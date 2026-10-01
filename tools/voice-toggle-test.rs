@@ -5,6 +5,8 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 static CAPTURES: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_STATE: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_FAILURES: AtomicUsize = AtomicUsize::new(0);
+static RENEW_FAILURES: AtomicUsize = AtomicUsize::new(0);
+static RENEWALS: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
@@ -108,7 +110,10 @@ mod drivers {pub mod audio {
     // FUNC: renew_capture
     // DESC: Renews only the deterministic fixture capture.
     // ------------------=
-    pub fn renew_capture(_:SecurityIdentity,_:u64)->bool{true}
+    pub fn renew_capture(_:SecurityIdentity,_:u64)->bool{
+        crate::RENEWALS.fetch_add(1,crate::Ordering::SeqCst);
+        crate::RENEW_FAILURES.fetch_update(crate::Ordering::SeqCst,crate::Ordering::SeqCst,|n|if n==0{None}else{Some(n-1)}).is_err()
+    }
     // ------------------------=
     // FUNC: read_capture
     // DESC: Supplies silence without advancing recognition in toggle tests.
@@ -402,6 +407,19 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll();conversation::poll();
     conversation::stop(owner);conversation::poll();
     assert!(conversation::start(owner));
+    // A concurrent DMA pump may hold the adapter lock during a renewal poll.
+    // One missed renewal must retain the active utterance and retry without
+    // returning voice control to desktop autostart.
+    let renewals=RENEWALS.load(Ordering::SeqCst);
+    RENEW_FAILURES.store(1,Ordering::SeqCst);
+    NOW.store(1_100_000_003,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(RENEWALS.load(Ordering::SeqCst),renewals+1);
+    NOW.store(1_110_000_003,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(RENEWALS.load(Ordering::SeqCst),renewals+2);
     let phrase_baseline=PHRASES.lock().unwrap().len();
     MICROPHONE.lock().unwrap().extend([0;3200]);
     MICROPHONE.lock().unwrap().extend([1700;1600]);

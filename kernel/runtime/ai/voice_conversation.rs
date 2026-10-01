@@ -478,7 +478,16 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         // microphone authority. Allocating a second capability before retiring
         // the first fails when the bounded global table is otherwise full and
         // made continuous listening drop after its first renewal.
-        if INPUT_CAP==0 || !crate::drivers::audio::renew_capture(OWNER,INPUT_CAP) {return false;}
+        if INPUT_CAP==0 {return false;}
+        if !crate::drivers::audio::renew_capture(OWNER,INPUT_CAP) {
+            // The adapter lock is shared with the high-frequency DMA pump. A
+            // single collision must not erase an utterance or cycle desktop
+            // autostart; the existing five-second stream remains authorized
+            // while a bounded retry is scheduled.
+            trace(b"capture renewal retry");
+            RENEW_AT=now.saturating_add(10_000_000);
+            return true;
+        }
         RENEW_AT=now+1_000_000_000;
     }
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
