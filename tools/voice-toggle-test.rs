@@ -21,6 +21,7 @@ static STREAMING: AtomicBool = AtomicBool::new(false);
 static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
 static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
 static INPUT_LENGTH: AtomicUsize = AtomicUsize::new(0);
+static DIRECT_TRANSCRIPT: AtomicBool = AtomicBool::new(false);
 static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
@@ -289,8 +290,13 @@ mod voice_input {
     // ------------------=
     pub fn take(_:SecurityIdentity,out:&mut[u8])->Result<usize,()>{
         crate::READY.store(false,crate::Ordering::SeqCst);
-        out[..13].copy_from_slice(b"Infinity test");
-        Ok(13)
+        let transcript: &[u8] = if crate::DIRECT_TRANSCRIPT.load(crate::Ordering::SeqCst) {
+            b"hello"
+        } else {
+            b"Infinity test"
+        };
+        out[..transcript.len()].copy_from_slice(transcript);
+        Ok(transcript.len())
     }
 }
 mod voice_output {
@@ -573,4 +579,17 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
     assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),grants+1);
     conversation::stop(owner);conversation::poll();
+
+    // An explicitly enabled visible voice session must submit a valid Whisper
+    // transcript even when recognition omits the optional wake phrase.
+    DIRECT_TRANSCRIPT.store(true,Ordering::SeqCst);
+    TURNS.store(0,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().extend([2100;1600]);
+    MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..10 {conversation::poll();if conversation::state().0==State::Thinking {break;}}
+    assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(TURNS.load(Ordering::SeqCst),1);
+    conversation::stop(owner);conversation::poll();
+    DIRECT_TRANSCRIPT.store(false,Ordering::SeqCst);
 }

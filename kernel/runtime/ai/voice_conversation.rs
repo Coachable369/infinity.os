@@ -804,7 +804,6 @@ pub fn poll() -> bool {
                     RECOGNIZE_CAP = 0;
                     let mut command = None;
                     let mut wake_only = false;
-                    let mut ignored = false;
                     if let Ok(n) = result {
                         if n != 0 {
                             if WAKE_ARMED {
@@ -814,7 +813,11 @@ pub fn poll() -> bool {
                                     &(&*(&raw const TRANSCRIPT))[..n],
                                     configured_wake_word(OWNER),
                                 ) {
-                                    wake_word::Match::Absent => ignored = true,
+                                    // Voice capture is already an explicitly enabled,
+                                    // visible session.  A wake phrase improves targeting
+                                    // and is stripped when present, but a recognizer miss
+                                    // must not silently discard an otherwise valid turn.
+                                    wake_word::Match::Absent => command = Some((0, n)),
                                     wake_word::Match::WakeOnly => wake_only = true,
                                     wake_word::Match::Command { start } => {
                                         command = Some((start, n));
@@ -855,12 +858,6 @@ pub fn poll() -> bool {
                         WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
                             .saturating_add(FOLLOW_UP_WINDOW_NS);
                         trace(b"wake phrase armed command capture");
-                        if !listen() {
-                            stop(OWNER);
-                            STATE = State::Failed;
-                        }
-                    } else if ignored {
-                        trace(b"unaddressed transcript ignored");
                         if !listen() {
                             stop(OWNER);
                             STATE = State::Failed;
