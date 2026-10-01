@@ -51,6 +51,10 @@ static mut CHAT_TURN: u64 = 0;
 static mut CONTINUOUS: bool = false;
 static mut REPLY_COMPLETE: bool = false;
 static mut REOPEN_FAILURE: u8 = 0;
+static mut CAPTURE_FRAME_SEEN: bool = false;
+static mut CAPTURE_EMPTY_SINCE: u64 = 0;
+static mut CAPTURE_EMPTY_REPORTED: bool = false;
+static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 
 #[cfg(not(test))]
 // ------------------------=
@@ -193,6 +197,10 @@ unsafe fn listen() -> bool {
     REOPEN_AT = 0;
     REOPEN_DEADLINE = 0;
     REOPEN_FAILURE = 0;
+    CAPTURE_FRAME_SEEN = false;
+    CAPTURE_EMPTY_SINCE = super::qwen::workers::clock_ns();
+    CAPTURE_EMPTY_REPORTED = false;
+    LAST_VAD_STATE = VadState::Waiting;
     STATE = State::Listening;
     true
 }
@@ -223,6 +231,9 @@ unsafe fn reopen_capture() -> bool {
     REOPEN_AT = 0;
     REOPEN_DEADLINE = 0;
     REOPEN_FAILURE = 0;
+    CAPTURE_FRAME_SEEN = false;
+    CAPTURE_EMPTY_SINCE = super::qwen::workers::clock_ns();
+    CAPTURE_EMPTY_REPORTED = false;
     true
 }
 // ------------------------=
@@ -513,7 +524,21 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         RENEW_AT=now+1_000_000_000;
     }
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
-    if count==0 {return true;}
+    if count==0 {
+        if !CAPTURE_EMPTY_REPORTED && now.saturating_sub(CAPTURE_EMPTY_SINCE)>=1_000_000_000 {
+            trace(b"capture recording but no samples 1s");
+            CAPTURE_EMPTY_REPORTED=true;
+        }
+        return true;
+    }
+    if !CAPTURE_FRAME_SEEN {
+        trace(b"capture samples received");
+        CAPTURE_FRAME_SEEN=true;
+    } else if CAPTURE_EMPTY_REPORTED {
+        trace(b"capture samples resumed");
+    }
+    CAPTURE_EMPTY_SINCE=now;
+    CAPTURE_EMPTY_REPORTED=false;
     let (used,n)=(&mut *(&raw mut RESAMPLER)).process(&(&*(&raw const RAW))[..count],&mut *(&raw mut MONO));
     if used!=count {
         trace(b"capture resampler backpressure");
@@ -529,6 +554,18 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     }
     LEVEL=(&*(&raw const MONO))[..n].iter().map(|x|x.unsigned_abs()).max().unwrap_or(0);
     (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n]);
+    let vad=(&*(&raw const UTTERANCE)).state();
+    if vad!=LAST_VAD_STATE {
+        trace(match vad {
+            VadState::Waiting => b"vad waiting",
+            VadState::Speech => b"vad speech onset",
+            VadState::Complete => b"vad utterance complete",
+            VadState::NoSpeech => b"vad no speech limit",
+            VadState::Limit => b"vad sample limit",
+            VadState::Cancelled => b"vad cancelled",
+        });
+        LAST_VAD_STATE=vad;
+    }
     (&mut *(&raw mut RAW)).fill(0);(&mut *(&raw mut MONO)).fill(0);
     if duplex && matches!((&*(&raw const UTTERANCE)).state(),VadState::NoSpeech|VadState::Limit) {
         (&mut *(&raw mut UTTERANCE)).clear(300);
@@ -598,6 +635,8 @@ pub fn poll() -> bool {
             State::Recognizing => match voice_input::status().state {
                 voice_input::InputState::Ready => {
                     let result = voice_input::take(OWNER, &mut *(&raw mut TRANSCRIPT));
+                    let result_was_empty = matches!(&result, Ok(0));
+                    let result_failed = result.is_err();
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
                     let queued = result
@@ -627,11 +666,28 @@ pub fn poll() -> bool {
                             State::Submitting
                         };
                     } else {
+                        trace(match (result_was_empty,result_failed) {
+                            (true,_) => b"recognition returned empty transcript",
+                            (_,true) => b"recognition result take failed",
+                            _ => b"transcript rejected by chat state",
+                        });
                         stop(OWNER);
                     }
                 }
                 voice_input::InputState::Failed | voice_input::InputState::Cancelled => {
                     let status = voice_input::status();
+                    trace(if status.state==voice_input::InputState::Cancelled {
+                        b"recognition cancelled"
+                    } else { match status.error {
+                        1 => b"recognition invalid request",
+                        2 => b"recognition deadline or cancellation",
+                        3 => b"recognition model initialization failed",
+                        4 => b"recognition decode failed",
+                        5 => b"recognition no hypothesis",
+                        6 => b"recognition transcript overflow",
+                        7 => b"recognition engine fatal state",
+                        _ => b"recognition provider failure",
+                    }});
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
                     // Only an acoustic no-hypothesis result may resume capture.

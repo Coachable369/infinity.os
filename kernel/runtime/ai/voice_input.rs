@@ -16,6 +16,31 @@ static mut MEMORY: usize = 0;
 static mut ELAPSED: u64 = 0;
 static mut ERROR: i32 = 0;
 
+#[cfg(not(test))]
+// ------------------------=
+// FUNC: trace
+// DESC: Emits privacy-safe native recognizer lifecycle evidence without transcript or PCM content.
+// ------------------=
+fn trace(event: &[u8]) {
+    unsafe {
+        let mut record = [0u8; 96];
+        let prefix = b"[WHISPER] ";
+        let event_length = event.len().min(record.len() - prefix.len() - 1);
+        record[..prefix.len()].copy_from_slice(prefix);
+        record[prefix.len()..prefix.len() + event_length]
+            .copy_from_slice(&event[..event_length]);
+        record[prefix.len() + event_length] = b'\n';
+        crate::output::write(&record[..prefix.len() + event_length + 1]);
+    }
+}
+
+#[cfg(test)]
+// ------------------------=
+// FUNC: trace
+// DESC: Keeps host recognizer harnesses independent of the native serial device.
+// ------------------=
+fn trace(_: &[u8]) {}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputState {
     Idle,
@@ -90,6 +115,7 @@ extern "C" fn cancelled(_: *mut core::ffi::c_void) -> i32 {
 // ------------------=
 unsafe fn worker() {
     STATE.store(2, Ordering::Release);
+    trace(b"worker started");
     let start = super::qwen::workers::clock_ns();
     LENGTH = Whisper
         .recognize_pcm(
@@ -111,6 +137,18 @@ unsafe fn worker() {
         (&mut *(&raw mut TEXT)).fill(0);
         LENGTH = 0;
     }
+    trace(match ERROR {
+        0 if LENGTH == 0 => b"worker completed empty transcript",
+        0 => b"worker completed transcript ready",
+        1 => b"worker failed invalid request",
+        2 => b"worker cancelled or deadline reached",
+        3 => b"worker failed model initialization",
+        4 => b"worker failed decode",
+        5 => b"worker completed no hypothesis",
+        6 => b"worker failed transcript overflow",
+        7 => b"worker failed fatal engine state",
+        _ => b"worker failed provider error",
+    });
     STATE.store(state, Ordering::Release);
 }
 // ------------------------=
@@ -119,9 +157,11 @@ unsafe fn worker() {
 // ------------------=
 pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(), AiError> {
     if pcm.is_empty() || pcm.len() > 160000 {
+        trace(b"submit rejected sample bounds");
         return Err(AiError::InvalidRequest);
     }
     if matches!(STATE.load(Ordering::Acquire), 1 | 2 | 3) {
+        trace(b"submit rejected recognizer busy");
         return Err(AiError::QueueFull);
     }
     let now = super::qwen::workers::clock_ns();
@@ -147,6 +187,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
     })
     .unwrap_or(false);
     if !valid {
+        trace(b"submit rejected recognition authority");
         return Err(AiError::AccessDenied);
     }
     unsafe {
@@ -165,8 +206,10 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
         if !super::qwen::workers::background(worker) {
             (&mut *(&raw mut PCM)).fill(0);
             STATE.store(4, Ordering::Release);
+            trace(b"submit failed worker scheduling");
             return Err(AiError::ProviderUnavailable);
         }
+        trace(b"submit queued");
     }
     Ok(())
 }
