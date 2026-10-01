@@ -417,7 +417,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
     assert!(conversation::wake_armed());
-    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     for terminal in [1,2] {
         let opened=CAPTURES.load(Ordering::SeqCst);
         CAPTURE_STATE.store(terminal,Ordering::SeqCst);conversation::poll();conversation::poll();
@@ -560,5 +560,17 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
     assert_eq!(conversation::state().0,State::Recognizing);
     assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==2400));
+    conversation::stop(owner);conversation::poll();
+
+    // A long-lived conversation rotates expiring native authority without
+    // reopening the VirtualBox/CoreAudio device or losing listening state.
+    assert!(conversation::start(owner));
+    let opened=CAPTURES.load(Ordering::SeqCst);
+    let grants=INPUT_GRANTS.load(Ordering::SeqCst);
+    NOW.store(49_000_000_003,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
+    assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),grants+1);
     conversation::stop(owner);conversation::poll();
 }

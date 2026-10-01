@@ -36,6 +36,7 @@ static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
 static mut INPUT_CAP: u64 = 0;
 static mut RECOGNIZE_CAP: u64 = 0;
 static mut RENEW_AT: u64 = 0;
+static mut CAPABILITY_REPLACE_AT: u64 = 0;
 static mut REOPEN_AT: u64 = 0;
 static mut REOPEN_DEADLINE: u64 = 0;
 static mut RESAMPLER: Resampler = Resampler::empty();
@@ -62,6 +63,8 @@ static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 static mut WAKE_ARMED: bool = false;
 static mut WAKE_ARMED_UNTIL: u64 = 0;
 const FOLLOW_UP_WINDOW_NS: u64 = 10_000_000_000;
+const CAPTURE_CAPABILITY_SECONDS: u64 = 60;
+const CAPTURE_CAPABILITY_REPLACE_NS: u64 = 45_000_000_000;
 
 #[cfg(not(test))]
 // ------------------------=
@@ -205,15 +208,37 @@ pub fn synchronized_reply_length(turn: u64, full_length: usize) -> usize {
     }
 }
 // ------------------------=
+// FUNC: reset_listening_state
+// DESC: Clears private turn buffers while preserving the already-authorized microphone DMA stream.
+// ------------------=
+unsafe fn reset_listening_state() {
+    (&mut *(&raw mut UTTERANCE)).clear(300);
+    (&mut *(&raw mut RESAMPLER)).clear();
+    (&mut *(&raw mut RAW)).fill(0);
+    (&mut *(&raw mut MONO)).fill(0);
+    (&mut *(&raw mut ECHO)).fill(0);
+    ECHO_VALID_UNTIL = 0;
+    LEVEL = 0;
+    REOPEN_AT = 0;
+    REOPEN_DEADLINE = 0;
+    REOPEN_FAILURE = 0;
+    CAPTURE_FRAME_SEEN = false;
+    CAPTURE_EMPTY_SINCE = super::qwen::workers::clock_ns();
+    CAPTURE_EMPTY_REPORTED = false;
+    LAST_VAD_STATE = VadState::Waiting;
+    STATE = State::Listening;
+}
+
+// ------------------------=
 // FUNC: listen
-// DESC: Opens a bounded capture lease and resets private utterance storage between conversational turns.
+// DESC: Opens one bounded capture stream or reuses its live DMA path for the next conversational turn.
 // ------------------=
 unsafe fn listen() -> bool {
     if INPUT_CAP != 0 {
-        STATE = State::Listening;
+        reset_listening_state();
         return true;
     }
-    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else {
+    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, CAPTURE_CAPABILITY_SECONDS) else {
         trace(b"listen failed grant");
         return false;
     };
@@ -229,20 +254,14 @@ unsafe fn listen() -> bool {
     if !(&mut *(&raw mut RESAMPLER)).configure(rate) {
         trace(b"listen failed sample rate");
         crate::drivers::audio::stop_capture(OWNER);
+        retire(INPUT_CAP);
         INPUT_CAP = 0;
         return false;
     }
-    (&mut *(&raw mut UTTERANCE)).clear(300);
-    LEVEL = 0;
-    RENEW_AT = super::qwen::workers::clock_ns() + 1_000_000_000;
-    REOPEN_AT = 0;
-    REOPEN_DEADLINE = 0;
-    REOPEN_FAILURE = 0;
-    CAPTURE_FRAME_SEEN = false;
-    CAPTURE_EMPTY_SINCE = super::qwen::workers::clock_ns();
-    CAPTURE_EMPTY_REPORTED = false;
-    LAST_VAD_STATE = VadState::Waiting;
-    STATE = State::Listening;
+    let now = super::qwen::workers::clock_ns();
+    RENEW_AT = now + 1_000_000_000;
+    CAPABILITY_REPLACE_AT = now + CAPTURE_CAPABILITY_REPLACE_NS;
+    reset_listening_state();
     true
 }
 
@@ -251,7 +270,7 @@ unsafe fn listen() -> bool {
 // DESC: Recovers a completed or overrun DMA stream without discarding speech already accepted by VAD.
 // ------------------=
 unsafe fn reopen_capture() -> bool {
-    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else {
+    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, CAPTURE_CAPABILITY_SECONDS) else {
         REOPEN_FAILURE = 1;
         return false;
     };
@@ -268,7 +287,9 @@ unsafe fn reopen_capture() -> bool {
         INPUT_CAP = 0;
         return false;
     }
-    RENEW_AT = super::qwen::workers::clock_ns() + 1_000_000_000;
+    let now = super::qwen::workers::clock_ns();
+    RENEW_AT = now + 1_000_000_000;
+    CAPABILITY_REPLACE_AT = now + CAPTURE_CAPABILITY_REPLACE_NS;
     REOPEN_AT = 0;
     REOPEN_DEADLINE = 0;
     REOPEN_FAILURE = 0;
@@ -361,6 +382,7 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         RESTART_LISTENING = false;
         crate::drivers::audio::stop_capture(owner);
         INPUT_CAP = 0;
+        CAPABILITY_REPLACE_AT = 0;
         voice_input::stop(owner);
         voice_output::stop(owner);
         if matches!(STATE, State::Thinking | State::Speaking) {
@@ -487,9 +509,6 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         if STATE == State::Listening && OWNER != owner { return; }
         let continuous = STATE == State::Listening;
         if continuous && INPUT_CAP != 0 {
-            crate::drivers::audio::stop_capture(owner);
-            retire(INPUT_CAP);
-            INPUT_CAP = 0;
             (&mut *(&raw mut UTTERANCE)).clear(300);
             (&mut *(&raw mut RESAMPLER)).clear();
             (&mut *(&raw mut RAW)).fill(0);
@@ -506,6 +525,73 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         CHAT_TURN = turn;
         STATE = State::Thinking;
     }
+}
+
+// ------------------------=
+// FUNC: renew_capture_authority
+// DESC: Extends live DMA and rotates its expiring capability without closing the host microphone stream.
+// ------------------=
+unsafe fn renew_capture_authority(now: u64) -> bool {
+    if INPUT_CAP == 0 {
+        return false;
+    }
+    if now >= CAPABILITY_REPLACE_AT {
+        if let Some(next) = grant(OWNER, CapabilityType::AudioInput, CAPTURE_CAPABILITY_SECONDS) {
+            if crate::drivers::audio::renew_capture(OWNER, next) {
+                INPUT_CAP = next;
+                CAPABILITY_REPLACE_AT = now.saturating_add(CAPTURE_CAPABILITY_REPLACE_NS);
+                RENEW_AT = now.saturating_add(1_000_000_000);
+                trace(b"capture authority rotated");
+                return true;
+            }
+            retire(next);
+        }
+        trace(b"capture authority rotation retry");
+        RENEW_AT = now.saturating_add(10_000_000);
+        return true;
+    }
+    if crate::drivers::audio::renew_capture(OWNER, INPUT_CAP) {
+        RENEW_AT = now.saturating_add(1_000_000_000);
+        true
+    } else {
+        trace(b"capture renewal retry");
+        RENEW_AT = now.saturating_add(10_000_000);
+        true
+    }
+}
+
+// ------------------------=
+// FUNC: drain_muted_capture
+// DESC: Keeps continuous microphone DMA healthy while recognition, inference, and uninterruptible speech own the turn.
+// ------------------=
+unsafe fn drain_muted_capture() -> bool {
+    use crate::runtime::audio::CaptureState;
+    if INPUT_CAP == 0 {
+        return true;
+    }
+    let now = super::qwen::workers::clock_ns();
+    let Some(status) = crate::drivers::audio::capture_status() else {
+        return true;
+    };
+    if status.state != CaptureState::Recording {
+        if matches!(status.state, CaptureState::Overrun | CaptureState::Complete) {
+            retire(INPUT_CAP);
+            INPUT_CAP = 0;
+            CAPABILITY_REPLACE_AT = 0;
+            trace(b"muted capture ended; defer reopen");
+            return true;
+        }
+        trace(b"muted capture terminal failure");
+        return false;
+    }
+    if now >= RENEW_AT && !renew_capture_authority(now) {
+        return false;
+    }
+    let _ = crate::drivers::audio::read_capture(OWNER, &mut *(&raw mut RAW));
+    (&mut *(&raw mut RAW)).fill(0);
+    (&mut *(&raw mut MONO)).fill(0);
+    LEVEL = 0;
+    true
 }
 // ------------------------=
 // FUNC: synchronize_visible_reply
@@ -572,21 +658,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         return false;
     }
     if now>=RENEW_AT {
-        // Extend the short IOP stream deadline with the existing 60-second
-        // microphone authority. Allocating a second capability before retiring
-        // the first fails when the bounded global table is otherwise full and
-        // made continuous listening drop after its first renewal.
-        if INPUT_CAP==0 {return false;}
-        if !crate::drivers::audio::renew_capture(OWNER,INPUT_CAP) {
-            // The adapter lock is shared with the high-frequency DMA pump. A
-            // single collision must not erase an utterance or cycle desktop
-            // autostart; the existing five-second stream remains authorized
-            // while a bounded retry is scheduled.
-            trace(b"capture renewal retry");
-            RENEW_AT=now.saturating_add(10_000_000);
-            return true;
-        }
-        RENEW_AT=now+1_000_000_000;
+        if !renew_capture_authority(now) { return false; }
     }
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
     if count==0 {
@@ -658,9 +730,17 @@ pub fn poll() -> bool {
             trace(b"conversation stopped model state");
             stop(OWNER);
         }
-        // Playback owns the conversational audio interval. The microphone is
-        // reopened only after the complete response drains, so acoustic input
-        // can never cancel or truncate an accepted assistant response.
+        // Recognition, inference, and playback own their turn while the one
+        // authorized capture DMA stream is drained and muted. Keeping hardware
+        // open avoids repeating the host audio permission/open path, while
+        // muted input can never cancel or truncate an accepted response.
+        if matches!(STATE, State::Recognizing | State::Submitting | State::Thinking | State::Speaking)
+            && !drain_muted_capture()
+        {
+            trace(b"conversation stopped muted capture");
+            stop(OWNER);
+            return true;
+        }
         match STATE {
             State::Starting => {
                 if voice_input::prepared() {
@@ -685,18 +765,21 @@ pub fn poll() -> bool {
                 }
                 match (&*(&raw const UTTERANCE)).state() {
                     VadState::Complete => {
-                        // Capture shutdown retires its lease. Recognition is
-                        // asynchronous, so it needs independent authority that
-                        // remains valid until the transcript is taken.
-                        RECOGNIZE_CAP = grant(OWNER,CapabilityType::AudioInput,60)
+                        // Recognition is asynchronous, so it receives separate
+                        // bounded authority while capture DMA stays open and is
+                        // drained without admitting another utterance.
+                        RECOGNIZE_CAP = grant(
+                            OWNER,
+                            CapabilityType::AudioInput,
+                            CAPTURE_CAPABILITY_SECONDS,
+                        )
                             .unwrap_or(0);
                         let submitted = (&*(&raw const UTTERANCE))
                             .speech()
                             .map(|pcm| voice_input::submit(OWNER, RECOGNIZE_CAP, pcm).is_ok())
                             .unwrap_or(false);
-                        crate::drivers::audio::stop_capture(OWNER);
-                        INPUT_CAP = 0;
                         (&mut *(&raw mut UTTERANCE)).clear(300);
+                        (&mut *(&raw mut RESAMPLER)).clear();
                         LEVEL = 0;
                         if submitted {
                             trace(b"recognition queued");
