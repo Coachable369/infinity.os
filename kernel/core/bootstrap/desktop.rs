@@ -9740,6 +9740,10 @@ impl super::DisplayDevice {
             throughput[n + 2..n + 8].copy_from_slice(b" TOK/S");
             n + 8
         });
+        #[cfg(target_os="none")]
+        let voice_starting = voice_enabled && !crate::runtime::ai::voice_conversation::ready();
+        #[cfg(not(target_os="none"))]
+        let voice_starting = false;
         let state = if chat.minimized() {
             b"LOCAL  +".as_slice()
         } else if !chat.selected_model_ready() {
@@ -9760,6 +9764,8 @@ impl super::DisplayDevice {
             use crate::runtime::ai::voice_conversation::{state,State};
             if !voice_enabled {
                 b"VOICE OFF".as_slice()
+            } else if voice_starting {
+                b"STARTING...".as_slice()
             } else { match state().0 {
                 State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
                 State::Off=>b"VOICE OFF".as_slice(),State::Listening=>b"LISTEN".as_slice(),
@@ -9770,8 +9776,8 @@ impl super::DisplayDevice {
             }}
         };
         let state_width = self.ui_text_width(state, 1);
-        let thinking = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
-            && !chat.minimized();
+        let thinking = (chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
+            || voice_starting) && !chat.minimized();
         let state_x = left + width.saturating_sub(state_width + 72 * scale);
         let frame = unsafe { THINKING_ANIMATION.frame as usize };
         #[cfg(target_os="none")]
@@ -10071,7 +10077,7 @@ impl super::DisplayDevice {
             composer_left + 12 * scale,
             composer_top + 15 * scale,
             if composer_text.is_empty() {
-                if chat.selected_model_ready() { b"Ask InfinityOS..." } else { b"Model unavailable" }
+                if chat.selected_model_ready() { b"Ask InfinityOS..." } else { b"Preparing local AI..." }
             } else {
                 composer_text
             },

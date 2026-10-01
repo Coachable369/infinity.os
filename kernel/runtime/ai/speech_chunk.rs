@@ -9,12 +9,24 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
     // whole sentence resident so segment boundaries cannot stop the device.
     const INITIAL_LIMIT: usize = 160;
     const PROVIDER_LIMIT: usize = 160;
+    const FIRST_WORD_WINDOW: usize = 32;
     let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
     let scan_limit = bytes.len().min(phrase_limit);
     for i in 0..scan_limit {
         if matches!(bytes[i], b'.' | b'!' | b'?')
             && (bytes.get(i + 1).is_some_and(u8::is_ascii_whitespace) || (complete && i + 1 == bytes.len())) {
             return i + 1;
+        }
+    }
+    // The first audible phrase must follow visible text by only a few words.
+    // Waiting for sentence punctuation made a long native response appear to
+    // be queued for close to a minute even though tokens were already visible.
+    if initial && !complete && bytes.len() >= FIRST_WORD_WINDOW {
+        if let Some(offset) = bytes[FIRST_WORD_WINDOW..scan_limit]
+            .iter()
+            .position(u8::is_ascii_whitespace)
+        {
+            return FIRST_WORD_WINDOW + offset + 1;
         }
     }
     if complete && bytes.len() <= phrase_limit { return bytes.len(); }
@@ -63,6 +75,7 @@ mod tests {
             at+=count;
         }
         assert_eq!(super::next(&text[..29],false,true),0);
+        assert_eq!(super::next(&text[..38],false,true),34);
     }
 
     // ------------------------=
@@ -85,7 +98,7 @@ mod tests {
     #[test]
     fn streaming_chunks_match_native_graph_boundaries() {
         let text=b"One two three four five six seven eight nine ten eleven twelve thirteen fourteen.";
-        assert_eq!(super::next(text,false,true),0);
+        assert_eq!(super::next(text,false,true),34);
         let complete=super::next(text,true,true);
         assert_eq!(complete,text.len());
     }

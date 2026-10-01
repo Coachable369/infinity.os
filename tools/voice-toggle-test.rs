@@ -107,6 +107,11 @@ mod drivers {pub mod audio {
     // ------------------=
     pub fn capture_available()->bool{true}
     // ------------------------=
+    // FUNC: playback_rate
+    // DESC: Declares the deterministic output route ready for conversation admission.
+    // ------------------=
+    pub fn playback_rate()->Option<u32>{Some(48000)}
+    // ------------------------=
     // FUNC: renew_capture
     // DESC: Renews only the deterministic fixture capture.
     // ------------------=
@@ -327,6 +332,10 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     use conversation::State;
     let owner=runtime::execution::SecurityIdentity([1;16]);
     MODEL_READY.store(false,Ordering::SeqCst);
+    CHAT_READY.store(false,Ordering::SeqCst);
+    assert!(!conversation::toggle(owner));assert_eq!(conversation::state().0,State::Off);
+    MODEL_READY.store(true,Ordering::SeqCst);
+    CHAT_READY.store(true,Ordering::SeqCst);
     assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Listening);
     BUSY.store(true,Ordering::SeqCst);
     assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Stopping);
@@ -346,16 +355,10 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert!(conversation::start(owner));
     MICROPHONE.lock().unwrap().extend([1000;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
-    for _ in 0..10 {conversation::poll();if conversation::state().0==State::Submitting {break;}}
-    assert_eq!(conversation::state().0,State::Submitting);
-    assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),4);
-    assert_eq!(TURNS.load(Ordering::SeqCst),0);
-    // Native service readiness is authoritative even if the presentation cache
-    // has not yet observed the boot transition.
-    CHAT_READY.store(false,Ordering::SeqCst);
-    MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
+    for _ in 0..10 {conversation::poll();if conversation::state().0==State::Thinking {break;}}
     assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),0);
+    assert_eq!(TURNS.load(Ordering::SeqCst),1);
     let captures_before_reply=CAPTURES.load(Ordering::SeqCst);
     conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);

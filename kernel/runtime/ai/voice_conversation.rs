@@ -151,6 +151,15 @@ pub fn state() -> (State, u16) {
     unsafe { (STATE, LEVEL) }
 }
 // ------------------------=
+// FUNC: ready
+// DESC: Admits conversational capture only when the selected model and both native audio directions are usable.
+// ------------------=
+pub fn ready() -> bool {
+    super::with_ai_runtime(|ai| ai.chat.selected_model_ready())
+        && crate::drivers::audio::capture_available()
+        && crate::drivers::audio::playback_rate().is_some()
+}
+// ------------------------=
 // FUNC: synchronized_reply_length
 // DESC: Limits the active assistant response to the word boundary reached by the real speech DMA cursor.
 // ------------------=
@@ -256,14 +265,14 @@ pub fn start(owner: SecurityIdentity) -> bool {
             RESTART_LISTENING = true;
             return true;
         }
-        // Microphone availability is independent of model loading.  Fresh
-        // installs must begin listening while the selected model is still
-        // being prepared, rather than presenting a misleading VOICE OFF state.
-        let ready = super::with_ai_runtime(|ai| {
+        // Do not collect speech before the complete local path is able to
+        // accept it.  The widget exposes this interval as STARTING instead of
+        // letting users unknowingly stack transcripts behind model loading.
+        let idle = super::with_ai_runtime(|ai| {
             ai.chat.input().is_empty()
                 && ai.chat.generation_state != GenerationState::Running
         });
-        if !ready || !crate::drivers::audio::capture_available() {
+        if !idle || !ready() {
             return false;
         }
         OWNER = owner;
