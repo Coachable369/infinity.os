@@ -177,6 +177,36 @@ pub enum VoiceActivation {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WakeWord {
+    Infinity = 1,
+    Computer = 2,
+}
+
+impl WakeWord {
+    // ------------------------=
+    // FUNC: phrase
+    // DESC: Returns the bounded spoken phrase associated with this wake-word selection.
+    // ------------------=
+    pub const fn phrase(self) -> &'static [u8] {
+        match self {
+            Self::Infinity => b"Infinity",
+            Self::Computer => b"Computer",
+        }
+    }
+
+    // ------------------------=
+    // FUNC: next
+    // DESC: Cycles the supported local wake phrases for the Settings selector.
+    // ------------------=
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Infinity => Self::Computer,
+            Self::Computer => Self::Infinity,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingScope {
     System = 1,
     Machine = 2,
@@ -252,6 +282,7 @@ pub struct VoiceProfile {
     pub user: StableId,
     pub enabled: bool,
     pub activation: VoiceActivation,
+    pub wake_word: WakeWord,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -532,6 +563,7 @@ impl IdentitySystem {
             user: user_id,
             enabled: true,
             activation: VoiceActivation::Continuous,
+            wake_word: WakeWord::Infinity,
         });
         self.ownership[slot] = Some(PersonalSpaceOwnership {
             owner: user_id,
@@ -1233,6 +1265,31 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: update_wake_word
+    // DESC: Persists the authenticated user's selected local wake phrase.
+    // ------------------=
+    pub fn update_wake_word(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        wake_word: WakeWord,
+    ) -> Result<VoiceProfile, IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        let profile = self
+            .voice_profiles
+            .iter_mut()
+            .flatten()
+            .find(|profile| profile.user == user)
+            .ok_or(IdentityError::NotFound)?;
+        profile.wake_word = wake_word;
+        let result = *profile;
+        self.commit();
+        Ok(result)
+    }
+
+    // ------------------------=
     // FUNC: complete_onboarding
     // DESC: Commits setup only after machine, user, credential, ownership, and profiles all exist.
     // ------------------=
@@ -1846,7 +1903,9 @@ fn write_user(
             MAX_NO_ACTIVITY_TIMEOUT_MINUTES,
         );
     out[at + 158] = voice.map(|v| v.enabled as u8).unwrap_or(0) | (timeout_minutes << 1);
-    out[at + 159] = voice.map(|v| v.activation as u8).unwrap_or(1)
+    out[at + 159] = voice
+        .map(|value| (value.activation as u8) | ((value.wake_word as u8) << 2))
+        .unwrap_or(1 | ((WakeWord::Infinity as u8) << 2))
 }
 
 // ------------------------=
@@ -1907,16 +1966,22 @@ fn read_user(
             3
         },
     };
-    let voice_was_uninitialized = input[at + 159] == 0;
+    let voice_preferences = input[at + 159];
+    let voice_was_uninitialized = voice_preferences == 0;
     let voice = VoiceProfile {
         user: id,
         enabled: voice_was_uninitialized || input[at + 158] & 1 != 0,
-        activation: match input[at + 159] {
+        activation: match voice_preferences & 0x03 {
             0 => VoiceActivation::Continuous,
             1 => VoiceActivation::Disabled,
             2 => VoiceActivation::PushToTalk,
             3 => VoiceActivation::Continuous,
             _ => VoiceActivation::Disabled,
+        },
+        wake_word: match voice_preferences >> 2 {
+            0 | 1 => WakeWord::Infinity,
+            2 => WakeWord::Computer,
+            _ => return Err(IdentityError::CorruptState),
         },
     };
     Ok((user, profile, ai, voice))

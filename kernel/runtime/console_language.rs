@@ -532,6 +532,11 @@ const VOICE_PROFILE_ARGS: &[ArgumentSchema] = &[
         value_type: ArgumentType::Text,
         required: true,
     },
+    ArgumentSchema {
+        name: b"wake-word",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
 ];
 const SETTING_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema {
@@ -1389,7 +1394,7 @@ pub static OPERATIONS: &[OperationSchema] = &[
         VOICE_PROFILE_ARGS,
         2,
         SideEffectClass::SecurityChange,
-        b"voice-profile update user:1 enabled=true activation=push-to-talk",
+        b"voice-profile update user:1 enabled=true activation=continuous wake-word=infinity",
     ),
     op(
         b"settings",

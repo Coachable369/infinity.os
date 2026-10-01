@@ -5,7 +5,9 @@ mod storage;
 #[path = "../kernel/storage/spatial_path.rs"] mod spatial_path;
 use std::{fs::{File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}};
 use storage::{BlockDevice, object::{ObjectStore, STORE_RELATIVE_LBA}};
-use runtime::identity::{IdentitySystem, OnboardingState, VoiceActivation, IDENTITY_STATE_BYTES};
+use runtime::identity::{
+    IdentitySystem, OnboardingState, VoiceActivation, WakeWord, IDENTITY_STATE_BYTES,
+};
 
 // ------------------------=
 // FUNC: output_text
@@ -59,6 +61,10 @@ fn main() {
     identity.create_password(user.id, b"fixture-only-password", 3).unwrap();
     identity.complete_onboarding().unwrap();
     assert_eq!(identity.voice_profile(user.id).unwrap().activation, VoiceActivation::Continuous);
+    assert_eq!(identity.voice_profile(user.id).unwrap().wake_word, WakeWord::Infinity);
+    identity
+        .update_wake_word(user.id, user.id, WakeWord::Computer)
+        .unwrap();
     let key = b"/system/identity/state";
     let id = store.resolve(key).unwrap();
     let mut exhausted = false;
@@ -92,6 +98,7 @@ fn main() {
     assert!(!restored.ai_profile(user.id).unwrap().speech_output_enabled);
     assert_eq!(restored.user_profile(user.id).unwrap().theme.as_bytes(),b"saved-theme");
     assert!(restored.voice_profile(user.id).unwrap().enabled);
+    assert_eq!(restored.voice_profile(user.id).unwrap().wake_word, WakeWord::Computer);
     restored.create_session(user.id,b"fixture-only-password",4).unwrap();
     restored.update_voice_profile(user.id,user.id,false,VoiceActivation::Disabled).unwrap();
     store.checkpoint(key,&restored.encode()).unwrap();
@@ -104,6 +111,7 @@ fn main() {
     assert_eq!(restored.onboarding_state(),OnboardingState::Complete);
     assert!(!restored.voice_profile(user.id).unwrap().enabled);
     assert_eq!(restored.voice_profile(user.id).unwrap().activation,VoiceActivation::Disabled);
+    assert_eq!(restored.voice_profile(user.id).unwrap().wake_word,WakeWord::Computer);
     let mut legacy = bytes;
     let user_offset = 160;
     legacy[user_offset + 158] &= !1;
@@ -118,6 +126,7 @@ fn main() {
     let migrated = IdentitySystem::decode(&legacy).unwrap();
     assert!(migrated.voice_profile(user.id).unwrap().enabled);
     assert_eq!(migrated.voice_profile(user.id).unwrap().activation,VoiceActivation::Continuous);
+    assert_eq!(migrated.voice_profile(user.id).unwrap().wake_word,WakeWord::Infinity);
     drop(store);
     std::fs::remove_file(path).unwrap();
     println!("200 durable checkpoints and two independent media remounts passed");

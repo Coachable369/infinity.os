@@ -16,6 +16,7 @@ pub mod voice_output;
 pub mod voice_input;
 #[cfg(target_os = "none")]
 pub mod voice_conversation;
+pub mod wake_word;
 pub mod voice_vad;
 
 use agent::AgentManager;

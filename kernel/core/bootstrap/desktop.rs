@@ -5416,21 +5416,24 @@ impl super::DisplayDevice {
                 } else { b"Local model unavailable".as_slice() },
             )
         });
-        let voice_enabled = crate::runtime::with_runtime(|runtime| {
+        let voice_profile = crate::runtime::with_runtime(|runtime| {
             (0..crate::runtime::identity::MAX_SESSIONS)
                 .filter_map(|index| runtime.identity.session_nth(index))
                 .find(|session| {
                     session.state == crate::runtime::identity::SessionState::Active
                 })
                 .and_then(|session| runtime.identity.voice_profile(session.user))
-                .map(|profile| {
-                    profile.enabled
-                        && profile.activation
-                            != crate::runtime::identity::VoiceActivation::Disabled
-                })
         })
-        .flatten()
-        .unwrap_or(false);
+        .flatten();
+        let voice_enabled = voice_profile
+            .map(|profile| {
+                profile.enabled
+                    && profile.activation != crate::runtime::identity::VoiceActivation::Disabled
+            })
+            .unwrap_or(false);
+        let wake_word = voice_profile
+            .map(|profile| profile.wake_word.phrase())
+            .unwrap_or(b"Infinity");
         let speech_enabled = crate::runtime::with_runtime(|runtime| {
             (0..crate::runtime::identity::MAX_SESSIONS)
                 .filter_map(|index| runtime.identity.session_nth(index))
@@ -5539,7 +5542,7 @@ impl super::DisplayDevice {
                 (b"Chat Model", chat_model),
                 (b"Remote Processing", b"Off"),
                 (b"Voice", if voice_enabled { b"Granted" } else { b"Restricted" }),
-                (b"Activation", if voice_enabled { b"Continuous listening" } else { b"Disabled" }),
+                (b"Wake Word", wake_word),
                 (b"Spoken Replies", if speech_enabled { b"Enabled" } else { b"Disabled" }),
                 (b"", b""),
             ],
@@ -5953,7 +5956,7 @@ impl super::DisplayDevice {
                         (2, 4) => b"The user profile persists with the installed system.",
                         (3, 3) => b"Remote processing is disabled; local inference stays on this device.",
                         (3, 4) => b"Microphone access follows the current user permission.",
-                        (3, 5) => b"Voice activation follows the current user permission.",
+                        (3, 5) => b"Choose the phrase that opens an eight-second command window.",
                         (3, 6) => b"Model operations remain subject to capability enforcement.",
                         (4, 0) => b"Applications receive no implicit authority over your data.",
                         (4, 1) => b"Microphone access is explicitly granted or restricted here.",
@@ -5988,7 +5991,8 @@ impl super::DisplayDevice {
                         (3, 1) => Some(if chat_enabled { b"DISABLE CHAT" } else { b"ENABLE CHAT" }),
                         (3, 2) => Some(b"NEXT MODEL"),
                         (3, 6) => Some(if speech_enabled { b"MUTE REPLIES" } else { b"SPEAK REPLIES" }),
-                        (3, 4) | (3, 5) | (4, 1) => Some(if voice_enabled { b"RESTRICT" } else { b"GRANT" }),
+                        (3, 4) | (4, 1) => Some(if voice_enabled { b"RESTRICT" } else { b"GRANT" }),
+                        (3, 5) => Some(b"NEXT WAKE WORD"),
                         _ => None,
                     };
                     if let Some(action) = action {
@@ -9694,21 +9698,25 @@ impl super::DisplayDevice {
         if !chat.enabled() {
             return;
         }
-        let voice_enabled = crate::runtime::with_runtime(|runtime| {
+        let voice_profile = crate::runtime::with_runtime(|runtime| {
             (0..crate::runtime::identity::MAX_SESSIONS)
                 .filter_map(|index| runtime.identity.session_nth(index))
                 .find(|session| {
                     session.state == crate::runtime::identity::SessionState::Active
                 })
                 .and_then(|session| runtime.identity.voice_profile(session.user))
-                .map(|profile| {
-                    profile.enabled
-                        && profile.activation
-                            != crate::runtime::identity::VoiceActivation::Disabled
-                })
         })
-        .flatten()
-        .unwrap_or(false);
+        .flatten();
+        let voice_enabled = voice_profile
+            .map(|profile| {
+                profile.enabled
+                    && profile.activation != crate::runtime::identity::VoiceActivation::Disabled
+            })
+            .unwrap_or(false);
+        let wake_prompt: &[u8] = match voice_profile.map(|profile| profile.wake_word) {
+            Some(crate::runtime::identity::WakeWord::Computer) => b"SAY COMPUTER",
+            _ => b"SAY INFINITY",
+        };
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry = layout.ai_chat_geometry(chat.minimized());
         let left = geometry.panel.x.max(0) as usize;
@@ -9772,7 +9780,8 @@ impl super::DisplayDevice {
                 b"STARTING...".as_slice()
             } else { match state().0 {
                 State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
-                State::Off=>b"VOICE OFF".as_slice(),State::Starting=>b"STARTING...".as_slice(),State::Listening=>b"LISTEN".as_slice(),
+                State::Off=>b"VOICE OFF".as_slice(),State::Starting=>b"STARTING...".as_slice(),
+                State::Listening=>if crate::runtime::ai::voice_conversation::wake_armed() {b"GO AHEAD".as_slice()} else {wake_prompt},
                 State::Recognizing=>b"HEARING".as_slice(),State::Submitting=>b"QUEUED".as_slice(),
                 State::Thinking=>b"THINKING".as_slice(),
                 State::Speaking=>match crate::runtime::ai::voice_output::status().state {

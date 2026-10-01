@@ -2533,6 +2533,27 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: cycle_voice_wake_word
+    // DESC: Selects and persists the next supported local wake phrase for the authenticated user.
+    // ------------------=
+    fn cycle_voice_wake_word(&mut self) {
+        let user = self.current_user;
+        let updated = crate::runtime::with_runtime(|runtime| {
+            let current = runtime.identity.voice_profile(user)?;
+            runtime
+                .identity
+                .update_wake_word(user, user, current.wake_word.next())
+                .ok()
+        })
+        .flatten()
+        .is_some();
+        if updated {
+            let _ = crate::runtime::persist_identity_state();
+            self.redraw();
+        }
+    }
+
+    // ------------------------=
     // FUNC: select_next_chat_model
     // DESC: Selects the next installed chat model and persists the choice.
     // ------------------=
@@ -4778,7 +4799,8 @@ impl ConsoleRuntime {
                 let _ = crate::runtime::persist_identity_state();
                 crate::runtime::ai::voice_output::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             }
-            (3, 4 | 5) | (4, 1) => self.toggle_voice_microphone(),
+            (3, 4) | (4, 1) => self.toggle_voice_microphone(),
+            (3, 5) => self.cycle_voice_wake_word(),
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
@@ -10272,7 +10294,9 @@ impl ConsoleRuntime {
         &mut self,
         node: &crate::runtime::console_language::OperationNode<'_>,
     ) -> bool {
-        use crate::runtime::identity::{AiProviderPolicy, IdentityError, VoiceActivation};
+        use crate::runtime::identity::{
+            AiProviderPolicy, IdentityError, VoiceActivation, WakeWord,
+        };
         use crate::runtime::iop::OperationId;
         let argument = |name: &[u8]| {
             node.arguments
@@ -10571,6 +10595,8 @@ impl ConsoleRuntime {
                         b"disabled"
                     },
                 ]);
+                self.output
+                    .write_segments(&[b"wake word: ", profile.wake_word.phrase()]);
                 Ok(())
             }
             OperationId::VoiceProfileUpdate => {
@@ -10586,6 +10612,19 @@ impl ConsoleRuntime {
                         .update_voice_profile(actor, actor, enabled, activation)
                 })
                 .unwrap_or(Err(IdentityError::InvalidState))?;
+                if let Some(wake_word) = argument(b"wake-word") {
+                    let wake_word = if wake_word.eq_ignore_ascii_case(b"infinity") {
+                        WakeWord::Infinity
+                    } else if wake_word.eq_ignore_ascii_case(b"computer") {
+                        WakeWord::Computer
+                    } else {
+                        return Err(IdentityError::InvalidInput);
+                    };
+                    crate::runtime::with_runtime(|runtime| {
+                        runtime.identity.update_wake_word(actor, actor, wake_word)
+                    })
+                    .unwrap_or(Err(IdentityError::InvalidState))?;
+                }
                 if crate::runtime::persist_identity_state() {
                     Ok(())
                 } else {

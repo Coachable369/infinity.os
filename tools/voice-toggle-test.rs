@@ -41,6 +41,15 @@ mod runtime {
         #[derive(PartialEq)] pub enum SessionState {Active,Locked}
         pub struct Session {pub id:super::execution::SecurityIdentity,pub user:super::execution::SecurityIdentity,pub state:SessionState}
         pub struct AiProfile {pub speech_output_enabled:bool}
+        #[derive(Clone,Copy)] pub enum WakeWord {Infinity,Computer}
+        impl WakeWord {
+            // ------------------------=
+            // FUNC: phrase
+            // DESC: Supplies the configured phrase to the production parser fixture.
+            // ------------------=
+            pub const fn phrase(self)->&'static[u8]{match self{Self::Infinity=>b"Infinity",Self::Computer=>b"Computer"}}
+        }
+        pub struct VoiceProfile {pub wake_word:WakeWord}
     }
     pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Idle,Recording,Overrun,Complete,Cancelled,Denied,DeviceLost}}
     pub struct Identity;
@@ -55,6 +64,11 @@ mod runtime {
         // DESC: Supplies the spoken-reply preference for the production conversation controller.
         // ------------------=
         pub fn ai_profile(&self,_:execution::SecurityIdentity)->Option<identity::AiProfile>{Some(identity::AiProfile{speech_output_enabled:true})}
+        // ------------------------=
+        // FUNC: voice_profile
+        // DESC: Supplies the default durable wake phrase to the production controller.
+        // ------------------=
+        pub fn voice_profile(&self,_:execution::SecurityIdentity)->Option<identity::VoiceProfile>{Some(identity::VoiceProfile{wake_word:identity::WakeWord::Infinity})}
     }
     pub struct Caps;
     impl Caps {
@@ -274,7 +288,9 @@ mod voice_input {
     // DESC: Provides no fabricated transcript.
     // ------------------=
     pub fn take(_:SecurityIdentity,out:&mut[u8])->Result<usize,()>{
-        crate::READY.store(false,crate::Ordering::SeqCst);out[..4].copy_from_slice(b"test");Ok(4)
+        crate::READY.store(false,crate::Ordering::SeqCst);
+        out[..13].copy_from_slice(b"Infinity test");
+        Ok(13)
     }
 }
 mod voice_output {
@@ -337,6 +353,7 @@ mod voice_output {
 }
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod voice_vad;
+#[path = "../kernel/runtime/ai/wake_word.rs"] mod wake_word;
 #[path = "../kernel/runtime/ai/voice_conversation.rs"] mod conversation;
 // ------------------------=
 // FUNC: toggles_restart_after_drain_without_reopening_after_revocation

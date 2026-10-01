@@ -7,8 +7,11 @@ use super::{
     voice_vad::{Utterance, VadState},
 };
 use crate::runtime::{
-    capability::CapabilityType, execution::SecurityIdentity, identity::SessionState,
+    capability::CapabilityType,
+    execution::SecurityIdentity,
+    identity::{SessionState, WakeWord},
 };
+use super::wake_word;
 #[path = "../../ui/voice_indicator.rs"]
 pub mod indicator;
 #[path = "speech_chunk.rs"]
@@ -56,6 +59,8 @@ static mut CAPTURE_FRAME_SEEN: bool = false;
 static mut CAPTURE_EMPTY_SINCE: u64 = 0;
 static mut CAPTURE_EMPTY_REPORTED: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
+static mut WAKE_ARMED: bool = false;
+static mut WAKE_ARMED_UNTIL: u64 = 0;
 
 #[cfg(not(test))]
 // ------------------------=
@@ -93,6 +98,22 @@ fn active_owner(owner: SecurityIdentity) -> bool {
             .any(|s| s.id.0 == owner.0 && s.state == SessionState::Active)
     })
     .unwrap_or(false)
+}
+
+// ------------------------=
+// FUNC: configured_wake_word
+// DESC: Resolves the active owner's durable wake phrase without granting any new authority.
+// ------------------=
+fn configured_wake_word(owner: SecurityIdentity) -> WakeWord {
+    crate::runtime::with_runtime(|runtime| {
+        (0..crate::runtime::identity::MAX_SESSIONS)
+            .filter_map(|index| runtime.identity.session_nth(index))
+            .find(|session| session.id.0 == owner.0 && session.state == SessionState::Active)
+            .and_then(|session| runtime.identity.voice_profile(session.user))
+            .map(|profile| profile.wake_word)
+    })
+    .flatten()
+    .unwrap_or(WakeWord::Infinity)
 }
 // ------------------------=
 // FUNC: grant
@@ -150,6 +171,14 @@ unsafe fn submit_pending_transcript() -> bool {
 // ------------------=
 pub fn state() -> (State, u16) {
     unsafe { (STATE, LEVEL) }
+}
+
+// ------------------------=
+// FUNC: wake_armed
+// DESC: Reports whether a wake-only utterance has opened the next bounded command turn.
+// ------------------=
+pub fn wake_armed() -> bool {
+    unsafe { WAKE_ARMED }
 }
 // ------------------------=
 // FUNC: ready
@@ -282,6 +311,8 @@ pub fn start(owner: SecurityIdentity) -> bool {
         }
         OWNER = owner;
         CONTINUOUS = true;
+        WAKE_ARMED = false;
+        WAKE_ARMED_UNTIL = 0;
         RESTART_LISTENING = false;
         super::with_ai_runtime(|ai| {
             ai.bind_chat_owner(owner.0);
@@ -351,6 +382,8 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         REPLY_AT = 0;
         SYNC_VISIBLE_AT = 0;
         LEVEL = 0;
+        WAKE_ARMED = false;
+        WAKE_ARMED_UNTIL = 0;
         STATE = State::Stopping;
         true
     }
@@ -633,6 +666,13 @@ pub fn poll() -> bool {
                 }
             }
             State::Listening => {
+                if WAKE_ARMED
+                    && super::qwen::workers::clock_ns() >= WAKE_ARMED_UNTIL
+                {
+                    WAKE_ARMED = false;
+                    WAKE_ARMED_UNTIL = 0;
+                    trace(b"wake command window expired");
+                }
                 if !capture_frame(false) {
                     trace(b"conversation stopped capture frame");
                     stop(OWNER);
@@ -674,17 +714,39 @@ pub fn poll() -> bool {
                     let result_failed = result.is_err();
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
-                    let queued = result
-                        .ok()
-                        .map(|n| {
+                    let mut command = None;
+                    let mut wake_only = false;
+                    let mut ignored = false;
+                    if let Ok(n) = result {
+                        if n != 0 {
+                            if WAKE_ARMED {
+                                command = Some((0, n));
+                            } else {
+                                match wake_word::classify(
+                                    &(&*(&raw const TRANSCRIPT))[..n],
+                                    configured_wake_word(OWNER),
+                                ) {
+                                    wake_word::Match::Absent => ignored = true,
+                                    wake_word::Match::WakeOnly => wake_only = true,
+                                    wake_word::Match::Command { start } => {
+                                        command = Some((start, n));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let queued = command
+                        .map(|(start, end)| {
+                            WAKE_ARMED = false;
+                            WAKE_ARMED_UNTIL = 0;
                             super::with_ai_runtime(|ai| {
                                 if !ai.chat.input().is_empty()
                                     || ai.chat.generation_state == GenerationState::Running
                                 {
                                     return false;
                                 }
-                                let mut inserted = n != 0;
-                                for &byte in &(&*(&raw const TRANSCRIPT))[..n] {
+                                let mut inserted = start < end;
+                                for &byte in &(&*(&raw const TRANSCRIPT))[start..end] {
                                     inserted &= ai.chat.push_input(byte);
                                 }
                                 inserted
@@ -700,6 +762,21 @@ pub fn poll() -> bool {
                         } else {
                             State::Submitting
                         };
+                    } else if wake_only {
+                        WAKE_ARMED = true;
+                        WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
+                            .saturating_add(8_000_000_000);
+                        trace(b"wake phrase armed command capture");
+                        if !listen() {
+                            stop(OWNER);
+                            STATE = State::Failed;
+                        }
+                    } else if ignored {
+                        trace(b"unaddressed transcript ignored");
+                        if !listen() {
+                            stop(OWNER);
+                            STATE = State::Failed;
+                        }
                     } else {
                         trace(match (result_was_empty,result_failed) {
                             (true,_) => b"recognition returned empty transcript",
