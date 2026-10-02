@@ -13,9 +13,10 @@ against Kokoro's independently pinned GGML version.
 
 The provider accepts at most ten seconds of signed 16 kHz mono PCM and publishes
 at most 511 UTF-8 bytes. It executes on the existing speech worker. Whisper and
-Kokoro serialize through a shared bounded native heap; persistent synthesis
-state is released before recognition, and Whisper context is released before
-synthesis can start.
+Kokoro serialize inference through one speech worker while both model contexts
+remain resident in the existing bounded native heap. Both engines warm during
+boot, so the readiness cover represents the complete conversation path and no
+turn pays a model rebuild or first-response synthesis-model load.
 
 Behavioral verification uses real recorded speech inside a freestanding ARM64
 guest and checks decoding, repeat recognition after Kokoro synthesis, output

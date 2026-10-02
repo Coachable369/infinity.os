@@ -162,7 +162,6 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
         CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
         (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
         FRAMES = 0; PEAK = 0; ERROR = 0; ELAPSED = 0; CANCEL.store(false, Ordering::Release);
-        super::voice_input::invalidate();
         STATE.store(1, Ordering::Release);
         // Inference can temporarily occupy every AP. Keep one bounded job
         // queued and retry on poll rather than dropping a streaming reply.

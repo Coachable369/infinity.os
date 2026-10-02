@@ -181,6 +181,10 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     drivers::audio::initialize(info);
     // Native speech jobs need workers even before an optional LLM is loaded.
     unsafe { runtime::ai::qwen::workers::initialize(info.worker_bridge); }
+    // Warm recognition concurrently with the remaining boot path. The fixed
+    // native speech arena keeps Whisper and Kokoro resident together, so this
+    // one boot-time preparation also covers every later conversational turn.
+    let _ = runtime::ai::voice_input::prepare();
     #[cfg(feature="native-browser")]
     runtime::browser::initialize(info);
     let _ = system_sounds::play_boot_once();

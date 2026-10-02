@@ -81,7 +81,7 @@ def main():
     assert elapsed > 0 and heartbeat > 1000
     if args.mode == "deadline":
         assert elapsed < 180_000_000_000
-    assert 0 < heap <= 1024**3 and allocation_failure == 0
+    assert 0 < heap <= 1536 * 1024**2 and allocation_failure == 0
     assert phase == 4 and len(data) == 2112 + frames * 2
     pcm = data[2112:]
     samples = array.array("h", pcm)

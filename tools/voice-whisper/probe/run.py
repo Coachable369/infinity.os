@@ -69,7 +69,7 @@ def main():
         offset += 96
         assert version == 1 and index == case and frequency > 0
         assert code == [0, 0, 6, 5, 2][case]
-        assert 0 < memory <= 1024 * 1024 * 1024 and 0 < stack < 8 * 1024 * 1024
+        assert 0 < memory <= 1536 * 1024 * 1024 and 0 < stack < 8 * 1024 * 1024
         transcript = data[offset:offset + length].decode("utf-8")
         offset += length
         if case < 2:
@@ -80,6 +80,9 @@ def main():
                          seconds=ticks / frequency, heap_committed_bytes=memory, stack_bytes=stack,
                          diagnostics=diagnostics))
     assert offset == len(data)
+    # Synthesis must not evict the prepared recognizer. Case 1 performs Kokoro
+    # immediately before the timed Whisper call; it must remain a warm decode.
+    assert rows[1]["seconds"] <= rows[0]["seconds"] * 1.5 + 2.0
     evidence = dict(engine="whisper.cpp tiny.en", execution="freestanding ARM64 QEMU " + args.accel,
                     fixture=str(source), cases=rows)
     (output / ("verified-" + args.accel + ".json")).write_text(json.dumps(evidence, indent=2) + "\n")

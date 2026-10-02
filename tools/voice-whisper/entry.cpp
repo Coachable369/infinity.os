@@ -74,29 +74,12 @@ extern "C" ggml_backend_t ggml_backend_init_by_type(enum ggml_backend_dev_type t
 }
 
 // ------------------------=
-// FUNC: release_context
-// DESC: Releases recognizer state after each utterance so synthesis can reuse the same bounded native heap.
-// ------------------=
-static void release_context() {
-    if (context) whisper_free(context);
-    context = nullptr;
-}
-
-// ------------------------=
 // FUNC: native_prepare
 // DESC: Warms the complete embedded Whisper context without accepting or retaining microphone content.
 // ------------------=
 extern "C" int native_prepare() {
     if (native_cancelled()) return 2;
     return prepare_context() ? 0 : 3;
-}
-
-// ------------------------=
-// FUNC: native_release_context
-// DESC: Releases resident recognition state before the mutually exclusive synthesis model enters the bounded heap.
-// ------------------=
-extern "C" void native_release_context() {
-    release_context();
 }
 
 // ------------------------=

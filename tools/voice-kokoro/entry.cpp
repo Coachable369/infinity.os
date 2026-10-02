@@ -18,14 +18,6 @@ extern "C" void (*native_init_start[])(void);
 extern "C" void (*native_init_end[])(void);
 
 // ------------------------=
-// FUNC: native_release_synthesis_model
-// DESC: Releases persistent synthesis state before recognition reuses the bounded shared native heap.
-// ------------------=
-extern "C" void native_release_synthesis_model(void) {
-    model.reset();
-}
-
-// ------------------------=
 // FUNC: native_initialize
 // DESC: Initializes the private C++ image once on the single owning speech worker, never the kernel global constructor list.
 // ------------------=
@@ -37,6 +29,32 @@ extern "C" void native_initialize(void) {
 }
 
 // ------------------------=
+// FUNC: prepare_model
+// DESC: Loads and validates the resident synthesis model once inside the bounded native speech arena.
+// ------------------=
+static bool prepare_model() {
+    if (model) return true;
+    std::string error;
+    const kokopop_model_options options{1, KOKOPOP_BACKEND_CPU};
+    if (!kokopop::load_model_from_gguf("/kokoro.gguf", &options, model, error)) return false;
+    if (model->is_mock || model->sample_rate("af_heart") != 24000) {
+        model.reset();
+        return false;
+    }
+    return true;
+}
+
+// ------------------------=
+// FUNC: native_prepare_synthesis
+// DESC: Warms the complete synthesis model before the UI advertises conversational readiness.
+// ------------------=
+extern "C" int native_prepare_synthesis(void) {
+    native_initialize();
+    native_phase = 1;
+    return native_cancelled() ? 2 : prepare_model() ? 0 : 3;
+}
+
+// ------------------------=
 // FUNC: synthesize_phrase
 // DESC: Produces one bounded phrase using the persistent private CPU model and releases its transient audio.
 // ------------------=
@@ -44,11 +62,7 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
     native_initialize();
     std::string error;
     native_phase = 1;
-    if (!model) {
-        const kokopop_model_options options{1, KOKOPOP_BACKEND_CPU};
-        if (!kokopop::load_model_from_gguf("/kokoro.gguf", &options, model, error)) return 3;
-        if (model->is_mock || model->sample_rate("af_heart") != 24000) { model.reset(); return 3; }
-    }
+    if (!prepare_model()) return 3;
     if (native_cancelled()) return 2;
     std::string phonemes;
     native_phase = 2;

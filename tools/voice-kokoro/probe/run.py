@@ -49,7 +49,7 @@ def main():
         assert (version,index,status)==(2,case,[0,0,2,1,2,0,0,0,0,0][case]), dict(version=version,case=index,status=status,frames=count,
             seconds=ticks/frequency,stage=stage,heap=heap,failed_allocation=failed_allocation,fatal_address=hex(fatal_address),callers=[hex(v) for v in callers])
         assert frequency>0 and count<=720000 and len(data)-offset>=count*2
-        assert 0 < heap <= 1024*1024*1024 and failed_allocation == 0
+        assert 0 < heap <= 1536*1024*1024 and failed_allocation == 0
         pcm = data[offset:offset+count*2]
         offset += len(pcm)
         samples = array.array("h",pcm)

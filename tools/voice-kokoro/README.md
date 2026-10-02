@@ -14,7 +14,7 @@ single-owner cancellation, a bounded 90-second asynchronous synthesis deadline,
 and a 130-second output lease covering synthesis plus finite playback. This
 provider-specific budget replaces the Flite-only two-second deadline; it is not
 a speed improvement. The UI thread never performs inference. Invalid/empty
-provider results cannot reach DMA. The existing 1 GiB private heap is unchanged.
+provider results cannot reach DMA. The private speech heap remains fixed and bounded.
 Long replies are synthesized in at most 44-character, word-boundary phrases;
 the bounded PCM is concatenated before playback. A single word exceeding this
 bound is rejected, not cut into unrelated pronunciations. This avoids a proven
@@ -108,8 +108,9 @@ a single-worker synchronization contract. `mapping.cpp` borrows resource bytes;
 `registry.cpp` refuses dynamic backend loading. The guest probe checks actual
 PCM and structured return values for repeat synthesis, cancellation and input
 bounds. The native guest uses 2 GiB RAM for this initial bounded prototype; its
-private heap is capped at 1 GiB and measured committed allocation reaches about
-539 MiB. The original prototype took roughly 15 seconds for 1.25 seconds of
+private heap is capped at 1.5 GiB so the measured 752 MiB Whisper context and
+539 MiB Kokoro peak can remain resident together without per-turn model reloads.
+The original prototype took roughly 15 seconds for 1.25 seconds of
 audio. September 26 measurements isolated matrix multiplication as the dominant
 cost: checked alignment specialization reduced a same-session 12.3-second warm
 run to 4.3 seconds, and four-row activation reuse reduced it further to about

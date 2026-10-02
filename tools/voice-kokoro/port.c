@@ -29,7 +29,7 @@ static struct { const struct model_file *file; size_t offset; } files[32];
 #if defined(__x86_64__)
 __attribute__((section(".speech_heap")))
 #endif
-static _Alignas(16) unsigned char heap[1024u*1024u*1024u];
+static _Alignas(16) unsigned char heap[1536u*1024u*1024u];
 static size_t heap_used;
 static jmp_buf failure;
 static int active;
@@ -306,10 +306,9 @@ void *__emutls_get_address(struct emulated_tls*t){
     t->address=p;tls_slots[tls_count++]=t;return p;
 }
 extern int native_run(const char*,size_t,int16_t*,size_t,size_t*);
+extern int native_prepare_synthesis(void);
 extern int whisper_private_native_transcribe(const int16_t*,size_t,char*,size_t,size_t*);
 extern int whisper_private_native_prepare(void);
-extern void whisper_private_native_release_context(void);
-extern void native_release_synthesis_model(void);
 // ------------------------=
 // FUNC: native_synthesize
 // DESC: Contains one bounded synthesis job and quarantines fatal engine state without crossing the Rust ABI.
@@ -321,7 +320,6 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
-        whisper_private_native_release_context();
         result=native_cancelled()?2:native_run(text,length,pcm,capacity,frames);
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
@@ -333,7 +331,7 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
 
 // ------------------------=
 // FUNC: native_prepare_recognition
-// DESC: Warms the embedded recognizer on the speech worker before the UI advertises conversational input readiness.
+// DESC: Warms both resident speech models before the UI advertises conversational readiness.
 // ------------------=
 int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
     if(!memory||active||poisoned)return 1;*memory=heap_used;
@@ -341,8 +339,8 @@ int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
-        native_release_synthesis_model();
         result=native_cancelled()?2:whisper_private_native_prepare();
+        if(!result)result=native_cancelled()?2:native_prepare_synthesis();
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
     }
@@ -362,7 +360,6 @@ int native_recognize(const int16_t*pcm,size_t samples,char*text,size_t capacity,
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
-        native_release_synthesis_model();
         result=native_cancelled()?2:whisper_private_native_transcribe(pcm,samples,text,capacity,length);
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}

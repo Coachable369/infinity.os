@@ -78,7 +78,7 @@ unsafe extern "C" {
 
 // ------------------------=
 // FUNC: prepare_worker
-// DESC: Builds the complete resident Whisper context before conversational microphone admission.
+// DESC: Builds both resident speech contexts before conversational microphone admission.
 // ------------------=
 unsafe fn prepare_worker() {
     trace(b"recognizer warmup started");
@@ -97,7 +97,7 @@ unsafe fn prepare_worker() {
 
 // ------------------------=
 // FUNC: prepare
-// DESC: Schedules recognition warmup once and reports whether speech can be accepted without cold-start latency.
+// DESC: Schedules complete speech warmup once and reports whether conversation can start without cold model loads.
 // ------------------=
 pub fn prepare() -> bool {
     match ENGINE.load(Ordering::Acquire) {
@@ -117,15 +117,10 @@ pub fn prepare() -> bool {
 
 // ------------------------=
 // FUNC: prepared
-// DESC: Reports only completed native recognizer warmup, never model bytes merely being present.
+// DESC: Reports only completed recognition and synthesis warmup, never model bytes merely being present.
 // ------------------=
 pub fn prepared() -> bool { ENGINE.load(Ordering::Acquire) == 2 }
 
-// ------------------------=
-// FUNC: invalidate
-// DESC: Marks recognition cold when synthesis takes ownership of the mutually exclusive native model heap.
-// ------------------=
-pub fn invalidate() { ENGINE.store(0, Ordering::Release); }
 struct Whisper;
 impl SpeechRecognitionProvider for Whisper {
     // ------------------------=
