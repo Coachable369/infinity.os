@@ -15,8 +15,9 @@ and a 130-second output lease covering synthesis plus finite playback. This
 provider-specific budget replaces the Flite-only two-second deadline; it is not
 a speed improvement. The UI thread never performs inference. Invalid/empty
 provider results cannot reach DMA. The private speech heap remains fixed and bounded.
-Long replies are synthesized in at most 44-character, word-boundary phrases;
-the bounded PCM is concatenated before playback. A single word exceeding this
+Long replies are synthesized in at most 80-character, word-boundary phrases;
+duplicated model-edge silence is bounded before the PCM is crossfaded and
+concatenated for playback. A single word exceeding this
 bound is rejected, not cut into unrelated pronunciations. This avoids a proven
 paragraph-sized graph allocation failure (a 259,560,528-byte request with
 952,663,520 bytes already committed). A 158-character paragraph now produces
@@ -130,9 +131,9 @@ The matrix changes preserve upstream FP32 accumulation and reduction order.
 ARM CPUs exposing FEAT_FHM additionally use checked 16-byte-aligned widening
 half multiply-accumulate tiles; other CPUs and alignments retain the existing
 fallback. September 28 ARM HVF probes preserved the full PCM hashes for all
-seven successful cases. At the 1.10 conversational rate, warm `Hi.` synthesis
-measured 2.12 seconds versus the previous 2.31-second probe, and the paragraph
-case took 20.47 seconds versus 22.02 seconds. These are native probe measurements,
+seven successful cases. At the 1.15 conversational rate, warm `Hi.` synthesis
+measures 2.10 seconds and the paragraph case measures 18.57 seconds. The
+paragraph previously took 20.47 seconds at the 1.10 rate. These are native probe measurements,
 not installed end-to-end response latency or a real-time throughput pass.
 They use wider reads only after checking alignment and retain upstream handling
 for unsupported types, lengths, and boundary rows. The guest additionally checks
@@ -163,13 +164,14 @@ failed native speech job; it does not substitute a different voice.
 
 ## Conversational phrase playback and microphone interruption
 
-The conversation controller submits word-aligned phrases of at most 44 characters,
-preferring sentence boundaries, from cumulative visible LLM output. This matches
+The conversation controller submits word-aligned spans from cumulative visible
+LLM output. The native engine retains up to 80 characters per coherent inference
+phrase, preferring word boundaries, and removes duplicated edge silence. This matches
 one native graph rather than waiting for a 160-character multi-graph batch.
-Two immutable DMA buffers allow synthesis of the next phrase during playback.
-There is no intentional inter-phrase wait. Gap-free output still requires
-synthesis throughput to keep up with playback; short-chunk dispatch alone does
-not establish that performance gate.
+The first word-aligned span is released after roughly 24 visible characters so
+synthesis overlaps ongoing LLM generation. Completed spans enter one continuous
+resident DMA response, without scheduler-timed stops between spans. There is no
+intentional inter-phrase wait.
 
 With conversation input explicitly enabled, authorized microphone capture stays
 open during thinking and speaking. Three voiced 20-ms frames interrupt playback

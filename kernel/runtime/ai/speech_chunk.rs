@@ -9,7 +9,7 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
     // whole sentence resident so segment boundaries cannot stop the device.
     const INITIAL_LIMIT: usize = 160;
     const PROVIDER_LIMIT: usize = 160;
-    const FIRST_WORD_WINDOW: usize = 32;
+    const FIRST_WORD_WINDOW: usize = 24;
     let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
     let scan_limit = bytes.len().min(phrase_limit);
     for i in 0..scan_limit {
@@ -74,8 +74,9 @@ mod tests {
             assert!(at+count==text.len() || text[at+count-1].is_ascii_whitespace());
             at+=count;
         }
-        assert_eq!(super::next(&text[..29],false,true),0);
-        assert_eq!(super::next(&text[..38],false,true),34);
+        assert_eq!(super::next(&text[..23],false,true),0);
+        assert_eq!(super::next(&text[..29],false,true),25);
+        assert_eq!(super::next(&text[..38],false,true),25);
     }
 
     // ------------------------=
@@ -98,7 +99,7 @@ mod tests {
     #[test]
     fn streaming_chunks_match_native_graph_boundaries() {
         let text=b"One two three four five six seven eight nine ten eleven twelve thirteen fourteen.";
-        assert_eq!(super::next(text,false,true),34);
+        assert_eq!(super::next(text,false,true),28);
         let complete=super::next(text,true,true);
         assert_eq!(complete,text.len());
     }

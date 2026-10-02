@@ -14,6 +14,22 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 # ------------------------=
+# FUNC: longest_internal_silence
+# DESC: Measures the longest non-edge low-energy interval in actual synthesized PCM.
+# ------------------=
+def longest_internal_silence(samples, rate, floor=96):
+    edge = rate // 2
+    longest = current = 0
+    for sample in samples[edge:len(samples) - edge]:
+        if abs(sample) <= floor:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest / rate
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Asserts binary synthesis results and writes actual guest PCM for listening review.
 # ------------------=
@@ -61,10 +77,12 @@ def main():
         else:
             assert count==0
         rows.append(dict(case=case,status=status,frames=count,seconds=ticks/frequency,heap_bytes=heap,
+                         longest_internal_silence_seconds=longest_internal_silence(samples, 24000) if count else 0,
                          pcm_sha256=hashlib.sha256(pcm).hexdigest()))
     assert rows[0]["pcm_sha256"] == rows[1]["pcm_sha256"] == rows[5]["pcm_sha256"] == rows[8]["pcm_sha256"]
     assert rows[7]["pcm_sha256"] == rows[9]["pcm_sha256"]
     assert rows[7]["heap_bytes"] == rows[9]["heap_bytes"]
+    assert rows[7]["longest_internal_silence_seconds"] <= 0.4, rows[7]
     assert len(data) - offset >= 8
     notice_length, = struct.unpack_from("<Q", data, offset)
     offset += 8

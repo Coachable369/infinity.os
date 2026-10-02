@@ -11,7 +11,10 @@
 static std::unique_ptr<kokopop::Model> model;
 // A modest conversational pace reduces both generated mel frames and perceived
 // response latency without the clipped cadence produced by aggressive rates.
-static constexpr float conversational_speed = 1.10f;
+static constexpr float conversational_speed = 1.15f;
+static constexpr size_t inference_phrase_bytes = 80;
+static constexpr size_t boundary_silence_frames = 1440;
+static constexpr int16_t boundary_activity_floor = 96;
 extern "C" int native_cancelled(void);
 extern "C" unsigned int native_phase;
 extern "C" void (*native_init_start[])(void);
@@ -89,11 +92,38 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
 }
 
 // ------------------------=
+// FUNC: active_start
+// DESC: Locates audible onset while retaining a bounded natural pause before an internal inference boundary.
+// ------------------=
+static size_t active_start(const int16_t *pcm, size_t frames) {
+    size_t active = 0;
+    while (active < frames && std::abs(int32_t(pcm[active])) <= boundary_activity_floor) ++active;
+    return active > boundary_silence_frames ? active - boundary_silence_frames : 0;
+}
+
+// ------------------------=
+// FUNC: active_end
+// DESC: Locates audible completion while retaining a bounded natural pause after an internal inference boundary.
+// ------------------=
+static size_t active_end(const int16_t *pcm, size_t frames) {
+    size_t active = frames;
+    while (active && std::abs(int32_t(pcm[active - 1])) <= boundary_activity_floor) --active;
+    return std::min(frames, active + boundary_silence_frames);
+}
+
+// ------------------------=
 // FUNC: join_phrase
-// DESC: Crossfades independently inferred Kokoro segments so internal text bounds cannot create clicks or discontinuities.
+// DESC: Removes duplicated model-edge silence and crossfades internal inference segments into one natural utterance.
 // ------------------=
 static size_t join_phrase(int16_t *pcm, size_t written, size_t produced) {
     if (!written || !produced) return written + produced;
+    const size_t left = active_end(pcm, written);
+    const size_t right = active_start(pcm + written, produced);
+    if (left < written || right) {
+        std::memmove(pcm + left, pcm + written + right, (produced - right) * sizeof(int16_t));
+        written = left;
+        produced -= right;
+    }
     const size_t overlap = std::min(size_t(120), std::min(written, produced));
     for (size_t i = 0; i < overlap; ++i) {
         const int32_t left = pcm[written - overlap + i];
@@ -125,7 +155,7 @@ extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t 
     size_t position = 0, written = 0;
     while (position < length) {
         if (native_cancelled()) return 2;
-        size_t count = std::min(size_t(44), length - position);
+        size_t count = std::min(inference_phrase_bytes, length - position);
         if (count < length - position) {
             size_t boundary = count;
             while (boundary && text[position + boundary - 1] != ' ') --boundary;
