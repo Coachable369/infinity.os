@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REVISION = "2c6989ac800f624ea984210215e1b76be42eea81"
 MODEL_REVISION = "b7958cdedd0efa56e8756895e739fbe2852f635d"
 MODEL_SHA256 = "e8242a1321e580599c26981692adf088ebfdc4c7b7555959b13f4d6667d0d206"
+CONVERSATIONAL_SPEED = "1.10"
 
 
 # ------------------------=
@@ -101,10 +102,11 @@ def main():
     audio = output / "hello.wav"
     audio.unlink(missing_ok=True)
     run(output / "kokopop_say", "--model", model, "--backend", "cpu", "--threads", "1",
-        "--voice", "af_heart", "--text", args.text, "--out", audio)
+        "--voice", "af_heart", "--speed", CONVERSATIONAL_SPEED, "--text", args.text, "--out", audio)
     evidence = {"environment": "host CPU reference only", "source_revision": REVISION,
                 "model_sha256": MODEL_SHA256, "voice": "af_heart", "text": args.text,
-                "host_native_optimizations": False, "threads": 1, "pcm": inspect_pcm(audio),
+                "host_native_optimizations": False, "threads": 1,
+                "speech_speed": float(CONVERSATIONAL_SPEED), "pcm": inspect_pcm(audio),
                 "native_verified": False, "installed_verified": False,
                 "perceptual_quality_verified": False, "recognition_verified": False}
     (output / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")

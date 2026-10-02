@@ -9,6 +9,9 @@
 #include <string>
 
 static std::unique_ptr<kokopop::Model> model;
+// A modest conversational pace reduces both generated mel frames and perceived
+// response latency without the clipped cadence produced by aggressive rates.
+static constexpr float conversational_speed = 1.10f;
 extern "C" int native_cancelled(void);
 extern "C" unsigned int native_phase;
 extern "C" void (*native_init_start[])(void);
@@ -53,7 +56,7 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
     if (native_cancelled()) return 2;
     kokopop_audio audio{};
     native_phase = 3;
-    if (!kokopop::synthesize_phonemes(*model, phonemes, "af_heart", 1.0f, audio, error))
+    if (!kokopop::synthesize_phonemes(*model, phonemes, "af_heart", conversational_speed, audio, error))
         return native_cancelled() ? 2 : 5;
     int result = 0;
     native_phase = 4;

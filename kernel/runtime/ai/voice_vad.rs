@@ -5,7 +5,9 @@ pub const MAX_SAMPLES: usize = RATE * 10;
 const PRE_ROLL: usize = RATE / 5;
 const ONSET_FRAMES: usize = 3;
 const TAIL: usize = RATE / 10;
-const END_SILENCE: usize = RATE * 3 / 5;
+// Four hundred milliseconds keeps natural intra-sentence pauses while avoiding
+// an unnecessary extra 200 ms after the user has clearly finished speaking.
+const END_SILENCE: usize = RATE * 2 / 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VadState { Waiting, Speech, Complete, NoSpeech, Limit, Cancelled }
@@ -216,5 +218,20 @@ mod tests {
         assert!(value.active_speech_samples()>=RATE/5);
         value.clear(300);
         assert_eq!(value.active_speech_samples(),0);
+    }
+
+    #[test]
+    // ------------------------=
+    // FUNC: completes_after_conversational_end_pause
+    // DESC: Proves a finished utterance advances after 400 ms of silence without treating a shorter thinking pause as completion.
+    // ------------------=
+    fn completes_after_conversational_end_pause() {
+        let mut value = Utterance::new(300);
+        value.push(&[1000; FRAME * 5]);
+        value.push(&[0; END_SILENCE - FRAME]);
+        assert_eq!(value.state(), VadState::Speech);
+        value.push(&[0; FRAME]);
+        assert_eq!(value.state(), VadState::Complete);
+        assert!(value.speech().is_some());
     }
 }

@@ -24,7 +24,7 @@ fn main() {
     input.extend_from_slice(&[0; RATE]);
     let mut whole = Detector::new(300);
     let accepted = whole.push(&input);
-    assert_eq!(accepted, RATE + RATE / 2 + RATE * 3 / 5);
+    assert_eq!(accepted, RATE + RATE / 2 + RATE * 2 / 5);
     let segment = whole.segment().unwrap();
     assert_eq!(segment, Segment { start: RATE - RATE / 5, end: RATE + RATE / 2 + RATE / 10 });
     for chunk_size in [1, 17, 319, 320, 701, 4096] {
