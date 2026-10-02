@@ -1645,8 +1645,14 @@ impl super::DisplayDevice {
                 188,
             );
         }
-        self.top_bar_infinity_icon(36 * scale, content_y, 68 * scale);
-        self.ui_text(76 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
+        let logo = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .top_bar_logo_geometry();
+        self.top_bar_infinity_icon(
+            logo.x.max(0) as usize + logo.width as usize / 2,
+            logo.y.max(0) as usize + logo.height as usize / 2,
+            logo.width as usize,
+        );
+        self.ui_text(68 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
 
         let help_x = 610 * scale;
         if active_menu == Some(5) {

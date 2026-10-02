@@ -583,6 +583,21 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: top_bar_logo_geometry
+    // DESC: Keeps the Infinity mark compact inside the top bar with balanced optical gutters at every UI scale.
+    // ------------------=
+    pub fn top_bar_logo_geometry(self) -> Rect {
+        let width = 52 * self.scale;
+        let height = width * 7 / 15;
+        rect(
+            8 * self.scale,
+            self.top_bar_height().saturating_sub(height) / 2,
+            width,
+            height,
+        )
+    }
+
+    // ------------------------=
     // FUNC: desktop_foreground_geometry
     // DESC: Returns the shared right-widget and dock bounds used to preserve desktop chrome during window motion.
     // ------------------=

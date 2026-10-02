@@ -1280,6 +1280,15 @@ fn installed_system_hit_geometry_test() {
     let wide = SystemLayout::new(1920, 1080);
     assert_eq!(wide.top_bar_height(), 38);
     assert_eq!(
+        wide.top_bar_logo_geometry(),
+        Rect {
+            x: 8,
+            y: 7,
+            width: 52,
+            height: 24,
+        }
+    );
+    assert_eq!(
         wide.onboarding_target(0, 200, 810),
         Some(OnboardingTarget::Primary)
     );
@@ -1685,6 +1694,15 @@ fn installed_system_hit_geometry_test() {
 
     let hidpi = SystemLayout::new(2560, 1440);
     assert_eq!(hidpi.top_bar_height(), 76);
+    assert_eq!(
+        hidpi.top_bar_logo_geometry(),
+        Rect {
+            x: 16,
+            y: 14,
+            width: 104,
+            height: 48,
+        }
+    );
     assert_eq!(
         hidpi.onboarding_target(0, 220, 810),
         Some(OnboardingTarget::Primary)
