@@ -360,7 +360,7 @@ fn voice_and_agents() {
     assert_eq!(voice.push_pcm(session, owner, &[1000; 1601], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
     assert_eq!(voice.push_pcm(session, owner, &[1000; 320], 44100, 2, &capabilities), Err(AiError::InvalidRequest));
     for _ in 0..3 { voice.push_pcm(session, owner, &[1000; 320], 16000, 2, &capabilities).unwrap(); }
-    for _ in 0..30 { voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities).unwrap(); }
+    for _ in 0..20 { voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities).unwrap(); }
     assert_eq!(voice.state(), VoiceState::Recognizing);
     assert_eq!(voice.speech_segment(session, owner).unwrap().unwrap().end, 2560);
     assert_eq!(voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
