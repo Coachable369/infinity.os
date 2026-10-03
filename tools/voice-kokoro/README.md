@@ -175,6 +175,22 @@ than one batch retain the next prepared span for playback after the active batch
 finishes. Native synthesis is still slower than real time, so this buffering
 introduces latency; the resident-buffer contract does not claim immediate streaming.
 
+Resident playback completion follows the HDA link cursor, not the expected
+wall-clock duration of the waveform. A separate silent DMA tail prevents an
+ordinary delayed service poll from replaying the beginning of the response.
+Completion additionally requires a silent link-byte drain covering the maximum
+HDA FIFO quantum, allowing queued codec output to reach the speakers before
+RUN is cleared. The hardware regression compares all 95,999 emitted stereo
+frames with an ordered start/body/end waveform, not just a partial tone.
+The finite playback deadline remains a failure watchdog: a stalled device must
+report an underrun, never successful completion. Terminal audio traces include
+the device-confirmed played and total frame counts without recording speech.
+
+At outer synthesis-job boundaries, exact-zero model padding is shortened to
+20 ms on either side. Every nonzero sample (including quiet consonants) and
+every internal pause is retained. This removes duplicated boundary silence;
+it does not make synthesis itself faster or establish installed listening quality.
+
 The reproducible native comparison is:
 
 ```sh

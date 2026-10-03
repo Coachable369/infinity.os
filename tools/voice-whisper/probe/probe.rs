@@ -6,6 +6,9 @@ static mut SYNTH: [i16; 160000] = [0; 160000];
 struct WorkerStack([u8; 8 * 1024 * 1024]);
 static mut WORKER_STACK: WorkerStack = WorkerStack([0; 8 * 1024 * 1024]);
 #[repr(C, align(4096))]
+struct ExceptionStack([u8; 16 * 1024]);
+static mut EXCEPTION_STACK: ExceptionStack = ExceptionStack([0; 16 * 1024]);
+#[repr(C, align(4096))]
 struct TranslationTable([u64; 512]);
 static mut TRANSLATIONS: TranslationTable = TranslationTable([0; 512]);
 core::arch::global_asm!(include_str!("../../../boot/aarch64/handoff.S"));
@@ -141,7 +144,9 @@ pub unsafe extern "C" fn probe() -> ! {
     normal_memory();
     (&mut *(&raw mut WORKER_STACK.0)).fill(0xa5);
     let stack = (&raw mut WORKER_STACK.0).cast::<u8>() as u64;
-    let context = [stack + 8 * 1024 * 1024, recognition_cases as *const () as u64, 0];
+    let emergency = (&raw mut EXCEPTION_STACK.0).cast::<u8>() as u64 + 16 * 1024;
+    let context = [stack + 8 * 1024 * 1024, recognition_cases as *const () as u64, 0,
+                   0, 0, 0, 0, 0, 0, 0, emergency];
     infinity_ap_callback(context.as_ptr());
     finish()
 }

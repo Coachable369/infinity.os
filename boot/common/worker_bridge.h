@@ -18,6 +18,7 @@ static void *worker_events[64];
 static uint8_t worker_started;
 extern void EFIAPI infinity_ap_callback(void *context);
 #define INFINITY_WORKER_STACK_PAGES 2048u
+#define INFINITY_WORKER_EXCEPTION_STACK_PAGES 4u
 
 // ------------------------=
 // FUNC: infinity_start_workers
@@ -43,7 +44,7 @@ static uint64_t EFIAPI infinity_start_workers(INFINITY_AP_PROC procedure, uint64
         InfinityApContext *context = &psci_contexts[launched];
         // MP firmware stacks are not sized for speech decoding. Every worker
         // must enter its reserved native stack before calling kernel code.
-        if (!context->stack) break;
+        if (!context->stack || !context->exception_stack) break;
         context->procedure = (uint64_t)(uintptr_t)procedure;
         context->argument = launched + 1;
         if (create(0, 0, NULL, NULL, &worker_events[launched])) continue;
@@ -75,8 +76,14 @@ static uint64_t infinity_worker_bridge(EFI_SYSTEM_TABLE *system) {
     for (size_t i = 0; i < count && i < 64; ++i) {
         uint64_t stack = UINT64_C(0xffffffff);
         if (worker_boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA,
-                                        INFINITY_WORKER_STACK_PAGES, &stack)) break;
+                                        INFINITY_WORKER_STACK_PAGES + INFINITY_WORKER_EXCEPTION_STACK_PAGES,
+                                        &stack)) break;
         psci_contexts[i].stack = stack + INFINITY_WORKER_STACK_PAGES * PAGE_SIZE;
+        // EDK2's synchronous exception vector switches to SP_EL0. PSCI
+        // does not initialize it, and MP callbacks cannot share the BSP's
+        // emergency area. Reserve a distinct stack outside native frames.
+        psci_contexts[i].exception_stack = psci_contexts[i].stack +
+                                         INFINITY_WORKER_EXCEPTION_STACK_PAGES * PAGE_SIZE;
     }
     return (uint64_t)(uintptr_t)&bridge;
 }

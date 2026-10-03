@@ -326,10 +326,10 @@ $(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUN
 
 FLITE_PORT_SOURCES := $(wildcard tools/voice-flite/include/*.h) tools/voice-flite/port.c tools/voice-flite/jump.S tools/voice-flite/build.py tools/voice-flite/COPYING
 
-$(BUILD)/voice-kokoro/aarch64/private-native.o: tools/voice_target.py $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard tools/voice-whisper/*.py tools/voice-whisper/*.cpp) $(wildcard tools/voice-native-runtime/*.py) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch)
+$(BUILD)/voice-kokoro/aarch64/private-native.o: tools/voice_target.py $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.h tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard tools/voice-whisper/*.py tools/voice-whisper/*.cpp) $(wildcard tools/voice-native-runtime/*.py) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch)
 	python3 tools/voice-kokoro/build.py --build-only
 
-$(BUILD)/voice-kokoro/x86_64/private-native.o: tools/voice_target.py $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard tools/voice-whisper/*.py tools/voice-whisper/*.cpp) $(wildcard tools/voice-native-runtime/*.py) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch)
+$(BUILD)/voice-kokoro/x86_64/private-native.o: tools/voice_target.py $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.h tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard tools/voice-whisper/*.py tools/voice-whisper/*.cpp) $(wildcard tools/voice-native-runtime/*.py) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch)
 	python3 tools/voice-kokoro/build.py --target x86_64 --build-only
 
 $(BUILD)/x86_64/qwen-math.o: kernel/runtime/ai/qwen/cpu_math.c

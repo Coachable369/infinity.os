@@ -1,7 +1,10 @@
 /* ACPI-advertised PSCI CPU_ON fallback for identity-mapped EL1 firmware. */
 typedef struct {
     uint64_t stack, procedure, argument, level, sctlr, tcr, ttbr0, ttbr1, mair, vbar;
+    uint64_t exception_stack;
 } InfinityApContext;
+_Static_assert(__builtin_offsetof(InfinityApContext, exception_stack) == 80,
+               "ARM worker exception stack assembly offset");
 static InfinityApContext psci_contexts[64] __attribute__((aligned(64)));
 static uint64_t psci_cpus[64];
 static size_t psci_count;
@@ -121,7 +124,7 @@ static uint64_t start_psci_workers(INFINITY_AP_PROC procedure, uint64_t requeste
     size_t launched=0;
     for (size_t i=0;i<psci_count && launched<limit;++i) {
         InfinityApContext *c=&psci_contexts[launched];
-        if (!c->stack) break;
+        if (!c->stack || !c->exception_stack) break;
         c->procedure=(uint64_t)(uintptr_t)procedure; c->argument=launched+1; c->level=level;
         __asm__ volatile("mrs %0, sctlr_el1" : "=r"(c->sctlr));
         __asm__ volatile("mrs %0, tcr_el1" : "=r"(c->tcr));
@@ -129,7 +132,8 @@ static uint64_t start_psci_workers(INFINITY_AP_PROC procedure, uint64_t requeste
         __asm__ volatile("mrs %0, ttbr1_el1" : "=r"(c->ttbr1));
         __asm__ volatile("mrs %0, mair_el1" : "=r"(c->mair));
         __asm__ volatile("mrs %0, vbar_el1" : "=r"(c->vbar));
-        if (!worker_identity((uint64_t)(uintptr_t)c) || !worker_identity(c->stack-16)) break;
+        if (!worker_identity((uint64_t)(uintptr_t)c) || !worker_identity(c->stack-16) ||
+            !worker_identity(c->exception_stack-16)) break;
         uint64_t ctr;
         __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
         uintptr_t line=(uintptr_t)4<<((ctr>>16)&15);

@@ -21,8 +21,42 @@ def read_pcm(path):
 
 
 # ------------------------=
+# FUNC: active_pcm
+# DESC: Aligns only bit-exact edge silence without trimming quiet speech, changing internal pauses or resampling.
+# ------------------=
+def active_pcm(samples):
+    start = 0
+    while start < len(samples) and samples[start] == 0:
+        start += 1
+    end = len(samples)
+    while end > start and samples[end - 1] == 0:
+        end -= 1
+    return samples[start:end]
+
+
+# ------------------------=
+# FUNC: compare_pcm
+# DESC: Compares the entire active waveform at unchanged tolerances and rejects missing quiet edges or internal timing changes.
+# ------------------=
+def compare_pcm(reference, native):
+    reference_active = active_pcm(reference)
+    native_active = active_pcm(native)
+    assert len(reference_active) == len(native_active) and reference_active
+    energy = sum(v*v for v in reference_active)
+    native_energy = sum(v*v for v in native_active)
+    assert energy > 0 and native_energy > 0
+    correlation = sum(a*b for a,b in zip(reference_active,native_active))/math.sqrt(energy*native_energy)
+    relative_error = math.sqrt(sum((a-b)**2 for a,b in zip(reference_active,native_active))/energy)
+    evidence = dict(correlation=correlation,relative_rms_error=relative_error,
+                    reference_frames=len(reference),native_frames=len(native),
+                    active_frames=len(reference_active),installed_verified=False)
+    assert correlation > 0.98 and relative_error < 0.15, evidence
+    return evidence
+
+
+# ------------------------=
 # FUNC: main
-# DESC: Checks waveform agreement while allowing the reference API's documented trailing-silence trim.
+# DESC: Checks complete waveform agreement while allowing only exact-zero model or API edge padding differences.
 # ------------------=
 def main():
     parser = argparse.ArgumentParser()
@@ -31,18 +65,8 @@ def main():
     output = ROOT / "build/voice-kokoro" / ("x86-runtime" if args.target == "x86_64" else "aarch64")
     reference = read_pcm(ROOT / "build/voice-kokoro/reference/hello.wav")
     native = read_pcm(output / ("native-hi.wav" if args.target == "x86_64" else "native-0.wav"))
-    assert len(reference) <= len(native) <= len(reference) + 2400
-    compared = native[:len(reference)]
-    energy = sum(v*v for v in reference)
-    native_energy = sum(v*v for v in compared)
-    assert energy > 0 and native_energy > 0
-    correlation = sum(a*b for a,b in zip(reference,compared))/math.sqrt(energy*native_energy)
-    relative_error = math.sqrt(sum((a-b)**2 for a,b in zip(reference,compared))/energy)
-    evidence = dict(correlation=correlation,relative_rms_error=relative_error,
-                    reference_frames=len(reference),native_frames=len(native),installed_verified=False,
-                    target=args.target, native_latency_verified=False)
+    evidence = dict(compare_pcm(reference, native), target=args.target, native_latency_verified=False)
     print(json.dumps(evidence,indent=2))
-    assert correlation > 0.98 and relative_error < 0.15, evidence
     (output / "reference-comparison.json").write_text(json.dumps(evidence,indent=2)+"\n")
 
 

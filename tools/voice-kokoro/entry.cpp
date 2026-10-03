@@ -7,6 +7,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include "pcm-boundary.h"
 
 static std::unique_ptr<kokopop::Model> model;
 // A modest conversational pace reduces both generated mel frames and perceived
@@ -183,6 +184,10 @@ extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t 
         written = join_phrase(pcm, written, produced);
         position += count;
     }
+    // Separate controller jobs are appended to one continuous output queue.
+    // Trim their exact-zero model padding too, not just the internal phrases,
+    // without dropping low-energy consonants or any pause within the speech.
+    written = native_pcm_trim_zero_edges(pcm, written, boundary_silence_frames);
     fade_edges(pcm, written);
     *frames = written;
     return 0;

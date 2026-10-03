@@ -7,7 +7,7 @@ static CAPTURE_OPEN_FAILURE: AtomicUsize = AtomicUsize::new(0);
 static mut DMA: hda::Dma = hda::Dma::new();
 static mut DEVICE: Option<hda::Hda> = None;
 static mut UNTIL: u64 = 0;
-static mut PLAYBACK_COMPLETE_AT: u64 = 0;
+static mut PLAYBACK_STARTED_AT: u64 = 0;
 static mut RESIDENT_BYTES: usize = 0;
 static mut LEASE: Option<crate::runtime::audio::AudioStream> = None;
 static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
@@ -228,7 +228,7 @@ pub fn playback_frames(owner: crate::runtime::execution::SecurityIdentity) -> Op
     let frames = unsafe {
         if RESIDENT_BYTES > 0 && LEASE.is_some_and(|lease| lease.owner == owner) {
             (&*(&raw const DEVICE)).as_ref().filter(|device| device.playing)
-                .and_then(|device| device.position().ok()).map(|bytes| bytes as usize / 4)
+                .and_then(|device| device.resident_progress().ok()).map(|progress| progress.played_bytes as usize / 4)
         } else { None }
     };
     LOCK.store(false, Ordering::Release); frames
@@ -250,7 +250,7 @@ pub fn infinity_audio_open(owner: crate::runtime::execution::SecurityIdentity, c
         if idle {
             (&mut *(&raw mut INFINITY_AUDIO)).reset(generation);
             INFINITY_OWNER = owner; INFINITY_GENERATION = generation; INFINITY_ACTIVE = true; INFINITY_STARTED = false;
-            INFINITY_PLAYED_FRAMES = 0;
+            INFINITY_PLAYED_FRAMES = 0; PLAYBACK_STARTED_AT = 0;
             LEASE = lease; PLAY_STATE = PlaybackState::Idle; true
         } else { false }
     };
@@ -272,7 +272,9 @@ pub fn infinity_audio_append(owner: crate::runtime::execution::SecurityIdentity,
             let next = request.ok().and_then(|request| crate::runtime::with_runtime(|runtime|
                 current.renew(&request, &runtime.capabilities, now / 1_000_000_000).ok()).flatten());
             if let Some(next) = next {
-                if (&mut *(&raw mut INFINITY_AUDIO)).append(generation, samples, content_start, content_end).is_ok() {
+                let capacity = (&*(&raw const DEVICE)).as_ref().map(|device| device.sample_rate as usize * 2 * 32).unwrap_or(0);
+                if samples.len() <= capacity.saturating_sub((&*(&raw const INFINITY_AUDIO)).remaining_samples())
+                    && (&mut *(&raw mut INFINITY_AUDIO)).append(generation, samples, content_start, content_end).is_ok() {
                     LEASE = Some(next);
                     if capability != current.capability { crate::runtime::with_runtime(|runtime| { let _ = runtime.capabilities.retire_leaf(current.capability, owner); }); }
                     true
@@ -290,7 +292,9 @@ pub fn infinity_audio_can_append(owner: crate::runtime::execution::SecurityIdent
     sample_count: usize, content_start: usize, content_end: usize) -> Option<bool> {
     if LOCK.swap(true, Ordering::Acquire) { return None; }
     let accepted = unsafe {
+        let capacity = (&*(&raw const DEVICE)).as_ref().map(|device| device.sample_rate as usize * 2 * 32).unwrap_or(0);
         INFINITY_ACTIVE && INFINITY_OWNER == owner && INFINITY_GENERATION == generation
+            && sample_count <= capacity.saturating_sub((&*(&raw const INFINITY_AUDIO)).remaining_samples())
             && (&*(&raw const INFINITY_AUDIO)).can_append(generation, sample_count, content_start, content_end)
     };
     LOCK.store(false, Ordering::Release); Some(accepted)
@@ -317,12 +321,12 @@ pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, g
             if let Some(samples) = resident {
                 if device.start_resident(samples).is_ok() {
                     RESIDENT_BYTES = samples.len() * 2; INFINITY_STARTED = true; INFINITY_PLAYED_FRAMES = 0;
-                    let started = crate::ui::performance::monotonic_ns().unwrap_or(0);
-                    PLAYBACK_COMPLETE_AT = started.saturating_add(
-                        hda::resident_duration_ns(samples.len(), device.sample_rate).unwrap_or(0)
-                    ).saturating_add(20_000_000);
+                    let started = crate::ui::performance::monotonic_ns().unwrap_or(now);
+                    PLAYBACK_STARTED_AT = started;
                     UNTIL = started.saturating_add(35_000_000_000);
-                    PLAY_STATE = PlaybackState::Playing; true
+                    PLAY_STATE = PlaybackState::Playing;
+                    trace_playback_transition(PLAY_STATE, 0, RESIDENT_BYTES as u64 / 4);
+                    true
                 } else { false }
             } else { false }
         } else { false }
@@ -338,8 +342,8 @@ pub fn infinity_audio_progress(owner: crate::runtime::execution::SecurityIdentit
     let progress = unsafe {
         if !INFINITY_ACTIVE || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { None }
         else {
-            let played = if INFINITY_STARTED { (&*(&raw const DEVICE)).as_ref().and_then(|device| device.position().ok())
-                .map(|bytes| (bytes as u64) / 4).unwrap_or(INFINITY_PLAYED_FRAMES) }
+            let played = if INFINITY_STARTED { (&*(&raw const DEVICE)).as_ref().and_then(|device| device.resident_progress().ok())
+                .map(|progress| progress.played_bytes as u64 / 4).unwrap_or(INFINITY_PLAYED_FRAMES) }
                 else { INFINITY_PLAYED_FRAMES };
             Some((&*(&raw const INFINITY_AUDIO)).status(played))
         }
@@ -355,7 +359,7 @@ pub fn infinity_audio_echo_reference(owner: crate::runtime::execution::SecurityI
     let copied = unsafe {
         if !INFINITY_ACTIVE || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { false }
         else if let Some(device) = (&*(&raw const DEVICE)).as_ref() {
-            let played = device.position().ok().map(|bytes| (bytes as u64) / 4).unwrap_or(INFINITY_PLAYED_FRAMES);
+            let played = device.resident_progress().ok().map(|progress| progress.played_bytes as u64 / 4).unwrap_or(INFINITY_PLAYED_FRAMES);
             (&*(&raw const INFINITY_AUDIO)).reference_mono(played, device.sample_rate, 16_000, output)
         } else { false }
     };
@@ -378,10 +382,17 @@ pub unsafe fn play_resident_speech(owner: crate::runtime::execution::SecurityIde
         &request, owner, &r.capabilities, now / 1_000_000_000).ok()).flatten();
     if lease.is_none() || LOCK.swap(true, Ordering::Acquire) { return false; }
     let started = if let Some(d) = (&mut *(&raw mut DEVICE)).as_mut().filter(|d| !d.playing && d.sample_rate == rate) {
-        if d.start_resident(samples).is_ok() {
+        // Only the caller's meaningful extent belongs to the transfer. The
+        // hardware adapter owns its own drain tail, so padded backing capacity
+        // must not defer completion for the entire 32-second allocation.
+        if d.start_resident(&samples[..spoken_samples]).is_ok() {
             RESIDENT_BYTES = spoken_samples * 2; INFINITY_ACTIVE = false; INFINITY_STARTED = false;
-            UNTIL = crate::ui::performance::monotonic_ns().unwrap_or(now).saturating_add(31_000_000_000);
-            LEASE = lease; PLAY_STATE = PlaybackState::Playing; true
+            INFINITY_PLAYED_FRAMES = 0;
+            PLAYBACK_STARTED_AT = crate::ui::performance::monotonic_ns().unwrap_or(now);
+            UNTIL = PLAYBACK_STARTED_AT.saturating_add(35_000_000_000);
+            LEASE = lease; PLAY_STATE = PlaybackState::Playing;
+            trace_playback_transition(PLAY_STATE, 0, RESIDENT_BYTES as u64 / 4);
+            true
         } else { false }
     } else { false };
     LOCK.store(false, Ordering::Release); started
@@ -435,16 +446,16 @@ pub fn play_resident_system_cue(
                 // buffer until finish_playback stops DMA and clears the resident cue.
                 let resident: &'static [i16] = &(&*(&raw const SYSTEM_CUE_PCM.0))[..output_samples];
                 if converted && device.start_resident(resident).is_ok() {
-                    let duration_ns = frames as u64 * 1_000_000_000 / device.sample_rate as u64;
                     SYSTEM_CUE_LENGTH = output_samples;
                     RESIDENT_BYTES = output_samples * 2;
                     INFINITY_ACTIVE = false;
                     INFINITY_STARTED = false;
-                    UNTIL = crate::ui::performance::monotonic_ns()
-                        .unwrap_or(now)
-                        .saturating_add(duration_ns);
+                    INFINITY_PLAYED_FRAMES = 0;
+                    PLAYBACK_STARTED_AT = crate::ui::performance::monotonic_ns().unwrap_or(now);
+                    UNTIL = PLAYBACK_STARTED_AT.saturating_add(15_000_000_000);
                     LEASE = lease;
                     PLAY_STATE = PlaybackState::Playing;
+                    trace_playback_transition(PLAY_STATE, 0, RESIDENT_BYTES as u64 / 4);
                     true
                 } else {
                     false
@@ -495,16 +506,13 @@ pub fn play_speech(owner: crate::runtime::execution::SecurityIdentity, capabilit
 // DESC: Stops DMA and erases private speech PCM before retiring output authority; audio lock must be held.
 // ------------------=
 unsafe fn finish_playback(device: &mut hda::Hda, state: PlaybackState) {
-    device.stop(); PLAY_STATE = state; RESIDENT_BYTES = 0; INFINITY_STARTED = false; PLAYBACK_COMPLETE_AT = 0;
-    crate::output::write(match state {
-        PlaybackState::Idle => b"[AUDIO] playback finished idle\n",
-        PlaybackState::Playing => b"[AUDIO] playback finished playing\n",
-        PlaybackState::Complete => b"[AUDIO] playback finished complete\n",
-        PlaybackState::Cancelled => b"[AUDIO] playback finished cancelled\n",
-        PlaybackState::Denied => b"[AUDIO] playback finished denied\n",
-        PlaybackState::DeviceLost => b"[AUDIO] playback finished device-lost\n",
-        PlaybackState::Underrun => b"[AUDIO] playback finished underrun\n",
-    });
+    let played = device.resident_progress().ok().map(|progress| progress.played_bytes as u64)
+        .unwrap_or(INFINITY_PLAYED_FRAMES * 4).min(RESIDENT_BYTES as u64);
+    let total = RESIDENT_BYTES as u64;
+    INFINITY_PLAYED_FRAMES = played / 4;
+    device.stop(); PLAY_STATE = state; RESIDENT_BYTES = 0; INFINITY_STARTED = false;
+    trace_playback_transition(state, played / 4, total / 4);
+    PLAYBACK_STARTED_AT = 0;
     if INFINITY_ACTIVE { (&mut *(&raw mut INFINITY_AUDIO)).erase_pcm(); }
     (&mut *(&raw mut PCM)).fill(0);
     (&mut *(&raw mut SYSTEM_CUE_PCM.0))[..SYSTEM_CUE_LENGTH].fill(0);
@@ -512,6 +520,39 @@ unsafe fn finish_playback(device: &mut hda::Hda, state: PlaybackState) {
     if let Some(lease) = (&mut *(&raw mut LEASE)).take() {
         crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(lease.capability, lease.owner); });
     }
+}
+// ------------------------=
+// FUNC: trace_playback_transition
+// DESC: Records start or terminal reason, generation, hardware frames and elapsed time without speech content or PCM.
+// ------------------=
+unsafe fn trace_playback_transition(state: PlaybackState, played: u64, total: u64) {
+    let prefix: &[u8] = match state {
+        PlaybackState::Idle => b"[AUDIO] playback finished idle",
+        PlaybackState::Playing => b"[AUDIO] playback started",
+        PlaybackState::Complete => b"[AUDIO] playback finished complete",
+        PlaybackState::Cancelled => b"[AUDIO] playback finished cancelled",
+        PlaybackState::Denied => b"[AUDIO] playback finished denied",
+        PlaybackState::DeviceLost => b"[AUDIO] playback finished device-lost",
+        PlaybackState::Underrun => b"[AUDIO] playback finished underrun",
+    };
+    let mut record = [0u8; 240];
+    record[..prefix.len()].copy_from_slice(prefix);
+    let mut at = prefix.len();
+    let elapsed = if PLAYBACK_STARTED_AT == 0 { 0 } else {
+        crate::ui::performance::monotonic_ns().unwrap_or(PLAYBACK_STARTED_AT).saturating_sub(PLAYBACK_STARTED_AT) / 1_000_000
+    };
+    for (label, mut value) in [
+        (b" generation=" as &[u8], if INFINITY_ACTIVE { INFINITY_GENERATION } else { 0 }),
+        (b" played_frames=" as &[u8], played), (b" total_frames=" as &[u8], total),
+        (b" elapsed_ms=" as &[u8], elapsed),
+    ] {
+        record[at..at + label.len()].copy_from_slice(label); at += label.len();
+        let mut digits = [0u8; 20]; let mut first = digits.len();
+        loop { first -= 1; digits[first] = b'0' + (value % 10) as u8; value /= 10; if value == 0 { break; } }
+        record[at..at + digits.len() - first].copy_from_slice(&digits[first..]); at += digits.len() - first;
+    }
+    record[at] = b'\n';
+    crate::output::write(&record[..at + 1]);
 }
 // ------------------------=
 // FUNC: stop_playback
@@ -606,18 +647,18 @@ pub fn poll() {
                 let authorized = LEASE.and_then(|lease| now.map(|n| (lease, n)))
                     .and_then(|(lease, n)| crate::runtime::with_runtime(|runtime| lease.valid(&runtime.capabilities, n / 1_000_000_000))).unwrap_or(false);
                 if !authorized { finish_playback(device, PlaybackState::Denied); }
-                else if INFINITY_STARTED && now.is_some_and(|n| PLAYBACK_COMPLETE_AT != 0 && n >= PLAYBACK_COMPLETE_AT) {
-                    finish_playback(device, PlaybackState::Complete);
+                else if RESIDENT_BYTES > 0 {
+                    match device.resident_progress() {
+                        Ok(progress) => {
+                            INFINITY_PLAYED_FRAMES = progress.played_bytes as u64 / 4;
+                            if progress.complete { finish_playback(device, PlaybackState::Complete); }
+                            else if now.map(|n| n >= UNTIL).unwrap_or(true) { finish_playback(device, PlaybackState::Underrun); }
+                        }
+                        Err(_) => finish_playback(device, PlaybackState::DeviceLost),
+                    }
                 }
                 else if device.position().is_err() { finish_playback(device, PlaybackState::DeviceLost); }
-                else if now.map(|n| n >= UNTIL).unwrap_or(true) {
-                    finish_playback(device, if INFINITY_ACTIVE { PlaybackState::Underrun } else { PlaybackState::Complete });
-                }
-                else if RESIDENT_BYTES > 0 {
-                    let position = device.position().unwrap_or(0) as usize;
-                    if INFINITY_ACTIVE { INFINITY_PLAYED_FRAMES = (position / 4) as u64; }
-                    if position >= RESIDENT_BYTES { finish_playback(device, PlaybackState::Complete); }
-                }
+                else if now.map(|n| n >= UNTIL).unwrap_or(true) { finish_playback(device, PlaybackState::Complete); }
             }
         }
     }

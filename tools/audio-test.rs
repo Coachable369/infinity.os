@@ -13,15 +13,9 @@ fn output_text(_: &[u8]) {}
 // ------------------=
 fn main() {
     route_tests();
+    resident_playback_tests();
     use runtime::{audio::*, capability::*, execution::SecurityIdentity, iop::*};
     assert_eq!(std::mem::align_of::<InfinityAudio<16, 4>>(), 128);
-    let split = hda::resident_descriptor_lengths(0x1000, 15_004).unwrap();
-    assert_eq!(split[0] + split[1], 15_004);
-    assert_eq!(split[0] % 128, 0);
-    assert_eq!((0x1000 + split[0]) % 128, 0);
-    assert_eq!(split[1] % 4, 0);
-    assert!(hda::resident_descriptor_lengths(0x1004, 15_004).is_none());
-    assert!(hda::resident_descriptor_lengths(0x1000, 6).is_none());
     assert_eq!(hda::resident_duration_ns(96_000, 48_000), Some(1_000_000_000));
     assert_eq!(hda::resident_duration_ns(88_200, 44_100), Some(1_000_000_000));
     assert_eq!(hda::resident_duration_ns(0, 48_000), None);
@@ -188,6 +182,72 @@ fn main() {
     assert!(hda::tone_at_rate(&mut fallback, 48000).is_err());
     assert_eq!(PCM.sample_rate, 48000);
     println!("Audio authority and deterministic PCM: PASS");
+}
+// ------------------------=
+// FUNC: resident_playback_tests
+// DESC: Verifies full speech descriptors and hardware-only completion across stalls, slow progress, wrap, device errors, and fresh sessions.
+// ------------------=
+fn resident_playback_tests() {
+    for rate in [44_100, 48_000] {
+        let tail = rate * 4 * 2;
+        for bytes in [4, 15_004, rate * 4 * 32] {
+            let descriptors = hda::resident_descriptors(0x1000, bytes as u64, 0x100000, tail as u64).unwrap();
+            assert_eq!(descriptors, [[0x1000, bytes as u64], [0x100000, tail as u64 | (1 << 32)]]);
+            assert_eq!(descriptors[0][1] >> 32, 0);
+            assert_eq!(descriptors[1][1] >> 32, 1);
+            let mut playback = hda::ResidentPlayback::new(bytes, tail).unwrap();
+            // Any number of service calls with a stalled cursor remains pending.
+            // Wall time never enters the hardware completion state machine.
+            for _ in 0..1000 {
+                assert_eq!(playback.observe(0, 0).unwrap(), hda::ResidentProgress {
+                    played_bytes: 0, total_bytes: bytes, complete: false,
+                });
+            }
+            let last = bytes - 4;
+            let partial = playback.observe(last, 0).unwrap();
+            assert_eq!(partial.played_bytes, last);
+            assert!(!partial.complete);
+            for _ in 0..1000 { assert_eq!(playback.observe(last, 0).unwrap(), partial); }
+            // Final speech bytes can still be queued at the codec/backend.
+            // Progress reaches total, but success waits for device-byte drain.
+            let draining = playback.observe(bytes, 0).unwrap();
+            assert_eq!(draining.played_bytes, bytes);
+            assert!(!draining.complete);
+            assert!(!playback.observe(bytes + hda::RESIDENT_DRAIN_BYTES - 1, 0).unwrap().complete);
+            let done = playback.observe(bytes + hda::RESIDENT_DRAIN_BYTES, 0).unwrap();
+            assert_eq!(done.played_bytes, bytes);
+            assert!(done.complete);
+            assert_eq!(playback.observe(0, 4).unwrap(), done);
+            // No completion leaks from a prior resident session.
+            let mut fresh = hda::ResidentPlayback::new(bytes, tail).unwrap();
+            assert!(!fresh.observe(0, 0).unwrap().complete);
+            assert_eq!(fresh.observe(0, 4).unwrap(), done);
+            assert_eq!(fresh.observe(0, 0x0c), Err(hda::Error::Dma));
+            assert_eq!(fresh.observe(0, 0x14), Err(hda::Error::Dma));
+        }
+        let mut slow = hda::ResidentPlayback::new(15_004, tail).unwrap();
+        for position in (0..15_004).step_by(4) {
+            let progress = slow.observe(position, 0).unwrap();
+            assert_eq!(progress.played_bytes, position);
+            assert!(!progress.complete);
+        }
+        assert_eq!(slow.observe(0, 0), Err(hda::Error::Dma));
+        assert!(slow.observe(0, 4).unwrap().complete);
+        let mut invalid = hda::ResidentPlayback::new(15_004, tail).unwrap();
+        assert_eq!(invalid.observe(2, 0).unwrap(), hda::ResidentProgress {
+            played_bytes: 2, total_bytes: 15_004, complete: false,
+        });
+        assert_eq!(invalid.observe(15_004 + tail + 4, 4), Err(hda::Error::Dma));
+    }
+    assert!(hda::resident_descriptors(0x1004, 15_004, 0x100000, 384000).is_none());
+    assert!(hda::resident_descriptors(0x1000, 6, 0x100000, 384000).is_none());
+    assert!(hda::resident_descriptors(0x1000, 15_004, 0x100004, 384000).is_none());
+    assert!(hda::resident_descriptors(0x1000, 15_004, 0x100000, 65532).is_none());
+    assert!(hda::resident_descriptors(0x1000, u32::MAX as u64 - 3, 0x100000, 384000).is_none());
+    assert!(hda::ResidentPlayback::new(0, 384000).is_none());
+    assert!(hda::ResidentPlayback::new(6, 384000).is_none());
+    assert!(hda::ResidentPlayback::new(4, 65532).is_none());
+    assert!(hda::ResidentPlayback::new(u32::MAX - 3, 384000).is_none());
 }
 // ------------------------=
 // FUNC: route_tests

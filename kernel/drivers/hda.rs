@@ -8,6 +8,14 @@ pub const FRAMES: usize = 4800;
 pub const SAMPLES: usize = FRAMES * 2;
 pub const CAPTURE_FRAMES: usize = 96000;
 pub const CAPTURE_SAMPLES: usize = CAPTURE_FRAMES * 2;
+const RESIDENT_TAIL_SAMPLES: usize = 48_000 * 2 * 2;
+// One maximum HDA FIFO quantum also drains a virtual codec's downstream
+// queue (QEMU's codec ring is 8192 bytes). Count actual silent link bytes,
+// never elapsed time: RUN must stay set until the final samples can drain.
+pub const RESIDENT_DRAIN_BYTES: u32 = u16::MAX as u32 + 1;
+#[repr(C, align(128))]
+struct ResidentSilence([i16; RESIDENT_TAIL_SAMPLES]);
+static RESIDENT_SILENCE: ResidentSilence = ResidentSilence([0; RESIDENT_TAIL_SAMPLES]);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Timeout, Unsupported, Busy, Invalid, Dma }
 
@@ -23,14 +31,47 @@ pub struct CaptureRoute {
     pub length: usize,
 }
 // ------------------------=
-// FUNC: resident_descriptor_lengths
-// DESC: Splits word-sized resident PCM into two buffers whose starting addresses meet the HDA 128-byte BDLE alignment contract.
+// FUNC: resident_descriptors
+// DESC: Describes immutable speech followed by bounded silence, with completion status only after the silence descriptor is fetched.
 // ------------------=
-pub const fn resident_descriptor_lengths(address: u64, bytes: u64) -> Option<[u64; 2]> {
-    if address & 127 != 0 || bytes & 3 != 0 || bytes > u32::MAX as u64 { return None; }
-    let first = (bytes / 2) & !127;
-    let second = bytes.saturating_sub(first);
-    if first == 0 || second == 0 || second & 3 != 0 { None } else { Some([first, second]) }
+pub const fn resident_descriptors(address: u64, bytes: u64, silence: u64, silence_bytes: u64) -> Option<[[u64; 2]; 2]> {
+    if address & 127 != 0 || silence & 127 != 0 || bytes == 0 || bytes & 3 != 0
+        || silence_bytes & 3 != 0 || silence_bytes <= u16::MAX as u64
+        || bytes.saturating_add(silence_bytes) > u32::MAX as u64 { return None; }
+    Some([[address, bytes], [silence, silence_bytes | (1 << 32)]])
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResidentProgress { pub played_bytes: u32, pub total_bytes: u32, pub complete: bool }
+#[derive(Clone, Copy)]
+pub struct ResidentPlayback { bytes: u32, cyclic_bytes: u32, position: u32, complete: bool }
+impl ResidentPlayback {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Starts a bounded hardware cursor tracker whose silence tail exceeds the HDA maximum FIFO depth.
+    // ------------------=
+    pub const fn new(bytes: u32, silence_bytes: u32) -> Option<Self> {
+        if bytes == 0 || bytes & 3 != 0 || silence_bytes & 3 != 0 || silence_bytes < RESIDENT_DRAIN_BYTES { return None; }
+        match bytes.checked_add(silence_bytes) {
+            Some(cyclic_bytes) => Some(Self { bytes, cyclic_bytes, position: 0, complete: false }),
+            None => None,
+        }
+    }
+    // ------------------------=
+    // FUNC: observe
+    // DESC: Completes only from link progress or the terminal silent descriptor; stalled clocks cannot imply successful playback.
+    // ------------------=
+    pub fn observe(&mut self, position: u32, status: u8) -> Result<ResidentProgress, Error> {
+        if status & 0x18 != 0 || position > self.cyclic_bytes { return Err(Error::Dma); }
+        // HDA 1.0a §§3.3.36–40: BCIS is DMA-to-FIFO completion, not link
+        // completion. IOC belongs only to the silent descriptor, longer than
+        // any 16-bit FIFOS capacity, so it also proves all speech left FIFO.
+        if status & 4 != 0 || position >= self.bytes + RESIDENT_DRAIN_BYTES { self.complete = true; }
+        if !self.complete && position < self.position { return Err(Error::Dma); }
+        self.position = self.position.max(position);
+        Ok(ResidentProgress { played_bytes: if self.complete { self.bytes } else { self.position.min(self.bytes) },
+            total_bytes: self.bytes, complete: self.complete })
+    }
 }
 
 // ------------------------=
@@ -118,6 +159,7 @@ pub struct Hda {
     pub codec_id: u32,
     pub sample_rate: u32,
     pub playing: bool,
+    resident: Cell<Option<ResidentPlayback>>,
 }
 impl Hda {
     // ------------------------=
@@ -224,7 +266,8 @@ impl Hda {
         let mut h = Self { base, dma, output: 0, codec: 0, dac: 0, adc: 0,
             input_route: None, input_group: 0,
             command_write: Cell::new(0), response_read: Cell::new(0),
-            capture_position: 0, capturing: false, codec_id: 0, sample_rate: 48000, playing: false };
+            capture_position: 0, capturing: false, codec_id: 0, sample_rate: 48000, playing: false,
+            resident: Cell::new(None) };
         h.w32(0x20, 0); // No interrupts until an interrupt service exists.
         h.w8(0x4c, 0); h.w8(0x5c, 0);
         h.w32(8, 0); h.wait(8, 1, 0)?;
@@ -431,6 +474,20 @@ impl Hda {
         Ok(self.r32(self.output + 4))
     }
     // ------------------------=
+    // FUNC: resident_progress
+    // DESC: Reports monotonic played speech bytes using the hardware link cursor and latched terminal descriptor status.
+    // ------------------=
+    pub unsafe fn resident_progress(&self) -> Result<ResidentProgress, Error> {
+        let mut resident = self.resident.get().ok_or(Error::Invalid)?;
+        // Read the cursor before the latched status. Otherwise a wrap between
+        // reads could present the new low cursor with an obsolete clear BCIS.
+        let position = self.r32(self.output + 4);
+        let status = (self.r32(self.output) >> 24) as u8;
+        let result = resident.observe(position, status)?;
+        self.resident.set(Some(resident));
+        Ok(result)
+    }
+    // ------------------------=
     // FUNC: start_resident
     // DESC: Plays a kernel-owned prefilled phrase and silence tail without scheduling-sensitive refills.
     // ------------------=
@@ -443,19 +500,23 @@ impl Hda {
         self.w8(r, 0); self.wait(r, 1, 0)?;
         let address = samples.as_ptr() as u64;
         let bytes = samples.len() as u64 * 2;
-        let [first, second] = resident_descriptor_lengths(address, bytes).ok_or(Error::Invalid)?;
+        let silence_bytes = self.sample_rate as u64 * 4 * 2;
+        let descriptors = resident_descriptors(address, bytes, RESIDENT_SILENCE.0.as_ptr() as u64,
+            silence_bytes).ok_or(Error::Invalid)?;
         let bdl = core::ptr::addr_of_mut!((*self.dma).descriptors) as u64;
-        // VirtualBox requires nonzero LVI; use two resident extents, neither needs refilling.
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[0]), [address, first]);
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[1]), [address + first, second]);
+        // Two complete resident extents satisfy LVI>=1. The independent zero
+        // tail gives the service loop time to stop before cyclic speech replay.
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[0]), descriptors[0]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[1]), descriptors[1]);
         fence(Ordering::SeqCst);
         #[cfg(target_arch = "aarch64")]
         core::arch::asm!("dsb sy", options(nostack));
-        self.w32(r + 8, bytes as u32); self.w16(r + 0x0c, 1);
+        self.w32(r + 8, (bytes + silence_bytes) as u32); self.w16(r + 0x0c, 1);
         self.w16(r + 0x12, if self.sample_rate == 48000 { 0x11 } else { 0x4011 });
         self.w32(r + 0x18, bdl as u32); self.w32(r + 0x1c, (bdl >> 32) as u32);
         self.verb(self.dac, if self.sample_rate == 48000 { 0x20011 } else { 0x24011 })?;
         self.verb(self.dac, 0x70610)?;
+        self.resident.set(ResidentPlayback::new(bytes as u32, silence_bytes as u32));
         self.w8(r + 3, 0x1c); self.w32(r, (1 << 20) | 2); self.playing = true;
         Ok(())
     }
@@ -483,7 +544,7 @@ impl Hda {
     // FUNC: stop
     // DESC: Stops output DMA without enabling capture.
     // ------------------=
-    pub unsafe fn stop(&mut self) { self.w8(self.output, 0); self.playing = false; }
+    pub unsafe fn stop(&mut self) { self.w8(self.output, 0); self.playing = false; self.resident.set(None); }
 }
 
 // ------------------------=

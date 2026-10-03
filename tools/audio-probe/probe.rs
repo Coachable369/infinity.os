@@ -3,7 +3,6 @@
 #[path = "../../kernel/drivers/hda.rs"]
 mod hda;
 static mut DMA: hda::Dma = hda::Dma::new();
-static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
 #[repr(align(128))]
 struct ResidentPcm([i16; hda::SAMPLES * 20]);
 static mut RESIDENT_PCM: ResidentPcm = ResidentPcm([0; hda::SAMPLES * 20]);
@@ -31,7 +30,7 @@ fn finish(code: u64) -> ! {
 fn panic(_: &core::panic::PanicInfo) -> ! { finish(99) }
 // ------------------------=
 // FUNC: probe
-// DESC: Exercises complete resident HDA DMA against QEMU and emits a two-second waveform without scheduler refills.
+// DESC: Plays ordered start/body/end markers through real resident DMA and stops only after hardware reports the complete extent.
 // ------------------=
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
@@ -51,20 +50,32 @@ pub unsafe extern "C" fn probe() -> ! {
         Err(hda::Error::Timeout) => finish(2),
         Err(_) => finish(3),
     };
-    hda::tone(&mut *(&raw mut PCM));
-    for index in 0..20 {
-        (&mut *(&raw mut RESIDENT_PCM)).0[index * hda::SAMPLES..(index + 1) * hda::SAMPLES]
-            .copy_from_slice(&*(&raw const PCM));
+    assert_eq!(driver.sample_rate, 48_000);
+    // Half-second 500-Hz start, one-second 750-Hz body, half-second
+    // 1000-Hz end marker: the WAV verifier checks all three full segments.
+    for frame in 0..hda::FRAMES * 20 {
+        let period = if frame < 24_000 { 96 } else if frame < 72_000 { 64 } else { 48 };
+        let phase = (frame % period) as i32;
+        let value = if phase < period as i32 / 2 { -6000 + phase * 24000 / period as i32 }
+            else { 18000 - phase * 24000 / period as i32 };
+        (&mut *(&raw mut RESIDENT_PCM)).0[frame * 2] = value as i16;
+        (&mut *(&raw mut RESIDENT_PCM)).0[frame * 2 + 1] = value as i16;
     }
     let resident = &(&*(&raw const RESIDENT_PCM)).0[..hda::SAMPLES * 20 - 2];
     assert!(driver.start_resident(resident).is_ok());
     let frequency: u64; core::arch::asm!("mrs {}, cntfrq_el0",out(reg)frequency);
     let start = ticks();
     let mut moved = false;
-    while ticks() - start < frequency * 2 {
-        let position = driver.position().unwrap();
-        assert!(position < (resident.len() * 2) as u32);
-        moved |= position > 0;
+    loop {
+        // The clock is a failing watchdog, never successful completion.
+        assert!(ticks() - start < frequency * 10);
+        let progress = driver.resident_progress().unwrap();
+        assert_eq!(progress.total_bytes, (resident.len() * 2) as u32);
+        moved |= progress.played_bytes > 0;
+        if progress.complete {
+            assert_eq!(progress.played_bytes, progress.total_bytes);
+            break;
+        }
     }
     driver.stop();
     assert!(moved);
