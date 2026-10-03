@@ -58,9 +58,20 @@ fn main() {
     assert_eq!(reference, [20, 30, 40, 50]);
     assert_eq!(stream.status(99).content_position, 8);
     assert!(stream.sealed_resident(9).is_none());
+    assert_eq!(stream.erase_pcm(), 8);
+    assert_eq!(stream.erase_pcm(), 0);
     stream.reset(10);
     assert!(stream.sealed_resident(10).is_none());
     assert!(stream.read(9, &mut period).is_err());
+    // Repeated short reply generations erase only written PCM instead of the
+    // fixed 32-second resident capacity that exists in the installed runtime.
+    for generation in 11..=18 {
+        stream.reset(generation);
+        stream.append(generation, &[generation as i16; 4], 0, 2).unwrap();
+        stream.seal(generation).unwrap();
+        assert_eq!(stream.erase_pcm(), 4);
+        assert_eq!(stream.erase_pcm(), 0);
+    }
     let mut wrapped = InfinityAudio::<8, 4>::new();
     wrapped.reset(11);
     wrapped.append(11, &[1, 11, 2, 12, 3, 13, 4, 14], 0, 4).unwrap();
@@ -71,6 +82,10 @@ fn main() {
     let mut wrapped_reference = [0i16; 4];
     assert!(wrapped.reference_mono(6, 4, 4, &mut wrapped_reference));
     assert_eq!(wrapped_reference, [8, 9, 10, 11]);
+    assert_eq!(wrapped.erase_pcm(), 8);
+    wrapped_reference.fill(7);
+    assert!(wrapped.reference_mono(6, 4, 4, &mut wrapped_reference));
+    assert_eq!(wrapped_reference, [0; 4]);
     assert!(wrapped.append(11, &[7, 17], 3, 7).is_err());
     let mut malformed = InfinityAudio::<3, 1>::new();
     malformed.reset(12);

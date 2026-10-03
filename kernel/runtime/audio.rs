@@ -48,6 +48,7 @@ pub struct InfinityAudio<const N: usize, const S: usize> {
     samples: [i16; N],
     read: usize,
     length: usize,
+    written: usize,
     generation: u64,
     total_frames: u64,
     spans: [AudioSpan; S],
@@ -62,7 +63,7 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
     // ------------------=
     pub const fn new() -> Self {
         Self {
-            samples: [0; N], read: 0, length: 0, generation: 0, total_frames: 0,
+            samples: [0; N], read: 0, length: 0, written: 0, generation: 0, total_frames: 0,
             spans: [AudioSpan { start_frame: 0, end_frame: 0, content_start: 0, content_end: 0 }; S],
             span_count: 0, sealed: false, underruns: 0,
         }
@@ -72,8 +73,9 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
     // DESC: Erases queued PCM and starts a new generation so stale producers cannot publish into a replacement stream.
     // ------------------=
     pub fn reset(&mut self, generation: u64) {
-        self.samples.fill(0); self.read = 0; self.length = 0; self.generation = generation;
-        self.total_frames = 0; self.spans.fill(AudioSpan { start_frame: 0, end_frame: 0, content_start: 0, content_end: 0 });
+        self.erase_written(); self.read = 0; self.length = 0; self.generation = generation;
+        self.total_frames = 0;
+        self.spans[..self.span_count].fill(AudioSpan { start_frame: 0, end_frame: 0, content_start: 0, content_end: 0 });
         self.span_count = 0; self.sealed = false; self.underruns = 0;
     }
     // ------------------------=
@@ -102,6 +104,7 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
         self.samples[write..write + first].copy_from_slice(&samples[..first]);
         self.samples[..samples.len() - first].copy_from_slice(&samples[first..]);
         self.length += samples.len();
+        self.written = N.min(self.written.saturating_add(samples.len()));
         let frames = (samples.len() / 2) as u64;
         let span = AudioSpan { start_frame: self.total_frames, end_frame: self.total_frames + frames, content_start, content_end };
         self.spans[self.span_count] = span; self.span_count += 1; self.total_frames += frames;
@@ -177,7 +180,21 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
     // FUNC: erase_pcm
     // DESC: Erases private queued sound after completion or cancellation while retaining non-audio timeline diagnostics.
     // ------------------=
-    pub fn erase_pcm(&mut self) { self.samples.fill(0); self.read = 0; self.length = 0; }
+    pub fn erase_pcm(&mut self) -> usize {
+        let erased = self.erase_written();
+        self.read = 0; self.length = 0;
+        erased
+    }
+    // ------------------------=
+    // FUNC: erase_written
+    // DESC: Erases only storage touched by this generation so short conversational replies cannot stall the service loop by scrubbing unused capacity.
+    // ------------------=
+    fn erase_written(&mut self) -> usize {
+        let count = self.written.min(N);
+        self.samples[..count].fill(0);
+        self.written = 0;
+        count
+    }
     // ------------------------=
     // FUNC: reference_mono
     // DESC: Produces a bounded mono echo reference from samples the hardware timeline has actually reached.
