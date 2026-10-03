@@ -92,6 +92,20 @@ def main():
         replacement = ROOT / "tools/voice-kokoro/overrides" / source.name
         if replacement.exists():
             source = replacement
+        if source.name == "ops.cpp":
+            original = source.read_text()
+            anchor = "static void ggml_compute_forward_im2col_f16("
+            if original.count(anchor) != 1:
+                raise RuntimeError("Unreviewed one-dimensional convolution boundary")
+            original = original.replace(anchor,
+                '#include "' + str(ROOT / "tools/voice-kokoro/im2col1d.h") + '"\n\n' + anchor)
+            dispatch = "                ggml_compute_forward_im2col_f16(params, dst);"
+            if original.count(dispatch) != 1:
+                raise RuntimeError("Unreviewed half convolution dispatch boundary")
+            original = original.replace(dispatch,
+                "                if (!native_im2col1d_f16(params, dst))\n" + dispatch)
+            source = output / "ops.cpp"
+            source.write_text(original + '\n#include "' + str(ROOT / "tools/voice-kokoro/im2col1d-test.h") + '"\n')
         if source.name == "ggml-cpu.c":
             original = source.read_text()
             anchor = "                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0),"

@@ -2,6 +2,9 @@
 use super::{types::AiError, voice::{SpeechRecognitionProvider, RECOGNITION_DEADLINE_SECONDS}};
 use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+#[cfg(not(test))]
+#[path = "voice_trace.rs"]
+mod voice_trace;
 
 static STATE: AtomicUsize = AtomicUsize::new(0);
 static ENGINE: AtomicUsize = AtomicUsize::new(0);
@@ -23,16 +26,7 @@ static mut ERROR: i32 = 0;
 // DESC: Emits privacy-safe native recognizer lifecycle evidence without transcript or PCM content.
 // ------------------=
 fn trace(event: &[u8]) {
-    unsafe {
-        let mut record = [0u8; 96];
-        let prefix = b"[WHISPER] ";
-        let event_length = event.len().min(record.len() - prefix.len() - 1);
-        record[..prefix.len()].copy_from_slice(prefix);
-        record[prefix.len()..prefix.len() + event_length]
-            .copy_from_slice(&event[..event_length]);
-        record[prefix.len() + event_length] = b'\n';
-        crate::output::write(&record[..prefix.len() + event_length + 1]);
-    }
+    voice_trace::write(b"[WHISPER] ", event, super::qwen::workers::clock_ns());
 }
 
 #[cfg(test)]

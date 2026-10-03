@@ -133,6 +133,40 @@ fn main() {
     assert_eq!(speech_lease.route, AudioRoute::Playback);
     assert!(speech_lease.valid(&caps, 44));
     assert!(!speech_lease.valid(&caps, 45));
+    // Synthesis of a pending span can consume most of the queue's lease.
+    // Renew at playback start, then preserve authority through the whole
+    // 32-second resident buffer without reviving an expired capability.
+    let playback_start = IopMessage::request(OperationId::AudioPlaybackStart, 4, owner, speech_cap, 55, 4, &[]).unwrap();
+    let playing = speech_lease.renew(&playback_start, &caps, 20).unwrap();
+    assert!(playing.valid(&caps, 52));
+    assert!(!playing.valid(&caps, 55));
+    assert!(speech_lease.renew(&playback_start, &caps, 45).is_err());
+    assert_eq!(speech_lease.renew_playback(&caps, 20).unwrap().deadline, playing.deadline);
+    assert!(capture_lease.renew_playback(&caps, 12).is_err());
+    // Preparation can exceed one short stream lease, but periodic renewals
+    // retain the original finite capability and never restore lost authority.
+    let preparation_cap = caps.grant(CapabilityType::AudioOutput, 0, 1, 0, owner, owner, Some(130), 0).unwrap();
+    let preparation = IopMessage::request(OperationId::AudioPlaybackStart, 5, owner, preparation_cap, 35, 5, &[]).unwrap();
+    let initial_preparation = AudioStream::authorize(&preparation, owner, &caps, 0).unwrap();
+    let mut prepared = initial_preparation;
+    for now in [25, 50, 75, 90] {
+        prepared = prepared.renew_playback(&caps, now).unwrap();
+        assert_eq!(prepared.owner, owner);
+        assert_eq!(prepared.capability, preparation_cap);
+        assert_eq!(prepared.route, AudioRoute::Playback);
+        assert_eq!(prepared.deadline, now + 35);
+    }
+    assert!(prepared.valid(&caps, 122));
+    assert!(!prepared.valid(&caps, 125));
+    assert!(initial_preparation.renew_playback(&caps, 35).is_err());
+    let capability_bound = prepared.renew_playback(&caps, 120).unwrap();
+    assert!(capability_bound.valid(&caps, 129));
+    assert!(!capability_bound.valid(&caps, 130));
+    assert!(capability_bound.renew_playback(&caps, 130).is_err());
+    let wrong_owner = AudioStream { owner: other, ..prepared };
+    assert!(wrong_owner.renew_playback(&caps, 91).is_err());
+    caps.revoke(preparation_cap).unwrap();
+    assert!(prepared.renew_playback(&caps, 91).is_err());
     speech.header.deadline = 46;
     assert!(matches!(AudioStream::authorize(&speech, owner, &caps, 10), Err(AudioError::Expired)));
     speech.header.deadline = 45; speech.header.capability_ref = input;

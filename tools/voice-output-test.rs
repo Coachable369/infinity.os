@@ -10,6 +10,14 @@ static PLAYING: AtomicBool = AtomicBool::new(false);
 static HOLD: AtomicBool = AtomicBool::new(false);
 static WORKER_BUSY: AtomicBool = AtomicBool::new(false);
 static QUEUE_ROOM: AtomicBool = AtomicBool::new(true);
+static SYNTHESIS_FRAMES: AtomicUsize = AtomicUsize::new(80);
+static SYNTHESIS_VALUE: AtomicUsize = AtomicUsize::new(100);
+static SYNTHESIS_DELAY_NS: AtomicU64 = AtomicU64::new(0);
+static BUFFERED_PCM: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
+static PLAYED_PCM: std::sync::Mutex<Vec<Vec<i16>>> = std::sync::Mutex::new(Vec::new());
+static BUFFERED_CONTENT: std::sync::Mutex<Vec<(usize, usize)>> = std::sync::Mutex::new(Vec::new());
+static PLAYED_CONTENT: std::sync::Mutex<Vec<Vec<(usize, usize)>>> = std::sync::Mutex::new(Vec::new());
+const RESIDENT_SAMPLES: usize = 48_000 * 2 * 32;
 static PLAY_PTR: AtomicUsize = AtomicUsize::new(0);
 static APPENDS: AtomicUsize = AtomicUsize::new(0);
 static DMA_FRAMES: AtomicUsize = AtomicUsize::new(160);
@@ -66,13 +74,24 @@ mod drivers { pub mod audio {
     // FUNC: infinity_audio_open
     // DESC: Opens the deterministic reusable queue fixture.
     // ------------------=
-    pub fn infinity_audio_open(_:SecurityIdentity,_:u64,_:u64)->bool {true}
+    pub fn infinity_audio_open(_:SecurityIdentity,_:u64,_:u64)->bool {
+        assert!(!crate::PLAYING.load(Ordering::SeqCst));
+        crate::BUFFERED_PCM.lock().unwrap().clear();
+        crate::BUFFERED_CONTENT.lock().unwrap().clear();
+        true
+    }
     // ------------------------=
     // FUNC: infinity_audio_append
     // DESC: Records converted PCM before one continuous playback session.
     // ------------------=
-    pub fn infinity_audio_append(_:SecurityIdentity,_:u64,_:u64,pcm:&[i16],_:usize,_:usize)->bool {
-        assert_eq!(pcm.len(),320);assert!(pcm.iter().any(|v|*v!=0));
+    pub fn infinity_audio_append(_:SecurityIdentity,_:u64,_:u64,pcm:&[i16],start:usize,end:usize)->bool {
+        assert_eq!(pcm.len(),crate::SYNTHESIS_FRAMES.load(Ordering::SeqCst)*4);
+        assert!(pcm.iter().any(|v|*v!=0));
+        assert!(!crate::PLAYING.load(Ordering::SeqCst));
+        let mut buffered=crate::BUFFERED_PCM.lock().unwrap();
+        if pcm.len()>crate::RESIDENT_SAMPLES-buffered.len() {return false;}
+        buffered.extend_from_slice(pcm);
+        crate::BUFFERED_CONTENT.lock().unwrap().push((start,end));
         crate::PLAY_PTR.store(pcm.as_ptr() as usize,Ordering::SeqCst);
         crate::APPENDS.fetch_add(1,Ordering::SeqCst);true
     }
@@ -80,14 +99,18 @@ mod drivers { pub mod audio {
     // FUNC: infinity_audio_can_append
     // DESC: Allows the fixture to force a bounded queue rollover without accepting a partial span.
     // ------------------=
-    pub fn infinity_audio_can_append(_:SecurityIdentity,_:u64,_:usize,_:usize,_:usize)->Option<bool> {
-        Some(crate::QUEUE_ROOM.load(Ordering::SeqCst))
+    pub fn infinity_audio_can_append(_:SecurityIdentity,_:u64,count:usize,_:usize,_:usize)->Option<bool> {
+        Some(crate::QUEUE_ROOM.load(Ordering::SeqCst)
+            && count<=crate::RESIDENT_SAMPLES-crate::BUFFERED_PCM.lock().unwrap().len())
     }
     // ------------------------=
     // FUNC: infinity_audio_seal
     // DESC: Starts the deterministic continuous stream after its queue is complete.
     // ------------------=
     pub fn infinity_audio_seal(_:SecurityIdentity,_:u64)->bool {
+        assert!(!crate::PLAYING.load(Ordering::SeqCst));
+        crate::PLAYED_PCM.lock().unwrap().push(crate::BUFFERED_PCM.lock().unwrap().clone());
+        crate::PLAYED_CONTENT.lock().unwrap().push(crate::BUFFERED_CONTENT.lock().unwrap().clone());
         crate::PLAYING.store(crate::HOLD.load(Ordering::SeqCst),Ordering::SeqCst);
         PLAYED.fetch_add(1,Ordering::SeqCst);true
     }
@@ -173,8 +196,10 @@ unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, p
     frames: *mut usize, cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void) -> i32 {
     assert_eq!(capacity, 720000);
     if cancel(context) != 0 { *frames = 0; return 2; }
-    for i in 0..80 { *pcm.add(i) = 100; }
-    *frames = if INVALID.load(Ordering::SeqCst) { capacity + 1 } else { 80 };
+    let generated=SYNTHESIS_FRAMES.load(Ordering::SeqCst);
+    for i in 0..generated { *pcm.add(i) = SYNTHESIS_VALUE.load(Ordering::SeqCst) as i16; }
+    *frames = if INVALID.load(Ordering::SeqCst) { capacity + 1 } else { generated };
+    NOW.fetch_add(SYNTHESIS_DELAY_NS.load(Ordering::SeqCst),Ordering::SeqCst);
     if EXPIRE.load(Ordering::SeqCst) { NOW.fetch_add((voice_output::SYNTHESIS_SECONDS + 1) * 1_000_000_000, Ordering::SeqCst); }
     0
 }
@@ -295,4 +320,141 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert_eq!(PLAYED.load(Ordering::SeqCst),played);
     stop(owner);poll();
     INVALID.store(false,Ordering::SeqCst);
+
+    // Two individually valid 16.7-second phrases exceed the real resident
+    // queue. The second must remain intact while the first owns DMA, then
+    // continue in order without dropping the response or mutating playing PCM.
+    SYNTHESIS_FRAMES.store(400_000,Ordering::SeqCst);
+    SYNTHESIS_VALUE.store(100,Ordering::SeqCst);
+    let played=PLAYED.load(Ordering::SeqCst);
+    let batches=PLAYED_PCM.lock().unwrap().len();
+    submit_span(owner,1,b"First long phrase.",0,18,false).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Buffered);
+    assert!(submit_span(owner,1,b"Invalid rewind.",0,15,true).is_err());
+    SYNTHESIS_VALUE.store(200,Ordering::SeqCst);
+    submit_span(owner,1,b"Second long phrase.",18,37,true).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Ready);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1);
+    let first_playback=status().first_playback_ns;
+    assert_ne!(first_playback,0);
+    assert!(!can_prefetch());
+    for _ in 0..8 {poll();}
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1);
+    assert!(submit(owner,1,b"Must wait.").is_err());
+    assert!(!stop(runtime::execution::SecurityIdentity([2;16])));
+    assert!(PLAYING.load(Ordering::SeqCst));
+    NOW.fetch_add(17_000_000_000,Ordering::SeqCst);
+    PLAYING.store(false,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+2);
+    assert_eq!(status().first_playback_ns,first_playback);
+    {
+        let pcm=PLAYED_PCM.lock().unwrap();
+        assert_eq!(pcm[batches].len(),1_600_000);
+        assert_eq!(pcm[batches+1].len(),1_600_000);
+        assert!(pcm[batches][64..1_599_936].iter().all(|&sample|sample==100));
+        assert!(pcm[batches+1][64..1_599_936].iter().all(|&sample|sample==200));
+        assert!(pcm[batches].chunks_exact(2).all(|pair|pair[0]==pair[1]));
+        assert!(pcm[batches+1].chunks_exact(2).all(|pair|pair[0]==pair[1]));
+        let content=PLAYED_CONTENT.lock().unwrap();
+        assert_eq!(content[batches],[(0,18)]);
+        assert_eq!(content[batches+1],[(18,37)]);
+    }
+    PLAYING.store(false,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Complete);
+
+    // Cancellation and revocation during rollover must retire the retained
+    // phrase instead of playing it after the original generation drains.
+    for revoked in [false,true] {
+        submit_span(owner,1,b"First long phrase.",0,18,false).unwrap();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        poll();
+        submit_span(owner,1,b"Second long phrase.",18,37,true).unwrap();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        poll();assert_eq!(status().state,S::Ready);
+        let played=PLAYED.load(Ordering::SeqCst);
+        if revoked {REVOKED.store(true,Ordering::SeqCst);} else {assert!(stop(owner));}
+        poll();poll();
+        assert_eq!(status().state,S::Cancelled);
+        assert!(!PLAYING.load(Ordering::SeqCst));
+        assert_eq!(PLAYED.load(Ordering::SeqCst),played);
+        REVOKED.store(false,Ordering::SeqCst);
+    }
+    SYNTHESIS_FRAMES.store(80,Ordering::SeqCst);
+    SYNTHESIS_VALUE.store(100,Ordering::SeqCst);
+    submit(owner,1,b"Next turn.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Speaking);
+    PLAYING.store(false,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Complete);
+
+    // Structured timing distinguishes scheduler wait, actual synthesis and
+    // post-synthesis publication, then resets for the next response.
+    let accepted=NOW.load(Ordering::SeqCst)+1_000_000_000;
+    NOW.store(accepted,Ordering::SeqCst);
+    WORKER_BUSY.store(true,Ordering::SeqCst);
+    SYNTHESIS_DELAY_NS.store(2_500_000_000,Ordering::SeqCst);
+    submit(owner,1,b"Measured response.").unwrap();
+    assert_eq!(status().queued_ns,accepted);
+    assert_eq!(status().queue_wait_ns,0);
+    assert_eq!(status().first_playback_ns,0);
+    NOW.fetch_add(3_000_000,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Queued);
+    assert_eq!(status().queue_wait_ns,0);
+    WORKER_BUSY.store(false,Ordering::SeqCst);poll();
+    NOW.fetch_add(2_000_000,Ordering::SeqCst);
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(status().state,S::Ready);
+    assert_eq!(status().queue_wait_ns,5_000_000);
+    assert_eq!(status().synthesis_ns,2_500_000_000);
+    assert_eq!(status().first_playback_ns,0);
+    NOW.fetch_add(11_000_000,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Speaking);
+    assert_eq!(status().first_playback_ns,accepted+2_516_000_000);
+    PLAYING.store(false,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Complete);
+    assert_eq!(status().queued_ns,accepted);
+    assert_eq!(status().first_playback_ns,accepted+2_516_000_000);
+
+    // A cancelled queued request never reports a worker or audible start.
+    WORKER_BUSY.store(true,Ordering::SeqCst);
+    NOW.fetch_add(1_000_000,Ordering::SeqCst);
+    let cancelled_at=NOW.load(Ordering::SeqCst);
+    submit(owner,1,b"Cancel queued timing.").unwrap();
+    assert_eq!(status().queued_ns,cancelled_at);
+    assert_eq!(status().queue_wait_ns,0);
+    assert_eq!(status().first_playback_ns,0);
+    NOW.fetch_add(9_000_000,Ordering::SeqCst);
+    assert!(stop(owner));poll();
+    assert_eq!(status().state,S::Cancelled);
+    assert_eq!(status().queue_wait_ns,0);
+    assert_eq!(status().first_playback_ns,0);
+    assert!(unsafe { (&*(&raw const TASK)).is_none() });
+
+    // Later spans belong to the same response clock even though each has its
+    // own scheduling delay; sealing records the first hardware start once.
+    WORKER_BUSY.store(false,Ordering::SeqCst);
+    SYNTHESIS_DELAY_NS.store(1_000_000,Ordering::SeqCst);
+    let accepted=NOW.load(Ordering::SeqCst);
+    submit_span(owner,1,b"First.",0,6,false).unwrap();
+    NOW.fetch_add(2_000_000,Ordering::SeqCst);
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Buffered);
+    assert_eq!(status().queued_ns,accepted);
+    assert_eq!(status().queue_wait_ns,2_000_000);
+    assert_eq!(status().first_playback_ns,0);
+    submit_span(owner,1,b"Second.",6,13,true).unwrap();
+    assert_eq!(status().queued_ns,accepted);
+    assert_eq!(status().queue_wait_ns,0);
+    NOW.fetch_add(4_000_000,Ordering::SeqCst);
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Speaking);
+    assert_eq!(status().queued_ns,accepted);
+    assert_eq!(status().queue_wait_ns,4_000_000);
+    assert_eq!(status().first_playback_ns,accepted+8_000_000);
+    PLAYING.store(false,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Complete);
+    SYNTHESIS_DELAY_NS.store(0,Ordering::SeqCst);
 }

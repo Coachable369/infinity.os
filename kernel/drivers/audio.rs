@@ -300,9 +300,17 @@ pub fn infinity_audio_can_append(owner: crate::runtime::execution::SecurityIdent
 // DESC: Seals a prepared stream and starts one continuous resident HDA DMA session without scheduler-timed refills.
 // ------------------=
 pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, generation: u64) -> bool {
+    let Some(now) = crate::ui::performance::monotonic_ns() else { return false; };
     if LOCK.swap(true, Ordering::Acquire) { return false; }
     let started = unsafe {
         if !INFINITY_ACTIVE || INFINITY_STARTED || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { false }
+        // Preparation consumes part of the existing lease. Revalidate it and
+        // begin the finite playback window now, so a full resident buffer does
+        // not lose authority halfway through its audible contents.
+        else if !LEASE.filter(|current| current.owner == owner).and_then(|current| {
+            crate::runtime::with_runtime(|runtime|
+                current.renew_playback(&runtime.capabilities, now / 1_000_000_000).ok()).flatten()
+        }).is_some_and(|renewed| { LEASE = Some(renewed); true }) { false }
         else if (&mut *(&raw mut INFINITY_AUDIO)).seal(generation).is_err() { false }
         else if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut().filter(|device| !device.playing) {
             let resident = (&*(&raw const INFINITY_AUDIO)).sealed_resident(generation);
@@ -556,6 +564,19 @@ pub fn poll() {
     unsafe {
         if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut() {
             let now = crate::ui::performance::monotonic_ns();
+            // A prepared response may wait for another native synthesis job.
+            // Preserve the existing capability while that work is pending;
+            // playing streams retain their finite, nonrenewing DMA deadline.
+            if INFINITY_ACTIVE && !INFINITY_STARTED && !device.playing {
+                if let Some((current, now)) = LEASE.zip(now.map(|n| n / 1_000_000_000))
+                    .filter(|(lease, now)| lease.owner == INFINITY_OWNER
+                        && lease.deadline.saturating_sub(*now) <= 10) {
+                    let renewed = crate::runtime::with_runtime(|runtime|
+                        current.renew_playback(&runtime.capabilities, now).ok()).flatten();
+                    if let Some(renewed) = renewed { LEASE = Some(renewed); }
+                    else { finish_playback(device, PlaybackState::Denied); }
+                }
+            }
             if device.capturing {
                 let authorized = INPUT_LEASE.and_then(|l| now.map(|n| (l, n)))
                     .and_then(|(l, n)| crate::runtime::with_runtime(|r| l.valid(&r.capabilities, n / 1_000_000_000))).unwrap_or(false);

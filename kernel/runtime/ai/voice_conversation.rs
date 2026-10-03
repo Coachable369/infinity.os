@@ -18,6 +18,9 @@ pub mod indicator;
 mod speech_chunk;
 #[path = "voice_echo.rs"]
 mod voice_echo;
+#[cfg(not(test))]
+#[path = "voice_trace.rs"]
+mod voice_trace;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
@@ -72,16 +75,7 @@ const CAPTURE_CAPABILITY_REPLACE_NS: u64 = 45_000_000_000;
 // DESC: Emits privacy-safe conversation state checkpoints to the VM serial trace.
 // ------------------=
 fn trace(event: &[u8]) {
-    unsafe {
-        let mut record = [0u8; 96];
-        let prefix = b"[VOICE] ";
-        let event_length = event.len().min(record.len() - prefix.len() - 1);
-        record[..prefix.len()].copy_from_slice(prefix);
-        record[prefix.len()..prefix.len() + event_length]
-            .copy_from_slice(&event[..event_length]);
-        record[prefix.len() + event_length] = b'\n';
-        crate::output::write(&record[..prefix.len() + event_length + 1]);
-    }
+    voice_trace::write(b"[VOICE] ", event, super::qwen::workers::clock_ns());
 }
 
 #[cfg(test)]

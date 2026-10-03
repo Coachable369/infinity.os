@@ -97,7 +97,7 @@ def main():
     if not whisper.is_file():
         raise RuntimeError("Missing native Whisper engine")
     run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_recognize", "--undefined=native_prepare_recognition", "--undefined=native_diagnostics",
-        "--undefined=native_profile_read",
+        "--undefined=native_profile_read", "--undefined=native_verify_im2col1d",
         "-T", ROOT / "tools/voice-kokoro/private.ld",
         *syscall_aliases("close", "fstat", "getpid", "gettimeofday", "isatty", "kill",
                          "lseek", "open", "read", "sbrk", "stat", "unlink", "write"),

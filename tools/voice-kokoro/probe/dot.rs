@@ -7,6 +7,12 @@ struct Tile([u16; 640]);
 #[repr(C, align(16))]
 struct FloatTile([f32; 640]);
 unsafe extern "C" {
+    #[link_name = "infinity_kokoro_native_verify_im2col1d"]
+    // ------------------------=
+    // FUNC: verify_im2col1d
+    // DESC: Returns the number of byte-identical native convolution expansion cases verified against the upstream implementation.
+    // ------------------=
+    fn verify_im2col1d() -> u64;
     #[link_name = "infinity_kokoro_native_dot4"]
     fn dot4(kind: i32, n: i32, out: *mut f32, x: *const u16, stride: usize, y: *const u16) -> i32;
     #[link_name = "infinity_kokoro_ggml_vec_dot_f16"]
@@ -65,6 +71,7 @@ pub unsafe fn verify_tiles() -> u64 {
 // DESC: Checks aligned and fallback native dot products produce identical bits across row lengths, tails, and offsets.
 // ------------------=
 pub unsafe fn verify() -> u64 {
+    assert!(verify_im2col1d() >= 1000);
     let mut cases = 0;
     for n in 0..=65usize {
         for offset_x in 0..8usize {

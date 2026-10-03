@@ -300,4 +300,15 @@ impl AudioStream {
         if next.route != self.route { return Err(AudioError::Denied); }
         Ok(next)
     }
+    // ------------------------=
+    // FUNC: renew_playback
+    // DESC: Extends an unexpired playback lease using its existing owner and capability without extending capability lifetime.
+    // ------------------=
+    pub fn renew_playback(&self, caps: &CapabilityManager, now: u64) -> Result<Self, AudioError> {
+        if self.route != AudioRoute::Playback { return Err(AudioError::Denied); }
+        let deadline = now.checked_add(35).ok_or(AudioError::Expired)?;
+        let request = IopMessage::request(OperationId::AudioPlaybackStart, now, self.owner,
+            self.capability, deadline, now, &[]).map_err(|_| AudioError::Invalid)?;
+        self.renew(&request, caps, now)
+    }
 }

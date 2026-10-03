@@ -164,28 +164,45 @@ failed native speech job; it does not substitute a different voice.
 
 ## Conversational phrase playback and microphone interruption
 
-The conversation controller submits word-aligned spans from cumulative visible
-LLM output. The native engine retains up to 80 characters per coherent inference
-phrase, preferring word boundaries, and removes duplicated edge silence. This matches
-one native graph rather than waiting for a 160-character multi-graph batch.
-The first word-aligned span is released after roughly 24 visible characters so
-synthesis overlaps ongoing LLM generation. Completed spans enter one continuous
-resident DMA response, without scheduler-timed stops between spans. There is no
-intentional inter-phrase wait.
+The conversation controller coalesces short sentences from cumulative visible
+LLM output. A complete short answer stays in one synthesis request; the first
+span of a longer streamed answer is released at a word boundary between 64 and
+80 bytes. The native engine retains at most 80 bytes per inference graph and
+joins internal graph boundaries before returning PCM. This avoids running a
+separate graph for a greeting when the rest of its short answer is available.
+Prepared spans fill a resident DMA batch before playback starts. Answers longer
+than one batch retain the next prepared span for playback after the active batch
+finishes. Native synthesis is still slower than real time, so this buffering
+introduces latency; the resident-buffer contract does not claim immediate streaming.
 
-With conversation input explicitly enabled, authorized microphone capture stays
-open during thinking and speaking. Three voiced 20-ms frames interrupt playback
-and cancel the old response, preserving the utterance onset for recognition.
-Typed replies do not silently enable a disabled microphone. Logout, lock, mute,
-and cancellation close capture and erase its private buffers.
+The reproducible native comparison is:
 
-A bounded playback-reference correlator subtracts delayed direct-path speaker
-echo before VAD, retaining independent near-end speech. Recent reference samples
-remain available for a 200-ms acoustic tail instead of discarding microphone
-input. This is not a full room-adaptive acoustic echo canceller: reverberant
-speakers and real microphone interruption remain installed-device acceptance
-gates. Behavioral tests cover delayed scaled echo, mixed human speech, onset
-preservation, immediate DMA cancellation, and voice off/on lifecycle handling.
+```sh
+./build-kit run python3 tools/voice-kokoro/probe/coalescing.py
+```
+
+For `Hello! How can I assist you today?`, an October 3 ARM guest comparison
+alternated split and joined synthesis twice with a warm model. Split synthesis
+averaged 5.466 seconds, joined synthesis 3.957 seconds (28% less time). The split
+version also generated 0.85 seconds more audio from independent model boundaries.
+Both variants produced deterministic PCM across repeats. These are isolated
+native synthesis measurements, not installed end-to-end conversational timings.
+The same native build's one-dimensional convolution expansion produced identical
+PCM after hoisting repeated padding checks; measured expansion time fell 13%,
+with roughly 3.6% less synthesis time for the paragraph case. The native regression
+compares optimized expansion directly with upstream output across types, padding,
+dilation, strides, batches, and worker partitions.
+
+The active response owns output until playback drains. Microphone energy does
+not cancel it; automatic barge-in is currently disabled. When voice input remains
+enabled, continuous listening resumes after the response completes. Typed replies
+do not silently enable a disabled microphone. Logout, lock, mute, and explicit
+cancellation close capture and erase its private buffers.
+
+The reusable audio component includes a bounded playback-reference correlator
+with behavioral coverage for delayed echo and mixed human speech. Its availability
+does not mean echo-controlled barge-in is enabled in the conversation controller.
+Real microphone and speaker behavior remains an installed-device acceptance gate.
 
 Unfinished upstream modifications are preserved as reviewable patches in
 `third_party/patches/voice-kokoro`. Generated clones, dependency checkouts and

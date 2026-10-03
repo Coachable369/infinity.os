@@ -19,6 +19,10 @@ static NOW: AtomicUsize = AtomicUsize::new(1);
 static TURNS: AtomicUsize = AtomicUsize::new(0);
 static STREAMING: AtomicBool = AtomicBool::new(false);
 static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
+static LONG_REPLY: AtomicBool = AtomicBool::new(false);
+const SHORT_RESPONSE: &[u8] = b"Hi. This is the next phrase of the response.";
+const LONG_RESPONSE: &[u8] = b"This streamed response contains enough words to start a bounded synthesis request before the full answer has arrived while keeping each word in order and preserving the final part of the answer.";
+static SPANS: std::sync::Mutex<Vec<(usize,usize,bool)>> = std::sync::Mutex::new(Vec::new());
 static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
 static INPUT_LENGTH: AtomicUsize = AtomicUsize::new(0);
 static DIRECT_TRANSCRIPT: AtomicBool = AtomicBool::new(false);
@@ -152,10 +156,11 @@ mod chat {
     impl Message {
         // ------------------------=
         // FUNC: text
-        // DESC: Supplies no fabricated assistant speech.
+        // DESC: Supplies bounded short and multi-span response bytes with controllable streaming visibility.
         // ------------------=
         pub fn text(&self)->&[u8]{
-            let bytes: &[u8] = if crate::TURNS.load(crate::Ordering::SeqCst)>1 {b"New response."} else {b"Hi. This is the next phrase of the response."};
+            let bytes: &[u8] = if crate::LONG_REPLY.load(crate::Ordering::SeqCst) {crate::LONG_RESPONSE}
+                else if crate::TURNS.load(crate::Ordering::SeqCst)>1 {b"New response."} else {crate::SHORT_RESPONSE};
             &bytes[..bytes.len().min(crate::VISIBLE.load(crate::Ordering::SeqCst))]
         }
     }
@@ -350,7 +355,12 @@ mod voice_output {
     // FUNC: submit_span
     // DESC: Records a generation-safe content span through the conversation fixture.
     // ------------------=
-    pub fn submit_span(owner:SecurityIdentity,cap:u64,text:&[u8],_:usize,_:usize,_:bool)->Result<(),()>{submit(owner,cap,text)}
+    pub fn submit_span(owner:SecurityIdentity,cap:u64,text:&[u8],start:usize,end:usize,final_span:bool)->Result<(),()>{
+        assert_eq!(text.len(),end-start);
+        submit(owner,cap,text)?;
+        crate::SPANS.lock().unwrap().push((start,end,final_span));
+        Ok(())
+    }
     // ------------------------=
     // FUNC: seal_buffered
     // DESC: Starts deterministic playback after every response span is prepared.
@@ -401,24 +411,21 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
-    assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
+    assert_eq!(*PHRASES.lock().unwrap(),vec![SHORT_RESPONSE.to_vec()]);
     // Queued synthesis and active playback retain exclusive conversation audio
     // ownership until every response phrase has completed.
     conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
     OUTPUT.store(1,Ordering::SeqCst);PLAYBACK_FRAMES.store(50,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::synchronized_reply_length(1,42),0);
+    assert_eq!(conversation::synchronized_reply_length(1,SHORT_RESPONSE.len()),0);
     PLAYBACK_FRAMES.store(100,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::synchronized_reply_length(1,42),3);
+    assert_eq!(conversation::synchronized_reply_length(1,SHORT_RESPONSE.len()),3);
     let captures=CAPTURES.load(Ordering::SeqCst);
     assert_eq!(captures,captures_before_reply);
-    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Speaking);
-    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
-    assert_eq!(PHRASES.lock().unwrap().len(),2);
     MODEL_READY.store(false,Ordering::SeqCst);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Starting);
+    assert_eq!(PHRASES.lock().unwrap().len(),1);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
@@ -486,7 +493,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     let phrases=PHRASES.lock().unwrap().len();
     NOW.store(3_000_000_002,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(conversation::state().0,State::Listening);
     assert_eq!(PHRASES.lock().unwrap().len(),phrases);
     conversation::stop(owner);
     conversation::poll();assert_eq!(conversation::state().0,State::Off);
@@ -505,14 +512,42 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll(); assert_eq!(conversation::state().0,State::Thinking);
     let before=PHRASES.lock().unwrap().len();
     VISIBLE.store(4,Ordering::SeqCst);
-    conversation::poll(); assert_eq!(conversation::state().0,State::Speaking);
-    assert_eq!(PHRASES.lock().unwrap()[before],b"Hi.");
-    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Thinking);
+    conversation::poll(); assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before);
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
-    conversation::poll(); assert_eq!(PHRASES.lock().unwrap().len(),before+2);
+    conversation::poll(); assert_eq!(PHRASES.lock().unwrap().len(),before+1);
+    assert_eq!(PHRASES.lock().unwrap()[before],SHORT_RESPONSE);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
+
+    // Long streamed answers still publish before generation completes. Every
+    // accepted byte and content range reaches exactly one synthesis request.
+    LONG_REPLY.store(true,Ordering::SeqCst);
+    STREAMING.store(true,Ordering::SeqCst);VISIBLE.store(4,Ordering::SeqCst);
+    let before=PHRASES.lock().unwrap().len();
+    let spans=SPANS.lock().unwrap().len();
+    conversation::speak_visible_reply(owner,1);
+    conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before);
+    VISIBLE.store(78,Ordering::SeqCst);
+    conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before+1);
+    let first_length=PHRASES.lock().unwrap()[before].len();
+    assert!(first_length<=80 && first_length<LONG_RESPONSE.len());
+    assert_eq!(SPANS.lock().unwrap()[spans],(0,first_length,false));
+    OUTPUT.store(4,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before+1);
+    STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
+    conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before+2);
+    assert_eq!(PHRASES.lock().unwrap()[before..].concat(),LONG_RESPONSE);
+    assert_eq!(SPANS.lock().unwrap()[spans+1],(first_length,LONG_RESPONSE.len(),true));
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Speaking);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Off);
+    LONG_REPLY.store(false,Ordering::SeqCst);
     STREAMING.store(false,Ordering::SeqCst);TURNS.store(0,Ordering::SeqCst);
     assert!(conversation::start(owner));
     conversation::speak_visible_reply(owner,1);conversation::poll();
@@ -558,8 +593,6 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
-    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
     MICROPHONE.lock().unwrap().extend([2400;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);

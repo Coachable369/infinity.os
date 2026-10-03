@@ -4,26 +4,25 @@
 // DESC: Releases a complete sentence or a bounded word-aligned chunk, preserving low first-audio latency and longer lookahead prosody.
 // ------------------=
 pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
-    // The native bridge safely divides this outer phrase into 80-byte model
-    // segments and concatenates their PCM before one DMA submission. Keep the
-    // whole sentence resident so segment boundaries cannot stop the device.
-    // Keep the first dispatch inside one native inference graph. Dispatching
-    // after only a few words adds another slower-than-realtime graph to nearly
-    // every answer and leaves a second model-edge pause in the final waveform.
+    // Coalesce available short sentences before dispatch. Sending "Hello!"
+    // separately from the rest of a short answer needlessly runs two graphs.
+    // Each bounded span still becomes resident before hardware playback.
     const INITIAL_LIMIT: usize = 80;
     const PROVIDER_LIMIT: usize = 160;
     const FIRST_WORD_WINDOW: usize = 64;
     let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
     let scan_limit = bytes.len().min(phrase_limit);
+    if complete && bytes.len() <= phrase_limit { return bytes.len(); }
+    let mut sentence_end = 0;
     for i in 0..scan_limit {
         if matches!(bytes[i], b'.' | b'!' | b'?')
             && (bytes.get(i + 1).is_some_and(u8::is_ascii_whitespace) || (complete && i + 1 == bytes.len())) {
-            return i + 1;
+            sentence_end = i + 1;
         }
     }
-    // The first audible phrase must follow visible text by only a few words.
-    // Waiting for sentence punctuation made a long native response appear to
-    // be queued for close to a minute even though tokens were already visible.
+    if sentence_end >= FIRST_WORD_WINDOW { return sentence_end; }
+    // Begin bounded synthesis while the LLM is still generating a long answer,
+    // but do not turn a tiny greeting into its own expensive native graph.
     if initial && !complete && bytes.len() >= FIRST_WORD_WINDOW {
         if let Some(offset) = bytes[FIRST_WORD_WINDOW..scan_limit]
             .iter()
@@ -32,7 +31,6 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
             return FIRST_WORD_WINDOW + offset + 1;
         }
     }
-    if complete && bytes.len() <= phrase_limit { return bytes.len(); }
     if bytes.len() >= phrase_limit {
         if let Some(i)=bytes[..phrase_limit].iter().rposition(u8::is_ascii_whitespace) {return i+1;}
         // An indivisible oversized word must reach the provider's explicit
@@ -84,7 +82,7 @@ mod tests {
 
     // ------------------------=
     // FUNC: lookahead_stays_within_one_native_graph
-    // DESC: Verifies queued followup speech is ready after one native graph while the first phrase retains its lower-latency bound.
+    // DESC: Verifies bounded first dispatch and lossless final followup batching.
     // ------------------=
     #[test]
     fn lookahead_stays_within_one_native_graph() {
@@ -105,5 +103,21 @@ mod tests {
         assert_eq!(super::next(text,false,true),72);
         let complete=super::next(text,true,true);
         assert_eq!(complete,72);
+    }
+
+    // ------------------------=
+    // FUNC: short_sentences_share_one_synthesis_request
+    // DESC: Prevents a greeting and short followup sentence from incurring separate synthesis jobs.
+    // ------------------=
+    #[test]
+    fn short_sentences_share_one_synthesis_request() {
+        let text = b"Hello! How can I help you today?";
+        for available in 1..text.len() {
+            assert_eq!(super::next(&text[..available], false, true), 0);
+        }
+        assert_eq!(super::next(text, true, true), text.len());
+        let followup = b"Yes. It is ready. You can use it now.";
+        assert_eq!(super::next(followup, true, false), followup.len());
+        assert_eq!(super::next(b"Hi!", true, true), 3);
     }
 }
