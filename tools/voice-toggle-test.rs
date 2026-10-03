@@ -25,7 +25,11 @@ const LONG_RESPONSE: &[u8] = b"This streamed response contains enough words to s
 static SPANS: std::sync::Mutex<Vec<(usize,usize,bool)>> = std::sync::Mutex::new(Vec::new());
 static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
 static INPUT_LENGTH: AtomicUsize = AtomicUsize::new(0);
-static DIRECT_TRANSCRIPT: AtomicBool = AtomicBool::new(false);
+static SELECTED_MODEL: AtomicUsize = AtomicUsize::new(0);
+static WAKE_SETTING: AtomicUsize = AtomicUsize::new(0);
+static TEST_TRANSCRIPT: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+static COMPOSER: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
+static PROMPTS: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
@@ -46,7 +50,7 @@ mod runtime {
         #[derive(PartialEq)] pub enum SessionState {Active,Locked}
         pub struct Session {pub id:super::execution::SecurityIdentity,pub user:super::execution::SecurityIdentity,pub state:SessionState}
         pub struct AiProfile {pub speech_output_enabled:bool}
-        #[derive(Clone,Copy)] pub enum WakeWord {Infinity,Computer}
+        #[derive(Clone,Copy,PartialEq)] pub enum WakeWord {Infinity,Computer}
         impl WakeWord {
             // ------------------------=
             // FUNC: phrase
@@ -71,9 +75,9 @@ mod runtime {
         pub fn ai_profile(&self,_:execution::SecurityIdentity)->Option<identity::AiProfile>{Some(identity::AiProfile{speech_output_enabled:true})}
         // ------------------------=
         // FUNC: voice_profile
-        // DESC: Supplies the default durable wake phrase to the production controller.
+        // DESC: Supplies the selected durable wake phrase to the production controller.
         // ------------------=
-        pub fn voice_profile(&self,_:execution::SecurityIdentity)->Option<identity::VoiceProfile>{Some(identity::VoiceProfile{wake_word:identity::WakeWord::Infinity})}
+        pub fn voice_profile(&self,_:execution::SecurityIdentity)->Option<identity::VoiceProfile>{Some(identity::VoiceProfile{wake_word:if crate::WAKE_SETTING.load(crate::Ordering::SeqCst)==0 {identity::WakeWord::Infinity}else{identity::WakeWord::Computer}})}
     }
     pub struct Caps;
     impl Caps {
@@ -170,7 +174,7 @@ mod chat {
         // FUNC: selected_model
         // DESC: Selects the fixture native model.
         // ------------------=
-        pub fn selected_model(&self)->usize{0}
+        pub fn selected_model(&self)->u32{crate::SELECTED_MODEL.load(crate::Ordering::SeqCst) as u32}
         // ------------------------=
         // FUNC: input
         // DESC: Exposes whether recognized text remains queued in the composer.
@@ -200,7 +204,7 @@ mod chat {
         // FUNC: push_input
         // DESC: Records recognized characters in the bounded composer fixture.
         // ------------------=
-        pub fn push_input(&mut self,_:u8)->bool{crate::INPUT_LENGTH.fetch_add(1,crate::Ordering::SeqCst);true}
+        pub fn push_input(&mut self,byte:u8)->bool{crate::COMPOSER.lock().unwrap().push(byte);crate::INPUT_LENGTH.fetch_add(1,crate::Ordering::SeqCst);true}
         // ------------------------=
         // FUNC: message_count
         // DESC: Reports no completed messages during lifecycle tests.
@@ -235,7 +239,8 @@ impl Ai {
     // DESC: Rejects unused generation in lifecycle-only tests.
     // ------------------=
     fn submit_chat(&mut self)->bool{
-        if !MODEL_READY.load(Ordering::SeqCst) {return false;}
+        if !MODEL_READY.load(Ordering::SeqCst) || !CHAT_READY.load(Ordering::SeqCst) {return false;}
+        PROMPTS.lock().unwrap().push(std::mem::take(&mut *COMPOSER.lock().unwrap()));
         TURNS.fetch_add(1,Ordering::SeqCst);INPUT_LENGTH.store(0,Ordering::SeqCst);true
     }
 }
@@ -291,15 +296,12 @@ mod voice_input {
     }
     // ------------------------=
     // FUNC: take
-    // DESC: Provides no fabricated transcript.
+    // DESC: Returns the controlled recognizer result to exercise production wake admission and prompt stripping.
     // ------------------=
     pub fn take(_:SecurityIdentity,out:&mut[u8])->Result<usize,()>{
         crate::READY.store(false,crate::Ordering::SeqCst);
-        let transcript: &[u8] = if crate::DIRECT_TRANSCRIPT.load(crate::Ordering::SeqCst) {
-            b"hello"
-        } else {
-            b"Infinity test"
-        };
+        let selected = crate::TEST_TRANSCRIPT.lock().unwrap();
+        let transcript: &[u8] = selected.as_deref().unwrap_or(b"Infinity test");
         out[..transcript.len()].copy_from_slice(transcript);
         Ok(transcript.len())
     }
@@ -429,7 +431,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
-    assert!(conversation::wake_armed());
+    assert!(!conversation::wake_armed());
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     for terminal in [1,2] {
         let opened=CAPTURES.load(Ordering::SeqCst);
@@ -613,16 +615,148 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),grants+1);
     conversation::stop(owner);conversation::poll();
 
-    // An explicitly enabled visible voice session must submit a valid Whisper
-    // transcript even when recognition omits the optional wake phrase.
-    DIRECT_TRANSCRIPT.store(true,Ordering::SeqCst);
-    TURNS.store(0,Ordering::SeqCst);
-    assert!(conversation::start(owner));
+    wake_gate_tests(owner);
+}
+
+// ------------------------=
+// FUNC: recognize_voice
+// DESC: Drives real VAD and conversation transitions with a controlled recognized transcript.
+// ------------------=
+fn recognize_voice(transcript: &[u8]) {
+    assert_eq!(conversation::state().0,conversation::State::Listening);
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(transcript.to_vec());
     MICROPHONE.lock().unwrap().extend([2100;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
-    for _ in 0..10 {conversation::poll();if conversation::state().0==State::Thinking {break;}}
-    assert_eq!(conversation::state().0,State::Thinking);
+    for _ in 0..10 {
+        conversation::poll();
+        if conversation::state().0==conversation::State::Recognizing {break;}
+    }
+    assert_eq!(conversation::state().0,conversation::State::Recognizing);
+    conversation::poll();
+    *TEST_TRANSCRIPT.lock().unwrap()=None;
+}
+
+// ------------------------=
+// FUNC: complete_voice_reply
+// DESC: Drains the accepted spoken response and verifies that listening resumes without authorizing another command.
+// ------------------=
+fn complete_voice_reply() {
+    assert_eq!(conversation::state().0,conversation::State::Thinking);
+    conversation::poll();
+    assert_eq!(conversation::state().0,conversation::State::Speaking);
+    OUTPUT.store(2,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,conversation::State::Listening);
+    assert!(!conversation::wake_armed());
+}
+
+// ------------------------=
+// FUNC: wake_gate_tests
+// DESC: Verifies every voice request needs a fresh configured wake, while one-shot wake capture, model changes, toggles, queued requests and typed drafts remain safe.
+// ------------------=
+fn wake_gate_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    TURNS.store(0,Ordering::SeqCst);
+    PROMPTS.lock().unwrap().clear();
+    assert!(conversation::start(owner));
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    for transcript in [b"hello" as &[u8],b"discuss infinity today",b"Infinityx help"] {
+        recognize_voice(transcript);
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(!conversation::wake_armed());
+        assert_eq!(TURNS.load(Ordering::SeqCst),0);
+        assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),0);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    }
+    recognize_voice(b"Infinity, hello");
+    assert_eq!(*PROMPTS.lock().unwrap(),vec![b"hello".to_vec()]);
+    complete_voice_reply();
+    recognize_voice(b"this is ambient speech after a reply");
     assert_eq!(TURNS.load(Ordering::SeqCst),1);
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+
+    // An explicit wake-only utterance permits exactly one following command.
+    recognize_voice(b"Infinity");
+    assert!(conversation::wake_armed());
+    assert_eq!(TURNS.load(Ordering::SeqCst),1);
+    recognize_voice(b"Infinity");
+    assert!(conversation::wake_armed());
+    assert_eq!(TURNS.load(Ordering::SeqCst),1);
+    recognize_voice(b"help me");
+    assert!(!conversation::wake_armed());
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"help me");
+    complete_voice_reply();
+    recognize_voice(b"another unaddressed request");
+    assert_eq!(TURNS.load(Ordering::SeqCst),2);
+    assert_eq!(conversation::state().0,State::Listening);
+
+    recognize_voice(b"Infinity");
+    NOW.fetch_add(10_000_000_000,Ordering::SeqCst);
+    conversation::poll();
+    assert!(!conversation::wake_armed());
+    recognize_voice(b"expired command");
+    assert_eq!(TURNS.load(Ordering::SeqCst),2);
+    recognize_voice(b"Infinity");
+    assert!(conversation::toggle(owner));conversation::poll();
+    assert_eq!(conversation::state().0,State::Off);
+    assert!(conversation::toggle(owner));
+    assert!(!conversation::wake_armed());
+    recognize_voice(b"command after toggle");
+    assert_eq!(TURNS.load(Ordering::SeqCst),2);
+
+    recognize_voice(b"Infinity");
+    SELECTED_MODEL.store(1,Ordering::SeqCst);conversation::poll();
+    assert!(!conversation::wake_armed());
+    recognize_voice(b"command after model switch");
+    assert_eq!(TURNS.load(Ordering::SeqCst),2);
+    recognize_voice(b"Infinity");
+    CHAT_READY.store(false,Ordering::SeqCst);MODEL_READY.store(false,Ordering::SeqCst);
+    conversation::poll();assert!(!conversation::wake_armed());
+    recognize_voice(b"command during model reload");
+    assert_eq!(conversation::state().0,State::Listening);
+    CHAT_READY.store(true,Ordering::SeqCst);MODEL_READY.store(true,Ordering::SeqCst);
+    recognize_voice(b"command after model reload");
+    assert_eq!(TURNS.load(Ordering::SeqCst),2);
+
+    // Switching the configured wake revokes an already armed old phrase.
+    recognize_voice(b"Infinity");
+    WAKE_SETTING.store(1,Ordering::SeqCst);conversation::poll();
+    assert!(!conversation::wake_armed());
+    for transcript in [b"Infinity help" as &[u8],b"my computer is fast",b"Computerized help"] {
+        recognize_voice(transcript);
+        assert_eq!(conversation::state().0,State::Listening);
+        assert_eq!(TURNS.load(Ordering::SeqCst),2);
+    }
+    recognize_voice(b"Computer, help");
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"help");
+    complete_voice_reply();
+    assert_eq!(TURNS.load(Ordering::SeqCst),3);
+
+    // Ignored speech must not overwrite or auto-submit a typed composer.
+    with_ai_runtime(|ai| for &byte in b"typed question" {assert!(ai.chat.push_input(byte));});
+    recognize_voice(b"ambient words");
+    assert_eq!(*COMPOSER.lock().unwrap(),b"typed question");
+    assert_eq!(TURNS.load(Ordering::SeqCst),3);
+    with_ai_runtime(|ai| assert!(ai.submit_chat()));
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"typed question");
+    conversation::speak_visible_reply(owner,1);
+    complete_voice_reply();
+
+    // A wake-addressed request queued during reload retains authorization for
+    // that one request, never opening a wake-free input window afterwards.
+    CHAT_READY.store(false,Ordering::SeqCst);MODEL_READY.store(false,Ordering::SeqCst);
+    recognize_voice(b"Computer, queued command");
+    assert_eq!(conversation::state().0,State::Submitting);
+    assert_eq!(TURNS.load(Ordering::SeqCst),4);
+    assert_eq!(*COMPOSER.lock().unwrap(),b"queued command");
+    CHAT_READY.store(true,Ordering::SeqCst);MODEL_READY.store(true,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(TURNS.load(Ordering::SeqCst),5);
+    complete_voice_reply();
+    recognize_voice(b"still ambient");
+    assert_eq!(TURNS.load(Ordering::SeqCst),5);
+    assert_eq!(conversation::state().0,State::Listening);
     conversation::stop(owner);conversation::poll();
-    DIRECT_TRANSCRIPT.store(false,Ordering::SeqCst);
+    WAKE_SETTING.store(0,Ordering::SeqCst);SELECTED_MODEL.store(0,Ordering::SeqCst);
 }

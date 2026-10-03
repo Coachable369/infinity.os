@@ -5,6 +5,8 @@ use crate::runtime::{audio::PlaybackState, capability::CapabilityType, execution
 use super::{types::AiError, voice::SpeechSynthesisProvider};
 const SOURCE_RATE: u32 = 24000;
 const CAPACITY: usize = SOURCE_RATE as usize * 30;
+const NATIVE_ENGINE_BUSY: i32 = 8;
+const WAITING_ENGINE: usize = 9;
 // Kokoro takes ~3.3 seconds for 1.25 seconds of speech on the native probe.
 // This is a bounded asynchronous execution budget, not a performance claim.
 pub const SYNTHESIS_SECONDS: u64 = 90;
@@ -98,6 +100,8 @@ impl SpeechSynthesisProvider for NativeSpeech {
             let mut frames = 0;
             let error = infinity_kokoro_native_synthesize(text.as_ptr(), text.len(), output.as_mut_ptr(),
                 output.len(), &mut frames, kokoro_cancelled, core::ptr::null_mut());
+            ERROR = error;
+            if error == NATIVE_ENGINE_BUSY { return Err(AiError::QueueFull); }
             let mut diagnostics = [0usize; 12];
             infinity_kokoro_native_diagnostics(diagnostics.as_mut_ptr());
             PEAK = diagnostics[1]; ERROR = error;
@@ -126,8 +130,12 @@ unsafe fn worker() {
     let start = super::qwen::workers::clock_ns();
     QUEUE_WAIT_NS.store(start.saturating_sub(SPAN_QUEUED_NS.load(Ordering::Acquire)), Ordering::Release);
     STATE.store(2, Ordering::Release);
-    trace(b"synthesis started");
+    if ERROR != NATIVE_ENGINE_BUSY { trace(b"synthesis started"); }
     let result = NativeSpeech.synthesize(&(&*(&raw const TEXT))[..LENGTH], &mut *(&raw mut PCM));
+    if ERROR == NATIVE_ENGINE_BUSY && cancelled() == 0 {
+        STATE.store(WAITING_ENGINE, Ordering::Release);
+        return;
+    }
     FRAMES = result.unwrap_or(0);
     if result.is_ok() && cancelled() == 0 {
         OUTPUT_SAMPLES = ((FRAMES * RATE as usize + SOURCE_RATE as usize - 1) / SOURCE_RATE as usize) * 2;
@@ -269,13 +277,13 @@ pub fn stop(owner: SecurityIdentity) -> bool {
 // ------------------=
 pub fn status() -> OutputStatus {
     let state = STATE.load(Ordering::Acquire);
-    OutputStatus { state: match state {1=>OutputState::Queued,2=>OutputState::Synthesizing,3=>OutputState::Ready,4=>OutputState::Failed,5=>OutputState::Speaking,6=>OutputState::Cancelled,7=>OutputState::Complete,8=>OutputState::Buffered,_=>OutputState::Idle},
-        frames: if state >= 3 { unsafe { FRAMES } } else { 0 }, peak_bytes: if state >= 3 { unsafe { PEAK } } else { 0 },
-        synthesis_ns: if state >= 3 { unsafe { ELAPSED } } else { 0 },
+    OutputStatus { state: match state {1|WAITING_ENGINE=>OutputState::Queued,2=>OutputState::Synthesizing,3=>OutputState::Ready,4=>OutputState::Failed,5=>OutputState::Speaking,6=>OutputState::Cancelled,7=>OutputState::Complete,8=>OutputState::Buffered,_=>OutputState::Idle},
+        frames: if (3..=8).contains(&state) { unsafe { FRAMES } } else { 0 }, peak_bytes: if (3..=8).contains(&state) { unsafe { PEAK } } else { 0 },
+        synthesis_ns: if (3..=8).contains(&state) { unsafe { ELAPSED } } else { 0 },
         queued_ns: RESPONSE_QUEUED_NS.load(Ordering::Acquire),
         queue_wait_ns: QUEUE_WAIT_NS.load(Ordering::Acquire),
         first_playback_ns: FIRST_PLAYBACK_NS.load(Ordering::Acquire),
-        error: if state >= 3 { unsafe { ERROR } } else { 0 } }
+        error: if (3..=8).contains(&state) { unsafe { ERROR } } else { 0 } }
 }
 // ------------------------=
 // FUNC: retire
@@ -385,7 +393,7 @@ pub fn poll() {
                     if playback != PlaybackState::Complete {
                         CANCEL.store(true, Ordering::Release);
                         PENDING_AFTER_DRAIN = false;
-                    } else if matches!(state, 1 | 2 | 3) {
+                    } else if matches!(state, 1 | 2 | 3 | WAITING_ENGINE) {
                         PLAYBACK_DRAINED = true;
                     }
                     if state == 5 && !PENDING_AFTER_DRAIN {
@@ -396,11 +404,16 @@ pub fn poll() {
             }
         }
         state = STATE.load(Ordering::Acquire);
-        if state <= 3 {
+        if state <= 3 || state == WAITING_ENGINE {
             let now = super::qwen::workers::clock_ns() / 1_000_000_000;
             let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(CAPABILITY, OWNER,
                 CapabilityType::AudioOutput, 0, 1, 0, now).is_ok()).unwrap_or(false);
             if !valid { CANCEL.store(true, Ordering::Release); }
+        }
+        if state == WAITING_ENGINE {
+            DISPATCHED = false;
+            state = 1;
+            STATE.store(state, Ordering::Release);
         }
         if state == 1 && !DISPATCHED {
             if cancelled() != 0 { STATE.store(6, Ordering::Release); retire(); }

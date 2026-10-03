@@ -13,6 +13,11 @@ static QUEUE_ROOM: AtomicBool = AtomicBool::new(true);
 static SYNTHESIS_FRAMES: AtomicUsize = AtomicUsize::new(80);
 static SYNTHESIS_VALUE: AtomicUsize = AtomicUsize::new(100);
 static SYNTHESIS_DELAY_NS: AtomicU64 = AtomicU64::new(0);
+static NATIVE_BUSY: AtomicBool = AtomicBool::new(false);
+static PREPARE_ENTERED: AtomicBool = AtomicBool::new(false);
+static PREPARE_RELEASE: AtomicBool = AtomicBool::new(false);
+static PREPARE_HOLD: AtomicBool = AtomicBool::new(true);
+static RECOGNIZED_SAMPLES: AtomicUsize = AtomicUsize::new(0);
 static BUFFERED_PCM: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
 static PLAYED_PCM: std::sync::Mutex<Vec<Vec<i16>>> = std::sync::Mutex::new(Vec::new());
 static BUFFERED_CONTENT: std::sync::Mutex<Vec<(usize, usize)>> = std::sync::Mutex::new(Vec::new());
@@ -27,7 +32,18 @@ mod runtime {
         #[derive(Clone, Copy, PartialEq, Eq)]
         pub struct SecurityIdentity(pub [u8; 16]);
     }
-    pub mod capability { pub enum CapabilityType { AudioOutput } }
+    pub mod capability { pub enum CapabilityType { AudioOutput, AudioInput } }
+    pub mod iop {
+        pub enum OperationId { SpeechRecognize }
+        pub struct IopMessage { pub capability:u64 }
+        impl IopMessage {
+            // ------------------------=
+            // FUNC: request
+            // DESC: Retains the supplied capability through the recognition authorization seam.
+            // ------------------=
+            pub fn request(_:OperationId,_:u64,_:super::execution::SecurityIdentity,capability:u64,_:u64,_:u64,_:&[u8])->Result<Self,()>{Ok(Self{capability})}
+        }
+    }
     pub mod audio {
         #[derive(PartialEq, Eq)]
         pub enum PlaybackState { Playing, Complete, Cancelled, Denied }
@@ -151,6 +167,23 @@ mod drivers { pub mod audio {
 } }
 mod types { #[derive(Clone, Copy, Debug)] pub enum AiError { InvalidRequest, QueueFull, AccessDenied, ProviderUnavailable } }
 mod voice {
+    pub const RECOGNITION_DEADLINE_SECONDS:u64=45;
+    pub trait SpeechRecognitionProvider {
+        // ------------------------=
+        // FUNC: recognize_pcm
+        // DESC: Mirrors the production recognition provider interface.
+        // ------------------=
+        fn recognize_pcm(&mut self,pcm:&[i16],rate:u32,out:&mut[u8])->Result<usize,super::types::AiError>;
+    }
+    // ------------------------=
+    // FUNC: authorize_recognition
+    // DESC: Exercises production job authorization with the fixture's revocable capabilities.
+    // ------------------=
+    pub fn authorize_recognition(request:&super::runtime::iop::IopMessage,owner:super::runtime::execution::SecurityIdentity,
+        _:usize,caps:&super::runtime::Caps,now:u64)->Result<(),super::types::AiError>{
+        caps.validate(request.capability,owner,super::runtime::capability::CapabilityType::AudioInput,0,1,0,now)
+            .map_err(|_|super::types::AiError::AccessDenied)
+    }
     pub trait SpeechSynthesisProvider {
         // ------------------------=
         // FUNC: synthesize
@@ -159,18 +192,7 @@ mod voice {
         fn synthesize(&mut self, text: &[u8], output: &mut [i16]) -> Result<usize, super::types::AiError>;
     }
 }
-mod voice_input {
-    // ------------------------=
-    // FUNC: invalidate
-    // DESC: Records no recognizer state in the isolated output harness.
-    // ------------------=
-    pub fn invalidate() {}
-    // ------------------------=
-    // FUNC: prepare
-    // DESC: Accepts post-synthesis recognizer warmup in the isolated output harness.
-    // ------------------=
-    pub fn prepare() -> bool { true }
-}
+#[path = "../kernel/runtime/ai/voice_input.rs"] mod voice_input;
 mod qwen { pub mod workers {
     // ------------------------=
     // FUNC: clock_ns
@@ -181,7 +203,7 @@ mod qwen { pub mod workers {
     // FUNC: background
     // DESC: Queues without executing on the submitting thread.
     // ------------------=
-    pub fn background(task: unsafe fn()) -> bool {
+    pub unsafe fn background(task: unsafe fn()) -> bool {
         if crate::WORKER_BUSY.load(crate::Ordering::SeqCst) { return false; }
         unsafe { crate::TASK = Some(task); } true
     }
@@ -195,6 +217,7 @@ mod qwen { pub mod workers {
 unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, pcm: *mut i16, capacity: usize,
     frames: *mut usize, cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void) -> i32 {
     assert_eq!(capacity, 720000);
+    if NATIVE_BUSY.load(Ordering::Acquire) { return 8; }
     if cancel(context) != 0 { *frames = 0; return 2; }
     let generated=SYNTHESIS_FRAMES.load(Ordering::SeqCst);
     for i in 0..generated { *pcm.add(i) = SYNTHESIS_VALUE.load(Ordering::SeqCst) as i16; }
@@ -202,6 +225,34 @@ unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, p
     NOW.fetch_add(SYNTHESIS_DELAY_NS.load(Ordering::SeqCst),Ordering::SeqCst);
     if EXPIRE.load(Ordering::SeqCst) { NOW.fetch_add((voice_output::SYNTHESIS_SECONDS + 1) * 1_000_000_000, Ordering::SeqCst); }
     0
+}
+// ------------------------=
+// FUNC: infinity_kokoro_native_prepare_recognition
+// DESC: Holds the real preparation worker at the native ownership boundary while a typed reply attempts synthesis.
+// ------------------=
+#[no_mangle]
+unsafe extern "C" fn infinity_kokoro_native_prepare_recognition(memory:*mut usize,
+    cancel:extern "C" fn(*mut core::ffi::c_void)->i32,context:*mut core::ffi::c_void)->i32 {
+    if NATIVE_BUSY.swap(true,Ordering::AcqRel) { return 8; }
+    PREPARE_ENTERED.store(true,Ordering::Release);
+    while PREPARE_HOLD.load(Ordering::Acquire) && !PREPARE_RELEASE.load(Ordering::Acquire) { std::thread::yield_now(); }
+    *memory=128;
+    let result=if cancel(context)==0 {0} else {2};
+    NATIVE_BUSY.store(false,Ordering::Release);
+    result
+}
+// ------------------------=
+// FUNC: infinity_kokoro_native_recognize
+// DESC: Checks that queued recognition preserves its original PCM across native-engine contention.
+// ------------------=
+#[no_mangle]
+unsafe extern "C" fn infinity_kokoro_native_recognize(pcm:*const i16,samples:usize,text:*mut u8,_:usize,
+    length:*mut usize,memory:*mut usize,cancel:extern "C" fn(*mut core::ffi::c_void)->i32,context:*mut core::ffi::c_void)->i32{
+    if NATIVE_BUSY.load(Ordering::Acquire) {return 8;}
+    if cancel(context)!=0 {return 2;}
+    assert_eq!(std::slice::from_raw_parts(pcm,samples),[17,-19,23,-29]);
+    RECOGNIZED_SAMPLES.fetch_add(samples,Ordering::SeqCst);
+    std::ptr::copy_nonoverlapping(b"accepted".as_ptr(),text,8);*length=8;*memory=128;0
 }
 // ------------------------=
 // FUNC: infinity_kokoro_native_diagnostics
@@ -220,6 +271,75 @@ unsafe extern "C" fn infinity_kokoro_native_diagnostics(out: *mut usize) {
 fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     use voice_output::{OutputState as S, *};
     let owner = runtime::execution::SecurityIdentity([1; 16]);
+    // Real warmup and output state machines overlap on separate workers. A
+    // busy reply stays queued with its buffers unavailable until warmup exits.
+    NATIVE_BUSY.store(true,Ordering::Release);
+    assert!(!voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert!(!voice_input::prepared());
+    assert!(!PREPARE_ENTERED.load(Ordering::Acquire));
+    NATIVE_BUSY.store(false,Ordering::Release);
+    voice_input::poll();
+    let prepare=unsafe { (&mut *(&raw mut TASK)).take().unwrap() };
+    let thread=std::thread::spawn(move||unsafe {prepare();});
+    while !PREPARE_ENTERED.load(Ordering::Acquire) {std::thread::yield_now();}
+    submit(owner,1,b"Typed reply during preparation.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(status().state,S::Queued);
+    assert_eq!(status().error,0);
+    assert!(submit(owner,1,b"Must not reuse queued buffers.").is_err());
+    assert_eq!(PLAYED.load(Ordering::SeqCst),0);
+    PREPARE_RELEASE.store(true,Ordering::Release);thread.join().unwrap();
+    assert!(voice_input::prepared());
+    poll();unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(status().state,S::Ready);
+    poll();poll();assert_eq!(status().state,S::Complete);
+    assert_eq!(PLAYED.swap(0,Ordering::SeqCst),1);
+
+    // Recognition keeps PCM, does not expose a transcript on busy, and accepts
+    // no replacement buffer until the pending request is completed or cancelled.
+    NATIVE_BUSY.store(true,Ordering::Release);
+    voice_input::submit(owner,1,&[17,-19,23,-29]).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(voice_input::status().state,voice_input::InputState::Queued);
+    assert!(voice_input::submit(owner,1,&[1]).is_err());
+    assert_eq!(RECOGNIZED_SAMPLES.load(Ordering::SeqCst),0);
+    NATIVE_BUSY.store(false,Ordering::Release);voice_input::poll();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    let mut transcript=[0;32];
+    assert_eq!(voice_input::take(owner,&mut transcript).unwrap(),8);
+    assert_eq!(&transcript[..8],b"accepted");
+    assert_eq!(RECOGNIZED_SAMPLES.load(Ordering::SeqCst),4);
+    for reason in 0..3 {
+        NATIVE_BUSY.store(true,Ordering::Release);
+        voice_input::submit(owner,1,&[17,-19,23,-29]).unwrap();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        match reason {
+            0=>assert!(voice_input::stop(owner)),
+            1=>REVOKED.store(true,Ordering::SeqCst),
+            _=>{NOW.fetch_add(46_000_000_000,Ordering::SeqCst);}
+        }
+        voice_input::poll();
+        assert_eq!(voice_input::status().state,voice_input::InputState::Cancelled);
+        assert!(voice_input::take(owner,&mut transcript).is_err());
+        assert!(unsafe { (&*(&raw const TASK)).is_none() });
+        REVOKED.store(false,Ordering::SeqCst);NATIVE_BUSY.store(false,Ordering::Release);
+    }
+    // Synthesis cancellation while waiting for shared native ownership never
+    // resubmits or publishes the cancelled response.
+    for reason in 0..3 {
+        NATIVE_BUSY.store(true,Ordering::Release);
+        submit(owner,1,b"Cancel while engine busy.").unwrap();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        match reason {
+            0=>{assert!(stop(owner));},
+            1=>REVOKED.store(true,Ordering::SeqCst),
+            _=>{NOW.fetch_add((SYNTHESIS_SECONDS+1)*1_000_000_000,Ordering::SeqCst);}
+        }
+        poll();assert_eq!(status().state,S::Cancelled);
+        assert!(unsafe { (&*(&raw const TASK)).is_none() });
+        NATIVE_BUSY.store(false,Ordering::Release);REVOKED.store(false,Ordering::SeqCst);
+    }
     assert!(submit(owner, 2, b"test").is_err());
     assert!(submit(owner, 1, b"").is_err());
     EXPIRE.store(true, Ordering::SeqCst);

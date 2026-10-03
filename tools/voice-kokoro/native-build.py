@@ -171,6 +171,22 @@ def main():
             source = output / "profiled-ggml-cpu.c"
             source.write_text('#include <stdint.h>\nextern uint64_t native_profile_clock(void);\n'
                               'extern void native_profile_record(unsigned, uint64_t);\n' + original)
+        if source.name == "ggml-backend-meta.cpp":
+            original = source.read_text()
+            anchor = "bool ggml_backend_buffer_is_meta(ggml_backend_buffer_t buf) {"
+            if original.count(anchor) != 1:
+                raise RuntimeError("Unreviewed private backend pointer boundary")
+            # Every native backend buffer object is constructed with C++ new
+            # in ggml_backend_buffer_init. Do not dereference out-of-arena
+            # objects: preserve the exact fault address and quarantine instead
+            # of entering the firmware exception loop indefinitely.
+            original = original.replace(anchor,
+                '// ------------------------=\n// FUNC: ggml_backend_buffer_is_meta\n'
+                '// DESC: Checks private object ownership before inspecting the backend buffer interface.\n'
+                '// ------------------=\n' + anchor +
+                '\n    if (buf != nullptr) native_require_heap_extent(buf, sizeof(*buf));')
+            source = output / "ggml-backend-meta.cpp"
+            source.write_text('#include <stddef.h>\nextern "C" void native_require_heap_extent(const void *, size_t);\n' + original)
         if source.name == "cpu.cpp" and "CMakeFiles/kokopop.dir/" in row["command"]:
             original = source.read_text()
             anchor = "            ggml_backend_cpu_set_n_threads(backend_, std::max<int32_t>(1, n_threads));"
@@ -181,10 +197,51 @@ def main():
                 raise RuntimeError("Unreviewed CPU graph capacity boundary")
             original = original.replace(capacity,
                 "            static_cast<size_t>(graph->n_nodes) + static_cast<size_t>(graph->n_leafs) + 1024);")
+            accounting = "        (void) ctx;"
+            if original.count(accounting) != 1:
+                raise RuntimeError("Unreviewed CPU context accounting boundary")
+            original = original.replace(accounting,
+                "        native_context_record(ggml_get_mem_size(ctx), ggml_used_mem(ctx));")
             flags.append("-I" + str(WORK / "reference/_deps/ggml-src/src"))
             source = output / "cpu.cpp"
-            source.write_text('#include <ggml-impl.h>\nextern "C" bool native_abort_callback(void *);\n' + original.replace(anchor,
+            source.write_text('#include <ggml-impl.h>\nextern "C" bool native_abort_callback(void *);\n'
+                'extern "C" void native_context_record(size_t, size_t);\n' + original.replace(anchor,
                 anchor + "\n            ggml_backend_cpu_set_abort_callback(backend_, native_abort_callback, nullptr);"))
+        if source.name == "kokoro_arch.cpp":
+            original = source.read_text()
+            first = "size_t kokoro_generation_context_bytes("
+            last = "// ---------------------------------------------------------------------------\n// KokoroArch"
+            if original.count(first) != 1 or original.count(last) != 1:
+                raise RuntimeError("Unreviewed Kokoro metadata sizing boundary")
+            begin = original.index(first)
+            end = original.index(last, begin)
+            # All three native CPU graph contexts use no_alloc=true. Tensor
+            # storage belongs to the backend allocator, not these arenas. The
+            # upstream data-sized reservations retained >135 MiB here and
+            # vector growth exhausted the shared ASR/TTS arena after two jobs.
+            replacement = '''// ------------------------=
+// FUNC: kokoro_generation_context_bytes
+// DESC: Reserves bounded graph metadata; tensor data is separately allocated by the CPU scheduler.
+// ------------------=
+size_t kokoro_generation_context_bytes(const Backend & backend,
+                                       int64_t total_frames, int64_t n_tokens) {
+    const size_t nodes = generation_graph_size(total_frames, n_tokens);
+    return backend.graph_context_bytes(nodes, nodes);
+}
+
+// ------------------------=
+// FUNC: kokoro_generator_context_bytes
+// DESC: Uses the graph's conservative object bound without duplicating its large convolution data buffers.
+// ------------------=
+size_t kokoro_generator_context_bytes(const Backend & backend,
+                                      int64_t decoder_len) {
+    const size_t nodes = generator_graph_size(decoder_len);
+    return backend.graph_context_bytes(nodes, nodes);
+}
+
+'''
+            source = output / "kokoro_arch.cpp"
+            source.write_text(original[:begin] + replacement + original[end:])
         if source.name == "audio_utils.cpp":
             original = source.read_text()
             start = "    try {\n        mem = arena.data(mem_size);\n    } catch (const std::bad_alloc &) {"

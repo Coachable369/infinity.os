@@ -65,7 +65,9 @@ static mut CAPTURE_EMPTY_REPORTED: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 static mut WAKE_ARMED: bool = false;
 static mut WAKE_ARMED_UNTIL: u64 = 0;
-const FOLLOW_UP_WINDOW_NS: u64 = 10_000_000_000;
+static mut WAKE_ARMED_MODEL: u32 = 0;
+static mut WAKE_ARMED_WORD: WakeWord = WakeWord::Infinity;
+const WAKE_COMMAND_WINDOW_NS: u64 = 10_000_000_000;
 const CAPTURE_CAPABILITY_SECONDS: u64 = 60;
 const CAPTURE_CAPABILITY_REPLACE_NS: u64 = 45_000_000_000;
 
@@ -177,6 +179,15 @@ pub fn state() -> (State, u16) {
 // ------------------=
 pub fn wake_armed() -> bool {
     unsafe { WAKE_ARMED }
+}
+// ------------------------=
+// FUNC: clear_wake_command
+// DESC: Consumes or revokes the one command authorized by an explicit wake-only utterance.
+// ------------------=
+unsafe fn clear_wake_command() {
+    WAKE_ARMED = false;
+    WAKE_ARMED_UNTIL = 0;
+    WAKE_ARMED_MODEL = 0;
 }
 // ------------------------=
 // FUNC: ready
@@ -327,8 +338,7 @@ pub fn start(owner: SecurityIdentity) -> bool {
         }
         OWNER = owner;
         CONTINUOUS = true;
-        WAKE_ARMED = false;
-        WAKE_ARMED_UNTIL = 0;
+        clear_wake_command();
         RESTART_LISTENING = false;
         super::with_ai_runtime(|ai| {
             ai.bind_chat_owner(owner.0);
@@ -399,8 +409,7 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         REPLY_AT = 0;
         SYNC_VISIBLE_AT = 0;
         LEVEL = 0;
-        WAKE_ARMED = false;
-        WAKE_ARMED_UNTIL = 0;
+        clear_wake_command();
         STATE = State::Stopping;
         true
     }
@@ -438,10 +447,9 @@ unsafe fn speak_next() -> bool {
         trace(b"reply drained");
         SYNC_VISIBLE_AT = REPLY_LENGTH;
         if CONTINUOUS {
-            WAKE_ARMED = true;
-            WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
-                .saturating_add(FOLLOW_UP_WINDOW_NS);
-            trace(b"follow-up command window armed");
+            // A completed reply never authorizes another spoken request.
+            // Only a newly recognized wake phrase may open the next command.
+            clear_wake_command();
             if voice_input::prepared() {
                 return listen();
             }
@@ -513,6 +521,7 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         }
         OWNER = owner;
         CONTINUOUS = continuous;
+        clear_wake_command();
         REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
         SYNC_VISIBLE_AT = 0;
         RESTART_LISTENING = false;
@@ -718,6 +727,13 @@ pub fn poll() -> bool {
             trace(b"conversation stopped inactive owner");
             stop(OWNER);
         }
+        if WAKE_ARMED && (configured_wake_word(OWNER) != WAKE_ARMED_WORD
+            || super::with_ai_runtime(|ai| ai.chat.selected_model() != WAKE_ARMED_MODEL
+                || !ai.chat.selected_model_ready()
+                || ai.chat.generation_state == GenerationState::Running)) {
+            clear_wake_command();
+            trace(b"wake command revoked by context change");
+        }
         if matches!(STATE, State::Thinking | State::Speaking)
             && super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN || matches!(ai.chat.generation_state,
                 GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
@@ -748,8 +764,7 @@ pub fn poll() -> bool {
                 if WAKE_ARMED
                     && super::qwen::workers::clock_ns() >= WAKE_ARMED_UNTIL
                 {
-                    WAKE_ARMED = false;
-                    WAKE_ARMED_UNTIL = 0;
+                    clear_wake_command();
                     trace(b"wake command window expired");
                 }
                 if !capture_frame(false) {
@@ -798,32 +813,25 @@ pub fn poll() -> bool {
                     RECOGNIZE_CAP = 0;
                     let mut command = None;
                     let mut wake_only = false;
+                    let mut unaddressed = false;
                     if let Ok(n) = result {
                         if n != 0 {
-                            if WAKE_ARMED {
-                                command = Some((0, n));
-                            } else {
-                                match wake_word::classify(
-                                    &(&*(&raw const TRANSCRIPT))[..n],
-                                    configured_wake_word(OWNER),
-                                ) {
-                                    // Voice capture is already an explicitly enabled,
-                                    // visible session.  A wake phrase improves targeting
-                                    // and is stripped when present, but a recognizer miss
-                                    // must not silently discard an otherwise valid turn.
-                                    wake_word::Match::Absent => command = Some((0, n)),
-                                    wake_word::Match::WakeOnly => wake_only = true,
-                                    wake_word::Match::Command { start } => {
-                                        command = Some((start, n));
-                                    }
+                            match wake_word::classify(
+                                &(&*(&raw const TRANSCRIPT))[..n],
+                                configured_wake_word(OWNER),
+                            ) {
+                                wake_word::Match::Absent if WAKE_ARMED => command = Some((0, n)),
+                                wake_word::Match::Absent => unaddressed = true,
+                                wake_word::Match::WakeOnly => wake_only = true,
+                                wake_word::Match::Command { start } => {
+                                    command = Some((start, n));
                                 }
                             }
                         }
                     }
                     let queued = command
                         .map(|(start, end)| {
-                            WAKE_ARMED = false;
-                            WAKE_ARMED_UNTIL = 0;
+                            clear_wake_command();
                             super::with_ai_runtime(|ai| {
                                 if !ai.chat.input().is_empty()
                                     || ai.chat.generation_state == GenerationState::Running
@@ -850,8 +858,16 @@ pub fn poll() -> bool {
                     } else if wake_only {
                         WAKE_ARMED = true;
                         WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
-                            .saturating_add(FOLLOW_UP_WINDOW_NS);
+                            .saturating_add(WAKE_COMMAND_WINDOW_NS);
+                        WAKE_ARMED_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
+                        WAKE_ARMED_WORD = configured_wake_word(OWNER);
                         trace(b"wake phrase armed command capture");
+                        if !listen() {
+                            stop(OWNER);
+                            STATE = State::Failed;
+                        }
+                    } else if unaddressed {
+                        trace(b"unaddressed speech ignored");
                         if !listen() {
                             stop(OWNER);
                             STATE = State::Failed;

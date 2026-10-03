@@ -19,6 +19,7 @@
 #include <pthread.h>
 #include <infinity/compiler_host.h>
 #include <infinity/serial_tls.h>
+#include "admission.h"
 
 struct model_file { const char *name; const unsigned char *data; size_t length; };
 extern const struct model_file native_model_files[];
@@ -32,7 +33,7 @@ __attribute__((section(".speech_heap")))
 static _Alignas(16) unsigned char heap[1536u*1024u*1024u];
 static size_t heap_used;
 static jmp_buf failure;
-static int active;
+static unsigned active;
 static int poisoned;
 static int (*cancel_callback)(void *);
 static void *cancel_context;
@@ -153,7 +154,7 @@ int _kill(int p,int s){(void)p;(void)s;errno=ENOSYS;return -1;}
 // FUNC: _exit
 // DESC: Quarantines fatal library errors inside the native C boundary.
 // ------------------=
-__attribute__((noreturn)) void _exit(int code){(void)code;if(!fatal_address)fatal_address=(uintptr_t)__builtin_return_address(0);if(active)longjmp(failure,1);__builtin_trap();}
+__attribute__((noreturn)) void _exit(int code){(void)code;if(!fatal_address)fatal_address=(uintptr_t)__builtin_return_address(0);if(native_engine_is_active(&active))longjmp(failure,1);__builtin_trap();}
 void *__dso_handle;
 // ------------------------=
 // FUNC: __cxa_allocate_exception
@@ -198,7 +199,42 @@ void *__wrap__malloc_r(struct _reent *r,size_t n){if(poisoned||n>sizeof(heap)){a
 // FUNC: native_diagnostics
 // DESC: Reports numeric failure stage, heap commitment and fault site without exposing speech text or model content.
 // ------------------=
-void native_diagnostics(size_t*out){out[0]=native_phase;out[1]=heap_used;out[2]=failed_allocation;out[3]=fatal_address;for(size_t i=0;i<8;i++)out[4+i]=allocation_callers[i];}
+void native_diagnostics(size_t*out){memset(out,0,12*sizeof(*out));if(!native_engine_try_acquire(&active))return;out[0]=native_phase;out[1]=heap_used;out[2]=failed_allocation;out[3]=fatal_address;for(size_t i=0;i<8;i++)out[4+i]=allocation_callers[i];native_engine_release(&active);}
+static size_t largest_context_capacity;
+static size_t largest_context_used;
+static uintptr_t invalid_native_pointer;
+// ------------------------=
+// FUNC: native_require_heap_extent
+// DESC: Quarantines impossible private backend object pointers before they can fault and strand the owning worker.
+// ------------------=
+void native_require_heap_extent(const void*object,size_t bytes){
+    const uintptr_t address=(uintptr_t)object,base=(uintptr_t)heap;
+    if(address<base||address-base>heap_used||bytes>heap_used-(address-base)||(address&(sizeof(void*)-1))){
+        invalid_native_pointer=address;
+        fatal_address=(uintptr_t)__builtin_return_address(0);
+        _exit(1);
+    }
+}
+// ------------------------=
+// FUNC: native_context_record
+// DESC: Records graph metadata high-water values on the owning native worker without retaining input content.
+// ------------------=
+void native_context_record(size_t capacity,size_t used){
+    if(capacity>largest_context_capacity)largest_context_capacity=capacity;
+    if(used>largest_context_used)largest_context_used=used;
+}
+// ------------------------=
+// FUNC: native_memory_stats
+// DESC: Reports allocator live/free bytes and graph metadata use between native jobs for bounded lifetime verification.
+// ------------------=
+void native_memory_stats(size_t*out){
+    memset(out,0,7*sizeof(*out));if(!native_engine_try_acquire(&active))return;
+    struct mallinfo info=mallinfo();
+    out[0]=heap_used;out[1]=info.uordblks;out[2]=info.fordblks;out[3]=info.keepcost;
+    out[4]=largest_context_capacity;out[5]=largest_context_used;
+    out[6]=invalid_native_pointer;
+    native_engine_release(&active);
+}
 // ------------------------=
 // FUNC: __wrap__free_r
 // DESC: Erases complete speech-derived allocations before reuse, including aligned allocations.
@@ -315,8 +351,10 @@ extern int whisper_private_native_prepare(void);
 // ------------------=
 int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,size_t*frames,int(*cancel)(void*),void*context){
     if(!frames)return 1;*frames=0;
-    if(!text||!pcm||!length||length>160||!capacity||capacity>720000||active||poisoned)return 1;
-    memset(pcm,0,capacity*sizeof(*pcm));cancel_callback=cancel;cancel_context=context;active=1;
+    if(!text||!pcm||!length||length>160||!capacity||capacity>720000)return 1;
+    if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(poisoned){native_engine_release(&active);return 7;}
+    memset(pcm,0,capacity*sizeof(*pcm));cancel_callback=cancel;cancel_context=context;
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
@@ -324,8 +362,9 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
     }
-    active=0;cancel_callback=NULL;cancel_context=NULL;
+    cancel_callback=NULL;cancel_context=NULL;
     if(result){memset(pcm,0,capacity*sizeof(*pcm));*frames=0;}
+    native_engine_release(&active);
     return result;
 }
 
@@ -334,8 +373,11 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
 // DESC: Warms both resident speech models before the UI advertises conversational readiness.
 // ------------------=
 int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
-    if(!memory||active||poisoned)return 1;*memory=heap_used;
-    cancel_callback=cancel;cancel_context=context;active=1;
+    if(!memory)return 1;*memory=0;
+    if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(poisoned){native_engine_release(&active);return 7;}
+    *memory=heap_used;
+    cancel_callback=cancel;cancel_context=context;
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
@@ -344,7 +386,7 @@ int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
     }
-    cancel_callback=NULL;cancel_context=NULL;active=0;*memory=heap_used;return result;
+    cancel_callback=NULL;cancel_context=NULL;*memory=heap_used;native_engine_release(&active);return result;
 }
 
 // ------------------------=
@@ -352,11 +394,14 @@ int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
 // DESC: Contains one bounded native Whisper request and prevents fatal engine state from crossing the Rust ABI.
 // ------------------=
 int native_recognize(const int16_t*pcm,size_t samples,char*text,size_t capacity,size_t*length,size_t*memory,int(*cancel)(void*),void*context){
-    if(!length||!memory)return 1;*length=0;*memory=heap_used;
-    if(!pcm||!samples||samples>160000||!text||capacity<2||active||poisoned)return 1;
+    if(!length||!memory)return 1;*length=0;*memory=0;
+    if(!pcm||!samples||samples>160000||!text||capacity<2)return 1;
+    if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(poisoned){native_engine_release(&active);return 7;}
+    *memory=heap_used;
     size_t nonzero=0;for(size_t i=0;i<samples;i++)nonzero|=(uint16_t)pcm[i];
-    if(!nonzero){text[0]=0;return 5;}
-    memset(text,0,capacity);cancel_callback=cancel;cancel_context=context;active=1;
+    if(!nonzero){text[0]=0;native_engine_release(&active);return 5;}
+    memset(text,0,capacity);cancel_callback=cancel;cancel_context=context;
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
@@ -365,5 +410,5 @@ int native_recognize(const int16_t*pcm,size_t samples,char*text,size_t capacity,
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
     }
     if(result){memset(text,0,capacity);*length=0;}
-    cancel_callback=NULL;cancel_context=NULL;active=0;*memory=heap_used;return result;
+    cancel_callback=NULL;cancel_context=NULL;*memory=heap_used;native_engine_release(&active);return result;
 }

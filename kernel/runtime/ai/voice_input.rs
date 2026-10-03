@@ -1,13 +1,16 @@
 //! One bounded native recognizer job. The UI never runs the decoder itself.
 use super::{types::AiError, voice::{SpeechRecognitionProvider, RECOGNITION_DEADLINE_SECONDS}};
 use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 #[cfg(not(test))]
 #[path = "voice_trace.rs"]
 mod voice_trace;
 
 static STATE: AtomicUsize = AtomicUsize::new(0);
 static ENGINE: AtomicUsize = AtomicUsize::new(0);
+static PREPARE_DEADLINE: AtomicU64 = AtomicU64::new(0);
+const NATIVE_ENGINE_BUSY: i32 = 8;
+const WAITING_ENGINE: usize = 6;
 static CANCEL: AtomicBool = AtomicBool::new(false);
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
 static mut CAPABILITY: u64 = 0;
@@ -75,18 +78,26 @@ unsafe extern "C" {
 // DESC: Builds both resident speech contexts before conversational microphone admission.
 // ------------------=
 unsafe fn prepare_worker() {
-    trace(b"recognizer warmup started");
-    let start = super::qwen::workers::clock_ns();
     let mut memory = 0usize;
-    ERROR = infinity_kokoro_native_prepare_recognition(
+    let error = infinity_kokoro_native_prepare_recognition(
         &mut memory,
-        cancelled,
+        prepare_cancelled,
         core::ptr::null_mut(),
     );
-    MEMORY = memory;
-    ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
-    ENGINE.store(if ERROR == 0 { 2 } else { 3 }, Ordering::Release);
-    trace(if ERROR == 0 { b"recognizer warmup ready" } else { b"recognizer warmup failed" });
+    if error == NATIVE_ENGINE_BUSY && prepare_cancelled(core::ptr::null_mut()) == 0 {
+        ENGINE.store(4, Ordering::Release);
+        return;
+    }
+    trace(if error == 0 { b"recognizer warmup ready" } else { b"recognizer warmup failed" });
+    ENGINE.store(if error == 0 { 2 } else { 3 }, Ordering::Release);
+}
+
+// ------------------------=
+// FUNC: prepare_cancelled
+// DESC: Bounds global model warmup independently from an owner's pending recognition request.
+// ------------------=
+extern "C" fn prepare_cancelled(_: *mut core::ffi::c_void) -> i32 {
+    (super::qwen::workers::clock_ns() >= PREPARE_DEADLINE.load(Ordering::Acquire)) as i32
 }
 
 // ------------------------=
@@ -94,15 +105,22 @@ unsafe fn prepare_worker() {
 // DESC: Schedules complete speech warmup once and reports whether conversation can start without cold model loads.
 // ------------------=
 pub fn prepare() -> bool {
-    match ENGINE.load(Ordering::Acquire) {
+    let engine = ENGINE.load(Ordering::Acquire);
+    match engine {
         2 => true,
         1 => false,
         _ => unsafe {
-            CANCEL.store(false, Ordering::Release);
-            DEADLINE = super::qwen::workers::clock_ns().saturating_add(90_000_000_000);
+            if matches!(STATE.load(Ordering::Acquire), 1 | 2 | WAITING_ENGINE) { return false; }
+            if engine != 4 {
+                PREPARE_DEADLINE.store(super::qwen::workers::clock_ns().saturating_add(90_000_000_000), Ordering::Release);
+                trace(b"recognizer warmup queued");
+            } else if prepare_cancelled(core::ptr::null_mut()) != 0 {
+                ENGINE.store(3, Ordering::Release);
+                return false;
+            }
             ENGINE.store(1, Ordering::Release);
             if !super::qwen::workers::background(prepare_worker) {
-                ENGINE.store(0, Ordering::Release);
+                ENGINE.store(4, Ordering::Release);
             }
             false
         },
@@ -161,7 +179,7 @@ extern "C" fn cancelled(_: *mut core::ffi::c_void) -> i32 {
 // ------------------=
 unsafe fn worker() {
     STATE.store(2, Ordering::Release);
-    trace(b"worker started");
+    if ERROR != NATIVE_ENGINE_BUSY { trace(b"worker started"); }
     let start = super::qwen::workers::clock_ns();
     LENGTH = Whisper
         .recognize_pcm(
@@ -170,6 +188,10 @@ unsafe fn worker() {
             &mut *(&raw mut TEXT),
         )
         .unwrap_or(0);
+    if ERROR == NATIVE_ENGINE_BUSY && cancelled(core::ptr::null_mut()) == 0 {
+        STATE.store(WAITING_ENGINE, Ordering::Release);
+        return;
+    }
     (&mut *(&raw mut PCM)).fill(0);
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
     let state = if cancelled(core::ptr::null_mut()) != 0 || ERROR == 2 {
@@ -206,7 +228,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
         trace(b"submit rejected sample bounds");
         return Err(AiError::InvalidRequest);
     }
-    if matches!(STATE.load(Ordering::Acquire), 1 | 2 | 3) {
+    if matches!(STATE.load(Ordering::Acquire), 1 | 2 | 3 | WAITING_ENGINE) {
         trace(b"submit rejected recognizer busy");
         return Err(AiError::QueueFull);
     }
@@ -253,13 +275,8 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
         MEMORY = 0;
         ELAPSED = 0;
         CANCEL.store(false, Ordering::Release);
-        STATE.store(1, Ordering::Release);
-        if !super::qwen::workers::background(worker) {
-            (&mut *(&raw mut PCM)).fill(0);
-            STATE.store(4, Ordering::Release);
-            trace(b"submit failed worker scheduling");
-            return Err(AiError::ProviderUnavailable);
-        }
+        STATE.store(WAITING_ENGINE, Ordering::Release);
+        poll();
         trace(b"submit queued");
     }
     Ok(())
@@ -275,6 +292,7 @@ pub fn stop(owner: SecurityIdentity) -> bool {
     CANCEL.store(true, Ordering::Release);
     if STATE.load(Ordering::Acquire) >= 3 {
         unsafe {
+            (&mut *(&raw mut PCM)).fill(0);
             (&mut *(&raw mut TEXT)).fill(0);
             LENGTH = 0;
         }
@@ -290,16 +308,16 @@ pub fn status() -> InputStatus {
     let state = STATE.load(Ordering::Acquire);
     InputStatus {
         state: match state {
-            1 => InputState::Queued,
+            1 | WAITING_ENGINE => InputState::Queued,
             2 => InputState::Recognizing,
             3 => InputState::Ready,
             4 => InputState::Failed,
             5 => InputState::Cancelled,
             _ => InputState::Idle,
         },
-        error: if state >= 3 { unsafe { ERROR } } else { 0 },
-        elapsed_ns: if state >= 3 { unsafe { ELAPSED } } else { 0 },
-        heap_bytes: if state >= 3 { unsafe { MEMORY } } else { 0 },
+        error: if (3..=5).contains(&state) { unsafe { ERROR } } else { 0 },
+        elapsed_ns: if (3..=5).contains(&state) { unsafe { ELAPSED } } else { 0 },
+        heap_bytes: if (3..=5).contains(&state) { unsafe { MEMORY } } else { 0 },
     }
 }
 // ------------------------=
@@ -348,7 +366,8 @@ pub fn take(owner: SecurityIdentity, out: &mut [u8]) -> Result<usize, AiError> {
 // DESC: Revocation cancels ongoing decoding and prevents unauthorized transcript publication.
 // ------------------=
 pub fn poll() {
-    if !matches!(STATE.load(Ordering::Acquire), 1 | 2 | 3) {
+    if ENGINE.load(Ordering::Acquire) == 4 { let _ = prepare(); }
+    if !matches!(STATE.load(Ordering::Acquire), 1 | 2 | 3 | WAITING_ENGINE) {
         return;
     }
     unsafe {
@@ -368,6 +387,11 @@ pub fn poll() {
         .unwrap_or(false);
         if !valid || cancelled(core::ptr::null_mut()) != 0 {
             stop(OWNER);
+        } else if STATE.load(Ordering::Acquire) == WAITING_ENGINE && ENGINE.load(Ordering::Acquire) != 1 {
+            STATE.store(1, Ordering::Release);
+            if !super::qwen::workers::background(worker) {
+                STATE.store(WAITING_ENGINE, Ordering::Release);
+            }
         }
     }
 }

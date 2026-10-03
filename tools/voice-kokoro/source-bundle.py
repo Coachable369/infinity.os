@@ -45,6 +45,7 @@ def main():
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
     repository = {path for path in tracked if path and (ROOT / path).is_file()
                   and not any(Path(path).is_relative_to(prefix) for prefix in paths)}
+    repository.add("tools/voice-kokoro/admission.h")
     repository.update(str(path.relative_to(ROOT)) for path in (ROOT / "assets").rglob("*") if path.is_file())
     with tarfile.open(pending, "w:gz", compresslevel=6) as bundle:
         for path in paths:
@@ -53,7 +54,7 @@ def main():
             bundle.add(ROOT / path, arcname=path, filter=source_filter)
     with tarfile.open(pending, "r:gz") as bundle:
         # Verify archived source and license bytes against the actual build inputs.
-        for path in ("tools/voice-kokoro/port.c", "tools/voice-kokoro/private.ld",
+        for path in ("tools/voice-kokoro/port.c", "tools/voice-kokoro/admission.h", "tools/voice-kokoro/private.ld",
                      "kernel/runtime/ai/voice_output.rs", "Makefile", "tools/build-qwen.sh",
                      "build/voice-kokoro/reference/_deps/espeak-src/COPYING"):
             assert bundle.extractfile(path).read() == (ROOT / path).read_bytes()
