@@ -13,8 +13,9 @@ static std::unique_ptr<kokopop::Model> model;
 // response latency without the clipped cadence produced by aggressive rates.
 static constexpr float conversational_speed = 1.15f;
 static constexpr size_t inference_phrase_bytes = 80;
-static constexpr size_t boundary_silence_frames = 1440;
-static constexpr int16_t boundary_activity_floor = 96;
+static constexpr size_t boundary_silence_frames = 480;
+static constexpr size_t boundary_activity_window = 120;
+static constexpr int16_t boundary_activity_floor = 160;
 extern "C" int native_cancelled(void);
 extern "C" unsigned int native_phase;
 extern "C" void (*native_init_start[])(void);
@@ -97,7 +98,13 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
 // ------------------=
 static size_t active_start(const int16_t *pcm, size_t frames) {
     size_t active = 0;
-    while (active < frames && std::abs(int32_t(pcm[active])) <= boundary_activity_floor) ++active;
+    while (active < frames) {
+        const size_t end = std::min(frames, active + boundary_activity_window);
+        int32_t peak = 0;
+        for (size_t i = active; i < end; ++i) peak = std::max(peak, std::abs(int32_t(pcm[i])));
+        if (peak > boundary_activity_floor) break;
+        active = end;
+    }
     return active > boundary_silence_frames ? active - boundary_silence_frames : 0;
 }
 
@@ -107,7 +114,13 @@ static size_t active_start(const int16_t *pcm, size_t frames) {
 // ------------------=
 static size_t active_end(const int16_t *pcm, size_t frames) {
     size_t active = frames;
-    while (active && std::abs(int32_t(pcm[active - 1])) <= boundary_activity_floor) --active;
+    while (active) {
+        const size_t start = active > boundary_activity_window ? active - boundary_activity_window : 0;
+        int32_t peak = 0;
+        for (size_t i = start; i < active; ++i) peak = std::max(peak, std::abs(int32_t(pcm[i])));
+        if (peak > boundary_activity_floor) break;
+        active = start;
+    }
     return std::min(frames, active + boundary_silence_frames);
 }
 

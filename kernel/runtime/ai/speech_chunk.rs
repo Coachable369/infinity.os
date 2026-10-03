@@ -4,12 +4,15 @@
 // DESC: Releases a complete sentence or a bounded word-aligned chunk, preserving low first-audio latency and longer lookahead prosody.
 // ------------------=
 pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
-    // The native bridge safely divides this outer phrase into 44-byte model
+    // The native bridge safely divides this outer phrase into 80-byte model
     // segments and concatenates their PCM before one DMA submission. Keep the
     // whole sentence resident so segment boundaries cannot stop the device.
-    const INITIAL_LIMIT: usize = 160;
+    // Keep the first dispatch inside one native inference graph. Dispatching
+    // after only a few words adds another slower-than-realtime graph to nearly
+    // every answer and leaves a second model-edge pause in the final waveform.
+    const INITIAL_LIMIT: usize = 80;
     const PROVIDER_LIMIT: usize = 160;
-    const FIRST_WORD_WINDOW: usize = 24;
+    const FIRST_WORD_WINDOW: usize = 64;
     let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
     let scan_limit = bytes.len().min(phrase_limit);
     for i in 0..scan_limit {
@@ -75,8 +78,8 @@ mod tests {
             at+=count;
         }
         assert_eq!(super::next(&text[..23],false,true),0);
-        assert_eq!(super::next(&text[..29],false,true),25);
-        assert_eq!(super::next(&text[..38],false,true),25);
+        assert_eq!(super::next(&text[..66],false,true),0);
+        assert_eq!(super::next(&text[..67],false,true),67);
     }
 
     // ------------------------=
@@ -89,7 +92,7 @@ mod tests {
         let followup=super::next(sentence,true,false);
         assert_eq!(followup,sentence.len());
         let first=super::next(sentence,true,true);
-        assert_eq!(first,sentence.len());
+        assert_eq!(first,73);
     }
 
     // ------------------------=
@@ -99,8 +102,8 @@ mod tests {
     #[test]
     fn streaming_chunks_match_native_graph_boundaries() {
         let text=b"One two three four five six seven eight nine ten eleven twelve thirteen fourteen.";
-        assert_eq!(super::next(text,false,true),28);
+        assert_eq!(super::next(text,false,true),72);
         let complete=super::next(text,true,true);
-        assert_eq!(complete,text.len());
+        assert_eq!(complete,72);
     }
 }
