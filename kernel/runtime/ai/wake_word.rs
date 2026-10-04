@@ -15,6 +15,8 @@ const INFINITY_ALIASES: &[&[u8]] = &[
     b"in finity",
     b"infinite",
     b"infinity",
+    b"infin",
+    b"finity",
 ];
 const COMPUTER_ALIASES: &[&[u8]] = &[b"computer", b"compute her"];
 
@@ -48,7 +50,9 @@ fn match_alias(transcript: &[u8], start: usize, alias: &[u8]) -> Option<usize> {
         }
     }
     let end = start + alias.len();
-    if end < transcript.len() && transcript[end].is_ascii_alphanumeric() {
+    // A clipped wake token must end here; accepting any non-alphanumeric byte
+    // would also authorize names such as `infin_extra` or `finityé`.
+    if end < transcript.len() && !is_separator(transcript[end]) {
         return None;
     }
     Some(end)
@@ -140,5 +144,49 @@ mod tests {
         assert_eq!(classify(b"InfinityOS: help", WakeWord::Infinity), Match::Command { start: 12 });
         assert_eq!(classify(b"Hey, Infinity, help", WakeWord::Infinity), Match::Command { start: 15 });
         assert_eq!(classify(b"compute her, help", WakeWord::Computer), Match::Command { start: 13 });
+    }
+
+    // ------------------------=
+    // FUNC: accepts_clipped_wake_tokens_without_changing_the_command
+    // DESC: Verifies reviewed clipped spellings, casing, optional hey and punctuation preserve the exact UTF-8 command suffix.
+    // ------------------=
+    #[test]
+    fn accepts_clipped_wake_tokens_without_changing_the_command() {
+        for wake in ["Infin", "finity", "Infinity", "INFIN", "FINity"] {
+            for prefix in ["", "  ", "Hey, ", "HEY! "] {
+                for separator in [" ", ", ", ": ", ". ", "! ", "? ", "- ", "; ", "\t"] {
+                    let command = "open café; keep Infinity in this command!";
+                    let addressed = std::format!("{prefix}{wake}{separator}{command}");
+                    let Match::Command { start } = classify(addressed.as_bytes(), WakeWord::Infinity)
+                    else { panic!("reviewed wake token did not admit a command"); };
+                    assert_eq!(&addressed.as_bytes()[start..], command.as_bytes());
+                    let wake_only = std::format!("{prefix}{wake}{separator}");
+                    assert_eq!(classify(wake_only.as_bytes(), WakeWord::Infinity), Match::WakeOnly);
+                }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: clipped_wake_tokens_do_not_authorize_substrings_or_other_selections
+    // DESC: Rejects ambient references, incomplete shorter fragments, attached suffixes and every Infinity alias when Computer is selected.
+    // ------------------=
+    #[test]
+    fn clipped_wake_tokens_do_not_authorize_substrings_or_other_selections() {
+        for transcript in [
+            "please Infin help", "say finity", "definity help", "affinity help",
+            "Infinityx help", "infinityosx help", "Infinx help", "finityful help",
+            "Infin_extra help", "finity/help", "finityé help", "Infin123 help",
+            "infi help", "in help", "finite help", "heyInfin help", "hey affinity help",
+        ] {
+            assert_eq!(classify(transcript.as_bytes(), WakeWord::Infinity), Match::Absent);
+        }
+        for alias in super::INFINITY_ALIASES {
+            assert_eq!(classify(alias, WakeWord::Computer), Match::Absent);
+        }
+        for alias in super::COMPUTER_ALIASES {
+            assert_eq!(classify(alias, WakeWord::Infinity), Match::Absent);
+            assert_eq!(classify(alias, WakeWord::Computer), Match::WakeOnly);
+        }
     }
 }

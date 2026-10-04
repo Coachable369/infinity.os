@@ -652,6 +652,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),grants+1);
     conversation::stop(owner);conversation::poll();
 
+    clipped_wake_gate_tests(owner);
     wake_gate_tests(owner);
     wake_handoff_tests(owner);
     transcript_handoff_tests(owner);
@@ -728,6 +729,48 @@ fn complete_voice_reply() {
     conversation::poll();
     assert_eq!(conversation::state().0,conversation::State::Listening);
     assert!(!conversation::wake_armed());
+}
+
+// ------------------------=
+// FUNC: clipped_wake_gate_tests
+// DESC: Exercises clipped wake-only and combined utterances through real VAD, prompt submission and one-turn authorization with no pointer events.
+// ------------------=
+fn clipped_wake_gate_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    TURNS.store(0,Ordering::SeqCst);
+    PROMPTS.lock().unwrap().clear();
+    assert!(conversation::start(owner));
+    for (index, wake) in [b"Infin" as &[u8],b"finity",b"Infinity"].iter().enumerate() {
+        recognize_voice(wake);
+        assert!(conversation::wake_armed());
+        assert_eq!(TURNS.load(Ordering::SeqCst),index*2);
+        recognize_voice(b"keep every command word");
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"keep every command word");
+        complete_voice_reply();
+
+        let mut addressed=b"HEY, ".to_vec();
+        addressed.extend_from_slice(wake);
+        addressed.extend_from_slice(b"! Preserve Infinity inside the command.");
+        recognize_voice(&addressed);
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"Preserve Infinity inside the command.");
+        complete_voice_reply();
+        recognize_voice(b"ambient speech after the answer");
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(!conversation::wake_armed());
+        assert_eq!(TURNS.load(Ordering::SeqCst),(index+1)*2);
+    }
+    WAKE_SETTING.store(1,Ordering::SeqCst);conversation::poll();
+    for transcript in [b"Infin, help" as &[u8],b"finity, help",b"Infinity, help"] {
+        recognize_voice(transcript);
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(!conversation::wake_armed());
+        assert_eq!(TURNS.load(Ordering::SeqCst),6);
+    }
+    recognize_voice(b"Computer, selected wake still works");
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"selected wake still works");
+    complete_voice_reply();
+    conversation::stop(owner);conversation::poll();
+    WAKE_SETTING.store(0,Ordering::SeqCst);
 }
 
 // ------------------------=

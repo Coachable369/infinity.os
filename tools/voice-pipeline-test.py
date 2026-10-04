@@ -26,6 +26,9 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     run("cargo", "test", "--quiet", "--manifest-path", "tools/behavior-harness/Cargo.toml",
         "--bin", "voice-toggle-test")
+    run("rustc", "--edition=2021", "--test", "tools/audio-poll-test.rs",
+        "-o", str(output / "audio-poll-test"))
+    run(str(output / "audio-poll-test"))
     run("rustc", "--edition=2021", "--test", "kernel/runtime/ai/voice_timing.rs",
         "-o", str(output / "voice-timing-test"))
     run(str(output / "voice-timing-test"))

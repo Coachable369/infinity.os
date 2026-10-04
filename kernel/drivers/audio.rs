@@ -3,6 +3,10 @@ use super::hda;
 #[path = "speech_pcm.rs"] mod speech_pcm;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static LOCK: AtomicBool = AtomicBool::new(false);
+// Hardware service uses elapsed time, never the number of desktop/input events.
+// In particular, an idle cursor must not make the BSP flood emulated HDA MMIO.
+const HARDWARE_POLL_INTERVAL_NS: u64 = 1_000_000;
+static mut LAST_HARDWARE_POLL: Option<u64> = None;
 static CAPTURE_OPEN_FAILURE: AtomicUsize = AtomicUsize::new(0);
 static mut DMA: hda::Dma = hda::Dma::new();
 static mut DEVICE: Option<hda::Hda> = None;
@@ -91,7 +95,8 @@ pub fn capture(owner: crate::runtime::execution::SecurityIdentity, capability: u
                     };
                     (&mut *(&raw mut INPUT)).clear();
                     INPUT_STATUS = CaptureStatus { state: CaptureState::Recording, sample_rate: device.sample_rate, frames: 0, peak: 0 };
-                    INPUT_LAST_POLL = started; INPUT_UNTIL = started.saturating_add(3_000_000_000); INPUT_LEASE = lease; true
+                    INPUT_LAST_POLL = started; INPUT_UNTIL = started.saturating_add(3_000_000_000); INPUT_LEASE = lease;
+                    LAST_HARDWARE_POLL = None; true
                 }
                 Err(error) => {
                     match error {
@@ -198,7 +203,10 @@ pub fn stop_capture(owner: crate::runtime::execution::SecurityIdentity) -> bool 
 // ------------------=
 pub fn initialize(info: &crate::boot_info::BootInfo) {
     if info.boot_reserved == 0 || LOCK.swap(true, Ordering::Acquire) { return; }
-    unsafe { DEVICE = hda::Hda::initialize(info.boot_reserved as usize, &raw mut DMA).ok(); }
+    unsafe {
+        DEVICE = hda::Hda::initialize(info.boot_reserved as usize, &raw mut DMA).ok();
+        LAST_HARDWARE_POLL = None;
+    }
     LOCK.store(false, Ordering::Release);
 }
 // ------------------------=
@@ -325,6 +333,7 @@ pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, g
                     PLAYBACK_STARTED_AT = started;
                     UNTIL = started.saturating_add(35_000_000_000);
                     PLAY_STATE = PlaybackState::Playing;
+                    LAST_HARDWARE_POLL = None;
                     trace_playback_transition(PLAY_STATE, 0, RESIDENT_BYTES as u64 / 4);
                     true
                 } else { false }
@@ -391,6 +400,7 @@ pub unsafe fn play_resident_speech(owner: crate::runtime::execution::SecurityIde
             PLAYBACK_STARTED_AT = crate::ui::performance::monotonic_ns().unwrap_or(now);
             UNTIL = PLAYBACK_STARTED_AT.saturating_add(35_000_000_000);
             LEASE = lease; PLAY_STATE = PlaybackState::Playing;
+            LAST_HARDWARE_POLL = None;
             trace_playback_transition(PLAY_STATE, 0, RESIDENT_BYTES as u64 / 4);
             true
         } else { false }
@@ -455,6 +465,7 @@ pub fn play_resident_system_cue(
                     UNTIL = PLAYBACK_STARTED_AT.saturating_add(15_000_000_000);
                     LEASE = lease;
                     PLAY_STATE = PlaybackState::Playing;
+                    LAST_HARDWARE_POLL = None;
                     trace_playback_transition(PLAY_STATE, 0, RESIDENT_BYTES as u64 / 4);
                     true
                 } else {
@@ -589,7 +600,8 @@ pub fn tone(owner: crate::runtime::execution::SecurityIdentity, capability: u64)
                 // Count audible duration from DMA start, without extending authority.
                 if let Some(started) = crate::ui::performance::monotonic_ns() {
                     UNTIL = started.saturating_add(2_000_000_000); LEASE = lease;
-                    INFINITY_ACTIVE = false; INFINITY_STARTED = false; PLAY_STATE = PlaybackState::Playing; true
+                    INFINITY_ACTIVE = false; INFINITY_STARTED = false; PLAY_STATE = PlaybackState::Playing;
+                    LAST_HARDWARE_POLL = None; true
                 } else { device.stop(); false }
             } else { false }
         } else { false }
@@ -598,13 +610,24 @@ pub fn tone(owner: crate::runtime::execution::SecurityIdentity, capability: u64)
 }
 // ------------------------=
 // FUNC: poll
-// DESC: Stops the finite tone at deadline or DMA fault without waiting on hardware or repainting.
+// DESC: Services native capture and playback at most once per millisecond, independently of pointer events, without sleeps or catch-up bursts.
 // ------------------=
 pub fn poll() {
     if LOCK.swap(true, Ordering::Acquire) { return; }
     unsafe {
+        let mut now = crate::ui::performance::monotonic_ns();
+        if let Some((current, previous)) = now.zip(LAST_HARDWARE_POLL) {
+            if current < previous {
+                // Lost monotonicity cannot extend stream authority or leave a
+                // stale future poll deadline suppressing capture indefinitely.
+                now = None;
+            } else if current - previous < HARDWARE_POLL_INTERVAL_NS {
+                LOCK.store(false, Ordering::Release);
+                return;
+            }
+        }
+        LAST_HARDWARE_POLL = now;
         if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut() {
-            let now = crate::ui::performance::monotonic_ns();
             // A prepared response may wait for another native synthesis job.
             // Preserve the existing capability while that work is pending;
             // playing streams retain their finite, nonrenewing DMA deadline.
