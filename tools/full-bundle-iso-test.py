@@ -91,6 +91,35 @@ def verify_model(installed_esp: Path, slot: int, expected_bytes: int, expected_h
 
 
 # ------------------------=
+# FUNC: verify_boot_loader
+# DESC: Proves live and freshly installed boot paths contain the exact current native worker adapter.
+# ------------------=
+def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Path) -> None:
+    architecture = "aarch64" if iso.name == "InfinityOS-aarch64.iso" else "x86_64"
+    if iso.name not in ("InfinityOS-aarch64.iso", "InfinityOS-x86_64.iso"):
+        raise RuntimeError(f"unrecognized release architecture: {iso.name}")
+    name = "BOOTAA64.EFI" if architecture == "aarch64" else "BOOTX64.EFI"
+    expected = (ROOT / "build" / architecture / name).read_bytes()
+    if not expected:
+        raise RuntimeError("native boot loader is empty")
+    for image, member in (
+        (live_esp, f"::/EFI/BOOT/{name}"),
+        (installed_esp, f"::/EFI/BOOT/{name}"),
+        (installed_esp, "::/EFI/InfinityOS/infinity.efi"),
+    ):
+        actual = subprocess.check_output(["mtype", "-i", str(image), member])
+        if actual != expected:
+            raise RuntimeError(f"stale or mismatched native boot loader: {member}")
+    external = work / name
+    subprocess.run(
+        ["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract", f"/EFI/BOOT/{name}", str(external)],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    if external.read_bytes() != expected:
+        raise RuntimeError("ISO boot loader differs from the installed boot loader")
+
+
+# ------------------------=
 # FUNC: verify_iso
 # DESC: Proves that a published ISO embeds both verified models in its fresh-install System Generation.
 # ------------------=
@@ -110,6 +139,7 @@ def verify_iso(iso: Path) -> None:
             stderr=subprocess.DEVNULL,
         )
         reassemble_installed_esp(live_esp, installed_esp)
+        verify_boot_loader(iso, live_esp, installed_esp, work)
         for model in MODELS:
             verify_model(installed_esp, *model)
     print(f"PASS: complete native model bundle verified in {iso}")
