@@ -76,10 +76,10 @@ def main():
         if source.name in ("ggml-backend-reg.cpp", "file_mapping.cpp") or "/playback/" in str(source):
             continue
         flags = ["-I" + str(source.parent)] + [item for item in command if item.startswith("-I")]
-        # Native profiling identifies matrix products and im2col as the dominant
-        # synthesis cost. Optimize these loop kernels without fast-math or any
+        # Native profiling identifies matrix products, im2col and typed binary
+        # element loops as dominant costs. Optimize without fast-math or any
         # change to their floating-point contract; PCM parity gates the result.
-        if source.name in ("ops.cpp", "ggml-cpu.c"):
+        if source.name in ("ops.cpp", "ggml-cpu.c", "binary-ops.cpp"):
             flags.append("-O3")
         flags += ["-DGGML_USE_CPU", "-DGGML_USE_CPU_REPACK", "-DGGML_SCHED_MAX_COPIES=4",
                   '-DGGML_VERSION="0.22.0"', '-DGGML_COMMIT="36da5713"',
@@ -108,15 +108,50 @@ def main():
             source.write_text(original + '\n#include "' + str(ROOT / "tools/voice-kokoro/im2col1d-test.h") + '"\n')
         if source.name == "ggml-cpu.c":
             original = source.read_text()
+            tiling = "    // block-tiling attempt"
+            if original.count(tiling) != 1:
+                raise RuntimeError("Unreviewed per-CPU matrix capability boundary")
+            original = original.replace(tiling,
+                "    const int native_isa = native_math_isa();\n\n" + tiling)
+            columns = "                float * dst_col = (float*)((char*)dst->data + (i1 * nb1 + i2 * nb2 + i3 * nb3));"
+            if original.count(columns) != 1:
+                raise RuntimeError("Unreviewed paired matrix column boundary")
+            original = original.replace(columns, columns + '''
+                if (num_rows_per_vec_dot == 1 && i11 + 1 < ne11 &&
+                    ir1 + 1 < MIN(iir1 + blck_1, ir1_end) &&
+                    native_mat2_isa(type, ne00, &dst_col[iir0], nb1,
+                        src0_row + iir0 * nb01, nb01, src1_col, src1_col_stride,
+                        MIN(iir0 + blck_0, ir0_end) - iir0, native_isa)) {
+                    ++ir1;
+                    continue;
+                }
+''')
             anchor = "                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0),"
             if original.count(anchor) != 1:
                 raise RuntimeError("Unreviewed matrix tile boundary")
             original = original.replace(anchor,
                 "                    if (num_rows_per_vec_dot == 1 && ir0 + 4 <= MIN(iir0 + blck_0, ir0_end) &&\n"
-                "                        native_dot4(type, ne00, &tmp[ir0 - iir0], src0_row + ir0 * nb01, nb01, src1_col)) {\n"
+                "                        native_dot4_isa(type, ne00, &tmp[ir0 - iir0], src0_row + ir0 * nb01, nb01, src1_col, native_isa)) {\n"
                 "                        ir0 += 3; continue;\n                    }\n" + anchor)
+            definition = "void ggml_compute_forward_mul_mat("
+            if original.count(definition) != 1:
+                raise RuntimeError("Unreviewed native matrix helper boundary")
+            original = original.replace(definition,
+                '#include "' + str(ROOT / "tools/voice-kokoro/matmul-parallel.h") + '"\n\n' + definition)
+            chunks = "    // The first chunk comes from our thread_id, the rest will get auto-assigned."
+            if original.count(chunks) != 1:
+                raise RuntimeError("Unreviewed native matrix chunk admission boundary")
+            original = original.replace(chunks, '''    if (native_parallel_mul_mat(params, dst, src0->type, vec_dot_num_rows,
+            nr0, nr1, nchunk0, nchunk1, dr0, dr1)) return;
+
+''' + chunks)
             source = output / "ggml-cpu.c"
-            source.write_text('#include <stddef.h>\nextern int native_dot4(int, int, float *, const void *, size_t, const void *);\n' + original)
+            source.write_text('#include <stddef.h>\nextern int native_dot4(int, int, float *, const void *, size_t, const void *);\n'
+                'extern int native_mat2(int, int, float *, size_t, const void *, size_t, const void *, size_t, int);\n' +
+                'extern int native_math_isa(void);\n'
+                'extern int native_dot4_isa(int, int, float *, const void *, size_t, const void *, int);\n'
+                'extern int native_mat2_isa(int, int, float *, size_t, const void *, size_t, const void *, size_t, int, int);\n' +
+                original + '\n#include "' + str(ROOT / "tools/voice-kokoro/matrix-tile-test.h") + '"\n')
         if source.name == "vec.cpp" and ARCH == "x86_64":
             # The upstream SSE path only needs SSE3 for horizontal addition.
             # Supply its exact pairwise operation using baseline SSE2 shuffles.

@@ -73,8 +73,17 @@ def main():
             synthesis_result=values[:8], operation_profile=profile), indent=2) + "\n")
         raise RuntimeError(f"Native synthesis guest exit status {result.returncode}; binary result {values[:8]}; profile {profile}")
     if args.dots_only:
-        assert data == struct.pack("<2Q", 205, int(args.cpu == "max"))
-        print("Native x86 SIMD: 205 exact guest dot-product and rejection cases passed")
+        # The compiled shared matrix fixture exercises five lengths accepted
+        # by both x86 paths, with no ARM-only cases or architecture skips.
+        expected_matrix_cases = 2 * 5 * 4 * 3 * 3 + 8 + 24
+        assert data == struct.pack("<3Q", 205, int(args.cpu == "max"), expected_matrix_cases)
+        evidence = dict(completed=True, cpu=args.cpu,
+                        environment=args.clock + " x86-64 TCG guest, production loader and AP scheduler",
+                        installed_verified=False, native_latency_verified=False,
+                        dot_product_cases=205, matrix_tile_cases=expected_matrix_cases,
+                        f16c_enabled=args.cpu == "max")
+        (work / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        print(json.dumps(evidence))
         return
     version, status, frames, elapsed, heap, allocation_failure, phase, heartbeat = struct.unpack_from("<8Q", data)
     assert version == 1 and status == 0 and 2400 <= frames <= 720000

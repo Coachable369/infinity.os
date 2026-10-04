@@ -1,5 +1,6 @@
-//! Bounded AP jobs. Only the BSP submits/polls; APs touch immutable weights and
-//! private activations and disjoint staging rows, never the engine, framebuffer or services.
+//! Bounded AP jobs. The BSP owns matrix/background queues. Native pure-math
+//! callers may borrow idle APs through atomic leases without entering those queues.
+//! APs never touch the engine, framebuffer, firmware, or service locks.
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 // One mailbox per secondary CPU; BSP remains dedicated to input/services.
@@ -11,6 +12,9 @@ const CACHE_FLOATS: usize = (WIDTH + WIDTH / 256 * 9 * 4) / 4;
 const MATRIX_ROWS: usize = 131072;
 // Smaller claims bound straggler/cancellation latency without changing row math.
 const CHUNK_ROWS: usize = 32;
+const RESERVED: usize = 5;
+const PURE_MATH: usize = 6;
+const MAX_PURE_HELPERS: usize = 3;
 static NEXT_ROW: AtomicUsize = AtomicUsize::new(0);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 // Exclusive row ranges are assigned by NEXT_ROW; BSP reads only after all APs
@@ -18,6 +22,7 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 static mut MATRIX_OUTPUT: [f32; MATRIX_ROWS] = [0.0; MATRIX_ROWS];
 struct Job {
     background: Option<unsafe fn()>,
+    pure: *const PureJob,
     data: *const u8,
     kind: u32,
     width: usize,
@@ -26,6 +31,11 @@ struct Job {
     elapsed: u64,
     input: [f32; WIDTH],
     cache: [f32; CACHE_FLOATS],
+}
+struct PureJob {
+    task: unsafe extern "C" fn(*mut core::ffi::c_void),
+    context: *mut core::ffi::c_void,
+    remaining: AtomicUsize,
 }
 struct Slot {
     state: AtomicUsize,
@@ -43,6 +53,7 @@ impl Slot {
             state: AtomicUsize::new(0),
             job: UnsafeCell::new(Job {
                 background: None,
+                pure: core::ptr::null(),
                 data: core::ptr::null(),
                 kind: 0,
                 width: 0,
@@ -69,6 +80,7 @@ fn wake_host(index: usize) {
     if let Some(thread) = HOST_THREADS[index].lock().unwrap().as_ref() { thread.unpark(); }
 }
 static COMPLETED: AtomicUsize = AtomicUsize::new(0);
+static PURE_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static COMPUTE_TICKS: AtomicU64 = AtomicU64::new(0);
 static IDLE_TICKS: AtomicU64 = AtomicU64::new(0);
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
@@ -169,6 +181,13 @@ pub fn online() -> usize {
 pub fn completed() -> usize {
     COMPLETED.load(Ordering::Relaxed)
 }
+// ------------------------=
+// FUNC: parallel_completed
+// DESC: Reports completed borrowed helper callbacks, excluding work performed by their calling owner.
+// ------------------=
+pub fn parallel_completed() -> usize {
+    PURE_COMPLETED.load(Ordering::Relaxed)
+}
 
 // ------------------------=
 // FUNC: run_host_worker
@@ -190,8 +209,9 @@ pub unsafe fn stop_host_workers() {
     let ready = READY.load(Ordering::Acquire);
     for (i, slot) in SLOTS.iter().enumerate() {
         if ready & (1 << i) != 0 {
-            while slot.state.load(Ordering::Acquire) == 4 { core::hint::spin_loop(); }
-            slot.state.store(3, Ordering::Release);
+            while slot.state.compare_exchange(0, 3, Ordering::AcqRel, Ordering::Acquire).is_err() {
+                core::hint::spin_loop();
+            }
             wake_host(i);
         }
     }
@@ -202,12 +222,15 @@ pub unsafe fn stop_host_workers() {
 // DESC: Submits one bounded non-rendering native task to an idle AP without occupying the UI thread.
 // ------------------=
 /// Safety: BSP-only; task must own its static buffers, honor cancellation and
-/// deadlines, and never access UI, firmware, runtime locks, or matrix mailboxes.
+/// deadlines, and never access UI, firmware, runtime locks, or matrix queues.
+/// A task may use infinity_speech_parallel only for its separately documented
+/// allocation-free pure-math contract.
 pub unsafe fn background(task: unsafe fn()) -> bool {
     if WAITING_BACKGROUND.is_some() { return false; }
     let ready = READY.load(Ordering::Acquire);
     for (index, slot) in SLOTS.iter().enumerate() {
-        if ready & (1 << index) != 0 && slot.state.load(Ordering::Acquire) == 0 {
+        if ready & (1 << index) != 0 && slot.state.compare_exchange(0, RESERVED,
+            Ordering::AcqRel, Ordering::Acquire).is_ok() {
             (*slot.job.get()).background = Some(task);
             slot.state.store(4, Ordering::Release);
             #[cfg(not(target_os = "none"))]
@@ -222,6 +245,51 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
         return true;
     }
     false
+}
+
+// ------------------------=
+// FUNC: infinity_speech_parallel
+// DESC: Borrows up to three idle APs for one allocation-free callback and joins them before returning.
+// ------------------=
+/// Safety: called off the BSP by a bounded native job. The callback owns an
+/// atomic work queue and writes only disjoint output; it may not allocate, use
+/// TLS, access runtime/firmware locks, unwind, abort, or dispatch nested work.
+/// It must return on cancellation, with each unit of work bounded. Context and
+/// referenced buffers stay alive until this call returns. No unclaimed AP is
+/// awaited, and the first online AP remains available for the browser/services.
+#[no_mangle]
+pub unsafe extern "C" fn infinity_speech_parallel(
+    task: unsafe extern "C" fn(*mut core::ffi::c_void),
+    context: *mut core::ffi::c_void,
+) -> usize {
+    let job = PureJob { task, context, remaining: AtomicUsize::new(0) };
+    let ready = READY.load(Ordering::Acquire);
+    let reserved = ready.trailing_zeros() as usize;
+    let mut helpers = 0;
+    for (index, slot) in SLOTS.iter().enumerate() {
+        if helpers == MAX_PURE_HELPERS { break; }
+        if index == reserved || ready & (1 << index) == 0 || slot.state.compare_exchange(
+            0, RESERVED, Ordering::AcqRel, Ordering::Acquire).is_err() { continue; }
+        (*slot.job.get()).pure = &job;
+        job.remaining.fetch_add(1, Ordering::Relaxed);
+        helpers += 1;
+        slot.state.store(PURE_MATH, Ordering::Release);
+        #[cfg(not(target_os = "none"))]
+        wake_host(index);
+    }
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    if helpers != 0 { core::arch::asm!("sev", options(nomem, nostack)); }
+    task(context);
+    // Never abandon a callback that can still access the caller's stack or
+    // tensor buffers, including after cancellation. Callbacks do not wait for
+    // one another, so an accepted cohort cannot deadlock at a graph barrier.
+    while job.remaining.load(Ordering::Acquire) != 0 {
+        #[cfg(not(target_os = "none"))]
+        std::thread::yield_now();
+        #[cfg(target_os = "none")]
+        core::hint::spin_loop();
+    }
+    helpers
 }
 
 // ------------------------=
@@ -267,7 +335,7 @@ unsafe fn collect_completed_matrix() -> Option<(usize, bool)> {
             Q6_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
         }
         IDLE_TICKS.fetch_add(counter().saturating_sub(job.finished), Ordering::Relaxed);
-        slot.state.store(0, Ordering::Relaxed);
+        slot.state.store(0, Ordering::Release);
     }
     PENDING = (0, 0, false);
     Some((start, discarded))
@@ -375,6 +443,16 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                 (*slot.job.get()).background = None;
                 slot.state.store(0, Ordering::Release);
             }
+            PURE_MATH => {
+                let job = (*slot.job.get()).pure;
+                ((*job).task)((*job).context);
+                (*slot.job.get()).pure = core::ptr::null();
+                PURE_COMPLETED.fetch_add(1, Ordering::Relaxed);
+                // This is the final access to the borrowed descriptor. The
+                // owner may retire it as soon as the acquire join sees zero.
+                (*job).remaining.fetch_sub(1, Ordering::Release);
+                slot.state.store(0, Ordering::Release);
+            }
             _ => {
                 #[cfg(all(target_arch = "aarch64", target_os = "none"))]
                 core::arch::asm!("wfe", options(nomem, nostack));
@@ -455,6 +533,8 @@ pub unsafe fn rows(
                 continue;
             }
             if reserve { reserve = false; continue; }
+            if slot.state.compare_exchange(0, RESERVED,
+                Ordering::AcqRel, Ordering::Acquire).is_err() { continue; }
             let job = &mut *slot.job.get();
             job.rows = output.len();
             job.width = input.len();
@@ -488,7 +568,7 @@ pub fn drain() {
             while slot.state.load(Ordering::Acquire) != 2 {
                 core::hint::spin_loop();
             }
-            slot.state.store(0, Ordering::Relaxed);
+            slot.state.store(0, Ordering::Release);
         }
         PENDING = (0, 0, false);
         dispatch_waiting_background();
@@ -497,6 +577,231 @@ pub fn drain() {
 
 #[cfg(test)]
 mod tests {
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static PURE_CONTEXT: core::sync::atomic::AtomicPtr<PureFixture> =
+        core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+    struct PureFixture {
+        next: AtomicUsize,
+        visits: [AtomicUsize; 512],
+        active: AtomicUsize,
+        finished: AtomicUsize,
+        released: AtomicBool,
+        cancel: AtomicBool,
+        helpers: AtomicUsize,
+        done: AtomicBool,
+    }
+    impl PureFixture {
+        // ------------------------=
+        // FUNC: new
+        // DESC: Allocates bounded atomic observation state for native helper ownership tests.
+        // ------------------=
+        fn new(released: bool) -> Self {
+            Self { next: AtomicUsize::new(0), visits: [const { AtomicUsize::new(0) }; 512],
+                active: AtomicUsize::new(0), finished: AtomicUsize::new(0),
+                released: AtomicBool::new(released), cancel: AtomicBool::new(false),
+                helpers: AtomicUsize::new(0), done: AtomicBool::new(false) }
+        }
+    }
+    // ------------------------=
+    // FUNC: pure_fixture_work
+    // DESC: Claims disjoint observable tasks and honors cancellation without retaining the borrowed context.
+    // ------------------=
+    unsafe extern "C" fn pure_fixture_work(context: *mut core::ffi::c_void) {
+        let fixture = &*(context.cast::<PureFixture>());
+        fixture.active.fetch_add(1, Ordering::AcqRel);
+        while !fixture.released.load(Ordering::Acquire) && !fixture.cancel.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        while !fixture.cancel.load(Ordering::Acquire) {
+            let next = fixture.next.fetch_add(1, Ordering::Relaxed);
+            if next >= fixture.visits.len() { break; }
+            fixture.visits[next].fetch_add(1, Ordering::Relaxed);
+            std::thread::yield_now();
+        }
+        fixture.active.fetch_sub(1, Ordering::Relaxed);
+        fixture.finished.fetch_add(1, Ordering::Release);
+    }
+    // ------------------------=
+    // FUNC: pure_fixture_owner
+    // DESC: Exercises helper borrowing from an actual background AP, including its owner slot exclusion.
+    // ------------------=
+    unsafe fn pure_fixture_owner() {
+        let context = PURE_CONTEXT.load(Ordering::Acquire);
+        let helpers = infinity_speech_parallel(pure_fixture_work, context.cast());
+        (*context).helpers.store(helpers, Ordering::Relaxed);
+        (*context).done.store(true, Ordering::Release);
+    }
+    // ------------------------=
+    // FUNC: await_condition
+    // DESC: Bounds behavioral test coordination without sleeps or production timeout changes.
+    // ------------------=
+    fn await_condition(condition: impl Fn() -> bool) {
+        let started = std::time::Instant::now();
+        while !condition() {
+            assert!(started.elapsed().as_secs() < 5);
+            std::thread::yield_now();
+        }
+    }
+    // ------------------------=
+    // FUNC: start_fixture_workers
+    // DESC: Starts a fresh isolated worker cohort after every preceding job and AP has retired.
+    // ------------------=
+    fn start_fixture_workers(count: usize) -> Vec<std::thread::JoinHandle<()>> {
+        assert_eq!(online(), 0);
+        for slot in &SLOTS { slot.state.store(0, Ordering::Release); }
+        let threads: Vec<_> = (1..=count)
+            .map(|id| std::thread::spawn(move || unsafe { worker_entry(id as *mut u8) })).collect();
+        await_condition(|| online() == count);
+        threads
+    }
+    // ------------------------=
+    // FUNC: finish_fixture_workers
+    // DESC: Joins every retired host AP before another test may reuse static scheduler state.
+    // ------------------=
+    fn finish_fixture_workers(threads: Vec<std::thread::JoinHandle<()>>) {
+        unsafe { stop_host_workers(); }
+        for thread in threads { thread.join().unwrap(); }
+        assert_eq!(online(), 0);
+    }
+    // ------------------------=
+    // FUNC: pure_helpers_preserve_ownership_and_quiesce
+    // DESC: Verifies native borrowing fallback, BSP progress, concurrent claims, repeated buffers, and cancellation lifetime.
+    // ------------------=
+    #[test]
+    fn pure_helpers_preserve_ownership_and_quiesce() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut empty = PureFixture::new(true);
+        let before = parallel_completed();
+        assert_eq!(unsafe { infinity_speech_parallel(pure_fixture_work, (&mut empty as *mut PureFixture).cast()) }, 0);
+        assert!(empty.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        assert_eq!(parallel_completed(), before);
+
+        // The single online AP is both the caller and protected service slot.
+        let threads = start_fixture_workers(1);
+        let mut single = PureFixture::new(true);
+        PURE_CONTEXT.store(&mut single, Ordering::Release);
+        assert!(unsafe { background(pure_fixture_owner) });
+        await_condition(|| single.done.load(Ordering::Acquire));
+        assert_eq!(single.helpers.load(Ordering::Acquire), 0);
+        assert!(single.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        assert_eq!(parallel_completed(), before);
+        finish_fixture_workers(threads);
+
+        let threads = start_fixture_workers(3);
+        // Keep the first online AP idle while an off-BSP caller borrows the
+        // other two. A real background callback must still obtain that AP.
+        let reserved = std::sync::Arc::new(PureFixture::new(false));
+        let owner_context = reserved.clone();
+        let owner = std::thread::spawn(move || unsafe {
+            infinity_speech_parallel(pure_fixture_work,
+                std::sync::Arc::as_ptr(&owner_context).cast_mut().cast())
+        });
+        await_condition(|| reserved.active.load(Ordering::Acquire) == 3);
+        QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
+        assert!(unsafe { background(queued_background) });
+        await_condition(|| QUEUED_BACKGROUND_RAN.load(Ordering::Acquire));
+        assert_eq!(reserved.finished.load(Ordering::Acquire), 0);
+        reserved.released.store(true, Ordering::Release);
+        assert_eq!(owner.join().unwrap(), 2);
+        assert_eq!(reserved.active.load(Ordering::Acquire), 0);
+        assert_eq!(reserved.finished.load(Ordering::Acquire), 3);
+        assert!(reserved.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        await_condition(|| SLOTS.iter().take(3).all(|slot| slot.state.load(Ordering::Acquire) == 0));
+
+        // A four-vCPU machine has only three APs. A permanent browser owns
+        // one, the speech owner uses the second, and only one helper remains.
+        BACKGROUND_RELEASE.store(false, Ordering::Release);
+        BACKGROUND_STARTED.store(false, Ordering::Release);
+        assert!(unsafe { background(held_background) });
+        await_condition(|| BACKGROUND_STARTED.load(Ordering::Acquire));
+        let mut constrained = PureFixture::new(false);
+        PURE_CONTEXT.store(&mut constrained, Ordering::Release);
+        assert!(unsafe { background(pure_fixture_owner) });
+        await_condition(|| constrained.active.load(Ordering::Acquire) == 2);
+        let mut busy = PureFixture::new(true);
+        assert_eq!(unsafe { infinity_speech_parallel(pure_fixture_work, (&mut busy as *mut PureFixture).cast()) }, 0);
+        assert!(busy.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        constrained.released.store(true, Ordering::Release);
+        await_condition(|| constrained.done.load(Ordering::Acquire));
+        assert_eq!(constrained.helpers.load(Ordering::Acquire), 1);
+        assert_eq!(constrained.active.load(Ordering::Acquire), 0);
+        assert_eq!(constrained.finished.load(Ordering::Acquire), 2);
+        assert!(constrained.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        BACKGROUND_RELEASE.store(true, Ordering::Release);
+        assert_eq!(parallel_completed() - before, 3);
+        finish_fixture_workers(threads);
+
+        let before = parallel_completed();
+        let threads = start_fixture_workers(6);
+        let data = vec![0u8; 256 * 144];
+        let input = vec![0.125f32; 256];
+        for cancelled in [false, true] {
+            let mut fixture = PureFixture::new(false);
+            PURE_CONTEXT.store(&mut fixture, Ordering::Release);
+            assert!(unsafe { background(pure_fixture_owner) });
+            await_condition(|| fixture.active.load(Ordering::Acquire) == 4);
+            // All borrowed contexts remain live, yet BSP matrix and ordinary
+            // background submissions and collection must continue independently.
+            let mut output = vec![f32::NAN; 256];
+            let mut cursor = 0;
+            assert_eq!(unsafe { rows(12, &data, &input, &mut output, &mut cursor) }, Some(false));
+            BACKGROUND_RELEASE.store(false, Ordering::Release);
+            BACKGROUND_STARTED.store(false, Ordering::Release);
+            assert!(unsafe { background(held_background) });
+            await_condition(|| BACKGROUND_STARTED.load(Ordering::Acquire));
+            let mut busy = PureFixture::new(true);
+            assert_eq!(unsafe { infinity_speech_parallel(pure_fixture_work, (&mut busy as *mut PureFixture).cast()) }, 0);
+            assert!(busy.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+            QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
+            assert!(unsafe { background(queued_background) });
+            let deadline = std::time::Instant::now();
+            while unsafe { rows(12, &data, &input, &mut output, &mut cursor) } != Some(true) {
+                assert!(deadline.elapsed().as_secs() < 5);
+                std::thread::yield_now();
+            }
+            await_condition(|| QUEUED_BACKGROUND_RAN.load(Ordering::Acquire));
+            assert!(output.iter().all(|value| *value == 0.0));
+            assert!(!fixture.done.load(Ordering::Acquire));
+            if cancelled { fixture.cancel.store(true, Ordering::Release); }
+            else { fixture.released.store(true, Ordering::Release); }
+            await_condition(|| fixture.done.load(Ordering::Acquire));
+            assert_eq!(fixture.helpers.load(Ordering::Acquire), 3);
+            assert_eq!(fixture.active.load(Ordering::Acquire), 0);
+            assert_eq!(fixture.finished.load(Ordering::Acquire), 4);
+            assert!(fixture.visits.iter().all(|count| count.load(Ordering::Acquire) == usize::from(!cancelled)));
+            BACKGROUND_RELEASE.store(true, Ordering::Release);
+            await_condition(|| SLOTS.iter().take(6).all(|slot| slot.state.load(Ordering::Acquire) == 0));
+        }
+        assert_eq!(parallel_completed() - before, 6);
+
+        // Repeated actual AP owners compete with BSP matrix claims. Reclaiming
+        // a fixture after done must never leave helpers writing its old buffer.
+        let mut helper_total = 6;
+        for _ in 0..64 {
+            let mut fixture = PureFixture::new(true);
+            PURE_CONTEXT.store(&mut fixture, Ordering::Release);
+            assert!(unsafe { background(pure_fixture_owner) });
+            let mut output = vec![f32::NAN; 256];
+            let mut cursor = 0;
+            let deadline = std::time::Instant::now();
+            loop {
+                let result = unsafe { rows(12, &data, &input, &mut output, &mut cursor) };
+                if result == Some(true) { break; }
+                assert!(deadline.elapsed().as_secs() < 5);
+                std::thread::yield_now();
+            }
+            await_condition(|| fixture.done.load(Ordering::Acquire));
+            let helpers = fixture.helpers.load(Ordering::Acquire);
+            assert!(helpers <= MAX_PURE_HELPERS);
+            helper_total += helpers;
+            assert_eq!(fixture.active.load(Ordering::Acquire), 0);
+            assert_eq!(fixture.finished.load(Ordering::Acquire), helpers + 1);
+            assert!(fixture.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+            assert!(output.iter().all(|value| *value == 0.0));
+        }
+        assert_eq!(parallel_completed() - before, helper_total);
+        finish_fixture_workers(threads);
+    }
     static QUEUED_BACKGROUND_RAN: AtomicBool = AtomicBool::new(false);
     // ------------------------=
     // FUNC: queued_background
@@ -547,9 +852,10 @@ mod tests {
     // ------------------=
     #[test]
     fn concurrent_rows_and_cancellation() {
-        let threads: Vec<_> = (1..=6)
-            .map(|id| std::thread::spawn(move || unsafe { worker_entry(id as *mut u8) }))
-            .collect();
+        let _guard = TEST_LOCK.lock().unwrap();
+        BACKGROUND_RELEASE.store(false, Ordering::Release);
+        BACKGROUND_STARTED.store(false, Ordering::Release);
+        let threads = start_fixture_workers(6);
         let deadline = std::time::Instant::now();
         while online() != 6 {
             assert!(deadline.elapsed().as_secs() < 5);

@@ -98,6 +98,7 @@ def main():
         raise RuntimeError("Missing native Whisper engine")
     run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_recognize", "--undefined=native_prepare_recognition", "--undefined=native_diagnostics",
         "--undefined=native_profile_read", "--undefined=native_verify_im2col1d", "--undefined=native_memory_stats",
+        "--undefined=native_verify_matrix_tiles", "--undefined=native_dot4",
         "-T", ROOT / "tools/voice-kokoro/private.ld",
         *syscall_aliases("close", "fstat", "getpid", "gettimeofday", "isatty", "kill",
                          "lseek", "open", "read", "sbrk", "stat", "unlink", "write"),
@@ -110,6 +111,7 @@ def main():
     run(LLVM / "llvm-objcopy", "--prefix-symbols=infinity_kokoro_", native, private)
     run(LLVM / "llvm-objcopy",
         "--redefine-sym", "infinity_kokoro_infinity_speech_clock_ns=infinity_speech_clock_ns",
+        "--redefine-sym", "infinity_kokoro_infinity_speech_parallel=infinity_speech_parallel",
         "--redefine-sym", "infinity_kokoro___extenddftf2=__extenddftf2",
         "--redefine-sym", "infinity_kokoro___trunctfdf2=__trunctfdf2", private)
 

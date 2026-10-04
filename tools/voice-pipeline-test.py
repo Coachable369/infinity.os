@@ -36,6 +36,8 @@ def main():
         "-o", str(output / "qwen-workers-test"))
     run(str(output / "qwen-workers-test"))
     run("python3", "tools/voice-kokoro/test_pcm_boundary.py")
+    run("python3", "-m", "unittest", "discover", "-s", "tools/voice-kokoro",
+        "-p", "test_latency*.py")
     run("make", "voice-output-test", "voice-pcm-test", "voice-vad-test", "audio-test")
 
 

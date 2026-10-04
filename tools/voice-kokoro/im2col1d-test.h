@@ -144,6 +144,23 @@ extern "C" uint64_t native_verify_im2col1d(void) {
         }
         if (memcmp(expected, actual, sizeof(expected)) != 0) return 0;
         ++cases;
+        if (workers == 1) {
+            // Disjoint ranges deliberately execute out of order and split
+            // inside batch boundaries. Every output and guard half must match.
+            for (size_t i = 0; i < 4096; ++i) actual[i] = 0x55aa;
+            ggml_compute_params params{};
+            params.nth = 1;
+            const int64_t rows = batches * outputs;
+            const int64_t first = rows / 3, second = rows * 2 / 3;
+            const int64_t ranges[][2] = {{second, rows}, {0, first}, {first, second}};
+            for (const auto &range : ranges) {
+                if (type == GGML_TYPE_F32)
+                    native_im2col1d_rows<true>(&params, &destination, range[0], range[1]);
+                else native_im2col1d_rows<false>(&params, &destination, range[0], range[1]);
+            }
+            if (memcmp(expected, actual, sizeof(expected)) != 0) return 0;
+            ++cases;
+        }
     }
     ggml_tensor weight{}, source{}, destination{};
     weight.ne[0] = 3;

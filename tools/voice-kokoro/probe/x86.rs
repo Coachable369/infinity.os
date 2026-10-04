@@ -35,6 +35,11 @@ unsafe extern "C" {
     fn infinity_kokoro_native_f16c_available() -> i32;
     fn infinity_kokoro_native_dot4(kind: i32, n: i32, out: *mut f32,
         x: *const u8, stride: usize, y: *const u8) -> i32;
+    // ------------------------=
+    // FUNC: infinity_kokoro_native_verify_matrix_tiles
+    // DESC: Returns completed bitwise matrix-tile and strided/broadcast dispatch checks, or zero on any failure.
+    // ------------------=
+    fn infinity_kokoro_native_verify_matrix_tiles() -> usize;
 }
 // ------------------------=
 // FUNC: finish
@@ -158,11 +163,16 @@ unsafe fn speech_job() {
         while cursor != end { (*cursor)(); cursor = cursor.add(1); }
         infinity_kokoro_ggml_cpu_init();
         verify_dots();
-        for byte in 205u64.to_le_bytes() {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
-        }
-        for byte in (infinity_kokoro_native_f16c_available() as u64).to_le_bytes() {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
+        let matrix_cases = infinity_kokoro_native_verify_matrix_tiles();
+        // Both baseline SSE2 and optional F16C accept all five tested lengths
+        // (32..512). The shared fixture has no architecture-specific skips:
+        // 2 types × 5 lengths × 4 row counts × 3 pads × 3 offsets, plus
+        // 8 rejection checks and 24 partial/strided/broadcast dispatch checks.
+        assert_eq!(matrix_cases, 2 * 5 * 4 * 3 * 3 + 8 + 24);
+        for value in [205u64, infinity_kokoro_native_f16c_available() as u64, matrix_cases as u64] {
+            for byte in value.to_le_bytes() {
+                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
+            }
         }
         finish(16);
     }

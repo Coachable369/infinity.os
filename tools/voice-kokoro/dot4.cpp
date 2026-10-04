@@ -101,8 +101,87 @@ template<bool Half> static void dot4(int n, float *out, const unsigned char *x, 
 #endif
 }
 
+// ------------------------=
+// FUNC: dot2x2
+// DESC: Reuses weights and activations across two rows and columns with exactly the upstream per-dot accumulator and reduction order.
+// ------------------=
+template<bool Half> static void dot2x2(int n, float *out, size_t output_stride,
+    const unsigned char *x, size_t x_stride, const unsigned char *y, size_t y_stride) {
+    constexpr int width = Half ? 2 : 4;
+#if defined(__aarch64__)
+    float32x4_t sums[2][2][4];
+    for (int row = 0; row < 2; ++row) for (int col = 0; col < 2; ++col)
+        for (int lane = 0; lane < 4; ++lane) sums[row][col][lane] = vdupq_n_f32(0);
+    for (int i = 0; i < n; i += 16) {
+#if defined(NATIVE_FAST_FHM)
+        if constexpr (Half) {
+            #pragma clang loop unroll(full)
+            for (int pair = 0; pair < 2; ++pair) {
+                const auto a0 = vld1q_f16((const __fp16 *)__builtin_assume_aligned(x + (i + pair * 8) * 2, 16));
+                const auto a1 = vld1q_f16((const __fp16 *)__builtin_assume_aligned(x + x_stride + (i + pair * 8) * 2, 16));
+                const auto b0 = vld1q_f16((const __fp16 *)__builtin_assume_aligned(y + (i + pair * 8) * 2, 16));
+                const auto b1 = vld1q_f16((const __fp16 *)__builtin_assume_aligned(y + y_stride + (i + pair * 8) * 2, 16));
+                sums[0][0][pair*2] = vfmlalq_low_f16(sums[0][0][pair*2], a0, b0);
+                sums[0][0][pair*2+1] = vfmlalq_high_f16(sums[0][0][pair*2+1], a0, b0);
+                sums[1][0][pair*2] = vfmlalq_low_f16(sums[1][0][pair*2], a1, b0);
+                sums[1][0][pair*2+1] = vfmlalq_high_f16(sums[1][0][pair*2+1], a1, b0);
+                sums[0][1][pair*2] = vfmlalq_low_f16(sums[0][1][pair*2], a0, b1);
+                sums[0][1][pair*2+1] = vfmlalq_high_f16(sums[0][1][pair*2+1], a0, b1);
+                sums[1][1][pair*2] = vfmlalq_low_f16(sums[1][1][pair*2], a1, b1);
+                sums[1][1][pair*2+1] = vfmlalq_high_f16(sums[1][1][pair*2+1], a1, b1);
+            }
+            continue;
+        }
+#endif
+        #pragma clang loop unroll(full)
+        for (int lane = 0; lane < 4; ++lane) {
+            const auto a0 = load<Half>(x + (i + lane * 4) * width);
+            const auto a1 = load<Half>(x + x_stride + (i + lane * 4) * width);
+            const auto b0 = load<Half>(y + (i + lane * 4) * width);
+            const auto b1 = load<Half>(y + y_stride + (i + lane * 4) * width);
+            sums[0][0][lane] = vfmaq_f32(sums[0][0][lane], a0, b0);
+            sums[1][0][lane] = vfmaq_f32(sums[1][0][lane], a1, b0);
+            sums[0][1][lane] = vfmaq_f32(sums[0][1][lane], a0, b1);
+            sums[1][1][lane] = vfmaq_f32(sums[1][1][lane], a1, b1);
+        }
+    }
+    for (int col = 0; col < 2; ++col) for (int row = 0; row < 2; ++row) {
+        float32x4_t *sum = sums[row][col];
+        ((float *)((unsigned char *)out + col * output_stride))[row] =
+            vaddvq_f32(vaddq_f32(vaddq_f32(sum[0], sum[2]), vaddq_f32(sum[1], sum[3])));
+    }
+#else
+    __m128 sums[2][2][8];
+    #pragma clang loop unroll(disable)
+    for (int lane = 0; lane < 8; ++lane) {
+        __m128 acc[2][2] = {{_mm_setzero_ps(), _mm_setzero_ps()}, {_mm_setzero_ps(), _mm_setzero_ps()}};
+        for (int i = 0; i < n; i += 32) {
+            const auto a0 = load<Half>(x + (i + lane * 4) * width);
+            const auto a1 = load<Half>(x + x_stride + (i + lane * 4) * width);
+            const auto b0 = load<Half>(y + (i + lane * 4) * width);
+            const auto b1 = load<Half>(y + y_stride + (i + lane * 4) * width);
+            acc[0][0] = _mm_add_ps(acc[0][0], _mm_mul_ps(a0, b0));
+            acc[1][0] = _mm_add_ps(acc[1][0], _mm_mul_ps(a1, b0));
+            acc[0][1] = _mm_add_ps(acc[0][1], _mm_mul_ps(a0, b1));
+            acc[1][1] = _mm_add_ps(acc[1][1], _mm_mul_ps(a1, b1));
+        }
+        for (int row = 0; row < 2; ++row) for (int col = 0; col < 2; ++col)
+            sums[row][col][lane] = acc[row][col];
+    }
+    for (int col = 0; col < 2; ++col) for (int row = 0; row < 2; ++row) {
+        __m128 *sum = sums[row][col];
+        for (int offset = 4; offset; offset >>= 1)
+            for (int lane = 0; lane < offset; ++lane) sum[lane] = _mm_add_ps(sum[lane], sum[lane + offset]);
+        const __m128 paired = _mm_add_ps(sum[0], _mm_shuffle_ps(sum[0], sum[0], _MM_SHUFFLE(2,3,0,1)));
+        ((float *)((unsigned char *)out + col * output_stride))[row] =
+            _mm_cvtss_f32(_mm_add_ss(paired, _mm_movehl_ps(paired, paired)));
+    }
+#endif
+}
+
 #if defined(__x86_64__) && !defined(NATIVE_FAST_F16C)
 extern "C" int native_dot4_f16c(int, int, float *, const void *, size_t, const void *);
+extern "C" int native_mat2_f16c(int, int, float *, size_t, const void *, size_t, const void *, size_t, int);
 // ------------------------=
 // FUNC: native_f16c_available
 // DESC: Requires both hardware capability and OS-enabled XMM/YMM state before dispatching optional instructions.
@@ -118,6 +197,7 @@ extern "C" __attribute__((noinline)) int native_f16c_available(void) {
 
 #if defined(__aarch64__) && !defined(NATIVE_FAST_FHM)
 extern "C" int native_dot4_fhm(int, int, float *, const void *, size_t, const void *);
+extern "C" int native_mat2_fhm(int, int, float *, size_t, const void *, size_t, const void *, size_t, int);
 // ------------------------=
 // FUNC: native_fhm_available
 // DESC: Checks guest CPU widening-half capability before entering the optional native instruction variant.
@@ -130,8 +210,8 @@ static int native_fhm_available(void) {
 #endif
 
 // ------------------------=
-// FUNC: native_dot4
-// DESC: Accepts only complete four-row FP32/FP16 tiles with verified alignment; all other tensors retain upstream execution.
+// FUNC: native_dot4_isa
+// DESC: Accepts checked four-row floating tiles using immutable capability evidence from the executing CPU.
 // ------------------=
 extern "C" int
 #if defined(NATIVE_FAST_F16C)
@@ -139,9 +219,13 @@ native_dot4_f16c
 #elif defined(NATIVE_FAST_FHM)
 native_dot4_fhm
 #else
-native_dot4
+native_dot4_isa
 #endif
-(int type, int n, float *out, const void *x, size_t stride, const void *y) {
+(int type, int n, float *out, const void *x, size_t stride, const void *y
+#if !defined(NATIVE_FAST_FHM) && !defined(NATIVE_FAST_F16C)
+ , int native_isa
+#endif
+) {
     if (n <= 0 || n % 16 || (type != 0 && type != 1)) return 0;
 #if defined(__x86_64__)
     if (n % 32) return 0;
@@ -154,18 +238,92 @@ native_dot4
 #endif
     if (((uintptr_t)x | (uintptr_t)y | stride) & mask) return 0;
 #if defined(__aarch64__) && !defined(NATIVE_FAST_FHM)
-    static int accelerated = -1;
-    if (accelerated < 0) accelerated = native_fhm_available();
-    if (type == 1 && accelerated && !(((uintptr_t)x | (uintptr_t)y | stride) & 15))
+    if (type == 1 && native_isa && !(((uintptr_t)x | (uintptr_t)y | stride) & 15))
         return native_dot4_fhm(type,n,out,x,stride,y);
 #endif
 #if defined(__x86_64__) && !defined(NATIVE_FAST_F16C)
-    // One speech worker owns this engine for its lifetime.
-    static int accelerated = -1;
-    if (accelerated < 0) accelerated = native_f16c_available();
-    if (accelerated) return native_dot4_f16c(type, n, out, x, stride, y);
+    if (native_isa) return native_dot4_f16c(type, n, out, x, stride, y);
 #endif
     if (type == 1) dot4<true>(n, out, (const unsigned char *)x, stride, (const unsigned char *)y);
     else dot4<false>(n, out, (const unsigned char *)x, stride, (const unsigned char *)y);
     return 1;
 }
+
+// ------------------------=
+// FUNC: native_mat2_isa
+// DESC: Computes checked paired columns using immutable capability evidence from the executing CPU.
+// ------------------=
+extern "C" int
+#if defined(NATIVE_FAST_F16C)
+native_mat2_f16c
+#elif defined(NATIVE_FAST_FHM)
+native_mat2_fhm
+#else
+native_mat2_isa
+#endif
+(int type, int n, float *out, size_t output_stride, const void *x, size_t x_stride,
+ const void *y, size_t y_stride, int rows
+#if !defined(NATIVE_FAST_FHM) && !defined(NATIVE_FAST_F16C)
+ , int native_isa
+#endif
+) {
+    if (!out || !x || !y || n <= 0 || n % 16 || (type != 0 && type != 1) ||
+        rows < 2 || rows > 16 || rows % 2 || output_stride < size_t(rows) * sizeof(float) ||
+        ((uintptr_t)out | output_stride) & 3) return 0;
+#if defined(__x86_64__)
+    if (n % 32) return 0;
+#endif
+    const size_t width = type == 1 ? 2 : 4;
+    if (x_stride < size_t(n) * width || y_stride < size_t(n) * width) return 0;
+    const uintptr_t mask =
+#if defined(NATIVE_FAST_FHM)
+        15;
+#else
+        type == 1 ? 7 : 15;
+#endif
+    if (((uintptr_t)x | (uintptr_t)y | x_stride | y_stride) & mask) return 0;
+#if defined(__aarch64__) && !defined(NATIVE_FAST_FHM)
+    if (type == 1 && native_isa && !(((uintptr_t)x | (uintptr_t)y | x_stride | y_stride) & 15))
+        return native_mat2_fhm(type, n, out, output_stride, x, x_stride, y, y_stride, rows);
+#endif
+#if defined(__x86_64__) && !defined(NATIVE_FAST_F16C)
+    if (native_isa) return native_mat2_f16c(type, n, out, output_stride, x, x_stride, y, y_stride, rows);
+#endif
+    for (int row = 0; row < rows; row += 2) {
+        const auto *weights = (const unsigned char *)x + row * x_stride;
+        if (type == 1) dot2x2<true>(n, out + row, output_stride, weights, x_stride, (const unsigned char *)y, y_stride);
+        else dot2x2<false>(n, out + row, output_stride, weights, x_stride, (const unsigned char *)y, y_stride);
+    }
+    return 1;
+}
+
+#if !defined(NATIVE_FAST_FHM) && !defined(NATIVE_FAST_F16C)
+// ------------------------=
+// FUNC: native_math_isa
+// DESC: Queries only the currently executing CPU; callers may reuse the immutable result within one non-migrating math chunk.
+// ------------------=
+extern "C" int native_math_isa(void) {
+#if defined(__aarch64__)
+    return native_fhm_available();
+#else
+    return native_f16c_available();
+#endif
+}
+
+// ------------------------=
+// FUNC: native_dot4
+// DESC: Preserves the checked public tile API, resolving current-CPU capabilities before entering optional native instructions.
+// ------------------=
+extern "C" int native_dot4(int type, int n, float *out, const void *x, size_t stride, const void *y) {
+    return native_dot4_isa(type, n, out, x, stride, y, native_math_isa());
+}
+
+// ------------------------=
+// FUNC: native_mat2
+// DESC: Preserves the checked public paired-column API without a shared mutable or thread-local capability cache.
+// ------------------=
+extern "C" int native_mat2(int type, int n, float *out, size_t output_stride,
+    const void *x, size_t x_stride, const void *y, size_t y_stride, int rows) {
+    return native_mat2_isa(type, n, out, output_stride, x, x_stride, y, y_stride, rows, native_math_isa());
+}
+#endif

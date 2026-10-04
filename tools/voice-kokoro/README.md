@@ -141,6 +141,53 @@ for unsupported types, lengths, and boundary rows. The guest additionally checks
 the single-row implementation. A separate experiment with the upstream tinyBLAS
 backend provided no measurable speedup and was removed.
 
+### Bounded native math helpers
+
+Kokoro still has one admitted engine owner and a single-threaded GGML graph.
+Large, validated floating-point matrix operations and one-dimensional
+convolution expansions can borrow up to three idle native workers for disjoint
+tiles or output rows. The first online worker is excluded from
+borrowing, and busy workers are never queued or awaited. The caller also computes;
+when no helper is available it performs the same work serially. Every accepted
+helper is joined before tensor storage or the stack descriptor can be reused.
+
+These callbacks may not allocate, use TLS, dispatch nested work, enter service
+locks, or invoke native fatal unwinding. Model loading, activation conversion,
+graph advancement, cancellation decisions and heap ownership remain on the
+admitted owner. Generic GGML/pthread threading is not enabled. The adapter and
+math sources are shared by ARM64 and x86-64; optional ISA capabilities are checked
+on the CPU actually executing a chunk, not cached globally across CPUs.
+
+Two-column tiles reuse weights and activations while preserving the original
+FP32 accumulation/reduction order. The native fixture compares complete PCM,
+plus 392 typed matrix/tensor-layout cases including partial tiles, odd sizes,
+strides, broadcast planes and converted inputs. Scheduler tests exercise busy
+fallback, concurrent browser/model jobs, cancellation and repeated buffer reuse.
+Convolution fixtures also exercise out-of-order row partitions across batches,
+padding, dilation and stride, comparing output and guard bytes with upstream.
+
+Use the production-loader/worker probe for matched native measurements:
+
+```sh
+./build-kit run python3 tools/voice-kokoro/build.py --target aarch64 --build-only
+./build-kit run python3 tools/voice-kokoro/probe/latency.py --cpus 8 --serial --label serial
+./build-kit run python3 tools/voice-kokoro/probe/latency.py --cpus 8 --label parallel
+./build-kit run python3 tools/voice-kokoro/probe/latency.py --cpus 8 --lifetime --label lifetime
+./build-kit run python3 tools/voice-kokoro/probe/compare-latency.py --baseline build/voice-kokoro/native-latency/serial/probe-hvf.bin --candidate build/voice-kokoro/native-latency/parallel/probe-hvf.bin --output build/voice-kokoro/native-latency/comparison.json
+```
+
+The serial switch unbinds only the optional helper hook in a test-only object
+copy, so it measures the helper contribution rather than the total improvement
+over an older engine. To measure a preserved pre-optimization engine instead,
+use `--baseline-object build/<saved-engine>/private-native.o` with the same CPU
+count; the runner records that object's hash and omits only the new matrix
+verifier that did not exist in the older engine. The comparison rejects changed
+PCM, increased heap use and instrumented
+timings. The lifetime probe alternates real Whisper recognition with twelve
+Kokoro replies and verifies failure erasure/quarantine. These are native guest
+and ownership tests, not installed microphone, device-playback or end-to-end
+conversation measurements. Complete-response playback remains unchanged.
+
 Remaining acceptance gates:
 
 1. Complete distribution materials before release integration. GPLv3-compatible

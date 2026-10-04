@@ -13,6 +13,12 @@ static mut TRANSLATIONS: TranslationTable = TranslationTable([0; 512]);
 core::arch::global_asm!(include_str!("../../../boot/aarch64/handoff.S"));
 unsafe extern "C" {
     // ------------------------=
+    // FUNC: native_verify_matrix_tiles
+    // DESC: Compares actual native two-column tiles with the upstream numerical kernel and verifies rejection leaves output untouched.
+    // ------------------=
+    #[link_name = "infinity_kokoro_native_verify_matrix_tiles"]
+    fn native_verify_matrix_tiles() -> usize;
+    // ------------------------=
     // FUNC: infinity_ap_callback
     // DESC: Enters the production ARM worker trampoline using the supplied stack, callback, and argument.
     // ------------------=
@@ -120,6 +126,7 @@ unsafe extern "C" fn speech_cases(_: u64) {
     let mut warm_frames = 0;
     assert_eq!(native_synthesize(b"Hi.".as_ptr(), 3, (&raw mut PCM).cast(), 720000,
         &mut warm_frames, 0, 0), 0);
+    assert_eq!(native_verify_matrix_tiles(), 392);
     for (case, split) in [true, false, false, true].into_iter().enumerate() {
         let mut frames = 0usize;
         let mut status = 0;

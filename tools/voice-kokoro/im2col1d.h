@@ -1,4 +1,6 @@
 #pragma once
+#include "parallel.h"
+#include <limits.h>
 
 // ------------------------=
 // FUNC: native_im2col_half_conversion_available
@@ -41,35 +43,82 @@ static inline ggml_fp16_t native_im2col_fp32_to_fp16(float value) {
 // DESC: Expands one-dimensional convolution rows with padding bounds computed once per output position, preserving the upstream half conversion.
 // ------------------=
 template<bool FloatInput, bool HardwareHalf = false>
-static void native_im2col1d_rows(const ggml_compute_params *params, ggml_tensor *dst) {
+static void native_im2col1d_rows(const ggml_compute_params *params, ggml_tensor *dst,
+    int64_t first_row = 0, int64_t last_row = -1) {
     const ggml_tensor *source = dst->src[1];
     const int64_t width = source->ne[0], channels = source->ne[1];
     const int64_t kernel = dst->src[0]->ne[0], outputs = dst->ne[1];
     const int32_t *options = reinterpret_cast<const int32_t *>(dst->op_params);
     const int64_t stride = options[0], padding = options[2], dilation = options[4];
     auto *destination = static_cast<ggml_fp16_t *>(dst->data);
-    for (int64_t batch = 0; batch < source->ne[2]; ++batch) {
-        for (int64_t x = 0; x < outputs; ++x) {
-            const int64_t origin = x * stride - padding;
-            const int64_t begin = std::min(kernel, std::max(int64_t(0), (-origin + dilation - 1) / dilation));
-            const int64_t end = std::max(begin, std::min(kernel, (width - origin + dilation - 1) / dilation));
-            ggml_fp16_t *row = destination + (batch * outputs + x) * channels * kernel;
-            for (int64_t channel = params->ith; channel < channels; channel += params->nth) {
-                ggml_fp16_t *out = row + channel * kernel;
-                const char *input = static_cast<const char *>(source->data) + batch * source->nb[2] + channel * source->nb[1];
-                for (int64_t k = 0; k < begin; ++k) out[k] = 0;
-                if constexpr (FloatInput) {
-                    const float *values = reinterpret_cast<const float *>(input);
-                    for (int64_t k = begin; k < end; ++k)
-                        out[k] = native_im2col_fp32_to_fp16<HardwareHalf>(values[origin + k * dilation]);
-                } else {
-                    const ggml_fp16_t *values = reinterpret_cast<const ggml_fp16_t *>(input);
-                    for (int64_t k = begin; k < end; ++k) out[k] = values[origin + k * dilation];
-                }
-                for (int64_t k = end; k < kernel; ++k) out[k] = 0;
+    if (last_row < 0) last_row = source->ne[2] * outputs;
+    for (int64_t index = first_row; index < last_row; ++index) {
+        const int64_t batch = index / outputs, x = index % outputs;
+        const int64_t origin = x * stride - padding;
+        const int64_t begin = std::min(kernel, std::max(int64_t(0), (-origin + dilation - 1) / dilation));
+        const int64_t end = std::max(begin, std::min(kernel, (width - origin + dilation - 1) / dilation));
+        ggml_fp16_t *row = destination + (batch * outputs + x) * channels * kernel;
+        for (int64_t channel = params->ith; channel < channels; channel += params->nth) {
+            ggml_fp16_t *out = row + channel * kernel;
+            const char *input = static_cast<const char *>(source->data) + batch * source->nb[2] + channel * source->nb[1];
+            for (int64_t k = 0; k < begin; ++k) out[k] = 0;
+            if constexpr (FloatInput) {
+                const float *values = reinterpret_cast<const float *>(input);
+                for (int64_t k = begin; k < end; ++k)
+                    out[k] = native_im2col_fp32_to_fp16<HardwareHalf>(values[origin + k * dilation]);
+            } else {
+                const ggml_fp16_t *values = reinterpret_cast<const ggml_fp16_t *>(input);
+                for (int64_t k = begin; k < end; ++k) out[k] = values[origin + k * dilation];
             }
+            for (int64_t k = end; k < kernel; ++k) out[k] = 0;
         }
     }
+}
+
+struct native_im2col_queue {
+    const ggml_compute_params *params;
+    ggml_tensor *dst;
+    int64_t rows;
+    int64_t next;
+};
+
+// ------------------------=
+// FUNC: native_im2col_tiles
+// DESC: Claims disjoint output rows with per-executing-CPU conversion capability and no allocation, model mutation or fault unwinding.
+// ------------------=
+template<bool FloatInput>
+static void native_im2col_tiles(void *context) {
+    auto *queue = static_cast<native_im2col_queue *>(context);
+    const bool hardware_half = FloatInput && native_im2col_half_conversion_available();
+    for (;;) {
+        const int64_t first = __atomic_fetch_add(&queue->next, 8, __ATOMIC_RELAXED);
+        if (first >= queue->rows) return;
+        const int64_t last = std::min(first + 8, queue->rows);
+        if constexpr (FloatInput) {
+            if (hardware_half) native_im2col1d_rows<true, true>(queue->params, queue->dst, first, last);
+            else native_im2col1d_rows<true>(queue->params, queue->dst, first, last);
+        } else native_im2col1d_rows<false>(queue->params, queue->dst, first, last);
+    }
+}
+
+// ------------------------=
+// FUNC: native_im2col_parallel
+// DESC: Borrows the bounded math helper cohort only for large validated row expansions and joins it before tensor or stack reuse.
+// ------------------=
+static bool native_im2col_parallel(const ggml_compute_params *params, ggml_tensor *dst) {
+    const ggml_tensor *source = dst->src[1];
+    const int64_t outputs = dst->ne[1], batches = source->ne[2];
+    const int64_t channels = source->ne[1], kernel = dst->src[0]->ne[0];
+    // Leave room for the rounded final tile and every cohort member's final
+    // exhausted fetch; the counter cannot overflow even at its shape limit.
+    if (params->nth != 1 || params->ith != 0 || outputs <= 0 || batches <= 0 || channels <= 0 || kernel <= 0 ||
+        outputs > (INT64_MAX - 64) / batches || channels > INT64_MAX / kernel) return false;
+    const int64_t rows = outputs * batches, row_values = channels * kernel;
+    if (rows < 32 || rows > INT64_MAX / row_values || rows * row_values < 32768) return false;
+    native_im2col_queue queue{params, dst, rows, 0};
+    if (source->type == GGML_TYPE_F32) native_parallel_math(native_im2col_tiles<true>, &queue);
+    else native_parallel_math(native_im2col_tiles<false>, &queue);
+    return true;
 }
 
 // ------------------------=
@@ -82,6 +131,8 @@ static bool native_im2col1d_f16(const ggml_compute_params *params, ggml_tensor *
     if (options[6] != 0 || options[3] != 0 || options[0] <= 0 || options[4] <= 0 || params->nth <= 0 ||
         dst->type != GGML_TYPE_F16 || source->ne[0] <= 0 || dst->src[0]->ne[0] <= 0 ||
         source->nb[0] != ggml_type_size(source->type)) return false;
+    if (source->type != GGML_TYPE_F32 && source->type != GGML_TYPE_F16) return false;
+    if (native_im2col_parallel(params, dst)) return true;
     if (source->type == GGML_TYPE_F32) {
         if (native_im2col_half_conversion_available()) native_im2col1d_rows<true, true>(params, dst);
         else native_im2col1d_rows<true>(params, dst);
