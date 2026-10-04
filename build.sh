@@ -28,6 +28,7 @@ if [ "$target" = aarch64 ]; then
 python3 tools/build-kit-test.py
 python3 tools/build-workspace-test.py
 python3 tools/installer-output-test.py
+python3 tools/boot-loader-parity-test.py
 python3 tools/voice-pipeline-test.py
 make install-boot-handoff-test
 make aarch64-bootstrap
@@ -45,6 +46,7 @@ elif [ "$target" = x86_64 ]; then
 python3 tools/build-kit-test.py
 python3 tools/build-workspace-test.py
 python3 tools/installer-output-test.py
+python3 tools/boot-loader-parity-test.py
 python3 tools/voice-pipeline-test.py
 make install-boot-handoff-test
 make build/test-media/InfinityOS-x86_64.bootmedia
@@ -60,6 +62,7 @@ python3 tools/build-workspace-test.py
 python3 tools/log-retention-test.py
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
+python3 tools/boot-loader-parity-test.py
 python3 tools/voice-pipeline-test.py
 python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
@@ -97,6 +100,7 @@ if [ "$target" != all ]; then
     python3 tools/build-kit-test.py
     python3 tools/build-workspace-test.py
     python3 tools/installer-output-test.py
+    python3 tools/boot-loader-parity-test.py
     python3 tools/voice-pipeline-test.py
     make install-boot-handoff-test
     if [ "$target" = aarch64 ]; then
@@ -125,6 +129,7 @@ python3 tools/build-workspace-test.py
 python3 tools/log-retention-test.py
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
+python3 tools/boot-loader-parity-test.py
 python3 tools/voice-pipeline-test.py
 python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py

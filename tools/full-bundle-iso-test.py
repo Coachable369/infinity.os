@@ -95,8 +95,11 @@ def verify_model(installed_esp: Path, slot: int, expected_bytes: int, expected_h
 # DESC: Proves live and freshly installed boot paths contain the exact current native worker adapter.
 # ------------------=
 def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Path) -> None:
-    architecture = "aarch64" if iso.name == "InfinityOS-aarch64.iso" else "x86_64"
-    if iso.name not in ("InfinityOS-aarch64.iso", "InfinityOS-x86_64.iso"):
+    # The publisher validates before its atomic rename. Apply identical byte
+    # checks to that private candidate and the final published filename.
+    release_name = iso.name.removesuffix(".partial")
+    architecture = "aarch64" if release_name == "InfinityOS-aarch64.iso" else "x86_64"
+    if release_name not in ("InfinityOS-aarch64.iso", "InfinityOS-x86_64.iso"):
         raise RuntimeError(f"unrecognized release architecture: {iso.name}")
     name = "BOOTAA64.EFI" if architecture == "aarch64" else "BOOTX64.EFI"
     expected = (ROOT / "build" / architecture / name).read_bytes()

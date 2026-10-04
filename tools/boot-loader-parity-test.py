@@ -34,7 +34,7 @@ class LoaderParityTests(unittest.TestCase):
     # FUNC: verify
     # DESC: Exercises the production comparator with binary extraction results for all four boot paths.
     # ------------------=
-    def verify(self, architecture, copies):
+    def verify(self, architecture, copies, suffix=""):
         name = "BOOTAA64.EFI" if architecture == "aarch64" else "BOOTX64.EFI"
         loader = self.work / "build" / architecture / name
         loader.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ class LoaderParityTests(unittest.TestCase):
                 patch.object(BUNDLE.subprocess, "check_output", side_effect=extract_fat), \
                 patch.object(BUNDLE.subprocess, "run", side_effect=extract_iso):
             BUNDLE.verify_boot_loader(
-                self.work / f"InfinityOS-{architecture}.iso", self.work / "live.img",
+                self.work / f"InfinityOS-{architecture}.iso{suffix}", self.work / "live.img",
                 self.work / "installed.img", self.work,
             )
 
@@ -69,8 +69,9 @@ class LoaderParityTests(unittest.TestCase):
     # ------------------=
     def test_identical_boot_paths(self):
         for architecture in ("aarch64", "x86_64"):
-            with self.subTest(architecture=architecture):
-                self.verify(architecture, [self.expected] * 4)
+            for suffix in ("", ".partial"):
+                with self.subTest(architecture=architecture, suffix=suffix):
+                    self.verify(architecture, [self.expected] * 4, suffix)
 
     # ------------------------=
     # FUNC: test_rejects_each_stale_boot_path
@@ -78,13 +79,24 @@ class LoaderParityTests(unittest.TestCase):
     # ------------------=
     def test_rejects_each_stale_boot_path(self):
         for architecture in ("aarch64", "x86_64"):
-            for index in range(4):
-                for corrupt in (self.expected[:-1] + b"\0", b""):
-                    with self.subTest(architecture=architecture, copy=index, length=len(corrupt)):
-                        copies = [self.expected] * 4
-                        copies[index] = corrupt
-                        with self.assertRaises(RuntimeError):
-                            self.verify(architecture, copies)
+            for suffix in ("", ".partial"):
+                for index in range(4):
+                    for corrupt in (self.expected[:-1] + b"\0", b""):
+                        with self.subTest(architecture=architecture, suffix=suffix, copy=index, length=len(corrupt)):
+                            copies = [self.expected] * 4
+                            copies[index] = corrupt
+                            with self.assertRaises(RuntimeError):
+                                self.verify(architecture, copies, suffix)
+
+    # ------------------------=
+    # FUNC: test_rejects_unknown_release_names
+    # DESC: Rejects invalid architecture and filename suffixes even when all supplied boot artifacts match.
+    # ------------------=
+    def test_rejects_unknown_release_names(self):
+        for architecture, suffix in (("arm64", ""), ("aarch64", ".partial.partial"), ("x86_64", ".backup")):
+            with self.subTest(architecture=architecture, suffix=suffix):
+                with self.assertRaises(RuntimeError):
+                    self.verify(architecture, [self.expected] * 4, suffix)
 
 
 if __name__ == "__main__":
