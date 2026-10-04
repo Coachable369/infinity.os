@@ -13,10 +13,16 @@ static QUEUE_ROOM: AtomicBool = AtomicBool::new(true);
 static SYNTHESIS_FRAMES: AtomicUsize = AtomicUsize::new(80);
 static SYNTHESIS_VALUE: AtomicUsize = AtomicUsize::new(100);
 static SYNTHESIS_DELAY_NS: AtomicU64 = AtomicU64::new(0);
+static SYNTHESIS_RESULT: AtomicUsize = AtomicUsize::new(0);
+static RECOGNITION_RESULT: AtomicUsize = AtomicUsize::new(0);
 static NATIVE_BUSY: AtomicBool = AtomicBool::new(false);
 static PREPARE_ENTERED: AtomicBool = AtomicBool::new(false);
 static PREPARE_RELEASE: AtomicBool = AtomicBool::new(false);
 static PREPARE_HOLD: AtomicBool = AtomicBool::new(true);
+static PREPARE_RESULT: AtomicUsize = AtomicUsize::new(0);
+static PREPARE_CALLS: AtomicUsize = AtomicUsize::new(0);
+static PREPARE_RETURN_FAULT: AtomicBool = AtomicBool::new(false);
+static SEAL_FAIL: AtomicBool = AtomicBool::new(false);
 static RECOGNIZED_SAMPLES: AtomicUsize = AtomicUsize::new(0);
 static BUFFERED_PCM: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
 static PLAYED_PCM: std::sync::Mutex<Vec<Vec<i16>>> = std::sync::Mutex::new(Vec::new());
@@ -125,6 +131,7 @@ mod drivers { pub mod audio {
     // ------------------=
     pub fn infinity_audio_seal(_:SecurityIdentity,_:u64)->bool {
         assert!(!crate::PLAYING.load(Ordering::SeqCst));
+        if crate::SEAL_FAIL.load(Ordering::SeqCst) { return false; }
         crate::PLAYED_PCM.lock().unwrap().push(crate::BUFFERED_PCM.lock().unwrap().clone());
         crate::PLAYED_CONTENT.lock().unwrap().push(crate::BUFFERED_CONTENT.lock().unwrap().clone());
         crate::PLAYING.store(crate::HOLD.load(Ordering::SeqCst),Ordering::SeqCst);
@@ -193,6 +200,12 @@ mod voice {
     }
 }
 #[path = "../kernel/runtime/ai/voice_input.rs"] mod voice_input;
+// Isolated production state machines allow terminal warmup scenarios without
+// adding a reset-only API or changing the successful engine's retained state.
+#[path = "../kernel/runtime/ai/voice_input.rs"] mod failed_voice_input;
+#[path = "../kernel/runtime/ai/voice_input.rs"] mod expired_voice_input;
+#[path = "../kernel/runtime/ai/voice_input.rs"] mod recognition_fault_voice_input;
+#[path = "../kernel/runtime/ai/voice_input.rs"] mod late_prepare_voice_input;
 mod qwen { pub mod workers {
     // ------------------------=
     // FUNC: clock_ns
@@ -219,6 +232,8 @@ unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, p
     assert_eq!(capacity, 720000);
     if NATIVE_BUSY.load(Ordering::Acquire) { return 8; }
     if cancel(context) != 0 { *frames = 0; return 2; }
+    let result=SYNTHESIS_RESULT.load(Ordering::SeqCst) as i32;
+    if result != 0 { return result; }
     let generated=SYNTHESIS_FRAMES.load(Ordering::SeqCst);
     for i in 0..generated { *pcm.add(i) = SYNTHESIS_VALUE.load(Ordering::SeqCst) as i16; }
     *frames = if INVALID.load(Ordering::SeqCst) { capacity + 1 } else { generated };
@@ -233,12 +248,14 @@ unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, p
 #[no_mangle]
 unsafe extern "C" fn infinity_kokoro_native_prepare_recognition(memory:*mut usize,
     cancel:extern "C" fn(*mut core::ffi::c_void)->i32,context:*mut core::ffi::c_void)->i32 {
+    PREPARE_CALLS.fetch_add(1,Ordering::SeqCst);
     if NATIVE_BUSY.swap(true,Ordering::AcqRel) { return 8; }
     PREPARE_ENTERED.store(true,Ordering::Release);
     while PREPARE_HOLD.load(Ordering::Acquire) && !PREPARE_RELEASE.load(Ordering::Acquire) { std::thread::yield_now(); }
     *memory=128;
-    let result=if cancel(context)==0 {0} else {2};
+    let result=if cancel(context)==0 {PREPARE_RESULT.load(Ordering::SeqCst) as i32} else {2};
     NATIVE_BUSY.store(false,Ordering::Release);
+    if PREPARE_RETURN_FAULT.load(Ordering::SeqCst) { late_prepare_voice_input::native_engine_fault(); }
     result
 }
 // ------------------------=
@@ -250,6 +267,8 @@ unsafe extern "C" fn infinity_kokoro_native_recognize(pcm:*const i16,samples:usi
     length:*mut usize,memory:*mut usize,cancel:extern "C" fn(*mut core::ffi::c_void)->i32,context:*mut core::ffi::c_void)->i32{
     if NATIVE_BUSY.load(Ordering::Acquire) {return 8;}
     if cancel(context)!=0 {return 2;}
+    let result=RECOGNITION_RESULT.load(Ordering::SeqCst) as i32;
+    if result != 0 {return result;}
     assert_eq!(std::slice::from_raw_parts(pcm,samples),[17,-19,23,-29]);
     RECOGNIZED_SAMPLES.fetch_add(samples,Ordering::SeqCst);
     std::ptr::copy_nonoverlapping(b"accepted".as_ptr(),text,8);*length=8;*memory=128;0
@@ -577,4 +596,101 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     PLAYING.store(false,Ordering::SeqCst);poll();
     assert_eq!(status().state,S::Complete);
     SYNTHESIS_DELAY_NS.store(0,Ordering::SeqCst);
+
+    // A native fatal fault is terminal even when the UI repeatedly asks to
+    // prepare again; no warmup job or replacement deadline may be scheduled.
+    PREPARE_HOLD.store(false,Ordering::SeqCst);
+    PREPARE_RESULT.store(7,Ordering::SeqCst);
+    let calls=PREPARE_CALLS.load(Ordering::SeqCst);
+    assert!(!failed_voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert!(failed_voice_input::prepare_failed());
+    assert!(!failed_voice_input::prepared());
+    for _ in 0..128 {
+        NOW.fetch_add(1_000_000_000,Ordering::SeqCst);
+        assert!(!failed_voice_input::prepare());
+        failed_voice_input::poll();
+        assert!(unsafe { (&*(&raw const TASK)).is_none() });
+    }
+    assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),calls+1);
+
+    // Transient admission contention remains retryable, but exhausting the
+    // original deadline is terminal, not an unbounded series of new leases.
+    PREPARE_RESULT.store(0,Ordering::SeqCst);
+    NATIVE_BUSY.store(true,Ordering::SeqCst);
+    let calls=PREPARE_CALLS.load(Ordering::SeqCst);
+    assert!(!expired_voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert!(!expired_voice_input::prepare_failed());
+    NOW.fetch_add(90_000_000_000,Ordering::SeqCst);
+    expired_voice_input::poll();
+    assert!(expired_voice_input::prepare_failed());
+    NATIVE_BUSY.store(false,Ordering::SeqCst);
+    for _ in 0..128 {
+        NOW.fetch_add(1_000_000_000,Ordering::SeqCst);
+        assert!(!expired_voice_input::prepare());
+        expired_voice_input::poll();
+        assert!(unsafe { (&*(&raw const TASK)).is_none() });
+    }
+    assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),calls+1);
+    assert!(voice_input::prepared());
+
+    // A terminal notification after native admission releases but before the
+    // warmup wrapper publishes success must not be overwritten by readiness.
+    PREPARE_RETURN_FAULT.store(true,Ordering::SeqCst);
+    assert!(!late_prepare_voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    PREPARE_RETURN_FAULT.store(false,Ordering::SeqCst);
+    assert!(late_prepare_voice_input::prepare_failed());
+    assert!(!late_prepare_voice_input::prepared());
+
+    // Driver publication has its own error7 and must not poison native speech.
+    SEAL_FAIL.store(true,Ordering::SeqCst);
+    submit(owner,1,b"Device playback failure.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    assert_eq!(status().state,S::Failed);
+    assert_eq!(status().error,7);
+    assert!(voice_input::prepared());
+    assert!(!voice_input::prepare_failed());
+    SEAL_FAIL.store(false,Ordering::SeqCst);
+
+    // A native synthesis fault poisons the shared engine after successful
+    // warmup. Unlike a driver failure, it also removes recognizer readiness.
+    SYNTHESIS_RESULT.store(7,Ordering::SeqCst);
+    submit(owner,1,b"Native synthesis fault.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    assert_eq!(status().state,S::Failed);
+    assert_eq!(status().error,7);
+    assert!(voice_input::prepare_failed());
+    assert!(!voice_input::prepared());
+    let calls=PREPARE_CALLS.load(Ordering::SeqCst);
+    for _ in 0..128 {
+        assert!(!voice_input::prepare());
+        voice_input::poll();
+        assert!(unsafe { (&*(&raw const TASK)).is_none() });
+    }
+    assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),calls);
+    SYNTHESIS_RESULT.store(0,Ordering::SeqCst);
+
+    // Recognition independently reports the same terminal fault, and repeated
+    // prepare requests cannot restart its previously ready native context.
+    assert!(!recognition_fault_voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert!(recognition_fault_voice_input::prepared());
+    RECOGNITION_RESULT.store(7,Ordering::SeqCst);
+    recognition_fault_voice_input::submit(owner,1,&[17,-19,23,-29]).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(recognition_fault_voice_input::status().state,recognition_fault_voice_input::InputState::Failed);
+    assert_eq!(recognition_fault_voice_input::status().error,7);
+    assert!(recognition_fault_voice_input::prepare_failed());
+    assert!(!recognition_fault_voice_input::prepared());
+    let calls=PREPARE_CALLS.load(Ordering::SeqCst);
+    for _ in 0..128 {
+        assert!(!recognition_fault_voice_input::prepare());
+        recognition_fault_voice_input::poll();
+        assert!(unsafe { (&*(&raw const TASK)).is_none() });
+    }
+    assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),calls);
 }

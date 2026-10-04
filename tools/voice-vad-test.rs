@@ -14,8 +14,8 @@ fn main() {
     clip.push(&[i16::MIN; FRAME * 3]);
     assert_eq!(clip.state(), VadState::Speech);
     assert_eq!(clip.push(&[i16::MAX; MAX_SAMPLES]), MAX_SAMPLES - FRAME * 3);
-    assert_eq!(clip.state(), VadState::Complete);
-    assert_eq!(clip.segment(), Some(Segment { start: 0, end: MAX_SAMPLES }));
+    assert_eq!(clip.state(), VadState::Limit);
+    assert_eq!(clip.segment(), None);
     let mut transient = Detector::new(300);
     transient.push(&[1000; FRAME * 2]); transient.push(&[0; FRAME]);
     assert_eq!(transient.state(), VadState::Waiting);

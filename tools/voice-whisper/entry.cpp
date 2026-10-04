@@ -132,6 +132,16 @@ extern "C" int native_transcribe(const int16_t *pcm, size_t samples, char *outpu
     for (size_t index = 0; index < samples; ++index) input[index] = pcm[index] / 32768.0f;
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.n_threads = 1;
+    // The provider admits at most ten seconds, but Whisper's default encoder
+    // evaluates thirty seconds for every request, including a single wake word.
+    // Keep every input frame, add one second of model silence, and retain a
+    // minimum 10.24-second context for short-command recognition. Each encoder
+    // position covers 320 input samples (20 ms); the upstream streaming API
+    // explicitly supports this bounded audio-context override.
+    const size_t positions = (samples + 319) / 320 + 50;
+    const size_t rounded = ((positions + 63) / 64) * 64;
+    params.audio_ctx = std::min(whisper_n_audio_ctx(context),
+                               static_cast<int>(std::max(size_t(512), rounded)));
     params.language = "en";
     params.translate = false;
     params.initial_prompt = "Infinity. Computer.";

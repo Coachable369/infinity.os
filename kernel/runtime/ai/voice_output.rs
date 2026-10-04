@@ -132,6 +132,9 @@ unsafe fn worker() {
     STATE.store(2, Ordering::Release);
     if ERROR != NATIVE_ENGINE_BUSY { trace(b"synthesis started"); }
     let result = NativeSpeech.synthesize(&(&*(&raw const TEXT))[..LENGTH], &mut *(&raw mut PCM));
+    // This status is the native provider's fatal admission state, not a later
+    // driver/device publication error that happens to share the numeric code.
+    if ERROR == 7 { super::voice_input::native_engine_fault(); }
     if ERROR == NATIVE_ENGINE_BUSY && cancelled() == 0 {
         STATE.store(WAITING_ENGINE, Ordering::Release);
         return;

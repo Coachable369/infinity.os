@@ -25,6 +25,7 @@ pub struct Detector {
     last_voice: usize,
     segment: Segment,
     threshold: u16,
+    limit_silence: usize,
 }
 impl Detector {
     // ------------------------=
@@ -33,7 +34,8 @@ impl Detector {
     // ------------------=
     pub const fn new(threshold: u16) -> Self {
         Self { state: VadState::Waiting, samples: 0, frame_samples: 0, energy: 0,
-            consecutive: 0, last_voice: 0, segment: Segment { start: 0, end: 0 }, threshold }
+            consecutive: 0, last_voice: 0, segment: Segment { start: 0, end: 0 }, threshold,
+            limit_silence: 0 }
     }
     // ------------------------=
     // FUNC: state
@@ -81,11 +83,32 @@ impl Detector {
             }
             if self.samples >= MAX_SAMPLES && self.state != VadState::Complete {
                 if self.state == VadState::Speech {
-                    self.segment.end = self.samples;
-                    self.state = VadState::Complete;
+                    self.segment = Segment { start: 0, end: 0 };
+                    self.state = VadState::Limit;
+                    self.frame_samples = 0; self.energy = 0; self.limit_silence = 0;
                 } else {
                     self.state = VadState::NoSpeech;
                 }
+            }
+        }
+        consumed
+    }
+    // ------------------------=
+    // FUNC: drain_limit
+    // DESC: Discards an overlong utterance until a real end pause without storing or submitting a truncated command.
+    // ------------------=
+    fn drain_limit(&mut self, pcm: &[i16]) -> usize {
+        let mut consumed = 0;
+        for &sample in pcm {
+            if self.state != VadState::Limit { break; }
+            consumed += 1; self.frame_samples += 1;
+            let value = i64::from(sample);
+            self.energy += (value * value) as u64;
+            if self.frame_samples == FRAME {
+                let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
+                self.limit_silence = if voiced { 0 } else { self.limit_silence + FRAME };
+                self.frame_samples = 0; self.energy = 0;
+                if self.limit_silence >= END_SILENCE { self.state = VadState::NoSpeech; }
             }
         }
         consumed
@@ -115,9 +138,16 @@ impl Utterance {
     // DESC: Stores exactly the samples accepted by VAD, never overflowing utterance storage.
     // ------------------=
     pub fn push(&mut self, pcm: &[i16]) -> usize {
+        if self.detector.state() == VadState::Limit {
+            return self.detector.drain_limit(pcm);
+        }
         let offset = self.detector.samples();
         let count = self.detector.push(pcm);
         self.pcm[offset..offset + count].copy_from_slice(&pcm[..count]);
+        if self.detector.state() == VadState::Limit {
+            self.pcm.fill(0);
+            return count + self.detector.drain_limit(&pcm[count..]);
+        }
         // Waiting time must not consume the speech budget. Preserve onset and
         // partial-frame history, but discard old silence before the next chunk.
         if self.detector.state == VadState::Waiting && self.detector.samples >= RATE {
@@ -233,5 +263,31 @@ mod tests {
         value.push(&[0; FRAME]);
         assert_eq!(value.state(), VadState::Complete);
         assert!(value.speech().is_some());
+    }
+
+    #[test]
+    // ------------------------=
+    // FUNC: overlong_speech_is_rejected_until_real_pause
+    // DESC: Ensures continuous speech beyond the bounded buffer is never truncated into a command, retains no PCM, and rearms only after silence.
+    // ------------------=
+    fn overlong_speech_is_rejected_until_real_pause() {
+        let mut value = Utterance::new(300);
+        for _ in 0..MAX_SAMPLES / FRAME { value.push(&[1000; FRAME]); }
+        assert_eq!(value.state(), VadState::Limit);
+        assert!(value.speech().is_none());
+        assert!(value.pcm.iter().all(|&sample| sample == 0));
+        for _ in 0..1000 { value.push(&[1000; FRAME]); }
+        assert_eq!(value.state(), VadState::Limit);
+        value.push(&[0; END_SILENCE - FRAME]);
+        assert_eq!(value.state(), VadState::Limit);
+        value.push(&[1000; FRAME]);
+        value.push(&[0; END_SILENCE - FRAME]);
+        assert_eq!(value.state(), VadState::Limit);
+        value.push(&[0; FRAME]);
+        assert_eq!(value.state(), VadState::NoSpeech);
+        assert!(value.speech().is_none());
+        value.clear(300);
+        value.push(&[1000; FRAME * 5]); value.push(&[0; END_SILENCE]);
+        assert_eq!(value.state(), VadState::Complete);
     }
 }

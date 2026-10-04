@@ -10,11 +10,14 @@ static RENEWALS: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
+static PREPARE_FAILED: AtomicBool = AtomicBool::new(false);
 static CHAT_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
+static HOLD_RECOGNITION: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_FRAMES: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_SEQUENCE: AtomicUsize = AtomicUsize::new(1);
+static FIRST_PLAYBACK_NS: AtomicUsize = AtomicUsize::new(0);
 static NOW: AtomicUsize = AtomicUsize::new(1);
 static TURNS: AtomicUsize = AtomicUsize::new(0);
 static STREAMING: AtomicBool = AtomicBool::new(false);
@@ -25,6 +28,7 @@ const LONG_RESPONSE: &[u8] = b"This streamed response contains enough words to s
 static SPANS: std::sync::Mutex<Vec<(usize,usize,bool)>> = std::sync::Mutex::new(Vec::new());
 static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
 static INPUT_LENGTH: AtomicUsize = AtomicUsize::new(0);
+static INPUT_FAIL_AT: AtomicUsize = AtomicUsize::new(usize::MAX);
 static SELECTED_MODEL: AtomicUsize = AtomicUsize::new(0);
 static WAKE_SETTING: AtomicUsize = AtomicUsize::new(0);
 static TEST_TRANSCRIPT: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
@@ -33,6 +37,7 @@ static PROMPTS: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new(
 static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
+static RECOGNITION_REQUESTS: std::sync::Mutex<Vec<Vec<i16>>> = std::sync::Mutex::new(Vec::new());
 // ------------------------=
 // FUNC: main
 // DESC: Directs callers to the behavioral test harness rather than reporting an unexecuted test as success.
@@ -154,6 +159,7 @@ mod drivers {pub mod audio {
     }
 }}
 mod chat {
+    pub const CHAT_INPUT_CAPACITY:usize=4096;
     #[derive(PartialEq)] pub enum ChatRole {Assistant}
     #[derive(Clone,Copy,PartialEq)] pub enum GenerationState {Running,Complete,Failed,Cancelled,ContextFull}
     pub struct Message {pub role:ChatRole}
@@ -168,7 +174,7 @@ mod chat {
             &bytes[..bytes.len().min(crate::VISIBLE.load(crate::Ordering::SeqCst))]
         }
     }
-    pub struct Chat {pub generation_state:GenerationState}
+    pub struct Chat {pub generation_state:GenerationState,pub input:Vec<u8>}
     impl Chat {
         // ------------------------=
         // FUNC: selected_model
@@ -179,7 +185,7 @@ mod chat {
         // FUNC: input
         // DESC: Exposes whether recognized text remains queued in the composer.
         // ------------------=
-        pub fn input(&self)->&[u8]{if crate::INPUT_LENGTH.load(crate::Ordering::SeqCst)==0 {b""} else {b"test"}}
+        pub fn input(&self)->&[u8]{&self.input}
         // ------------------------=
         // FUNC: selected_model_ready
         // DESC: Exposes the deterministic local-model load boundary.
@@ -204,7 +210,25 @@ mod chat {
         // FUNC: push_input
         // DESC: Records recognized characters in the bounded composer fixture.
         // ------------------=
-        pub fn push_input(&mut self,byte:u8)->bool{crate::COMPOSER.lock().unwrap().push(byte);crate::INPUT_LENGTH.fetch_add(1,crate::Ordering::SeqCst);true}
+        pub fn push_input(&mut self,byte:u8)->bool{
+            if !(b' '..=b'~').contains(&byte) || self.input.len()>=CHAT_INPUT_CAPACITY
+                || self.input.len()>=crate::INPUT_FAIL_AT.load(crate::Ordering::SeqCst){return false;}
+            self.input.push(byte);crate::COMPOSER.lock().unwrap().push(byte);
+            crate::INPUT_LENGTH.fetch_add(1,crate::Ordering::SeqCst);true
+        }
+        // ------------------------=
+        // FUNC: pop_input
+        // DESC: Mirrors an atomic rollback of the fixture's own composer insertion.
+        // ------------------=
+        pub fn pop_input(&mut self)->bool{
+            if self.input.pop().is_none(){return false;}
+            crate::COMPOSER.lock().unwrap().pop();crate::INPUT_LENGTH.fetch_sub(1,crate::Ordering::SeqCst);true
+        }
+        // ------------------------=
+        // FUNC: set_input_cursor
+        // DESC: Models the fixture's end-only composer caret used when clearing an unchanged owned prompt.
+        // ------------------=
+        pub fn set_input_cursor(&mut self,index:usize){assert_eq!(index,self.input.len());}
         // ------------------------=
         // FUNC: message_count
         // DESC: Reports no completed messages during lifecycle tests.
@@ -248,7 +272,10 @@ impl Ai {
 // FUNC: with_ai_runtime
 // DESC: Exposes an idle local model to the production controller.
 // ------------------=
-fn with_ai_runtime<T>(f:impl FnOnce(&mut Ai)->T)->T{f(&mut Ai{chat:chat::Chat{generation_state:if STREAMING.load(Ordering::SeqCst){chat::GenerationState::Running}else{chat::GenerationState::Complete}}})}
+fn with_ai_runtime<T>(f:impl FnOnce(&mut Ai)->T)->T{
+    let input=COMPOSER.lock().unwrap().clone();
+    f(&mut Ai{chat:chat::Chat{input,generation_state:if STREAMING.load(Ordering::SeqCst){chat::GenerationState::Running}else{chat::GenerationState::Complete}}})
+}
 mod qwen {pub mod workers {
     // ------------------------=
     // FUNC: clock_ns
@@ -271,6 +298,11 @@ mod voice_input {
     // ------------------=
     pub fn prepared()->bool{crate::MODEL_READY.load(crate::Ordering::SeqCst)}
     // ------------------------=
+    // FUNC: prepare_failed
+    // DESC: Exposes the terminal recognizer warmup failure without retrying or advertising microphone readiness.
+    // ------------------=
+    pub fn prepare_failed()->bool{crate::PREPARE_FAILED.load(crate::Ordering::SeqCst)}
+    // ------------------------=
     // FUNC: invalidate
     // DESC: Leaves recognition lifecycle control with the fixture's test transitions.
     // ------------------=
@@ -292,7 +324,10 @@ mod voice_input {
     pub fn submit(_:SecurityIdentity,_:u64,pcm:&[i16])->Result<(),()>{
         if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
         *crate::RECOGNIZED.lock().unwrap()=pcm.to_vec();
-        crate::READY.store(true,crate::Ordering::SeqCst);Ok(())
+        crate::RECOGNITION_REQUESTS.lock().unwrap().push(pcm.to_vec());
+        let held=crate::HOLD_RECOGNITION.load(crate::Ordering::SeqCst);
+        crate::BUSY.store(held,crate::Ordering::SeqCst);
+        crate::READY.store(!held,crate::Ordering::SeqCst);Ok(())
     }
     // ------------------------=
     // FUNC: take
@@ -300,6 +335,7 @@ mod voice_input {
     // ------------------=
     pub fn take(_:SecurityIdentity,out:&mut[u8])->Result<usize,()>{
         crate::READY.store(false,crate::Ordering::SeqCst);
+        crate::BUSY.store(false,crate::Ordering::SeqCst);
         let selected = crate::TEST_TRANSCRIPT.lock().unwrap();
         let transcript: &[u8] = selected.as_deref().unwrap_or(b"Infinity test");
         out[..transcript.len()].copy_from_slice(transcript);
@@ -321,7 +357,7 @@ mod voice_output {
     use crate::runtime::execution::SecurityIdentity;
     #[derive(PartialEq)]
     pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled,Buffered}
-    pub struct Status {pub state:OutputState}
+    pub struct Status {pub state:OutputState,pub first_playback_ns:u64}
     pub struct PlaybackProgress {pub sequence:usize,pub frames:usize,pub total_frames:usize,pub content_position:usize,pub content_boundary:bool}
     // ------------------------=
     // FUNC: playback_progress
@@ -337,7 +373,7 @@ mod voice_output {
     // FUNC: status
     // DESC: Models an acknowledged playback stop.
     // ------------------=
-    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,4=>OutputState::Buffered,_=>OutputState::Cancelled}}}
+    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,4=>OutputState::Buffered,_=>OutputState::Cancelled},first_playback_ns:crate::FIRST_PLAYBACK_NS.load(crate::Ordering::SeqCst) as u64}}
     // ------------------------=
     // FUNC: stop
     // DESC: Supplies the audio-output cancellation seam.
@@ -359,6 +395,7 @@ mod voice_output {
     // ------------------=
     pub fn submit_span(owner:SecurityIdentity,cap:u64,text:&[u8],start:usize,end:usize,final_span:bool)->Result<(),()>{
         assert_eq!(text.len(),end-start);
+        if crate::OUTPUT.load(crate::Ordering::SeqCst)!=4 {crate::FIRST_PLAYBACK_NS.store(0,crate::Ordering::SeqCst);}
         submit(owner,cap,text)?;
         crate::SPANS.lock().unwrap().push((start,end,final_span));
         Ok(())
@@ -367,7 +404,7 @@ mod voice_output {
     // FUNC: seal_buffered
     // DESC: Starts deterministic playback after every response span is prepared.
     // ------------------=
-    pub fn seal_buffered(_:SecurityIdentity)->bool{crate::OUTPUT.store(1,crate::Ordering::SeqCst);true}
+    pub fn seal_buffered(_:SecurityIdentity)->bool{crate::FIRST_PLAYBACK_NS.store(crate::NOW.load(crate::Ordering::SeqCst),crate::Ordering::SeqCst);crate::OUTPUT.store(1,crate::Ordering::SeqCst);true}
 }
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod voice_vad;
@@ -616,6 +653,49 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::stop(owner);conversation::poll();
 
     wake_gate_tests(owner);
+    wake_handoff_tests(owner);
+    transcript_handoff_tests(owner);
+    turn_timing_tests(owner);
+}
+
+// ------------------------=
+// FUNC: turn_timing_tests
+// DESC: Measures actual controller milestones, rejects stale prior playback, and requires output drain before a spoken turn is complete.
+// ------------------=
+fn turn_timing_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::{State, timing::Milestone};
+    assert!(conversation::start(owner));
+    NOW.fetch_add(1_000_000_000,Ordering::SeqCst);
+    FIRST_PLAYBACK_NS.store(1,Ordering::SeqCst);
+    recognize_voice(b"Infinity, measure this response");
+    let accepted=conversation::timing_snapshot();
+    assert!(accepted.at(Milestone::Endpoint).is_some());
+    assert!(accepted.at(Milestone::Transcript).is_some());
+    assert!(accepted.at(Milestone::Submitted).is_some());
+    assert_eq!(accepted.at(Milestone::FirstAudio),None);
+    NOW.fetch_add(100_000_000,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Speaking);
+    assert!(conversation::timing_snapshot().at(Milestone::FirstText).is_some());
+    assert!(conversation::timing_snapshot().at(Milestone::SpeechQueued).is_some());
+    assert!(!conversation::timing_snapshot().complete());
+    NOW.fetch_add(200_000_000,Ordering::SeqCst);
+    let first=NOW.load(Ordering::SeqCst) as u64;
+    FIRST_PLAYBACK_NS.store(first as usize,Ordering::SeqCst);
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::timing_snapshot().at(Milestone::FirstAudio),Some(first));
+    assert!(!conversation::timing_snapshot().complete());
+    NOW.fetch_add(300_000_000,Ordering::SeqCst);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    let drained=conversation::timing_snapshot();
+    assert!(drained.complete());
+    assert_eq!(drained.elapsed(Milestone::SpeechQueued,Milestone::FirstAudio),Some(200_000_000));
+    assert_eq!(drained.elapsed(Milestone::FirstAudio,Milestone::Drained),Some(300_000_000));
+    assert_eq!(conversation::state().0,State::Listening);
+    recognize_voice(b"Infinity, another measured response");
+    assert!(conversation::timing_snapshot().sequence>drained.sequence);
+    assert_eq!(conversation::timing_snapshot().at(Milestone::FirstAudio),None);
+    conversation::stop(owner);conversation::poll();
 }
 
 // ------------------------=
@@ -759,4 +839,262 @@ fn wake_gate_tests(owner: runtime::execution::SecurityIdentity) {
     assert_eq!(conversation::state().0,State::Listening);
     conversation::stop(owner);conversation::poll();
     WAKE_SETTING.store(0,Ordering::SeqCst);SELECTED_MODEL.store(0,Ordering::SeqCst);
+}
+
+// ------------------------=
+// FUNC: microphone_phrase
+// DESC: Creates deterministic speech plus exactly the production endpoint silence in mono samples.
+// ------------------=
+fn microphone_phrase(amplitude: i16) -> Vec<i16> {
+    let mut pcm=vec![amplitude;1600];
+    pcm.extend_from_slice(&[0;6400]);
+    pcm
+}
+// ------------------------=
+// FUNC: drain_microphone
+// DESC: Services finite capture chunks while the asynchronous recognizer intentionally remains pending.
+// ------------------=
+fn drain_microphone() {
+    for _ in 0..100 {
+        if MICROPHONE.lock().unwrap().is_empty() {return;}
+        conversation::poll();
+    }
+    panic!("bounded microphone fixture did not drain");
+}
+// ------------------------=
+// FUNC: finish_recognition
+// DESC: Completes one delayed native recognition result without manufacturing another controller turn.
+// ------------------=
+fn finish_recognition(transcript: &[u8]) {
+    assert_eq!(conversation::state().0,conversation::State::Recognizing);
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(transcript.to_vec());
+    BUSY.store(false,Ordering::SeqCst);READY.store(true,Ordering::SeqCst);
+    conversation::poll();
+    *TEST_TRANSCRIPT.lock().unwrap()=None;
+}
+// ------------------------=
+// FUNC: begin_delayed_recognition
+// DESC: Sends a real segmented utterance to the production controller and holds its asynchronous result.
+// ------------------=
+fn begin_delayed_recognition(amplitude: i16) {
+    assert_eq!(conversation::state().0,conversation::State::Listening);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(amplitude));
+    drain_microphone();
+    assert_eq!(conversation::state().0,conversation::State::Recognizing);
+}
+// ------------------------=
+// FUNC: wake_handoff_tests
+// DESC: Verifies lossless bounded wake-to-command capture, strict authorization, expiry, repeated turns, and privacy resets through real VAD and controller state.
+// ------------------=
+fn wake_handoff_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    HOLD_RECOGNITION.store(true,Ordering::SeqCst);
+    TURNS.store(0,Ordering::SeqCst);PROMPTS.lock().unwrap().clear();
+    RECOGNITION_REQUESTS.lock().unwrap().clear();
+    assert!(conversation::start(owner));
+    let captures=CAPTURES.load(Ordering::SeqCst);
+
+    // The command starts within the same driver block that ends the wake,
+    // then finishes while Whisper is still working. Every soft-onset sample
+    // must survive instead of being discarded by the muted-drain path.
+    for turn in 0..3 {
+        let mut command=vec![120;3200];
+        command.extend(microphone_phrase(2300+turn));
+        let mut expected=voice_vad::Utterance::new(300);
+        expected.push(&command);
+        MICROPHONE.lock().unwrap().extend(microphone_phrase(1100));
+        MICROPHONE.lock().unwrap().extend(command);
+        drain_microphone();
+        assert_eq!(conversation::state().0,State::Recognizing);
+        assert_eq!(TURNS.load(Ordering::SeqCst),turn as usize);
+        NOW.fetch_add(8_000_000_000,Ordering::SeqCst);
+        finish_recognition(b"Infinity");
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(conversation::wake_armed());
+        conversation::poll();
+        assert_eq!(conversation::state().0,State::Recognizing);
+        assert_eq!(&*RECOGNIZED.lock().unwrap(),expected.speech().unwrap());
+        assert_eq!(RECOGNIZED.lock().unwrap().iter().filter(|&&v|v==120).count(),3200);
+        finish_recognition(b"help me");
+        assert_eq!(conversation::state().0,State::Thinking);
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"help me");
+        complete_voice_reply();
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    }
+
+    // A combined wake and command owns exactly one turn: an extra utterance
+    // captured during ASR may not run after its response finishes.
+    begin_delayed_recognition(1200);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(3100));drain_microphone();
+    let submitted=RECOGNITION_REQUESTS.lock().unwrap().len();
+    finish_recognition(b"Infinity, combined request");
+    complete_voice_reply();conversation::poll();
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),submitted);
+    assert_eq!(TURNS.load(Ordering::SeqCst),4);
+
+    // Ambient speech cannot authorize its retained successor. A real wake in
+    // that successor is nevertheless retained and can authorize one command.
+    begin_delayed_recognition(1400);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(1500));drain_microphone();
+    finish_recognition(b"ambient conversation");
+    conversation::poll();assert_eq!(conversation::state().0,State::Recognizing);
+    finish_recognition(b"more ambient conversation");
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(TURNS.load(Ordering::SeqCst),4);
+    begin_delayed_recognition(1400);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(1600));drain_microphone();
+    finish_recognition(b"ambient conversation");
+    conversation::poll();finish_recognition(b"Infinity, retained wake");
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"retained wake");
+    complete_voice_reply();
+
+    // Do not retain speech that only starts after the provisional ten-second
+    // handoff window while the wake's decode result is still pending.
+    begin_delayed_recognition(1700);
+    NOW.fetch_add(10_000_000_000,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(3200));drain_microphone();
+    let submitted=RECOGNITION_REQUESTS.lock().unwrap().len();
+    finish_recognition(b"Infinity");conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),submitted);
+    // Starting before the armed deadline remains valid even if completing
+    // that same utterance and decoding it occur after the deadline.
+    MICROPHONE.lock().unwrap().extend([2400;1600]);drain_microphone();
+    NOW.fetch_add(11_000_000_000,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([0;6400]);drain_microphone();
+    assert_eq!(conversation::state().0,State::Recognizing);
+    finish_recognition(b"started before expiry");
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"started before expiry");
+    complete_voice_reply();
+
+    // The bounded capture cannot silently turn a ten-second prefix into a
+    // command. Drop the entire overlong turn and require a fresh wake phrase.
+    let submitted=RECOGNITION_REQUESTS.lock().unwrap().len();
+    let turns=TURNS.load(Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend(vec![2400;voice_vad::MAX_SAMPLES]);
+    drain_microphone();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),submitted);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(2600));drain_microphone();
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),submitted);
+    begin_delayed_recognition(1700);finish_recognition(b"unaddressed tail");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    begin_delayed_recognition(1700);
+    MICROPHONE.lock().unwrap().extend(vec![2400;voice_vad::MAX_SAMPLES]);drain_microphone();
+    finish_recognition(b"Infinity");
+    assert_eq!(conversation::state().0,State::Listening);
+    assert!(!conversation::wake_armed());
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(2600));drain_microphone();
+    begin_delayed_recognition(1700);finish_recognition(b"Infinity, after overflow");
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"after overflow");
+    complete_voice_reply();
+
+    // A pending wake cannot authorize private audio after model/wake changes,
+    // explicit cancellation, session lock, or capture permission revocation.
+    for reason in 0..6 {
+        begin_delayed_recognition(1800);
+        MICROPHONE.lock().unwrap().extend(microphone_phrase(3300));drain_microphone();
+        let turns=TURNS.load(Ordering::SeqCst);
+        match reason {
+            0 => {SELECTED_MODEL.store(9,Ordering::SeqCst);conversation::poll();},
+            1 => {WAKE_SETTING.store(1,Ordering::SeqCst);conversation::poll();},
+            2 => {CHAT_READY.store(false,Ordering::SeqCst);conversation::poll();},
+            3 => {assert!(conversation::stop(owner));},
+            4 => {ACTIVE.store(false,Ordering::SeqCst);conversation::poll();},
+            _ => {CAPTURE_STATE.store(3,Ordering::SeqCst);conversation::poll();},
+        }
+        if reason<3 {
+            finish_recognition(b"Infinity");
+            assert_eq!(conversation::state().0,State::Listening);
+            assert!(!conversation::wake_armed());
+            conversation::poll();assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+            conversation::stop(owner);
+        }
+        BUSY.store(false,Ordering::SeqCst);READY.store(false,Ordering::SeqCst);
+        ACTIVE.store(true,Ordering::SeqCst);CHAT_READY.store(true,Ordering::SeqCst);
+        SELECTED_MODEL.store(0,Ordering::SeqCst);WAKE_SETTING.store(0,Ordering::SeqCst);
+        conversation::poll();
+        assert_eq!(conversation::state().0,State::Off);
+        assert!(conversation::start(owner));conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(!conversation::wake_armed());
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    }
+    conversation::stop(owner);BUSY.store(false,Ordering::SeqCst);conversation::poll();
+    HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+}
+
+// ------------------------=
+// FUNC: transcript_handoff_tests
+// DESC: Exercises atomic UTF-8-to-composer transfer, rejection recovery, owned queue expiry/context changes, and terminal warmup failures.
+// ------------------=
+fn transcript_handoff_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    assert!(conversation::start(owner));
+    recognize_voice("Infinity, what’s \"new\"—today?\nNext\u{a0}line…".as_bytes());
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"what's \"new\"-today? Next line...");
+    complete_voice_reply();
+    let turns=TURNS.load(Ordering::SeqCst);
+    for transcript in ["Infinity, unsupported 🚀", "Infinity, \n\t\u{a0}", ""] {
+        recognize_voice(transcript.as_bytes());
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(COMPOSER.lock().unwrap().is_empty());
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    }
+    INPUT_FAIL_AT.store(4,Ordering::SeqCst);
+    recognize_voice(b"Infinity, partially inserted text must roll back");
+    INPUT_FAIL_AT.store(usize::MAX,Ordering::SeqCst);
+    assert_eq!(conversation::state().0,State::Listening);
+    assert!(COMPOSER.lock().unwrap().is_empty());
+    assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),0);
+
+    // A recognized voice command never replaces or submits an existing draft.
+    with_ai_runtime(|ai|for &byte in b"my typed draft"{assert!(ai.chat.push_input(byte));});
+    recognize_voice(b"Infinity, spoken request");
+    assert_eq!(*COMPOSER.lock().unwrap(),b"my typed draft");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    COMPOSER.lock().unwrap().clear();INPUT_LENGTH.store(0,Ordering::SeqCst);
+
+    for reason in 0..6 {
+        CHAT_READY.store(false,Ordering::SeqCst);MODEL_READY.store(false,Ordering::SeqCst);
+        recognize_voice(b"Infinity, queued voice request");
+        assert_eq!(conversation::state().0,State::Submitting);
+        assert_eq!(*COMPOSER.lock().unwrap(),b"queued voice request");
+        match reason {
+            0=>{NOW.fetch_add(10_000_000_000,Ordering::SeqCst);},
+            1=>{SELECTED_MODEL.store(8,Ordering::SeqCst);},
+            2=>{WAKE_SETTING.store(1,Ordering::SeqCst);},
+            3=>{with_ai_runtime(|ai|assert!(ai.chat.push_input(b'!')));},
+            4=>{ACTIVE.store(false,Ordering::SeqCst);},
+            _=>{conversation::stop(owner);},
+        }
+        CHAT_READY.store(true,Ordering::SeqCst);MODEL_READY.store(true,Ordering::SeqCst);
+        conversation::poll();
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        if reason==3 {assert_eq!(*COMPOSER.lock().unwrap(),b"queued voice request!");}
+        else {assert!(COMPOSER.lock().unwrap().is_empty());}
+        COMPOSER.lock().unwrap().clear();INPUT_LENGTH.store(0,Ordering::SeqCst);
+        SELECTED_MODEL.store(0,Ordering::SeqCst);WAKE_SETTING.store(0,Ordering::SeqCst);
+        ACTIVE.store(true,Ordering::SeqCst);
+        if matches!(conversation::state().0,State::Stopping|State::Off) {
+            conversation::poll();assert!(conversation::start(owner));
+        }
+        assert_eq!(conversation::state().0,State::Listening);
+    }
+    recognize_voice(b"Infinity, recovered normally");
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"recovered normally");
+    complete_voice_reply();conversation::stop(owner);conversation::poll();
+
+    // Warmup failure is visible and cannot reopen capture by retrying a
+    // terminal engine on every poll or by repeatedly toggling the widget.
+    MODEL_READY.store(false,Ordering::SeqCst);
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    assert!(conversation::start(owner));assert_eq!(conversation::state().0,State::Starting);
+    PREPARE_FAILED.store(true,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Failed);
+    for _ in 0..5 {conversation::poll();}
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    assert!(!conversation::start(owner));assert_eq!(conversation::state().0,State::Failed);
+    PREPARE_FAILED.store(false,Ordering::SeqCst);MODEL_READY.store(true,Ordering::SeqCst);
+    assert!(conversation::start(owner));conversation::stop(owner);conversation::poll();
 }

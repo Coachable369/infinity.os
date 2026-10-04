@@ -1,5 +1,6 @@
 #![no_std]
 static INPUT: &[u8] = include_bytes!(env!("INFINITY_STT_FIXTURE"));
+static ALTERNATE: &[u8] = include_bytes!(env!("INFINITY_STT_ALTERNATE_FIXTURE"));
 static mut PCM: [i16; 160000] = [0; 160000];
 static mut SYNTH: [i16; 160000] = [0; 160000];
 #[repr(C, align(4096))]
@@ -165,7 +166,15 @@ unsafe extern "C" fn recognition_cases(_: *mut u8) {
         0,
     );
     assert!(prepared_memory > 0);
-    for case in 0..5usize {
+    let alternating = option_env!("INFINITY_STT_ALTERNATING") == Some("1");
+    let cases = if alternating { 8 } else if option_env!("INFINITY_STT_BENCHMARK") == Some("1") { 2 } else { 5 };
+    for case in 0..cases {
+        let input = if alternating && case % 2 == 1 { ALTERNATE } else { INPUT };
+        if alternating {
+            for (index, pair) in input.chunks_exact(2).enumerate() {
+                PCM[index] = i16::from_le_bytes([pair[0], pair[1]]);
+            }
+        }
         let mut text = [0u8; 512];
         let mut length = 0usize;
         let mut memory = 0usize;
@@ -178,17 +187,17 @@ unsafe extern "C" fn recognition_cases(_: *mut u8) {
                 (&raw mut SYNTH).cast(), 160000, &mut frames, 0, 0), 0);
             assert!(frames > 0);
         }
-        if case == 3 { (&mut *(&raw mut PCM)).fill(0); }
-        if case == 4 {
+        if !alternating && case == 3 { (&mut *(&raw mut PCM)).fill(0); }
+        if !alternating && case == 4 {
             for (index, pair) in INPUT.chunks_exact(2).enumerate() {
                 PCM[index] = i16::from_le_bytes([pair[0], pair[1]]);
             }
         }
         core::arch::asm!("mrs {},cntvct_el0",out(reg)start);
         let result = infinity_kokoro_native_recognize(
-            (&raw const PCM).cast(), INPUT.len() / 2, text.as_mut_ptr(),
-            if case == 2 { 2 } else { text.len() }, &mut length, &mut memory,
-            if case == 4 { cancel as *const () as usize } else { 0 }, 0,
+            (&raw const PCM).cast(), input.len() / 2, text.as_mut_ptr(),
+            if !alternating && case == 2 { 2 } else { text.len() }, &mut length, &mut memory,
+            if !alternating && case == 4 { cancel as *const () as usize } else { 0 }, 0,
         );
         let mut diagnostics = [0usize; 12];
         infinity_kokoro_native_diagnostics(diagnostics.as_mut_ptr());
@@ -202,7 +211,7 @@ unsafe extern "C" fn recognition_cases(_: *mut u8) {
         }
         for value in diagnostics { bytes(&(value as u64).to_le_bytes()); }
         bytes(&text[..length]);
-        assert_eq!(result, [0, 0, 6, 5, 2][case]);
-        if case >= 2 { assert_eq!(length, 0); }
+        assert_eq!(result, if alternating { 0 } else { [0, 0, 6, 5, 2][case] });
+        if !alternating && case >= 2 { assert_eq!(length, 0); }
     }
 }

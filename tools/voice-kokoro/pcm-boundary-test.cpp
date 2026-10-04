@@ -30,6 +30,35 @@ static void verify_case(const std::vector<int16_t> &source, size_t padding) {
 }
 
 // ------------------------=
+// FUNC: verify_join
+// DESC: Compares an actual production phrase join with independent retained spans, including quiet edges and unchanged internal pauses.
+// ------------------=
+static void verify_join(const std::vector<int16_t> &left, const std::vector<int16_t> &right) {
+    const int16_t sentinel = 12345;
+    std::vector<int16_t> source(left);
+    source.insert(source.end(), right.begin(), right.end());
+    std::vector<int16_t> expected(source);
+    auto last = std::find_if(left.rbegin(), left.rend(), [](int16_t value) { return value != 0; });
+    auto first = std::find_if(right.begin(), right.end(), [](int16_t value) { return value != 0; });
+    if (last != left.rend() && first != right.end()) {
+        const size_t tail = size_t(last - left.rbegin());
+        const size_t head = size_t(first - right.begin());
+        const size_t gap = std::min(tail, size_t(480)) + std::min(head, size_t(480))
+                         - std::min({tail, head, size_t(120)});
+        expected.assign(left.begin(), left.end() - tail);
+        expected.insert(expected.end(), gap, 0);
+        expected.insert(expected.end(), right.begin() + head, right.end());
+    }
+    std::vector<int16_t> actual(source.size() + 2, sentinel);
+    std::copy(source.begin(), source.end(), actual.begin() + 1);
+    const size_t kept = native_pcm_join_phrases(actual.data() + 1, left.size(), right.size(), 480, 120);
+    assert(kept == expected.size() && kept <= source.size());
+    assert(actual.front() == sentinel && actual.back() == sentinel);
+    assert(std::equal(expected.begin(), expected.end(), actual.begin() + 1));
+    assert(std::all_of(actual.begin() + 1 + kept, actual.end() - 1, [](int16_t value) { return value == 0; }));
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Exercises tiny, silent, quiet, maximal, pause-bearing and consecutive native PCM spans; optionally transforms raw guest PCM.
 // ------------------=
@@ -51,6 +80,19 @@ int main(int argc, char **argv) {
         return 0;
     }
     assert(argc == 1);
+    // The old energy-floor join reduced 4,000 quiet nonzero samples to 840.
+    // Neither low amplitude nor absence of padding permits removing speech.
+    verify_join(std::vector<int16_t>(2000, 1), std::vector<int16_t>(2000, -1));
+    for (size_t left = 0; left < 32; ++left) {
+        for (size_t right = 0; right < 32; ++right) {
+            verify_join(std::vector<int16_t>(left, 0), std::vector<int16_t>(right, 0));
+            verify_join(std::vector<int16_t>(left, 1), std::vector<int16_t>(right, -1));
+            std::vector<int16_t> first(left, 0), second(right, 0);
+            if (left) first[left / 2] = 1;
+            if (right) second[right / 2] = -1;
+            verify_join(first, second);
+        }
+    }
     for (size_t frames = 0; frames < 32; ++frames) {
         for (size_t padding : {size_t(0), size_t(1), size_t(480), std::numeric_limits<size_t>::max()}) {
             verify_case(std::vector<int16_t>(frames, 0), padding);
@@ -81,5 +123,13 @@ int main(int argc, char **argv) {
     assert(response[frames - 481] == -1 && response[frames + 480] == 1);
     assert(std::all_of(response.begin() + frames - 480, response.begin() + frames + 480,
                        [](int16_t value) { return value == 0; }));
+    verify_join(std::vector<int16_t>(phrase.begin(), phrase.begin() + frames),
+                std::vector<int16_t>(phrase.begin(), phrase.begin() + frames));
+    // Inference-boundary padding can be large; the complete internal 400 ms
+    // pause and both one-LSB boundaries must survive regardless of amplitude.
+    std::vector<int16_t> padded(6000, 0);
+    padded.insert(padded.end(), phrase.begin(), phrase.begin() + frames);
+    padded.insert(padded.end(), 6000, 0);
+    verify_join(padded, padded);
     return 0;
 }

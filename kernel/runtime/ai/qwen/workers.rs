@@ -236,10 +236,41 @@ unsafe fn dispatch_waiting_background() {
 
 // ------------------------=
 // FUNC: poll_background
-// DESC: Advances an accepted background handoff independently of matrix collection.
+// DESC: Retires abandoned matrix ownership and advances accepted background work without waiting.
 // ------------------=
 pub fn poll_background() {
-    unsafe { dispatch_waiting_background(); }
+    unsafe {
+        // A cancelled engine no longer calls rows(), so its completed mailboxes
+        // must be reclaimed here before an accepted speech task can run.
+        if PENDING.2 { collect_completed_matrix(); }
+        dispatch_waiting_background();
+    }
+}
+
+// ------------------------=
+// FUNC: collect_completed_matrix
+// DESC: Nonblockingly retires a completed matrix while preserving its result ownership and profiling.
+// ------------------=
+unsafe fn collect_completed_matrix() -> Option<(usize, bool)> {
+    let (mask, start, discarded) = PENDING;
+    if mask == 0 || (0..COUNT).any(|i| mask & (1 << i) != 0
+        && SLOTS[i].state.load(Ordering::Acquire) != 2) {
+        return None;
+    }
+    for (i, slot) in SLOTS.iter().enumerate() {
+        if mask & (1 << i) == 0 { continue; }
+        let job = &*slot.job.get();
+        COMPUTE_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+        if job.kind == 12 {
+            Q4_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+        } else if job.kind == 14 {
+            Q6_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+        }
+        IDLE_TICKS.fetch_add(counter().saturating_sub(job.finished), Ordering::Relaxed);
+        slot.state.store(0, Ordering::Relaxed);
+    }
+    PENDING = (0, 0, false);
+    Some((start, discarded))
 }
 
 // ------------------------=
@@ -382,27 +413,10 @@ pub unsafe fn rows(
     cursor: &mut usize,
 ) -> Option<bool> {
     unsafe {
-        let (mask, start, discarded) = PENDING;
-        if mask != 0 {
-            if (0..COUNT).any(|i| mask & (1 << i) != 0
-                && SLOTS[i].state.load(Ordering::Acquire) != 2) {
+        if PENDING.0 != 0 {
+            let Some((start, discarded)) = collect_completed_matrix() else {
                 return Some(false);
-            }
-            for (i, slot) in SLOTS.iter().enumerate() {
-                if mask & (1 << i) == 0 {
-                    continue;
-                }
-                let job = &*slot.job.get();
-                COMPUTE_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
-                if job.kind == 12 {
-                    Q4_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
-                } else if job.kind == 14 {
-                    Q6_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
-                }
-                IDLE_TICKS.fetch_add(counter().saturating_sub(job.finished), Ordering::Relaxed);
-                slot.state.store(0, Ordering::Relaxed);
-            }
-            PENDING = (0, 0, false);
+            };
             dispatch_waiting_background();
             if !discarded {
                 core::ptr::copy_nonoverlapping(
@@ -631,6 +645,35 @@ mod tests {
             }
             assert!(outputs_match(kind, &wide_expected, &wide_actual));
         }
+        // Model cancellation stops rows() polling. Occupy the reserved AP as a
+        // permanent browser would, then require only the ordinary service poll
+        // to retire cancelled matrices and run a queued speech-shaped task.
+        let data = vec![0u8; 256 * 144];
+        let input = vec![0.125f32; 256];
+        let mut abandoned = vec![f32::NAN; 256];
+        let mut cursor = 0;
+        assert_eq!(unsafe { rows(12, &data, &input, &mut abandoned, &mut cursor) }, Some(false));
+        assert!(unsafe { background(held_background) });
+        discard();
+        QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
+        assert!(unsafe { background(queued_background) });
+        let deadline = std::time::Instant::now();
+        while !QUEUED_BACKGROUND_RAN.load(Ordering::Acquire) {
+            poll_background();
+            assert!(deadline.elapsed().as_secs() < 5);
+            std::thread::yield_now();
+        }
+        assert!(abandoned.iter().all(|value| value.is_nan()));
+        assert_eq!(unsafe { PENDING.0 }, 0);
+        // Repeated polls do not republish the abandoned result, and the same
+        // worker pool can execute a fresh matrix after the speech callback.
+        poll_background();
+        let mut next = vec![f32::NAN; 1];
+        while unsafe { rows(12, &data, &input, &mut next, &mut cursor) } != Some(true) {
+            assert!(deadline.elapsed().as_secs() < 5);
+            std::thread::yield_now();
+        }
+        assert_eq!(next, [0.0]);
         assert!(completed() >= 10);
         BACKGROUND_RELEASE.store(true, Ordering::Release);
         unsafe { stop_host_workers(); }

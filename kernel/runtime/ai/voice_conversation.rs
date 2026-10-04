@@ -18,6 +18,9 @@ pub mod indicator;
 mod speech_chunk;
 #[path = "voice_echo.rs"]
 mod voice_echo;
+#[path = "voice_timing.rs"]
+pub mod timing;
+use timing::Milestone;
 #[cfg(not(test))]
 #[path = "voice_trace.rs"]
 mod voice_trace;
@@ -49,6 +52,11 @@ static mut MONO: [i16; 4800] = [0; 4800];
 static mut ECHO: [i16; 9600] = [0; 9600];
 static mut ECHO_VALID_UNTIL: u64 = 0;
 static mut TRANSCRIPT: [u8; 512] = [0; 512];
+static mut PENDING_PROMPT: [u8; 512] = [0; 512];
+static mut PENDING_PROMPT_LENGTH: usize = 0;
+static mut PENDING_PROMPT_MODEL: u32 = 0;
+static mut PENDING_PROMPT_WORD: WakeWord = WakeWord::Infinity;
+static mut PENDING_PROMPT_UNTIL: u64 = 0;
 static mut REPLY: [u8; 16384] = [0; 16384];
 static mut REPLY_LENGTH: usize = 0;
 static mut REPLY_AT: usize = 0;
@@ -63,11 +71,27 @@ static mut CAPTURE_FRAME_SEEN: bool = false;
 static mut CAPTURE_EMPTY_SINCE: u64 = 0;
 static mut CAPTURE_EMPTY_REPORTED: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
+static mut TURN_TIMING: timing::Timeline = timing::Timeline::new();
+static mut TURN_TIMING_ACTIVE: bool = false;
+static mut LAST_TIMING_RECORD: (u64, u64) = (0, 0);
+// One follow-up utterance may accumulate while its predecessor is decoded.
+// The existing Utterance owns at most ten seconds; there is no transcript queue.
+static mut UTTERANCE_STARTED_AT: u64 = 0;
+static mut UTTERANCE_ENDED_AT: u64 = 0;
+static mut HANDOFF_PCM: [i16; 4800] = [0; 4800];
+static mut HANDOFF_LENGTH: usize = 0;
+static mut RECOGNITION_MODEL: u32 = 0;
+static mut RECOGNITION_WORD: WakeWord = WakeWord::Infinity;
+static mut RECOGNITION_CONTEXT_VALID: bool = false;
+static mut RECOGNITION_MODEL_WAS_READY: bool = false;
+static mut RECOGNITION_WAKE_AUTHORIZED: bool = false;
+static mut FOLLOWUP_ONSET_UNTIL: u64 = 0;
 static mut WAKE_ARMED: bool = false;
 static mut WAKE_ARMED_UNTIL: u64 = 0;
 static mut WAKE_ARMED_MODEL: u32 = 0;
 static mut WAKE_ARMED_WORD: WakeWord = WakeWord::Infinity;
 const WAKE_COMMAND_WINDOW_NS: u64 = 10_000_000_000;
+const SUBMIT_WAIT_NS: u64 = 10_000_000_000;
 const CAPTURE_CAPABILITY_SECONDS: u64 = 60;
 const CAPTURE_CAPABILITY_REPLACE_NS: u64 = 45_000_000_000;
 
@@ -86,6 +110,28 @@ fn trace(event: &[u8]) {
 // DESC: Keeps host conversation harnesses independent of the native serial device.
 // ------------------=
 fn trace(_: &[u8]) {}
+
+// ------------------------=
+// FUNC: timing_snapshot
+// DESC: Copies content-free measurements on the conversation owner thread for structured diagnostics.
+// ------------------=
+pub fn timing_snapshot() -> timing::Timeline {
+    unsafe { TURN_TIMING }
+}
+
+// ------------------------=
+// FUNC: report_timing
+// DESC: Emits each new measured stage once, never mistaking a missing playback event for success.
+// ------------------=
+unsafe fn report_timing() {
+    let record = timing_snapshot().record();
+    let key = (record[1], record[2]);
+    if key != LAST_TIMING_RECORD && record[2] != 0 {
+        LAST_TIMING_RECORD = key;
+        #[cfg(not(test))]
+        voice_trace::timing(record);
+    }
+}
 
 // ------------------------=
 // FUNC: active_owner
@@ -145,11 +191,96 @@ fn retire(cap: u64) {
     }
 }
 // ------------------------=
+// FUNC: normalize_command
+// DESC: Converts supported speech punctuation and whitespace before any ASCII composer mutation; rejects unsupported UTF-8 atomically.
+// ------------------=
+fn normalize_command(input: &[u8], output: &mut [u8]) -> Option<usize> {
+    let text = core::str::from_utf8(input).ok()?;
+    let mut length = 0;
+    for ch in text.chars() {
+        let bytes: &[u8] = match ch {
+            '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}' => b"'",
+            '\u{201c}' | '\u{201d}' | '\u{201e}' | '\u{201f}' => b"\"",
+            '\u{2010}'..='\u{2015}' | '\u{2212}' => b"-",
+            '\u{2026}' => b"...",
+            _ if ch.is_whitespace() => b" ",
+            _ if ch.is_ascii() && !ch.is_ascii_control() => {
+                if length == output.len() { return None; }
+                output[length] = ch as u8; length += 1;
+                continue;
+            }
+            _ => return None,
+        };
+        if bytes == b" " && (length == 0 || output[length - 1] == b' ') { continue; }
+        if bytes.len() > output.len() - length { return None; }
+        output[length..length + bytes.len()].copy_from_slice(bytes); length += bytes.len();
+    }
+    while length != 0 && output[length - 1] == b' ' { length -= 1; }
+    (length != 0).then_some(length)
+}
+// ------------------------=
+// FUNC: clear_pending_prompt
+// DESC: Erases controller-owned prompt state and optionally removes only an unchanged owned composer, never a user's edits.
+// ------------------=
+unsafe fn clear_pending_prompt(remove_composer: bool) {
+    if remove_composer && PENDING_PROMPT_LENGTH != 0 {
+        super::with_ai_runtime(|ai| {
+            if ai.chat.input() == &(&*(&raw const PENDING_PROMPT))[..PENDING_PROMPT_LENGTH] {
+                ai.chat.set_input_cursor(PENDING_PROMPT_LENGTH);
+                for _ in 0..PENDING_PROMPT_LENGTH { let _ = ai.chat.pop_input(); }
+            }
+        });
+    }
+    (&mut *(&raw mut PENDING_PROMPT)).fill(0);
+    PENDING_PROMPT_LENGTH = 0;
+    PENDING_PROMPT_UNTIL = 0;
+}
+// ------------------------=
+// FUNC: pending_prompt_valid
+// DESC: Binds a queued voice prompt to its original owner, model, wake setting, deadline, and exact unchanged composer.
+// ------------------=
+unsafe fn pending_prompt_valid() -> bool {
+    PENDING_PROMPT_LENGTH != 0 && active_owner(OWNER)
+        && super::qwen::workers::clock_ns() < PENDING_PROMPT_UNTIL
+        && configured_wake_word(OWNER) == PENDING_PROMPT_WORD
+        && super::with_ai_runtime(|ai| ai.chat.selected_model() == PENDING_PROMPT_MODEL
+            && ai.chat.input() == &(&*(&raw const PENDING_PROMPT))[..PENDING_PROMPT_LENGTH])
+}
+// ------------------------=
+// FUNC: queue_command
+// DESC: Inserts a fully validated bounded transcript atomically and records ownership before waiting for local-model readiness.
+// ------------------=
+unsafe fn queue_command(input: &[u8]) -> bool {
+    clear_pending_prompt(false);
+    let Some(length) = normalize_command(input, &mut *(&raw mut PENDING_PROMPT)) else {
+        clear_pending_prompt(false);
+        return false;
+    };
+    if length > super::chat::CHAT_INPUT_CAPACITY { clear_pending_prompt(false); return false; }
+    let inserted = super::with_ai_runtime(|ai| {
+        if !ai.chat.input().is_empty() || ai.chat.generation_state == GenerationState::Running { return false; }
+        for index in 0..length {
+            if !ai.chat.push_input(PENDING_PROMPT[index]) {
+                for _ in 0..index { let _ = ai.chat.pop_input(); }
+                return false;
+            }
+        }
+        true
+    });
+    if !inserted { clear_pending_prompt(false); return false; }
+    PENDING_PROMPT_LENGTH = length;
+    PENDING_PROMPT_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
+    PENDING_PROMPT_WORD = configured_wake_word(OWNER);
+    PENDING_PROMPT_UNTIL = super::qwen::workers::clock_ns().saturating_add(SUBMIT_WAIT_NS);
+    true
+}
+// ------------------------=
 // FUNC: submit_pending_transcript
-// DESC: Submits a recognized composer only after its selected local model becomes ready.
+// DESC: Submits only the unchanged authorized voice composer after its original selected local model becomes ready.
 // ------------------=
 unsafe fn submit_pending_transcript() -> bool {
-    super::with_ai_runtime(|ai| {
+    if !pending_prompt_valid() { return false; }
+    let submitted = super::with_ai_runtime(|ai| {
         if ai.chat.input().is_empty()
             || ai.chat.generation_state == GenerationState::Running
         {
@@ -163,7 +294,12 @@ unsafe fn submit_pending_transcript() -> bool {
         REPLY_COMPLETE = false;
         trace(b"model turn accepted");
         true
-    })
+    });
+    if submitted {
+        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Submitted, super::qwen::workers::clock_ns());
+        clear_pending_prompt(false);
+    }
+    submitted
 }
 // ------------------------=
 // FUNC: state
@@ -188,6 +324,30 @@ unsafe fn clear_wake_command() {
     WAKE_ARMED = false;
     WAKE_ARMED_UNTIL = 0;
     WAKE_ARMED_MODEL = 0;
+}
+// ------------------------=
+// FUNC: clear_captured_turn
+// DESC: Erases the single pending utterance and endpoint carry without touching microphone authority.
+// ------------------=
+unsafe fn clear_captured_turn() {
+    (&mut *(&raw mut UTTERANCE)).clear(300);
+    (&mut *(&raw mut HANDOFF_PCM)).fill(0);
+    HANDOFF_LENGTH = 0;
+    UTTERANCE_STARTED_AT = 0;
+    UTTERANCE_ENDED_AT = 0;
+    LAST_VAD_STATE = VadState::Waiting;
+}
+// ------------------------=
+// FUNC: resume_captured_turn
+// DESC: Promotes bounded audio captured during recognition without reopening DMA or resetting its resampler.
+// ------------------=
+unsafe fn resume_captured_turn() {
+    STATE = State::Listening;
+    LEVEL = 0;
+    RECOGNITION_CONTEXT_VALID = false;
+    RECOGNITION_MODEL_WAS_READY = false;
+    RECOGNITION_WAKE_AUTHORIZED = false;
+    FOLLOWUP_ONSET_UNTIL = 0;
 }
 // ------------------------=
 // FUNC: ready
@@ -217,7 +377,7 @@ pub fn synchronized_reply_length(turn: u64, full_length: usize) -> usize {
 // DESC: Clears private turn buffers while preserving the already-authorized microphone DMA stream.
 // ------------------=
 unsafe fn reset_listening_state() {
-    (&mut *(&raw mut UTTERANCE)).clear(300);
+    clear_captured_turn();
     (&mut *(&raw mut RESAMPLER)).clear();
     (&mut *(&raw mut RAW)).fill(0);
     (&mut *(&raw mut MONO)).fill(0);
@@ -231,6 +391,9 @@ unsafe fn reset_listening_state() {
     CAPTURE_EMPTY_SINCE = super::qwen::workers::clock_ns();
     CAPTURE_EMPTY_REPORTED = false;
     LAST_VAD_STATE = VadState::Waiting;
+    RECOGNITION_CONTEXT_VALID = false;
+    RECOGNITION_WAKE_AUTHORIZED = false;
+    FOLLOWUP_ONSET_UNTIL = 0;
     STATE = State::Listening;
 }
 
@@ -346,6 +509,11 @@ pub fn start(owner: SecurityIdentity) -> bool {
             ai.chat.set_minimized(false);
         });
         if !voice_input::prepare() {
+            if voice_input::prepare_failed() {
+                STATE = State::Failed;
+                trace(b"recognizer warmup failed");
+                return false;
+            }
             STATE = State::Starting;
             trace(b"conversation waiting for recognizer warmup");
             return true;
@@ -383,6 +551,8 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         if OWNER != owner || STATE == State::Off {
             return false;
         }
+        report_timing();
+        TURN_TIMING_ACTIVE = false;
         RESTART_LISTENING = false;
         crate::drivers::audio::stop_capture(owner);
         INPUT_CAP = 0;
@@ -399,11 +569,19 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         retire(RECOGNIZE_CAP);
         RECOGNIZE_CAP = 0;
         (&mut *(&raw mut UTTERANCE)).cancel();
+        (&mut *(&raw mut HANDOFF_PCM)).fill(0);
+        HANDOFF_LENGTH = 0;
+        UTTERANCE_STARTED_AT = 0;
+        UTTERANCE_ENDED_AT = 0;
+        RECOGNITION_CONTEXT_VALID = false;
+        RECOGNITION_WAKE_AUTHORIZED = false;
+        FOLLOWUP_ONSET_UNTIL = 0;
         (&mut *(&raw mut RESAMPLER)).clear();
         (&mut *(&raw mut RAW)).fill(0);
         (&mut *(&raw mut MONO)).fill(0);
         (&mut *(&raw mut ECHO)).fill(0);ECHO_VALID_UNTIL=0;
         (&mut *(&raw mut TRANSCRIPT)).fill(0);
+        clear_pending_prompt(true);
         (&mut *(&raw mut REPLY)).fill(0);
         REPLY_LENGTH = 0;
         REPLY_AT = 0;
@@ -445,6 +623,11 @@ unsafe fn speak_next() -> bool {
             return true;
         }
         trace(b"reply drained");
+        if TURN_TIMING_ACTIVE && timing_snapshot().at(Milestone::FirstAudio).is_some() {
+            (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Drained, super::qwen::workers::clock_ns());
+        }
+        report_timing();
+        TURN_TIMING_ACTIVE = false;
         SYNC_VISIBLE_AT = REPLY_LENGTH;
         if CONTINUOUS {
             // A completed reply never authorizes another spoken request.
@@ -478,6 +661,9 @@ unsafe fn speak_next() -> bool {
         return false;
     }
     trace(b"speech queued");
+    if TURN_TIMING_ACTIVE {
+        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::SpeechQueued, super::qwen::workers::clock_ns());
+    }
     REPLY_AT += count;
     STATE = State::Speaking;
     true
@@ -500,6 +686,9 @@ unsafe fn refresh_reply() {
             }
         }
     });
+    if TURN_TIMING_ACTIVE && REPLY_LENGTH != 0 {
+        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::FirstText, super::qwen::workers::clock_ns());
+    }
 }
 // ------------------------=
 // FUNC: speak_visible_reply
@@ -510,6 +699,8 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) { return; }
         if STATE == State::Listening && OWNER != owner { return; }
         let continuous = STATE == State::Listening;
+        report_timing();
+        TURN_TIMING_ACTIVE = false;
         if continuous && INPUT_CAP != 0 {
             (&mut *(&raw mut UTTERANCE)).clear(300);
             (&mut *(&raw mut RESAMPLER)).clear();
@@ -602,6 +793,12 @@ unsafe fn drain_muted_capture() -> bool {
 // ------------------=
 unsafe fn synchronize_visible_reply() -> bool {
     let before = SYNC_VISIBLE_AT;
+    if TURN_TIMING_ACTIVE && matches!(STATE, State::Thinking | State::Speaking) {
+        let first = voice_output::status().first_playback_ns;
+        if first != 0 && timing_snapshot().at(Milestone::SpeechQueued).is_some_and(|queued| first >= queued) {
+            (&mut *(&raw mut TURN_TIMING)).observe(Milestone::FirstAudio, first);
+        }
+    }
     if let Some(progress) = voice_output::playback_progress(OWNER) {
         let mut target = progress.content_position.min(REPLY_LENGTH);
         if target < REPLY_LENGTH && !progress.content_boundary {
@@ -693,8 +890,32 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         (&mut *(&raw mut ECHO)).fill(0);
     }
     LEVEL=(&*(&raw const MONO))[..n].iter().map(|x|x.unsigned_abs()).max().unwrap_or(0);
-    (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n]);
+    // Keep exactly the first following utterance during ASR. Audio after that
+    // bounded segment is deliberately drained, never queued as another turn.
+    let accept = STATE != State::Recognizing || (RECOGNITION_CONTEXT_VALID
+        && (UTTERANCE_STARTED_AT != 0 || now < FOLLOWUP_ONSET_UNTIL));
+    if STATE == State::Recognizing && UTTERANCE_STARTED_AT == 0
+        && FOLLOWUP_ONSET_UNTIL != 0 && now >= FOLLOWUP_ONSET_UNTIL {
+        clear_captured_turn();
+        FOLLOWUP_ONSET_UNTIL = 0;
+    }
+    let consumed = if accept {
+        (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n])
+    } else { n };
     let vad=(&*(&raw const UTTERANCE)).state();
+    if UTTERANCE_STARTED_AT == 0 && matches!(vad, VadState::Speech | VadState::Complete) {
+        UTTERANCE_STARTED_AT = now.max(1);
+    }
+    if UTTERANCE_ENDED_AT == 0 && vad == VadState::Complete {
+        UTTERANCE_ENDED_AT = now.max(1);
+    }
+    // VAD can finish part way through a driver chunk. Preserve that suffix
+    // before clearing MONO so the next command's onset is not silently lost.
+    if STATE == State::Listening && vad == VadState::Complete && consumed < n {
+        HANDOFF_LENGTH = n - consumed;
+        (&mut *(&raw mut HANDOFF_PCM))[..HANDOFF_LENGTH]
+            .copy_from_slice(&(&*(&raw const MONO))[consumed..n]);
+    }
     if vad!=LAST_VAD_STATE {
         trace(match vad {
             VadState::Waiting => b"vad waiting",
@@ -727,6 +948,17 @@ pub fn poll() -> bool {
             trace(b"conversation stopped inactive owner");
             stop(OWNER);
         }
+        if STATE == State::Recognizing && RECOGNITION_CONTEXT_VALID
+            && (configured_wake_word(OWNER) != RECOGNITION_WORD
+                || super::with_ai_runtime(|ai| ai.chat.selected_model() != RECOGNITION_MODEL
+                    || (RECOGNITION_MODEL_WAS_READY && !ai.chat.selected_model_ready())
+                    || ai.chat.generation_state == GenerationState::Running)) {
+            RECOGNITION_CONTEXT_VALID = false;
+            RECOGNITION_WAKE_AUTHORIZED = false;
+            clear_wake_command();
+            clear_captured_turn();
+            trace(b"recognition context changed; pending audio erased");
+        }
         if WAKE_ARMED && (configured_wake_word(OWNER) != WAKE_ARMED_WORD
             || super::with_ai_runtime(|ai| ai.chat.selected_model() != WAKE_ARMED_MODEL
                 || !ai.chat.selected_model_ready()
@@ -740,11 +972,15 @@ pub fn poll() -> bool {
             trace(b"conversation stopped model state");
             stop(OWNER);
         }
-        // Recognition, inference, and playback own their turn while the one
-        // authorized capture DMA stream is drained and muted. Keeping hardware
-        // open avoids repeating the host audio permission/open path, while
-        // muted input can never cancel or truncate an accepted response.
-        if matches!(STATE, State::Recognizing | State::Submitting | State::Thinking | State::Speaking)
+        // Recognition retains one following utterance so wake-only decoding
+        // cannot erase an immediately spoken command. Inference and playback
+        // still own the accepted turn; their input is drained, never queued.
+        if STATE == State::Recognizing && !capture_frame(false) {
+            trace(b"conversation stopped recognition capture");
+            stop(OWNER);
+            return true;
+        }
+        if matches!(STATE, State::Submitting | State::Thinking | State::Speaking)
             && !drain_muted_capture()
         {
             trace(b"conversation stopped muted capture");
@@ -753,7 +989,11 @@ pub fn poll() -> bool {
         }
         match STATE {
             State::Starting => {
-                if voice_input::prepared() {
+                if voice_input::prepare_failed() {
+                    stop(OWNER);
+                    STATE = State::Failed;
+                    trace(b"recognizer warmup failed");
+                } else if voice_input::prepared() {
                     if listen() { trace(b"conversation listening after warmup"); }
                     else { STATE = State::Failed; trace(b"capture failed after warmup"); }
                 } else {
@@ -763,20 +1003,20 @@ pub fn poll() -> bool {
             State::Listening => {
                 if WAKE_ARMED
                     && super::qwen::workers::clock_ns() >= WAKE_ARMED_UNTIL
+                    && (UTTERANCE_STARTED_AT == 0 || UTTERANCE_STARTED_AT >= WAKE_ARMED_UNTIL)
                 {
                     clear_wake_command();
                     trace(b"wake command window expired");
                 }
-                if !capture_frame(false) {
+                if (&*(&raw const UTTERANCE)).state() != VadState::Complete && !capture_frame(false) {
                     trace(b"conversation stopped capture frame");
                     stop(OWNER);
                     return true;
                 }
                 match (&*(&raw const UTTERANCE)).state() {
                     VadState::Complete => {
-                        // Recognition is asynchronous, so it receives separate
-                        // bounded authority while capture DMA stays open and is
-                        // drained without admitting another utterance.
+                        // Recognition receives separate bounded authority; the
+                        // same capture stream retains one following utterance.
                         RECOGNIZE_CAP = grant(
                             OWNER,
                             CapabilityType::AudioInput,
@@ -787,8 +1027,31 @@ pub fn poll() -> bool {
                             .speech()
                             .map(|pcm| voice_input::submit(OWNER, RECOGNIZE_CAP, pcm).is_ok())
                             .unwrap_or(false);
+                        if submitted {
+                            report_timing();
+                            (&mut *(&raw mut TURN_TIMING)).begin(UTTERANCE_ENDED_AT);
+                            TURN_TIMING_ACTIVE = true;
+                        }
+                        RECOGNITION_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
+                        RECOGNITION_WORD = configured_wake_word(OWNER);
+                        RECOGNITION_CONTEXT_VALID = submitted;
+                        RECOGNITION_MODEL_WAS_READY = super::with_ai_runtime(|ai| ai.chat.selected_model_ready());
+                        RECOGNITION_WAKE_AUTHORIZED = WAKE_ARMED && UTTERANCE_STARTED_AT != 0
+                            && UTTERANCE_STARTED_AT < WAKE_ARMED_UNTIL;
+                        FOLLOWUP_ONSET_UNTIL = super::qwen::workers::clock_ns()
+                            .saturating_add(WAKE_COMMAND_WINDOW_NS);
                         (&mut *(&raw mut UTTERANCE)).clear(300);
-                        (&mut *(&raw mut RESAMPLER)).clear();
+                        UTTERANCE_STARTED_AT = 0;
+                        UTTERANCE_ENDED_AT = 0;
+                        LAST_VAD_STATE = VadState::Waiting;
+                        if submitted && HANDOFF_LENGTH != 0 {
+                            (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const HANDOFF_PCM))[..HANDOFF_LENGTH]);
+                            if (&*(&raw const UTTERANCE)).state() == VadState::Speech {
+                                UTTERANCE_STARTED_AT = super::qwen::workers::clock_ns().max(1);
+                            }
+                        }
+                        (&mut *(&raw mut HANDOFF_PCM)).fill(0);
+                        HANDOFF_LENGTH = 0;
                         LEVEL = 0;
                         if submitted {
                             trace(b"recognition queued");
@@ -798,9 +1061,11 @@ pub fn poll() -> bool {
                             stop(OWNER);
                         }
                     }
-                    VadState::NoSpeech | VadState::Limit => {
-                        (&mut *(&raw mut UTTERANCE)).clear(300);
+                    VadState::NoSpeech => {
+                        clear_wake_command();
+                        clear_captured_turn();
                     }
+                    VadState::Limit => { clear_wake_command(); }
                     _ => {}
                 }
             }
@@ -811,6 +1076,19 @@ pub fn poll() -> bool {
                     let result_failed = result.is_err();
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
+                    if result_failed {
+                        (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                        stop(OWNER);
+                        STATE = State::Failed;
+                        trace(b"recognition result authority failed");
+                        return true;
+                    }
+                    if !RECOGNITION_CONTEXT_VALID {
+                        (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                        clear_captured_turn();
+                        resume_captured_turn();
+                        return true;
+                    }
                     let mut command = None;
                     let mut wake_only = false;
                     let mut unaddressed = false;
@@ -820,7 +1098,7 @@ pub fn poll() -> bool {
                                 &(&*(&raw const TRANSCRIPT))[..n],
                                 configured_wake_word(OWNER),
                             ) {
-                                wake_word::Match::Absent if WAKE_ARMED => command = Some((0, n)),
+                                wake_word::Match::Absent if RECOGNITION_WAKE_AUTHORIZED => command = Some((0, n)),
                                 wake_word::Match::Absent => unaddressed = true,
                                 wake_word::Match::WakeOnly => wake_only = true,
                                 wake_word::Match::Command { start } => {
@@ -832,22 +1110,15 @@ pub fn poll() -> bool {
                     let queued = command
                         .map(|(start, end)| {
                             clear_wake_command();
-                            super::with_ai_runtime(|ai| {
-                                if !ai.chat.input().is_empty()
-                                    || ai.chat.generation_state == GenerationState::Running
-                                {
-                                    return false;
-                                }
-                                let mut inserted = start < end;
-                                for &byte in &(&*(&raw const TRANSCRIPT))[start..end] {
-                                    inserted &= ai.chat.push_input(byte);
-                                }
-                                inserted
-                            })
+                            queue_command(&(&*(&raw const TRANSCRIPT))[start..end])
                         })
                         .unwrap_or(false);
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
                     if queued {
+                        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Transcript, super::qwen::workers::clock_ns());
+                        clear_captured_turn();
+                        RECOGNITION_CONTEXT_VALID = false;
+                        RECOGNITION_WAKE_AUTHORIZED = false;
                         trace(b"transcript ready");
                         STATE = if submit_pending_transcript() {
                             trace(b"transcript submitted");
@@ -856,29 +1127,28 @@ pub fn poll() -> bool {
                             State::Submitting
                         };
                     } else if wake_only {
-                        WAKE_ARMED = true;
-                        WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
-                            .saturating_add(WAKE_COMMAND_WINDOW_NS);
-                        WAKE_ARMED_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
-                        WAKE_ARMED_WORD = configured_wake_word(OWNER);
-                        trace(b"wake phrase armed command capture");
-                        if !listen() {
-                            stop(OWNER);
-                            STATE = State::Failed;
+                        if matches!((&*(&raw const UTTERANCE)).state(), VadState::Limit | VadState::NoSpeech) {
+                            clear_wake_command();
+                        } else {
+                            WAKE_ARMED = true;
+                            WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
+                                .saturating_add(WAKE_COMMAND_WINDOW_NS);
+                            WAKE_ARMED_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
+                            WAKE_ARMED_WORD = configured_wake_word(OWNER);
                         }
+                        trace(b"wake phrase armed command capture");
+                        resume_captured_turn();
                     } else if unaddressed {
                         trace(b"unaddressed speech ignored");
-                        if !listen() {
-                            stop(OWNER);
-                            STATE = State::Failed;
-                        }
+                        resume_captured_turn();
                     } else {
                         trace(match (result_was_empty,result_failed) {
                             (true,_) => b"recognition returned empty transcript",
                             (_,true) => b"recognition result take failed",
                             _ => b"transcript rejected by chat state",
                         });
-                        stop(OWNER);
+                        clear_wake_command();
+                        resume_captured_turn();
                     }
                 }
                 voice_input::InputState::Failed | voice_input::InputState::Cancelled => {
@@ -901,9 +1171,8 @@ pub fn poll() -> bool {
                     // Cancellation, revoked authority, and decoder faults must
                     // not silently obtain a fresh microphone lease.
                     if status.state == voice_input::InputState::Failed && status.error == 5 {
-                        if !listen() {
-                            stop(OWNER);
-                        }
+                        if !RECOGNITION_CONTEXT_VALID { clear_captured_turn(); }
+                        resume_captured_turn();
                     } else {
                         stop(OWNER);
                         STATE = State::Failed;
@@ -912,7 +1181,13 @@ pub fn poll() -> bool {
                 _ => {}
             },
             State::Submitting => {
-                if submit_pending_transcript() { STATE = State::Thinking; }
+                if !pending_prompt_valid() {
+                    clear_pending_prompt(true);
+                    clear_wake_command();
+                    clear_captured_turn();
+                    resume_captured_turn();
+                    trace(b"queued transcript expired or context changed");
+                } else if submit_pending_transcript() { STATE = State::Thinking; }
             }
             State::Thinking => {
                 if super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN) {
@@ -980,6 +1255,7 @@ pub fn poll() -> bool {
             _ => {}
         }
         presentation_changed |= synchronize_visible_reply();
+        report_timing();
         STATE != previous || presentation_changed
     }
 }

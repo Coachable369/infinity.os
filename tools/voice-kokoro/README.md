@@ -186,10 +186,15 @@ The finite playback deadline remains a failure watchdog: a stalled device must
 report an underrun, never successful completion. Terminal audio traces include
 the device-confirmed played and total frame counts without recording speech.
 
-At outer synthesis-job boundaries, exact-zero model padding is shortened to
-20 ms on either side. Every nonzero sample (including quiet consonants) and
-every internal pause is retained. This removes duplicated boundary silence;
-it does not make synthesis itself faster or establish installed listening quality.
+At outer synthesis-job and internal inference boundaries, exact-zero model
+padding is shortened to 20 ms on either side. Internal joins overlap at most
+5 ms of exact-zero padding; they never overlap nonzero speech. Every nonzero
+sample (including quiet consonants) and every pause within a phrase is retained.
+The former energy-threshold join could discard quiet speech and is no longer
+used. Sanitizer-backed PCM fixtures verify sample order, one-LSB onset/tails,
+internal pauses, silent inputs, and buffer bounds. This removes duplicated
+boundary silence; it does not make synthesis itself faster or establish
+installed listening quality.
 
 The reproducible native comparison is:
 

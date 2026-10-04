@@ -15,8 +15,6 @@ static std::unique_ptr<kokopop::Model> model;
 static constexpr float conversational_speed = 1.15f;
 static constexpr size_t inference_phrase_bytes = 80;
 static constexpr size_t boundary_silence_frames = 480;
-static constexpr size_t boundary_activity_window = 120;
-static constexpr int16_t boundary_activity_floor = 160;
 extern "C" int native_cancelled(void);
 extern "C" unsigned int native_phase;
 extern "C" void (*native_init_start[])(void);
@@ -94,59 +92,11 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
 }
 
 // ------------------------=
-// FUNC: active_start
-// DESC: Locates audible onset while retaining a bounded natural pause before an internal inference boundary.
-// ------------------=
-static size_t active_start(const int16_t *pcm, size_t frames) {
-    size_t active = 0;
-    while (active < frames) {
-        const size_t end = std::min(frames, active + boundary_activity_window);
-        int32_t peak = 0;
-        for (size_t i = active; i < end; ++i) peak = std::max(peak, std::abs(int32_t(pcm[i])));
-        if (peak > boundary_activity_floor) break;
-        active = end;
-    }
-    return active > boundary_silence_frames ? active - boundary_silence_frames : 0;
-}
-
-// ------------------------=
-// FUNC: active_end
-// DESC: Locates audible completion while retaining a bounded natural pause after an internal inference boundary.
-// ------------------=
-static size_t active_end(const int16_t *pcm, size_t frames) {
-    size_t active = frames;
-    while (active) {
-        const size_t start = active > boundary_activity_window ? active - boundary_activity_window : 0;
-        int32_t peak = 0;
-        for (size_t i = start; i < active; ++i) peak = std::max(peak, std::abs(int32_t(pcm[i])));
-        if (peak > boundary_activity_floor) break;
-        active = start;
-    }
-    return std::min(frames, active + boundary_silence_frames);
-}
-
-// ------------------------=
 // FUNC: join_phrase
-// DESC: Removes duplicated model-edge silence and crossfades internal inference segments into one natural utterance.
+// DESC: Removes duplicated exact-zero padding without truncating or attenuating quiet speech at internal inference boundaries.
 // ------------------=
 static size_t join_phrase(int16_t *pcm, size_t written, size_t produced) {
-    if (!written || !produced) return written + produced;
-    const size_t left = active_end(pcm, written);
-    const size_t right = active_start(pcm + written, produced);
-    if (left < written || right) {
-        std::memmove(pcm + left, pcm + written + right, (produced - right) * sizeof(int16_t));
-        written = left;
-        produced -= right;
-    }
-    const size_t overlap = std::min(size_t(120), std::min(written, produced));
-    for (size_t i = 0; i < overlap; ++i) {
-        const int32_t left = pcm[written - overlap + i];
-        const int32_t right = pcm[written + i];
-        const int32_t mixed = left * int32_t(overlap - i) + right * int32_t(i + 1);
-        pcm[written - overlap + i] = static_cast<int16_t>(mixed / int32_t(overlap + 1));
-    }
-    std::memmove(pcm + written, pcm + written + overlap, (produced - overlap) * sizeof(int16_t));
-    return written + produced - overlap;
+    return native_pcm_join_phrases(pcm, written, produced, boundary_silence_frames, 120);
 }
 
 // ------------------------=

@@ -28,3 +28,25 @@ pub fn write(prefix: &[u8], event: &[u8], now: u64) {
     record[at] = b'\n';
     unsafe { crate::output::write(&record[..at + 1]); }
 }
+
+// ------------------------=
+// FUNC: timing
+// DESC: Writes one versioned numeric timing record, without transcripts, PCM, allocation or runtime locks.
+// ------------------=
+pub fn timing(values: [u64; 10]) {
+    const PREFIX: &[u8] = b"[VOICE TIMING] ";
+    const HEX: &[u8] = b"0123456789abcdef";
+    let mut record = [0u8; PREFIX.len() + 10 * 17];
+    record[..PREFIX.len()].copy_from_slice(PREFIX);
+    let mut at = PREFIX.len();
+    for value in values {
+        for shift in (0..16).rev() {
+            record[at] = HEX[((value >> (shift * 4)) & 15) as usize];
+            at += 1;
+        }
+        record[at] = b' ';
+        at += 1;
+    }
+    record[at - 1] = b'\n';
+    unsafe { crate::output::write(&record[..at]); }
+}

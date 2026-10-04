@@ -28,25 +28,30 @@ if [ "$target" = aarch64 ]; then
 python3 tools/build-kit-test.py
 python3 tools/build-workspace-test.py
 python3 tools/installer-output-test.py
+python3 tools/voice-pipeline-test.py
 make install-boot-handoff-test
 make aarch64-bootstrap
 sh tools/build-hermes.sh --target aarch64
 python3 tools/full-bundle-iso-test.py builds/InfinityOS-aarch64.iso
-python3 tools/browser-artwork-parity.py
+cp tools/configure-virtualbox-arm64.sh builds/configure-virtualbox-arm64.sh
+cp tools/start-virtualbox-arm64.sh builds/start-virtualbox-arm64.sh
+chmod +x builds/configure-virtualbox-arm64.sh builds/start-virtualbox-arm64.sh
 tools/guard-virtualbox-arm64-input.sh
-shasum -a 256 builds/InfinityOS-aarch64.iso > builds/SHA256SUMS
+(cd builds && shasum -a 256 InfinityOS-aarch64.iso > SHA256SUMS)
+python3 tools/browser-artwork-parity.py
 COMMANDS
 elif [ "$target" = x86_64 ]; then
     cat <<'COMMANDS'
 python3 tools/build-kit-test.py
 python3 tools/build-workspace-test.py
 python3 tools/installer-output-test.py
+python3 tools/voice-pipeline-test.py
 make install-boot-handoff-test
 make build/test-media/InfinityOS-x86_64.bootmedia
 sh tools/build-hermes.sh --target x86_64
 python3 tools/full-bundle-iso-test.py builds/InfinityOS-x86_64.iso
+(cd builds && shasum -a 256 InfinityOS-x86_64.iso > SHA256SUMS)
 python3 tools/browser-artwork-parity.py
-shasum -a 256 builds/InfinityOS-x86_64.iso > builds/SHA256SUMS
 COMMANDS
 else
     cat <<'COMMANDS'
@@ -55,6 +60,7 @@ python3 tools/build-workspace-test.py
 python3 tools/log-retention-test.py
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
+python3 tools/voice-pipeline-test.py
 python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
@@ -91,6 +97,7 @@ if [ "$target" != all ]; then
     python3 tools/build-kit-test.py
     python3 tools/build-workspace-test.py
     python3 tools/installer-output-test.py
+    python3 tools/voice-pipeline-test.py
     make install-boot-handoff-test
     if [ "$target" = aarch64 ]; then
         make aarch64-bootstrap
@@ -118,6 +125,7 @@ python3 tools/build-workspace-test.py
 python3 tools/log-retention-test.py
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
+python3 tools/voice-pipeline-test.py
 python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test

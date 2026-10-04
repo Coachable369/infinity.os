@@ -85,11 +85,15 @@ unsafe fn prepare_worker() {
         core::ptr::null_mut(),
     );
     if error == NATIVE_ENGINE_BUSY && prepare_cancelled(core::ptr::null_mut()) == 0 {
-        ENGINE.store(4, Ordering::Release);
+        let _ = ENGINE.compare_exchange(1, 4, Ordering::AcqRel, Ordering::Acquire);
         return;
     }
-    trace(if error == 0 { b"recognizer warmup ready" } else { b"recognizer warmup failed" });
-    ENGINE.store(if error == 0 { 2 } else { 3 }, Ordering::Release);
+    // Another native job may report a fatal fault immediately after this
+    // provider releases admission. Never overwrite its terminal publication.
+    let published = ENGINE.compare_exchange(1, if error == 0 { 2 } else { 3 }, Ordering::AcqRel, Ordering::Acquire).is_ok();
+    trace(if error != 0 { b"recognizer warmup failed" }
+        else if published { b"recognizer warmup ready" }
+        else { b"recognizer warmup discarded after native fault" });
 }
 
 // ------------------------=
@@ -108,19 +112,24 @@ pub fn prepare() -> bool {
     let engine = ENGINE.load(Ordering::Acquire);
     match engine {
         2 => true,
-        1 => false,
+        // A failed native context cannot be repaired by another scheduling
+        // attempt. Keep the failure observable instead of restarting its
+        // deadline and flooding APs with identical failed warmup jobs.
+        1 | 3 => false,
         _ => unsafe {
             if matches!(STATE.load(Ordering::Acquire), 1 | 2 | WAITING_ENGINE) { return false; }
             if engine != 4 {
                 PREPARE_DEADLINE.store(super::qwen::workers::clock_ns().saturating_add(90_000_000_000), Ordering::Release);
                 trace(b"recognizer warmup queued");
             } else if prepare_cancelled(core::ptr::null_mut()) != 0 {
-                ENGINE.store(3, Ordering::Release);
+                let _ = ENGINE.compare_exchange(4, 3, Ordering::AcqRel, Ordering::Acquire);
                 return false;
             }
-            ENGINE.store(1, Ordering::Release);
+            if ENGINE.compare_exchange(engine, 1, Ordering::AcqRel, Ordering::Acquire).is_err() {
+                return false;
+            }
             if !super::qwen::workers::background(prepare_worker) {
-                ENGINE.store(4, Ordering::Release);
+                let _ = ENGINE.compare_exchange(1, 4, Ordering::AcqRel, Ordering::Acquire);
             }
             false
         },
@@ -132,6 +141,18 @@ pub fn prepare() -> bool {
 // DESC: Reports only completed recognition and synthesis warmup, never model bytes merely being present.
 // ------------------=
 pub fn prepared() -> bool { ENGINE.load(Ordering::Acquire) == 2 }
+
+// ------------------------=
+// FUNC: prepare_failed
+// DESC: Reports terminal warmup failure without silently retrying a faulted native engine.
+// ------------------=
+pub fn prepare_failed() -> bool { ENGINE.load(Ordering::Acquire) == 3 }
+
+// ------------------------=
+// FUNC: native_engine_fault
+// DESC: Latches a shared native provider fault from either speech worker without taking runtime locks.
+// ------------------=
+pub fn native_engine_fault() { ENGINE.store(3, Ordering::Release); }
 
 struct Whisper;
 impl SpeechRecognitionProvider for Whisper {
@@ -188,6 +209,7 @@ unsafe fn worker() {
             &mut *(&raw mut TEXT),
         )
         .unwrap_or(0);
+    if ERROR == 7 { native_engine_fault(); }
     if ERROR == NATIVE_ENGINE_BUSY && cancelled(core::ptr::null_mut()) == 0 {
         STATE.store(WAITING_ENGINE, Ordering::Release);
         return;
