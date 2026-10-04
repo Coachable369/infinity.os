@@ -7,6 +7,11 @@ edition = "2021"
 path = "probe.rs"
 crate-type = ["staticlib"]
 
+[features]
+hid = []
+reserve-ap = ["hid"]
+production-policy = ["reserve-ap"]
+
 [profile.release]
 opt-level = 2
 panic = "abort"

@@ -5,6 +5,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 mod boot_info;
 #[path = "../../kernel/drivers/hda.rs"]
 mod hda;
+#[cfg(feature = "hid")]
+mod hid;
 const MAGIC: u64 = 0x494e46434150544d;
 static PHASE: AtomicUsize = AtomicUsize::new(0);
 static ACK: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -54,9 +56,18 @@ unsafe extern "efiapi" fn worker(argument: *mut u8) {
     RECORDS[slot] = registers();
     READY.fetch_or(1 << slot, Ordering::Release);
     let target = RECORDS[slot][0] & 255 == 7;
+    #[cfg(not(feature = "hid"))]
     let mut previous = usize::MAX;
     loop {
         let phase = PHASE.load(Ordering::Acquire);
+        #[cfg(feature = "hid")]
+        {
+            if target { ACK.store(phase,Ordering::Release); }
+            hid::worker_idle(target,phase);
+            continue;
+        }
+        #[cfg(not(feature = "hid"))]
+        {
         if target && phase != previous {
             if phase == 1 || phase >= 3 {
                 // VirtualBox 7.2.16 reads CNTP but rejects even a zero write.
@@ -70,6 +81,7 @@ unsafe extern "efiapi" fn worker(argument: *mut u8) {
         }
         if target && phase == 4 { core::hint::spin_loop(); }
         else { core::arch::asm!("wfe", options(nomem, nostack)); }
+        }
     }
 }
 
@@ -124,12 +136,18 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: &boot_info::BootInfo) -> ! 
     struct Bridge { version: u64, start: unsafe extern "efiapi" fn(unsafe extern "efiapi" fn(*mut u8), u64) -> u64 }
     let bridge = &*(info.worker_bridge as *const Bridge);
     assert_eq!(bridge.version, 1);
-    let count = (bridge.start)(worker, 7);
-    assert_eq!(count, 7);
+    let expected = if cfg!(feature = "reserve-ap") {6} else {7};
+    let requested = if cfg!(feature = "production-policy") {7} else {expected};
+    let count = (bridge.start)(worker, requested);
+    assert_eq!(count, expected);
     let started = ticks();
-    while READY.load(Ordering::Acquire) != 254 {
+    while READY.load(Ordering::Acquire) != (1 << (count+1))-2 {
         if ticks() - started > frequency * 2 { finish(2); }
     }
+    #[cfg(feature = "hid")]
+    hid::measure(info, &mut device, frequency);
+    #[cfg(not(feature = "hid"))]
+    {
     let header = [MAGIC, 2, count, device.sample_rate as u64, frequency];
     for value in header { bytes(&value.to_le_bytes()); }
     for record in &*(&raw const RECORDS) { for value in record { bytes(&value.to_le_bytes()); } }
@@ -165,6 +183,7 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: &boot_info::BootInfo) -> ! 
     }
     device.stop_capture();
     finish(0)
+    }
 }
 
 // ------------------------=

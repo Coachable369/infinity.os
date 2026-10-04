@@ -30,7 +30,13 @@ static uint64_t EFIAPI infinity_start_workers(INFINITY_AP_PROC procedure, uint64
     if (!worker_mp) return start_psci_workers(procedure,requested);
     size_t total = 0, enabled = 0;
     if (worker_mp->count(worker_mp, &total, &enabled) || enabled < 2) return start_psci_workers(procedure,requested);
-    size_t limit = enabled - 1;
+    size_t eligible = 0;
+    for (size_t cpu = 0; cpu < total; ++cpu) {
+        InfinityProcessor info;
+        if (!worker_mp->info(worker_mp, cpu, &info) && !(info.flags & 1) && (info.flags & 6) == 6)
+            ++eligible;
+    }
+    size_t limit = eligible;
     if (limit > requested) limit = requested;
     if (limit > 64) limit = 64;
     typedef EFI_STATUS (EFIAPI *CreateEvent)(uint32_t, size_t, void *, void *, void **);
@@ -41,6 +47,7 @@ static uint64_t EFIAPI infinity_start_workers(INFINITY_AP_PROC procedure, uint64
     for (size_t cpu = 0; cpu < total && launched < limit; ++cpu) {
         InfinityProcessor info;
         if (worker_mp->info(worker_mp, cpu, &info) || (info.flags & 1) || (info.flags & 6) != 6) continue;
+        if (!worker_cpu_allowed(info.id,eligible)) continue;
         InfinityApContext *context = &psci_contexts[launched];
         // MP firmware stacks are not sized for speech decoding. Every worker
         // must enter its reserved native stack before calling kernel code.

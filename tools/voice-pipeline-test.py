@@ -24,6 +24,12 @@ def main():
         raise SystemExit("Use ./build-kit run python3 tools/voice-pipeline-test.py")
     output = ROOT / "build/behavior-tests"
     output.mkdir(parents=True, exist_ok=True)
+    run("clang", "-std=c11", "-O2", "tools/psci-topology-test.c",
+        "-o", str(output / "psci-topology-test"))
+    run(str(output / "psci-topology-test"))
+    run("clang", "-std=c11", "-O2", "tools/arm-worker-reservation-test.c",
+        "-o", str(output / "arm-worker-reservation-test"))
+    run(str(output / "arm-worker-reservation-test"))
     run("cargo", "test", "--quiet", "--manifest-path", "tools/behavior-harness/Cargo.toml",
         "--bin", "voice-toggle-test")
     run("rustc", "--edition=2021", "--test", "tools/audio-poll-test.rs",

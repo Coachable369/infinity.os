@@ -30,7 +30,7 @@ def command(args, **kwargs):
 # FUNC: disk_image
 # DESC: Builds an isolated GPT/FAT EFI test disk without producing or changing any ISO.
 # ------------------=
-def disk_image():
+def disk_image(loader):
     path = OUT / "probe.raw"
     size = 128 * 1024 * 1024
     sectors = size // 512
@@ -60,7 +60,7 @@ def disk_image():
     image = str(path) + "@@1048576"
     command(["mformat", "-i", image, "-F", "-T", sectors - 34 - 2048 + 1, "::"])
     command(["mmd", "-i", image, "::/EFI", "::/EFI/BOOT", "::/EFI/INFINITY"])
-    command(["mcopy", "-i", image, OUT / "baseline-BOOTAA64.EFI", "::/EFI/BOOT/BOOTAA64.EFI"])
+    command(["mcopy", "-i", image, loader, "::/EFI/BOOT/BOOTAA64.EFI"])
     command(["mcopy", "-i", image, OUT / "probe.elf", "::/EFI/INFINITY/KERNEL.ELF"])
 
 
@@ -68,35 +68,50 @@ def disk_image():
 # FUNC: build
 # DESC: Preserves the existing production loader and links the small native capture probe.
 # ------------------=
-def build():
+def build(hid=False, reserve_ap=False, production_policy=False):
     OUT.mkdir(parents=True, exist_ok=True)
     loader = OUT / "baseline-BOOTAA64.EFI"
     if not loader.exists():
         shutil.copyfile(ROOT / "build/aarch64/BOOTAA64.EFI", loader)
+    if production_policy:
+        loader = ROOT / "build/aarch64/BOOTAA64.EFI"
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(OUT / "target"))
-    command(["cargo", "build", "--manifest-path", "tools/arm-capture-timer-probe/Cargo.toml",
-             "--release", "-Z", "build-std=core", "--target", "aarch64-unknown-none-softfloat"], env=env)
+    args = ["cargo", "build", "--manifest-path", "tools/arm-capture-timer-probe/Cargo.toml",
+             "--release", "-Z", "build-std=core", "--target", "aarch64-unknown-none-softfloat"]
+    if hid:
+        args.extend(["--features", "production-policy" if production_policy else "reserve-ap" if reserve_ap else "hid"])
+    command(args, env=env)
     command(["/opt/homebrew/opt/lld/bin/ld.lld", "-nostdlib", "--gc-sections", "-T",
              "linker/aarch64.ld", "-o", OUT / "probe.elf",
              OUT / "target/aarch64-unknown-none-softfloat/release/libinfinity_capture_timer_probe.a"])
-    disk_image()
-    (OUT / "build-evidence.json").write_text(json.dumps(dict(
+    disk_image(loader)
+    build_evidence = "production-policy-build-evidence.json" if production_policy else "build-evidence.json"
+    (OUT / build_evidence).write_text(json.dumps(dict(
         baseline_loader_sha256=hashlib.sha256(loader.read_bytes()).hexdigest(),
         probe_sha256=hashlib.sha256((OUT / "probe.elf").read_bytes()).hexdigest(),
-        baseline_loader_source="Production BOOTAA64.EFI captured at the first probe build",
+        baseline_loader_source=str(loader.relative_to(ROOT)),
+        production_policy=production_policy,
         iso_generated=False), indent=2) + "\n")
+    mode = 6 if production_policy else 5 if reserve_ap else 4 if hid else 2
+    (OUT / "probe-mode.json").write_text(json.dumps(dict(
+        mode=mode, loader=str(loader.relative_to(ROOT)),
+        loader_sha256=hashlib.sha256(loader.read_bytes()).hexdigest(),
+        disk_sha256=hashlib.sha256((OUT / "probe.raw").read_bytes()).hexdigest()), indent=2) + "\n")
 
 
 # ------------------------=
 # FUNC: decode
 # DESC: Decodes binary register/capture measurements without using diagnostic prose as an oracle.
 # ------------------=
-def decode(data):
+def decode(data, expected_mode):
     marker = struct.pack("<Q", MAGIC).hex().encode() + b"\n"
     start = data.find(marker)
     assert start >= 0, "Guest emitted no binary result"
     data = bytes.fromhex(data[start:].decode())
     status, = struct.unpack_from("<Q", data, 8)
+    assert status == expected_mode, dict(expected_mode=expected_mode, actual_mode=status)
+    if status in (3, 4, 5, 6):
+        return decode_hid(data)
     assert status == 2, dict(guest_status=status, bytes=len(data))
     words = struct.unpack("<251Q", data[:251 * 8])
     assert words[:3] == (MAGIC, 2, 7), words[:5]
@@ -127,12 +142,57 @@ def decode(data):
 
 
 # ------------------------=
+# FUNC: decode_hid
+# DESC: Decodes native sample and USB duration counters without treating prose as acceptance evidence.
+# ------------------=
+def decode_hid(data):
+    version, = struct.unpack_from("<Q",data,8)
+    count = {3:114,4:88,5:31,6:31}[version]
+    words = struct.unpack(f"<{count}Q", data[:count * 8])
+    assert words[0] == MAGIC and words[-2:] == (MAGIC, 0)
+    names = {3:["baseline", "sync_hid", "sync_hid_8ms", "no_hid_recovery", "firmware_protocol", "protocol_and_sync", "protocol_sync_timer_idle", "timer_idle_only"], 4:["baseline", "periodic_sev", "baseline_again", "cpu7_timer_wfi", "baseline_final", "cpu7_timer_wfi_again"],5:["reserved_cpu7_idle_hid"],6:["production_reserved_cpu7_idle_hid"]}[version]
+    phases = []
+    for i in range(len(names)):
+        offset = 16 if version >= 5 else 8
+        row = words[offset+i*13:offset+13+i*13]
+        assert row[0] == i and row[2] > row[1]
+        phases.append(dict(phase=names[i], seconds=(row[2]-row[1])/words[3], capture_frames=row[3],
+            max_no_samples_seconds=row[4]/words[3], reads=row[5], initial_lpib=row[6], final_lpib=row[7],
+            hid_calls=row[8], hid_reports=row[9], max_hid_call_seconds=row[10]/words[3],
+            timer_waits=row[11], max_timer_wait_seconds=row[12]/words[3]))
+    evidence = dict(environment="disposable native VirtualBox ARM guest with idle HID", installed_verified=False,
+        sample_rate=words[2], absolute_count=words[4], relative_count=words[5], usb_mouse_count=words[6],
+        initial_async=words[7], phases=phases)
+    if version >= 5:
+        evidence["claimed_cpu_ids"] = list(words[8:15])
+        assert evidence["claimed_cpu_ids"] == list(range(7)) and words[15] == 2**64-1
+        phase = phases[0]
+        assert phase["seconds"] >= 40
+        assert phase["capture_frames"] >= words[2]*(phase["seconds"]-1), phase
+        assert phase["capture_frames"] <= words[2]*(phase["seconds"]+1), phase
+        assert phase["max_no_samples_seconds"] < 0.25, phase
+        assert phase["hid_reports"] == 0, "This acceptance requires the pointer to remain stationary"
+        evidence["idle_capture_acceptance"] = True
+        evidence["requested_workers"] = 7 if version == 6 else 6
+        evidence["started_workers"] = 6
+    filename = {3:"hid-evidence.json",4:"ap-idle-evidence.json",5:"reserved-ap-evidence.json",6:"production-policy-evidence.json"}[version]
+    (OUT / filename).write_text(json.dumps(evidence, indent=2) + "\n")
+    print(json.dumps(evidence, indent=2), flush=True)
+
+
+# ------------------------=
 # FUNC: run
 # DESC: Runs only the explicitly named repository-local disposable VM without touching installed systems.
 # ------------------=
-def run(name):
+def run(name, expected_mode):
     assert name == "infinity-audio-timer-test", "Only the approved isolated VM is allowed"
     assert (OUT / "probe.raw").is_file(), "Run --build-only first"
+    mode = json.loads((OUT / "probe-mode.json").read_text())
+    assert mode["mode"] == expected_mode, "Build this mode before running it"
+    assert hashlib.sha256((OUT / "probe.raw").read_bytes()).hexdigest() == mode["disk_sha256"]
+    if expected_mode == 6:
+        assert mode["loader"] == "build/aarch64/BOOTAA64.EFI"
+        assert hashlib.sha256((ROOT / mode["loader"]).read_bytes()).hexdigest() == mode["loader_sha256"]
     existing = subprocess.run(["VBoxManage", "showvminfo", name, "--machinereadable"],
                               capture_output=True, text=True)
     if existing.returncode == 0:
@@ -165,11 +225,11 @@ def run(name):
             fields = dict(line.split("=", 1) for line in state.stdout.splitlines() if "=" in line)
             if fields.get("VMState") == '"running"':
                 command(["VBoxManage", "controlvm", name, "poweroff"])
-            decode(data)
+            decode(data, expected_mode)
             return
         time.sleep(0.2)
     command(["VBoxManage", "controlvm", name, "poweroff"])
-    decode(serial.read_bytes() if serial.exists() else b"")
+    decode(serial.read_bytes() if serial.exists() else b"", expected_mode)
     raise RuntimeError("Guest did not finish within the bounded watchdog")
 
 
@@ -183,12 +243,19 @@ def main():
     parser.add_argument("--build-only", action="store_true")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--vm")
+    parser.add_argument("--hid", action="store_true")
+    parser.add_argument("--reserve-last-ap", action="store_true")
+    parser.add_argument("--production-policy", action="store_true")
     args = parser.parse_args()
+    if args.production_policy:
+        args.hid = args.reserve_last_ap = True
     assert args.build_only != args.run
+    assert not args.reserve_last_ap or args.hid
     if args.build_only:
-        build()
+        build(args.hid, args.reserve_last_ap, args.production_policy)
     else:
-        run(args.vm)
+        mode = 6 if args.production_policy else 5 if args.reserve_last_ap else 4 if args.hid else 2
+        run(args.vm, mode)
 
 
 if __name__ == "__main__":

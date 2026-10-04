@@ -9,6 +9,8 @@ static InfinityApContext psci_contexts[64] __attribute__((aligned(64)));
 static uint64_t psci_cpus[64];
 static size_t psci_count;
 static uint8_t psci_hvc;
+static uint8_t worker_service_cpu_reserved;
+static uint64_t worker_service_cpu;
 extern void infinity_ap_entry(void);
 
 // ------------------------=
@@ -59,13 +61,42 @@ static void parse_psci_cpus(const uint8_t *madt, uint64_t self) {
     }
     if (at!=length) psci_count=0;
 }
+
+// ------------------------=
+// FUNC: configure_worker_service_cpu
+// DESC: Reserves VirtualBox's highest eligible ARM CPU for platform timer service using only checksum-validated native ACPI identity and topology.
+// ------------------=
+static void configure_worker_service_cpu(const uint8_t *rsdp, const uint8_t *madt) {
+    static const uint8_t oem[6] = {'O','R','C','L','V','B'};
+    worker_service_cpu_reserved=0;
+    worker_service_cpu=0;
+    if (!rsdp || worker_u64(rsdp)!=UINT64_C(0x2052545020445352) ||
+        rsdp[15]<2 || !worker_checksum(rsdp,20) || worker_u32(rsdp+20)<36 ||
+        !worker_checksum(rsdp,worker_u32(rsdp+20)) ||
+        !worker_table(madt,UINT32_C(0x43495041),44) || psci_count<2) return;
+    for (size_t i=0;i<6;++i)
+        if (rsdp[9+i]!=oem[i] || madt[10+i]!=oem[i]) return;
+    for (size_t i=0;i<psci_count;++i)
+        if (psci_cpus[i]>worker_service_cpu) worker_service_cpu=psci_cpus[i];
+    worker_service_cpu_reserved=1;
+}
+
+// ------------------------=
+// FUNC: worker_cpu_allowed
+// DESC: Applies the same exact-affinity reservation to MP and PSCI launches without consuming the last available worker on a two-CPU system.
+// ------------------=
+static int worker_cpu_allowed(uint64_t affinity, size_t eligible_aps) {
+    return !worker_service_cpu_reserved || eligible_aps<2 ||
+           (affinity&UINT64_C(0xff00ffffff))!=worker_service_cpu;
+}
 #ifndef INFINITY_PSCI_TEST
 // ------------------------=
 // FUNC: discover_psci_workers
 // DESC: Reads the PSCI conduit and enabled CPU affinities from validated FADT and MADT tables.
 // ------------------=
 static void discover_psci_workers(EFI_SYSTEM_TABLE *system) {
-    const uint8_t *fadt = NULL, *madt = NULL;
+    const uint8_t *fadt = NULL, *madt = NULL, *topology_rsdp = NULL;
+    worker_service_cpu_reserved=0;
     if (!system->configuration_table || system->number_of_table_entries > 4096) return;
     for (size_t i=0; i<system->number_of_table_entries; ++i) {
         EFI_CONFIGURATION_TABLE *entry = &system->configuration_table[i];
@@ -77,7 +108,7 @@ static void discover_psci_workers(EFI_SYSTEM_TABLE *system) {
         for (size_t at=36; at<worker_u32(xsdt+4); at+=8) {
             const uint8_t *table=(const uint8_t *)(uintptr_t)worker_u64(xsdt+at);
             if (worker_table(table,0x50434146,132)) fadt=table;
-            if (worker_table(table,0x43495041,44)) madt=table;
+            if (worker_table(table,0x43495041,44)) { madt=table; topology_rsdp=rsdp; }
         }
     }
     if (!fadt || !madt || !(fadt[129]&1)) return;
@@ -86,6 +117,7 @@ static void discover_psci_workers(EFI_SYSTEM_TABLE *system) {
     __asm__ volatile("mrs %0, mpidr_el1" : "=r"(self));
     self &= UINT64_C(0xff00ffffff);
     parse_psci_cpus(madt,self);
+    configure_worker_service_cpu(topology_rsdp,madt);
 }
 // ------------------------=
 // FUNC: worker_identity
@@ -117,12 +149,14 @@ static uint64_t start_psci_workers(INFINITY_AP_PROC procedure, uint64_t requeste
     uint64_t level;
     __asm__ volatile("mrs %0, CurrentEL" : "=r"(level));
     if (level!=4 || !psci_count || !worker_identity((uint64_t)(uintptr_t)infinity_ap_entry) || !worker_identity((uint64_t)(uintptr_t)procedure)) return 0;
-    // Discovery already excludes the BSP. Do not strand a second core.
+    // Normally every discovered AP is available. The validated VirtualBox
+    // quirk leaves its highest AP with firmware/platform timer service.
     size_t limit=psci_count;
     if (limit>64) limit=64;
     if (limit>requested) limit=requested;
     size_t launched=0;
     for (size_t i=0;i<psci_count && launched<limit;++i) {
+        if (!worker_cpu_allowed(psci_cpus[i],psci_count)) continue;
         InfinityApContext *c=&psci_contexts[launched];
         if (!c->stack || !c->exception_stack) break;
         c->procedure=(uint64_t)(uintptr_t)procedure; c->argument=launched+1; c->level=level;
