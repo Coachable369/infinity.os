@@ -185,69 +185,101 @@ fn main() {
 }
 // ------------------------=
 // FUNC: resident_playback_tests
-// DESC: Verifies full speech descriptors and hardware-only completion across stalls, slow progress, wrap, device errors, and fresh sessions.
+// DESC: Verifies bounded IOC periods, exact PCM across repeated wraps, independent capture DMA layout and failure-closed hardware cursor tracking.
 // ------------------=
 fn resident_playback_tests() {
+    let dma = hda::Dma::new();
+    assert!(dma.coherent_layout_valid());
     for rate in [44_100, 48_000] {
-        let tail = rate * 4 * 2;
-        for bytes in [4, 15_004, rate * 4 * 32] {
-            let descriptors = hda::resident_descriptors(0x1000, bytes as u64, 0x100000, tail as u64).unwrap();
-            assert_eq!(descriptors, [[0x1000, bytes as u64], [0x100000, tail as u64 | (1 << 32)]]);
-            assert_eq!(descriptors[0][1] >> 32, 0);
-            assert_eq!(descriptors[1][1] >> 32, 1);
-            let mut playback = hda::ResidentPlayback::new(bytes, tail).unwrap();
-            // Any number of service calls with a stalled cursor remains pending.
-            // Wall time never enters the hardware completion state machine.
-            for _ in 0..1000 {
-                assert_eq!(playback.observe(0, 0).unwrap(), hda::ResidentProgress {
-                    played_bytes: 0, total_bytes: bytes, complete: false,
-                });
-            }
-            let last = bytes - 4;
-            let partial = playback.observe(last, 0).unwrap();
-            assert_eq!(partial.played_bytes, last);
-            assert!(!partial.complete);
-            for _ in 0..1000 { assert_eq!(playback.observe(last, 0).unwrap(), partial); }
-            // Final speech bytes can still be queued at the codec/backend.
-            // Progress reaches total, but success waits for device-byte drain.
-            let draining = playback.observe(bytes, 0).unwrap();
-            assert_eq!(draining.played_bytes, bytes);
-            assert!(!draining.complete);
-            assert!(!playback.observe(bytes + hda::RESIDENT_DRAIN_BYTES - 1, 0).unwrap().complete);
-            let done = playback.observe(bytes + hda::RESIDENT_DRAIN_BYTES, 0).unwrap();
-            assert_eq!(done.played_bytes, bytes);
-            assert!(done.complete);
-            assert_eq!(playback.observe(0, 4).unwrap(), done);
-            // No completion leaks from a prior resident session.
-            let mut fresh = hda::ResidentPlayback::new(bytes, tail).unwrap();
-            assert!(!fresh.observe(0, 0).unwrap().complete);
-            assert_eq!(fresh.observe(0, 4).unwrap(), done);
-            assert_eq!(fresh.observe(0, 0x0c), Err(hda::Error::Dma));
-            assert_eq!(fresh.observe(0, 0x14), Err(hda::Error::Dma));
+        let layout = hda::ResidentRingLayout::new(rate).unwrap();
+        assert_eq!(layout.period_bytes & 127, 0);
+        assert!(layout.period_bytes as u64 * 1_000_000_000 / (rate as u64 * 4) <= 20_000_000);
+        assert!(layout.half_bytes as u64 * 1_000_000_000 / (rate as u64 * 4) >= 2_500_000_000);
+        for i in 0..hda::RESIDENT_PERIODS {
+            let [address, control] = layout.descriptor(0x1000, i).unwrap();
+            assert_eq!(address, 0x1000 + i as u64 * layout.period_bytes as u64);
+            assert_eq!(address & 127, 0);
+            assert_eq!(control, layout.period_bytes as u64 | (1 << 32));
         }
-        let mut slow = hda::ResidentPlayback::new(15_004, tail).unwrap();
-        for position in (0..15_004).step_by(4) {
-            let progress = slow.observe(position, 0).unwrap();
-            assert_eq!(progress.played_bytes, position);
+        assert!(layout.descriptor(0x1004, 0).is_none());
+        assert!(layout.descriptor(0x1000, 256).is_none());
+        let mut ring = vec![123i16; layout.cyclic_bytes as usize / 2];
+        let edge = layout.cyclic_bytes - hda::RESIDENT_DRAIN_BYTES;
+        for (generation, bytes) in [4, 15_004, edge - 4, edge, edge + 4, layout.half_bytes,
+            layout.cyclic_bytes, rate * 4 * 32, 79_906 * 4, 119_473 * 4, 16_004].into_iter().enumerate() {
+            resident_pcm_cycle(rate, bytes, generation as u32, &mut ring);
+        }
+        let mut stalled = hda::ResidentRing::new(15_004, rate, 10).unwrap();
+        for now in 10..1010 {
+            assert_eq!(stalled.observe(0, 4, now).unwrap().progress,
+                hda::ResidentProgress { played_bytes: 0, total_bytes: 15_004, complete: false });
+        }
+        assert_eq!(stalled.observe(0, 0, 1), Err(hda::Error::Dma));
+        assert_eq!(stalled.observe(0, 0, 1010 + layout.duration_ns()), Err(hda::Error::Dma));
+        assert_eq!(stalled.observe(layout.cyclic_bytes, 0, 1011), Err(hda::Error::Dma));
+        assert_eq!(stalled.observe(0, 0x0c, 1011), Err(hda::Error::Dma));
+        assert_eq!(stalled.observe(0, 0x14, 1011), Err(hda::Error::Dma));
+        let mut backward = hda::ResidentRing::new(15_004, rate, 0).unwrap();
+        backward.observe(8, 0, 100).unwrap();
+        assert_eq!(backward.observe(4, 4, 1_000_100), Err(hda::Error::Dma));
+        assert!(!backward.progress().complete);
+        let mut missed = hda::ResidentRing::new(rate * 4 * 32, rate, 0).unwrap();
+        let unsafe_position = layout.cyclic_bytes - hda::RESIDENT_DRAIN_BYTES;
+        assert_eq!(missed.observe(unsafe_position, 0, unsafe_position as u64 * 1_000_000_000 / (rate as u64 * 4)), Err(hda::Error::Dma));
+        let half_ns = layout.half_bytes as u64 * 1_000_000_000 / (rate as u64 * 4);
+        let refill = missed.observe(layout.half_bytes, 4, half_ns).unwrap().refill.unwrap();
+        assert_eq!(missed.observe(layout.half_bytes, 4, half_ns), Err(hda::Error::Busy));
+        assert_eq!(missed.commit_refill(refill, layout.half_bytes, 0, half_ns + layout.duration_ns()), Err(hda::Error::Dma));
+        assert_eq!(missed.commit_refill(refill, unsafe_position, 0,
+            unsafe_position as u64 * 1_000_000_000 / (rate as u64 * 4)), Err(hda::Error::Dma));
+        assert!(hda::ResidentRing::new(rate * 4 * 32 + 4, rate, 0).is_none());
+    }
+    assert!(hda::ResidentRingLayout::new(16_000).is_none());
+    assert!(hda::ResidentRing::new(0, 48_000, 0).is_none());
+    assert!(hda::ResidentRing::new(6, 48_000, 0).is_none());
+    assert!(hda::ResidentRing::new(u32::MAX - 3, 48_000, 0).is_none());
+    assert_eq!(hda::copy_resident_extent(&[1], 0, &mut [0; 2]), Err(hda::Error::Invalid));
+    assert_eq!(hda::copy_resident_extent(&[1, 2], 2, &mut [0; 2]), Err(hda::Error::Invalid));
+}
+
+// ------------------------=
+// FUNC: resident_pcm_cycle
+// DESC: Consumes every programmed PCM sample in DMA order while exercising exact finite-source copies, silence and half refills through multiple wraps.
+// ------------------=
+fn resident_pcm_cycle(rate: u32, bytes: u32, generation: u32, ring: &mut [i16]) {
+    let source: Vec<i16> = (0..bytes / 2).map(|index|
+        ((index.wrapping_mul(73) ^ (index >> 16).wrapping_mul(977) ^ generation.wrapping_mul(13)) & 65535) as i16).collect();
+    let layout = hda::ResidentRingLayout::new(rate).unwrap();
+    let mut cursor = hda::ResidentRing::new(bytes, rate, 0).unwrap();
+    hda::copy_resident_extent(&source, 0, ring).unwrap();
+    let end = bytes as u64 + hda::RESIDENT_DRAIN_BYTES as u64;
+    let mut absolute = 0u64;
+    let mut copies = 0u64;
+    while absolute < end {
+        let count = (end - absolute).min(layout.period_bytes as u64);
+        for offset in (0..count).step_by(2) {
+            let index = (absolute + offset) / 2;
+            assert_eq!(ring[index as usize % ring.len()], source.get(index as usize).copied().unwrap_or(0),
+                "generation={generation} rate={rate} source_bytes={bytes} sample={index}");
+        }
+        absolute += count;
+        let position = (absolute % layout.cyclic_bytes as u64) as u32;
+        let now = absolute * 1_000_000_000 / (rate as u64 * 4) + copies * 1000;
+        let step = cursor.observe(position, 4, now).unwrap();
+        assert_eq!(step.progress.played_bytes, absolute.min(bytes as u64) as u32);
+        assert_eq!(step.progress.complete, absolute == end);
+        if let Some(refill) = step.refill {
+            assert_ne!(position / layout.half_bytes, refill.half as u32);
+            let start = refill.half * refill.bytes as usize / 2;
+            hda::copy_resident_extent(&source, refill.source_byte_offset,
+                &mut ring[start..start + refill.bytes as usize / 2]).unwrap();
+            copies += 1;
+            let progress = cursor.commit_refill(refill, position, 4, now + 1000).unwrap();
             assert!(!progress.complete);
         }
-        assert_eq!(slow.observe(0, 0), Err(hda::Error::Dma));
-        assert!(slow.observe(0, 4).unwrap().complete);
-        let mut invalid = hda::ResidentPlayback::new(15_004, tail).unwrap();
-        assert_eq!(invalid.observe(2, 0).unwrap(), hda::ResidentProgress {
-            played_bytes: 2, total_bytes: 15_004, complete: false,
-        });
-        assert_eq!(invalid.observe(15_004 + tail + 4, 4), Err(hda::Error::Dma));
     }
-    assert!(hda::resident_descriptors(0x1004, 15_004, 0x100000, 384000).is_none());
-    assert!(hda::resident_descriptors(0x1000, 6, 0x100000, 384000).is_none());
-    assert!(hda::resident_descriptors(0x1000, 15_004, 0x100004, 384000).is_none());
-    assert!(hda::resident_descriptors(0x1000, 15_004, 0x100000, 65532).is_none());
-    assert!(hda::resident_descriptors(0x1000, u32::MAX as u64 - 3, 0x100000, 384000).is_none());
-    assert!(hda::ResidentPlayback::new(0, 384000).is_none());
-    assert!(hda::ResidentPlayback::new(6, 384000).is_none());
-    assert!(hda::ResidentPlayback::new(4, 65532).is_none());
-    assert!(hda::ResidentPlayback::new(u32::MAX - 3, 384000).is_none());
+    assert_eq!(cursor.progress(), hda::ResidentProgress { played_bytes: bytes, total_bytes: bytes, complete: true });
+    if bytes == rate * 4 * 32 { assert!(copies >= 11); }
 }
 // ------------------------=
 // FUNC: route_tests

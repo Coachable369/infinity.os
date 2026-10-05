@@ -8,14 +8,12 @@ pub const FRAMES: usize = 4800;
 pub const SAMPLES: usize = FRAMES * 2;
 pub const CAPTURE_FRAMES: usize = 96000;
 pub const CAPTURE_SAMPLES: usize = CAPTURE_FRAMES * 2;
-const RESIDENT_TAIL_SAMPLES: usize = 48_000 * 2 * 2;
 // One maximum HDA FIFO quantum also drains a virtual codec's downstream
 // queue (QEMU's codec ring is 8192 bytes). Count actual silent link bytes,
 // never elapsed time: RUN must stay set until the final samples can drain.
 pub const RESIDENT_DRAIN_BYTES: u32 = u16::MAX as u32 + 1;
-#[repr(C, align(128))]
-struct ResidentSilence([i16; RESIDENT_TAIL_SAMPLES]);
-static RESIDENT_SILENCE: ResidentSilence = ResidentSilence([0; RESIDENT_TAIL_SAMPLES]);
+pub const RESIDENT_PERIODS: usize = 256;
+pub const RESIDENT_RING_SAMPLES: usize = 3840 * RESIDENT_PERIODS / 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Timeout, Unsupported, Busy, Invalid, Dma }
 
@@ -30,50 +28,180 @@ pub struct CaptureRoute {
     pub selectors: [u32; 8],
     pub length: usize,
 }
-// ------------------------=
-// FUNC: resident_descriptors
-// DESC: Describes immutable speech followed by bounded silence, with completion status only after the silence descriptor is fetched.
-// ------------------=
-pub const fn resident_descriptors(address: u64, bytes: u64, silence: u64, silence_bytes: u64) -> Option<[[u64; 2]; 2]> {
-    if address & 127 != 0 || silence & 127 != 0 || bytes == 0 || bytes & 3 != 0
-        || silence_bytes & 3 != 0 || silence_bytes <= u16::MAX as u64
-        || bytes.saturating_add(silence_bytes) > u32::MAX as u64 { return None; }
-    Some([[address, bytes], [silence, silence_bytes | (1 << 32)]])
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResidentProgress { pub played_bytes: u32, pub total_bytes: u32, pub complete: bool }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResidentRingLayout {
+    pub period_bytes: u32,
+    pub half_bytes: u32,
+    pub cyclic_bytes: u32,
+    pub byte_rate: u32,
+}
+impl ResidentRingLayout {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Bounds immutable IOC descriptors to twenty milliseconds while keeping every DMA extent 128-byte aligned.
+    // ------------------=
+    pub const fn new(rate: u32) -> Option<Self> {
+        if rate != 44_100 && rate != 48_000 { return None; }
+        let byte_rate = rate * 4;
+        let period_bytes = byte_rate / 50 / 128 * 128;
+        let cyclic_bytes = period_bytes * RESIDENT_PERIODS as u32;
+        Some(Self { period_bytes, half_bytes: cyclic_bytes / 2, cyclic_bytes, byte_rate })
+    }
+    // ------------------------=
+    // FUNC: duration_ns
+    // DESC: Gives the longest unambiguous observation interval for the cyclic link cursor.
+    // ------------------=
+    pub const fn duration_ns(self) -> u64 {
+        self.cyclic_bytes as u64 * 1_000_000_000 / self.byte_rate as u64
+    }
+    // ------------------------=
+    // FUNC: descriptor
+    // DESC: Describes one fixed coherent ring period; descriptors never change while RUN is set.
+    // ------------------=
+    pub const fn descriptor(self, address: u64, index: usize) -> Option<[u64; 2]> {
+        if address & 127 != 0 || index >= RESIDENT_PERIODS { return None; }
+        match address.checked_add(index as u64 * self.period_bytes as u64) {
+            Some(start) => Some([start, self.period_bytes as u64 | (1 << 32)]),
+            None => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ResidentProgress { pub played_bytes: u32, pub total_bytes: u32, pub complete: bool }
-#[derive(Clone, Copy)]
-pub struct ResidentPlayback { bytes: u32, cyclic_bytes: u32, position: u32, complete: bool }
-impl ResidentPlayback {
+pub struct ResidentRefill {
+    pub half: usize,
+    pub source_byte_offset: u64,
+    pub bytes: u32,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResidentStep {
+    pub progress: ResidentProgress,
+    pub refill: Option<ResidentRefill>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResidentRing {
+    layout: ResidentRingLayout,
+    bytes: u32,
+    absolute: u64,
+    position: u32,
+    last_ns: u64,
+    filled_until: u64,
+    pending: Option<ResidentRefill>,
+    complete: bool,
+}
+impl ResidentRing {
     // ------------------------=
     // FUNC: new
-    // DESC: Starts a bounded hardware cursor tracker whose silence tail exceeds the HDA maximum FIFO depth.
+    // DESC: Tracks one finite resident source independently of prior playback generations or hardware cursor wraps.
     // ------------------=
-    pub const fn new(bytes: u32, silence_bytes: u32) -> Option<Self> {
-        if bytes == 0 || bytes & 3 != 0 || silence_bytes & 3 != 0 || silence_bytes < RESIDENT_DRAIN_BYTES { return None; }
-        match bytes.checked_add(silence_bytes) {
-            Some(cyclic_bytes) => Some(Self { bytes, cyclic_bytes, position: 0, complete: false }),
+    pub const fn new(bytes: u32, rate: u32, now_ns: u64) -> Option<Self> {
+        if bytes == 0 || bytes & 3 != 0 || bytes > rate.saturating_mul(4).saturating_mul(32) { return None; }
+        match ResidentRingLayout::new(rate) {
+            Some(layout) => Some(Self { layout, bytes, absolute: 0, position: 0, last_ns: now_ns,
+                filled_until: layout.cyclic_bytes as u64, pending: None, complete: false }),
             None => None,
         }
     }
     // ------------------------=
-    // FUNC: observe
-    // DESC: Completes only from link progress or the terminal silent descriptor; stalled clocks cannot imply successful playback.
+    // FUNC: progress
+    // DESC: Reports link-consumed speech only; clock time and IOC events cannot complete a response.
     // ------------------=
-    pub fn observe(&mut self, position: u32, status: u8) -> Result<ResidentProgress, Error> {
-        if status & 0x18 != 0 || position > self.cyclic_bytes { return Err(Error::Dma); }
-        // HDA 1.0a §§3.3.36–40: BCIS is DMA-to-FIFO completion, not link
-        // completion. IOC belongs only to the silent descriptor, longer than
-        // any 16-bit FIFOS capacity, so it also proves all speech left FIFO.
-        if status & 4 != 0 || position >= self.bytes + RESIDENT_DRAIN_BYTES { self.complete = true; }
-        if !self.complete && position < self.position { return Err(Error::Dma); }
-        self.position = self.position.max(position);
-        Ok(ResidentProgress { played_bytes: if self.complete { self.bytes } else { self.position.min(self.bytes) },
-            total_bytes: self.bytes, complete: self.complete })
+    pub const fn progress(self) -> ResidentProgress {
+        ResidentProgress { played_bytes: if self.absolute < self.bytes as u64 { self.absolute as u32 } else { self.bytes },
+            total_bytes: self.bytes, complete: self.complete }
+    }
+    // ------------------------=
+    // FUNC: advance
+    // DESC: Extends the hardware cursor only while time proves that no entire ring rotation was missed.
+    // ------------------=
+    fn advance(&mut self, position: u32, status: u8, now_ns: u64) -> Result<(), Error> {
+        if status & 0x18 != 0 || position >= self.layout.cyclic_bytes { return Err(Error::Dma); }
+        let elapsed = now_ns.checked_sub(self.last_ns).ok_or(Error::Dma)?;
+        if elapsed >= self.layout.duration_ns() { return Err(Error::Dma); }
+        let delta = (position + self.layout.cyclic_bytes - self.position) % self.layout.cyclic_bytes;
+        let possible = elapsed.saturating_mul(self.layout.byte_rate as u64) / 1_000_000_000
+            + RESIDENT_DRAIN_BYTES as u64;
+        if delta as u64 > possible { return Err(Error::Dma); }
+        self.absolute = self.absolute.checked_add(delta as u64).ok_or(Error::Dma)?;
+        self.position = position;
+        self.last_ns = now_ns;
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: observe
+    // DESC: Requests at most one inactive-half refill and rejects stale DMA reuse rather than reporting lost audio as complete.
+    // ------------------=
+    pub fn observe(&mut self, position: u32, status: u8, now_ns: u64) -> Result<ResidentStep, Error> {
+        if self.pending.is_some() { return Err(Error::Busy); }
+        if self.complete {
+            if status & 0x18 != 0 { return Err(Error::Dma); }
+            return Ok(ResidentStep { progress: self.progress(), refill: None });
+        }
+        let mut next = *self;
+        next.advance(position, status, now_ns)?;
+        let drain_end = next.bytes as u64 + RESIDENT_DRAIN_BYTES as u64;
+        // A whole source/drain extent must have been written before it can
+        // count as consumed. BCIS is merely one short-period acknowledgement.
+        if next.absolute >= next.filled_until { return Err(Error::Dma); }
+        if next.absolute >= drain_end {
+            next.complete = true;
+        } else {
+            // DMA can prefetch a maximum 16-bit FIFO ahead of link progress.
+            // Keep that full reserve both before and after the bounded copy.
+            if next.absolute + RESIDENT_DRAIN_BYTES as u64 >= next.filled_until { return Err(Error::Dma); }
+            if next.absolute >= next.filled_until - next.layout.half_bytes as u64 {
+                next.pending = Some(ResidentRefill {
+                    half: (next.filled_until / next.layout.half_bytes as u64 % 2) as usize,
+                    source_byte_offset: next.filled_until,
+                    bytes: next.layout.half_bytes,
+                });
+            }
+        }
+        *self = next;
+        Ok(ResidentStep { progress: self.progress(), refill: self.pending })
+    }
+    // ------------------------=
+    // FUNC: commit_refill
+    // DESC: Publishes copied PCM only if hardware stayed outside its destination and maximum prefetch reserve throughout the copy.
+    // ------------------=
+    pub fn commit_refill(&mut self, refill: ResidentRefill, position: u32, status: u8, now_ns: u64) -> Result<ResidentProgress, Error> {
+        if self.pending != Some(refill) { return Err(Error::Invalid); }
+        let mut next = *self;
+        next.advance(position, status, now_ns)?;
+        if position / next.layout.half_bytes == refill.half as u32
+            || next.absolute + RESIDENT_DRAIN_BYTES as u64 >= refill.source_byte_offset { return Err(Error::Dma); }
+        next.filled_until += refill.bytes as u64;
+        next.pending = None;
+        next.complete = next.absolute >= next.bytes as u64 + RESIDENT_DRAIN_BYTES as u64;
+        *self = next;
+        Ok(self.progress())
     }
 }
 
+// ------------------------=
+// FUNC: copy_resident_extent
+// DESC: Copies an exact finite source extent and zero-pads beyond its end without truncating or repeating speech.
+// ------------------=
+pub fn copy_resident_extent(source: &[i16], source_byte_offset: u64, output: &mut [i16]) -> Result<(), Error> {
+    if source.len() % 2 != 0 || source_byte_offset & 3 != 0 || output.len() % 2 != 0 { return Err(Error::Invalid); }
+    output.fill(0);
+    let offset = usize::try_from(source_byte_offset / 2).map_err(|_| Error::Invalid)?;
+    if offset < source.len() {
+        let count = (source.len() - offset).min(output.len());
+        output[..count].copy_from_slice(&source[offset..offset + count]);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct ResidentTransfer {
+    cursor: ResidentRing,
+    source: &'static [i16],
+    clock: fn() -> Option<u64>,
+}
 // ------------------------=
 // FUNC: resident_duration_ns
 // DESC: Converts an interleaved stereo resident sample count into its exact finite playback duration.
@@ -128,8 +256,10 @@ fn route_visit<F: FnMut(u32, u32) -> Result<u32, Error>>(
 }
 #[repr(C, align(128))]
 pub struct Dma {
-    descriptors: [[u64; 2]; 16],
+    descriptors: [[u64; 2]; RESIDENT_PERIODS],
+    capture_descriptors: [[u64; 2]; 8],
     playback: [i16; SAMPLES],
+    resident_pcm: [i16; RESIDENT_RING_SAMPLES],
     capture: [i16; CAPTURE_SAMPLES],
     commands: [u32; 256],
     responses: [u64; 256],
@@ -140,7 +270,26 @@ impl Dma {
     // DESC: Reserves resident zeroed DMA storage without allocation.
     // ------------------=
     pub const fn new() -> Self {
-        Self { descriptors: [[0; 2]; 16], playback: [0; SAMPLES], capture: [0; CAPTURE_SAMPLES], commands: [0; 256], responses: [0; 256] }
+        Self { descriptors: [[0; 2]; RESIDENT_PERIODS], capture_descriptors: [[0; 2]; 8],
+            playback: [0; SAMPLES], resident_pcm: [0; RESIDENT_RING_SAMPLES],
+            capture: [0; CAPTURE_SAMPLES], commands: [0; 256], responses: [0; 256] }
+    }
+    // ------------------------=
+    // FUNC: coherent_layout_valid
+    // DESC: Verifies independent aligned input/output DMA regions before either stream is programmed.
+    // ------------------=
+    pub fn coherent_layout_valid(&self) -> bool {
+        let regions = [
+            (self.descriptors.as_ptr() as usize, core::mem::size_of_val(&self.descriptors)),
+            (self.capture_descriptors.as_ptr() as usize, core::mem::size_of_val(&self.capture_descriptors)),
+            (self.playback.as_ptr() as usize, core::mem::size_of_val(&self.playback)),
+            (self.resident_pcm.as_ptr() as usize, core::mem::size_of_val(&self.resident_pcm)),
+            (self.capture.as_ptr() as usize, core::mem::size_of_val(&self.capture)),
+            (self.commands.as_ptr() as usize, core::mem::size_of_val(&self.commands)),
+            (self.responses.as_ptr() as usize, core::mem::size_of_val(&self.responses)),
+        ];
+        regions.iter().all(|(address, bytes)| address & 127 == 0 && *bytes > 0)
+            && regions.windows(2).all(|pair| pair[0].0.checked_add(pair[0].1).is_some_and(|end| end <= pair[1].0))
     }
 }
 pub struct Hda {
@@ -159,7 +308,8 @@ pub struct Hda {
     pub codec_id: u32,
     pub sample_rate: u32,
     pub playing: bool,
-    resident: Cell<Option<ResidentPlayback>>,
+    resident: Cell<Option<ResidentTransfer>>,
+    resident_failed: Cell<bool>,
 }
 impl Hda {
     // ------------------------=
@@ -263,11 +413,12 @@ impl Hda {
         if base == 0 || base & 0x3fff != 0 || dma.is_null() || dma as usize & 127 != 0 {
             return Err(Error::Invalid);
         }
+        if !(&*dma).coherent_layout_valid() { return Err(Error::Invalid); }
         let mut h = Self { base, dma, output: 0, codec: 0, dac: 0, adc: 0,
             input_route: None, input_group: 0,
             command_write: Cell::new(0), response_read: Cell::new(0),
             capture_position: 0, capturing: false, codec_id: 0, sample_rate: 48000, playing: false,
-            resident: Cell::new(None) };
+            resident: Cell::new(None), resident_failed: Cell::new(false) };
         h.w32(0x20, 0); // No interrupts until an interrupt service exists.
         h.w8(0x4c, 0); h.w8(0x5c, 0);
         h.w32(8, 0); h.wait(8, 1, 0)?;
@@ -384,9 +535,9 @@ impl Hda {
         self.w8(r, 0); self.wait(r, 1, 0)?;
         for i in 0..CAPTURE_SAMPLES { write_volatile(core::ptr::addr_of_mut!((*self.dma).capture[i]), 0); }
         let address = core::ptr::addr_of_mut!((*self.dma).capture) as u64;
-        let bdl = core::ptr::addr_of_mut!((*self.dma).descriptors[8]) as u64;
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[8]), [address, CAPTURE_SAMPLES as u64]);
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[9]), [address + CAPTURE_SAMPLES as u64, CAPTURE_SAMPLES as u64]);
+        let bdl = core::ptr::addr_of_mut!((*self.dma).capture_descriptors) as u64;
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).capture_descriptors[0]), [address, CAPTURE_SAMPLES as u64]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).capture_descriptors[1]), [address + CAPTURE_SAMPLES as u64, CAPTURE_SAMPLES as u64]);
         fence(Ordering::SeqCst);
         #[cfg(target_arch = "aarch64")]
         core::arch::asm!("dsb sy", options(nostack));
@@ -475,49 +626,82 @@ impl Hda {
     }
     // ------------------------=
     // FUNC: resident_progress
-    // DESC: Reports monotonic played speech bytes using the hardware link cursor and latched terminal descriptor status.
+    // DESC: Latches stream failures and stops DMA immediately so later UI queries cannot conceal a missed refill deadline.
     // ------------------=
     pub unsafe fn resident_progress(&self) -> Result<ResidentProgress, Error> {
+        if self.resident_failed.get() { return Err(Error::Dma); }
+        let result = self.service_resident();
+        if result.is_err() {
+            self.w8(self.output, 0);
+            self.resident_failed.set(true);
+        }
+        result
+    }
+    // ------------------------=
+    // FUNC: service_resident
+    // DESC: Services only an inactive resident ring half and reports absolute hardware-link progress across immutable descriptor cycles.
+    // ------------------=
+    unsafe fn service_resident(&self) -> Result<ResidentProgress, Error> {
         let mut resident = self.resident.get().ok_or(Error::Invalid)?;
-        // Read the cursor before the latched status. Otherwise a wrap between
-        // reads could present the new low cursor with an obsolete clear BCIS.
+        let now = (resident.clock)().ok_or(Error::Dma)?;
         let position = self.r32(self.output + 4);
         let status = (self.r32(self.output) >> 24) as u8;
-        let result = resident.observe(position, status)?;
+        if status & 4 != 0 { self.w8(self.output + 3, 4); }
+        let step = resident.cursor.observe(position, status, now)?;
+        let result = if let Some(refill) = step.refill {
+            let start = refill.half * refill.bytes as usize / 2;
+            let count = refill.bytes as usize / 2;
+            // The cursor has proved that this half is outside the active
+            // DMA/FIFO window. Source storage remains immutable until stop.
+            let output = &mut (&mut (*self.dma).resident_pcm)[start..start + count];
+            copy_resident_extent(resident.source, refill.source_byte_offset, output)?;
+            fence(Ordering::SeqCst);
+            #[cfg(target_arch = "aarch64")]
+            core::arch::asm!("dsb sy", options(nostack));
+            let after = (resident.clock)().ok_or(Error::Dma)?;
+            let position = self.r32(self.output + 4);
+            let status = (self.r32(self.output) >> 24) as u8;
+            if status & 4 != 0 { self.w8(self.output + 3, 4); }
+            resident.cursor.commit_refill(refill, position, status, after)?
+        } else { step.progress };
         self.resident.set(Some(resident));
         Ok(result)
     }
     // ------------------------=
     // FUNC: start_resident
-    // DESC: Plays a kernel-owned prefilled phrase and silence tail without scheduling-sensitive refills.
+    // DESC: Keeps the entire finite waveform resident while short immutable IOC periods bound hardware mixer transfers.
     // ------------------=
-    /// Caller keeps coherent, DMA-addressable samples resident and immutable until stop.
-    pub unsafe fn start_resident(&mut self, samples: &'static [i16]) -> Result<(), Error> {
+    /// Caller keeps source samples resident and immutable until stop; clock is native and monotonic.
+    pub unsafe fn start_resident(&mut self, samples: &'static [i16], clock: fn() -> Option<u64>) -> Result<(), Error> {
         if self.playing { return Err(Error::Busy); }
-        if samples.is_empty() || samples.len() % 2 != 0 || samples.len() > 48_000 * 2 * 32 { return Err(Error::Invalid); }
+        if samples.is_empty() || samples.len() % 2 != 0 || samples.len() > self.sample_rate as usize * 2 * 32 { return Err(Error::Invalid); }
+        let layout = ResidentRingLayout::new(self.sample_rate).ok_or(Error::Invalid)?;
+        if clock().is_none() { return Err(Error::Invalid); }
         let r = self.output;
         self.stop(); self.w8(r, 1); self.wait(r, 1, 1)?;
         self.w8(r, 0); self.wait(r, 1, 0)?;
-        let address = samples.as_ptr() as u64;
-        let bytes = samples.len() as u64 * 2;
-        let silence_bytes = self.sample_rate as u64 * 4 * 2;
-        let descriptors = resident_descriptors(address, bytes, RESIDENT_SILENCE.0.as_ptr() as u64,
-            silence_bytes).ok_or(Error::Invalid)?;
+        let address = core::ptr::addr_of!((*self.dma).resident_pcm) as u64;
+        let bytes = samples.len() as u32 * 2;
         let bdl = core::ptr::addr_of_mut!((*self.dma).descriptors) as u64;
-        // Two complete resident extents satisfy LVI>=1. The independent zero
-        // tail gives the service loop time to stop before cyclic speech replay.
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[0]), descriptors[0]);
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[1]), descriptors[1]);
+        if bdl & 127 != 0 { return Err(Error::Invalid); }
+        copy_resident_extent(samples, 0, &mut (&mut (*self.dma).resident_pcm)[..layout.cyclic_bytes as usize / 2])?;
+        for index in 0..RESIDENT_PERIODS {
+            let descriptor = layout.descriptor(address, index).ok_or(Error::Invalid)?;
+            write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[index]), descriptor);
+        }
         fence(Ordering::SeqCst);
         #[cfg(target_arch = "aarch64")]
         core::arch::asm!("dsb sy", options(nostack));
-        self.w32(r + 8, (bytes + silence_bytes) as u32); self.w16(r + 0x0c, 1);
+        self.w32(r + 8, layout.cyclic_bytes); self.w16(r + 0x0c, (RESIDENT_PERIODS - 1) as u16);
         self.w16(r + 0x12, if self.sample_rate == 48000 { 0x11 } else { 0x4011 });
         self.w32(r + 0x18, bdl as u32); self.w32(r + 0x1c, (bdl >> 32) as u32);
         self.verb(self.dac, if self.sample_rate == 48000 { 0x20011 } else { 0x24011 })?;
         self.verb(self.dac, 0x70610)?;
-        self.resident.set(ResidentPlayback::new(bytes as u32, silence_bytes as u32));
-        self.w8(r + 3, 0x1c); self.w32(r, (1 << 20) | 2); self.playing = true;
+        self.w8(r + 3, 0x1c);
+        let now = clock().ok_or(Error::Invalid)?;
+        let cursor = ResidentRing::new(bytes, self.sample_rate, now).ok_or(Error::Invalid)?;
+        self.resident.set(Some(ResidentTransfer { cursor, source: samples, clock }));
+        self.w32(r, (1 << 20) | 2); self.playing = true;
         Ok(())
     }
     // ------------------------=
@@ -544,7 +728,17 @@ impl Hda {
     // FUNC: stop
     // DESC: Stops output DMA without enabling capture.
     // ------------------=
-    pub unsafe fn stop(&mut self) { self.w8(self.output, 0); self.playing = false; self.resident.set(None); }
+    pub unsafe fn stop(&mut self) {
+        self.w8(self.output, 0);
+        self.playing = false;
+        self.resident_failed.set(false);
+        if self.resident.take().is_some() {
+            (&mut (*self.dma).resident_pcm).fill(0);
+            fence(Ordering::SeqCst);
+            #[cfg(target_arch = "aarch64")]
+            core::arch::asm!("dsb sy", options(nostack));
+        }
+    }
 }
 
 // ------------------------=

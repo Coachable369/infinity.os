@@ -327,7 +327,7 @@ pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, g
         else if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut().filter(|device| !device.playing) {
             let resident = (&*(&raw const INFINITY_AUDIO)).sealed_resident(generation);
             if let Some(samples) = resident {
-                if device.start_resident(samples).is_ok() {
+                if device.start_resident(samples, crate::ui::performance::monotonic_ns).is_ok() {
                     RESIDENT_BYTES = samples.len() * 2; INFINITY_STARTED = true; INFINITY_PLAYED_FRAMES = 0;
                     let started = crate::ui::performance::monotonic_ns().unwrap_or(now);
                     PLAYBACK_STARTED_AT = started;
@@ -394,7 +394,7 @@ pub unsafe fn play_resident_speech(owner: crate::runtime::execution::SecurityIde
         // Only the caller's meaningful extent belongs to the transfer. The
         // hardware adapter owns its own drain tail, so padded backing capacity
         // must not defer completion for the entire 32-second allocation.
-        if d.start_resident(&samples[..spoken_samples]).is_ok() {
+        if d.start_resident(&samples[..spoken_samples], crate::ui::performance::monotonic_ns).is_ok() {
             RESIDENT_BYTES = spoken_samples * 2; INFINITY_ACTIVE = false; INFINITY_STARTED = false;
             INFINITY_PLAYED_FRAMES = 0;
             PLAYBACK_STARTED_AT = crate::ui::performance::monotonic_ns().unwrap_or(now);
@@ -409,7 +409,7 @@ pub unsafe fn play_resident_speech(owner: crate::runtime::execution::SecurityIde
 }
 // ------------------------=
 // FUNC: play_resident_system_cue
-// DESC: Converts a bounded 16-kHz mono system cue once and gives its complete stereo waveform to HDA so boot playback cannot underrun before the service loop starts.
+// DESC: Converts a bounded 16-kHz mono cue once for paced resident playback; the READY-screen loop services it until completion.
 // ------------------=
 pub fn play_resident_system_cue(
     owner: crate::runtime::execution::SecurityIdentity,
@@ -455,7 +455,7 @@ pub fn play_resident_system_cue(
                 // SAFETY: the single audio lock prevents mutation of this aligned static
                 // buffer until finish_playback stops DMA and clears the resident cue.
                 let resident: &'static [i16] = &(&*(&raw const SYSTEM_CUE_PCM.0))[..output_samples];
-                if converted && device.start_resident(resident).is_ok() {
+                if converted && device.start_resident(resident, crate::ui::performance::monotonic_ns).is_ok() {
                     SYSTEM_CUE_LENGTH = output_samples;
                     RESIDENT_BYTES = output_samples * 2;
                     INFINITY_ACTIVE = false;

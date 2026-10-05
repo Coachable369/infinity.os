@@ -146,7 +146,10 @@ mod hda {
         // FUNC: start_resident
         // DESC: Implements the resident playback hardware seam without altering queue semantics.
         // ------------------=
-        pub unsafe fn start_resident(&mut self, samples: &'static [i16]) -> Result<(), Error> { self.start(samples) }
+        pub unsafe fn start_resident(&mut self, samples: &'static [i16], clock: fn() -> Option<u64>) -> Result<(), Error> {
+            clock().ok_or(Error::Invalid)?;
+            self.start(samples)
+        }
         // ------------------------=
         // FUNC: position
         // DESC: Counts hardware playback reads independently of any rendering or pointer work.
