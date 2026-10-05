@@ -11,6 +11,8 @@ mod startup;
 
 #[path = "../infinity-browser-core/frame_pacing.rs"]
 mod frame_pacing;
+#[path = "../infinity-browser-core/zoom.rs"]
+mod zoom;
 
 const FRAME_PERIOD_NS: u64 = 50_000_000;
 
@@ -78,6 +80,19 @@ fn valid_size(width: u32, height: u32) -> bool {
 }
 
 impl<P: Provider + 'static> Session<P> {
+    // ------------------------=
+    // FUNC: zoom
+    // DESC: Changes real layout zoom for this tab without changing other tabs or native chrome.
+    // ------------------=
+    pub fn zoom(&self, direction: i32) {
+        let next = zoom::next(self.zoom_percent(), direction) as f32 / 100.0;
+        if next != self.view.page_zoom() { self.view.set_page_zoom(next); }
+    }
+    // ------------------------=
+    // FUNC: zoom_percent
+    // DESC: Reports this tab's actual engine zoom for chrome and behavioral verification.
+    // ------------------=
+    pub fn zoom_percent(&self) -> u16 { (self.view.page_zoom() * 100.0).round() as u16 }
     // ------------------------=
     // FUNC: find
     // DESC: Searches rendered document text, selects a real DOM range and reports an asynchronous bounded match count.

@@ -31,6 +31,11 @@ fn main() {
     use console::ConsoleKey::*;
     use firmware_key::decode;
     for command in [0x40, 0x80, 0xc0] {
+        assert_eq!(decode(0,8,0x8000_0000|command),Some(Backspace));
+        assert_eq!(decode(0,13,0x8000_0000|command),Some(Enter));
+        for key in [b'=', b'+', b'-', b'0', b'[', b']', b'a', b'c', b'v'] {
+            assert_eq!(decode(0,key as u16,0x8000_0000|command),Some(Shortcut(key)));
+        }
         assert_eq!(
             decode(0, 9, 0x8000_0000 | command),
             Some(Shortcut(desktop_shortcuts::SPATIAL_NEXT))
@@ -70,6 +75,9 @@ fn main() {
         );
     }
     for ctrl in [4, 8] {
+        for key in [b'=',b'+',b'-',b'0',b'[',b']'] {
+            assert_eq!(decode(0,key as u16,0x8000_0000|ctrl),Some(Shortcut(key)));
+        }
         for value in [10, b'j' as u16, b'J' as u16] {
             assert_eq!(decode(0, value, 0x8000_0000 | ctrl), Some(Shortcut(b'j')));
         }

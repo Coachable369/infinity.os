@@ -8,7 +8,7 @@ use crate::console::ConsoleKey;
 pub fn decode(scan: u16, character: u16, shift_state: u32) -> Option<ConsoleKey> {
     let valid = shift_state & 0x8000_0000 != 0;
     let shift = valid && shift_state & 3 != 0;
-    let control = valid && shift_state & 12 != 0;
+    let control = valid && shift_state & 0xcc != 0;
     if let Some(code) = super::desktop_shortcuts::spatial_chord(
         scan == 0 && character == 9,
         valid && shift_state & 0xc0 != 0,
@@ -18,8 +18,8 @@ pub fn decode(scan: u16, character: u16, shift_state: u32) -> Option<ConsoleKey>
     }
     if control && scan == 0 {
         let letter = match character {
-            1..=26 => b'a' + character as u8 - 1,
-            65..=90 | 97..=122 => (character as u8).to_ascii_lowercase(),
+            1..=26 if shift_state & 12 != 0 => b'a' + character as u8 - 1,
+            32..=126 => (character as u8).to_ascii_lowercase(),
             _ => 0,
         };
         if letter != 0 {

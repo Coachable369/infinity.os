@@ -331,6 +331,12 @@ pub(super) fn close() {unsafe {
 // ------------------=
 pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     let settings=crate::runtime::browser::presentation();
+    if let ConsoleKey::Shortcut(value @ (b'+'|b'='|b'-'|b'_'|b'0'))=key {
+        let mut command=abi::Command::empty();command.kind=abi::ZOOM;
+        command.x=match value {b'+'|b'='=>1,b'-'|b'_'=>-1,_=>0};
+        if enqueue(console,command) {poll(console);}
+        return;
+    }
     if settings.chrome_menu!=0 {
         let count=match settings.chrome_menu {1=>3,4=>settings.tab_count.max(1),_=>1};
         match key {
@@ -368,6 +374,13 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     if let ConsoleKey::Shortcut(value)=key {
         let mut command=abi::Command::empty();
         match value {
+            b'['=>{command.kind=abi::BACK;},
+            b']'=>{command.kind=abi::FORWARD;},
+            b'1'..=b'9'=>{
+                let index=if value==b'9' {settings.tab_count.saturating_sub(1)}else{usize::from(value-b'1')};
+                if index>=settings.tab_count {return;}
+                command.kind=abi::TAB_SELECT;command.a=settings.tabs[index].id;
+            },
             b'r'|b'R'=>{command.kind=abi::RELOAD;},
             b'd'|b'D'=>{toggle_favorite(console);return;},
             b't'|b'T'=>{new_tab(console);return;},
@@ -379,6 +392,11 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
             b'l'|b'L'=>{crate::runtime::browser::select_address();return;},
             b'a'|b'A' if crate::runtime::browser::presentation().address_focused=>{
                 crate::runtime::browser::select_address();return;
+            },
+            b'a'|b'c'|b'x'|b'v'|b'z'|b'y' if !settings.address_focused && !settings.welcome_open=>{
+                command.kind=abi::KEY;command.flags=abi::KEY_DOWN;
+                command.a=u32::from(value);command.b=abi::MOD_CONTROL;
+                send_key(console,command);return;
             },
             _=>return,
         }
@@ -404,8 +422,20 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         ConsoleKey::Enter=>1,ConsoleKey::Tab(shift)=>{if shift {down.b=abi::MOD_SHIFT;}2},
         ConsoleKey::Backspace=>3,ConsoleKey::Delete=>4,ConsoleKey::Left=>5,ConsoleKey::Right=>6,
         ConsoleKey::Up=>7,ConsoleKey::Down=>8,ConsoleKey::Home=>9,ConsoleKey::End=>10,ConsoleKey::Escape=>11,
+        ConsoleKey::SelectMove(direction)=>{
+            down.b=abi::MOD_SHIFT;
+            match direction {-1=>5,1=>6,-2=>7,2=>8,-3=>9,3=>10,_=>return}
+        },
         _=>return,
     };
+    send_key(console,down);
+}
+
+// ------------------------=
+// FUNC: send_key
+// DESC: Enqueues a complete modified key gesture without risking a stuck key under pressure.
+// ------------------=
+fn send_key(console:&mut ConsoleRuntime,down:abi::Command) {
     let mut up=down;up.flags&=!abi::KEY_DOWN;
     unsafe {
         let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return;};

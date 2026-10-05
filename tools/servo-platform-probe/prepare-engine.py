@@ -17,6 +17,18 @@ def main():
     spec = importlib.util.spec_from_file_location("native", Path(__file__).with_name("prepare-mio.py"))
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
+    relative = "components/script/dom/node/node.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    anchor = "        selection.collapse_to_dom_position(cx, &container, offset);"
+    if text.count(anchor) != 1:
+        raise RuntimeError("Selection default-action integration changed")
+    text = text.replace(anchor, anchor + "\n" + Path(__file__).with_name("document-multiclick.rs").read_text())
+    (servo / relative).write_text(text)
+    relative = "components/script/dom/html/form_controls/text_input.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("3 if button == MouseButton::Primary => {",
+                        "3..=i32::MAX if button == MouseButton::Primary => {")
+    (servo / relative).write_text(text)
     relative = "components/url/lib.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     text = helper.native_body(text, 'pub fn to_file_path(&self)', 'Err(UrlError::ToFilePath)')

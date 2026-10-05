@@ -301,6 +301,7 @@ fn verify_closed_channel_retirement() {
 fn dispatch(view:&mut session::Session<Network>,command:&abi::Command)->Result<(),()> {
     let point=servo::WebViewPoint::Device((command.x as f32,command.y as f32).into());
     match command.kind {
+        abi::ZOOM=>view.zoom(command.x),
         abi::FIND=>{
             let text=core::str::from_utf8(command.text.get(..command.length as usize).ok_or(())?).map_err(|_|())?;
             let token=command.b;

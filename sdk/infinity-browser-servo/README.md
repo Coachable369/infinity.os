@@ -82,3 +82,23 @@ and verifies Ctrl+Shift+K autorepeat by a real JS listener changing rendered pix
 Its four-gate lifecycle passed in `20260927T041146653085Z-47811.json`, with
 149,722,880 bytes peak reservation. `Command.b` carries the native modifier mask;
 unsupported flag bits are rejected rather than silently changing input meaning.
+
+## Page interaction
+
+Command and Control both reach browser shortcuts. Plus (or equals) and minus
+step the active tab's layout zoom between 50% and 300%; zero resets to 100%.
+Number keys select tabs (9 selects the last), and brackets navigate history.
+Page-focused A/C/X/V/Z/Y shortcuts reach Servo editing, as do Shift+arrow and
+Shift+Home/End selections. Clipboard behavior remains Servo's in-memory browser
+clipboard, not an OS-wide clipboard bridge.
+
+The native selection overlay uses Servo's click count and Unicode word boundaries:
+double-click selects a word, and the third and subsequent rapid clicks select
+the rendered line. Ordinary drag selection remains on Servo's native drag path.
+Adjacent queued pointer motion is coalesced without crossing button or key
+events; rendering cadence and resource authority are unchanged.
+
+Run the focused native interaction fixture with
+`./build-kit run env INFINITY_BROWSER_INTERACTION_ONLY=1 python3 tools/servo-platform-probe/run-engine-guest.py --page-probe`
+after native engine code generation. It is separate from installed-desktop and
+external-site compatibility verification.

@@ -7,6 +7,9 @@ use servo::{RenderingContext, Servo, SoftwareRenderingContext, WebView, WebViewB
 mod resources;
 #[path = "../../sdk/infinity-browser-servo/session.rs"]
 mod session;
+mod interactions {
+    include!("engine-interactions.rs");
+}
 #[cfg(infinity_network_probe)]
 #[path = "../../sdk/infinity-browser-servo/native_https.rs"]
 mod native_https;
@@ -231,15 +234,22 @@ fn verify_session(engine: &Servo) -> bool {
     if session.navigate("file:///secret").is_ok() || session.resize(0, 128).is_ok()
         || session.resize(2560, 2560).is_ok() || session.navigate("https://adapter.test/").is_err() { return false; }
     let mut painted = false;
+    let mut frames = 0u64;
+    let mut first_pixel = 0u32;
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline && !(painted && session.complete()) {
         if session.pump(engine, |w,h,bytes| {
+            frames += 1;
+            first_pixel = bytes.get(..4).map(|p|u32::from_le_bytes(p.try_into().unwrap())).unwrap_or(0);
             painted = w == 128 && h == 128 && bytes.len() == 128*128*4
                 && bytes.chunks_exact(4).all(|pixel| pixel == [12,34,56,255]);
         }).is_err() { return false; }
         std::thread::sleep(Duration::from_millis(1));
     }
     super::record(2, 21, (u64::from(painted) << 32) | u64::from(starts.get()));
+    super::record(2,43,frames);
+    super::record(2,44,session.complete() as u64);
+    super::record(2,45,first_pixel as u64);
     if !painted || starts.get() != 31 || session.resize(160, 96).is_err() { return false; }
     painted = false;
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -377,6 +387,12 @@ fn image_pixels_match(engine:&Servo,view:&WebView,repaint:&Cell<bool>)->bool {
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_SESSION_ONLY")==Some("1") {
+        return if verify_session(engine) {0} else {21};
+    }
+    if option_env!("INFINITY_BROWSER_INTERACTION_ONLY")==Some("1") {
+        return if interactions::verify(engine) {0} else {40};
+    }
     if option_env!("INFINITY_BROWSER_COOKIE_ONLY")==Some("1") {
         return if verify_cookies(engine) {0} else {22};
     }
@@ -458,6 +474,7 @@ pub fn verify(engine: &Servo) -> u64 {
     drain_close(engine);
     if !verify_resources(engine) { return 19; }
     if !verify_session(engine) { return 21; }
+    if !interactions::verify(engine) { return 40; }
     if !verify_cookies(engine) { return 22; }
     super::record(2, 11, 9);
     #[cfg(infinity_network_probe)]

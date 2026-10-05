@@ -21,7 +21,14 @@ impl<const N:usize> Queue<N>{
     // DESC: Leaves capacity for releases of already admitted pointer buttons.
     // ------------------=
     pub fn push_reserved(&mut self,commands:&[Command],reserve:usize)->bool {
-        if reserve>N-self.len || commands.len()>N-self.len-reserve {return false;}
+        if reserve>N-self.len {return false;}
+        if commands.len()==1 && commands[0].kind==crate::worker::POINTER && self.len>0 {
+            let last=(self.head+self.len-1)%N;
+            if self.entries[last].kind==crate::worker::POINTER {
+                self.entries[last]=commands[0];return true;
+            }
+        }
+        if commands.len()>N-self.len-reserve {return false;}
         self.push(commands)
     }
     // ------------------------=
@@ -50,6 +57,25 @@ impl<const N:usize> Queue<N>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    // ------------------------=
+    // FUNC: motion_coalesces_without_crossing_gesture_boundaries
+    // DESC: Proves queued motion stays bounded while exact click coordinates and releases survive.
+    // ------------------=
+    #[test]
+    fn motion_coalesces_without_crossing_gesture_boundaries(){
+        let mut queue=Queue::<6>::new();
+        let mut motion=Command::empty();motion.kind=crate::worker::POINTER;
+        for x in 0..1000 {motion.x=x;assert!(queue.push_reserved(&[motion],3));}
+        let mut click=motion;click.kind=crate::worker::BUTTON;click.flags=1;
+        assert!(queue.push_reserved(&[click],3));
+        motion.x=1001;assert!(queue.push_reserved(&[motion],3));
+        motion.x=1002;assert!(queue.push_reserved(&[motion],3));
+        click.flags=0;click.x=1002;assert!(queue.push(&[click]));
+        let expected=[(crate::worker::POINTER,999,0),(crate::worker::BUTTON,999,1),
+            (crate::worker::POINTER,1002,0),(crate::worker::BUTTON,1002,0)];
+        let mut index=0;
+        assert_eq!(queue.drain(6,|c|{assert_eq!((c.kind,c.x,c.flags),expected[index]);index+=1;true}),4);
+    }
     // ------------------------=
     // FUNC: gestures_remain_ordered_across_pressure_and_wrap
     // DESC: Checks atomic pair admission, exact retry, ring wrap and lifetime clearing.
