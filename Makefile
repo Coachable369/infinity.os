@@ -102,6 +102,7 @@ CRASH_ASSETS := $(shell find assets/crash -type f)
 APPLICATION_ASSETS := $(shell find assets/apps -type f)
 DESIGN_KIT_ASSETS := $(shell find assets/ui-design-kit/default -type f)
 KERNEL_SOURCES += $(DESIGN_KIT_ASSETS)
+KERNEL_SOURCES += $(wildcard sdk/infinity-enterprise-core/*.rs) sdk/infinity-enterprise-core/Cargo.toml
 
 $(BUILD)/x86_64/installed-esp.img $(BUILD)/aarch64/installed-esp.img: $(DESIGN_KIT_ASSETS)
 NODE_ASSETS := $(shell find assets/mesh -type f)

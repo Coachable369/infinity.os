@@ -46,6 +46,10 @@ clean = false
 command = ["cargo", "test", "--manifest-path", "sdk/infinity-browser-core/Cargo.toml"]
 clean = false
 
+[profiles.enterprise-core-tests]
+command = ["cargo", "test", "--manifest-path", "sdk/infinity-enterprise-core/Cargo.toml"]
+clean = false
+
 [profiles.studio]
 command = ["sh", "tools/installer-designer/build.sh"]
 clean = false

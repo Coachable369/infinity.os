@@ -52,7 +52,27 @@ static mut EPOCH_NS:u64=0;
 pub struct Event {pub kind:u32,pub value:u32,pub length:usize,pub text:[u8;2048]}
 static mut HOST:abi::Host=abi::Host {version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,
     context:core::ptr::null_mut(),heap:core::ptr::null_mut(),heap_length:HEAP_BYTES,
-    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,download,fatal};
+    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,download,clipboard_read,clipboard_write,fatal};
+
+// ------------------------=
+// FUNC: clipboard_read
+// DESC: Services only a native user-granted paste through the session-isolated OS clipboard.
+// ------------------=
+unsafe extern "C" fn clipboard_read(_: *mut c_void,out:*mut u8,capacity:usize)->usize {
+    if out.is_null() || capacity>crate::ui::clipboard::MAX_CLIPBOARD_BYTES {return 0;}
+    let now=super::ai::qwen::workers::clock_ns()/1_000_000;
+    crate::ui::clipboard::with_shared(|c|c.browser_read(core::slice::from_raw_parts_mut(out,capacity),now))
+        .map_or(0,|n|n+1)
+}
+// ------------------------=
+// FUNC: clipboard_write
+// DESC: Copies bounded UTF-8 from a native copy/cut gesture without granting persistent web access.
+// ------------------=
+unsafe extern "C" fn clipboard_write(_: *mut c_void,bytes:*const u8,length:usize)->u32 {
+    if bytes.is_null() || length>crate::ui::clipboard::MAX_CLIPBOARD_BYTES {return 0;}
+    let now=super::ai::qwen::workers::clock_ns()/1_000_000;
+    crate::ui::clipboard::with_shared(|c|c.browser_write(core::slice::from_raw_parts(bytes,length),now)).is_ok() as u32
+}
 
 // ------------------------=
 // FUNC: take_download
@@ -427,6 +447,20 @@ pub fn edit_address(key:crate::ui::text_input::TextEditKey) {unsafe {
 }}
 
 // ------------------------=
+// FUNC: paste_address
+// DESC: Atomically replaces the selected address or inserts safe clipboard text at its caret.
+// ------------------=
+pub fn paste_address(bytes:&[u8])->bool {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    if !view.address_focused {return false;}
+    let mut draft=view.edit;let mut n=if view.address_selected {0}else{view.edit_length};
+    let mut caret=if view.address_selected {0}else{view.caret};
+    if !crate::ui::text_input::paste_ascii(&mut draft,&mut n,&mut caret,bytes) {return false;}
+    view.edit=draft;view.edit_length=n;view.caret=caret;view.address_selected=false;
+    view.revision=view.revision.wrapping_add(1);true
+}}
+
+// ------------------------=
 // FUNC: input_pressure
 // DESC: Makes rejected whole gestures visible without fabricating a successful key delivery.
 // ------------------=
@@ -563,6 +597,15 @@ unsafe extern "C" fn idle(_: *mut c_void) {core::hint::spin_loop();}
 unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
     let Ok(Some(value))=COMMANDS.try_take() else{return 0;};
     if value.kind==abi::OPEN {GENERATION.fetch_add(1,Ordering::AcqRel);ACTIVE_TAB.store(0,Ordering::Release);}
+    if matches!(value.kind,abi::OPEN|abi::CLOSE|abi::TAB_SELECT|abi::TAB_CLOSE|abi::TAB_CREATE|abi::NAVIGATE|abi::BACK|abi::FORWARD|abi::RELOAD) {
+        crate::ui::clipboard::with_shared(|c|c.revoke_browser());
+    }
+    if value.kind==abi::KEY && value.flags&abi::KEY_DOWN!=0 && value.b&abi::MOD_CONTROL!=0 {
+        if matches!(value.a,99|120|118) {
+            crate::ui::clipboard::with_shared(|c|c.grant(value.clipboard_epoch,value.a!=118,
+                super::ai::qwen::workers::clock_ns()/1_000_000));
+        }
+    }
     out.write(value);1
 }
 // ------------------------=

@@ -412,6 +412,18 @@ impl ChatRuntime {
     pub fn input(&self) -> &[u8] {
         &self.input[..self.input_length]
     }
+    // ------------------------=
+    // FUNC: paste_input
+    // DESC: Atomically inserts shared clipboard text without submitting a chat request.
+    // ------------------=
+    pub fn paste_input(&mut self,text:&[u8])->bool {
+        crate::ui::text_input::paste_ascii(&mut self.input,&mut self.input_length,&mut self.input_cursor,text)
+    }
+    // ------------------------=
+    // FUNC: clear_input
+    // DESC: Erases composer bytes after a successful explicit cut.
+    // ------------------=
+    pub fn clear_input(&mut self) {self.input.fill(0);self.input_length=0;self.input_cursor=0;}
 
     // ------------------------=
     // FUNC: input_cursor

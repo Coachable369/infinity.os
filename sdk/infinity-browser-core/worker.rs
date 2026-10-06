@@ -1,7 +1,7 @@
 //! Versioned integer/pointer-only ABI between the native engine component and
 //! the OS worker. Callbacks must be nonblocking mailbox operations. All pointers
 //! remain owned by their issuer; frame/event bytes are borrowed for one call.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 pub const OPEN: u32 = 1;
 pub const CLOSE: u32 = 2;
 pub const NAVIGATE: u32 = 3;
@@ -49,6 +49,7 @@ pub const EVENT_DIAGNOSTIC: u32 = 100;
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Command {
+    pub clipboard_epoch: u64,
     pub kind: u32,
     pub flags: u32,
     pub x: i32,
@@ -64,7 +65,7 @@ impl Command {
     // DESC: Creates a fully initialized mailbox payload with no command or text.
     // ------------------=
     pub const fn empty() -> Self {
-        Self { kind: 0, flags: 0, x: 0, y: 0, a: 0, b: 0, length: 0, text: [0; 2048] }
+        Self { clipboard_epoch: 0, kind: 0, flags: 0, x: 0, y: 0, a: 0, b: 0, length: 0, text: [0; 2048] }
     }
 }
 
@@ -99,6 +100,9 @@ pub struct Host {
     pub cancel: unsafe extern "C" fn(*mut core::ffi::c_void, u64),
     /// Offers a bounded complete attachment for explicit native save consent; zero rejects it.
     pub download: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize, *const u8, usize, *const u8, usize) -> u32,
+    /// Zero denies; otherwise the result is the number of copied UTF-8 bytes plus one.
+    pub clipboard_read: unsafe extern "C" fn(*mut core::ffi::c_void, *mut u8, usize) -> usize,
+    pub clipboard_write: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize) -> u32,
     /// Must abandon/quarantine this worker, never return into a failed engine.
     pub fatal: unsafe extern "C" fn(*mut core::ffi::c_void, u32) -> !,
 }

@@ -113,13 +113,14 @@ impl<P: Provider + 'static> Session<P> {
     // DESC: Opens one software-backed context with no ambient network authority.
     // ------------------=
     pub fn new(engine: &Servo, provider: P, clock: fn() -> u64, width: u32, height: u32) -> Result<Self, ()> {
-        Self::create(engine, provider, clock, width, height, true)
+        Self::create(engine, provider, clock, width, height, true, None)
     }
     // ------------------------=
     // FUNC: create
     // DESC: Creates an isolated view queue; grouped tabs leave the profile-level global delegate unchanged.
     // ------------------=
-    fn create(engine: &Servo, provider: P, clock: fn() -> u64, width: u32, height: u32, global: bool) -> Result<Self, ()> {
+    fn create(engine: &Servo, provider: P, clock: fn() -> u64, width: u32, height: u32, global: bool,
+        clipboard: Option<Rc<dyn servo::ClipboardDelegate>>) -> Result<Self, ()> {
         if !valid_size(width, height) { return Err(()); }
         let context = Rc::new(SoftwareRenderingContext::new((width, height).into()).map_err(|_| ())?);
         context.make_current().map_err(|_| ())?;
@@ -129,10 +130,12 @@ impl<P: Provider + 'static> Session<P> {
         let complete = Rc::new(Cell::new(false));
         let crashed = Rc::new(Cell::new(false));
         let ready = Rc::new(Cell::new(false));
-        let view = WebViewBuilder::new(engine, context.clone()).delegate(Rc::new(Delegate {
+        let mut builder = WebViewBuilder::new(engine, context.clone()).delegate(Rc::new(Delegate {
             resources: resources.clone(), dirty: dirty.clone(), complete: complete.clone(), crashed: crashed.clone(),
             ready: ready.clone(),
-        })).build();
+        }));
+        if let Some(clipboard)=clipboard {builder=builder.clipboard_delegate(clipboard);}
+        let view=builder.build();
         view.show();
         Ok(Self { view, context, resources, dirty, complete, crashed, size: (width, height),
             ready, pending: RefCell::new(None), clock,
@@ -269,6 +272,7 @@ struct Tab<P: Provider> { id: u32, session: Session<P> }
 /// One normal-profile engine group. Separate profiles/private sessions must not
 /// share this group until Servo storage partitioning is implemented.
 pub struct TabSessions<P: Provider> {
+    clipboard: Option<Rc<dyn servo::ClipboardDelegate>>,
     global: Rc<Resources<P>>,
     tabs: std::vec::Vec<Tab<P>>,
     active: u32,
@@ -285,8 +289,16 @@ impl<P: Provider + 'static> TabSessions<P> {
         if !valid_size(width, height) { return Err(()); }
         let global = Rc::new(Resources::new(provider, clock));
         engine.set_delegate(global.clone());
-        Ok(Self { global, tabs: std::vec::Vec::with_capacity(TAB_LIMIT), active: 0, next: 1,
+        Ok(Self { clipboard: None, global, tabs: std::vec::Vec::with_capacity(TAB_LIMIT), active: 0, next: 1,
             size: (width, height), clock })
+    }
+    // ------------------------=
+    // FUNC: set_clipboard
+    // DESC: Installs a native clipboard delegate before any view can receive page input.
+    // ------------------=
+    pub fn set_clipboard(&mut self, clipboard: Rc<dyn servo::ClipboardDelegate>) -> Result<(),()> {
+        if !self.tabs.is_empty() {return Err(());}
+        self.clipboard=Some(clipboard);Ok(())
     }
     // ------------------------=
     // FUNC: create
@@ -295,7 +307,7 @@ impl<P: Provider + 'static> TabSessions<P> {
     pub fn create(&mut self, engine: &Servo, provider: P, foreground: bool) -> Result<u32, ()> {
         if self.tabs.len() == TAB_LIMIT { return Err(()); }
         let next = self.next.checked_add(1).ok_or(())?;
-        let session = Session::create(engine, provider, self.clock, self.size.0, self.size.1, false)?;
+        let session = Session::create(engine, provider, self.clock, self.size.0, self.size.1, false,self.clipboard.clone())?;
         session.visible(false);
         let id = self.next;
         self.next = next;

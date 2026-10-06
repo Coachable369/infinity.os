@@ -3,6 +3,7 @@
 extern crate std;
 mod resources;
 mod session;
+mod clipboard;
 #[path = "../infinity-browser-core/worker.rs"]
 mod abi;
 use core::{mem::MaybeUninit, sync::atomic::{AtomicPtr, Ordering}};
@@ -111,6 +112,21 @@ fn event(kind:u32,value:u32,text:&str) {
 }
 
 struct Network;
+// ------------------------=
+// FUNC: read_clipboard
+// DESC: Adapts the versioned native clipboard ABI without exposing kernel pointers to page code.
+// ------------------=
+fn read_clipboard(bytes:&mut [u8])->Option<usize> {
+    let h=host();let n=unsafe{(h.clipboard_read)(h.context,bytes.as_mut_ptr(),bytes.len())};
+    if n==0 || n>bytes.len()+1 {None}else{Some(n-1)}
+}
+// ------------------------=
+// FUNC: write_clipboard
+// DESC: Returns native clipboard admission so cut cannot delete text after a rejected write.
+// ------------------=
+fn write_clipboard(bytes:&[u8])->bool {
+    let h=host();unsafe{(h.clipboard_write)(h.context,bytes.as_ptr(),bytes.len())==1}
+}
 impl resources::Provider for Network {
     // ------------------------=
     // FUNC: download
@@ -216,6 +232,7 @@ fn run() {
                 if session.is_none() {
                     session=session::TabSessions::new(&engine,Network,clock,command.a,command.b).ok();
                     if let Some(group)=session.as_mut() {
+                        let _=group.set_clipboard(std::rc::Rc::new(clipboard::NativeClipboard{read:read_clipboard,write:write_clipboard}));
                         if let Ok(id)=group.create(&engine,Network,true) {
                             event(abi::EVENT_TAB_CREATED,id,"");event(abi::EVENT_TAB_SELECTED,id,"");
                         } else {session=None;}

@@ -15,6 +15,7 @@ browser-qemu-payload = ["browser-installer-payload"]
 native-browser = []
 
 [dependencies]
+infinity-enterprise-core = { path = "sdk/infinity-enterprise-core" }
 infinity-browser-core = { path = "sdk/infinity-browser-core" }
 infinity-http = { path = "kernel/runtime/http" }
 libm = { version = "0.2", default-features = false }

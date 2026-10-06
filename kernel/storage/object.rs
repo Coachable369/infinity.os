@@ -39,7 +39,10 @@ const MAX_OBJECTS: usize = OBJECT_TABLE_SECTORS * OBJECTS_PER_SECTOR;
 // Each bank owns four additional sectors in the reserved 72..80 range.
 // Content still begins at sector 80; no existing payload is relocated.
 const MAX_VERSIONS: usize = 64;
-const MAX_ENTRIES: usize = 32;
+// The six unused sectors between the root pair and BANK_A provide three
+// additional namespace sectors per bank, without moving existing content.
+pub const NAMESPACE_CAPACITY: usize = 44;
+const MAX_ENTRIES: usize = NAMESPACE_CAPACITY;
 const MAX_RELATIONSHIPS: usize = 16;
 const MAX_PATH: usize = 95;
 pub const DOCUMENTS_PATH: &[u8] = b"/home/default/documents";
@@ -54,7 +57,7 @@ const ALLOCATION_SECTORS: usize = (ALLOCATION_BYTES + ALLOCATION_SECTOR_BYTES - 
 const LEGACY_ALLOCATION_BLOCKS: usize = LEGACY_ALLOCATION_BYTES * 8;
 const ALLOCATION_EXTENSION_A: u64 = CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
 const ALLOCATION_EXTENSION_B: u64 = ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
-pub const FORMAT_VERSION: u32 = 6;
+pub const FORMAT_VERSION: u32 = 7;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
 pub struct ObjectId(pub [u8; 16]);
@@ -2613,7 +2616,7 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
 // FUNC: supported_format
 // DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
 // ------------------=
-const fn supported_format(version: u32) -> bool { matches!(version, 4 | 5 | FORMAT_VERSION) }
+const fn supported_format(version: u32) -> bool { matches!(version, 4 | 5 | 6 | FORMAT_VERSION) }
 // ------------------------=
 // FUNC: set_bit
 // DESC: Writes or updates set bit data.
@@ -2682,6 +2685,15 @@ fn read_root<D: BlockDevice>(
 fn version_sector(bank: u64, sector: usize) -> u64 {
     if sector < 4 { bank + 11 + sector as u64 }
     else { 72 + if bank == BANK_A { 0 } else { 4 } + (sector - 4) as u64 }
+}
+
+// ------------------------=
+// FUNC: namespace_sector
+// DESC: Keeps the original namespace offsets and places bank-owned extensions in unused pre-bank metadata sectors.
+// ------------------=
+fn namespace_sector(bank:u64,sector:usize)->u64 {
+    if sector<8 {bank+15+sector as u64}
+    else {2+if bank==BANK_A {0}else{3}+(sector-8) as u64}
 }
 
 // ------------------------=
@@ -2758,7 +2770,7 @@ fn write_bank<D: BlockDevice>(
         finish_sector(&mut s);
         write(d, c + version_sector(bank, sector), &s)?;
     }
-    for sector in 0..8 {
+    for sector in 0..MAX_ENTRIES / 4 {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFONSP2");
         put32(&mut s, 8, FORMAT_VERSION);
@@ -2766,7 +2778,7 @@ fn write_bank<D: BlockDevice>(
             encode_entry(&state.entries[sector * 4 + n], &mut s, 16 + n * 120);
         }
         finish_sector(&mut s);
-        write(d, base + 15 + sector as u64, &s)?;
+        write(d, c + namespace_sector(bank,sector), &s)?;
     }
     for sector in 0..2 {
         let mut s = [0u8; 512];
@@ -2840,8 +2852,8 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
         }
     }
-    for sector in 0..8 {
-        let s = read(d, base + 15 + sector as u64)?;
+    for sector in 0..if format>=7 {MAX_ENTRIES/4}else{8} {
+        let s = read(d, c + namespace_sector(bank,sector))?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {
             state.entries[sector * 4 + n] = decode_entry(&s, 16 + n * 120)?;

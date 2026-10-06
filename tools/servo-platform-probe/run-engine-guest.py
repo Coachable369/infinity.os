@@ -98,7 +98,7 @@ def main():
     cookie_only=environment.get("INFINITY_BROWSER_COOKIE_ONLY")=="1"
     report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1] not in (4,5)],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed and not cookie_only,"cookie_flow_verified":[9,2,38,1] in records,"screenshot":str(screenshot) if screenshot else None}
     report["software_raster_verified"] = raster_passed
-    report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,8))
+    report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,9))
     report["external_https_verified"] = network_passed
     report["load_completed"] = [9,2,32,1] in records if options.network_probe else None
     report["requested_url"] = environment.get("INFINITY_BROWSER_PROBE_URL", "https://www.google.com/") if options.network_probe else None

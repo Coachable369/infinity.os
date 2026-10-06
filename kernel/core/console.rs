@@ -48,6 +48,8 @@ mod pool_commands;
 mod editor_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
+#[path = "console_enterprise.rs"]
+mod enterprise_commands;
 #[cfg(feature="native-browser")]
 #[path="browser_controller.rs"]
 mod browser_controller;
@@ -432,6 +434,9 @@ struct ConsoleRuntime {
     command: [u8; COMMAND_CAPACITY],
     command_length: usize,
     command_cursor: usize,
+    command_history: infinity_enterprise_core::History,
+    workplace_session: [u8;16],
+    workplace_result: [u64;8],
     caret_visible: bool,
     intent: IntentRuntime,
     language_session: crate::runtime::console_language::ConsoleSession,
@@ -546,8 +551,6 @@ struct ConsoleRuntime {
     editor_document: TextDocument,
     editor_tools: crate::ui::editor_tools::Presentation,
     assistant_session: crate::runtime::identity::StableId,
-    editor_clipboard: [u8; crate::ui::text_editor::DOCUMENT_CAPACITY],
-    editor_clipboard_length: usize,
     editor_document_path: [u8; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
     editor_document_path_length: usize,
     editor_document_name: [u8; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
@@ -585,6 +588,9 @@ impl ConsoleRuntime {
             command: [0; COMMAND_CAPACITY],
             command_length: 0,
             command_cursor: 0,
+            command_history: infinity_enterprise_core::History::new(),
+            workplace_session: [0;16],
+            workplace_result: [0;8],
             caret_visible: true,
             intent: IntentRuntime::new(),
             language_session: crate::runtime::console_language::ConsoleSession::new(),
@@ -722,8 +728,6 @@ impl ConsoleRuntime {
             editor_document: TextDocument::new(),
             editor_tools: crate::ui::editor_tools::Presentation::new(),
             assistant_session: crate::runtime::identity::StableId::zero(),
-            editor_clipboard: [0; crate::ui::text_editor::DOCUMENT_CAPACITY],
-            editor_clipboard_length: 0,
             editor_document_path: [0; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
             editor_document_path_length: 0,
             editor_document_name: [0; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
@@ -1303,6 +1307,7 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        self.synchronize_workplace();
         if self.authentication_success.active() {
             return;
         }
@@ -1429,6 +1434,21 @@ impl ConsoleRuntime {
     // DESC: Handles keyboard navigation, model selection, and bounded chat composer editing.
     // ------------------=
     fn input_ai_chat(&mut self, key: ConsoleKey) -> bool {
+        if self.ai_chat_focus==2 {
+            match key {
+                ConsoleKey::Shortcut(b'c'|b'x')=>{
+                    let copied=crate::runtime::ai::with_ai_runtime(|r|self.copy_workplace_text(r.chat.input()));
+                    if copied && matches!(key,ConsoleKey::Shortcut(b'x')) {crate::runtime::ai::with_ai_runtime(|r|r.chat.clear_input());}
+                    return true;
+                },
+                ConsoleKey::Shortcut(b'v')=>{
+                    let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                    if let Ok(n)=self.read_workplace_text(&mut bytes) {crate::runtime::ai::with_ai_runtime(|r|r.chat.paste_input(&bytes[..n]));}
+                    return true;
+                },
+                _=>{},
+            }
+        }
         match key {
             ConsoleKey::Shortcut(b'm') => {
                 self.select_next_chat_model();
@@ -1865,6 +1885,23 @@ impl ConsoleRuntime {
         }
         if state.location_editing || state.rename_editing {
             match key {
+                ConsoleKey::Shortcut(b'c'|b'x')=>{
+                    if self.copy_workplace_text(state.editor_text.as_bytes()) && matches!(key,ConsoleKey::Shortcut(b'x')) {
+                        let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {n.editor_text=crate::runtime::object_navigation::ByteText::empty();n.editor_cursor=0;}});
+                    }
+                },
+                ConsoleKey::Shortcut(b'v')=>{
+                    let mut value=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                    if let Ok(length)=self.read_workplace_text(&mut value) {
+                        let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {
+                            let mut bytes=[0;crate::runtime::object_navigation::MAX_NAMESPACE_PATH];let mut size=n.editor_text.as_bytes().len();
+                            bytes[..size].copy_from_slice(n.editor_text.as_bytes());let mut caret=n.editor_cursor;
+                            if crate::ui::text_input::paste_ascii(&mut bytes,&mut size,&mut caret,&value[..length]) {
+                                if let Ok(text)=crate::runtime::object_navigation::ByteText::new(&bytes[..size]) {n.editor_text=text;n.editor_cursor=caret;}
+                            }
+                        }});
+                    }
+                },
                 ConsoleKey::Character(_)
                 | ConsoleKey::Backspace
                 | ConsoleKey::Delete
@@ -1991,6 +2028,7 @@ impl ConsoleRuntime {
                 });
                 true
             }
+            ConsoleKey::Shortcut(c @ (b'c'|b'x'|b'v')) => {self.file_clipboard(c,state);true}
             ConsoleKey::Enter => {
                 self.open_file_navigator_selection();
                 true
@@ -2285,6 +2323,7 @@ impl ConsoleRuntime {
         self.reset_app_assistant_session();
         self.cancel_node_pairing_input();
         self.mode = ConsoleMode::Desktop;
+        self.synchronize_workplace();
         self.desktop_app = DesktopAppKind::None;
         self.system_focus = 0;
         self.ai_chat_focus = 0;
@@ -3287,6 +3326,7 @@ impl ConsoleRuntime {
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
         if locked {
+            self.synchronize_workplace();
             self.cancel_node_pairing_input();
             let _ = self.persist_desktop_layout();
             self.locked_desktop_layout.save(layout);
@@ -5167,6 +5207,14 @@ impl ConsoleRuntime {
     // DESC: Applies bounded private text editing without sending credentials to logs or events.
     // ------------------=
     fn edit_system_text(&mut self, key: ConsoleKey) -> bool {
+        if matches!(key,ConsoleKey::Shortcut(b'v')) && self.workplace_authorized(false)
+            && !matches!(self.mode,ConsoleMode::Authentication|ConsoleMode::Locked|ConsoleMode::Onboarding|ConsoleMode::Installer) {
+            let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+            if let Ok(n)=self.read_workplace_text(&mut bytes) {
+                crate::ui::text_input::paste_ascii(&mut self.command,&mut self.command_length,&mut self.command_cursor,&bytes[..n]);
+            }
+            return true;
+        }
         match key {
             ConsoleKey::Character(character) => crate::ui::text_input::insert_ascii(
                 &mut self.command,
@@ -6847,6 +6895,10 @@ impl ConsoleRuntime {
     ) {
         use crate::runtime::object_navigation::ContextAction as A;
         let Some(action) = state.context_actions().get(action).copied() else { return; };
+        if matches!(action,A::Copy|A::Cut|A::Paste) {
+            let mut state=state;state.selected_index=state.context_item;
+            self.file_clipboard(match action {A::Copy=>b'c',A::Cut=>b'x',_=>b'v'},state);return;
+        }
         if matches!(action, A::OpenWith | A::Back) {
             let _ = crate::runtime::with_runtime(|runtime| {
                 if let Some(navigator) = runtime.file_navigator.as_mut() {
@@ -8821,6 +8873,7 @@ impl ConsoleRuntime {
     // DESC: Handles input console input or state transitions.
     // ------------------=
     fn input_console(&mut self, key: ConsoleKey) {
+        if self.workplace_console_key(key) {return;}
         if self.edit_input(key) {
             return;
         }
@@ -8847,8 +8900,10 @@ impl ConsoleRuntime {
         }
         let command = self.command;
         let length = self.command_length;
-        self.output
-            .write_segments(&[self.prompt(), &command[..length]]);
+        let private=self.command_history.private() || infinity_enterprise_core::sensitive(&command[..length]);
+        if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
+        if self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
+        if self.execute_workplace(&command[..length]) {self.reset_input();return;}
         if &command[..length] == b"spatial" {
             self.reset_input();
             crate::bootstrap::spatial_animation_timings(true);
@@ -9040,7 +9095,7 @@ impl ConsoleRuntime {
                 self.output.write_line(b"..");
                 shown = crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT;
             }
-            for index in 0..32usize {
+            for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
                 let entry = match crate::storage::namespace_list_nth(prefix, index) {
                     Ok(Some(entry)) => entry,
                     _ => break,
@@ -9223,7 +9278,7 @@ impl ConsoleRuntime {
                 } else {
                     source
                 };
-                for index in 0..32usize {
+                for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
                     let Ok(Some(entry)) = crate::storage::namespace_list_nth(path, index) else {
                         break;
                     };
@@ -9343,7 +9398,7 @@ impl ConsoleRuntime {
                 Err(error) => self.storage_error(error),
             },
             b"list" => {
-                for index in 0..32usize {
+                for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
                     let Ok(Some(entry)) = crate::storage::namespace_list_nth(b"/trash", index)
                     else {
                         break;
@@ -10869,6 +10924,7 @@ impl ConsoleRuntime {
     fn help(&mut self) {
         crate::output_text(b"[operation] help\n");
         self.output.write_line(b"Commands: help | clear | exit");
+        self.output.write_line(b"work help | clipboard, history, checksums, backups, support report");
         self.output.write_line(b"device list");
         self.output
             .write_line(b"system status | system info | system generation | system boot");
@@ -12054,7 +12110,7 @@ impl ConsoleRuntime {
             };
             let mut path = [0u8; 95];
             let mut shown = 0;
-            for index in 0..32 {
+            for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
                 if let Some((n, _)) = storage::namespace_entry(index, &mut path) {
                     if path[..n].starts_with(prefix) {
                         self.output.write_line(&path[..n]);
@@ -13472,6 +13528,7 @@ pub fn clock_tick() {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             diagnostics::publish(runtime);
+            runtime.synchronize_workplace();
             if !matches!(
                 runtime.mode,
                 ConsoleMode::Onboarding

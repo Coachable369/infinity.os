@@ -9,8 +9,8 @@ impl ConsoleRuntime {
     pub(super) fn reset_app_assistant_session(&mut self) {
         if self.assistant_session != self.current_session {
             assistant::reset();
-            self.editor_clipboard.fill(0);
-            self.editor_clipboard_length = 0;
+            self.command_history=infinity_enterprise_core::History::new();
+            crate::ui::clipboard::with_shared(|c|c.session(self.current_session.0,false));
             self.assistant_session = self.current_session;
         }
     }
@@ -113,6 +113,18 @@ impl ConsoleRuntime {
             return false;
         }
         match key {
+            ConsoleKey::Shortcut(b'c'|b'x') => {
+                if self.copy_workplace_text(&panel.input[..panel.length]) && matches!(key,ConsoleKey::Shortcut(b'x')) {
+                    panel.input.fill(0);panel.length=0;
+                }
+            }
+            ConsoleKey::Shortcut(b'v') => {
+                let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                if let Ok(n)=self.read_workplace_text(&mut bytes) {
+                    let mut caret=panel.length;
+                    let _=infinity_enterprise_core::paste_line(&mut panel.input,&mut panel.length,&mut caret,&bytes[..n]);
+                }
+            }
             ConsoleKey::Character(c) if (32..=126).contains(&c) => {
                 if panel.length < panel.input.len() {
                     panel.input[panel.length] = c;

@@ -29,6 +29,10 @@ pub enum TextEditKey {
     End,
 }
 
+#[path="text_paste.rs"]
+mod text_paste;
+pub use text_paste::paste_ascii;
+
 // ------------------------=
 // FUNC: insert_ascii
 // DESC: Inserts one printable ASCII byte at a bounded caret and shifts trailing text right.

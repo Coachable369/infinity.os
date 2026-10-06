@@ -275,7 +275,9 @@ class Guest(base.Guest):
             "-device", "e1000,netdev=net", "-qmp", f"unix:{qmp},server=on,wait=off",
             "-display", "none", "-serial", "stdio", "-monitor", "none", "-no-reboot"]
         if self.arch=="x86_64":
-            command=["qemu-system-x86_64","-machine","pc","-accel","tcg","-cpu","max",
+            # The native browser/speech image currently ends above 3 GiB. Keep
+            # its fixed ELF load range in RAM, below the PCI aperture.
+            command=["qemu-system-x86_64","-machine","pc,max-ram-below-4g=3584M","-accel","tcg","-cpu","max",
                 "-smp","4","-m","12G","-vga","none","-device","VGA,xres=1024,yres=768,xmax=1024,ymax=768",
                 "-drive",f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                 "-drive",f"if=ide,index=0,format=raw,file={self.disk}",
@@ -325,6 +327,8 @@ def main():
     parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog under the user's existing Network Settings policy")
     parser.add_argument("--open-url", action="store_true", help="Verify the OS default web association under the user's existing Network Settings policy")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
+    parser.add_argument("--workplace", action="store_true", help="Exercise installed cross-app clipboard and native workplace commands")
+    parser.add_argument("--workplace-resume-storage", action="store_true", help="Resume a disposable workplace run after its initial file was saved")
     parser.add_argument("--tabs", action="store_true", help="With interaction, exercise native create/select/close controls and independent page pixels")
     parser.add_argument("--invalid-tls", action="store_true", help="Require a certificate-validation rejection from a real expired HTTPS endpoint")
     parser.add_argument("--lifecycle", action="store_true", help="Check maximize/restore/minimize/close/reopen after the interaction page")
@@ -391,7 +395,7 @@ def main():
     guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
     # PS/2 emulation cannot reliably ingest the rapid four-key batches while
     # the 2048px x86 desktop is painting. Acknowledge each key on that target.
-    guest.fast_commands = args.interaction and args.arch != "x86_64"
+    guest.fast_commands = (args.interaction or args.workplace) and args.arch != "x86_64"
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
     receipt = dict(architecture=args.arch,acceleration=args.accel,installed=reuse, browser_iso_parity=False, browser_interactive=False)
     if media_kernels is not None: receipt["iso_kernel_artifacts"]=media_kernels
@@ -420,6 +424,20 @@ def main():
             receipt["network_settings_configured"] = True
         elif args.automatic_network:
             receipt["automatic_network_only"] = True
+        if args.workplace:
+            spec = importlib.util.spec_from_file_location("workplace_acceptance", ROOT / "tools/workplace-installed-test.py")
+            workplace = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(workplace)
+            receipt["workplace"] = {}
+            try:
+                workplace.verify(guest, globals(), receipt["workplace"], args.workplace_resume_storage)
+            except Exception:
+                try:
+                    guest.screenshot("workplace-failure")
+                except Exception:
+                    pass
+                raise
+            return
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         if args.measure or args.lifecycle or args.reopen:
             assert "PEAK" in counters, "This optimized kernel does not expose peak-memory diagnostics"

@@ -35,12 +35,35 @@ static mut INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT: [u64; 64] = [0; 64];
 #[used]
 #[no_mangle]
 static mut INFINITY_COMPUTE_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
+#[used]
+#[no_mangle]
+static mut INFINITY_WORKPLACE_DIAGNOSTIC_SNAPSHOT: [u64;32]=[0;32];
+
+// ------------------------=
+// FUNC: publish_workplace
+// DESC: Exposes policy, counts and explicit integrity-command outcomes, never clipboard or command contents.
+// ------------------=
+fn publish_workplace(console:&ConsoleRuntime,generation:u64) {
+    let mut data=[0;32];data[0]=0x494e46574f524b31;data[1]=1;data[2]=generation;data[31]=generation;
+    data[3]=console.command_history.private() as u64;data[4]=console.command_history.count() as u64;
+    let (ttl,read,write)=crate::ui::clipboard::with_shared(|c|c.policy());
+    data[5]=ttl as u64;data[6]=read as u64;data[7]=write as u64;
+    if console.workplace_authorized(false) {data[12..20].copy_from_slice(&console.workplace_result);}
+    unsafe {
+        let pointer=(&raw mut INFINITY_WORKPLACE_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(pointer.add(2),generation|1);
+        for index in 0..32 {if index!=2 {core::ptr::write_volatile(pointer.add(index),data[index]);}}
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2),generation);
+    }
+}
 
 // ------------------------=
 // FUNC: publish_navigator
 // DESC: Publishes read-only file identity hashes, picker state, and exact live menu bounds for end-to-end interaction verification.
 // ------------------=
 fn publish_navigator(console: &ConsoleRuntime, generation: u64) {
+    publish_workplace(console,generation);
     let mut data = [0u64;64];
     data[0] = 0x494e464e41563131; data[1] = 1; data[2] = generation; data[63] = generation;
     let layout = crate::ui::system_layout::SystemLayout::new(console.system.framebuffer_width, console.system.framebuffer_height);
@@ -64,6 +87,7 @@ fn publish_navigator(console: &ConsoleRuntime, generation: u64) {
         data[20] = state.menu_selection as u64;
         data[21] = state.view_mode as u64;
         data[22] = state.scroll_offset as u64;
+        data[30] = state.workplace_notice as u64;
         let menu = layout.file_navigator_context_geometry(state.context_x,state.context_y,state.context_actions().len());
         data[23..27].copy_from_slice(&[menu.x as u64,menu.y as u64,menu.width as u64,menu.height as u64]);
         if let Some(entry) = (state.selected_index != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION)

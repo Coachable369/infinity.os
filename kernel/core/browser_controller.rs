@@ -352,6 +352,15 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         let mut text=settings.find_text;let mut length=settings.find_length;
         match key {
             ConsoleKey::Escape=>{crate::runtime::browser::find_presentation(false,&[],0);find_page(console,0);return;},
+            ConsoleKey::Shortcut(b'c'|b'x')=>{
+                if console.copy_workplace_text(&text[..length]) && matches!(key,ConsoleKey::Shortcut(b'x')) {length=0;}
+            },
+            ConsoleKey::Shortcut(b'v')=>{
+                let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                if let Ok(n)=console.read_workplace_text(&mut bytes) {
+                    let mut caret=length;crate::ui::text_input::paste_ascii(&mut text,&mut length,&mut caret,&bytes[..n]);
+                }
+            },
             ConsoleKey::Enter|ConsoleKey::Down=>{find_page(console,1);return;},
             ConsoleKey::Up=>{find_page(console,-1);return;},
             ConsoleKey::Backspace=>length=length.saturating_sub(1),
@@ -372,6 +381,20 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         return;
     }
     if let ConsoleKey::Shortcut(value)=key {
+        if settings.address_focused && matches!(value,b'c'|b'x'|b'v') {
+            if value==b'v' {
+                let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                if let Ok(n)=console.read_workplace_text(&mut bytes) {crate::runtime::browser::paste_address(&bytes[..n]);}
+            } else if settings.address_selected && console.copy_workplace_text(&settings.edit[..settings.edit_length]) && value==b'x' {
+                crate::runtime::browser::edit_address(crate::ui::text_input::TextEditKey::Delete);
+            }
+            return;
+        }
+        if !settings.address_focused && matches!(value,b'c'|b'x'|b'v') {
+            let allowed=crate::ui::clipboard::with_shared(|c|{let (_,read,write)=c.policy();
+                c.authorized(console.current_session.0) && if value==b'v' {read}else{write}});
+            if !allowed {return;}
+        }
         let mut command=abi::Command::empty();
         match value {
             b'['=>{command.kind=abi::BACK;},
@@ -435,7 +458,8 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
 // FUNC: send_key
 // DESC: Enqueues a complete modified key gesture without risking a stuck key under pressure.
 // ------------------=
-fn send_key(console:&mut ConsoleRuntime,down:abi::Command) {
+fn send_key(console:&mut ConsoleRuntime,mut down:abi::Command) {
+    down.clipboard_epoch=crate::ui::clipboard::with_shared(|c|c.epoch(console.current_session.0));
     let mut up=down;up.flags&=!abi::KEY_DOWN;
     unsafe {
         let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return;};

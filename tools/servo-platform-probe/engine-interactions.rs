@@ -1,6 +1,28 @@
 use super::*;
 
 // ------------------------=
+// FUNC: clipboard_read
+// DESC: Exercises the production session broker from the native engine clipboard delegate.
+// ------------------=
+fn clipboard_read(bytes:&mut [u8])->Option<usize> {
+    system_clipboard::with_shared(|c|c.browser_read(bytes,super::super::monotonic()/1_000_000)).ok()
+}
+// ------------------------=
+// FUNC: clipboard_write
+// DESC: Acknowledges only complete writes into the production OS clipboard.
+// ------------------=
+fn clipboard_write(bytes:&[u8])->bool {
+    system_clipboard::with_shared(|c|c.browser_write(bytes,super::super::monotonic()/1_000_000)).is_ok()
+}
+// ------------------------=
+// FUNC: grant_clipboard
+// DESC: Models the supervisor's authenticated keyboard-gesture grant without giving scripts ambient permission.
+// ------------------=
+fn grant_clipboard(write:bool) {
+    system_clipboard::with_shared(|c|c.grant(c.epoch([1;16]),write,super::super::monotonic()/1_000_000));
+}
+
+// ------------------------=
 // FUNC: click
 // DESC: Dispatches a complete physical click and waits for both engine acknowledgments.
 // ------------------=
@@ -57,8 +79,10 @@ pub fn verify(engine:&Servo)->bool {
     let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));let input=Rc::new(Cell::new(0));
     let view=WebViewBuilder::new(engine,Rc::new(context)).delegate(Rc::new(PageDelegate{
         repaint:repaint.clone(),loaded:loaded.clone(),input:input.clone(),
-    })).url("data:text/html,<body></body>".parse().unwrap()).build();
-    view.show();
+    })).clipboard_delegate(Rc::new(native_clipboard::NativeClipboard{read:clipboard_read,write:clipboard_write}))
+        .url("data:text/html,<body></body>".parse().unwrap()).build();
+    view.show();view.set_focused(true);
+    system_clipboard::with_shared(|c|c.session([1;16],true));
     if !spin_until(engine,&view,&repaint,&loaded){return false;}
     let check=|script:&str|javascript_true(engine,&view,&repaint,script);
     if !check(r#"document.body.style.cssText='margin:0;font:20px monospace';
@@ -90,10 +114,31 @@ pub fn verify(engine:&Servo)->bool {
     if !key(engine,&view,&repaint,&input,servo::Key::Named(servo::NamedKey::ArrowLeft),servo::Modifiers::SHIFT) ||
         !check("entry.selectionStart===0 && entry.selectionEnd===1"){return false;}
     for action in ["c","x","v"] {
+        grant_clipboard(action!="v");
         if !key(engine,&view,&repaint,&input,servo::Key::Character(action.into()),servo::Modifiers::CONTROL){return false;}
         if !check(if action=="x" {"entry.value.length===0"} else {"entry.value==='q'"}){return false;}
     }
     super::super::record(2,40,4);
+    let mut copied=[0;16];
+    if system_clipboard::with_shared(|c|c.read([1;16],system_clipboard::ClipboardKind::Utf8Text,&mut copied,super::super::monotonic()/1_000_000))!=Ok(1) || copied[0]!=b'q' {return false;}
+    system_clipboard::with_shared(|c|c.write([1;16],system_clipboard::ClipboardKind::Utf8Text,b"native clipboard",super::super::monotonic()/1_000_000)).unwrap();
+    if !key(engine,&view,&repaint,&input,servo::Key::Character("a".into()),servo::Modifiers::CONTROL){return false;}
+    grant_clipboard(false);
+    if !key(engine,&view,&repaint,&input,servo::Key::Character("v".into()),servo::Modifiers::CONTROL) || !check("entry.value==='native clipboard'"){return false;}
+    if !check("entry.select();true"){return false;}
+    // A denied cut must preserve both the field and the previous clipboard.
+    if !key(engine,&view,&repaint,&input,servo::Key::Character("x".into()),servo::Modifiers::CONTROL) || !check("entry.value==='native clipboard'"){return false;}
+    if !check("entry.value='x'.repeat(16385);entry.select();true"){return false;}
+    grant_clipboard(true);
+    if !key(engine,&view,&repaint,&input,servo::Key::Character("x".into()),servo::Modifiers::CONTROL) || !check("entry.value.length===16385"){return false;}
+    if !check("entry.type='password';entry.value='secret';entry.select();true"){return false;}
+    grant_clipboard(true);
+    if !key(engine,&view,&repaint,&input,servo::Key::Character("x".into()),servo::Modifiers::CONTROL) || !check("entry.value==='secret'"){return false;}
+    if system_clipboard::with_shared(|c|c.read([1;16],system_clipboard::ClipboardKind::Utf8Text,&mut copied,super::super::monotonic()/1_000_000))!=Ok(16) || &copied!=b"native clipboard" {return false;}
+    system_clipboard::with_shared(|c|c.session([1;16],false));
+    if !check("entry.type='text';entry.value='locked';entry.select();true"){return false;}
+    if !key(engine,&view,&repaint,&input,servo::Key::Character("v".into()),servo::Modifiers::CONTROL) || !check("entry.value==='locked'"){return false;}
+    super::super::record(2,40,8);
     if !check("entry.blur();line.style.width='80px';line.getBoundingClientRect().width===80"){return false;}
     for _ in 0..4 {if !click(engine,&view,&repaint,&input,24.0,24.0){return false;}}
     if !check("getSelection().anchorNode===line.firstChild && getSelection().anchorOffset===0 && getSelection().focusNode===line.firstChild && getSelection().focusOffset>=5 && getSelection().focusOffset<=6"){return false;}

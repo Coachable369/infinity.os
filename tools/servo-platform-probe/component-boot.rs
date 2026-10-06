@@ -36,8 +36,18 @@ static HEADERS:&[u8]=b"content-type: text/html\r\n";
 static mut HOST:abi::Host=abi::Host {
     version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,context:core::ptr::null_mut(),
     heap:0x80000000 as *mut u8,heap_length:256*1024*1024,
-    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,download,fatal,
+    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,download,clipboard_read,clipboard_write,fatal,
 };
+// ------------------------=
+// FUNC: clipboard_read
+// DESC: Denies clipboard reads in the network-only component fixture.
+// ------------------=
+unsafe extern "C" fn clipboard_read(_: *mut c_void,_:*mut u8,_:usize)->usize {0}
+// ------------------------=
+// FUNC: clipboard_write
+// DESC: Denies clipboard writes in the network-only component fixture.
+// ------------------=
+unsafe extern "C" fn clipboard_write(_: *mut c_void,_:*const u8,_:usize)->u32 {0}
 // ------------------------=
 // FUNC: download
 // DESC: Verifies exact native attachment bytes and validated metadata before acknowledging the offer.

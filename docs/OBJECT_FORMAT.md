@@ -1,11 +1,13 @@
-# Infinity Object Store format v5
+# Infinity Object Store Format v7
 
-Format 5 expands the bounded version index to 64 entries. Current kernels read
-formats 4 and 5; the first successful mutation of a format-4 store commits a
-format-5 bank and root. Payload locations do not change. The new sectors belong
+Format 7 expands the bounded namespace index from 32 to 44 references using
+previously unused sectors 2..7. Current kernels read formats 4, 5, 6, and 7;
+the first successful mutation of an older supported store commits a format-7
+bank and root. Payload locations do not change. The new sectors belong
 to the inactive bank until its root commits, so a failed write retains the prior
 generation. This is not a general migration path from formats 1–3. Older kernels
-are not supported for writing format-5 stores.
+are not supported for writing format-7 stores. Formats 4..6 remain active read
+compatibility contracts for installed-system upgrades, not deprecated copies.
 
 Milestone 6.5 extends stable base types with Collection, Project, Model,
 IdentityData, and DeviceData and persistent relationship IDs with ContainedBy,
@@ -22,6 +24,7 @@ The store begins at container-relative LBA 262,144. The boot image remains at re
 | Relative sector | Structure | Size | Integrity |
 |---:|---|---:|---|
 | 0, 1 | alternating generation roots | 512 bytes each | CRC-32/ISO-HDLC at 508 |
+| 2..4, 5..7 | bank A/B extended namespace index | 3 sectors each | CRC-32 per sector |
 | 8..39, 40..71 | alternating metadata banks | 32 sectors each | CRC-32 per sector |
 | 72..75 | bank A extended version index | 4 sectors | CRC-32 per sector |
 | 76..79 | bank B extended version index | 4 sectors | CRC-32 per sector |
@@ -42,6 +45,10 @@ Each bank contains:
 | 15..22 | `INFONSP2` | four 120-byte NamespaceRecords per sector |
 | 23..24 | `INFOREL2` | eight 60-byte RelationshipRecords per sector |
 | 25..31 | `INFOOBJ2` | seven expansion sectors, four ObjectRecords each |
+
+Namespace records 32..43 use store-relative sectors 2..4 for bank A and 5..7
+for bank B. Formats 4..6 ignore those sectors. Each extension has the same
+checksummed `INFONSP2` encoding as the original namespace sectors.
 
 The first 32 VersionRecords retain bank offsets 11..14. Records 32..63 use
 store-relative sectors 72..75 for bank A and 76..79 for bank B. Format-4 reads
@@ -84,7 +91,7 @@ Used is at 0; relationship type at 2; source ObjectId at 4; target ObjectId at 2
 The allocator exposes 4 KiB logical allocation blocks over eight 512-byte transfer sectors. Its 1,968-byte checksummed bitmap addresses 15,744 blocks (61.5 MiB), uses deterministic checked first-fit contiguous extents, and is reconstructed from disk on every mount. Allocation requests carry a Space; usage is calculated from each retained VersionRecord and its owning object's Space. Spaces share one pool and are not fixed partitions. Policy hooks are reserved in object flags and Space-aware allocation APIs.
 
 The object and namespace tables remain bounded bootstrap indexes (52 objects,
-64 versions, 32 namespace references, 16 relationships). These are implementation
+64 versions, 44 namespace references, 16 relationships). These are implementation
 limits, not public API semantics. A captured installed system used 31 of the
 former 32 version slots, preventing a second Pool object's content and manifest
 from committing together. The format-5 regression reproduces that occupancy,

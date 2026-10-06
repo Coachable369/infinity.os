@@ -1,5 +1,9 @@
 # Infinity Console Language v1
 
+Native clipboard, command history, completion, private mode, integrity, backup,
+restore, and support-report commands are described in
+[Enterprise Workplace](enterprise-workplace.md). Start with `work help`.
+
 9-B note: the Console direct node-mutation bypass remains unresolved; the new
 remote router does not establish Console/GUI lockstep by itself. See
 [the control-plane gap report](MILESTONE_9B_CONTROL_PLANE.md).

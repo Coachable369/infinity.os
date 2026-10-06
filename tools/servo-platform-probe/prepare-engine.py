@@ -14,6 +14,9 @@ def main():
         raise SystemExit("Run through build-kit")
     root = Path(__file__).resolve().parents[2]
     servo = root / "build/servo-port-audit"
+    clipboard_spec = importlib.util.spec_from_file_location("clipboard_overlay", Path(__file__).with_name("prepare-clipboard.py"))
+    clipboard_overlay = importlib.util.module_from_spec(clipboard_spec)
+    clipboard_spec.loader.exec_module(clipboard_overlay)
     spec = importlib.util.spec_from_file_location("native", Path(__file__).with_name("prepare-mio.py"))
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
@@ -267,6 +270,9 @@ mod platform {
 }
 '''
     (servo / relative).write_text(text)
+
+
+    clipboard_overlay.apply(servo)
 
 
 if __name__ == "__main__":

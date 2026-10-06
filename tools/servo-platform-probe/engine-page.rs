@@ -7,6 +7,10 @@ use servo::{RenderingContext, Servo, SoftwareRenderingContext, WebView, WebViewB
 mod resources;
 #[path = "../../sdk/infinity-browser-servo/session.rs"]
 mod session;
+#[path = "../../sdk/infinity-browser-servo/clipboard.rs"]
+mod native_clipboard;
+#[path = "../../kernel/ui/clipboard.rs"]
+mod system_clipboard;
 mod interactions {
     include!("engine-interactions.rs");
 }

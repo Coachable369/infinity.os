@@ -9171,6 +9171,12 @@ impl super::DisplayDevice {
             27,
             220,
         );
+        let workplace_notice=navigator_state.map(|state|state.workplace_notice).unwrap_or(0);
+        if workplace_notice!=0 {
+            let text:&[u8]=match workplace_notice {1=>b"Paste complete",2=>b"Ready to move",3=>b"Copied",_=>b"Transfer failed; source or destination unavailable"};
+            let limit=browser_width.saturating_sub(sidebar_w+28*scale)/(8*scale);
+            self.ui_text(browser_left+sidebar_w+14*scale,status_top+5*scale,&text[..text.len().min(limit)],142,185,210,1);
+        } else {
         let mut count_text = [0u8; 24];
         let count_len = navigator_decimal(&mut count_text, object_count);
         self.ui_text(
@@ -9195,6 +9201,7 @@ impl super::DisplayDevice {
             210,
             1,
         );
+        }
         if dragging_item == Some(6) {
             self.ui_text(
                 browser_left + sidebar_w + 28 * scale,

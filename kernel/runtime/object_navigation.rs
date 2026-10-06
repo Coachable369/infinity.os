@@ -22,7 +22,7 @@ pub const FILE_NAVIGATOR_NO_SELECTION: u16 = u16::MAX;
 pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContextAction { Open, OpenWith, Rename, Duplicate, Trash, NewFolder, List, Grid, Sort, TextEditor, FileNavigator, Unavailable, Back }
+pub enum ContextAction { Open, OpenWith, Rename, Duplicate, Trash, Copy, Cut, Paste, NewFolder, List, Grid, Sort, TextEditor, FileNavigator, Unavailable, Back }
 
 impl ContextAction {
     // ------------------------=
@@ -36,6 +36,7 @@ impl ContextAction {
             Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
             Self::TextEditor => b"Text Editor", Self::FileNavigator => b"File Navigator",
             Self::Unavailable => b"No compatible app", Self::Back => b"Back",
+            Self::Copy => b"Copy", Self::Cut => b"Cut", Self::Paste => b"Paste",
         }
     }
 }
@@ -1069,6 +1070,7 @@ impl Default for ShellProfileService {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileNavigatorState {
+    pub workplace_notice: u8,
     pub active_namespace_ref: ByteText<MAX_NAMESPACE_PATH>,
     pub back_namespace_ref: ByteText<MAX_NAMESPACE_PATH>,
     pub forward_namespace_ref: ByteText<MAX_NAMESPACE_PATH>,
@@ -1376,6 +1378,7 @@ impl FileNavigatorState {
         history[0] = path;
         Ok(Self {
             active_namespace_ref: path,
+            workplace_notice: 0,
             back_namespace_ref: ByteText::empty(),
             forward_namespace_ref: ByteText::empty(),
             view_mode: ViewMode::List,
@@ -1410,6 +1413,7 @@ impl FileNavigatorState {
     // ------------------=
     pub fn navigate(&mut self, path: &[u8]) -> Result<(), NavigationError> {
         let path = normalize_absolute_path(path)?;
+        self.workplace_notice = 0;
         if path != self.active_namespace_ref {
             self.back_namespace_ref = self.active_namespace_ref;
             let next = self.history_cursor as usize + 1;
@@ -1603,9 +1607,9 @@ impl FileNavigatorState {
                 OpenTarget::Unsupported => &[Unavailable, Back],
             };
         }
-        if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, List, Grid, Sort] }
+        if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, List, Grid, Sort] }
         else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
-        else { &[Open, OpenWith, Rename, Duplicate, Trash] }
+        else { &[Open, OpenWith, Rename, Duplicate, Copy, Cut, Paste, Trash] }
     }
 
     // ------------------------=

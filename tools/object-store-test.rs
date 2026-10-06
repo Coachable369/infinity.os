@@ -236,12 +236,16 @@ impl ObjectCapabilityPolicy for Deny {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--namespace-expansion-only") {
+        namespace_expansion();return;
+    }
     if std::env::args().any(|arg| arg == "--large-kernel-only") {
         large_kernel_store_mount();
         legacy_store_mount(STORE_RELATIVE_LBA as usize + 32_768);
         return;
     }
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    namespace_expansion();
     download_transaction(test_sectors);
     private_spatial_checkpoint(test_sectors);
     private_browser_favorites(test_sectors);
@@ -665,6 +669,47 @@ fn main() {
     );
 
     println!("PASS: native IDs, typed metadata/query, persistent date/time settings, persistent relationships, multi-extent COW, per-Space accounting, conservative GC, namespace identity, reboot/restore, five crash boundaries, format rejection, root/allocation/object/namespace/relationship/content corruption detection");
+}
+
+// ------------------------=
+// FUNC: namespace_expansion
+// DESC: Migrates a full format-6 namespace with cuts at every metadata write, verifies remount identity and bounded overflow rollback.
+// ------------------=
+fn namespace_expansion() {
+    let sectors=STORE_RELATIVE_LBA as usize+32768;
+    let disk=MemoryDisk::new(sectors);
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x74;16]).unwrap();
+    let id=store.create_attached(b"source",ObjectType::Text,Space::Personal,b"preserve",b"/home/default/source").unwrap();
+    let count=(0..storage::object::NAMESPACE_CAPACITY).filter(|i|store.namespace_entry(*i).is_some()).count();
+    for i in count..32 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
+    drop(store);
+    for sector in 0..80 {
+        let at=STORE_RELATIVE_LBA as usize+sector;
+        if matches!(sector,2..=7) {disk.0.borrow_mut()[at]=[0xa5;512];}
+        else if disk.0.borrow()[at][..4]==*b"INFO" {disk.set_version_and_rechecksum(at,6);}
+    }
+    let baseline=disk.0.borrow().clone();
+    for cut in 0..=40 {
+        let backing=MemoryDisk(Rc::new(RefCell::new(baseline.clone())));
+        let failing=FailingDisk::new(backing.clone());
+        let mut store=ObjectStore::mount(failing.clone(),0).unwrap();
+        assert_eq!((0..44).filter(|i|store.namespace_entry(*i).is_some()).count(),32);
+        let generation=store.generation();failing.arm(cut);
+        let result=store.attach(b"/home/default/expanded",id);failing.disarm();drop(store);
+        let mut recovered=ObjectStore::mount(backing,0).unwrap();
+        assert_eq!(recovered.resolve(b"/home/default/expanded").is_ok(),result.is_ok());
+        assert_eq!(recovered.generation(),generation+u64::from(result.is_ok()));
+        let mut bytes=[0;16];let n=recovered.read(id,None,&mut bytes).unwrap();assert_eq!(&bytes[..n],b"preserve");
+    }
+    let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
+    for i in 32..44 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
+    let generation=store.generation();
+    assert_eq!(store.attach(b"/home/default/overflow",id),Err(ObjectError::InsufficientCapacity));
+    assert_eq!(store.generation(),generation);drop(store);
+    let mut store=ObjectStore::mount(disk,0).unwrap();
+    assert_eq!((0..45).filter(|i|store.namespace_entry(*i).is_some()).count(),44);
+    for i in 32..44 {assert_eq!(store.resolve(format!("/home/default/alias{i}").as_bytes()).unwrap(),id);}
+    let mut bytes=[0;16];let n=store.read(id,None,&mut bytes).unwrap();assert_eq!(&bytes[..n],b"preserve");
 }
 
 // ------------------------=

@@ -254,20 +254,18 @@ impl ConsoleRuntime {
                     .select(0, self.editor_document.bytes().len()),
                 b'c' | b'x' => {
                     if let Some((a, b)) = self.editor_document.selection() {
-                        self.editor_clipboard[..b - a]
-                            .copy_from_slice(&self.editor_document.bytes()[a..b]);
-                        self.editor_clipboard_length = b - a;
-                        if c.to_ascii_lowercase() == b'x' {
+                        let copied=self.copy_workplace_text(&self.editor_document.bytes()[a..b]);
+                        if copied && c.to_ascii_lowercase() == b'x' {
                             self.editor_document.replace_selection(b"");
                         }
                     }
                 }
                 b'v' => {
-                    if !self
-                        .editor_document
-                        .replace_selection(&self.editor_clipboard[..self.editor_clipboard_length])
-                    {
-                        self.editor_tools.notice = b"Paste rejected: document limit is 16 KiB.";
+                    let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                    match self.read_workplace_text(&mut bytes) {
+                        Ok(n) if self.editor_document.replace_selection(&bytes[..n])=>{},
+                        Ok(_)=>self.editor_tools.notice=b"Paste rejected: unsupported text or 16 KiB limit.",
+                        Err(_)=>self.editor_tools.notice=b"Clipboard empty, expired, or unavailable.",
                     }
                 }
                 b's' => {
