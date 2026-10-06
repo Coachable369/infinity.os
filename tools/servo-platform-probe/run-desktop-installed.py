@@ -405,6 +405,8 @@ def main():
     # x86 PIO under cross-architecture TCG must read back the entire large payload.
     # This bounds the harness only; it does not relax any installed-byte checks.
     guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
+    # Full-bundle x86 media caches installer shards before firmware exit under TCG.
+    guest.boot_timeout_seconds=300 if args.arch=="x86_64" else 120
     # PS/2 emulation cannot reliably ingest the rapid four-key batches while
     # the 2048px x86 desktop is painting. Acknowledge each key on that target.
     guest.fast_commands = (args.interaction or args.workplace or args.workplace_menu) and args.arch != "x86_64"

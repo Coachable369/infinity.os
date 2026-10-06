@@ -938,6 +938,56 @@ static int reserve_kernel_range(EFI_BOOT_SERVICES *boot, uint64_t low, uint64_t 
 }
 
 // ------------------------=
+// FUNC: kernel_segment_ranges
+// DESC: Validates identity-mapped ELF segments and merges only touching page ranges, preserving physical holes.
+// ------------------=
+static int kernel_segment_ranges(const Elf64ProgramHeader *segments, size_t count,
+        size_t image_size, uint64_t ranges[64][2], size_t *range_count) {
+    *range_count = 0;
+    if (count > 64) return 0;
+    for (size_t i = 0; i < count; ++i) {
+        const Elf64ProgramHeader *segment = &segments[i];
+        if (segment->type != PT_LOAD) continue;
+        if (segment->filesz > segment->memsz || segment->offset > image_size ||
+            segment->filesz > image_size - segment->offset || segment->vaddr != segment->paddr ||
+            segment->memsz > UINT64_MAX - segment->paddr ||
+            segment->paddr + segment->memsz > UINT64_MAX - PAGE_MASK) return 0;
+        if (!segment->memsz) continue;
+        uint64_t low = segment->paddr & ~(uint64_t)PAGE_MASK;
+        uint64_t high = (segment->paddr + segment->memsz + PAGE_MASK) & ~(uint64_t)PAGE_MASK;
+        size_t at = *range_count;
+        while (at && ranges[at-1][0] > low) {
+            ranges[at][0] = ranges[at-1][0]; ranges[at][1] = ranges[at-1][1]; --at;
+        }
+        ranges[at][0] = low; ranges[at][1] = high; ++*range_count;
+    }
+    size_t merged = 0;
+    for (size_t i = 0; i < *range_count; ++i) {
+        if (merged && ranges[i][0] <= ranges[merged-1][1]) {
+            if (ranges[i][1] > ranges[merged-1][1]) ranges[merged-1][1] = ranges[i][1];
+        } else {
+            ranges[merged][0] = ranges[i][0]; ranges[merged++][1] = ranges[i][1];
+        }
+    }
+    *range_count = merged;
+    return merged != 0;
+}
+
+// ------------------------=
+// FUNC: reserve_kernel_segments
+// DESC: Reserves validated ELF ranges independently and rolls back all earlier ranges on failure.
+// ------------------=
+static int reserve_kernel_segments(EFI_BOOT_SERVICES *boot, uint64_t ranges[64][2], size_t count) {
+    if (!boot->free_pages) return 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (reserve_kernel_range(boot, ranges[i][0], ranges[i][1])) continue;
+        while (i) { --i; boot->free_pages(ranges[i][0], (ranges[i][1]-ranges[i][0])/PAGE_SIZE); }
+        return 0;
+    }
+    return count != 0;
+}
+
+// ------------------------=
 // FUNC: report_kernel_memory_conflict
 // DESC: Emits bounded boot-only allocation diagnostics without changing memory ownership or normal runtime logging.
 // ------------------=
@@ -970,20 +1020,25 @@ static void report_kernel_memory_conflict(EFI_BOOT_SERVICES *boot, uint64_t low,
 static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image, size_t image_size) {
     EFI_BOOT_SERVICES *boot = system->boot_services;
     const Elf64Header *header = image;
-    if (header->ident[0] != 0x7f || header->ident[1] != 'E' || header->ident[2] != 'L' ||
+    if (image_size < sizeof(*header) || header->ident[0] != 0x7f || header->ident[1] != 'E' || header->ident[2] != 'L' ||
         header->ident[3] != 'F' || header->ident[4] != 2 || header->ident[5] != 1 ||
         header->machine != INFINITY_ELF_MACHINE || header->phentsize != sizeof(Elf64ProgramHeader) ||
-        header->phoff + (uint64_t)header->phnum * header->phentsize > image_size)
+        header->phoff % 8 || header->phoff > image_size ||
+        (uint64_t)header->phnum * header->phentsize > image_size - header->phoff)
         fail(system, L"ERROR: unsupported kernel format\r\n", "ERROR: unsupported kernel format\n");
 
     const Elf64ProgramHeader *segments = (const void *)((const uint8_t *)image + header->phoff);
+    uint64_t ranges[64][2]; size_t range_count = 0;
+    if (!kernel_segment_ranges(segments, header->phnum, image_size, ranges, &range_count))
+        fail(system, L"ERROR: malformed kernel segment\r\n", "ERROR: malformed kernel segment\n");
     uint64_t low = UINT64_MAX, high = 0;
+    uint8_t executable_entry = 0;
     InfinityLoadedKernel loaded = {0, UINT64_MAX, 0, UINT64_MAX, 0,
         UINT64_MAX, 0, UINT64_MAX, 0};
     for (uint16_t i = 0; i < header->phnum; ++i) {
-        if (segments[i].type != PT_LOAD) continue;
-        if (segments[i].filesz > segments[i].memsz || segments[i].offset + segments[i].filesz > image_size)
-            fail(system, L"ERROR: malformed kernel segment\r\n", "ERROR: malformed kernel segment\n");
+        if (segments[i].type != PT_LOAD || !segments[i].memsz) continue;
+        if ((segments[i].flags & 1) && header->entry >= segments[i].paddr &&
+            header->entry - segments[i].paddr < segments[i].filesz) executable_entry = 1;
         uint64_t start = segments[i].paddr & ~(uint64_t)PAGE_MASK;
         uint64_t end = (segments[i].paddr + segments[i].memsz + PAGE_MASK) & ~(uint64_t)PAGE_MASK;
         if (start < low) low = start;
@@ -995,13 +1050,14 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
         if (start < *kind_low) *kind_low = start;
         if (end > *kind_high) *kind_high = end;
     }
-    if (low == UINT64_MAX || high <= low || header->entry < low || header->entry >= high)
+    if (low == UINT64_MAX || high <= low || !executable_entry)
         fail(system, L"ERROR: kernel has no loadable entry\r\n", "ERROR: kernel has no loadable entry\n");
-    if (!reserve_kernel_range(boot, low, high)) {
+    if (!reserve_kernel_segments(boot, ranges, range_count)) {
         report_kernel_memory_conflict(boot, low, high);
         fail(system, L"ERROR: unable to allocate kernel pages\r\n", "ERROR: unable to allocate kernel pages\n");
     }
-    memset((void *)(uintptr_t)low, 0, (size_t)(high - low));
+    for (size_t i = 0; i < range_count; ++i)
+        memset((void *)(uintptr_t)ranges[i][0], 0, (size_t)(ranges[i][1] - ranges[i][0]));
     for (uint16_t i = 0; i < header->phnum; ++i) {
         if (segments[i].type == PT_LOAD)
             memcpy((void *)(uintptr_t)segments[i].paddr, (const uint8_t *)image + segments[i].offset,

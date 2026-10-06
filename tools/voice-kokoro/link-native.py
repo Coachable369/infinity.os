@@ -72,6 +72,10 @@ def main():
         cxx = path.suffix == ".cpp"
         extra = ["-std=c++17", "-nostdinc++", "-fno-exceptions", "-fno-rtti", "-femulated-tls",
                  "-I" + str(WORK / ("cxx-" + ARCH) / "include/c++/v1")] if cxx else []
+        # The private arena lives above the PC PCI aperture; only its owning
+        # adapter needs absolute addressing outside the small code model.
+        if ARCH == "x86_64" and path.name == "port.c":
+            extra += ["-mcmodel=large"]
         run(LLVM / ("clang++" if cxx else "clang"), *flags, *extra, "-c", path, "-o", obj)
         objects.append(obj)
         if ARCH == "aarch64" and path.name == "dot4.cpp":

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 
@@ -105,6 +106,15 @@ def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Pat
     expected = (ROOT / "build" / architecture / name).read_bytes()
     if not expected:
         raise RuntimeError("native boot loader is empty")
+    if architecture == "x86_64":
+        pe = struct.unpack_from("<I", expected, 0x3C)[0]
+        assert expected[pe:pe+4] == b"PE\0\0"
+        assert struct.unpack_from("<H", expected, pe+4)[0] == 0x8664
+        optional = pe + 24
+        assert struct.unpack_from("<H", expected, optional)[0] == 0x20B
+        base = struct.unpack_from("<Q", expected, optional+24)[0]
+        size = struct.unpack_from("<I", expected, optional+56)[0]
+        assert 0x100000 <= base and size > 0 and base + size <= 0x4000000
     for image, member in (
         (live_esp, f"::/EFI/BOOT/{name}"),
         (installed_esp, f"::/EFI/BOOT/{name}"),

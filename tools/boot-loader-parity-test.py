@@ -2,6 +2,7 @@
 """Behavioral coverage for binary live/installed boot-loader parity rejection."""
 import importlib.util
 import os
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,7 +22,15 @@ class LoaderParityTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(dir=ROOT / "build/tmp", prefix="loader-parity-")
         self.work = Path(self.temporary.name)
-        self.expected = bytes(range(256)) * 4
+        image = bytearray(bytes(range(256)) * 4)
+        image[:2] = b"MZ"
+        struct.pack_into("<I", image, 0x3C, 0x80)
+        image[0x80:0x84] = b"PE\0\0"
+        struct.pack_into("<H", image, 0x84, 0x8664)
+        struct.pack_into("<H", image, 0x98, 0x20B)
+        struct.pack_into("<Q", image, 0xB0, 0x2000000)
+        struct.pack_into("<I", image, 0xD0, 0x24000)
+        self.expected = bytes(image)
 
     # ------------------------=
     # FUNC: tearDown
@@ -72,6 +81,22 @@ class LoaderParityTests(unittest.TestCase):
             for suffix in ("", ".partial"):
                 with self.subTest(architecture=architecture, suffix=suffix):
                     self.verify(architecture, [self.expected] * 4, suffix)
+
+    # ------------------------=
+    # FUNC: test_rejects_conflicting_loader_extent
+    # DESC: Rejects matching binaries whose preferred allocation overlaps the kernel, the speech arena, or low firmware memory.
+    # ------------------=
+    def test_rejects_conflicting_loader_extent(self):
+        original = self.expected
+        for base, size in ((0, 0x24000), (0x140000000, 0x24000),
+                           (0x3FFF000, 0x24000), (0x2000000, 0)):
+            with self.subTest(base=base, size=size):
+                image = bytearray(original)
+                struct.pack_into("<Q", image, 0xB0, base)
+                struct.pack_into("<I", image, 0xD0, size)
+                self.expected = bytes(image)
+                with self.assertRaises(AssertionError):
+                    self.verify("x86_64", [self.expected] * 4)
 
     # ------------------------=
     # FUNC: test_rejects_each_stale_boot_path

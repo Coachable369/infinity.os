@@ -68,6 +68,7 @@ class Guest:
         self.last_remote = None
         self.input_latency_ns = []
         self.fast_commands = False
+        self.boot_timeout_seconds = 120
 
     # ------------------------=
     # FUNC: boot
@@ -324,7 +325,7 @@ class Guest:
     # ------------------=
     def install(self):
         self.boot(True)
-        self.wait(lambda state: state[4] == 0 and state[3] == 0, "live startup")
+        self.wait(lambda state: state[4] == 0 and state[3] == 0, "live startup", self.boot_timeout_seconds)
         self.text("1")
         self.key("ret")
         self.wait(lambda state: state[4] == 3 and state[5] == 0, "wizard welcome")
@@ -357,7 +358,7 @@ class Guest:
         self.screenshot("installed-complete")
         self.stop()
         self.boot(False)
-        self.wait(lambda state: state[3] == 1 and state[4] == 4, "detached-media installed onboarding", 180)
+        self.wait(lambda state: state[3] == 1 and state[4] == 4, "detached-media installed onboarding", max(180, self.boot_timeout_seconds))
         self.screenshot("detached-onboarding")
 
     # ------------------------=
@@ -437,7 +438,7 @@ class Guest:
     # ------------------=
     def onboard(self):
         self.boot(False)
-        initial = self.wait(lambda state: state[3] == 1 and state[4] in (4, 9), "installed local UI")
+        initial = self.wait(lambda state: state[3] == 1 and state[4] in (4, 9), "installed local UI", self.boot_timeout_seconds)
         if initial[4] == 9:
             before = self.authenticate()
             return self.cold_boot_proof(before)
@@ -469,7 +470,7 @@ class Guest:
     # DESC: Authenticates the actual password field, then returns a legitimately restored application to Desktop through normal input.
     # ------------------=
     def authenticate(self):
-        state = self.wait(lambda state: state[3] == 1 and state[4] in (9, 10), "local authentication")
+        state = self.wait(lambda state: state[3] == 1 and state[4] in (9, 10), "local authentication", self.boot_timeout_seconds)
         for _ in range(11):
             if state[8] == 1:
                 break

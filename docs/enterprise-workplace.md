@@ -28,12 +28,12 @@ suite, but the images are not yet release-accepted.
 - All 46 browser core tests and all eight native engine interaction stages pass.
   Object-store, input, network, transport, resource-policy, and installed UI asset
   parity checks pass after correcting a namespace-capacity test fixture.
-- Both architecture ISO profiles rebuilt successfully. These were focused
-  builds, not a clean `full` build. Fresh x86 final-ISO acceptance failed before
-  the live desktop: the ELF requires one contiguous allocation from 64 MiB to
-  `0xd04a9000`, crossing the PC machine's 3 GiB RAM boundary. Setting
-  `max-ram-below-4g=3584M` does not override QEMU's gigabyte-alignment cap with
-  12 GiB total RAM. Installed x86 workplace behavior remains unverified.
+- Both architecture ISO profiles rebuilt successfully after the menu fix. These
+  were focused builds, not a clean `full` build. The initial x86 image required
+  a contiguous allocation crossing the PC machine's 3 GiB RAM boundary. The
+  allocation correction below now reaches the final-ISO installer, but fresh
+  installation exceeded its 30-minute provisioning limit. Installed x86
+  workplace behavior remains unverified.
 
 Fresh ARM workplace evidence:
 `build/browser-installed-1791273370904977000/result.json`, with successful run
@@ -45,8 +45,8 @@ its receipt explicitly distinguishes checks from preceding resumed runs.
 Failed final x86 ISO run:
 `builds/manifests/20261006T081312907031Z-21487.json`, with firmware allocation
 diagnostics in `build/browser-installed-1791274392995346000/node-1/installer.log`.
-The ARM fault and x86 memory-layout incompatibility remain release blockers;
-neither is corrected by the harness fixes in this continuation.
+The ARM fault remains a release blocker. The x86 allocation correction below
+has final-ISO live-startup proof but still requires installed acceptance.
 Focused installed menu evidence:
 `build/browser-installed-menu-20261006T0841/result.json`, with manifest
 `builds/manifests/20261006T084155757763Z-32278.json` and screenshot
@@ -57,6 +57,60 @@ Both updated full-bundle ISO profiles completed successfully after the menu fix:
 ARM `builds/manifests/20261006T082041262424Z-22071.json`, and x86
 `builds/manifests/20261006T084506607296Z-33444.json`. These package the current
 workspace, including pre-existing local changes left outside this commit.
+
+### Boot Allocation Follow-Up
+
+The shared loader now reserves and clears merged ELF load segments independently,
+leaving physical gaps untouched. It validates segment extents and the executable
+entry before reserving memory, and rolls back earlier reservations on failure.
+The x86 linker places its 1.5 GiB speech arena in a separate zero-fill segment at
+4 GiB. Only the arena's private libc adapter uses large-model addressing; normal
+kernel data remains below the PC aperture. The UEFI loader's preferred image base
+is 32 MiB, avoiding its former 5 GiB overlap with that arena.
+
+Host behavioral loader checks, including exact copied/zeroed/untouched bytes and
+multi-range rollback, passed in
+`builds/manifests/20261006T100442485846Z-60621.json`. Binary loader-parity tests now
+reject matching but conflicting PE image extents; four tests passed in
+`builds/manifests/20261006T103906165304Z-68265.json`. Both live and installed ELF
+packaging checks require the independent high arena and reject PCI-gap crossings.
+
+A disposable default-PC/12-GiB QEMU gate reached structured live startup using
+the corrected loader and kernel:
+`build/browser-installed-boot-gate-1791282163277862000/result.json`, manifest
+`builds/manifests/20261006T102243202130Z-66895.json`. This is not final-ISO or
+installed proof. The earlier intermediate ISO still collided with its own
+loader at 5 GiB (`20261006T101749362883Z-66741.json`); it is not an accepted image.
+
+The corrected x86 full-bundle ISO passed the focused build and binary packaging
+checks in `builds/manifests/20261006T103914782900Z-68280.json`. Its first runtime
+attempt exceeded the 120-second firmware startup allowance. A bounded
+300-second retry reached live startup and installer steps 0 through 6, including
+the default-Cancel destructive confirmation. Provisioning then exceeded its
+unchanged 1800-second limit after allocating approximately 4.85 GB on the target
+disk. No completion, readback, detached boot, or installed workplace success is
+claimed. Evidence is retained in
+`build/browser-installed-1791284158956976000/` and failed manifest
+`builds/manifests/20261006T105558853893Z-73180.json`.
+That diagnostic retry temporarily increased generic default waits to 300
+seconds; the production harness change below confines the allowance to startup.
+
+The installed harness now supports a per-guest startup allowance: 120 seconds
+by default and 300 seconds for the full-bundle x86 probe. UI predicates and
+interaction deadlines are unchanged. Two behavioral routing/default tests passed
+in `builds/manifests/20261006T113123796104Z-73794.json`.
+
+The ARM full-bundle ISO was rebuilt with the same shared loader correction;
+its focused build and binary packaging checks passed in
+`builds/manifests/20261006T113128208915Z-73802.json`. Updated candidates are
+`builds/InfinityOS-x86_64.iso` and `builds/InfinityOS-aarch64.iso`, with combined
+checksums in `builds/SHA256SUMS`. These are focused workspace builds, not a clean
+release, and include the pre-existing local changes excluded from this fix's
+commit. The rebuilt ARM image has not passed fresh detached-install acceptance.
+
+Bounded ARM debugger runs observed valid speech-worker stack reuse but did not
+isolate the intermittent bad write. No speculative ARM runtime change was made.
+Google search-result rendering also remains unverified.
 
 The workplace implementation is shared by ARM and x86. It adds these fifteen
 capabilities to native applications and the installed System Generation:

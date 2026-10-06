@@ -366,8 +366,8 @@ $(BUILD)/x86_64/workers.obj: boot/x86_64/workers.asm
 	@mkdir -p $(@D)
 	nasm -f win64 $< -o $@
 
-$(BUILD)/x86_64/BOOTX64.EFI: $(BUILD)/x86_64/loader.obj $(BUILD)/x86_64/handoff.obj $(BUILD)/x86_64/workers.obj
-	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:x64 /out:$@ $^
+$(BUILD)/x86_64/BOOTX64.EFI: $(BUILD)/x86_64/loader.obj $(BUILD)/x86_64/handoff.obj $(BUILD)/x86_64/workers.obj Makefile
+	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:x64 /base:0x2000000 /out:$@ $(filter %.obj,$^)
 
 $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash

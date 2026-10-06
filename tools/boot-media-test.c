@@ -13,6 +13,99 @@ static uint8_t present;
 static unsigned range_calls, range_frees, range_mode;
 static unsigned image_calls, image_frees, image_fail, image_high_map;
 static uint64_t image_ceiling = UINT64_MAX;
+static uint64_t segment_addresses[4], segment_freed[4];
+static size_t segment_pages[4], segment_freed_pages[4];
+static unsigned segment_calls, segment_frees, segment_fail;
+// ------------------------=
+// FUNC: test_segment_allocate
+// DESC: Records independent fixed-address segment reservations and injects a later allocation failure.
+// ------------------=
+static EFI_STATUS EFIAPI test_segment_allocate(uint32_t kind, uint32_t type, size_t pages, uint64_t *address) {
+    assert(kind == EFI_ALLOCATE_ADDRESS && type == EFI_LOADER_DATA && segment_calls < 4);
+    segment_addresses[segment_calls] = *address; segment_pages[segment_calls] = pages;
+    ++segment_calls;
+    return segment_fail == segment_calls ? 1 : EFI_SUCCESS;
+}
+// ------------------------=
+// FUNC: test_segment_free
+// DESC: Records exact rollback addresses and sizes without touching host fixture memory.
+// ------------------=
+static EFI_STATUS EFIAPI test_segment_free(uint64_t address, size_t pages) {
+    assert(segment_frees < 4);
+    segment_freed_pages[segment_frees] = pages;
+    segment_freed[segment_frees++] = address;
+    return EFI_SUCCESS;
+}
+// ------------------------=
+// FUNC: test_segment_loading
+// DESC: Exercises gap-preserving loading, shared page merging, overflow rejection, and reservation rollback.
+// ------------------=
+static void test_segment_loading(void) {
+    Elf64ProgramHeader segments[3] = {
+        {.type=PT_LOAD,.vaddr=0x100000000,.paddr=0x100000000,.memsz=0x3000},
+        {.type=PT_LOAD,.vaddr=0x4000000,.paddr=0x4000000,.memsz=0x1800},
+        {.type=PT_LOAD,.vaddr=0x4001800,.paddr=0x4001800,.memsz=0x800},
+    };
+    uint64_t ranges[64][2]; size_t count;
+    assert(kernel_segment_ranges(segments, 3, 512, ranges, &count) && count == 2);
+    assert(ranges[0][0] == 0x4000000 && ranges[0][1] == 0x4002000);
+    assert(ranges[1][0] == 0x100000000 && ranges[1][1] == 0x100003000);
+    EFI_BOOT_SERVICES boot = {0};
+    boot.allocate_pages = test_segment_allocate; boot.free_pages = test_segment_free;
+    assert(reserve_kernel_segments(&boot, ranges, count));
+    assert(segment_calls == 2 && !segment_frees);
+    assert(segment_addresses[0] == 0x4000000 && segment_pages[0] == 2);
+    assert(segment_addresses[1] == 0x100000000 && segment_pages[1] == 3);
+    segment_calls = 0; segment_fail = 2;
+    assert(!reserve_kernel_segments(&boot, ranges, count));
+    assert(segment_calls == 2 && segment_frees == 1 && segment_freed[0] == 0x4000000);
+    assert(segment_freed_pages[0] == 2);
+    ranges[2][0] = 0x200000000; ranges[2][1] = 0x200004000;
+    segment_calls = segment_frees = 0; segment_fail = 3;
+    assert(!reserve_kernel_segments(&boot, ranges, 3));
+    assert(segment_calls == 3 && segment_frees == 2);
+    assert(segment_freed[0] == 0x100000000 && segment_freed_pages[0] == 3);
+    assert(segment_freed[1] == 0x4000000 && segment_freed_pages[1] == 2);
+    segments[0].memsz = UINT64_MAX;
+    assert(!kernel_segment_ranges(segments, 3, 512, ranges, &count));
+    segments[0].memsz = 0x3000; segments[0].offset = UINT64_MAX;
+    assert(!kernel_segment_ranges(segments, 3, 512, ranges, &count));
+    segments[0].offset = 510; segments[0].filesz = 3;
+    assert(!kernel_segment_ranges(segments, 3, 512, ranges, &count));
+    segments[0].filesz = 0x3001; segments[0].offset = 0;
+    assert(!kernel_segment_ranges(segments, 3, 512, ranges, &count));
+    segments[0].filesz = 0; segments[0].vaddr++;
+    assert(!kernel_segment_ranges(segments, 3, 512, ranges, &count));
+    assert(!kernel_segment_ranges(segments, 65, 512, ranges, &count));
+    assert(!kernel_segment_ranges(segments, 0, 512, ranges, &count));
+
+    uint8_t *memory = aligned_alloc(PAGE_SIZE, 7*PAGE_SIZE);
+    assert(memory); memset(memory, 0xa5, 7*PAGE_SIZE);
+    uint64_t image[64] = {0};
+    Elf64Header *header = (void *)image;
+    memcpy(header->ident, "\177ELF\2\1", 6);
+    header->machine = INFINITY_ELF_MACHINE; header->phoff = sizeof(*header);
+    header->phentsize = sizeof(Elf64ProgramHeader); header->phnum = 2;
+    header->entry = (uintptr_t)(memory + PAGE_SIZE);
+    Elf64ProgramHeader *program = (void *)((uint8_t *)image + header->phoff);
+    program[0] = (Elf64ProgramHeader){.type=PT_LOAD,.flags=5,.offset=256,
+        .paddr=header->entry,.vaddr=header->entry,.filesz=16,.memsz=PAGE_SIZE};
+    program[1] = (Elf64ProgramHeader){.type=PT_LOAD,.flags=6,.offset=272,
+        .paddr=(uintptr_t)(memory+4*PAGE_SIZE),.vaddr=(uintptr_t)(memory+4*PAGE_SIZE),
+        .filesz=16,.memsz=2*PAGE_SIZE};
+    memset((uint8_t *)image+256, 0x39, 32);
+    segment_calls = segment_frees = segment_fail = 0;
+    EFI_SYSTEM_TABLE system = {0}; system.boot_services = &boot;
+    InfinityLoadedKernel loaded = load_elf(&system, image, sizeof(image));
+    assert(loaded.entry == header->entry && segment_calls == 2 && !segment_frees);
+    for (size_t i = 0; i < 7*PAGE_SIZE; ++i) {
+        uint8_t expected = 0xa5;
+        if ((i >= PAGE_SIZE && i < 2*PAGE_SIZE) || (i >= 4*PAGE_SIZE && i < 6*PAGE_SIZE)) expected = 0;
+        if ((i >= PAGE_SIZE && i < PAGE_SIZE+16) || (i >= 4*PAGE_SIZE && i < 4*PAGE_SIZE+16)) expected = 0x39;
+        assert(memory[i] == expected);
+    }
+    free(memory);
+}
 // ------------------------=
 // FUNC: test_image_map
 // DESC: Exposes high conventional RAM beside reserved RAM to verify explicit safe staging placement.
@@ -129,10 +222,16 @@ void EFIAPI infinity_handoff(InfinityBootInfo *info, uint64_t a, uint64_t b, uin
 // ------------------=
 void infinity_ap_entry(void) { abort(); }
 // ------------------------=
+// FUNC: infinity_ap_callback
+// DESC: Rejects accidental native worker dispatch from the host-only loader fixture.
+// ------------------=
+void EFIAPI infinity_ap_callback(void *context) { (void)context; abort(); }
+// ------------------------=
 // FUNC: main
 // DESC: Verifies media detection, installed fallback and balanced firmware handle cleanup.
 // ------------------=
 int main(void) {
+    test_segment_loading();
     assert(!installed_kernel_size_valid(sizeof(Elf64Header)-1));
     assert(installed_kernel_size_valid(sizeof(Elf64Header)));
     assert(installed_kernel_size_valid(UINT64_C(802)*1024*1024));
