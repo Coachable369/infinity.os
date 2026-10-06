@@ -1,5 +1,6 @@
 //! Strict bounded HTTP/1 response headers; body decoding is a separate layer.
 pub const HEADER_LIMIT: usize = 8192;
+pub const HEADER_COUNT: usize = 128;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     TooLarge,
@@ -24,7 +25,7 @@ pub struct Head {
 /// A borrowed, allocation-free view of the preserved wire head. Repeated fields
 /// remain separate (notably Set-Cookie); callers apply field-specific policy.
 pub struct Headers<'a> {
-    fields: [httparse::Header<'a>; 32],
+    fields: [httparse::Header<'a>; HEADER_COUNT],
     length: usize,
 }
 
@@ -35,7 +36,7 @@ impl<'a> Headers<'a> {
     // ------------------=
     pub fn parse(bytes: &'a [u8]) -> Result<Self, Error> {
         let head = parse(bytes, false)?.ok_or(Error::Invalid)?;
-        let mut fields = [httparse::EMPTY_HEADER; 32];
+        let mut fields = [httparse::EMPTY_HEADER; HEADER_COUNT];
         let mut response = httparse::Response::new(&mut fields);
         response.parse(&bytes[..head.bytes]).map_err(|_| Error::Invalid)?;
         let length = response.headers.len();
@@ -66,7 +67,7 @@ impl<'a> Headers<'a> {
 // DESC: Parses complete or fragmented response headers and rejects conflicting framing before body consumption.
 // ------------------=
 pub fn parse(bytes: &[u8], head_request: bool) -> Result<Option<Head>, Error> {
-    let mut headers = [httparse::EMPTY_HEADER; 32];
+    let mut headers = [httparse::EMPTY_HEADER; HEADER_COUNT];
     let mut response = httparse::Response::new(&mut headers);
     let size = match response
         .parse(&bytes[..bytes.len().min(HEADER_LIMIT)])
@@ -140,5 +141,19 @@ mod tests {
         assert_eq!(fields[1], ("Set-Cookie", b"b=2".as_slice()));
         assert_eq!(fields[2], ("X-Value", b"\x80".as_slice()));
         assert!(Headers::parse(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n").is_err());
+    }
+    // ------------------------=
+    // FUNC: many_security_and_cookie_fields_remain_bounded
+    // DESC: Accepts realistic field counts without weakening framing checks or allowing unbounded metadata.
+    // ------------------=
+    #[test]
+    fn many_security_and_cookie_fields_remain_bounded() {
+        let mut bytes=std::string::String::from("HTTP/1.1 200 OK\r\n");
+        for _ in 0..80 {bytes.push_str("Set-Cookie: a=b; Secure\r\n");}
+        bytes.push_str("Content-Length: 0\r\n\r\n");
+        assert_eq!(Headers::parse(bytes.as_bytes()).unwrap().values("set-cookie").count(),80);
+        assert!(Headers::parse(bytes.replace("Content-Length: 0", "Content-Length: 0\r\nContent-Length: 1").as_bytes()).is_err());
+        let too_many=std::format!("HTTP/1.1 200 OK\r\n{}\r\n","X: y\r\n".repeat(HEADER_COUNT+1));
+        assert!(Headers::parse(too_many.as_bytes()).is_err());
     }
 }

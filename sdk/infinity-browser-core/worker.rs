@@ -1,7 +1,7 @@
 //! Versioned integer/pointer-only ABI between the native engine component and
 //! the OS worker. Callbacks must be nonblocking mailbox operations. All pointers
 //! remain owned by their issuer; frame/event bytes are borrowed for one call.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 pub const OPEN: u32 = 1;
 pub const CLOSE: u32 = 2;
 pub const NAVIGATE: u32 = 3;
@@ -69,7 +69,7 @@ impl Command {
     }
 }
 
-/// Response buffers stay valid until cancel(id); completion always calls cancel.
+/// Response buffers stay valid until the next poll or cancel(id).
 #[repr(C)]
 pub struct Response {
     pub status: u32,
@@ -94,8 +94,11 @@ pub struct Host {
     pub command: unsafe extern "C" fn(*mut core::ffi::c_void, *mut Command) -> u32,
     pub frame: unsafe extern "C" fn(*mut core::ffi::c_void, u32, u32, *const u8, usize),
     pub event: unsafe extern "C" fn(*mut core::ffi::c_void, u32, u32, *const u8, usize),
-    pub begin: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize, *const u8, usize) -> u64,
-    /// 0 pending; 1 complete; any other result failed.
+    pub begin: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize, *const u8, usize,
+        *const u8, usize, *const u8, usize) -> u64,
+    /// 0 pending; 1 complete buffered response; 2 failed; 3 stream chunk; 4 stream done.
+    /// A chunk with nonzero status contains headers; status zero contains body bytes.
+    /// The next poll acknowledges the previous chunk after all borrowed bytes are copied.
     pub poll: unsafe extern "C" fn(*mut core::ffi::c_void, u64, *mut Response) -> u32,
     pub cancel: unsafe extern "C" fn(*mut core::ffi::c_void, u64),
     /// Offers a bounded complete attachment for explicit native save consent; zero rejects it.

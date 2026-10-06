@@ -22,6 +22,7 @@ pub mod page_status;
 pub mod settings;
 pub mod welcome;
 pub mod zoom;
+pub mod resource_order;
 #[cfg(test)]
 #[path = "../servo-std/profiler_window.rs"]
 mod profiler_window;

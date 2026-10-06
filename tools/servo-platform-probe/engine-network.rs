@@ -43,11 +43,11 @@ impl Link for Connection {
 impl native_https::Factory for Factory {
     type Connection = Connection;
     // ------------------------=
-    // FUNC: failed
+    // FUNC: failed_request
     // DESC: Retains one terminal native transport diagnostic for a failed fixture.
     // ------------------=
-    fn failed(error: &infinity_browser_native_network::client::Error) {
-        super::super::diagnostic(7,&std::format!("{error:?}"));
+    fn failed_request(url: &str, error: &infinity_browser_native_network::client::Error) {
+        super::super::diagnostic(7,&std::format!("{error:?}: {url}\n"));
     }
     // ------------------------=
     // FUNC: completed
@@ -58,11 +58,22 @@ impl native_https::Factory for Factory {
         BODY_BYTES.fetch_add(body_bytes,Ordering::Relaxed);
     }
     // ------------------------=
+    // FUNC: completed_request
+    // DESC: Records resource completion diagnostics separately from DOM acceptance.
+    // ------------------=
+    fn completed_request(url:&str,status:u16,body_bytes:usize) {
+        Self::completed(status,body_bytes);
+        super::super::diagnostic(7,&std::format!("HTTP {status}, {body_bytes} bytes: {url}\n"));
+    }
+    // ------------------------=
     // FUNC: authorize
     // DESC: Grants only the fixture's named public test origin with genuine entropy and RTC time.
     // ------------------=
     fn authorize(&mut self, host: &str, port: u16) -> Result<(Connection, Configuration, u64, [u8;32]), ()> {
-        if !matches!(host, "www.google.com" | "www.gstatic.com" | "www.googleusercontent.com" | "en.wikipedia.org" | "upload.wikimedia.org" | "example.com") || port != 443 { return Err(()); }
+        if !(matches!(host, "www.google.com" | "www.gstatic.com" | "www.googleusercontent.com" | "en.wikipedia.org" | "upload.wikimedia.org" | "example.com")
+            || ["duckduckgo.com", "yahoo.com", "yimg.com"].iter()
+                .any(|domain|host==*domain || host.strip_suffix(domain).is_some_and(|prefix|prefix.ends_with('.'))))
+            || port != 443 { return Err(()); }
         let mut seed=[0;32];
         if !super::super::entropy_probe::fill(&mut seed) { return Err(()); }
         self.port=self.port.checked_add(1).ok_or(())?;
@@ -113,7 +124,8 @@ pub fn verify(engine: &servo::Servo) -> bool {
     let view=servo::WebViewBuilder::new(engine,context.clone())
         .delegate(Rc::new(ResourceDelegate {resources:resources.clone(),repaint:repaint.clone(),loaded:loaded.clone()}))
         .url(option_env!("INFINITY_BROWSER_PROBE_URL").unwrap_or("https://www.google.com/").parse().unwrap()).build();
-    view.show();let deadline=Instant::now()+Duration::from_secs(60);
+    let timeout=option_env!("INFINITY_BROWSER_LOAD_TIMEOUT").and_then(|value|value.parse::<u64>().ok()).unwrap_or(60).clamp(30,180);
+    view.show();let deadline=Instant::now()+Duration::from_secs(timeout);
     while loaded.get()==0 && Instant::now()<deadline {
         engine.spin_event_loop();resources.pump();
         if repaint.replace(false) {view.paint();}
@@ -122,8 +134,11 @@ pub fn verify(engine: &servo::Servo) -> bool {
     super::super::record(2,30,HTTP_STATUS.load(Ordering::Relaxed) as u64);
     super::super::record(2,31,BODY_BYTES.load(Ordering::Relaxed) as u64);
     super::super::record(2,32,loaded.get() as u64);
-    let dom_matches=super::javascript_true(engine,&view,&repaint,
-        option_env!("INFINITY_BROWSER_PROBE_ASSERT").unwrap_or("location.protocol==='https:' && location.hostname==='www.google.com' && Array.from(document.images).some(i=>i.complete && i.naturalWidth>100)"));
+    let asserted=Rc::new(Cell::new(0));let assertion=asserted.clone();
+    view.evaluate_javascript(option_env!("INFINITY_BROWSER_PROBE_ASSERT").unwrap_or("location.protocol==='https:' && location.hostname==='www.google.com' && Array.from(document.images).some(i=>i.complete && i.naturalWidth>100)"),move |value| {
+        assertion.set(if matches!(value,Ok(servo::JSValue::Boolean(true))) {1}else{2});
+    });
+    let dom_matches=wait_for_callback(engine,&view,&repaint,&resources,&asserted);
     super::super::record(2,34,dom_matches as u64);
     if !dom_matches {
     let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();

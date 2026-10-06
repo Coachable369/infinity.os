@@ -4,6 +4,8 @@ use std::{cell::RefCell, vec::Vec};
 use servo::{WebResourceLoad, WebResourceResponse};
 #[path = "../infinity-browser-core/download.rs"]
 pub mod download;
+#[path = "../infinity-browser-core/resource_order.rs"]
+mod resource_order;
 
 pub const MAX_BODY: usize = 4 * 1024 * 1024;
 const MAX_REQUESTS: usize = 256;
@@ -13,6 +15,12 @@ pub struct Response {
     pub status: u16,
     pub headers: Vec<(std::string::String, std::string::String)>,
     pub body: Vec<u8>,
+}
+pub enum Event { Complete(Response), Head(u16, Vec<(std::string::String, std::string::String)>), Data(Vec<u8>), Done }
+struct Stream {
+    id: u64, deadline: u64, document: bool, size: usize,
+    load: servo::InterceptedWebResourceLoad,
+    attachment: Option<(download::Metadata, Vec<u8>)>,
 }
 
 pub trait Provider {
@@ -27,10 +35,22 @@ pub trait Provider {
     // ------------------=
     fn begin_with_headers(&mut self, url: &str, _headers: &[u8]) -> Result<u64, ()> { self.begin(url) }
     // ------------------------=
+    // FUNC: begin_request
+    // DESC: Carries the engine's validated method and bounded binary body without inventing request authority.
+    // ------------------=
+    fn begin_request(&mut self,url:&str,method:&str,headers:&[u8],body:&[u8])->Result<u64,()> {
+        if method=="GET" && body.is_empty() {self.begin_with_headers(url,headers)} else {Err(())}
+    }
+    // ------------------------=
     // FUNC: poll
     // DESC: Returns a bounded complete native-service response or a pending state.
     // ------------------=
-    fn poll(&mut self, id: u64) -> Result<Option<Response>, ()>;
+    fn poll(&mut self, _id: u64) -> Result<Option<Response>, ()> { Err(()) }
+    // ------------------------=
+    // FUNC: poll_stream
+    // DESC: Delivers one bounded transport event; complete-response fixtures retain their existing contract.
+    // ------------------=
+    fn poll_stream(&mut self, id: u64) -> Result<Option<Event>, ()> { self.poll(id).map(|value|value.map(Event::Complete)) }
     // ------------------------=
     // FUNC: cancel
     // DESC: Releases request resources after success, failure, revocation or supersession.
@@ -48,8 +68,8 @@ pub trait Provider {
     fn download(&mut self, _metadata: &download::Metadata, _body: &[u8]) -> Result<(), ()> { Err(()) }
 }
 
-struct Pending { id: u64, deadline: u64, load: WebResourceLoad }
-struct State<P> { provider: P, pending: Vec<Pending>, closed: bool, failed_document: bool }
+struct Pending { id: u64, deadline: u64, priority: resource_order::Priority, load: WebResourceLoad }
+struct State<P> { provider: P, pending: Vec<Pending>, stream: Option<Stream>, closed: bool, failed_document: bool }
 pub struct Resources<P: Provider> { state: RefCell<State<P>>, clock: fn() -> u64 }
 
 impl<P: Provider> servo::ServoDelegate for Resources<P> {
@@ -85,7 +105,7 @@ impl<P: Provider> Resources<P> {
     // DESC: Creates a bounded resource queue without opening any network connections.
     // ------------------=
     pub fn new(provider: P, clock: fn() -> u64) -> Self {
-        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), closed: false, failed_document: false }), clock }
+        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), stream: None, closed: false, failed_document: false }), clock }
     }
     // ------------------------=
     // FUNC: submit
@@ -99,14 +119,19 @@ impl<P: Provider> Resources<P> {
         // Dropping without interception invokes Servo's own local scheme handler.
         // These schemes cannot open an ambient socket; retain Servo's origin/CSP checks.
         if matches!(url.scheme(), "data" | "blob" | "about") { return; }
-        if state.pending.len() == MAX_REQUESTS || request.method.as_str() != "GET"
-            || !matches!(url.scheme(), "http" | "https") || url.as_str().len() > 2048
+        if state.pending.len() == MAX_REQUESTS || !matches!(request.method.as_str(),"GET"|"HEAD"|"POST"|"PUT"|"PATCH"|"DELETE"|"OPTIONS")
+            || request.body.len()>64*1024
+            || !matches!(url.scheme(), "http" | "https") || url.as_str().len() > 8192
             || !url.username().is_empty() || url.password().is_some() {
             fail_load(&mut state, load); return;
         }
         // Queue metadata, not response buffers. Start the transfer deadline only
         // when this resource reaches the head of the serialized native transport.
-        state.pending.push(Pending { id: 0, deadline: 0, load });
+        let priority=resource_order::classify(request.is_for_main_frame,request.destination.as_str());
+        // Keep active work and equal-priority FIFO order; unblock document
+        // parsing/layout before spending the serialized transport on media.
+        let at=resource_order::insertion_index(state.pending.iter().map(|pending|(pending.id!=0,pending.priority)),priority);
+        state.pending.insert(at,Pending { id: 0, deadline: 0, priority, load });
     }
     // ------------------------=
     // FUNC: pump
@@ -115,6 +140,33 @@ impl<P: Provider> Resources<P> {
     pub fn pump(&self) {
         let mut state = self.state.borrow_mut();
         let now = (self.clock)();
+        if let Some(mut stream) = state.stream.take() {
+            let event = if now >= stream.deadline { Err(()) } else { state.provider.poll_stream(stream.id) };
+            match event {
+                Ok(None) => { state.stream = Some(stream); return; },
+                Ok(Some(Event::Data(bytes))) if bytes.len() <= MAX_BODY.saturating_sub(stream.size) => {
+                    stream.size += bytes.len();
+                    if let Some((_, body)) = &mut stream.attachment { body.extend_from_slice(&bytes); }
+                    else { stream.load.send_body_data(bytes); }
+                    state.stream = Some(stream); return;
+                },
+                Ok(Some(Event::Done)) => {
+                    state.provider.cancel(stream.id);
+                    if let Some((metadata, body)) = stream.attachment {
+                        if state.provider.download(&metadata, &body).is_ok() { stream.load.cancel(); }
+                        else {
+                            if stream.document { state.failed_document = true; state.provider.document_failed(); }
+                            stream.load.fail();
+                        }
+                    } else { stream.load.finish(); }
+                },
+                _ => {
+                    state.provider.cancel(stream.id);
+                    if stream.document { state.failed_document = true; state.provider.document_failed(); }
+                    stream.load.fail();
+                },
+            }
+        }
         let at = 0;
         while at < state.pending.len() {
             if state.pending[at].id == 0 {
@@ -129,7 +181,9 @@ impl<P: Provider> Resources<P> {
                     headers.extend_from_slice(b": ");headers.extend_from_slice(value.as_bytes());headers.extend_from_slice(b"\r\n");
                 }
                 if oversized {let pending=state.pending.remove(at);fail_load(&mut state,pending.load);continue;}
-                match state.provider.begin_with_headers(url.as_str(), &headers) {
+                let method=state.pending[at].load.request().method.clone();
+                let body=state.pending[at].load.request().body.clone();
+                match state.provider.begin_request(url.as_str(),method.as_str(), &headers,&body) {
                     Ok(id) if id != 0 => {
                         state.pending[at].id=id;
                         state.pending[at].deadline=now.saturating_add(TIMEOUT_NS);
@@ -142,14 +196,39 @@ impl<P: Provider> Resources<P> {
                 }
             }
             let id = state.pending[at].id;
-            let result = if now >= state.pending[at].deadline { Err(()) } else { state.provider.poll(id) };
+            let result = if now >= state.pending[at].deadline { Err(()) } else { state.provider.poll_stream(id) };
             if matches!(result, Ok(None)) { break; }
             let pending = state.pending.remove(at);
+            if let Ok(Some(Event::Head(status, ref headers))) = result {
+                let document = pending.load.request().is_for_main_frame;
+                let mut response = WebResourceResponse::new(pending.load.request().url.clone());
+                let mut valid = (200..=599).contains(&status) && headers.len() <= 128;
+                let mut bytes = 0usize;
+                for (name, value) in headers {
+                    bytes = bytes.saturating_add(name.len()).saturating_add(value.len());
+                    let (Ok(name), Ok(value)) = (name.parse::<http::header::HeaderName>(), value.parse()) else { valid=false; break; };
+                    response.headers.append(name, value);
+                }
+                valid &= bytes <= 16384;
+                let attachment = if document && (200..300).contains(&status) {
+                    let fields: Vec<_> = headers.iter().filter(|(name,_)|name.eq_ignore_ascii_case("content-disposition")).collect();
+                    if fields.len()>1 { valid=false; }
+                    let media=headers.iter().find(|(name,_)|name.eq_ignore_ascii_case("content-type")).map_or("",|(_,value)|value.as_str());
+                    match download::attachment(fields.first().map_or("",|(_,value)|value.as_str()),media) {
+                        Ok(value)=>value.map(|metadata|(metadata, Vec::new())), Err(_)=>{valid=false;None},
+                    }
+                } else { None };
+                if !valid { state.provider.cancel(id); fail_load(&mut state,pending.load); continue; }
+                response.status_code = status.try_into().unwrap();
+                state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,
+                    load: pending.load.intercept(response), attachment });
+                return;
+            }
             state.provider.cancel(id);
-            let Ok(Some(result)) = result else {
+            let Ok(Some(Event::Complete(result))) = result else {
                 fail_load(&mut state, pending.load); continue;
             };
-            if result.body.len() > MAX_BODY || result.headers.len() > 32 || !(200..=599).contains(&result.status) {
+            if result.body.len() > MAX_BODY || result.headers.len() > 128 || !(200..=599).contains(&result.status) {
                 fail_load(&mut state, pending.load); continue;
             }
             if pending.load.request().is_for_main_frame && (200..300).contains(&result.status) {
@@ -200,6 +279,7 @@ impl<P: Provider> Resources<P> {
     pub fn cancel_all(&self) {
         let mut state = self.state.borrow_mut();
         state.failed_document=false;
+        if let Some(stream) = state.stream.take() { state.provider.cancel(stream.id); stream.load.cancel(); }
         while let Some(pending) = state.pending.pop() {
             if pending.id != 0 { state.provider.cancel(pending.id); }
             reject(pending.load);

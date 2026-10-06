@@ -63,8 +63,8 @@ def main():
     {
         let request = &mut fetch_params.request;
         let mut response = None;
-        context.request_interceptor.lock().await
-            .intercept_request(request, &mut response, context).await;
+        let interceptor = context.request_interceptor.lock().await.clone();
+        interceptor.intercept_streaming(request, &mut response, done_chan, context).await;
         let Some(mut response) = response else {
             return Response::network_error(NetworkError::ConnectionFailure);
         };
@@ -75,7 +75,6 @@ def main():
         }
         context.state.hsts_list.write().update_hsts_list_from_response(
             &request.current_url(), &response.headers);
-        context.timing.set_attribute(ResourceAttribute::ResponseEnd);
         return response;
     }
     let mut response_end_timer = ResponseEndTimer(Some(context.timing.clone()));''')
@@ -88,21 +87,29 @@ def main():
                 #[cfg(not(infinity_native))]
                 { request.url().into_url() }
             },''')
+    text = text.replace("method: request.method.clone(),", "method: request.method.clone(),\n            #[cfg(infinity_native)]\n            body: Vec::new(),")
     text = text.replace("WebResourceResponseMsg::CancelLoad => {", '''WebResourceResponseMsg::FailLoad => {
                     *response = Some(Response::network_error(NetworkError::ConnectionFailure));
                     break;
                 },
                 WebResourceResponseMsg::CancelLoad => {''')
+    text += Path(__file__).with_name("native-request-interceptor.rs").read_text()
     (servo / relative).write_text(text)
 
     # A provider failure is not an intentional superseding-navigation cancel.
     # Preserve that distinction so Servo finishes its failed-document lifecycle.
+    relative = "components/servo/lib.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("SimpleDialog, WebResourceLoad,", "SimpleDialog, InterceptedWebResourceLoad, WebResourceLoad,")
+    (servo / relative).write_text(text)
     relative = "components/shared/embedder/lib.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     text = text.replace("    CancelLoad,", "    CancelLoad,\n    FailLoad,")
+    text = text.replace("    pub method: Method,", "    pub method: Method,\n    #[cfg(infinity_native)]\n    pub body: Vec<u8>,")
     (servo / relative).write_text(text)
     relative = "components/servo/webview_delegate.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("            method: Method::GET,", "            method: Method::GET,\n            #[cfg(infinity_native)]\n            body: Vec::new(),")
     text = text.replace("    pub fn cancel(mut self) {", '''    // ------------------------=
     // FUNC: fail
     // DESC: Completes a failed provider request without treating it as intentional navigation cancellation.
@@ -114,6 +121,27 @@ def main():
         self.finished = true;
     }
     pub fn cancel(mut self) {''')
+    (servo / relative).write_text(text)
+
+    # Native frames are already paced by Session. Do not leave a partial body
+    # blocked indefinitely when the next network chunk has not arrived yet.
+    relative = "components/script/dom/window/window.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("const INITIAL_REFLOW_DELAY: Duration = Duration::from_millis(200);",
+        "#[cfg(not(infinity_native))]\nconst INITIAL_REFLOW_DELAY: Duration = Duration::from_millis(200);\n"
+        "#[cfg(infinity_native)]\nconst INITIAL_REFLOW_DELAY: Duration = Duration::ZERO;")
+    (servo / relative).write_text(text)
+    relative = "components/script/dom/servoparser/mod.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("""        self.push_bytes_input_chunk(input.as_ref());
+        if !self.suspended.get() {
+            self.parse_sync(cx);
+        }""", """        self.push_bytes_input_chunk(input.as_ref());
+        if !self.suspended.get() {
+            self.parse_sync(cx);
+            #[cfg(infinity_native)]
+            self.document.window().reflow_if_reflow_timer_expired(cx);
+        }""")
     (servo / relative).write_text(text)
 
     # Native execution is in-process. Never link a Unix sandbox or attempt

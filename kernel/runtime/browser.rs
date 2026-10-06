@@ -636,10 +636,14 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
 // FUNC: begin
 // DESC: Requests network work only through the BSP capability-governed bridge.
 // ------------------=
-unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize,headers:*const u8,head:usize)->u64 {
-    if url.is_null() || length>2048 || head>8192 || (head>0 && headers.is_null()) {return 0;}
-    crate::drivers::browser_network::begin(core::slice::from_raw_parts(url,length),
-        if head==0 {&[]} else {core::slice::from_raw_parts(headers,head)})
+unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize,headers:*const u8,head:usize,
+    method:*const u8,method_length:usize,body:*const u8,body_length:usize)->u64 {
+    if url.is_null() || length>8192 || head>8192 || (head>0 && headers.is_null())
+        || method.is_null() || method_length>8 || body_length>64*1024 || (body_length>0 && body.is_null()) {return 0;}
+    crate::drivers::browser_network::begin_request(core::slice::from_raw_parts(url,length),
+        if head==0 {&[]} else {core::slice::from_raw_parts(headers,head)},
+        core::slice::from_raw_parts(method,method_length),
+        if body_length==0 {&[]} else {core::slice::from_raw_parts(body,body_length)})
 }
 // ------------------------=
 // FUNC: poll

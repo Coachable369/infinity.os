@@ -148,10 +148,10 @@ pub async fn get_with_headers<L: Link, R: rand_core::CryptoRngCore>(
 // DESC: Carries validated engine fields through the same deadline-bound native transport.
 // ------------------=
 pub async fn get_with_request_headers<L: Link, R: rand_core::CryptoRngCore>(
-    mut link: L,
+    link: L,
     config: Configuration,
     destination: Destination,
-    mut rng: R,
+    rng: R,
     roots: &[rustls_pki_types::TrustAnchor<'_>],
     unix_seconds: u64,
     host: &str,
@@ -160,6 +160,35 @@ pub async fn get_with_request_headers<L: Link, R: rand_core::CryptoRngCore>(
     request_headers: &[u8],
     buffers: https::Buffers<'_>,
     headers: Option<&mut [u8]>,
+) -> Result<https::Response, Error> {
+    get_streaming(link, config, destination, rng, roots, unix_seconds, host, port, path,
+        request_headers, buffers, headers, |_, _| true).await
+}
+
+// ------------------------=
+// FUNC: get_streaming
+// DESC: Keeps streaming response delivery inside the same revocable endpoint authority and transaction deadline.
+// ------------------=
+pub async fn get_streaming<L: Link, R: rand_core::CryptoRngCore>(
+    link: L, config: Configuration, destination: Destination, rng: R,
+    roots: &[rustls_pki_types::TrustAnchor<'_>], unix_seconds: u64,
+    host: &str, port: u16, path: &str, request_headers: &[u8],
+    buffers: https::Buffers<'_>, headers: Option<&mut [u8]>,
+    progress: impl FnMut(Option<&[u8]>, &[u8]) -> bool,
+) -> Result<https::Response, Error> {
+    request_streaming(link,config,destination,rng,roots,unix_seconds,host,port,path,"GET",
+        request_headers,&[],buffers,headers,progress).await
+}
+
+// ------------------------=
+// FUNC: request_streaming
+// DESC: Applies native endpoint authority, cancellation, and deadlines to standard methods and bounded request bodies.
+// ------------------=
+pub async fn request_streaming<L:Link,R:rand_core::CryptoRngCore>(
+    mut link:L,config:Configuration,destination:Destination,mut rng:R,
+    roots:&[rustls_pki_types::TrustAnchor<'_>],unix_seconds:u64,
+    host:&str,port:u16,path:&str,method:&str,request_headers:&[u8],request_body:&[u8],
+    buffers:https::Buffers<'_>,headers:Option<&mut[u8]>,progress:impl FnMut(Option<&[u8]>,&[u8])->bool,
 ) -> Result<https::Response, Error> {
     let mut queue = EthernetQueue::new();
     let mut storage = [SocketStorage::EMPTY, SocketStorage::EMPTY];
@@ -260,16 +289,19 @@ pub async fn get_with_request_headers<L: Link, R: rand_core::CryptoRngCore>(
     let mut session = Session::new(transport);
     let stream = session.stream();
     let handle = stream.session();
-    let mut request = core::pin::pin!(https::get_with_request_headers(
+    let mut request = core::pin::pin!(https::request_streaming(
         stream,
         rng,
         roots,
         unix_seconds,
         host,
         path,
+        method,
         request_headers,
+        request_body,
         buffers,
-        headers
+        headers,
+        progress
     ));
     let result = poll_fn(|cx| {
         let now = match exchange(&mut link, &mut queue, address, port, config.deadline) {

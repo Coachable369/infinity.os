@@ -6,6 +6,7 @@ import struct
 import subprocess
 import socket
 import argparse
+import shutil
 
 # ------------------------=
 # FUNC: main
@@ -22,10 +23,17 @@ def main():
     parser.add_argument("--url", help="Public HTTPS destination for the native network probe")
     parser.add_argument("--assert-script", help="JavaScript boolean over real page state; required with --url")
     parser.add_argument("--network-only", action="store_true", help="Retest only site compatibility after engine fixtures have passed")
+    parser.add_argument("--load-timeout-seconds", type=int, default=60, choices=range(30,181), metavar="30..180", help="Bounded page-load budget for slow emulated external networking")
+    parser.add_argument("--evidence-dir", type=Path, help="Retain this run's structured receipt and screenshot inside the repository")
     options = parser.parse_args()
+    if options.evidence_dir:
+        options.evidence_dir = options.evidence_dir.resolve()
+        if not options.evidence_dir.is_relative_to(root):
+            parser.error("evidence directory must be inside the repository")
     if bool(options.url) != bool(options.assert_script) or (options.network_only and not (options.network_probe or options.url)):
         parser.error("--url requires --assert-script; --network-only requires --network-probe")
     environment=os.environ.copy()
+    environment["INFINITY_BROWSER_LOAD_TIMEOUT"]=str(options.load_timeout_seconds)
     if options.url:
         options.network_probe=True
         environment["INFINITY_BROWSER_PROBE_URL"]=options.url
@@ -53,7 +61,7 @@ def main():
               "-object","filter-dump,id=packets,netdev=browser,file="+str(output / "browser-network.pcap")]
              if options.network_probe else []))
     try:
-        process.wait(timeout=180 if options.network_probe else 45)
+        process.wait(timeout=options.load_timeout_seconds+120 if options.network_probe else (90 if options.page_probe else 45))
     except subprocess.TimeoutExpired:
         timed_out=True
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
@@ -95,14 +103,24 @@ def main():
             from PIL import Image
             screenshot=output/"browser-page.png"
             Image.frombytes("RGBA",(width,height),rgba).save(screenshot)
-    cookie_only=environment.get("INFINITY_BROWSER_COOKIE_ONLY")=="1"
-    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1] not in (4,5)],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed and not cookie_only,"cookie_flow_verified":[9,2,38,1] in records,"screenshot":str(screenshot) if screenshot else None}
+    metadata_only=any(environment.get(key)=="1" for key in ("INFINITY_BROWSER_COOKIE_ONLY","INFINITY_BROWSER_REQUEST_ONLY"))
+    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1] not in (4,5)],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed and not metadata_only,"cookie_flow_verified":[9,2,38,1] in records,"screenshot":str(screenshot) if screenshot else None}
     report["software_raster_verified"] = raster_passed
+    report["progressive_rendering_verified"] = all([9,2,41,step] in records for step in (1,2))
+    report["request_body_redirects_verified"] = [9,2,46,31] in records
     report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,9))
     report["external_https_verified"] = network_passed
     report["load_completed"] = [9,2,32,1] in records if options.network_probe else None
     report["requested_url"] = environment.get("INFINITY_BROWSER_PROBE_URL", "https://www.google.com/") if options.network_probe else None
     report["network_only"] = options.network_only
+    report["load_timeout_seconds"] = options.load_timeout_seconds if options.network_probe else None
+    if options.evidence_dir:
+        options.evidence_dir.mkdir(parents=True, exist_ok=True)
+        if screenshot:
+            retained=options.evidence_dir/"page.png"
+            shutil.copyfile(screenshot,retained)
+            report["screenshot"]=str(retained)
+        (options.evidence_dir/"result.json").write_text(json.dumps(report,indent=2)+"\n")
     (output / "engine-boot.json").write_text(json.dumps(report,indent=2)+"\n")
     print(json.dumps(report,indent=2))
     return 0 if passed else 1

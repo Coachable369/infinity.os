@@ -3,6 +3,7 @@ pub enum Error {
     InvalidAuthority,
     InvalidTarget,
     InvalidHeader,
+    InvalidMethod,
     Capacity,
 }
 
@@ -15,6 +16,15 @@ pub fn get(host: &str, path: &str, output: &mut [u8]) -> Result<usize, Error> {
 }
 
 pub const HEADER_LIMIT: usize = 8192;
+pub const BODY_LIMIT: usize = 64 * 1024;
+
+// ------------------------=
+// FUNC: validate_method
+// DESC: Admits standard document and fetch methods without exposing CONNECT, TRACE, or arbitrary wire tokens.
+// ------------------=
+pub fn validate_method(method:&str)->Result<(),Error> {
+    if matches!(method,"GET"|"HEAD"|"POST"|"PUT"|"PATCH"|"DELETE"|"OPTIONS") {Ok(())} else {Err(Error::InvalidMethod)}
+}
 
 // ------------------------=
 // FUNC: validate_headers
@@ -42,6 +52,17 @@ pub fn validate_headers(bytes: &[u8]) -> Result<(), Error> {
 // DESC: Preserves engine-selected end-to-end request fields without allowing framing or authority injection.
 // ------------------=
 pub fn get_with_headers(host: &str, path: &str, headers: &[u8], output: &mut [u8]) -> Result<usize, Error> {
+    head(host,path,"GET",headers,0,output)
+}
+
+// ------------------------=
+// FUNC: head
+// DESC: Serializes a validated method and native-owned body length while preserving origin and cookie metadata.
+// ------------------=
+pub fn head(host:&str,path:&str,method:&str,headers:&[u8],body_length:usize,output:&mut[u8])->Result<usize,Error> {
+    validate_method(method)?;
+    if body_length>BODY_LIMIT {return Err(Error::Capacity);}
+    if body_length!=0 && matches!(method,"GET"|"HEAD") {return Err(Error::InvalidMethod);}
     validate_headers(headers)?;
     if host.is_empty()
         || host.len() > 253
@@ -58,8 +79,11 @@ pub fn get_with_headers(host: &str, path: &str, headers: &[u8], output: &mut [u8
     {
         return Err(Error::InvalidTarget);
     }
+    let mut digits=[0u8;20];let mut at=digits.len();let mut remaining=body_length;
+    loop {at-=1;digits[at]=b'0'+(remaining%10) as u8;remaining/=10;if remaining==0 {break;}}
+    let has_length=!matches!(method,"GET"|"HEAD");
     let parts = [
-        b"GET ".as_slice(),
+        method.as_bytes(),b" ",
         path.as_bytes(),
         b" HTTP/1.1\r\nHost: ",
         host.as_bytes(),
@@ -67,6 +91,9 @@ pub fn get_with_headers(host: &str, path: &str, headers: &[u8], output: &mut [u8
         b"Accept-Encoding: identity\r\n",
         if headers.is_empty() { b"User-Agent: InfinityOS/0.1\r\n" } else { b"" },
         headers,
+        if has_length {b"Content-Length: ".as_slice()} else {b""},
+        if has_length {&digits[at..]} else {b""},
+        if has_length {b"\r\n".as_slice()} else {b""},
         b"\r\n",
     ];
     let length = parts
@@ -114,5 +141,41 @@ mod tests {
         }
         assert_eq!(validate_headers(&[b'x';HEADER_LIMIT+1]),Err(Error::Capacity));
         assert_eq!(get_with_headers("example.test","/",b"Cookie: a=b\r\n",&mut [0;32]),Err(Error::Capacity));
+    }
+    // ------------------------=
+    // FUNC: long_search_target_survives_native_serialization
+    // DESC: Preserves long search and challenge redirect targets without truncating parameters or accepting controls.
+    // ------------------=
+    #[test]
+    fn long_search_target_survives_native_serialization() {
+        let target=std::format!("/search?q={}","a".repeat(6000));
+        let url=std::format!("https://example.test{target}");
+        assert!(crate::geturl::parse(core::iter::once(url.as_str())).is_ok());
+        let mut bytes=[0;17408];
+        let size=get_with_headers("example.test",&target,b"Cookie: accepted=1\r\n",&mut bytes).unwrap();
+        let mut fields=[httparse::EMPTY_HEADER;16];
+        let mut request=httparse::Request::new(&mut fields);
+        assert!(request.parse(&bytes[..size]).unwrap().is_complete());
+        assert_eq!(request.path,Some(target.as_str()));
+        let too_long=std::format!("https://example.test/{}","a".repeat(8192));
+        assert!(crate::geturl::parse(core::iter::once(too_long.as_str())).is_err());
+    }
+    // ------------------------=
+    // FUNC: standard_methods_own_their_framing
+    // DESC: Verifies method and exact generated length while rejecting unsafe methods, body overflow, and framing injection.
+    // ------------------=
+    #[test]
+    fn standard_methods_own_their_framing() {
+        for method in ["POST","PUT","PATCH","DELETE","OPTIONS"] {
+            let mut bytes=[0;512];
+            let n=head("example.test","/submit",method,b"Content-Type: application/octet-stream\r\n",17,&mut bytes).unwrap();
+            let mut fields=[httparse::EMPTY_HEADER;16];let mut parsed=httparse::Request::new(&mut fields);
+            assert!(parsed.parse(&bytes[..n]).unwrap().is_complete());assert_eq!(parsed.method,Some(method));
+            assert_eq!(parsed.headers.iter().filter(|h|h.name.eq_ignore_ascii_case("content-length")).map(|h|h.value).collect::<std::vec::Vec<_>>(),std::vec![b"17".as_slice()]);
+        }
+        for method in ["TRACE","CONNECT","POST\r\nX: x",""] {assert_eq!(validate_method(method),Err(Error::InvalidMethod));}
+        assert_eq!(head("example.test","/","POST",&[],BODY_LIMIT+1,&mut[0;512]),Err(Error::Capacity));
+        assert_eq!(head("example.test","/","HEAD",&[],1,&mut[0;512]),Err(Error::InvalidMethod));
+        assert_eq!(head("example.test","/","POST",b"Content-Length: 1\r\n",2,&mut[0;512]),Err(Error::InvalidHeader));
     }
 }

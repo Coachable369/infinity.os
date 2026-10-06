@@ -6,6 +6,65 @@ pub enum Error {
     Capacity,
 }
 
+#[derive(Default)]
+pub struct Cursor { offset: usize }
+impl Cursor {
+    // ------------------------=
+    // FUNC: next
+    // DESC: Exposes each authenticated payload byte once, withholding chunk data until its framing is validated.
+    // ------------------=
+    pub fn next<'a>(&mut self, bytes: &'a [u8], framing: Body) -> Result<Option<&'a [u8]>, Error> {
+        let start = self.offset;
+        let end = match framing {
+            Body::Empty => return Ok(None),
+            Body::Length(length) => bytes.len().min(usize::try_from(length).map_err(|_| Error::Capacity)?),
+            Body::UntilClose => bytes.len(),
+            Body::Chunked => {
+                let (prefix, length) = match httparse::parse_chunk_size(&bytes[start..]).map_err(|_| Error::Invalid)? {
+                    httparse::Status::Partial => return Ok(None),
+                    httparse::Status::Complete(value) => value,
+                };
+                if length == 0 { return Ok(None); }
+                let payload = start.checked_add(prefix).ok_or(Error::Capacity)?;
+                let end = payload.checked_add(usize::try_from(length).map_err(|_| Error::Capacity)?).ok_or(Error::Capacity)?;
+                let next = end.checked_add(2).ok_or(Error::Capacity)?;
+                if next > bytes.len() { return Ok(None); }
+                if &bytes[end..next] != b"\r\n" { return Err(Error::Invalid); }
+                self.offset = next;
+                return Ok(Some(&bytes[payload..end]));
+            },
+        };
+        if start >= end { return Ok(None); }
+        self.offset = end;
+        Ok(Some(&bytes[start..end]))
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: fragmented_payload_is_delivered_once_before_completion
+    // DESC: Verifies early fixed-length and validated chunk payloads, exact concatenation, and malformed framing rejection.
+    // ------------------=
+    #[test]
+    fn fragmented_payload_is_delivered_once_before_completion() {
+        let mut cursor = Cursor::default();
+        assert_eq!(cursor.next(b"abc", Body::Length(6)), Ok(Some(&b"abc"[..])));
+        assert_eq!(cursor.next(b"abc", Body::Length(6)), Ok(None));
+        assert_eq!(cursor.next(b"abcdefEXTRA", Body::Length(6)), Ok(Some(&b"def"[..])));
+        let wire = b"3\r\nabc\r\n3\r\ndef\r\n0\r\n\r\n";
+        let mut cursor = Cursor::default();
+        let mut output = std::vec::Vec::new();
+        for n in 0..=wire.len() {
+            while let Some(chunk) = cursor.next(&wire[..n], Body::Chunked).unwrap() { output.extend_from_slice(chunk); }
+            if n == 8 { assert_eq!(output, b"abc"); }
+        }
+        assert_eq!(output, b"abcdef");
+        assert_eq!(Cursor::default().next(b"3\r\nabcXX", Body::Chunked), Err(Error::Invalid));
+    }
+}
+
 // ------------------------=
 // FUNC: chunk_end
 // DESC: Validates chunk framing without modifying incomplete input, bounding chunk lengths and trailers.

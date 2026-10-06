@@ -12,10 +12,15 @@ const PENDING:u8=2;
 const ACTIVE:u8=3;
 const READY:u8=4;
 const FAILED:u8=5;
-struct Data {url:[u8;2048],length:usize,request_headers:[u8;8192],request_head:usize,status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
+const CHUNK_READY:u8=6;
+const CHUNK_READING:u8=7;
+struct Data {url:[u8;8192],length:usize,request_headers:[u8;8192],request_head:usize,
+    method:[u8;8],method_length:usize,request_body:[u8;65536],request_length:usize,
+    status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
 struct Slot {state:AtomicU8,id:AtomicU64,cancelled:AtomicBool,data:UnsafeCell<Data>}
 // Engine writes only after claiming FREE. BSP writes only after acquiring
-// PENDING; READY release-publishes immutable bytes until engine cancellation.
+// PENDING; CHUNK_READY publishes immutable bytes until the engine's next poll
+// acknowledges CHUNK_READING. Terminal storage is released by cancellation.
 unsafe impl Sync for Slot {}
 impl Slot {
     // ------------------------=
@@ -23,7 +28,9 @@ impl Slot {
     // DESC: Reserves bounded native response storage in BSS rather than on the desktop stack.
     // ------------------=
     const fn new()->Self {Self {state:AtomicU8::new(FREE),id:AtomicU64::new(0),cancelled:AtomicBool::new(false),
-        data:UnsafeCell::new(Data {url:[0;2048],length:0,request_headers:[0;8192],request_head:0,status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
+        data:UnsafeCell::new(Data {url:[0;8192],length:0,request_headers:[0;8192],request_head:0,
+            method:[0;8],method_length:0,request_body:[0;65536],request_length:0,
+            status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
 }
 static SLOTS:[Slot;COUNT]=[const {Slot::new()};COUNT];
 static NEXT:AtomicU64=AtomicU64::new(1);
@@ -70,7 +77,17 @@ pub unsafe fn renew(owner:SecurityIdentity,capabilities:[CapabilityId;4])->bool 
 // ------------------=
 /// Called only from the single native engine owner CPU.
 pub unsafe fn begin(url:&[u8],headers:&[u8])->u64 {
-    if url.is_empty() || url.len()>2048 || crate::http_transport::request::validate_headers(headers).is_err() {return 0;}
+    begin_request(url,headers,b"GET",&[])
+}
+// ------------------------=
+// FUNC: begin_request
+// DESC: Claims bounded storage only after validating request method, framing ownership, and body limits.
+// ------------------=
+pub unsafe fn begin_request(url:&[u8],headers:&[u8],method:&[u8],body:&[u8])->u64 {
+    if url.is_empty() || url.len()>8192 || crate::http_transport::request::validate_headers(headers).is_err() {return 0;}
+    let Ok(name)=core::str::from_utf8(method) else {return 0;};
+    if crate::http_transport::request::validate_method(name).is_err() || method.len()>8 || body.len()>65536
+        || (!body.is_empty() && matches!(name,"GET"|"HEAD")) {return 0;}
     for slot in &SLOTS {
         if slot.state.compare_exchange(FREE,WRITING,Ordering::Acquire,Ordering::Relaxed).is_err() {continue;}
         let id=match NEXT.fetch_update(Ordering::Relaxed,Ordering::Relaxed,|n|n.checked_add(1)) {
@@ -78,6 +95,8 @@ pub unsafe fn begin(url:&[u8],headers:&[u8])->u64 {
         };
         let data=&mut *slot.data.get();data.url[..url.len()].copy_from_slice(url);data.length=url.len();
         data.request_headers.fill(0);data.request_headers[..headers.len()].copy_from_slice(headers);data.request_head=headers.len();
+        data.method[..method.len()].copy_from_slice(method);data.method_length=method.len();
+        data.request_body[..body.len()].copy_from_slice(body);data.request_length=body.len();
         slot.id.store(id,Ordering::Relaxed);slot.cancelled.store(false,Ordering::Relaxed);
         slot.state.store(PENDING,Ordering::Release);return id;
     }
@@ -85,20 +104,67 @@ pub unsafe fn begin(url:&[u8],headers:&[u8])->u64 {
 }
 // ------------------------=
 // FUNC: poll
-// DESC: Lends completed native response bytes without blocking the engine or copying on every poll.
+// DESC: Lends one immutable response chunk; the next poll acknowledges and releases the prior chunk before producer reuse.
 // ------------------=
-/// Engine owner only. Returned pointers remain valid until cancel(id); callers
-/// must finish reading before cancellation and must not retain them afterwards.
+/// Engine owner only. Returned pointers remain valid until the next poll or
+/// cancel(id); callers must finish reading before either call and never retain them.
 pub unsafe fn poll(id:u64,out:&mut abi::Response)->u32 {
     let Some(slot)=SLOTS.iter().find(|slot|slot.id.load(Ordering::Relaxed)==id && id!=0) else{return 2;};
+    poll_slot(slot,out)
+}
+// ------------------------=
+// FUNC: poll_slot
+// DESC: Applies the immutable-chunk loan and acknowledgement transitions to one owned slot.
+// ------------------=
+unsafe fn poll_slot(slot:&Slot,out:&mut abi::Response)->u32 {
     let state=slot.state.load(Ordering::Acquire);
     if slot.cancelled.load(Ordering::Acquire) {return 2;}
     match state {
         PENDING|ACTIVE|WRITING=>0,
-        READY=>{let data=&*slot.data.get();*out=abi::Response{status:data.status,headers:data.headers.as_ptr(),
-            headers_length:data.head,body:data.body.as_ptr(),body_length:data.size};1},
+        CHUNK_READING=>{slot.state.store(ACTIVE,Ordering::Release);0},
+        CHUNK_READY=>{
+            let data=&*slot.data.get();
+            *out=abi::Response{status:data.status,headers:data.headers.as_ptr(),headers_length:data.head,
+                body:data.body.as_ptr(),body_length:data.size};
+            slot.state.store(CHUNK_READING,Ordering::Relaxed);3
+        },
+        READY=>4,
         _=>2,
     }
+}
+
+// ------------------------=
+// FUNC: publish_progress
+// DESC: Publishes one authenticated chunk only after the engine releases the previous loan, applying bounded backpressure.
+// ------------------=
+pub(crate) fn publish_progress(head:Option<&[u8]>,bytes:&[u8])->bool { unsafe {
+    let Some((index,_))=CURRENT else {return false;};
+    publish_slot(&SLOTS[index],head,bytes)
+}}
+// ------------------------=
+// FUNC: publish_slot
+// DESC: Writes only an acknowledged slot and publishes validated headers or payload with release ordering.
+// ------------------=
+unsafe fn publish_slot(slot:&Slot,head:Option<&[u8]>,bytes:&[u8])->bool {
+    if slot.cancelled.load(Ordering::Acquire) {return false;}
+    if slot.state.load(Ordering::Acquire)!=ACTIVE {return false;}
+    let data=&mut *slot.data.get();
+    data.head=0;data.status=0;
+    if let Some(head)=head {
+        let Ok(Some(parsed))=crate::http_transport::response::parse(head,false) else {return false;};
+        let Ok(headers)=crate::http_transport::response::Headers::parse(head) else {return false;};
+        data.status=parsed.status as u32;
+        for (name,value) in headers.iter() {
+            if name.eq_ignore_ascii_case("transfer-encoding") || name.eq_ignore_ascii_case("connection") {continue;}
+            for part in [name.as_bytes(),b": ",value,b"\r\n"] {
+                if part.len()>data.headers.len()-data.head {return false;}
+                data.headers[data.head..data.head+part.len()].copy_from_slice(part);data.head+=part.len();
+            }
+        }
+    }
+    if bytes.len()>data.body.len() {return false;}
+    data.body[..bytes.len()].copy_from_slice(bytes);data.size=bytes.len();
+    slot.state.store(CHUNK_READY,Ordering::Release);true
 }
 // ------------------------=
 // FUNC: cancel
@@ -120,26 +186,6 @@ pub unsafe fn cancel_all() {
         if slot.state.load(Ordering::Acquire)!=FREE {slot.cancelled.store(true,Ordering::Release);}
     }
 }
-// ------------------------=
-// FUNC: finish
-// DESC: Copies one validated response and strips already-decoded hop-by-hop framing before publication.
-// ------------------=
-unsafe fn finish(slot:&Slot,response:https::Response)->bool {
-    if response.header_length>response.headers.len() || response.length>response.bytes.len() {return false;}
-    let Ok(headers)=crate::http_transport::response::Headers::parse(&response.headers[..response.header_length]) else{return false;};
-    let data=&mut *slot.data.get();data.head=0;
-    for (name,value) in headers.iter() {
-        if name.eq_ignore_ascii_case("transfer-encoding") || name.eq_ignore_ascii_case("connection") {continue;}
-        let Some(end)=data.head.checked_add(name.len()+value.len()+4).filter(|end|*end<=data.headers.len()) else{return false;};
-        for part in [name.as_bytes(),b": ",value,b"\r\n"] {
-            data.headers[data.head..data.head+part.len()].copy_from_slice(part);data.head+=part.len();
-        }
-        debug_assert_eq!(data.head,end);
-    }
-    data.body[..response.length].copy_from_slice(&response.bytes[..response.length]);
-    data.size=response.length;data.status=response.status as u32;true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,41 +204,31 @@ mod tests {
         AUTHORITY=None;
     }}
     // ------------------------=
-    // FUNC: response_handoff_preserves_content_not_transfer_framing
-    // DESC: Checks actual HTTP metadata transformation and exact decoded binary-body ownership.
+    // FUNC: streaming_handoff_preserves_loans_and_framing
+    // DESC: Verifies early headers, lossless chunks, backpressure, acknowledgements, cancellation, and terminal state.
     // ------------------=
     #[test]
-    fn response_handoff_preserves_content_not_transfer_framing() {
+    fn streaming_handoff_preserves_loans_and_framing() { unsafe {
         static SLOT:Slot=Slot::new();
         let slot=&SLOT;
-        let mut response=https::Response{status:200,length:4,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
-        response.bytes[..4].copy_from_slice(&[0,128,255,9]);
+        slot.state.store(ACTIVE,Ordering::Release);
+        let mut out=abi::Response{status:0,headers:core::ptr::null(),headers_length:0,body:core::ptr::null(),body_length:0};
         let head=b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
-        response.headers[..head.len()].copy_from_slice(head);response.header_length=head.len();
-        assert!(unsafe {finish(&slot,response)});
-        let data=unsafe {&*slot.data.get()};
-        assert_eq!(data.status,200);assert_eq!(&data.body[..data.size],&[0,128,255,9]);
-        assert_eq!(&data.headers[..data.head],b"Content-Type: image/png\r\n");
-        let malformed=https::Response{status:200,length:https::BODY+1,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
-        assert!(!unsafe {finish(&slot,malformed)});
-        let mut large=https::Response{status:200,length:2_600_000,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
-        assert!(https::ResponseBody::claim().is_none());
-        for (i,b) in large.bytes[..large.length].iter_mut().enumerate(){*b=(i%251) as u8;}
-        large.headers[..head.len()].copy_from_slice(head);large.header_length=head.len();
-        assert!(unsafe {finish(slot,large)});
-        let data=unsafe {&*slot.data.get()};
-        assert_eq!(data.size,2_600_000);
-        assert!(data.body[..data.size].iter().enumerate().all(|(i,b)|*b==(i%251) as u8));
-        let released=https::ResponseBody::claim().unwrap();assert!(released.iter().all(|b|*b==0));
-        drop(released);
-        let head=b"HTTP/1.1 302 Found\r\nLocation: /next\r\nSet-Cookie: session=123; Secure\r\nContent-Length: 0\r\n\r\n";
-        let mut response=https::Response{status:302,length:0,bytes:https::ResponseBody::claim().unwrap(),header_length:head.len(),headers:[0;8192]};
-        response.headers[..head.len()].copy_from_slice(head);
-        assert!(unsafe {finish(slot,response)});
-        let data=unsafe {&*slot.data.get()};
-        assert_eq!(data.status,302);assert_eq!(data.size,0);
-        assert_eq!(&data.headers[..data.head],b"Location: /next\r\nSet-Cookie: session=123; Secure\r\nContent-Length: 0\r\n");
-    }
+        assert!(publish_slot(slot,Some(head),&[]));
+        assert!(!publish_slot(slot,None,b"overwritten"));
+        assert_eq!(poll_slot(slot,&mut out),3);assert_eq!(out.status,200);
+        assert_eq!(core::slice::from_raw_parts(out.headers,out.headers_length),b"Content-Type: image/png\r\n");
+        assert!(!publish_slot(slot,None,b"still borrowed"));
+        assert_eq!(poll_slot(slot,&mut out),0);
+        let bytes=[0,128,255,9];
+        assert!(publish_slot(slot,None,&bytes));
+        assert_eq!(poll_slot(slot,&mut out),3);assert_eq!(out.status,0);
+        assert_eq!(core::slice::from_raw_parts(out.body,out.body_length),bytes);
+        assert_eq!(poll_slot(slot,&mut out),0);
+        slot.state.store(READY,Ordering::Release);assert_eq!(poll_slot(slot,&mut out),4);
+        slot.cancelled.store(true,Ordering::Release);assert_eq!(poll_slot(slot,&mut out),2);
+        assert!(!publish_slot(slot,None,b"late"));
+    }}
 }
 // ------------------------=
 // FUNC: pump
@@ -223,6 +259,7 @@ pub unsafe fn pump() {
     if let Some((index,ticket))=CURRENT {
         let slot=&SLOTS[index];
         if slot.cancelled.load(Ordering::Acquire) {let _=https::cancel_browser(owner,ticket);}
+        else if matches!(slot.state.load(Ordering::Acquire),CHUNK_READY|CHUNK_READING) {return;}
         match https::take_browser(owner,ticket) {
             Ok(None)|Err(https::Failure::Busy)=>return,
             result=>{
@@ -234,7 +271,8 @@ pub unsafe fn pump() {
                             INFINITY_BROWSER_NETWORK_STATUS.store(response.status as u32,Ordering::Release);
                             INFINITY_BROWSER_NETWORK_COMPLETED.fetch_add(1,Ordering::Release);
                             // Servo owns redirect URLs and destination-specific cookies.
-                            finish(slot,response)
+                            let data=&mut *slot.data.get();data.status=response.status as u32;
+                            data.head=0;data.size=0;true
                         },
                         Ok(Some(Err(error)))|Err(error)=>{
                             INFINITY_BROWSER_NETWORK_FAILURE.store(error as u32+1,Ordering::Release);false
@@ -275,8 +313,9 @@ pub unsafe fn pump() {
         let Some(crate::http_transport::geturl::Command::Get(options))=parsed else {
             slot.state.store(FAILED,Ordering::Release);continue;
         };
-        match https::get_browser_with_headers(owner,caps[0],caps[1],caps[2],caps[3],options.host,443,options.target,
-            &data.request_headers[..data.request_head]) {
+        match https::get_browser_streaming(owner,caps[0],caps[1],caps[2],caps[3],options.host,443,options.target,
+            &data.request_headers[..data.request_head],core::str::from_utf8(&data.method[..data.method_length]).unwrap(),
+            &data.request_body[..data.request_length],publish_progress) {
             Ok(ticket)=>{INFINITY_BROWSER_NETWORK_FAILURE.store(0,Ordering::Release);
                 slot.state.store(ACTIVE,Ordering::Release);CURRENT=Some((index,ticket));},
             Err(https::Failure::Busy)=>{},

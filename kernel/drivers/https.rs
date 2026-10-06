@@ -469,7 +469,7 @@ pub(crate) fn get(
     host: &str,
     path: &str,
 ) -> Result<(), Failure> {
-    get_bounded(owner,connect,send,receive,resolve,host,443,path,8192,&[]).map(|_|())
+    get_bounded(owner,connect,send,receive,resolve,host,443,path,8192,&[],"GET",&[],None).map(|_|())
 }
 
 // ------------------------=
@@ -498,7 +498,19 @@ pub(crate) fn get_browser_with_headers(
     receive: CapabilityId, resolve: CapabilityId, host: &str, port: u16,
     path: &str, headers: &[u8],
 ) -> Result<Ticket, Failure> {
-    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY,headers)
+    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY,headers,"GET",&[],None)
+}
+
+// ------------------------=
+// FUNC: get_browser_streaming
+// DESC: Adds a bounded response consumer without changing browser capability checks or ownership.
+// ------------------=
+pub(crate) fn get_browser_streaming(
+    owner: SecurityIdentity, connect: CapabilityId, send: CapabilityId,
+    receive: CapabilityId, resolve: CapabilityId, host: &str, port: u16,
+    path: &str, headers: &[u8], method: &str, body: &[u8], progress: fn(Option<&[u8]>, &[u8]) -> bool,
+) -> Result<Ticket, Failure> {
+    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY,headers,method,body,Some(progress))
 }
 
 // ------------------------=
@@ -516,17 +528,20 @@ fn get_bounded(
     path: &str,
     body_limit: usize,
     request_headers: &[u8],
+    method: &str,
+    request_body: &[u8],
+    progress: Option<fn(Option<&[u8]>, &[u8]) -> bool>,
 ) -> Result<Ticket, Failure> {
     let Some(_guard) = lock() else {
         return Err(Failure::Busy);
     };
     // Non-default TLS ports require explicit Host authority formatting in the
     // shared client. Refuse them until that contract is implemented end to end.
-    if host.is_empty() || host.len() > 253 || path.len() > 1024 || remote_port!=443 {
+    if host.is_empty() || host.len() > 253 || path.len() > 8192 || remote_port!=443 {
         return Err(Failure::Invalid);
     }
-    let mut check = [0; 1536];
-    http::request::get(host, path, &mut check).map_err(|_| Failure::Invalid)?;
+    let mut check = [0; 8704];
+    http::request::head(host,path,method,&[],request_body.len(),&mut check).map_err(|_| Failure::Invalid)?;
     http::request::validate_headers(request_headers).map_err(|_| Failure::Invalid)?;
     unsafe {
         if OWNER.is_some() {
@@ -595,19 +610,22 @@ fn get_bounded(
         let mut name = [0; 253];
         name[..host.len()].copy_from_slice(host.as_bytes());
         let name_length = host.len();
-        let mut target = [0; 1024];
+        let mut target = [0; 8192];
         target[..path.len()].copy_from_slice(path.as_bytes());
         let target_length = path.len();
         let mut outgoing=[0;http::request::HEADER_LIMIT];
         outgoing[..request_headers.len()].copy_from_slice(request_headers);
         let outgoing_length=request_headers.len();
+        let mut verb=[0;8];verb[..method.len()].copy_from_slice(method.as_bytes());let verb_length=method.len();
+        let mut payload=[0;http::request::BODY_LIMIT];payload[..request_body.len()].copy_from_slice(request_body);
+        let payload_length=request_body.len();
         let mut body=ResponseBody::claim().ok_or(Failure::Busy)?;
         let future = async move {
             let mut read = [0; 16640];
             let mut write = [0; 4096];
-            let mut request = [0; 12288];
+            let mut request = [0; 17408];
             let mut headers = [0; HEAD];
-            let result = http::client::get_with_request_headers(
+            let result = http::client::request_streaming(
                 ServiceLink(auth),
                 config,
                 Destination::Resolve,
@@ -617,7 +635,9 @@ fn get_bounded(
                 core::str::from_utf8(&name[..name_length]).unwrap(),
                 remote_port,
                 core::str::from_utf8(&target[..target_length]).unwrap(),
+                core::str::from_utf8(&verb[..verb_length]).unwrap(),
                 &outgoing[..outgoing_length],
+                &payload[..payload_length],
                 http::https::Buffers {
                     read_record: &mut read,
                     write_record: &mut write,
@@ -625,6 +645,7 @@ fn get_bounded(
                     response: &mut body[..body_limit],
                 },
                 Some(&mut headers),
+                |head, bytes| progress.is_none_or(|publish|publish(head, bytes)),
             )
             .await
             .map_err(|error| match error {

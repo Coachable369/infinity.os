@@ -115,7 +115,7 @@ pub fn parse<'a>(args: impl Iterator<Item = &'a str>) -> Result<Command<'a>, Err
     }
     // A query without a slash requires an owned normalized target; reject until that path is supported.
     let target = if at == rest.len() { "/" } else { &rest[at..] };
-    if target.len() > 1024
+    if target.len() > 8192
         || !target.starts_with('/')
         || !target.bytes().all(|b| (0x21..=0x7e).contains(&b))
         || target.contains(['{', '}', '[', ']'])

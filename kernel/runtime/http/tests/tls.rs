@@ -128,16 +128,34 @@ impl Wake for Noop {
 // DESC: Interoperates with an independent TLS server and verifies decrypted, decoded response bytes.
 // ------------------=
 fn authenticated_tls13_get_returns_complete_chunked_body() {
-    authenticated_exchange(Some(8192));
-    authenticated_exchange(Some(1));
-    authenticated_exchange(None);
+    authenticated_exchange(Some(8192), false,"GET",&[]);
+    authenticated_exchange(Some(1), false,"GET",&[]);
+    authenticated_exchange(None, false,"GET",&[]);
+}
+
+#[test]
+// ------------------------=
+// FUNC: authenticated_prefix_arrives_before_server_sends_final_bytes
+// DESC: The independent TLS server withholds the suffix until the real client delivers its first payload under consumer backpressure.
+// ------------------=
+fn authenticated_prefix_arrives_before_server_sends_final_bytes() {
+    authenticated_exchange(Some(8192), true,"GET",&[]);
+}
+
+#[test]
+// ------------------------=
+// FUNC: authenticated_post_preserves_binary_body_and_native_length
+// DESC: Checks real TLS POST bytes and response streaming against an independent HTTP parser and server.
+// ------------------=
+fn authenticated_post_preserves_binary_body_and_native_length() {
+    authenticated_exchange(Some(8192),true,"POST",&[0,13,10,255,128,65]);
 }
 
 // ------------------------=
 // FUNC: authenticated_exchange
 // DESC: Checks header retention, insufficient capacity, and legacy body-only behavior against real TLS records.
 // ------------------=
-fn authenticated_exchange(header_capacity: Option<usize>) {
+fn authenticated_exchange(header_capacity: Option<usize>, streaming: bool,method:&'static str,payload:&'static[u8]) {
     let (root, leaf, key) = certificates();
     let provider = rustls::crypto::ring::default_provider();
     let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
@@ -152,6 +170,7 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
+    let (prefix_tx,prefix_rx)=std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         let (socket, _) = listener.accept().unwrap();
         socket
@@ -168,12 +187,26 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
             assert!(received>0);count+=received;
             let mut fields=[httparse::EMPTY_HEADER;16];
             let mut parsed=httparse::Request::new(&mut fields);
-            if parsed.parse(&request[..count]).unwrap().is_complete() {
+            if let httparse::Status::Complete(head)=parsed.parse(&request[..count]).unwrap() {
+                assert_eq!(parsed.method,Some(method));
                 assert_eq!(parsed.headers.iter().find(|h|h.name.eq_ignore_ascii_case("cookie")).unwrap().value,b"sid=123");
+                if !payload.is_empty() {
+                    let length=parsed.headers.iter().find(|h|h.name.eq_ignore_ascii_case("content-length")).unwrap().value;
+                    assert_eq!(std::str::from_utf8(length).unwrap().parse::<usize>().unwrap(),payload.len());
+                }
+                if count<head+payload.len() {continue;}
+                assert_eq!(&request[head..count],payload);
                 break;
             }
         }
-        stream.write_all(b"HTTP/1.1 103 Early Hints\r\nLink: </ignored>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap();
+        if streaming {
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n").unwrap();
+            stream.flush().unwrap();
+            assert_eq!(prefix_rx.recv_timeout(Duration::from_secs(5)).unwrap(), b"hello");
+            stream.write_all(b"6\r\n world\r\n0\r\n\r\n").unwrap();
+        } else {
+            stream.write_all(b"HTTP/1.1 103 Early Hints\r\nLink: </ignored>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap();
+        }
         stream.flush().unwrap();
     });
     let stream = TcpStream::connect(address).unwrap();
@@ -190,29 +223,49 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
     // capacity guard, against independent authenticated TLS records.
     let mut response = vec![0; https::MAX_RESPONSE_BODY];
     let mut headers = [0; 8192];
+    let mut chunks=Vec::new();
+    let mut statuses=Vec::new();
+    let mut blocked=false;
+    let mut waits=0;
     let result = {
-        let mut future = std::pin::pin!(https::get_with_request_headers(
+        let mut future = std::pin::pin!(https::request_streaming(
             TestStream(stream),
             rand_chacha::ChaCha20Rng::from_seed([7; 32]),
             &roots,
             1_800_000_000,
             "localhost",
             "/",
+            method,
             b"Cookie: sid=123\r\n",
+            payload,
             Buffers {
                 read_record: &mut read,
                 write_record: &mut write,
                 request: &mut request,
                 response: &mut response
             },
-            header_capacity.map(|capacity| &mut headers[..capacity])
+            header_capacity.map(|capacity| &mut headers[..capacity]),
+            |head, bytes| {
+                if !streaming {return true;}
+                if !blocked {blocked=true;return false;}
+                blocked=false;
+                if let Some(head)=head {
+                    statuses.push(infinity_http::response::parse(head,false).unwrap().unwrap().status);
+                } else {
+                    if chunks.is_empty() {prefix_tx.send(bytes.to_vec()).unwrap();}
+                    chunks.extend_from_slice(bytes);
+                }
+                true
+            }
         ));
         let waker = Waker::from(Arc::new(Noop));
         let mut context = Context::from_waker(&waker);
-        let Poll::Ready(result) = std::future::Future::poll(future.as_mut(), &mut context) else {
-            panic!("fixture unexpectedly pending");
-        };
-        result
+        loop {
+            match std::future::Future::poll(future.as_mut(), &mut context) {
+                Poll::Ready(result)=>break result,
+                Poll::Pending=>{waits+=1;assert!(streaming && waits<=8);},
+            }
+        }
     };
     worker.join().unwrap();
     if header_capacity == Some(1) {
@@ -224,6 +277,7 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
     assert_eq!(result.status, 200);
     assert_eq!(result.body_bytes, 11);
     assert_eq!(&response[..result.body_bytes], b"hello world");
+    if streaming {assert_eq!(statuses,vec![200]);assert_eq!(chunks,b"hello world");assert_eq!(waits,3);}
     if header_capacity.is_some() {
         let head = infinity_http::response::Headers::parse(&headers[..result.header_bytes]).unwrap();
         assert_eq!(head.values("content-type").collect::<Vec<_>>(), vec![b"text/plain".as_slice()]);

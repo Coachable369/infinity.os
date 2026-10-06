@@ -149,18 +149,27 @@ impl resources::Provider for Network {
     // DESC: Copies bounded engine-selected fields into the versioned native network mailbox.
     // ------------------=
     fn begin_with_headers(&mut self,url:&str,headers:&[u8])->Result<u64,()> {
-        let h=host(); let id=unsafe { (h.begin)(h.context,url.as_ptr(),url.len(),headers.as_ptr(),headers.len()) };
+        self.begin_request(url,"GET",headers,&[])
+    }
+    // ------------------------=
+    // FUNC: begin_request
+    // DESC: Copies request metadata and body through the versioned bounded native mailbox.
+    // ------------------=
+    fn begin_request(&mut self,url:&str,method:&str,headers:&[u8],body:&[u8])->Result<u64,()> {
+        let h=host(); let id=unsafe { (h.begin)(h.context,url.as_ptr(),url.len(),headers.as_ptr(),headers.len(),
+            method.as_ptr(),method.len(),body.as_ptr(),body.len()) };
         if id==0 { Err(()) } else { Ok(id) }
     }
     // ------------------------=
-    // FUNC: poll
-    // DESC: Copies a bounded native response while its mailbox handle remains owned.
+    // FUNC: poll_stream
+    // DESC: Copies each borrowed stream chunk before the next poll acknowledges it; completion never duplicates payload.
     // ------------------=
-    fn poll(&mut self,id:u64)->Result<Option<resources::Response>,()> {
+    fn poll_stream(&mut self,id:u64)->Result<Option<resources::Event>,()> {
         let h=host(); let mut response=abi::Response {status:0,headers:core::ptr::null(),headers_length:0,
             body:core::ptr::null(),body_length:0};
-        match unsafe { (h.poll)(h.context,id,&mut response) } { 0=>return Ok(None),1=>{},_=>return Err(()) }
-        if !(100..=599).contains(&response.status) || response.headers_length>16*1024
+        let kind=unsafe { (h.poll)(h.context,id,&mut response) };
+        match kind {0=>return Ok(None),4=>return Ok(Some(resources::Event::Done)),1|3=>{},_=>return Err(())}
+        if response.headers_length>16*1024
             || response.body_length>resources::MAX_BODY
             || (response.headers_length>0 && response.headers.is_null())
             || (response.body_length>0 && response.body.is_null()) { return Err(()); }
@@ -168,13 +177,19 @@ impl resources::Provider for Network {
         let mut headers=std::vec::Vec::new();
         for line in core::str::from_utf8(raw).map_err(|_|())?.split("\r\n").filter(|line|!line.is_empty()) {
             let (name,value)=line.split_once(':').ok_or(())?;
-            if headers.len()==32 { return Err(()); }
+            if headers.len()==128 { return Err(()); }
             headers.push((name.to_string(),value.trim().to_string()));
         }
         let body=if response.body_length==0 { std::vec::Vec::new() } else {
             unsafe { core::slice::from_raw_parts(response.body,response.body_length) }.to_vec()
         };
-        Ok(Some(resources::Response {status:response.status as u16,headers,body}))
+        if kind==1 {
+            if !(200..=599).contains(&response.status) {return Err(());}
+            Ok(Some(resources::Event::Complete(resources::Response {status:response.status as u16,headers,body})))
+        } else if response.status!=0 {
+            if !(200..=599).contains(&response.status) || !body.is_empty() {return Err(());}
+            Ok(Some(resources::Event::Head(response.status as u16,headers)))
+        } else { Ok(Some(resources::Event::Data(body))) }
     }
     // ------------------------=
     // FUNC: cancel

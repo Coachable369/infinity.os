@@ -99,7 +99,31 @@ pub async fn get_with_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
 pub async fn get_with_request_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
     stream: S, rng: R, roots: &[TrustAnchor<'_>], unix_seconds: u64,
     host: &str, path: &str, request_headers: &[u8], buffers: Buffers<'_>,
-    mut headers: Option<&mut [u8]>,
+    headers: Option<&mut [u8]>,
+) -> Result<Response, Error> {
+    get_streaming(stream, rng, roots, unix_seconds, host, path, request_headers, buffers, headers, |_, _| true).await
+}
+
+// ------------------------=
+// FUNC: get_streaming
+// DESC: Publishes authenticated headers and validated payload incrementally, waiting cooperatively on consumer backpressure.
+// ------------------=
+pub async fn get_streaming<S: Read + Write, R: rand_core::CryptoRngCore>(
+    stream: S, rng: R, roots: &[TrustAnchor<'_>], unix_seconds: u64,
+    host: &str, path: &str, request_headers: &[u8], buffers: Buffers<'_>,
+    headers: Option<&mut [u8]>, progress: impl FnMut(Option<&[u8]>, &[u8]) -> bool,
+) -> Result<Response, Error> {
+    request_streaming(stream,rng,roots,unix_seconds,host,path,"GET",request_headers,&[],buffers,headers,progress).await
+}
+
+// ------------------------=
+// FUNC: request_streaming
+// DESC: Sends bounded binary request bodies with native framing and streams only authenticated response payload.
+// ------------------=
+pub async fn request_streaming<S: Read + Write, R: rand_core::CryptoRngCore>(
+    stream:S,rng:R,roots:&[TrustAnchor<'_>],unix_seconds:u64,
+    host:&str,path:&str,method:&str,request_headers:&[u8],request_body:&[u8],buffers:Buffers<'_>,
+    mut headers:Option<&mut[u8]>,mut progress:impl FnMut(Option<&[u8]>,&[u8])->bool,
 ) -> Result<Response, Error> {
     if buffers.read_record.len() < 16640
         || buffers.write_record.len() < 2048
@@ -107,7 +131,7 @@ pub async fn get_with_request_headers<S: Read + Write, R: rand_core::CryptoRngCo
     {
         return Err(Error::Capacity);
     }
-    let length = request::get_with_headers(host, path, request_headers, buffers.request).map_err(Error::Request)?;
+    let length = request::head(host,path,method,request_headers,request_body.len(),buffers.request).map_err(Error::Request)?;
     let verifier = CertificateVerifier::new(roots, host, unix_seconds).map_err(Error::Tls)?;
     let config = TlsConfig::new()
         .enable_rsa_signatures()
@@ -119,22 +143,25 @@ pub async fn get_with_request_headers<S: Read + Write, R: rand_core::CryptoRngCo
         .open(TlsContext::new(&config, Provider { rng, verifier }))
         .await
         .map_err(Error::Tls)?;
-    let mut sent = 0;
-    while sent < length {
+    for part in [&buffers.request[..length],request_body] {
+      let mut sent = 0;
+      while sent < part.len() {
         let count = connection
-            .write(&buffers.request[sent..length])
+            .write(&part[sent..])
             .await
             .map_err(Error::Tls)?;
         if count == 0 {
             return Err(Error::Truncated);
         }
         sent += count;
+      }
     }
     connection.flush().await.map_err(Error::Tls)?;
     let mut used = 0;
     let mut head = None;
     let mut interim = 0;
     let mut header_bytes = 0;
+    let mut cursor = body::Cursor::default();
     loop {
         if used == buffers.response.len() {
             return Err(Error::Capacity);
@@ -148,7 +175,7 @@ pub async fn get_with_request_headers<S: Read + Write, R: rand_core::CryptoRngCo
         if head.is_none() {
             loop {
                 let Some(parsed) =
-                    response::parse(&buffers.response[..used], false).map_err(Error::Header)?
+                    response::parse(&buffers.response[..used], method=="HEAD").map_err(Error::Header)?
                 else {
                     break;
                 };
@@ -168,11 +195,19 @@ pub async fn get_with_request_headers<S: Read + Write, R: rand_core::CryptoRngCo
                         header_bytes = parsed.bytes;
                     }
                     head = Some(parsed);
+                    core::future::poll_fn(|_| if progress(Some(&buffers.response[..parsed.bytes]), &[]) {
+                        core::task::Poll::Ready(())
+                    } else { core::task::Poll::Pending }).await;
                     break;
                 }
             }
         }
         if let Some(head) = head {
+            while let Some(chunk) = cursor.next(&buffers.response[head.bytes..used], head.body).map_err(Error::Body)? {
+                core::future::poll_fn(|_| if progress(None, chunk) {
+                    core::task::Poll::Ready(())
+                } else { core::task::Poll::Pending }).await;
+            }
             if let Some(length) = body::complete(
                 &mut buffers.response[head.bytes..used],
                 head.body,
