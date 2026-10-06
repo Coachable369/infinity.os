@@ -46,8 +46,12 @@ def extract_media_kernels(iso, artifacts, arch):
     with tempfile.TemporaryDirectory(prefix="browser-media-",dir=ROOT / "build" / "tmp") as temporary:
         temporary=Path(temporary)
         subprocess.run(["xorriso","-osirrox","on","-indev",str(iso),
-            "-extract","/EFI/INFINITY/KERNEL.ELF",str(temporary/"live.elf"),
-            "-extract","/EFI/INFINITY/PAYLOAD",str(temporary/"payload")],check=True)
+            "-extract","/efi.img",str(temporary/"boot.img")],check=True)
+        (temporary/"payload").mkdir()
+        subprocess.run(["mcopy","-i",str(temporary/"boot.img"),
+            "::/EFI/INFINITY/KERNEL.ELF",str(temporary/"live.elf")],check=True)
+        subprocess.run(["mcopy","-i",str(temporary/"boot.img"),
+            "::/EFI/INFINITY/PAYLOAD/P1-*.BIN",str(temporary/"payload")],check=True)
         parts=sorted((temporary/"payload").glob("P1-*.BIN"))
         assert parts and len(parts)<=8
         assert [part.name for part in parts]==[f"P1-{index:03}.BIN" for index in range(len(parts))]
@@ -275,9 +279,9 @@ class Guest(base.Guest):
             "-device", "e1000,netdev=net", "-qmp", f"unix:{qmp},server=on,wait=off",
             "-display", "none", "-serial", "stdio", "-monitor", "none", "-no-reboot"]
         if self.arch=="x86_64":
-            # The native browser/speech image currently ends above 3 GiB. Keep
-            # its fixed ELF load range in RAM, below the PCI aperture.
-            command=["qemu-system-x86_64","-machine","pc,max-ram-below-4g=3584M","-accel","tcg","-cpu","max",
+            # Exercise the default PC memory map. Raising max-ram-below-4g
+            # does not defeat this machine's 3 GiB alignment cap with 12 GiB RAM.
+            command=["qemu-system-x86_64","-machine","pc","-accel","tcg","-cpu","max",
                 "-smp","4","-m","12G","-vga","none","-device","VGA,xres=1024,yres=768,xmax=1024,ymax=768",
                 "-drive",f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                 "-drive",f"if=ide,index=0,format=raw,file={self.disk}",
@@ -319,6 +323,7 @@ def main():
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--resume-onboarding",action="store_true",help="Resume a completed disposable installation, reverify against its original ISO and finish onboarding")
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
+    parser.add_argument("--iso", type=Path, help="Test this repository-local ISO instead of the architecture's internal boot media")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--configure-network", action="store_true", help="Retry installed Network Settings configuration on a reused disposable disk")
     parser.add_argument("--automatic-network", action="store_true", help="Use only installed automatic address discovery; do not enter a static NAT configuration")
@@ -328,6 +333,7 @@ def main():
     parser.add_argument("--open-url", action="store_true", help="Verify the OS default web association under the user's existing Network Settings policy")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
     parser.add_argument("--workplace", action="store_true", help="Exercise installed cross-app clipboard and native workplace commands")
+    parser.add_argument("--workplace-menu", action="store_true", help="Verify clipboard context actions on an existing workplace test disk")
     parser.add_argument("--workplace-resume-storage", action="store_true", help="Resume a disposable workplace run after its initial file was saved")
     parser.add_argument("--tabs", action="store_true", help="With interaction, exercise native create/select/close controls and independent page pixels")
     parser.add_argument("--invalid-tls", action="store_true", help="Require a certificate-validation rejection from a real expired HTTPS endpoint")
@@ -345,6 +351,8 @@ def main():
     parser.add_argument("--url",help="Require successful installed loading of this real HTTPS destination")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
+    if args.workplace_menu and (not args.reuse_installed or args.workplace):
+        parser.error("Context-menu acceptance requires a reused workplace disk and excludes --workplace")
     if args.accel=="hvf" and args.arch!="aarch64":
         parser.error("HVF verification is supported only for the native ARM target")
     if args.open_url and any((args.launcher,args.interaction,args.tabs,args.address,args.measure,args.navigation,args.download,args.invalid_tls,args.lifecycle,args.reopen)):
@@ -370,6 +378,10 @@ def main():
         parser.error("x86 verification requires unmodified ISO installation or a previously verified disk")
     if args.iso_parity and (reuse or args.update_kernel):
         parser.error("ISO parity requires a new unmodified installation")
+    if args.iso and (not args.iso_parity or not args.iso.resolve().is_relative_to(ROOT) or not args.iso.is_file()):
+        parser.error("Explicit ISO requires --iso-parity and an existing repository-local image")
+    if args.workplace_resume_storage and (not args.workplace or not reuse):
+        parser.error("Workplace resume requires --workplace and --reuse-installed")
     if args.update_kernel and (not reuse or not args.update_kernel.resolve().is_relative_to(ROOT / "build")):
         parser.error("Kernel updates require a reused disposable installation and a build-local image")
     work = args.reuse_installed.resolve() if reuse else ROOT / "build" / ("browser-installed-" + str(time.time_ns()))
@@ -378,7 +390,7 @@ def main():
     if not reuse:
         artifacts.mkdir(parents=True)
     for source, name in ([] if reuse else [
-        ("build/test-media/InfinityOS-x86_64.bootmedia" if args.arch=="x86_64" else "build/test-media/InfinityOS-aarch64-qemu.bootmedia", "installer.iso"),
+        (args.iso.resolve() if args.iso else "build/test-media/InfinityOS-x86_64.bootmedia" if args.arch=="x86_64" else "build/test-media/InfinityOS-aarch64-qemu.bootmedia", "installer.iso"),
         ("build/x86_64/kernel.elf" if args.arch=="x86_64" else "build/aarch64/kernel-qemu.elf", "kernel.elf"),
         ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
         shutil.copyfile(ROOT / source, artifacts / name)
@@ -395,9 +407,10 @@ def main():
     guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
     # PS/2 emulation cannot reliably ingest the rapid four-key batches while
     # the 2048px x86 desktop is painting. Acknowledge each key on that target.
-    guest.fast_commands = (args.interaction or args.workplace) and args.arch != "x86_64"
+    guest.fast_commands = (args.interaction or args.workplace or args.workplace_menu) and args.arch != "x86_64"
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
     receipt = dict(architecture=args.arch,acceleration=args.accel,installed=reuse, browser_iso_parity=False, browser_interactive=False)
+    if args.iso: receipt["source_iso"]=str(args.iso.resolve())
     if media_kernels is not None: receipt["iso_kernel_artifacts"]=media_kernels
     try:
         if not reuse:
@@ -424,13 +437,17 @@ def main():
             receipt["network_settings_configured"] = True
         elif args.automatic_network:
             receipt["automatic_network_only"] = True
-        if args.workplace:
+        if args.workplace or args.workplace_menu:
             spec = importlib.util.spec_from_file_location("workplace_acceptance", ROOT / "tools/workplace-installed-test.py")
             workplace = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(workplace)
             receipt["workplace"] = {}
             try:
-                workplace.verify(guest, globals(), receipt["workplace"], args.workplace_resume_storage)
+                if args.workplace_menu:
+                    workplace.verify_context_menu(guest)
+                    receipt["workplace"]["context_menu_copy_cut_paste_and_bounds"] = True
+                else:
+                    workplace.verify(guest, globals(), receipt["workplace"], args.workplace_resume_storage)
             except Exception:
                 try:
                     guest.screenshot("workplace-failure")

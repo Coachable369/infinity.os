@@ -13,8 +13,16 @@ fn full_namespace_upload_audit_legacy_and_reserved_authority(){
     use crate::storage::object::{ObjectType,Space,ObjectService,ObjectCapabilityPolicy,ObjectOperation,ObjectRef,ObjectCreateRequest};
     let (disk,mut s)=fresh();let bytes:Vec<u8>=(0..32768).map(|n|crate::runtime::storage_fixture::byte_at(17,n)).collect();
     s.pool_upload_begin(OWNER,0,1,StorageClass::Critical,32768,Sha256::digest(&bytes).into(),ObjectId([0;16]),0).unwrap();
-    for i in 0..32 {let path=format!("/audit-capacity-{i}");if s.create_attached(b"filler",ObjectType::Metadata,Space::Personal,&[],path.as_bytes()).is_err(){break}}
-    assert_eq!((0..32).filter(|i|s.namespace_entry(*i).is_some()).count(),32);
+    let filler=s.create(b"filler",ObjectType::Metadata,Space::Personal,&[]).unwrap();
+    let capacity=crate::storage::object::NAMESPACE_CAPACITY;
+    for i in 0..capacity {
+        let path=format!("/audit-capacity-{i}");
+        match s.attach(path.as_bytes(),filler) {
+            Ok(())=>{},Err(ObjectError::InsufficientCapacity)=>break,Err(error)=>panic!("{error:?}"),
+        }
+    }
+    assert_eq!((0..capacity).filter(|i|s.namespace_entry(*i).is_some()).count(),capacity);
+    assert_eq!(s.attach(b"/audit-overflow",filler),Err(ObjectError::InsufficientCapacity));
     let m=upload(&mut s,&bytes,1,ObjectId([0;16]),0);verify(&mut s,&m,&bytes);assert_eq!(audit(&mut s).0,1);
     s.pool_create(OWNER,0,2,StorageClass::Protected,b"small",OWNER,RESOURCE,[3;16],1).unwrap();assert_eq!(audit(&mut s).0,2);
     assert!(s.resolve(b"/system/storage/pool-audit").is_err());

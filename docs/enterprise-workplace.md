@@ -2,28 +2,61 @@
 
 ## Acceptance Status: Incomplete
 
-As of 2026-10-06, this implementation is not release-accepted. The repository's
-six-attempt correction limit stopped the installed acceptance run.
+As of 2026-10-06, the workplace behavior passes the installed ARM acceptance
+suite, but the images are not yet release-accepted.
 
 - All 11 workplace core tests pass, as do the full object-store and input
   regression suites. Format-7 migration passed interrupted-write and remount tests.
-- An updated ARM installed kernel built successfully. A reused, detached ARM
-  installation passed text clipboard transfer, checksums, comparison, verified
-  backup, bad-digest rejection, restoration, and support-report readback checks
-  across separate runs.
-- The current installed harness incorrectly treats diagnostic slot 8 (settings
-  focus) as window focus in `documents()`. Its preceding run used stale window
-  coordinates after opening another File Navigator. Neither failure establishes
-  that file clipboard behavior passes or fails.
-- Installed file transfer, history/private mode, browser clipboard policy,
-  expiry/lock clearing, and final cold-boot persistence remain unverified.
-- Native browser clipboard fixtures passed earlier; the latest broker changes
-  still need that fixture rerun. Fresh ARM/x86 installations and updated ISO
-  acceptance are outstanding. Existing ISO files are not the completed release.
+- The navigator harness now waits for a fresh post-release window snapshot.
+  The reused ARM disk and a fresh ARM QEMU installation both passed all workplace
+  checks: text/file transfer, checksum/comparison/backup/restore, report readback,
+  history/private mode, browser clipboard policy and pixels, safe paste,
+  expiry/lock clearing, and detached cold-boot persistence.
+- Subsequent screenshot review found the eight-action context menu still used
+  five-row paint and hit bounds. Both bounds now include all eight rows, with
+  layout assertions at compact and high-density resolutions. A focused installed
+  test passed Copy/Cut/Paste clicks and unchanged object identity on collision.
+  Screenshot review confirms all eight rows are enclosed. This focused run used
+  an updated disposable clone; the earlier fresh-install full-suite receipt
+  predates this extra acceptance check. Other existing desktop text overlaps
+  are visible in the screenshot; this is not whole-desktop visual acceptance.
+- The fresh ARM disk used the QEMU media with byte-verified installed kernel
+  parity, not an offline replacement kernel. Its initial cold boot faulted at
+  address zero during native speech initialization. Unchanged-media retries
+  booted successfully; this intermittent startup failure remains unresolved.
+  The ARM VirtualBox-targeted final ISO is not covered by that runtime proof.
+- All 46 browser core tests and all eight native engine interaction stages pass.
+  Object-store, input, network, transport, resource-policy, and installed UI asset
+  parity checks pass after correcting a namespace-capacity test fixture.
+- Both architecture ISO profiles rebuilt successfully. These were focused
+  builds, not a clean `full` build. Fresh x86 final-ISO acceptance failed before
+  the live desktop: the ELF requires one contiguous allocation from 64 MiB to
+  `0xd04a9000`, crossing the PC machine's 3 GiB RAM boundary. Setting
+  `max-ram-below-4g=3584M` does not override QEMU's gigabyte-alignment cap with
+  12 GiB total RAM. Installed x86 workplace behavior remains unverified.
 
-Latest failed run: `builds/manifests/20261006T062605662027Z-92628.json`.
-Installed evidence: `build/browser-installed-1791194800249204000/result.json`.
-That receipt explicitly distinguishes checks from preceding resumed runs.
+Fresh ARM workplace evidence:
+`build/browser-installed-1791273370904977000/result.json`, with successful run
+manifest `builds/manifests/20261006T080234621774Z-21192.json`.
+The original startup failure is retained in
+`builds/manifests/20261006T075610816696Z-21014.json` and that disk's installed log.
+Reused-disk evidence: `build/browser-installed-1791194800249204000/result.json`;
+its receipt explicitly distinguishes checks from preceding resumed runs.
+Failed final x86 ISO run:
+`builds/manifests/20261006T081312907031Z-21487.json`, with firmware allocation
+diagnostics in `build/browser-installed-1791274392995346000/node-1/installer.log`.
+The ARM fault and x86 memory-layout incompatibility remain release blockers;
+neither is corrected by the harness fixes in this continuation.
+Focused installed menu evidence:
+`build/browser-installed-menu-20261006T0841/result.json`, with manifest
+`builds/manifests/20261006T084155757763Z-32278.json` and screenshot
+`build/browser-installed-menu-20261006T0841/node-1/workplace-context-eight-rows.png`.
+Post-fix input regression manifest:
+`builds/manifests/20261006T084425665850Z-32966.json`.
+Both updated full-bundle ISO profiles completed successfully after the menu fix:
+ARM `builds/manifests/20261006T082041262424Z-22071.json`, and x86
+`builds/manifests/20261006T084506607296Z-33444.json`. These package the current
+workspace, including pre-existing local changes left outside this commit.
 
 The workplace implementation is shared by ARM and x86. It adds these fifteen
 capabilities to native applications and the installed System Generation:

@@ -139,6 +139,32 @@ def select_file(guest, path, keep_menu=False):
     raise AssertionError(("Missing file", path))
 
 # ------------------------=
+# FUNC: verify_context_menu
+# DESC: Clicks Copy, Cut, and Paste in the actual eight-row menu and verifies collision safety.
+# ------------------=
+def verify_context_menu(guest):
+    guest.width, guest.height = guest.state()[11:13]
+    documents(guest)
+    source = "/home/default/documents/enterprise.txt"
+    identity = None
+    for row, notice in ((4, 3), (5, 2), (6, 4)):
+        selected = select_file(guest, source, keep_menu=True)
+        if identity is None:
+            identity = selected
+        assert selected == identity
+        state = docs.navigator(guest)
+        left, top, width, height = state[23:27]
+        scale = state[8]
+        assert height == 236 * scale and width >= 100 * scale
+        guest.click(left + 20 * scale, top + (6 + row * 28 + 14) * scale)
+        docs.wait_navigator(guest, lambda s: not s[17] and s[30] == notice)
+    assert select_file(guest, source, keep_menu=True) == identity
+    guest.screenshot("workplace-context-eight-rows")
+    guest.key("esc")
+    terminal(guest)
+    command(guest, "work clipboard clear", 2)
+
+# ------------------------=
 # FUNC: documents
 # DESC: Opens the actual File Navigator dock item and its responsive Documents favorite.
 # ------------------=
@@ -148,8 +174,8 @@ def documents(guest):
     scale = 2 if width >= 2560 and height >= 1440 else 1
     dock_width = width * 54 // 100
     guest.click((width - dock_width) // 2 + (dock_width // 8) * 3 // 2, height - 46 * scale)
-    focused = guest.wait(lambda s: s[8] != before[8], "new navigator focused")
-    docs.wait_navigator(guest, lambda s: s[3] and s[2] >= focused[2])
+    released = guest.state()[2]
+    docs.wait_navigator(guest, lambda s: s[3] and s[2] > released)
     return folder(guest, 2, "/home/default/documents")
 
 # ------------------------=
@@ -185,6 +211,11 @@ def verify(guest, browser, result=None, resume_storage=False):
         result["resumed_storage_only"] = True
         previous = json.loads((guest.work.parent / "result.json").read_text()).get("workplace", {})
         result["previous_run_checks"] = previous
+        inherited = previous
+        previous = {}
+        while inherited:
+            previous.update({key: value for key, value in inherited.items() if value is True})
+            inherited = inherited.get("previous_run_checks", {})
         if not previous.get("checksums_comparison_verified_backup_restore"):
             open_source(guest, source, original)
     else:
@@ -254,6 +285,8 @@ def verify(guest, browser, result=None, resume_storage=False):
     digest(guest, "/home/default/pictures/enterprise.txt", original)
     command(guest, "work checksum /home/default/downloads/enterprise.txt", 5, False)
     result["file_copy_cut_paste_collision_and_identity"] = True
+    verify_context_menu(guest)
+    result["context_menu_copy_cut_paste_and_bounds"] = True
     command(guest, "work history clear", 4)
     assert snapshot(guest)[4] == 0
     guest.command("system info")
