@@ -108,6 +108,8 @@ def main():
     report["software_raster_verified"] = raster_passed
     report["progressive_rendering_verified"] = all([9,2,41,step] in records for step in (1,2))
     report["request_body_redirects_verified"] = [9,2,46,31] in records
+    report["network_failure_recovery_verified"] = all([9,2,52,step] in records for step in (1,2,3))
+    report["renderer_failure_recovery_verified"] = [9,2,53,1] in records
     report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,9))
     report["external_https_verified"] = network_passed
     report["load_completed"] = [9,2,32,1] in records if options.network_probe else None

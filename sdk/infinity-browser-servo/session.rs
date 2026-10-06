@@ -223,13 +223,15 @@ impl<P: Provider + 'static> Session<P> {
             }
         }
         self.resources.pump();
-        if self.crashed.get() { return Err(()); }
+        if self.crashed.get() { self.resources.cancel_all(); return Err(()); }
         if !visible || !self.dirty.get() { return Ok(false); }
         if !self.frame_pacer.borrow_mut().admit((self.clock)()) { return Ok(false); }
         self.dirty.set(false);
         self.view.paint();
         let image = self.context.read_to_image(servo::DeviceIntRect::new((0, 0).into(),
-            (self.size.0 as i32, self.size.1 as i32).into())).ok_or(())?;
+            (self.size.0 as i32, self.size.1 as i32).into())).ok_or_else(|| {
+                self.crashed.set(true);self.resources.cancel_all();
+            })?;
         frame(image.width(), image.height(), image.as_raw());
         Ok(true)
     }
@@ -243,6 +245,12 @@ impl<P: Provider + 'static> Session<P> {
     // DESC: Reports this document's native request failure without leaking a background tab failure into the foreground UI.
     // ------------------=
     pub fn failed(&self) -> bool { self.resources.failed_document() }
+    // ------------------------=
+    // FUNC: inject_crash
+    // DESC: Injects a renderer failure into the real session lifecycle in the native behavioral probe only.
+    // ------------------=
+    #[cfg(infinity_page_probe)]
+    pub fn inject_crash(&self) { self.crashed.set(true); }
     // ------------------------=
     // FUNC: address
     // DESC: Returns the engine's actual location after redirects and history changes.
@@ -341,6 +349,20 @@ impl<P: Provider + 'static> TabSessions<P> {
         self.tabs.iter_mut().find(|tab| tab.id == self.active).map(|tab| &mut tab.session)
     }
     // ------------------------=
+    // FUNC: recover_current
+    // DESC: Replaces a failed renderer on explicit retry while preserving tab identity and every healthy tab.
+    // ------------------=
+    pub fn recover_current(&mut self, engine:&Servo, provider:P) -> Result<(),()> {
+        let tab=self.tabs.iter_mut().find(|tab|tab.id==self.active).ok_or(())?;
+        if !tab.session.crashed.get() {return Ok(());}
+        let address=tab.session.address();
+        let replacement=Session::create(engine,provider,self.clock,self.size.0,self.size.1,false,self.clipboard.clone())?;
+        tab.session=replacement;
+        tab.session.visible(true);
+        if let Some(address)=address {let _=tab.session.navigate(&address);}
+        Ok(())
+    }
+    // ------------------------=
     // FUNC: close
     // DESC: Cancels and drops exactly one WebView, then focuses its surviving neighbor if necessary.
     // ------------------=
@@ -371,14 +393,15 @@ impl<P: Provider + 'static> TabSessions<P> {
         engine.spin_event_loop();
         self.global.pump();
         let mut painted = false;
+        let mut failed = false;
         for tab in &self.tabs {
             match tab.session.pump_frame(tab.id == self.active, &mut frame) {
                 Ok(value) => painted |= value,
-                Err(()) if tab.id == self.active => return Err(()),
+                Err(()) if tab.id == self.active => failed = true,
                 Err(()) => {},
             }
         }
-        Ok(painted)
+        if failed {Err(())} else {Ok(painted)}
     }
 }
 impl<P: Provider> Drop for TabSessions<P> {

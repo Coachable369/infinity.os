@@ -51,7 +51,52 @@ or fresh installations pass acceptance.
   compile with the new ABI and transport. Existing warnings remain. This is
   not an installed boot, refreshed payload parity, or ISO-build result.
 
-## Remaining Gates
+## Navigation Failure Recovery (October 6 Follow-Up)
+
+The component previously dropped the entire tab group after a renderer/pixel
+readback failure. The desktop retained its open-window state, so subsequent
+navigation commands reached an empty session and were ignored. Renderer errors
+now retain the tab group, release failed-tab network work, and continue servicing
+healthy tabs. Explicit navigation or reload replaces the failed WebView while
+preserving its tab identity and the other tabs. The failed tab's document state
+and history cannot survive replacement; healthy tabs retain theirs. Error events
+are coalesced rather than filling the worker mailbox every tick.
+
+The native recovery fixture tests failure before headers, failure after a partial
+body, timeout, renderer failure, navigation retry, reload retry, and preservation
+of a healthy neighboring tab. Recovery requires matching engine location,
+completion, and real rendered pixels. Transport cases enforce exact lease release.
+The network cases also pass before the fix, so they are regression coverage, not
+evidence that the original network path caused the reported lockout.
+
+- `20261006T215951337369Z-19154.json`: baseline native transport recovery passes.
+- `20261006T220451733150Z-19388.json`: final combined native suite passes,
+  including transport and renderer recovery, reload, incremental pixels,
+  request-body redirects, cookies, and browser interactions. Evidence is retained
+  under `builds/evidence/browser-recovery/final/`; the selection image was reviewed.
+- `20261006T220617437887Z-19450.json`: updated ARM browser component links.
+- `20261006T220749063304Z-19914.json`: updated x86 browser component links.
+- `20261006T220952282303Z-20012.json`: `./build-kit incremental` completes,
+  rebuilding both full-bundle ISOs with live/installed kernel payload comparisons,
+  model-bundle checks and browser artwork/font parity. This is an incremental
+  build, not a clean-build or installed-runtime claim. ISO SHA-256 values:
+  - ARM: `f98f837947303355a9e3d31340ece0c31857abc757e5683b535c64c993c36aa3`
+  - x86: `5bf3268f9bb5653f7e83538997e67e7e85d1aa4f9ddd8820e573c50c013f4892`
+- `20261006T230454991060Z-40711.json`: cold x86 full-ISO install attempt
+  times out at live startup (no runtime snapshot) before installation or browser
+  execution. This is not an x86 browser pass.
+- `20261006T231033831235Z-41110.json`: native ARM/HVF QEMU-media cold install
+  passes exact installed-kernel comparison and media-detached boot. Real browser
+  pixels, favorite add/remove/navigation, detached reboot persistence, failed
+  HTTPS destination state and subsequent successful navigation all pass. Receipt:
+  `build/browser-installed-1791328233934142000/result.json`. This tests the QEMU
+  ARM media variant, not the VirtualBox hardware layout of the distributable ISO.
+
+Yahoo compatibility and the user's installed-system reproduction are separate
+acceptance gates; fault injection and the controlled installed HTTPS failure do
+not establish the cause of Yahoo's failure.
+
+## Remaining Site And Installation Gates
 
 DuckDuckGo search still fails the result-DOM assertion. The 120-second TCG
 diagnostic (`20261006T170227314247Z-7262.json`) receives 6,294,168 bytes but
@@ -75,8 +120,8 @@ Yahoo still fails its DOM/pixel gate after receiving 1,325,095 bytes
 are fetched before the script backlog, but the document remains loading.
 Receiving HTTP 200 is not counted as a rendering pass.
 
-Live-site acceptance, x86 runtime verification, refreshed ISO packaging and
-detached fresh-installed runtime verification remain required. Existing ISOs
-must not be presented as containing this change. Production networking still
+Live-site acceptance, x86 runtime verification and the ARM VirtualBox
+distributable's detached installed path remain required. The ARM QEMU installed
+path and refreshed ISO packaging are verified above. Production networking still
 uses a serialized bounded HTTPS transport; broad modern-site compatibility
 and hardware-VM performance are not established by these fixtures.

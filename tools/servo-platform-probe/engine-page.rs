@@ -18,6 +18,8 @@ mod interactions {
 mod streaming;
 #[path = "engine-request.rs"]
 mod request;
+#[path = "engine-recovery.rs"]
+mod recovery;
 #[cfg(infinity_network_probe)]
 #[path = "../../sdk/infinity-browser-servo/native_https.rs"]
 mod native_https;
@@ -395,6 +397,9 @@ fn image_pixels_match(engine:&Servo,view:&WebView,repaint:&Cell<bool>)->bool {
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_RECOVERY_ONLY")==Some("1") {
+        return if recovery::verify(engine) {0} else {52};
+    }
     if option_env!("INFINITY_BROWSER_REQUEST_ONLY")==Some("1") {
         return if request::verify(engine) {0} else {46};
     }
@@ -416,6 +421,7 @@ pub fn verify(engine: &Servo) -> u64 {
     }
     if !streaming::verify(engine) {return 41;}
     if !request::verify(engine) {return 46;}
+    if !recovery::verify(engine) {return 52;}
     let context = match SoftwareRenderingContext::new((128, 128).into()) {
         Ok(context) => Rc::new(context),
         Err(_) => return 1,

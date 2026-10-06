@@ -220,6 +220,7 @@ fn run() {
     let mut last_complete=false;
     let mut last_history=None;
     let mut last_failed=false;
+    let mut last_render_failed=false;
     loop {
         for _ in 0..16 {
             let h=host(); let mut command=abi::Command::empty();
@@ -239,7 +240,7 @@ fn run() {
                 return;
             }
             if command.kind==abi::CLOSE {
-                session=None; last_address=None; last_title=None; last_complete=false; last_history=None;last_failed=false;
+                session=None; last_address=None; last_title=None; last_complete=false; last_history=None;last_failed=false;last_render_failed=false;
                 event(abi::EVENT_MEMORY,unsafe{Runtime::peak_allocated()} as u32,"");
                 event(abi::EVENT_CLOSED,0,""); continue;
             }
@@ -266,7 +267,7 @@ fn run() {
                 };
                 if result.is_ok() && group.active()!=previous {
                     event(abi::EVENT_TAB_SELECTED,group.active(),"");
-                    last_address=None;last_title=None;last_complete=false;last_history=None;last_failed=false;
+                    last_address=None;last_title=None;last_complete=false;last_history=None;last_failed=false;last_render_failed=false;
                 }
                 if result.is_err() {event(abi::EVENT_ERROR,1,"");}
                 continue;
@@ -274,6 +275,9 @@ fn run() {
             if command.kind==abi::RESIZE {
                 if group.resize(command.a,command.b).is_err() {event(abi::EVENT_ERROR,1,"");}
                 continue;
+            }
+            if matches!(command.kind,abi::NAVIGATE|abi::RELOAD) {
+                if group.recover_current(&engine,Network).is_err() {event(abi::EVENT_ERROR,2,"");continue;}
             }
             let Some(view)=group.current() else {continue;};
             if dispatch(view,&command).is_err() { event(abi::EVENT_ERROR,1,""); }
@@ -284,7 +288,11 @@ fn run() {
         if let Some(group)=session.as_mut() {
             if group.pump(&engine,|w,h,bytes| {
                 let host=host(); unsafe { (host.frame)(host.context,w,h,bytes.as_ptr(),bytes.len()) }
-            }).is_err() { event(abi::EVENT_ERROR,2,""); session=None; continue; }
+            }).is_err() {
+                if !last_render_failed {event(abi::EVENT_ERROR,2,"");}
+                last_render_failed=true;std::thread::sleep(Duration::from_millis(1));continue;
+            }
+            last_render_failed=false;
             let Some(view)=group.current() else {std::thread::sleep(Duration::from_millis(1));continue;};
             if view.failed() && !last_failed {event(abi::EVENT_ERROR,3,"");}
             last_failed=view.failed();
