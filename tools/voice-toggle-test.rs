@@ -45,6 +45,16 @@ static RECOGNITION_REQUESTS: std::sync::Mutex<Vec<Vec<i16>>> = std::sync::Mutex:
 fn main() { panic!("Run cargo test --bin voice-toggle-test through build-kit"); }
 #[path = "../kernel/ui/geometry.rs"] pub mod geometry;
 mod ui { pub use crate::geometry; }
+mod output {
+    // ------------------------=
+    // FUNC: write
+    // DESC: Provides the production trace sink without using diagnostic text as a behavioral oracle.
+    // ------------------=
+    pub unsafe fn write(bytes: &[u8]) {
+        use std::io::Write;
+        let _ = std::io::stderr().write_all(bytes);
+    }
+}
 mod runtime {
     pub mod execution {
         #[derive(Clone,Copy,PartialEq,Eq)] pub struct SecurityIdentity(pub [u8;16]);

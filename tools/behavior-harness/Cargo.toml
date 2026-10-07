@@ -23,6 +23,10 @@ name = "voice-pcm-test"
 path = "../voice-pcm-test.rs"
 
 [[bin]]
+name = "voice-pcm-coefficients"
+path = "../voice-pcm-coefficients.rs"
+
+[[bin]]
 name = "audio-test"
 path = "../audio-test.rs"
 

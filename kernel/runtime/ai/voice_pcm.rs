@@ -1,15 +1,18 @@
 //! Bounded microphone conversion to speech-provider 16 kHz mono PCM.
-//! Coefficients are prepared once, never during capture. No heap or host DSP.
+//! Fixed coefficients are embedded in both live and installed kernels. No heap or host DSP.
 const TAPS: usize = 96;
 const PHASES: usize = 160;
 const OUTPUT_RATE: u32 = 16_000;
+const COEFFICIENT_BYTES: usize = TAPS * PHASES * 4;
+static FILTER_44100: &[u8; COEFFICIENT_BYTES] = include_bytes!("voice-pcm-44100.bin");
+static FILTER_48000: &[u8; COEFFICIENT_BYTES] = include_bytes!("voice-pcm-48000.bin");
 
 pub struct Resampler {
     rate: u32,
     phase: u32,
     cursor: usize,
     history: [i16; TAPS],
-    coefficients: [[i32; TAPS]; PHASES],
+    coefficients: &'static [u8; COEFFICIENT_BYTES],
 }
 
 impl Resampler {
@@ -18,40 +21,21 @@ impl Resampler {
     // DESC: Reserves fixed filter storage in an inactive state suitable for static initialization.
     // ------------------=
     pub const fn empty() -> Self {
-        Self { rate: 0, phase: 0, cursor: 0, history: [0; TAPS], coefficients: [[0; TAPS]; PHASES] }
+        Self { rate: 0, phase: 0, cursor: 0, history: [0; TAPS], coefficients: FILTER_48000 }
     }
 
     // ------------------------=
     // FUNC: configure
-    // DESC: Prepares a normalized Blackman-windowed sinc anti-alias filter for supported HDA rates.
+    // DESC: Selects a precomputed anti-alias filter without blocking input on software floating-point initialization.
     // ------------------=
     pub fn configure(&mut self, rate: u32) -> bool {
         self.clear();
-        if self.rate == rate && rate != 0 { return true; }
         self.rate = 0;
-        if !matches!(rate, 16_000 | 44_100 | 48_000) { return false; }
-        if rate != OUTPUT_RATE {
-            let pi = core::f64::consts::PI;
-            let cutoff = 6_800.0 / rate as f64;
-            for phase in 0..PHASES {
-                let fraction = phase as f64 / PHASES as f64;
-                let mut sum = 0.0;
-                let mut values = [0.0f64; TAPS];
-                for tap in 0..TAPS {
-                    let x = tap as f64 - (TAPS - 1) as f64 / 2.0 - fraction;
-                    let sinc = if x.abs() < 1e-12 { 2.0 * cutoff }
-                        else { libm::sin(2.0 * pi * cutoff * x) / (pi * x) };
-                    let angle = 2.0 * pi * tap as f64 / (TAPS - 1) as f64;
-                    let window = 0.42 - 0.5 * libm::cos(angle) + 0.08 * libm::cos(2.0 * angle);
-                    let value = sinc * window;
-                    values[tap] = value;
-                    sum += value;
-                }
-                for tap in 0..TAPS {
-                    self.coefficients[phase][tap] = libm::round(values[tap] / sum * (1u64 << 30) as f64) as i32;
-                }
-            }
-        }
+        self.coefficients = match rate {
+            44_100 => FILTER_44100,
+            16_000 | 48_000 => FILTER_48000,
+            _ => return false,
+        };
         self.rate = rate;
         true
     }
@@ -90,7 +74,9 @@ impl Resampler {
                 let mut value = 0i64;
                 for tap in 0..TAPS {
                     let index = (self.cursor + TAPS - 1 - tap) % TAPS;
-                    value += self.history[index] as i64 * self.coefficients[bank][tap] as i64;
+                    let offset = (bank * TAPS + tap) * 4;
+                    let coefficient = i32::from_le_bytes(self.coefficients[offset..offset + 4].try_into().unwrap());
+                    value += self.history[index] as i64 * coefficient as i64;
                 }
                 let rounded = if value < 0 { -((-value + (1 << 29)) >> 30) } else { (value + (1 << 29)) >> 30 };
                 output[produced] = rounded.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
@@ -104,6 +90,23 @@ impl Resampler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // ------------------------=
+    // FUNC: cold_configuration_reuses_embedded_filters
+    // DESC: Checks cold and repeated rate changes select immutable filters and reset sample state.
+    // ------------------=
+    fn cold_configuration_reuses_embedded_filters() {
+        assert!(core::mem::size_of::<Resampler>() < 256);
+        let mut r = Resampler::empty();
+        for rate in [44_100, 48_000, 16_000, 48_000, 44_100] {
+            assert!(r.configure(rate));
+            let expected = if rate == 44_100 { FILTER_44100 } else { FILTER_48000 };
+            assert!(core::ptr::eq(r.coefficients, expected));
+            assert_eq!((r.phase, r.cursor), (0, 0));
+            assert!(r.history.iter().all(|sample| *sample == 0));
+            assert!(r.process(&[1234; 300], &mut [0; 300]).1 > 0);
+        }
+    }
     #[test]
     // ------------------------=
     // FUNC: private_history_is_erased

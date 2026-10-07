@@ -34,6 +34,12 @@ def main():
     for part, offset in enumerate(range(0, len(installed), part_size)):
         payload = subprocess.check_output(["mtype", "-i", media, f"::/EFI/INFINITY/PAYLOAD/P1-{part:03}.BIN"])
         assert payload == installed[offset:offset + part_size]
+    live = subprocess.check_output(["mtype", "-i", media, "::/EFI/INFINITY/KERNEL.ELF"])
+    for rate in (44100, 48000):
+        coefficients = (root / f"kernel/runtime/ai/voice-pcm-{rate}.bin").read_bytes()
+        assert len(coefficients) == 96 * 160 * 4
+        assert coefficients in installed
+        assert coefficients in live
     loader = (root / f"build/{arch}/{boot}").read_bytes()
     for image in (str(root / f"build/{arch}/installed-esp.img"), media):
         actual = subprocess.check_output(["mtype", "-i", image, f"::/EFI/BOOT/{boot}"])
