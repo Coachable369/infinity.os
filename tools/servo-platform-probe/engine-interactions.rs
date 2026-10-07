@@ -106,6 +106,9 @@ pub fn verify(engine:&Servo)->bool {
     super::super::record(2,40,3);
     for _ in 0..2 {if !click(engine,&view,&repaint,&input,24.0,144.0){return false;}}
     if !check("entry.selectionStart===0 && entry.selectionEnd===5"){return false;}
+    let search=include_str!("../../sdk/infinity-browser-servo/selection-search.js");
+    if !check(&std::format!("({search})==='https://www.google.com/search?q=alpha'")){return false;}
+    super::super::record(2,40,9);
     for _ in 0..2 {if !click(engine,&view,&repaint,&input,24.0,144.0){return false;}}
     if !check("entry.selectionStart===0 && entry.selectionEnd===11"){return false;}
     if !key(engine,&view,&repaint,&input,servo::Key::Character("a".into()),servo::Modifiers::CONTROL) ||
@@ -132,6 +135,8 @@ pub fn verify(engine:&Servo)->bool {
     grant_clipboard(true);
     if !key(engine,&view,&repaint,&input,servo::Key::Character("x".into()),servo::Modifiers::CONTROL) || !check("entry.value.length===16385"){return false;}
     if !check("entry.type='password';entry.value='secret';entry.select();true"){return false;}
+    if !check(&std::format!("({search})===''") ) {return false;}
+    super::super::record(2,40,10);
     grant_clipboard(true);
     if !key(engine,&view,&repaint,&input,servo::Key::Character("x".into()),servo::Modifiers::CONTROL) || !check("entry.value==='secret'"){return false;}
     if system_clipboard::with_shared(|c|c.read([1;16],system_clipboard::ClipboardKind::Utf8Text,&mut copied,super::super::monotonic()/1_000_000))!=Ok(16) || &copied!=b"native clipboard" {return false;}

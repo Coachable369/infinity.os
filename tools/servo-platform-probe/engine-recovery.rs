@@ -95,7 +95,9 @@ pub fn verify(engine:&Servo)->bool {
         if session.navigate(&next).is_err() || !loaded(engine,&session,&next) {return false;}
         super::super::record(2,52,index as u64+1);
     }
-    let passed=starts.get()==7 && cancels.get()==7;
+    session.reload();
+    if session.complete() || !loaded(engine,&session,"https://recovery.test/good3") {return false;}
+    let passed=starts.get()==8 && cancels.get()==8;
     drop(session);super::drain_close(engine);OFFSET.store(0,Ordering::Relaxed);
     passed && renderer_recovery(engine)
 }

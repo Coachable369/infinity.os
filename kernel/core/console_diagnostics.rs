@@ -49,6 +49,10 @@ fn publish_workplace(console:&ConsoleRuntime,generation:u64) {
     let (ttl,read,write)=crate::ui::clipboard::with_shared(|c|c.policy());
     data[5]=ttl as u64;data[6]=read as u64;data[7]=write as u64;
     if console.workplace_authorized(false) {data[12..20].copy_from_slice(&console.workplace_result);}
+    let menu=super::clipboard_menu::current();
+    data[20]=menu.open as u64;data[21]=menu.viewer as u64;data[22]=menu.target as u64;data[23]=menu.row as u64;
+    data[24..28].copy_from_slice(&[menu.rect.x as u64,menu.rect.y as u64,menu.rect.width as u64,menu.rect.height as u64]);
+    data[28]=menu.length as u64;data[29]=menu.page as u64;data[30]=crate::ui::cursor::busy() as u64;
     unsafe {
         let pointer=(&raw mut INFINITY_WORKPLACE_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
         core::ptr::write_volatile(pointer.add(2),generation|1);
@@ -88,6 +92,7 @@ fn publish_navigator(console: &ConsoleRuntime, generation: u64) {
         data[21] = state.view_mode as u64;
         data[22] = state.scroll_offset as u64;
         data[30] = state.workplace_notice as u64;
+        data[31]=state.paste_to_editing as u64;data[32]=state.editor_selected as u64;
         let menu = layout.file_navigator_context_geometry(state.context_x,state.context_y,state.context_actions().len());
         data[23..27].copy_from_slice(&[menu.x as u64,menu.y as u64,menu.width as u64,menu.height as u64]);
         if let Some(entry) = (state.selected_index != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION)

@@ -168,13 +168,13 @@ impl DisplayDevice {
                 let r=label(24,y,if y<100 {440}else{288});
                 if r.y>=visible.y && r.y+r.height as i32<=visible.y+visible.height as i32 {self.browser_label(r,text,14*scale,false);}
             }
-            for index in 0..7 {
+            for index in 0..8 {
                 let text:&[u8]=match index {0=>b"Fast Search",1=>b"DuckDuckGo",2=>b"Bing",
                     3=>if view.settings.favorites {b"On"}else{b"Off"},
-                    4=>if view.settings_confirm {b"Confirm clear"}else{b"Clear favorites"},5=>b"Restore defaults",_=>b"Back to page"};
+                    4=>if view.settings_confirm {b"Confirm clear"}else{b"Clear favorites"},5=>b"Restore defaults",7=>b"Google",_=>b"Back to page"};
                 let r=infinity_browser_core::settings::control(content,scale as u32,index);
                 if r.y<visible.y || r.y+r.height as i32>visible.y+visible.height as i32 {continue;}
-                self.browser_surface(r,skin::button(index==view.settings.search as usize || index==3&&view.settings.favorites,skin::Interaction::Normal));
+                self.browser_surface(r,skin::button((index<3 && index==view.settings.search as usize) || (index==7 && view.settings.search==3) || index==3&&view.settings.favorites,skin::Interaction::Normal));
                 self.browser_label(Viewport{y:r.y+9*scale as i32,..r},text,14*scale,true);
                 if index==view.settings_focus {self.outline_rounded_rect(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize,8,34,211,238);}
             }
@@ -381,6 +381,10 @@ impl DisplayDevice {
     // ------------------=
     fn browser_glyph(&mut self,r:Viewport,glyph:usize,enabled:bool,scale:usize) {
         let cx=r.x+r.width as i32/2;let cy=r.y+r.height as i32/2;let s=scale as i32;
+        if glyph==14 {
+            let _=self.themed_icon(cx.max(0) as usize,cy.max(0) as usize,27,24*scale);
+            return;
+        }
         let color=if enabled {if glyph>=14 {(34,211,238)}else{(196,207,232)}}else{(91,108,139)};
         let mut stroke=|x1:i32,y1:i32,x2:i32,y2:i32| {
             for offset in 0..scale as i32 {self.line(cx+x1*s,cy+y1*s+offset,cx+x2*s,cy+y2*s+offset,color.0,color.1,color.2);}
@@ -396,7 +400,6 @@ impl DisplayDevice {
             9=>{stroke(-5,-5,5,5);stroke(5,-5,-5,5);}
             10=>{for (a,b,c,d) in [(-5,-7,2,-7),(2,-7,5,-4),(5,-4,5,7),(5,7,-5,7),(-5,7,-5,-7),(2,-7,2,-3),(2,-3,5,-3),(-2,0,2,0),(-2,3,2,3)] {stroke(a,b,c,d);}}
             12|16=>{for (a,b,c,d) in [(0,-8,2,-3),(2,-3,8,-2),(8,-2,4,2),(4,2,5,8),(5,8,0,5),(0,5,-5,8),(-5,8,-4,2),(-4,2,-8,-2),(-8,-2,-2,-3),(-2,-3,0,-8)] {stroke(a,b,c,d);}}
-            14=>{for (a,b,c,d) in [(-6,-7,0,-8),(0,-8,5,-4),(5,-4,5,1),(5,1,0,5),(0,5,-6,4),(-6,4,-9,-1),(-9,-1,-6,-7),(4,4,9,9)] {stroke(a,b,c,d);}}
             15=>{for (a,b,c,d) in [(-8,-3,3,-3),(3,-3,3,8),(3,8,-8,8),(-8,8,-8,-3),(-5,-6,6,-6),(6,-6,6,5),(-2,-9,9,-9),(9,-9,9,2)] {stroke(a,b,c,d);}}
             13=>{for (a,b,c,d) in [(-3,-6,3,-6),(3,-6,6,-3),(6,-3,6,3),(6,3,3,6),(3,6,-3,6),(-3,6,-6,3),(-6,3,-6,-3),(-6,-3,-3,-6),
                 (0,-9,0,-6),(0,6,0,9),(-9,0,-6,0),(6,0,9,0),(-6,-6,-4,-4),(4,4,6,6),(-6,6,-4,4),(4,-4,6,-6),(-2,-2,2,-2),(2,-2,2,2),(2,2,-2,2),(-2,2,-2,-2)] {stroke(a,b,c,d);}}

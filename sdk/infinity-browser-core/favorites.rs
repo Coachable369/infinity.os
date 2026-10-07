@@ -28,7 +28,7 @@ impl Favorites {
         if bytes.len()<4 || bytes[..3]!=[b'I',b'F',b'A'] || !matches!(bytes[3],1|2) || bytes.len()>BYTES {return Err(Error::Invalid);}
         let mut result=Self::new();let mut at=4;
         if bytes[3]==2 {
-            if bytes.len()<6 || bytes[4]>2 || bytes[5]>1 {return Err(Error::Invalid);}
+            if bytes.len()<6 || bytes[4]>3 || bytes[5]>1 {return Err(Error::Invalid);}
             result.set_preferences(bytes[4],bytes[5]!=0)?;at=6;
         }
         while at<bytes.len() {
@@ -58,7 +58,7 @@ impl Favorites {
     // DESC: Upgrades the existing browser object atomically in memory without another namespace or losing saved pages.
     // ------------------=
     pub fn set_preferences(&mut self,search:u8,visible:bool)->Result<(),Error> {
-        if search>2 {return Err(Error::Invalid);}
+        if search>3 {return Err(Error::Invalid);}
         if self.bytes[3]==1 {
             if self.length+2>BYTES {return Err(Error::Full);}
             self.bytes.copy_within(4..self.length,6);self.length+=2;self.bytes[3]=2;

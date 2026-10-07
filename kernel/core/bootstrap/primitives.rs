@@ -966,6 +966,15 @@ impl super::DisplayDevice {
         let x = self.width as i32 * cursor_x / 1000;
         let y = self.height as i32 * cursor_y / 1000;
         let prefs = crate::ui::input_preferences::current();
+        if crate::ui::cursor::busy() {
+            let bounds=crate::ui::cursor::bounds(x,y,self.ui_scale(),prefs,false);
+            let edge=bounds.width as usize;
+            for py in 0..edge {for px in 0..edge {
+                let p=crate::ui::cursor::busy_sample(px,py,edge);
+                self.blend_color(bounds.x+px as i32,bounds.y+py as i32,p[0],p[1],p[2],p[3]);
+            }}
+            return;
+        }
         let scale = crate::ui::cursor::shape_scale(prefs, self.ui_scale());
         match crate::ui::text_input::pointer_shape() {
             crate::ui::text_input::PointerShape::Text => {

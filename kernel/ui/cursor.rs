@@ -1,6 +1,32 @@
 //! Built-in cursor sprites are linked into both live and installed kernels.
 use super::geometry::Rect;
 use super::input_preferences::Preferences;
+use core::sync::atomic::{AtomicUsize,Ordering};
+static BUSY_FRAME:AtomicUsize=AtomicUsize::new(0);
+static BUSY_SPRITE:&[u8;16*64*64*4]=include_bytes!("../../assets/ui-design-kit/default/wait-infinity-v1.rgba");
+// ------------------------=
+// FUNC: animate_busy
+// DESC: Publishes one fixed-rate sprite frame and reports transitions including return to the normal pointer.
+// ------------------=
+pub fn animate_busy(loading:bool,now_ms:u64)->bool {
+    let next=if loading {1+(now_ms/80%16) as usize}else{0};
+    BUSY_FRAME.swap(next,Ordering::Relaxed)!=next
+}
+// ------------------------=
+// FUNC: busy
+// DESC: Reports the active wait-cursor state without querying application services during painting.
+// ------------------=
+pub fn busy()->bool {BUSY_FRAME.load(Ordering::Relaxed)!=0}
+// ------------------------=
+// FUNC: busy_sample
+// DESC: Samples the authored animation in a bounded fixed footprint.
+// ------------------=
+pub fn busy_sample(x:usize,y:usize,size:usize)->[u8;4] {
+    if size==0 || x>=size || y>=size {return [0;4];}
+    let frame=BUSY_FRAME.load(Ordering::Relaxed).saturating_sub(1).min(15);
+    let i=(frame*64*64+y*64/size*64+x*64/size)*4;
+    [BUSY_SPRITE[i],BUSY_SPRITE[i+1],BUSY_SPRITE[i+2],BUSY_SPRITE[i+3]]
+}
 include!("../../assets/cursors/hotspots.rs");
 pub const EDGE: usize = 128;
 pub static SPRITES: [&[u8; EDGE * EDGE * 4]; 10] = [
@@ -32,6 +58,10 @@ pub fn shape_scale(p: Preferences, scale: usize) -> usize { ((size(p,scale)+13)/
 // DESC: Shares hotspot-aware paint and restoration geometry; hit-test coordinates remain unchanged.
 // ------------------=
 pub fn bounds(x: i32, y: i32, scale: usize, p: Preferences, special: bool) -> Rect {
+    if busy() {
+        let edge=size(p,scale).max((40*scale).min(120));
+        return Rect{x:x-edge as i32/2,y:y-edge as i32/2,width:edge as u32,height:edge as u32};
+    }
     let size=if special {28*shape_scale(p,scale)} else {size(p,scale)};
     let (hx,hy)=if special {(0,0)} else {HOTSPOTS[p.cursor_style.min(9) as usize]};
     Rect {x:x-(hx*size/EDGE) as i32,y:y-(hy*size/EDGE) as i32,width:size as u32,height:size as u32}

@@ -81,6 +81,23 @@ fn valid_size(width: u32, height: u32) -> bool {
 
 impl<P: Provider + 'static> Session<P> {
     // ------------------------=
+    // FUNC: search_selection
+    // DESC: Searches the focused selection without modifying clipboard contents or exposing password fields.
+    // ------------------=
+    pub fn search_selection(&self) {
+        let view=self.view.clone();
+        let resources=self.resources.clone();let complete=self.complete.clone();
+        self.view.evaluate_javascript(String::from(include_str!("selection-search.js")),move |result|{
+            if let Ok(servo::JSValue::String(url))=result {
+                if url.starts_with("https://www.google.com/search?q=") && url.len()<=2048 {
+                    if let Ok(url)=servo::ServoUrl::parse(&url) {
+                        resources.cancel_all();complete.set(false);view.load(url.into_url());
+                    }
+                }
+            }
+        });
+    }
+    // ------------------------=
     // FUNC: zoom
     // DESC: Changes real layout zoom for this tab without changing other tabs or native chrome.
     // ------------------=

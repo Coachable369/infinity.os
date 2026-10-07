@@ -61,6 +61,117 @@ fn personal_destination(path:&[u8])->Result<(),Error> {
 
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: clipboard_menu_pointer
+    // DESC: Opens text actions without moving the selected range and keeps overlay hits out of web content.
+    // ------------------=
+    pub(super) fn clipboard_menu_pointer(&mut self,clicked:bool,right_clicked:bool)->bool {
+        use clipboard_menu::{Target,Menu};
+        let p=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,
+            y:self.system.framebuffer_height as i32*self.pointer_y/1000};
+        let mut menu=clipboard_menu::current();
+        if menu.open {
+            if clicked {
+                if menu.viewer {
+                    if !menu.rect.contains(p) || p.y<menu.rect.y+42*menu.scale as i32 {clipboard_menu::close();}
+                    else if p.y>menu.rect.bottom()-48*menu.scale as i32 {
+                        if p.x<menu.rect.x+menu.rect.width as i32/2 {menu.page=menu.page.saturating_sub(1);}
+                        else {menu.page=(menu.page+1).min(menu.length.saturating_sub(1)/384);}
+                        clipboard_menu::publish(menu);
+                    }
+                } else if let Some(row)=menu.row_at(p) {self.clipboard_menu_action(row);}
+                else {clipboard_menu::close();}
+            } else if let Some(row)=menu.row_at(p) {
+                if menu.row!=row {menu.row=row;clipboard_menu::publish(menu);}
+            }
+            return true;
+        }
+        if !right_clicked || self.mode!=ConsoleMode::Desktop || !self.workplace_authorized(false) {return false;}
+        let target=if self.desktop_app==DesktopAppKind::TextEditor && self.editor_dialog==EditorDialog::None
+            && self.editor_layout().body.contains(p) {Some(Target::Editor)} else {None};
+        let target=target.or_else(||{
+            if self.desktop_app!=DesktopAppKind::None || !self.home_window_visible {return None;}
+            let state=crate::runtime::with_runtime(|r|r.file_navigator).flatten()?;
+            let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
+            if (state.location_editing || state.paste_to_editing)
+                && matches!(self.desktop_target(layout),Some(DesktopTarget::HomeLocation|DesktopTarget::HomeDialogAction(2))) {
+                Some(Target::Navigator)
+            }else{None}
+        });
+        #[cfg(feature="native-browser")]
+        let target=target.or_else(||browser_controller::context_target(self,p));
+        let Some(target)=target else{return false;};
+        menu=Menu::new();menu.open=true;menu.target=target;
+        menu.place(p.x,p.y,self.system.framebuffer_width,self.system.framebuffer_height,
+            SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
+        clipboard_menu::publish(menu);true
+    }
+    // ------------------------=
+    // FUNC: clipboard_menu_key
+    // DESC: Provides keyboard navigation, activation, viewer paging and Escape without editing the covered selection.
+    // ------------------=
+    pub(super) fn clipboard_menu_key(&mut self,key:ConsoleKey)->bool {
+        let mut menu=clipboard_menu::current();if !menu.open {return false;}
+        if matches!(key,ConsoleKey::Shortcut(b'L')) {clipboard_menu::close();return false;}
+        match key {
+            ConsoleKey::Escape=>clipboard_menu::close(),
+            ConsoleKey::Up|ConsoleKey::Left=>{
+                if menu.viewer {menu.page=menu.page.saturating_sub(1);}else{menu.row=(menu.row+5)%6;}
+                clipboard_menu::publish(menu);
+            },
+            ConsoleKey::Down|ConsoleKey::Right=>{
+                if menu.viewer {menu.page=(menu.page+1).min(menu.length.saturating_sub(1)/384);}else{menu.row=(menu.row+1)%6;}
+                clipboard_menu::publish(menu);
+            },
+            ConsoleKey::Enter if !menu.viewer=>self.clipboard_menu_action(menu.row),
+            _=>{},
+        }true
+    }
+    // ------------------------=
+    // FUNC: clipboard_menu_action
+    // DESC: Executes the same authenticated clipboard operations used by editing shortcuts.
+    // ------------------=
+    fn clipboard_menu_action(&mut self,row:usize) {
+        use clipboard_menu::Target;
+        let mut menu=clipboard_menu::current();clipboard_menu::close();
+        if !self.workplace_authorized(false) {return;}
+        if row==4 {
+            menu.bytes.fill(0);menu.length=self.read_workplace_text(&mut menu.bytes).unwrap_or(0);
+            menu.viewer=true;menu.open=true;menu.page=0;
+            menu.place(menu.rect.x,menu.rect.y,self.system.framebuffer_width,self.system.framebuffer_height,menu.scale);
+            clipboard_menu::publish(menu);return;
+        }
+        if row==5 {
+            #[cfg(feature="native-browser")]
+            match menu.target {
+                Target::Editor=>if let Some((start,end))=self.editor_document.selection() {
+                    let mut selected=[0;16384];let bytes=&self.editor_document.bytes()[start..end];
+                    let n=bytes.len().min(selected.len());selected[..n].copy_from_slice(&bytes[..n]);
+                    browser_controller::search_text(self,&selected[..n]);
+                },
+                Target::Address=>{
+                    let view=crate::runtime::browser::presentation();
+                    if view.address_selected {browser_controller::search_text(self,&view.edit[..view.edit_length]);}
+                },
+                Target::Browser=>browser_controller::search_selection(self),
+                Target::Navigator=>{
+                    if let Some(state)=crate::runtime::with_runtime(|r|r.file_navigator).flatten().filter(|n|n.editor_selected) {
+                        browser_controller::search_text(self,state.editor_text.as_bytes());
+                    }
+                },
+            }
+            return;
+        }
+        let Some(&key)=b"cxva".get(row) else{return;};
+        match menu.target {
+            Target::Editor=>{self.input_editor_tools(ConsoleKey::Shortcut(key));},
+            Target::Navigator=>{self.input_file_navigator(ConsoleKey::Shortcut(key));},
+            #[cfg(feature="native-browser")]
+            Target::Browser|Target::Address=>browser_controller::key(self,ConsoleKey::Shortcut(key)),
+            #[cfg(not(feature="native-browser"))]
+            _=>{},
+        }
+    }
+    // ------------------------=
     // FUNC: workplace_authorized
     // DESC: Checks the full active session and native Personal Space capability before workplace operations.
     // ------------------=
@@ -77,12 +188,22 @@ impl ConsoleRuntime {
     pub(super) fn synchronize_workplace(&mut self) {
         let active=self.workplace_authorized(false);
         if self.workplace_session!=self.current_session.0 {
+            clipboard_menu::close();
             self.command_history=work::History::new();self.workplace_session=self.current_session.0;
             self.workplace_result=[0;8];
         }
-        if !active {self.command_history.clear();}
+        if !active {self.command_history.clear();clipboard_menu::close();}
         let now=now_ms();
         clipboard::with_shared(|c|{c.session(self.current_session.0,active);c.expire(now);});
+        let mut menu=clipboard_menu::current();
+        if menu.open && menu.viewer {
+            let mut bytes=[0;clipboard::MAX_CLIPBOARD_BYTES];
+            let n=self.read_workplace_text(&mut bytes).unwrap_or(0);
+            if n!=menu.length || bytes!=menu.bytes {
+                menu.bytes=bytes;menu.length=n;menu.page=menu.page.min(n.saturating_sub(1)/384);
+                clipboard_menu::publish(menu);
+            }
+        }
     }
     // ------------------------=
     // FUNC: copy_workplace_text
@@ -310,6 +431,9 @@ impl ConsoleRuntime {
             }else{return Err(Error::Invalid);}Ok(())
         })();
         let notice=if result.is_ok() {if key==b'v' {1}else if key==b'x' {2}else{3}} else {4};
-        let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {n.workplace_notice=notice;n.context_menu_open=false;}});
+        let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {
+            n.workplace_notice=notice;n.context_menu_open=false;
+            if result.is_ok() && key==b'v' {n.cancel_edit();n.dialog_open=None;}
+        }});
     }
 }

@@ -79,6 +79,23 @@ desktop animation frame; no timer, bitmap, blur, or paint-time allocation is add
 - Input and send controls are fully covered; voice capture remains closed while visible.
 - Surface, border, typography, cyan focus, and 8px rhythm reuse the assistant kit.
 
+## Clipboard and loading interactions
+
+Reuse the native context-menu surface, 30px rows, Inter labels, cyan focus,
+and the File Navigator location field for Paste To. No new panel recipe.
+All magnifying glasses reuse generated theme role 27 (`27-search.png`),
+including browser chrome; do not substitute procedural strokes.
+
+Kit gap: no animated busy cursor existed. `wait-infinity-v1.png` is a built-in
+imagegen transparent 4x4 sheet: silver/cyan glass infinity ribbon with a moving
+white highlight. Prompt: sixteen centered, equally padded row-major frames,
+one seamless highlight circuit, orthographic, fixed silhouette, no text,
+background, pointer arrow or borders. `tools/build-wait-artwork.py` packs sixteen
+64x64 RGBA frames. Display at the pointer hotspot in a fixed 40px footprint,
+80ms per frame. Retain user cursor sizing and avoid full-window animation damage.
+Loading cancellation, completion, error, lock and window dismissal restore the
+normal cursor. Master and packed sprite use the existing design-kit install list.
+
 ## Generation
 
 Created with the built-in image-generation tool, transparent background enabled.

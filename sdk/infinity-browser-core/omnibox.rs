@@ -44,26 +44,30 @@ pub fn resolve(input: &str, search_prefix: &str, output: &mut [u8]) -> Result<(D
         && (host == "localhost" || (host.contains('.') && !host.starts_with('.') && !host.ends_with('.')
             && host.split('.').all(|part| !part.is_empty() && !part.starts_with('-') && !part.ends_with('-')
                 && part.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'))));
-    let (kind, prefix) = if bare_domain { (Destination::Url, "https://") } else {
-        if !search_prefix.starts_with("https://") || search_prefix.chars().any(char::is_control) {
-            return Err(Error::Invalid);
-        }
-        (Destination::Search, search_prefix)
-    };
-    let length = prefix.len() + input.bytes().map(|b| if kind == Destination::Url || unreserved(b) { 1 } else { 3 }).sum::<usize>();
+    if !bare_domain {return search(input,search_prefix,output).map(|n|(Destination::Search,n));}
+    let prefix="https://";
+    let length = prefix.len() + input.len();
     if length > output.len() { return Err(Error::Full); }
     output[..prefix.len()].copy_from_slice(prefix.as_bytes());
-    let mut at = prefix.len();
-    for byte in input.bytes() {
-        if kind == Destination::Url || unreserved(byte) { output[at] = byte; at += 1; }
-        else {
-            output[at] = b'%';
-            output[at + 1] = b"0123456789ABCDEF"[(byte >> 4) as usize];
-            output[at + 2] = b"0123456789ABCDEF"[(byte & 15) as usize];
-            at += 3;
+    output[prefix.len()..length].copy_from_slice(input.as_bytes());
+    Ok((Destination::Url, length))
+}
+
+// ------------------------=
+// FUNC: search
+// DESC: Encodes literal selected text as a query even when it resembles a URL; rejects overflow before writing.
+// ------------------=
+pub fn search(input:&str,prefix:&str,output:&mut[u8])->Result<usize,Error> {
+    if input.trim().is_empty() || !prefix.starts_with("https://") || prefix.chars().any(char::is_control) {return Err(Error::Invalid);}
+    let length=prefix.len()+input.bytes().map(|b|if unreserved(b){1}else{3}).sum::<usize>();
+    if length>output.len() {return Err(Error::Full);}
+    output[..prefix.len()].copy_from_slice(prefix.as_bytes());let mut at=prefix.len();
+    for b in input.bytes() {
+        if unreserved(b) {output[at]=b;at+=1;}else{
+            output[at]=b'%';output[at+1]=b"0123456789ABCDEF"[(b>>4) as usize];
+            output[at+2]=b"0123456789ABCDEF"[(b&15) as usize];at+=3;
         }
-    }
-    Ok((kind, at))
+    }Ok(at)
 }
 
 // ------------------------=
@@ -75,6 +79,17 @@ fn unreserved(byte: u8) -> bool { byte.is_ascii_alphanumeric() || matches!(byte,
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: selected_text_is_always_a_literal_query
+    // DESC: Tests URL-shaped selections, multiline text and atomic rejection when the query exceeds capacity.
+    // ------------------=
+    #[test]
+    fn selected_text_is_always_a_literal_query() {
+        let mut bytes=[0;2048];let prefix="https://www.google.com/search?q=";
+        let n=search("https://example.com/?x=1&y=2\n",prefix,&mut bytes).unwrap();
+        assert_eq!(&bytes[..n],b"https://www.google.com/search?q=https%3A%2F%2Fexample.com%2F%3Fx%3D1%26y%3D2%0A");
+        let mut small=[7;8];assert_eq!(search("text",prefix,&mut small),Err(Error::Full));assert_eq!(small,[7;8]);
+    }
     // ------------------------=
     // FUNC: explicit_web_association_preserves_local_objects
     // DESC: Checks default web routing, bounded writes and refusal to turn file or privileged schemes into web requests.

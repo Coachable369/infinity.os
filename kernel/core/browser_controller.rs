@@ -47,7 +47,7 @@ fn settings_action(console:&ConsoleRuntime,index:usize) {
         if ok {unsafe {FAVORITES=empty;FAVORITES_OFFSET=0;FAVORITES_ERROR=0;}favorites_sync(console);}
         crate::runtime::browser::settings_presentation(next,true,if ok {1}else{2},false);return;
     }
-    match index {0..=2=>next.search=index as u8,3=>next.favorites=!next.favorites,5=>next=infinity_browser_core::settings::Settings::new(),_=>return}
+    match index {0..=2=>next.search=index as u8,7=>next.search=3,3=>next.favorites=!next.favorites,5=>next=infinity_browser_core::settings::Settings::new(),_=>return}
     let mut previous=[0u8;6];
     let ok=crate::storage::browser_settings(console.current_user.0,console.current_session.0,Some(&next.bytes()),&mut previous).is_ok();
     if ok {unsafe {FAVORITES_OWNER=None;}favorites_sync(console);}
@@ -373,7 +373,7 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         if matches!(key,ConsoleKey::Escape) {settings_action(console,6);}
         else if matches!(key,ConsoleKey::Enter|ConsoleKey::Character(b' ')) {settings_action(console,settings.settings_focus);}
         else if let ConsoleKey::Tab(reverse)=key {
-            let focus=(settings.settings_focus+if reverse {6}else{1})%7;
+            let focus=(settings.settings_focus+if reverse {7}else{1})%8;
             let (height,scale)=settings_dimensions(console);
             let r=infinity_browser_core::settings::control(infinity_browser_core::Viewport{x:0,y:0,width:760*scale,height},scale,focus);
             crate::runtime::browser::settings_position(focus,(r.y as u32+40*scale).saturating_sub(height));
@@ -455,6 +455,44 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
 }
 
 // ------------------------=
+// FUNC: context_target
+// DESC: Preserves text selection while routing native right-click actions to the address field or web viewport.
+// ------------------=
+pub(super) fn context_target(console:&ConsoleRuntime,p:crate::ui::geometry::Point)->Option<super::clipboard_menu::Target> {
+    if console.desktop_app!=DesktopAppKind::Browser {return None;}
+    let state=console.browser_window_state();if !state.visible {return None;}
+    let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
+    let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+    let view=crate::runtime::browser::presentation();if view.permission!=0 || view.settings_open {return None;}
+    let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
+    let layout=Layout::new(bounds.width,bounds.height,scale as u32)?.with_favorites(view.settings.favorites);
+    let (x,y)=(p.x-bounds.x,p.y-bounds.y);
+    if layout.address.local(x,y).is_some() {
+        crate::runtime::browser::focus_address(true);Some(super::clipboard_menu::Target::Address)
+    }else if !view.welcome_open && layout.content.local(x,y).is_some() {
+        crate::runtime::browser::focus_address(false);Some(super::clipboard_menu::Target::Browser)
+    }else{None}
+}
+// ------------------------=
+// FUNC: search_text
+// DESC: Encodes explicit selected-text Google searches through the normal permission and navigation path.
+// ------------------=
+pub(super) fn search_text(console:&mut ConsoleRuntime,bytes:&[u8]) {
+    let Ok(text)=core::str::from_utf8(bytes) else{return;};if text.trim().is_empty() {return;}
+    let mut url=[0;2048];
+    let Ok(length)=infinity_browser_core::omnibox::search(text,"https://www.google.com/search?q=",&mut url) else{return;};
+    request_access(console,&url[..length]);
+}
+// ------------------------=
+// FUNC: search_selection
+// DESC: Sends an explicit user context-menu action to the focused engine selection.
+// ------------------=
+pub(super) fn search_selection(console:&ConsoleRuntime) {
+    let mut command=abi::Command::empty();command.kind=abi::SEARCH_SELECTION;
+    if enqueue(console,command) {poll(console);}
+}
+
+// ------------------------=
 // FUNC: send_key
 // DESC: Enqueues a complete modified key gesture without risking a stuck key under pressure.
 // ------------------=
@@ -479,6 +517,10 @@ fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
     if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
     let accepted=(&mut *(&raw mut INPUT)).push_reserved(&[command],3);
     crate::runtime::browser::input_pressure(!accepted);
+    if accepted && command.kind==abi::RELOAD {
+        let view=crate::runtime::browser::presentation();
+        crate::runtime::browser::launch_presentation(&view.address[..view.address_length],None);
+    }
     accepted
 }}
 
@@ -626,7 +668,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let view=crate::runtime::browser::presentation();
     if view.settings_open && layout.content.local(x,y).is_some() {
         let content=infinity_browser_core::Viewport{y:layout.content.y-view.settings_scroll as i32,..layout.content};
-        for index in 0..7 {if infinity_browser_core::settings::control(content,scale as u32,index).local(x,y).is_some() {
+        for index in 0..8 {if infinity_browser_core::settings::control(content,scale as u32,index).local(x,y).is_some() {
             settings_action(console,index);poll(console);break;
         }}return true;
     }

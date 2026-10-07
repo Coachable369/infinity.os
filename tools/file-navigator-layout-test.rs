@@ -155,7 +155,7 @@ fn main() {
         None
     );
     assert_eq!(layout.file_navigator_context_action(500, 500, row_five_x, row_five_y, 5), Some(4));
-    for rows in 1..=8 {
+    for rows in 1..=9 {
         let bounds = layout.file_navigator_context_geometry(990, 990, rows);
         assert_eq!(bounds.height, (12 + rows * 28) as u32);
         assert!(bounds.right() <= 1600 && bounds.bottom() <= 1000);
@@ -167,13 +167,13 @@ fn main() {
     for (width, height) in [(1024, 600), (1024, 768), (2560, 1440)] {
         let layout = SystemLayout::new(width, height);
         let scale = layout.scale() as i32;
-        let bounds = layout.file_navigator_context_geometry(990, 990, 8);
-        assert_eq!(bounds.height, 236 * scale as u32);
+        let bounds = layout.file_navigator_context_geometry(990, 990, 9);
+        assert_eq!(bounds.height, 264 * scale as u32);
         assert!(bounds.right() <= width as i32 && bounds.bottom() <= height as i32);
-        for row in 0..8 {
+        for row in 0..9 {
             let x = (bounds.x + 20 * scale) * 1000 / width as i32;
             let y = (bounds.y + (6 + row * 28 + 14) * scale) * 1000 / height as i32;
-            assert_eq!(layout.file_navigator_context_action(990, 990, x, y, 8), Some(row as usize));
+            assert_eq!(layout.file_navigator_context_action(990, 990, x, y, 9), Some(row as usize));
         }
     }
     println!(

@@ -135,6 +135,37 @@ pub(super) const AURORA_HARMONY_LAUNCHER_BMP: &[u8] =
 
 impl super::DisplayDevice {
     // ------------------------=
+    // FUNC: clipboard_overlay
+    // DESC: Paints native clipboard actions and bounded paged text using the shared menu surface.
+    // ------------------=
+    pub(super) fn clipboard_overlay(&mut self) {
+        let menu=crate::console::clipboard_menu::current();if !menu.open {return;}
+        let s=menu.scale;let x=menu.rect.x.max(0) as usize;let y=menu.rect.y.max(0) as usize;
+        let w=menu.rect.width as usize;let h=menu.rect.height as usize;
+        self.fill_rounded_rect_alpha(x,y,w,h,8*s,5,18,31,250);
+        self.outline_rounded_rect(x,y,w,h,8*s,73,180,229);
+        if !menu.viewer {
+            for (row,label) in crate::console::clipboard_menu::LABELS.iter().enumerate() {
+                let top=y+(6+row*30)*s;
+                if row==menu.row {self.fill_rounded_rect_alpha(x+5*s,top,w-10*s,30*s,4*s,20,66,91,255);}
+                self.app_text(x+14*s,top+3*s,label,(215,231,241),false,s);
+            }
+            return;
+        }
+        self.app_text(x+16*s,y+12*s,b"Clipboard",(231,239,245),true,s);
+        self.app_text(x+w.saturating_sub(58*s),y+12*s,b"Close",(100,215,245),false,s);
+        if menu.length==0 {self.app_text(x+16*s,y+64*s,b"Clipboard is empty or unavailable.",(165,188,207),false,s);}
+        let start=(menu.page*384).min(menu.length);let end=(start+384).min(menu.length);
+        for (row,line) in menu.bytes[start..end].chunks(48).enumerate() {
+            for (column,byte) in line.iter().enumerate() {
+                self.editor_glyph(x+(16+column*crate::ui::editor_tools::CELL_WIDTH)*s,
+                    y+(56+row*26)*s,if byte.is_ascii_control(){b' '}else{*byte},s,(220,232,240));
+            }
+        }
+        self.app_text(x+16*s,y+h.saturating_sub(34*s),b"Previous",(100,215,245),false,s);
+        self.app_text(x+w.saturating_sub(70*s),y+h.saturating_sub(34*s),b"Next",(100,215,245),false,s);
+    }
+    // ------------------------=
     // FUNC: active_accent_surface
     // DESC: Resolves one user-selected semantic accent surface into framebuffer channels.
     // ------------------=
@@ -313,7 +344,7 @@ impl super::DisplayDevice {
     #[cfg(any(feature = "installer", target_arch = "x86"))]
     // ------------------------=
     // FUNC: themed_icon
-    // DESC: Leaves semantic icon rendering to vector fallbacks on the legacy text architecture.
+    // DESC: Reuses the generated search artwork in the live installer; other roles retain their fallbacks.
     // ------------------=
     pub(super) fn themed_icon(
         &mut self,
@@ -322,6 +353,15 @@ impl super::DisplayDevice {
         _role: usize,
         _size: usize,
     ) -> bool {
+        #[cfg(all(feature = "installer", any(target_arch = "aarch64", target_arch = "x86_64")))]
+        if _role == 27 {
+            return self.paint_bitmap_alpha_atlas_cell(
+                include_bytes!("../../../assets/icons/runtime/crystal-blue-glass-base.bmp"),
+                5, 9, 27,
+                _center_x.saturating_sub(_size / 2),
+                _center_y.saturating_sub(_size / 2), _size,
+            );
+        }
         false
     }
 
@@ -8805,6 +8845,9 @@ impl super::DisplayDevice {
             b"/home/default/projects",
             b"/trash",
         ];
+        if location_editing && navigator_state.is_some_and(|state|state.editor_selected) {
+            self.fill_rect_alpha(location_left+12*scale,tool_top+7*scale,location_width.saturating_sub(24*scale),24*scale,20,90,140,220);
+        }
         self.ui_text(
             location_left + 14 * scale,
             tool_top + 9 * scale,
@@ -9489,16 +9532,20 @@ impl super::DisplayDevice {
                     b"Enter an absolute InfinityOS Namespace reference.",
                 ),
             };
-            self.ui_text_strong(left + 24 * scale, top + 22 * scale, title, 231, 239, 245, 1);
-            self.ui_text(
-                left + 24 * scale,
-                top + 54 * scale,
-                detail,
-                166,
-                190,
-                207,
-                1,
-            );
+            let paste_to=navigator_state.is_some_and(|state|state.paste_to_editing);
+            let title=if paste_to {b"Paste to location".as_slice()}else{title};
+            let detail=if paste_to && navigator_state.is_some_and(|state|state.workplace_notice==4) {
+                b"Paste failed. Check folder or existing names.".as_slice()
+            }else if paste_to {b"Destination folder".as_slice()}else{detail};
+            if paste_to {
+                for (offset,text,strong,color) in [(22,title,true,(231,239,245)),(54,detail,false,(166,190,207))] {
+                    self.app_label(crate::ui::geometry::Rect{x:(left+24*scale) as i32,y:(top+offset*scale) as i32,
+                        width:(width-48*scale) as u32,height:(24*scale) as u32},text,color,strong,scale);
+                }
+            }else{
+                self.ui_text_strong(left + 24 * scale, top + 22 * scale, title, 231, 239, 245, 1);
+                self.ui_text(left+24*scale,top+54*scale,detail,166,190,207,1);
+            }
             if dialog == crate::runtime::object_navigation::FileNavigatorDialog::Location {
                 self.fill_rounded_rect_alpha(
                     left + 24 * scale,
@@ -9525,7 +9572,12 @@ impl super::DisplayDevice {
                     .map(|state| state.editor_text)
                     .unwrap_or(crate::runtime::object_navigation::ByteText::empty());
                 let path = path_text.as_bytes();
-                self.ui_text(left + 36 * scale, top + 93 * scale, path, 220, 232, 240, 1);
+                if navigator_state.is_some_and(|state|state.editor_selected) {
+                    self.fill_rect_alpha(left+34*scale,top+89*scale,width-68*scale,24*scale,20,90,140,220);
+                }
+                self.ui_text_elided_strong(left + 36 * scale, top + 93 * scale, width-72*scale,path, 220, 232, 240);
+                let field_clip=self.render_clip;
+                self.intersect_render_clip(left+34*scale,top+82*scale,width-68*scale,38*scale);
                 self.text_field_caret(
                     left + 36 * scale,
                     top + 82 * scale,
@@ -9534,6 +9586,7 @@ impl super::DisplayDevice {
                     true,
                     2,
                 );
+                self.render_clip=field_clip;
             }
             let button_top = top + height.saturating_sub(54 * scale);
             let two_buttons = matches!(
@@ -9548,6 +9601,8 @@ impl super::DisplayDevice {
                     if dialog == crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
                     {
                         b"Empty Trash"
+                    } else if paste_to {
+                        b"Paste"
                     } else {
                         b"Go"
                     },
@@ -11318,7 +11373,7 @@ pub fn system_ui_present(
                 console.display.system_top_bar_clock(clock);
             }
             if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10 | 11) {
-                for damage in [crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                for damage in [crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {
@@ -11345,6 +11400,7 @@ pub fn system_ui_present(
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;
+            console.display.clipboard_overlay();
             console.save_and_draw_cursor(cursor_x, cursor_y);
             console.last_system_screen = screen;
             console.last_system_step = step;

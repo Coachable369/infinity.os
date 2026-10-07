@@ -223,7 +223,7 @@ class Guest(base.Guest):
     # FUNC: click
     # DESC: Requires observed pointer motion and paired button transitions before accepting a desktop click.
     # ------------------=
-    def click(self, x, y, press=True):
+    def click(self, x, y, press=True, button="left"):
         target = (x * 1000 // self.width, y * 1000 // self.height)
         previous=(0,0)
         divisor=[3,3]
@@ -245,10 +245,11 @@ class Guest(base.Guest):
         else:
             raise AssertionError({"pointer_target":target,"pointer_actual":state[13:15]})
         if not press:return
+        mask={"left":1,"right":2}[button]
         for down in (True, False):
             self.qmp("input-send-event", {"events": [
-                {"type": "btn", "data": {"button": "left", "down": down}}]})
-            self.wait(lambda s: bool(s[15] & 1) == down, "browser pointer button", timeout=30)
+                {"type": "btn", "data": {"button": button, "down": down}}]})
+            self.wait(lambda s: bool(s[15] & mask) == down, "browser pointer button", timeout=30)
 
     # ------------------------=
     # FUNC: boot
@@ -334,6 +335,7 @@ def main():
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
     parser.add_argument("--workplace", action="store_true", help="Exercise installed cross-app clipboard and native workplace commands")
     parser.add_argument("--workplace-menu", action="store_true", help="Verify clipboard context actions on an existing workplace test disk")
+    parser.add_argument("--clipboard-ui", action="store_true", help="Verify Command select-all and native text context-menu actions")
     parser.add_argument("--workplace-resume-storage", action="store_true", help="Resume a disposable workplace run after its initial file was saved")
     parser.add_argument("--tabs", action="store_true", help="With interaction, exercise native create/select/close controls and independent page pixels")
     parser.add_argument("--invalid-tls", action="store_true", help="Require a certificate-validation rejection from a real expired HTTPS endpoint")
@@ -439,13 +441,16 @@ def main():
             receipt["network_settings_configured"] = True
         elif args.automatic_network:
             receipt["automatic_network_only"] = True
-        if args.workplace or args.workplace_menu:
+        if args.workplace or args.workplace_menu or args.clipboard_ui:
             spec = importlib.util.spec_from_file_location("workplace_acceptance", ROOT / "tools/workplace-installed-test.py")
             workplace = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(workplace)
             receipt["workplace"] = {}
             try:
-                if args.workplace_menu:
+                if args.clipboard_ui:
+                    workplace.verify_text_context(guest)
+                    receipt["workplace"]["command_select_all_context_copy_cut_paste_viewer"]=True
+                elif args.workplace_menu:
                     workplace.verify_context_menu(guest)
                     receipt["workplace"]["context_menu_copy_cut_paste_and_bounds"] = True
                 else:
@@ -502,9 +507,10 @@ def main():
             welcome_value("STATE",0)
             welcome_value("NETWORK_COMPLETED",0)
             wait_color(guest,"browser-welcome",110,270,(32,33,36))
-            guest.click(396,441);welcome_value("SETTINGS",0x10100)
+            preference=int.from_bytes(guest.memory(*counters["SETTINGS"]),"little")&0xffff
+            guest.click(396,441);welcome_value("SETTINGS",0x10000|preference)
             guest.screenshot("browser-welcome-settings")
-            guest.key("esc");welcome_value("SETTINGS",256)
+            guest.key("esc");welcome_value("SETTINGS",preference)
             guest.key("tab");welcome_value("WELCOME",1)
             guest.key("ret")
             browser_text(guest,"https://example.com/");guest.key("ret")
@@ -783,12 +789,13 @@ def main():
                 guest.key("ctrl","w");chrome_value("ACTIVE_TAB",first)
                 receipt["find_highlights_navigation_and_view_switching"]=True
             guest.click(220,157);chrome_value("MENU",2)
+            preference=int.from_bytes(guest.memory(*counters["SETTINGS"]),"little")&0xffff
             guest.screenshot("browser-settings-menu")
-            guest.key("ret");chrome_value("SETTINGS",0x10100);chrome_value("MENU",0)
-            guest.key("esc");chrome_value("SETTINGS",256)
-            guest.click(808,197);chrome_value("SETTINGS",0x10100)
+            guest.key("ret");chrome_value("SETTINGS",0x10000|preference);chrome_value("MENU",0)
+            guest.key("esc");chrome_value("SETTINGS",preference)
+            guest.click(808,197);chrome_value("SETTINGS",0x10000|preference)
             guest.screenshot("browser-chrome-settings")
-            guest.key("esc");chrome_value("SETTINGS",256)
+            guest.key("esc");chrome_value("SETTINGS",preference)
             guest.click(140,157);chrome_value("MENU",1)
             guest.screenshot("browser-file-menu")
             guest.key("esc");chrome_value("MENU",0)
@@ -815,7 +822,8 @@ def main():
                     actual=int.from_bytes(guest.memory(*counters["SETTINGS"]),"little")
                     if actual==expected: return
                 raise AssertionError(dict(expected=expected,actual=actual))
-            guest.click(808,197);setting_value(0x10100)
+            preference=int.from_bytes(guest.memory(*counters["SETTINGS"]),"little")&0xffff
+            guest.click(808,197);setting_value(0x10000|preference)
             guest.click(350,361);setting_value(0x1010101)
             guest.click(500,417);setting_value(0x1010001)
             guest.screenshot("browser-settings-hidden-favorites")
@@ -824,8 +832,9 @@ def main():
             setting_value(1)
             guest.click(808,197);setting_value(0x10001)
             guest.click(500,381);setting_value(0x1010101)
-            guest.click(150,537);setting_value(0x1010100)
+            guest.click(150,537);setting_value(0x1010103)
             guest.screenshot("browser-settings-defaults")
+            guest.key("tab");guest.key("ret");setting_value(0x1010103)
             guest.key("tab");guest.key("ret");setting_value(0x1010100)
             guest.key("tab");guest.key("ret");setting_value(0x1010101)
             guest.key("tab");guest.key("ret");setting_value(0x1010102)

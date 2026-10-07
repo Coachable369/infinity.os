@@ -139,8 +139,89 @@ def select_file(guest, path, keep_menu=False):
     raise AssertionError(("Missing file", path))
 
 # ------------------------=
+# FUNC: verify_text_context
+# DESC: Verifies native Command select-all, real document mutations and clipboard viewer state through physical input.
+# ------------------=
+def verify_text_context(guest):
+    guest.launch("text",5)
+    value="Clipboard menu acceptance"
+    editor.text(guest,value)
+    initial=editor.wait_feature(guest,lambda p:p[7]==len(value))
+    x,y,w,h=initial[21:25]
+    for modifier in ("ctrl","meta_l","meta_r"):
+        guest.key("right")
+        guest.key(modifier,"a")
+        editor.wait_feature(guest,lambda p:p[9:11]==(0,len(value)))
+    # ------------------------=
+    # FUNC: action
+    # DESC: Invokes a real native context row while preserving the document selection.
+    # ------------------=
+    def action(row):
+        guest.click(x+160,y+190,button="right")
+        deadline=time.monotonic()+15
+        while True:
+            menu=snapshot(guest)
+            if menu[20] and not menu[21]:break
+            assert time.monotonic()<deadline,menu
+        left,top,width,height=menu[24:28]
+        scale=height//192
+        guest.click(left+40*scale,top+(6+row*30+15)*scale)
+    action(0)
+    action(1);editor.wait_feature(guest,lambda p:p[7]==0)
+    action(2);editor.wait_feature(guest,lambda p:p[16]==initial[16])
+    action(4)
+    deadline=time.monotonic()+15
+    while True:
+        menu=snapshot(guest)
+        if menu[20:22]==(1,1) and menu[28]==len(value):break
+        assert time.monotonic()<deadline,menu
+    guest.screenshot("clipboard-viewer")
+    guest.key("esc")
+    guest.key("meta_l","a")
+    action(0)
+    editor.wait_feature(guest,lambda p:p[9:11]==(0,len(value)))
+    guest.click(x+160,y+190,button="right")
+    guest.screenshot("text-context-menu")
+    guest.key("esc")
+    name="clipboard-ui-"+str(time.time_ns())[-8:]+".txt"
+    source="/home/default/documents/"+name
+    guest.key("ctrl","s")
+    docs.wait_navigator(guest,lambda s:s[9]==1)
+    editor.text(guest,name);guest.key("ret")
+    docs.wait_navigator(guest,lambda s:s[9]==0 and s[13]==zlib.crc32(source.encode()))
+    documents(guest);source_id=select_file(guest,source)
+    guest.key("ctrl","c")
+    # ------------------------=
+    # FUNC: paste_to
+    # DESC: Uses the actual file context menu and destination popup, never a storage shortcut.
+    # ------------------=
+    def paste_to(path,destination,success):
+        select_file(guest,path,keep_menu=True)
+        state=docs.navigator(guest);left,top=state[23:25];scale=state[8]
+        guest.click(left+40*scale,top+(6+7*28+14)*scale)
+        docs.wait_navigator(guest,lambda s:s[31] and s[32] and not s[17])
+        guest.key("meta_l","a");editor.text(guest,destination)
+        time.sleep(1)
+        guest.screenshot("file-paste-to")
+        guest.key("ret")
+        docs.wait_navigator(guest,lambda s:s[30]==(1 if success else 4) and bool(s[31])!=success)
+    paste_to(source,"/not-a-destination",False)
+    guest.key("esc");docs.wait_navigator(guest,lambda s:not s[31])
+    paste_to(source,"/home/default/downloads",True)
+    folder(guest,3,"/home/default/downloads")
+    copy="/home/default/downloads/"+name
+    copy_id=select_file(guest,copy);assert copy_id!=source_id
+    guest.key("ctrl","x")
+    paste_to(copy,"/home/default/documents",False)
+    guest.key("esc");docs.wait_navigator(guest,lambda s:not s[31])
+    paste_to(copy,"/home/default/pictures",True)
+    folder(guest,4,"/home/default/pictures")
+    assert select_file(guest,"/home/default/pictures/"+name)==copy_id
+    terminal(guest);digest(guest,source,value);digest(guest,"/home/default/pictures/"+name,value)
+
+# ------------------------=
 # FUNC: verify_context_menu
-# DESC: Clicks Copy, Cut, and Paste in the actual eight-row menu and verifies collision safety.
+# DESC: Clicks Copy, Cut, and Paste in the native context menu and verifies collision safety.
 # ------------------=
 def verify_context_menu(guest):
     guest.width, guest.height = guest.state()[11:13]
@@ -155,11 +236,11 @@ def verify_context_menu(guest):
         state = docs.navigator(guest)
         left, top, width, height = state[23:27]
         scale = state[8]
-        assert height == 236 * scale and width >= 100 * scale
+        assert height == 264 * scale and width >= 100 * scale
         guest.click(left + 20 * scale, top + (6 + row * 28 + 14) * scale)
         docs.wait_navigator(guest, lambda s: not s[17] and s[30] == notice)
     assert select_file(guest, source, keep_menu=True) == identity
-    guest.screenshot("workplace-context-eight-rows")
+    guest.screenshot("workplace-context-nine-rows")
     guest.key("esc")
     terminal(guest)
     command(guest, "work clipboard clear", 2)

@@ -50,6 +50,8 @@ mod editor_commands;
 mod assistant_commands;
 #[path = "console_enterprise.rs"]
 mod enterprise_commands;
+#[path="../ui/clipboard_menu.rs"]
+pub(crate) mod clipboard_menu;
 #[cfg(feature="native-browser")]
 #[path="browser_controller.rs"]
 mod browser_controller;
@@ -797,7 +799,7 @@ impl ConsoleRuntime {
                     || crate::runtime::with_runtime(|runtime| {
                         runtime
                             .file_navigator
-                            .map(|state| state.location_editing || state.rename_editing)
+                            .map(|state| state.location_editing || state.rename_editing || state.paste_to_editing)
                     })
                     .flatten()
                     .unwrap_or(false)
@@ -928,7 +930,7 @@ impl ConsoleRuntime {
         } else {
             let file_cursor = crate::runtime::with_runtime(|runtime| {
                 runtime.file_navigator.and_then(|state| {
-                    (state.location_editing || state.rename_editing).then_some(state.editor_cursor)
+                    (state.location_editing || state.rename_editing || state.paste_to_editing).then_some(state.editor_cursor)
                 })
             })
             .flatten();
@@ -1308,6 +1310,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
         self.synchronize_workplace();
+        if self.clipboard_menu_key(key) {self.redraw();return;}
         if self.authentication_success.active() {
             return;
         }
@@ -1883,8 +1886,11 @@ impl ConsoleRuntime {
             }
             return true;
         }
-        if state.location_editing || state.rename_editing {
+        if state.location_editing || state.rename_editing || state.paste_to_editing {
             match key {
+                ConsoleKey::Shortcut(b'a')=>{
+                    let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {n.editor_selected=true;}});
+                },
                 ConsoleKey::Shortcut(b'c'|b'x')=>{
                     if self.copy_workplace_text(state.editor_text.as_bytes()) && matches!(key,ConsoleKey::Shortcut(b'x')) {
                         let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {n.editor_text=crate::runtime::object_navigation::ByteText::empty();n.editor_cursor=0;}});
@@ -1894,10 +1900,12 @@ impl ConsoleRuntime {
                     let mut value=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
                     if let Ok(length)=self.read_workplace_text(&mut value) {
                         let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {
-                            let mut bytes=[0;crate::runtime::object_navigation::MAX_NAMESPACE_PATH];let mut size=n.editor_text.as_bytes().len();
-                            bytes[..size].copy_from_slice(n.editor_text.as_bytes());let mut caret=n.editor_cursor;
+                            let mut bytes=[0;crate::runtime::object_navigation::MAX_NAMESPACE_PATH];
+                            let mut size=if n.editor_selected {0}else{n.editor_text.as_bytes().len()};
+                            if size!=0 {bytes[..size].copy_from_slice(n.editor_text.as_bytes());}
+                            let mut caret=if n.editor_selected {0}else{n.editor_cursor};
                             if crate::ui::text_input::paste_ascii(&mut bytes,&mut size,&mut caret,&value[..length]) {
-                                if let Ok(text)=crate::runtime::object_navigation::ByteText::new(&bytes[..size]) {n.editor_text=text;n.editor_cursor=caret;}
+                                if let Ok(text)=crate::runtime::object_navigation::ByteText::new(&bytes[..size]) {n.editor_text=text;n.editor_cursor=caret;n.editor_selected=false;}
                             }
                         }});
                     }
@@ -1911,11 +1919,22 @@ impl ConsoleRuntime {
                 | ConsoleKey::End => {
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigator.as_mut().map(|navigator| {
+                            if navigator.editor_selected {
+                                if matches!(key,ConsoleKey::Left|ConsoleKey::Right) {
+                                    navigator.editor_cursor=if matches!(key,ConsoleKey::Left) {0}else{navigator.editor_text.as_bytes().len()};
+                                    navigator.editor_selected=false;return;
+                                }
+                                if matches!(key,ConsoleKey::Character(_)|ConsoleKey::Backspace|ConsoleKey::Delete) {
+                                    navigator.editor_text=crate::runtime::object_navigation::ByteText::empty();navigator.editor_cursor=0;
+                                }
+                                navigator.editor_selected=false;
+                                if matches!(key,ConsoleKey::Backspace|ConsoleKey::Delete) {return;}
+                            }
                             text_edit_key(key).map(|edit_key| {
                                 navigator
                                     .editor_text
                                     .edit(&mut navigator.editor_cursor, edit_key)
-                            })
+                            });
                         })
                     });
                 }
@@ -1924,7 +1943,7 @@ impl ConsoleRuntime {
                         runtime
                             .file_navigator
                             .as_mut()
-                            .map(|navigator| navigator.cancel_edit())
+                            .map(|navigator| {navigator.cancel_edit();navigator.dialog_open=None;})
                     });
                 }
                 ConsoleKey::Enter => self.commit_file_navigator_edit(state),
@@ -2076,6 +2095,18 @@ impl ConsoleRuntime {
         &mut self,
         state: crate::runtime::object_navigation::FileNavigatorState,
     ) {
+        if state.paste_to_editing {
+            let path=state.editor_text.as_bytes();
+            let valid=crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|
+                m.space==crate::storage::object::Space::Personal && m.content_type==crate::storage::object::ContentType::Namespace);
+            if valid {
+                let mut destination=state;destination.active_namespace_ref=state.editor_text;
+                self.file_clipboard(b'v',destination);
+            } else {
+                let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {n.workplace_notice=4;}});
+            }
+            return;
+        }
         if state.location_editing {
             let path = state.editor_text.as_bytes();
             if crate::storage::namespace_resolve(path).is_ok() {
@@ -6895,6 +6926,12 @@ impl ConsoleRuntime {
     ) {
         use crate::runtime::object_navigation::ContextAction as A;
         let Some(action) = state.context_actions().get(action).copied() else { return; };
+        if action==A::PasteTo {
+            let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut() {
+                n.begin_paste_to();
+            }});
+            return;
+        }
         if matches!(action,A::Copy|A::Cut|A::Paste) {
             let mut state=state;state.selected_index=state.context_item;
             self.file_clipboard(match action {A::Copy=>b'c',A::Cut=>b'x',_=>b'v'},state);return;
@@ -7297,6 +7334,7 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        if self.clipboard_menu_pointer(clicked,right_clicked) {self.redraw();return;}
         #[cfg(feature="native-browser")]
         if browser_controller::pointer(self,buttons,true) {return;}
         self.spatial_finish_arrival();
@@ -13439,6 +13477,15 @@ pub fn ui_animation_tick() -> bool {
             return true;
         }
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
+        #[cfg(feature="native-browser")]
+        {
+            let view=crate::runtime::browser::presentation();
+            let loading=runtime.mode==ConsoleMode::Desktop && runtime.browser_window_state().visible
+                && view.loading && view.error==0;
+            if crate::ui::cursor::animate_busy(loading,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000) {
+                crate::bootstrap::system_ui_cursor(runtime.pointer_x,runtime.pointer_y);
+            }
+        }
         if runtime.spatial.arriving { return runtime.spatial_arrival_tick(); }
         if runtime.spatial.open { return runtime.spatial_tick(); }
         let thinking_changed = crate::bootstrap::thinking_animation_tick(matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings));

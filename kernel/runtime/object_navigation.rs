@@ -22,7 +22,7 @@ pub const FILE_NAVIGATOR_NO_SELECTION: u16 = u16::MAX;
 pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContextAction { Open, OpenWith, Rename, Duplicate, Trash, Copy, Cut, Paste, NewFolder, List, Grid, Sort, TextEditor, FileNavigator, Unavailable, Back }
+pub enum ContextAction { Open, OpenWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo, NewFolder, List, Grid, Sort, TextEditor, FileNavigator, Unavailable, Back }
 
 impl ContextAction {
     // ------------------------=
@@ -36,7 +36,7 @@ impl ContextAction {
             Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
             Self::TextEditor => b"Text Editor", Self::FileNavigator => b"File Navigator",
             Self::Unavailable => b"No compatible app", Self::Back => b"Back",
-            Self::Copy => b"Copy", Self::Cut => b"Cut", Self::Paste => b"Paste",
+            Self::Copy => b"Copy", Self::Cut => b"Cut", Self::Paste => b"Paste", Self::PasteTo => b"Paste to...",
         }
     }
 }
@@ -1083,6 +1083,8 @@ pub struct FileNavigatorState {
     pub selected_index: u16,
     pub location_editing: bool,
     pub rename_editing: bool,
+    pub paste_to_editing: bool,
+    pub editor_selected: bool,
     pub editor_text: ByteText<MAX_NAMESPACE_PATH>,
     pub editor_cursor: usize,
     pub context_menu_open: bool,
@@ -1390,6 +1392,8 @@ impl FileNavigatorState {
             selected_index: FILE_NAVIGATOR_NO_SELECTION,
             location_editing: false,
             rename_editing: false,
+            paste_to_editing: false,
+            editor_selected: false,
             editor_text: ByteText::empty(),
             editor_cursor: 0,
             context_menu_open: false,
@@ -1505,11 +1509,22 @@ impl FileNavigatorState {
     // DESC: Focuses the location editor with the active NamespaceRef selected for editing.
     // ------------------=
     pub fn begin_location_edit(&mut self) {
+        self.paste_to_editing = false;
+        self.editor_selected = true;
         self.editor_text = self.active_namespace_ref;
         self.editor_cursor = self.editor_text.as_bytes().len();
         self.location_editing = true;
         self.rename_editing = false;
         self.context_menu_open = false;
+    }
+
+    // ------------------------=
+    // FUNC: begin_paste_to
+    // DESC: Opens a selected destination field without changing the current namespace or staged clipboard payload.
+    // ------------------=
+    pub fn begin_paste_to(&mut self) {
+        self.begin_location_edit();self.location_editing=false;self.paste_to_editing=true;
+        self.workplace_notice=0;self.menu_open=None;self.dialog_open=Some(FileNavigatorDialog::Location);
     }
 
     // ------------------------=
@@ -1540,6 +1555,8 @@ impl FileNavigatorState {
     // DESC: Dismisses File Navigator menus, dialogs, context menus, and active text editing.
     // ------------------=
     pub fn close_overlays(&mut self) {
+        self.paste_to_editing = false;
+        self.editor_selected = false;
         self.menu_open = None;
         self.dialog_open = None;
         self.context_menu_open = false;
@@ -1555,6 +1572,7 @@ impl FileNavigatorState {
             return false;
         };
         self.editor_text = text;
+        self.paste_to_editing=false;self.editor_selected=true;
         self.editor_cursor = self.editor_text.as_bytes().len();
         self.rename_editing = true;
         self.location_editing = false;
@@ -1567,6 +1585,8 @@ impl FileNavigatorState {
     // DESC: Cancels any location or rename edit without changing namespace state.
     // ------------------=
     pub fn cancel_edit(&mut self) {
+        self.paste_to_editing = false;
+        self.editor_selected = false;
         self.location_editing = false;
         self.rename_editing = false;
         self.editor_text = ByteText::empty();
@@ -1607,9 +1627,9 @@ impl FileNavigatorState {
                 OpenTarget::Unsupported => &[Unavailable, Back],
             };
         }
-        if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, List, Grid, Sort] }
+        if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, PasteTo, List, Grid, Sort] }
         else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
-        else { &[Open, OpenWith, Rename, Duplicate, Copy, Cut, Paste, Trash] }
+        else { &[Open, OpenWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
     }
 
     // ------------------------=

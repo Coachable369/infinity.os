@@ -575,6 +575,7 @@ ui-install-parity-test: x86 x86_64 aarch64
 	@tools/ui-install-parity-test.sh
 
 input-regression-test:
+	@sh tools/clipboard-cursor-test.sh
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 -A warnings --test tools/personalization-test.rs -o build/behavior-tests/personalization-test
 	@build/behavior-tests/personalization-test --test-threads=1
