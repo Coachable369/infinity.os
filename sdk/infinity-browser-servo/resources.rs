@@ -25,6 +25,11 @@ struct Stream {
 
 pub trait Provider {
     // ------------------------=
+    // FUNC: retry_pre_header_failures
+    // DESC: Lets native transports opt into bounded idempotent retries while deterministic fixtures remain exact.
+    // ------------------=
+    fn retry_pre_header_failures(&self) -> bool { false }
+    // ------------------------=
     // FUNC: begin
     // DESC: Submits a nonblocking authorized request; rejection must grant no socket authority.
     // ------------------=
@@ -68,7 +73,7 @@ pub trait Provider {
     fn download(&mut self, _metadata: &download::Metadata, _body: &[u8]) -> Result<(), ()> { Err(()) }
 }
 
-struct Pending { id: u64, deadline: u64, priority: resource_order::Priority, load: WebResourceLoad }
+struct Pending { id: u64, deadline: u64, failures: u8, priority: resource_order::Priority, load: WebResourceLoad }
 struct State<P> { provider: P, pending: Vec<Pending>, stream: Option<Stream>, closed: bool, failed_document: bool }
 pub struct Resources<P: Provider> { state: RefCell<State<P>>, clock: fn() -> u64 }
 
@@ -131,26 +136,28 @@ impl<P: Provider> Resources<P> {
         // Keep active work and equal-priority FIFO order; unblock document
         // parsing/layout before spending the serialized transport on media.
         let at=resource_order::insertion_index(state.pending.iter().map(|pending|(pending.id!=0,pending.priority)),priority);
-        state.pending.insert(at,Pending { id: 0, deadline: 0, priority, load });
+        state.pending.insert(at,Pending { id: 0, deadline: 0, failures: 0, priority, load });
     }
     // ------------------------=
     // FUNC: pump
-    // DESC: Polls each queued request once without blocking the engine or desktop event loop.
+    // DESC: Polls each queued request once and reports response progress without blocking the engine or desktop event loop.
     // ------------------=
-    pub fn pump(&self) {
+    pub fn pump(&self) -> bool {
         let mut state = self.state.borrow_mut();
         let now = (self.clock)();
+        let mut progressed = false;
         if let Some(mut stream) = state.stream.take() {
             let event = if now >= stream.deadline { Err(()) } else { state.provider.poll_stream(stream.id) };
             match event {
-                Ok(None) => { state.stream = Some(stream); return; },
+                Ok(None) => { state.stream = Some(stream); return false; },
                 Ok(Some(Event::Data(bytes))) if bytes.len() <= MAX_BODY.saturating_sub(stream.size) => {
                     stream.size += bytes.len();
                     if let Some((_, body)) = &mut stream.attachment { body.extend_from_slice(&bytes); }
                     else { stream.load.send_body_data(bytes); }
-                    state.stream = Some(stream); return;
+                    state.stream = Some(stream); return true;
                 },
                 Ok(Some(Event::Done)) => {
+                    progressed = true;
                     state.provider.cancel(stream.id);
                     if let Some((metadata, body)) = stream.attachment {
                         if state.provider.download(&metadata, &body).is_ok() { stream.load.cancel(); }
@@ -161,6 +168,7 @@ impl<P: Provider> Resources<P> {
                     } else { stream.load.finish(); }
                 },
                 _ => {
+                    progressed = true;
                     state.provider.cancel(stream.id);
                     if stream.document { state.failed_document = true; state.provider.document_failed(); }
                     stream.load.fail();
@@ -180,7 +188,7 @@ impl<P: Provider> Resources<P> {
                     headers.extend_from_slice(name.as_str().as_bytes());
                     headers.extend_from_slice(b": ");headers.extend_from_slice(value.as_bytes());headers.extend_from_slice(b"\r\n");
                 }
-                if oversized {let pending=state.pending.remove(at);fail_load(&mut state,pending.load);continue;}
+                if oversized {let pending=state.pending.remove(at);fail_load(&mut state,pending.load);progressed=true;continue;}
                 let method=state.pending[at].load.request().method.clone();
                 let body=state.pending[at].load.request().body.clone();
                 match state.provider.begin_request(url.as_str(),method.as_str(), &headers,&body) {
@@ -191,13 +199,23 @@ impl<P: Provider> Resources<P> {
                     _ => {
                         let pending=state.pending.remove(at);
                         fail_load(&mut state,pending.load);
+                        progressed=true;
                         continue;
                     }
                 }
             }
             let id = state.pending[at].id;
             let result = if now >= state.pending[at].deadline { Err(()) } else { state.provider.poll_stream(id) };
-            if matches!(result, Ok(None)) { break; }
+            if matches!(result, Ok(None)) { return progressed; }
+            if result.is_err() && state.provider.retry_pre_header_failures() && resource_order::retry_pre_header(
+                state.pending[at].load.request().method.as_str(),state.pending[at].failures)
+            {
+                state.provider.cancel(id);
+                state.pending[at].id=0;
+                state.pending[at].deadline=0;
+                state.pending[at].failures+=1;
+                return true;
+            }
             let pending = state.pending.remove(at);
             if let Ok(Some(Event::Head(status, ref headers))) = result {
                 let document = pending.load.request().is_for_main_frame;
@@ -218,16 +236,17 @@ impl<P: Provider> Resources<P> {
                         Ok(value)=>value.map(|metadata|(metadata, Vec::new())), Err(_)=>{valid=false;None},
                     }
                 } else { None };
-                if !valid { state.provider.cancel(id); fail_load(&mut state,pending.load); continue; }
+                if !valid { state.provider.cancel(id); fail_load(&mut state,pending.load); progressed=true; continue; }
                 response.status_code = status.try_into().unwrap();
                 state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,
                     load: pending.load.intercept(response), attachment });
-                return;
+                return true;
             }
             state.provider.cancel(id);
             let Ok(Some(Event::Complete(result))) = result else {
-                fail_load(&mut state, pending.load); continue;
+                fail_load(&mut state, pending.load); progressed=true; continue;
             };
+            progressed=true;
             if result.body.len() > MAX_BODY || result.headers.len() > 128 || !(200..=599).contains(&result.status) {
                 fail_load(&mut state, pending.load); continue;
             }
@@ -266,6 +285,7 @@ impl<P: Provider> Resources<P> {
             intercepted.send_body_data(result.body);
             intercepted.finish();
         }
+        progressed
     }
     // ------------------------=
     // FUNC: failed_document

@@ -45,6 +45,11 @@ impl<F: Factory> Https<F> {
 }
 impl<F: Factory> Provider for Https<F> {
     // ------------------------=
+    // FUNC: retry_pre_header_failures
+    // DESC: Allows bounded retries for transient native transport failures before response exposure.
+    // ------------------=
+    fn retry_pre_header_failures(&self) -> bool { true }
+    // ------------------------=
     // FUNC: begin
     // DESC: Authorizes an HTTPS GET and creates a cancellable transaction with bounded buffers.
     // ------------------=

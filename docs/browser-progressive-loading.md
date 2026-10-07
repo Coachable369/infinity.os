@@ -105,6 +105,15 @@ a failed font resolution despite valid DNS replies in the packet capture;
 that diagnostic alone does not establish the cause. The separate search
 endpoint root returns HTTP 200 with an empty body, which is not search proof.
 
+The default address-bar search now uses DuckDuckGo's server-rendered HTML
+results endpoint. The native engine acceptance run in
+`build/evidence/browser-progressive-20261006/duckduckgo-html/result.json`
+passes HTTP status, real `.result__a` DOM content, rendered pixels, and load
+completion after transferring 373,492 bytes. Under the same 120-second bound,
+the JavaScript-heavy endpoint transferred 4,185,034 bytes but remained loading
+without result links. Direct URLs and the selectable full DuckDuckGo and Bing
+providers remain available.
+
 The probe now continues network pumping during DOM callbacks, retains per-run
 screenshots/reports, and supports an explicit bounded emulation load budget.
 These are diagnostic improvements, not acceptance relaxations: real result

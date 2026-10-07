@@ -1,6 +1,6 @@
 //! Stable priority policy for the bounded, serialized native transport queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Priority { Document, Style, Script, Font, Other }
+pub enum Priority { Document, Critical, Font, Other }
 
 // ------------------------=
 // FUNC: classify
@@ -8,7 +8,7 @@ pub enum Priority { Document, Style, Script, Font, Other }
 // ------------------=
 pub fn classify(document:bool,destination:&str)->Priority {
     if document {return Priority::Document;}
-    match destination {"style"=>Priority::Style,"script"|""=>Priority::Script,"font"=>Priority::Font,_=>Priority::Other}
+    match destination {"style"|"script"|""=>Priority::Critical,"font"=>Priority::Font,_=>Priority::Other}
 }
 
 // ------------------------=
@@ -20,13 +20,21 @@ pub fn insertion_index(mut queue:impl ExactSizeIterator<Item=(bool,Priority)>,pr
     queue.position(|(active,current)|!active && current>priority).unwrap_or(length)
 }
 
+// ------------------------=
+// FUNC: retry_pre_header
+// DESC: Retries bounded idempotent requests that fail before any response metadata reaches the engine.
+// ------------------=
+pub fn retry_pre_header(method:&str,failures:u8)->bool {
+    matches!(method,"GET"|"HEAD"|"OPTIONS") && failures<2
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
     use super::*;
     // ------------------------=
     // FUNC: dispatch_order_preserves_active_work_and_fifo
-    // DESC: Applies actual queue insertions and verifies document/style precedence without replacing in-flight work.
+    // DESC: Applies actual queue insertions and verifies document/critical precedence without replacing in-flight work.
     // ------------------=
     #[test]
     fn dispatch_order_preserves_active_work_and_fifo() {
@@ -36,8 +44,12 @@ mod tests {
             let at=insertion_index(queue.iter().map(|&(active,p,_)|(active,p)),priority);
             queue.insert(at,(false,priority,id));
         }
-        assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,4,6,3,2,1]);
+        assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,3,4,6,2,1]);
         assert_eq!(insertion_index(core::iter::empty(),Priority::Document),0);
-        assert_eq!(classify(false,""),Priority::Script);
+        assert_eq!(classify(false,""),Priority::Critical);
+        assert!(retry_pre_header("GET",0));
+        assert!(retry_pre_header("GET",1));
+        assert!(!retry_pre_header("GET",2));
+        assert!(!retry_pre_header("POST",0));
     }
 }

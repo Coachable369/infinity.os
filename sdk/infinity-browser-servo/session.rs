@@ -222,7 +222,8 @@ impl<P: Provider + 'static> Session<P> {
                 self.view.load(url.into_url());
             }
         }
-        self.resources.pump();
+        let network_progress = self.resources.pump();
+        if network_progress && !self.complete.get() { self.dirty.set(true); }
         if self.crashed.get() { self.resources.cancel_all(); return Err(()); }
         if !visible || !self.dirty.get() { return Ok(false); }
         if !self.frame_pacer.borrow_mut().admit((self.clock)()) { return Ok(false); }
@@ -391,10 +392,11 @@ impl<P: Provider + 'static> TabSessions<P> {
     // ------------------=
     pub fn pump(&self, engine: &Servo, mut frame: impl FnMut(u32, u32, &[u8])) -> Result<bool, ()> {
         engine.spin_event_loop();
-        self.global.pump();
+        let global_progress = self.global.pump();
         let mut painted = false;
         let mut failed = false;
         for tab in &self.tabs {
+            if global_progress && tab.id == self.active && !tab.session.complete.get() { tab.session.dirty.set(true); }
             match tab.session.pump_frame(tab.id == self.active, &mut frame) {
                 Ok(value) => painted |= value,
                 Err(()) if tab.id == self.active => failed = true,

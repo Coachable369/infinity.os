@@ -129,6 +129,11 @@ fn write_clipboard(bytes:&[u8])->bool {
 }
 impl resources::Provider for Network {
     // ------------------------=
+    // FUNC: retry_pre_header_failures
+    // DESC: Allows bounded idempotent recovery from transient native mailbox transport failures.
+    // ------------------=
+    fn retry_pre_header_failures(&self)->bool {true}
+    // ------------------------=
     // FUNC: download
     // DESC: Copies an attachment into the native consent mailbox without granting file or namespace access to Servo.
     // ------------------=

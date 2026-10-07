@@ -26,7 +26,7 @@ impl Settings {
     // DESC: Supplies the selected provider to real address-bar navigation.
     // ------------------=
     pub fn search_prefix(self)->&'static str {match self.search {
-        1=>"https://duckduckgo.com/?q=",2=>"https://www.bing.com/search?q=",_=>"https://www.google.com/search?q=",
+        1=>"https://duckduckgo.com/?q=",2=>"https://www.bing.com/search?q=",_=>"https://html.duckduckgo.com/html/?q=",
     }}
 }
 // ------------------------=
@@ -47,6 +47,7 @@ mod tests {
     // ------------------=
     #[test]
     fn preferences_roundtrip_and_navigation() {
+        assert_eq!(Settings::new().search_prefix(),"https://html.duckduckgo.com/html/?q=");
         for search in 0..3 {for favorites in [false,true] {
             let s=Settings{search,favorites};assert_eq!(Settings::decode(&s.bytes()),Some(s));
             let mut out=[0;2048];let (_,n)=crate::omnibox::resolve("hello world",s.search_prefix(),&mut out).unwrap();

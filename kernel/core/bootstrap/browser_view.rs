@@ -169,7 +169,7 @@ impl DisplayDevice {
                 if r.y>=visible.y && r.y+r.height as i32<=visible.y+visible.height as i32 {self.browser_label(r,text,14*scale,false);}
             }
             for index in 0..7 {
-                let text:&[u8]=match index {0=>b"Google",1=>b"DuckDuckGo",2=>b"Bing",
+                let text:&[u8]=match index {0=>b"Fast Search",1=>b"DuckDuckGo",2=>b"Bing",
                     3=>if view.settings.favorites {b"On"}else{b"Off"},
                     4=>if view.settings_confirm {b"Confirm clear"}else{b"Clear favorites"},5=>b"Restore defaults",_=>b"Back to page"};
                 let r=infinity_browser_core::settings::control(content,scale as u32,index);
