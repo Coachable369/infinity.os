@@ -10770,7 +10770,8 @@ pub fn system_ui_present(
                 && !settings_geometry_changed
                 && !app_window_geometry_changed;
             let bounded_scene_geometry_change = !structural_change_without_window
-                && (!content_changed || assistant_changed || matches!(screen, 8 | 9 | 10 | 11) || (screen == 4 && chat_changed))
+                && crate::ui::redraw::scene_content_allows_bounded_redraw(
+                    screen, content_changed, navigator_surface_changed, assistant_changed, chat_changed)
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
                     || assistant_changed

@@ -393,10 +393,43 @@ fn image_pixels_match(engine:&Servo,view:&WebView,repaint:&Cell<bool>)->bool {
 }
 
 // ------------------------=
+// FUNC: verify_gradients
+// DESC: Exercises native gradient shader selection and checks actual color interpolation before any external network work.
+// ------------------=
+fn verify_gradients(engine:&Servo)->bool {
+    let Ok(context)=SoftwareRenderingContext::new((128,128).into()) else{return false;};
+    let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));let input=Rc::new(Cell::new(0));
+    let view=WebViewBuilder::new(engine,Rc::new(context))
+        .delegate(Rc::new(PageDelegate{repaint:repaint.clone(),loaded:loaded.clone(),input}))
+        .url("data:text/html,<html><body></body></html>".parse().unwrap()).build();
+    view.show();
+    if !spin_until(engine,&view,&repaint,&loaded) {return false;}
+    for (background,radial) in [("linear-gradient(90deg,red,blue)",false),("radial-gradient(circle,red,blue)",true)] {
+        if !javascript_true(engine,&view,&repaint,&std::format!(
+            "document.documentElement.style.cssText='height:100%;background:{background}';true")) {return false;}
+        let done=Rc::new(Cell::new(0));let result=done.clone();
+        view.take_screenshot(None,move |image| {
+            let passed=image.is_ok_and(|image| {
+                if image.width()!=128 || image.height()!=128 {return false;}
+                let red=image.get_pixel(if radial {64}else{8},64).0;
+                let blue=image.get_pixel(if radial {0}else{120},if radial {0}else{64}).0;
+                red[0]>200 && red[2]<60 && blue[2]>200 && blue[0]<60
+            });
+            result.set(if passed {1}else{2});
+        });
+        if !spin_until(engine,&view,&repaint,&done) {return false;}
+    }
+    drop(view);drain_close(engine);true
+}
+
+// ------------------------=
 // FUNC: verify
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_GRADIENT_ONLY")==Some("1") {
+        return if verify_gradients(engine) {0} else {54};
+    }
     if option_env!("INFINITY_BROWSER_RECOVERY_ONLY")==Some("1") {
         return if recovery::verify(engine) {0} else {52};
     }
@@ -419,6 +452,7 @@ pub fn verify(engine: &Servo) -> u64 {
     if option_env!("INFINITY_BROWSER_NETWORK_ONLY")==Some("1") {
         return if network::verify(engine) {0} else {20};
     }
+    if !verify_gradients(engine) {return 54;}
     if !streaming::verify(engine) {return 41;}
     if !request::verify(engine) {return 46;}
     if !recovery::verify(engine) {return 52;}

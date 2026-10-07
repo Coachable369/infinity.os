@@ -78,6 +78,16 @@ def interaction_url():
     return "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
 
 # ------------------------=
+# FUNC: gradient_url
+# DESC: Serves native gradient acceptance through real HTTPS within the Console URL capacity.
+# ------------------=
+def gradient_url():
+    document=b'<style>body{margin:0;background:#123456}div{width:128px;height:128px;background:linear-gradient(90deg,red,blue)}div+div{background:radial-gradient(circle,red,blue)}</style><div></div><div></div>'
+    url="https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
+    assert len("browser "+url)<512
+    return url
+
+# ------------------------=
 # FUNC: navigation_urls
 # DESC: Provides real HTTPS pages with a deterministic link and distinct rendered colors for navigation assertions.
 # ------------------=
@@ -351,8 +361,13 @@ def main():
     parser.add_argument("--find-view",action="store_true",help="Search real page text and switch open tabs through View")
     parser.add_argument("--welcome",action="store_true",help="Verify the local welcome, native settings, keyboard actions and real address navigation")
     parser.add_argument("--url",help="Require successful installed loading of this real HTTPS destination")
+    parser.add_argument("--gradients",action="store_true",help="Check installed linear/radial gradient pixels and a real reload request")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
+    if args.gradients:
+        if args.url or args.interaction or args.navigation or args.download:
+            parser.error("Gradient acceptance uses its own HTTPS fixture")
+        args.url=gradient_url()
     if args.workplace_menu and (not args.reuse_installed or args.workplace):
         parser.error("Context-menu acceptance requires a reused workplace disk and excludes --workplace")
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -553,6 +568,24 @@ def main():
         if args.url:
             assert values["PAGE_ERROR"]==0 and values["NETWORK_FAILURE"]==0 and values["NETWORK_COMPLETED"]>0 and values["LOADING"]==0, receipt
             receipt["requested_url_loaded"]=args.url
+            if args.gradients:
+                left,top,_,_=page_color_bounds(guest)
+                for attempt in range(2):
+                    if attempt:
+                        before=values["NETWORK_COMPLETED"]
+                        guest.key("ctrl","r")
+                        deadline=time.monotonic()+90
+                        while time.monotonic()<deadline:
+                            values={name:int.from_bytes(guest.memory(address,size),"little") for name,(address,size) in counters.items()}
+                            if values["NETWORK_COMPLETED"]>before and values["LOADING"]==0:break
+                            time.sleep(.25)
+                        assert values["NETWORK_COMPLETED"]>before and values["LOADING"]==0 and values["PAGE_ERROR"]==0,values
+                    width,height,pixels=read_pixels(guest.screenshot("browser-gradients"))
+                    for x,y,red in [(8,64,True),(120,64,False),(64,192,True),(0,128,False)]:
+                        at=((top+y)*width+left+x)*3
+                        r,g,b=pixels[at:at+3]
+                        assert (r>200 and b<60) if red else (b>200 and r<60),(x,y,r,g,b)
+                receipt["gradient_pixels_and_network_reload"]=True
             if args.url=="https://www.google.com/":
                 before=values["LOAD_REVISION"]
                 guest.key("ctrl","l");browser_text(guest,"www.google.com");guest.key("ret")

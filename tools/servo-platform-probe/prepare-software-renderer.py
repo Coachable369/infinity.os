@@ -43,6 +43,17 @@ pub use native_software_context::SoftwareRenderingContext;
                 #[cfg(all(target_os = "none", infinity_native))]
                 clear_caches_with_quads: false,
 ''')
+    marker = "enable_dithering: true,"
+    if source.count(marker) != 1:
+        raise SystemExit("Pinned gradient renderer options changed")
+    # The locked SWGL shader set has no DITHERING variants. Keep gradients
+    # enabled while selecting the supported CPU shaders; host GPU policy stays intact.
+    source = source.replace(marker, '''
+                #[cfg(all(target_os = "none", infinity_native))]
+                enable_dithering: false,
+                #[cfg(not(all(target_os = "none", infinity_native)))]
+                enable_dithering: true,
+''')
     (servo / relative).write_text(source)
     relative = "components/shared/paint/Cargo.toml"
     source = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)

@@ -368,11 +368,11 @@ impl<P: Provider + 'static> TabSessions<P> {
     }
     // ------------------------=
     // FUNC: recover_current
-    // DESC: Replaces a failed renderer on explicit retry while preserving tab identity and every healthy tab.
+    // DESC: Replaces failed documents or renderers on explicit retry without waiting for an old load-completion callback.
     // ------------------=
     pub fn recover_current(&mut self, engine:&Servo, provider:P) -> Result<(),()> {
         let tab=self.tabs.iter_mut().find(|tab|tab.id==self.active).ok_or(())?;
-        if !tab.session.crashed.get() {return Ok(());}
+        if !tab.session.crashed.get() && !tab.session.failed() {return Ok(());}
         let address=tab.session.address();
         let replacement=Session::create(engine,provider,self.clock,self.size.0,self.size.1,false,self.clipboard.clone())?;
         tab.session=replacement;

@@ -198,11 +198,22 @@ def verify_text_context(guest):
     def paste_to(path,destination,success):
         select_file(guest,path,keep_menu=True)
         state=docs.navigator(guest);left,top=state[23:25];scale=state[8]
+        before=guest.screenshot("file-paste-to-menu").read_bytes().split(b"\n",3)
+        width,height=map(int,before[1].split())
+        assert before[0]==b"P6" and before[2]==b"255"
         guest.click(left+40*scale,top+(6+7*28+14)*scale)
         docs.wait_navigator(guest,lambda s:s[31] and s[32] and not s[17])
         guest.key("meta_l","a");editor.text(guest,destination)
-        time.sleep(1)
-        guest.screenshot("file-paste-to")
+        deadline=time.monotonic()+15
+        while True:
+            after=guest.screenshot("file-paste-to").read_bytes().split(b"\n",3)
+            assert after[:3]==before[:3]
+            region=[(y*width+x)*3 for y in range(top+25*scale,top+125*scale)
+                for x in range(left+20*scale,left+150*scale)]
+            changed=sum(before[3][i:i+3]!=after[3][i:i+3] for i in region)
+            if changed*10>len(region)*7:break
+            assert time.monotonic()<deadline,("stale menu covers destination popup",changed,len(region))
+            time.sleep(.2)
         guest.key("ret")
         docs.wait_navigator(guest,lambda s:s[30]==(1 if success else 4) and bool(s[31])!=success)
     paste_to(source,"/not-a-destination",False)

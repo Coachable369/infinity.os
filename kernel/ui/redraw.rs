@@ -1,6 +1,18 @@
 //! Architecture-neutral redraw policy for bounded system-surface updates.
 
 // ------------------------=
+// FUNC: scene_content_allows_bounded_redraw
+// DESC: Keeps navigator edits on their owning window even when they also change the shared input hash.
+// ------------------=
+pub const fn scene_content_allows_bounded_redraw(
+    screen: u8, content_changed: bool, navigator_changed: bool,
+    assistant_changed: bool, chat_changed: bool,
+) -> bool {
+    !content_changed || navigator_changed || assistant_changed
+        || matches!(screen, 8 | 9 | 10 | 11) || (screen == 4 && chat_changed)
+}
+
+// ------------------------=
 // FUNC: focus_change_requires_structural_redraw
 // DESC: Determines whether a focus transition requires rebuilding the complete system surface.
 // ------------------=

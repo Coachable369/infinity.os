@@ -99,7 +99,31 @@ pub fn verify(engine:&Servo)->bool {
     if session.complete() || !loaded(engine,&session,"https://recovery.test/good3") {return false;}
     let passed=starts.get()==8 && cancels.get()==8;
     drop(session);super::drain_close(engine);OFFSET.store(0,Ordering::Relaxed);
-    passed && renderer_recovery(engine)
+    passed && renderer_recovery(engine) && failed_document_retry(engine)
+}
+
+// ------------------------=
+// FUNC: failed_document_retry
+// DESC: Retries an actual failed document through the production tab-group boundary before requiring any old completion event.
+// ------------------=
+fn failed_document_retry(engine:&Servo)->bool {
+    let Ok(mut tabs)=session::TabSessions::new(engine,provider(),clock,128,128) else{return false;};
+    let Ok(healthy)=tabs.create(engine,provider(),true) else{return false;};
+    let good="https://recovery.test/good-neighbor";
+    if tabs.current().unwrap().navigate(good).is_err() || !loaded(engine,tabs.current().unwrap(),good) {return false;}
+    let Ok(failing)=tabs.create(engine,provider(),true) else{return false;};
+    if tabs.current().unwrap().navigate("https://recovery.test/partial").is_err() {return false;}
+    let deadline=Instant::now()+Duration::from_secs(10);
+    while !tabs.current().unwrap().failed() && Instant::now()<deadline {
+        if tabs.pump(engine,|_,_,_|{}).is_err() {return false;}
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    if !tabs.current().unwrap().failed() || tabs.recover_current(engine,provider()).is_err()
+        || tabs.current().unwrap().failed() || tabs.active()!=failing {return false;}
+    let next="https://recovery.test/good-explicit-retry";
+    if tabs.current().unwrap().navigate(next).is_err() || !loaded(engine,tabs.current().unwrap(),next) {return false;}
+    if tabs.select(healthy).is_err() || !loaded(engine,tabs.current().unwrap(),good) {return false;}
+    drop(tabs);super::drain_close(engine);true
 }
 
 // ------------------------=

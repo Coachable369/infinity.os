@@ -121,6 +121,12 @@ fn desktop_click_focus_reconstructs_only_window_layers() {
 // DESC: Runs behavioral redraw-policy scenarios through the same functions used by the kernel presenter.
 // ------------------=
 fn main() {
+    for content_changed in [false, true] {
+        assert!(redraw::scene_content_allows_bounded_redraw(2, content_changed, true, false, false));
+    }
+    assert!(!redraw::scene_content_allows_bounded_redraw(2, true, false, false, true));
+    assert!(redraw::scene_content_allows_bounded_redraw(4, true, false, false, true));
+    assert!(redraw::scene_content_allows_bounded_redraw(9, true, false, false, false));
     for screen in 0..=u8::MAX {
         assert!(!redraw::chat_requires_independent_widget_damage(screen, false));
         assert_eq!(redraw::chat_requires_independent_widget_damage(screen, true),
