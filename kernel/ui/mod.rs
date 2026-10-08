@@ -16,6 +16,7 @@ pub mod compositor;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod crash_layout;
 pub mod desktop_stack;
+pub mod desktop_effects;
 pub mod desktop_widgets;
 pub mod editor_tools;
 pub mod editor_chrome;

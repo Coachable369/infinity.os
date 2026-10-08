@@ -4601,6 +4601,11 @@ impl super::DisplayDevice {
             self.desktop_base(scale,desktop_items,desktop_item_positions,false);
             for id in stack.order {
                 if !stack.visible[id] {continue;}
+                crate::ui::desktop_effects::layer(Some(id));
+                if id==stack.active && id!=0 {
+                    let dim=crate::ui::desktop_effects::current().dim;
+                    if dim!=0 {self.fill_rect_alpha(0,top_bar,self.width,self.height.saturating_sub(top_bar),3,10,19,dim);}
+                }
                 if id==0 {
                     self.desktop_navigator_windows(scale,window_x,window_y,window_width,window_height,
                         window_visible,window_maximized,home_location,dragging_item);
@@ -4627,14 +4632,14 @@ impl super::DisplayDevice {
                         crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32}}
                     else {let state=match id {1=>command_window,2=>editor_window,5=>crate::console::browser_window(),_=>task_manager_window};
                         layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
-                    if id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(if id==5 {0}else{id},rect,scale);}
-                    if id==stack.active {self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
+                    if crate::ui::desktop_effects::opacity()==255 && id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(if id==5 {0}else{id},rect,scale);}
+                    if crate::ui::desktop_effects::opacity()==255 && id==stack.active {self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
                         rect.width as usize,rect.height as usize,10*scale,105,199,245);}
                 }
             }
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        if matches!(screen,2|4|8|9|10|11) { self.minimized_app_shelf(); self.desktop_widget_menu(scale); }
+        if matches!(screen,2|4|8|9|10|11) { crate::ui::desktop_effects::layer(None); self.minimized_app_shelf(); self.desktop_widget_menu(scale); }
         if screen==4 {return;}
         if matches!(screen, 1 | 5 | 6) {
             let panel_top = if matches!(screen, 5 | 6) {
@@ -8570,6 +8575,7 @@ impl super::DisplayDevice {
             if Some(index) == active_navigator || !navigator.visible {
                 continue;
             }
+            crate::ui::desktop_effects::layer(None);
             let (left, top, width, height) =
                 crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .home_window_geometry_sized(
@@ -8584,14 +8590,19 @@ impl super::DisplayDevice {
                     navigator.width, navigator.height, navigator.maximized,
                     home_location, None, Some(navigator.state));
             });
-            self.window_assistant(5+index,crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},scale);
-            if !navigator.maximized {
+            if crate::ui::desktop_effects::opacity()==255 {self.window_assistant(5+index,crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},scale);}
+            if crate::ui::desktop_effects::opacity()==255 && !navigator.maximized {
                 let outline =
                     self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
                 self.window_resize_affordances(left, top, width, height, scale, outline);
             }
         }
         if window_visible {
+            crate::ui::desktop_effects::layer(Some(0));
+            if crate::ui::desktop_stack::current().active==0 {
+                let dim=crate::ui::desktop_effects::current().dim;
+                if dim!=0 {let top=crate::ui::system_layout::SystemLayout::new(self.width,self.height).top_bar_height(); self.fill_rect_alpha(0,top,self.width,self.height.saturating_sub(top),3,10,19,dim);}
+            }
             let bounds = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .home_window_geometry_sized(
                     window_x,
@@ -8614,7 +8625,7 @@ impl super::DisplayDevice {
                     navigator_state,
                 )
             });
-            self.window_assistant(5+active_navigator.unwrap_or(0),crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,width:bounds.2 as u32,height:bounds.3 as u32},scale);
+            if crate::ui::desktop_effects::opacity()==255 {self.window_assistant(5+active_navigator.unwrap_or(0),crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,width:bounds.2 as u32,height:bounds.3 as u32},scale);}
         }
     }
 
@@ -10643,6 +10654,8 @@ pub fn system_ui_present(
                 || console.last_app_window_width != app_window_width
                 || console.last_app_window_height != app_window_height
                 || console.last_app_window_maximized != app_window_maximized;
+            let effect_damage=crate::ui::desktop_effects::take_damage();
+            let effect_changed=effect_damage!=0;
             let bounded_menu_change =
                 crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
                     console.last_system_screen,
@@ -10769,11 +10782,11 @@ pub fn system_ui_present(
                 && !window_resized
                 && !settings_geometry_changed
                 && !app_window_geometry_changed;
-            let bounded_scene_geometry_change = !structural_change_without_window
+            let bounded_scene_geometry_change = effect_damage&2==0 && !structural_change_without_window
                 && crate::ui::redraw::scene_content_allows_bounded_redraw(
                     screen, content_changed, navigator_surface_changed, assistant_changed, chat_changed)
                 && console.last_system_screen == screen
-                && (navigator_surface_changed
+                && (effect_changed || navigator_surface_changed
                     || assistant_changed
                     || network_settings_changed
                     || node_settings_changed
@@ -10786,7 +10799,7 @@ pub fn system_ui_present(
                     || (chat_changed && screen == 4)
                     || (content_changed && matches!(screen, 8 | 9 | 10 | 11)));
             let mut full_surface_redrawn = false;
-            if bounded_menu_change
+            if bounded_menu_change && !effect_changed
                 && !structural_change_without_window
                 && !window_moved
                 && !window_resized
@@ -10800,7 +10813,7 @@ pub fn system_ui_present(
                     focus,
                     clock,
                 );
-            } else if bounded_launcher_change {
+            } else if bounded_launcher_change && !effect_changed {
                 let padding = (12 * layout.scale()) as u32;
                 let damage = if launcher_interaction_changed {
                     let panel = layout.app_launcher_geometry().panel;
@@ -10865,7 +10878,7 @@ pub fn system_ui_present(
                     editor_dialog_focus,
                 );
                 console.display.clear_render_clip();
-            } else if desktop_layer_focus_changed && !structural_change_without_window {
+            } else if desktop_layer_focus_changed && !structural_change_without_window && !effect_changed {
                 let previous = if console.last_system_screen == 2 {
                     let bounds = layout.home_window_geometry_sized(
                         console.last_home_window_x,
@@ -11160,7 +11173,7 @@ pub fn system_ui_present(
                     );
                 }
                 console.display.clear_render_clip();
-            } else if structural_change_without_window
+            } else if effect_changed || structural_change_without_window
                 || window_move_requires_structural_redraw
                 || window_resized
                 || settings_geometry_changed

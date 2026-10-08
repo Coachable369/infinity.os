@@ -288,8 +288,9 @@ impl DisplayDevice {
                 cache.icon_theme = icon_theme;
                 cache.damage = None;
             }
+            let effect_opacity=crate::ui::desktop_effects::opacity();
             let (opacity, blur) = self.active_background_effects();
-            if slot != 5 && blur >= 2 && opacity < 100 && !self.fast_motion_frame {
+            if effect_opacity==255 && slot != 5 && blur >= 2 && opacity < 100 && !self.fast_motion_frame {
                 self.blur_framebuffer_region(bounds.0, bounds.1, bounds.2, bounds.3, blur as usize);
             }
             for y in region.top..region.bottom {
@@ -298,6 +299,9 @@ impl DisplayDevice {
                 }
                 for x in region.left..region.right {
                     let source = cache.pixels[(y - top) * width + x - left];
+                    let source=if effect_opacity==255 {source} else {
+                        crate::ui::desktop_effects::fade_pixel(source,effect_opacity)
+                    };
                     if source >> 24 == 0 {
                         continue;
                     }

@@ -58,6 +58,8 @@ pub enum DesktopAction {
     Cycle,
     Grow,
     Shrink,
+    FocusLens,
+    PeekThrough,
 }
 
 // ------------------------=
@@ -69,7 +71,7 @@ pub fn shortcut_code(letter: u8, shift: bool) -> u8 {
     if shift
         && matches!(
             letter,
-            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i' | b'k'
+            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i' | b'k' | b'f' | b'o'
         )
     {
         letter.to_ascii_uppercase()
@@ -100,6 +102,8 @@ pub fn desktop_action(code: u8, authenticated: bool, desktop: bool) -> Option<De
         b'W' => DesktopAction::Cycle,
         b'U' => DesktopAction::Grow,
         b'I' => DesktopAction::Shrink,
+        b'F' => DesktopAction::FocusLens,
+        b'O' => DesktopAction::PeekThrough,
         _ => return None,
     })
 }
@@ -154,6 +158,8 @@ mod tests {
             (b'w', DesktopAction::Cycle),
             (b'u', DesktopAction::Grow),
             (b'i', DesktopAction::Shrink),
+            (b'f', DesktopAction::FocusLens),
+            (b'o', DesktopAction::PeekThrough),
         ] {
             let code = shortcut_code(key, true);
             assert_eq!(desktop_action(code, true, true), Some(action));

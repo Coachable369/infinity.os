@@ -1309,6 +1309,13 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        let mut peek_dismissed=false;
+        crate::ui::desktop_effects::mutate(|effects| peek_dismissed=effects.dismiss_peek());
+        if peek_dismissed {
+            self.advance_desktop_effects();
+            self.redraw();
+            if matches!(key,ConsoleKey::Escape) {return;}
+        }
         self.synchronize_workplace();
         if self.clipboard_menu_key(key) {self.redraw();return;}
         if self.authentication_success.active() {
@@ -1357,6 +1364,7 @@ impl ConsoleRuntime {
                     DesktopAction::Command => self.open_command_window(),
                     DesktopAction::Tasks => self.open_task_manager(),
                     DesktopAction::Lock => { self.lock_session_preserving_desktop(false); }
+                    DesktopAction::FocusLens | DesktopAction::PeekThrough => self.desktop_effect_action(action),
                     action => self.window_workflow(action),
                 }
                 self.redraw();
@@ -2948,6 +2956,35 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: advance_desktop_effects
+    // DESC: Samples finite composition effects only on authenticated ordinary desktop surfaces.
+    // ------------------=
+    fn advance_desktop_effects(&self) -> bool {
+        let stack=crate::ui::desktop_stack::current();
+        let visible=!self.current_session.is_zero() && !self.spatial.open
+            && matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings);
+        let active=(visible && stack.visible[stack.active]).then_some(stack.active);
+        crate::ui::desktop_effects::advance(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,
+            active,self.spatial.state.reduced_motion)
+    }
+    // ------------------------=
+    // FUNC: desktop_effect_action
+    // DESC: Routes keyboard and menu actions to the same focus-preserving presentation state.
+    // ------------------=
+    fn desktop_effect_action(&mut self,action:crate::drivers::input::desktop_shortcuts::DesktopAction) {
+        use crate::drivers::input::desktop_shortcuts::DesktopAction as A;
+        let time=crate::ui::performance::monotonic_ns();
+        let now=time.unwrap_or(0)/1_000_000;
+        let reduced=self.spatial.state.reduced_motion || time.is_none();
+        let stack=crate::ui::desktop_stack::current();
+        crate::ui::desktop_effects::mutate(|effects| match action {
+            A::FocusLens=>effects.toggle_lens(now,reduced),
+            A::PeekThrough if stack.visible[stack.active]=>effects.peek(stack.active,now,reduced),
+            _=>{},
+        });
+        self.advance_desktop_effects();
+    }
+    // ------------------------=
     // FUNC: window_workflow
     // DESC: Arranges or cycles existing windows without reopening applications or changing their buffers.
     // ------------------=
@@ -3357,6 +3394,7 @@ impl ConsoleRuntime {
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
         if locked {
+            crate::ui::desktop_effects::reset();
             self.synchronize_workplace();
             self.cancel_node_pairing_input();
             let _ = self.persist_desktop_layout();
@@ -5046,6 +5084,12 @@ impl ConsoleRuntime {
                 crate::ui::status_menu::items(self.shell_menu).get(self.system_focus)
             {
                 match *action {
+                    Action::FocusLens | Action::PeekThrough => {
+                        self.close_shell_menu();
+                        self.desktop_effect_action(if *action==Action::FocusLens {
+                            crate::drivers::input::desktop_shortcuts::DesktopAction::FocusLens
+                        } else {crate::drivers::input::desktop_shortcuts::DesktopAction::PeekThrough});
+                    }
                     Action::SnapLeft | Action::SnapRight | Action::CenterWindow | Action::NextWindow | Action::GrowWindow | Action::ShrinkWindow => {
                         use crate::drivers::input::desktop_shortcuts::DesktopAction as A;
                         let command=match *action {Action::SnapLeft=>A::SnapLeft,Action::SnapRight=>A::SnapRight,
@@ -6812,6 +6856,9 @@ impl ConsoleRuntime {
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
+        let mut dismissed=false;
+        if vertical!=0 {crate::ui::desktop_effects::mutate(|effects| dismissed=effects.dismiss_peek());}
+        if dismissed {self.advance_desktop_effects();self.redraw();return true;}
         if self.authentication_success.active() {
             return true;
         }
@@ -7334,6 +7381,11 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        if clicked || right_clicked {
+            let mut dismissed=false;
+            crate::ui::desktop_effects::mutate(|effects| dismissed=effects.dismiss_peek());
+            if dismissed {self.advance_desktop_effects();self.redraw();return;}
+        }
         if self.clipboard_menu_pointer(clicked,right_clicked) {self.redraw();return;}
         #[cfg(feature="native-browser")]
         if browser_controller::pointer(self,buttons,true) {return;}
@@ -13494,7 +13546,8 @@ pub fn ui_animation_tick() -> bool {
         if thinking_changed && !motion_frame && !assistant_changed {
             runtime.redraw();
         }
-        let mut frame_changed = motion_frame || assistant_changed;
+        let effects_changed=runtime.advance_desktop_effects();
+        let mut frame_changed = motion_frame || assistant_changed || effects_changed;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
             runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);
         if pool_revision != runtime.pool_view_revision {
@@ -13520,7 +13573,7 @@ pub fn ui_animation_tick() -> bool {
                 frame_changed = true;
             }
             if frame_changed {
-                runtime.presenting_fast_motion_frame = motion_frame;
+                runtime.presenting_fast_motion_frame = motion_frame || effects_changed;
                 runtime.redraw();
                 runtime.presenting_fast_motion_frame = false;
             }
@@ -13528,7 +13581,7 @@ pub fn ui_animation_tick() -> bool {
         }
         if runtime.mode != ConsoleMode::AppLauncher {
             if frame_changed {
-                runtime.presenting_fast_motion_frame = motion_frame;
+                runtime.presenting_fast_motion_frame = motion_frame || effects_changed;
                 runtime.redraw();
                 runtime.presenting_fast_motion_frame = false;
             }

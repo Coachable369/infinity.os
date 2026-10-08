@@ -53,3 +53,7 @@ clean = false
 [profiles.studio]
 command = ["sh", "tools/installer-designer/build.sh"]
 clean = false
+
+[profiles.desktop-effects-tests]
+command = ["sh", "-c", "rustc --edition=2021 --test tools/desktop-effects-test.rs -o build/desktop-effects-test && build/desktop-effects-test && rustc --edition=2021 --test tools/spatial-retained-test.rs -o build/spatial-retained-test && build/spatial-retained-test --test-threads=1"]
+clean = false

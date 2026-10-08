@@ -24,6 +24,8 @@ pub enum Action {
     NextWindow,
     GrowWindow,
     ShrinkWindow,
+    FocusLens,
+    PeekThrough,
 }
 // ------------------------=
 // FUNC: items
@@ -64,6 +66,8 @@ pub fn items(menu: usize) -> &'static [(&'static [u8], Action)] {
             (b"Spatial desktop", Action::Spatial),
             (b"Search apps", Action::Launcher),
             (b"Browse files", Action::Files),
+            (b"Toggle Focus Lens  Ctrl+Shift+F", Action::FocusLens),
+            (b"Peek Through  Ctrl+Shift+O", Action::PeekThrough),
         ],
         14 => &[
             (b"Users & accounts", Action::Settings(2)),

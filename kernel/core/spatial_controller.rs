@@ -34,7 +34,7 @@ static mut WORLD_NAVIGATORS: [Option<NavigatorSnapshot>; 4] = [None; 4];
 pub(super) struct Controller {
     pub open: bool,
     switcher: bool,
-    state: SpatialState,
+    pub(super) state: SpatialState,
     owner: [u8; 16],
     tab: usize,
     focus: usize,

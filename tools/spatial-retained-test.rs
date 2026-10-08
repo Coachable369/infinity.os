@@ -1,4 +1,6 @@
 //! Executes the exact native retained-surface cache with a small software framebuffer.
+#[path="../kernel/ui/motion.rs"] pub mod motion;
+#[path="../kernel/ui/desktop_effects.rs"] pub mod desktop_effects;
 #[derive(Clone, Copy)]
 pub struct PresentRegion {
     left: usize,
@@ -17,6 +19,8 @@ struct DisplayDevice {
     render_clip: Option<PresentRegion>,
 }
 mod ui {
+    pub use crate::desktop_effects;
+    pub mod app_launcher {pub use crate::motion;}
     pub mod input_capture {
         // ------------------------=
         // FUNC: poll
@@ -176,6 +180,24 @@ fn independent_live_surfaces_reuse_contents_and_clip_previews() {
     assert_eq!(pixels[70 * 240 + 40], 0x00112233);
     d.spatial_preview(7, (20, 20, 60, 50));
     assert_eq!(pixels[40 * 240 + 40], 0x000000ff);
+    // A peek reuses the same production surface, leaves other layers opaque,
+    // and restores exact pixels without asking the app to paint again.
+    desktop_effects::mutate(|effects| effects.peek(0,0,true));
+    desktop_effects::advance(0,Some(0),true);
+    desktop_effects::layer(Some(0));
+    pixels.fill(0x00112233);
+    d.render_clip=None;
+    d.retained_window(6,(48,24,96,64),|_|panic!("peek rerendered app"));
+    assert_eq!(pixels[40*240+60],0x00112233);
+    desktop_effects::layer(Some(1));
+    d.retained_window(7,(24,24,96,64),|_|panic!("peek rerendered background app"));
+    assert_eq!(pixels[40*240+60],0x000000ff);
+    desktop_effects::mutate(|effects| {effects.dismiss_peek();});
+    desktop_effects::advance(1,Some(0),true);
+    desktop_effects::layer(Some(0));
+    d.retained_window(6,(48,24,96,64),|_|panic!("restoration rerendered app"));
+    assert_eq!(pixels[40*240+60],0x00ff0000);
+    desktop_effects::reset();
     d.render_clip = None;
     let mut revision = Some(1);
     assert!(retained::invalidate_revision(6, &mut revision, Some(2)));
