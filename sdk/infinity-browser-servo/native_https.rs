@@ -13,6 +13,11 @@ pub trait Factory {
     // ------------------=
     fn authorize(&mut self, host: &str, port: u16) -> Result<(Self::Connection, Configuration, u64, [u8;32]), ()>;
     // ------------------------=
+    // FUNC: started_request
+    // DESC: Optional transaction-edge diagnostic for a native integration probe.
+    // ------------------=
+    fn started_request(_url:&str) {}
+    // ------------------------=
     // FUNC: failed
     // DESC: Reports one terminal transport failure to native diagnostics, never raw text to page content.
     // ------------------=
@@ -73,6 +78,7 @@ impl<F: Factory> Provider for Https<F> {
         let method=String::from(method);let request_body=body.to_vec();
         let request_headers=headers.to_vec();
         let requested_url=String::from(url);
+        F::started_request(url);
         if self.requests.len() == 16 { return Err(()); }
         let url = servo::ServoUrl::parse(url).map_err(|_| ())?.into_url();
         if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() { return Err(()); }

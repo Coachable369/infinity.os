@@ -134,3 +134,47 @@ distributable's detached installed path remain required. The ARM QEMU installed
 path and refreshed ISO packaging are verified above. Production networking still
 uses a serialized bounded HTTPS transport; broad modern-site compatibility
 and hardware-VM performance are not established by these fixtures.
+
+## 2026-10-08: bounded gzip and paint invalidation
+
+The native browser now negotiates gzip and decodes it through the engine's
+existing Rust flate2 dependency. Both whole-response and streaming-provider
+paths validate the gzip checksum and enforce a 4 MiB decoded limit. Compressed
+responses are buffered until EOF; identity responses retain progressive delivery.
+Wire Content-Encoding/Content-Length are removed after decoding, while security
+headers remain intact. Unsupported encodings, malformed streams, and expansion
+beyond the limit fail closed. No TLS validation or site authority is relaxed.
+
+Session and shared-tab resource pumping no longer request a viewport paint for
+every received network chunk. Servo's new-frame notification drives painting;
+the existing frame pacer still applies.
+
+Measured wire payloads for identical Coachable asset URLs:
+
+| Resource | Identity bytes | Gzip bytes | Reduction |
+| --- | ---: | ---: | ---: |
+| Main stylesheet | 2,529,511 | 419,618 | 83.4% |
+| Main JavaScript | 681,729 | 147,502 | 78.4% |
+
+These are transfer-size savings, **not page-load timing claims**. The public-site
+fixture runs in emulated AArch64 with a serialized transport. Coachable still
+fails the visible-page acceptance check: resources arrive but intermittent
+pre-header timeouts/retries and blank rendering remain. The latest diagnostic
+is `build/browser-coachable-diagnostic/result.json`; no installed-site success
+is claimed. The fixture's explicit allowlist now covers this site's CDN/font
+dependencies; this changes test authority only, not installed browser policy.
+
+Verification: manifest `20261008T113205251372Z-2974.json` records passing gzip
+boundary/CRC tests, 29 HTTP tests including parsed request-header negotiation,
+cursor behavior, both kernel target checks and native component links for both
+architectures. Earlier native progressive-frame evidence is
+`build/browser-stream-no-forced-paint/result.json`. The additional
+`build/browser-gzip-native/result.json` passes progressive painting plus actual
+Servo CSS-pixel/completion assertions for whole and split-chunk gzip responses.
+Manifest `20261008T113716771462Z-3791.json` records that native run and the
+DuckDuckGo homepage DOM/pixel pass (`build/browser-ddg-gzip/result.json`). Its
+screenshot was inspected: styled search controls and content cards render.
+`load_completed` is false, with background resource timeouts; this is not a
+claim that all scripts, search results, or page resources finished successfully.
+This update has not yet been
+verified in a detached installed VM or rebuilt installer ISO.

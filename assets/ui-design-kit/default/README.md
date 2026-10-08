@@ -86,13 +86,18 @@ and the File Navigator location field for Paste To. No new panel recipe.
 All magnifying glasses reuse generated theme role 27 (`27-search.png`),
 including browser chrome; do not substitute procedural strokes.
 
-Kit gap: no animated busy cursor existed. `wait-infinity-v1.png` is a built-in
-imagegen transparent 4x4 sheet: silver/cyan glass infinity ribbon with a moving
-white highlight. Prompt: sixteen centered, equally padded row-major frames,
-one seamless highlight circuit, orthographic, fixed silhouette, no text,
-background, pointer arrow or borders. `tools/build-wait-artwork.py` packs sixteen
-64x64 RGBA frames. Display at the pointer hotspot in a fixed 40px footprint,
-80ms per frame. Retain user cursor sizing and avoid full-window animation damage.
+The replacement busy cursor is `wait-orbit-v2.png`, generated with built-in
+imagegen and genuine transparency. Prompt: one face-on circular satin silver/cyan
+comet ribbon, tapered violet tail, luminous white tip, restrained glow, no text,
+background, arrow, infinity symbol or ice shards. The previous infinity sheet
+has been removed. `tools/build-wait-artwork.py` derives sixty equally spaced
+64×64 RGBA frames using premultiplied-alpha filtering. Display at the pointer
+hotspot in a 32px footprint (respecting larger user sizes), one revolution/sec,
+time-based 60fps phase. No catch-up loop, decoding, rotation or allocation in
+paint. Alpha-weighted sampling preserves clean small-size edges. The sprite is
+983,040 bytes shared by both target kernels. `wait-orbit-v2-preview.png` shows
+six production frames at their actual 32px size, not enlarged concept art.
+Only cursor damage is presented, never a full-window repaint for animation.
 Loading cancellation, completion, error, lock and window dismissal restore the
 normal cursor. Master and packed sprite use the existing design-kit install list.
 

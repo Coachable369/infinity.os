@@ -1,5 +1,5 @@
 use super::{resources, session, Servo};
-use std::{cell::Cell, rc::Rc, time::{Duration, Instant}};
+use std::{cell::Cell, rc::Rc, string::ToString, time::{Duration, Instant}};
 
 struct Provider { stage: u8, finish: Rc<Cell<bool>>, cancelled: Rc<Cell<u32>>, observed: Rc<Cell<u32>> }
 impl resources::Provider for Provider {
@@ -77,5 +77,63 @@ pub fn verify(engine:&Servo)->bool {
         std::thread::sleep(Duration::from_millis(1));
     }
     let passed=late && session.complete() && cancelled.get()==1;
+    let passed=passed && verify_gzip(engine);
     super::super::record(2,41,if passed {2}else{0});passed
+}
+
+struct CompressedProvider { stage:u8, body:std::vec::Vec<u8>, streamed:bool }
+impl resources::Provider for CompressedProvider {
+    // ------------------------=
+    // FUNC: begin
+    // DESC: Restricts compressed-response coverage to the fixture origin.
+    // ------------------=
+    fn begin(&mut self,url:&str)->Result<u64,()> {
+        if url!="https://gzip.test/" {return Err(());}self.stage=0;Ok(1)
+    }
+    // ------------------------=
+    // FUNC: poll_stream
+    // DESC: Exercises both complete and chunked compressed native response paths.
+    // ------------------=
+    fn poll_stream(&mut self,_:u64)->Result<Option<resources::Event>,()> {
+        let headers=std::vec![("Content-Type".into(),"text/html".into()),("Content-Encoding".into(),"gzip".into()),("Content-Length".into(),self.body.len().to_string())];
+        let event=if !self.streamed && self.stage==0 {
+            resources::Event::Complete(resources::Response{status:200,headers,body:self.body.clone()})
+        } else {match self.stage {
+            0=>resources::Event::Head(200,headers),
+            1=>resources::Event::Data(self.body[..self.body.len()/2].to_vec()),
+            2=>resources::Event::Data(self.body[self.body.len()/2..].to_vec()),
+            3=>resources::Event::Done,
+            _=>return Err(()),
+        }};
+        self.stage+=1;Ok(Some(event))
+    }
+    // ------------------------=
+    // FUNC: cancel
+    // DESC: Fixture has no external resources to retain.
+    // ------------------=
+    fn cancel(&mut self,_:u64) {}
+}
+
+// ------------------------=
+// FUNC: verify_gzip
+// DESC: Requires real Servo CSS pixels and completed loads from both compressed response adapters.
+// ------------------=
+fn verify_gzip(engine:&Servo)->bool {
+    use std::io::Write;
+    for streamed in [false,true] {
+        let mut encoder=flate2::write::GzEncoder::new(std::vec::Vec::new(),flate2::Compression::default());
+        if encoder.write_all(b"<!doctype html><html><head><style>body{margin:0;background:rgb(20,220,30)}</style></head><body>Compressed native page</body></html>").is_err() {return false;}
+        let Ok(body)=encoder.finish() else {return false;};
+        let Ok(session)=session::Session::new(engine,CompressedProvider{stage:0,body,streamed},super::super::monotonic,256,192) else {return false;};
+        if session.navigate("https://gzip.test/").is_err() {return false;}
+        let deadline=Instant::now()+Duration::from_secs(15);let mut green=false;
+        while (!green || !session.complete()) && Instant::now()<deadline {
+            if session.pump(engine,|_,_,bytes| {
+                green=bytes.chunks_exact(4).filter(|p|p[1]>180 && p[0]<80 && p[2]<80).count()>30000;
+            }).is_err() {return false;}
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if !green || !session.complete() || session.failed() {return false;}
+    }
+    true
 }

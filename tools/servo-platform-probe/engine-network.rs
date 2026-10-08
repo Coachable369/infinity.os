@@ -43,6 +43,11 @@ impl Link for Connection {
 impl native_https::Factory for Factory {
     type Connection = Connection;
     // ------------------------=
+    // FUNC: started_request
+    // DESC: Associates pending and rejected fixture requests with their resource for diagnosis.
+    // ------------------=
+    fn started_request(url:&str) {super::super::diagnostic(7,&std::format!("BEGIN {url}\n"));}
+    // ------------------------=
     // FUNC: failed_request
     // DESC: Retains one terminal native transport diagnostic for a failed fixture.
     // ------------------=
@@ -71,7 +76,8 @@ impl native_https::Factory for Factory {
     // ------------------=
     fn authorize(&mut self, host: &str, port: u16) -> Result<(Connection, Configuration, u64, [u8;32]), ()> {
         if !(matches!(host, "www.google.com" | "www.gstatic.com" | "www.googleusercontent.com" | "en.wikipedia.org" | "upload.wikimedia.org" | "example.com")
-            || ["duckduckgo.com", "yahoo.com", "yimg.com"].iter()
+            || matches!(host,"cdnjs.cloudflare.com"|"fonts.googleapis.com"|"fonts.gstatic.com")
+            || ["coachable.online", "duckduckgo.com", "yahoo.com", "yimg.com"].iter()
                 .any(|domain|host==*domain || host.strip_suffix(domain).is_some_and(|prefix|prefix.ends_with('.'))))
             || port != 443 { return Err(()); }
         let mut seed=[0;32];
@@ -140,9 +146,9 @@ pub fn verify(engine: &servo::Servo) -> bool {
     });
     let dom_matches=wait_for_callback(engine,&view,&repaint,&resources,&asserted);
     super::super::record(2,34,dom_matches as u64);
-    if !dom_matches {
+    {
     let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
-    view.evaluate_javascript("JSON.stringify({headings:document.querySelectorAll('h3').length,roles:document.querySelectorAll('[role=heading]').length,search:!!document.getElementById('search'),links:Array.from(document.links).slice(0,30).map(a=>({host:a.hostname,path:a.pathname})),ready:document.readyState})",move |value| {
+    view.evaluate_javascript("JSON.stringify({ready:document.readyState,body:document.body&&{text:document.body.innerText.slice(0,300),height:document.body.getBoundingClientRect().height,display:getComputedStyle(document.body).display,visibility:getComputedStyle(document.body).visibility,opacity:getComputedStyle(document.body).opacity},top:Array.from(document.elementsFromPoint(100,100)).slice(0,5).map(e=>({tag:e.tagName,id:e.id,cls:e.className,background:getComputedStyle(e).backgroundColor,opacity:getComputedStyle(e).opacity})),sheets:document.styleSheets.length,images:Array.from(document.images).slice(0,6).map(i=>({complete:i.complete,width:i.naturalWidth}))})",move |value| {
         if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&value);}
         inspection.set(1);
     });
@@ -154,8 +160,14 @@ pub fn verify(engine: &servo::Servo) -> bool {
         view.paint();
         let image=context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(800,600).into()));
         let pixels=image.is_some_and(|image| {
-                super::super::record(2,36,((image.width() as u64)<<32)|image.height() as u64);
-                for (index,chunk) in image.as_raw().chunks(8).enumerate() {
+                // UART proof is a half-resolution thumbnail of real rendered pixels;
+                // serializing full-size pixels can itself exhaust the test wall timeout.
+                let mut thumbnail=std::vec::Vec::with_capacity(400*300*4);
+                for y in (0..image.height()).step_by(2) {for x in (0..image.width()).step_by(2) {
+                    thumbnail.extend_from_slice(&image.get_pixel(x,y).0);
+                }}
+                super::super::record(2,36,((400u64)<<32)|300u64);
+                for (index,chunk) in thumbnail.chunks(8).enumerate() {
                     let mut bytes=[0;8];bytes[..chunk.len()].copy_from_slice(chunk);
                     super::super::record(5,index as u64,u64::from_le_bytes(bytes));
                 }

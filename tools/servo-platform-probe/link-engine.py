@@ -66,6 +66,10 @@ def main():
             raise SystemExit("Expected one native code-generated " + name + " archive")
         native_externs += ["--extern", name + "=" + str(archives[0])]
     if options.page_probe or options.component:
+        compression = list((target / "deps").glob("libflate2-*.rlib"))
+        if len(compression) != 1:
+            raise SystemExit("Expected one native gzip decoder archive")
+        native_externs += ["--extern", "flate2=" + str(compression[0])]
         archives = list((target / "deps").glob("libhttp-*.rlib"))
         if len(archives) != 1:
             raise SystemExit("Expected one native HTTP type archive")

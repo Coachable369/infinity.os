@@ -1,0 +1,9 @@
+[package]
+name = "infinity-browser-compression-test"
+version = "0.1.0"
+edition = "2021"
+[workspace]
+[dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+[lib]
+path = "lib.rs"

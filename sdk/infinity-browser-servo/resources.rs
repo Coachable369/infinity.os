@@ -6,6 +6,7 @@ use servo::{WebResourceLoad, WebResourceResponse};
 pub mod download;
 #[path = "../infinity-browser-core/resource_order.rs"]
 mod resource_order;
+#[path="compression.rs"] mod compression;
 
 pub const MAX_BODY: usize = 4 * 1024 * 1024;
 const MAX_REQUESTS: usize = 256;
@@ -21,6 +22,7 @@ struct Stream {
     id: u64, deadline: u64, document: bool, size: usize,
     load: servo::InterceptedWebResourceLoad,
     attachment: Option<(download::Metadata, Vec<u8>)>,
+    encoded: Option<Vec<u8>>,
 }
 
 pub trait Provider {
@@ -152,13 +154,22 @@ impl<P: Provider> Resources<P> {
                 Ok(None) => { state.stream = Some(stream); return false; },
                 Ok(Some(Event::Data(bytes))) if bytes.len() <= MAX_BODY.saturating_sub(stream.size) => {
                     stream.size += bytes.len();
-                    if let Some((_, body)) = &mut stream.attachment { body.extend_from_slice(&bytes); }
+                    if let Some(body)=&mut stream.encoded {body.extend_from_slice(&bytes);}
+                    else if let Some((_, body)) = &mut stream.attachment { body.extend_from_slice(&bytes); }
                     else { stream.load.send_body_data(bytes); }
                     state.stream = Some(stream); return true;
                 },
                 Ok(Some(Event::Done)) => {
                     progressed = true;
                     state.provider.cancel(stream.id);
+                    if let Some(encoded)=stream.encoded.take() {
+                        let Ok(decoded)=compression::decode(&encoded,MAX_BODY) else {
+                            if stream.document {state.failed_document=true;state.provider.document_failed();}
+                            stream.load.fail();return true;
+                        };
+                        if let Some((_,body))=&mut stream.attachment {*body=decoded;}
+                        else {stream.load.send_body_data(decoded);}
+                    }
                     if let Some((metadata, body)) = stream.attachment {
                         if state.provider.download(&metadata, &body).is_ok() { stream.load.cancel(); }
                         else {
@@ -189,6 +200,8 @@ impl<P: Provider> Resources<P> {
                     headers.extend_from_slice(b": ");headers.extend_from_slice(value.as_bytes());headers.extend_from_slice(b"\r\n");
                 }
                 if oversized {let pending=state.pending.remove(at);fail_load(&mut state,pending.load);progressed=true;continue;}
+                if headers.len()+23>8192 {let pending=state.pending.remove(at);fail_load(&mut state,pending.load);progressed=true;continue;}
+                headers.extend_from_slice(b"Accept-Encoding: gzip\r\n");
                 let method=state.pending[at].load.request().method.clone();
                 let body=state.pending[at].load.request().body.clone();
                 match state.provider.begin_request(url.as_str(),method.as_str(), &headers,&body) {
@@ -218,11 +231,16 @@ impl<P: Provider> Resources<P> {
             }
             let pending = state.pending.remove(at);
             if let Ok(Some(Event::Head(status, ref headers))) = result {
+                let Ok(compressed)=compression::gzip(headers) else {
+                    state.provider.cancel(id);fail_load(&mut state,pending.load);return true;
+                };
+                let compressed=compressed && !matches!(status,204|304) && pending.load.request().method.as_str()!="HEAD";
                 let document = pending.load.request().is_for_main_frame;
                 let mut response = WebResourceResponse::new(pending.load.request().url.clone());
                 let mut valid = (200..=599).contains(&status) && headers.len() <= 128;
                 let mut bytes = 0usize;
                 for (name, value) in headers {
+                    if compressed && (name.eq_ignore_ascii_case("content-encoding") || name.eq_ignore_ascii_case("content-length")) {continue;}
                     bytes = bytes.saturating_add(name.len()).saturating_add(value.len());
                     let (Ok(name), Ok(value)) = (name.parse::<http::header::HeaderName>(), value.parse()) else { valid=false; break; };
                     response.headers.append(name, value);
@@ -239,13 +257,22 @@ impl<P: Provider> Resources<P> {
                 if !valid { state.provider.cancel(id); fail_load(&mut state,pending.load); progressed=true; continue; }
                 response.status_code = status.try_into().unwrap();
                 state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,
-                    load: pending.load.intercept(response), attachment });
+                    load: pending.load.intercept(response), attachment, encoded:compressed.then(Vec::new) });
                 return true;
             }
             state.provider.cancel(id);
-            let Ok(Some(Event::Complete(result))) = result else {
+            let Ok(Some(Event::Complete(mut result))) = result else {
                 fail_load(&mut state, pending.load); progressed=true; continue;
             };
+            if result.body.len()>MAX_BODY {fail_load(&mut state,pending.load);continue;}
+            match compression::gzip(&result.headers) {
+                Ok(true) if !matches!(result.status,204|304) && pending.load.request().method.as_str()!="HEAD"=>match compression::decode(&result.body,MAX_BODY) {
+                    Ok(body)=>{result.body=body;compression::remove_wire_encoding(&mut result.headers);},
+                    Err(())=>{fail_load(&mut state,pending.load);continue;},
+                },
+                Ok(_)=>{},
+                Err(())=>{fail_load(&mut state,pending.load);continue;},
+            }
             progressed=true;
             if result.body.len() > MAX_BODY || result.headers.len() > 128 || !(200..=599).contains(&result.status) {
                 fail_load(&mut state, pending.load); continue;

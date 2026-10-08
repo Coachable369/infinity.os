@@ -3,13 +3,13 @@ use super::geometry::Rect;
 use super::input_preferences::Preferences;
 use core::sync::atomic::{AtomicUsize,Ordering};
 static BUSY_FRAME:AtomicUsize=AtomicUsize::new(0);
-static BUSY_SPRITE:&[u8;16*64*64*4]=include_bytes!("../../assets/ui-design-kit/default/wait-infinity-v1.rgba");
+static BUSY_SPRITE:&[u8;60*64*64*4]=include_bytes!("../../assets/ui-design-kit/default/wait-orbit-v2.rgba");
 // ------------------------=
 // FUNC: animate_busy
 // DESC: Publishes one fixed-rate sprite frame and reports transitions including return to the normal pointer.
 // ------------------=
 pub fn animate_busy(loading:bool,now_ms:u64)->bool {
-    let next=if loading {1+(now_ms/80%16) as usize}else{0};
+    let next=if loading {1+((now_ms%1000)*60/1000) as usize}else{0};
     BUSY_FRAME.swap(next,Ordering::Relaxed)!=next
 }
 // ------------------------=
@@ -23,9 +23,17 @@ pub fn busy()->bool {BUSY_FRAME.load(Ordering::Relaxed)!=0}
 // ------------------=
 pub fn busy_sample(x:usize,y:usize,size:usize)->[u8;4] {
     if size==0 || x>=size || y>=size {return [0;4];}
-    let frame=BUSY_FRAME.load(Ordering::Relaxed).saturating_sub(1).min(15);
-    let i=(frame*64*64+y*64/size*64+x*64/size)*4;
-    [BUSY_SPRITE[i],BUSY_SPRITE[i+1],BUSY_SPRITE[i+2],BUSY_SPRITE[i+3]]
+    let frame=BUSY_FRAME.load(Ordering::Relaxed).saturating_sub(1).min(59);
+    // Alpha-weighted area sampling avoids jagged transparent edges at small sizes.
+    let x0=x*64/size;let x1=((x+1)*64/size).max(x0+1).min(64);
+    let y0=y*64/size;let y1=((y+1)*64/size).max(y0+1).min(64);
+    let mut sum=[0u32;4];let count=((x1-x0)*(y1-y0)) as u32;
+    for sy in y0..y1 {for sx in x0..x1 {
+        let i=(frame*64*64+sy*64+sx)*4;let a=BUSY_SPRITE[i+3] as u32;
+        for c in 0..3 {sum[c]+=BUSY_SPRITE[i+c] as u32*a;}sum[3]+=a;
+    }}
+    if sum[3]==0 {return [0;4];}
+    [(sum[0]/sum[3]) as u8,(sum[1]/sum[3]) as u8,(sum[2]/sum[3]) as u8,(sum[3]/count) as u8]
 }
 include!("../../assets/cursors/hotspots.rs");
 pub const EDGE: usize = 128;
@@ -59,7 +67,7 @@ pub fn shape_scale(p: Preferences, scale: usize) -> usize { ((size(p,scale)+13)/
 // ------------------=
 pub fn bounds(x: i32, y: i32, scale: usize, p: Preferences, special: bool) -> Rect {
     if busy() {
-        let edge=size(p,scale).max((40*scale).min(120));
+        let edge=size(p,scale).max((32*scale).min(120));
         return Rect{x:x-edge as i32/2,y:y-edge as i32/2,width:edge as u32,height:edge as u32};
     }
     let size=if special {28*shape_scale(p,scale)} else {size(p,scale)};

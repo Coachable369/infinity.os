@@ -41,13 +41,14 @@ fn main() {
         assert!(clipboard_menu::take_damage().is_some());
     }}
     let prefs=input_preferences::Preferences::defaults();let mut signatures=std::collections::BTreeSet::new();
-    for frame in 0..16 {
-        assert!(cursor::animate_busy(true,frame*80));assert!(!cursor::animate_busy(true,frame*80+79));
-        let bounds=cursor::bounds(200,200,1,prefs,false);assert_eq!(bounds.width,40);
+    for frame in 0..60 {
+        let time=(frame*1000+59)/60;
+        assert!(cursor::animate_busy(true,time));assert!(!cursor::animate_busy(true,time));
+        let bounds=cursor::bounds(200,200,1,prefs,false);assert_eq!(bounds.width,32);
         let mut bytes=Vec::new();let mut visible=0;
-        for y in 0..40 {for x in 0..40 {let p=cursor::busy_sample(x,y,40);visible+=usize::from(p[3]>128);bytes.extend_from_slice(&p);}}
-        assert!(visible>100 && visible<1200);signatures.insert(bytes);
+        for y in 0..32 {for x in 0..32 {let p=cursor::busy_sample(x,y,32);visible+=usize::from(p[3]>128);bytes.extend_from_slice(&p);}}
+        assert!(visible>30 && visible<700);signatures.insert(bytes);
     }
-    assert_eq!(signatures.len(),16);assert!(cursor::animate_busy(false,1280));assert!(!cursor::busy());
+    assert_eq!(signatures.len(),60);assert!(cursor::animate_busy(false,1000));assert!(!cursor::busy());
     assert_eq!(cursor::bounds(200,200,1,prefs,false).width,28);
 }
