@@ -1,0 +1,24 @@
+--- a/src/VBox/Devices/Audio/DrvAudio.cpp
++++ b/src/VBox/Devices/Audio/DrvAudio.cpp
+@@ -3500,6 +3500,10 @@
+         rc = pThis->pHostDrvAudio->pfnStreamCapture(pThis->pHostDrvAudio, pStreamEx->pBackend, pbBuf, cbToRead, &cbReadNow);
+         if (RT_SUCCESS(rc))
+         {
++            /* A backend may temporarily report readable data but make no progress.
++             * Release the stream locks instead of retrying forever under them. */
++            if (cbReadNow == 0)
++                break;
+             if (cbReadNow != cbToRead)
+                 Log4Func(("%s: @%#RX64: Read fewer bytes than requested: %#x, requested %#x\n",
+                           pStreamEx->Core.Cfg.szName, pStreamEx->offInternal, cbReadNow, cbToRead));
+--- a/src/VBox/Devices/Audio/DrvHostAudioCoreAudio.cpp
++++ b/src/VBox/Devices/Audio/DrvHostAudioCoreAudio.cpp
+@@ -2277,7 +2277,7 @@
+     int                 rc        = VINF_SUCCESS;
+     uint32_t            cbRead    = 0;
+-    while (cbBuf > cbFrame)
++    while (cbBuf >= cbFrame)
+     {
+         AssertBreakStmt(pStreamCA->hAudioQueue, rc = VERR_AUDIO_STREAM_NOT_READY);
+ 
+         /*

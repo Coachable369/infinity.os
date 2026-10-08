@@ -103,3 +103,46 @@ and the fixture's input setting was restored afterward. Evidence is under
 This validates a bounded temporary workaround, not microphone functionality or
 long-duration stability. With the VM powered off, its VirtualBox Audio settings
 can disable audio input while preserving output. The user's VM was not changed.
+
+## Source repair and deterministic regression (2026-10-08)
+
+A fresh read-only sample of the user's hung VirtualBox 7.2.16 process again
+shows CPU0 blocked in `PGMPhysRead -> PDMCritSectEnter`, CPU7 waiting on the
+audio mixer, and `MixAIO-2` spinning at the same capture-loop offsets.
+`build/ai-post-prompt-host.sample` retains that evidence. The serial trace
+records completed speech playback and renewed capture before the stall.
+
+The host-side source fix is
+`third_party/patches/virtualbox/audio-capture-progress.patch`:
+
+- CoreAudio capture accepts `cbBuf == cbFrame`, not only larger requests.
+- The generic capture connector breaks on a successful zero-byte transfer,
+  returning accumulated data rather than looping forever with locks held.
+
+No listening delay, microphone disablement, Hermes change, security bypass,
+or guest watchdog is substituted for this repair. Once the host is stuck in
+the device lock, a guest watchdog cannot release it.
+
+Run `./build-kit run python3 tools/virtualbox-audio-fix/test.py` to fetch pinned
+GPL-3.0 upstream source at `32f5f1de3fe17a3df177d6b3259112bcbf79856e`, apply
+the patch without fuzzy matching, and compile the actual two upstream
+functions against deterministic AudioQueue/backend fixtures. Source hashes
+and structured outcomes are saved in `build/virtualbox-audio-fix/result.json`.
+
+Manifest `20261008T181142246566Z-10229.json` records:
+
+- Original one-frame capture fails its byte-count assertion.
+- Original zero-progress connector and combined one-frame CoreAudio/connector
+  calls both exceed a two-second bound and are terminated by the harness.
+- Patched zero, partial, error, single-frame, buffer-tail, empty, disabled,
+  and combined capture cases all pass with AddressSanitizer and UBSan.
+- Checks include exact returned bytes/counts, preserved partial progress,
+  bounded callback count, and another thread successfully acquiring the
+  released backend mutex.
+
+These are executable source-regression tests, not an installed VirtualBox or
+microphone acceptance pass. The installed host binary is unchanged. Deployment
+requires building and installing VirtualBox with this patch using its normal
+platform signing/install process, followed by microphone-enabled conversation
+tests on a disposable VM. An InfinityOS ISO rebuild alone cannot deliver this
+host-library fix. Do not mark the installed freeze resolved until that gate passes.
