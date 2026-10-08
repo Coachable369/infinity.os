@@ -55,6 +55,28 @@ shortcut routing, reduced motion, exact premultiplied pixels, and actual retaine
 surface reuse with paint callbacks that panic if an animation rerasterizes an app.
 It does not prove installed interaction or frame rate.
 
+## Visual Clipboard implementation checkpoint
+
+The native sheet now supports eight session-local text entries, full-content
+case-insensitive ASCII search, previews, paging, copy/paste, individual removal
+and clearing. Ctrl+Shift+V opens it. In Text Editor, “Remember selection” in the
+context menu or Ctrl+Shift+C explicitly retains selected text. Ordinary copy/cut
+and browser copies do not retain history: application identity alone is not a
+sensitive-content classifier. Lock/session changes erase retained content.
+
+The sheet reuses the kit's smoked surface, cyan selection, rounded 8px cards and
+8px gutters. Its logical footprint is 520×350, with a 36px search field, three
+56px visible history cards and 32px footer actions. Gaps are not clickable.
+
+Behavioral coverage: `tools/clipboard-history-test.rs` exercises bounded eviction,
+deduplication, filtering beyond the preview, full-size restoration, denied reads,
+stale IDs, expiration and browser exclusion. `tools/clipboard-cursor-test.rs`
+exercises scaled action hit regions and overlay dismissal/erasure. Run both
+through `build-kit run`. Shared ARM64/x86_64 compile checks passed; this is not
+installed visual proof. Image history and installed visual verification remain
+open acceptance items. This checkpoint does not complete Visual Clipboard or
+the twelve-feature release.
+
 ## Generation prompt
 
 Built-in imagegen; landscape reference board titled “InfinityOS Desktop

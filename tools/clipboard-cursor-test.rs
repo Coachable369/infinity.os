@@ -5,7 +5,8 @@ pub mod geometry;
 pub mod input_preferences;
 #[path="../kernel/ui/cursor.rs"]
 mod cursor;
-mod ui {pub use crate::geometry;}
+#[path="../kernel/ui/clipboard.rs"] pub mod clipboard;
+mod ui {pub use crate::{geometry,clipboard};}
 #[path="../kernel/ui/clipboard_menu.rs"]
 mod clipboard_menu;
 // ------------------------=
@@ -18,7 +19,7 @@ fn main() {
         let mut menu=clipboard_menu::Menu::new();menu.open=true;
         menu.place(width as i32,height as i32,width,height,scale);
         assert!(menu.rect.right()<=width as i32 && menu.rect.bottom()<=height as i32);
-        for row in 0..6 {
+        for row in 0..clipboard_menu::LABELS.len() {
             assert_eq!(menu.row_at(Point{x:menu.rect.x+10*menu.scale as i32,
                 y:menu.rect.y+(7+30*row) as i32*menu.scale as i32}),Some(row));
         }
@@ -30,6 +31,11 @@ fn main() {
         assert!(menu.rect.right()<=width as i32 && menu.rect.bottom()<=height as i32);
         assert_eq!(menu.rect.width,520*menu.scale as u32);
         assert_eq!(menu.rect.height,350*menu.scale as u32);
+        for action in 1..=6 {
+            assert_eq!(menu.viewer_action(Point{x:menu.rect.x+(16+(action-1)*80+30) as i32*menu.scale as i32,
+                y:menu.rect.y+320*menu.scale as i32}),Some(action));
+        }
+        assert_eq!(menu.viewer_action(Point{x:menu.rect.x+92*menu.scale as i32,y:menu.rect.y+320*menu.scale as i32}),None);
         clipboard_menu::close();let closed=clipboard_menu::current();
         assert!(!closed.open);assert_eq!(closed.length,0);assert!(closed.bytes.iter().all(|b|*b==0));
         assert!(clipboard_menu::take_damage().is_some());

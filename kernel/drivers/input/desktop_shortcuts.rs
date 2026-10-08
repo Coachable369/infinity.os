@@ -71,7 +71,7 @@ pub fn shortcut_code(letter: u8, shift: bool) -> u8 {
     if shift
         && matches!(
             letter,
-            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i' | b'k' | b'f' | b'o'
+            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i' | b'k' | b'f' | b'o' | b'v' | b'c'
         )
     {
         letter.to_ascii_uppercase()
@@ -168,7 +168,7 @@ mod tests {
             assert_eq!(desktop_action(shortcut_code(key, false), true, true), None);
         }
         assert_eq!(shortcut_code(b'z', true), b'y');
-        assert_eq!(shortcut_code(b'c', true), b'c');
+        assert_eq!(shortcut_code(b'c', true), b'C');
         assert_eq!(desktop_action(b'J', true, true), None);
     }
 }

@@ -72,12 +72,8 @@ impl ConsoleRuntime {
         if menu.open {
             if clicked {
                 if menu.viewer {
-                    if !menu.rect.contains(p) || p.y<menu.rect.y+42*menu.scale as i32 {clipboard_menu::close();}
-                    else if p.y>menu.rect.bottom()-48*menu.scale as i32 {
-                        if p.x<menu.rect.x+menu.rect.width as i32/2 {menu.page=menu.page.saturating_sub(1);}
-                        else {menu.page=(menu.page+1).min(menu.length.saturating_sub(1)/384);}
-                        clipboard_menu::publish(menu);
-                    }
+                    if !menu.rect.contains(p) {clipboard_menu::close();}
+                    else if let Some(action)=menu.viewer_action(p) {self.clipboard_history_action(action);}
                 } else if let Some(row)=menu.row_at(p) {self.clipboard_menu_action(row);}
                 else {clipboard_menu::close();}
             } else if let Some(row)=menu.row_at(p) {
@@ -110,16 +106,59 @@ impl ConsoleRuntime {
     // DESC: Provides keyboard navigation, activation, viewer paging and Escape without editing the covered selection.
     // ------------------=
     pub(super) fn clipboard_menu_key(&mut self,key:ConsoleKey)->bool {
+        // Retention is explicit, never inferred from a successful copy or an app name.
+        if matches!(key,ConsoleKey::Shortcut(b'C')) && self.workplace_authorized(false)
+            && self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::TextEditor
+            && self.editor_dialog==EditorDialog::None && !clipboard_menu::current().open {
+            if let Some((a,b))=self.editor_document.selection() {
+                let saved=clipboard::with_shared(|c|c.write_public_text(self.current_session.0,&self.editor_document.bytes()[a..b],now_ms())).is_ok();
+                self.editor_tools.notice=if saved {b"Selection copied and retained for this session."}else{b"Could not retain selection."};
+            }
+            return true;
+        }
+        if matches!(key,ConsoleKey::Shortcut(b'V')) && self.workplace_authorized(false)
+            && matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) {
+            let mut menu=clipboard_menu::Menu::new();menu.open=true;menu.viewer=true;
+            menu.can_paste=self.mode==ConsoleMode::Desktop && (self.desktop_app==DesktopAppKind::Browser
+                || (self.desktop_app==DesktopAppKind::TextEditor && self.editor_dialog==EditorDialog::None));
+            menu.target=if self.desktop_app==DesktopAppKind::Browser {clipboard_menu::Target::Browser}else{clipboard_menu::Target::Editor};
+            menu.place((self.system.framebuffer_width/4) as i32,(self.system.framebuffer_height/4) as i32,
+                self.system.framebuffer_width,self.system.framebuffer_height,SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
+            self.refresh_clipboard_history(&mut menu);clipboard_menu::publish(menu);return true;
+        }
         let mut menu=clipboard_menu::current();if !menu.open {return false;}
         if matches!(key,ConsoleKey::Shortcut(b'L')) {clipboard_menu::close();return false;}
+        if menu.viewer {
+            match key {
+                ConsoleKey::Escape=>clipboard_menu::close(),
+                ConsoleKey::Up=>self.clipboard_history_action(1),
+                ConsoleKey::Down=>self.clipboard_history_action(2),
+                ConsoleKey::Enter=>self.clipboard_history_action(if menu.can_paste {4}else{3}),
+                ConsoleKey::Delete=>self.clipboard_history_action(5),
+                ConsoleKey::Left|ConsoleKey::Right=>{
+                    menu.page=if matches!(key,ConsoleKey::Left) {menu.page.saturating_sub(1)}else{(menu.page+1).min(menu.length.saturating_sub(1)/192)};
+                    clipboard_menu::publish(menu);
+                },
+                ConsoleKey::Character(c) if (32..=126).contains(&c) && menu.query_length<menu.query.len()=>{
+                    menu.query[menu.query_length]=c;menu.query_length+=1;menu.selected_id=0;menu.page=0;
+                    self.refresh_clipboard_history(&mut menu);clipboard_menu::publish(menu);
+                },
+                ConsoleKey::Backspace=>{
+                    menu.query_length=menu.query_length.saturating_sub(1);menu.query[menu.query_length]=0;
+                    menu.selected_id=0;menu.page=0;self.refresh_clipboard_history(&mut menu);clipboard_menu::publish(menu);
+                },
+                _=>{},
+            }
+            return true;
+        }
         match key {
             ConsoleKey::Escape=>clipboard_menu::close(),
             ConsoleKey::Up|ConsoleKey::Left=>{
-                if menu.viewer {menu.page=menu.page.saturating_sub(1);}else{menu.row=(menu.row+5)%6;}
+                menu.row=(menu.row+clipboard_menu::LABELS.len()-1)%clipboard_menu::LABELS.len();
                 clipboard_menu::publish(menu);
             },
             ConsoleKey::Down|ConsoleKey::Right=>{
-                if menu.viewer {menu.page=(menu.page+1).min(menu.length.saturating_sub(1)/384);}else{menu.row=(menu.row+1)%6;}
+                menu.row=(menu.row+1)%clipboard_menu::LABELS.len();
                 clipboard_menu::publish(menu);
             },
             ConsoleKey::Enter if !menu.viewer=>self.clipboard_menu_action(menu.row),
@@ -134,9 +173,13 @@ impl ConsoleRuntime {
         use clipboard_menu::Target;
         let mut menu=clipboard_menu::current();clipboard_menu::close();
         if !self.workplace_authorized(false) {return;}
+        if row==6 {
+            if menu.target==Target::Editor {self.clipboard_menu_key(ConsoleKey::Shortcut(b'C'));}
+            return;
+        }
         if row==4 {
-            menu.bytes.fill(0);menu.length=self.read_workplace_text(&mut menu.bytes).unwrap_or(0);
             menu.viewer=true;menu.open=true;menu.page=0;
+            self.refresh_clipboard_history(&mut menu);
             menu.place(menu.rect.x,menu.rect.y,self.system.framebuffer_width,self.system.framebuffer_height,menu.scale);
             clipboard_menu::publish(menu);return;
         }
@@ -197,13 +240,52 @@ impl ConsoleRuntime {
         clipboard::with_shared(|c|{c.session(self.current_session.0,active);c.expire(now);});
         let mut menu=clipboard_menu::current();
         if menu.open && menu.viewer {
-            let mut bytes=[0;clipboard::MAX_CLIPBOARD_BYTES];
-            let n=self.read_workplace_text(&mut bytes).unwrap_or(0);
-            if n!=menu.length || bytes!=menu.bytes {
-                menu.bytes=bytes;menu.length=n;menu.page=menu.page.min(n.saturating_sub(1)/384);
-                clipboard_menu::publish(menu);
-            }
+            let previous=menu.entries;
+            self.refresh_clipboard_history(&mut menu);
+            if previous!=menu.entries {clipboard_menu::publish(menu);}
         }
+    }
+    // ------------------------=
+    // FUNC: refresh_clipboard_history
+    // DESC: Projects eligible copies outside paint and retains selection by stable item identity.
+    // ------------------=
+    fn refresh_clipboard_history(&self,menu:&mut clipboard_menu::Menu) {
+        clipboard::with_shared(|c| {
+            menu.entries=c.history_previews(self.current_session.0,&menu.query[..menu.query_length],now_ms());
+            menu.row=menu.entries.iter().position(|e|e.id==menu.selected_id && e.id!=0).unwrap_or(0);
+            menu.selected_id=menu.entries[menu.row].id;
+            menu.bytes.fill(0);
+            menu.length=c.history_read(self.current_session.0,menu.selected_id,&mut menu.bytes,now_ms()).unwrap_or(0);
+            menu.page=menu.page.min(menu.length.saturating_sub(1)/192);
+        });
+    }
+    // ------------------------=
+    // FUNC: clipboard_history_action
+    // DESC: Shares keyboard and pointer selection, erasure, clipboard restoration and normal paste dispatch.
+    // ------------------=
+    fn clipboard_history_action(&mut self,action:usize) {
+        let mut menu=clipboard_menu::current();
+        if !self.workplace_authorized(false) {clipboard_menu::close();return;}
+        match action {
+            0=>{clipboard_menu::close();return;},
+            1|2=>{
+                let count=menu.entries.iter().filter(|e|e.id!=0).count();
+                if count!=0 {menu.row=if action==1 {menu.row.saturating_sub(1)}else{(menu.row+1).min(count-1)};
+                    menu.selected_id=menu.entries[menu.row].id;menu.page=0;}
+            },
+            3|4=>{
+                if action==4 && !menu.can_paste {return;}
+                let ok=clipboard::with_shared(|c|c.history_select(self.current_session.0,menu.selected_id,now_ms())).is_ok();
+                if !ok {self.refresh_clipboard_history(&mut menu);clipboard_menu::publish(menu);return;}
+                if action==4 {self.clipboard_menu_action(2);} else {clipboard_menu::close();}
+                return;
+            },
+            5=>{clipboard::with_shared(|c|c.history_remove(self.current_session.0,menu.selected_id));},
+            6=>{clipboard::with_shared(|c|c.clear());},
+            10..=17=>{let index=action-10;if menu.entries[index].id!=0 {menu.selected_id=menu.entries[index].id;menu.page=0;}},
+            _=>{},
+        }
+        self.refresh_clipboard_history(&mut menu);clipboard_menu::publish(menu);
     }
     // ------------------------=
     // FUNC: copy_workplace_text

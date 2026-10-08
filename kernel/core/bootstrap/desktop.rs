@@ -148,22 +148,41 @@ impl super::DisplayDevice {
             for (row,label) in crate::console::clipboard_menu::LABELS.iter().enumerate() {
                 let top=y+(6+row*30)*s;
                 if row==menu.row {self.fill_rounded_rect_alpha(x+5*s,top,w-10*s,30*s,4*s,20,66,91,255);}
-                self.app_text(x+14*s,top+3*s,label,(215,231,241),false,s);
+                self.app_text(x+14*s,top+3*s,label,
+                    if row==6 && menu.target!=crate::console::clipboard_menu::Target::Editor {(83,111,132)}else{(215,231,241)},false,s);
             }
             return;
         }
-        self.app_text(x+16*s,y+12*s,b"Clipboard",(231,239,245),true,s);
+        self.app_text(x+16*s,y+12*s,b"Visual Clipboard",(231,239,245),true,s);
         self.app_text(x+w.saturating_sub(58*s),y+12*s,b"Close",(100,215,245),false,s);
-        if menu.length==0 {self.app_text(x+16*s,y+64*s,b"Clipboard is empty or unavailable.",(165,188,207),false,s);}
-        let start=(menu.page*384).min(menu.length);let end=(start+384).min(menu.length);
-        for (row,line) in menu.bytes[start..end].chunks(48).enumerate() {
-            for (column,byte) in line.iter().enumerate() {
-                self.editor_glyph(x+(16+column*crate::ui::editor_tools::CELL_WIDTH)*s,
-                    y+(56+row*26)*s,if byte.is_ascii_control(){b' '}else{*byte},s,(220,232,240));
-            }
+        self.fill_rounded_rect_alpha(x+16*s,y+48*s,w.saturating_sub(32*s),36*s,8*s,3,16,28,255);
+        self.outline_rounded_rect(x+16*s,y+48*s,w.saturating_sub(32*s),36*s,8*s,54,204,237);
+        self.app_label(crate::ui::geometry::Rect{x:(x+26*s) as i32,y:(y+54*s) as i32,width:w.saturating_sub(52*s) as u32,height:(24*s) as u32},
+            if menu.query_length==0 {b"Type to search retained copies..."}else{&menu.query[..menu.query_length]},(190,214,230),false,s);
+        for slot in 0..3 {
+            let index=menu.row/3*3+slot;
+            let Some(entry)=menu.entries.get(index).filter(|e|e.id!=0) else {continue;};
+            let top=y+(100+slot*64)*s;
+            self.fill_rounded_rect_alpha(x+16*s,top,184*s,56*s,8*s,12,37,54,245);
+            self.outline_rounded_rect(x+16*s,top,184*s,56*s,8*s,
+                if index==menu.row {54}else{39},if index==menu.row {204}else{71},if index==menu.row {237}else{89});
+            let mut label=entry.bytes;for c in &mut label {if c.is_ascii_control(){*c=b' ';}}
+            self.app_label(crate::ui::geometry::Rect{x:(x+26*s) as i32,y:(top+6*s) as i32,width:(164*s) as u32,height:(24*s) as u32},&label[..entry.length],(223,237,245),false,s);
+            self.app_text(x+26*s,top+30*s,b"Text  /  this session",(147,182,200),false,s);
         }
-        self.app_text(x+16*s,y+h.saturating_sub(34*s),b"Previous",(100,215,245),false,s);
-        self.app_text(x+w.saturating_sub(70*s),y+h.saturating_sub(34*s),b"Next",(100,215,245),false,s);
+        self.app_text(x+220*s,y+100*s,if menu.selected_id==0 {b"No retained copies"}else{b"Text preview"},(223,237,245),true,s);
+        let start=(menu.page*192).min(menu.length);let end=(start+192).min(menu.length);
+        for (row,line) in menu.bytes[start..end].chunks(32).enumerate() {
+            let mut label=[b' ';32];for (n,&c) in line.iter().enumerate() {label[n]=if c.is_ascii_control(){b' '}else{c};}
+            self.app_label(crate::ui::geometry::Rect{x:(x+220*s) as i32,y:(y+(128+row*24)*s) as i32,width:w.saturating_sub(236*s) as u32,height:(24*s) as u32},&label[..line.len()],(190,214,230),false,s);
+        }
+        self.app_text(x+220*s,y+280*s,b"Left / Right: preview pages",(147,182,200),false,s);
+        for (i,label) in [b"Previous".as_slice(),b"Next",b"Copy",b"Paste",b"Remove",b"Clear all"].iter().enumerate() {
+            let left=x+(16+i*80)*s;
+            self.fill_rounded_rect_alpha(left,y+308*s,74*s,32*s,6*s,12,37,54,255);
+            self.app_label(crate::ui::geometry::Rect{x:(left+4*s) as i32,y:(y+312*s) as i32,width:(66*s) as u32,height:(24*s) as u32},label,
+                if i==3 && !menu.can_paste {(83,111,132)}else{(190,230,244)},false,s);
+        }
     }
     // ------------------------=
     // FUNC: active_accent_surface
