@@ -2492,6 +2492,35 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: dispatch_ai_control
+    // DESC: Uses the ordinary desktop workflows for bounded AI tools and checks the resulting window state.
+    // ------------------=
+    fn dispatch_ai_control(&mut self, command: crate::runtime::ai::control::Command) -> bool {
+        use crate::runtime::ai::control::Command;
+        let image = match command {
+            Command::TextEditor => Some(crate::runtime::task_manager::IMAGE_TEXT_EDITOR),
+            Command::Terminal => Some(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW),
+            Command::TaskManager => Some(crate::runtime::task_manager::IMAGE_TASK_MANAGER),
+            _ => None,
+        };
+        if image.is_some_and(|id| !self.ensure_app_task(id)) { return false; }
+        match command {
+            Command::TextEditor => { self.open_text_editor(); self.editor_window.visible && self.desktop_app == DesktopAppKind::TextEditor }
+            Command::FileNavigator => self.open_file_navigator_window(home_location_path(0)).is_some(),
+            Command::Browser => {
+                #[cfg(feature="native-browser")]
+                { browser_controller::open_home(self); self.browser_window.visible && self.desktop_app == DesktopAppKind::Browser }
+                #[cfg(not(feature="native-browser"))]
+                { false }
+            }
+            Command::Settings => { self.open_settings(0); self.settings_open && self.mode == ConsoleMode::Settings }
+            Command::Terminal => { self.open_command_window(); self.command_window.visible && self.desktop_app == DesktopAppKind::CommandWindow }
+            Command::TaskManager => { self.open_task_manager(); self.task_manager_window.visible && self.desktop_app == DesktopAppKind::TaskManager }
+            Command::Launcher => { self.open_app_launcher(); self.mode == ConsoleMode::AppLauncher }
+        }
+    }
+
+    // ------------------------=
     // FUNC: persist_ai_chat_preferences
     // DESC: Commits desktop chat visibility and selected model to the user's native identity object.
     // ------------------=
@@ -2644,8 +2673,8 @@ impl ConsoleRuntime {
     // FUNC: ensure_app_task
     // DESC: Registers one singleton GUI application's live execution context when needed.
     // ------------------=
-    fn ensure_app_task(&mut self, image_identity: u32) {
-        let _ = crate::runtime::with_runtime(|runtime| {
+    fn ensure_app_task(&mut self, image_identity: u32) -> bool {
+        crate::runtime::with_runtime(|runtime| {
             let running = (0..runtime.execution.count()).any(|index| {
                 runtime
                     .execution
@@ -2656,12 +2685,10 @@ impl ConsoleRuntime {
                     })
                     .unwrap_or(false)
             });
-            if !running {
-                let _ = runtime
+            running || runtime
                     .task_manager
-                    .launch(&mut runtime.execution, image_identity);
-            }
-        });
+                    .launch(&mut runtime.execution, image_identity).is_ok()
+        }).unwrap_or(false)
     }
 
     // ------------------------=
@@ -3394,6 +3421,10 @@ impl ConsoleRuntime {
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
         if locked {
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                ai.cancel_app_turn();
+                ai.cancel_chat();
+            });
             crate::ui::desktop_effects::reset();
             self.synchronize_workplace();
             self.cancel_node_pairing_input();
@@ -13356,9 +13387,24 @@ pub fn poll_native_ai() {
                 && crate::ui::app_assistant::read(id).expanded) };
         if !allowed { crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_app_turn()); }
     }
-    if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
+    let desktop_allowed = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
+        runtime.ai_chat_allowed() && matches!(runtime.mode,
+            ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher)) };
+    let mut ai_changed = crate::runtime::ai::with_ai_runtime(|ai| {
+        if app_turn.is_none() && !desktop_allowed { ai.cancel_chat() } else { ai.poll_qwen() }
+    });
+    unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
+        ai_changed |= crate::runtime::ai::with_ai_runtime(|ai| ai.control_pending());
+        let command = crate::runtime::ai::with_ai_runtime(|ai| ai.take_control(runtime.current_user.0, desktop_allowed));
+        if let Some(command) = command {
+            let success = runtime.dispatch_ai_control(command);
+            crate::runtime::ai::with_ai_runtime(|ai| ai.finish_control(command, success));
+            ai_changed = true;
+        }
+    } }
+    if ai_changed {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
-        if app_turn.is_some() { return; }
+        if app_turn.is_some() || !desktop_allowed { return; }
         crate::runtime::ai::with_ai_runtime(|ai|ai.record_first_visible_response());
         #[cfg(target_os = "none")]
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {

@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod broker;
 pub mod chat;
+pub mod control;
 pub mod generation;
 pub mod intent;
 pub mod memory;
@@ -45,6 +46,7 @@ pub struct AiRuntime {
     app_owner: Option<usize>,
     app_saved: Option<qwen::service::Conversation>,
     chat_owner: [u8; 16],
+    pending_control: Option<control::Command>,
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
     pub qwen_metrics: qwen::metrics::Metrics,
@@ -63,7 +65,7 @@ impl AiRuntime {
     // ------------------=
     pub fn submit_app_turn(&mut self, id: usize, prompt: &[u8]) -> Result<(), &'static [u8]> {
         if !self.chat.enabled() { return Err(b"AI is disabled in Settings."); }
-        if self.app_owner.is_some() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
+        if self.app_owner.is_some() || self.pending_control.is_some() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let selected = self.chat.selected_model();
@@ -225,6 +227,7 @@ impl AiRuntime {
     pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
         if self.chat_owner != owner {
             self.cancel_app_turn();
+            self.pending_control = None;
             if let Some(service) = self.qwen.as_mut() {
                 service.clear_conversation();
             }
@@ -243,6 +246,10 @@ impl AiRuntime {
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
         if self.app_owner.is_some() { return false; }
+        if self.pending_control.take().is_some() {
+            self.chat.generation_state = chat::GenerationState::Cancelled;
+            return true;
+        }
         let Some(service) = self.qwen.as_mut() else {
             return false;
         };
@@ -279,7 +286,14 @@ impl AiRuntime {
     // DESC: Routes selected native models to bounded local inference; legacy helpers retain their behavior.
     // ------------------=
     pub fn submit_chat(&mut self) -> bool {
-        if self.app_owner.is_some() { return false; }
+        if self.app_owner.is_some() || self.pending_control.is_some() || !self.chat.enabled()
+            || self.qwen.as_ref().is_some_and(|s| s.busy()) { return false; }
+        if let Some(command) = control::Command::explicit(self.chat.input()) {
+            self.chat.begin_native_turn();
+            self.chat.generation_state = chat::GenerationState::Running;
+            self.pending_control = Some(command);
+            return true;
+        }
         if !matches!(self.chat.selected_model(), chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
             return self.chat.submit_input();
         }
@@ -296,7 +310,12 @@ impl AiRuntime {
             return false;
         }
         let submitted_ns = crate::ui::performance::monotonic_ns();
-        if let Err(error) = service.submit(self.chat.input()) {
+        let mut prompt = [0u8; chat::CHAT_INPUT_CAPACITY + control::INSTRUCTIONS.len()];
+        let prefix = control::INSTRUCTIONS;
+        let length = prefix.len() + self.chat.input().len();
+        prompt[..prefix.len()].copy_from_slice(prefix);
+        prompt[prefix.len()..length].copy_from_slice(self.chat.input());
+        if let Err(error) = service.submit(&prompt[..length]) {
             self.chat.generation_state = if error == qwen::gguf::Error::Overflow {
                 chat::GenerationState::ContextFull
             } else {
@@ -311,6 +330,34 @@ impl AiRuntime {
         self.qwen_first_token_ns = None;
         self.chat.begin_native_turn();
         true
+    }
+    // ------------------------=
+    // FUNC: take_control
+    // DESC: Consumes a command exactly once after rechecking the currently authenticated UI owner and permission.
+    // ------------------=
+    pub fn take_control(&mut self, owner: [u8; 16], allowed: bool) -> Option<control::Command> {
+        let command = self.pending_control.take()?;
+        if owner != self.chat_owner || !allowed || !self.chat.enabled() {
+            self.chat.generation_state = chat::GenerationState::Cancelled;
+            self.chat.update_native_response(b"OS action cancelled: the session or AI permission changed.");
+            return None;
+        }
+        Some(command)
+    }
+
+    // ------------------------=
+    // FUNC: control_pending
+    // DESC: Allows presentation to observe dispatch or denial even when no model tokens are being generated.
+    // ------------------=
+    pub fn control_pending(&self) -> bool { self.pending_control.is_some() }
+
+    // ------------------------=
+    // FUNC: finish_control
+    // DESC: Publishes the dispatcher's actual outcome instead of treating model text as execution evidence.
+    // ------------------=
+    pub fn finish_control(&mut self, command: control::Command, success: bool) {
+        self.chat.update_native_response(command.result(success));
+        self.chat.generation_state = if success { chat::GenerationState::Complete } else { chat::GenerationState::Failed };
     }
     // ------------------------=
     // FUNC: poll_qwen
@@ -348,7 +395,8 @@ impl AiRuntime {
         };
         if self.chat.selected_model() != self.active_native || !self.chat.enabled() {
             service.cancel();
-            return false;
+            self.chat.generation_state = chat::GenerationState::Cancelled;
+            return true;
         }
         let mut budget = qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
         while budget.next(crate::ui::performance::monotonic_ns()) {
@@ -357,7 +405,8 @@ impl AiRuntime {
             self.qwen_metrics.slice(slice_start, crate::ui::performance::monotonic_ns(), matches!(result, Ok(true)));
             match result {
                 Ok(true) => {
-                    let published = self.chat.publish_native_completion(service.output(), !service.busy());
+                    let published = control::publish(&mut self.chat, &mut self.pending_control,
+                        service.output(), !service.busy(), service.completed());
                     self.qwen_tokens += 1;
                     #[cfg(target_os = "none")]
                     if let Some(now) = crate::ui::performance::monotonic_ns() {
@@ -379,7 +428,8 @@ impl AiRuntime {
             }
             if !service.busy() {
                 if self.chat.generation_state == chat::GenerationState::Running {
-                    self.chat.publish_native_completion(service.output(), true);
+                    control::publish(&mut self.chat, &mut self.pending_control,
+                        service.output(), true, service.completed());
                     return true;
                 }
                 break;
@@ -405,6 +455,7 @@ impl AiRuntime {
             app_owner: None,
             app_saved: None,
             chat_owner: [0; 16],
+            pending_control: None,
             qwen_tokens: 0,
             qwen_decode_ns: 0,
             qwen_metrics: qwen::metrics::Metrics::new(),

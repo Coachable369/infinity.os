@@ -119,6 +119,29 @@ def panel_click(guest, control):
         click(guest, left + 40 * scale, bottom - 32 * scale)
 
 # ------------------------=
+# FUNC: verify_os_controls
+# DESC: Types desktop AI commands through real input and checks actual window ownership and shell modes after dispatch.
+# ------------------=
+def verify_os_controls(guest):
+    for request, mode, owner in [
+        ("open browser", 5, 0),
+        ("open terminal", 5, 1),
+        ("open task manager", 5, 3),
+        ("open settings", 8, 4),
+        ("open app launcher", 6, None),
+        ("open file navigator", 5, -1),
+        ("open text editor", 5, 2),
+    ]:
+        guest.key("ctrl", "j")
+        text(guest, request)
+        guest.key("ret")
+        guest.wait(lambda s: s[4] == mode, "AI command surface transition")
+        if owner is not None:
+            wait_feature(guest, lambda p: p[12] >= 5 and p[12] < 32 if owner == -1 else p[12] == owner)
+    guest.screenshot("desktop-ai-open-editor")
+    guest.key("esc")
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs to a new disposable disk, cold-boots without ISO, edits/saves with real input and verifies the universal panel.
 # ------------------=
@@ -155,6 +178,7 @@ def main():
             print("Configuring and cold-booting installed disk without ISO", flush=True)
             identity = guest.onboard()
             guest.launch("text", 5)
+            verify_os_controls(guest)
         wait_feature(guest, lambda p: p[12] == 2)
         initial = wait_feature(guest, lambda p: p[7] == 0)
         x, y, w, h = initial[21:25]
