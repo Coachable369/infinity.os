@@ -83,7 +83,7 @@ mod runtime {
         // FUNC: session_nth
         // DESC: Supplies the active owner or a locked session for revocation testing.
         // ------------------=
-        pub fn session_nth(&self,_:usize)->Option<identity::Session>{Some(identity::Session{id:execution::SecurityIdentity([1;16]),user:execution::SecurityIdentity([1;16]),state:if crate::ACTIVE.load(crate::Ordering::SeqCst){identity::SessionState::Active}else{identity::SessionState::Locked}})}
+        pub fn session_nth(&self,_:usize)->Option<identity::Session>{Some(identity::Session{id:execution::SecurityIdentity([1;16]),user:execution::SecurityIdentity([2;16]),state:if crate::ACTIVE.load(crate::Ordering::SeqCst){identity::SessionState::Active}else{identity::SessionState::Locked}})}
         // ------------------------=
         // FUNC: ai_profile
         // DESC: Supplies the spoken-reply preference for the production conversation controller.
@@ -261,9 +261,9 @@ impl Ai {
     fn native_ready(&self,_:usize)->bool{MODEL_READY.load(Ordering::SeqCst)}
     // ------------------------=
     // FUNC: bind_chat_owner
-    // DESC: Accepts the fixture owner binding.
+    // DESC: Rejects session IDs at the conversation boundary; the real session and user identities deliberately differ.
     // ------------------=
-    fn bind_chat_owner(&mut self,_:[u8;16]){}
+    fn bind_chat_owner(&mut self,user:[u8;16]){assert_eq!(user,[2;16]);}
     // ------------------------=
     // FUNC: cancel_chat
     // DESC: Supplies the cancellation seam.

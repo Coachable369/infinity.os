@@ -904,6 +904,9 @@ fn control_contract() {
     use runtime::ai::control::{self, Command};
     for (input, expected) in [
         (b"Open text editor".as_slice(), Command::TextEditor),
+        (b"Could you please open the text editor?", Command::TextEditor),
+        (b"Can you open file navigator, please?", Command::FileNavigator),
+        (b"  Would you   launch the browser please!  ", Command::Browser),
         (b"open file navigator", Command::FileNavigator),
         (b"Please launch the infinity browser.", Command::Browser),
         (b"start system settings", Command::Settings),
@@ -915,6 +918,7 @@ fn control_contract() {
         ai.bind_chat_owner([1;16]);
         for byte in input { assert!(ai.chat.push_input(*byte)); }
         assert!(ai.submit_chat());
+        assert_eq!(ai.qwen_tokens, 0);
         assert_eq!(ai.chat.generation_state, GenerationState::Running);
         assert!(!ai.submit_chat());
         assert!(ai.submit_app_turn(2, b"hello").is_err());
@@ -943,7 +947,9 @@ fn control_contract() {
         assert!(!ai.submit_chat());
     }
     for input in [b"don't open text editor".as_slice(), b"explain open text editor",
-        b"open terminal and run rm -rf /", b"open editor and browser", b"OS_OPEN:text_editor"] {
+        b"open terminal and run rm -rf /", b"open editor and browser", b"OS_OPEN:text_editor",
+        b"could you not open text editor?", b"can you explain open text editor?",
+        b"can you open terminal and run a command?", b"open text editor. open browser"] {
         assert_eq!(Command::explicit(input), None);
     }
     let mut chat = ChatRuntime::new();

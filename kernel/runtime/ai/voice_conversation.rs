@@ -138,12 +138,21 @@ unsafe fn report_timing() {
 // DESC: Stops voice authority at logout or lock rather than relying only on capability expiration.
 // ------------------=
 fn active_owner(owner: SecurityIdentity) -> bool {
+    active_user(owner).is_some()
+}
+
+// ------------------------=
+// FUNC: active_user
+// DESC: Resolves the authenticated user behind an audio session without treating session IDs as conversation identities.
+// ------------------=
+fn active_user(owner: SecurityIdentity) -> Option<[u8; 16]> {
     crate::runtime::with_runtime(|r| {
         (0..crate::runtime::identity::MAX_SESSIONS)
             .filter_map(|i| r.identity.session_nth(i))
-            .any(|s| s.id.0 == owner.0 && s.state == SessionState::Active)
+            .find(|s| s.id.0 == owner.0 && s.state == SessionState::Active)
+            .map(|s| s.user.0)
     })
-    .unwrap_or(false)
+    .flatten()
 }
 
 // ------------------------=
@@ -472,9 +481,7 @@ unsafe fn reopen_capture() -> bool {
 // ------------------=
 pub fn start(owner: SecurityIdentity) -> bool {
     unsafe {
-        if !active_owner(owner) {
-            return false;
-        }
+        let Some(user) = active_user(owner) else { return false; };
         if !matches!(STATE, State::Off | State::Failed) {
             if OWNER != owner {
                 return false;
@@ -504,7 +511,7 @@ pub fn start(owner: SecurityIdentity) -> bool {
         clear_wake_command();
         RESTART_LISTENING = false;
         super::with_ai_runtime(|ai| {
-            ai.bind_chat_owner(owner.0);
+            ai.bind_chat_owner(user);
             ai.chat.set_enabled(true);
             ai.chat.set_minimized(false);
         });

@@ -31,9 +31,20 @@ impl Command {
         let mut normalized = [0u8; 128];
         let input = input.trim_ascii();
         if input.len() > normalized.len() { return None; }
-        for (to, from) in normalized.iter_mut().zip(input) { *to = from.to_ascii_lowercase(); }
-        let mut request = normalized[..input.len()].trim_ascii();
-        request = request.strip_suffix(b".").unwrap_or(request);
+        let mut length = 0;
+        for byte in input {
+            let byte = if byte.is_ascii_whitespace() { b' ' } else { byte.to_ascii_lowercase() };
+            if byte == b' ' && (length == 0 || normalized[length - 1] == b' ') { continue; }
+            normalized[length] = byte;
+            length += 1;
+        }
+        let mut request = normalized[..length].trim_ascii();
+        if request.last().is_some_and(|b| matches!(b, b'.' | b'?' | b'!')) {
+            request = request[..request.len()-1].trim_ascii_end();
+        }
+        request = request.strip_suffix(b", please").or_else(|| request.strip_suffix(b" please")).unwrap_or(request);
+        request = request.strip_prefix(b"can you ").or_else(|| request.strip_prefix(b"could you "))
+            .or_else(|| request.strip_prefix(b"would you ")).unwrap_or(request);
         request = request.strip_prefix(b"please ").unwrap_or(request);
         request = request.strip_prefix(b"open ").or_else(|| request.strip_prefix(b"launch "))
             .or_else(|| request.strip_prefix(b"start "))?;

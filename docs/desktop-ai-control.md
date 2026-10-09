@@ -75,3 +75,34 @@ The extended installed test checks actual window ownership and shell modes via
 read-only guest snapshots. Installed GUI acceptance remains unverified: the
 existing x86 QEMU fixture previously timed out before reaching the desktop.
 Host inference tests are not evidence that the installed GUI has been exercised.
+
+## Voice identity correction
+
+Voice capture authority is session-scoped, but desktop conversation history and
+OS command ownership are user-scoped. Voice startup now resolves the active
+session's user before binding chat. Passing the session ID previously caused a
+valid command to be rejected by the desktop's user-ID check, and could reset
+the user's conversation at voice startup. The voice fixture now deliberately
+uses different IDs and asserts the user binding; all 25 controller tests pass
+(`20261009T205129574458Z-29606.json`). Lock/logout validation still uses the
+session ID, so the fix does not weaken audio authorization.
+
+Common polite request prefixes, trailing "please", whitespace, and terminal
+speech punctuation are accepted by the deterministic command resolver. Host
+acceptance verifies that these requests queue their typed actions with zero
+LLM output tokens, while negated and compound requests do not take that path
+(`20261009T205148733617Z-29644.json`). This removes language-model inference from
+those requests, not Whisper transcription time. No speech decoder settings or
+recognition-accuracy tradeoffs are changed.
+
+The unchanged native Whisper decoder was measured separately on the standard
+10-second JFK recording: 2.550 seconds initially and 2.627 seconds after Kokoro
+synthesis, with correct recognition in both cases. This is freestanding ARM64
+QEMU HVF evidence, not installed microphone or end-to-end UI latency
+(`20261009T205214064758Z-29905.json`).
+
+The corrected focused ISO builds passed for x86_64
+(`20261009T205247184624Z-30001.json`) and aarch64
+(`20261009T210623332338Z-34869.json`). Installed-kernel and boot-loader byte
+parity passed on both (`20261009T212218514120Z-39812.json`). These are not
+clean-release or installed GUI acceptance claims.
