@@ -13349,8 +13349,16 @@ pub fn poll_native_ai() {
     }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { geturl::poll(runtime); } }
+    let app_turn = crate::runtime::ai::with_ai_runtime(|ai| ai.app_turn_owner());
+    if let Some(id) = app_turn {
+        let allowed = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
+            runtime.ai_chat_allowed() && runtime.assistant_owner().map(|v| v.0) == Some(id)
+                && crate::ui::app_assistant::read(id).expanded) };
+        if !allowed { crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_app_turn()); }
+    }
     if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
+        if app_turn.is_some() { return; }
         crate::runtime::ai::with_ai_runtime(|ai|ai.record_first_visible_response());
         #[cfg(target_os = "none")]
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {

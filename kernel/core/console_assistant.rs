@@ -8,6 +8,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn reset_app_assistant_session(&mut self) {
         if self.assistant_session != self.current_session {
+            crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_app_turn());
             assistant::reset();
             self.command_history=infinity_enterprise_core::History::new();
             crate::ui::clipboard::with_shared(|c|c.session(self.current_session.0,false));
@@ -226,13 +227,23 @@ impl ConsoleRuntime {
         if panel.length == 0 {
             return;
         }
+        if !self.ai_chat_allowed() {
+            panel.pending = Action::None;
+            panel.reply(b"AI is disabled in Settings.");
+            assistant::write(id, panel);
+            return;
+        }
+        crate::runtime::ai::with_ai_runtime(|ai| {
+            if ai.app_turn_owner() == Some(id) { ai.cancel_app_turn(); }
+        });
         panel.request = panel.input;
         panel.request_len = panel.length;
-        if !panel.propose(id == 2, self.assistant_revision()) {
+        let direct = panel.propose(id == 2, self.assistant_revision());
+        if !direct {
             // Unsupported intents still retain only the prompt supplied to this app.
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
-                panel.reply(if id==2 {b"Local editor actions: find TEXT, insert TEXT, undo, redo, select all, save, maximize, restore, minimize. Each action is previewed before Apply. This local assistant does not generate or refactor code."}
+                panel.reply(if id==2 {b"Ask for text or code, then Apply the generated edit. Commands: insert TEXT, clear text, undo, redo, select all, find TEXT, save file. Save uses the normal filename dialog when needed."}
                     else if id==0 {b"Browser assistance: refresh, maximize, restore, or minimize this window with Apply. Other prompts use local dialogue; website contents are not automatically shared."}
                     else if id >= 5 {b"This File Navigator supports open folder /absolute/path, maximize, restore, minimize, and refresh. Actions target this window only and require Apply."}
                     else {b"Local window actions: maximize, restore, minimize, refresh. Every action requires Apply. No files or settings are changed by chat."});
@@ -240,31 +251,49 @@ impl ConsoleRuntime {
                 let language = self.editor_tools.language.name();
                 let mut response = [0; 512];
                 let mut n = 0;
-                for part in [b"Current syntax: ".as_slice(),language,if self.editor_document.is_saved(){b". Saved document. ".as_slice()}else{b". Unsaved changes. ".as_slice()},b"Only explicit find/insert/undo/redo/select/save actions are supported. Use help for details."]{response[n..n+part.len()].copy_from_slice(part);n+=part.len();}
+                for part in [b"Current syntax: ".as_slice(),language,if self.editor_document.is_saved(){b". Saved document. ".as_slice()}else{b". Unsaved changes. ".as_slice()},b"Local text and code generation is available for this document."]{response[n..n+part.len()].copy_from_slice(part);n+=part.len();}
                 panel.reply(&response[..n]);
             } else {
-                // Invoke the shipped local dialogue runtime in an isolated session, not the global conversation or private document.
-                let mut chat = crate::runtime::ai::chat::ChatRuntime::new();
-                chat.submit(text);
-                let mut response = [0; 512];
-                let prefix = b"Local dialogue (no app action): ";
-                response[..prefix.len()].copy_from_slice(prefix);
-                let answer = chat
-                    .message(1)
-                    .map(|m| m.text())
-                    .unwrap_or(b"Local model unavailable.");
-                response[prefix.len()..prefix.len() + answer.len()].copy_from_slice(answer);
-                panel.reply(&response[..prefix.len() + answer.len()]);
+                let mut prompt = [0; 6144];
+                let context = if id == 2 {
+                    if let Some((a,b)) = self.editor_document.selection() { &self.editor_document.bytes()[a..b] }
+                    else { self.editor_document.bytes() }
+                } else { b"" };
+                panel.document_revision = self.assistant_revision();
+                if let Some(n) = panel.generation_prompt(id == 2, context, &mut prompt) {
+                    match crate::runtime::ai::with_ai_runtime(|ai| ai.submit_app_turn(id, &prompt[..n])) {
+                        Ok(()) => {
+                            panel.generation = assistant::GenerationStatus::Running;
+                            panel.reply(b"Generating locally...");
+                        }
+                        Err(message) => {
+                            panel.generation = assistant::GenerationStatus::Failed;
+                            panel.reply(message);
+                        }
+                    }
+                } else {
+                    panel.reply(b"The document is too large for this request. Select a smaller passage and retry.");
+                }
             }
         }
         panel.length = 0;
         assistant::write(id, panel);
+        if direct && id == 2 && !matches!(panel.pending, Action::Maximize | Action::Minimize | Action::Restore | Action::Refresh) {
+            self.apply_window_assistant(id);
+        }
     }
     // ------------------------=
     // FUNC: apply_window_assistant
     // DESC: Executes only the focused window's consumed, explicitly approved capability through normal application workflows.
     // ------------------=
     fn apply_window_assistant(&mut self, id: usize) {
+        if !self.ai_chat_allowed() {
+            let mut panel = assistant::read(id);
+            panel.pending = Action::None;
+            panel.reply(b"AI is disabled in Settings.");
+            assistant::write(id, panel);
+            return;
+        }
         if self.assistant_owner().map(|v| v.0) != Some(id) {
             return;
         }
@@ -313,10 +342,8 @@ impl ConsoleRuntime {
                     .editor_document
                     .find(&panel.argument[..panel.argument_len], false)
             }
-            Action::Insert if id == 2 => {
-                success = self
-                    .editor_document
-                    .replace_selection(&panel.argument[..panel.argument_len])
+            Action::Insert | Action::Replace | Action::Clear if id == 2 => {
+                success = panel.edit_document(action, &mut self.editor_document);
             }
             Action::Undo if id == 2 => success = self.editor_document.undo(),
             Action::Redo if id == 2 => success = self.editor_document.redo(),
@@ -324,9 +351,12 @@ impl ConsoleRuntime {
                 .editor_document
                 .select(0, self.editor_document.bytes().len()),
             Action::Save if id == 2 => {
-                self.save_editor_document();
-                success =
-                    self.editor_document.is_saved() || self.editor_dialog != EditorDialog::None;
+                success = self.save_editor_document();
+                panel.reply(if success { b"File saved." }
+                    else if self.editor_dialog == EditorDialog::SaveAs { b"Choose a filename and location in Save As to finish saving." }
+                    else { b"Save failed. Your document remains in memory." });
+                assistant::write(id, panel);
+                return;
             }
             Action::Refresh => {
                 #[cfg(feature="native-browser")]

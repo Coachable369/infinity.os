@@ -371,6 +371,7 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    generated_editor_actions();
     attached_assistant_damage();
     caret_damage_is_bounded();
     menus_and_viewport();
@@ -382,6 +383,73 @@ fn main() {
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
     }
+}
+
+// ------------------------=
+// FUNC: generated_editor_actions
+// DESC: Exercises complete model edits, exact document bytes, undo, command aliases, stale replies and malformed output rejection.
+// ------------------=
+fn generated_editor_actions() {
+    let mut panel = ai::Panel::new();
+    let mut document = TextDocument::new();
+    assert!(document.open(b"hello world"));
+    document.select(6,11);
+    panel.document_revision = 12;
+    assert!(panel.accept_generated(b"INSERT\nRust\nEND_ACTION", true, true));
+    let action = panel.take_action(12);
+    assert_eq!(action, Action::Insert);
+    assert!(panel.edit_document(action, &mut document));
+    assert_eq!(document.bytes(), b"hello Rust");
+    assert!(document.undo());
+    assert_eq!(document.bytes(), b"hello world");
+    assert!(document.is_saved());
+    assert!(panel.accept_generated(b"REPLACE\nfn main() {\n    println!(\"Hi\");\n}\n\nEND_ACTION", true, true));
+    let action = panel.take_action(12);
+    assert!(panel.edit_document(action, &mut document));
+    assert_eq!(document.bytes(), b"fn main() {\n    println!(\"Hi\");\n}\n");
+    assert!(!document.is_saved());
+    assert!(document.undo());
+    assert_eq!(document.bytes(), b"hello world");
+    for command in [b"clear text".as_slice(), b"clear document", b"clear"] {
+        panel.input[..command.len()].copy_from_slice(command);
+        panel.length = command.len();
+        assert!(panel.propose(true, 12));
+        let action = panel.take_action(12);
+        assert_eq!(action, Action::Clear);
+        assert!(panel.edit_document(action, &mut document));
+        assert!(document.bytes().is_empty());
+        assert!(document.undo());
+        assert_eq!(document.bytes(), b"hello world");
+    }
+    for command in [b"save".as_slice(), b"save file", b"save document"] {
+        panel.input[..command.len()].copy_from_slice(command);
+        panel.length = command.len();
+        assert!(panel.propose(true, 12));
+        assert_eq!(panel.take_action(12), Action::Save);
+        assert_eq!(panel.take_action(12), Action::None);
+    }
+    assert!(!panel.accept_generated(b"INSERT\npartial", true, false));
+    assert_eq!(panel.pending, Action::None);
+    assert!(!panel.accept_generated(b"INSERT\nx\nEND_ACTION", true, false));
+    for invalid in [b"SAVE\n/path\nEND_ACTION".as_slice(),
+        b"EXEC\nrm -rf /\nEND_ACTION", b"INSERT\n\xff\nEND_ACTION", b"INSERT\n\nEND_ACTION"] {
+        assert!(!panel.accept_generated(invalid, true, true));
+        assert_eq!(panel.pending, Action::None);
+        assert_eq!(document.bytes(), b"hello world");
+    }
+    assert!(!panel.accept_generated(b"INSERT\nx\nEND_ACTION", false, true));
+    assert!(panel.accept_generated(b"INSERT\nx\nEND_ACTION", true, true));
+    assert_eq!(panel.take_action(13), Action::None);
+    assert!(panel.accept_generated(b"CHAT\nHello", true, true));
+    assert_eq!(panel.pending, Action::None);
+    let oversized = [b"INSERT\n".as_slice(), &[b'x'; 4097], b"\nEND_ACTION"].concat();
+    assert!(!panel.accept_generated(&oversized, true, true));
+    assert!(document.open(&[b'a'; DOCUMENT_CAPACITY]));
+    document.set_cursor(4);
+    assert!(panel.accept_generated(b"INSERT\nx\nEND_ACTION", true, true));
+    assert!(!panel.edit_document(Action::Insert, &mut document));
+    assert_eq!(document.bytes().len(), DOCUMENT_CAPACITY);
+    assert_eq!(document.cursor(), 4);
 }
 
 // ------------------------=

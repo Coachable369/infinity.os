@@ -107,8 +107,8 @@ def panel_click(guest, control):
     width = min(max(w * 336 // 1000, 320 * scale), 480 * scale, w - 280 * scale)
     left, top, bottom = x + w - width - scale, y + 48 * scale, y + h - scale
     if control == "toggle":
-        tab_width = 40 * scale
-        tab_height = (44 if p[13] else 88) * scale
+        tab_width = 28 * scale
+        tab_height = 104 * scale
         tab_left = display[11] - (x + w) < tab_width and x >= tab_width
         offset = min(max(h // 4, 48 * scale), max(h - tab_height - 12 * scale, 8 * scale))
         tab_x = x - tab_width + scale if tab_left else x + w - scale
@@ -135,7 +135,8 @@ def main():
     artifacts.mkdir()
     for source, name in [("builds/InfinityOS-x86_64.iso", "installer.iso"), ("build/x86_64/kernel.elf", "kernel.elf"), ("build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
         shutil.copyfile(ROOT / source, artifacts / name)
-    guest = base.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-x86_64-code.fd", width=1920, height=1080)
+    guest = base.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-x86_64-code.fd", width=1920, height=1080, memory_mb=8192)
+    guest.boot_timeout_seconds = 300
     try:
         identity = None
         if live_only:
@@ -196,19 +197,26 @@ def main():
         assert opened[27] < closed[27] and opened[9:11] == closed[9:11]
         text(guest, "insert VALUE")
         guest.key("ret")
-        proposed = wait_feature(guest, lambda p: p[14] == 5)
-        assert proposed[16] == initial[16]
-        guest.screenshot("editor-ai-proposal")
-        panel_click(guest, "apply")
         applied = wait_feature(guest, lambda p: p[7] == 15 and p[14] == 0)
         assert applied[16] != initial[16]
         guest.screenshot("editor-ai-applied")
+        text(guest, "clear text")
+        guest.key("ret")
+        wait_feature(guest, lambda p: p[7] == 0 and p[14] == 0)
+        text(guest, "undo")
+        guest.key("ret")
+        wait_feature(guest, lambda p: p[16] == applied[16])
+        if not live_only:
+            text(guest, "save file")
+            guest.key("ret")
+            text(guest, "assistant-proof.rs")
+            guest.key("ret")
+            saved = wait_feature(guest, lambda p: p[11] and p[12] == 2)
+            assert saved[16] == applied[16]
+            guest.screenshot("editor-ai-saved")
         panel_click(guest, "toggle")
         saved = wait_feature(guest, lambda p: not p[13] and p[27] == closed[27])
         if not live_only:
-            guest.key("ctrl", "s")
-            text(guest, "assistant-proof.rs")
-            guest.key("ret")
             saved = wait_feature(guest, lambda p: p[11] and p[12] == 2)
             assert saved[16] == applied[16]
             guest.screenshot("editor-saved")
@@ -237,7 +245,7 @@ def main():
         (work / "result.json").write_text(json.dumps({"fresh_install": not live_only, "iso_detached": not live_only,
             "cold_boot_identity": identity, "editor_history_clipboard_search_syntax": True, "saved": not live_only,
             "file_menu_open_dialog": True, "named_syntax_dropdown": True, "assistant_viewport_reflow": True,
-            "reviewed_ai_insert": True, "independent_settings_panel": True, "features": saved[3:7]}, indent=2))
+            "direct_ai_insert_clear_undo_save": True, "independent_settings_panel": True, "features": saved[3:7]}, indent=2))
         print("Live UI acceptance passed" if live_only else "Installed editor and shared assistant acceptance passed", flush=True)
     finally:
         guest.stop()

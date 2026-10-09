@@ -110,7 +110,7 @@ impl super::DisplayDevice {
             let intro = if panel.response_len > 0 {
                 &panel.response[..panel.response_len]
             } else if id == 2 {
-                b"Local editor assistance\n\nFind text, insert supplied text, undo, redo or save. Review a proposed action before applying it.\n\nType help for available commands. Code generation is not connected.".as_slice()
+                b"What would you like to write?".as_slice()
             } else {
                 b"Local window assistance\n\nMaximize, restore, minimize or refresh this app. Review each action before applying it.\n\nType help for available commands."
             };

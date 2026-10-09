@@ -16,12 +16,38 @@ pub struct Service {
     output_count: usize,
     generated: usize,
     busy: bool,
+    completed: bool,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
     pub allocated_bytes: usize,
     worker_start: [u64; 3],
 }
+pub struct Conversation {
+    prompt: [u32; CONTEXT],
+    count: usize,
+}
 impl Service {
+    // ------------------------=
+    // FUNC: suspend_conversation
+    // DESC: Retains idle desktop tokens while an isolated app turn temporarily borrows this model's cache.
+    // ------------------=
+    pub fn suspend_conversation(&mut self) -> Option<Conversation> {
+        if self.busy { return None; }
+        let saved = Conversation { prompt: self.prompt, count: self.prompt_count };
+        self.clear_conversation();
+        Some(saved)
+    }
+
+    // ------------------------=
+    // FUNC: restore_conversation
+    // DESC: Restores trusted token history and rebuilds its KV prefix on the next desktop turn, excluding app data.
+    // ------------------=
+    pub fn restore_conversation(&mut self, saved: Conversation) {
+        self.clear_conversation();
+        self.prompt = saved.prompt;
+        self.prompt_count = saved.count;
+    }
+
     // ------------------------=
     // FUNC: load
     // DESC: Verifies the pinned artifact before binding an exclusively owned boot-reserved arena.
@@ -122,6 +148,7 @@ impl Service {
             output_count: 0,
             generated: 0,
             busy: false,
+            completed: false,
             reused_tokens: 0,
             prefill_tokens: 0,
             allocated_bytes: bytes.len() + arena.len() + core::mem::size_of::<Self>(),
@@ -136,6 +163,7 @@ impl Service {
         if self.busy || text.is_empty() {
             return Err(Error::Unsupported);
         }
+        self.completed = false;
         let text = core::str::from_utf8(text).map_err(|_| Error::Format)?;
         self.engine.profile = super::metrics::Profile::new();
         self.worker_start = super::workers::kernel_profile_ns();
@@ -232,6 +260,7 @@ impl Service {
     // DESC: Stops the active job without emitting a fabricated response.
     // ------------------=
     pub fn cancel(&mut self) {
+        self.completed = false;
         self.engine.cancel();
         self.busy = false;
     }
@@ -254,6 +283,11 @@ impl Service {
     pub fn busy(&self) -> bool {
         self.busy
     }
+    // ------------------------=
+    // FUNC: completed
+    // DESC: Distinguishes a model end token from cancellation, output exhaustion and context exhaustion.
+    // ------------------=
+    pub fn completed(&self) -> bool { self.completed }
     // ------------------------=
     // FUNC: output
     // DESC: Exposes only bytes produced by model-selected tokens.
@@ -290,6 +324,7 @@ impl Service {
             || (self.hermes && next == 128039)
             || self.prompt_count >= CONTEXT
         {
+            self.completed = (self.ministral && next == 2) || (self.hermes && next == 128039);
             self.busy = false;
             return Ok(false);
         }

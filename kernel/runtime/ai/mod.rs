@@ -42,6 +42,8 @@ pub struct AiRuntime {
     qwen: Option<qwen::service::Service>,
     other_native: Option<qwen::service::Service>,
     active_native: ModelId,
+    app_owner: Option<usize>,
+    app_saved: Option<qwen::service::Conversation>,
     chat_owner: [u8; 16],
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
@@ -55,6 +57,95 @@ pub struct AiRuntime {
 }
 
 impl AiRuntime {
+    // ------------------------=
+    // FUNC: submit_app_turn
+    // DESC: Borrows the loaded model exclusively for isolated app inference without changing desktop conversation messages.
+    // ------------------=
+    pub fn submit_app_turn(&mut self, id: usize, prompt: &[u8]) -> Result<(), &'static [u8]> {
+        if !self.chat.enabled() { return Err(b"AI is disabled in Settings."); }
+        if self.app_owner.is_some() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
+            return Err(b"The local model is busy. Wait for the current reply, then retry.");
+        }
+        let selected = self.chat.selected_model();
+        if matches!(selected, chat::HERMES_MODEL_ID | chat::MINISTRAL_MODEL_ID) && selected != self.active_native {
+            if !self.native_ready(selected) { return Err(b"The selected model is still loading or is not installed."); }
+            core::mem::swap(&mut self.qwen, &mut self.other_native);
+            self.active_native = selected;
+        }
+        let Some(service) = self.qwen.as_mut() else {
+            return Err(b"The local language model is still loading or is not installed.");
+        };
+        self.app_saved = service.suspend_conversation();
+        if service.submit(prompt).is_err() {
+            if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
+            return Err(b"This request exceeds the local model context. Select a smaller passage and retry.");
+        }
+        self.app_owner = Some(id);
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: app_turn_owner
+    // DESC: Exposes only the window lease so the console can cancel on focus or permission changes.
+    // ------------------=
+    pub fn app_turn_owner(&self) -> Option<usize> { self.app_owner }
+
+    // ------------------------=
+    // FUNC: cancel_app_turn
+    // DESC: Releases app inference and clears private document tokens before another consumer uses the model.
+    // ------------------=
+    pub fn cancel_app_turn(&mut self) {
+        if let Some(id) = self.app_owner.take() {
+            if let Some(service) = self.qwen.as_mut() {
+                if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
+                else { service.clear_conversation(); }
+            }
+            let mut panel = crate::ui::app_assistant::read(id);
+            panel.pending = crate::ui::app_assistant::Action::None;
+            panel.generation = crate::ui::app_assistant::GenerationStatus::Cancelled;
+            panel.reply(b"App request cancelled. Nothing was changed.");
+            crate::ui::app_assistant::write(id, panel);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: poll_app_turn
+    // DESC: Cooperatively streams app output and stages complete edits without publishing private text to desktop chat or speech.
+    // ------------------=
+    fn poll_app_turn(&mut self) -> bool {
+        let Some(id) = self.app_owner else { return false; };
+        let Some(service) = self.qwen.as_mut() else { self.app_owner = None; return false; };
+        let mut budget = qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
+        while budget.next(crate::ui::performance::monotonic_ns()) {
+            let result = service.poll();
+            if result.is_err() || !service.busy() {
+                let mut panel = crate::ui::app_assistant::read(id);
+                if result.is_err() {
+                    panel.generation = crate::ui::app_assistant::GenerationStatus::Failed;
+                    panel.reply(b"Local generation failed. Nothing was changed; please retry.");
+                } else {
+                    let output = service.output();
+                    let end = output.iter().rposition(|b| !b.is_ascii_whitespace()).map_or(0, |i| i + 1);
+                    panel.generation = if panel.accept_generated(&output[..end], id == 2, service.completed()) {
+                        crate::ui::app_assistant::GenerationStatus::Complete
+                    } else { crate::ui::app_assistant::GenerationStatus::Failed };
+                }
+                crate::ui::app_assistant::write(id, panel);
+                if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
+                else { service.clear_conversation(); }
+                self.app_owner = None;
+                return true;
+            }
+            if result == Ok(true) {
+                let mut panel = crate::ui::app_assistant::read(id);
+                panel.reply(service.output());
+                crate::ui::app_assistant::write(id, panel);
+                return true;
+            }
+        }
+        false
+    }
+
     // ------------------------=
     // FUNC: refresh_native_readiness
     // DESC: Derives chat availability from the owned native services so boot and owner changes cannot leave stale model flags.
@@ -133,6 +224,7 @@ impl AiRuntime {
     // ------------------=
     pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
         if self.chat_owner != owner {
+            self.cancel_app_turn();
             if let Some(service) = self.qwen.as_mut() {
                 service.clear_conversation();
             }
@@ -150,6 +242,7 @@ impl AiRuntime {
     // DESC: Cancels active native generation while preserving its partial response.
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
+        if self.app_owner.is_some() { return false; }
         let Some(service) = self.qwen.as_mut() else {
             return false;
         };
@@ -186,6 +279,7 @@ impl AiRuntime {
     // DESC: Routes selected native models to bounded local inference; legacy helpers retain their behavior.
     // ------------------=
     pub fn submit_chat(&mut self) -> bool {
+        if self.app_owner.is_some() { return false; }
         if !matches!(self.chat.selected_model(), chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
             return self.chat.submit_input();
         }
@@ -223,6 +317,7 @@ impl AiRuntime {
     // DESC: Advances local inference outside rendering and publishes model-produced text only.
     // ------------------=
     pub fn poll_qwen(&mut self) -> bool {
+        if self.app_owner.is_some() { return self.poll_app_turn(); }
         if !self.qwen.as_ref().is_some_and(|service| service.busy()) {
             return false;
         }
@@ -307,6 +402,8 @@ impl AiRuntime {
             qwen: None,
             other_native: None,
             active_native: chat::HERMES_MODEL_ID,
+            app_owner: None,
+            app_saved: None,
             chat_owner: [0; 16],
             qwen_tokens: 0,
             qwen_decode_ns: 0,

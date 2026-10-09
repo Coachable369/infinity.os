@@ -789,10 +789,102 @@ fn desktop_chat() {
 // DESC: Runs the Milestone 6 host acceptance suite.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg| arg == "--app-native") {
+        app_native();
+        return;
+    }
     model_and_provider();
     security_brokers();
     voice_and_agents();
     services_and_events();
     desktop_chat();
     println!("PASS Milestone 6 native AI host acceptance");
+}
+
+// ------------------------=
+// FUNC: app_native
+// DESC: Uses pinned native weights through the production app runtime to verify generation, document changes, isolation and cancellation.
+// ------------------=
+fn app_native() {
+    use ui::app_assistant::{self, Action, Panel};
+    let mut ai = Box::new(AiRuntime::new());
+    assert!(ai.submit_app_turn(2, b"hello").is_err());
+    let weights = Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf").unwrap().into_boxed_slice());
+    let arena = Box::leak(vec![0u128; 1280 * 1024 * 1024 / 16].into_boxed_slice());
+    let arena = unsafe { std::slice::from_raw_parts_mut(arena.as_mut_ptr().cast::<u8>(), arena.len() * 16) };
+    assert!(ai.load_hermes(weights, arena));
+    let threads: Vec<_> = (0..4).map(|i| std::thread::spawn(move || unsafe { runtime::ai::qwen::workers::run_host_worker(i) })).collect();
+    while runtime::ai::qwen::workers::online() != 4 { std::thread::yield_now(); }
+    assert!(ai.chat.push_input(b'h'));
+    assert!(ai.chat.push_input(b'i'));
+    assert!(ai.submit_chat());
+    let first_prefill = ai.qwen_metrics.prefill_tokens;
+    let start = Instant::now();
+    while ai.chat.generation_state == GenerationState::Running {
+        ai.poll_qwen();
+        assert!(start.elapsed().as_secs() < 240);
+    }
+    assert_eq!(ai.chat.generation_state, GenerationState::Complete);
+    assert_eq!(ai.chat.message_count(), 2);
+    let transcript = ai.chat.state_hash();
+    for (i, request) in [b"hi".as_slice(),
+        b"Generate a Python function called add that returns the sum of two arguments. Insert the code.",
+        b"Write a short welcome message for a team newsletter and insert it."].iter().enumerate() {
+        let mut panel = Panel::new();
+        panel.input[..request.len()].copy_from_slice(request);
+        panel.length = request.len();
+        panel.document_revision = 17;
+        app_assistant::write(2, panel);
+        let mut prompt = [0; 6144];
+        let n = panel.generation_prompt(true, b"", &mut prompt).unwrap();
+        assert!(ai.submit_app_turn(2, &prompt[..n]).is_ok());
+        assert_eq!(ai.app_turn_owner(), Some(2));
+        assert!(ai.submit_app_turn(1, b"other").is_err());
+        assert!(!ai.submit_chat());
+        let start = Instant::now();
+        let mut partial = Vec::new();
+        while ai.app_turn_owner().is_some() {
+            ai.poll_qwen();
+            let streamed = app_assistant::read(2);
+            if ai.app_turn_owner().is_some() { partial = streamed.response[..streamed.response_len].to_vec(); }
+            assert!(start.elapsed().as_secs() < 240, "app generation deadline");
+        }
+        let mut result = app_assistant::read(2);
+        assert_eq!(result.generation, app_assistant::GenerationStatus::Complete,
+            "model response: {}; streamed: {}", String::from_utf8_lossy(&result.response[..result.response_len]), String::from_utf8_lossy(&partial));
+        assert_eq!(ai.chat.state_hash(), transcript);
+        if i == 0 {
+            assert_eq!(result.pending, Action::None);
+            assert!(result.response_len > 0);
+        } else {
+            assert!(matches!(result.pending, Action::Insert | Action::Replace), "model output: {:?}", &result.response[..result.response_len]);
+            let action = result.take_action(17);
+            let mut document = ui::text_editor::TextDocument::new();
+            assert!(result.edit_document(action, &mut document));
+            assert!(!document.bytes().is_empty());
+            if i == 1 {
+                std::fs::write("build/app-assistant-generated.py", document.bytes()).unwrap();
+                let verified = std::process::Command::new("python3").args(["-c", "import ast; t=ast.parse(open('build/app-assistant-generated.py').read()); allowed=(ast.Module,ast.FunctionDef,ast.arguments,ast.arg,ast.Return,ast.BinOp,ast.Name,ast.Load,ast.Add,ast.Expr,ast.Constant); assert all(isinstance(n,allowed) for n in ast.walk(t)); m={'__builtins__':{}}; exec(compile(t,'generated','exec'),m); assert m['add'](2,3)==5; assert m['add'](-2,2)==0"]).status().unwrap();
+                assert!(verified.success());
+            } else {
+                std::fs::write("build/app-assistant-generated.txt", document.bytes()).unwrap();
+            }
+            assert!(document.undo());
+            assert!(document.bytes().is_empty());
+        }
+    }
+    assert!(ai.chat.push_input(b'h'));
+    assert!(ai.chat.push_input(b'i'));
+    assert!(ai.submit_chat());
+    assert_eq!(ai.qwen_metrics.reused_tokens, 0);
+    assert!(ai.qwen_metrics.prefill_tokens > first_prefill);
+    assert!(ai.cancel_chat());
+    assert!(ai.submit_app_turn(2, b"hi").is_ok());
+    ai.bind_chat_owner([7;16]);
+    assert_eq!(ai.app_turn_owner(), None);
+    assert_eq!(app_assistant::read(2).pending, Action::None);
+    ai.chat.set_enabled(false);
+    assert!(ai.submit_app_turn(2, b"hi").is_err());
+    unsafe { runtime::ai::qwen::workers::stop_host_workers(); }
+    for thread in threads { thread.join().unwrap(); }
 }
