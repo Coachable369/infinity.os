@@ -2495,16 +2495,35 @@ impl ConsoleRuntime {
     // FUNC: dispatch_ai_control
     // DESC: Uses the ordinary desktop workflows for bounded AI tools and checks the resulting window state.
     // ------------------=
-    fn dispatch_ai_control(&mut self, command: crate::runtime::ai::control::Command) -> bool {
+    fn dispatch_ai_control(&mut self, command: crate::runtime::ai::control::Command) -> Option<bool> {
         use crate::runtime::ai::control::Command;
+        if self.editor_dialog != EditorDialog::None || self.settings_editing { return Some(false); }
+        match command {
+            Command::Focus(app) => return self.dispatch_ai_window(app, false),
+            Command::Close(app) => return self.dispatch_ai_window(app, true),
+            Command::CloseActive => {
+                use crate::runtime::ai::control::App;
+                let app = if self.mode == ConsoleMode::AppLauncher { App::Launcher }
+                    else if self.mode == ConsoleMode::Settings { App::Settings }
+                    else { match self.desktop_app {
+                        DesktopAppKind::TextEditor => App::TextEditor,
+                        DesktopAppKind::CommandWindow => App::Terminal,
+                        DesktopAppKind::TaskManager => App::TaskManager,
+                        DesktopAppKind::Browser => App::Browser,
+                        DesktopAppKind::None => App::FileNavigator,
+                    }};
+                return self.dispatch_ai_window(app, true);
+            }
+            _ => {}
+        }
         let image = match command {
             Command::TextEditor => Some(crate::runtime::task_manager::IMAGE_TEXT_EDITOR),
             Command::Terminal => Some(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW),
             Command::TaskManager => Some(crate::runtime::task_manager::IMAGE_TASK_MANAGER),
             _ => None,
         };
-        if image.is_some_and(|id| !self.ensure_app_task(id)) { return false; }
-        match command {
+        if image.is_some_and(|id| !self.ensure_app_task(id)) { return Some(false); }
+        Some(match command {
             Command::TextEditor => { self.open_text_editor(); self.editor_window.visible && self.desktop_app == DesktopAppKind::TextEditor }
             Command::FileNavigator => self.open_file_navigator_window(home_location_path(0)).is_some(),
             Command::Browser => {
@@ -2517,7 +2536,41 @@ impl ConsoleRuntime {
             Command::Terminal => { self.open_command_window(); self.command_window.visible && self.desktop_app == DesktopAppKind::CommandWindow }
             Command::TaskManager => { self.open_task_manager(); self.task_manager_window.visible && self.desktop_app == DesktopAppKind::TaskManager }
             Command::Launcher => { self.open_app_launcher(); self.mode == ConsoleMode::AppLauncher }
+            _ => false,
+        })
+    }
+
+    // ------------------------=
+    // FUNC: dispatch_ai_window
+    // DESC: Finds an existing app without launching duplicates and preserves native unsaved-document prompts on close.
+    // ------------------=
+    fn dispatch_ai_window(&mut self, app: crate::runtime::ai::control::App, close: bool) -> Option<bool> {
+        use crate::runtime::ai::control::App;
+        use crate::ui::app_launcher::minimized_shelf as shelf;
+        if app == App::Launcher {
+            if self.mode != ConsoleMode::AppLauncher { return Some(false); }
+            if close { self.close_app_launcher(); }
+            return Some(true);
         }
+        let (id, visible) = match app {
+            App::TextEditor => (shelf::EDITOR, self.editor_window.visible),
+            App::Terminal => (shelf::COMMAND, self.command_window.visible),
+            App::TaskManager => (shelf::TASKS, self.task_manager_window.visible),
+            App::Browser => (shelf::BROWSER, self.browser_window.visible),
+            App::Settings => (shelf::SETTINGS, self.settings_open),
+            App::FileNavigator => {
+                let index = crate::runtime::with_runtime(|r| r.file_navigators.active_index().or_else(||
+                    (0..crate::runtime::object_navigation::MAX_FILE_NAVIGATOR_INSTANCES)
+                        .find(|&i| r.file_navigators.window(i).is_some()))).flatten();
+                let Some(index) = index else { return Some(false); };
+                (index, true)
+            }
+            App::Launcher => return Some(false),
+        };
+        if !visible && shelf::current().mask & (1 << id) == 0 { return Some(false); }
+        self.window_action(id, if close { shelf::Action::Close } else { shelf::Action::Restore });
+        if close && self.editor_dialog == EditorDialog::Unsaved { return None; }
+        Some(true)
     }
 
     // ------------------------=
@@ -13398,7 +13451,10 @@ pub fn poll_native_ai() {
         let command = crate::runtime::ai::with_ai_runtime(|ai| ai.take_control(runtime.current_user.0, desktop_allowed));
         if let Some(command) = command {
             let success = runtime.dispatch_ai_control(command);
-            crate::runtime::ai::with_ai_runtime(|ai| ai.finish_control(command, success));
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                if let Some(success) = success { ai.finish_control(command, success); }
+                else { ai.chat.publish_native_completion(b"Please choose Save, Discard, or Cancel in the editor. The app is still open.", true); }
+            });
             ai_changed = true;
         }
     } }

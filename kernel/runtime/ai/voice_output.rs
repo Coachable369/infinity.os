@@ -165,7 +165,9 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     content_end: usize, final_chunk: bool) -> Result<(), AiError> {
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
     let state = STATE.load(Ordering::Acquire);
-    if !matches!(state, 0 | 4 | 6 | 7 | 8) || content_end < content_start { return Err(AiError::QueueFull); }
+    if !matches!(state, 0 | 4 | 5 | 6 | 7 | 8) || content_end < content_start { return Err(AiError::QueueFull); }
+    let continuation = unsafe { state == 8 || state == 5 || (state == 7 && !FINAL_CHUNK && OWNER == owner && content_start != 0) };
+    if continuation && unsafe { FINAL_CHUNK || content_start < CONTENT_END } { return Err(AiError::InvalidRequest); }
     if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } { return Err(AiError::QueueFull); }
     if state == 8 && content_start < unsafe { CONTENT_END } { return Err(AiError::InvalidRequest); }
     let now = super::qwen::workers::clock_ns();
@@ -176,12 +178,15 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
         retire();
-        if state != 8 {
+        if !continuation {
             STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false; PLAYBACK_DRAINED = false;
             RESPONSE_QUEUED_NS.store(now, Ordering::Release);
             FIRST_PLAYBACK_NS.store(0, Ordering::Release);
             let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
             STREAM_GENERATION.store(next, Ordering::Release);
+        } else if state == 5 {
+            PENDING_AFTER_DRAIN = PLAYING;
+            PLAYBACK_DRAINED = false;
         }
         RATE = rate; OWNER = owner; CAPABILITY = capability; DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
         CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
@@ -210,7 +215,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 // ------------------=
 pub fn can_prefetch() -> bool {
     let state = STATE.load(Ordering::Acquire);
-    !CANCEL.load(Ordering::Acquire) && state == 8
+    !CANCEL.load(Ordering::Acquire) && (state == 8 || (state == 5 && unsafe { !FINAL_CHUNK }))
 }
 // ------------------------=
 // FUNC: record_playback_start
@@ -350,18 +355,14 @@ unsafe fn publish_resident_span() -> bool {
         (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
         (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
         (&mut *(&raw mut TEXT)).fill(0);
-        if !FINAL_CHUNK {
-            STATE.store(8, Ordering::Release);
-            trace(b"phrase buffered");
-            true
-        } else if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
+        if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
             record_playback_start();
             PLAYING = true;
             PLAYBACK_DRAINED = false;
             PENDING_AFTER_DRAIN = false;
             STATE.store(5, Ordering::Release);
             trace(b"continuous response playback started");
-            let _ = super::voice_input::prepare();
+            if FINAL_CHUNK { let _ = super::voice_input::prepare(); }
             true
         } else {
             crate::drivers::audio::stop_playback(OWNER);
@@ -388,6 +389,10 @@ pub fn poll() {
     let mut state = STATE.load(Ordering::Acquire);
     if state == 0 { return; }
     unsafe {
+        if state == 4 && PLAYING {
+            crate::drivers::audio::stop_playback(OWNER);
+            PLAYING = false; STREAM_OPEN = false; PENDING_AFTER_DRAIN = false;
+        }
         if PLAYING {
             if CANCEL.load(Ordering::Acquire) { crate::drivers::audio::stop_playback(OWNER); }
             if let Some(playback) = crate::drivers::audio::playback_state() {

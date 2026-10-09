@@ -60,6 +60,15 @@ pub struct AiRuntime {
 
 impl AiRuntime {
     // ------------------------=
+    // FUNC: acceptance_native_output
+    // DESC: Exposes decoded bytes only in host acceptance harnesses for failed protocol diagnostics, never in the installed OS.
+    // ------------------=
+    #[cfg(not(target_os = "none"))]
+    pub fn acceptance_native_output(&self) -> &[u8] {
+        self.qwen.as_ref().map(|service| service.output()).unwrap_or(b"")
+    }
+
+    // ------------------------=
     // FUNC: submit_app_turn
     // DESC: Borrows the loaded model exclusively for isolated app inference without changing desktop conversation messages.
     // ------------------=
@@ -310,12 +319,11 @@ impl AiRuntime {
             return false;
         }
         let submitted_ns = crate::ui::performance::monotonic_ns();
-        let mut prompt = [0u8; chat::CHAT_INPUT_CAPACITY + control::INSTRUCTIONS.len()];
-        let prefix = control::INSTRUCTIONS;
-        let length = prefix.len() + self.chat.input().len();
-        prompt[..prefix.len()].copy_from_slice(prefix);
-        prompt[prefix.len()..length].copy_from_slice(self.chat.input());
-        if let Err(error) = service.submit(&prompt[..length]) {
+        let input = self.chat.input();
+        let plain = control::veto_action(input);
+        let submitted = if plain { service.submit(input) }
+            else { service.submit_desktop(input, control::INSTRUCTIONS) };
+        if let Err(error) = submitted {
             self.chat.generation_state = if error == qwen::gguf::Error::Overflow {
                 chat::GenerationState::ContextFull
             } else {

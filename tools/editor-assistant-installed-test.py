@@ -131,6 +131,12 @@ def verify_os_controls(guest):
         ("open app launcher", 6, None),
         ("open file navigator", 5, -1),
         ("open text editor", 5, 2),
+        ("focus terminal", 5, 1),
+        ("close terminal", 5, -1),
+        ("bring text editor to front", 5, 2),
+        ("close text editor", 5, -1),
+        ("open app tray", 6, None),
+        ("open text editor", 5, 2),
     ]:
         guest.key("ctrl", "j")
         text(guest, request)
@@ -140,6 +146,26 @@ def verify_os_controls(guest):
             wait_feature(guest, lambda p: p[12] >= 5 and p[12] < 32 if owner == -1 else p[12] == owner)
     guest.screenshot("desktop-ai-open-editor")
     guest.key("esc")
+
+# ------------------------=
+# FUNC: wait_editor_dialog
+# DESC: Waits for the real editor dialog state through the read-only navigator snapshot.
+# ------------------=
+def wait_editor_dialog(guest, expected):
+    elf = guest.work.parent / "artifacts" / ("kernel.elf" if guest.installer else "installed-kernel.elf")
+    address, size = base.symbol(elf, "INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT")
+    assert size == 512
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        guest.qmp("stop")
+        try:
+            state = struct.unpack("<64Q", guest.memory(address, size))
+        finally:
+            guest.qmp("cont")
+        if state[2] == state[63] and state[2] % 2 == 0 and state[9] == expected:
+            return
+        time.sleep(.2)
+    raise AssertionError("Editor dialog state deadline")
 
 # ------------------------=
 # FUNC: main
@@ -192,6 +218,14 @@ def main():
         wait_feature(guest, lambda p: p[12] == 2)
         text(guest, "let answer = 42;")
         initial = wait_feature(guest, lambda p: p[7] == 16)
+        guest.key("ctrl", "j")
+        text(guest, "close text editor")
+        guest.key("ret")
+        wait_editor_dialog(guest, 3)
+        assert features(guest)[16] == initial[16]
+        guest.key("esc")
+        wait_editor_dialog(guest, 0)
+        assert features(guest)[16] == initial[16]
         click(guest, x + w - 100, y + h - 16)
         wait_feature(guest, lambda p: p[25] == 5)
         guest.screenshot("editor-syntax-dropdown")

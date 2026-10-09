@@ -249,6 +249,14 @@ impl ConsoleRuntime {
         if shelf::current().mask & (1 << id) == 0 {
             return;
         }
+        self.window_action(id, action);
+    }
+
+    // ------------------------=
+    // FUNC: window_action
+    // DESC: Applies the shared restore and guarded-close lifecycle to a caller-validated existing window.
+    // ------------------=
+    pub(super) fn window_action(&mut self, id: usize, action: Action) {
         self.ai_chat_focus = 0;
         self.shell_menu = 0;
         self.store_active_app_window();

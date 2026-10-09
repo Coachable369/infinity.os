@@ -826,6 +826,7 @@ fn app_native() {
     assert!(ai.chat.push_input(b'i'));
     assert!(ai.submit_chat());
     let first_prefill = ai.qwen_metrics.prefill_tokens;
+    assert!(first_prefill < 32, "greeting should not prefill the OS tool catalog");
     let start = Instant::now();
     while ai.chat.generation_state == GenerationState::Running {
         ai.poll_qwen();
@@ -833,6 +834,17 @@ fn app_native() {
     }
     assert_eq!(ai.chat.generation_state, GenerationState::Complete);
     assert_eq!(ai.chat.message_count(), 2);
+    for byte in b"hi" { assert!(ai.chat.push_input(*byte)); }
+    let warm_start = Instant::now();
+    assert!(ai.submit_chat());
+    assert!(ai.qwen_metrics.prefill_tokens <= first_prefill + 8);
+    println!("desktop prompt tokens: initial={first_prefill} retained={}", ai.qwen_metrics.prefill_tokens);
+    while ai.chat.generation_state == GenerationState::Running {
+        ai.poll_qwen();
+        assert!(warm_start.elapsed().as_secs() < 240);
+    }
+    assert_eq!(ai.chat.generation_state, GenerationState::Complete);
+    println!("retained-context response milliseconds={}", warm_start.elapsed().as_millis());
     let transcript = ai.chat.state_hash();
     for (i, request) in [b"hi".as_slice(),
         b"Generate a Python function called add that returns the sum of two arguments. Insert the code.",
@@ -901,7 +913,7 @@ fn app_native() {
 // DESC: Exercises typed command parsing, exact-once dispatch, completion, denial, cancellation and owner isolation without model availability.
 // ------------------=
 fn control_contract() {
-    use runtime::ai::control::{self, Command};
+    use runtime::ai::control::{self, App, Command};
     for (input, expected) in [
         (b"Open text editor".as_slice(), Command::TextEditor),
         (b"Could you please open the text editor?", Command::TextEditor),
@@ -913,6 +925,12 @@ fn control_contract() {
         (b"open terminal", Command::Terminal),
         (b"open task manager", Command::TaskManager),
         (b"open app launcher", Command::Launcher),
+        (b"open app tray", Command::Launcher),
+        (b"focus text editor", Command::Focus(App::TextEditor)),
+        (b"focus on the browser", Command::Focus(App::Browser)),
+        (b"bring file navigator to front", Command::Focus(App::FileNavigator)),
+        (b"close text editor", Command::Close(App::TextEditor)),
+        (b"close current app", Command::CloseActive),
     ] {
         let mut ai = Box::new(AiRuntime::new());
         ai.bind_chat_owner([1;16]);
@@ -972,6 +990,16 @@ fn control_contract() {
     let mut ai = AiRuntime::new();
     ai.finish_control(Command::Browser, false);
     assert_eq!(ai.chat.generation_state, GenerationState::Failed);
+    for request in [b"Do not open the text editor.".as_slice(), b"Don't close browser",
+        b"Explain focus text editor", b"Never open terminal", b"Example: close app", b"Hello, how are you?"] {
+        let mut chat = ChatRuntime::new();
+        for byte in request { chat.push_input(*byte); }
+        chat.begin_native_turn();
+        let mut pending = None;
+        control::publish(&mut chat, &mut pending, b"OS_CLOSE:text_editor", true, true);
+        assert_eq!(pending, None);
+        assert_eq!(chat.generation_state, GenerationState::Complete);
+    }
 }
 
 // ------------------------=
@@ -979,7 +1007,7 @@ fn control_contract() {
 // DESC: Verifies real native model paraphrases and non-command requests against typed command outcomes, not reply wording.
 // ------------------=
 fn control_native(ai: &mut AiRuntime) {
-    use runtime::ai::control::Command;
+    use runtime::ai::control::{App, Command};
     let cases: &[(&[u8], Option<Command>)] = &[
         (b"Could you bring up the app where I can edit a text file?", Some(Command::TextEditor)),
         (b"I'd like to browse my files. Bring up the file manager for me.", Some(Command::FileNavigator)),
@@ -991,13 +1019,19 @@ fn control_native(ai: &mut AiRuntime) {
         (b"Do not open the text editor.", None),
         (b"Explain what the command 'open text editor' means. Do not execute it.", None),
         (b"Hello, how are you?", None),
+        (b"Please bring the text editor window into focus.", Some(Command::Focus(App::TextEditor))),
+        (b"Please dismiss the browser window.", Some(Command::Close(App::Browser))),
+        (b"Dismiss the window I am currently using.", Some(Command::CloseActive)),
+        (b"Please show the application tray.", Some(Command::Launcher)),
     ];
+    let mut initial_prefill = 0;
     for (index, (request, expected)) in cases.iter().enumerate() {
         let owner = [index as u8 + 1;16];
         ai.bind_chat_owner(owner);
         assert_eq!(Command::explicit(request), None);
         for byte in *request { assert!(ai.chat.push_input(*byte)); }
         assert!(ai.submit_chat());
+        initial_prefill = ai.qwen_metrics.prefill_tokens;
         let start = Instant::now();
         let mut actual = None;
         while ai.chat.generation_state == GenerationState::Running {
@@ -1008,9 +1042,21 @@ fn control_native(ai: &mut AiRuntime) {
             }
             assert!(start.elapsed().as_secs() < 180, "control inference deadline");
         }
-        assert_eq!(actual, *expected, "case {index}: {:?}", ai.chat.message(ai.chat.message_count()-1));
+        assert_eq!(actual, *expected, "case {index}: {}", String::from_utf8_lossy(ai.acceptance_native_output()));
         assert_eq!(ai.chat.generation_state, GenerationState::Complete);
         assert_eq!(ai.take_control(owner, true), None);
         println!("control case {index} passed: {actual:?}");
     }
+    let owner = [cases.len() as u8;16];
+    for byte in b"Explain what a text editor does. Do not open anything." { assert!(ai.chat.push_input(*byte)); }
+    assert!(ai.submit_chat());
+    assert!(ai.qwen_metrics.prefill_tokens < 48, "tool instructions must not be repeated");
+    println!("tool context prompt tokens: initial={initial_prefill} cached={}", ai.qwen_metrics.prefill_tokens);
+    let start = Instant::now();
+    while ai.chat.generation_state == GenerationState::Running {
+        ai.poll_qwen();
+        assert_eq!(ai.take_control(owner, true), None);
+        assert!(start.elapsed().as_secs() < 180);
+    }
+    assert_eq!(ai.chat.generation_state, GenerationState::Complete);
 }

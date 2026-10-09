@@ -17,6 +17,7 @@ pub struct Service {
     generated: usize,
     busy: bool,
     completed: bool,
+    desktop_context: bool,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
     pub allocated_bytes: usize,
@@ -25,6 +26,7 @@ pub struct Service {
 pub struct Conversation {
     prompt: [u32; CONTEXT],
     count: usize,
+    desktop_context: bool,
 }
 impl Service {
     // ------------------------=
@@ -33,7 +35,7 @@ impl Service {
     // ------------------=
     pub fn suspend_conversation(&mut self) -> Option<Conversation> {
         if self.busy { return None; }
-        let saved = Conversation { prompt: self.prompt, count: self.prompt_count };
+        let saved = Conversation { prompt: self.prompt, count: self.prompt_count, desktop_context: self.desktop_context };
         self.clear_conversation();
         Some(saved)
     }
@@ -46,6 +48,7 @@ impl Service {
         self.clear_conversation();
         self.prompt = saved.prompt;
         self.prompt_count = saved.count;
+        self.desktop_context = saved.desktop_context;
     }
 
     // ------------------------=
@@ -149,12 +152,28 @@ impl Service {
             generated: 0,
             busy: false,
             completed: false,
+            desktop_context: false,
             reused_tokens: 0,
             prefill_tokens: 0,
             allocated_bytes: bytes.len() + arena.len() + core::mem::size_of::<Self>(),
             worker_start: [0; 3],
         })
     }
+    // ------------------------=
+    // FUNC: submit_desktop
+    // DESC: Retains the tool instructions in the conversation prefix instead of re-encoding them on every request.
+    // ------------------=
+    pub fn submit_desktop(&mut self, text: &[u8], prefix: &[u8]) -> Result<(), Error> {
+        if self.desktop_context { return self.submit(text); }
+        let mut prompt = [0; 8192];
+        if text.is_empty() || prefix.len() > prompt.len() || text.len() > prompt.len() - prefix.len() { return Err(Error::Overflow); }
+        prompt[..prefix.len()].copy_from_slice(prefix);
+        prompt[prefix.len()..prefix.len()+text.len()].copy_from_slice(text);
+        self.submit(&prompt[..prefix.len()+text.len()])?;
+        self.desktop_context = true;
+        Ok(())
+    }
+
     // ------------------------=
     // FUNC: submit
     // DESC: Formats an explicit non-thinking user turn and schedules native generation.
@@ -271,6 +290,7 @@ impl Service {
     pub fn clear_conversation(&mut self) {
         self.cancel();
         self.prompt.fill(0);
+        self.desktop_context = false;
         self.prompt_count = 0;
         self.output.fill(0);
         self.output_count = 0;
