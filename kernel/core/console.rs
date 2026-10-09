@@ -13319,22 +13319,20 @@ pub fn poll_native_ai() {
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
         let now = crate::runtime::ai::qwen::workers::clock_ns();
         if runtime.mode == ConsoleMode::Desktop && now >= runtime.voice_autostart_after_ns {
-            runtime.voice_autostart_after_ns = now.saturating_add(5_000_000_000);
             let auto = crate::runtime::with_runtime(|r| r.identity.voice_profile(runtime.current_user)
                 .is_some_and(|p| p.enabled && p.activation != crate::runtime::identity::VoiceActivation::Disabled))
                 .unwrap_or(false);
-            if auto && crate::runtime::ai::with_ai_runtime(|ai| ai.chat.enabled())
-                && matches!(crate::runtime::ai::voice_conversation::state().0,
-                    crate::runtime::ai::voice_conversation::State::Off | crate::runtime::ai::voice_conversation::State::Failed) {
-                crate::output_text(b"[voice] desktop autostart begin\n");
-                let started = crate::runtime::ai::voice_conversation::start(
-                    crate::runtime::execution::SecurityIdentity(runtime.current_session.0));
-                crate::output_text(if started {
-                    b"[voice] desktop autostart listening\n"
-                } else {
-                    b"[voice] desktop autostart deferred\n"
-                });
-            }
+            if auto && crate::runtime::ai::with_ai_runtime(|ai| ai.chat.enabled()) {
+                if let Some(started) = crate::runtime::ai::voice_conversation::autostart(
+                    crate::runtime::execution::SecurityIdentity(runtime.current_session.0),
+                    &mut runtime.voice_autostart_after_ns, now) {
+                    crate::output_text(if started {
+                        b"[voice] desktop autostart listening\n"
+                    } else {
+                        b"[voice] desktop autostart deferred\n"
+                    });
+                }
+            } else { runtime.voice_autostart_after_ns = now.saturating_add(5_000_000_000); }
         }
     } }
     #[cfg(feature="native-browser")]

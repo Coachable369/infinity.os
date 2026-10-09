@@ -146,3 +146,38 @@ requires building and installing VirtualBox with this patch using its normal
 platform signing/install process, followed by microphone-enabled conversation
 tests on a disposable VM. An InfinityOS ISO rebuild alone cannot deliver this
 host-library fix. Do not mark the installed freeze resolved until that gate passes.
+
+## October 9: guest-side failure/restart trigger
+
+The preserved `build/vm-logs/infinityos-4/serial.log` contains completed voice
+turns followed by recognition error 6 (transcript overflow), capture cancellation,
+and desktop autostart reopening capture a few seconds later. This establishes
+an unnecessary guest device-cycle path preceding the stall; it does not prove
+that every reported freeze has that cause.
+
+Two guest defects are repaired together:
+
+- An oversized recognition hypothesis was treated as a failed microphone.
+  The controller now discards the invalid utterance, buffered handoff and wake
+  authorization, and returns to listening using the existing capture lease.
+  Cancellation, revoked authority and actual decoder faults remain fatal.
+- Desktop autostart retried Off/Failed every five seconds, including after a
+  user stop. It now consumes one scheduled start per desktop entry. Explicit
+  user retry is still available; failure never automatically reopens capture.
+
+The production-controller behavioral harness exercises repeated overflow and
+empty hypotheses, unchanged capture-open counts, no additional input grants
+during recovery, no command submission from discarded text, a subsequent valid
+spoken response, fatal failure and manual stop. All 25 tests pass in manifest
+`20261009T074832240709Z-87918.json`.
+
+Revision attribution: published October 7 ARM media was built from revision
+`1d37404314a68f7ef2f264f93e719ffe003e4d71` plus working changes, as recorded by
+manifest `20261007T175556491425Z-60875.json`. The three latest commits at the
+start of this investigation (`da849ae`, `900ace7`, `06c62a7`) were not in that
+published ISO. This is artifact provenance, not proof of the user's installed
+kernel revision. The offending restart/error handling predates those commits.
+
+These guest corrections do not replace the host zero-progress repair above.
+Installed microphone-enabled validation remains required before claiming the
+reported VM hang eliminated. No ISO or host binary is updated by these tests.

@@ -527,6 +527,17 @@ pub fn start(owner: SecurityIdentity) -> bool {
         true
     }
 }
+
+// ------------------------=
+// FUNC: autostart
+// DESC: Consumes one scheduled desktop start; fatal errors and manual stops never reopen capture automatically.
+// ------------------=
+pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Option<bool> {
+    if *deadline == u64::MAX || now < *deadline { return None; }
+    *deadline = u64::MAX;
+    if state().0 != State::Off { return None; }
+    Some(start(owner))
+}
 // ------------------------=
 // FUNC: toggle
 // DESC: Treats a click during asynchronous stopping as a restart request, or cancels that request on the next click.
@@ -1167,10 +1178,16 @@ pub fn poll() -> bool {
                     }});
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
-                    // Only an acoustic no-hypothesis result may resume capture.
+                    // Empty/oversized hypotheses are failed utterances, not failed
+                    // microphone devices. Discard them without cycling host DMA.
                     // Cancellation, revoked authority, and decoder faults must
                     // not silently obtain a fresh microphone lease.
-                    if status.state == voice_input::InputState::Failed && status.error == 5 {
+                    if status.state == voice_input::InputState::Failed && matches!(status.error, 5 | 6) {
+                        if status.error == 6 {
+                            (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                            clear_wake_command();
+                            clear_captured_turn();
+                        }
                         if !RECOGNITION_CONTEXT_VALID { clear_captured_turn(); }
                         resume_captured_turn();
                     } else {

@@ -13,6 +13,7 @@ static MODEL_READY: AtomicBool = AtomicBool::new(false);
 static PREPARE_FAILED: AtomicBool = AtomicBool::new(false);
 static CHAT_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
+static RECOGNITION_ERROR: AtomicUsize = AtomicUsize::new(0);
 static HOLD_RECOGNITION: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_FRAMES: AtomicUsize = AtomicUsize::new(0);
@@ -321,7 +322,10 @@ mod voice_input {
     // FUNC: status
     // DESC: Models asynchronous cancellation drain without running a recognizer.
     // ------------------=
-    pub fn status()->Status{Status{state:if crate::READY.load(crate::Ordering::SeqCst){InputState::Ready}else if crate::BUSY.load(crate::Ordering::SeqCst){InputState::Recognizing}else{InputState::Cancelled},error:0}}
+    pub fn status()->Status{
+        let error=crate::RECOGNITION_ERROR.load(crate::Ordering::SeqCst) as i32;
+        Status{state:if error!=0{InputState::Failed}else if crate::READY.load(crate::Ordering::SeqCst){InputState::Ready}else if crate::BUSY.load(crate::Ordering::SeqCst){InputState::Recognizing}else{InputState::Cancelled},error}
+    }
     // ------------------------=
     // FUNC: stop
     // DESC: Leaves the simulated worker busy until the test acknowledges cancellation.
@@ -667,6 +671,51 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     wake_handoff_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
+    recognition_failure_recovery_tests(owner);
+}
+
+// ------------------------=
+// FUNC: recognition_failure_recovery_tests
+// DESC: Keeps failed utterances on the same capture lease and prevents automatic reopening after fatal errors or manual stop.
+// ------------------=
+fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    HOLD_RECOGNITION.store(true,Ordering::SeqCst);
+    let mut deadline=10;
+    assert_eq!(conversation::autostart(owner,&mut deadline,9),None);
+    assert_eq!(conversation::autostart(owner,&mut deadline,10),Some(true));
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    let turns=TURNS.load(Ordering::SeqCst);
+    for error in [6,5,6] {
+        begin_delayed_recognition(1800);
+        let grants=INPUT_GRANTS.load(Ordering::SeqCst);
+        BUSY.store(false,Ordering::SeqCst);
+        RECOGNITION_ERROR.store(error,Ordering::SeqCst);
+        conversation::poll();
+        RECOGNITION_ERROR.store(0,Ordering::SeqCst);
+        assert_eq!(conversation::state().0,State::Listening);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+        assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),grants);
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    }
+    begin_delayed_recognition(1800);
+    finish_recognition(b"Infinity what is your name");
+    complete_voice_reply();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    begin_delayed_recognition(1800);
+    BUSY.store(false,Ordering::SeqCst);
+    RECOGNITION_ERROR.store(3,Ordering::SeqCst);
+    conversation::poll();
+    RECOGNITION_ERROR.store(0,Ordering::SeqCst);
+    assert_eq!(conversation::state().0,State::Failed);
+    assert_eq!(conversation::autostart(owner,&mut deadline,100_000_000_000),None);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    assert!(conversation::start(owner));
+    conversation::stop(owner);conversation::poll();
+    assert_eq!(conversation::state().0,State::Off);
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    assert_eq!(conversation::autostart(owner,&mut deadline,200_000_000_000),None);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
 }
 
 // ------------------------=
