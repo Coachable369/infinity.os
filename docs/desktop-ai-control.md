@@ -94,9 +94,23 @@ Retry verification:
   post-synthesis recognition, bounded output, silence, and cancellation
   (`20261010T005118953885Z-56923.json`).
 
-No replacement ISO is published by this retry: native Computer recognition and
-installed microphone acceptance are unresolved. Existing ISO files are from the
-previous build and must not be presented as this retry's artifacts.
+The initial retry withheld replacement ISOs pending microphone acceptance. The user
+subsequently confirmed the failing wake word was Infinity and requested both updated
+ISOs for VM testing. The release rebuild retains the conservative audio path above;
+native Computer recognition and installed microphone acceptance remain unresolved.
+Prior wake-test recordings, native results, and the installed VM trace are preserved
+under `builds/validation/voice-retry/` before clean-build scratch removal.
+
+The requested clean release rebuild passed through `./build-kit full`
+(`20261010T005423742471Z-57170.json`, source revision `287ef94`, current workspace).
+Both `builds/InfinityOS-aarch64.iso` and `builds/InfinityOS-x86_64.iso` were replaced
+with the conservative retry. This is build/package evidence, not proof that the
+reported Infinity failure is resolved on the user's microphone.
+The freshly rebuilt speech library passed the five-case native Infinity probe
+(`20261010T021514686321Z-57584.json`), including recognition before and after synthesis.
+The release result is saved as `builds/validation/voice-retry/verified-hvf-release.json`.
+Installed kernel and boot-loader byte parity passed for both architectures
+(`20261010T021542902469Z-57685.json`).
 
 ## Verification
 
