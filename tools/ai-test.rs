@@ -1028,6 +1028,7 @@ fn control_native(ai: &mut AiRuntime) {
     for (index, (request, expected)) in cases.iter().enumerate() {
         let owner = [index as u8 + 1;16];
         ai.bind_chat_owner(owner);
+        assert!(ai.chat.selected_model_ready());
         assert_eq!(Command::explicit(request), None);
         for byte in *request { assert!(ai.chat.push_input(*byte)); }
         assert!(ai.submit_chat());
@@ -1046,6 +1047,7 @@ fn control_native(ai: &mut AiRuntime) {
         assert_eq!(ai.chat.generation_state, GenerationState::Complete);
         assert_eq!(ai.take_control(owner, true), None);
         println!("control case {index} passed: {actual:?}");
+        assert!(ai.chat.selected_model_ready());
     }
     let owner = [cases.len() as u8;16];
     for byte in b"Explain what a text editor does. Do not open anything." { assert!(ai.chat.push_input(*byte)); }

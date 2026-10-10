@@ -401,23 +401,25 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     poll(); assert_eq!(status().state, S::Cancelled);
     assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
     REVOKED.store(false, Ordering::SeqCst);
-    // Start the first prepared span before the reply completes, then prepare
-    // exactly one following span without modifying the playing generation.
+    // Buffer every span into one generation and start hardware only after the
+    // final span is resident, eliminating phrase-boundary silence.
     HOLD.store(true, Ordering::SeqCst);
     let played=PLAYED.load(Ordering::SeqCst);
     let appended=APPENDS.load(Ordering::SeqCst);
     submit_span(owner,1,b"First sentence.",0,15,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll(); assert!(can_prefetch());
-    assert_eq!(status().state,S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1);
+    assert_eq!(status().state,S::Buffered);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played,"incomplete speech must not start a choppy partial stream");
     submit_span(owner,1,b"Second sentence.",15,31,true).unwrap();
     assert!(!can_prefetch());
     assert!(submit(owner, 1, b"Third sentence.").is_err());
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Ready);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1);
-    assert_eq!(APPENDS.load(Ordering::SeqCst),appended+1);
+    poll();assert_eq!(status().state,S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"one sealed response must start exactly once");
+    assert!(!can_prefetch());
+    assert!(submit_span(owner,1,b"No overlapping synthesis.",31,56,true).is_err());
+    assert_eq!(APPENDS.load(Ordering::SeqCst),appended+2,"both spans must occupy the same response stream");
     DMA_FRAMES.store(80,Ordering::SeqCst);
     let progress=playback_progress(owner).unwrap();
     assert_eq!((progress.frames,progress.total_frames),(80,160));
@@ -427,12 +429,8 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert!(reference.iter().any(|&sample|sample!=0),"DMA speech must remain in the echo reference despite delayed device playback");
     assert!(!echo_reference(runtime::execution::SecurityIdentity([2;16]),&mut reference));
     PLAYING.store(false,Ordering::SeqCst);poll();
-    assert_eq!(status().state,S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+2);
-    assert_eq!(APPENDS.load(Ordering::SeqCst),appended+2);
-    PLAYING.store(false,Ordering::SeqCst);poll();
     assert_eq!(status().state,S::Complete);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+2,"each prepared span must play exactly once");
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"response playback must not restart between spans");
     // Busy inference workers delay, rather than discard, queued synthesis.
     WORKER_BUSY.store(true,Ordering::SeqCst);
     submit(owner,1,b"Waiting for an AP.").unwrap();
@@ -447,11 +445,11 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     stop(owner);poll();assert_eq!(status().state,S::Cancelled);
     assert!(unsafe { (&*(&raw const TASK)).is_none() });
 
-    // A failed prefetched span stops the current audio and cannot publish bad PCM.
+    // A rejected final span must fail closed before any partial response reaches DMA.
     WORKER_BUSY.store(false,Ordering::SeqCst);
     submit_span(owner,1,b"Prepare this phrase.",0,20,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Speaking);
+    poll();assert_eq!(status().state,S::Buffered);
     let played=PLAYED.load(Ordering::SeqCst);
     INVALID.store(true,Ordering::SeqCst);
     submit_span(owner,1,b"Rejected followup.",20,38,true).unwrap();
@@ -473,7 +471,7 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     let batches=PLAYED_PCM.lock().unwrap().len();
     submit_span(owner,1,b"First long phrase.",0,18,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Speaking);
+    poll();assert_eq!(status().state,S::Buffered);
     assert!(submit_span(owner,1,b"Invalid rewind.",0,15,true).is_err());
     SYNTHESIS_VALUE.store(200,Ordering::SeqCst);
     submit_span(owner,1,b"Second long phrase.",18,37,true).unwrap();
@@ -584,21 +582,19 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     submit_span(owner,1,b"First.",0,6,false).unwrap();
     NOW.fetch_add(2_000_000,Ordering::SeqCst);
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Speaking);
+    poll();assert_eq!(status().state,S::Buffered);
     assert_eq!(status().queued_ns,accepted);
     assert_eq!(status().queue_wait_ns,2_000_000);
-    assert_eq!(status().first_playback_ns,accepted+3_000_000);
+    assert_eq!(status().first_playback_ns,0);
     submit_span(owner,1,b"Second.",6,13,true).unwrap();
     assert_eq!(status().queued_ns,accepted);
     assert_eq!(status().queue_wait_ns,0);
     NOW.fetch_add(4_000_000,Ordering::SeqCst);
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Ready);
+    poll();assert_eq!(status().state,S::Speaking);
     assert_eq!(status().queued_ns,accepted);
     assert_eq!(status().queue_wait_ns,4_000_000);
-    assert_eq!(status().first_playback_ns,accepted+3_000_000);
-    PLAYING.store(false,Ordering::SeqCst);poll();
-    assert_eq!(status().state,S::Speaking);
+    assert_eq!(status().first_playback_ns,accepted+8_000_000);
     PLAYING.store(false,Ordering::SeqCst);poll();
     assert_eq!(status().state,S::Complete);
     SYNTHESIS_DELAY_NS.store(0,Ordering::SeqCst);

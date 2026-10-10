@@ -364,9 +364,9 @@ mod voice_output {
     pub fn echo_reference(_:crate::runtime::execution::SecurityIdentity,out:&mut[i16])->bool{out.fill(0);false}
     // ------------------------=
     // FUNC: can_prefetch
-    // DESC: Leaves buffer concurrency to the separate production output harness.
+    // DESC: Matches production admission: append only to a buffered response, never during active playback.
     // ------------------=
-    pub fn can_prefetch()->bool{false}
+    pub fn can_prefetch()->bool{crate::OUTPUT.load(crate::Ordering::SeqCst)==4}
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
     #[derive(PartialEq)]
@@ -399,6 +399,7 @@ mod voice_output {
     // ------------------=
     pub fn submit(_:SecurityIdentity,_:u64,text:&[u8])->Result<(),()>{
         if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
+        if matches!(crate::OUTPUT.load(crate::Ordering::SeqCst),1|3){return Err(());}
         assert!(text.len()<=160);
         crate::PHRASES.lock().unwrap().push(text.to_vec());
         crate::OUTPUT.store(3,crate::Ordering::SeqCst);Ok(())
@@ -668,10 +669,60 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
 
     clipped_wake_gate_tests(owner);
     wake_gate_tests(owner);
+    repeated_reply_wake_tests(owner);
     wake_handoff_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
     recognition_failure_recovery_tests(owner);
+}
+
+// ------------------------=
+// FUNC: repeated_reply_wake_tests
+// DESC: Repeats short and buffered multi-span replies, checking fresh wake admission and a stable capture lease after each drain.
+// ------------------=
+fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    assert!(conversation::start(owner));
+    let captures = CAPTURES.load(Ordering::SeqCst);
+    for word in [0, 1] {
+        WAKE_SETTING.store(word, Ordering::SeqCst);
+        for (index, command) in [b"hello".as_slice(), b"focus text editor", b"close browser", b"open app tray"].iter().enumerate() {
+            let turns = TURNS.load(Ordering::SeqCst);
+            recognize_voice(b"ambient conversation");
+            assert_eq!(TURNS.load(Ordering::SeqCst), turns);
+            recognize_voice(if word == 0 { b"Infinity" } else { b"Computer" });
+            assert!(conversation::wake_armed());
+            recognize_voice(command);
+            assert_eq!(TURNS.load(Ordering::SeqCst), turns + 1);
+            assert_eq!(PROMPTS.lock().unwrap().last().unwrap(), command);
+            LONG_REPLY.store(index % 2 == 1, Ordering::SeqCst);
+            conversation::poll();
+            for _ in 0..16 {
+                assert_eq!(conversation::state().0, State::Speaking);
+                if OUTPUT.load(Ordering::SeqCst) == 3 {
+                    let final_span = SPANS.lock().unwrap().last().unwrap().2;
+                    OUTPUT.store(if final_span { 1 } else { 4 }, Ordering::SeqCst);
+                }
+                conversation::poll();
+                if OUTPUT.load(Ordering::SeqCst) == 1 {
+                    assert!(!conversation::wake_armed());
+                    assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+                    OUTPUT.store(2, Ordering::SeqCst);
+                    conversation::poll();
+                    break;
+                }
+            }
+            assert_eq!(conversation::state().0, State::Listening);
+            assert!(!conversation::wake_armed());
+            assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+            recognize_voice(b"unaddressed follow-up");
+            assert_eq!(TURNS.load(Ordering::SeqCst), turns + 1);
+        }
+    }
+    LONG_REPLY.store(false, Ordering::SeqCst);
+    WAKE_SETTING.store(0, Ordering::SeqCst);
+    conversation::stop(owner);
+    conversation::poll();
 }
 
 // ------------------------=
