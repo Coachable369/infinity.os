@@ -155,7 +155,7 @@ impl ConsoleRuntime {
             }
             return false;
         };
-        let mut panel = assistant::read(id);
+        let expanded = assistant::expanded(id);
         let scale = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
@@ -169,29 +169,26 @@ impl ConsoleRuntime {
             window,
             self.system.framebuffer_width,
             scale,
-            panel.expanded,
+            expanded,
         );
         let hovered = geometry.toggle.contains(p);
-        let hover_changed = panel.hovered != hovered;
         let hover_owner_changed = assistant::set_hovered(if hovered { Some(id) } else { None });
-        panel.hovered = hovered;
-        let Some(target) = assistant::hit(geometry, panel.expanded, p) else {
+        let target = assistant::hit(geometry, expanded, p);
+        if !clicked {
+            if hover_owner_changed { self.redraw(); }
+            return expanded && target.is_some();
+        }
+        let mut panel = assistant::read(id);
+        let Some(target) = target else {
             if clicked {
                 panel.focused = false;
             }
             assistant::write(id, panel);
-            if hover_changed || hover_owner_changed {
+            if hover_owner_changed {
                 self.redraw();
             }
             return false;
         };
-        if !clicked {
-            assistant::write(id, panel);
-            if hover_changed || hover_owner_changed {
-                self.redraw();
-            }
-            return panel.expanded;
-        }
         self.ai_chat_focus = 0;
         match target {
             Target::Toggle => {
@@ -238,14 +235,20 @@ impl ConsoleRuntime {
         });
         panel.request = panel.input;
         panel.request_len = panel.length;
+        if panel.propose_contextual(id) {
+            panel.length = 0;
+            assistant::write(id, panel);
+            self.apply_window_assistant(id);
+            return;
+        }
         let direct = panel.propose(id == 2, self.assistant_revision());
         if !direct {
             // Unsupported intents still retain only the prompt supplied to this app.
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
                 panel.reply(if id==2 {b"Ask for text or code, then Apply the generated edit. Commands: insert TEXT, clear text, undo, redo, select all, find TEXT, save file. Save uses the normal filename dialog when needed."}
-                    else if id==0 {b"Browser assistance: refresh, maximize, restore, or minimize this window with Apply. Other prompts use local dialogue; website contents are not automatically shared."}
-                    else if id >= 5 {b"This File Navigator supports open folder /absolute/path, maximize, restore, minimize, and refresh. Actions target this window only and require Apply."}
+                    else if id==0 {b"Search google for WORDS searches immediately in this browser using normal network policy. Refresh, maximize, restore, and minimize use Apply. Website contents are not automatically shared."}
+                    else if id >= 5 {b"Find FILENAME searches this folder tree and selects the file. Open folder /absolute/path, maximize, restore, minimize, and refresh use Apply. Actions target this window only."}
                     else {b"Local window actions: maximize, restore, minimize, refresh. Every action requires Apply. No files or settings are changed by chat."});
             } else if id == 2 && text.eq_ignore_ascii_case(b"describe document") {
                 let language = self.editor_tools.language.name();
@@ -305,6 +308,24 @@ impl ConsoleRuntime {
         }
         let mut success = true;
         match action {
+            Action::SearchWeb if id == 0 => {
+                #[cfg(feature="native-browser")]
+                {
+                    browser_controller::search_text(self, &panel.argument[..panel.argument_len]);
+                    panel.reply(b"Google search requested in this browser. Network policy still applies.");
+                }
+                #[cfg(not(feature="native-browser"))]
+                panel.reply(b"The native browser is unavailable in this build.");
+                assistant::write(id, panel);
+                return;
+            }
+            Action::FindFile if id >= 5 => {
+                success = self.assistant_find_file(&panel.argument[..panel.argument_len]);
+                panel.reply(if success { b"Found and selected the file in this Navigator." }
+                    else { b"No matching filename found in this folder tree. Open a broader folder and try again." });
+                assistant::write(id, panel);
+                return;
+            }
             Action::Maximize | Action::Restore => {
                 let value = action == Action::Maximize;
                 let current = if id == 4 {
@@ -387,5 +408,39 @@ impl ConsoleRuntime {
         }
         panel.reply(if success{b"Action applied through the app. Document edits remain undoable; Save may require a filename."}else{b"The app could not apply this action (no match, no history, save error, or document capacity)."});
         assistant::write(id, panel);
+    }
+
+    // ------------------------=
+    // FUNC: assistant_find_file
+    // DESC: Finds an exact filename within the active namespace and reveals its row without opening or executing the file.
+    // ------------------=
+    fn assistant_find_file(&mut self, name: &[u8]) -> bool {
+        let Some(state) = crate::runtime::with_runtime(|r| r.file_navigator).flatten() else { return false; };
+        let root = state.active_namespace_ref.as_bytes();
+        for index in 0..256 {
+            let Ok(Some(entry)) = crate::storage::namespace_list_nth(root, index) else { break; };
+            let path = &entry.path[..entry.path_len as usize];
+            if !crate::runtime::object_navigation::namespace_basename(path).eq_ignore_ascii_case(name) { continue; }
+            let Ok(parent) = crate::runtime::object_navigation::parent_path(path) else { continue; };
+            // Listing prefixes must never permit a sibling namespace to escape the search root.
+            if parent.as_bytes() != root && !(parent.as_bytes().starts_with(root)
+                && (root == b"/" || parent.as_bytes().get(root.len()) == Some(&b'/'))) { continue; }
+            let moved = crate::runtime::with_runtime(|r| r.file_navigator.as_mut()
+                .is_some_and(|n| n.navigate(parent.as_bytes()).is_ok())).unwrap_or(false);
+            if !moved { return false; }
+            if let Ok(Some(index)) = crate::storage::namespace_child_sorted_index(parent.as_bytes(), path, state.sort_descending) {
+                let row = index + crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT;
+                self.home_selected_item = Some(row);
+                let scale = SystemLayout::new(self.system.framebuffer_width, self.system.framebuffer_height).scale();
+                crate::runtime::with_runtime(|r| { if let Some(n) = r.file_navigator.as_mut() {
+                    n.selected_index = row as u16;
+                    n.view_mode = crate::runtime::object_navigation::ViewMode::List;
+                    n.scroll_offset = row * 34 * scale;
+                } });
+                self.checkpoint_active_file_navigator();
+                return true;
+            }
+        }
+        false
     }
 }

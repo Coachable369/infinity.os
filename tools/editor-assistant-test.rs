@@ -371,6 +371,7 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    contextual_searches();
     generated_editor_actions();
     attached_assistant_damage();
     caret_damage_is_bounded();
@@ -382,6 +383,43 @@ fn main() {
     ai::reset();
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
+    }
+}
+
+// ------------------------=
+// FUNC: contextual_searches
+// DESC: Verifies app isolation, argument fidelity, whitespace, and one-shot contextual command dispatch.
+// ------------------=
+fn contextual_searches() {
+    ai::reset();
+    let before = ai::revision();
+    assert!(!ai::expanded(0));
+    assert!(!ai::expanded(ai::PANEL_SLOTS));
+    for _ in 0..1000 { assert!(!ai::expanded(0)); }
+    assert_eq!(ai::revision(), before);
+    let mut visible = ai::Panel::new(); visible.expanded = true;
+    ai::write(0, visible);
+    assert!(ai::expanded(0));
+    ai::reset();
+    for (owner, input, action, argument) in [
+        (0, "Search google for Hello World", Action::SearchWeb, "Hello World"),
+        (5, "Find hello.c", Action::FindFile, "hello.c"),
+        (7, " please FIND file Hello.c  ", Action::FindFile, "Hello.c"),
+    ] {
+        let mut panel = ai::Panel::new();
+        panel.input[..input.len()].copy_from_slice(input.as_bytes());
+        panel.length = input.len();
+        assert!(panel.propose_contextual(owner));
+        assert_eq!(&panel.argument[..panel.argument_len], argument.as_bytes());
+        assert_eq!(panel.generation, ai::GenerationStatus::Idle);
+        assert_eq!(panel.take_action(0), action);
+        assert_eq!(panel.take_action(0), Action::None);
+    }
+    for (owner, input) in [(2,"Find hello.c"),(0,"Find hello.c"),(5,"Search google for Hello"),(0,"google   ")] {
+        let mut panel = ai::Panel::new();
+        panel.input[..input.len()].copy_from_slice(input.as_bytes()); panel.length=input.len();
+        assert!(!panel.propose_contextual(owner));
+        assert_eq!(panel.pending,Action::None);
     }
 }
 

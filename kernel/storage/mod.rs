@@ -1430,6 +1430,24 @@ pub fn namespace_child_nth_sorted(
 }
 
 // ------------------------=
+// FUNC: namespace_child_sorted_index
+// DESC: Computes one known child's sorted row in a single bounded scan rather than repeatedly sorting prefixes.
+// ------------------=
+pub fn namespace_child_sorted_index(parent: &[u8], path: &[u8], descending: bool) -> Result<Option<usize>, object::ObjectError> {
+    let mut rank = 0;
+    let mut found = false;
+    for index in 0..256 {
+        let Some(entry) = namespace_list_nth(parent, index)? else { break; };
+        let candidate = &entry.path[..entry.path_len as usize];
+        if !crate::runtime::object_navigation::is_immediate_namespace_child(parent, candidate) { continue; }
+        if candidate == path { found = true; continue; }
+        let ordering = namespace_name_order(candidate, path);
+        if ordering == if descending { core::cmp::Ordering::Greater } else { core::cmp::Ordering::Less } { rank += 1; }
+    }
+    Ok(found.then_some(rank))
+}
+
+// ------------------------=
 // FUNC: namespace_name_order
 // DESC: Compares final NamespaceRef components using stable ASCII case folding.
 // ------------------=

@@ -21,6 +21,8 @@ pub enum Action {
     Navigate,
     Replace,
     Clear,
+    SearchWeb,
+    FindFile,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -52,6 +54,25 @@ pub struct Panel {
     pub document_revision: u64,
 }
 impl Panel {
+    // ------------------------=
+    // FUNC: propose_contextual
+    // DESC: Resolves explicit app-scoped searches without model latency or cross-app authority.
+    // ------------------=
+    pub fn propose_contextual(&mut self, owner: usize) -> bool {
+        let Ok(input) = core::str::from_utf8(&self.input[..self.length]) else { return false; };
+        let mut text = input.trim();
+        if text.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("please ")) { text = text[7..].trim_start(); }
+        let prefixes: &[&str] = if owner == 0 { &["search google for ", "google ", "search for "] }
+            else if owner >= 5 { &["find file ", "find ", "search for "] } else { return false; };
+        let Some(prefix) = prefixes.iter().find(|p| text.get(..p.len()).is_some_and(|s| s.eq_ignore_ascii_case(p))) else { return false; };
+        let argument = text[prefix.len()..].trim().as_bytes();
+        if argument.is_empty() { return false; }
+        self.argument_len = argument.len();
+        self.argument[..argument.len()].copy_from_slice(argument);
+        self.pending = if owner == 0 { Action::SearchWeb } else { Action::FindFile };
+        self.generation = GenerationStatus::Idle;
+        true
+    }
     // ------------------------=
     // FUNC: generation_prompt
     // DESC: Frames bounded local app context as data and requests one complete typed response without silently truncating documents.
@@ -385,6 +406,13 @@ pub fn read(id: usize) -> Panel {
             .copied()
             .unwrap_or(Panel::new())
     }
+}
+// ------------------------=
+// FUNC: expanded
+// DESC: Reads only hit-test state instead of copying the multi-kilobyte conversation on pointer motion.
+// ------------------=
+pub fn expanded(id: usize) -> bool {
+    unsafe { (*(&raw const PANELS)).get(id).is_some_and(|panel| panel.expanded) }
 }
 // ------------------------=
 // FUNC: write
