@@ -62,3 +62,38 @@ bounds, silence, cancellation, and private heap limits:
 the installed kernel and that the ISO payload reconstructs that kernel exactly.
 This artifact proof does not replace an installed microphone word-error-rate
 test.
+
+## Bounded matrix workers (October 11)
+
+Whisper's floating-point matrix tiles now reuse the existing native speech
+helper adapter used by Kokoro. The graph and resident models still have one
+owner; only disjoint, allocation-free tiles run on up to three idle helpers.
+Helpers join before tensor storage is reused. The desktop CPU and the first
+service worker are not borrowed. Unsupported/small matrices retain upstream
+execution, and absent/busy helpers safely fall back to the owner. The private
+symbol linker preserves the optional weak helper binding on both architectures.
+
+On the same eight-CPU firmware-loaded ARM64 guest, two recognitions of the same
+ten-second recording (separated by six synthesized replies) changed from
+3.992/4.001 seconds to 1.476/1.659 seconds: **60.77% lower mean recognition time**.
+The transcript bytes and all twelve complete synthesized PCM outputs remained
+identical; resident heap high-water did not increase. Model, decoding settings,
+512-position minimum context and input bytes were unchanged.
+
+Reproduce through the build kit:
+
+```sh
+./build-kit run python3 tools/voice-kokoro/probe/latency.py --lifetime --label voice-baseline --cpus 8
+# Rebuild the changed engine through the build kit, then:
+./build-kit run python3 tools/voice-kokoro/probe/latency.py --lifetime --label voice-parallel --cpus 8
+./build-kit run python3 tools/voice-whisper/compare-workers.py build/voice-kokoro/native-latency/voice-baseline/evidence.json build/voice-kokoro/native-latency/voice-parallel/evidence.json
+```
+
+Preserved results live under `builds/validation/voice-workers-20261011/`.
+This is recognition-stage evidence, not a claimed percentage improvement in
+installed end-to-end Hermes response time or x86 execution time. An installed
+ARM capture trace before this optimization showed 58.8 ms from playback drain
+to the next microphone samples. There is no fixed post-reply cooldown; the
+faster recognizer also reduces the subsequent wake-phrase acknowledgement delay.
+The controller regression suite verifies same-poll return to Listening without
+reopening its existing capture lease, while retaining fresh wake authorization.

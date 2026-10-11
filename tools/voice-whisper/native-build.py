@@ -65,6 +65,26 @@ def freestanding_ggml_source(source, output):
 
 
 # ------------------------=
+# FUNC: native_matrix_source
+# DESC: Reuses the bounded joined speech math workers for independent floating-point Whisper matrix tiles without graph threads or shared mutable model state.
+# ------------------=
+def native_matrix_source(source, output):
+    content = source.read_text()
+    definition = "void ggml_compute_forward_mul_mat("
+    chunks = "    // The first chunk comes from our thread_id, the rest will get auto-assigned."
+    if content.count(definition) != 1 or content.count(chunks) != 1:
+        raise RuntimeError("Unreviewed Whisper matrix helper boundary")
+    content = content.replace(definition,
+        '#include "' + str(ROOT / "tools/voice-kokoro/matmul-parallel.h") + '"\n\n' + definition)
+    content = content.replace(chunks, '''    if (native_parallel_mul_mat(params, dst, src0->type, vec_dot_num_rows,
+            nr0, nr1, nchunk0, nchunk1, dr0, dr1)) return;
+
+''' + chunks)
+    output.write_text(content)
+    return output
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Builds upstream CPU objects for the selected architecture and namespaces every engine definition.
 # ------------------=
@@ -106,6 +126,8 @@ def main():
             source = freestanding_whisper_source(source, output / "whisper-freestanding.cpp")
         elif source.name == "ggml.cpp":
             source = freestanding_ggml_source(source, output / "ggml-freestanding.cpp")
+        elif source.name == "ggml-cpu.c":
+            source = native_matrix_source(source, output / "ggml-cpu-native.c")
         name = hashlib.sha256(str(source).encode()).hexdigest()[:12] + "-" + source.name + ".o"
         obj = output / name
         compiler = LLVM / ("clang++" if source.suffix == ".cpp" else "clang")
@@ -139,7 +161,7 @@ def main():
     undefined = set()
     for line in subprocess.check_output([str(LLVM / "llvm-nm"), "-g", str(engine)], text=True).splitlines():
         parts = line.split()
-        if len(parts) >= 2 and parts[-2] == "U":
+        if len(parts) >= 2 and parts[-2] in ("U", "w", "v"):
             undefined.add(parts[-1])
         elif len(parts) >= 3:
             defined.add(parts[-1])

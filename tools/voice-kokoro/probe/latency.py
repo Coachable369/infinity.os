@@ -115,6 +115,9 @@ def decode_lifetime(data):
                 raise ValueError("Recognition did not publish a bounded transcript")
         rows.append(row)
     finished = [row for row in rows if row["kind"] == 1]
+    recognized = [row for row in rows if row["kind"] == 11]
+    if any(row["seconds"] <= 0 or row["pcm_fnv64"] != "0xa851ff9efa4ab835" for row in recognized):
+        raise ValueError("Recorded recognition changed or omitted native timing")
     if any(not 2400 <= row["frames"] <= 720000 or not row["seconds"] for row in finished):
         raise ValueError("Invalid native lifetime speech result")
     for first, repeated in zip(finished[:6], finished[6:]):

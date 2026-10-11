@@ -108,9 +108,18 @@ unsafe extern "C" fn speech_cases(_: u64) {
     ];
     for round in 0..2 {
         let mut length = 0;
+        let (recognition_start, recognition_end): (u64, u64);
+        core::arch::asm!("mrs {},cntvct_el0", out(reg) recognition_start);
         let result = infinity_kokoro_native_recognize((&raw const INPUT_PCM).cast(), INPUT.len() / 2,
             (&raw mut TRANSCRIPT).cast(), 512, &mut length, &mut memory, 0, 0);
-        report(round, 11, result, length, 0, 0);
+        core::arch::asm!("mrs {},cntvct_el0", out(reg) recognition_end);
+        let mut transcript_hash = 0xcbf29ce484222325u64;
+        if result == 0 && length <= 512 {
+            for byte in core::slice::from_raw_parts((&raw const TRANSCRIPT).cast::<u8>(), length) {
+                transcript_hash = (transcript_hash ^ *byte as u64).wrapping_mul(0x100000001b3);
+            }
+        }
+        report(round, 11, result, length, recognition_end - recognition_start, transcript_hash);
         if result != 0 { return; }
         for (index, text) in texts.iter().enumerate() {
             let case = round * texts.len() + index;
