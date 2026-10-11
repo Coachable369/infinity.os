@@ -44,6 +44,15 @@ entrypoint requires adding a named profile to `build-kit.toml` or invoking it
 through `build-kit run`. No build may write project data outside
 `/opt/codebase/infinity.os`.
 
+## Cycle handoff: usable installer ISOs
+
+After each implementation cycle, produce updated ARM64 and x86_64 installer ISOs
+in `./builds` through `./build-kit full` before declaring the cycle complete.
+Verify release checksums and packaging/parity results, and report the exact ISO
+paths and build manifest. If release generation fails, clearly identify the
+blocker and do not present older ISOs as containing the latest changes. Building
+an ISO does not update an installed VM or prove installed-runtime acceptance.
+
 ## Deprecation removal
 
 A file marked or declared deprecated must be removed in the same change that
