@@ -914,6 +914,21 @@ fn app_native() {
 // ------------------=
 fn control_contract() {
     use runtime::ai::control::{self, App, Command};
+    for text in [b"Search google for Hello World".as_slice(),b"find Hello.c",b"new tab",b"next icon set",b"type echo Hello"] {
+        let expected=control::ContextRequest::parse(text).unwrap();
+        assert_eq!(&expected.bytes[..expected.length],text);
+        let mut ai=Box::new(AiRuntime::new());ai.bind_chat_owner([1;16]);
+        for byte in text {assert!(ai.chat.push_input(*byte));}
+        assert!(ai.submit_chat());assert_eq!(ai.qwen_tokens,0);
+        assert_eq!(ai.take_control([2;16],true),None);
+        assert_eq!(ai.take_control([1;16],true),None);
+        assert_eq!(Command::explicit(text),Some(Command::Context(expected)));
+    }
+    for text in [b"do not close tab".as_slice(),b"explain new tab",b"\"new tab\"",b"next model and delete files"] {
+        assert_eq!(control::ContextRequest::parse(text),None);
+    }
+    assert_eq!(Command::explicit(b"open calendar"),Some(Command::Menu(15)));
+    assert_eq!(Command::explicit(b"open network"),Some(Command::SettingsSection(6)));
     for (input, expected) in [
         (b"Open text editor".as_slice(), Command::TextEditor),
         (b"Could you please open the text editor?", Command::TextEditor),

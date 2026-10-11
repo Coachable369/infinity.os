@@ -499,6 +499,22 @@ impl ConsoleRuntime {
         self.spatial_open_surface(false, 2);
     }
     // ------------------------=
+    // FUNC: spatial_assistant_action
+    // DESC: Routes explicit spatial assistant operations through normal selection and editor workflows without bypassing confirmation.
+    // ------------------=
+    pub(super) fn spatial_assistant_action(&mut self,action:crate::ui::app_assistant::Action)->bool {
+        use crate::ui::app_assistant::Action;
+        if !self.spatial.open || self.spatial.editing!=0 || self.spatial.pending_drop.is_some() {return false;}
+        let key=match action {
+            Action::NextItem=>Some(ConsoleKey::Right),Action::PreviousItem=>Some(ConsoleKey::Left),
+            Action::ActivateItem=>Some(ConsoleKey::Enter),
+            Action::AddIdea if self.spatial.tab==2=>Some(ConsoleKey::Character(b't')),
+            Action::NewCategory if self.spatial.tab==2=>Some(ConsoleKey::Character(b'n')),
+            Action::ZoomIn if matches!(self.spatial.tab,0|2)=>Some(ConsoleKey::Character(b'+')),
+            Action::ZoomOut if matches!(self.spatial.tab,0|2)=>Some(ConsoleKey::Character(b'-')),_=>None};
+        let Some(key)=key else{return false;};self.spatial_input(key);true
+    }
+    // ------------------------=
     // FUNC: holographic_open
     // DESC: Opens Holographic Desktop as an independent app-switching surface.
     // ------------------=

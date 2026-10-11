@@ -137,7 +137,7 @@ impl AiRuntime {
                 } else {
                     let output = service.output();
                     let end = output.iter().rposition(|b| !b.is_ascii_whitespace()).map_or(0, |i| i + 1);
-                    panel.generation = if panel.accept_generated(&output[..end], id == 2, service.completed()) {
+                    panel.generation = if panel.accept_for_owner(id, &output[..end], service.completed()) {
                         crate::ui::app_assistant::GenerationStatus::Complete
                     } else { crate::ui::app_assistant::GenerationStatus::Failed };
                 }

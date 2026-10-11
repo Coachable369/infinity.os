@@ -3,6 +3,57 @@ use super::*;
 use crate::ui::app_assistant::{self as assistant, Action, Target};
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: assistant_owner_alive
+    // DESC: Keeps background app generation attached to its original live window rather than the current foreground app.
+    // ------------------=
+    pub(super) fn assistant_owner_alive(&self,id:usize)->bool {
+        if !matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {return false;}
+        use crate::ui::app_launcher::minimized_shelf as shelf;
+        let mask=shelf::current().mask;
+        match id {
+            0=>self.browser_window.visible || mask&(1<<shelf::BROWSER)!=0,
+            1=>self.command_window.visible || mask&(1<<shelf::COMMAND)!=0,
+            2=>self.editor_window.visible || mask&(1<<shelf::EDITOR)!=0,
+            3=>self.task_manager_window.visible || mask&(1<<shelf::TASKS)!=0,
+            4=>self.settings_open || mask&(1<<shelf::SETTINGS)!=0,
+            11=>self.mode==ConsoleMode::AppLauncher,
+            12=>self.spatial.open,
+            5..=10=>crate::runtime::with_runtime(|r|r.file_navigators.window(id-5).is_some()).unwrap_or(false),
+            _=>false,
+        }
+    }
+    // ------------------------=
+    // FUNC: scroll_window_assistant
+    // DESC: Consumes panel wheel events before the underlying application can scroll.
+    // ------------------=
+    pub(super) fn scroll_window_assistant(&mut self, vertical:i8)->bool {
+        let Some((id,window))=self.assistant_owner() else{return false;};
+        if !assistant::expanded(id) {return false;}
+        let scale=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale();
+        let g=assistant::geometry_in_viewport(window,self.system.framebuffer_width,scale,true);
+        let p=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,y:self.system.framebuffer_height as i32*self.pointer_y/1000};
+        if !g.panel.contains(p) {return false;}
+        let mut panel=assistant::read(id);
+        let delta=crate::ui::input_preferences::current().wheel(vertical)*24*scale as i32;
+        panel.scroll=(panel.scroll as i64+delta as i64).clamp(0,panel.scroll_max as i64) as u32;
+        assistant::write(id,panel);true
+    }
+    // ------------------------=
+    // FUNC: dispatch_context_request
+    // DESC: Uses the attached-panel action resolver for authenticated desktop text and voice commands.
+    // ------------------=
+    pub(super) fn dispatch_context_request(&mut self, input:&[u8])->bool {
+        if !self.ai_chat_allowed() {return false;}
+        let Some((id,_))=self.assistant_owner() else{return false;};
+        let mut panel=assistant::read(id);
+        if input.len()>panel.input.len() {return false;}
+        panel.input[..input.len()].copy_from_slice(input);panel.length=input.len();panel.caret=input.len();
+        if !panel.propose_contextual(id) && !panel.propose(id==2,self.assistant_revision()) {return false;}
+        panel.request=panel.input;panel.request_len=panel.length;panel.length=0;panel.caret=0;
+        assistant::write(id,panel);
+        self.apply_window_assistant(id)
+    }
+    // ------------------------=
     // FUNC: reset_app_assistant_session
     // DESC: Clears transient prompts, pending app actions and clipboard at an authenticated session boundary.
     // ------------------=
@@ -20,7 +71,7 @@ impl ConsoleRuntime {
     // DESC: Resolves the currently focused native app instance, excluding login, lock, installer, and modal editors.
     // ------------------=
     pub(super) fn assistant_owner(&self) -> Option<(usize, crate::ui::geometry::Rect)> {
-        if !matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
+        if !matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::AppLauncher)
             || self.editor_dialog != EditorDialog::None
         {
             return None;
@@ -29,6 +80,10 @@ impl ConsoleRuntime {
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
+        if self.spatial.open {
+            return Some((12,assistant::spatial_window(self.system.framebuffer_width,self.system.framebuffer_height)));
+        }
+        if self.mode==ConsoleMode::AppLauncher {return Some((11,l.app_launcher_geometry().panel));}
         if self.mode == ConsoleMode::Settings {
             return Some((4, l.settings_window_geometry(self.settings_window).window));
         }
@@ -116,23 +171,24 @@ impl ConsoleRuntime {
         match key {
             ConsoleKey::Shortcut(b'c'|b'x') => {
                 if self.copy_workplace_text(&panel.input[..panel.length]) && matches!(key,ConsoleKey::Shortcut(b'x')) {
-                    panel.input.fill(0);panel.length=0;
+                    panel.input.fill(0);panel.length=0;panel.caret=0;
                 }
             }
             ConsoleKey::Shortcut(b'v') => {
                 let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
                 if let Ok(n)=self.read_workplace_text(&mut bytes) {
-                    let mut caret=panel.length;
-                    let _=infinity_enterprise_core::paste_line(&mut panel.input,&mut panel.length,&mut caret,&bytes[..n]);
+                    let _=infinity_enterprise_core::paste_line(&mut panel.input,&mut panel.length,&mut panel.caret,&bytes[..n]);
                 }
             }
             ConsoleKey::Character(c) if (32..=126).contains(&c) => {
-                if panel.length < panel.input.len() {
-                    panel.input[panel.length] = c;
-                    panel.length += 1;
-                }
+                crate::ui::text_input::insert_ascii(&mut panel.input,&mut panel.length,&mut panel.caret,c);
             }
-            ConsoleKey::Backspace => panel.length = panel.length.saturating_sub(1),
+            ConsoleKey::Backspace => {crate::ui::text_input::backspace(&mut panel.input,&mut panel.length,&mut panel.caret);},
+            ConsoleKey::Delete => {crate::ui::text_input::delete(&mut panel.input,&mut panel.length,&mut panel.caret);},
+            ConsoleKey::Left => panel.caret=panel.caret.saturating_sub(1),
+            ConsoleKey::Right => panel.caret=(panel.caret+1).min(panel.length),
+            ConsoleKey::Home => panel.caret=0,
+            ConsoleKey::End => panel.caret=panel.length,
             ConsoleKey::Escape => panel.focused = false,
             ConsoleKey::Enter => {
                 assistant::write(id, panel);
@@ -174,6 +230,17 @@ impl ConsoleRuntime {
         let hovered = geometry.toggle.contains(p);
         let hover_owner_changed = assistant::set_hovered(if hovered { Some(id) } else { None });
         let target = assistant::hit(geometry, expanded, p);
+        if expanded && assistant::dragging(id) {
+            let mut panel=assistant::read(id);
+            {
+                if !self.pointer_pressed {panel.scroll_drag=false;} else {
+                    let thumb=assistant::scroll_thumb(geometry,panel.scroll,panel.scroll_max);
+                    let travel=geometry.scrollbar.height.saturating_sub(thumb.height).max(1);
+                    panel.scroll=((p.y-geometry.scrollbar.y-panel.scroll_grab as i32).max(0) as u64*panel.scroll_max as u64/travel as u64).min(panel.scroll_max as u64) as u32;
+                }
+                assistant::write(id,panel);self.redraw();return true;
+            }
+        }
         if !clicked {
             if hover_owner_changed { self.redraw(); }
             return expanded && target.is_some();
@@ -191,11 +258,19 @@ impl ConsoleRuntime {
         };
         self.ai_chat_focus = 0;
         match target {
+            Target::Close => {panel.expanded=false;panel.focused=false;panel.scroll_drag=false;},
+            Target::Scrollbar => {
+                panel.scroll_drag=panel.scroll_max>0;
+                let thumb=assistant::scroll_thumb(geometry,panel.scroll,panel.scroll_max);
+                panel.scroll_grab=if thumb.contains(p) {(p.y-thumb.y).max(0) as u32}else{thumb.height/2};
+                let travel=geometry.scrollbar.height.saturating_sub(thumb.height).max(1);
+                panel.scroll=((p.y-geometry.scrollbar.y-panel.scroll_grab as i32).max(0) as u64*panel.scroll_max as u64/travel as u64).min(panel.scroll_max as u64) as u32;
+            },
             Target::Toggle => {
                 panel.expanded = !panel.expanded;
                 panel.focused = panel.expanded;
             }
-            Target::Composer => panel.focused = true,
+            Target::Composer => {panel.focused = true;panel.caret=panel.length;},
             Target::Dismiss => {
                 panel.pending = Action::None;
                 panel.reply(b"Proposal dismissed. The app is unchanged.");
@@ -235,8 +310,17 @@ impl ConsoleRuntime {
         });
         panel.request = panel.input;
         panel.request_len = panel.length;
+        if let Some(command)=crate::runtime::ai::control::Command::explicit(&panel.input[..panel.length]) {
+            if !matches!(command,crate::runtime::ai::control::Command::Context(_)) {
+                let result=self.dispatch_ai_control(command);
+                panel.length=0;panel.caret=0;
+                panel.reply(if let Some(success)=result {command.result(success)}else{b"The app needs your decision in its save dialog."});
+                assistant::write(id,panel);return;
+            }
+        }
         if panel.propose_contextual(id) {
             panel.length = 0;
+            panel.caret = 0;
             assistant::write(id, panel);
             self.apply_window_assistant(id);
             return;
@@ -246,10 +330,7 @@ impl ConsoleRuntime {
             // Unsupported intents still retain only the prompt supplied to this app.
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
-                panel.reply(if id==2 {b"Ask for text or code, then Apply the generated edit. Commands: insert TEXT, clear text, undo, redo, select all, find TEXT, save file. Save uses the normal filename dialog when needed."}
-                    else if id==0 {b"Search google for WORDS searches immediately in this browser using normal network policy. Refresh, maximize, restore, and minimize use Apply. Website contents are not automatically shared."}
-                    else if id >= 5 {b"Find FILENAME searches this folder tree and selects the file. Open folder /absolute/path, maximize, restore, minimize, and refresh use Apply. Actions target this window only."}
-                    else {b"Local window actions: maximize, restore, minimize, refresh. Every action requires Apply. No files or settings are changed by chat."});
+                panel.reply(assistant::help(id));
             } else if id == 2 && text.eq_ignore_ascii_case(b"describe document") {
                 let language = self.editor_tools.language.name();
                 let mut response = [0; 512];
@@ -261,7 +342,7 @@ impl ConsoleRuntime {
                 let context = if id == 2 {
                     if let Some((a,b)) = self.editor_document.selection() { &self.editor_document.bytes()[a..b] }
                     else { self.editor_document.bytes() }
-                } else { b"" };
+                } else { assistant::help(id) };
                 panel.document_revision = self.assistant_revision();
                 if let Some(n) = panel.generation_prompt(id == 2, context, &mut prompt) {
                     match crate::runtime::ai::with_ai_runtime(|ai| ai.submit_app_turn(id, &prompt[..n])) {
@@ -280,6 +361,7 @@ impl ConsoleRuntime {
             }
         }
         panel.length = 0;
+        panel.caret = 0;
         assistant::write(id, panel);
         if direct && id == 2 && !matches!(panel.pending, Action::Maximize | Action::Minimize | Action::Restore | Action::Refresh) {
             self.apply_window_assistant(id);
@@ -289,25 +371,83 @@ impl ConsoleRuntime {
     // FUNC: apply_window_assistant
     // DESC: Executes only the focused window's consumed, explicitly approved capability through normal application workflows.
     // ------------------=
-    fn apply_window_assistant(&mut self, id: usize) {
+    fn apply_window_assistant(&mut self, id: usize) -> bool {
         if !self.ai_chat_allowed() {
             let mut panel = assistant::read(id);
             panel.pending = Action::None;
             panel.reply(b"AI is disabled in Settings.");
             assistant::write(id, panel);
-            return;
+            return false;
         }
         if self.assistant_owner().map(|v| v.0) != Some(id) {
-            return;
+            return false;
         }
         let mut panel = assistant::read(id);
         let action = panel.take_action(self.assistant_revision());
-        if action == Action::None {
+        if !assistant::supports(id,action) {
             assistant::write(id, panel);
-            return;
+            return false;
         }
         let mut success = true;
         match action {
+            Action::NavigateWeb if id==0 => {
+                #[cfg(feature="native-browser")]
+                browser_controller::request_access(self,&panel.argument[..panel.argument_len]);
+                #[cfg(not(feature="native-browser"))]
+                {success=false;}
+            },
+            Action::Back | Action::Forward if (5..11).contains(&id) => {
+                success=crate::runtime::with_runtime(|r|r.file_navigator.as_mut().map(|n|
+                    if action==Action::Back {n.back().is_ok()}else{n.forward().is_ok()})).flatten().unwrap_or(false);
+                self.checkpoint_active_file_navigator();
+            },
+            Action::FilterApps if id==11 => {
+                if panel.argument_len>self.command.len(){success=false;}else{
+                    self.reset_input();self.command[..panel.argument_len].copy_from_slice(&panel.argument[..panel.argument_len]);
+                    self.command_length=panel.argument_len;self.command_cursor=panel.argument_len;self.system_focus=0;
+                    crate::ui::app_launcher::launcher_scroll_by(i32::MIN,0);
+                    panel.focused=false;
+                }
+            },
+            Action::NextItem | Action::PreviousItem | Action::ActivateItem | Action::AddIdea | Action::NewCategory | Action::ZoomIn | Action::ZoomOut if id==12 => {
+                success=self.spatial_assistant_action(action);panel.focused=false;
+            },
+            Action::Close if id==11 => {self.close_app_launcher();return true;},
+            Action::Close if id==12 => {self.spatial_close();return true;},
+            Action::DraftCommand if id==1 => {
+                if panel.argument_len>self.command.len() {success=false;}else{
+                    self.reset_input();self.command[..panel.argument_len].copy_from_slice(&panel.argument[..panel.argument_len]);
+                    self.command_length=panel.argument_len;self.command_cursor=panel.argument_len;
+                    panel.focused=false;panel.reply(b"Command prepared, not executed. Review it in Command Window and press Enter to run.");
+                    assistant::write(id,panel);return true;
+                }
+            },
+            Action::NextTask | Action::PreviousTask if id==3 => {
+                let before=self.task_manager_selected;
+                self.input_task_manager(if action==Action::NextTask {ConsoleKey::Down}else{ConsoleKey::Up});
+                success=self.task_manager_selected!=before;
+            },
+            Action::CycleTheme | Action::CycleIcons | Action::CycleModel if id==4 => {
+                self.open_settings(if action==Action::CycleModel {3}else{1});
+                self.activate_settings_content_row(match action {Action::CycleTheme=>0,Action::CycleIcons=>1,_=>2});
+            },
+            Action::Close => {
+                use crate::runtime::ai::control::App;
+                let app=match id {0=>App::Browser,1=>App::Terminal,2=>App::TextEditor,3=>App::TaskManager,4=>App::Settings,_=>App::FileNavigator};
+                return self.dispatch_ai_window(app,true)==Some(true);
+            },
+            Action::Back | Action::Forward | Action::NewTab | Action::CloseTab | Action::ZoomIn | Action::ZoomOut if id==0 => {
+                #[cfg(feature="native-browser")]
+                browser_controller::key(self,ConsoleKey::Shortcut(match action {Action::Back=>b'[',Action::Forward=>b']',Action::NewTab=>b't',Action::CloseTab=>b'w',Action::ZoomIn=>b'+',_=>b'-'}));
+                #[cfg(not(feature="native-browser"))]
+                {success=false;}
+            },
+            Action::ListView | Action::GridView if (5..11).contains(&id) => {
+                success=crate::runtime::with_runtime(|r|r.file_navigator.as_mut().map(|n| {
+                    n.view_mode=if action==Action::ListView {crate::runtime::object_navigation::ViewMode::List}else{crate::runtime::object_navigation::ViewMode::Grid};
+                })).flatten().is_some();
+                self.checkpoint_active_file_navigator();
+            },
             Action::SearchWeb if id == 0 => {
                 #[cfg(feature="native-browser")]
                 {
@@ -317,18 +457,20 @@ impl ConsoleRuntime {
                 #[cfg(not(feature="native-browser"))]
                 panel.reply(b"The native browser is unavailable in this build.");
                 assistant::write(id, panel);
-                return;
+                return cfg!(feature="native-browser");
             }
-            Action::FindFile if id >= 5 => {
+            Action::FindFile if (5..11).contains(&id) => {
                 success = self.assistant_find_file(&panel.argument[..panel.argument_len]);
                 panel.reply(if success { b"Found and selected the file in this Navigator." }
                     else { b"No matching filename found in this folder tree. Open a broader folder and try again." });
                 assistant::write(id, panel);
-                return;
+                return success;
             }
-            Action::Maximize | Action::Restore => {
+            Action::Maximize | Action::Restore if id<11 => {
                 let value = action == Action::Maximize;
-                let current = if id == 4 {
+                let current = if id == 0 {
+                    self.browser_window_state().maximized
+                } else if id == 4 {
                     self.settings_window.maximized
                 } else if id >= 5 {
                     self.home_window_maximized
@@ -340,14 +482,14 @@ impl ConsoleRuntime {
                 }
                 let _ = self.checkpoint_desktop_layout();
             }
-            Action::Minimize => {
+            Action::Minimize if id<11 => {
                 panel.focused = false;
                 if id == 4 {
                     crate::ui::app_launcher::minimized_shelf::set(
                         crate::ui::app_launcher::minimized_shelf::SETTINGS, true);
                     self.settings_open = false;
                     self.mode = ConsoleMode::Desktop;
-                } else if id >= 5 {
+                } else if (5..11).contains(&id) {
                     self.checkpoint_active_file_navigator();
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigators.minimize_active()
@@ -377,18 +519,19 @@ impl ConsoleRuntime {
                     else if self.editor_dialog == EditorDialog::SaveAs { b"Choose a filename and location in Save As to finish saving." }
                     else { b"Save failed. Your document remains in memory." });
                 assistant::write(id, panel);
-                return;
+                return success;
             }
             Action::Refresh => {
+                success=matches!(id,0|3|5..=10);
                 #[cfg(feature="native-browser")]
                 if id==0 {browser_controller::key(self,ConsoleKey::Shortcut(b'r'));}
                 if id == 3 {
                     self.refresh_task_manager_output();
-                } else if id >= 5 {
+                } else if (5..11).contains(&id) {
                     self.refresh_desktop_items();
                 }
             }
-            Action::Navigate if id >= 5 => {
+            Action::Navigate if (5..11).contains(&id) => {
                 let path = &panel.argument[..panel.argument_len];
                 success = crate::storage::object_inspect_path(path).ok()
                     .map(|(metadata, _)| metadata.kind == crate::storage::object::ObjectType::NamespaceNode)
@@ -408,6 +551,7 @@ impl ConsoleRuntime {
         }
         panel.reply(if success{b"Action applied through the app. Document edits remain undoable; Save may require a filename."}else{b"The app could not apply this action (no match, no history, save error, or document capacity)."});
         assistant::write(id, panel);
+        success
     }
 
     // ------------------------=

@@ -371,6 +371,7 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    assistant_controls();
     contextual_searches();
     generated_editor_actions();
     attached_assistant_damage();
@@ -383,6 +384,41 @@ fn main() {
     ai::reset();
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
+    }
+}
+
+// ------------------------=
+// FUNC: assistant_controls
+// DESC: Exercises real scoped action selection, close hit regions, and proportional scroll bounds at multiple scales.
+// ------------------=
+fn assistant_controls() {
+    let mut proposal=ai::Panel::new();
+    proposal.input[..5].copy_from_slice(b"draft");proposal.length=5;proposal.caret=2;
+    assert!(proposal.accept_for_owner(0,b"ACTION\nnew tab\nEND_ACTION",true));
+    assert_eq!(proposal.pending,Action::NewTab);assert_eq!(&proposal.input[..proposal.length],b"draft");assert_eq!(proposal.caret,2);
+    assert!(!proposal.accept_for_owner(5,b"ACTION\nnew tab\nEND_ACTION",true));
+    assert_eq!(proposal.pending,Action::None);
+    assert!(!proposal.accept_for_owner(0,b"ACTION\nnew tab",true));
+    assert!(!proposal.accept_for_owner(0,b"ACTION\nnew tab\nEND_ACTION",false));
+    assert!(!proposal.accept_for_owner(4,b"ACTION\nopen folder /\nEND_ACTION",true));
+    assert!(!ai::supports(12,Action::Maximize));assert!(ai::supports(12,Action::Close));
+    for (owner,text,expected) in [(0,b"new tab".as_slice(),Action::NewTab),(0,b"zoom in",Action::ZoomIn),
+        (5,b"grid view",Action::GridView),(3,b"next task",Action::NextTask),(4,b"next icon set",Action::CycleIcons),
+        (1,b"type echo Hello",Action::DraftCommand)] {
+        let mut panel=ai::Panel::new();panel.input[..text.len()].copy_from_slice(text);panel.length=text.len();
+        assert!(panel.propose_contextual(owner));assert_eq!(panel.take_action(0),expected);
+        assert_eq!(panel.take_action(0),Action::None);
+        assert!(!panel.propose_contextual(15));
+    }
+    for s in 1..=3 {
+        let g=ai::geometry(Rect{x:32,y:32,width:800*s,height:600*s},s as usize,true);
+        assert_eq!(ai::hit(g,true,Point{x:g.close.x+1,y:g.close.y+1}),Some(Target::Close));
+        assert_eq!(ai::hit(g,false,Point{x:g.close.x+1,y:g.close.y+1}),None);
+        assert!(g.body.bottom()<g.apply.y);assert!(g.close.bottom()<g.body.y);
+        let first=ai::scroll_thumb(g,0,2000);let last=ai::scroll_thumb(g,2000,2000);
+        assert_eq!(first.y,g.scrollbar.y);assert_eq!(last.bottom(),g.scrollbar.bottom());
+        assert_eq!(ai::scroll_thumb(g,u32::MAX,2000),last);
+        assert_eq!(ai::hit(g,true,Point{x:g.scrollbar.x+1,y:g.scrollbar.y+1}),Some(Target::Scrollbar));
     }
 }
 

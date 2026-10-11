@@ -784,6 +784,7 @@ impl ConsoleRuntime {
     // DESC: Reports whether the current native surface owns an editable text caret.
     // ------------------=
     fn text_input_focused(&self) -> bool {
+        if self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)).is_some() {return true;}
         match self.mode {
             ConsoleMode::Onboarding => {
                 (1..=4).contains(&self.system_step) && self.system_focus == 1
@@ -818,6 +819,13 @@ impl ConsoleRuntime {
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
+        if let Some((id,window))=self.assistant_owner() {
+            if crate::ui::app_assistant::expanded(id) {
+                let g=crate::ui::app_assistant::geometry_in_viewport(window,self.system.framebuffer_width,layout.scale(),true);
+                let p=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,y:self.system.framebuffer_height as i32*self.pointer_y/1000};
+                if g.panel.contains(p) {return g.composer.contains(p);}
+            }
+        }
         match self.mode {
             ConsoleMode::Onboarding => matches!(
                 layout.onboarding_target(self.system_step, self.pointer_x, self.pointer_y),
@@ -918,7 +926,9 @@ impl ConsoleRuntime {
     // DESC: Publishes focused caret and I-beam state immediately before framebuffer composition.
     // ------------------=
     fn publish_text_input_presentation(&self) {
-        let (cursor, kind) = if self.ai_chat_focus == 2 {
+        let (cursor, kind) = if let Some(caret)=self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)) {
+            (caret,5)
+        } else if self.ai_chat_focus == 2 {
             (
                 crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.input_cursor()),
                 3,
@@ -1344,7 +1354,10 @@ impl ConsoleRuntime {
             self.spatial_cycle(reverse);
             return;
         }
-        if self.spatial.open { self.spatial_input(key); return; }
+        if self.spatial.open {
+            if self.input_window_assistant(key) {crate::bootstrap::spatial_invalidate_transition();self.redraw();return;}
+            self.spatial_input(key); return;
+        }
         if self.minimized_shelf_key(key) { return; }
         if matches!(key, ConsoleKey::Shortcut(b'K')) && !self.current_session.is_zero()
             && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher) {
@@ -2499,9 +2512,38 @@ impl ConsoleRuntime {
         use crate::runtime::ai::control::Command;
         if self.editor_dialog != EditorDialog::None || self.settings_editing { return Some(false); }
         match command {
+            Command::Shell(action) => {
+                use crate::runtime::ai::control::ShellAction as S;
+                use crate::drivers::input::desktop_shortcuts::DesktopAction as D;
+                match action {
+                    S::PreviousMonth|S::NextMonth|S::Today=>{
+                        crate::ui::status_menu::navigate(match action {S::PreviousMonth=>-1,S::NextMonth=>1,_=>0});self.open_shell_menu(15);
+                    },
+                    S::ShowOverview|S::HideOverview=>{
+                        let mut state=crate::ui::desktop_widgets::current();
+                        if action==S::ShowOverview {state.visible|=1;}else{state.visible&=!1;}
+                        crate::ui::desktop_widgets::publish(state);return Some(self.checkpoint_desktop_layout());
+                    },
+                    S::FocusLens|S::Peek=>self.desktop_effect_action(if action==S::FocusLens {D::FocusLens}else{D::PeekThrough}),
+                    _=>self.window_workflow(match action {S::SnapLeft=>D::SnapLeft,S::SnapRight=>D::SnapRight,S::Center=>D::Center,
+                        S::NextWindow=>D::Cycle,S::Grow=>D::Grow,_=>D::Shrink}),
+                }
+                return Some(true);
+            },
+            Command::Context(request) => return Some(self.dispatch_context_request(&request.bytes[..request.length])),
+            Command::SettingsSection(section) => {self.open_settings(section as usize);return Some(self.settings_open);},
+            Command::Spatial => {self.spatial_open();return Some(self.spatial.open);},
+            Command::Holographic => {self.holographic_open();return Some(self.spatial.open);},
+            Command::WorldShift => {self.worldshift_open();return Some(self.spatial.open);},
+            Command::LaunchEntry(index) => {
+                let Some(entry)=crate::ui::app_launcher::LAUNCHER_APPS.get(index) else{return Some(false);};
+                self.activate_launcher_action(entry.action);return Some(true);
+            },
+            Command::Menu(menu) => {self.open_shell_menu(menu);return Some(self.mode==ConsoleMode::SystemMenu);},
             Command::Focus(app) => return self.dispatch_ai_window(app, false),
             Command::Close(app) => return self.dispatch_ai_window(app, true),
             Command::CloseActive => {
+                if self.spatial.open {self.spatial_close();return Some(true);}
                 use crate::runtime::ai::control::App;
                 let app = if self.mode == ConsoleMode::AppLauncher { App::Launcher }
                     else if self.mode == ConsoleMode::Settings { App::Settings }
@@ -6947,6 +6989,7 @@ impl ConsoleRuntime {
             return true;
         }
         self.spatial_finish_arrival();
+        if self.scroll_window_assistant(vertical) {self.redraw();return true;}
         if self.spatial.open {return self.spatial_scroll(vertical);}
         if self.minimized_shelf_scroll(vertical) { return true; }
         #[cfg(feature="native-browser")]
@@ -7465,6 +7508,10 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        if (self.spatial.open || self.mode==ConsoleMode::AppLauncher) && self.pointer_window_assistant(clicked) {
+            if self.spatial.open {crate::bootstrap::spatial_invalidate_transition();}
+            if clicked {self.redraw();}return;
+        }
         if clicked || right_clicked {
             let mut dismissed=false;
             crate::ui::desktop_effects::mutate(|effects| dismissed=effects.dismiss_peek());
@@ -13436,8 +13483,8 @@ pub fn poll_native_ai() {
     let app_turn = crate::runtime::ai::with_ai_runtime(|ai| ai.app_turn_owner());
     if let Some(id) = app_turn {
         let allowed = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
-            runtime.ai_chat_allowed() && runtime.assistant_owner().map(|v| v.0) == Some(id)
-                && crate::ui::app_assistant::read(id).expanded) };
+            runtime.ai_chat_allowed() && runtime.assistant_owner_alive(id)
+                && crate::ui::app_assistant::expanded(id)) };
         if !allowed { crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_app_turn()); }
     }
     let desktop_allowed = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|

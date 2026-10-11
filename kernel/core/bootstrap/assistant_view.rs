@@ -40,7 +40,7 @@ impl super::DisplayDevice {
                 Rect {
                     x: p.x + 68 * s as i32,
                     y: p.y + 8 * s as i32,
-                    width: p.width.saturating_sub(96 * s as u32),
+                    width: p.width.saturating_sub(116 * s as u32),
                     height: 26 * s as u32,
                 },
                 b"Infinity AI",
@@ -69,90 +69,35 @@ impl super::DisplayDevice {
                 58,
                 85,
             );
-            let mut top = p.y + 80 * s as i32;
-            if panel.request_len > 0 {
-                let r = Rect {
-                    x: p.x + 40 * s as i32,
-                    y: top,
-                    width: p.width.saturating_sub(56 * s as u32),
-                    height: (self.assistant_lines(
-                        &panel.request[..panel.request_len],
-                        p.width.saturating_sub(80 * s as u32) as usize,
-                        s,
-                    ) * 24
-                        * s
-                        + 24 * s)
-                        .min(104 * s) as u32,
-                };
-                self.app_card(r, (20, 36, 56), (33, 58, 85), s);
-                self.assistant_wrapped(
-                    &panel.request[..panel.request_len],
-                    inset(r, 12 * s),
-                    s,
-                    TEXT,
-                );
-                top = r.bottom() + 12 * s as i32;
+            self.app_button(g.close, b"x", false, s);
+            let body_clip=self.render_clip;
+            self.intersect_render_clip(g.body.x.max(0) as usize,g.body.y.max(0) as usize,g.body.width as usize,g.body.height as usize);
+            let intro = if panel.response_len>0 {&panel.response[..panel.response_len]}
+                else {b"Ask this app for help, or type help to see its supported commands.".as_slice()};
+            let preview=panel.pending!=Action::None && panel.argument_len>0;
+            let parts=[(&panel.request[..panel.request_len],(20,36,56)),(intro,(15,27,46)),
+                (if preview {&panel.argument[..panel.argument_len]}else{b""},(14,35,42))];
+            let heights=parts.map(|(text,_)|if text.is_empty(){0}else{
+                (self.assistant_lines(text,g.body.width.saturating_sub(24*s as u32) as usize,s)*24*s+24*s) as u32});
+            let total=heights.iter().filter(|&&h|h>0).map(|h|h+12*s as u32).sum::<u32>();
+            let maximum=total.saturating_sub(g.body.height);
+            let offset=panel.scroll.min(maximum);
+            let mut top=g.body.y-offset as i32;
+            for ((text,color),height) in parts.into_iter().zip(heights) {
+                if height==0 {continue;}
+                let r=Rect{x:g.body.x,y:top,width:g.body.width,height};
+                self.app_card(r,color,(33,58,85),s);
+                self.assistant_wrapped(text,inset(r,12*s),s,TEXT);
+                top+=height as i32+12*s as i32;
             }
-            let preview = panel.pending != Action::None && panel.argument_len > 0;
-            let available = (g.apply.y - top - 12 * s as i32).max(0) as u32;
-            let preview_height = if preview {
-                (100 * s as u32).min(available / 3)
-            } else {
-                0
-            };
-            let mut r = Rect {
-                x: p.x + 16 * s as i32,
-                y: top,
-                width: p.width.saturating_sub(32 * s as u32),
-                height: available
-                    .saturating_sub(preview_height + if preview { 12 * s as u32 } else { 0 }),
-            };
-            let intro = if panel.response_len > 0 {
-                &panel.response[..panel.response_len]
-            } else if id == 2 {
-                b"What would you like to write?".as_slice()
-            } else {
-                b"Local window assistance\n\nMaximize, restore, minimize or refresh this app. Review each action before applying it.\n\nType help for available commands."
-            };
-            r.height = r.height.min(
-                (self.assistant_lines(intro, r.width.saturating_sub(24 * s as u32) as usize, s)
-                    * 24
-                    * s
-                    + 24 * s) as u32,
-            );
-            self.app_card(r, (15, 27, 46), (33, 58, 85), s);
-            self.assistant_wrapped(intro, inset(r, 12 * s), s, TEXT);
-            if preview {
-                let r = Rect {
-                    x: r.x,
-                    y: r.bottom() + 12 * s as i32,
-                    width: r.width,
-                    height: preview_height,
-                };
-                self.app_card(r, (14, 35, 42), (33, 70, 80), s);
-                self.app_label(
-                    Rect {
-                        x: r.x + 12 * s as i32,
-                        y: r.y + 4 * s as i32,
-                        width: r.width.saturating_sub(24 * s as u32),
-                        height: 24 * s as u32,
-                    },
-                    b"Proposed changes",
-                    MUTED,
-                    true,
-                    s,
-                );
-                self.assistant_wrapped(
-                    &panel.argument[..panel.argument_len],
-                    Rect {
-                        x: r.x + 12 * s as i32,
-                        y: r.y + 28 * s as i32,
-                        width: r.width.saturating_sub(24 * s as u32),
-                        height: r.height.saturating_sub(36 * s as u32),
-                    },
-                    s,
-                    (105, 233, 179),
-                );
+            self.render_clip=body_clip;
+            if panel.scroll_max!=maximum || panel.scroll!=offset {
+                let mut updated=panel;updated.scroll_max=maximum;updated.scroll=offset;assistant::write(id,updated);
+            }
+            if maximum>0 {
+                self.app_card(g.scrollbar,(11,18,32),(33,58,85),s);
+                let thumb=assistant::scroll_thumb(g,offset,maximum);
+                self.app_card(thumb,(75,152,192),(93,182,216),s);
             }
             if panel.pending != Action::None {
                 self.app_button(g.apply, b"Apply", true, s);
@@ -166,8 +111,9 @@ impl super::DisplayDevice {
                 s,
             );
             let mut start = 0;
-            while start < panel.length
-                && self.app_text_width(&panel.input[start..panel.length], false, s)
+            let caret=panel.caret.min(panel.length);
+            while start < caret
+                && self.app_text_width(&panel.input[start..caret], false, s)
                     > c.width.saturating_sub(24 * s as u32) as usize
             {
                 start += 1;
@@ -190,6 +136,10 @@ impl super::DisplayDevice {
             );
             self.app_card(g.send, (15, 27, 46), CYAN, s);
             self.app_symbol(g.send, b'^', CYAN, s);
+            if panel.focused && crate::ui::text_input::caret(5).is_some_and(|(visible,_)|visible) {
+                let x=c.x+12*s as i32+self.app_text_width(&panel.input[start..caret],false,s) as i32;
+                self.fill_rect(x.max(0) as usize,(c.y+10*s as i32).max(0) as usize,s,20*s,160,218,245);
+            }
         }
         let t = g.toggle;
         let pulse = if panel.hovered { assistant::glow_intensity(panel.glow_phase) } else { 48 };
@@ -272,14 +222,15 @@ impl super::DisplayDevice {
             if end < text.len() && text[end] != b'\n' {
                 end = space.unwrap_or(end.max(start + 1));
             }
-            self.app_text(
+            let y=rect.y+row as i32*24*s as i32;
+            if y>=0 {self.app_text(
                 rect.x.max(0) as usize,
-                rect.y.max(0) as usize + row * 24 * s,
+                y as usize,
                 &text[start..end],
                 color,
                 false,
                 s,
-            );
+            );}
             start = end;
             if matches!(text.get(start), Some(b'\n' | b' ')) {
                 start += 1;

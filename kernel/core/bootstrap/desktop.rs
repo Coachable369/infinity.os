@@ -8038,6 +8038,7 @@ impl super::DisplayDevice {
             ),
             |target| target.paint_app_launcher(scale, query, focus),
         );
+        self.window_assistant(11,panel,scale);
     }
 
     // ------------------------=

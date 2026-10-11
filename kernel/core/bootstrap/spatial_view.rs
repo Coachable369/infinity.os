@@ -394,6 +394,7 @@ pub fn present(
                     );
                     let painted = crate::ui::performance::monotonic_ns();
                     d.clear_render_clip();
+                    d.window_assistant(12,crate::ui::app_assistant::spatial_window(d.width,d.height),d.ui_scale().max(1));
                     c.save_and_draw_cursor(x, y);
                     c.display.present_damage();
                     (*(&raw mut TIMINGS)).record([
@@ -435,6 +436,7 @@ pub fn present(
                     region.bottom - region.top,
                 );
                 d.clear_render_clip();
+                d.window_assistant(12,crate::ui::app_assistant::spatial_window(d.width,d.height),d.ui_scale().max(1));
                 c.save_and_draw_cursor(x, y);
                 c.display.present_damage();
                 if transition_progress != 255 || TRANSITION_ACTIVE {
@@ -1084,6 +1086,7 @@ pub fn present(
             }
             let blended = crate::ui::performance::monotonic_ns();
             d.clear_render_clip();
+            d.window_assistant(12,crate::ui::app_assistant::spatial_window(d.width,d.height),d.ui_scale().max(1));
             c.save_and_draw_cursor(x, y);
             c.display.present_damage();
             if transition_progress != 255 {
