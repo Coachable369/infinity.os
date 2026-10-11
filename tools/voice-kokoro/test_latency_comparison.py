@@ -47,6 +47,8 @@ def lifetime_fixture():
             frames = 1_000_000_000
         elif kind == 11:
             frames = 106
+            ticks = 1_000_000
+            pcm_hash = 0xa851ff9efa4ab835
         elif kind == 1:
             index = case % 6
             frames = [18273, 43486, 90000, 30000, 95000, 40000][index]
@@ -105,7 +107,8 @@ class LatencyComparisonTests(unittest.TestCase):
     # DESC: Rejects changed repeated samples, silent recognition, malformed heap accounting, and nonzero private PCM after fatal failure.
     # ------------------=
     def test_rejects_pcm_heap_and_privacy_failures(self):
-        for row, field, value in ((16, 19, 17), (1, 4, 0), (3, 21, 800_000_001), (27, 19, 1), (28, 20, 999_999_999)):
+        for row, field, value in ((16, 19, 17), (1, 4, 0), (1, 5, 0), (1, 19, 17),
+                                  (3, 21, 800_000_001), (27, 19, 1), (28, 20, 999_999_999)):
             data = lifetime_fixture()
             struct.pack_into("<Q", data, row * 216 + field * 8, value)
             with self.subTest(row=row, field=field), self.assertRaises(ValueError):
