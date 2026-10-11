@@ -12225,6 +12225,9 @@ impl ConsoleRuntime {
                 let recognition = crate::runtime::ai::voice_input::status();
                 self.output.write_number(b"Conversation state: ", state as u64);
                 self.output.write_number(b"Microphone level: ", level as u64);
+                if let Some(threshold) = crate::runtime::ai::voice_conversation::microphone_threshold() {
+                    self.output.write_number(b"Microphone speech threshold: ", threshold as u64);
+                }
                 if let Some(capture)=crate::drivers::audio::capture_status() {
                     self.output.write_number(b"Microphone capture state: ",capture.state as u64);
                     self.output.write_number(b"Microphone captured frames: ",capture.frames);
@@ -13476,6 +13479,9 @@ pub fn poll_native_ai() {
                 if let Some(started) = crate::runtime::ai::voice_conversation::autostart(
                     crate::runtime::execution::SecurityIdentity(runtime.current_session.0),
                     &mut runtime.voice_autostart_after_ns, now) {
+                    // Starting is published before conversation::poll snapshots
+                    // its prior state; invalidate it here, not only on completion.
+                    runtime.redraw();
                     crate::output_text(if started {
                         b"[voice] desktop autostart listening\n"
                     } else {

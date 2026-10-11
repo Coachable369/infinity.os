@@ -24,7 +24,9 @@ pub fn thinking_animation_tick(visible: bool) -> bool {
         ai.chat.enabled() && !ai.chat.minimized()
         && ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Running);
     #[cfg(target_os="none")]
-    { active |= visible && crate::runtime::ai::voice_conversation::state().0 == crate::runtime::ai::voice_conversation::State::Listening; }
+    { active |= visible && matches!(crate::runtime::ai::voice_conversation::state().0,
+        crate::runtime::ai::voice_conversation::State::Listening
+        | crate::runtime::ai::voice_conversation::State::Starting); }
     let now = crate::ui::performance::monotonic_ns().unwrap_or(0);
     unsafe {
         let changed = (&mut *(&raw mut THINKING_ANIMATION)).advance(active, now);
@@ -9878,7 +9880,9 @@ impl super::DisplayDevice {
             } else { match state().0 {
                 State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
                 State::Off=>b"VOICE OFF".as_slice(),State::Starting=>b"STARTING...".as_slice(),
-                State::Listening=>if crate::runtime::ai::voice_conversation::wake_armed() {b"GO AHEAD".as_slice()} else {wake_prompt},
+                State::Listening=>if crate::runtime::ai::voice_conversation::waiting_for_pause() {
+                    b"PAUSE TO RETRY".as_slice()
+                } else if crate::runtime::ai::voice_conversation::wake_armed() {b"GO AHEAD".as_slice()} else {wake_prompt},
                 State::Recognizing=>b"HEARING".as_slice(),State::Submitting=>b"QUEUED".as_slice(),
                 State::Thinking=>b"THINKING".as_slice(),
                 State::Speaking=>match crate::runtime::ai::voice_output::status().state {
@@ -10036,7 +10040,9 @@ impl super::DisplayDevice {
             );
             self.ui_text_centered(
                 loading_left, loading_width, center_y + 66 * scale,
-                b"Loading local language and speech models", 137, 178, 198, 1,
+                if crate::runtime::ai::voice_conversation::calibrating() {
+                    b"Checking microphone background level"
+                } else { b"Loading local language and speech models" }, 137, 178, 198, 1,
             );
             self.ui_text_centered(
                 loading_left, loading_width, center_y + 86 * scale,
@@ -11298,7 +11304,12 @@ pub fn system_ui_present(
                 let mut widgets = layout.ai_chat_geometry(false).panel;
                 if thinking_header_changed && !content_changed {
                     widgets = layout.ai_chat_geometry(false).panel;
-                    widgets.height = (48 * layout.scale()) as u32;
+                    #[cfg(target_os="none")]
+                    let preparing = crate::runtime::ai::voice_conversation::preparing();
+                    #[cfg(not(target_os="none"))]
+                    let preparing = false;
+                    widgets.height = crate::ui::thinking::repaint_height(
+                        widgets.height, layout.scale(), preparing);
                 }
                 console.display.set_render_clip(
                     widgets.x.max(0) as usize,

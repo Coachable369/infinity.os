@@ -41,9 +41,30 @@ pub fn grayscale(position: usize, offset: usize, period: usize) -> u8 {
     (128 + triangle * 127 / (period / 2)) as u8
 }
 
+// ------------------------=
+// FUNC: repaint_height
+// DESC: Includes the readiness orbit below the header while keeping normal speech animation damage bounded.
+// ------------------=
+pub fn repaint_height(panel_height: u32, scale: usize, preparing: bool) -> u32 {
+    if preparing { panel_height } else { panel_height.min((48 * scale) as u32) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: readiness_orbit_is_inside_damage
+    // DESC: Checks cold-start animation damage includes the body and returns to header-only after admission.
+    // ------------------=
+    #[test]
+    fn readiness_orbit_is_inside_damage() {
+        for scale in [1, 2, 3] {
+            let height = 600 * scale as u32;
+            assert_eq!(repaint_height(height, scale, true), height);
+            assert_eq!(repaint_height(height, scale, false), 48 * scale as u32);
+        }
+        assert_eq!(repaint_height(20, 1, false), 20);
+    }
     // ------------------------=
     // FUNC: animation_lifecycle
     // DESC: Verifies frame throttling, cancellation, restart, and grayscale motion.

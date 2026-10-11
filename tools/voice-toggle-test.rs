@@ -14,6 +14,7 @@ static PREPARE_FAILED: AtomicBool = AtomicBool::new(false);
 static PREPARE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PLAYBACK_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static CALIBRATION_PLAYBACK: AtomicUsize = AtomicUsize::new(0);
 static CHAT_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
 static RECOGNITION_ERROR: AtomicUsize = AtomicUsize::new(0);
@@ -79,7 +80,10 @@ mod runtime {
         }
         pub struct VoiceProfile {pub wake_word:WakeWord}
     }
-    pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Idle,Recording,Overrun,Complete,Cancelled,Denied,DeviceLost}}
+    pub mod audio {
+        #[derive(PartialEq)] pub enum CaptureState {Idle,Recording,Overrun,Complete,Cancelled,Denied,DeviceLost}
+        #[derive(PartialEq)] pub enum PlaybackState {Idle,Playing}
+    }
     pub struct Identity;
     impl Identity {
         // ------------------------=
@@ -131,6 +135,12 @@ mod drivers {pub mod audio {
     pub fn capture(_:SecurityIdentity,_:u64)->bool{
         crate::CAPTURES.fetch_add(1,crate::Ordering::SeqCst);
         if crate::CAPTURE_FAILURES.fetch_update(crate::Ordering::SeqCst,crate::Ordering::SeqCst,|n|if n==0{None}else{Some(n-1)}).is_ok(){return false;}
+        // Real cold capture supplies a half-second ambient baseline before the
+        // fixture's first spoken phrase, just as the widget instructs the user.
+        if crate::conversation::microphone_threshold().is_none() {
+            let mut input=crate::MICROPHONE.lock().unwrap();
+            for _ in 0..8000 {input.push_front(0);}
+        }
         crate::CAPTURE_STATE.store(0,crate::Ordering::SeqCst);true
     }
     // ------------------------=
@@ -153,6 +163,11 @@ mod drivers {pub mod audio {
     // DESC: Declares the deterministic output route ready for conversation admission.
     // ------------------=
     pub fn playback_rate()->Option<u32>{crate::PLAYBACK_AVAILABLE.load(crate::Ordering::SeqCst).then_some(48000)}
+    // ------------------------=
+    // FUNC: playback_state
+    // DESC: Supplies idle native output for ambient calibration without simulating microphone speech.
+    // ------------------=
+    pub fn playback_state()->Option<crate::runtime::audio::PlaybackState>{match crate::CALIBRATION_PLAYBACK.load(crate::Ordering::SeqCst){1=>Some(crate::runtime::audio::PlaybackState::Playing),2=>None,_=>Some(crate::runtime::audio::PlaybackState::Idle)}}
     // ------------------------=
     // FUNC: renew_capture
     // DESC: Renews only the deterministic fixture capture.
@@ -429,6 +444,7 @@ mod voice_output {
 }
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod voice_vad;
+#[path = "../kernel/ui/thinking.rs"] mod thinking;
 #[path = "../kernel/runtime/ai/wake_word.rs"] mod wake_word;
 #[path = "../kernel/runtime/ai/voice_conversation.rs"] mod conversation;
 // ------------------------=
@@ -777,7 +793,34 @@ fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentit
     PLAYBACK_AVAILABLE.store(true,Ordering::SeqCst);
     conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
+    assert!(conversation::preparing());
+    // Login audio and a contended output adapter cannot be calibrated as ambient.
+    for output in [1,2] {
+        CALIBRATION_PLAYBACK.store(output,Ordering::SeqCst);
+        MICROPHONE.lock().unwrap().extend([4000;8000]);
+        drain_microphone();
+        assert!(conversation::preparing());
+        assert_eq!(conversation::microphone_threshold(),None);
+    }
+    CALIBRATION_PLAYBACK.store(0,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([500;8000]);
+    drain_microphone();
     assert!(!conversation::preparing());
+    assert_eq!(conversation::microphone_threshold(),Some(1000));
+    let requests=RECOGNITION_REQUESTS.lock().unwrap().len();
+    MICROPHONE.lock().unwrap().extend(std::iter::repeat_n(500,160000));
+    drain_microphone();
+    assert!(!conversation::waiting_for_pause());
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests);
+    HOLD_RECOGNITION.store(true,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([1800;3200]);
+    MICROPHONE.lock().unwrap().extend([500;8000]);
+    drain_microphone();
+    assert_eq!(conversation::state().0,State::Recognizing);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests+1);
+    assert!(RECOGNIZED.lock().unwrap().contains(&1800));
+    finish_recognition(b"Infinity test");
+    complete_voice_reply();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before+1);
     let captures=CAPTURES.load(Ordering::SeqCst);
     let turns=TURNS.load(Ordering::SeqCst);
@@ -1172,8 +1215,10 @@ fn wake_handoff_tests(owner: runtime::execution::SecurityIdentity) {
     MICROPHONE.lock().unwrap().extend(vec![2400;voice_vad::MAX_SAMPLES]);
     drain_microphone();
     assert_eq!(conversation::state().0,State::Listening);
+    assert!(conversation::waiting_for_pause());
     assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),submitted);
     MICROPHONE.lock().unwrap().extend(microphone_phrase(2600));drain_microphone();
+    assert!(!conversation::waiting_for_pause());
     assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),submitted);
     begin_delayed_recognition(1700);finish_recognition(b"unaddressed tail");
     assert_eq!(TURNS.load(Ordering::SeqCst),turns);

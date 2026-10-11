@@ -75,8 +75,11 @@ desktop animation frame; no timer, bitmap, blur, or paint-time allocation is add
 - State: visible until the language model, microphone route, output route, and
   resident speech recognizer all report usable.
 - Primary copy: `PREPARING CONVERSATION`.
-- Secondary copy explains that local language and speech models are loading.
-- Input and send controls are fully covered; voice capture remains closed while visible.
+- Secondary copy explains model loading, then changes to `Checking microphone background level`.
+- Input and send controls are covered during preparation. Capture opens only after
+  model readiness, then measures 500 ms of ambient PCM before admitting speech.
+  Active or temporarily unavailable playback holds calibration so login sound
+  cannot become the microphone noise floor. No calibration audio is retained.
 - Surface, border, typography, cyan focus, and 8px rhythm reuse the assistant kit.
 
 Readiness integration (2026-10-11): keep the veil visible through the `Starting`
@@ -99,6 +102,15 @@ transition, cancellation and terminal failures. ARM64 and x86_64 kernel checks
 pass. Installed microphone latency, rendered veil review, and fresh-installed
 runtime verification remain pending; no conversational speedup is claimed from
 host tests. These shared kernel changes require rebuilt ISOs to reach installs.
+
+Readiness repaint correction (2026-10-11): entering `Starting` explicitly
+invalidates the widget. Its animation damages the full widget while the orbit
+is in the body, then returns to header-only damage for normal listening.
+Do not impose an artificial loading delay when boot prewarm already completed.
+Rejected overlong microphone input uses the header state `PAUSE TO RETRY` until
+the detector observes a real pause; this must not be presented as ready for a
+new wake command. Changing that state invalidates the widget without waiting
+for an unrelated pointer event. Typed chat remains usable during that pause.
 
 ## Clipboard and loading interactions
 

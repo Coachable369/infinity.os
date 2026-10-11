@@ -18,6 +18,8 @@ pub mod indicator;
 mod speech_chunk;
 #[path = "voice_echo.rs"]
 mod voice_echo;
+#[path = "voice_noise_floor.rs"]
+mod voice_noise_floor;
 #[path = "voice_timing.rs"]
 pub mod timing;
 use timing::Milestone;
@@ -46,6 +48,7 @@ static mut CAPABILITY_REPLACE_AT: u64 = 0;
 static mut REOPEN_AT: u64 = 0;
 static mut REOPEN_DEADLINE: u64 = 0;
 static mut RESAMPLER: Resampler = Resampler::empty();
+static mut NOISE_FLOOR: voice_noise_floor::NoiseFloor = voice_noise_floor::NoiseFloor::new();
 static mut UTTERANCE: Utterance = Utterance::new(300);
 static mut RAW: [i16; 4800] = [0; 4800];
 static mut MONO: [i16; 4800] = [0; 4800];
@@ -339,7 +342,7 @@ unsafe fn clear_wake_command() {
 // DESC: Erases the single pending utterance and endpoint carry without touching microphone authority.
 // ------------------=
 unsafe fn clear_captured_turn() {
-    (&mut *(&raw mut UTTERANCE)).clear(300);
+    (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
     (&mut *(&raw mut HANDOFF_PCM)).fill(0);
     HANDOFF_LENGTH = 0;
     UTTERANCE_STARTED_AT = 0;
@@ -375,9 +378,34 @@ pub fn ready() -> bool {
 pub fn preparing() -> bool {
     match state().0 {
         State::Starting => true,
+        State::Listening => calibrating(),
         State::Off => !voice_input::prepare_failed() && !ready(),
         _ => false,
     }
+}
+// ------------------------=
+// FUNC: calibrating
+// DESC: Keeps the readiness veil up until live microphone samples establish the ambient speech floor.
+// ------------------=
+pub fn calibrating() -> bool {
+    unsafe { STATE == State::Listening && !(&*(&raw const NOISE_FLOOR)).ready() }
+}
+// ------------------------=
+// FUNC: microphone_threshold
+// DESC: Exposes the measured speech gate for diagnostics without returning any recorded audio.
+// ------------------=
+pub fn microphone_threshold() -> Option<u16> {
+    unsafe {
+        let floor = &*(&raw const NOISE_FLOOR);
+        floor.ready().then_some(floor.threshold())
+    }
+}
+// ------------------------=
+// FUNC: waiting_for_pause
+// DESC: Exposes rejected overlong input without advertising that a new command can currently be accepted.
+// ------------------=
+pub fn waiting_for_pause() -> bool {
+    unsafe { STATE == State::Listening && (&*(&raw const UTTERANCE)).state() == VadState::Limit }
 }
 // ------------------------=
 // FUNC: synchronized_reply_length
@@ -519,6 +547,7 @@ pub fn start(owner: SecurityIdentity) -> bool {
         // and audio routes become ready. Never open capture during this work.
         let speech_ready = voice_input::prepare();
         OWNER = owner;
+        NOISE_FLOOR = voice_noise_floor::NoiseFloor::new();
         CONTINUOUS = true;
         clear_wake_command();
         RESTART_LISTENING = false;
@@ -738,7 +767,7 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         report_timing();
         TURN_TIMING_ACTIVE = false;
         if continuous && INPUT_CAP != 0 {
-            (&mut *(&raw mut UTTERANCE)).clear(300);
+            (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
             (&mut *(&raw mut RESAMPLER)).clear();
             (&mut *(&raw mut RAW)).fill(0);
             (&mut *(&raw mut MONO)).fill(0);
@@ -925,6 +954,22 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     } else {
         (&mut *(&raw mut ECHO)).fill(0);
     }
+    if !(&*(&raw const NOISE_FLOOR)).ready() {
+        // Login audio is output, not an ambient microphone baseline. Keep the
+        // DMA drained and the veil visible until the real output cursor stops.
+        if crate::drivers::audio::playback_state().is_some_and(|state| state != crate::runtime::audio::PlaybackState::Playing) {
+            let consumed = (&mut *(&raw mut NOISE_FLOOR)).push(&(&*(&raw const MONO))[..n]);
+            if (&*(&raw const NOISE_FLOOR)).ready() {
+                clear_captured_turn();
+                (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[consumed..n]);
+                trace(b"microphone calibration ready");
+            }
+        } else { NOISE_FLOOR = voice_noise_floor::NoiseFloor::new(); }
+        (&mut *(&raw mut RAW)).fill(0);
+        (&mut *(&raw mut MONO)).fill(0);
+        LEVEL = 0;
+        return true;
+    }
     LEVEL=(&*(&raw const MONO))[..n].iter().map(|x|x.unsigned_abs()).max().unwrap_or(0);
     // Keep exactly the first following utterance during ASR. Audio after that
     // bounded segment is deliberately drained, never queued as another turn.
@@ -965,7 +1010,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     }
     (&mut *(&raw mut RAW)).fill(0);(&mut *(&raw mut MONO)).fill(0);
     if duplex && matches!((&*(&raw const UTTERANCE)).state(),VadState::NoSpeech|VadState::Limit) {
-        (&mut *(&raw mut UTTERANCE)).clear(300);
+        (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
     }
     true
 }
@@ -976,6 +1021,8 @@ unsafe fn capture_frame(duplex: bool) -> bool {
 pub fn poll() -> bool {
     unsafe {
         let previous = STATE;
+        let was_waiting_for_pause = waiting_for_pause();
+        let was_calibrating = calibrating();
         let mut presentation_changed = synchronize_visible_reply();
         if matches!(STATE, State::Off | State::Failed) {
             return false;
@@ -1076,7 +1123,7 @@ pub fn poll() -> bool {
                             && UTTERANCE_STARTED_AT < WAKE_ARMED_UNTIL;
                         FOLLOWUP_ONSET_UNTIL = super::qwen::workers::clock_ns()
                             .saturating_add(WAKE_COMMAND_WINDOW_NS);
-                        (&mut *(&raw mut UTTERANCE)).clear(300);
+                        (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
                         UTTERANCE_STARTED_AT = 0;
                         UTTERANCE_ENDED_AT = 0;
                         LAST_VAD_STATE = VadState::Waiting;
@@ -1298,6 +1345,7 @@ pub fn poll() -> bool {
         }
         presentation_changed |= synchronize_visible_reply();
         report_timing();
-        STATE != previous || presentation_changed
+        STATE != previous || presentation_changed || was_waiting_for_pause != waiting_for_pause()
+            || was_calibrating != calibrating()
     }
 }
