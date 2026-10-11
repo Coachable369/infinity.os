@@ -11,6 +11,9 @@ static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
 static PREPARE_FAILED: AtomicBool = AtomicBool::new(false);
+static PREPARE_CALLS: AtomicUsize = AtomicUsize::new(0);
+static CAPTURE_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PLAYBACK_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static CHAT_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
 static RECOGNITION_ERROR: AtomicUsize = AtomicUsize::new(0);
@@ -144,12 +147,12 @@ mod drivers {pub mod audio {
     // FUNC: capture_available
     // DESC: Declares the fixture capture device ready.
     // ------------------=
-    pub fn capture_available()->bool{true}
+    pub fn capture_available()->bool{crate::CAPTURE_AVAILABLE.load(crate::Ordering::SeqCst)}
     // ------------------------=
     // FUNC: playback_rate
     // DESC: Declares the deterministic output route ready for conversation admission.
     // ------------------=
-    pub fn playback_rate()->Option<u32>{Some(48000)}
+    pub fn playback_rate()->Option<u32>{crate::PLAYBACK_AVAILABLE.load(crate::Ordering::SeqCst).then_some(48000)}
     // ------------------------=
     // FUNC: renew_capture
     // DESC: Renews only the deterministic fixture capture.
@@ -302,7 +305,10 @@ mod voice_input {
     // FUNC: prepare
     // DESC: Mirrors deterministic completion of the native recognizer warmup gate.
     // ------------------=
-    pub fn prepare()->bool{crate::MODEL_READY.load(crate::Ordering::SeqCst)}
+    pub fn prepare()->bool{
+        crate::PREPARE_CALLS.fetch_add(1,crate::Ordering::SeqCst);
+        crate::MODEL_READY.load(crate::Ordering::SeqCst)
+    }
     // ------------------------=
     // FUNC: prepared
     // DESC: Exposes the fixture's explicit recognizer readiness state.
@@ -435,10 +441,11 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     let owner=runtime::execution::SecurityIdentity([1;16]);
     MODEL_READY.store(false,Ordering::SeqCst);
     CHAT_READY.store(false,Ordering::SeqCst);
-    assert!(!conversation::toggle(owner));assert_eq!(conversation::state().0,State::Off);
+    assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Starting);
+    assert!(conversation::preparing());assert_eq!(CAPTURES.load(Ordering::SeqCst),0);
     MODEL_READY.store(true,Ordering::SeqCst);
     CHAT_READY.store(true,Ordering::SeqCst);
-    assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Listening);
+    conversation::poll();assert_eq!(conversation::state().0,State::Listening);
     BUSY.store(true,Ordering::SeqCst);
     assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Stopping);
     assert!(conversation::toggle(owner));conversation::poll();assert_eq!(CAPTURES.load(Ordering::SeqCst),1);
@@ -732,9 +739,46 @@ fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
 fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentity) {
     use conversation::State;
     HOLD_RECOGNITION.store(true,Ordering::SeqCst);
+    // Cold speech starts warming before the language model is available.
+    let captures_before=CAPTURES.load(Ordering::SeqCst);
+    let prepares=PREPARE_CALLS.load(Ordering::SeqCst);
+    MODEL_READY.store(false,Ordering::SeqCst);
+    CHAT_READY.store(false,Ordering::SeqCst);
     let mut deadline=10;
     assert_eq!(conversation::autostart(owner,&mut deadline,9),None);
     assert_eq!(conversation::autostart(owner,&mut deadline,10),Some(true));
+    assert_eq!(deadline,u64::MAX);
+    assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),prepares+1);
+    assert!(conversation::preparing());
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before);
+    assert_eq!(conversation::autostart(owner,&mut deadline,250_000_009),None);
+    CHAT_READY.store(true,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Starting);
+    MODEL_READY.store(true,Ordering::SeqCst);
+    // Warm bytes alone must not remove the veil before capture is admitted.
+    assert!(conversation::ready());
+    assert!(conversation::preparing());
+    CHAT_READY.store(false,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Starting);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before);
+    CHAT_READY.store(true,Ordering::SeqCst);
+    CAPTURE_AVAILABLE.store(false,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Starting);
+    assert!(conversation::preparing());
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before);
+    CAPTURE_AVAILABLE.store(true,Ordering::SeqCst);
+    PLAYBACK_AVAILABLE.store(false,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Starting);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before);
+    PLAYBACK_AVAILABLE.store(true,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert!(!conversation::preparing());
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before+1);
     let captures=CAPTURES.load(Ordering::SeqCst);
     let turns=TURNS.load(Ordering::SeqCst);
     for error in [6,5,6] {
@@ -759,6 +803,7 @@ fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentit
     conversation::poll();
     RECOGNITION_ERROR.store(0,Ordering::SeqCst);
     assert_eq!(conversation::state().0,State::Failed);
+    assert!(!conversation::preparing());
     assert_eq!(conversation::autostart(owner,&mut deadline,100_000_000_000),None);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     assert!(conversation::start(owner));

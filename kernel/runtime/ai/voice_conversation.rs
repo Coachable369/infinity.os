@@ -369,6 +369,17 @@ pub fn ready() -> bool {
         && voice_input::prepared()
 }
 // ------------------------=
+// FUNC: preparing
+// DESC: Keeps the readiness veil through capture admission, without masking terminal failures or active turns.
+// ------------------=
+pub fn preparing() -> bool {
+    match state().0 {
+        State::Starting => true,
+        State::Off => !voice_input::prepare_failed() && !ready(),
+        _ => false,
+    }
+}
+// ------------------------=
 // FUNC: synchronized_reply_length
 // DESC: Limits the active assistant response to the word boundary reached by the real speech DMA cursor.
 // ------------------=
@@ -503,9 +514,10 @@ pub fn start(owner: SecurityIdentity) -> bool {
         let route_ready = super::with_ai_runtime(|ai| ai.chat.selected_model_ready())
             && crate::drivers::audio::capture_available()
             && crate::drivers::audio::playback_rate().is_some();
-        if !idle || !route_ready {
-            return false;
-        }
+        if !idle { return false; }
+        // Warm speech on its existing background worker while the local model
+        // and audio routes become ready. Never open capture during this work.
+        let speech_ready = voice_input::prepare();
         OWNER = owner;
         CONTINUOUS = true;
         clear_wake_command();
@@ -515,7 +527,7 @@ pub fn start(owner: SecurityIdentity) -> bool {
             ai.chat.set_enabled(true);
             ai.chat.set_minimized(false);
         });
-        if !voice_input::prepare() {
+        if !speech_ready || !route_ready {
             if voice_input::prepare_failed() {
                 STATE = State::Failed;
                 trace(b"recognizer warmup failed");
@@ -537,13 +549,19 @@ pub fn start(owner: SecurityIdentity) -> bool {
 
 // ------------------------=
 // FUNC: autostart
-// DESC: Consumes one scheduled desktop start; fatal errors and manual stops never reopen capture automatically.
+// DESC: Retries transient cold-start dependencies; a successful start, fatal error or manual stop consumes the schedule.
 // ------------------=
 pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Option<bool> {
     if *deadline == u64::MAX || now < *deadline { return None; }
     *deadline = u64::MAX;
     if state().0 != State::Off { return None; }
-    Some(start(owner))
+    let started = start(owner);
+    if !started && state().0 == State::Off && active_user(owner).is_some()
+        && !voice_input::prepare_failed() {
+        *deadline = now.saturating_add(250_000_000);
+        return None;
+    }
+    Some(started)
 }
 // ------------------------=
 // FUNC: toggle
@@ -1011,7 +1029,7 @@ pub fn poll() -> bool {
                     stop(OWNER);
                     STATE = State::Failed;
                     trace(b"recognizer warmup failed");
-                } else if voice_input::prepared() {
+                } else if ready() {
                     if listen() { trace(b"conversation listening after warmup"); }
                     else { STATE = State::Failed; trace(b"capture failed after warmup"); }
                 } else {

@@ -79,6 +79,27 @@ desktop animation frame; no timer, bitmap, blur, or paint-time allocation is add
 - Input and send controls are fully covered; voice capture remains closed while visible.
 - Surface, border, typography, cyan focus, and 8px rhythm reuse the assistant kit.
 
+Readiness integration (2026-10-11): keep the veil visible through the `Starting`
+state, including the interval between warmup publication and microphone
+admission. The same state blocks composer keyboard/paste, send, and timeline
+clicks; model selection, minimize, close, and voice cancellation remain available.
+Terminal failures must show their existing error state rather than a perpetual
+loading veil. Reuse this element; no additional loading artwork is needed.
+
+The controller now accepts a cold start as pending, opens capture only after all
+dependencies are ready, and retries a transiently occupied composer at 250 ms
+intervals. It retains the existing boot-time speech prewarm and removes the fixed
+one-second desktop-entry delay. This removes a scheduled delay, not one second
+of recognition compute. Whisper model/context, endpoint silence, decoding and
+worker count are unchanged to preserve recognition quality.
+
+Behavioral evidence: `voice-toggle-test` exercises cold model startup, delayed
+recognizer readiness, model readiness loss during startup, veil-to-capture
+transition, cancellation and terminal failures. ARM64 and x86_64 kernel checks
+pass. Installed microphone latency, rendered veil review, and fresh-installed
+runtime verification remain pending; no conversational speedup is claimed from
+host tests. These shared kernel changes require rebuilt ISOs to reach installs.
+
 ## Clipboard and loading interactions
 
 Reuse the native context-menu surface, 30px rows, Inter labels, cyan focus,

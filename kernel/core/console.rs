@@ -1454,10 +1454,25 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: ai_chat_preparing
+    // DESC: Shares the rendered voice readiness veil with composer input admission.
+    // ------------------=
+    fn ai_chat_preparing(&self) -> bool {
+        #[cfg(target_os = "none")]
+        { self.voice_microphone_allowed() && crate::runtime::ai::voice_conversation::preparing() }
+        #[cfg(not(target_os = "none"))]
+        { false }
+    }
+
+    // ------------------------=
     // FUNC: input_ai_chat
     // DESC: Handles keyboard navigation, model selection, and bounded chat composer editing.
     // ------------------=
     fn input_ai_chat(&mut self, key: ConsoleKey) -> bool {
+        if self.ai_chat_preparing() && matches!(self.ai_chat_focus, 2 | 3)
+            && !matches!(key, ConsoleKey::Escape | ConsoleKey::Shortcut(b'm' | b'c')) {
+            return true;
+        }
         if self.ai_chat_focus==2 {
             match key {
                 ConsoleKey::Shortcut(b'c'|b'x')=>{
@@ -2409,8 +2424,7 @@ impl ConsoleRuntime {
         self.refresh_desktop_items();
         crate::output_text(b"[desktop] objects refreshed\n");
         self.reset_input();
-        self.voice_autostart_after_ns = crate::runtime::ai::qwen::workers::clock_ns()
-            .saturating_add(1_000_000_000);
+        self.voice_autostart_after_ns = crate::runtime::ai::qwen::workers::clock_ns();
         crate::output_text(b"[desktop] voice autostart scheduled\n");
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
     }
@@ -2481,7 +2495,7 @@ impl ConsoleRuntime {
     // DESC: Submits one chat turn and durably checkpoints any semantic-memory change.
     // ------------------=
     fn submit_ai_chat_input(&mut self) {
-        if !self.ai_chat_allowed() {
+        if !self.ai_chat_allowed() || self.ai_chat_preparing() {
             return;
         }
         let memory = crate::runtime::ai::with_ai_runtime(|runtime| {
@@ -7765,6 +7779,11 @@ impl ConsoleRuntime {
                 if let Some(target) =
                     layout.ai_chat_target(self.pointer_x, self.pointer_y, chat_state.1)
                 {
+                    if self.ai_chat_preparing() && matches!(target,
+                        AiChatTarget::Composer | AiChatTarget::Send | AiChatTarget::Timeline) {
+                        self.ai_chat_focus = 0;
+                        return;
+                    }
                     match target {
                         AiChatTarget::Model => {
                             self.ai_chat_focus = 1;

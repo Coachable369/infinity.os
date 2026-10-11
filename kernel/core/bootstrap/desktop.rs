@@ -9849,9 +9849,7 @@ impl super::DisplayDevice {
         });
         #[cfg(target_os="none")]
         let voice_starting = {
-            use crate::runtime::ai::voice_conversation::{state,State};
-            voice_enabled && !crate::runtime::ai::voice_conversation::ready()
-                && matches!(state().0, State::Off | State::Starting)
+            voice_enabled && crate::runtime::ai::voice_conversation::preparing()
         };
         #[cfg(not(target_os="none"))]
         let voice_starting = false;
