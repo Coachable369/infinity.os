@@ -19,6 +19,8 @@ pub enum IoError { Invalid = 1, Denied, NotFound, Exists, Capacity, BadHandle, C
 
 pub struct Grant<'a> { pub root: &'a [u8], pub write: bool }
 
+pub struct Metadata { pub identity: ObjectId, pub size: u64, pub namespace: bool, pub access: u32 }
+
 #[derive(Clone, Copy)]
 struct Handle {
     token: i32,
@@ -82,6 +84,32 @@ fn normalize(cwd: &[u8], path: &[u8], out: &mut [u8; MAX_PATH]) -> Result<usize,
 }
 
 impl<'a, const N: usize> ObjectIo<'a, N> {
+    // ------------------------=
+    // FUNC: inspect
+    // DESC: Reports metadata for the open snapshot, including buffered size rather than a newer external version.
+    // ------------------=
+    pub fn inspect(&self, token: i32) -> Result<Metadata, IoError> {
+        let h = self.handles[self.slot(token)?].unwrap();
+        Ok(Metadata { identity: h.id, size: h.length as u64, namespace: false,
+            access: h.flags & (READ | WRITE) })
+    }
+
+    // ------------------------=
+    // FUNC: inspect_path
+    // DESC: Resolves object metadata through namespace grants without opening or copying content.
+    // ------------------=
+    pub fn inspect_path<D: BlockDevice>(&self, store: &ObjectStore<D>, path: &[u8]) -> Result<Metadata, IoError> {
+        let mut canonical = [0; MAX_PATH];
+        let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
+        let path = &canonical[..length];
+        if !self.authorized(path, false) { return Err(IoError::Denied); }
+        let id = store.resolve(path).map_err(storage_error)?;
+        let metadata = store.metadata(id).map_err(storage_error)?;
+        let writable = self.authorized(path, true) && matches!(metadata.space, Space::Personal | Space::Applications)
+            && matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData | ObjectType::NamespaceNode);
+        Ok(Metadata { identity: id, size: metadata.logical_size as u64,
+            namespace: metadata.kind == ObjectType::NamespaceNode, access: READ | if writable { WRITE } else { 0 } })
+    }
     // ------------------------=
     // FUNC: access_mode
     // DESC: Reports the immutable open rights used by the service to revalidate live authority.

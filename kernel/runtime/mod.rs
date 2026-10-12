@@ -15,6 +15,8 @@ pub mod native_c_image;
 pub mod native_c_io;
 #[cfg(target_os = "none")]
 pub mod native_c_service;
+#[cfg(target_os = "none")]
+pub mod native_c_syscall;
 pub mod native_memory;
 pub mod native_memory_arm;
 pub mod native_mappings;

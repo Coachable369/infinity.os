@@ -13,6 +13,8 @@ pub enum Request<'a> {
     Truncate { handle: i32, length: usize },
     Flush(i32),
     Close(i32),
+    Inspect(i32),
+    InspectPath(&'a [u8]),
     CurrentDirectory,
     Resolve(&'a [u8]),
     ChangeDirectory(&'a [u8]),
@@ -77,7 +79,7 @@ impl<'a, const N: usize> Session<'a, N> {
             Request::Write { .. } | Request::Truncate { .. } | Request::Flush(_) |
                 Request::MakeDirectory(_) | Request::Remove(_) => WRITE,
             Request::Link { .. } => READ | WRITE,
-            Request::Close(handle) | Request::Seek { handle, .. } => self.io.access_mode(*handle)?,
+            Request::Close(handle) | Request::Inspect(handle) | Request::Seek { handle, .. } => self.io.access_mode(*handle)?,
             _ => READ,
         };
         if let Err(error) = self.authorize(caps, mode, now) {
@@ -93,6 +95,14 @@ impl<'a, const N: usize> Session<'a, N> {
             Request::Truncate { handle, length } => self.io.truncate(handle, length).map(|_| 0),
             Request::Flush(handle) => self.io.flush(store, handle).map(|_| 0),
             Request::Close(handle) => self.io.close(store, handle).map(|_| 0),
+            Request::Inspect(handle) => {
+                let metadata = self.io.inspect(handle)?;
+                self.encode_metadata(metadata, caps, now, output)
+            }
+            Request::InspectPath(path) => {
+                let metadata = self.io.inspect_path(store, path)?;
+                self.encode_metadata(metadata, caps, now, output)
+            }
             Request::CurrentDirectory => self.io.current_directory(output),
             Request::Resolve(path) => self.io.canonical_path(store, path, output),
             Request::ChangeDirectory(path) => self.io.change_directory(store, path).map(|_| 0),
@@ -100,5 +110,27 @@ impl<'a, const N: usize> Session<'a, N> {
             Request::Remove(path) => self.io.unlink(store, path).map(|_| 0),
             Request::Link { source, destination, symbolic } => self.io.link(store, source, destination, symbolic).map(|_| 0),
         }
+    }
+
+    // ------------------------=
+    // FUNC: encode_metadata
+    // DESC: Encodes the 40-byte compiler metadata ABI without leaking Rust padding or granting execute authority.
+    // ------------------=
+    fn encode_metadata(&self, metadata: super::native_c_io::Metadata, caps: &CapabilityManager,
+        now: u64, output: &mut [u8]) -> Result<usize, IoError> {
+        if output.len() < 40 { return Err(IoError::Capacity); }
+        // Inode identity is a non-security fingerprint of the full native object ID.
+        let identity = metadata.identity.0.iter().fold(0xcbf29ce484222325u64,
+            |hash, byte| (hash ^ *byte as u64).wrapping_mul(0x100000001b3));
+        let mut access = metadata.access;
+        if self.authorize(caps, READ, now).is_err() { access &= !READ; }
+        if self.authorize(caps, WRITE, now).is_err() { access &= !WRITE; }
+        output[..40].fill(0);
+        output[..8].copy_from_slice(&identity.to_le_bytes());
+        output[8..16].copy_from_slice(&metadata.size.to_le_bytes());
+        // Logical modification counters are not Unix seconds; zero means unavailable.
+        output[28..32].copy_from_slice(&(if metadata.namespace { 2u32 } else { 1 }).to_le_bytes());
+        output[32..36].copy_from_slice(&access.to_le_bytes());
+        Ok(40)
     }
 }

@@ -853,3 +853,28 @@ This is the typed service boundary, not yet a production trap-dispatch binding.
 The bounded stream limit remains 16 KiB; compiler resources and larger linked
 outputs still require their sealed-extent adapter. Installed acceptance remains
 open as described above.
+
+### Compiler file syscall adapter
+
+`kernel/runtime/native_c_syscall.rs` decodes the existing compiler file ABI into
+the capability-checked ObjectStore session. It supports open, read, positional
+read, write, seek, close, truncate, metadata inspection and namespace operations.
+Transfers are bounded to 4 KiB per call and return the completed byte count.
+Every output range is validated before advancing a cursor or mutating storage;
+user addresses are translated through the owning hardware page tables.
+
+Metadata describes the opened snapshot, including buffered length. Path metadata
+reports current effective read/write rights. Execute permission is not implied.
+ObjectStore logical modification counters are not Unix time, so timestamps
+remain zero until a real wall-clock mapping exists. Unsupported calls return
+Newlib ENOSYS rather than simulated success.
+
+Run `./build-kit native-compiler-storage-tests` for the behavioral suite. It
+exercises both ARM64 and x86_64 page-table encodings against real ObjectStore
+operations, including cross-page paths, invalid output pages, supervisor input,
+forged descriptor high bits, positional-read cursor preservation, metadata and
+capability revocation. These host-executed tests validate the adapter, not a
+production scheduler binding or installed compiler workflow.
+
+The combined storage ABI, runtime, and ARM64/x86_64 installed-kernel compilation
+batch passed under `builds/manifests/20261012T074030521377Z-60216.json`.

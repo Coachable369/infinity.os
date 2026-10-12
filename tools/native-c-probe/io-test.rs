@@ -4,6 +4,11 @@ use io as native_c_io;
 #[path = "../../kernel/runtime/execution.rs"] mod execution;
 #[path = "../../kernel/runtime/capability.rs"] mod capability;
 #[path = "../../kernel/runtime/native_c_service.rs"] mod service;
+use service as native_c_service;
+#[path = "../../kernel/runtime/native_c_image.rs"] mod native_c_image;
+#[path = "../../kernel/runtime/native_memory.rs"] mod native_memory;
+#[path = "../../kernel/runtime/native_memory_arm.rs"] mod native_memory_arm;
+#[path = "../../kernel/runtime/native_c_syscall.rs"] mod native_c_syscall;
 use std::{rc::Rc, cell::RefCell};
 use storage::{BlockDevice, object::{ObjectStore, ObjectType, Space, STORE_RELATIVE_LBA, MAX_CONTENT}};
 use io::{ObjectIo, Grant, IoError, READ, WRITE, CREATE, TRUNCATE, APPEND, EXCLUSIVE, TEXT};
@@ -151,6 +156,110 @@ fn main() {
     io.unlink(&mut store, b"hello-reference.c").unwrap();
     assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), hello);
     service_acceptance(&mut store);
+    syscall_acceptance::<native_memory::X86AddressSpace>(&mut store);
+    syscall_acceptance::<native_memory_arm::ArmAddressSpace>(&mut store);
+}
+
+// ------------------------=
+// FUNC: syscall_acceptance
+// DESC: Exercises real hardware page encodings and ObjectStore through the compiler ABI, including failure atomicity.
+// ------------------=
+fn syscall_acceptance<T: native_memory::PageTable>(store: &mut ObjectStore<Disk>) {
+    use native_memory::*;
+    use capability::{CapabilityManager, CapabilityType};
+    use execution::SecurityIdentity;
+    let layout = std::alloc::Layout::from_size_align(1024 * 1024, 4096).unwrap();
+    let arena = unsafe { std::alloc::alloc_zeroed(layout) };
+    assert!(!arena.is_null());
+    let mut memory = NativeMemory::empty();
+    memory.initialize(arena as u64, layout.size() as u64).unwrap();
+    let initial = memory.available_pages();
+    let data = memory.allocate(3, 1).unwrap();
+    let mut tables = T::new(&mut memory, 1).unwrap();
+    let user = 0x1_0000_0000;
+    tables.map_range(&mut memory, user, data.physical_address, 8192, PagePermissions::USER_RW).unwrap();
+    tables.map_range(&mut memory, user + 8192, data.physical_address + 8192, 4096, PagePermissions::USER_R).unwrap();
+    tables.map_range(&mut memory, user + 0x10000, data.physical_address, 4096, PagePermissions::KERNEL_RW).unwrap();
+    let owner = SecurityIdentity([71;16]);
+    let mut caps = CapabilityManager::new();
+    let read = caps.grant(CapabilityType::PersonalSpaceRead, 90, 1, 0, owner, owner, None, 0).unwrap();
+    let write = caps.grant(CapabilityType::PersonalSpaceWrite, 90, 1, 0, owner, owner, None, 0).unwrap();
+    let mut session = service::Session::<2>::new(ObjectIo::<2>::documents(), owner, 90, read, write);
+    copy_to_user(&mut tables, user + 4090, b"abi-output.c\0").unwrap();
+    let flags = (READ | WRITE | CREATE | TRUNCATE) as u64;
+    // Invalid result pointers cannot create an object or consume a handle.
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120b,
+        [user + 4090, flags, user + 8192, 0, 0, 0], 1), -14);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120b,
+        [user + 4090, flags, user + 128, 0, 0, 0], 1), 0);
+    let mut number = [0u8;8];
+    copy_from_user(&tables, user + 128, &mut number).unwrap();
+    let handle = u64::from_le_bytes(number);
+    assert_eq!(handle, 3);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x1214,
+        [user + 2048, 95, user + 136, 0, 0, 0], 1), 0);
+    copy_from_user(&tables, user + 136, &mut number).unwrap();
+    let mut cwd = [0; b"/home/default/documents".len()];
+    copy_from_user(&tables, user + 2048, &mut cwd).unwrap();
+    assert_eq!(&cwd, b"/home/default/documents");
+    assert_eq!(u64::from_le_bytes(number), cwd.len() as u64);
+    copy_to_user(&mut tables, user + 256, b"int main(){return 54;}").unwrap();
+    let args = [handle, user + 256, 22, user + 136, 0, 0];
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120d,
+        [handle, user + 256, 22, user + 8192, 0, 0], 1), -14);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120d, args, 1), 0);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x1211,
+        [handle, user + 1024, 0, 0, 0, 0], 1), 0);
+    copy_from_user(&tables, user + 1032, &mut number).unwrap();
+    assert_eq!(u64::from_le_bytes(number), 22);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120e,
+        [handle, 0, 0, user + 136, 0, 0], 1), 0);
+    // A read spanning a read-only page cannot advance the cursor or partly copy.
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120c,
+        [handle, user + 8190, 22, user + 136, 0, 0], 1), -14);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120c,
+        [handle, user + 512, 22, user + 136, 0, 0], 1), 0);
+    let mut text = [0u8;22];
+    copy_from_user(&tables, user + 512, &mut text).unwrap();
+    assert_eq!(&text, b"int main(){return 54;}");
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x1210,
+        [handle, 18, user + 512, 2, user + 136, 0], 1), 0);
+    let mut pair = [0;2];
+    copy_from_user(&tables, user + 512, &mut pair).unwrap();
+    assert_eq!(&pair, b"54");
+    // Positional reads leave the stream at its previous end.
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120c,
+        [handle, user + 512, 1, user + 136, 0, 0], 1), 0);
+    copy_from_user(&tables, user + 136, &mut number).unwrap();
+    assert_eq!(u64::from_le_bytes(number), 0);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120c,
+        [handle + (1 << 32), user + 512, 1, user + 136, 0, 0], 1), -9);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120d,
+        [handle, user + 0x10000, 1, user + 136, 0, 0], 1), -14);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x120f,
+        [handle, 0, 0, 0, 0, 0], 1), 0);
+    let id = store.resolve(b"/home/default/documents/abi-output.c").unwrap();
+    let mut saved = [0u8;22];
+    assert_eq!(store.read(id, None, &mut saved).unwrap(), 22);
+    assert_eq!(saved, text);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x1212,
+        [user + 4090, user + 1024, 0, 0, 0, 0], 1), 0);
+    let mut metadata = [0u8;40];
+    copy_from_user(&tables, user + 1024, &mut metadata).unwrap();
+    assert_eq!(u64::from_le_bytes(metadata[8..16].try_into().unwrap()), 22);
+    assert_eq!(u32::from_le_bytes(metadata[28..32].try_into().unwrap()), 1);
+    assert_eq!(u32::from_le_bytes(metadata[32..36].try_into().unwrap()), READ | WRITE);
+    caps.revoke(write).unwrap();
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x1212,
+        [user + 4090, user + 1024, 0, 0, 0, 0], 1), 0);
+    copy_from_user(&tables, user + 1024, &mut metadata).unwrap();
+    assert_eq!(u32::from_le_bytes(metadata[32..36].try_into().unwrap()), READ);
+    assert_eq!(session.file_syscall(owner, &caps, store, &mut tables, 0x121a, [0;6], 1), -88);
+    session.cancel();
+    tables.release(&mut memory).unwrap();
+    memory.release(data).unwrap();
+    assert_eq!(memory.available_pages(), initial);
+    unsafe { std::alloc::dealloc(arena, layout); }
 }
 
 // ------------------------=

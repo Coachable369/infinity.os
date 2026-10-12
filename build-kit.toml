@@ -42,6 +42,10 @@ clean = false
 command = ["sh", "-c", "rustc --edition=2021 -A warnings tools/native-memory-test.rs -o build/native-memory-test && build/native-memory-test && rustc --edition=2021 -A warnings tools/native-process-memory-test.rs -o build/native-process-memory-test && build/native-process-memory-test"]
 clean = false
 
+[profiles.native-compiler-storage-tests]
+command = ["sh", "-c", "mkdir -p build/native-c && rustc --edition=2021 -A warnings tools/native-c-probe/io-test.rs -o build/native-c/io-test && build/native-c/io-test"]
+clean = false
+
 [profiles.browser-aarch64]
 command = ["sh", "build.sh", "--target", "aarch64"]
 clean = false
