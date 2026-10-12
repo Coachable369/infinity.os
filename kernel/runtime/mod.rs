@@ -9,6 +9,8 @@ pub mod console_language;
 pub mod event;
 pub mod execution;
 pub mod native_process;
+pub mod native_stdio;
+pub mod native_compiler_launch;
 pub mod native_c_image;
 // ObjectStore-backed compiler sessions are exercised by the dedicated native
 // storage harness; the storage-free runtime harness does not link a disk stack.

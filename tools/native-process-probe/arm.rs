@@ -4,6 +4,8 @@
 #[path = "../../kernel/runtime/native_memory.rs"] mod native_memory;
 #[path = "../../kernel/runtime/native_memory_arm.rs"] mod native_memory_arm;
 #[path = "../../kernel/runtime/native_mappings.rs"] mod native_mappings;
+#[path = "../../kernel/runtime/native_stdio.rs"] mod native_stdio;
+#[path = "../../kernel/runtime/native_compiler_launch.rs"] mod native_compiler_launch;
 #[path = "../../kernel/runtime/native_task_arm.rs"] mod task;
 use task as native_task_arm;
 #[path = "../../kernel/runtime/execution.rs"] mod execution;

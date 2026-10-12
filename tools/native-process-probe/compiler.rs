@@ -90,45 +90,26 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap,
     let tls_storage = core::slice::from_raw_parts_mut((process.heap.physical_address + 4096) as *mut u8, 4096);
     let tp = tls.initialize_at(IMAGE, MACHINE, tls_storage, (layout.heap_base + 4096) as usize).unwrap().thread_pointer();
     let base = layout.heap_base;
-    let arguments = base + 0x100;
-    let text = base + 0x200;
-    copy_to_user(&mut process.page_tables, text, b"clang\0--version\0/system/clang\0/home/default\0native-probe\0").unwrap();
-    put(&mut process, arguments, text);
-    put(&mut process, arguments + 8, text + 6);
-    put(&mut process, arguments + 16, 0);
-    put(&mut process, base, 1 | (72u64 << 32));
-    put(&mut process, base + 8, 2 | (1u64 << 32));
-    put(&mut process, base + 16, 1);
-    put(&mut process, base + 24, arguments);
-    put(&mut process, base + 32, base + 65536);
-    put(&mut process, base + 40, 64 * 1024 * 1024 - 65536);
-    put(&mut process, base + 48, text + 16);
-    put(&mut process, base + 56, text + 30);
-    put(&mut process, base + 64, text + 44);
-    if COMPILE || LINK {
-        let compile: &[&[u8]] = &[b"clang", b"-cc1", b"-triple", cpu::TRIPLE,
-            b"-emit-obj", b"-o", b"-", b"-x", b"c", b"-O1", b"-"];
-        let link: &[&[u8]] = &[b"ld.lld", b"-static", b"-pie", b"--no-dynamic-linker", b"--build-id=none",
-            b"-z", b"max-page-size=4096", b"--entry=_start", b"-T", b"/app.ld", b"-o", b"-", b"/input.o"];
-        let argv = if LINK { link } else { compile };
-        let mut next = base + 0x400;
-        for (index, value) in argv.iter().enumerate() {
-            put(&mut process, arguments + index as u64 * 8, next);
-            copy_to_user(&mut process.page_tables, next, value).unwrap();
-            copy_to_user(&mut process.page_tables, next + value.len() as u64, &[0]).unwrap();
-            next += value.len() as u64 + 1;
-        }
-        put(&mut process, arguments + argv.len() as u64 * 8, 0);
-        put(&mut process, base + 8, argv.len() as u64 | (1u64 << 32));
-    }
+    let compile: &[&[u8]] = &[b"clang", b"-cc1", b"-triple", cpu::TRIPLE,
+        b"-emit-obj", b"-o", b"-", b"-x", b"c", b"-O1", b"-"];
+    let link: &[&[u8]] = &[b"ld.lld", b"-static", b"-pie", b"--no-dynamic-linker", b"--build-id=none",
+        b"-z", b"max-page-size=4096", b"--entry=_start", b"-T", b"/app.ld", b"-o", b"-", b"/input.o"];
+    let version: &[&[u8]] = &[b"clang", b"--version"];
+    super::native_compiler_launch::write(&mut process.page_tables, base,
+        super::native_compiler_launch::Invocation {
+            arguments: if LINK { link } else if COMPILE { compile } else { version },
+            executable: b"/system/clang", home: b"/home/default", node: b"native-probe",
+            process: 1, session: 1, heap: base + 65536, heap_bytes: 64 * 1024 * 1024 - 65536,
+        }).unwrap();
     cpu::prepare(&mut process, memory, controller).unwrap();
     let mut context = Context::new(process.entry, process.stack_top, base, tp as u64);
     let mut written = 0u64;
     let mut diagnostic = [0u8; 65536];
-    let mut diagnostic_length = 0usize;
     let mut output = [0u8; 65536];
-    let mut output_length = 0usize;
-    let mut input_position = 0usize;
+    let source: &[u8] = if option_env!("INFINITY_COMPILER_INVALID_SOURCE").is_some() {
+        b"int main(void) { return ; this is not C; }\n"
+    } else { SOURCE };
+    let mut streams = super::native_stdio::Streams::new(source, &mut output, &mut diagnostic);
     let mut calls = 0u64;
     let mut file_positions = [0usize; 2];
     let mut file_opens = [false; 2];
@@ -150,17 +131,19 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap,
                 mappings.release_all(&mut process.page_tables, memory).unwrap();
                 process.release(memory).unwrap();
                 let app_status = if LINK && status == 0 {
-                    execute_linked(&output[..output_length], memory, kernel, controller)
+                    execute_linked(streams.output(), memory, kernel, controller)
                 } else { u64::MAX };
                 for value in [0x434c414e47454c30, status, written, calls, memory.available_pages() as u64, initial as u64] { emit(value); }
-                emit(diagnostic_length as u64);
-                for chunk in diagnostic[..diagnostic_length].chunks(8) {
+                let (diagnostic, truncated) = streams.diagnostics();
+                assert!(!truncated);
+                emit(diagnostic.len() as u64);
+                for chunk in diagnostic.chunks(8) {
                     let mut bytes = [0u8; 8];
                     bytes[..chunk.len()].copy_from_slice(chunk);
                     emit(u64::from_le_bytes(bytes));
                 }
-                emit(output_length as u64);
-                for chunk in output[..output_length].chunks(8) {
+                emit(streams.output().len() as u64);
+                for chunk in streams.output().chunks(8) {
                     let mut bytes = [0u8; 8];
                     bytes[..chunk.len()].copy_from_slice(chunk);
                     emit(u64::from_le_bytes(bytes));
@@ -168,27 +151,12 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap,
                 emit(app_status);
                 finish();
             }
-            0x121c if args[0] == 1 || args[0] == 2 => {
-                let count = usize::try_from(args[2]).unwrap();
-                assert!(count <= 65536);
-                let mut buffer = [0u8; 4096];
-                for offset in (0..count).step_by(buffer.len()) {
-                    let size = (count - offset).min(buffer.len());
-                    copy_from_user(&process.page_tables, args[1] + offset as u64, &mut buffer[..size]).unwrap();
-                    let retained = size.min(diagnostic.len() - diagnostic_length);
-                    diagnostic[diagnostic_length..diagnostic_length + retained].copy_from_slice(&buffer[..retained]);
-                    diagnostic_length += retained;
-                    if args[0] == 1 {
-                        assert!(output_length + size <= output.len());
-                        output[output_length..output_length + size].copy_from_slice(&buffer[..size]);
-                        output_length += size;
-                    }
+            0x121b | 0x121c | 0x121d => {
+                result = streams.syscall(&mut process.page_tables, operation, args) as u64;
+                if operation == 0x121c && result == 0 {
+                    written += args[2].min(4096);
                 }
-                put(&mut process, args[3], count as u64);
-                written += count as u64;
-                result = 0;
             }
-            0x121d => { copy_to_user(&mut process.page_tables, args[1], &1i32.to_le_bytes()).unwrap(); result = 0; }
             0x1201 if matches!(args[2], 1 | 3) && args[3] == 34 && args[4] as i32 == -1 && args[5] == 0 => {
                 let mut hint = [0u8; 8];
                 copy_from_user(&process.page_tables, args[0], &mut hint).unwrap();
@@ -199,13 +167,6 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap,
             }
             0x1202 => {
                 mappings.unmap(&mut process.page_tables, memory, args[0], args[1]).unwrap();
-                result = 0;
-            }
-            0x121b if args[0] == 0 => {
-                let count = (args[2] as usize).min(SOURCE.len() - input_position);
-                copy_to_user(&mut process.page_tables, args[1], &SOURCE[input_position..input_position + count]).unwrap();
-                put(&mut process, args[3], count as u64);
-                input_position += count;
                 result = 0;
             }
             0x120b if LINK => {

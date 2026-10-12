@@ -26,12 +26,19 @@ def compiler_result(data, work, args):
     (work / "compiler-console.log").write_bytes(diagnostic)
     if not (args.compile_source or args.link_object) or status:
         print(diagnostic.decode("utf-8", errors="replace"))
-    assert marker == 0x434c414e47454c30 and status == 0 and written > 0 and calls > 1 and free == initial
+    assert marker == 0x434c414e47454c30 and written > 0 and calls > 1 and free == initial
+    if args.reject_invalid_source:
+        assert status != 0 and output_length == 0 and diagnostic_length > 0
+    else:
+        assert status == 0
     proof = dict(architecture=args.arch, real_native_toolchain=True, hardware_user_mode=True,
         exit_status=status, console_bytes=written, service_calls=calls, memory_reclaimed=True,
         compiled_source=args.compile_source, installed_acceptance=False)
     machine = 183 if args.arch == "aarch64" else 62
-    if args.compile_source:
+    if args.reject_invalid_source:
+        proof["invalid_source_rejected"] = True
+        proof["binary_output_bytes"] = output_length
+    elif args.compile_source:
         assert output[:6] == b"\x7fELF\x02\x01"
         assert struct.unpack_from("<HH", output, 16) == (1, machine)
         (work / "compiled.o").write_bytes(output)
@@ -42,7 +49,7 @@ def compiler_result(data, work, args):
         proof["native_linked"] = True
         assert app_status == 54
         proof["guest_linked_app_exit"] = app_status
-    stage = "link" if args.link_object else "compile" if args.compile_source else "version"
+    stage = "invalid" if args.reject_invalid_source else "link" if args.link_object else "compile" if args.compile_source else "version"
     (work / f"{stage}-evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
     print(json.dumps(proof))
 
@@ -59,8 +66,10 @@ def main():
     parser.add_argument("--memory", choices=["512M", "1G"], default="1G", help="Firmware guest RAM for low-memory boot coverage")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
+    parser.add_argument("--reject-invalid-source", action="store_true", help="Verify real compiler failure, diagnostics, no executable output and full memory recovery")
     parser.add_argument("--link-object", type=Path, help="Run native LLD with this object exposed as a read-only guest fixture")
     args = parser.parse_args()
+    assert not args.reject_invalid_source or (args.compiler and args.compile_source and not args.link_object)
     arm = args.arch == "aarch64"
     assert not args.firmware or (arm and not args.compiler and not args.split_eoi)
     target = "aarch64-unknown-none-softfloat" if arm else "x86_64-unknown-none"
@@ -92,6 +101,9 @@ def main():
         assert arm and args.gic == 3
         env["INFINITY_PROCESS_SPLIT_EOI"] = "1"
     env.pop("INFINITY_COMPILER_PROBE", None)
+    env.pop("INFINITY_COMPILER_INVALID_SOURCE", None)
+    if args.reject_invalid_source:
+        env["INFINITY_COMPILER_INVALID_SOURCE"] = "1"
     if args.compiler:
         env.update(INFINITY_COMPILER_PROBE="1", INFINITY_PROCESS_IMAGE=str(args.compiler.resolve()))
     env.pop("INFINITY_COMPILER_SOURCE", None)

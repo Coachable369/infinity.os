@@ -45,8 +45,27 @@ test -x "$ld_lld" || {
 }
 
 mkdir -p "$downloads" "$sources" "$sysroot"
-test -f "$llvm_archive" || curl -fL --retry 3 -o "$llvm_archive" "$llvm_url"
-test -f "$newlib_archive" || curl -fL --retry 3 -o "$newlib_archive" "$newlib_url"
+# Reuse the identical speech toolchain source only after verifying its digest.
+if ! test -f "$newlib_archive" && test -f "$repo/build/newlib-voice.tar.gz"; then
+  if printf '%s  %s\n' "$newlib_sha" "$repo/build/newlib-voice.tar.gz" | shasum -a 256 -c >/dev/null 2>&1; then
+    cp "$repo/build/newlib-voice.tar.gz" "$newlib_archive"
+  fi
+fi
+# ------------------------=
+# FUNC: fetch_archive
+# DESC: Publishes only checksum-verified downloads; interrupted transfers never become cached sources.
+# ------------------=
+fetch_archive() {
+  archive=$1; digest=$2; url=$3
+  if test -f "$archive" && printf '%s  %s\n' "$digest" "$archive" | shasum -a 256 -c >/dev/null 2>&1; then
+    return
+  fi
+  curl -fL --retry 3 -o "$archive.part" "$url"
+  printf '%s  %s\n' "$digest" "$archive.part" | shasum -a 256 -c
+  mv "$archive.part" "$archive"
+}
+fetch_archive "$llvm_archive" "$llvm_sha" "$llvm_url"
+fetch_archive "$newlib_archive" "$newlib_sha" "$newlib_url"
 printf '%s  %s\n' "$llvm_sha" "$llvm_archive" | shasum -a 256 -c
 printf '%s  %s\n' "$newlib_sha" "$newlib_archive" | shasum -a 256 -c
 

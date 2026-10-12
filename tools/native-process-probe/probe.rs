@@ -9,6 +9,8 @@ use task as native_task_x86;
 use native_memory::*;
 #[path = "services.rs"] mod services;
 #[path = "../../kernel/runtime/native_mappings.rs"] mod native_mappings;
+#[path = "../../kernel/runtime/native_stdio.rs"] mod native_stdio;
+#[path = "../../kernel/runtime/native_compiler_launch.rs"] mod native_compiler_launch;
 #[path = "compiler.rs"] mod compiler;
 #[path = "../../kernel/runtime/native_cpu.rs"] mod cpu;
 static IMAGE: &[u8] = include_bytes!(env!("INFINITY_PROCESS_IMAGE"));
