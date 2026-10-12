@@ -83,6 +83,33 @@ fn normalize(cwd: &[u8], path: &[u8], out: &mut [u8; MAX_PATH]) -> Result<usize,
 
 impl<'a, const N: usize> ObjectIo<'a, N> {
     // ------------------------=
+    // FUNC: access_mode
+    // DESC: Reports the immutable open rights used by the service to revalidate live authority.
+    // ------------------=
+    pub fn access_mode(&self, token: i32) -> Result<u32, IoError> {
+        Ok(self.handles[self.slot(token)?].unwrap().flags & (READ | WRITE))
+    }
+
+    // ------------------------=
+    // FUNC: discard
+    // DESC: Releases and erases an open snapshot without publishing uncommitted bytes.
+    // ------------------=
+    pub fn discard(&mut self, token: i32) -> Result<(), IoError> {
+        let slot = self.slot(token)?;
+        self.handles[slot] = None;
+        self.buffers[slot].fill(0);
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: discard_all
+    // DESC: Cancels a process session without writing any pending snapshots to storage.
+    // ------------------=
+    pub fn discard_all(&mut self) {
+        self.handles.fill(None);
+        for buffer in &mut self.buffers { buffer.fill(0); }
+    }
+    // ------------------------=
     // FUNC: documents
     // DESC: Provides a statically allocated Documents-only developer session without a large temporary kernel stack allocation.
     // ------------------=

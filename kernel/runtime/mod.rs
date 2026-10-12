@@ -9,6 +9,12 @@ pub mod console_language;
 pub mod event;
 pub mod execution;
 pub mod native_c_image;
+// ObjectStore-backed compiler sessions are exercised by the dedicated native
+// storage harness; the storage-free runtime harness does not link a disk stack.
+#[cfg(target_os = "none")]
+pub mod native_c_io;
+#[cfg(target_os = "none")]
+pub mod native_c_service;
 pub mod native_memory;
 pub mod native_memory_arm;
 pub mod native_mappings;

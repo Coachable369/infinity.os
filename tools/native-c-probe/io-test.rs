@@ -1,5 +1,9 @@
 #[path = "../storage.rs"] mod storage;
 #[path = "../../kernel/runtime/native_c_io.rs"] mod io;
+use io as native_c_io;
+#[path = "../../kernel/runtime/execution.rs"] mod execution;
+#[path = "../../kernel/runtime/capability.rs"] mod capability;
+#[path = "../../kernel/runtime/native_c_service.rs"] mod service;
 use std::{rc::Rc, cell::RefCell};
 use storage::{BlockDevice, object::{ObjectStore, ObjectType, Space, STORE_RELATIVE_LBA, MAX_CONTENT}};
 use io::{ObjectIo, Grant, IoError, READ, WRITE, CREATE, TRUNCATE, APPEND, EXCLUSIVE, TEXT};
@@ -146,4 +150,56 @@ fn main() {
     assert_eq!(io.link(&mut store, b"hello.c", b"symbolic.c", true), Err(IoError::Unsupported));
     io.unlink(&mut store, b"hello-reference.c").unwrap();
     assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), hello);
+    service_acceptance(&mut store);
+}
+
+// ------------------------=
+// FUNC: service_acceptance
+// DESC: Verifies real object mutations, revocation, expiry, cross-process rejection and cancellation through the typed service.
+// ------------------=
+fn service_acceptance(store: &mut ObjectStore<Disk>) {
+    use capability::{CapabilityManager, CapabilityType};
+    use execution::SecurityIdentity;
+    use service::{Request, Session};
+    let owner = SecurityIdentity([41; 16]);
+    let other = SecurityIdentity([42; 16]);
+    let mut caps = CapabilityManager::new();
+    let read = caps.grant(CapabilityType::PersonalSpaceRead, 71, 1, 0, owner, owner, Some(100), 0).unwrap();
+    let write = caps.grant(CapabilityType::PersonalSpaceWrite, 71, 1, 0, owner, owner, None, 0).unwrap();
+    let mut session = Session::<4>::new(ObjectIo::<4>::documents(), owner, 71, read, write);
+    let mut output = [0u8; 128];
+    let path = b"/home/default/documents/service.c";
+    let handle = session.execute(owner, &caps, store,
+        Request::Open { path, flags: READ | WRITE | CREATE }, &mut output, 1).unwrap() as i32;
+    session.execute(owner, &caps, store, Request::Write { handle, bytes: b"int main(){return 9;}" }, &mut output, 1).unwrap();
+    session.execute(owner, &caps, store, Request::Flush(handle), &mut output, 1).unwrap();
+    let id = store.resolve(path).unwrap();
+    let version = store.metadata(id).unwrap().current_version;
+    let size = store.read(id, None, &mut output).unwrap();
+    assert_eq!(&output[..size], b"int main(){return 9;}");
+    assert_eq!(session.execute(other, &caps, store, Request::Close(handle), &mut output, 1), Err(IoError::Denied));
+    session.execute(owner, &caps, store, Request::Seek { handle, offset: 0, origin: 0 }, &mut output, 1).unwrap();
+    session.execute(owner, &caps, store, Request::Write { handle, bytes: b"DO NOT COMMIT" }, &mut output, 1).unwrap();
+    caps.revoke(write).unwrap();
+    for request in [Request::Flush(handle), Request::Truncate { handle, length: 0 },
+        Request::Write { handle, bytes: b"x" }, Request::Close(handle)] {
+        assert_eq!(session.execute(owner, &caps, store, request, &mut output, 1), Err(IoError::Denied));
+        assert_eq!(store.metadata(id).unwrap().current_version, version);
+    }
+    assert_eq!(session.execute(owner, &caps, store, Request::Read(handle), &mut output, 1), Err(IoError::BadHandle));
+    let handle = session.execute(owner, &caps, store, Request::Open { path, flags: READ }, &mut output, 99).unwrap() as i32;
+    output.fill(0xA5);
+    assert_eq!(session.execute(owner, &caps, store, Request::Read(handle), &mut output, 100), Err(IoError::Denied));
+    assert_eq!(output, [0xA5; 128]);
+    assert_eq!(session.execute(owner, &caps, store, Request::Remove(path), &mut output, 1), Err(IoError::Denied));
+    assert_eq!(store.resolve(path).unwrap(), id);
+    let write = caps.grant(CapabilityType::PersonalSpaceWrite, 71, 1, 0, owner, owner, None, 0).unwrap();
+    let mut cancelled = Session::<1>::new(ObjectIo::<1>::documents(), owner, 71, read, write);
+    let handle = cancelled.execute(owner, &caps, store, Request::Open { path, flags: WRITE | TRUNCATE }, &mut output, 1).unwrap() as i32;
+    cancelled.execute(owner, &caps, store, Request::Write { handle, bytes: b"cancelled" }, &mut output, 1).unwrap();
+    cancelled.cancel();
+    assert_eq!(cancelled.execute(owner, &caps, store, Request::Close(handle), &mut output, 1), Err(IoError::Denied));
+    assert_eq!(store.metadata(id).unwrap().current_version, version);
+    let mut wrong_scope = Session::<1>::new(ObjectIo::<1>::documents(), owner, 72, read, write);
+    assert_eq!(wrong_scope.execute(owner, &caps, store, Request::Open { path, flags: WRITE }, &mut output, 1), Err(IoError::Denied));
 }

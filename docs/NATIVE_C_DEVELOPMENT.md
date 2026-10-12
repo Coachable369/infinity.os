@@ -833,3 +833,23 @@ production process scheduling, desktop rendering/events for C apps, or the
 voice-to-application workflow. The native compiler is not yet installed by the
 ISO. Fresh-installed, ISO-detached acceptance and updated release ISOs remain
 required; neither target is complete on the strength of these probes alone.
+
+### Object service authority checkpoint
+
+`kernel/runtime/native_c_service.rs` now binds an ObjectStore stream session to
+the launching security identity, namespace grants, and live read/write
+capabilities. Every operation rechecks holder, scope, rights, expiry and
+revocation, including operations on previously opened handles. Revoked close
+discards pending output rather than publishing it. Process cancellation erases
+all stream snapshots and permanently rejects further requests.
+
+The production ObjectStore behavioral harness verifies persisted writes,
+cross-process rejection, revoked writes/flush/close, expired reads without
+output-buffer mutation, wrong-scope denial, and cancellation without version
+changes. The storage and runtime verification batch passed under manifest
+`builds/manifests/20261012T055822644071Z-57066.json`.
+
+This is the typed service boundary, not yet a production trap-dispatch binding.
+The bounded stream limit remains 16 KiB; compiler resources and larger linked
+outputs still require their sealed-extent adapter. Installed acceptance remains
+open as described above.
