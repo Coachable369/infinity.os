@@ -95,7 +95,9 @@ fn verify_artifact(path: &Path) {
             }
         }
     }
-    assert!(symbol_table_found, "{}: missing static symbol table", path.display());
+    // Release packages omit non-runtime symbols after validating the full link.
+    assert!(symbol_table_found || env::var_os("INFINITY_COMPILER_STRIPPED").is_some(),
+        "{}: missing static symbol table", path.display());
     assert_eq!(unresolved_strong, 0, "{}: unresolved strong symbols", path.display());
 
     let metadata = native_c_image::Image::parse_compiler(&bytes, machine)

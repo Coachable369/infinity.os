@@ -130,6 +130,7 @@ impl Context {
 // ------------------=
 pub unsafe fn prepare(process: &mut ProcessAddressSpace<Tables>, memory: &mut NativeMemory,
     controller: Controller) -> Result<(), MemoryError> {
+    task::map_trampoline(&mut process.page_tables,memory)?;
     #[cfg(target_arch = "aarch64")]
     {
         let _ = (memory, controller);
@@ -141,6 +142,32 @@ pub unsafe fn prepare(process: &mut ProcessAddressSpace<Tables>, memory: &mut Na
     }
     #[cfg(target_arch = "x86_64")]
     { process.page_tables.map_range(memory, controller, controller, 4096, PagePermissions::KERNEL_RW) }
+}
+
+// ------------------------=
+// FUNC: map_privileged
+// DESC: Identity maps only the supervisor trampoline pages, accepting identical overlaps but never replacing user mappings or permissions.
+// ------------------=
+pub fn map_privileged<T:PageTable>(tables:&mut T,memory:&mut NativeMemory,address:u64,bytes:usize,permissions:PagePermissions)->Result<(),MemoryError> {
+    if permissions.user || bytes==0 {return Err(MemoryError::InvalidPermissions);}
+    let end=address.checked_add(bytes as u64).and_then(|v|v.checked_add(4095)).ok_or(MemoryError::AddressOverflow)? & !4095;
+    let mut page=address & !4095;
+    while page<end {
+        if let Some(mapping)=tables.mapping(page) {
+            if mapping.physical_address!=page || mapping.permissions!=permissions {return Err(MemoryError::MappingConflict);}
+        }else{tables.map_range(memory,page,page,4096,permissions)?;}
+        page+=4096;
+    }
+    Ok(())
+}
+
+// ------------------------=
+// FUNC: private_kernel_map
+// DESC: Starts with no ambient kernel mappings; prepare installs the small architecture-specific privileged transition boundary.
+// ------------------=
+pub const fn private_kernel_map()->KernelAccessMap {
+    let empty=MappedRange{virtual_address:0,physical_address:0,bytes:0};
+    KernelAccessMap{text:empty,rodata:empty,data:empty,stack:empty,gateway:empty}
 }
 
 // ------------------------=

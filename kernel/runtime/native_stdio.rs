@@ -2,6 +2,14 @@
 //! The trusted job owns all buffers and keeps the process mapping stable.
 use super::native_memory::{PageTable, check_user_range, copy_from_user, copy_to_user};
 
+#[derive(Clone, Copy, Default)]
+pub struct State {
+    position: usize,
+    output_length: usize,
+    diagnostic_length: usize,
+    diagnostic_truncated: bool,
+}
+
 pub struct Streams<'a> {
     input: &'a [u8],
     position: usize,
@@ -20,6 +28,25 @@ impl<'a> Streams<'a> {
     pub fn new(input: &'a [u8], output: &'a mut [u8], diagnostics: &'a mut [u8]) -> Self {
         Self { input, position: 0, output, output_length: 0, diagnostics,
             diagnostic_length: 0, diagnostic_truncated: false }
+    }
+    // ------------------------=
+    // FUNC: resume
+    // DESC: Reborrows job-owned buffers for one scheduler visit without self-referential storage or resetting stream positions.
+    // ------------------=
+    pub fn resume(input: &'a [u8], output: &'a mut [u8], diagnostics: &'a mut [u8], state: State) -> Option<Self> {
+        if state.position > input.len() || state.output_length > output.len() || state.diagnostic_length > diagnostics.len() {
+            return None;
+        }
+        Some(Self { input, output, diagnostics, position: state.position, output_length: state.output_length,
+            diagnostic_length: state.diagnostic_length, diagnostic_truncated: state.diagnostic_truncated })
+    }
+    // ------------------------=
+    // FUNC: checkpoint
+    // DESC: Retains only stream cursors across background scheduler visits; buffers remain owned by the job.
+    // ------------------=
+    pub fn checkpoint(&self) -> State {
+        State { position: self.position, output_length: self.output_length,
+            diagnostic_length: self.diagnostic_length, diagnostic_truncated: self.diagnostic_truncated }
     }
     // ------------------------=
     // FUNC: output

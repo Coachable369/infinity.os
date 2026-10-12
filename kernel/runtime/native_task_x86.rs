@@ -35,6 +35,7 @@ static mut GDT: [u64; 7] = [0; 7];
 static mut IDT: [Gate; 256] = [EMPTY_GATE; 256];
 static BUSY: AtomicBool = AtomicBool::new(false);
 static mut KERNEL_STATE: ExtendedState = ExtendedState([0; 65536]);
+static mut USER_FRAME: core::mem::MaybeUninit<Registers> = core::mem::MaybeUninit::uninit();
 
 #[no_mangle]
 static mut infinity_task_kernel_rsp: u64 = 0;
@@ -48,8 +49,30 @@ pub enum RunError { Busy, UnsupportedCpu, InvalidContext }
 
 core::arch::global_asm!(include_str!("native_task_x86.S"));
 unsafe extern "C" {
-    fn infinity_task_enter(registers: *mut Registers, root: u64);
+    fn infinity_task_enter(registers: *mut Registers, root: u64, trap_stack: u64);
+    fn infinity_task_restore_segments(code: u64, stack: u64);
     static infinity_task_vectors: [u64; 256];
+    static infinity_task_code_start:u8;
+    static infinity_task_code_end:u8;
+}
+
+// ------------------------=
+// FUNC: map_trampoline
+// DESC: Maps only the ring-transition code, descriptor tables, private trap stack and stable register frame into user process roots as supervisor-only.
+// ------------------=
+pub unsafe fn map_trampoline<T:super::native_memory::PageTable>(tables:&mut T,memory:&mut super::native_memory::NativeMemory)->Result<(),super::native_memory::MemoryError> {
+    use super::native_memory::PagePermissions as P;
+    let start=(&raw const infinity_task_code_start) as u64;
+    let end=(&raw const infinity_task_code_end) as u64;
+    super::native_cpu::map_privileged(tables,memory,start,(end-start) as usize,P::KERNEL_RX)?;
+    super::native_cpu::map_privileged(tables,memory,(&raw const infinity_task_vectors) as u64,2048,P::KERNEL_R)?;
+    for (address,bytes) in [((&raw const TRAP_STACK) as u64,32768),
+        ((&raw const TSS) as u64,104),((&raw const GDT) as u64,56),((&raw const IDT) as u64,4096),
+        ((&raw const infinity_task_kernel_rsp) as u64,8),((&raw const infinity_task_kernel_cr3) as u64,8),
+        ((&raw const infinity_task_registers) as u64,8),((&raw const USER_FRAME) as u64,core::mem::size_of::<Registers>())] {
+        super::native_cpu::map_privileged(tables,memory,address,bytes,P::KERNEL_RW)?;
+    }
+    Ok(())
 }
 
 // ------------------------=
@@ -104,6 +127,9 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
     }
     let flags: u64;
     core::arch::asm!("pushfq", "pop {}", "cli", out(reg) flags);
+    let code: u16; let stack_selector: u16; let task_selector: u16;
+    core::arch::asm!("mov {0:x}, cs", "mov {1:x}, ss", "str {2:x}",
+        out(reg) code, out(reg) stack_selector, out(reg) task_selector);
     let low: u32;
     let high: u32;
     core::arch::asm!("rdmsr", in("ecx") 0xc0000080u32, out("eax") low, out("edx") high);
@@ -164,7 +190,10 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
     write_msr(0xc0000100, registers.fs_base);
     write_msr(0xc0000101, registers.gs_base);
     extended_state(state, true, mask);
-    infinity_task_enter(registers, root);
+    let transition=(&raw mut USER_FRAME).cast::<Registers>();
+    transition.write(*registers);
+    infinity_task_enter(transition, root, stack);
+    *registers=transition.read();
     extended_state(state, false, mask);
     extended_state(&raw mut KERNEL_STATE, true, mask);
     registers.fs_base = read_msr(0xc0000100);
@@ -181,6 +210,18 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
     core::ptr::write_volatile(register(0x80), old_tpr);
     core::ptr::write_volatile(register(0xf0), old_svr);
     core::arch::asm!("lgdt [{}]", "lidt [{}]", in(reg) &old_gdt, in(reg) &old_idt);
+    infinity_task_restore_segments(code as u64, stack_selector as u64);
+    if task_selector != 0 && task_selector & 4 == 0 && (task_selector as usize & !7) + 15 <= old_gdt.limit as usize {
+        // LTR requires an available TSS descriptor. Restore its busy state through LTR itself.
+        let access = (old_gdt.base + (task_selector as u64 & !7) + 5) as *mut u8;
+        let value = core::ptr::read_volatile(access);
+        if value & 15 == 11 {
+            core::ptr::write_volatile(access, value & !2);
+            core::arch::asm!("ltr ax", in("ax") task_selector);
+        }
+    }
+    core::arch::asm!("mov cr0, {}", in(reg) cr0);
+    core::arch::asm!("wrmsr", in("ecx") 0xc0000080u32, in("eax") low, in("edx") high);
     core::arch::asm!("out dx, al", in("dx") 0x21u16, in("al") pic_master);
     core::arch::asm!("out dx, al", in("dx") 0xa1u16, in("al") pic_slave);
     BUSY.store(false, Ordering::Release);

@@ -508,6 +508,19 @@ impl ConsoleRuntime {
             Action::Insert | Action::Replace | Action::Clear if id == 2 => {
                 success = panel.edit_document(action, &mut self.editor_document);
             }
+            Action::Compile | Action::ReplaceCompile if id == 2 => {
+                if action==Action::ReplaceCompile && !panel.edit_document(action,&mut self.editor_document) {
+                    panel.reply(b"The generated source could not be applied. Nothing was compiled.");
+                    assistant::write(id,panel);return false;
+                }
+                #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                {success=compiler_commands::start(self);}
+                #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
+                {success=false;}
+                panel.reply(if success {b"Compiling this source snapshot in isolated user mode. You can keep editing; the result will appear here."}
+                    else{b"Compilation could not start. Check for an active build, native compiler availability, and an authenticated session."});
+                assistant::write(id,panel);return success;
+            }
             Action::Undo if id == 2 => success = self.editor_document.undo(),
             Action::Redo if id == 2 => success = self.editor_document.redo(),
             Action::SelectAll if id == 2 => self

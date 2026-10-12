@@ -1,5 +1,7 @@
 .arch armv8-a+simd
 .text
+.global infinity_arm_code_start
+infinity_arm_code_start:
 .p2align 4
 .global infinity_arm_enter
 // ------------------------=
@@ -135,6 +137,7 @@ infinity_arm_enter:
 infinity_arm_vectors:
 .rept 8
     b infinity_arm_kernel_fault
+
     .balign 128
 .endr
     b infinity_arm_sync
@@ -275,3 +278,6 @@ infinity_arm_kernel_fault:
     msr daifset, #0xf
     wfi
     b infinity_arm_kernel_fault
+.ltorg
+.global infinity_arm_code_end
+infinity_arm_code_end:

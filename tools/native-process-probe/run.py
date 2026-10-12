@@ -96,6 +96,8 @@ def main():
         str(work / "user.o"), str(work / "isolated.o"), "-o", str(work / "user.elf")], check=True)
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(work / "cargo"),
         INFINITY_PROCESS_IMAGE=str(work / "user.elf"), INFINITY_PROCESS_GIC=str(args.gic))
+    # Compiler probes use the actual isolated main() CRT shipped with the SDK.
+    env["INFINITY_APPLICATION_CRT"] = str(ROOT / "builds/toolchains" / args.arch / "application-crt.o") if args.compiler else str(work / "user.o")
     env.pop("INFINITY_PROCESS_SPLIT_EOI", None)
     if args.split_eoi:
         assert arm and args.gic == 3

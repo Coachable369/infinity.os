@@ -6,6 +6,10 @@
 #[path = "../../kernel/runtime/native_mappings.rs"] mod native_mappings;
 #[path = "../../kernel/runtime/native_stdio.rs"] mod native_stdio;
 #[path = "../../kernel/runtime/native_compiler_launch.rs"] mod native_compiler_launch;
+#[path = "../../kernel/runtime/native_job_files.rs"] mod native_job_files;
+#[path = "../../kernel/runtime/native_compiler_task.rs"] mod native_compiler_task;
+#[path = "../../kernel/runtime/native_app_task.rs"] mod native_app_task;
+use cpu as native_cpu;
 #[path = "../../kernel/runtime/native_task_arm.rs"] mod task;
 use task as native_task_arm;
 #[path = "../../kernel/runtime/execution.rs"] mod execution;

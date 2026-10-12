@@ -246,3 +246,15 @@ ninja -C "$compiler_build" -j"$jobs" clang lld
 
 rustc --edition 2021 "$repo/tools/native-c-toolchain-test.rs" -o "$work/native-c-toolchain-test"
 INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$compiler_build/bin/clang.elf" "$compiler_build/bin/lld.elf"
+# Retain validated native binaries outside disposable build scratch so release
+# cleanup cannot destroy the input needed by subsequent guest acceptance tests.
+published=$repo/builds/toolchains/$architecture
+mkdir -p "$published"
+for program in clang lld; do
+  cp -L "$compiler_build/bin/$program.elf" "$published/$program.elf.part"
+  "$llvm_bin/llvm-strip" --strip-all "$published/$program.elf.part"
+  mv "$published/$program.elf.part" "$published/$program.elf"
+done
+INFINITY_COMPILER_STRIPPED=1 INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$published/clang.elf" "$published/lld.elf"
+(cd "$published" && shasum -a 256 clang.elf lld.elf > SHA256SUMS)
+sh tools/build-native-app-sdk.sh "$architecture"

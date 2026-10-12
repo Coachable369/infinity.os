@@ -3,6 +3,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 #[repr(C, align(16))]
+#[derive(Clone,Copy)]
 pub struct Registers {
     pub x: [u64; 31],
     pub sp: u64,
@@ -43,6 +44,7 @@ struct Saved([u64; 128]);
 static mut infinity_arm_kernel: Saved = Saved([0; 128]);
 #[no_mangle]
 static mut infinity_arm_registers: u64 = 0;
+static mut USER_FRAME: core::mem::MaybeUninit<Registers> = core::mem::MaybeUninit::uninit();
 static BUSY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +52,25 @@ pub enum RunError { Busy, UnsupportedLevel, InvalidContext }
 
 core::arch::global_asm!(include_str!("native_task_arm.S"));
 unsafe extern "C" { fn infinity_arm_enter(frame: *mut Registers, root: u64, stack: u64); }
+unsafe extern "C" { static infinity_arm_code_start:u8; static infinity_arm_code_end:u8; }
+
+// ------------------------=
+// FUNC: map_trampoline
+// DESC: Maps only native exception code, private trap stack and fixed register storage with supervisor permissions.
+// ------------------=
+pub unsafe fn map_trampoline<T:super::native_memory::PageTable>(tables:&mut T,memory:&mut super::native_memory::NativeMemory)->Result<(),super::native_memory::MemoryError> {
+    use super::native_memory::PagePermissions as P;
+    let start=(&raw const infinity_arm_code_start) as u64;
+    let end=(&raw const infinity_arm_code_end) as u64;
+    super::native_cpu::map_privileged(tables,memory,start,(end-start) as usize,P::KERNEL_RX)?;
+    for (address,bytes) in [((&raw const TRAP_STACK) as u64,32768),
+        ((&raw const infinity_arm_kernel) as u64,core::mem::size_of::<Saved>()),
+        ((&raw const infinity_arm_registers) as u64,8),
+        ((&raw const USER_FRAME) as u64,core::mem::size_of::<Registers>())] {
+        super::native_cpu::map_privileged(tables,memory,address,bytes,P::KERNEL_RW)?;
+    }
+    Ok(())
+}
 
 // ------------------------=
 // FUNC: run
@@ -89,7 +110,7 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
             // Group 1 silently disables slices when firmware enables only
             // distributor Group 0 (QEMU GICv2 without Security Extensions).
             write(distributor + 0x100, 1 << 30);
-            write(cpu + 4, 255);
+            write(cpu + 4, 1); // only highest-priority private slice timer
             // AckCtl permits Group 1 acknowledgement through IAR when the
             // platform exposes the secure view (QEMU's non-security model).
             write(cpu, control | 7);
@@ -109,18 +130,21 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
             write(bank + 0x80, group | (1 << 30));
             write(bank + 0x100, 1 << 30);
             core::arch::asm!("msr ICC_PMR_EL1, {}", "msr ICC_IGRPEN1_EL1, {}", "isb",
-                in(reg) 255u64, in(reg) 1u64);
+                in(reg) 1u64, in(reg) 1u64);
             (bank, control, priority, group, enabled, sre)
         }
     };
     let priority_address = (bank + 0x400 + 30) as *mut u8;
     let old_irq_priority = core::ptr::read_volatile(priority_address);
-    core::ptr::write_volatile(priority_address, 0x80);
+    core::ptr::write_volatile(priority_address, 0);
     let ticks = (frequency * microseconds as u64 / 1_000_000).max(1);
     core::arch::asm!("msr cntp_tval_el0, {}", "msr cntp_ctl_el0, {}", "isb",
         in(reg) ticks, in(reg) 1u64);
     frame.pstate &= 0xf0000000; // EL0t, IRQ enabled, no inherited privilege flags.
-    infinity_arm_enter(frame, root, (&raw mut TRAP_STACK).cast::<u8>().add(32768) as u64);
+    let transition=(&raw mut USER_FRAME).cast::<Registers>();
+    transition.write(*frame);
+    infinity_arm_enter(transition, root, (&raw mut TRAP_STACK).cast::<u8>().add(32768) as u64);
+    *frame=transition.read();
     if frame.reason == 1 {
         let interrupt = match controller {
             InterruptController::V2 { cpu, .. } => read(cpu + 12) as u64,

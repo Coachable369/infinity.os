@@ -11,6 +11,15 @@ pub mod execution;
 pub mod native_process;
 pub mod native_stdio;
 pub mod native_compiler_launch;
+pub mod native_job_files;
+#[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
+pub mod native_compiler_task;
+#[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
+pub mod native_app_task;
+#[cfg(all(feature="native-compiler", target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
+pub mod native_compiler_package;
+#[cfg(all(feature="native-compiler", target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
+pub mod native_compile_job;
 pub mod native_c_image;
 // ObjectStore-backed compiler sessions are exercised by the dedicated native
 // storage harness; the storage-free runtime harness does not link a disk stack.

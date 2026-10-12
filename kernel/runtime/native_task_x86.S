@@ -1,4 +1,20 @@
 .text
+.global infinity_task_code_start
+infinity_task_code_start:
+.global infinity_task_restore_segments
+// ------------------------=
+// FUNC: infinity_task_restore_segments
+// DESC: Restores the caller's code and stack selectors after reinstalling its descriptor table.
+// ------------------=
+infinity_task_restore_segments:
+    mov ss, si
+    push rdi
+    lea rax, [rip + 1f]
+    push rax
+    retfq
+1:
+    ret
+
 .global infinity_task_enter
 // ------------------------=
 // FUNC: infinity_task_enter
@@ -15,6 +31,7 @@ infinity_task_enter:
     mov rax, cr3
     mov [rip + infinity_task_kernel_cr3], rax
     mov [rip + infinity_task_registers], rdi
+    mov rsp, rdx
     mov cr3, rsi
     push qword ptr [rdi + 168]
     push qword ptr [rdi + 160]
@@ -97,6 +114,8 @@ TASK_VECTOR %vector_number
 .set vector_number, vector_number + 1
 .endr
 
+.global infinity_task_code_end
+infinity_task_code_end:
 .section .rodata
 .global infinity_task_vectors
 .p2align 3

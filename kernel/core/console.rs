@@ -48,6 +48,9 @@ mod pool_commands;
 mod editor_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
+#[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+#[path="console_compile.rs"]
+mod compiler_commands;
 #[path = "console_enterprise.rs"]
 mod enterprise_commands;
 #[path="../ui/clipboard_menu.rs"]
@@ -2222,6 +2225,8 @@ impl ConsoleRuntime {
             return;
         };
         let path = &entry.path[..entry.path_len as usize];
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if compiler_commands::launch(self,path){return;}
         if let Ok((metadata, _)) = crate::storage::object_inspect_path(path) {
             if metadata.kind == crate::storage::object::ObjectType::NamespaceNode {
                 let _ = crate::runtime::with_runtime(|runtime| {
@@ -13468,6 +13473,8 @@ pub fn browser_window()->DesktopAppWindowState {unsafe {BROWSER_WINDOW}}
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){compiler_commands::poll(runtime);}}
     #[cfg(target_os = "none")]
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
         let now = crate::runtime::ai::qwen::workers::clock_ns();

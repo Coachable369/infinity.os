@@ -130,6 +130,17 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     if info.native_pool_address != 0 {
         let _ = runtime::native_memory::initialize(info.native_pool_address, info.native_pool_bytes);
     }
+    #[cfg(all(feature="native-compiler", any(target_arch="aarch64",target_arch="x86_64")))]
+    unsafe {
+        use runtime::native_memory::{KernelAccessMap,MappedRange};
+        let mapped=|address,bytes|MappedRange{virtual_address:address,physical_address:address,bytes};
+        runtime::native_compile_job::initialize(KernelAccessMap {
+            text:mapped(info.kernel_text_address,info.kernel_text_bytes),
+            rodata:mapped(info.kernel_rodata_address,info.kernel_rodata_bytes),
+            data:mapped(info.kernel_data_address,info.kernel_data_bytes),
+            stack:mapped(info.kernel_stack_address,info.kernel_stack_bytes),gateway:mapped(0,0),
+        },info.native_controller_kind,info.native_controller_reserved,info.native_controller_base,info.native_controller_auxiliary);
+    }
     runtime::initialize(cfg!(target_arch = "x86") || info.boot_flags & 32 == 0);
     storage::initialize_installation_identity(
         &info.firmware_entropy,

@@ -317,7 +317,16 @@ check-tools:
 $(ICON_RUNTIME_ASSETS): $(ICON_THEME_SOURCES)
 	@tools/build-icon-themes.sh
 
-$(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
+NATIVE_C_SOURCES := tools/build-native-c-toolchain.sh tools/build-native-app-sdk.sh $(shell find sdk/c sdk/compiler -type f)
+builds/toolchains/aarch64/clang.elf builds/toolchains/aarch64/lld.elf builds/toolchains/aarch64/application-crt.o: $(NATIVE_C_SOURCES)
+	sh tools/build-native-c-toolchain.sh aarch64
+
+builds/toolchains/x86_64/clang.elf builds/toolchains/x86_64/lld.elf builds/toolchains/x86_64/application-crt.o: $(NATIVE_C_SOURCES)
+	sh tools/build-native-c-toolchain.sh x86_64
+
+$(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: builds/toolchains/aarch64/clang.elf builds/toolchains/aarch64/lld.elf builds/toolchains/aarch64/application-crt.o
+$(BUILD)/x86_64/kernel.o: builds/toolchains/x86_64/clang.elf builds/toolchains/x86_64/lld.elf builds/toolchains/x86_64/application-crt.o
+$(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS) builds/toolchains/x86_64/clang.elf builds/toolchains/x86_64/lld.elf builds/toolchains/x86_64/application-crt.o
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo-installed $(CARGO) build --release \
 		-Z build-std=core --target x86_64-unknown-none $(BROWSER_FEATURE)

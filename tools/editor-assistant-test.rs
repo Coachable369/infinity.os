@@ -495,6 +495,24 @@ fn generated_editor_actions() {
         assert!(document.undo());
         assert_eq!(document.bytes(), b"hello world");
     }
+    assert!(!panel.accept_generated(b"REPLACE_COMPILE\nint main(void){return 7;}\nEND_ACTION",false,true));
+    assert!(!panel.accept_generated(b"REPLACE_COMPILE\nint main(void){return 7;}",true,false));
+    assert!(panel.accept_generated(b"REPLACE_COMPILE\nint main(void){return 7;}\nEND_ACTION",true,true));
+    assert!(!ai::supports(0,panel.pending));
+    assert!(ai::supports(2,panel.pending));
+    assert_eq!(panel.take_action(13),Action::None);
+    assert_eq!(document.bytes(),b"hello world");
+    assert!(panel.accept_generated(b"REPLACE_COMPILE\nint main(void){return 7;}\nEND_ACTION",true,true));
+    let action=panel.take_action(12);
+    assert_eq!(action,Action::ReplaceCompile);
+    assert!(panel.edit_document(action,&mut document));
+    assert_eq!(document.bytes(),b"int main(void){return 7;}");
+    assert!(document.undo());
+    assert_eq!(document.bytes(),b"hello world");
+    panel.input[..7].copy_from_slice(b"compile");panel.length=7;
+    assert!(panel.propose(true,12));
+    assert_eq!(panel.take_action(12),Action::Compile);
+    assert_eq!(panel.take_action(12),Action::None);
     for command in [b"save".as_slice(), b"save file", b"save document"] {
         panel.input[..command.len()].copy_from_slice(command);
         panel.length = command.len();

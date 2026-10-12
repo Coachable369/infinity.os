@@ -4,6 +4,7 @@
 #[path = "../kernel/runtime/native_mappings.rs"] mod native_mappings;
 #[path = "../kernel/runtime/native_stdio.rs"] mod native_stdio;
 #[path = "../kernel/runtime/native_compiler_launch.rs"] mod native_compiler_launch;
+#[path = "../kernel/runtime/native_job_files.rs"] mod native_job_files;
 use native_memory::*;
 use native_memory_arm::ArmAddressSpace;
 
@@ -79,6 +80,69 @@ fn main() {
     verify_streams::<ArmAddressSpace>();
     verify_launch::<X86AddressSpace>();
     verify_launch::<ArmAddressSpace>();
+    verify_job_files::<X86AddressSpace>();
+    verify_job_files::<ArmAddressSpace>();
+}
+
+// ------------------------=
+// FUNC: verify_job_files
+// DESC: Exercises exact grants, separate handle positions, bounded binary reads, invalid pointers and closed handles on both CPUs.
+// ------------------=
+fn verify_job_files<T: PageTable>() {
+    use native_job_files::{File, Files};
+    let layout = std::alloc::Layout::new::<Arena>();
+    let arena = unsafe { std::alloc::alloc_zeroed(layout) };
+    assert!(!arena.is_null());
+    let mut memory = NativeMemory::empty();
+    memory.initialize(arena as u64, layout.size() as u64).unwrap();
+    let initial = memory.available_pages();
+    let data = memory.allocate(2, 1).unwrap();
+    let mut tables = T::new(&mut memory, 1).unwrap();
+    let user = 0x1_0000_0000;
+    tables.map_range(&mut memory, user, data.physical_address, 8192, PagePermissions::USER_RW).unwrap();
+    let content: Vec<u8> = (0..5000).map(|n| (n % 251) as u8).collect();
+    let files = [File { path: b"/input.o", bytes: &content }];
+    let mut io = Files::new();
+    copy_to_user(&mut tables, user, b"/input.o\0").unwrap();
+    assert_eq!(io.syscall(&mut tables, &files, 0x120b, [user,2,user+128,0,0,0]), -13);
+    assert_eq!(io.syscall(&mut tables, &files, 0x120b, [user,1,user+8192,0,0,0]), -14);
+    assert_eq!(io.syscall(&mut tables, &files, 0x120b, [user,1,user+128,0,0,0]), 0);
+    let mut value = [0;8];
+    copy_from_user(&tables,user+128,&mut value).unwrap();
+    assert_eq!(u64::from_le_bytes(value),3);
+    assert_eq!(io.syscall(&mut tables,&files,0x120c,[3,user+256,5000,user+8192,0,0]),-14);
+    assert_eq!(io.syscall(&mut tables,&files,0x120c,[3,user+256,5000,user+128,0,0]),0);
+    copy_from_user(&tables,user+128,&mut value).unwrap();
+    assert_eq!(u64::from_le_bytes(value),4096);
+    let mut actual = [0;4096];
+    copy_from_user(&tables,user+256,&mut actual).unwrap();
+    assert_eq!(&actual, &content[..4096]);
+    assert_eq!(io.syscall(&mut tables,&files,0x1210,[3,0,user+256,16,user+128,0]),0);
+    assert_eq!(io.syscall(&mut tables,&files,0x120c,[3,user+256,4096,user+128,0,0]),0);
+    copy_from_user(&tables,user+128,&mut value).unwrap();
+    assert_eq!(u64::from_le_bytes(value),904);
+    assert_eq!(io.syscall(&mut tables,&files,0x120e,[3,(-1i64) as u64,0,user+128,0,0]),-22);
+    assert_eq!(io.syscall(&mut tables,&files,0x1211,[3,user+256,0,0,0,0]),0);
+    copy_from_user(&tables,user+264,&mut value).unwrap();
+    assert_eq!(u64::from_le_bytes(value),5000);
+    assert_eq!(io.syscall(&mut tables,&files,0x120f,[3,0,0,0,0,0]),0);
+    assert_eq!(io.syscall(&mut tables,&files,0x120c,[3,user+256,16,user+128,0,0]),-9);
+    copy_to_user(&mut tables,user,b"/secret\0").unwrap();
+    assert_eq!(io.syscall(&mut tables,&files,0x120b,[user,1,user+128,0,0,0]),-2);
+    let headers=[File{path:b"/sdk/stdio.h",bytes:b"header"}];
+    copy_to_user(&mut tables,user,b"/sdk\0").unwrap();
+    assert_eq!(io.syscall(&mut tables,&headers,0x1212,[user,user+256,0,0,0,0]),0);
+    let mut kind=[0;4];
+    copy_from_user(&tables,user+284,&mut kind).unwrap();
+    assert_eq!(u32::from_le_bytes(kind),2);
+    copy_to_user(&mut tables,user,b"/sd\0").unwrap();
+    assert_eq!(io.syscall(&mut tables,&headers,0x1212,[user,user+256,0,0,0,0]),-2);
+    copy_to_user(&mut tables,user,b"\0").unwrap();
+    assert_eq!(io.syscall(&mut tables,&headers,0x1212,[user,user+256,0,0,0,0]),-2);
+    tables.release(&mut memory).unwrap();
+    memory.release(data).unwrap();
+    assert_eq!(memory.available_pages(),initial);
+    unsafe {std::alloc::dealloc(arena,layout);}
 }
 
 // ------------------------=
@@ -182,6 +246,16 @@ fn verify_streams<T: PageTable>() {
     assert_eq!(io.syscall(&mut tables,0x121d,[1,user+7000,0,0,0,0]),0);
     copy_from_user(&tables,user+7000,&mut count[..4]).unwrap();
     assert_eq!(&count[..4], &[0;4]);
+    let saved = io.checkpoint();
+    drop(io);
+    let mut io = native_stdio::Streams::resume(&source,&mut output,&mut errors,saved).unwrap();
+    assert_eq!(io.output(),binary);
+    assert_eq!(io.diagnostics(),(&binary[..3],true));
+    assert_eq!(io.syscall(&mut tables,0x121b,[0,user,10,user+7000,0,0]),0);
+    copy_from_user(&tables,user+7000,&mut count).unwrap();
+    assert_eq!(u64::from_le_bytes(count),0);
+    drop(io);
+    assert!(native_stdio::Streams::resume(&source,&mut output[..1],&mut errors,saved).is_none());
     tables.release(&mut memory).unwrap();
     memory.release(data).unwrap();
     unsafe {std::alloc::dealloc(arena,layout);}

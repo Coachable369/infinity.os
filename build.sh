@@ -123,6 +123,7 @@ if [ "$target" != all ]; then
         (cd "$output_dir" && shasum -a 256 InfinityOS-x86_64.iso > SHA256SUMS)
     fi
     python3 tools/browser-artwork-parity.py
+    python3 tools/native-compiler-parity-test.py --arch "$target"
     echo "InfinityOS $target full-bundle ISO is ready in $output_dir"
     exit 0
 fi
@@ -170,6 +171,7 @@ make video-driver-test
 # architecture pass. Re-stage the actual media before comparing its payloads.
 make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
+python3 tools/native-compiler-parity-test.py
 make crash-screen-test
 make component-manifest-test
 make settings-color-test
