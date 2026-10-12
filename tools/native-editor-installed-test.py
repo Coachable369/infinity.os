@@ -70,6 +70,8 @@ def wait_build(guest, previous, expected):
     deadline = time.monotonic() + 180
     transitions = []
     input_latency = None
+    input_started = None
+    input_x = None
     while time.monotonic() < deadline:
         state = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
         assert state[:2] == (0x494e46434c414e47, 1)
@@ -77,16 +79,22 @@ def wait_build(guest, previous, expected):
         if state[2] > previous:
             if not transitions or transitions[-1] != state[3]:
                 transitions.append(state[3])
-            if state[3] in (1, 2) and input_latency is None:
+            if input_started is not None and input_latency is None:
+                observed = guest.state()
+                if observed is not None and observed[13] != input_x:
+                    input_latency = time.monotonic() - input_started
+            if state[3] in (1, 2) and input_started is None:
                 before = guest.state()
                 assert before is not None
-                started = time.monotonic()
+                input_started = time.monotonic()
+                input_x = before[13]
                 guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
                     "axis": "x", "value": -4 if before[13] > 500 else 4}}]})
-                guest.wait(lambda s: s[13] != before[13], "input while native compiler runs", timeout=5)
-                input_latency = time.monotonic() - started
             if state[3] >= 3:
                 assert state[3] == expected, state
+                if input_started is not None and input_latency is None:
+                    guest.wait(lambda s: s[13] != input_x, "pointer after compiler completion", timeout=5)
+                    input_latency = time.monotonic() - input_started
                 return {"snapshot": state, "transitions": transitions,
                         "input_latency_seconds": input_latency}
         time.sleep(.2)
@@ -220,11 +228,14 @@ def main():
         else:
             raise AssertionError("Stored native executable did not finish")
         guest.screenshot("native-editor-executed")
+        assert all(result["input_latency_seconds"] is None or result["input_latency_seconds"] < 5
+                   for result in (report["compile"], report["invalid"], report["generated"])), "Compiler input latency exceeded five seconds"
         report["installed_acceptance"] = True
         report["model_generated_source"] = True
     except BaseException as error:
         report["failure"] = repr(error)
         if guest.process is not None and guest.process.poll() is None:
+            report["cpu_diagnostic"] = guest.qmp("human-monitor-command", {"command-line": "info registers"})
             guest.screenshot("native-editor-failure")
         raise
     finally:
