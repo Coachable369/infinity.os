@@ -1,4 +1,5 @@
 #[path = "../../kernel/core/memory.rs"] mod memory;
+#[path = "../../kernel/core/boot_info.rs"] mod boot_info;
 #[path = "../../kernel/runtime/native_c_image.rs"] mod native_c_image;
 #[path = "../../kernel/runtime/native_memory.rs"] mod native_memory;
 #[path = "../../kernel/runtime/native_memory_arm.rs"] mod native_memory_arm;
@@ -114,7 +115,6 @@ pub unsafe extern "C" fn process_probe() -> ! {
     };
     let mut memory = NativeMemory::empty();
     memory.initialize((&raw mut POOL) as u64, POOL_BYTES as u64).unwrap();
-    let initial = memory.available_pages();
     let kernel = KernelAccessMap {
         text: region(&raw const text_start, &raw const text_end),
         rodata: region(&raw const rodata_start, &raw const rodata_end),
@@ -122,6 +122,46 @@ pub unsafe extern "C" fn process_probe() -> ! {
         stack: MappedRange { virtual_address: STACK_TOP - 0x100000, physical_address: STACK_TOP - 0x100000, bytes: 0x100000 },
         gateway: MappedRange { virtual_address: 0, physical_address: 0, bytes: 0 },
     };
+    run_cases(memory,kernel,controller)
+}
+// ------------------------=
+// FUNC: infinity_kernel_entry
+// DESC: Exercises the production firmware handoff without guessed GIC addresses or a replacement firmware memory map.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo) -> ! {
+    let boot=&*info;
+    assert_eq!(boot.magic,boot_info::BOOT_MAGIC);
+    assert_eq!(boot.version,boot_info::BOOT_VERSION);
+    assert!(cpu::controller_from_handoff(0,0,0,0).is_none());
+    assert!(cpu::controller_from_handoff(1,0,0xfee00000,0).is_none());
+    assert!(cpu::controller_from_handoff(3,1,0x080a0000,0x08000000).is_none());
+    assert!(cpu::controller_from_handoff(3,0,0x080a1000,0x08000000).is_none());
+    let controller=cpu::controller_from_handoff(boot.native_controller_kind,
+        boot.native_controller_reserved,boot.native_controller_base,boot.native_controller_auxiliary).unwrap();
+    let mut memory=NativeMemory::empty();
+    memory.initialize(boot.native_pool_address,boot.native_pool_bytes).unwrap();
+    let kernel=KernelAccessMap {
+        text: mapped(boot.kernel_text_address,boot.kernel_text_bytes),
+        rodata: mapped(boot.kernel_rodata_address,boot.kernel_rodata_bytes),
+        data: mapped(boot.kernel_data_address,boot.kernel_data_bytes),
+        stack: mapped(boot.kernel_stack_address,boot.kernel_stack_bytes), gateway: mapped(0,0),
+    };
+    run_cases(memory,kernel,controller)
+}
+// ------------------------=
+// FUNC: mapped
+// DESC: Converts the loader's checked section bounds into supervisor mappings.
+// ------------------=
+fn mapped(address:u64,bytes:u64)->MappedRange {
+    MappedRange {virtual_address:address,physical_address:address,bytes}
+}
+// ------------------------=
+// FUNC: run_cases
+// DESC: Runs identical isolation and recovery cases for firmware and bare-metal entry paths.
+// ------------------=
+unsafe fn run_cases(mut memory:NativeMemory,kernel:KernelAccessMap,controller:cpu::Controller)->! {
+    let initial=memory.available_pages();
     if COMPILER { compiler::run(&mut memory, kernel, controller); }
     let image = native_c_image::Image::parse(IMAGE, 183).unwrap();
     let layout = CompilerVirtualLayout { image_base: 0x100000000, heap_base: 0x200000000,
@@ -141,8 +181,18 @@ pub unsafe extern "C" fn process_probe() -> ! {
         registers.thread_pointer = layout.heap_base;
         let mut yields = 0;
         for _ in 0..100 {
+            let virtual_control:u64; let virtual_deadline:u64;
+            core::arch::asm!("mrs {}, cntv_ctl_el0", "mrs {}, cntv_cval_el0",
+                out(reg) virtual_control,out(reg) virtual_deadline);
             task::run(&mut registers, process.page_tables.root_physical_address(),
                 controller, 2000).unwrap();
+            // Control must survive a slice. Firmware is free to advance an expired
+            // deadline immediately on IRQ restoration, so compare only masked timers.
+            let restored_control:u64; let restored_deadline:u64;
+            core::arch::asm!("mrs {}, cntv_ctl_el0", "mrs {}, cntv_cval_el0",
+                out(reg) restored_control,out(reg) restored_deadline);
+            assert_eq!(restored_control & 3,virtual_control & 3);
+            if virtual_control & 3 != 1 { assert_eq!(restored_deadline,virtual_deadline); }
             if kind == 7 && registers.reason == 0 && registers.syndrome >> 26 == 0x15 {
                 if let Some(result) = services::client_contract(&mut process.page_tables, registers.x[8],
                     registers.x[..6].try_into().unwrap(), &mut yields) {

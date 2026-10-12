@@ -71,17 +71,23 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
     core::arch::asm!("mrs {}, daif", "msr daifset, #0xf", out(reg) daif);
     let old_timer: u64;
     let old_compare: u64;
+    let old_virtual_timer: u64;
     let frequency: u64;
     core::arch::asm!("mrs {}, cntp_ctl_el0", "mrs {}, cntp_cval_el0", "mrs {}, cntfrq_el0",
         out(reg) old_timer, out(reg) old_compare, out(reg) frequency);
+    // Firmware may keep PPI27 armed. Preserve its deadline and pending status;
+    // do not acknowledge its tick as an application preemption interrupt.
+    core::arch::asm!("mrs {}, cntv_ctl_el0", out(reg) old_virtual_timer);
+    core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) old_virtual_timer | 2);
     let (bank, old_control, old_priority, old_group, enabled, old_sre) = match controller {
         InterruptController::V2 { distributor, cpu } => {
             let control = read(cpu);
             let priority = read(cpu + 4);
             let group = read(distributor + 0x80);
             let enabled = read(distributor + 0x100);
-            // Non-secure Group 1 physical timer PPI30, current CPU bank.
-            write(distributor + 0x80, group | (1 << 30));
+            // Keep the firmware-selected security group. Moving PPI30 to
+            // Group 1 silently disables slices when firmware enables only
+            // distributor Group 0 (QEMU GICv2 without Security Extensions).
             write(distributor + 0x100, 1 << 30);
             write(cpu + 4, 255);
             // AckCtl permits Group 1 acknowledgement through IAR when the
@@ -154,6 +160,7 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
     }
     core::arch::asm!("msr cntp_cval_el0, {}", "msr cntp_ctl_el0, {}", "isb",
         in(reg) old_compare, in(reg) old_timer);
+    core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) old_virtual_timer);
     BUSY.store(false, Ordering::Release);
     core::arch::asm!("msr daif, {}", in(reg) daif);
     Ok(())

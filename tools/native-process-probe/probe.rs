@@ -68,6 +68,14 @@ fn identity(address: u64, bytes: u64) -> MappedRange {
 #[no_mangle]
 pub unsafe extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo) -> ! {
     let boot = &*info;
+    assert_eq!(boot.magic, boot_info::BOOT_MAGIC);
+    assert_eq!(boot.version, boot_info::BOOT_VERSION);
+    assert!(cpu::controller_from_handoff(0,0,0,0).is_none());
+    assert!(cpu::controller_from_handoff(2,0,0x08000000,0x08010000).is_none());
+    assert!(cpu::controller_from_handoff(1,1,0xfee00000,0).is_none());
+    assert!(cpu::controller_from_handoff(1,0,0xfee00001,0).is_none());
+    let controller = cpu::controller_from_handoff(boot.native_controller_kind,
+        boot.native_controller_reserved, boot.native_controller_base, boot.native_controller_auxiliary).unwrap();
     let mut memory = NativeMemory::empty();
     memory.initialize(boot.native_pool_address, boot.native_pool_bytes).unwrap();
     let initial = memory.available_pages();
@@ -78,14 +86,14 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo)
         stack: identity(boot.kernel_stack_address, boot.kernel_stack_bytes),
         gateway: identity(0, 0),
     };
-    if option_env!("INFINITY_COMPILER_PROBE").is_some() { compiler::run(&mut memory, kernel, 0xfee00000); }
+    if option_env!("INFINITY_COMPILER_PROBE").is_some() { compiler::run(&mut memory, kernel, controller); }
     let image = native_c_image::Image::parse(IMAGE, 62).unwrap();
     let layout = CompilerVirtualLayout { image_base: 0x100000000, heap_base: 0x200000000,
         heap_pages: 2, stack_guard_base: 0x300000000, stack_pages: 8 };
     for kind in [0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 6, 7] {
         let mut process = CompilerAddressSpace::build(&mut memory, 1, &image, layout, kernel).unwrap();
         native_c_image::Image::load_at(IMAGE, 62, process.image_bytes_mut(), layout.image_base as usize).unwrap();
-        process.page_tables.map_range(&mut memory, 0xfee00000, 0xfee00000, 4096,
+        process.page_tables.map_range(&mut memory, controller, controller, 4096,
             PagePermissions::KERNEL_RW).unwrap();
         let mut registers = task::Registers { rip: process.entry, rsp: process.stack_top - 8,
             rdi: kind, rsi: (&raw mut SENTINEL) as u64, fs_base: layout.heap_base, ..Default::default() };
@@ -93,7 +101,7 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo)
         let mut yields = 0;
         for _ in 0..100 {
             task::run(&mut registers, &mut *(&raw mut STATE), &mut initialized,
-                process.page_tables.root_physical_address(), 0xfee00000).unwrap();
+                process.page_tables.root_physical_address(), controller).unwrap();
             if kind == 7 && registers.vector == 128 {
                 if let Some(result) = services::client_contract(&mut process.page_tables, registers.rax,
                     [registers.rdi, registers.rsi, registers.rdx, registers.rcx, registers.r8, registers.r9], &mut yields) {

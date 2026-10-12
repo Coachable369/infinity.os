@@ -353,7 +353,7 @@ $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/inst
 $(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o
 	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BROWSER_X86)
 
-$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/x86_64/workers.h boot/common/payload_loader.h boot/common/payload_cache.h
+$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/native_controller.h boot/common/native_controller_firmware.h boot/common/video_modes.h boot/common/tpm_random.h boot/x86_64/workers.h boot/common/payload_loader.h boot/common/payload_cache.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=x86_64-pc-windows-msvc -ffreestanding -fshort-wchar -fno-stack-protector \
 		-mno-red-zone -O2 -Wall -Wextra -Werror -c $< -o $@
@@ -757,7 +757,7 @@ $(BUILD)/aarch64/kernel-qemu.elf: $(QEMU_KERNEL_STAMP) linker/aarch64-qemu.ld $(
 
 $(BUILD)/aarch64/kernel-browser-qemu.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
 
-$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
+$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/native_controller.h boot/common/native_controller_firmware.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-pc-windows-msvc -DINFINITY_AARCH64 -ffreestanding -fshort-wchar \
 		-fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c $< -o $@

@@ -74,11 +74,11 @@ protected_entry:
 .segments_loaded:
     mov edi, BOOT_INFO
     xor eax, eax
-    mov ecx, 66                ; 264-byte BootInfo v8
+    mov ecx, 98                ; 392-byte BootInfo v10; no native controller on legacy x86
     rep stosd
     mov dword [BOOT_INFO], BOOT_MAGIC_LOW
     mov dword [BOOT_INFO + 4], BOOT_MAGIC_HIGH
-    mov dword [BOOT_INFO + 8], 8
+    mov dword [BOOT_INFO + 8], 10
     mov dword [BOOT_INFO + 12], 1
     mov dword [BOOT_INFO + 32], 1
     push dword BOOT_INFO

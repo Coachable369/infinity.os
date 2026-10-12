@@ -1077,17 +1077,12 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
 // DESC: Reserves a contiguous identity-mapped frame arena for isolated native process images, heaps, stacks, and page tables.
 // ------------------=
 static uint64_t reserve_native_runtime_pool(EFI_SYSTEM_TABLE *system) {
-#if defined(INFINITY_AARCH64)
-    (void)system;
-    return 0;
-#else
     uint64_t base = (uint64_t)(uintptr_t)allocate_native_buffer(system->boot_services,
         (size_t)NATIVE_RUNTIME_POOL_PAGES * PAGE_SIZE, (uint64_t)IDENTITY_MAP_GIB * 1024 * 1024 * 1024 - 1);
     if (!base)
         fail(system, L"ERROR: native runtime pool allocation failed\r\n",
             "ERROR: native runtime pool allocation failed\n");
     return base;
-#endif
 }
 
 // ------------------------=
@@ -1543,6 +1538,7 @@ static void gather_firmware_audio(EFI_SYSTEM_TABLE *system, InfinityBootInfo *in
 // DESC: Runs the UEFI loader entry point.
 // ------------------=
 #include "payload_loader.h"
+#include "native_controller_firmware.h"
 
 // ------------------------=
 // FUNC: efi_main
@@ -1643,6 +1639,11 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->kernel_page_table = page_tables;
     info->kernel_stack_address = stack_base;
     info->kernel_stack_bytes = (uint64_t)KERNEL_STACK_PAGES * PAGE_SIZE;
+    InfinityNativeController controller=discover_native_controller(system);
+    info->native_controller_kind=controller.kind;
+    info->native_controller_reserved=0;
+    info->native_controller_base=controller.base;
+    info->native_controller_auxiliary=controller.auxiliary;
     prepare_payloads(image, system, info, booted_installed_generation);
     gather_firmware_entropy(system, info);
     gather_framebuffer(system, info);

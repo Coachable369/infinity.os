@@ -96,6 +96,10 @@ rm -f "$output_dir/InfinityOS-x86.iso" \
 
 export INFINITY_ISO_BUILD_AUTHORITY=build.sh
 
+# The firmware controller contract is shared by live and installed loaders.
+cc -std=c11 -Wall -Wextra -Werror tools/native-controller-test.c -o build/native-controller-test
+build/native-controller-test
+
 if [ "$target" != all ]; then
     python3 tools/build-kit-test.py
     python3 tools/build-workspace-test.py

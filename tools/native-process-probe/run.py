@@ -55,13 +55,15 @@ def main():
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
     parser.add_argument("--gic", choices=[2, 3], type=int, default=2)
     parser.add_argument("--split-eoi", action="store_true")
+    parser.add_argument("--firmware", action="store_true", help="Use production ARM UEFI discovery and handoff")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
     parser.add_argument("--link-object", type=Path, help="Run native LLD with this object exposed as a read-only guest fixture")
     args = parser.parse_args()
     arm = args.arch == "aarch64"
+    assert not args.firmware or (arm and not args.compiler and not args.split_eoi)
     target = "aarch64-unknown-none-softfloat" if arm else "x86_64-unknown-none"
-    work = ROOT / "build/native-process-probe" / (args.arch + (f"-gic{args.gic}" if arm else "") + ("-compiler" if args.compiler else ""))
+    work = ROOT / "build/native-process-probe" / (args.arch + (f"-gic{args.gic}" if arm else "") + ("-firmware" if args.firmware else "") + ("-compiler" if args.compiler else ""))
     work.mkdir(parents=True, exist_ok=True)
     clang = "/opt/homebrew/opt/llvm/bin/clang"
     linker = "/opt/homebrew/opt/lld/bin/ld.lld"
@@ -71,6 +73,12 @@ def main():
         "-Isdk/c/include", "-Isdk/compiler/include", "-isystem",
         str(ROOT / ("build/native-c/aarch64/sysroot/aarch64-unknown-elf/include" if arm else
                     "build/native-c/sysroot/x86_64-unknown-elf/include")), "-Os"]
+    # Release builds already prepare the same pinned Newlib for native speech.
+    # Reuse its real headers/configuration when the optional compiler build is absent.
+    newlib = ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include"
+    newlib_config = ROOT / f"build/voice-newlib-{args.arch}/{args.arch}-none-elf/newlib"
+    if newlib.exists() and (newlib_config / "newlib.h").exists():
+        c_flags += ["-isystem", str(newlib_config), "-isystem", str(newlib)]
     subprocess.run(c_flags + ["-c", "tools/native-process-probe/user.c", "-o", str(work / "user.o")], check=True)
     subprocess.run(c_flags + ["-c", "sdk/compiler/isolated.c", "-o", str(work / "isolated.o")], check=True)
     subprocess.run([linker, "-static", "-pie", "--strip-all", "--no-dynamic-linker",
@@ -98,13 +106,26 @@ def main():
         target, "--manifest-path", "tools/native-process-probe/Cargo.toml"], env=env, check=True)
     subprocess.run([linker, "-nostdlib", "-static", "-T",
         "tools/native-process-probe/arm.ld" if arm else "linker/x86_64.ld", "-o", str(work / "probe.elf"),
-        str(work / "cargo" / target / "release/libinfinity_native_process_probe.a")], check=True)
+        str(work / "cargo" / target / "release/libinfinity_native_process_probe.a")] +
+        (["-e", "infinity_kernel_entry"] if args.firmware else []), check=True)
     if arm:
+        boot_args=["-kernel",str(work / "probe.elf")]
+        if args.firmware:
+            esp=work / "esp"
+            (esp / "EFI/BOOT").mkdir(parents=True,exist_ok=True)
+            (esp / "EFI/INFINITY").mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(ROOT / "build/aarch64/BOOTAA64.EFI",esp / "EFI/BOOT/BOOTAA64.EFI")
+            shutil.copyfile(work / "probe.elf",esp / "EFI/INFINITY/KERNEL.ELF")
+            boot_args=["-bios","/opt/homebrew/share/qemu/edk2-aarch64-code.fd",
+                "-drive",f"if=none,id=esp,format=raw,file=fat:rw:{esp}","-device","virtio-blk-pci,drive=esp","-net","none"]
         with (work / "qemu.log").open("wb") as log:
             subprocess.run(["qemu-system-aarch64", "-machine", f"virt,gic-version={args.gic}", "-cpu", "max",
-                "-m", "512M", "-display", "none", "-monitor", "none", "-serial", f"file:{work / 'result.bin'}",
-                "-kernel", str(work / "probe.elf")], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120 if args.compiler else 30)
+                "-m", "1G" if args.firmware else "512M", "-display", "none", "-monitor", "none",
+                "-qmp", f"unix:{work / 'monitor.sock'},server=on,wait=off", "-serial", f"file:{work / 'result.bin'}",
+                *boot_args], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120 if args.compiler or args.firmware else 30)
         data = (work / "result.bin").read_bytes()
+        if args.firmware:
+            data=data[-(12*32+8):]  # Only the fixed binary result trailer is acceptance evidence.
         if args.compiler:
             compiler_result(data, work, args)
             return
@@ -112,7 +133,7 @@ def main():
         assert struct.unpack_from("<Q", data, 12 * 32)[0] == 0x49534f4c41544544
         rows = list(struct.iter_unpack("<4Q", data[:-8]))
         assert [r[2] >> 26 if r[1] == 0 else r[2] for r in rows] == [21, 36, 21, 32, 21, 30, 21, 0, 21, 21, 21, 21]
-        proof = dict(architecture=args.arch, hardware_user_mode=True, supervisor_write_blocked=True,
+        proof = dict(architecture=args.arch, firmware_controller_handoff=args.firmware, hardware_user_mode=True, supervisor_write_blocked=True,
             nx_enforced=True, infinite_loop_preempted=True, privileged_instruction_blocked=True,
             memory_reclaimed=True, kernel_survived_each_case=True, repeated_resume_tls_simd=True, installed_acceptance=False, cases=rows)
         (work / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
@@ -137,7 +158,7 @@ def main():
     rows = list(struct.iter_unpack("<4Q", data))
     assert len(rows) == 12
     assert [row[1] for row in rows] == [128, 14, 128, 14, 128, 32, 128, 13, 128, 128, 128, 128]
-    proof = dict(hardware_user_mode=True, supervisor_write_blocked=True, nx_enforced=True,
+    proof = dict(firmware_controller_handoff=True, hardware_user_mode=True, supervisor_write_blocked=True, nx_enforced=True,
         infinite_loop_preempted=True, privileged_io_blocked=True, memory_reclaimed=True,
         kernel_survived_each_case=True, repeated_resume_tls_simd=True, installed_acceptance=False, cases=rows)
     (work / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")

@@ -969,3 +969,40 @@ The post-build runtime behavioral suite, C event-header code generation for
 both CPU targets, and independent checksum verification passed under
 `builds/manifests/20261012T093531684229Z-63761.json`. The header fixture is
 `tools/native-c-probe/event-api.c`; its compile check is not guest execution.
+
+### Firmware controller handoff
+
+BootInfo v10 appends a typed interrupt-controller descriptor while retaining
+the existing segment and memory-pool fields. Live and installed UEFI loaders
+share discovery. Unsupported hardware yields an unavailable descriptor rather
+than a guessed address. The legacy 32-bit bootstrap now initializes the full
+392-byte contract instead of emitting its obsolete v8 prefix.
+
+ARM discovery validates MADT and GTDT checksums, record lengths, the enabled
+boot CPU affinity, physical timer PPI30, and bounded GICv3 redistributor ranges.
+GICv2 supplies distributor and CPU-interface addresses; GICv3 supplies the
+matching redistributor. x86 discovery accepts enabled memory-mapped xAPIC only;
+x2APIC is not implemented. `native_cpu::controller_from_handoff` rejects
+cross-architecture kinds, nonzero reserved fields and invalid address alignment.
+
+The ARM loader now reserves the same 256 MiB native process arena as x86.
+Previously its production handoff supplied zero, even though bare-metal process
+tests used their own arena. ARM slices preserve and mask the firmware virtual
+timer, then restore it on return. GICv2 retains the firmware-selected security
+group for PPI30 instead of moving it into a potentially disabled group.
+
+`./build-kit native-controller-tests` exercises actual parser results, including
+corrupt checksums, malformed records, missing CPUs, unsupported timers, address
+bounds and MMIO read limits. This suite also runs before ISO generation.
+`tools/native-process-probe/run.py --arch aarch64 --gic 2|3 --firmware`
+boots the production loader in a disposable guest and runs the same twelve
+hardware isolation cases as the bare-metal probe. The x86 probe now consumes
+the production handoff instead of hard-coding its APIC address. Binary case
+records, not console prose, determine acceptance. These are firmware-backed
+guest tests, not a cold-installed desktop application test.
+
+Production desktop process scheduling, safe handling of unrelated interrupts,
+x86 descriptor-state restoration and calibrated slices, installed Clang/LLD
+resources, package/double-click launch and Hermes app creation still need
+integration and installed-system verification. Controller discovery does not
+by itself enable arbitrary native application execution in the desktop.

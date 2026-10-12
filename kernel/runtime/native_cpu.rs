@@ -23,6 +23,24 @@ pub const TRIPLE: &[u8] = b"aarch64-none-elf";
 pub const TRIPLE: &[u8] = b"x86_64-none-elf";
 
 pub use super::native_process::Trap as Slice;
+// ------------------------=
+// FUNC: controller_from_handoff
+// DESC: Accepts only the current architecture's aligned, firmware-discovered controller contract; no guessed defaults.
+// ------------------=
+pub fn controller_from_handoff(kind: u32, reserved: u32, base: u64, auxiliary: u64) -> Option<Controller> {
+    if reserved != 0 || base == 0 || base & 4095 != 0 || base.checked_add(0x20000).is_none() { return None; }
+    #[cfg(target_arch = "x86_64")]
+    { if kind == 1 && auxiliary == 0 && base < 64 * 1024 * 1024 * 1024 { Some(base) } else { None } }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if auxiliary == 0 || auxiliary & 4095 != 0 || auxiliary.checked_add(65536).is_none() { return None; }
+        match kind {
+            2 => Some(Controller::V2 { distributor: base, cpu: auxiliary }),
+            3 if base & 65535 == 0 => Some(Controller::V3 { redistributor: base }),
+            _ => None,
+        }
+    }
+}
 pub struct Context {
     registers: task::Registers,
     #[cfg(target_arch = "x86_64")]
