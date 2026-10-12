@@ -985,7 +985,11 @@ matching redistributor. x86 discovery accepts enabled memory-mapped xAPIC only;
 x2APIC is not implemented. `native_cpu::controller_from_handoff` rejects
 cross-architecture kinds, nonzero reserved fields and invalid address alignment.
 
-The ARM loader now reserves the same 256 MiB native process arena as x86.
+The ARM loader now requests the same 256 MiB native process arena as x86.
+Both targets fall back to 128 or 64 MiB when no larger contiguous region is
+available. If all reservations fail, the OS still boots with native process
+memory unavailable; launches must report resource exhaustion. The handoff
+reports the actual reservation, not the requested maximum.
 Previously its production handoff supplied zero, even though bare-metal process
 tests used their own arena. ARM slices preserve and mask the firmware virtual
 timer, then restore it on return. GICv2 retains the firmware-selected security

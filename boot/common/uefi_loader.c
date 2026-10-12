@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "boot_info.h"
 #include "video_modes.h"
+#include "native_pool.h"
 
 #define EFIAPI __attribute__((ms_abi))
 #include "tpm_random.h"
@@ -18,7 +19,6 @@
 #define PAGE_SIZE 4096u
 #define PAGE_MASK (PAGE_SIZE - 1u)
 #define KERNEL_STACK_PAGES 256u
-#define NATIVE_RUNTIME_POOL_PAGES 65536u
 #define IDENTITY_MAP_GIB 64u
 #define PT_LOAD 1u
 #if defined(INFINITY_AARCH64)
@@ -1073,16 +1073,12 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
 }
 
 // ------------------------=
-// FUNC: reserve_native_runtime_pool
-// DESC: Reserves a contiguous identity-mapped frame arena for isolated native process images, heaps, stacks, and page tables.
+// FUNC: allocate_native_pool
+// DESC: Adapts firmware page allocation to the shared bounded native process pool policy.
 // ------------------=
-static uint64_t reserve_native_runtime_pool(EFI_SYSTEM_TABLE *system) {
-    uint64_t base = (uint64_t)(uintptr_t)allocate_native_buffer(system->boot_services,
-        (size_t)NATIVE_RUNTIME_POOL_PAGES * PAGE_SIZE, (uint64_t)IDENTITY_MAP_GIB * 1024 * 1024 * 1024 - 1);
-    if (!base)
-        fail(system, L"ERROR: native runtime pool allocation failed\r\n",
-            "ERROR: native runtime pool allocation failed\n");
-    return base;
+static uint64_t allocate_native_pool(void *context,uint64_t bytes,uint64_t maximum) {
+    EFI_SYSTEM_TABLE *system=context;
+    return (uint64_t)(uintptr_t)allocate_native_buffer(system->boot_services,(size_t)bytes,maximum);
 }
 
 // ------------------------=
@@ -1580,7 +1576,9 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, KERNEL_STACK_PAGES, &stack_base) != EFI_SUCCESS)
         fail(system, L"ERROR: stack allocation failed\r\n", "ERROR: stack allocation failed\n");
     uint64_t page_tables = prepare_identity_map(system);
-    uint64_t native_pool = reserve_native_runtime_pool(system);
+    uint64_t native_pool_bytes=0;
+    uint64_t native_pool=infinity_reserve_process_pool(allocate_native_pool,system,
+        (uint64_t)IDENTITY_MAP_GIB*1024*1024*1024-1,&native_pool_bytes);
     InfinityBootInfo *info = NULL;
     if (system->boot_services->allocate_pool(EFI_LOADER_DATA, sizeof(*info), (void **)&info) != EFI_SUCCESS)
         fail(system, L"ERROR: BootInfo allocation failed\r\n", "ERROR: BootInfo allocation failed\n");
@@ -1627,7 +1625,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->model_work_address = 0;
     info->model_work_bytes = 0;
     info->native_pool_address = native_pool;
-    info->native_pool_bytes = native_pool ? (uint64_t)NATIVE_RUNTIME_POOL_PAGES * PAGE_SIZE : 0;
+    info->native_pool_bytes = native_pool_bytes;
     info->kernel_address = kernel.low;
     info->kernel_bytes = kernel.high - kernel.low;
     info->kernel_text_address = kernel.text_low;

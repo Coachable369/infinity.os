@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--gic", choices=[2, 3], type=int, default=2)
     parser.add_argument("--split-eoi", action="store_true")
     parser.add_argument("--firmware", action="store_true", help="Use production ARM UEFI discovery and handoff")
+    parser.add_argument("--memory", choices=["512M", "1G"], default="1G", help="Firmware guest RAM for low-memory boot coverage")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
     parser.add_argument("--link-object", type=Path, help="Run native LLD with this object exposed as a read-only guest fixture")
@@ -120,7 +121,7 @@ def main():
                 "-drive",f"if=none,id=esp,format=raw,file=fat:rw:{esp}","-device","virtio-blk-pci,drive=esp","-net","none"]
         with (work / "qemu.log").open("wb") as log:
             subprocess.run(["qemu-system-aarch64", "-machine", f"virt,gic-version={args.gic}", "-cpu", "max",
-                "-m", "1G" if args.firmware else "512M", "-display", "none", "-monitor", "none",
+                "-m", args.memory if args.firmware else "512M", "-display", "none", "-monitor", "none",
                 "-qmp", f"unix:{work / 'monitor.sock'},server=on,wait=off", "-serial", f"file:{work / 'result.bin'}",
                 *boot_args], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120 if args.compiler or args.firmware else 30)
         data = (work / "result.bin").read_bytes()

@@ -2,8 +2,18 @@
 #include <string.h>
 #include "../boot/common/native_controller.h"
 #include "../boot/common/boot_info.h"
+#include "../boot/common/native_pool.h"
 static uint8_t madt[44+80+24+16],gtdt[80];
 static unsigned reads;
+static unsigned allocations;
+// ------------------------=
+// FUNC: limited_pool
+// DESC: Models contiguous firmware availability while checking requested physical limits.
+// ------------------=
+static uint64_t limited_pool(void *context,uint64_t bytes,uint64_t maximum) {
+    ++allocations; assert(maximum==UINT64_C(0xffffffff));
+    return bytes<=*(uint64_t *)context ? UINT64_C(0x50000000) : 0;
+}
 // ------------------------=
 // FUNC: put32
 // DESC: Encodes fixture fields independently of parser reads.
@@ -55,6 +65,14 @@ static InfinityNativeController discover(void) {
 // DESC: Verifies controller addresses, fail-closed malformed topology and bounded MMIO access through structured results.
 // ------------------=
 int main(void) {
+    for(unsigned mib=0;mib<=256;mib+=64) {
+        uint64_t available=(uint64_t)mib*1024*1024,bytes=999; allocations=0;
+        uint64_t base=infinity_reserve_process_pool(limited_pool,&available,UINT64_C(0xffffffff),&bytes);
+        unsigned expected=mib>=256?256:mib>=128?128:mib>=64?64:0;
+        assert(bytes==(uint64_t)expected*1024*1024);
+        assert(base==(expected?UINT64_C(0x50000000):0));
+        assert(allocations==(mib>=256?1:mib>=128?2:3));
+    }
     assert(sizeof(InfinityBootInfo)==392 && offsetof(InfinityBootInfo,native_controller_kind)==368);
     setup(2); InfinityNativeController c=discover();
     assert(c.kind==2 && c.base==0x08000000 && c.auxiliary==0x08010000 && reads==0);
