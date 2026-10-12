@@ -66,7 +66,7 @@ fn sample_image() -> Image {
     segments[2] = Segment { source: 0, address: 0x3000, file_size: 0x1800,
         memory_size: 0x3000, flags: 6 };
     Image { entry: 0x100, memory_size: 0x6000, virtual_base: 0,
-        segments, segment_count: 3, tls: None,
+        segments, segment_count: 3, tls: None, relative_relocations: None,
         relro: Some(Region { address: 0x3000, length: 0x1000 }) }
 }
 
@@ -88,6 +88,12 @@ fn main() {
     let arena = AlignedArena::new(32 * 1024 * 1024);
     let mut memory = NativeMemory::empty();
     memory.initialize(arena.base(), arena.layout.size() as u64).unwrap();
+    let allocation = memory.allocate(1, 9).unwrap();
+    let available = memory.available_pages();
+    assert_eq!(memory.initialize(arena.base(), arena.layout.size() as u64), Err(MemoryError::AlreadyInitialized));
+    assert_eq!(memory.available_pages(), available);
+    memory.release(allocation).unwrap();
+    assert_eq!(NativeMemory::empty().initialize(u64::MAX - 4095, 8192), Err(MemoryError::AddressOverflow));
     let initial_pages = memory.available_pages();
 
     let first = memory.allocate(3, 11).unwrap();

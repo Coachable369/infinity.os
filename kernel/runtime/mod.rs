@@ -11,6 +11,7 @@ pub mod execution;
 pub mod native_c_image;
 pub mod native_memory;
 pub mod native_memory_arm;
+pub mod native_mappings;
 pub mod native_window;
 #[cfg(all(target_os = "none", target_arch = "x86_64"))]
 pub mod native_task_x86;
@@ -572,11 +573,17 @@ impl InfinityRuntime {
         if self.ui.surfaces.inspect(surface).map(|entry| entry.owner) != Some(context) {
             return Err(UiOperationError::AccessDenied);
         }
+        if self.ui.windows.uses_surface(surface) || self.ui.surfaces.inspect(surface)
+            .is_some_and(|entry| entry.associated_window.is_some()) {
+            return Err(UiOperationError::Surface(crate::ui::surface::SurfaceError::InUse));
+        }
         let window = self
             .ui
             .windows
             .create(context, surface, bounds, z_class)
             .map_err(UiOperationError::Window)?;
+        self.ui.surfaces.associate_window(context, surface, Some(window))
+            .map_err(UiOperationError::Surface)?;
         self.flush_window_events(now, window.0 as u64, window.0 as u64);
         Ok(window)
     }

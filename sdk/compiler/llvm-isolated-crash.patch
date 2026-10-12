@@ -1,0 +1,17 @@
+--- a/llvm/lib/Support/Unix/Signals.inc
++++ b/llvm/lib/Support/Unix/Signals.inc
+@@ -334,8 +334,14 @@
+   if (!NativeRegistered) {
+     if (infinity_compiler_register_crash_handler(
+-            [](void *) { llvm::sys::RunSignalHandlers(); }, nullptr) != 0)
++            [](void *) { llvm::sys::RunSignalHandlers(); }, nullptr) != 0) {
++      // Isolated processes are terminated by the native supervisor on faults.
++      // Cleanup notification is optional; do not claim it was registered when
++      // the execution boundary does not offer a user-mode callback facility.
++      if (errno == ENOSYS)
++        return;
+       ReportErrnumFatal("Native context crash notification unavailable", errno);
++    }
+     NativeRegistered = true;
+   }
+ #else

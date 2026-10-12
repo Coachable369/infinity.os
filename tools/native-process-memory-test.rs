@@ -1,6 +1,7 @@
 #[path = "../kernel/runtime/native_c_image.rs"] mod native_c_image;
 #[path = "../kernel/runtime/native_memory.rs"] mod native_memory;
 #[path = "../kernel/runtime/native_memory_arm.rs"] mod native_memory_arm;
+#[path = "../kernel/runtime/native_mappings.rs"] mod native_mappings;
 use native_memory::*;
 use native_memory_arm::ArmAddressSpace;
 
@@ -70,6 +71,62 @@ fn main() {
     verify::<X86AddressSpace>();
     verify::<ArmAddressSpace>();
     verify_tls();
+    verify_mappings::<X86AddressSpace>();
+    verify_mappings::<ArmAddressSpace>();
+}
+
+// ------------------------=
+// FUNC: verify_mappings
+// DESC: Verifies budget, zero-fill, non-executable protection, cross-owner denial, reuse and complete frame reclamation on both architectures.
+// ------------------=
+fn verify_mappings<T: PageTable>() {
+    let layout = std::alloc::Layout::new::<Arena>();
+    let arena = unsafe { std::alloc::alloc_zeroed(layout) };
+    assert!(!arena.is_null());
+    let mut memory = NativeMemory::empty();
+    memory.initialize(arena as u64, layout.size() as u64).unwrap();
+    let initial = memory.available_pages();
+    let mut tables = T::new(&mut memory, 7).unwrap();
+    let mut mappings = native_mappings::PrivateMappings::new(7, 3);
+    let mut stranger = native_mappings::PrivateMappings::new(8, 3);
+    let first = mappings.map(&mut tables, &mut memory, 4097, true).unwrap();
+    assert_eq!(mappings.used_pages(), 2);
+    let mut bytes = [0xa5; 8192];
+    copy_from_user(&tables, first, &mut bytes).unwrap();
+    assert_eq!(bytes, [0; 8192]);
+    copy_to_user(&mut tables, first, &[42; 8192]).unwrap();
+    assert_eq!(mappings.map(&mut tables, &mut memory, 8192, true), Err(MemoryError::AccessDenied));
+    assert_eq!(stranger.unmap(&mut tables, &mut memory, first, 8192), Err(MemoryError::UnknownAllocation));
+    assert_eq!(mappings.unmap(&mut tables, &mut memory, first, 4096), Err(MemoryError::UnknownAllocation));
+    mappings.protect(&mut tables, first, 8192, false).unwrap();
+    assert_eq!(copy_to_user(&mut tables, first, &[1]), Err(MemoryError::AccessDenied));
+    assert!(!tables.mapping(first).unwrap().permissions.executable);
+    mappings.protect(&mut tables, first, 8192, true).unwrap();
+    copy_to_user(&mut tables, first, &[43]).unwrap();
+    let second = mappings.map(&mut tables, &mut memory, 4096, false).unwrap();
+    assert_eq!(second, first + 8192);
+    mappings.unmap(&mut tables, &mut memory, first, 8192).unwrap();
+    assert!(tables.mapping(first).is_none());
+    assert_eq!(mappings.map(&mut tables, &mut memory, 8192, true).unwrap(), first);
+    copy_from_user(&tables, first, &mut bytes).unwrap();
+    assert_eq!(bytes, [0; 8192]);
+    assert_eq!(mappings.map(&mut tables, &mut memory, u64::MAX, true), Err(MemoryError::AddressOverflow));
+    mappings.release_all(&mut tables, &mut memory).unwrap();
+    assert_eq!(mappings.used_pages(), 0);
+    assert!(tables.mapping(second).is_none());
+    tables.release(&mut memory).unwrap();
+    assert_eq!(memory.available_pages(), initial);
+
+    // Leave too few frames to build the page-table chain after data allocation.
+    let mut tables = T::new(&mut memory, 7).unwrap();
+    let reserved = memory.allocate((memory.available_pages() - 4) as u32, 9).unwrap();
+    assert!(mappings.map(&mut tables, &mut memory, 12288, true).is_err());
+    assert_eq!(mappings.used_pages(), 0);
+    assert!(tables.mapping(first).is_none());
+    tables.release(&mut memory).unwrap();
+    memory.release(reserved).unwrap();
+    assert_eq!(memory.available_pages(), initial);
+    unsafe { std::alloc::dealloc(arena, layout); }
 }
 
 // ------------------------=

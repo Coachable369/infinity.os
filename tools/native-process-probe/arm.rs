@@ -2,23 +2,31 @@
 #[path = "../../kernel/runtime/native_c_image.rs"] mod native_c_image;
 #[path = "../../kernel/runtime/native_memory.rs"] mod native_memory;
 #[path = "../../kernel/runtime/native_memory_arm.rs"] mod native_memory_arm;
+#[path = "../../kernel/runtime/native_mappings.rs"] mod native_mappings;
 #[path = "../../kernel/runtime/native_task_arm.rs"] mod task;
 use native_memory::*;
+#[path = "services.rs"] mod services;
 use native_memory_arm::ArmAddressSpace;
+#[path = "compiler.rs"] mod compiler;
+#[path = "cpu.rs"] mod cpu;
+
+const COMPILER: bool = option_env!("INFINITY_COMPILER_PROBE").is_some();
+const POOL_BYTES: usize = if COMPILER { 256 * 1024 * 1024 } else { 8 * 1024 * 1024 };
+const STACK_TOP: u64 = if COMPILER { 0x5ff00000 } else { 0x42000000 };
 
 static IMAGE: &[u8] = include_bytes!(env!("INFINITY_PROCESS_IMAGE"));
 static mut SENTINEL: u64 = 0x1020304050607080;
 #[repr(C, align(4096))]
-struct Arena([u8; 8 * 1024 * 1024]);
-static mut POOL: Arena = Arena([0; 8 * 1024 * 1024]);
+struct Arena([u8; POOL_BYTES]);
+static mut POOL: Arena = Arena([0; POOL_BYTES]);
 #[repr(C, align(4096))]
 struct Table([u64; 512]);
 static mut BOOT_TABLE: Table = Table([0; 512]);
 
 core::arch::global_asm!(
     ".section .text.entry", ".global _start", "_start:", "msr daifset, #0xf",
-    "msr spsel, #1", "ldr x0, =0x42000000", "mov sp, x0",
-    "bl process_probe", "b ."
+    "msr spsel, #1", "ldr x0, ={stack}", "mov sp, x0",
+    "bl process_probe", "b .", stack = const STACK_TOP
 );
 unsafe extern "C" {
     static text_start: u8; static text_end: u8;
@@ -92,22 +100,23 @@ pub unsafe extern "C" fn process_probe() -> ! {
         core::ptr::write_volatile(0x08000000 as *mut u32, 3);
         task::InterruptController::V2 { distributor: 0x08000000, cpu: 0x08010000 }
     };
-    let image = native_c_image::Image::parse(IMAGE, 183).unwrap();
     let mut memory = NativeMemory::empty();
-    memory.initialize((&raw mut POOL) as u64, 8 * 1024 * 1024).unwrap();
+    memory.initialize((&raw mut POOL) as u64, POOL_BYTES as u64).unwrap();
     let initial = memory.available_pages();
     let kernel = KernelAccessMap {
         text: region(&raw const text_start, &raw const text_end),
         rodata: region(&raw const rodata_start, &raw const rodata_end),
         data: region(&raw const data_start, &raw const data_end),
-        stack: MappedRange { virtual_address: 0x41f00000, physical_address: 0x41f00000, bytes: 0x100000 },
+        stack: MappedRange { virtual_address: STACK_TOP - 0x100000, physical_address: STACK_TOP - 0x100000, bytes: 0x100000 },
         gateway: MappedRange { virtual_address: 0, physical_address: 0, bytes: 0 },
     };
+    if COMPILER { compiler::run(&mut memory, kernel, controller); }
+    let image = native_c_image::Image::parse(IMAGE, 183).unwrap();
     let layout = CompilerVirtualLayout { image_base: 0x100000000, heap_base: 0x200000000,
         heap_pages: 2, stack_guard_base: 0x300000000, stack_pages: 8 };
-    for kind in [0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 6] {
+    for kind in [0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 6, 7] {
         let mut process = ProcessAddressSpace::<ArmAddressSpace>::build(&mut memory, 1, &image, layout, kernel).unwrap();
-        native_c_image::Image::load(IMAGE, 183, process.image_bytes_mut()).unwrap();
+        native_c_image::Image::load_at(IMAGE, 183, process.image_bytes_mut(), layout.image_base as usize).unwrap();
         // Make copied instructions visible before the first user fetch.
         for address in (process.image.physical_address..process.image.physical_address +
             process.image.page_count as u64 * 4096).step_by(64) {
@@ -122,6 +131,13 @@ pub unsafe extern "C" fn process_probe() -> ! {
         for _ in 0..100 {
             task::run(&mut registers, process.page_tables.root_physical_address(),
                 controller, 2000).unwrap();
+            if kind == 7 && registers.reason == 0 && registers.syndrome >> 26 == 0x15 {
+                if let Some(result) = services::client_contract(&mut process.page_tables, registers.x[8],
+                    registers.x[..6].try_into().unwrap(), &mut yields) {
+                    registers.x[0] = result;
+                    continue;
+                }
+            }
             if kind == 6 && registers.reason == 0 && registers.syndrome >> 26 == 0x15 && registers.x[8] == 0x1001 {
                 assert_eq!(&registers.x[..6], &[yields, 11, 22, 33, 44, 55]);
                 registers.x[0] = yields + 100;
@@ -136,6 +152,7 @@ pub unsafe extern "C" fn process_probe() -> ! {
             if registers.reason != 1 || kind == 3 { break; }
         }
         if kind == 5 || kind == 6 { assert_eq!(yields, 16); }
+        if kind == 7 { assert_eq!(yields, 3); }
         for value in [kind, registers.reason, registers.syndrome, registers.x[0]] { emit(value); }
         assert_eq!(core::ptr::read_volatile(&raw const SENTINEL), 0x1020304050607080);
         assert_eq!(registers.pstate & 15, 0);

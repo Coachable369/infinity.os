@@ -72,10 +72,20 @@ if test ! -f "$llvm_source/.infinity-patched"; then
   fi
   touch "$llvm_source/.infinity-patched"
 fi
+if ! patch -f --dry-run -R -p1 -d "$llvm_source" < "$repo/sdk/compiler/llvm-isolated-crash.patch" >/dev/null 2>&1; then
+  patch -f -s -p1 -d "$llvm_source" < "$repo/sdk/compiler/llvm-isolated-crash.patch"
+fi
+if ! patch -f --dry-run -R -p1 -d "$llvm_source" < "$repo/sdk/compiler/llvm-native-signal-default.patch" >/dev/null 2>&1; then
+  patch -f -s -p1 -d "$llvm_source" < "$repo/sdk/compiler/llvm-native-signal-default.patch"
+fi
 
 newlib_build=$work/newlib-build-$architecture
 mkdir -p "$newlib_build"
-if test ! -f "$newlib_build/Makefile"; then
+newlib_flags="-O2 -fPIE $cpu_flags -ffunction-sections -fdata-sections"
+if test ! -f "$newlib_build/Makefile" || test "$(cat "$newlib_build/.infinity-flags" 2>/dev/null || true)" != "$newlib_flags"; then
+  if test -f "$newlib_build/Makefile"; then
+    make -C "$newlib_build" clean-target-newlib
+  fi
   cd "$newlib_build"
   "$newlib_source/configure" \
     --target="$target" \
@@ -94,7 +104,8 @@ if test ! -f "$newlib_build/Makefile"; then
     RANLIB_FOR_TARGET="$llvm_bin/llvm-ranlib" \
     READELF_FOR_TARGET="$llvm_bin/llvm-readelf" \
     STRIP_FOR_TARGET="$llvm_bin/llvm-strip" \
-    CFLAGS_FOR_TARGET="-O2 $cpu_flags -ffunction-sections -fdata-sections"
+    CFLAGS_FOR_TARGET="$newlib_flags"
+  printf '%s\n' "$newlib_flags" > "$newlib_build/.infinity-flags"
   cd "$repo"
 fi
 make -C "$newlib_build" -j"$jobs" all-target-newlib
@@ -129,7 +140,7 @@ cmake -G Ninja \
   -DCMAKE_LINKER="$ld_lld" \
   -DCMAKE_SYSROOT="$sysroot" \
   -DCMAKE_INSTALL_PREFIX="$sysroot" \
-  -DCMAKE_C_FLAGS="-O2 $cpu_flags -ffunction-sections -fdata-sections"
+  -DCMAKE_C_FLAGS="-O2 -fPIE $cpu_flags -ffunction-sections -fdata-sections"
 ninja -C "$builtins_build" -j"$jobs"
 
 common_flags="-O2 -fPIE $cpu_flags -ffunction-sections -fdata-sections -include $repo/sdk/compiler/target.h -I$repo/sdk/compiler/include"
@@ -162,7 +173,7 @@ ninja -C "$cxx_build" -j"$jobs" cxx cxxabi
 ninja -C "$cxx_build" install-cxx install-cxxabi
 
 INFINITY_COMPILER_TARGET="$target" INFINITY_COMPILER_OUTPUT="$work" INFINITY_COMPILER_SYSROOT="$sysroot" LLVM_BIN="$llvm_bin" sh "$repo/tools/native-c-probe/build-compiler-runtime.sh"
-runtime_objects="$work/compiler-start.o $work/compiler-entry.o $work/compiler-platform.o $work/compiler-dlfcn.o $work/compiler-files.o $work/compiler-heap.o $work/compiler-time.o $work/compiler-serial_sync.o $work/compiler-serial_tls.o $work/compiler-pthread.o $work/compiler-namespace.o $work/compiler-process.o $work/compiler-newlib.o"
+runtime_objects="$work/compiler-start.o $work/compiler-entry.o $work/compiler-isolated.o $work/compiler-platform.o $work/compiler-dlfcn.o $work/compiler-files.o $work/compiler-heap.o $work/compiler-time.o $work/compiler-serial_sync.o $work/compiler-serial_tls.o $work/compiler-pthread.o $work/compiler-namespace.o $work/compiler-process.o $work/compiler-newlib.o"
 runtime_builtins="$builtins_build/lib/infinityos/libclang_rt.builtins-$architecture.a"
 compiler_build=$work/clang-build-infinity-$architecture
 compiler_cxx_flags="$common_flags -nostdinc++ -isystem $sysroot/include/c++/v1"

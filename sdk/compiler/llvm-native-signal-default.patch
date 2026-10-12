@@ -1,0 +1,11 @@
+--- a/clang/tools/driver/driver.cpp
++++ b/clang/tools/driver/driver.cpp
+@@ -382,4 +382,8 @@
+     // Ensure the CC1Command actually catches cc1 crashes
++#if !defined(__INFINITY__)
+     llvm::CrashRecoveryContext::Enable(
+         /*NeedsPOSIXUtilitySignalHandling=*/true);
++#endif
++    // InfinityOS catches fatal faults at the isolated process boundary.
++    // Do not install Unix signal recovery inside the compiler process.
+   }

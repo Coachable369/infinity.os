@@ -1,5 +1,29 @@
 #include <stdint.h>
 #include <infinity/syscall.h>
+#include <infinity/window.h>
+#include <infinity/compiler_syscall.h>
+#include <stddef.h>
+
+// ------------------------=
+// FUNC: memcpy
+// DESC: Copies compiler launch metadata without a host libc.
+// ------------------=
+void *memcpy(void *target, const void *source, size_t bytes) {
+    volatile unsigned char *out = target;
+    const volatile unsigned char *in = source;
+    for (size_t i = 0; i < bytes; ++i) out[i] = in[i];
+    return target;
+}
+
+// ------------------------=
+// FUNC: memset
+// DESC: Initializes user-owned launch structures without a host libc.
+// ------------------=
+void *memset(void *target, int value, size_t bytes) {
+    volatile unsigned char *out = target;
+    for (size_t i = 0; i < bytes; ++i) out[i] = (unsigned char)value;
+    return target;
+}
 
 // ------------------------=
 // FUNC: infinity_app_entry
@@ -35,6 +59,26 @@ __attribute__((noreturn)) void infinity_app_entry(uint64_t kind, volatile uint64
                 index, 11, 22, 33, 44, 55);
             if (result != (int64_t)(index + 100)) __builtin_trap();
         }
+    }
+    if (kind == 7) {
+        char *arguments[] = { "clang", "--version", 0 };
+        InfinityIsolatedCompilerLaunch launch = { .version = INFINITY_ISOLATED_COMPILER_ABI,
+            .size = sizeof(launch), .argc = 2, .process_identity = 1, .session_identity = 1,
+            .argv = arguments, .heap_base = (void *)0x200000000ull, .heap_size = 4096,
+            .executable_path = "/system/clang", .home_path = "/home/default", .node_name = "test" };
+        InfinityCompilerHost host;
+        if (infinity_compiler_isolated_host(&launch, &host)) __builtin_trap();
+        if (host.heap_base != launch.heap_base || host.heap_size != 4096 ||
+            host.serial_execution != 1 || !host.files || !host.namespaces) __builtin_trap();
+        launch.reserved = 1;
+        if (!infinity_compiler_isolated_host(&launch, &host)) __builtin_trap();
+        uint64_t payload = 0x123456789abcdef0ull;
+        size_t done = 999;
+        if (host.console->write(host.context, 2, &payload, sizeof(payload), &done) != 13 || done != 999)
+            __builtin_trap();
+        if (host.console->write(host.context, 2, &payload, sizeof(payload), &done) || done != 8)
+            __builtin_trap();
+        if (infinity_window_create(91, 7, 10, 20, 300, 200) != 27) __builtin_trap();
     }
 #if defined(__x86_64__)
     if (kind == 4) __asm__ volatile("outb %%al, %%dx" :: "a"(0), "d"(0x80));

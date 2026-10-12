@@ -191,6 +191,11 @@ fn ui_authority() {
         Some(100),
         0,
     ).unwrap();
+    assert_eq!(integrated.ui.surfaces.inspect(surface).unwrap().associated_window, Some(window));
+    assert_eq!(integrated.create_window(caller, context, create_window, surface,
+        ui::geometry::Rect { x: 50, y: 50, width: 320, height: 200 },
+        ui::window::ZOrderClass::Normal, 1),
+        Err(runtime::UiOperationError::Surface(ui::surface::SurfaceError::InUse)));
     let inspect_window = integrated.capabilities.grant(
         CapabilityType::WindowInspectMetadata,
         window.0 as u64,
@@ -289,6 +294,12 @@ fn ui_authority() {
     ), Err(runtime::UiOperationError::AccessDenied));
     let window_service = integrated.services.inspect(SERVICE_WINDOW_SERVER).unwrap();
     assert_eq!(window_service.manifest.operation_count, 12);
+    let close = integrated.capabilities.grant(CapabilityType::WindowManageOwn, window.0 as u64,
+        1, 0, issuer, caller, Some(100), 0).unwrap();
+    integrated.native_window_command(caller, context, close, window, Command::Close, area, area, 3).unwrap();
+    assert_eq!(integrated.ui.surfaces.inspect(surface).unwrap().associated_window, None);
+    integrated.destroy_surface(caller, context, destroy_surface, surface, 3).unwrap();
+    assert!(integrated.ui.surfaces.inspect(surface).is_none());
 }
 
 // ------------------------=

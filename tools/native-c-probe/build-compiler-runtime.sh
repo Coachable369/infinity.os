@@ -17,9 +17,9 @@ if test ! -f "$sysroot/lib/libc.a"; then
   exit 2
 fi
 mkdir -p "$output"
-for unit in start entry platform dlfcn files heap time serial_sync serial_tls pthread namespace process newlib; do
+for unit in start entry isolated platform dlfcn files heap time serial_sync serial_tls pthread namespace process newlib; do
   "$compiler" --target="$target" --sysroot="$sysroot" \
     -std=c17 -O2 -fPIE "$cpu_flags" -ffunction-sections -fdata-sections \
-    -Wall -Wextra -Werror -include sdk/compiler/target.h -Isdk/compiler/include \
+    -Wall -Wextra -Werror -include sdk/compiler/target.h -Isdk/compiler/include -Isdk/c/include \
     -c "sdk/compiler/$unit.c" -o "$output/compiler-$unit.o"
 done

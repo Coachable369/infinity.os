@@ -793,3 +793,43 @@ integration with the desktop; in-guest compilation and executable launch; and
 fresh-installed, ISO-detached verification on both targets. The existing ISO
 release does not contain this checkpoint. None of these remaining gates is
 claimed complete by the disposable execution probes.
+
+## Native compiler execution checkpoint 2026 10 12
+
+Clang and LLD now compile and link real C inside disposable InfinityOS guests
+on AArch64 and x86_64. The resulting executable enters a separate EL0 or CPL3
+address space and returns the expected result, 54. Compilation, linking and
+application execution reclaim all owned frames. The host builds the toolchain
+and probe kernel, but does not compile or link the test C program.
+
+`sdk/compiler/isolated.c` replaces privileged callback entry with checked syscall
+marshalling. The launch record contains private addresses and process metadata,
+not kernel function pointers. LLVM's optional crash cleanup notification can be
+unavailable without preventing startup; Unix signal recovery remains disabled
+because the supervisor owns fatal process termination. Newlib and compiler
+builtins use position-independent code for the compiler's high virtual address.
+
+The ELF loader supports bounded, symbol-free relative relocations for private
+callback tables. Dynamic anonymous mappings use shared ownership and page-budget
+accounting, reject executable allocation, and clean up on exit. Window creation
+now records an exclusive surface association; close releases that association.
+
+The reproducible native pipeline is:
+
+```
+./build-kit run python3 tools/native-process-probe/toolchain.py --arch aarch64
+./build-kit run python3 tools/native-process-probe/toolchain.py --arch x86_64
+```
+
+Structured results, generated objects, executables and checksums are retained in
+`builds/validation/native-apps/aarch64-gic3-compiler/` and
+`builds/validation/native-apps/x86_64-compiler/`. The verification batch manifest
+is `builds/manifests/20261012T055043516630Z-56355.json`; it also covers the two
+hardware page-table encodings, dynamic mapping budgets and runtime window tests.
+
+These probes use bounded input/output streams and read-only linker fixtures.
+They do not yet provide the installed ObjectStore compiler resource adapter,
+production process scheduling, desktop rendering/events for C apps, or the
+voice-to-application workflow. The native compiler is not yet installed by the
+ISO. Fresh-installed, ISO-detached acceptance and updated release ISOs remain
+required; neither target is complete on the strength of these probes alone.

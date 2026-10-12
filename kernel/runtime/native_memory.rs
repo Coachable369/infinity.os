@@ -24,6 +24,7 @@ pub struct FrameAllocation {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryError {
+    AlreadyInitialized,
     InvalidPool,
     InvalidPageCount,
     OutOfMemory,
@@ -67,9 +68,11 @@ impl NativeMemory {
     // DESC: Claims a page-aligned loader-reserved physical arena as the native runtime frame pool.
     // ------------------=
     pub fn initialize(&mut self, base: u64, bytes: u64) -> Result<(), MemoryError> {
+        if self.page_count != 0 { return Err(MemoryError::AlreadyInitialized); }
         if base == 0 || base & (PAGE_SIZE - 1) != 0 || bytes < PAGE_SIZE || bytes & (PAGE_SIZE - 1) != 0 {
             return Err(MemoryError::InvalidPool);
         }
+        base.checked_add(bytes).ok_or(MemoryError::AddressOverflow)?;
         let pages = (bytes / PAGE_SIZE) as usize;
         if pages > MAX_POOL_PAGES {
             return Err(MemoryError::InvalidPool);

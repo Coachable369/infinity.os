@@ -33,6 +33,7 @@ pub struct Image {
     pub segment_count: usize,
     pub tls: Option<tls::Template>,
     pub relro: Option<Region>,
+    pub relative_relocations: Option<Region>,
 }
 
 // ------------------------=
@@ -95,6 +96,7 @@ impl Image {
         if end > bytes.len() { return Err(ImageError::Bounds); }
         let sections = index(bytes, 40)?;
         let section_count = integer(bytes, 60, 2)? as usize;
+        let mut relocations = None;
         if section_count != 0 {
             if sections < 64 || integer(bytes, 58, 2)? != 64
                 || integer(bytes, 62, 2)? as usize >= section_count {
@@ -105,8 +107,18 @@ impl Image {
             }
             for number in 0..section_count {
                 let section = sections + number * 64;
-                if matches!(integer(bytes, section + 4, 4)?, 4 | 9) && index(bytes, section + 32)? != 0 {
-                    return Err(ImageError::Unsupported);
+                let kind = integer(bytes, section + 4, 4)?;
+                let length = index(bytes, section + 32)?;
+                if matches!(kind, 4 | 9) && length != 0 {
+                    if compiler || kind != 4 || relocations.is_some() || length % 24 != 0 ||
+                        length / 24 > 4096 || index(bytes, section + 56)? != 24 {
+                        return Err(ImageError::Unsupported);
+                    }
+                    let source = index(bytes, section + 24)?;
+                    if source.checked_add(length).is_none_or(|end| end > bytes.len()) {
+                        return Err(ImageError::Bounds);
+                    }
+                    relocations = Some(Region { address: source, length });
                 }
             }
         } else if sections != 0 { return Err(ImageError::Unsupported); }
@@ -152,7 +164,8 @@ impl Image {
         let load_bias = if compiler { virtual_base } else { 0 };
         let entry = raw_entry.checked_sub(load_bias).ok_or(ImageError::Entry)?;
         let mut image = Self { entry, memory_size: virtual_end - load_bias, virtual_base: load_bias,
-            segments: [Segment::default(); MAX_SEGMENTS], segment_count: 0, tls: None, relro: None };
+            segments: [Segment::default(); MAX_SEGMENTS], segment_count: 0, tls: None, relro: None,
+            relative_relocations: relocations };
         let mut tls_seen = false;
         for number in 0..count {
             let p = table + number * 56;
@@ -216,6 +229,28 @@ impl Image {
             && image.entry >= s.address && image.entry < s.address + s.file_size) {
             return Err(ImageError::Entry);
         }
+        if let Some(relocations) = image.relative_relocations {
+            let mut previous = None;
+            for at in (relocations.address..relocations.address + relocations.length).step_by(24) {
+                let target = index(bytes, at)?;
+                let info = integer(bytes, at + 8, 8)?;
+                let addend = index(bytes, at + 16)?;
+                if info != if machine == 62 { 8 } else { 1027 } {
+                    return Err(ImageError::Unsupported);
+                }
+                if target % 8 != 0 || previous.is_some_and(|value| target <= value) {
+                    return Err(ImageError::Overlap);
+                }
+                let end = target.checked_add(8).ok_or(ImageError::Bounds)?;
+                if !image.segments[..image.segment_count].iter().any(|s| s.flags & 2 != 0 &&
+                    target >= s.address && end <= s.address + s.memory_size) ||
+                    !image.segments[..image.segment_count].iter().any(|s|
+                        addend >= s.address && addend <= s.address + s.memory_size) {
+                    return Err(ImageError::Permissions);
+                }
+                previous = Some(target);
+            }
+        }
         Ok(image)
     }
 
@@ -225,7 +260,26 @@ impl Image {
     // ------------------=
     pub fn load(bytes: &[u8], machine: u16, destination: &mut [u8]) -> Result<Self, ImageError> {
         let image = Self::parse(bytes, machine)?;
+        if image.relative_relocations.is_some() { return Err(ImageError::Unsupported); }
         Self::copy_into(bytes, destination, image)
+    }
+
+    // ------------------------=
+    // FUNC: load_at
+    // DESC: Relocates only checked in-image relative pointers at the explicit private virtual base before execution.
+    // ------------------=
+    pub fn load_at(bytes: &[u8], machine: u16, destination: &mut [u8], virtual_base: usize) -> Result<Self, ImageError> {
+        let image = Self::parse(bytes, machine)?;
+        virtual_base.checked_add(image.memory_size).ok_or(ImageError::Bounds)?;
+        Self::copy_into(bytes, destination, image)?;
+        if let Some(relocations) = image.relative_relocations {
+            for at in (relocations.address..relocations.address + relocations.length).step_by(24) {
+                let target = index(bytes, at)?;
+                let value = virtual_base + index(bytes, at + 16)?;
+                destination[target..target + 8].copy_from_slice(&(value as u64).to_le_bytes());
+            }
+        }
+        Ok(image)
     }
 
     // ------------------------=
