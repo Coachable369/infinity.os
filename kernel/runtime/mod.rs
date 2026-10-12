@@ -23,6 +23,8 @@ pub mod native_memory_arm;
 pub mod native_mappings;
 pub mod native_window;
 pub mod native_event;
+pub mod native_surface;
+pub mod native_input;
 #[cfg(all(target_os = "none", target_arch = "x86_64"))]
 pub mod native_task_x86;
 #[cfg(all(target_os = "none", target_arch = "aarch64"))]
@@ -97,6 +99,7 @@ pub const EVENT_COMPOSITOR_DEGRADED: u32 = 0x98009;
 pub const EVENT_COMPOSITOR_RECOVERED: u32 = 0x9800a;
 pub const EVENT_SECURE_INPUT_STARTED: u32 = 0x9800b;
 pub const EVENT_SECURE_INPUT_STOPPED: u32 = 0x9800c;
+pub const EVENT_NATIVE_INPUT: u32 = 0x9800d;
 pub const EVENT_NETWORK_INTERFACE_STATE_CHANGED: u32 = 0x99001;
 pub const EVENT_NETWORK_ADDRESS_CHANGED: u32 = 0x99002;
 pub const EVENT_NETWORK_ROUTE_CHANGED: u32 = 0x99003;
@@ -190,7 +193,7 @@ const COMPUTE_EVENT_TYPES: [u32; 8] = [
     EVENT_COMPUTE_RESTARTED, EVENT_COMPUTE_NODE_LOST,
 ];
 
-const UI_EVENT_TYPES: [u32; 12] = [
+const UI_EVENT_TYPES: [u32; 13] = [
     EVENT_WINDOW_CREATED,
     EVENT_WINDOW_DESTROYED,
     EVENT_WINDOW_FOCUSED,
@@ -203,6 +206,7 @@ const UI_EVENT_TYPES: [u32; 12] = [
     EVENT_COMPOSITOR_RECOVERED,
     EVENT_SECURE_INPUT_STARTED,
     EVENT_SECURE_INPUT_STOPPED,
+    EVENT_NATIVE_INPUT,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

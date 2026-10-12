@@ -32,7 +32,10 @@ impl InfinityRuntime {
             if width == 0 || height == 0 || width > work_area.width || height > work_area.height { return -3; }
             return match self.create_window(caller, context, args[0], crate::ui::window::SurfaceId(id),
                 Rect { x, y, width, height }, crate::ui::window::ZOrderClass::Normal, now) {
-                Ok(window) => window.0 as i64, Err(error) => abi_error(error),
+                Ok(window) => {
+                    self.ui.damage.add(Rect { x, y, width, height });
+                    window.0 as i64
+                }, Err(error) => abi_error(error),
             };
         }
         let mut title = [0u8; crate::ui::window::MAX_WINDOW_TITLE];
@@ -94,6 +97,12 @@ impl InfinityRuntime {
             Command::ModalParent(parent) => self.ui.windows.set_modal_parent(context, window, parent).map(|_| before.bounds),
             Command::Close => self.ui.windows.close(context, window).map(|closed| closed.bounds),
         }.map_err(UiOperationError::Window)?;
+        if !matches!(command, Command::Capture | Command::ReleaseCapture) {
+            if before.visible { self.ui.damage.add(before.bounds); }
+            if let Some(after) = self.ui.windows.inspect(window) {
+                if after.visible { self.ui.damage.add(after.bounds); }
+            }
+        }
         if command == Command::Close {
             // A closed window releases its association, not its caller-owned
             // pixels; the app may reuse or explicitly destroy that surface.

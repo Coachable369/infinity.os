@@ -309,6 +309,9 @@ fn ui_authority() {
 fn main(){execution_and_scheduler();capabilities();iop();events();services();ui_authority();
     native_event_abi::<runtime::native_memory::X86AddressSpace>();
     native_event_abi::<runtime::native_memory_arm::ArmAddressSpace>();
+    native_surface_abi::<runtime::native_memory::X86AddressSpace>();
+    native_surface_abi::<runtime::native_memory_arm::ArmAddressSpace>();
+    native_input_routes();
     println!("PASS Milestone 4 host acceptance");}
 
 // ------------------------=
@@ -376,4 +379,198 @@ fn native_event_abi<T: runtime::native_memory::PageTable>() {
     memory.release(allocation).unwrap();
     assert_eq!(memory.available_pages(), initial);
     unsafe { std::alloc::dealloc(arena, layout); }
+}
+
+// ------------------------=
+// FUNC: native_surface_abi
+// DESC: Exercises real retained pixels, compositor output, transactional uploads, bounded allocation and cross-context authority on both page-table implementations.
+// ------------------=
+fn native_surface_abi<T: runtime::native_memory::PageTable>() {
+    use runtime::native_memory::*;
+    use ui::{geometry::{Rect, Size}, window::{ContextId, SurfaceId, WindowId}};
+    let mut runtime = runtime::InfinityRuntime::new(false);
+    let mut surfaces = runtime::native_surface::NativeSurfaces::new();
+    let caller = identity(65);
+    let owner = ContextId(65);
+    let create = runtime.capabilities.grant(CapabilityType::SurfaceCreate,
+        SERVICE_WINDOW_SERVER as u64, 1, 0, caller, caller, None, 0).unwrap();
+    let layout = std::alloc::Layout::from_size_align(80 * 1024 * 1024, 4096).unwrap();
+    let arena = unsafe { std::alloc::alloc_zeroed(layout) };
+    assert!(!arena.is_null());
+    let mut memory = NativeMemory::empty();
+    memory.initialize(arena as u64, layout.size() as u64).unwrap();
+    let initial = memory.available_pages();
+    let source = memory.allocate(3, owner.0).unwrap();
+    let mut tables = T::new(&mut memory, owner.0).unwrap();
+    let user = 0x1_0000_0000;
+    tables.map_range(&mut memory, user, source.physical_address, 8192, PagePermissions::USER_RW).unwrap();
+    tables.map_range(&mut memory, user+8192, source.physical_address+8192, 4096, PagePermissions::KERNEL_RW).unwrap();
+    let before = memory.available_pages();
+    assert_eq!(surfaces.syscall(&mut runtime, &mut memory, &tables, identity(66), owner, 0x1120, [create,128,64,0,0,0], 1), -1);
+    assert_eq!(surfaces.syscall(&mut runtime, &mut memory, &tables, caller, owner, 0x1120, [create,u64::MAX,64,0,0,0], 1), -3);
+    assert_eq!(memory.available_pages(), before);
+    let display = Rect{x:0,y:0,width:256,height:128};
+    assert_eq!(surfaces.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,0xffff,[0;6],display,display,1),-6);
+    let id = surfaces.dispatch(&mut runtime, &mut memory, &mut tables, caller, owner, 0x1120, [create,128,64,0,0,0], display,display,1);
+    assert!(id > 0);
+    let id = id as u64;
+    let surface = SurfaceId(id as u32);
+    assert_eq!(before - memory.available_pages(), 16); // two 32KiB planes
+    let publish = runtime.capabilities.grant(CapabilityType::SurfacePublish,id,1,0,caller,caller,None,0).unwrap();
+    let resize = runtime.capabilities.grant(CapabilityType::SurfaceResize,id,1,0,caller,caller,None,0).unwrap();
+    let destroy = runtime.capabilities.grant(CapabilityType::SurfaceDestroy,id,1,0,caller,caller,None,0).unwrap();
+    let window_create = runtime.capabilities.grant(CapabilityType::WindowCreate,
+        SERVICE_WINDOW_SERVER as u64,1,0,caller,caller,None,0).unwrap();
+    let bounds = Rect { x: 0, y: 0, width: 128, height: 64 };
+    let window = surfaces.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,0x1100,
+        [window_create,id,0,0,128,64],display,display,1);
+    assert!(window>0);
+    let window = WindowId(window as u32);
+    assert_eq!(runtime.ui.damage.regions(), &[bounds]);
+    runtime.ui.damage.begin_frame();
+    let sub = runtime.capabilities.grant(CapabilityType::EventSubscribe,runtime::EVENT_NATIVE_INPUT as u64,
+        1,window.0 as u64,caller,caller,None,0).unwrap();
+    let lease = surfaces.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,0x1110,
+        [sub,runtime::EVENT_NATIVE_INPUT as u64,window.0 as u64,100,4,0],display,display,1);
+    assert!(lease>0);
+    assert_eq!(surfaces.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,0x1111,
+        [lease as u64,user,128,0,0,0],display,display,1),0);
+    assert_eq!(surfaces.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,0x1112,
+        [lease as u64,0,0,0,0,0],display,display,1),0);
+    assert!(surfaces.frame(&runtime, surface).unwrap().pixels.iter().all(|p| *p == 0));
+    copy_to_user(&mut tables, user+4092, &[0x33,0x22,0x11,0xff,0x66,0x55,0x44,0xff]).unwrap();
+    let offset = (5*128+7)*4;
+    assert_eq!(surfaces.syscall(&mut runtime, &mut memory, &tables, caller, ContextId(66), 0x1121, [publish,id,user,offset,8,0],1),-1);
+    assert_eq!(surfaces.syscall(&mut runtime, &mut memory, &tables, caller, owner, 0x1121, [publish,id,user+4092,offset,8,0],1),0);
+    assert_eq!(surfaces.frame(&runtime, surface).unwrap().pixels[5*128+7], 0);
+    assert_eq!(surfaces.take_damage(surface), None);
+    for (address, off, len, expected) in [(user+8190,offset,8,-5), (u64::MAX-3,offset,8,-5),
+        (user,offset+1,8,-3), (user,32768,8,-3), (user,0,65540,-3)] {
+        assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1121,[publish,id,address,off,len,0],1),expected);
+    }
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1122,[publish,id,1,0,0,0],1),0);
+    assert_eq!(surfaces.frame(&runtime,surface).unwrap().pixels[5*128+7..5*128+9], [0xff112233,0xff445566]);
+    assert_eq!(surfaces.take_damage(surface),Some(Rect{x:7,y:5,width:2,height:1}));
+    assert_eq!(runtime.ui.damage.regions(), &[Rect{x:7,y:5,width:2,height:1}]);
+    runtime.ui.damage.begin_frame();
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1122,[publish,id,1,0,0,0],1),-3);
+    let pointer = surfaces.frame(&runtime,surface).unwrap().pixels.as_ptr();
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1122,[publish,id,2,0,0,0],1),0);
+    assert_eq!(surfaces.take_damage(surface),None);
+    assert!(runtime.ui.damage.regions().is_empty());
+    let manage = runtime.capabilities.grant(CapabilityType::WindowManageOwn,window.0 as u64,
+        1,0,caller,caller,None,0).unwrap();
+    assert_eq!(surfaces.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,0x1103,
+        [manage,window.0 as u64,10,10,0,0],display,display,1),0);
+    assert!(!runtime.ui.damage.regions().is_empty());
+    assert_eq!(surfaces.frame(&runtime,surface).unwrap().pixels.as_ptr(),pointer);
+    let mut damage = ui::scene::DamageTracker::new();
+    damage.add(Rect{x:17,y:15,width:2,height:1});
+    let mut compositor = ui::compositor::SoftwareCompositor::new(Size{width:256,height:128},256,0);
+    let mut back = vec![0x987654;256*128];
+    compositor.compose(&mut back,&[surfaces.frame(&runtime,surface).unwrap()],&damage).unwrap();
+    assert_eq!(back[15*256+17]&0xffffff,0x112233);
+    assert_eq!(back[15*256+18]&0xffffff,0x445566);
+    assert_eq!(back[15*256+16],0x987654);
+    assert_eq!(back[15*256+19],0x987654);
+    let free = memory.available_pages();
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1123,[resize,id,8192,8192,0,0],1),-3);
+    assert_eq!(memory.available_pages(),free);
+    assert_eq!(surfaces.frame(&runtime,surface).unwrap().pixels.as_ptr(),pointer);
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1121,[publish,id,user,0,4,0],1),0);
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1123,[resize,id,256,64,0,0],1),0);
+    assert_eq!(runtime.ui.surfaces.inspect(surface).unwrap().content_generation,3);
+    let frame = surfaces.frame(&runtime,surface).unwrap();
+    assert_eq!(frame.pixels[5*256+7],0xff112233);
+    assert_eq!(frame.pixels[5*256+128],0);
+    assert_eq!(frame.pixels[0],0);
+    assert_eq!(surfaces.take_damage(surface),Some(Rect{x:0,y:0,width:256,height:64}));
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1124,[destroy,id,0,0,0,0],1),-3);
+    // Physical budget includes both buffers and rejects the entire second large allocation.
+    let large = surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1120,[create,4096,1024,0,0,0],1);
+    assert!(large>0);
+    let free = memory.available_pages();
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1120,[create,4096,1024,0,0,0],1),-4);
+    assert_eq!(memory.available_pages(),free);
+    let large_destroy = runtime.capabilities.grant(CapabilityType::SurfaceDestroy,large as u64,1,0,caller,caller,None,0).unwrap();
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1124,[large_destroy,large as u64,0,0,0,0],1),0);
+    let other = ContextId(66);
+    let sibling = surfaces.syscall(&mut runtime,&mut memory,&tables,caller,other,0x1120,[create,32,32,0,0,0],1);
+    assert!(sibling>0);
+    runtime.capabilities.revoke(publish).unwrap();
+    assert_eq!(surfaces.syscall(&mut runtime,&mut memory,&tables,caller,owner,0x1122,[publish,id,4,0,0,0],1),-1);
+    runtime.ui.damage.begin_frame();
+    let old_bounds = runtime.ui.windows.inspect(window).unwrap().bounds;
+    assert_eq!(surfaces.context_failed(&mut runtime,&mut memory,owner),1);
+    assert_eq!(runtime.ui.damage.regions(), &[old_bounds]);
+    assert!(runtime.ui.windows.inspect(window).is_none());
+    assert!(runtime.ui.surfaces.inspect(SurfaceId(sibling as u32)).is_some());
+    assert_eq!(surfaces.context_failed(&mut runtime,&mut memory,other),1);
+    assert_eq!(surfaces.context_failed(&mut runtime,&mut memory,owner),0);
+    tables.release(&mut memory).unwrap();
+    memory.release(source).unwrap();
+    assert_eq!(memory.available_pages(),initial);
+    unsafe { std::alloc::dealloc(arena,layout); }
+}
+
+// ------------------------=
+// FUNC: native_input_routes
+// DESC: Proves scoped native input follows focus, pointer capture and secure-input exclusion without cross-window leakage.
+// ------------------=
+fn native_input_routes() {
+    use ui::{geometry::{Rect,Size,Point},window::{ContextId,ZOrderClass},
+        surface::{PixelFormat,SurfaceSecurityClass}, input::{UiEvent,Key,PointerPhase}};
+    let mut runtime = runtime::InfinityRuntime::new(false);
+    runtime.define_bootstrap().unwrap();
+    runtime.start_all(0);
+    let caller = identity(70);
+    let owner = ContextId(70);
+    let mut windows = Vec::new();
+    let mut leases = Vec::new();
+    for x in [0,200] {
+        let surface = runtime.ui.surfaces.create(owner,Size{width:100,height:100},PixelFormat::Xrgb8888,SurfaceSecurityClass::Application,false).unwrap();
+        let window = runtime.ui.windows.create(owner,surface,Rect{x,y:0,width:100,height:100},ZOrderClass::Normal).unwrap();
+        let cap = runtime.capabilities.grant(CapabilityType::EventSubscribe,runtime::EVENT_NATIVE_INPUT as u64,1,window.0 as u64,caller,caller,None,0).unwrap();
+        let lease = runtime.events.subscribe(caller,cap,EventFilter{type_id:runtime::EVENT_NATIVE_INPUT,scope:Some(window.0 as u64)},100,OverflowPolicy::DropOldest,8,&runtime.capabilities,0).unwrap();
+        windows.push(window); leases.push(lease);
+    }
+    runtime.ui.windows.focus(windows[0]).unwrap();
+    assert!(runtime.native_input(UiEvent::Key{key:Key::Character('é'),pressed:true,modifiers:3},0,0,1));
+    assert_eq!(runtime.events.queue_depth(leases[1]),Some(0));
+    let event = runtime.events.receive_authorized(caller,leases[0],&runtime.capabilities,1).unwrap().unwrap();
+    assert_eq!(event.scope,windows[0].0 as u64);
+    assert_eq!(u32::from_le_bytes(event.payload[4..8].try_into().unwrap()),1);
+    assert_eq!(u32::from_le_bytes(event.payload[12..16].try_into().unwrap()),1|(3<<8));
+    assert_eq!(u32::from_le_bytes(event.payload[16..20].try_into().unwrap()),13);
+    assert_eq!(u32::from_le_bytes(event.payload[20..24].try_into().unwrap()),'é' as u32);
+    runtime.ui.windows.focus(windows[1]).unwrap();
+    assert!(runtime.native_input(UiEvent::Text("é".as_bytes()),0,0,1));
+    assert_eq!(runtime.events.queue_depth(leases[0]),Some(0));
+    let event = runtime.events.receive(leases[1],1).unwrap();
+    assert_eq!(&event.payload[32..34],"é".as_bytes());
+    assert!(event.payload[34..].iter().all(|b|*b==0));
+    assert!(!runtime.native_input(UiEvent::Text(&[0xff]),0,0,1));
+    assert!(!runtime.native_input(UiEvent::Text(&[b'x';65]),0,0,1));
+    assert!(runtime.native_input(UiEvent::Pointer{position:Point{x:210,y:20},phase:PointerPhase::Scroll,button:0},-2,4,1));
+    let event = runtime.events.receive(leases[1],1).unwrap();
+    for (index, expected) in [10i32,20,-2,4].iter().enumerate() {
+        assert_eq!(i32::from_le_bytes(event.payload[16+index*4..20+index*4].try_into().unwrap()),*expected);
+    }
+    runtime.ui.windows.capture_pointer(owner,windows[0]).unwrap();
+    assert!(runtime.native_input(UiEvent::Pointer{position:Point{x:210,y:20},phase:PointerPhase::Up,button:1},0,0,1));
+    assert_eq!(runtime.events.queue_depth(leases[1]),Some(0));
+    let event = runtime.events.receive(leases[0],1).unwrap();
+    assert_eq!(i32::from_le_bytes(event.payload[16..20].try_into().unwrap()),210);
+    let secure = runtime.ui.trusted.acquire_secure_input(true,99,ui::trusted::TrustedSurface::Authentication,100).unwrap();
+    assert!(!runtime.native_input(UiEvent::Text(b"secret"),0,0,1));
+    assert!(!runtime.native_input(UiEvent::Pointer{position:Point{x:10,y:10},phase:PointerPhase::Down,button:1},0,0,1));
+    assert_eq!(runtime.events.queue_depth(leases[0]),Some(0));
+    assert_eq!(runtime.events.queue_depth(leases[1]),Some(0));
+    runtime.ui.trusted.release_secure_input(secure).unwrap();
+    for (event,kind) in [(UiEvent::CompositionStart,4u32),(UiEvent::CompositionUpdate(b"abc"),5),
+        (UiEvent::CompositionCommit(b"abc"),6),(UiEvent::CompositionCancel,7)] {
+        assert!(runtime.native_input(event,0,0,1));
+        let event = runtime.events.receive(leases[1],1).unwrap();
+        assert_eq!(u32::from_le_bytes(event.payload[4..8].try_into().unwrap()),kind);
+    }
 }

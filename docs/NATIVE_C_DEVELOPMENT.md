@@ -31,8 +31,13 @@ The ObjectStore file service supports live capability checks, namespace grants,
 versioned writable snapshots and sealed resource streaming. The native window
 API supports ownership-checked geometry, title, focus, capture and lifecycle
 operations. The C event ABI uses bounded IEF subscriptions with checked copies
-and read-time revocation. These service adapters compile with both kernel
-targets, but the production process dispatcher does not yet connect the path;
+and read-time revocation. Retained pixel surfaces now provide bounded, checked
+uploads into a staging plane, explicit commit, resize and failure cleanup.
+Normalized keyboard, text, composition and pointer input routes into scoped IEF
+events, respecting focus, capture and secure-input exclusion. A shared GUI trap
+dispatcher routes the C window, surface and event calls. These adapters compile
+with both kernel targets, but the production desktop scheduler does not yet
+connect the process path;
 unreferenced handlers may be removed by release link-time optimization.
 
 `sdk/c/examples/hello.c` is provisioned as a normal editable Documents Text
@@ -56,8 +61,10 @@ Exit status and structured artifacts decide success; printed prose is diagnostic
    visits to the production desktop scheduler, including cleanup after failure.
 2. Package Clang, LLD and SDK resources in the installed System Generation;
    support larger writable compiler outputs beyond the 16 KiB snapshot limit.
-3. Complete C surface allocation, retained rendering and keyboard/pointer event
-   routing through the existing compositor and service boundary.
+3. Bind the implemented retained-surface store, GUI trap dispatcher and native
+   input adapter to the production process lifecycle, desktop compositor and
+   device event loop. The service-level paths are tested; installed GUI apps
+   are not yet demonstrated.
 4. Connect console compilation, application metadata, icons, double-click launch
    and Hermes voice-generated applications to that isolated process path.
 5. Verify editable source, native compilation, GUI interaction, cancellation and
@@ -66,6 +73,31 @@ Exit status and structured artifacts decide success; printed prose is diagnostic
 
 Sources: https://clang.llvm.org/docs/Toolchain.html,
 https://clang.llvm.org/c_status.html, https://lld.llvm.org/.
+
+## Retained GUI services checkpoint: 2026-10-12
+
+`native_surface.rs` owns separate displayed and staging planes in the native
+frame pool. Limits are 16 MiB per plane, 64 MiB across both planes of all
+surfaces, and 64 KiB per checked upload. Apps receive IDs, never framebuffer or
+kernel pointers. Commit copies the changed span and damages the corresponding
+window region. Moving a window reuses its persistent pixels. Resize preserves
+committed overlap and zeroes new pixels; failed allocation preserves old state.
+Context failure invalidates exposed bounds and releases only that owner's data.
+
+`native_input.rs` translates trusted normalized events to the 96-byte versioned
+C input packet in `sdk/c/include/infinity/input.h`. It follows existing input
+routing rather than inventing a second focus/capture model. Surface wrappers
+are in `sdk/c/include/infinity/surface.h`. `NativeSurfaces::dispatch` is the GUI
+service entrypoint; it does not replace the native process scheduler.
+
+Behavioral runtime tests exercise both ARM64 and x86 page-table implementations,
+cross-page uploads, inaccessible pages, integer bounds, capability revocation,
+unpublished-pixel isolation, compositor pixel output, damage, resize, budget
+rejection and exact frame reclamation. Input checks cover focused Unicode text,
+pointer capture, window-local coordinates, scroll, composition and secure-input
+exclusion. Both SDK header targets and installed-kernel compilations passed.
+These are service/harness results, not installed interactive application proof.
+Kernel compilation evidence: `builds/manifests/20261012T112608330428Z-66219.json`.
 
 ## Native toolchain port attempt: 2026-09-12
 
