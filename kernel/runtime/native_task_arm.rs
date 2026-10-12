@@ -130,6 +130,13 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
                 InterruptController::V2 { cpu, .. } => write(cpu + 16, interrupt as u32),
                 InterruptController::V3 { .. } => {
                     core::arch::asm!("msr ICC_EOIR1_EL1, {}", "isb", in(reg) interrupt);
+                    let control: u64;
+                    core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) control);
+                    if control & 2 != 0 {
+                        // Split EOI mode drops priority separately from deactivation.
+                        // Leaving PPI30 active prevents the next slice timer firing.
+                        core::arch::asm!("msr ICC_DIR_EL1, {}", "isb", in(reg) interrupt);
+                    }
                 }
             }
         }

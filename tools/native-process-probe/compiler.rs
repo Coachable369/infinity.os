@@ -57,12 +57,15 @@ unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: Kernel
         heap_pages: 4, stack_guard_base: 0x300000000, stack_pages: 16 };
     let mut child = ProcessAddressSpace::<Tables>::build(memory, 2, &image, layout, kernel).unwrap();
     Image::load_at(bytes, MACHINE, child.image_bytes_mut(), layout.image_base as usize).unwrap();
-    cpu::prepare(&mut child, memory);
-    let mut context = Context::new(child.entry, child.stack_top, 0, 0);
+    cpu::prepare(&mut child, memory, controller).unwrap();
+    let context = Context::new(child.entry, child.stack_top, 0, 0);
+    let executor = cpu::BoundContext::new(context, child.page_tables.root_physical_address(), controller);
+    let mut supervised = super::native_process::Process::new(executor,
+        super::execution::SecurityIdentity([2; 16]), 1000, None);
     for _ in 0..1000 {
-        let result = match context.run(child.page_tables.root_physical_address(), controller) {
-            Slice::Preempted => continue,
-            Slice::Call(0x1000, args) => args[0],
+        let result = match supervised.step(0, |_, _, _| -88) {
+            super::native_process::State::Runnable => continue,
+            super::native_process::State::Exited(status) => status as u64,
             _ => panic!("unexpected linked-app trap"),
         };
         child.release(memory).unwrap();
@@ -118,7 +121,7 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap,
         put(&mut process, arguments + argv.len() as u64 * 8, 0);
         put(&mut process, base + 8, argv.len() as u64 | (1u64 << 32));
     }
-    cpu::prepare(&mut process, memory);
+    cpu::prepare(&mut process, memory, controller).unwrap();
     let mut context = Context::new(process.entry, process.stack_top, base, tp as u64);
     let mut written = 0u64;
     let mut diagnostic = [0u8; 65536];
@@ -131,7 +134,7 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap,
     let mut file_opens = [false; 2];
     let mut mappings = super::native_mappings::PrivateMappings::new(1, 256);
     for _ in 0..100000 {
-        let (operation, args) = match context.run(process.page_tables.root_physical_address(), controller) {
+        let (operation, args) = match context.run(process.page_tables.root_physical_address(), controller).unwrap() {
             Slice::Preempted => continue,
             Slice::Call(operation, args) => (operation, args),
             Slice::Fault(reason, address, pc) => {

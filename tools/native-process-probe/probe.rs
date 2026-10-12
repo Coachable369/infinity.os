@@ -3,11 +3,14 @@
 #[path = "../../kernel/runtime/native_c_image.rs"] mod native_c_image;
 #[path = "../../kernel/runtime/native_memory.rs"] mod native_memory;
 #[path = "../../kernel/runtime/native_task_x86.rs"] mod task;
+use task as native_task_x86;
+#[path = "../../kernel/runtime/execution.rs"] mod execution;
+#[path = "../../kernel/runtime/native_process.rs"] mod native_process;
 use native_memory::*;
 #[path = "services.rs"] mod services;
 #[path = "../../kernel/runtime/native_mappings.rs"] mod native_mappings;
 #[path = "compiler.rs"] mod compiler;
-#[path = "cpu.rs"] mod cpu;
+#[path = "../../kernel/runtime/native_cpu.rs"] mod cpu;
 static IMAGE: &[u8] = include_bytes!(env!("INFINITY_PROCESS_IMAGE"));
 static mut STATE: task::ExtendedState = task::ExtendedState([0; 65536]);
 static mut SENTINEL: u64 = 0x1020304050607080;
@@ -75,7 +78,7 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo)
         stack: identity(boot.kernel_stack_address, boot.kernel_stack_bytes),
         gateway: identity(0, 0),
     };
-    if option_env!("INFINITY_COMPILER_PROBE").is_some() { compiler::run(&mut memory, kernel, ()); }
+    if option_env!("INFINITY_COMPILER_PROBE").is_some() { compiler::run(&mut memory, kernel, 0xfee00000); }
     let image = native_c_image::Image::parse(IMAGE, 62).unwrap();
     let layout = CompilerVirtualLayout { image_base: 0x100000000, heap_base: 0x200000000,
         heap_pages: 2, stack_guard_base: 0x300000000, stack_pages: 8 };

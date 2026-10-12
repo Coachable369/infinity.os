@@ -4,11 +4,14 @@
 #[path = "../../kernel/runtime/native_memory_arm.rs"] mod native_memory_arm;
 #[path = "../../kernel/runtime/native_mappings.rs"] mod native_mappings;
 #[path = "../../kernel/runtime/native_task_arm.rs"] mod task;
+use task as native_task_arm;
+#[path = "../../kernel/runtime/execution.rs"] mod execution;
+#[path = "../../kernel/runtime/native_process.rs"] mod native_process;
 use native_memory::*;
 #[path = "services.rs"] mod services;
 use native_memory_arm::ArmAddressSpace;
 #[path = "compiler.rs"] mod compiler;
-#[path = "cpu.rs"] mod cpu;
+#[path = "../../kernel/runtime/native_cpu.rs"] mod cpu;
 
 const COMPILER: bool = option_env!("INFINITY_COMPILER_PROBE").is_some();
 const POOL_BYTES: usize = if COMPILER { 256 * 1024 * 1024 } else { 8 * 1024 * 1024 };
@@ -95,6 +98,15 @@ pub unsafe extern "C" fn process_probe() -> ! {
             if core::ptr::read_volatile(0x080a0014 as *const u32) & 4 == 0 { awake = true; break; }
         }
         assert!(awake);
+        if option_env!("INFINITY_PROCESS_SPLIT_EOI").is_some() {
+            core::arch::asm!("msr ICC_SRE_EL1, {}", "isb", in(reg) 1u64);
+            let control: u64;
+            core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) control);
+            core::arch::asm!("msr ICC_CTLR_EL1, {}", "isb", in(reg) control | 2);
+            let configured: u64;
+            core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) configured);
+            assert_ne!(configured & 2, 0);
+        }
         task::InterruptController::V3 { redistributor: 0x080a0000 }
     } else {
         core::ptr::write_volatile(0x08000000 as *mut u32, 3);
@@ -156,7 +168,12 @@ pub unsafe extern "C" fn process_probe() -> ! {
         for value in [kind, registers.reason, registers.syndrome, registers.x[0]] { emit(value); }
         assert_eq!(core::ptr::read_volatile(&raw const SENTINEL), 0x1020304050607080);
         assert_eq!(registers.pstate & 15, 0);
-        if kind == 3 { assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, 30); }
+        if kind == 3 {
+            assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, 30);
+            // A second busy-loop slice must preempt even under split EOI mode.
+            task::run(&mut registers, process.page_tables.root_physical_address(), controller, 2000).unwrap();
+            assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, 30);
+        }
         else {
             assert_eq!(registers.reason, 0);
             let expected = match kind { 1 => 0x24, 2 => 0x20, 4 => 0, _ => 0x15 };

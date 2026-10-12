@@ -54,6 +54,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
     parser.add_argument("--gic", choices=[2, 3], type=int, default=2)
+    parser.add_argument("--split-eoi", action="store_true")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
     parser.add_argument("--link-object", type=Path, help="Run native LLD with this object exposed as a read-only guest fixture")
@@ -77,6 +78,10 @@ def main():
         str(work / "user.o"), str(work / "isolated.o"), "-o", str(work / "user.elf")], check=True)
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(work / "cargo"),
         INFINITY_PROCESS_IMAGE=str(work / "user.elf"), INFINITY_PROCESS_GIC=str(args.gic))
+    env.pop("INFINITY_PROCESS_SPLIT_EOI", None)
+    if args.split_eoi:
+        assert arm and args.gic == 3
+        env["INFINITY_PROCESS_SPLIT_EOI"] = "1"
     env.pop("INFINITY_COMPILER_PROBE", None)
     if args.compiler:
         env.update(INFINITY_COMPILER_PROBE="1", INFINITY_PROCESS_IMAGE=str(args.compiler.resolve()))

@@ -878,3 +878,36 @@ production scheduler binding or installed compiler workflow.
 
 The combined storage ABI, runtime, and ARM64/x86_64 installed-kernel compilation
 batch passed under `builds/manifests/20261012T074030521377Z-60216.json`.
+
+### Shared native execution supervision
+
+`kernel/runtime/native_cpu.rs` now owns the hardware context adapter previously
+located in the probe tools. Both probes and installed-kernel builds consume this
+same implementation. Interrupt-controller addresses come from the caller;
+platform entry failures return errors instead of panicking the kernel.
+
+`native_process.rs` supervises one hardware slice per scheduler visit. It handles
+exit and yield, enforces a finite slice budget and optional monotonic deadline,
+binds service dispatch to the launch identity, and prevents re-entry after
+cancellation, faults or exit. The scheduler caller remains responsible for
+retaining mappings while runnable and releasing windows, streams and memory
+after a terminal outcome. Service handlers must also remain bounded.
+
+The guest-linked C application now runs through this supervisor on both CPU
+targets and still returns 54. Compile/link/execute evidence is recorded under
+`builds/manifests/20261012T074733038876Z-61118.json`. Host lifecycle tests run with
+`./build-kit native-process-supervision-tests`; they test cancellation, deadlines,
+budgets, dispatch identity and terminal-state behavior independently of hardware.
+
+The ARM adapter also deactivates the timer interrupt when GICv3 uses split EOI
+mode. The hardware probe checks two consecutive busy-loop preemptions, preventing
+an active timer interrupt from silently disabling subsequent time slices.
+
+Both installed-kernel compilations and the architecture regression batch passed
+under `builds/manifests/20261012T074913699005Z-61279.json`. The final split-EOI
+readback, lifecycle and runtime checks passed under
+`builds/manifests/20261012T075146247584Z-61604.json`.
+
+Desktop-loop scheduling, firmware controller discovery, calibrated x86 slice
+timing, installed compiler resources, and C window/event/render integration
+remain acceptance gates. No new installer release is implied by these checks.
