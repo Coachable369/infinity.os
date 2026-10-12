@@ -49,7 +49,6 @@ claiming installed acceptance; merely adding the test is not evidence of passing
 Run each installed check through the build authority after building the release:
 
 ```sh
-./build-kit run python3 tools/native-editor-installed-test.py --arch aarch64 build/native-editor-installed-arm
 ./build-kit run python3 tools/native-editor-installed-test.py --arch x86_64 build/native-editor-installed-x86
 ```
 
@@ -57,6 +56,11 @@ These create disposable disks, extract kernel metadata from the tested ISO itsel
 install without patching the disk, then boot with installer media detached. They
 do not use or modify the personal VirtualBox machine. Evidence is retained under
 `builds/validation/native-apps/<architecture>-installed/`.
+
+ARM QEMU verification requires explicit `--iso` test media linked for QEMU's RAM
+layout. The canonical ARM installer targets VirtualBox and cannot be silently
+substituted into this harness. Its evidence records the source media and whether
+it is a canonical release; a QEMU derivative does not prove the VirtualBox ISO.
 
 `tools/native-compiler-parity-test.py` compares actual toolchain bytes in both live
 and installed artifacts. It does not substitute for installed execution.

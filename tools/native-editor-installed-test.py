@@ -119,14 +119,19 @@ def generate_program(guest):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
+    parser.add_argument("--iso", type=pathlib.Path, help="Explicit QEMU-compatible test media for ARM; never substitute silently for the published VirtualBox ISO")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
+    if args.arch == "aarch64" and args.iso is None:
+        parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
     work = args.work.resolve()
     work.relative_to(ROOT / "build")
     work.mkdir(exist_ok=False)
     artifacts = work / "artifacts"
     artifacts.mkdir()
-    shutil.copyfile(ROOT / f"builds/InfinityOS-{args.arch}.iso", artifacts / "installer.iso")
+    source_iso = args.iso.resolve() if args.iso else ROOT / f"builds/InfinityOS-{args.arch}.iso"
+    source_iso.relative_to(ROOT)
+    shutil.copyfile(source_iso, artifacts / "installer.iso")
     packaged = desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
     guest = desktop.Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
                            width=1024, height=768, memory_mb=12288)
@@ -135,7 +140,8 @@ def main():
     # No post-install patch: this is the unmodified ISO's installed generation.
     guest.patched = True
     guest.boot_timeout_seconds = 600
-    report = {"installed_acceptance": False, "architecture": args.arch, "packaged": packaged}
+    report = {"installed_acceptance": False, "architecture": args.arch, "packaged": packaged,
+              "source_media": str(source_iso), "canonical_release_media": args.iso is None}
     try:
         guest.install()
         guest.stop()
