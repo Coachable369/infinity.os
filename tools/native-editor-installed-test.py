@@ -38,6 +38,7 @@ def read(guest, symbol, count):
 def wait_build(guest, previous, expected):
     deadline = time.monotonic() + 180
     transitions = []
+    input_latency = None
     while time.monotonic() < deadline:
         state = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
         assert state[:2] == (0x494e46434c414e47, 1)
@@ -45,9 +46,18 @@ def wait_build(guest, previous, expected):
         if state[2] > previous:
             if not transitions or transitions[-1] != state[3]:
                 transitions.append(state[3])
+            if state[3] in (1, 2) and input_latency is None:
+                before = guest.state()
+                assert before is not None
+                started = time.monotonic()
+                guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                    "axis": "x", "value": -4 if before[13] > 500 else 4}}]})
+                guest.wait(lambda s: s[13] != before[13], "input while native compiler runs", timeout=5)
+                input_latency = time.monotonic() - started
             if state[3] >= 3:
                 assert state[3] == expected, state
-                return {"snapshot": state, "transitions": transitions}
+                return {"snapshot": state, "transitions": transitions,
+                        "input_latency_seconds": input_latency}
         time.sleep(.2)
     raise AssertionError(("Native build deadline", transitions))
 
