@@ -62,6 +62,14 @@ layout. The canonical ARM installer targets VirtualBox and cannot be silently
 substituted into this harness. Its evidence records the source media and whether
 it is a canonical release; a QEMU derivative does not prove the VirtualBox ISO.
 
+```sh
+./build-kit run sh tools/native-editor-arm-media.sh
+./build-kit run python3 tools/native-editor-installed-test.py --arch aarch64 --iso build/test-media/native-editor-aarch64.bootmedia build/native-editor-installed-arm
+```
+
+This derivative keeps the release's packaged model/asset ESP and relinks the
+shared kernel at QEMU's load address. It never replaces the published ARM ISO.
+
 `tools/native-compiler-parity-test.py` compares actual toolchain bytes in both live
 and installed artifacts. It does not substitute for installed execution.
 
