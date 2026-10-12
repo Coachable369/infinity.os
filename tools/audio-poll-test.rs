@@ -6,6 +6,11 @@ static CLOCK_VALID: AtomicBool = AtomicBool::new(true);
 static READS: AtomicUsize = AtomicUsize::new(0);
 static POSITIONS: AtomicUsize = AtomicUsize::new(0);
 static REENTER: AtomicBool = AtomicBool::new(false);
+static REENTER_DISCARD: AtomicBool = AtomicBool::new(false);
+static CAPTURE_STARTS: AtomicUsize = AtomicUsize::new(0);
+static CAPTURE_STOPS: AtomicUsize = AtomicUsize::new(0);
+static DISCARDS: AtomicUsize = AtomicUsize::new(0);
+static DISCARD_FAULT: AtomicBool = AtomicBool::new(false);
 const OWNER: execution::SecurityIdentity = execution::SecurityIdentity([1; 16]);
 #[path = "../kernel/runtime/execution.rs"] pub mod execution;
 #[path = "../kernel/runtime/capability.rs"] pub mod capability;
@@ -107,6 +112,7 @@ mod hda {
         // DESC: Starts a fresh mock DMA generation without changing the test clock.
         // ------------------=
         pub unsafe fn start_capture(&mut self) -> Result<(), Error> {
+            crate::CAPTURE_STARTS.fetch_add(1, crate::Ordering::SeqCst);
             self.capturing = true; self.sample = 0; self.consumed_frames = 0;
             self.origin_ns = crate::NOW.load(crate::Ordering::SeqCst).saturating_sub(1_000_000);
             Ok(())
@@ -133,10 +139,31 @@ mod hda {
             Ok(frames * 2)
         }
         // ------------------------=
+        // FUNC: discard_capture_pending
+        // DESC: Drops completed mock DMA frames and verifies reentrant callers cannot cross the adapter's ownership lock.
+        // ------------------=
+        pub unsafe fn discard_capture_pending(&mut self) -> Result<usize, Error> {
+            assert!(self.capturing);
+            crate::DISCARDS.fetch_add(1, crate::Ordering::SeqCst);
+            if crate::DISCARD_FAULT.swap(false, crate::Ordering::SeqCst) { return Err(Error::Dma); }
+            if crate::REENTER_DISCARD.swap(false, crate::Ordering::SeqCst) {
+                assert_eq!(crate::audio::discard_capture_pending(crate::OWNER), None);
+            }
+            let now = crate::NOW.load(crate::Ordering::SeqCst);
+            let produced = now.saturating_sub(self.origin_ns) * u64::from(self.sample_rate) / 1_000_000_000;
+            let frames = produced.saturating_sub(self.consumed_frames);
+            self.sample = ((self.sample as u64 + frames) % 20000) as i16;
+            self.consumed_frames = produced;
+            Ok(frames as usize * 2)
+        }
+        // ------------------------=
         // FUNC: stop_capture
         // DESC: Records that the production adapter stopped capture after a terminal state.
         // ------------------=
-        pub unsafe fn stop_capture(&mut self) { self.capturing = false; }
+        pub unsafe fn stop_capture(&mut self) {
+            crate::CAPTURE_STOPS.fetch_add(1, crate::Ordering::SeqCst);
+            self.capturing = false;
+        }
         // ------------------------=
         // FUNC: start
         // DESC: Starts mock playback for deadline and revocation tests.
@@ -278,4 +305,59 @@ fn actual_adapter_time_cadence_and_authority() {
     assert!(audio::tone(OWNER, cap));
     CLOCK_VALID.store(false, Ordering::SeqCst); audio::poll();
     assert_eq!(audio::playback_state(), Some(PlaybackState::Denied));
+    discard_capture_boundary_tests();
+}
+
+// ------------------------=
+// FUNC: discard_capture_boundary_tests
+// DESC: Proves muted PCM in both software and unpumped DMA is discarded atomically while the next fresh onset, stream and authority remain intact.
+// ------------------=
+fn discard_capture_boundary_tests() {
+    use audio_contract::CaptureState;
+    let cap = capture(20_000_000_000);
+    let starts = CAPTURE_STARTS.load(Ordering::SeqCst);
+    let stops = CAPTURE_STOPS.load(Ordering::SeqCst);
+    let discarded = DISCARDS.load(Ordering::SeqCst);
+    NOW.store(20_200_000_000, Ordering::SeqCst);
+    audio::poll(); // 9648 old mono samples: more than the controller's one 4800-sample drain.
+    NOW.store(20_250_000_000, Ordering::SeqCst); // Another 2400 old frames are still unpumped in DMA.
+    assert_eq!(audio::discard_capture_pending(execution::SecurityIdentity([2; 16])), Some(false));
+    assert_eq!(DISCARDS.load(Ordering::SeqCst), discarded);
+    let mut marker = [0; 1];
+    assert_eq!(audio::read_capture(OWNER, &mut marker), 1);
+    assert_eq!(marker[0], 0);
+    CLOCK_VALID.store(false, Ordering::SeqCst);
+    assert_eq!(audio::discard_capture_pending(OWNER), None);
+    CLOCK_VALID.store(true, Ordering::SeqCst);
+    REENTER_DISCARD.store(true, Ordering::SeqCst);
+    assert_eq!(audio::discard_capture_pending(OWNER), Some(true));
+    assert_eq!(DISCARDS.load(Ordering::SeqCst), discarded + 1);
+    assert_eq!(audio::read_capture(OWNER, &mut [0; 9600]), 0);
+    assert_eq!(audio::capture_status().unwrap().frames, 12048);
+    assert_eq!(audio::capture_status().unwrap().state, CaptureState::Recording);
+    assert_eq!(CAPTURE_STARTS.load(Ordering::SeqCst), starts);
+    assert_eq!(CAPTURE_STOPS.load(Ordering::SeqCst), stops);
+
+    NOW.store(20_260_000_000, Ordering::SeqCst);
+    audio::poll();
+    let mut fresh = [0; 480];
+    assert_eq!(audio::read_capture(OWNER, &mut fresh), fresh.len());
+    assert_eq!(fresh, core::array::from_fn(|index| 12048 + index as i16));
+    assert!(audio::renew_capture(OWNER, cap));
+    assert_eq!(CAPTURE_STARTS.load(Ordering::SeqCst), starts);
+
+    runtime::with_runtime(|runtime| runtime.capabilities.revoke(cap).unwrap());
+    assert_eq!(audio::discard_capture_pending(OWNER), Some(false));
+    assert_eq!(DISCARDS.load(Ordering::SeqCst), discarded + 1);
+    assert!(audio::stop_capture(OWNER));
+    assert_eq!(audio::discard_capture_pending(OWNER), Some(false));
+    capture(21_000_000_000);
+    DISCARD_FAULT.store(true, Ordering::SeqCst);
+    assert_eq!(audio::discard_capture_pending(OWNER), None);
+    assert_eq!(audio::capture_status().unwrap().state, CaptureState::Overrun);
+    assert_eq!(audio::read_capture(OWNER, &mut [0; 48]), 0);
+    capture(21_100_000_000);
+    assert_eq!(audio::discard_capture_pending(OWNER), Some(true));
+    assert_eq!(audio::capture_status().unwrap().state, CaptureState::Recording);
+    assert!(audio::stop_capture(OWNER));
 }

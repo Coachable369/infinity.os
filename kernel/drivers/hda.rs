@@ -4,6 +4,10 @@ use core::ptr::{read_volatile, write_volatile};
 use core::sync::atomic::{fence, Ordering};
 use core::cell::Cell;
 
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+#[path = "../../tools/hda-capture-fixture.rs"]
+pub mod capture_fixture;
+
 pub const FRAMES: usize = 4800;
 pub const SAMPLES: usize = FRAMES * 2;
 pub const CAPTURE_FRAMES: usize = 96000;
@@ -568,6 +572,20 @@ impl Hda {
             *sample = read_volatile(core::ptr::addr_of!((*self.dma).capture[(self.capture_position + i) % CAPTURE_SAMPLES]));
         }
         self.capture_position = (self.capture_position + count) % CAPTURE_SAMPLES;
+        Ok(count)
+    }
+    // ------------------------=
+    // FUNC: discard_capture_pending
+    // DESC: Drops only completed input frames up to one hardware cursor snapshot without stopping DMA or losing later samples.
+    // ------------------=
+    pub unsafe fn discard_capture_pending(&mut self) -> Result<usize, Error> {
+        if !self.capturing { return Err(Error::Invalid); }
+        if self.r32(0x80) & (0x18 << 24) != 0 { return Err(Error::Dma); }
+        let bytes = self.r32(0x84) as usize;
+        if bytes >= CAPTURE_SAMPLES * 2 { return Err(Error::Dma); }
+        let position = bytes / 4 * 2;
+        let count = (position + CAPTURE_SAMPLES - self.capture_position) % CAPTURE_SAMPLES;
+        self.capture_position = position;
         Ok(count)
     }
     // ------------------------=

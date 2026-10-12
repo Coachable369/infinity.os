@@ -163,6 +163,40 @@ pub fn read_capture(owner: crate::runtime::execution::SecurityIdentity, output: 
     LOCK.store(false, Ordering::Release); count
 }
 // ------------------------=
+// FUNC: discard_capture_pending
+// DESC: Erases caller-owned queued input through the current DMA boundary while retaining the live lease and all subsequently captured frames.
+// ------------------=
+pub fn discard_capture_pending(owner: crate::runtime::execution::SecurityIdentity) -> Option<bool> {
+    let now = crate::ui::performance::monotonic_ns()?;
+    if LOCK.swap(true, Ordering::Acquire) { return None; }
+    let discarded = unsafe {
+        let valid = INPUT_LEASE.filter(|lease| lease.owner == owner)
+            .and_then(|lease| crate::runtime::with_runtime(|runtime|
+                lease.valid(&runtime.capabilities, now / 1_000_000_000))).unwrap_or(false);
+        if !valid || INPUT_STATUS.state != CaptureState::Recording { Some(false) }
+        else if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut() {
+            match device.discard_capture_pending() {
+                Ok(samples) => {
+                    (&mut *(&raw mut INPUT)).clear();
+                    (&mut *(&raw mut INPUT_PCM)).fill(0);
+                    INPUT_STATUS.frames = INPUT_STATUS.frames.saturating_add((samples / 2) as u64);
+                    INPUT_LAST_POLL = now;
+                    Some(true)
+                }
+                Err(error) => {
+                    let recoverable = hda::capture_fault_is_recoverable(error);
+                    finish_capture(device, if recoverable {
+                        CaptureState::Overrun
+                    } else { CaptureState::DeviceLost });
+                    if recoverable { None } else { Some(false) }
+                }
+            }
+        } else { Some(false) }
+    };
+    LOCK.store(false, Ordering::Release);
+    discarded
+}
+// ------------------------=
 // FUNC: finish_capture
 // DESC: Stops hardware and erases private audio before retiring the one-shot microphone lease; lock must be held.
 // ------------------=

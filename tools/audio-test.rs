@@ -14,6 +14,7 @@ fn output_text(_: &[u8]) {}
 fn main() {
     route_tests();
     resident_playback_tests();
+    hda::capture_fixture::verify_discard_boundary();
     use runtime::{audio::*, capability::*, execution::SecurityIdentity, iop::*};
     assert_eq!(std::mem::align_of::<InfinityAudio<16, 4>>(), 128);
     assert_eq!(hda::resident_duration_ns(96_000, 48_000), Some(1_000_000_000));

@@ -451,6 +451,15 @@ unsafe fn reset_listening_state() {
 // ------------------=
 unsafe fn listen() -> bool {
     if INPUT_CAP != 0 {
+        // A reply may finish with several controller chunks still pending in
+        // capture. None of those speaker-era samples belongs to the new turn.
+        // Snapshot the live DMA cursor before advertising Listening; a busy
+        // adapter retries on the next service pass without a timed cooldown.
+        match crate::drivers::audio::discard_capture_pending(OWNER) {
+            Some(true) => {}
+            Some(false) => return false,
+            None => return true,
+        }
         reset_listening_state();
         return true;
     }

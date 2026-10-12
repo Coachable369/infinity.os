@@ -7,6 +7,7 @@ static CAPTURE_STATE: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 static RENEW_FAILURES: AtomicUsize = AtomicUsize::new(0);
 static RENEWALS: AtomicUsize = AtomicUsize::new(0);
+static DISCARD_BUSY: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
@@ -185,6 +186,16 @@ mod drivers {pub mod audio {
         let count=out.len().min(input.len());
         for sample in &mut out[..count] {*sample=input.pop_front().unwrap();}
         count
+    }
+    // ------------------------=
+    // FUNC: discard_capture_pending
+    // DESC: Models an authorized atomic capture boundary without reopening DMA or advancing the clock.
+    // ------------------=
+    pub fn discard_capture_pending(owner:SecurityIdentity)->Option<bool>{
+        if crate::DISCARD_BUSY.load(crate::Ordering::SeqCst) { return None; }
+        if owner.0 != [1;16] || !crate::ACTIVE.load(crate::Ordering::SeqCst) { return Some(false); }
+        crate::MICROPHONE.lock().unwrap().clear();
+        Some(true)
     }
 }}
 mod chat {
@@ -696,10 +707,64 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     clipped_wake_gate_tests(owner);
     wake_gate_tests(owner);
     repeated_reply_wake_tests(owner);
+    next_turn_capture_boundary_tests(owner);
     wake_handoff_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
     recognition_failure_recovery_tests(owner);
+}
+
+// ------------------------=
+// FUNC: next_turn_capture_boundary_tests
+// DESC: Rejects buffered speaker-era audio while admitting immediate distinct wake commands after three replies without waits or capture restarts.
+// ------------------=
+fn next_turn_capture_boundary_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    assert!(conversation::start(owner));
+    recognize_voice(b"Infinity begin");
+    let captures = CAPTURES.load(Ordering::SeqCst);
+    for (pending, command) in [(4801, b"Infinity open browser".as_slice()),
+        (32000, b"Infinity what time is it"), (192000, b"Infinity open settings")] {
+        assert_eq!(conversation::state().0, State::Thinking);
+        conversation::poll();
+        assert_eq!(conversation::state().0, State::Speaking);
+        MICROPHONE.lock().unwrap().extend(std::iter::repeat_n(1700, pending));
+        let now = NOW.load(Ordering::SeqCst);
+        OUTPUT.store(2, Ordering::SeqCst);
+        conversation::poll();
+        assert_eq!(conversation::state().0, State::Listening);
+        assert!(MICROPHONE.lock().unwrap().is_empty());
+        assert_eq!(NOW.load(Ordering::SeqCst), now);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+        assert!(!conversation::wake_armed());
+        let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
+        let turns = TURNS.load(Ordering::SeqCst);
+        recognize_voice(command);
+        assert_eq!(TURNS.load(Ordering::SeqCst), turns + 1);
+        let input = RECOGNITION_REQUESTS.lock().unwrap();
+        assert_eq!(input.len(), requests + 1);
+        assert!(!input.last().unwrap().contains(&1700));
+    }
+    // A transient adapter lock must neither reopen capture nor advertise
+    // Listening until the stale boundary is actually discarded.
+    conversation::poll();
+    assert_eq!(conversation::state().0, State::Speaking);
+    MICROPHONE.lock().unwrap().extend([1700; 9600]);
+    let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
+    OUTPUT.store(2, Ordering::SeqCst);
+    DISCARD_BUSY.store(true, Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0, State::Speaking);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(), requests);
+    DISCARD_BUSY.store(false, Ordering::SeqCst);
+    let now = NOW.load(Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0, State::Listening);
+    assert!(MICROPHONE.lock().unwrap().is_empty());
+    assert_eq!(NOW.load(Ordering::SeqCst), now);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+    conversation::stop(owner);
+    conversation::poll();
 }
 
 // ------------------------=
