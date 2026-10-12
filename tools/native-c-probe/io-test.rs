@@ -13,6 +13,52 @@ use std::{rc::Rc, cell::RefCell};
 use storage::{BlockDevice, object::{ObjectStore, ObjectType, Space, STORE_RELATIVE_LBA, MAX_CONTENT}};
 use io::{ObjectIo, Grant, IoError, READ, WRITE, CREATE, TRUNCATE, APPEND, EXCLUSIVE, TEXT};
 
+// ------------------------=
+// FUNC: resource_stream_acceptance
+// DESC: Streams sealed compiler resources across allocation boundaries after remount, with independent cursors and immutable grants.
+// ------------------=
+fn resource_stream_acceptance() {
+    let disk = Disk(Rc::new(RefCell::new(vec![[0;512];16384])));
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [0x72;16]).unwrap();
+    let content: Vec<u8> = (0..131071usize).map(|i| ((i * 31) % 251) as u8).collect();
+    let resource = store.create_system_extent(b"sdk", content.len() as u32).unwrap();
+    for (i, bytes) in content.chunks(1024).enumerate() {
+        store.write_staging_range(resource, (i * 1024) as u64, bytes).unwrap();
+    }
+    store.seal_system_extent(resource, b"/system/toolchain/sdk", storage::object::crc32(&content)).unwrap();
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    let grants = [Grant { root: b"/system/toolchain", write: true }];
+    let mut io = ObjectIo::<2>::new(b"/system/toolchain", &grants).unwrap();
+    assert_eq!(io.open(&mut store, b"sdk", WRITE), Err(IoError::Denied));
+    let first = io.open(&mut store, b"sdk", READ).unwrap();
+    let second = io.open(&mut store, b"sdk", READ).unwrap();
+    assert_eq!(io.inspect(first).unwrap().size, content.len() as u64);
+    assert_eq!(io.inspect(first).unwrap().access, READ);
+    let mut out = vec![0; 70000];
+    assert_eq!(io.read(&mut store, first, &mut out).unwrap(), 65536);
+    assert_eq!(&out[..65536], &content[..65536]);
+    assert_eq!(io.seek(second, 0, 1).unwrap(), 0);
+    assert_eq!(io.read_at(&mut store, first, 4093, &mut out[..31]).unwrap(), 31);
+    assert_eq!(&out[..31], &content[4093..4124]);
+    assert_eq!(io.seek(first, 0, 1).unwrap(), 65536);
+    assert_eq!(io.read(&mut store, first, &mut out).unwrap(), content.len() - 65536);
+    assert_eq!(&out[..content.len()-65536], &content[65536..]);
+    assert_eq!(io.read(&mut store, first, &mut out).unwrap(), 0);
+    assert_eq!(io.read_at(&mut store, second, usize::MAX, &mut out).unwrap(), 0);
+    assert_eq!(io.seek(first, -7, 2).unwrap(), content.len()-7);
+    assert_eq!(io.read(&mut store, first, &mut out).unwrap(), 7);
+    assert_eq!(&out[..7], &content[content.len()-7..]);
+    assert_eq!(io.write(first, b"replace"), Err(IoError::Denied));
+    assert_eq!(io.truncate(first, 0), Err(IoError::Denied));
+    io.close(&mut store, first).unwrap();
+    io.close(&mut store, second).unwrap();
+    assert_eq!(store.metadata(resource).unwrap().current_version, 1);
+    let restricted = [Grant { root: b"/home/default/documents", write: false }];
+    let mut denied = ObjectIo::<1>::new(b"/", &restricted).unwrap();
+    assert_eq!(denied.open(&mut store, b"/system/toolchain/sdk", READ), Err(IoError::Denied));
+}
+
 #[derive(Clone)]
 struct Disk(Rc<RefCell<Vec<[u8;512]>>>);
 impl BlockDevice for Disk {
@@ -69,22 +115,22 @@ fn main() {
     let read = io.open(&mut store, b"./hello.c", READ).unwrap();
     store.write(id, b"int main(void) { return 17; }\n").unwrap();
     let mut bytes = [0;MAX_CONTENT];
-    assert_eq!(io.read_at(read, 2, &mut bytes[..3]).unwrap(), 3);
+    assert_eq!(io.read_at(&mut store, read, 2, &mut bytes[..3]).unwrap(), 3);
     assert_eq!(&bytes[..3], &source[2..5]);
-    assert_eq!(io.read_at(read, usize::MAX, &mut bytes[..3]).unwrap(), 0);
+    assert_eq!(io.read_at(&mut store, read, usize::MAX, &mut bytes[..3]).unwrap(), 0);
     assert_eq!(io.seek(read, 0, 1).unwrap(), 0);
-    let length = io.read(read, &mut bytes).unwrap();
+    let length = io.read(&mut store, read, &mut bytes).unwrap();
     assert_eq!(&bytes[..length], source); // opened version remains coherent
-    assert_eq!(io.read(read, &mut bytes).unwrap(), 0);
+    assert_eq!(io.read(&mut store, read, &mut bytes).unwrap(), 0);
     assert_eq!(io.write(read, b"bad"), Err(IoError::Denied));
     assert_eq!(io.truncate(read, 0), Err(IoError::Denied));
     assert_eq!(io.seek(read, -1, 0), Err(IoError::Invalid));
     assert_eq!(io.seek(read, i64::MAX, 2), Err(IoError::Invalid));
     io.close(&mut store, read).unwrap();
-    assert_eq!(io.read(read, &mut bytes), Err(IoError::BadHandle));
+    assert_eq!(io.read(&mut store, read, &mut bytes), Err(IoError::BadHandle));
     let current = io.open(&mut store, b"hello.c", READ).unwrap();
     assert_ne!(current, read);
-    let length = io.read(current, &mut bytes).unwrap();
+    let length = io.read(&mut store, current, &mut bytes).unwrap();
     assert_eq!(&bytes[..length], b"int main(void) { return 17; }\n");
     io.close(&mut store, current).unwrap();
     let output = io.open(&mut store, b"output.txt", READ | WRITE | CREATE | TRUNCATE | TEXT).unwrap();
@@ -93,7 +139,7 @@ fn main() {
     io.write(output, b"abc").unwrap();
     io.truncate(output, 6).unwrap();
     assert_eq!(io.seek(output, 0, 1).unwrap(), 3);
-    assert_eq!(io.read_at(output, 3, &mut bytes[..3]).unwrap(), 3);
+    assert_eq!(io.read_at(&mut store, output, 3, &mut bytes[..3]).unwrap(), 3);
     assert_eq!(&bytes[..3], &[0, 0, 0]);
     io.truncate(output, 3).unwrap();
     assert_eq!(io.truncate(output, MAX_CONTENT + 1), Err(IoError::Capacity));
@@ -155,6 +201,7 @@ fn main() {
     assert_eq!(io.link(&mut store, b"hello.c", b"symbolic.c", true), Err(IoError::Unsupported));
     io.unlink(&mut store, b"hello-reference.c").unwrap();
     assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), hello);
+    resource_stream_acceptance();
     service_acceptance(&mut store);
     syscall_acceptance::<native_memory::X86AddressSpace>(&mut store);
     syscall_acceptance::<native_memory_arm::ArmAddressSpace>(&mut store);

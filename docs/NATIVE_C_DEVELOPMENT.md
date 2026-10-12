@@ -850,9 +850,10 @@ changes. The storage and runtime verification batch passed under manifest
 `builds/manifests/20261012T055822644071Z-57066.json`.
 
 This is the typed service boundary, not yet a production trap-dispatch binding.
-The bounded stream limit remains 16 KiB; compiler resources and larger linked
-outputs still require their sealed-extent adapter. Installed acceptance remains
-open as described above.
+Writable snapshots remain limited to 16 KiB. Sealed SystemComponent resources
+now stream through the same grant-checked file adapter without whole-file
+buffering. Larger linked outputs still require a writable extent adapter.
+Installed acceptance remains open as described above.
 
 ### Compiler file syscall adapter
 
@@ -911,3 +912,27 @@ readback, lifecycle and runtime checks passed under
 Desktop-loop scheduling, firmware controller discovery, calibrated x86 slice
 timing, installed compiler resources, and C window/event/render integration
 remain acceptance gates. No new installer release is implied by these checks.
+
+### Resource streaming and native C events
+
+Sealed compiler resources use positional ObjectStore reads capped at 64 KiB;
+the compiler syscall boundary retains its smaller 4 KiB transfer limit. Open
+handles preserve independent cursors and immutable resource identity. Seeks
+are bounded by resource length. Writes and truncation remain denied even when
+a namespace grant is writable. Remount, cross-block reads, short reads, EOF,
+cursor independence and denied mutation pass the storage behavior suite under
+`builds/manifests/20261012T080046115400Z-62079.json`.
+
+`sdk/c/include/infinity/event.h` defines the 128-byte native event packet and
+subscribe, poll and unsubscribe calls. `native_event.rs` adapts these operations
+to IEF rather than introducing another message queue. Every read checks holder,
+lease, scope, expiry and live capability authority. A bad user pointer leaves
+the event queued; overflow sets a reconciliation flag. Unsubscription permits
+owner cleanup after revocation but rejects other processes.
+
+The runtime behavioral suite exercises this event ABI using both ARM64 and
+x86_64 page-table implementations. The suite and both installed-kernel
+compilations passed under
+`builds/manifests/20261012T080828435900Z-62602.json`. This is service-adapter acceptance, not
+installed native application acceptance: the production process dispatcher
+still needs to route these calls, and input/render wiring remains incomplete.

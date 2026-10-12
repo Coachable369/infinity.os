@@ -84,9 +84,9 @@ extern "C" fn object_open(context: *mut Capture, path: *const u8, length: usize,
 // FUNC: object_read
 // DESC: Reads an opened object snapshot into a trusted app's bounded buffer.
 // ------------------=
-extern "C" fn object_read(_: *mut Capture, fd: i32, out: *mut u8, length: usize) -> isize {
-    if out.is_null() || length > 16384 { return -1; }
-    unsafe { (*(&raw mut IO)).read(fd, core::slice::from_raw_parts_mut(out, length))
+extern "C" fn object_read(context: *mut Capture, fd: i32, out: *mut u8, length: usize) -> isize {
+    if context.is_null() || out.is_null() || length > 16384 { return -1; }
+    unsafe { (*(&raw mut IO)).read(&mut *(*context).store, fd, core::slice::from_raw_parts_mut(out, length))
         .map(|n| n as isize).unwrap_or_else(|e| -(e as isize)) }
 }
 

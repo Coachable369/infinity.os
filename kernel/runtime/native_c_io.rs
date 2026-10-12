@@ -30,6 +30,7 @@ struct Handle {
     position: usize,
     length: usize,
     dirty: bool,
+    streamed: bool,
 }
 
 /// Each open stream owns a bounded snapshot. Writes publish one version at
@@ -322,19 +323,26 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
         };
         let metadata = store.metadata(id).map_err(storage_error)?;
         if metadata.kind == ObjectType::NamespaceNode { return Err(IoError::IsDirectory); }
-        if !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) { return Err(IoError::Denied); }
+        let streamed = metadata.kind == ObjectType::SystemComponent;
+        if !streamed && !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) { return Err(IoError::Denied); }
+        if streamed {
+            if flags & WRITE != 0 { return Err(IoError::Denied); }
+            // Only sealed extents are readable; unpublished installer resources
+            // and ordinary system objects never become implicit file grants.
+            store.read_system_extent(id, 0, &mut []).map_err(storage_error)?;
+        }
         if flags & WRITE != 0 {
             if !matches!(metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
             if self.handles.iter().flatten().any(|h| h.id == id && h.flags & WRITE != 0) { return Err(IoError::Conflict); }
         }
-        if metadata.logical_size as usize > MAX_CONTENT { return Err(IoError::Capacity); }
-        let size = if flags & TRUNCATE != 0 { 0 } else {
+        if !streamed && metadata.logical_size as usize > MAX_CONTENT { return Err(IoError::Capacity); }
+        let size = if streamed { metadata.logical_size as usize } else if flags & TRUNCATE != 0 { 0 } else {
             store.read(id, Some(metadata.current_version), &mut self.buffers[slot]).map_err(storage_error)?
         };
         let token = self.next_token;
         self.next_token = next;
         self.handles[slot] = Some(Handle { token, id, version: metadata.current_version, flags,
-            position: if flags & APPEND != 0 { size } else { 0 }, length: size, dirty: flags & TRUNCATE != 0 });
+            position: if flags & APPEND != 0 { size } else { 0 }, length: size, dirty: flags & TRUNCATE != 0, streamed });
         Ok(token)
     }
 
@@ -342,12 +350,11 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: read
     // DESC: Reads a bounded range from the opened version and advances its independent cursor.
     // ------------------=
-    pub fn read(&mut self, token: i32, out: &mut [u8]) -> Result<usize, IoError> {
+    pub fn read<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, token: i32, out: &mut [u8]) -> Result<usize, IoError> {
         let slot = self.slot(token)?;
+        let position = self.handles[slot].unwrap().position;
+        let count = self.read_at(store, token, position, out)?;
         let h = self.handles[slot].as_mut().unwrap();
-        if h.flags & READ == 0 { return Err(IoError::Denied); }
-        let count = out.len().min(h.length.saturating_sub(h.position));
-        if count > 0 { out[..count].copy_from_slice(&self.buffers[slot][h.position..h.position + count]); }
         h.position += count;
         Ok(count)
     }
@@ -356,12 +363,17 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: read_at
     // DESC: Reads the opened snapshot at an explicit offset without moving its cursor.
     // ------------------=
-    pub fn read_at(&self, token: i32, offset: usize, out: &mut [u8]) -> Result<usize, IoError> {
+    pub fn read_at<D: BlockDevice>(&self, store: &mut ObjectStore<D>, token: i32, offset: usize, out: &mut [u8]) -> Result<usize, IoError> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_ref().unwrap();
         if h.flags & READ == 0 { return Err(IoError::Denied); }
-        let count = out.len().min(h.length.saturating_sub(offset));
-        if count > 0 { out[..count].copy_from_slice(&self.buffers[slot][offset..offset + count]); }
+        let count = out.len().min(h.length.saturating_sub(offset)).min(64 * 1024);
+        if count > 0 {
+            if h.streamed {
+                if store.metadata(h.id).map_err(storage_error)?.current_version != h.version { return Err(IoError::Conflict); }
+                store.read_system_extent(h.id, offset as u64, &mut out[..count]).map_err(storage_error)?;
+            } else { out[..count].copy_from_slice(&self.buffers[slot][offset..offset + count]); }
+        }
         Ok(count)
     }
 
@@ -406,7 +418,8 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_mut().unwrap();
         let base = match origin { 0 => 0, 1 => h.position, 2 => h.length, _ => return Err(IoError::Invalid) };
-        let next = (base as i64).checked_add(offset).filter(|p| *p >= 0 && *p <= MAX_CONTENT as i64).ok_or(IoError::Invalid)?;
+        let limit = if h.streamed { h.length } else { MAX_CONTENT };
+        let next = (base as i64).checked_add(offset).filter(|p| *p >= 0 && *p <= limit as i64).ok_or(IoError::Invalid)?;
         h.position = next as usize;
         Ok(h.position)
     }

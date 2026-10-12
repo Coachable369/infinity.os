@@ -306,4 +306,74 @@ fn ui_authority() {
 // FUNC: main
 // DESC: Runs the program entry point.
 // ------------------=
-fn main(){execution_and_scheduler();capabilities();iop();events();services();ui_authority();println!("PASS Milestone 4 host acceptance");}
+fn main(){execution_and_scheduler();capabilities();iop();events();services();ui_authority();
+    native_event_abi::<runtime::native_memory::X86AddressSpace>();
+    native_event_abi::<runtime::native_memory_arm::ArmAddressSpace>();
+    println!("PASS Milestone 4 host acceptance");}
+
+// ------------------------=
+// FUNC: native_event_abi
+// DESC: Verifies real ARM and x86 user-page encodings, queue overflow, copy failure atomicity, revocation and process isolation.
+// ------------------=
+fn native_event_abi<T: runtime::native_memory::PageTable>() {
+    use runtime::native_memory::*;
+    let mut runtime = runtime::InfinityRuntime::new(false);
+    let caller = identity(63);
+    let publish = runtime.capabilities.grant(CapabilityType::EventPublish, 77, 1, 0,
+        caller, caller, None, 0).unwrap();
+    let subscribe = runtime.capabilities.grant(CapabilityType::EventSubscribe, 77, 1, 9,
+        caller, caller, Some(100), 0).unwrap();
+    let layout = std::alloc::Layout::from_size_align(1024 * 1024, 4096).unwrap();
+    let arena = unsafe { std::alloc::alloc_zeroed(layout) };
+    assert!(!arena.is_null());
+    let mut memory = NativeMemory::empty();
+    memory.initialize(arena as u64, layout.size() as u64).unwrap();
+    let initial = memory.available_pages();
+    let allocation = memory.allocate(3, 1).unwrap();
+    let mut tables = T::new(&mut memory, 1).unwrap();
+    let user = 0x1_0000_0000;
+    tables.map_range(&mut memory, user, allocation.physical_address, 8192, PagePermissions::USER_RW).unwrap();
+    tables.map_range(&mut memory, user+8192, allocation.physical_address+8192, 4096, PagePermissions::USER_R).unwrap();
+    for args in [[subscribe,77,9,100,0,0], [subscribe,77,9,100,9,0], [subscribe,77,9,1,1,0]] {
+        assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1110, args, 1), -3);
+    }
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1110, [subscribe,77,8,100,1,0], 1), -1);
+    let lease = runtime.native_event_syscall(caller, &mut tables, 0x1110, [subscribe,77,9,100,1,0], 1);
+    assert!(lease > 0);
+    let lease = lease as u64;
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1111, [lease,user,128,0,0,0], 1), 0);
+    for n in 1u64..=3 {
+        runtime.events.publish(EventClass::StateChange, RoutingDomain::Application, 77,
+            caller, 9, n, n, &n.to_le_bytes(), 1, 1, &runtime.capabilities, publish).unwrap();
+    }
+    assert_eq!(runtime.events.queue_depth(lease), Some(1));
+    assert_eq!(runtime.native_event_syscall(identity(64), &mut tables, 0x1111, [lease,user,128,0,0,0], 1), -1);
+    assert_eq!(runtime.native_event_syscall(identity(64), &mut tables, 0x1112, [lease,0,0,0,0,0], 1), -1);
+    for address in [user+8192, user+8150, user+16384, u64::MAX-4] {
+        assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1111, [lease,address,128,0,0,0], 1), -5);
+        assert_eq!(runtime.events.queue_depth(lease), Some(1));
+    }
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1111, [lease,user,127,0,0,0], 1), -3);
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1111, [lease,user+4090,128,0,0,0], 1), 1);
+    let mut bytes = [0u8;128];
+    copy_from_user(&tables, user+4090, &mut bytes).unwrap();
+    assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 1);
+    assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 77);
+    assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), 3);
+    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 8);
+    assert_eq!(u32::from_le_bytes(bytes[28..32].try_into().unwrap()), 1);
+    assert_eq!(u64::from_le_bytes(bytes[32..40].try_into().unwrap()), 3);
+    assert!(bytes[40..].iter().all(|b| *b == 0));
+    runtime.events.publish(EventClass::StateChange, RoutingDomain::Application, 77,
+        caller, 9, 4, 4, &[4], 1, 2, &runtime.capabilities, publish).unwrap();
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1111, [lease,user,128,0,0,0], 100), -2);
+    runtime.capabilities.revoke(subscribe).unwrap();
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1111, [lease,user,128,0,0,0], 2), -1);
+    assert_eq!(runtime.events.queue_depth(lease), Some(1));
+    assert_eq!(runtime.native_event_syscall(caller, &mut tables, 0x1112, [lease,0,0,0,0,0], 2), 0);
+    assert_eq!(runtime.events.queue_depth(lease), None);
+    tables.release(&mut memory).unwrap();
+    memory.release(allocation).unwrap();
+    assert_eq!(memory.available_pages(), initial);
+    unsafe { std::alloc::dealloc(arena, layout); }
+}

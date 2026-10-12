@@ -22,6 +22,7 @@ pub mod native_memory;
 pub mod native_memory_arm;
 pub mod native_mappings;
 pub mod native_window;
+pub mod native_event;
 #[cfg(all(target_os = "none", target_arch = "x86_64"))]
 pub mod native_task_x86;
 #[cfg(all(target_os = "none", target_arch = "aarch64"))]

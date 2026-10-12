@@ -88,8 +88,8 @@ impl<'a, const N: usize> Session<'a, N> {
         }
         match request {
             Request::Open { path, flags } => self.io.open(store, path, flags).map(|h| h as usize),
-            Request::Read(handle) => self.io.read(handle, output),
-            Request::ReadAt { handle, offset } => self.io.read_at(handle, offset, output),
+            Request::Read(handle) => self.io.read(store, handle, output),
+            Request::ReadAt { handle, offset } => self.io.read_at(store, handle, offset, output),
             Request::Write { handle, bytes } => self.io.write(handle, bytes),
             Request::Seek { handle, offset, origin } => self.io.seek(handle, offset, origin),
             Request::Truncate { handle, length } => self.io.truncate(handle, length).map(|_| 0),
