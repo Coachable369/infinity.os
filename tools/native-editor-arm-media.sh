@@ -11,8 +11,13 @@ mcopy -i "$stage/iso/efi.img" '::/EFI/INFINITY/PAYLOAD/P0-*.BIN' "$stage/origina
 cat "$stage"/original/P0-*.BIN > "$stage/installed-esp.img"
 # Same packaged models/assets, same installed kernel source, different native
 # load-address adapter. No installed-disk patch or synthetic model response.
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static --strip-debug \
+    --undefined=infinity_browser_private_infinity_browser_run -T linker/aarch64-qemu.ld \
+    -o "$stage/installed-kernel.elf" build/aarch64/libinstalled-kernel.a \
+    build/aarch64/qwen-math.o build/voice-kokoro/aarch64/private-native.o \
+    build/servo-platform-probe/browser-private-aarch64.o
 build/behavior-harness/release/qwen-pack install "$stage/installed-esp.img" \
-    build/aarch64/installed-kernel-qemu.elf "$stage/payload" build/qwen/payload-manifest.rs
+    "$stage/installed-kernel.elf" "$stage/payload" build/qwen/payload-manifest.rs
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR="$stage/cargo" cargo build --release -Z build-std=core \
     --target aarch64-unknown-none-softfloat --features streamed-payload,native-browser
 /opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static --strip-debug \
