@@ -146,6 +146,7 @@ def main():
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=pathlib.Path, help="Explicit QEMU-compatible test media for ARM; never substitute silently for the published VirtualBox ISO")
     parser.add_argument("--reuse-installed", action="store_true", help="Continue failed workflow checks on this harness's already cold-boot-verified disk")
+    parser.add_argument("--accel", choices=("hvf", "tcg"), help="Explicit accelerator for diagnosing installed execution transitions")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
     if args.arch == "aarch64" and args.iso is None:
@@ -168,12 +169,13 @@ def main():
     guest = NativeGuest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
                            reuse=args.reuse_installed, width=1024, height=768, memory_mb=12288)
     guest.arch = args.arch
-    guest.acceleration = "hvf" if args.arch == "aarch64" else "tcg"
+    guest.acceleration = args.accel or ("hvf" if args.arch == "aarch64" else "tcg")
     # No post-install patch: this is the unmodified ISO's installed generation.
     guest.patched = True
     guest.boot_timeout_seconds = 600
     report = {"installed_acceptance": False, "architecture": args.arch, "packaged": packaged,
-              "source_media": str(source_iso), "canonical_release_media": args.iso is None}
+              "source_media": str(source_iso), "canonical_release_media": args.iso is None,
+              "acceleration": guest.acceleration}
     try:
         if args.reuse_installed:
             guest.boot(False)
@@ -222,12 +224,17 @@ def main():
         report["model_generated_source"] = True
     except BaseException as error:
         report["failure"] = repr(error)
-        if guest.process is not None:
+        if guest.process is not None and guest.process.poll() is None:
             guest.screenshot("native-editor-failure")
         raise
     finally:
         (work / "evidence.json").write_text(json.dumps(report, indent=2) + "\n")
-        guest.stop()
+        try:
+            guest.stop()
+        except (BrokenPipeError, ConnectionResetError):
+            if guest.process is not None and guest.process.poll() is None:
+                guest.process.terminate()
+                guest.process.wait(timeout=20)
         evidence = ROOT / "builds/validation/native-apps" / (args.arch + "-installed")
         evidence.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(work / "evidence.json", evidence / "evidence.json")
