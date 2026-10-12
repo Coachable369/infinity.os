@@ -760,3 +760,36 @@ entry, a TSS/privileged kernel stack, a trap or syscall dispatcher behind the
 gateway ABI, saved-register context switching, page-fault termination, and then
 fresh installed ISO-detached `cc hello.c -o hello` execution. Until those are
 complete, the production scheduler must not activate an untrusted compiler CR3.
+
+## Hardware-isolated execution checkpoint — 2026-10-11
+
+The shared address-space builder now supports x86-64 and AArch64. Disposable
+QEMU guests execute compiler-produced C at CPL3/EL0, preempt an infinite loop,
+reject supervisor writes and executable heap access, and survive privileged
+instruction faults. Repeated resumptions preserve TLS and SIMD registers.
+All process frames are reclaimed after each case. The native C syscall header
+passes six arguments and receives results through the real privilege boundary.
+
+The window service adds capability-checked title, movement, resize, state, focus,
+capture, and close operations with checked user-memory copies. Behavioral tests
+cover ownership, grant revocation, modal focus, z-order, invalid pointers, and
+capture cleanup. This is service-level evidence, not rendered desktop evidence.
+
+The AArch64 Clang/LLD artifacts now build against native Newlib bridges. Their
+4-KiB-aligned ELF segments load through the compiler image policy. This does not
+yet prove that Clang compiles a program inside InfinityOS.
+
+Evidence, produced exclusively through the build kit:
+
+- `builds/manifests/20261012T044620932094Z-37909.json`: successful ARM compiler build.
+- `builds/manifests/20261012T044644485911Z-38160.json`: memory/window/runtime tests
+  and x86, ARM GICv2, and ARM GICv3 user-execution probes.
+- `build/native-process-probe/{x86_64,aarch64-gic2,aarch64-gic3}/evidence.json`:
+  structured fault, privilege, preemption, and reclamation results.
+
+Remaining acceptance gates: production process scheduling and trap dispatch;
+compiler service syscalls and resource packaging; complete C window/event/render
+integration with the desktop; in-guest compilation and executable launch; and
+fresh-installed, ISO-detached verification on both targets. The existing ISO
+release does not contain this checkpoint. None of these remaining gates is
+claimed complete by the disposable execution probes.

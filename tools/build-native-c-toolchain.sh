@@ -1,14 +1,19 @@
 #!/bin/sh
-# Rebuilds the pinned x86-64 InfinityOS Clang/LLD development toolchain.
+# Rebuilds the pinned native InfinityOS Clang/LLD toolchain for one selected CPU.
 set -eu
 
 cd "$(dirname "$0")/.."
 . tools/require-build-kit.sh
 repo=$PWD
-target=x86_64-unknown-elf
-work=$repo/build/native-c
-downloads=$work/downloads
-sources=$work/src
+architecture=${1:-x86_64}
+case "$architecture" in
+  x86_64) cpu_flags=-mno-red-zone; llvm_backend=X86; elf_machine=62; work=$repo/build/native-c ;;
+  aarch64) cpu_flags=-mno-outline-atomics; llvm_backend=AArch64; elf_machine=183; work=$repo/build/native-c/aarch64 ;;
+  *) echo "unsupported native compiler architecture: $architecture" >&2; exit 2 ;;
+esac
+target=$architecture-unknown-elf
+downloads=$repo/build/native-c/downloads
+sources=$repo/build/native-c/src
 sysroot=$work/sysroot/$target
 llvm_source=$sources/llvm-project
 newlib_source=$sources/newlib
@@ -68,7 +73,7 @@ if test ! -f "$llvm_source/.infinity-patched"; then
   touch "$llvm_source/.infinity-patched"
 fi
 
-newlib_build=$work/newlib-build-x86_64
+newlib_build=$work/newlib-build-$architecture
 mkdir -p "$newlib_build"
 if test ! -f "$newlib_build/Makefile"; then
   cd "$newlib_build"
@@ -89,15 +94,22 @@ if test ! -f "$newlib_build/Makefile"; then
     RANLIB_FOR_TARGET="$llvm_bin/llvm-ranlib" \
     READELF_FOR_TARGET="$llvm_bin/llvm-readelf" \
     STRIP_FOR_TARGET="$llvm_bin/llvm-strip" \
-    CFLAGS_FOR_TARGET="-O2 -mno-red-zone -ffunction-sections -fdata-sections"
+    CFLAGS_FOR_TARGET="-O2 $cpu_flags -ffunction-sections -fdata-sections"
   cd "$repo"
 fi
 make -C "$newlib_build" -j"$jobs" all-target-newlib
-make -C "$newlib_build" install-target-newlib
+# Newlib's install target touches unchanged headers and otherwise invalidates
+# every LLVM translation unit on every retry. The source is checksum-pinned;
+# reinstall only when its built archives or required installed headers differ.
+if ! test -f "$sysroot/$target/include/stdio.h" ||
+   ! cmp -s "$newlib_build/$target/newlib/libc.a" "$sysroot/$target/lib/libc.a" ||
+   ! cmp -s "$newlib_build/$target/newlib/libm.a" "$sysroot/$target/lib/libm.a"; then
+  make -C "$newlib_build" install-target-newlib
+fi
 ln -sfn "$target/include" "$sysroot/include"
 ln -sfn "$target/lib" "$sysroot/lib"
 
-builtins_build=$work/builtins-x86_64
+builtins_build=$work/builtins-$architecture
 cmake -G Ninja \
   -S "$llvm_source/compiler-rt" \
   -B "$builtins_build" \
@@ -108,6 +120,8 @@ cmake -G Ninja \
   -DCMAKE_MODULE_PATH="$repo/sdk/compiler/cmake" \
   -DCMAKE_C_COMPILER="$llvm_bin/clang" \
   -DCMAKE_C_COMPILER_TARGET="$target" \
+  -DCMAKE_CXX_COMPILER="$llvm_bin/clang++" \
+  -DCMAKE_CXX_COMPILER_TARGET="$target" \
   -DCMAKE_ASM_COMPILER="$llvm_bin/clang" \
   -DCMAKE_ASM_COMPILER_TARGET="$target" \
   -DCMAKE_AR="$llvm_bin/llvm-ar" \
@@ -115,11 +129,11 @@ cmake -G Ninja \
   -DCMAKE_LINKER="$ld_lld" \
   -DCMAKE_SYSROOT="$sysroot" \
   -DCMAKE_INSTALL_PREFIX="$sysroot" \
-  -DCMAKE_C_FLAGS="-O2 -mno-red-zone -ffunction-sections -fdata-sections"
+  -DCMAKE_C_FLAGS="-O2 $cpu_flags -ffunction-sections -fdata-sections"
 ninja -C "$builtins_build" -j"$jobs"
 
-common_flags="-O2 -fPIE -mno-red-zone -ffunction-sections -fdata-sections -include $repo/sdk/compiler/target.h -I$repo/sdk/compiler/include"
-cxx_build=$work/cxx-build-x86_64
+common_flags="-O2 -fPIE $cpu_flags -ffunction-sections -fdata-sections -include $repo/sdk/compiler/target.h -I$repo/sdk/compiler/include"
+cxx_build=$work/cxx-build-$architecture
 cmake -G Ninja \
   -S "$llvm_source/runtimes" \
   -B "$cxx_build" \
@@ -147,18 +161,18 @@ cmake -G Ninja \
 ninja -C "$cxx_build" -j"$jobs" cxx cxxabi
 ninja -C "$cxx_build" install-cxx install-cxxabi
 
-INFINITY_COMPILER_SYSROOT="$sysroot" LLVM_BIN="$llvm_bin" sh "$repo/tools/native-c-probe/build-compiler-runtime.sh"
-runtime_objects="$work/compiler-start.o $work/compiler-entry.o $work/compiler-platform.o $work/compiler-dlfcn.o $work/compiler-files.o $work/compiler-heap.o $work/compiler-time.o $work/compiler-serial_sync.o $work/compiler-serial_tls.o $work/compiler-pthread.o $work/compiler-namespace.o $work/compiler-process.o"
-runtime_builtins="$builtins_build/lib/infinityos/libclang_rt.builtins-x86_64.a"
-compiler_build=$work/clang-build-infinity-x86_64
+INFINITY_COMPILER_TARGET="$target" INFINITY_COMPILER_OUTPUT="$work" INFINITY_COMPILER_SYSROOT="$sysroot" LLVM_BIN="$llvm_bin" sh "$repo/tools/native-c-probe/build-compiler-runtime.sh"
+runtime_objects="$work/compiler-start.o $work/compiler-entry.o $work/compiler-platform.o $work/compiler-dlfcn.o $work/compiler-files.o $work/compiler-heap.o $work/compiler-time.o $work/compiler-serial_sync.o $work/compiler-serial_tls.o $work/compiler-pthread.o $work/compiler-namespace.o $work/compiler-process.o $work/compiler-newlib.o"
+runtime_builtins="$builtins_build/lib/infinityos/libclang_rt.builtins-$architecture.a"
+compiler_build=$work/clang-build-infinity-$architecture
 compiler_cxx_flags="$common_flags -nostdinc++ -isystem $sysroot/include/c++/v1"
-compiler_link_flags="-nostdlib -Wl,--gc-sections,--error-limit=0,-e,infinity_compiler_entry $runtime_objects -L$sysroot/lib -Wl,--start-group -lc++ -lc++abi -lc -lm $runtime_builtins -Wl,--end-group"
+compiler_link_flags="-nostdlib -Wl,--gc-sections,--error-limit=0,--image-base=0x100000000,-z,max-page-size=4096,-z,common-page-size=4096,-e,infinity_compiler_entry $runtime_objects -L$sysroot/lib -Wl,--start-group -lc++ -lc++abi -lc -lm $runtime_builtins -Wl,--end-group"
 env LDFLAGS= CPPFLAGS= cmake -G Ninja \
   -S "$llvm_source/llvm" \
   -B "$compiler_build" \
   -C "$repo/sdk/compiler/cmake/compiler-options.cmake" \
   -DLLVM_ENABLE_PROJECTS="clang;lld" \
-  -DLLVM_TARGETS_TO_BUILD=X86 \
+  -DLLVM_TARGETS_TO_BUILD="$llvm_backend" \
   -DLLVM_ENABLE_THREADS=OFF \
   -DLLVM_ENABLE_ZLIB=OFF \
   -DLLVM_ENABLE_ZSTD=OFF \
@@ -201,4 +215,4 @@ env LDFLAGS= CPPFLAGS= cmake -G Ninja \
 ninja -C "$compiler_build" -j"$jobs" clang lld
 
 rustc --edition 2021 "$repo/tools/native-c-toolchain-test.rs" -o "$work/native-c-toolchain-test"
-"$work/native-c-toolchain-test" "$compiler_build/bin/clang.elf" "$compiler_build/bin/lld.elf"
+INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$compiler_build/bin/clang.elf" "$compiler_build/bin/lld.elf"

@@ -10,6 +10,12 @@ pub mod event;
 pub mod execution;
 pub mod native_c_image;
 pub mod native_memory;
+pub mod native_memory_arm;
+pub mod native_window;
+#[cfg(all(target_os = "none", target_arch = "x86_64"))]
+pub mod native_task_x86;
+#[cfg(all(target_os = "none", target_arch = "aarch64"))]
+pub mod native_task_arm;
 pub mod font;
 pub mod fabric;
 pub mod storage_client;
@@ -660,6 +666,7 @@ impl InfinityRuntime {
                 crate::ui::window::WindowEventKind::Moved => EVENT_WINDOW_MOVED,
                 crate::ui::window::WindowEventKind::Resized => EVENT_WINDOW_RESIZED,
                 crate::ui::window::WindowEventKind::StateChanged
+                | crate::ui::window::WindowEventKind::TitleChanged
                 | crate::ui::window::WindowEventKind::CaptureChanged => EVENT_WINDOW_STATE_CHANGED,
             };
             let mut payload = [0u8; crate::ui::window::WindowEvent::ENCODED_BYTES];

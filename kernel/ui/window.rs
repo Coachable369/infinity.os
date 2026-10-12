@@ -6,6 +6,7 @@ use super::trusted::TrustedWindowToken;
 pub const MAX_WINDOWS: usize = 16;
 pub const MAX_DISPLAYS: usize = 4;
 pub const MAX_WINDOW_EVENTS: usize = 32;
+pub const MAX_WINDOW_TITLE: usize = 96;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct WindowId(pub u32);
@@ -51,9 +52,18 @@ pub struct Window {
     pub visible: bool,
     pub modal_parent: Option<WindowId>,
     pub accepts_input: bool,
+    title: [u8; MAX_WINDOW_TITLE],
+    title_length: u8,
 }
 
 impl Window {
+    // ------------------------=
+    // FUNC: title
+    // DESC: Returns the validated UTF-8 application title without exposing mutable registry storage.
+    // ------------------=
+    pub fn title(&self) -> &str {
+        core::str::from_utf8(&self.title[..self.title_length as usize]).unwrap_or("")
+    }
     // ------------------------=
     // FUNC: assistant_geometry
     // DESC: Makes the assistant a standard normal-window affordance, excluding privileged secure input and non-app surfaces.
@@ -77,6 +87,7 @@ pub enum WindowError {
     InvalidBounds,
     ModalBlocked,
     PrivilegedZOrder,
+    InvalidTitle,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -96,6 +107,7 @@ pub enum WindowEventKind {
     StateChanged,
     CaptureChanged,
     ContextFailed,
+    TitleChanged,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -290,10 +302,13 @@ impl WindowServer {
             visible: true,
             modal_parent: None,
             accepts_input: true,
+            title: [0; MAX_WINDOW_TITLE],
+            title_length: 0,
         });
         if self.focused.is_none() && z_class != ZOrderClass::Desktop {
             self.focused = Some(id);
         }
+        self.raise(id);
         self.emit(WindowEventKind::Created, id, owner, bounds, bounds);
         Ok(id)
     }
@@ -321,6 +336,23 @@ impl WindowServer {
             return Err(WindowError::AccessDenied);
         }
         Ok(window)
+    }
+
+    // ------------------------=
+    // FUNC: set_title
+    // DESC: Sets bounded readable UTF-8 chrome text without truncating multibyte characters or accepting control codes.
+    // ------------------=
+    pub fn set_title(&mut self, caller: ContextId, id: WindowId, title: &str) -> Result<(), WindowError> {
+        if title.len() > MAX_WINDOW_TITLE || title.chars().any(char::is_control) {
+            return Err(WindowError::InvalidTitle);
+        }
+        let window = self.mutate(caller, id)?;
+        window.title.fill(0);
+        window.title[..title.len()].copy_from_slice(title.as_bytes());
+        window.title_length = title.len() as u8;
+        let bounds = window.bounds;
+        self.emit(WindowEventKind::TitleChanged, id, caller, bounds, bounds);
+        Ok(())
     }
 
     // ------------------------=
@@ -402,6 +434,9 @@ impl WindowServer {
         let (old_bounds, new_bounds, visible, owner) = {
             let window = self.mutate(caller, id)?;
             let old_bounds = window.bounds;
+            if window.state == state {
+                return Ok(WindowTransition { old_bounds, new_bounds: old_bounds, state });
+            }
             if window.state == WindowState::Normal && state != WindowState::Normal {
                 window.restore_bounds = window.bounds;
             }
@@ -432,6 +467,9 @@ impl WindowServer {
         };
         if !visible && self.focused == Some(id) {
             self.focused = None;
+        }
+        if !visible && self.pointer_capture.map(|capture| capture.0) == Some(id) {
+            self.pointer_capture = None;
         }
         self.emit(
             WindowEventKind::StateChanged,
@@ -488,6 +526,13 @@ impl WindowServer {
         child: WindowId,
         parent: WindowId,
     ) -> Result<(), WindowError> {
+        let mut ancestor = Some(parent);
+        for _ in 0..MAX_WINDOWS {
+            let Some(id) = ancestor else { break; };
+            if id == child { return Err(WindowError::InvalidBounds); }
+            ancestor = self.inspect(id).ok_or(WindowError::Unknown)?.modal_parent;
+        }
+        if ancestor.is_some() { return Err(WindowError::InvalidBounds); }
         let parent_window = *self.inspect(parent).ok_or(WindowError::Unknown)?;
         if parent_window.owner != caller {
             return Err(WindowError::AccessDenied);
@@ -510,10 +555,11 @@ impl WindowServer {
             return Err(WindowError::AccessDenied);
         }
         if let Some(modal) = self.top_modal() {
-            if modal.id != id && modal.modal_parent != Some(id) {
+            if modal.id != id {
                 return Err(WindowError::ModalBlocked);
             }
         }
+        self.raise(id);
         self.focused = Some(id);
         self.emit(
             WindowEventKind::Focused,
@@ -523,6 +569,33 @@ impl WindowServer {
             candidate.bounds,
         );
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: raise
+    // DESC: Moves a window to the front of its z-class without allowing focus to cross privileged layer boundaries.
+    // ------------------=
+    fn raise(&mut self, id: WindowId) {
+        if let Some(index) = self.windows.iter().position(|entry| entry.is_some_and(|window| window.id == id)) {
+            self.windows[index..].rotate_left(1);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: ordered_window
+    // DESC: Exposes the authoritative back-to-front layer order to retained compositors and native event routing.
+    // ------------------=
+    pub fn ordered_window(&self, index: usize) -> Option<&Window> {
+        let mut count = 0;
+        for layer in 0..=ZOrderClass::Cursor as u8 {
+            for window in self.windows.iter().flatten() {
+                if window.z_class as u8 == layer {
+                    if count == index { return Some(window); }
+                    count += 1;
+                }
+            }
+        }
+        None
     }
 
     // ------------------------=
@@ -557,6 +630,12 @@ impl WindowServer {
         if window.owner != caller {
             return Err(WindowError::AccessDenied);
         }
+        if !window.visible || !window.accepts_input {
+            return Err(WindowError::AccessDenied);
+        }
+        if self.top_modal().is_some_and(|modal| modal.id != id) {
+            return Err(WindowError::ModalBlocked);
+        }
         self.pointer_capture = Some((id, caller));
         self.emit(
             WindowEventKind::CaptureChanged,
@@ -590,6 +669,15 @@ impl WindowServer {
             bounds,
         );
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: release_window_pointer
+    // DESC: Prevents a window-scoped capability from releasing capture belonging to a sibling window.
+    // ------------------=
+    pub fn release_window_pointer(&mut self, caller: ContextId, window: WindowId) -> Result<(), WindowError> {
+        if self.pointer_capture != Some((window, caller)) { return Err(WindowError::AccessDenied); }
+        self.release_pointer(caller)
     }
 
     // ------------------------=
@@ -664,6 +752,9 @@ impl WindowServer {
     // ------------------=
     pub fn pointer_target(&self, point: Point) -> Option<WindowId> {
         self.pointer_capture
+            .filter(|capture| self.inspect(capture.0).is_some_and(|window|
+                window.visible && window.accepts_input &&
+                self.top_modal().is_none_or(|modal| modal.id == window.id)))
             .map(|capture| capture.0)
             .or_else(|| self.hit_test(point))
     }
@@ -728,6 +819,7 @@ impl WindowServer {
     fn top_modal(&self) -> Option<&Window> {
         self.windows
             .iter()
+            .rev()
             .flatten()
             .find(|window| window.visible && window.z_class == ZOrderClass::Modal)
     }

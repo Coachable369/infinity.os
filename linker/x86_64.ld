@@ -18,7 +18,7 @@ SECTIONS
     .browser_init_array : ALIGN(8) { KEEP(*(.browser_init_array)) } :data
     .init_array : ALIGN(8) { KEEP(*(.init_array .init_array.*)) } :data
     .fini_array : ALIGN(8) { KEEP(*(.fini_array .fini_array.*)) } :data
-    .got : ALIGN(8) { *(.got .got.*) } :data
+    .got : ALIGN(0x1000) { *(.got .got.*) } :data
     .data : ALIGN(0x1000) { *(.data .data.* .ldata .ldata.*) } :data
     .bss : ALIGN(0x1000) { *(.bss .bss.* .lbss .lbss.*) *(COMMON) } :data
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) { *(.speech_heap) } :speech

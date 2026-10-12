@@ -228,7 +228,56 @@ fn ui_authority() {
     assert_eq!(moved_event.correlation_id, window.0 as u64);
     assert_eq!(moved_event.payload[0], 1);
     assert_eq!(u32::from_le_bytes(moved_event.payload[4..8].try_into().unwrap()), window.0);
+    use runtime::native_window::Command;
+    let area = ui::geometry::Rect { x: 0, y: 30, width: 1280, height: 690 };
+    let resized = integrated.native_window_command(caller, context, manage, window,
+        Command::Resize(ui::geometry::Size { width: 500, height: 350 }), area, area, 2).unwrap();
+    assert_eq!((resized.width, resized.height), (500, 350));
+    {
+        use runtime::native_memory::{NativeMemory, X86AddressSpace, PagePermissions, copy_to_user};
+        let layout = std::alloc::Layout::from_size_align(128 * 1024, 4096).unwrap();
+        let arena = unsafe { std::alloc::alloc_zeroed(layout) };
+        assert!(!arena.is_null());
+        let mut memory = NativeMemory::empty();
+        memory.initialize(arena as u64, layout.size() as u64).unwrap();
+        let data = memory.allocate(1, context.0).unwrap();
+        let mut tables = X86AddressSpace::new(&mut memory, context.0).unwrap();
+        tables.map_range(&mut memory, 0x100000000, data.physical_address, 4096, PagePermissions::USER_RW).unwrap();
+        tables.map_range(&mut memory, 0x200000000, data.physical_address, 4096, PagePermissions::KERNEL_RW).unwrap();
+        copy_to_user(&mut tables, 0x100000000, b"Native app").unwrap();
+        assert_eq!(integrated.native_window_syscall(caller, context, &tables, 0x1102,
+            [manage, window.0 as u64, 0x100000000, 10, 0, 0], area, area, 2), 0);
+        assert_eq!(integrated.ui.windows.inspect(window).unwrap().title(), "Native app");
+        assert_eq!(integrated.native_window_syscall(caller, context, &tables, 0x1102,
+            [manage, window.0 as u64, 0x200000000, 10, 0, 0], area, area, 2), -5);
+        assert_eq!(integrated.native_window_syscall(caller, context, &tables, 0x1105,
+            [manage, window.0 as u64, 999, 0, 0, 0], area, area, 2), -3);
+        assert_eq!(integrated.ui.windows.inspect(window).unwrap().bounds, resized);
+        assert_eq!(integrated.ui.windows.inspect(window).unwrap().title(), "Native app");
+        tables.release(&mut memory).unwrap();
+        memory.release(data).unwrap();
+        assert_eq!(memory.available_pages(), 32);
+        unsafe { std::alloc::dealloc(arena, layout); }
+    }
+    assert_eq!(integrated.native_window_command(identity(99), context, manage, window,
+        Command::Close, area, area, 2), Err(runtime::UiOperationError::AccessDenied));
+    assert_eq!(integrated.native_window_command(caller, ui::window::ContextId(99), manage, window,
+        Command::Close, area, area, 2), Err(runtime::UiOperationError::AccessDenied));
+    integrated.native_window_command(caller, context, manage, window,
+        Command::State(ui::window::WindowState::Minimized), area, area, 2).unwrap();
+    assert!(!integrated.ui.windows.inspect(window).unwrap().visible);
+    integrated.native_window_command(caller, context, manage, window,
+        Command::State(ui::window::WindowState::Normal), area, area, 2).unwrap();
+    assert_eq!(integrated.ui.windows.inspect(window).unwrap().bounds, resized);
+    assert_eq!(integrated.native_window_command(caller, context, manage, window,
+        Command::Focus, area, area, 2), Err(runtime::UiOperationError::AccessDenied));
+    let focus = integrated.capabilities.grant(CapabilityType::WindowFocus, window.0 as u64,
+        1, 0, issuer, caller, Some(100), 0).unwrap();
+    integrated.native_window_command(caller, context, focus, window, Command::Focus, area, area, 2).unwrap();
+    assert_eq!(integrated.ui.windows.focused(), Some(window));
     integrated.capabilities.revoke(manage).unwrap();
+    assert_eq!(integrated.native_window_command(caller, context, manage, window,
+        Command::Close, area, area, 3), Err(runtime::UiOperationError::AccessDenied));
     assert_eq!(integrated.move_window(
         caller,
         context,

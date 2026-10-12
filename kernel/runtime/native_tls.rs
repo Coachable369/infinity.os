@@ -63,8 +63,24 @@ impl Template {
         machine: u16,
         storage: &'a mut [u8],
     ) -> Result<Block<'a>, ImageError> {
+        let address = storage.as_ptr() as usize;
+        self.initialize_at(image, machine, storage, address)
+    }
+
+    // ------------------------=
+    // FUNC: initialize_at
+    // DESC: Initializes TLS through its kernel mapping while encoding pointers in the process virtual address space.
+    // ------------------=
+    pub fn initialize_at<'a>(
+        &self,
+        image: &[u8],
+        machine: u16,
+        storage: &'a mut [u8],
+        address: usize,
+    ) -> Result<Block<'a>, ImageError> {
         self.validate(image)?;
-        let base = storage.as_ptr() as usize;
+        let base = address;
+        base.checked_add(storage.len()).ok_or(ImageError::Bounds)?;
         let alignment = self.alignment.max(16);
         let start = align(base, alignment)?
             .checked_sub(base)

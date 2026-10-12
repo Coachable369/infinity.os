@@ -34,13 +34,16 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 // DESC: Verifies a linked compiler component is a loadable x86-64 ELF executable with static TLS.
 // ------------------=
 fn verify_artifact(path: &Path) {
+    let machine: u16 = env::var("INFINITY_COMPILER_MACHINE")
+        .unwrap_or_else(|_| "62".into()).parse().expect("valid ELF machine");
+    assert!(matches!(machine, 62 | 183));
     let bytes = fs::read(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     assert!(bytes.len() >= 64, "{}: truncated ELF header", path.display());
     assert_eq!(&bytes[0..4], b"\x7fELF", "{}: bad ELF magic", path.display());
     assert_eq!(bytes[4], 2, "{}: not ELF64", path.display());
     assert_eq!(bytes[5], 1, "{}: not little endian", path.display());
     assert_eq!(read_u16(&bytes, 16), 2, "{}: not ET_EXEC", path.display());
-    assert_eq!(read_u16(&bytes, 18), 62, "{}: not x86-64", path.display());
+    assert_eq!(read_u16(&bytes, 18), machine, "{}: wrong CPU target", path.display());
     assert_ne!(read_u64(&bytes, 24), 0, "{}: missing entry point", path.display());
 
     let program_offset = usize::try_from(read_u64(&bytes, 32)).unwrap();
@@ -95,16 +98,16 @@ fn verify_artifact(path: &Path) {
     assert!(symbol_table_found, "{}: missing static symbol table", path.display());
     assert_eq!(unresolved_strong, 0, "{}: unresolved strong symbols", path.display());
 
-    let metadata = native_c_image::Image::parse_compiler(&bytes, 62)
+    let metadata = native_c_image::Image::parse_compiler(&bytes, machine)
         .unwrap_or_else(|error| panic!("{}: production loader rejected image: {error:?}", path.display()));
     assert_eq!(
-        native_c_image::Image::parse(&bytes, 62),
+        native_c_image::Image::parse(&bytes, machine),
         Err(native_c_image::ImageError::Header),
         "{}: ordinary application policy accepted a compiler executable",
         path.display()
     );
     assert_eq!(
-        native_c_image::Image::load_compiler(&bytes, 62, &mut []),
+        native_c_image::Image::load_compiler(&bytes, machine, &mut []),
         Err(native_c_image::ImageError::Bounds),
         "{}: compiler load ignored destination capacity",
         path.display()
@@ -112,7 +115,7 @@ fn verify_artifact(path: &Path) {
     assert!(metadata.virtual_base > 0, "{}: fixed image was not normalized", path.display());
     assert!(metadata.entry < metadata.memory_size, "{}: normalized entry is out of range", path.display());
     let mut memory = vec![0xa5; metadata.memory_size];
-    let loaded = native_c_image::Image::load_compiler(&bytes, 62, &mut memory)
+    let loaded = native_c_image::Image::load_compiler(&bytes, machine, &mut memory)
         .unwrap_or_else(|error| panic!("{}: production loader failed: {error:?}", path.display()));
     assert_eq!(loaded, metadata, "{}: parse/load metadata mismatch", path.display());
     for segment in &loaded.segments[..loaded.segment_count] {

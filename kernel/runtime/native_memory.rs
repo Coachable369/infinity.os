@@ -34,6 +34,9 @@ pub enum MemoryError {
     MappingConflict,
     MissingMapping,
     PageTableLimit,
+    InvalidAddress,
+    InvalidPermissions,
+    AccessDenied,
 }
 
 pub struct NativeMemory {
@@ -223,8 +226,8 @@ pub struct X86AddressSpace {
     table_count: usize,
 }
 
-pub struct CompilerAddressSpace {
-    pub page_tables: X86AddressSpace,
+pub struct ProcessAddressSpace<T: PageTable> {
+    pub page_tables: T,
     pub image: FrameAllocation,
     pub heap: FrameAllocation,
     pub stack: FrameAllocation,
@@ -232,7 +235,45 @@ pub struct CompilerAddressSpace {
     pub stack_top: u64,
 }
 
-impl CompilerAddressSpace {
+pub type CompilerAddressSpace = ProcessAddressSpace<X86AddressSpace>;
+
+/// A page-table implementation must return only owned, validated physical mappings.
+pub trait PageTable: Sized {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Allocates a private translation root from the native frame arena.
+    // ------------------=
+    fn new(memory: &mut NativeMemory, owner: u32) -> Result<Self, MemoryError>;
+    // ------------------------=
+    // FUNC: map_range
+    // DESC: Installs a checked page-aligned mapping in an inactive address space.
+    // ------------------=
+    fn map_range(&mut self, memory: &mut NativeMemory, address: u64, physical: u64,
+        bytes: u64, permissions: PagePermissions) -> Result<(), MemoryError>;
+    // ------------------------=
+    // FUNC: protect_range
+    // DESC: Changes permissions only after validating the complete existing range.
+    // ------------------=
+    fn protect_range(&mut self, address: u64, bytes: u64,
+        permissions: PagePermissions) -> Result<(), MemoryError>;
+    // ------------------------=
+    // FUNC: unmap_user_range
+    // DESC: Removes a fully validated user range before its physical frames may be released.
+    // ------------------=
+    fn unmap_user_range(&mut self, address: u64, bytes: u64) -> Result<(), MemoryError>;
+    // ------------------------=
+    // FUNC: mapping
+    // DESC: Translates a virtual address and returns its effective access permissions.
+    // ------------------=
+    fn mapping(&self, address: u64) -> Option<Mapping>;
+    // ------------------------=
+    // FUNC: release
+    // DESC: Releases the table hierarchy after execution has stopped using it.
+    // ------------------=
+    fn release(self, memory: &mut NativeMemory) -> Result<(), MemoryError>;
+}
+
+impl<T: PageTable> ProcessAddressSpace<T> {
     // ------------------------=
     // FUNC: build
     // DESC: Allocates and maps a compiler image, heap, guarded stack, supervisor kernel regions, and the sole user-callable kernel gateway.
@@ -240,6 +281,22 @@ impl CompilerAddressSpace {
     pub fn build(memory: &mut NativeMemory, owner: u32,
         image: &super::native_c_image::Image, virtual_layout: CompilerVirtualLayout,
         kernel: KernelAccessMap) -> Result<Self, MemoryError> {
+        if image.segment_count > image.segments.len() || image.memory_size == 0 ||
+            image.entry >= image.memory_size {
+            return Err(MemoryError::InvalidAddress);
+        }
+        virtual_layout.image_base.checked_add(image.memory_size as u64)
+            .ok_or(MemoryError::AddressOverflow)?;
+        virtual_layout.heap_base.checked_add(virtual_layout.heap_pages as u64 * PAGE_SIZE)
+            .ok_or(MemoryError::AddressOverflow)?;
+        virtual_layout.stack_guard_base.checked_add((virtual_layout.stack_pages as u64 + 2) * PAGE_SIZE)
+            .ok_or(MemoryError::AddressOverflow)?;
+        for segment in &image.segments[..image.segment_count] {
+            if segment.address.checked_add(segment.memory_size)
+                .filter(|end| *end <= image.memory_size).is_none() {
+                return Err(MemoryError::InvalidAddress);
+            }
+        }
         let image_pages = pages_for(image.memory_size as u64)?;
         let image_allocation = memory.allocate(image_pages, owner)?;
         let heap = match memory.allocate(virtual_layout.heap_pages, owner) {
@@ -254,7 +311,7 @@ impl CompilerAddressSpace {
                 return Err(error);
             }
         };
-        let mut page_tables = match X86AddressSpace::new(memory, owner) {
+        let mut page_tables = match T::new(memory, owner) {
             Ok(value) => value,
             Err(error) => {
                 let _ = memory.release(stack);
@@ -307,7 +364,7 @@ impl CompilerAddressSpace {
     // FUNC: map_all
     // DESC: Applies segment W-X, RELRO, guard, kernel-supervisor, and gateway policies to one address space.
     // ------------------=
-    fn map_all(page_tables: &mut X86AddressSpace, memory: &mut NativeMemory,
+    fn map_all(page_tables: &mut T, memory: &mut NativeMemory,
         image: &super::native_c_image::Image, layout: CompilerVirtualLayout,
         image_allocation: FrameAllocation, heap: FrameAllocation, stack: FrameAllocation,
         kernel: KernelAccessMap) -> Result<(), MemoryError> {
@@ -326,12 +383,21 @@ impl CompilerAddressSpace {
         }
         page_tables.map_range(memory, layout.heap_base, heap.physical_address,
             heap.page_count as u64 * PAGE_SIZE, PagePermissions::USER_RW)?;
-        page_tables.map_guarded_stack(memory, layout.stack_guard_base, stack)?;
+        let stack_start = layout.stack_guard_base.checked_add(PAGE_SIZE)
+            .ok_or(MemoryError::AddressOverflow)?;
+        let stack_end = stack_start.checked_add(stack.page_count as u64 * PAGE_SIZE)
+            .ok_or(MemoryError::AddressOverflow)?;
+        page_tables.map_range(memory, stack_start, stack.physical_address,
+            stack.page_count as u64 * PAGE_SIZE, PagePermissions::USER_RW)?;
         map_kernel_range(page_tables, memory, kernel.text, PagePermissions::KERNEL_RX)?;
         map_kernel_range(page_tables, memory, kernel.rodata, PagePermissions::KERNEL_R)?;
         map_kernel_range(page_tables, memory, kernel.data, PagePermissions::KERNEL_RW)?;
         map_kernel_range(page_tables, memory, kernel.stack, PagePermissions::KERNEL_RW)?;
         map_kernel_range(page_tables, memory, kernel.gateway, PagePermissions::USER_RX)?;
+        if page_tables.mapping(layout.stack_guard_base).is_some() ||
+            page_tables.mapping(stack_end).is_some() {
+            return Err(MemoryError::MappingConflict);
+        }
         if let Some(relro) = image.relro {
             let start = align_down(relro.address as u64);
             let end = align_up((relro.address + relro.length) as u64)?;
@@ -367,6 +433,7 @@ impl X86AddressSpace {
     pub fn map_range(&mut self, memory: &mut NativeMemory, virtual_address: u64,
         physical_address: u64, bytes: u64, permissions: PagePermissions) -> Result<(), MemoryError> {
         validate_range(virtual_address, physical_address, bytes)?;
+        validate_permissions(permissions)?;
         let pages = bytes / PAGE_SIZE;
         for page in 0..pages {
             self.map_page(memory, virtual_address + page * PAGE_SIZE,
@@ -381,8 +448,14 @@ impl X86AddressSpace {
     // ------------------=
     pub fn protect_range(&mut self, virtual_address: u64, bytes: u64,
         permissions: PagePermissions) -> Result<(), MemoryError> {
-        if virtual_address & (PAGE_SIZE - 1) != 0 || bytes == 0 || bytes & (PAGE_SIZE - 1) != 0 {
-            return Err(MemoryError::InvalidAlignment);
+        validate_range(virtual_address, 0, bytes)?;
+        validate_permissions(permissions)?;
+        for page in 0..bytes / PAGE_SIZE {
+            let current = self.mapping(virtual_address + page * PAGE_SIZE)
+                .ok_or(MemoryError::MissingMapping)?;
+            if current.permissions.user != permissions.user {
+                return Err(MemoryError::AccessDenied);
+            }
         }
         for page in 0..bytes / PAGE_SIZE {
             let leaf = self.leaf_entry_mut(virtual_address + page * PAGE_SIZE)?;
@@ -407,6 +480,7 @@ impl X86AddressSpace {
     // DESC: Walks the live hierarchy and reports the effective leaf mapping for behavioral verification and fault handling.
     // ------------------=
     pub fn mapping(&self, virtual_address: u64) -> Option<Mapping> {
+        if !canonical_x86(virtual_address) { return None; }
         let indices = page_indices(virtual_address);
         let mut table = self.root.physical_address;
         let mut effective_user = true;
@@ -498,20 +572,147 @@ fn validate_range(virtual_address: u64, physical_address: u64, bytes: u64) -> Re
         bytes == 0 || bytes & (PAGE_SIZE - 1) != 0 {
         return Err(MemoryError::InvalidAlignment);
     }
-    virtual_address.checked_add(bytes).ok_or(MemoryError::AddressOverflow)?;
-    physical_address.checked_add(bytes).ok_or(MemoryError::AddressOverflow)?;
+    let end = virtual_address.checked_add(bytes - 1).ok_or(MemoryError::AddressOverflow)?;
+    let physical_end = physical_address.checked_add(bytes - 1).ok_or(MemoryError::AddressOverflow)?;
+    if !canonical_x86(virtual_address) || !canonical_x86(end) ||
+        virtual_address >> 47 != end >> 47 || physical_end >> 52 != 0 {
+        return Err(MemoryError::InvalidAddress);
+    }
     Ok(())
+}
+
+// ------------------------=
+// FUNC: canonical_x86
+// DESC: Rejects addresses whose high bits do not sign-extend the 48-bit virtual address.
+// ------------------=
+fn canonical_x86(address: u64) -> bool {
+    address < (1 << 47) || address >= 0xffff_8000_0000_0000
+}
+
+// ------------------------=
+// FUNC: validate_permissions
+// DESC: Enforces write-or-execute on every user and supervisor mapping.
+// ------------------=
+pub(super) fn validate_permissions(permissions: PagePermissions) -> Result<(), MemoryError> {
+    if permissions.writable && permissions.executable {
+        Err(MemoryError::InvalidPermissions)
+    } else { Ok(()) }
 }
 
 // ------------------------=
 // FUNC: map_kernel_range
 // DESC: Maps a required kernel or gateway range while allowing explicitly empty optional sections.
 // ------------------=
-fn map_kernel_range(address_space: &mut X86AddressSpace, memory: &mut NativeMemory,
+fn map_kernel_range<T: PageTable>(address_space: &mut T, memory: &mut NativeMemory,
     range: MappedRange, permissions: PagePermissions) -> Result<(), MemoryError> {
     if range.bytes == 0 { return Ok(()); }
     address_space.map_range(memory, range.virtual_address, range.physical_address,
         range.bytes, permissions)
+}
+
+impl PageTable for X86AddressSpace {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates the x86 translation hierarchy for the shared process builder.
+    // ------------------=
+    fn new(memory: &mut NativeMemory, owner: u32) -> Result<Self, MemoryError> {
+        Self::new(memory, owner)
+    }
+    // ------------------------=
+    // FUNC: map_range
+    // DESC: Applies x86 page encodings behind the shared memory boundary.
+    // ------------------=
+    fn map_range(&mut self, memory: &mut NativeMemory, address: u64, physical: u64,
+        bytes: u64, permissions: PagePermissions) -> Result<(), MemoryError> {
+        self.map_range(memory, address, physical, bytes, permissions)
+    }
+    // ------------------------=
+    // FUNC: protect_range
+    // DESC: Applies the checked x86 permission transition.
+    // ------------------=
+    fn protect_range(&mut self, address: u64, bytes: u64,
+        permissions: PagePermissions) -> Result<(), MemoryError> {
+        self.protect_range(address, bytes, permissions)
+    }
+    // ------------------------=
+    // FUNC: unmap_user_range
+    // DESC: Atomically removes user leaves while preserving supervisor mappings and owned intermediate tables.
+    // ------------------=
+    fn unmap_user_range(&mut self, address: u64, bytes: u64) -> Result<(), MemoryError> {
+        validate_range(address, 0, bytes)?;
+        check_user_range(self, address, bytes as usize, false)?;
+        for offset in (0..bytes).step_by(PAGE_SIZE as usize) {
+            *self.leaf_entry_mut(address + offset)? = 0;
+        }
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: mapping
+    // DESC: Exposes effective x86 permissions to shared user-copy validation.
+    // ------------------=
+    fn mapping(&self, address: u64) -> Option<Mapping> { self.mapping(address) }
+    // ------------------------=
+    // FUNC: release
+    // DESC: Releases all x86 translation frames owned by the process.
+    // ------------------=
+    fn release(self, memory: &mut NativeMemory) -> Result<(), MemoryError> { self.release(memory) }
+}
+
+// ------------------------=
+// FUNC: check_user_range
+// DESC: Validates every page before any copy; supervisor mappings, wraparound, and read-only outputs fail closed.
+// ------------------=
+pub fn check_user_range<T: PageTable>(tables: &T, address: u64, length: usize,
+    write: bool) -> Result<(), MemoryError> {
+    if length == 0 { return Ok(()); }
+    let end = address.checked_add(length as u64 - 1).ok_or(MemoryError::AddressOverflow)?;
+    let mut cursor = address;
+    loop {
+        let mapping = tables.mapping(cursor).ok_or(MemoryError::MissingMapping)?;
+        if !mapping.permissions.user || (write && !mapping.permissions.writable) {
+            return Err(MemoryError::AccessDenied);
+        }
+        if align_down(cursor) == align_down(end) { return Ok(()); }
+        cursor = align_down(cursor).checked_add(PAGE_SIZE).ok_or(MemoryError::AddressOverflow)?;
+    }
+}
+
+// ------------------------=
+// FUNC: copy_from_user
+// DESC: Copies through validated physical mappings, never dereferencing a user virtual pointer in the kernel.
+// ------------------=
+pub fn copy_from_user<T: PageTable>(tables: &T, address: u64, output: &mut [u8])
+    -> Result<(), MemoryError> {
+    check_user_range(tables, address, output.len(), false)?;
+    let mut done = 0;
+    while done < output.len() {
+        let cursor = address + done as u64;
+        let mapping = tables.mapping(cursor).ok_or(MemoryError::MissingMapping)?;
+        let count = (PAGE_SIZE - (cursor & (PAGE_SIZE - 1))).min((output.len() - done) as u64) as usize;
+        unsafe { core::ptr::copy_nonoverlapping(mapping.physical_address as *const u8,
+            output.as_mut_ptr().add(done), count); }
+        done += count;
+    }
+    Ok(())
+}
+
+// ------------------------=
+// FUNC: copy_to_user
+// DESC: Publishes checked kernel data to writable app pages; failed validation leaves the full destination untouched.
+// ------------------=
+pub fn copy_to_user<T: PageTable>(tables: &mut T, address: u64, input: &[u8])
+    -> Result<(), MemoryError> {
+    check_user_range(tables, address, input.len(), true)?;
+    let mut done = 0;
+    while done < input.len() {
+        let cursor = address + done as u64;
+        let mapping = tables.mapping(cursor).ok_or(MemoryError::MissingMapping)?;
+        let count = (PAGE_SIZE - (cursor & (PAGE_SIZE - 1))).min((input.len() - done) as u64) as usize;
+        unsafe { core::ptr::copy_nonoverlapping(input.as_ptr().add(done),
+            mapping.physical_address as *mut u8, count); }
+        done += count;
+    }
+    Ok(())
 }
 
 // ------------------------=
