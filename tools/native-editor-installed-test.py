@@ -34,6 +34,20 @@ def adaptive_click(guest, x, y, button="left"):
 
 ui.click = adaptive_click
 
+class NativeGuest(desktop.Guest):
+    # ------------------------=
+    # FUNC: key
+    # DESC: Waits for delivered input, allowing focused composers to consume key release without publishing a second snapshot.
+    # ------------------=
+    def key(self, *codes):
+        before = self.state()
+        self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 150})
+        time.sleep(.2)
+        transition = before is not None and codes == ("ret",) and (
+            before[4] in (9, 10) and before[8] == 1 or before[4] == 3 and before[5] == 6)
+        if before is not None and not transition:
+            self.wait(lambda state: state[2] > before[2], "delivered keyboard input", timeout=30)
+
 # ------------------------=
 # FUNC: read
 # DESC: Reads exported typed state from a stopped guest without modifying memory or invoking privileged test hooks.
@@ -151,7 +165,7 @@ def main():
     else:
         shutil.copyfile(source_iso, artifacts / "installer.iso")
         packaged = desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
-    guest = desktop.Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
+    guest = NativeGuest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
                            reuse=args.reuse_installed, width=1024, height=768, memory_mb=12288)
     guest.arch = args.arch
     guest.acceleration = "hvf" if args.arch == "aarch64" else "tcg"
