@@ -18,74 +18,50 @@ console output and an exit code. Verify the same workflow in an installed system
 after cold boot with the ISO detached. Never overwrite a user's existing
 `hello.c` when installing or updating the example.
 
-## Current checkpoint (not feature completion)
+## Current implementation status
 
-- `sdk/c/examples/hello.c` is embedded as a normal Documents Text Object when
-  formatting a fresh ObjectStore, shared by live and installed initialization.
-  Mounting an existing store does not overwrite or re-create this user document.
-- `sdk/c/runtime.c` implements ABI v2 negotiation, `puts`, `putchar`, stream
-  cleanup and returning `main`'s status. `sdk/c/stdio.c` supplies bounded
-  `fopen`/`fclose`, element reads/writes, seek/tell, EOF/error state and line I/O.
-  This is not a complete C standard library: for example `printf`, `errno`,
-  allocation, threads and clocks still require the larger runtime port.
-- `kernel/runtime/native_c_io.rs` is a safe, typed object-stream adapter with
-  explicit path grants, normalized namespace references, independent opened
-  snapshots, bounded seek/append, and optimistic write-conflict detection.
-  Flush publishes one ObjectStore version; close reports conflicts without
-  replacing a newer editor save. Open handles are never recycled within a session.
-  It currently shares ObjectStore's 16 KiB per-object limit. It is used by the
-  development probe, not yet exposed as a production syscall or console service.
-- `kernel/runtime/native_c_image.rs` validates the initial static PIE ELF64
-  envelope and copies it into caller-owned memory. It rejects wrong architectures,
-  overlapping segments, writable executable segments, dynamic dependencies,
-  relocation sections and invalid entry points. Metadata checks do not implement
-  hardware page protection.
-- `tools/native-c-probe/test.sh` cross-compiles the real source using the build
-  host's Clang/LLD, tests x86_64 and AArch64 ELF loading, and boots a small x86_64
-  QEMU probe. The probe resolves the provisioned Text Object and creates the executable as
-  an ApplicationData Object using production ObjectStore, remounts the store,
-  verifies stable identities and source editing, and executes the stored ELF.
-- A second Clang-built C executable opens the **edited** source with `fopen`,
-  verifies its current bytes, writes and appends a Documents Text Object using
-  standard stream calls, and exits. The VM remounts the store and verifies the
-  resulting bytes and object type. Host I/O tests also cover access denial,
-  aliases to System objects, stale handles, overflow and external-edit conflicts.
-- This is a trusted fixture with shared-address-space execution. Do not expose
-  it as a launcher for arbitrary user programs. There is no hardware isolation,
-  on-device compiler or full fresh-install/desktop acceptance
-  yet. The image loader is not wired into the production console.
-- The prototype compiler work was set aside under the ignored
-  `build/native-c-prototype-archive` directory when Clang was selected.
+Native Clang compiles C, native LLD links it, and the resulting executable runs
+at EL0 on ARM64 or CPL3 on x86_64 in disposable QEMU guests. Private page tables,
+W^X, guarded stacks, timer preemption, TLS, checked user copies, fault return,
+cancellation and finite execution budgets have focused acceptance evidence.
+These tests use bounded compiler I/O fixtures; they are not the installed
+desktop compiler workflow.
+
+The ObjectStore file service supports live capability checks, namespace grants,
+versioned writable snapshots and sealed resource streaming. The native window
+API supports ownership-checked geometry, title, focus, capture and lifecycle
+operations. The C event ABI uses bounded IEF subscriptions with checked copies
+and read-time revocation. These service adapters are built into both kernels,
+but the production process dispatcher does not yet connect the complete path.
+
+`sdk/c/examples/hello.c` is provisioned as a normal editable Documents Text
+Object on fresh format. Existing user documents are never overwritten. The
+older trusted C library probe remains a fixture, not a launcher for arbitrary
+applications. The dated sections below record earlier port work; the latest
+status in this section takes precedence over those historical checkpoints.
 
 ## Fast verification
 
-Run `sh tools/native-c-probe/test.sh` from the repository. It rebuilds only the
-small C artifacts and probe, reuses the boot loader, and does not rebuild the
-desktop or ISO. Exit status and typed binary state assertions decide success;
-guest log messages do not. Results are in `build/native-c/proof.json`.
-The FAT boot volume belongs to the UEFI test harness only; application source
-and executable I/O in the guest use ObjectStore, not that volume.
-
-`tools/object-store-test.sh` additionally verifies Documents enumeration, Text
-metadata, exact sample bytes and durable user edits. The full
-`tools/documents-installed-test.py` scenario now covers opening the seeded sample
-through File Navigator's Open With menu on a fresh install and again without the
-ISO. That expanded desktop scenario has not yet been run for this checkpoint.
-The current store has only 32 namespace slots; the sample consumes one. Expanding
-that pre-existing limit needs a separately validated storage-format change.
+Run `./build-kit native-compiler-storage-tests` for ObjectStore and compiler file
+ABI behavior, `./build-kit run make runtime-test` for window/event authority,
+and `./build-kit native-process-supervision-tests` for lifecycle behavior.
+Use `./build-kit run python3 tools/native-process-probe/toolchain.py --arch
+aarch64 --gic 3` or `--arch x86_64` for native compile/link/execute guest proof.
+Exit status and structured artifacts decide success; printed prose is diagnostic.
 
 ## Remaining implementation sequence
 
-1. Isolated application execution, fault recovery, cancellation, arguments and
-   capability-checked ABI calls.
-2. Object-backed C library handles and stream operations, memory allocation,
-   clocks, and the C++ support required to host LLVM/Clang.
-3. Native Clang/LLD runtime and object-backed compiler resource access; preserve
-   diagnostics and disable unsupported platform operations explicitly.
-4. Console integration, existing-install sample migration and header provisioning in both
-   live and installed System Generations.
-5. Verify saved-source edits affect native compilation, then perform the full
-   installed-system/ISO-detached acceptance test and review the visible workflow.
+1. Discover native interrupt controllers from firmware and bind bounded process
+   visits to the production desktop scheduler, including cleanup after failure.
+2. Package Clang, LLD and SDK resources in the installed System Generation;
+   support larger writable compiler outputs beyond the 16 KiB snapshot limit.
+3. Complete C surface allocation, retained rendering and keyboard/pointer event
+   routing through the existing compositor and service boundary.
+4. Connect console compilation, application metadata, icons, double-click launch
+   and Hermes voice-generated applications to that isolated process path.
+5. Verify editable source, native compilation, GUI interaction, cancellation and
+   crash isolation after cold installation with media detached on both targets.
+   Generate fresh installer ISOs through `./build-kit full`.
 
 Sources: https://clang.llvm.org/docs/Toolchain.html,
 https://clang.llvm.org/c_status.html, https://lld.llvm.org/.
