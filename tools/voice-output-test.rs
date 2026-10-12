@@ -599,6 +599,76 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert_eq!(status().state,S::Complete);
     SYNTHESIS_DELAY_NS.store(0,Ordering::SeqCst);
 
+    // Progressive speech starts before later synthesis, retains immutable DMA
+    // samples, and recovers recognition after both fast and slow lookahead.
+    for slow in [false, true] {
+        let batches=PLAYED_PCM.lock().unwrap().len();
+        let accepted=NOW.load(Ordering::SeqCst);
+        SYNTHESIS_DELAY_NS.store(1_000_000_000,Ordering::SeqCst);
+        submit_progressive_span(owner,1,b"First.",0,6,false).unwrap();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        poll();assert_eq!(status().state,S::Speaking);
+        assert!(can_prefetch());
+        assert_eq!(status().first_playback_ns,accepted+1_000_000_000);
+        assert!(submit_progressive_span(runtime::execution::SecurityIdentity([2;16]),1,b"Other.",6,12,true).is_err());
+        assert!(submit_progressive_span(owner,1,b"Rewind.",0,7,true).is_err());
+        let immutable=BUFFERED_PCM.lock().unwrap().clone();
+        submit_progressive_span(owner,1,b"Second.",6,13,true).unwrap();
+        assert!(!can_prefetch());
+        assert!(submit_progressive_span(owner,1,b"Extra.",13,19,true).is_err());
+        if slow {PLAYING.store(false,Ordering::SeqCst);poll();}
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        poll();
+        if !slow {
+            assert_eq!(status().state,S::Ready);
+            assert_eq!(*BUFFERED_PCM.lock().unwrap(),immutable);
+            assert_eq!(PLAYED_PCM.lock().unwrap().len(),batches+1);
+            PLAYING.store(false,Ordering::SeqCst);poll();
+        }
+        assert_eq!(status().state,S::Speaking);
+        assert_eq!(status().first_playback_ns,accepted+1_000_000_000);
+        assert_eq!(&PLAYED_CONTENT.lock().unwrap()[batches..],&[vec![(0,6)],vec![(6,13)]]);
+        PLAYING.store(false,Ordering::SeqCst);poll();
+        assert_eq!(status().state,S::Complete);
+        assert!(voice_input::prepared());
+        voice_input::submit(owner,1,&[17,-19,23,-29]).unwrap();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        let mut transcript=[0;32];
+        assert_eq!(voice_input::take(owner,&mut transcript).unwrap(),8);
+    }
+    // A failed lookahead stops the playing prefix and never publishes failed PCM.
+    submit_progressive_span(owner,1,b"First.",0,6,false).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert!(PLAYING.load(Ordering::SeqCst));
+    submit_progressive_span(owner,1,b"Second.",6,13,true).unwrap();
+    INVALID.store(true,Ordering::SeqCst);
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Failed);
+    assert!(!PLAYING.load(Ordering::SeqCst));
+    INVALID.store(false,Ordering::SeqCst);
+    SYNTHESIS_DELAY_NS.store(0,Ordering::SeqCst);
+
+    // Stop/revoke before or after lookahead completion; neither may publish
+    // the pending phrase, and a new response must recover cleanly afterwards.
+    for ready in [false,true] {
+        for revoked in [false,true] {
+            submit_progressive_span(owner,1,b"First.",0,6,false).unwrap();
+            unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+            poll();
+            let played=PLAYED.load(Ordering::SeqCst);
+            submit_progressive_span(owner,1,b"Second.",6,13,true).unwrap();
+            if ready {unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); } poll();}
+            if revoked {REVOKED.store(true,Ordering::SeqCst);} else {assert!(stop(owner));}
+            poll();
+            if !ready {unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }}
+            poll();poll();
+            assert_eq!(status().state,S::Cancelled);
+            assert!(!PLAYING.load(Ordering::SeqCst));
+            assert_eq!(PLAYED.load(Ordering::SeqCst),played);
+            REVOKED.store(false,Ordering::SeqCst);
+        }
+    }
+
     // A native fatal fault is terminal even when the UI repeatedly asks to
     // prepare again; no warmup job or replacement deadline may be scheduled.
     PREPARE_HOLD.store(false,Ordering::SeqCst);

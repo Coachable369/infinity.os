@@ -720,7 +720,7 @@ unsafe fn speak_next() -> bool {
     let start = REPLY_AT;
     let end = REPLY_AT + count;
     let final_chunk = REPLY_COMPLETE && end >= REPLY_LENGTH;
-    if voice_output::submit_span(OWNER, cap, &remaining[..count], start, end, final_chunk).is_err() {
+    if voice_output::submit_progressive_span(OWNER, cap, &remaining[..count], start, end, final_chunk).is_err() {
         trace(b"speech submission rejected");
         retire(cap);
         return false;
@@ -871,7 +871,7 @@ unsafe fn synchronize_visible_reply() -> bool {
         }
         SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(target);
     } else if voice_output::status().state == voice_output::OutputState::Complete {
-        SYNC_VISIBLE_AT = REPLY_LENGTH;
+        SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(REPLY_AT.min(REPLY_LENGTH));
     }
     before != SYNC_VISIBLE_AT
 }

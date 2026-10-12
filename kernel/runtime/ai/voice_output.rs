@@ -42,6 +42,7 @@ static mut PLAYBACK_DRAINED: bool = false;
 static mut CONTENT_START: usize = 0;
 static mut CONTENT_END: usize = 0;
 static mut FINAL_CHUNK: bool = false;
+static mut PROGRESSIVE: bool = false;
 #[path = "../../drivers/speech_pcm.rs"]
 mod speech_pcm;
 #[cfg(not(test))]
@@ -163,9 +164,27 @@ unsafe fn worker() {
 // ------------------=
 pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
     content_end: usize, final_chunk: bool) -> Result<(), AiError> {
+    submit_mode(owner, capability, text, content_start, content_end, final_chunk, false)
+}
+// ------------------------=
+// FUNC: submit_progressive_span
+// DESC: Plays each completed conversational phrase while preparing one private lookahead phrase.
+// ------------------=
+pub fn submit_progressive_span(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
+    content_end: usize, final_chunk: bool) -> Result<(), AiError> {
+    submit_mode(owner, capability, text, content_start, content_end, final_chunk, true)
+}
+// ------------------------=
+// FUNC: submit_mode
+// DESC: Admits one synthesis worker without modifying DMA-owned storage or another response's authority.
+// ------------------=
+fn submit_mode(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
+    content_end: usize, final_chunk: bool, progressive: bool) -> Result<(), AiError> {
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
     let state = STATE.load(Ordering::Acquire);
-    if !matches!(state, 0 | 4 | 6 | 7 | 8) || content_end < content_start { return Err(AiError::QueueFull); }
+    let continuation = unsafe { progressive && PROGRESSIVE && !FINAL_CHUNK && OWNER == owner
+        && content_start >= CONTENT_END && matches!(state, 5 | 7) };
+    if !(matches!(state, 0 | 4 | 6 | 7 | 8) || (state == 5 && continuation)) || content_end < content_start { return Err(AiError::QueueFull); }
     if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } { return Err(AiError::QueueFull); }
     if state == 8 && content_start < unsafe { CONTENT_END } { return Err(AiError::InvalidRequest); }
     let now = super::qwen::workers::clock_ns();
@@ -176,13 +195,15 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
         retire();
-        if state != 8 {
+        if state != 8 && !continuation {
             STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false; PLAYBACK_DRAINED = false;
             RESPONSE_QUEUED_NS.store(now, Ordering::Release);
             FIRST_PLAYBACK_NS.store(0, Ordering::Release);
             let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
             STREAM_GENERATION.store(next, Ordering::Release);
         }
+        PROGRESSIVE = progressive;
+        if continuation { PENDING_AFTER_DRAIN = PLAYING; PLAYBACK_DRAINED = !PLAYING; }
         RATE = rate; OWNER = owner; CAPABILITY = capability; DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
         CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
         (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
@@ -210,7 +231,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 // ------------------=
 pub fn can_prefetch() -> bool {
     let state = STATE.load(Ordering::Acquire);
-    !CANCEL.load(Ordering::Acquire) && state == 8
+    !CANCEL.load(Ordering::Acquire) && (state == 8 || (state == 5 && unsafe { PROGRESSIVE && !FINAL_CHUNK }))
 }
 // ------------------------=
 // FUNC: record_playback_start
@@ -350,7 +371,7 @@ unsafe fn publish_resident_span() -> bool {
         (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
         (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
         (&mut *(&raw mut TEXT)).fill(0);
-        if !FINAL_CHUNK {
+        if !FINAL_CHUNK && !PROGRESSIVE {
             STATE.store(8, Ordering::Release);
             trace(b"phrase buffered");
             true
@@ -361,7 +382,7 @@ unsafe fn publish_resident_span() -> bool {
             PENDING_AFTER_DRAIN = false;
             STATE.store(5, Ordering::Release);
             trace(b"continuous response playback started");
-            let _ = super::voice_input::prepare();
+            if FINAL_CHUNK { let _ = super::voice_input::prepare(); }
             true
         } else {
             crate::drivers::audio::stop_playback(OWNER);
@@ -430,6 +451,12 @@ pub fn poll() {
                 PLAYBACK_DRAINED = false;
                 let _ = publish_resident_span();
             }
-        } else if matches!(state, 4 | 6 | 7) && CAPABILITY != 0 { retire(); }
+        } else if matches!(state, 4 | 6 | 7) {
+            if matches!(state, 4 | 6) && (PLAYING || STREAM_OPEN) {
+                crate::drivers::audio::stop_playback(OWNER);
+                PLAYING = false; STREAM_OPEN = false; PENDING_AFTER_DRAIN = false;
+            }
+            if CAPABILITY != 0 { retire(); }
+        }
     }
 }

@@ -385,9 +385,11 @@ mod voice_output {
     pub fn echo_reference(_:crate::runtime::execution::SecurityIdentity,out:&mut[i16])->bool{out.fill(0);false}
     // ------------------------=
     // FUNC: can_prefetch
-    // DESC: Matches production admission: append only to a buffered response, never during active playback.
+    // DESC: Admits one lookahead phrase while a nonfinal phrase plays.
     // ------------------=
-    pub fn can_prefetch()->bool{crate::OUTPUT.load(crate::Ordering::SeqCst)==4}
+    pub fn can_prefetch()->bool{crate::OUTPUT.load(crate::Ordering::SeqCst)==4
+        || (crate::OUTPUT.load(crate::Ordering::SeqCst)==1
+            && crate::SPANS.lock().unwrap().last().is_some_and(|span| !span.2))}
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
     #[derive(PartialEq)]
@@ -420,18 +422,19 @@ mod voice_output {
     // ------------------=
     pub fn submit(_:SecurityIdentity,_:u64,text:&[u8])->Result<(),()>{
         if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
-        if matches!(crate::OUTPUT.load(crate::Ordering::SeqCst),1|3){return Err(());}
+        if crate::OUTPUT.load(crate::Ordering::SeqCst)==3
+            || (crate::OUTPUT.load(crate::Ordering::SeqCst)==1 && !can_prefetch()){return Err(());}
         assert!(text.len()<=160);
         crate::PHRASES.lock().unwrap().push(text.to_vec());
         crate::OUTPUT.store(3,crate::Ordering::SeqCst);Ok(())
     }
     // ------------------------=
-    // FUNC: submit_span
+    // FUNC: submit_progressive_span
     // DESC: Records a generation-safe content span through the conversation fixture.
     // ------------------=
-    pub fn submit_span(owner:SecurityIdentity,cap:u64,text:&[u8],start:usize,end:usize,final_span:bool)->Result<(),()>{
+    pub fn submit_progressive_span(owner:SecurityIdentity,cap:u64,text:&[u8],start:usize,end:usize,final_span:bool)->Result<(),()>{
         assert_eq!(text.len(),end-start);
-        if crate::OUTPUT.load(crate::Ordering::SeqCst)!=4 {crate::FIRST_PLAYBACK_NS.store(0,crate::Ordering::SeqCst);}
+        if start==0 {crate::FIRST_PLAYBACK_NS.store(0,crate::Ordering::SeqCst);}
         submit(owner,cap,text)?;
         crate::SPANS.lock().unwrap().push((start,end,final_span));
         Ok(())
@@ -612,7 +615,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     let first_length=PHRASES.lock().unwrap()[before].len();
     assert!(first_length<=80 && first_length<LONG_RESPONSE.len());
     assert_eq!(SPANS.lock().unwrap()[spans],(0,first_length,false));
-    OUTPUT.store(4,Ordering::SeqCst);conversation::poll();
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(PHRASES.lock().unwrap().len(),before+1);
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
@@ -701,7 +704,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
 
 // ------------------------=
 // FUNC: repeated_reply_wake_tests
-// DESC: Repeats short and buffered multi-span replies, checking fresh wake admission and a stable capture lease after each drain.
+// DESC: Repeats short and progressive multi-span replies, checking fresh wake admission and a stable capture lease after each drain.
 // ------------------=
 fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
     use conversation::State;
@@ -723,8 +726,7 @@ fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
             for _ in 0..16 {
                 assert_eq!(conversation::state().0, State::Speaking);
                 if OUTPUT.load(Ordering::SeqCst) == 3 {
-                    let final_span = SPANS.lock().unwrap().last().unwrap().2;
-                    OUTPUT.store(if final_span { 1 } else { 4 }, Ordering::SeqCst);
+                    OUTPUT.store(1, Ordering::SeqCst);
                 }
                 conversation::poll();
                 if OUTPUT.load(Ordering::SeqCst) == 1 {
@@ -732,7 +734,7 @@ fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
                     assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
                     OUTPUT.store(2, Ordering::SeqCst);
                     conversation::poll();
-                    break;
+                    if conversation::state().0 == State::Listening { break; }
                 }
             }
             assert_eq!(conversation::state().0, State::Listening);
