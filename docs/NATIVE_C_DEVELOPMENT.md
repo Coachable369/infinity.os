@@ -31,8 +31,9 @@ The ObjectStore file service supports live capability checks, namespace grants,
 versioned writable snapshots and sealed resource streaming. The native window
 API supports ownership-checked geometry, title, focus, capture and lifecycle
 operations. The C event ABI uses bounded IEF subscriptions with checked copies
-and read-time revocation. These service adapters are built into both kernels,
-but the production process dispatcher does not yet connect the complete path.
+and read-time revocation. These service adapters compile with both kernel
+targets, but the production process dispatcher does not yet connect the path;
+unreferenced handlers may be removed by release link-time optimization.
 
 `sdk/c/examples/hello.c` is provisioned as a normal editable Documents Text
 Object on fresh format. Existing user documents are never overwritten. The
@@ -912,3 +913,27 @@ compilations passed under
 `builds/manifests/20261012T080828435900Z-62602.json`. This is service-adapter acceptance, not
 installed native application acceptance: the production process dispatcher
 still needs to route these calls, and input/render wiring remains incomplete.
+
+### Clean release checkpoint — 2026-10-12
+
+`./build-kit full` completed successfully with manifest
+`builds/manifests/20261012T081205430107Z-62990.json` (revision `66ad31b`,
+including the pre-existing workspace changes). Binary installed-kernel/loader
+parity and final model-bundle/artwork checks passed for both architectures.
+
+| Installer | SHA-256 |
+| --- | --- |
+| `builds/InfinityOS-aarch64.iso` | `b3334371afb6d72e55daa22f42203b352e600d6cd598297e103ac2f24855257e` |
+| `builds/InfinityOS-x86_64.iso` | `15393905cd89661c4ebb0d46957c78948abce14352f08f0dd424a985f1d8ebf0` |
+
+This is a release-build checkpoint, **not completion of native app creation**.
+Clang/LLD and SDK resources are not yet installed by this release. Production
+process launch/dispatch, retained app pixel surfaces, desktop input routing,
+package/double-click launch and Hermes app creation remain incomplete. Neither
+ISO has been cold-installed to prove that complete workflow; no existing VM was
+upgraded by building these files.
+
+The post-build runtime behavioral suite, C event-header code generation for
+both CPU targets, and independent checksum verification passed under
+`builds/manifests/20261012T093531684229Z-63761.json`. The header fixture is
+`tools/native-c-probe/event-api.c`; its compile check is not guest execution.
