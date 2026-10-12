@@ -1,6 +1,7 @@
 """Native editor compilation acceptance through real input on a disposable installed OS."""
 import importlib.util
 import argparse
+import functools
 import json
 import pathlib
 import shutil
@@ -16,6 +17,11 @@ base = ui.base
 guest_spec = importlib.util.spec_from_file_location("desktop_guest", ROOT / "tools/servo-platform-probe/run-desktop-installed.py")
 desktop = importlib.util.module_from_spec(guest_spec)
 guest_spec.loader.exec_module(desktop)
+
+# Each run extracts immutable kernel artifacts once. Avoid rereading a gigabyte
+# ELF on every guest-state poll while measuring responsiveness.
+base.symbol = functools.lru_cache(maxsize=64)(base.symbol)
+desktop.base.symbol = base.symbol
 
 # ------------------------=
 # FUNC: read
