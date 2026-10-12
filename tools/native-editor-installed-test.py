@@ -24,6 +24,17 @@ base.symbol = functools.lru_cache(maxsize=64)(base.symbol)
 desktop.base.symbol = base.symbol
 
 # ------------------------=
+# FUNC: adaptive_click
+# DESC: Uses measured display geometry and the existing acceleration-aware real pointer driver.
+# ------------------=
+def adaptive_click(guest, x, y, button="left"):
+    state = guest.wait(lambda s: s[11] > 0 and s[12] > 0, "display geometry")
+    guest.width, guest.height = state[11:13]
+    guest.click(x, y, button=button)
+
+ui.click = adaptive_click
+
+# ------------------------=
 # FUNC: read
 # DESC: Reads exported typed state from a stopped guest without modifying memory or invoking privileged test hooks.
 # ------------------=
@@ -120,21 +131,28 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=pathlib.Path, help="Explicit QEMU-compatible test media for ARM; never substitute silently for the published VirtualBox ISO")
+    parser.add_argument("--reuse-installed", action="store_true", help="Continue failed workflow checks on this harness's already cold-boot-verified disk")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
     work = args.work.resolve()
     work.relative_to(ROOT / "build")
-    work.mkdir(exist_ok=False)
+    work.mkdir(exist_ok=args.reuse_installed)
     artifacts = work / "artifacts"
-    artifacts.mkdir()
+    artifacts.mkdir(exist_ok=args.reuse_installed)
     source_iso = args.iso.resolve() if args.iso else ROOT / f"builds/InfinityOS-{args.arch}.iso"
     source_iso.relative_to(ROOT)
-    shutil.copyfile(source_iso, artifacts / "installer.iso")
-    packaged = desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
+    previous_report = json.loads((work / "evidence.json").read_text()) if args.reuse_installed else None
+    if previous_report:
+        assert previous_report["identity"]["cold_boot_identity"]
+        assert previous_report["source_media"] == str(source_iso)
+        packaged = previous_report["packaged"]
+    else:
+        shutil.copyfile(source_iso, artifacts / "installer.iso")
+        packaged = desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
     guest = desktop.Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
-                           width=1024, height=768, memory_mb=12288)
+                           reuse=args.reuse_installed, width=1024, height=768, memory_mb=12288)
     guest.arch = args.arch
     guest.acceleration = "hvf" if args.arch == "aarch64" else "tcg"
     # No post-install patch: this is the unmodified ISO's installed generation.
@@ -143,9 +161,14 @@ def main():
     report = {"installed_acceptance": False, "architecture": args.arch, "packaged": packaged,
               "source_media": str(source_iso), "canonical_release_media": args.iso is None}
     try:
-        guest.install()
-        guest.stop()
-        report["identity"] = guest.onboard()
+        if args.reuse_installed:
+            guest.boot(False)
+            guest.authenticate()
+            report["identity"] = previous_report["identity"]
+        else:
+            guest.install()
+            guest.stop()
+            report["identity"] = guest.onboard()
         guest.launch("text", 5)
         ui.wait_feature(guest, lambda p: p[12] == 2)
         report["compile"] = compile_document(guest, 'int main(void) { return 54; }', 3)
@@ -183,6 +206,11 @@ def main():
         guest.screenshot("native-editor-executed")
         report["installed_acceptance"] = True
         report["model_generated_source"] = True
+    except BaseException as error:
+        report["failure"] = repr(error)
+        if guest.process is not None:
+            guest.screenshot("native-editor-failure")
+        raise
     finally:
         (work / "evidence.json").write_text(json.dumps(report, indent=2) + "\n")
         guest.stop()
