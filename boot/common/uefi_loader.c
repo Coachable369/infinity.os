@@ -991,7 +991,8 @@ static int reserve_kernel_segments(EFI_BOOT_SERVICES *boot, uint64_t ranges[64][
 // FUNC: report_kernel_memory_conflict
 // DESC: Emits bounded boot-only allocation diagnostics without changing memory ownership or normal runtime logging.
 // ------------------=
-static void report_kernel_memory_conflict(EFI_BOOT_SERVICES *boot, uint64_t low, uint64_t high) {
+static void report_kernel_memory_conflict(EFI_SYSTEM_TABLE *system, uint64_t low, uint64_t high) {
+    EFI_BOOT_SERVICES *boot = system->boot_services;
     static uint64_t map[4096];
     size_t bytes = sizeof(map), stride = 0;
     uint64_t key = 0; uint32_t version = 0;
@@ -1003,12 +1004,17 @@ static void report_kernel_memory_conflict(EFI_BOOT_SERVICES *boot, uint64_t low,
         memcpy(&type, entry, 4); memcpy(&start, entry + 8, 8); memcpy(&pages, entry + 24, 8);
         if (pages > (UINT64_MAX-start)/PAGE_SIZE || start >= high || start + pages*PAGE_SIZE <= low) continue;
         uint64_t values[3] = {type, start, pages*PAGE_SIZE};
-        serial_write("[BOOT] kernel memory type/start/bytes ");
+        firmware_write(system, L"[BOOT] kernel memory type/start/bytes ");
         for (unsigned field = 0; field < 3; ++field) {
             char text[18];
             for (unsigned digit = 0; digit < 16; ++digit)
                 text[digit] = "0123456789abcdef"[(values[field] >> ((15-digit)*4)) & 15];
-            text[16] = field == 2 ? '\n' : ' '; text[17] = 0; serial_write(text);
+            text[16] = field == 2 ? '\n' : ' '; text[17] = 0;
+            CHAR16 wide[19];
+            for (unsigned digit = 0; digit < 16; ++digit) wide[digit] = (CHAR16)text[digit];
+            wide[16] = field == 2 ? '\r' : ' ';
+            wide[17] = field == 2 ? '\n' : 0; wide[18] = 0;
+            firmware_write(system, wide);
         }
     }
 }
@@ -1053,7 +1059,7 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
     if (low == UINT64_MAX || high <= low || !executable_entry)
         fail(system, L"ERROR: kernel has no loadable entry\r\n", "ERROR: kernel has no loadable entry\n");
     if (!reserve_kernel_segments(boot, ranges, range_count)) {
-        report_kernel_memory_conflict(boot, low, high);
+        report_kernel_memory_conflict(system, low, high);
         fail(system, L"ERROR: unable to allocate kernel pages\r\n", "ERROR: unable to allocate kernel pages\n");
     }
     for (size_t i = 0; i < range_count; ++i)

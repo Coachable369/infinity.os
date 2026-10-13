@@ -775,8 +775,8 @@ $(BUILD)/aarch64/handoff.obj: boot/aarch64/handoff.S
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-pc-windows-msvc -c $< -o $@
 
-$(BUILD)/aarch64/BOOTAA64.EFI: $(BUILD)/aarch64/loader.obj $(BUILD)/aarch64/handoff.obj
-	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 /out:$@ $^
+$(BUILD)/aarch64/BOOTAA64.EFI: $(BUILD)/aarch64/loader.obj $(BUILD)/aarch64/handoff.obj Makefile
+	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 /base:0x8000000 /out:$@ $(filter %.obj,$^)
 
 $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/kernel.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Icons $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Crash

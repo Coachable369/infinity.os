@@ -172,6 +172,7 @@ make video-driver-test
 make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
 python3 tools/native-compiler-parity-test.py
+python3 tools/kernel-layout-test.py
 make crash-screen-test
 make component-manifest-test
 make settings-color-test
