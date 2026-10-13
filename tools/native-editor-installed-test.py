@@ -4,6 +4,7 @@ import argparse
 import functools
 import json
 import pathlib
+import re
 import shutil
 import struct
 import sys
@@ -235,14 +236,20 @@ def main():
     except BaseException as error:
         report["failure"] = repr(error)
         if guest.process is not None and guest.process.poll() is None:
-            report["cpu_diagnostic"] = guest.qmp("human-monitor-command", {"command-line": "info registers"})
-            guest.screenshot("native-editor-failure")
+            try:
+                registers = guest.qmp("human-monitor-command", {"command-line": "info registers"})
+                # Retain execution addresses only, never general/vector registers
+                # which can contain private model input or authentication data.
+                report["cpu_diagnostic"] = dict(re.findall(r"\b(PC|SP|RIP|RSP|RBP)=([0-9a-fA-F]+)", registers))
+                guest.screenshot("native-editor-failure")
+            except (OSError, ValueError) as diagnostic_error:
+                report["diagnostic_failure"] = type(diagnostic_error).__name__
         raise
     finally:
         (work / "evidence.json").write_text(json.dumps(report, indent=2) + "\n")
         try:
             guest.stop()
-        except (BrokenPipeError, ConnectionResetError):
+        except OSError:
             if guest.process is not None and guest.process.poll() is None:
                 guest.process.terminate()
                 guest.process.wait(timeout=20)

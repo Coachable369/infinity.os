@@ -75,6 +75,41 @@ and installed artifacts. It does not substitute for installed execution.
 
 ## Current limits
 
+### Installed verification status — 2026-10-12
+
+Not accepted end-to-end. Six unsuccessful installed verification/correction
+attempts have reached this pass's repository limit; no speculative kernel fix
+was applied to bypass the remaining failures.
+
+- Full release build passed: manifest
+  `builds/manifests/20261012T215524743829Z-16081.json`. Both canonical ISOs and
+  `builds/SHA256SUMS` were regenerated. Build success is not installed acceptance.
+- ARM QEMU derivative installed and retained its authenticated identity after a
+  detached cold boot. It is not proof of the canonical VirtualBox ARM installer.
+- Installed TCG run compiled valid C through the attached panel, linked a real
+  8,648-byte ELF, and published its ObjectId. Malformed C produced 148 bytes of
+  diagnostics and no replacement executable. Structured evidence:
+  `builds/validation/native-apps/aarch64-installed/tcg-editor-evidence.json`.
+- Pointer latency during these compilations was 17.595 seconds and 3.145 seconds
+  respectively under software emulation. The first exceeds the five-second
+  acceptance bound. Compiler image loading/preparation remains synchronous;
+  this is a candidate to profile, not a proven attribution of the whole delay.
+- Actual Hermes generation did not produce a reviewed compile proposal within
+  600 seconds. The session subsequently auto-locked; no generated-source or
+  File Navigator execution acceptance is claimed.
+- An earlier accelerated ARM run aborted inside QEMU HVF at its `isv` assertion.
+  A final instrumented run failed to open the launcher and its diagnostic
+  connection timed out, before reaching compiler execution. Broad MMIO tracing
+  was removed because it perturbs timing and generates excessive diagnostics.
+- x86 native compiler/linker/isolation probes pass, but the complete installed
+  desktop workflow on x86 has not been verified.
+
+Next required proof: bound compiler initialization work, diagnose the ARM HVF
+transition with minimally intrusive diagnostics (or the canonical VirtualBox
+test VM), obtain actual reviewed model-generated source, compile it, and open
+the saved ELF through File Navigator with exit status checked. Repeat on x86.
+Any production fix requires a new full release build and renewed installed proof.
+
 - One compiler job and one console application at a time.
 - Source 16 KiB; object/executable 256 KiB; diagnostics 8 KiB; application output
   4 KiB. Compiler deadline 120 seconds; application deadline 60 seconds.
