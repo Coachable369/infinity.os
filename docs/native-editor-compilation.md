@@ -111,7 +111,24 @@ write barrier. This run no longer aborts in HVF and completes native execution.
 
 This is a focused updated-kernel test on a disposable, previously installed QEMU
 disk, not fresh-install acceptance of the canonical ARM VirtualBox ISO. x86
-installed end-to-end proof and refreshed release artifacts remain separate gates.
+installed end-to-end proof remains a separate gate.
+
+### Fresh release artifacts — 2026-10-13
+
+Clean `./build-kit full` passed in 5,121.439 seconds, manifest
+`builds/manifests/20261013T053539512147Z-32476.json`, from revision
+`ebc83833517d133a58e8eac0b5075a168d688ab6` with existing workspace changes.
+Both canonical installers include this editor workflow. Native compiler artifact
+parity and complete model-bundle verification passed for both targets.
+
+| Installer | SHA-256 |
+| --- | --- |
+| `builds/InfinityOS-aarch64.iso` | `f23a0368cc579ac48dc42f62a050b14e1db3ce2cab47447fa7d83f874068c702` |
+| `builds/InfinityOS-x86_64.iso` | `6e9af6c69f06e7fff0186efa86928accf7c2165f5b59b9e36a1d2bb6a8329ce0` |
+
+Release success does not establish canonical fresh-installed desktop acceptance
+on either architecture. The installed execution evidence above remains the
+focused ARM QEMU test; no user VM was replaced for this release.
 
 ### Bounded compiler preparation — 2026-10-12 follow-up
 
