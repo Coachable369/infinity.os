@@ -40,3 +40,15 @@ map showed LoaderCode at that address.
   an authenticated desktop session. The user's VM and disk were not modified.
 - Replacement canonical release ISOs require a successful full build; until
   that completes, the existing ISOs still contain the previous broken layout.
+
+## Release blocker
+
+Full-build manifest `20261013T093417554877Z-44682.json` failed at
+`native-https-arm-test`. That minimal probe reuses `linker/aarch64-qemu.ld`
+without linking the speech runtime, while the new linker assertion requires
+an exactly 1.5 GiB speech section. The assertion must distinguish a minimal
+speech-free probe from a full kernel; retain the full-kernel artifact aperture
+check. No successful replacement ISO release is claimed. Stop after this
+pass's correction limit; next resume should address this specific harness
+compatibility issue, verify it, then perform a new clean release and canonical
+ISO boot test.
