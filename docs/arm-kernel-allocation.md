@@ -41,14 +41,16 @@ map showed LoaderCode at that address.
 - Replacement canonical release ISOs require a successful full build; until
   that completes, the existing ISOs still contain the previous broken layout.
 
-## Release blocker
+## Release probe compatibility
 
 Full-build manifest `20261013T093417554877Z-44682.json` failed at
 `native-https-arm-test`. That minimal probe reuses `linker/aarch64-qemu.ld`
-without linking the speech runtime, while the new linker assertion requires
-an exactly 1.5 GiB speech section. The assertion must distinguish a minimal
-speech-free probe from a full kernel; retain the full-kernel artifact aperture
-check. No successful replacement ISO release is claimed. Stop after this
-pass's correction limit; next resume should address this specific harness
-compatibility issue, verify it, then perform a new clean release and canonical
-ISO boot test.
+without linking the speech runtime. The QEMU linker now permits an absent
+speech arena, but still rejects any nonzero arena other than 1.5 GiB. The
+canonical ARM linker retains its mandatory 1.5 GiB assertion; release artifact
+aperture checks remain unchanged.
+
+Focused manifest `20261013T144204408818Z-44117.json` successfully linked and
+ran the ARM native HTTPS probe (guest exit 0, DHCP configured). It does not
+establish public-site HTTPS or installed-system acceptance. A new clean
+release and canonical ISO boot test remain required.

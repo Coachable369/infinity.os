@@ -28,6 +28,8 @@ SECTIONS
     . = __low_bss;
     .bss : ALIGN(0x1000) { *(.bss .bss.*) *(COMMON) } :data
     ASSERT(. <= 0x100000000, "ARM low kernel overlaps speech arena")
-    ASSERT(SIZEOF(.speech_heap) == 0x60000000, "ARM speech arena must reside in high RAM")
+    /* Service probes omit Kokoro; a linked arena must still have its exact size. */
+    ASSERT(SIZEOF(.speech_heap) == 0 || SIZEOF(.speech_heap) == 0x60000000,
+           "ARM speech arena must reside in high RAM")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) }
 }
