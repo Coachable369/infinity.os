@@ -75,6 +75,30 @@ and installed artifacts. It does not substitute for installed execution.
 
 ## Current limits
 
+### Bounded compiler preparation — 2026-10-12 follow-up
+
+Compiler preparation now clears/copies, maps, applies RELRO, and cleans the
+instruction cache in at most 64 KiB chunks per desktop poll. The intermediate
+address space cannot be executed before initialization finishes. Cancellation,
+expired deadlines and lost authority stop preparation and reclaim its frames.
+Small application loading retains its existing path.
+
+Behavioral memory tests passed on both page-table implementations, including
+dirty-frame initialization, exact source/BSS contents, cancellation at multiple
+phases, W-X, RELRO and stack guards. Manifest:
+`builds/manifests/20261013T004423053767Z-20655.json`.
+Real ARM and x86 guest compiler/linker probes also passed, including exit 54
+from the resulting isolated executable and rejection of malformed C:
+`builds/manifests/20261013T004445180224Z-20716.json` and
+`builds/manifests/20261013T004521029241Z-20851.json`.
+
+These tests do not establish installed desktop latency or AI generation success.
+The prior published ISOs do not yet contain this follow-up. The installed harness
+supports an explicit `--update-kernel` on its disposable disk for focused diagnosis;
+that mode is marked non-canonical and cannot establish fresh-install parity.
+`--compiler-only` checks compilation/publication/launch without claiming model
+generation acceptance.
+
 ### Installed verification status — 2026-10-12
 
 Not accepted end-to-end. Six unsuccessful installed verification/correction
@@ -92,8 +116,8 @@ was applied to bypass the remaining failures.
   `builds/validation/native-apps/aarch64-installed/tcg-editor-evidence.json`.
 - Pointer latency during these compilations was 17.595 seconds and 3.145 seconds
   respectively under software emulation. The first exceeds the five-second
-  acceptance bound. Compiler image loading/preparation remains synchronous;
-  this is a candidate to profile, not a proven attribution of the whole delay.
+  acceptance bound. This was measured before bounded compiler preparation;
+  it is not a proven attribution of the whole delay.
 - Actual Hermes generation did not produce a reviewed compile proposal within
   600 seconds. The session subsequently auto-locked; no generated-source or
   File Navigator execution acceptance is claimed.
