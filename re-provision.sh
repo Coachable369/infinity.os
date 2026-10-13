@@ -57,9 +57,7 @@ wait_for_poweroff() {
     while test "$attempts" -lt 30; do
         current_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable 2>/dev/null || true)
         current_state=$(machine_value VMState "$current_info")
-        if test "$current_state" = "poweroff"; then
-            return 0
-        fi
+        case "$current_state" in poweroff|aborted) return 0 ;; esac
         attempts=$((attempts + 1))
         sleep 1
     done
@@ -75,11 +73,28 @@ delete_existing_vm() {
     test -n "$existing_info" || return 0
 
     existing_state=$(machine_value VMState "$existing_info")
-    if test "$existing_state" != "poweroff"; then
-        printf 'Powering off existing VM: %s\n' "$vm_name"
-        "$vboxmanage" controlvm "$vm_name" poweroff >/dev/null
-        wait_for_poweroff
-    fi
+    case "$existing_state" in
+        poweroff|aborted) ;;
+        saved)
+            "$vboxmanage" discardstate "$vm_name" || die "Could not discard the saved state for '$vm_name'."
+            wait_for_poweroff
+            ;;
+        running|paused)
+            printf 'Powering off existing VM: %s\n' "$vm_name"
+            if ! stop_output=$("$vboxmanage" controlvm "$vm_name" poweroff 2>&1); then
+                # The VM can stop between showvminfo and controlvm. Accept only
+                # a confirmed terminal state, never suppress a live-VM failure.
+                current_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable) || die "Could not confirm the state of '$vm_name'."
+                current_state=$(machine_value VMState "$current_info")
+                case "$current_state" in
+                    poweroff|aborted) ;;
+                    *) printf '%s\n' "$stop_output" >&2; die "Could not stop '$vm_name' (state: $current_state)." ;;
+                esac
+            fi
+            wait_for_poweroff
+            ;;
+        *) die "Refusing to replace '$vm_name' in state '$existing_state'. Wait for VirtualBox to finish its current operation, then retry." ;;
+    esac
 
     printf 'Deleting existing VM and its virtual disks: %s\n' "$vm_name"
     attempts=0

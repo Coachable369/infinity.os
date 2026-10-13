@@ -44,5 +44,34 @@ def main():
         assert (vm / "infinityos-4.vdi").is_file()
         assert not (state / "unregistered").exists()
 
+        for initial, race, failure, succeeds in (
+            ("poweroff", False, False, True),
+            ("aborted", False, False, True),
+            ("saved", False, False, True),
+            ("running", False, False, True),
+            ("paused", False, False, True),
+            ("running", True, False, True),
+            ("running", False, True, False),
+            ("starting", False, False, False),
+            ("inaccessible", False, False, False),
+        ):
+            shutil.rmtree(state)
+            state.mkdir()
+            (state / "vm-state").write_text("old\n")
+            previous_disk = (vm / "infinityos-4.vdi").read_bytes()
+            environment.update(TEST_INITIAL_STATE=initial,
+                TEST_STOP_RACE=str(int(race)), TEST_STOP_FAILURE=str(int(failure)))
+            result = subprocess.run(["sh", str(work / "re-provision.sh"), "infinityos-4", str(iso)],
+                env=environment, capture_output=True, timeout=20)
+            assert (result.returncode == 0) == succeeds, (initial, result.stderr.decode(errors="replace"))
+            assert (state / "poweroff-attempted").exists() == (initial in ("running", "paused"))
+            assert (state / "discarded").exists() == (initial == "saved")
+            assert (state / "unregistered").exists() == succeeds
+            assert (state / "vm-state").read_text().strip() == ("new" if succeeds else "old")
+            if succeeds:
+                assert (state / "attached-iso").read_bytes() == iso.read_bytes()
+            else:
+                assert (vm / "infinityos-4.vdi").read_bytes() == previous_disk
+
 if __name__ == "__main__":
     main()

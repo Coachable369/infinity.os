@@ -16,7 +16,12 @@ case "$command_name" in
             exit 1
         fi
         if test "${2:-}" = "--machinereadable"; then
-            printf 'VMState="poweroff"\n'
+            power_state=${TEST_INITIAL_STATE:-poweroff}
+            if test -f "$TEST_STATE_PATH/power-state"; then
+                power_state=$(sed -n '1p' "$TEST_STATE_PATH/power-state")
+            fi
+            test "$vm_state" != new || power_state=poweroff
+            printf 'VMState="%s"\n' "$power_state"
             printf 'CfgFile="%s/infinityos-4.vbox"\n' "$TEST_VM_DIRECTORY"
             if test "$vm_state" = new; then
                 printf 'platformArchitecture="ARM"\n'
@@ -59,6 +64,32 @@ case "$command_name" in
         mkdir -p "$TEST_VM_DIRECTORY"
         : > "$TEST_VM_DIRECTORY/infinityos-4.vbox"
         printf 'new\n' > "$TEST_STATE_PATH/vm-state"
+        ;;
+    controlvm)
+        : > "$TEST_STATE_PATH/poweroff-attempted"
+        case "${TEST_INITIAL_STATE:-poweroff}" in
+            running|paused) ;;
+            *) exit 1 ;;
+        esac
+        test "${TEST_STOP_FAILURE:-0}" != 1 || exit 1
+        printf 'poweroff\n' > "$TEST_STATE_PATH/power-state"
+        test "${TEST_STOP_RACE:-0}" != 1 || exit 1
+        ;;
+    discardstate)
+        test "${TEST_INITIAL_STATE:-poweroff}" = saved || exit 1
+        : > "$TEST_STATE_PATH/discarded"
+        printf 'poweroff\n' > "$TEST_STATE_PATH/power-state"
+        ;;
+    storageattach)
+        while test "$#" -gt 0; do
+            if test "$1" = --medium; then
+                shift
+                if test "$1" = "$TEST_ISO_PATH"; then
+                    cp "$1" "$TEST_STATE_PATH/attached-iso"
+                fi
+            fi
+            shift
+        done
         ;;
     showmediuminfo)
         : > "$TEST_STATE_PATH/medium-inspected"
@@ -125,7 +156,7 @@ case "$command_name" in
             shift
         done
         ;;
-    controlvm|setextradata|storagectl|storageattach)
+    setextradata|storagectl)
         ;;
     *)
         exit 2
