@@ -93,7 +93,25 @@ Behavioral tests cover explicit requests, ordinary edits, quoted instructions,
 negation, incomplete generation, foreign owners, stale revisions and one-shot
 review actions. The focused suite and ARM installed kernel build passed under
 `builds/manifests/20261013T020008634175Z-28134.json`.
-Installed verification and refreshed release artifacts are still pending.
+The updated accelerated installed ARM workflow passed in manifest
+`builds/manifests/20261013T053103100875Z-31164.json`: real Hermes output became
+the editor's 33-byte C document without an Apply click; native Clang/LLD published
+an 8,648-byte executable; File Navigator opened it in isolation and observed exit
+54. Generation through compilation took 49.059 seconds in this run. The sampled
+pointer response during the observed linker interval was 0.207 seconds (not a
+full end-to-end latency benchmark). Evidence is retained in
+`builds/validation/native-apps/aarch64-installed/direct-editor-evidence.json`,
+`direct-editor-proposal.json`, and `direct-editor-source.png`.
+
+The accelerated compiler failure was a pre-indexed MMIO load emitted for the
+GICv3 register at `0x080b0080`. The HVF trace identified that address with ISV=0;
+disassembly identified the writeback-addressing load. ARM controller access now
+uses explicit plain scalar loads/stores, preserving volatile ordering and the
+write barrier. This run no longer aborts in HVF and completes native execution.
+
+This is a focused updated-kernel test on a disposable, previously installed QEMU
+disk, not fresh-install acceptance of the canonical ARM VirtualBox ISO. x86
+installed end-to-end proof and refreshed release artifacts remain separate gates.
 
 ### Bounded compiler preparation — 2026-10-12 follow-up
 
