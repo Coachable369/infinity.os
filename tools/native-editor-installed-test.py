@@ -39,6 +39,23 @@ ui.click = adaptive_click
 
 class NativeGuest(desktop.Guest):
     # ------------------------=
+    # FUNC: launch
+    # DESC: Uses the dock launcher so a restored editor cannot consume slash as document text.
+    # ------------------=
+    def launch(self, query, mode, section=None):
+        state = self.state()
+        if state[4] in (9, 10):
+            state = self.authenticate()
+        width, height = state[11:13]
+        scale = 2 if width >= 2560 and height >= 1440 else 1
+        dock_width = width * 54 // 100
+        adaptive_click(self, (width-dock_width)//2 + (dock_width//8)//2, height-46*scale)
+        self.wait(lambda s: s[4] == 6, "dock launcher opened", timeout=30)
+        ui.text(self, query)
+        self.key("ret")
+        return self.wait(lambda s: s[4] == mode and (section is None or s[8] == section), "selected app", timeout=30)
+
+    # ------------------------=
     # FUNC: key
     # DESC: Waits for delivered input, allowing focused composers to consume key release without publishing a second snapshot.
     # ------------------=
@@ -70,7 +87,8 @@ def read(guest, symbol, count):
 # DESC: Waits for real compiler completion and records service state transitions with a bounded deadline.
 # ------------------=
 def wait_build(guest, previous, expected):
-    deadline = time.monotonic() + 180
+    started = time.monotonic()
+    deadline = started + 180
     transitions = []
     input_latency = None
     input_started = None
@@ -94,12 +112,16 @@ def wait_build(guest, previous, expected):
                 guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
                     "axis": "x", "value": -4 if before[13] > 500 else 4}}]})
             if state[3] >= 3:
+                result = {"snapshot": state, "transitions": transitions,
+                          "input_latency_seconds": input_latency,
+                          "elapsed_seconds": time.monotonic() - started}
+                (guest.work / "native-build-last.json").write_text(json.dumps(result, indent=2) + "\n")
                 assert state[3] == expected, state
                 if input_started is not None and input_latency is None:
                     guest.wait(lambda s: s[13] != input_x, "pointer after compiler completion", timeout=5)
                     input_latency = time.monotonic() - input_started
-                return {"snapshot": state, "transitions": transitions,
-                        "input_latency_seconds": input_latency}
+                result["input_latency_seconds"] = input_latency
+                return result
         time.sleep(.2)
     raise AssertionError(("Native build deadline", transitions))
 
@@ -160,10 +182,13 @@ def main():
     parser.add_argument("--accel", choices=("hvf", "tcg"), help="Explicit accelerator for diagnosing installed execution transitions")
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
     parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
+    parser.add_argument("--generation-only", action="store_true", help="Retest generated-source acceptance without repeating passing manual-source cases")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
     if args.update_kernel and not args.reuse_installed:
         parser.error("--update-kernel requires --reuse-installed")
+    if args.generation_only and args.compiler_only:
+        parser.error("Choose one focused case")
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
     work = args.work.resolve()
@@ -201,6 +226,9 @@ def main():
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         report["updated_kernel_sha256"] = digest
         report["canonical_release_media"] = False
+    elif previous_report and "updated_kernel_sha256" in previous_report:
+        report["updated_kernel_sha256"] = previous_report["updated_kernel_sha256"]
+        report["canonical_release_media"] = False
     try:
         if args.reuse_installed:
             guest.boot(False)
@@ -212,15 +240,21 @@ def main():
             report["identity"] = guest.onboard()
         guest.launch("text", 5)
         ui.wait_feature(guest, lambda p: p[12] == 2)
-        report["compile"] = compile_document(guest, 'int main(void) { return 54; }', 3)
+        if not args.generation_only:
+            report["compile"] = compile_document(guest, 'int main(void) { return 54; }', 3)
         published = read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)
-        assert published[3] == 1 and any(published[4:6])
+        if not args.generation_only:
+            assert published[3] == 1 and any(published[4:6])
         address, size = base.symbol(artifacts / "installed-kernel.elf", "INFINITY_NATIVE_APP_NAME")
         assert size == 28
         name = guest.memory(address, size).decode("ascii")
-        guest.screenshot("native-editor-compiled")
-        report["invalid"] = compile_document(guest, 'int main(void) { this is not C; }', 4)
-        assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[2] == published[2]
+        if not args.generation_only:
+            guest.screenshot("native-editor-compiled")
+            report["invalid"] = compile_document(guest, 'int main(void) { this is not C; }', 4)
+            assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[2] == published[2]
+        elif not ui.features(guest)[13]:
+            ui.panel_click(guest, "toggle")
+            ui.wait_feature(guest, lambda p: p[13] and p[15])
         if not args.compiler_only:
             report["generated"] = generate_program(guest)
             assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[2] == published[2] + 1
@@ -248,7 +282,7 @@ def main():
         guest.screenshot("native-editor-executed")
         assert all(result["input_latency_seconds"] is None or result["input_latency_seconds"] < 5
                    for result in [report[key] for key in ("compile", "invalid", "generated") if key in report]), "Compiler input latency exceeded five seconds"
-        report["installed_acceptance"] = not args.compiler_only
+        report["installed_acceptance"] = not args.compiler_only and not args.generation_only
         report["model_generated_source"] = not args.compiler_only
         report["compiler_workflow_passed"] = True
     except BaseException as error:

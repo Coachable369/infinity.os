@@ -87,8 +87,21 @@ impl Task {
         if self.cancelled { return State::Cancelled; }
         if now >= self.deadline { return State::Deadline; }
         if self.process.is_none() {
-            return if unsafe { self.prepare_next(memory) }.is_ok() { State::Runnable }
-                else { self.cancelled = true; State::PlatformFailure };
+            // Amortize firmware HID polling without allowing an unbounded load.
+            // The timer is optional; without it, retain one bounded chunk.
+            let started = unsafe { cpu::clock_ns() };
+            for _ in 0..64 {
+                if unsafe { self.prepare_next(memory) }.is_err() {
+                    self.cancelled = true;
+                    return State::PlatformFailure;
+                }
+                if self.process.is_some() { break; }
+                match (started, unsafe { cpu::clock_ns() }) {
+                    (Some(start), Some(end)) if end.saturating_sub(start) < 4_000_000 => {},
+                    _ => break,
+                }
+            }
+            return State::Runnable;
         }
         let Some(mut streams) = native_stdio::Streams::resume(input, output, diagnostics, self.streams) else {
             self.cancel();
