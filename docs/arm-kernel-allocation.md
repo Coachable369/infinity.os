@@ -38,8 +38,23 @@ map showed LoaderCode at that address.
   `successful-boot.log`, under that same directory.
 - This test proves firmware allocation and kernel startup, not installation or
   an authenticated desktop session. The user's VM and disk were not modified.
-- Replacement canonical release ISOs require a successful full build; until
-  that completes, the existing ISOs still contain the previous broken layout.
+- Clean release manifest `20261013T154836743563Z-35188.json` passed on
+  revision `6b427dbc1cc481e04ba746b9477acdb5126563b1` in 5066.764 seconds.
+  Both canonical ISOs in `builds/` now contain the repair; full-bundle checks
+  validated their live and installed kernel load ranges and loader placement.
+- Independent SHA-256 verification passed for both files, recorded in
+  manifest `20261013T171342305905Z-41691.json`.
+- The exact canonical `builds/InfinityOS-aarch64.iso` booted to the graphical
+  installer menu in the separate 12 GiB VirtualBox test VM. Screenshot:
+  `builds/validation/kernel-layout/release-boot.png`. The test VM was powered
+  off afterward. This remains ISO boot proof, not a new installation test.
+
+Release SHA-256 values:
+
+| ISO | SHA-256 |
+| --- | --- |
+| `InfinityOS-aarch64.iso` | `fe682249fa4c40e4a4a8dffb068d6df6d46b5aac86536835bea69e7c7b6287ea` |
+| `InfinityOS-x86_64.iso` | `f3ea15d203fd51375d3eb081c74ef71cbda451d9c10aa64af39ed6e292161000` |
 
 ## Release probe compatibility
 
@@ -52,5 +67,5 @@ aperture checks remain unchanged.
 
 Focused manifest `20261013T144204408818Z-44117.json` successfully linked and
 ran the ARM native HTTPS probe (guest exit 0, DHCP configured). It does not
-establish public-site HTTPS or installed-system acceptance. A new clean
-release and canonical ISO boot test remain required.
+establish public-site HTTPS or installed-system acceptance. The subsequent
+clean release and canonical ARM ISO boot check are recorded above.
