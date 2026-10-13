@@ -2,11 +2,13 @@
 import importlib.util
 import argparse
 import functools
+import hashlib
 import json
 import pathlib
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import time
 
@@ -156,8 +158,12 @@ def main():
     parser.add_argument("--iso", type=pathlib.Path, help="Explicit QEMU-compatible test media for ARM; never substitute silently for the published VirtualBox ISO")
     parser.add_argument("--reuse-installed", action="store_true", help="Continue failed workflow checks on this harness's already cold-boot-verified disk")
     parser.add_argument("--accel", choices=("hvf", "tcg"), help="Explicit accelerator for diagnosing installed execution transitions")
+    parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
+    parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
+    if args.update_kernel and not args.reuse_installed:
+        parser.error("--update-kernel requires --reuse-installed")
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
     work = args.work.resolve()
@@ -179,12 +185,22 @@ def main():
                            reuse=args.reuse_installed, width=1024, height=768, memory_mb=12288)
     guest.arch = args.arch
     guest.acceleration = args.accel or ("hvf" if args.arch == "aarch64" else "tcg")
-    # No post-install patch: this is the unmodified ISO's installed generation.
+    # Suppress the base harness's unrelated browser patching path.
     guest.patched = True
     guest.boot_timeout_seconds = 600
     report = {"installed_acceptance": False, "architecture": args.arch, "packaged": packaged,
               "source_media": str(source_iso), "canonical_release_media": args.iso is None,
               "acceleration": guest.acceleration}
+    if args.update_kernel:
+        kernel = args.update_kernel.resolve()
+        kernel.relative_to(ROOT)
+        subprocess.run([sys.executable, str(ROOT / "tools/update-installed-clone.py"),
+                        str(guest.work / "installed.raw"), str(kernel), "--apply"], check=True)
+        shutil.copyfile(kernel, artifacts / "installed-kernel.elf")
+        with kernel.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        report["updated_kernel_sha256"] = digest
+        report["canonical_release_media"] = False
     try:
         if args.reuse_installed:
             guest.boot(False)
@@ -205,8 +221,9 @@ def main():
         guest.screenshot("native-editor-compiled")
         report["invalid"] = compile_document(guest, 'int main(void) { this is not C; }', 4)
         assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[2] == published[2]
-        report["generated"] = generate_program(guest)
-        assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[2] == published[2] + 1
+        if not args.compiler_only:
+            report["generated"] = generate_program(guest)
+            assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[2] == published[2] + 1
         name = guest.memory(address, size).decode("ascii")
         guest.launch("file", 5)
         ui.wait_feature(guest, lambda p: 5 <= p[12] < 11)
@@ -230,9 +247,10 @@ def main():
             raise AssertionError("Stored native executable did not finish")
         guest.screenshot("native-editor-executed")
         assert all(result["input_latency_seconds"] is None or result["input_latency_seconds"] < 5
-                   for result in (report["compile"], report["invalid"], report["generated"])), "Compiler input latency exceeded five seconds"
-        report["installed_acceptance"] = True
-        report["model_generated_source"] = True
+                   for result in [report[key] for key in ("compile", "invalid", "generated") if key in report]), "Compiler input latency exceeded five seconds"
+        report["installed_acceptance"] = not args.compiler_only
+        report["model_generated_source"] = not args.compiler_only
+        report["compiler_workflow_passed"] = True
     except BaseException as error:
         report["failure"] = repr(error)
         if guest.process is not None and guest.process.poll() is None:

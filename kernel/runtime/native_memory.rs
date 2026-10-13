@@ -90,6 +90,17 @@ impl NativeMemory {
     // DESC: Allocates, owns, and zeroes one contiguous physical-page run for a native execution context.
     // ------------------=
     pub fn allocate(&mut self, page_count: u32, owner: u32) -> Result<FrameAllocation, MemoryError> {
+        let allocation = self.reserve(page_count, owner)?;
+        unsafe { core::ptr::write_bytes(allocation.physical_address as *mut u8, 0,
+            page_count as usize * PAGE_SIZE as usize); }
+        Ok(allocation)
+    }
+
+    // ------------------------=
+    // FUNC: reserve
+    // DESC: Privately reserves uninitialized frames; only the bounded loader may use them before zeroing every byte.
+    // ------------------=
+    fn reserve(&mut self, page_count: u32, owner: u32) -> Result<FrameAllocation, MemoryError> {
         let requested = page_count as usize;
         if requested == 0 {
             return Err(MemoryError::InvalidPageCount);
@@ -108,10 +119,6 @@ impl NativeMemory {
         };
         self.next_allocation_id = self.next_allocation_id.wrapping_add(1).max(1);
         self.allocations[record] = Some(allocation);
-        unsafe {
-            core::ptr::write_bytes(allocation.physical_address as *mut u8, 0,
-                requested * PAGE_SIZE as usize);
-        }
         Ok(allocation)
     }
 
@@ -239,6 +246,128 @@ pub struct ProcessAddressSpace<T: PageTable> {
 }
 
 pub type CompilerAddressSpace = ProcessAddressSpace<X86AddressSpace>;
+
+/// Inactive compiler mappings cannot escape until every byte and permission has
+/// been initialized. One visit touches at most 64 KiB or maps sixteen pages.
+pub struct ProcessPreparation<T: PageTable> {
+    space: ProcessAddressSpace<T>,
+    image: super::native_c_image::Image,
+    layout: CompilerVirtualLayout,
+    phase: usize,
+    offset: usize,
+    segment: usize,
+}
+
+impl<T: PageTable> ProcessPreparation<T> {
+    pub const CHUNK: usize = 64 * 1024;
+    // ------------------------=
+    // FUNC: new
+    // DESC: Reserves private compiler frames without bulk clearing or mapping them into an executable context.
+    // ------------------=
+    pub fn new(memory: &mut NativeMemory, owner: u32, image: super::native_c_image::Image,
+        layout: CompilerVirtualLayout) -> Result<Self, MemoryError> {
+        if image.memory_size == 0 || image.entry >= image.memory_size || image.segment_count > image.segments.len()
+            || layout.image_base & 4095 != 0 || layout.heap_base & 4095 != 0
+            || layout.stack_guard_base & 4095 != 0 || layout.heap_pages == 0 || layout.stack_pages == 0 {
+            return Err(MemoryError::InvalidAddress);
+        }
+        layout.image_base.checked_add(image.memory_size as u64).ok_or(MemoryError::AddressOverflow)?;
+        layout.heap_base.checked_add(layout.heap_pages as u64 * PAGE_SIZE).ok_or(MemoryError::AddressOverflow)?;
+        let stack_top = layout.stack_guard_base.checked_add((layout.stack_pages as u64 + 1) * PAGE_SIZE)
+            .filter(|end| end.checked_add(PAGE_SIZE).is_some()).ok_or(MemoryError::AddressOverflow)?;
+        for s in &image.segments[..image.segment_count] {
+            if s.address.checked_add(s.memory_size).is_none_or(|end| end > image.memory_size)
+                || s.file_size > s.memory_size { return Err(MemoryError::InvalidAddress); }
+        }
+        let allocation = memory.reserve(pages_for(image.memory_size as u64)?, owner)?;
+        let heap = match memory.reserve(layout.heap_pages, owner) {
+            Ok(v) => v, Err(e) => { memory.release(allocation)?; return Err(e); }
+        };
+        let stack = match memory.reserve(layout.stack_pages, owner) {
+            Ok(v) => v, Err(e) => { memory.release(heap)?; memory.release(allocation)?; return Err(e); }
+        };
+        let tables = match T::new(memory, owner) {
+            Ok(v) => v, Err(e) => { memory.release(stack)?; memory.release(heap)?; memory.release(allocation)?; return Err(e); }
+        };
+        Ok(Self { space: ProcessAddressSpace { page_tables: tables, image: allocation, heap, stack,
+            entry: layout.image_base + image.entry as u64, stack_top }, image, layout,
+            phase: 0, offset: 0, segment: 0 })
+    }
+    // ------------------------=
+    // FUNC: poll
+    // DESC: Initializes one bounded memory or mapping chunk; no user execution is possible during preparation.
+    // ------------------=
+    pub fn poll(&mut self, memory: &mut NativeMemory, bytes: &[u8]) -> Result<bool, MemoryError> {
+        if self.phase < 3 {
+            let allocation = [self.space.image, self.space.heap, self.space.stack][self.phase];
+            let end = (self.offset + Self::CHUNK).min(allocation.page_count as usize * PAGE_SIZE as usize);
+            let target = unsafe { core::slice::from_raw_parts_mut(
+                (allocation.physical_address + self.offset as u64) as *mut u8, end - self.offset) };
+            target.fill(0);
+            if self.phase == 0 {
+                for s in &self.image.segments[..self.image.segment_count] {
+                    let begin = self.offset.max(s.address);
+                    let stop = end.min(s.address + s.file_size);
+                    if begin < stop {
+                        let source = s.source.checked_add(begin - s.address).ok_or(MemoryError::AddressOverflow)?;
+                        let data = bytes.get(source..source.checked_add(stop-begin).ok_or(MemoryError::AddressOverflow)?)
+                            .ok_or(MemoryError::InvalidAddress)?;
+                        target[begin-self.offset..stop-self.offset].copy_from_slice(data);
+                    }
+                }
+            }
+            self.offset = end;
+            if end == allocation.page_count as usize * PAGE_SIZE as usize { self.phase += 1; self.offset = 0; }
+        } else if self.phase == 3 {
+            if self.segment == self.image.segment_count { self.phase = 4; self.offset = 0; return Ok(false); }
+            let s = self.image.segments[self.segment];
+            let start = align_down(s.address as u64);
+            let end = align_up((s.address + s.memory_size) as u64)?;
+            let at = start + self.offset as u64;
+            let n = (end-at).min(Self::CHUNK as u64);
+            let p = if s.flags & 1 != 0 { PagePermissions::USER_RX }
+                else if s.flags & 2 != 0 { PagePermissions::USER_RW } else { PagePermissions::USER_R };
+            if n != 0 { self.space.page_tables.map_range(memory, self.layout.image_base+at,
+                self.space.image.physical_address+at, n, p)?; }
+            self.offset += n as usize;
+            if at+n == end { self.segment += 1; self.offset = 0; }
+        } else if self.phase < 6 {
+            let (allocation, base) = if self.phase == 4 { (self.space.heap, self.layout.heap_base) }
+                else { (self.space.stack, self.layout.stack_guard_base+PAGE_SIZE) };
+            let n = (allocation.page_count as usize * PAGE_SIZE as usize-self.offset).min(Self::CHUNK);
+            self.space.page_tables.map_range(memory, base+self.offset as u64,
+                allocation.physical_address+self.offset as u64, n as u64, PagePermissions::USER_RW)?;
+            self.offset += n;
+            if self.offset == allocation.page_count as usize * PAGE_SIZE as usize { self.phase += 1; self.offset = 0; }
+        } else if self.phase == 6 {
+            if let Some(relro) = self.image.relro {
+                let start = align_down(relro.address as u64);
+                let end = align_up((relro.address+relro.length) as u64)?;
+                let n = (end-start-self.offset as u64).min(Self::CHUNK as u64);
+                if n != 0 { self.space.page_tables.protect_range(self.layout.image_base+start+self.offset as u64,
+                    n, PagePermissions::USER_R)?; }
+                self.offset += n as usize;
+                if start+self.offset as u64 != end { return Ok(false); }
+            }
+            if self.space.page_tables.mapping(self.layout.stack_guard_base).is_some()
+                || self.space.page_tables.mapping(self.space.stack_top).is_some() { return Err(MemoryError::MappingConflict); }
+            self.phase = 7;
+        }
+        Ok(self.phase == 7)
+    }
+    // ------------------------=
+    // FUNC: finish
+    // DESC: Releases ownership of a fully initialized space only; premature completion returns the still-owned builder.
+    // ------------------=
+    pub fn finish(self) -> Result<ProcessAddressSpace<T>, Self> {
+        if self.phase == 7 { Ok(self.space) } else { Err(self) }
+    }
+    // ------------------------=
+    // FUNC: release
+    // DESC: Reclaims all partially initialized frames and tables on cancellation or preparation failure.
+    // ------------------=
+    pub fn release(self, memory: &mut NativeMemory) -> Result<(), MemoryError> { self.space.release(memory) }
+}
 
 /// A page-table implementation must return only owned, validated physical mappings.
 pub trait PageTable: Sized {

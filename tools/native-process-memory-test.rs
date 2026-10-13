@@ -82,6 +82,72 @@ fn main() {
     verify_launch::<ArmAddressSpace>();
     verify_job_files::<X86AddressSpace>();
     verify_job_files::<ArmAddressSpace>();
+    verify_preparation::<X86AddressSpace>();
+    verify_preparation::<ArmAddressSpace>();
+}
+
+// ------------------------=
+// FUNC: verify_preparation
+// DESC: Exercises bounded loading, dirty-frame clearing, exact data, W-X, RELRO, guards and cancellation reclamation on both table formats.
+// ------------------=
+fn verify_preparation<T: PageTable>() {
+    use native_c_image::{Image, Segment, Region};
+    let allocation_layout = std::alloc::Layout::new::<Arena>();
+    let arena = unsafe { std::alloc::alloc(allocation_layout) };
+    assert!(!arena.is_null());
+    unsafe { core::ptr::write_bytes(arena, 0xa5, allocation_layout.size()); }
+    let mut memory = NativeMemory::empty();
+    memory.initialize(arena as u64, allocation_layout.size() as u64).unwrap();
+    let initial = memory.available_pages();
+    let mut segments = [Segment::default(); 8];
+    segments[0] = Segment { source: 0, address: 0, file_size: 70000, memory_size: 131072, flags: 5 };
+    segments[1] = Segment { source: 70000, address: 131072, file_size: 4097, memory_size: 65536, flags: 6 };
+    let image = Image { entry: 0, virtual_base: 0x100000000, memory_size: 196608, segments,
+        segment_count: 2, tls: None, relro: Some(Region { address: 131072, length: 4096 }), relative_relocations: None };
+    let layout = CompilerVirtualLayout { image_base: 0x100000000, heap_base: 0x200000000,
+        heap_pages: 32, stack_guard_base: 0x300000000, stack_pages: 16 };
+    let source = vec![0x7b; 74097];
+    for cancel_after in [0, 1, 4, 8, 12] {
+        let mut job = ProcessPreparation::<T>::new(&mut memory, 1, image, layout).unwrap();
+        for _ in 0..cancel_after { if job.poll(&mut memory, &source).unwrap() { break; } }
+        job.release(&mut memory).unwrap();
+        assert_eq!(memory.available_pages(), initial);
+    }
+    let mut job = ProcessPreparation::<T>::new(&mut memory, 1, image, layout).unwrap();
+    job = match job.finish() { Err(job) => job, Ok(_) => panic!("Uninitialized space escaped") };
+    let mut visits = 0;
+    loop {
+        let before = unsafe { core::slice::from_raw_parts(arena, allocation_layout.size()) }.to_vec();
+        let ready = job.poll(&mut memory, &source).unwrap();
+        let after = unsafe { core::slice::from_raw_parts(arena, allocation_layout.size()) };
+        assert!(before.iter().zip(after).filter(|(a,b)| a != b).count() <= ProcessPreparation::<T>::CHUNK);
+        visits += 1;
+        assert!(visits < 100);
+        if ready { break; }
+    }
+    assert!(visits > 10);
+    let space = match job.finish() { Ok(space) => space, Err(_) => panic!("Ready space unavailable") };
+    let bytes = unsafe { core::slice::from_raw_parts(space.image.physical_address as *const u8, image.memory_size) };
+    assert!(bytes[..70000].iter().all(|b| *b == 0x7b));
+    assert!(bytes[70000..131072].iter().all(|b| *b == 0));
+    assert!(bytes[131072..135169].iter().all(|b| *b == 0x7b));
+    assert!(bytes[135169..].iter().all(|b| *b == 0));
+    for allocation in [space.heap, space.stack] {
+        assert!(unsafe { core::slice::from_raw_parts(allocation.physical_address as *const u8,
+            allocation.page_count as usize * 4096) }.iter().all(|b| *b == 0));
+    }
+    assert_eq!(space.page_tables.mapping(layout.image_base).unwrap().permissions, PagePermissions::USER_RX);
+    assert_eq!(space.page_tables.mapping(layout.image_base+131072).unwrap().permissions, PagePermissions::USER_R);
+    assert_eq!(space.page_tables.mapping(layout.image_base+135168).unwrap().permissions, PagePermissions::USER_RW);
+    assert!(space.page_tables.mapping(layout.stack_guard_base).is_none());
+    assert!(space.page_tables.mapping(space.stack_top).is_none());
+    space.release(&mut memory).unwrap();
+    assert_eq!(memory.available_pages(), initial);
+    let mut job = ProcessPreparation::<T>::new(&mut memory, 1, image, layout).unwrap();
+    assert!(job.poll(&mut memory, &source[..10]).is_err());
+    job.release(&mut memory).unwrap();
+    assert_eq!(memory.available_pages(), initial);
+    unsafe { std::alloc::dealloc(arena, allocation_layout); }
 }
 
 // ------------------------=

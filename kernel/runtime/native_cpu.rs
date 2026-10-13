@@ -130,13 +130,33 @@ impl Context {
 // ------------------=
 pub unsafe fn prepare(process: &mut ProcessAddressSpace<Tables>, memory: &mut NativeMemory,
     controller: Controller) -> Result<(), MemoryError> {
+    clean_instruction_range(process.image.physical_address, process.image.page_count as usize * 4096);
+    finish_preparation(process, memory, controller)
+}
+
+// ------------------------=
+// FUNC: clean_instruction_range
+// DESC: Publishes a caller-bounded image chunk to the instruction point of unification on the native CPU.
+// ------------------=
+pub unsafe fn clean_instruction_range(address: u64, bytes: usize) {
+    #[cfg(target_arch = "aarch64")]
+    for at in (address..address + bytes as u64).step_by(64) {
+        core::arch::asm!("dc cvau, {}", in(reg)at);
+    }
+    #[cfg(target_arch = "x86_64")]
+    let _ = (address, bytes);
+}
+
+// ------------------------=
+// FUNC: finish_preparation
+// DESC: Installs the small supervisor trampoline and orders previously cleaned chunks before first execution.
+// ------------------=
+pub unsafe fn finish_preparation(process: &mut ProcessAddressSpace<Tables>, memory: &mut NativeMemory,
+    controller: Controller) -> Result<(), MemoryError> {
     task::map_trampoline(&mut process.page_tables,memory)?;
     #[cfg(target_arch = "aarch64")]
     {
         let _ = (memory, controller);
-        for address in (process.image.physical_address..process.image.physical_address + process.image.page_count as u64 * 4096).step_by(64) {
-            core::arch::asm!("dc cvau, {}", in(reg)address);
-        }
         core::arch::asm!("dsb ish", "ic iallu", "dsb ish", "isb");
         Ok(())
     }

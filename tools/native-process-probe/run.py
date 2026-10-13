@@ -32,7 +32,7 @@ def compiler_result(data, work, args):
     else:
         assert status == 0
     proof = dict(architecture=args.arch, real_native_toolchain=True, hardware_user_mode=True,
-        exit_status=status, console_bytes=written, service_calls=calls, memory_reclaimed=True,
+        exit_status=status, console_bytes=written, poll_visits=calls, memory_reclaimed=True,
         compiled_source=args.compile_source, installed_acceptance=False)
     machine = 183 if args.arch == "aarch64" else 62
     if args.reject_invalid_source:
