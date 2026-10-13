@@ -97,12 +97,6 @@ def verify_model(installed_esp: Path, slot: int, expected_bytes: int, expected_h
 # DESC: Proves live and freshly installed boot paths contain the exact current native worker adapter.
 # ------------------=
 def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Path) -> None:
-    for member in ("::/EFI/INFINITY/KERNEL.ELF", "::/EFI/INFINITY/PAYLOAD/P1-000.BIN"):
-        sink = HeaderSink()
-        present, length, _ = stream_member(live_esp, member, sink)
-        if not present or not length:
-            raise RuntimeError(f"missing kernel artifact: {member}")
-        validate_kernel_layout(sink.header)
     # The publisher validates before its atomic rename. Apply identical byte
     # checks to that private candidate and the final published filename.
     release_name = iso.name.removesuffix(".partial")
@@ -167,6 +161,12 @@ def verify_iso(iso: Path) -> None:
             stderr=subprocess.DEVNULL,
         )
         reassemble_installed_esp(live_esp, installed_esp)
+        for member in ("::/EFI/INFINITY/KERNEL.ELF", "::/EFI/INFINITY/PAYLOAD/P1-000.BIN"):
+            sink = HeaderSink()
+            present, length, _ = stream_member(live_esp, member, sink)
+            if not present or not length:
+                raise RuntimeError(f"missing kernel artifact: {member}")
+            validate_kernel_layout(sink.header)
         verify_boot_loader(iso, live_esp, installed_esp, work)
         for model in MODELS:
             verify_model(installed_esp, *model)

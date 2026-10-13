@@ -40,6 +40,17 @@ class LoaderParityTests(unittest.TestCase):
         self.temporary.cleanup()
 
     # ------------------------=
+    # FUNC: configure_architecture
+    # DESC: Sets valid machine and preferred-base fields for each binary PE fixture.
+    # ------------------=
+    def configure_architecture(self, architecture):
+        image = bytearray(self.expected)
+        struct.pack_into("<H", image, 0x84, 0xAA64 if architecture == "aarch64" else 0x8664)
+        struct.pack_into("<Q", image, 0xB0, 0x8000000 if architecture == "aarch64" else 0x2000000)
+        struct.pack_into("<I", image, 0xD0, 0x24000)
+        self.expected = bytes(image)
+
+    # ------------------------=
     # FUNC: verify
     # DESC: Exercises the production comparator with binary extraction results for all four boot paths.
     # ------------------=
@@ -78,6 +89,7 @@ class LoaderParityTests(unittest.TestCase):
     # ------------------=
     def test_identical_boot_paths(self):
         for architecture in ("aarch64", "x86_64"):
+            self.configure_architecture(architecture)
             for suffix in ("", ".partial"):
                 with self.subTest(architecture=architecture, suffix=suffix):
                     self.verify(architecture, [self.expected] * 4, suffix)
@@ -104,6 +116,7 @@ class LoaderParityTests(unittest.TestCase):
     # ------------------=
     def test_rejects_each_stale_boot_path(self):
         for architecture in ("aarch64", "x86_64"):
+            self.configure_architecture(architecture)
             for suffix in ("", ".partial"):
                 for index in range(4):
                     for corrupt in (self.expected[:-1] + b"\0", b""):
@@ -112,6 +125,22 @@ class LoaderParityTests(unittest.TestCase):
                             copies[index] = corrupt
                             with self.assertRaises(RuntimeError):
                                 self.verify(architecture, copies, suffix)
+
+    # ------------------------=
+    # FUNC: test_arm_loader_cannot_overlap_kernel_or_arena
+    # DESC: Rejects the former implicit 5 GiB ARM loader base and low-kernel overlaps.
+    # ------------------=
+    def test_arm_loader_cannot_overlap_kernel_or_arena(self):
+        self.configure_architecture("aarch64")
+        original = self.expected
+        for base, size in ((0x140000000, 0x24000), (0x10000000, 0x24000),
+                           (0xFFFF000, 0x24000), (0x8000000, 0)):
+            image = bytearray(original)
+            struct.pack_into("<Q", image, 0xB0, base)
+            struct.pack_into("<I", image, 0xD0, size)
+            self.expected = bytes(image)
+            with self.assertRaises(AssertionError):
+                self.verify("aarch64", [self.expected] * 4)
 
     # ------------------------=
     # FUNC: test_rejects_unknown_release_names
