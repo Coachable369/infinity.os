@@ -509,6 +509,36 @@ fn generated_editor_actions() {
     assert_eq!(document.bytes(),b"int main(void){return 7;}");
     assert!(document.undo());
     assert_eq!(document.bytes(),b"hello world");
+    for (request, expected) in [
+        (b"Write and compile a simple C program with int main(void) that returns 54. Replace the entire document.".as_slice(), Action::ReplaceCompile),
+        (b"Please create and compile a C program", Action::ReplaceCompile),
+        (b"Generate and compile a C program", Action::ReplaceCompile),
+        (b"Write a C program", Action::Replace),
+        (b"Explain how to write and compile a C program", Action::Replace),
+        (b"Do not write and compile a C program", Action::Replace),
+        (b"Write and compile a C program but do not compile it yet", Action::Replace),
+        (b"\"Write and compile a C program\"", Action::Replace),
+    ] {
+        panel.request[..request.len()].copy_from_slice(request);
+        panel.request_len = request.len();
+        assert!(!panel.accept_for_owner(2, b"REPLACE\nint main(void){return 54;}", false));
+        assert_eq!(panel.pending, Action::None);
+        assert!(!panel.accept_for_owner(0, b"REPLACE\nint main(void){return 54;}\nEND_ACTION", true));
+        assert_eq!(panel.pending, Action::None);
+        assert!(panel.accept_for_owner(2, b"REPLACE\nint main(void){return 54;}\nEND_ACTION", true));
+        assert_eq!(panel.pending, expected);
+        panel.generation = ai::GenerationStatus::Running;
+        assert!(!panel.apply_generated_compile_requested());
+        panel.generation = ai::GenerationStatus::Complete;
+        assert_eq!(panel.apply_generated_compile_requested(), expected == Action::ReplaceCompile);
+        assert_eq!(document.bytes(), b"hello world"); // Proposal never applies itself.
+        assert_eq!(panel.take_action(13), Action::None); // Stale document is still protected.
+        assert!(panel.accept_for_owner(2, b"REPLACE\nint main(void){return 54;}\nEND_ACTION", true));
+        assert_eq!(panel.take_action(12), expected);
+        assert!(!panel.apply_generated_compile_requested());
+        assert_eq!(panel.take_action(12), Action::None);
+    }
+    panel.request_len = 0;
     panel.input[..7].copy_from_slice(b"compile");panel.length=7;
     assert!(panel.propose(true,12));
     assert_eq!(panel.take_action(12),Action::Compile);

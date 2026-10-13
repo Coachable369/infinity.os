@@ -194,12 +194,20 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
 // FUNC: read
 // DESC: Reads a kernel-only interrupt-controller register.
 // ------------------=
-unsafe fn read(address: u64) -> u32 { core::ptr::read_volatile(address as *const u32) }
+unsafe fn read(address: u64) -> u32 {
+    // A pre/post-indexed MMIO load has no valid instruction syndrome on a
+    // stage-two trap. Keep the plain scalar form required by HVF MMIO emulation.
+    let value: u32;
+    core::arch::asm!("ldr {value:w}, [{address}]", value = out(reg) value,
+        address = in(reg) address, options(nostack, preserves_flags));
+    value
+}
 // ------------------------=
 // FUNC: write
 // DESC: Publishes a kernel-only interrupt-controller register update before enabling the timer.
 // ------------------=
 unsafe fn write(address: u64, value: u32) {
-    core::ptr::write_volatile(address as *mut u32, value);
-    core::arch::asm!("dsb sy");
+    core::arch::asm!("str {value:w}, [{address}]", "dsb sy",
+        value = in(reg) value, address = in(reg) address,
+        options(nostack, preserves_flags));
 }

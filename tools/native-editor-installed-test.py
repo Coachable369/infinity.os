@@ -156,6 +156,8 @@ def compile_document(guest, source, expected):
     ui.panel_click(guest, "toggle")
     ui.wait_feature(guest, lambda p: p[13] and p[15])
     ui.text(guest, "compile this program")
+    if getattr(guest, "trace_native_faults", False):
+        guest.qmp("trace-event-set-state", {"name": "hvf_data_abort", "enable": True})
     guest.key("ret")
     # Explicit commands can apply directly; generated proposals require review.
     if ui.features(guest)[14]:
@@ -164,7 +166,7 @@ def compile_document(guest, source, expected):
 
 # ------------------------=
 # FUNC: generate_program
-# DESC: Requests actual local model generation, verifies the reviewed typed action, then uses the normal Apply control to compile it.
+# DESC: Requests actual generation and checks that the editor receives source and compiles it without an Apply click.
 # ------------------=
 def generate_program(guest):
     assert ui.features(guest)[13]
@@ -192,10 +194,15 @@ def generate_program(guest):
             guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
                 "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})
             next_progress = time.monotonic() + 20
-        if state[14]:
-            assert state[14] == 14, ("Expected reviewed ReplaceCompile action", state[14])
-            guest.screenshot("native-editor-generated-review")
-            ui.panel_click(guest, "apply")
+        build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
+        if build[2] > before and build[3] != 0:
+            assert state[7] > 0 and state[14] == 0, ("Generated source was not applied to the editor", state)
+            (guest.work / "native-generated-proposal.json").write_text(json.dumps({
+                "owner": state[12], "action": state[14], "snapshot": state,
+                "elapsed_seconds": time.monotonic() - started,
+                "applied": True, "compile_started_without_confirmation": True,
+            }, indent=2) + "\n")
+            guest.screenshot("native-editor-generated-source")
             result = wait_build(guest, before, 3)
             result["generation_and_compile_seconds"] = time.monotonic() - started
             return result
@@ -215,6 +222,7 @@ def main():
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
     parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
     parser.add_argument("--generation-only", action="store_true", help="Retest generated-source acceptance without repeating passing manual-source cases")
+    parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
     if args.update_kernel and not args.reuse_installed:
@@ -242,6 +250,7 @@ def main():
                            reuse=args.reuse_installed, width=1024, height=768, memory_mb=12288)
     guest.arch = args.arch
     guest.acceleration = args.accel or ("hvf" if args.arch == "aarch64" else "tcg")
+    guest.trace_native_faults = args.trace_native_faults
     # Suppress the base harness's unrelated browser patching path.
     guest.patched = True
     guest.boot_timeout_seconds = 600

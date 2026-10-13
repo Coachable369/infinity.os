@@ -3,9 +3,11 @@
 ## Contract
 
 The attached editor assistant can propose `REPLACE_COMPILE` with complete C
-source, or compile the current document on an explicit compile request. Generated
-source remains a reviewed, revision-fenced, undoable editor operation. Compilation
-does not automatically execute the result.
+source, or compile the current document on an explicit compile request. An explicit
+generation-and-compilation request puts the generated code directly into the editor
+and starts compilation there, without a second Apply click. The edit remains
+revision-fenced and undoable. Other generated edits retain their review step.
+Compilation does not automatically execute the result.
 
 The desktop captures an immutable source snapshot and runs native Clang, then
 native LLD, as preemptible user-mode processes. Successful output is stored as a
@@ -74,6 +76,24 @@ shared kernel at QEMU's load address. It never replaces the published ARM ISO.
 and installed artifacts. It does not substitute for installed execution.
 
 ## Current limits
+
+### Explicit compile intent — 2026-10-12 continuation
+
+The editor preserves a saved user request beginning with `write and compile`,
+`create and compile`, or `generate and compile` (optionally `please`). A valid
+model `REPLACE` proposal for that request becomes `REPLACE_COMPILE`.
+The completed action applies once to the original editor and compiles its immutable
+document snapshot. This narrow fallback does not interpret document contents,
+accept raw model code, or launch the generated executable.
+Negated/ambiguous requests outside this grammar remain ordinary edits.
+Existing owner checks, completion checks and document revision fences apply;
+changing the document during generation prevents stale replacement.
+
+Behavioral tests cover explicit requests, ordinary edits, quoted instructions,
+negation, incomplete generation, foreign owners, stale revisions and one-shot
+review actions. The focused suite and ARM installed kernel build passed under
+`builds/manifests/20261013T020008634175Z-28134.json`.
+Installed verification and refreshed release artifacts are still pending.
 
 ### Bounded compiler preparation — 2026-10-12 follow-up
 

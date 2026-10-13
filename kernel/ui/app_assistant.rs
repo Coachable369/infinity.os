@@ -361,6 +361,7 @@ impl Panel {
         };
         let action = match &body[..split] {
             b"INSERT" if editor => Action::Insert,
+            b"REPLACE" if editor && self.requested_generation_compile() => Action::ReplaceCompile,
             b"REPLACE" if editor => Action::Replace,
             b"REPLACE_COMPILE" if editor => Action::ReplaceCompile,
             b"CHAT" => { self.reply(&body[split + 1..]); return true; }
@@ -377,6 +378,32 @@ impl Panel {
         self.pending = action;
         self.reply(content);
         true
+    }
+
+    // ------------------------=
+    // FUNC: requested_generation_compile
+    // DESC: Preserves an explicit leading generation-and-compilation request without inferring authority from model text or document contents.
+    // ------------------=
+    fn requested_generation_compile(&self) -> bool {
+        let request = &self.request[..self.request_len.min(self.request.len())];
+        let mut words = request.split(|b| b.is_ascii_whitespace()).filter(|word| !word.is_empty());
+        let mut first = words.next().unwrap_or(b"");
+        if first.eq_ignore_ascii_case(b"please") { first = words.next().unwrap_or(b""); }
+        if ![b"write".as_slice(), b"create", b"generate"].iter().any(|verb| first.eq_ignore_ascii_case(verb))
+            || !words.next().unwrap_or(b"").eq_ignore_ascii_case(b"and")
+            || !words.next().unwrap_or(b"").eq_ignore_ascii_case(b"compile") { return false; }
+        // Ambiguous or negated requests remain a normal reviewed edit, never an inferred build.
+        !words.any(|word| [b"not".as_slice(), b"don't", b"never", b"without", b"instead", b"only"]
+            .iter().any(|negative| word.eq_ignore_ascii_case(negative)))
+    }
+
+    // ------------------------=
+    // FUNC: apply_generated_compile_requested
+    // DESC: Allows only completed, explicitly requested editor generation to enter the normal document compilation workflow without a second confirmation.
+    // ------------------=
+    pub fn apply_generated_compile_requested(&self) -> bool {
+        self.generation == GenerationStatus::Complete && self.pending == Action::ReplaceCompile
+            && self.requested_generation_compile()
     }
 
     // ------------------------=

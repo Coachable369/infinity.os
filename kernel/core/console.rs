@@ -13526,6 +13526,7 @@ pub fn poll_native_ai() {
         if app_turn.is_none() && !desktop_allowed { ai.cancel_chat() } else { ai.poll_qwen() }
     });
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
+        ai_changed |= runtime.apply_completed_editor_compile();
         ai_changed |= crate::runtime::ai::with_ai_runtime(|ai| ai.control_pending());
         let command = crate::runtime::ai::with_ai_runtime(|ai| ai.take_control(runtime.current_user.0, desktop_allowed));
         if let Some(command) = command {

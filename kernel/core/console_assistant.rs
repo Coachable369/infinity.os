@@ -368,6 +368,14 @@ impl ConsoleRuntime {
         }
     }
     // ------------------------=
+    // FUNC: apply_completed_editor_compile
+    // DESC: Puts explicitly requested completed C into its original editor and starts compilation once, retaining revision and capability checks.
+    // ------------------=
+    pub(super) fn apply_completed_editor_compile(&mut self) -> bool {
+        if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return false; }
+        self.apply_window_assistant(2)
+    }
+    // ------------------------=
     // FUNC: apply_window_assistant
     // DESC: Executes only the focused window's consumed, explicitly approved capability through normal application workflows.
     // ------------------=
@@ -379,7 +387,8 @@ impl ConsoleRuntime {
             assistant::write(id, panel);
             return false;
         }
-        if self.assistant_owner().map(|v| v.0) != Some(id) {
+        if self.assistant_owner().map(|v| v.0) != Some(id)
+            && !(id == 2 && self.assistant_owner_alive(2) && assistant::read(id).apply_generated_compile_requested()) {
             return false;
         }
         let mut panel = assistant::read(id);
@@ -512,6 +521,11 @@ impl ConsoleRuntime {
                 if action==Action::ReplaceCompile && !panel.edit_document(action,&mut self.editor_document) {
                     panel.reply(b"The generated source could not be applied. Nothing was compiled.");
                     assistant::write(id,panel);return false;
+                }
+                if action == Action::ReplaceCompile {
+                    self.editor_document.set_cursor(0);
+                    self.editor_scroll_row = 0;
+                    panel.focused = false;
                 }
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 {success=compiler_commands::start(self);}
