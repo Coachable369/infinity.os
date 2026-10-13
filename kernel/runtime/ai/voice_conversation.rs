@@ -610,8 +610,10 @@ pub fn toggle(owner: SecurityIdentity) -> bool {
         if matches!(STATE, State::Off | State::Failed)
             || (STATE == State::Stopping && !RESTART_LISTENING)
         {
+            trace(b"widget requested voice start");
             start(owner)
         } else {
+            trace(b"widget requested voice stop");
             stop(owner)
         }
     }
@@ -972,6 +974,9 @@ unsafe fn capture_frame(duplex: bool) -> bool {
                 clear_captured_turn();
                 (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[consumed..n]);
                 trace(b"microphone calibration ready");
+                #[cfg(not(test))]
+                voice_trace::capture(now, 0, (&*(&raw const NOISE_FLOOR)).threshold(),
+                    &(&*(&raw const MONO))[..n]);
             }
         } else { NOISE_FLOOR = voice_noise_floor::NoiseFloor::new(); }
         (&mut *(&raw mut RAW)).fill(0);
@@ -1007,6 +1012,11 @@ unsafe fn capture_frame(duplex: bool) -> bool {
             .copy_from_slice(&(&*(&raw const MONO))[consumed..n]);
     }
     if vad!=LAST_VAD_STATE {
+        #[cfg(not(test))]
+        voice_trace::capture(now, match vad {
+            VadState::Waiting => 1, VadState::Speech => 2, VadState::Complete => 3,
+            VadState::NoSpeech => 4, VadState::Limit => 5, VadState::Cancelled => 6,
+        }, (&*(&raw const NOISE_FLOOR)).threshold(), &(&*(&raw const MONO))[..n]);
         trace(match vad {
             VadState::Waiting => b"vad waiting",
             VadState::Speech => b"vad speech onset",

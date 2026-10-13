@@ -870,7 +870,10 @@ fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentit
         assert_eq!(conversation::microphone_threshold(),None);
     }
     CALIBRATION_PLAYBACK.store(0,Ordering::SeqCst);
-    MICROPHONE.lock().unwrap().extend([500;8000]);
+    // A cold ADC/filter can deliver initial quiet frames before ambient PCM.
+    // Those frames must not pin the gate below the sustained room noise.
+    MICROPHONE.lock().unwrap().extend([0;640]);
+    MICROPHONE.lock().unwrap().extend([500;7360]);
     drain_microphone();
     assert!(!conversation::preparing());
     assert_eq!(conversation::microphone_threshold(),Some(1000));

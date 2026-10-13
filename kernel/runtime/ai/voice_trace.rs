@@ -1,6 +1,31 @@
 //! Bounded, prompt-free timing records shared by native conversation workers.
 
 // ------------------------=
+// FUNC: capture
+// DESC: Records calibration and VAD transitions as timestamp, state, threshold, mean-square energy and peak; never retains PCM.
+// ------------------=
+pub fn capture(now: u64, state: u64, threshold: u16, pcm: &[i16]) {
+    let energy = pcm.iter().map(|&v| (i64::from(v) * i64::from(v)) as u64).sum::<u64>()
+        / pcm.len().max(1) as u64;
+    let peak = pcm.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
+    const PREFIX: &[u8] = b"[VOICE CAPTURE] ";
+    const HEX: &[u8] = b"0123456789abcdef";
+    let mut record = [0u8; PREFIX.len() + 5 * 17];
+    record[..PREFIX.len()].copy_from_slice(PREFIX);
+    let mut at = PREFIX.len();
+    for value in [now, state, u64::from(threshold), energy, u64::from(peak)] {
+        for shift in (0..16).rev() {
+            record[at] = HEX[((value >> (shift * 4)) & 15) as usize];
+            at += 1;
+        }
+        record[at] = b' ';
+        at += 1;
+    }
+    record[at - 1] = b'\n';
+    unsafe { crate::output::write(&record); }
+}
+
+// ------------------------=
 // FUNC: write
 // DESC: Adds the same monotonic nanosecond clock to each voice lifecycle record without allocation or runtime locks.
 // ------------------=

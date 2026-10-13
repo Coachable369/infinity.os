@@ -6,7 +6,7 @@ pub struct NoiseFloor {
     samples: usize,
     frames: usize,
     energy: u64,
-    minimum: u64,
+    energies: [u32; FRAMES],
     threshold: u16,
 }
 impl NoiseFloor {
@@ -15,7 +15,7 @@ impl NoiseFloor {
     // DESC: Starts a half-second 16-kHz calibration with the established minimum speech threshold.
     // ------------------=
     pub const fn new() -> Self {
-        Self { samples: 0, frames: 0, energy: 0, minimum: u64::MAX, threshold: 300 }
+        Self { samples: 0, frames: 0, energy: 0, energies: [0; FRAMES], threshold: 300 }
     }
     // ------------------------=
     // FUNC: ready
@@ -29,7 +29,7 @@ impl NoiseFloor {
     pub const fn threshold(&self) -> u16 { self.threshold }
     // ------------------------=
     // FUNC: push
-    // DESC: Measures quietest complete frames so isolated clicks cannot inflate the calibrated threshold.
+    // DESC: Uses median frame energy so startup zeros and isolated clicks cannot dominate the ambient baseline.
     // ------------------=
     pub fn push(&mut self, pcm: &[i16]) -> usize {
         let mut consumed = 0;
@@ -39,16 +39,18 @@ impl NoiseFloor {
             self.samples += 1;
             self.energy += (i64::from(sample) * i64::from(sample)) as u64;
             if self.samples == FRAME {
-                self.minimum = self.minimum.min(self.energy / FRAME as u64);
+                self.energies[self.frames] = (self.energy / FRAME as u64) as u32;
                 self.samples = 0;
                 self.energy = 0;
                 self.frames += 1;
                 if self.ready() {
+                    self.energies.sort_unstable();
+                    let baseline = u64::from(self.energies[FRAMES / 2]);
                     let mut low = 0u64;
                     let mut high = 32769u64;
                     while high - low > 1 {
                         let middle = (low + high) / 2;
-                        if middle * middle <= self.minimum { low = middle; } else { high = middle; }
+                        if middle * middle <= baseline { low = middle; } else { high = middle; }
                     }
                     self.threshold = (low * 2).clamp(300, 3000) as u16;
                 }
@@ -77,12 +79,29 @@ mod tests {
             let mut chunked = NoiseFloor::new();
             for _ in 0..8000 { chunked.push(&[ambient]); }
             assert_eq!(chunked.threshold(), expected);
-            assert!(core::mem::size_of::<NoiseFloor>() <= 48);
+            assert!(core::mem::size_of::<NoiseFloor>() <= 144);
         }
         let mut floor = NoiseFloor::new();
         floor.push(&[0; 7999]);
         assert!(!floor.ready());
         assert_eq!(floor.push(&[0; 100]), 1);
         assert!(floor.ready());
+    }
+
+    // ------------------------=
+    // FUNC: startup_zeros_and_clicks_do_not_override_ambient
+    // DESC: Checks a minority of cold zero frames and clipped impulses at every chunk boundary against sustained ambient sound.
+    // ------------------=
+    #[test]
+    fn startup_zeros_and_clicks_do_not_override_ambient() {
+        let mut pcm = std::vec![0; FRAME * 5];
+        pcm.extend_from_slice(&[500; FRAME * 17]);
+        pcm.extend_from_slice(&[32767; FRAME * 3]);
+        for size in [1, 17, 320, 701, 4800, 8000] {
+            let mut floor = NoiseFloor::new();
+            for chunk in pcm.chunks(size) { floor.push(chunk); }
+            assert!(floor.ready());
+            assert_eq!(floor.threshold(), 1000);
+        }
     }
 }
