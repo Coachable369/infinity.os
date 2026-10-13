@@ -78,7 +78,8 @@ and installed artifacts. It does not substitute for installed execution.
 ### Bounded compiler preparation — 2026-10-12 follow-up
 
 Compiler preparation now clears/copies, maps, applies RELRO, and cleans the
-instruction cache in at most 64 KiB chunks per desktop poll. The intermediate
+instruction cache in 64 KiB chunks. Each desktop visit batches at most 64 chunks,
+checking a 4 ms budget between chunks; uncalibrated targets use one chunk. The intermediate
 address space cannot be executed before initialization finishes. Cancellation,
 expired deadlines and lost authority stop preparation and reclaim its frames.
 Small application loading retains its existing path.
@@ -99,7 +100,33 @@ that mode is marked non-canonical and cannot establish fresh-install parity.
 `--compiler-only` checks compilation/publication/launch without claiming model
 generation acceptance.
 
-### Installed verification status — 2026-10-12
+The subsequent focused ARM installed test passed compilation, rejection,
+publication and File Navigator execution (actual user-mode exit 54). Evidence:
+`builds/validation/native-apps/aarch64-installed/bounded-compiler-evidence.json`,
+manifest `builds/manifests/20261013T010705194505Z-26533.json`.
+Under TCG, valid compilation/linking took 42.158 seconds and observed pointer
+response was 0.425 seconds, versus the earlier 17.595-second pointer stall.
+Malformed source took 24.418 seconds with 1.247-second pointer response and no
+replacement executable. These are individual diagnostic measurements, not
+statistical performance benchmarks or accelerated-hardware timings.
+
+The real accelerated generation check revealed a separate model framing failure:
+it produced raw C instead of the reviewed action envelope. The parser rejected
+it without changing the document. The revised prompt provides an exact envelope
+example and explicitly limits generated library calls to the native SDK. Its
+installed acceptance must be reported separately from the passing compiler case.
+
+Final follow-up result: the revised installed model produced `Action::Replace`
+(12), not the requested `Action::ReplaceCompile` (14). The test rejected this
+before Apply; it did not silently promote the action or claim compilation.
+Failure manifest: `builds/manifests/20261013T013411815540Z-27385.json`.
+Six unsuccessful correction/diagnostic runs in this resumed pass reached the
+repository limit. No further speculative correction was made. Remaining gates:
+reliable real-model ReplaceCompile selection, its installed compile/launch path,
+x86 installed end-to-end proof, canonical ARM fresh-install proof and a new full
+release/ISO set. Existing ISOs remain the prior release, not this follow-up.
+
+### Earlier installed verification status — before this follow-up
 
 Not accepted end-to-end. Six unsuccessful installed verification/correction
 attempts have reached this pass's repository limit; no speculative kernel fix

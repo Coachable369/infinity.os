@@ -70,17 +70,32 @@ class NativeGuest(desktop.Guest):
 
 # ------------------------=
 # FUNC: read
-# DESC: Reads exported typed state from a stopped guest without modifying memory or invoking privileged test hooks.
+# DESC: Reads exported typed state without stopping inference workers or modifying guest memory.
 # ------------------=
 def read(guest, symbol, count):
     elf = guest.work.parent / "artifacts/installed-kernel.elf"
     address, size = base.symbol(elf, symbol)
     assert size == count * 8
-    guest.qmp("stop")
-    try:
-        return struct.unpack(f"<{count}Q", guest.memory(address, size))
-    finally:
-        guest.qmp("cont")
+    for _ in range(20):
+        state = struct.unpack(f"<{count}Q", guest.memory(address, size))
+        # App publication uses a monotonic counter, while the feature/build
+        # snapshots publish matching even sequence words at both ends.
+        if count == 8 or state[2] == state[-1] and state[2] % 2 == 0:
+            return state
+        time.sleep(.01)
+    raise AssertionError("Diagnostic snapshot remained in flight")
+
+# ------------------------=
+# FUNC: features
+# DESC: Reads the seqlocked app snapshot without pausing SMP inference workers under HVF.
+# ------------------=
+def features(guest):
+    state = read(guest, "INFINITY_APP_FEATURE_SNAPSHOT", 32)
+    assert state[:2] == (0x494e464150505331, 1)
+    assert state[3:7] == (0x1ff, 16384, 8, 9)
+    return state
+
+ui.features = features
 
 # ------------------------=
 # FUNC: wait_build
@@ -157,9 +172,26 @@ def generate_program(guest):
     ui.text(guest, "Write and compile a simple C program with int main(void) that returns 54. Replace the entire document.")
     before = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
     started = time.monotonic()
+    next_progress = started + 20
+    prior_length = None
+    captures = 0
     guest.key("ret")
     while time.monotonic() - started < 600:
         state = ui.features(guest)
+        if state[19] != prior_length and captures < 64:
+            prior_length = state[19]
+            guest.screenshot(f"native-editor-model-{captures:02d}")
+            captures += 1
+        if time.monotonic() >= next_progress:
+            guest.screenshot("native-editor-generation-progress")
+            print(json.dumps({"generation_seconds": round(time.monotonic()-started, 2),
+                              "owner": state[12], "pending_action": state[14],
+                              "input_bytes": state[18], "response_bytes": state[19]}), flush=True)
+            # Exercise normal pointer input while waiting, keeping the active
+            # test session alive without changing authentication policy.
+            guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})
+            next_progress = time.monotonic() + 20
         if state[14]:
             assert state[14] == 14, ("Expected reviewed ReplaceCompile action", state[14])
             guest.screenshot("native-editor-generated-review")
@@ -304,7 +336,11 @@ def main():
         except OSError:
             if guest.process is not None and guest.process.poll() is None:
                 guest.process.terminate()
-                guest.process.wait(timeout=20)
+                try:
+                    guest.process.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    guest.process.kill()
+                    guest.process.wait(timeout=20)
         evidence = ROOT / "builds/validation/native-apps" / (args.arch + "-installed")
         evidence.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(work / "evidence.json", evidence / "evidence.json")
