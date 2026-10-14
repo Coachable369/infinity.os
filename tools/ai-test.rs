@@ -14,6 +14,9 @@ use runtime::ai::model::asset::model_object_valid;
 use runtime::ai::{
     agent::*, broker::*, chat::*, intent::*, model::*, provider::*, types::*, voice::*, AiRuntime,
 };
+use runtime::ai::kit::{AuditOutcome, CapabilityDirectory, CapabilityFamily, ExecutionBroker,
+    ExecutionError, ExecutionRequest, InferenceMode, IntentRouter, PolicyContext, PolicyDenial,
+    RequestApi, RequestEnvelope, RequestOrigin, RequestRoute};
 use runtime::capability::*;
 use runtime::event::{EventFilter, OverflowPolicy};
 use runtime::execution::SecurityIdentity;
@@ -790,6 +793,7 @@ fn desktop_chat() {
 // ------------------=
 fn main() {
     instruction_mapping_contract();
+    aikit_contract();
     control_contract();
     if std::env::args().any(|arg| arg == "--app-native" || arg == "--control-native") {
         app_native();
@@ -801,6 +805,49 @@ fn main() {
     services_and_events();
     desktop_chat();
     println!("PASS Milestone 6 native AI host acceptance");
+}
+
+// ------------------------=
+// FUNC: aikit_contract
+// DESC: Exercises typed AIKit discovery, routing, policy, exact-once execution, and bounded structured audit behavior.
+// ------------------=
+fn aikit_contract() {
+    use runtime::ai::{control::Command, mapping};
+    assert_eq!(CapabilityDirectory::count(), mapping::CAPABILITY_TARGETS.len());
+    assert_eq!(CapabilityDirectory::descriptor(0).unwrap().family, CapabilityFamily::Open);
+    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Context);
+    assert!(CapabilityDirectory::descriptor(CapabilityDirectory::count()).is_none());
+    assert!(CapabilityDirectory::contains(mapping::CAPABILITY_TARGETS[0]));
+
+    let mut configured = mapping::ConfiguredMap::new();
+    let direct = RequestEnvelope { input: b"show my files", owner: [7; 16], origin: RequestOrigin::DesktopChat, correlation_id: 41 };
+    assert_eq!(IntentRouter::route(&mut configured, &direct), RequestRoute::Control(Command::FileNavigator));
+    let conversational = RequestEnvelope { input: b"How are you today?", correlation_id: 42, ..direct };
+    assert_eq!(IntentRouter::route(&mut configured, &conversational), RequestRoute::Inference(InferenceMode::Conversation));
+    let tool_eligible = RequestEnvelope { input: b"open something useful", correlation_id: 43, ..direct };
+    assert_eq!(IntentRouter::route(&mut configured, &tool_eligible), RequestRoute::Inference(InferenceMode::DesktopTools));
+
+    let mut requests = RequestApi::new();
+    let accepted = requests.accept(b"show my files", direct.owner, direct.origin);
+    assert_eq!(accepted.correlation_id, 1);
+    assert_eq!(requests.accept(b"show my files", direct.owner, direct.origin).correlation_id, 2);
+    let mut execution = ExecutionBroker::new();
+    let request = ExecutionRequest { command: Command::FileNavigator, owner: direct.owner,
+        origin: direct.origin, correlation_id: accepted.correlation_id };
+    assert!(execution.stage(request).is_ok());
+    assert_eq!(execution.stage(request), Err(ExecutionError::Busy));
+    let denied = PolicyContext { requester: [8; 16], owner: direct.owner, chat_enabled: true, desktop_allowed: true };
+    assert_eq!(execution.take(denied), Err(PolicyDenial::OwnerChanged));
+    assert!(!execution.pending());
+    assert_eq!(execution.audit(execution.audit_count() - 1).unwrap().outcome, AuditOutcome::Denied(PolicyDenial::OwnerChanged));
+
+    let request = ExecutionRequest { correlation_id: requests.accept(b"show my files", direct.owner, direct.origin).correlation_id, ..request };
+    assert!(execution.stage(request).is_ok());
+    let allowed = PolicyContext { requester: direct.owner, owner: direct.owner, chat_enabled: true, desktop_allowed: true };
+    assert_eq!(execution.take(allowed), Ok(Some(request)));
+    assert_eq!(execution.take(allowed), Ok(None));
+    assert!(execution.finish(request.command, true).is_ok());
+    assert_eq!(execution.audit(execution.audit_count() - 1).unwrap().outcome, AuditOutcome::Completed);
 }
 
 // ------------------------=
@@ -1040,6 +1087,10 @@ fn control_contract() {
     assert_eq!(pending.take(), Some(Command::TextEditor));
     assert_eq!(chat.generation_state, GenerationState::Running);
     let mut ai = AiRuntime::new();
+    ai.bind_chat_owner([9; 16]);
+    for byte in b"open browser" { assert!(ai.chat.push_input(*byte)); }
+    assert!(ai.submit_chat());
+    assert_eq!(ai.take_control([9; 16], true), Some(Command::Browser));
     ai.finish_control(Command::Browser, false);
     assert_eq!(ai.chat.generation_state, GenerationState::Failed);
     for request in [b"Do not open the text editor.".as_slice(), b"Don't close browser",

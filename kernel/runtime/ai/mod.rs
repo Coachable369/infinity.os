@@ -4,6 +4,7 @@ pub mod chat;
 pub mod control;
 pub mod generation;
 pub mod intent;
+pub mod kit;
 pub mod mapping;
 pub mod memory;
 pub mod model;
@@ -26,17 +27,18 @@ use broker::{ContextBroker, CONTEXT_SYSTEM_STATE};
 use chat::ChatRuntime;
 use generation::{CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID};
 use intent::{ConsequencePolicy, IntentPlan};
+use kit::{ExecutionBroker, ExecutionRequest, InferenceMode, IntentRouter, PolicyContext, RequestApi, RequestOrigin, RequestRoute};
 use model::{
     conversation_model_descriptor, local_model_descriptor, LocalCpuBackend, ModelRegistry,
     LOCAL_INTENT_MODEL_ID,
 };
-use provider::{local_provider, ProviderRouter};
+use provider::local_provider;
 use types::*;
 use voice::VoiceService;
 
 pub struct AiRuntime {
     pub models: ModelRegistry,
-    pub providers: ProviderRouter,
+    pub providers: kit::ProviderRegistry,
     pub voice: VoiceService,
     pub agents: AgentManager,
     pub chat: ChatRuntime,
@@ -47,7 +49,8 @@ pub struct AiRuntime {
     app_owner: Option<usize>,
     app_saved: Option<qwen::service::Conversation>,
     chat_owner: [u8; 16],
-    pending_control: Option<control::Command>,
+    requests: RequestApi,
+    execution: ExecutionBroker,
     instruction_mapping: mapping::ConfiguredMap,
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
@@ -76,7 +79,7 @@ impl AiRuntime {
     // ------------------=
     pub fn submit_app_turn(&mut self, id: usize, prompt: &[u8]) -> Result<(), &'static [u8]> {
         if !self.chat.enabled() { return Err(b"AI is disabled in Settings."); }
-        if self.app_owner.is_some() || self.pending_control.is_some() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
+        if self.app_owner.is_some() || self.execution.busy() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let selected = self.chat.selected_model();
@@ -238,7 +241,7 @@ impl AiRuntime {
     pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
         if self.chat_owner != owner {
             self.cancel_app_turn();
-            self.pending_control = None;
+            self.execution.cancel();
             if let Some(service) = self.qwen.as_mut() {
                 service.clear_conversation();
             }
@@ -257,7 +260,7 @@ impl AiRuntime {
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
         if self.app_owner.is_some() { return false; }
-        if self.pending_control.take().is_some() {
+        if self.execution.cancel() {
             self.chat.generation_state = chat::GenerationState::Cancelled;
             return true;
         }
@@ -297,16 +300,35 @@ impl AiRuntime {
     // DESC: Routes selected native models to bounded local inference; legacy helpers retain their behavior.
     // ------------------=
     pub fn submit_chat(&mut self) -> bool {
-        if self.app_owner.is_some() || self.pending_control.is_some() || !self.chat.enabled()
+        self.submit_chat_from(RequestOrigin::DesktopChat)
+    }
+
+    // ------------------------=
+    // FUNC: submit_voice_chat
+    // DESC: Routes an authenticated voice transcript through the same AIKit ingress while preserving its origin.
+    // ------------------=
+    pub fn submit_voice_chat(&mut self) -> bool {
+        self.submit_chat_from(RequestOrigin::Voice)
+    }
+
+    // ------------------------=
+    // FUNC: submit_chat_from
+    // DESC: Applies shared routing and execution boundaries to a typed desktop or voice chat request.
+    // ------------------=
+    fn submit_chat_from(&mut self, origin: RequestOrigin) -> bool {
+        if self.app_owner.is_some() || self.execution.busy() || !self.chat.enabled()
             || self.qwen.as_ref().is_some_and(|s| s.busy()) { return false; }
-        self.instruction_mapping.refresh();
         let input = self.chat.input();
-        let mapped = self.instruction_mapping.resolve(input);
-        if let Some(command) = mapped.or_else(|| control::Command::explicit(input)) {
-            self.chat.begin_native_turn();
-            self.chat.generation_state = chat::GenerationState::Running;
-            self.pending_control = Some(command);
-            return true;
+        let request = self.requests.accept(input, self.chat_owner, origin);
+        let route = IntentRouter::route(&mut self.instruction_mapping, &request);
+        if let RequestRoute::Control(command) = route {
+            let staged = self.execution.stage(ExecutionRequest { command, owner: request.owner, origin: request.origin,
+                correlation_id: request.correlation_id }).is_ok();
+            if staged {
+                self.chat.begin_native_turn();
+                self.chat.generation_state = chat::GenerationState::Running;
+            }
+            return staged;
         }
         if !matches!(self.chat.selected_model(), chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
             return self.chat.submit_input();
@@ -325,8 +347,7 @@ impl AiRuntime {
         }
         let submitted_ns = crate::ui::performance::monotonic_ns();
         let input = self.chat.input();
-        let plain = control::veto_action(input);
-        let submitted = if plain { service.submit(input) }
+        let submitted = if route == RequestRoute::Inference(InferenceMode::Conversation) { service.submit(input) }
             else { service.submit_desktop(input, control::INSTRUCTIONS) };
         if let Err(error) = submitted {
             self.chat.generation_state = if error == qwen::gguf::Error::Overflow {
@@ -349,29 +370,53 @@ impl AiRuntime {
     // DESC: Consumes a command exactly once after rechecking the currently authenticated UI owner and permission.
     // ------------------=
     pub fn take_control(&mut self, owner: [u8; 16], allowed: bool) -> Option<control::Command> {
-        let command = self.pending_control.take()?;
-        if owner != self.chat_owner || !allowed || !self.chat.enabled() {
-            self.chat.generation_state = chat::GenerationState::Cancelled;
-            self.chat.update_native_response(b"OS action cancelled: the session or AI permission changed.");
-            return None;
+        let context = PolicyContext { requester: owner, owner: self.chat_owner, chat_enabled: self.chat.enabled(), desktop_allowed: allowed };
+        match self.execution.take(context) {
+            Ok(Some(request)) => Some(request.command),
+            Ok(None) => None,
+            Err(_) => {
+                self.chat.generation_state = chat::GenerationState::Cancelled;
+                self.chat.update_native_response(b"OS action cancelled: the session or AI permission changed.");
+                None
+            }
         }
-        Some(command)
     }
 
     // ------------------------=
     // FUNC: control_pending
     // DESC: Allows presentation to observe dispatch or denial even when no model tokens are being generated.
     // ------------------=
-    pub fn control_pending(&self) -> bool { self.pending_control.is_some() }
+    pub fn control_pending(&self) -> bool { self.execution.pending() }
 
     // ------------------------=
     // FUNC: finish_control
     // DESC: Publishes the dispatcher's actual outcome instead of treating model text as execution evidence.
     // ------------------=
     pub fn finish_control(&mut self, command: control::Command, success: bool) {
+        if self.execution.finish(command, success).is_err() { return; }
         self.chat.update_native_response(command.result(success));
         self.chat.generation_state = if success { chat::GenerationState::Complete } else { chat::GenerationState::Failed };
     }
+
+    // ------------------------=
+    // FUNC: defer_control
+    // DESC: Audits a native save or confirmation handoff without falsely reporting the command as completed.
+    // ------------------=
+    pub fn defer_control(&mut self, command: control::Command) {
+        let _ = self.execution.defer(command);
+    }
+
+    // ------------------------=
+    // FUNC: control_audit_count
+    // DESC: Exposes the retained structured execution audit length for diagnostics and behavioral verification.
+    // ------------------=
+    pub const fn control_audit_count(&self) -> usize { self.execution.audit_count() }
+
+    // ------------------------=
+    // FUNC: control_audit
+    // DESC: Returns one chronological structured execution audit record without granting mutation access.
+    // ------------------=
+    pub fn control_audit(&self, index: usize) -> Option<kit::AuditRecord> { self.execution.audit(index) }
     // ------------------------=
     // FUNC: poll_qwen
     // DESC: Advances local inference outside rendering and publishes model-produced text only.
@@ -418,8 +463,15 @@ impl AiRuntime {
             self.qwen_metrics.slice(slice_start, crate::ui::performance::monotonic_ns(), matches!(result, Ok(true)));
             match result {
                 Ok(true) => {
-                    let published = control::publish(&mut self.chat, &mut self.pending_control,
+                    let mut command = None;
+                    let published = control::publish(&mut self.chat, &mut command,
                         service.output(), !service.busy(), service.completed());
+                    if let Some(command) = command {
+                        let envelope = self.requests.accept(&[], self.chat_owner, RequestOrigin::Model);
+                        let request = ExecutionRequest { command, owner: envelope.owner, origin: envelope.origin,
+                            correlation_id: envelope.correlation_id };
+                        let _ = self.execution.stage(request);
+                    }
                     self.qwen_tokens += 1;
                     #[cfg(target_os = "none")]
                     if let Some(now) = crate::ui::performance::monotonic_ns() {
@@ -441,8 +493,14 @@ impl AiRuntime {
             }
             if !service.busy() {
                 if self.chat.generation_state == chat::GenerationState::Running {
-                    control::publish(&mut self.chat, &mut self.pending_control,
-                        service.output(), true, service.completed());
+                    let mut command = None;
+                    control::publish(&mut self.chat, &mut command, service.output(), true, service.completed());
+                    if let Some(command) = command {
+                        let envelope = self.requests.accept(&[], self.chat_owner, RequestOrigin::Model);
+                        let request = ExecutionRequest { command, owner: envelope.owner, origin: envelope.origin,
+                            correlation_id: envelope.correlation_id };
+                        let _ = self.execution.stage(request);
+                    }
                     return true;
                 }
                 break;
@@ -457,7 +515,7 @@ impl AiRuntime {
     pub const fn new() -> Self {
         Self {
             models: ModelRegistry::new(),
-            providers: ProviderRouter::new(),
+            providers: kit::ProviderRegistry::new(),
             voice: VoiceService::new(),
             agents: AgentManager::new(),
             chat: ChatRuntime::new(),
@@ -468,7 +526,8 @@ impl AiRuntime {
             app_owner: None,
             app_saved: None,
             chat_owner: [0; 16],
-            pending_control: None,
+            requests: RequestApi::new(),
+            execution: ExecutionBroker::new(),
             instruction_mapping: mapping::ConfiguredMap::new(),
             qwen_tokens: 0,
             qwen_decode_ns: 0,

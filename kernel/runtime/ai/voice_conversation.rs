@@ -298,7 +298,7 @@ unsafe fn submit_pending_transcript() -> bool {
         {
             return false;
         }
-        if !ai.submit_chat() { return false; }
+        if !ai.submit_voice_chat() { return false; }
         CHAT_TURN = ai.chat.turn_id();
         REPLY_AT = 0;
         REPLY_LENGTH = 0;

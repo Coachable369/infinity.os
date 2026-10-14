@@ -13549,7 +13549,10 @@ pub fn poll_native_ai() {
             let success = runtime.dispatch_ai_control(command);
             crate::runtime::ai::with_ai_runtime(|ai| {
                 if let Some(success) = success { ai.finish_control(command, success); }
-                else { ai.chat.publish_native_completion(b"Please choose Save, Discard, or Cancel in the editor. The app is still open.", true); }
+                else {
+                    ai.defer_control(command);
+                    ai.chat.publish_native_completion(b"Please choose Save, Discard, or Cancel in the editor. The app is still open.", true);
+                }
             });
             ai_changed = true;
         }
