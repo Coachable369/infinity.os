@@ -139,7 +139,7 @@ impl ConsoleRuntime {
     // FUNC: assistant_revision
     // DESC: Binds document proposals to the current object identity, content and selection.
     // ------------------=
-    fn assistant_revision(&self) -> u64 {
+    pub(super) fn assistant_revision(&self) -> u64 {
         assistant::fingerprint(
             self.editor_document.bytes(),
             self.editor_document.cursor(),
@@ -379,7 +379,7 @@ impl ConsoleRuntime {
     // FUNC: apply_window_assistant
     // DESC: Executes only the focused window's consumed, explicitly approved capability through normal application workflows.
     // ------------------=
-    fn apply_window_assistant(&mut self, id: usize) -> bool {
+    pub(super) fn apply_window_assistant(&mut self, id: usize) -> bool {
         if !self.ai_chat_allowed() {
             let mut panel = assistant::read(id);
             panel.pending = Action::None;
