@@ -1,7 +1,8 @@
 {
   "schema": "infinityos.ai-instruction-map",
   "version": 1,
-  "description": "Editable aliases for implemented InfinityOS AI controls. Targets are typed OS protocols; unknown targets are rejected.",
+  "description": "Complete editable directory of implemented InfinityOS AI controls, including controls not used by the current default UI flow. Targets are typed OS protocols; missing or unknown capabilities are rejected.",
+  "directory": {"status":"complete","targetCount":100,"includes":["operating-system controls","application controls","launcher-only destinations"]},
   "actions": [
     {"id":"os.app.open.textEditor","scope":"os","target":"OS_OPEN:text_editor","aliases":["open text editor","launch text editor","start code editor"]},
     {"id":"os.app.open.fileNavigator","scope":"os","target":"OS_OPEN:file_navigator","aliases":["open file navigator","open file manager","show my files"]},
@@ -11,6 +12,10 @@
     {"id":"os.app.open.taskManager","scope":"os","target":"OS_OPEN:task_manager","aliases":["open task manager","show running tasks","launch task manager"]},
     {"id":"os.app.open.launcher","scope":"os","target":"OS_OPEN:launcher","aliases":["open app launcher","show applications","open app tray"]},
     {"id":"os.ai.editInstructionMappings","scope":"os","target":"OS_OPEN:ai_instruction_mappings","aliases":["edit ai instructions","open ai instruction mappings","configure voice commands"]},
+    {"id":"os.launch.documents","scope":"os","target":"OS_LAUNCH:documents","aliases":["open documents","show my documents"]},
+    {"id":"os.launch.projects","scope":"os","target":"OS_LAUNCH:projects","aliases":["open projects","show my projects"]},
+    {"id":"os.launch.media","scope":"os","target":"OS_LAUNCH:media","aliases":["open media","show my media"]},
+    {"id":"os.launch.recycleBin","scope":"os","target":"OS_LAUNCH:recycle_bin","aliases":["open recycle bin","show recycle bin"]},
 
     {"id":"os.window.focus.textEditor","scope":"os","target":"OS_FOCUS:text_editor","aliases":["focus text editor","bring text editor to front"]},
     {"id":"os.window.focus.fileNavigator","scope":"os","target":"OS_FOCUS:file_navigator","aliases":["focus file navigator","bring file manager to front"]},
@@ -18,6 +23,7 @@
     {"id":"os.window.focus.settings","scope":"os","target":"OS_FOCUS:settings","aliases":["focus settings","bring settings to front"]},
     {"id":"os.window.focus.terminal","scope":"os","target":"OS_FOCUS:terminal","aliases":["focus terminal","bring command window to front"]},
     {"id":"os.window.focus.taskManager","scope":"os","target":"OS_FOCUS:task_manager","aliases":["focus task manager","bring task manager to front"]},
+    {"id":"os.window.focus.launcher","scope":"os","target":"OS_FOCUS:launcher","aliases":["focus app launcher","bring app launcher to front"]},
     {"id":"os.window.close.active","scope":"os","target":"OS_CLOSE:active","aliases":["close current window","close active app","dismiss this window"]},
     {"id":"os.window.close.textEditor","scope":"os","target":"OS_CLOSE:text_editor","aliases":["close text editor","dismiss text editor"]},
     {"id":"os.window.close.fileNavigator","scope":"os","target":"OS_CLOSE:file_navigator","aliases":["close file navigator","close file manager"]},
@@ -25,6 +31,7 @@
     {"id":"os.window.close.settings","scope":"os","target":"OS_CLOSE:settings","aliases":["close settings","dismiss settings"]},
     {"id":"os.window.close.terminal","scope":"os","target":"OS_CLOSE:terminal","aliases":["close terminal","close command window"]},
     {"id":"os.window.close.taskManager","scope":"os","target":"OS_CLOSE:task_manager","aliases":["close task manager","dismiss task manager"]},
+    {"id":"os.window.close.launcher","scope":"os","target":"OS_CLOSE:launcher","aliases":["close app launcher","dismiss app launcher"]},
 
     {"id":"os.settings.general","scope":"os","target":"OS_SETTINGS:general","aliases":["open general settings","show general settings"]},
     {"id":"os.settings.themes","scope":"os","target":"OS_SETTINGS:themes","aliases":["open themes","open appearance settings","show themes and skins"]},
@@ -87,6 +94,7 @@
     {"id":"app.editor.redo","scope":"application","target":"OS_CONTEXT:redo","aliases":["redo","redo edit"]},
     {"id":"app.editor.selectAll","scope":"application","target":"OS_CONTEXT:select all","aliases":["select all","select entire document"]},
     {"id":"app.editor.save","scope":"application","target":"OS_CONTEXT:save file","aliases":["save","save file","save document"]},
+    {"id":"app.editor.clear","scope":"application","target":"OS_CONTEXT:clear text","aliases":["clear text","clear document"]},
     {"id":"app.editor.saveCompile","scope":"application","target":"OS_CONTEXT:save and compile my code","aliases":["save and compile","save then compile","save and build"]},
     {"id":"app.editor.compile","scope":"application","target":"OS_CONTEXT:compile my code","aliases":["compile","compile program","build this code"]},
     {"id":"app.terminal.draft","scope":"application","target":"OS_CONTEXT:type {argument}","aliases":["type command {argument}","draft command {argument}"]},

@@ -810,14 +810,23 @@ fn main() {
 fn instruction_mapping_contract() {
     use runtime::ai::{control::{Command,ContextRequest},mapping};
     assert!(mapping::validate(mapping::DEFAULT).is_ok());
+    assert_eq!(mapping::CAPABILITY_TARGETS.len(),100);
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"show my files").unwrap(),Some(Command::FileNavigator));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"edit ai instructions").unwrap(),Some(Command::AiInstructionMapping));
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"open documents").unwrap(),Some(Command::LaunchEntry(1)));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"  SHOW   MY   FILES! ").unwrap(),Some(Command::FileNavigator));
     let expected=ContextRequest::parse(b"search google for Infinity OS").unwrap();
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"Google Infinity OS").unwrap(),Some(Command::Context(expected)));
-    let custom=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"os.app.open.editor","scope":"os","target":"OS_OPEN:text_editor","aliases":["paint code","code canvas"]}]}"#;
-    assert!(mapping::validate(custom).is_ok());
-    assert_eq!(mapping::resolve(custom,b"code canvas").unwrap(),Some(Command::TextEditor));
+    let clear=ContextRequest::parse(b"clear text").unwrap();
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"clear document").unwrap(),Some(Command::Context(clear)));
+    let mut custom=mapping::DEFAULT.to_vec();
+    let alias=custom.windows(b"show my files".len()).position(|bytes|bytes==b"show my files").unwrap();
+    custom[alias..alias+b"paint my code".len()].copy_from_slice(b"paint my code");
+    assert!(mapping::validate(&custom).is_ok());
+    assert_eq!(mapping::resolve(&custom,b"paint my code").unwrap(),Some(Command::FileNavigator));
+    assert_eq!(mapping::resolve(&custom,b"show my files").unwrap(),None);
+    let incomplete=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"os.app.open.editor","scope":"os","target":"OS_OPEN:text_editor","aliases":["paint code"]}]}"#;
+    assert_eq!(mapping::validate(incomplete),Err(mapping::Error::MissingCapability));
     let unsafe_target=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"bad","scope":"os","target":"SYSTEM_CALL:delete","aliases":["erase everything"]}]}"#;
     assert_eq!(mapping::validate(unsafe_target),Err(mapping::Error::InvalidTarget));
     let duplicate=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"one","scope":"os","target":"OS_OPEN:settings","aliases":["same alias"]},{"id":"two","scope":"os","target":"OS_OPEN:browser","aliases":["SAME ALIAS"]}]}"#;

@@ -25,7 +25,7 @@ impl ContextRequest {
         let input=if input.get(..7).is_some_and(|v|v.eq_ignore_ascii_case(b"please ")) {&input[7..]}else{input};
         let exact=[b"maximize".as_slice(),b"maximize window",b"restore",b"restore window",b"minimize",b"minimize window",
             b"refresh",b"back",b"go back",b"forward",b"go forward",b"new tab",b"close tab",b"zoom in",b"zoom out",
-            b"list view",b"grid view",b"undo",b"redo",b"select all",b"save",b"save file",b"save document",
+            b"list view",b"grid view",b"undo",b"redo",b"select all",b"save",b"save file",b"save document",b"clear",b"clear text",
             b"next task",b"previous task",b"next theme",b"next icon set",b"next model",
             b"next item",b"previous item",b"open selected",b"add idea",b"new category"];
         let prefixes=[b"search google for ".as_slice(),b"google ",b"search for ",b"find ",b"find file ",b"insert ",b"open folder ",b"type ",b"search apps ",b"go to ",b"open url ",b"navigate to "];
@@ -78,6 +78,9 @@ impl Command {
         }
         if let Some(surface)=bytes.strip_prefix(b"OS_SURFACE:") {return match surface {
             b"spatial"=>Some(Self::Spatial),b"holographic"=>Some(Self::Holographic),b"world_shift"=>Some(Self::WorldShift),_=>None};}
+        if let Some(entry)=bytes.strip_prefix(b"OS_LAUNCH:") {return match entry {
+            b"documents"=>Some(Self::LaunchEntry(1)),b"projects"=>Some(Self::LaunchEntry(2)),
+            b"media"=>Some(Self::LaunchEntry(3)),b"recycle_bin"=>Some(Self::LaunchEntry(4)),_=>None};}
         if let Some(menu)=bytes.strip_prefix(b"OS_MENU:") {return [
             (b"audio".as_slice(),8),(b"network",9),(b"bluetooth",10),(b"power",11),(b"window",12),
             (b"search",13),(b"account",14),(b"calendar",15),(b"help",5)]
@@ -202,7 +205,7 @@ impl Command {
 pub fn protocol_output(bytes: &[u8]) -> bool {
     let bytes = bytes.trim_ascii();
     [b"OS_OPEN:".as_slice(), b"OS_FOCUS:", b"OS_CLOSE:", b"OS_CONTEXT:", b"OS_SETTINGS:",
-        b"OS_SURFACE:",b"OS_MENU:",b"OS_SHELL:"].iter()
+        b"OS_SURFACE:",b"OS_LAUNCH:",b"OS_MENU:",b"OS_SHELL:"].iter()
         .any(|prefix| prefix.starts_with(bytes) || bytes.starts_with(prefix))
 }
 

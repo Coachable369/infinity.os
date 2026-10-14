@@ -8,6 +8,35 @@ pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappin
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 256;
+pub const CAPABILITY_TARGETS: [&[u8]; 100] = [
+    b"OS_OPEN:text_editor", b"OS_OPEN:file_navigator", b"OS_OPEN:browser", b"OS_OPEN:settings",
+    b"OS_OPEN:terminal", b"OS_OPEN:task_manager", b"OS_OPEN:launcher", b"OS_OPEN:ai_instruction_mappings",
+    b"OS_LAUNCH:documents", b"OS_LAUNCH:projects", b"OS_LAUNCH:media", b"OS_LAUNCH:recycle_bin",
+    b"OS_FOCUS:text_editor", b"OS_FOCUS:file_navigator", b"OS_FOCUS:browser", b"OS_FOCUS:settings",
+    b"OS_FOCUS:terminal", b"OS_FOCUS:task_manager", b"OS_FOCUS:launcher", b"OS_CLOSE:active",
+    b"OS_CLOSE:text_editor", b"OS_CLOSE:file_navigator", b"OS_CLOSE:browser", b"OS_CLOSE:settings",
+    b"OS_CLOSE:terminal", b"OS_CLOSE:task_manager", b"OS_CLOSE:launcher", b"OS_SETTINGS:general",
+    b"OS_SETTINGS:themes", b"OS_SETTINGS:accounts", b"OS_SETTINGS:ai_voice", b"OS_SETTINGS:privacy",
+    b"OS_SETTINGS:devices", b"OS_SETTINGS:network", b"OS_SETTINGS:nodes_mesh", b"OS_SETTINGS:storage",
+    b"OS_SETTINGS:about", b"OS_SETTINGS:input", b"OS_SURFACE:spatial", b"OS_SURFACE:holographic",
+    b"OS_SURFACE:world_shift", b"OS_MENU:audio", b"OS_MENU:network", b"OS_MENU:bluetooth",
+    b"OS_MENU:power", b"OS_MENU:window", b"OS_MENU:search", b"OS_MENU:account", b"OS_MENU:calendar",
+    b"OS_MENU:help", b"OS_SHELL:snap_left", b"OS_SHELL:snap_right", b"OS_SHELL:center",
+    b"OS_SHELL:next_window", b"OS_SHELL:grow", b"OS_SHELL:shrink", b"OS_SHELL:focus_lens",
+    b"OS_SHELL:peek", b"OS_SHELL:previous_month", b"OS_SHELL:next_month", b"OS_SHELL:today",
+    b"OS_SHELL:show_overview", b"OS_SHELL:hide_overview", b"OS_CONTEXT:maximize", b"OS_CONTEXT:restore",
+    b"OS_CONTEXT:minimize", b"OS_CONTEXT:search google for {argument}", b"OS_CONTEXT:go to {argument}",
+    b"OS_CONTEXT:back", b"OS_CONTEXT:forward", b"OS_CONTEXT:new tab", b"OS_CONTEXT:close tab",
+    b"OS_CONTEXT:zoom in", b"OS_CONTEXT:zoom out", b"OS_CONTEXT:refresh",
+    b"OS_CONTEXT:find file {argument}", b"OS_CONTEXT:open folder {argument}", b"OS_CONTEXT:list view",
+    b"OS_CONTEXT:grid view", b"OS_CONTEXT:find {argument}", b"OS_CONTEXT:insert {argument}", b"OS_CONTEXT:undo",
+    b"OS_CONTEXT:redo", b"OS_CONTEXT:select all", b"OS_CONTEXT:save file", b"OS_CONTEXT:clear text",
+    b"OS_CONTEXT:save and compile my code", b"OS_CONTEXT:compile my code", b"OS_CONTEXT:type {argument}",
+    b"OS_CONTEXT:next task", b"OS_CONTEXT:previous task", b"OS_CONTEXT:next theme",
+    b"OS_CONTEXT:next icon set", b"OS_CONTEXT:next model", b"OS_CONTEXT:search apps {argument}",
+    b"OS_CONTEXT:next item", b"OS_CONTEXT:previous item", b"OS_CONTEXT:open selected",
+    b"OS_CONTEXT:add idea", b"OS_CONTEXT:new category",
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -20,6 +49,8 @@ pub enum Error {
     InvalidTarget,
     InvalidAlias,
     DuplicateAlias,
+    DuplicateTarget,
+    MissingCapability,
     Capacity,
 }
 
@@ -223,7 +254,7 @@ fn command_for_target(target: &[u8], matched: AliasMatch, input: &[u8]) -> Resul
 // DESC: Validates one action inventory entry and resolves at most one matching alias.
 // ------------------=
 fn parse_action<'a>(cursor: &mut Cursor<'a>, input: Option<&[u8]>, hashes: &mut [u64;MAX_ALIASES],
-    alias_count: &mut usize) -> Result<Option<Command>,Error> {
+    alias_count: &mut usize, covered: &mut [bool;CAPABILITY_TARGETS.len()]) -> Result<Option<Command>,Error> {
     cursor.take(b'{')?;
     let mut id=None;
     let mut scope=None;
@@ -263,6 +294,9 @@ fn parse_action<'a>(cursor: &mut Cursor<'a>, input: Option<&[u8]>, hashes: &mut 
     if !matches!(scope.ok_or(Error::MissingField)?,b"os"|b"application"){return Err(Error::InvalidScope);}
     if aliases==0{return Err(Error::MissingField);}
     let target=target.ok_or(Error::MissingField)?;
+    let target_index=CAPABILITY_TARGETS.iter().position(|candidate|*candidate==target).ok_or(Error::InvalidTarget)?;
+    if covered[target_index] {return Err(Error::DuplicateTarget);}
+    covered[target_index]=true;
     let dynamic=target.ends_with(ARGUMENT);
     if target.contains(&b'{') && !dynamic{return Err(Error::InvalidTarget);}
     let probe=AliasMatch{argument_start:0,argument_end:1,dynamic};
@@ -282,6 +316,7 @@ fn walk(bytes:&[u8],input:Option<&[u8]>)->Result<Option<Command>,Error>{
     let mut cursor=Cursor::new(bytes);cursor.take(b'{')?;
     let mut schema=false;let mut version=false;let mut actions=false;let mut resolved=None;
     let mut hashes=[0u64;MAX_ALIASES];let mut alias_count=0usize;
+    let mut covered=[false;CAPABILITY_TARGETS.len()];
     loop{
         cursor.whitespace();if cursor.bytes.get(cursor.at)==Some(&b'}'){cursor.at+=1;break;}
         let key=cursor.string()?;cursor.take(b':')?;
@@ -290,7 +325,7 @@ fn walk(bytes:&[u8],input:Option<&[u8]>)->Result<Option<Command>,Error>{
             b"version"=>{version=cursor.number()?==1;if !version{return Err(Error::UnsupportedVersion);}},
             b"actions"=>{actions=true;cursor.take(b'[')?;cursor.whitespace();
                 if cursor.bytes.get(cursor.at)==Some(&b']'){cursor.at+=1;}else{loop{
-                    let command=parse_action(&mut cursor,input,&mut hashes,&mut alias_count)?;
+                    let command=parse_action(&mut cursor,input,&mut hashes,&mut alias_count,&mut covered)?;
                     if resolved.is_none(){resolved=command;}
                     cursor.whitespace();match cursor.bytes.get(cursor.at).copied(){Some(b',')=>cursor.at+=1,Some(b']')=>{cursor.at+=1;break;},_=>return Err(Error::InvalidJson)}
                 }}},
@@ -300,6 +335,7 @@ fn walk(bytes:&[u8],input:Option<&[u8]>)->Result<Option<Command>,Error>{
     }
     cursor.whitespace();if cursor.at!=bytes.len(){return Err(Error::InvalidJson);}
     if !schema||!version||!actions||alias_count==0{return Err(Error::MissingField);}
+    if covered.iter().any(|present|!*present){return Err(Error::MissingCapability);}
     Ok(resolved)
 }
 
