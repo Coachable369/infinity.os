@@ -43,6 +43,16 @@ fi
 model_bytes=$(wc -c < "$hermes")
 secondary_bytes=$(wc -c < "$ministral")
 python3 tools/iso-staging.py check build "$((2 * (model_bytes + secondary_bytes) + 3221225472))"
+# The canonical ISO must never inherit an installed kernel accepted only because
+# a timestamp or incomplete dependency list left an older Make product in place.
+# Remove only this architecture's disposable kernel products; durable toolchains,
+# model caches and unrelated architecture outputs remain available.
+rm -f "build/$arch/installed-kernel.o" \
+      "build/$arch/installed-kernel.stamp" \
+      "build/$arch/installed-kernel.elf" \
+      "build/$arch/libinstalled-kernel.a" \
+      "build/$arch/installed-esp.img" \
+      "build/browser-payload/$arch/manifest.rs"
 make build/$arch/$boot build/$arch/installed-kernel.elf build/$arch/installed-esp.img
 CARGO_TARGET_DIR=build/behavior-harness cargo build --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack
 mkdir -p ${payload_build}/installed/EFI/INFINITY/PAYLOAD ${payload_build}/live/EFI/BOOT ${payload_build}/live/EFI/INFINITY/PAYLOAD ${payload_build}/iso
@@ -97,12 +107,18 @@ mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
 python3 tools/iso-staging.py consume "${payload_build}/live" "${payload_build}/iso/efi.img"
 # The ISO's EFI image now owns the live payload. Release this private mktemp
-# duplicate before allocating the final ISO alongside the previous release.
+# duplicate before allocating the final ISO alongside the previous release,
+# retaining only the exact current live kernel needed by the publication gate.
+mv "${payload_build}/live/EFI/INFINITY/KERNEL.ELF" "${payload_build}/current-live-kernel.elf"
 rm -r -- "${payload_build}/live"
 # Publish only after model and installed-kernel parity have passed. Keep a failed
 # image out of the canonical filename used by provisioning.
 python3 tools/iso-staging.py check builds "$((iso_size + 1073741824))"
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "$installer_output.partial" ${payload_build}/iso
+python3 tools/iso-kernel-freshness.py \
+    "$installer_output.partial" \
+    "${payload_build}/current-live-kernel.elf" \
+    "build/$arch/installed-kernel.elf"
 python3 tools/full-bundle-iso-test.py "$installer_output.partial"
 python3 tools/audio-install-parity.py "$installer_output.partial" "$arch"
 mv "$installer_output.partial" "$installer_output"
