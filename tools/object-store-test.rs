@@ -252,6 +252,7 @@ fn main() {
     private_spatial_checkpoint(test_sectors);
     private_browser_favorites(test_sectors);
     private_font_preferences(test_sectors);
+    private_editor_preferences(test_sectors);
     private_browser_settings(test_sectors);
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
@@ -846,6 +847,27 @@ fn private_font_preferences(sectors:usize) {
         drop(store);let mut mounted=ObjectStore::mount(backing,0).unwrap();
         let n=mounted.read_font_preferences(id,&mut bytes).unwrap();
         assert_eq!(font_preferences::Preferences::decode(&bytes[..n]).unwrap(),if fail {old}else{next});
+    }
+}
+
+// ------------------------=
+// FUNC: private_editor_preferences
+// DESC: Exercises editor checkpoint isolation, bounded versions, write rollback and durable remount.
+// ------------------=
+fn private_editor_preferences(sectors:usize) {
+    for fail in [false,true] {
+        let backing=MemoryDisk::new(sectors);let disk=FailingDisk::new(backing.clone());
+        let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x97;16]).unwrap();
+        let old=[b'I',b'E',b'D',1,0,0,1,0];let next=[b'I',b'E',b'D',1,9,3,5,0];
+        let id=store.create_attached(b"@editor-preferences",ObjectType::Metadata,Space::System,&old,b"/system/editor/test-user").unwrap();let mut bytes=[0;8];
+        assert_eq!(store.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));
+        assert_eq!(store.write(id,&next),Err(ObjectError::Unauthorized));
+        assert_eq!(store.remove(id),Err(ObjectError::Unauthorized));
+        assert_eq!(store.copy_attached(id,b"/home/default/leaked-editor"),Err(ObjectError::Unauthorized));
+        for _ in 0..70 {store.replace_state(id,&old).unwrap();}assert_eq!(store.history_count(id),1);
+        if fail {disk.arm(0);}let result=store.replace_state(id,&next);disk.disarm();assert_eq!(result.is_err(),fail);
+        drop(store);let mut mounted=ObjectStore::mount(backing,0).unwrap();
+        assert_eq!(mounted.read_editor_preferences(id,&mut bytes).unwrap(),8);assert_eq!(bytes,if fail{old}else{next});
     }
 }
 

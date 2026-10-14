@@ -252,7 +252,7 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
             .file_name()
             .and_then(OsStr::to_str)
             .expect("font name");
-        let root = if extension == Some("ttf") || name == "InfinityUI-library.bin" {
+        let root = if extension == Some("ttf") || name == "InfinityUI-library.bin" || name == "InfinityEditor-library.bin" {
             container.font_root
         } else if extension == Some("txt") && name.starts_with("OFL-") {
             container.license_root

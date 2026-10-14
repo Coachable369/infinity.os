@@ -665,8 +665,8 @@ fn caret_damage_is_bounded() {
             assert!(rects.len() <= 2);
             assert!(rects
                 .iter()
-                .all(|r| r.width == scale && r.height == 19 * scale));
-            assert!(rects.iter().map(|r| r.width * r.height).sum::<u32>() <= 38 * scale * scale);
+                .all(|r| r.width == scale && r.height == (ui::editor_tools::preferences::current().line() as u32 - 4) * scale));
+            assert!(rects.iter().map(|r| r.width * r.height).sum::<u32>() <= 2 * (ui::editor_tools::preferences::current().line() as u32 - 4) * scale * scale);
             if cursor == input.len() {
                 assert!(rects.is_empty());
             }
@@ -782,7 +782,11 @@ fn menus_and_viewport() {
                     assert!(popup.x >= window.x && popup.right() <= layout.body.right());
                     assert!(popup.y >= window.y && popup.bottom() <= window.bottom());
                     for index in 0..menu.count() {
-                        let row = layout.menu_row(menu, index);
+                        let mut view = ui::editor_tools::Presentation::new();
+                        view.menu = menu;
+                        view.menu_index = index;
+                        ui::editor_tools::publish(view);
+                        let row = layout.menu_row(menu, index % layout.menu_capacity());
                         let point = Point {
                             x: row.x + 2,
                             y: row.y + 2,

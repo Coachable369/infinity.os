@@ -3473,6 +3473,15 @@ impl ConsoleRuntime {
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
         self.restore_font_preferences();
+        let mut appearance = crate::storage::editor_preferences(
+            self.current_user.0, self.current_session.0, None,
+        ).unwrap_or(crate::ui::editor_tools::preferences::Preferences::new());
+        let fonts = crate::runtime::font_preferences::current();
+        if !fonts.contains(crate::ui::editor_tools::preferences::FONT_IDS[appearance.font as usize]) {
+            appearance.font = crate::ui::editor_tools::preferences::FONT_IDS.iter()
+                .position(|id| fonts.contains(*id)).unwrap_or(0) as u8;
+        }
+        crate::ui::editor_tools::preferences::publish(appearance);
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         self.restore_app_shortcuts();
         crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::new());

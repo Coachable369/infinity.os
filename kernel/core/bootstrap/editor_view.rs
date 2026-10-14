@@ -1,7 +1,7 @@
 //! Native editor window composed from shared menu and viewport geometry.
 use super::app_style::{CYAN, MUTED, TEXT};
 use crate::ui::{
-    editor_chrome::{Layout, Menu, CODE_INSET, LINE_HEIGHT},
+    editor_chrome::{Layout, Menu, CODE_INSET},
     editor_tools::{self, Field, Token},
     geometry::Rect,
 };
@@ -384,13 +384,36 @@ impl super::DisplayDevice {
     // ------------------=
     fn code_editor(&mut self, g: Layout, input: &[u8], scroll: usize, s: usize) {
         let view = editor_tools::current();
+        let appearance = editor_tools::preferences::current();
+        let cell = appearance.cell();
+        let line_height = appearance.line();
+        let background = appearance.color(0);
+        let gutter = appearance.color(1);
+        let active = appearance.color(2);
+        let selection = appearance.color(3);
         let body = g.body;
         let x = body.x as usize;
         let y = body.y as usize;
         let clip = self.render_clip;
         self.intersect_render_clip(x, y, body.width as usize, body.height as usize);
-        self.fill_rect(x, y, body.width as usize, body.height as usize, 11, 18, 32);
-        self.fill_rect(x, y, 76 * s, body.height as usize, 10, 22, 37);
+        self.fill_rect(
+            x,
+            y,
+            body.width as usize,
+            body.height as usize,
+            background.0,
+            background.1,
+            background.2,
+        );
+        self.fill_rect(
+            x,
+            y,
+            76 * s,
+            body.height as usize,
+            gutter.0,
+            gutter.1,
+            gutter.2,
+        );
         self.fill_rect(x + 76 * s, y, s, body.height as usize, 25, 43, 64);
         let columns = g.columns().max(1);
         let total = crate::ui::text_editor::visual_line_count(input, columns);
@@ -407,7 +430,7 @@ impl super::DisplayDevice {
             if start > input.len() {
                 break;
             }
-            let line_y = y + (8 + row * LINE_HEIGHT) * s;
+            let line_y = y + (8 + row * line_height) * s;
             let end = input[start..]
                 .iter()
                 .position(|b| *b == b'\n')
@@ -417,7 +440,7 @@ impl super::DisplayDevice {
             // text measurement and glyph work, not just at framebuffer writes.
             if self
                 .render_clip
-                .is_some_and(|clip| line_y >= clip.bottom || line_y + LINE_HEIGHT * s <= clip.top)
+                .is_some_and(|clip| line_y >= clip.bottom || line_y + line_height * s <= clip.top)
             {
                 if take == columns {
                     start += take;
@@ -434,28 +457,35 @@ impl super::DisplayDevice {
                     x + 77 * s,
                     line_y,
                     body.width as usize - 77 * s,
-                    LINE_HEIGHT * s,
-                    18,
-                    31,
-                    50,
+                    line_height * s,
+                    active.0,
+                    active.1,
+                    active.2,
                 );
             }
             let mut n = [0; 20];
             let number = decimal(logical, &mut n);
             let width = self.app_text_width(number, false, s);
-            self.app_text(x + 58 * s - width, line_y, number, MUTED, false, s);
+            self.app_text(
+                x + 58 * s - width.min(56 * s),
+                line_y,
+                number,
+                appearance.color(8),
+                false,
+                s,
+            );
             for col in 0..take {
                 let i = start + col;
-                let cx = x + (CODE_INSET + col * editor_tools::CELL_WIDTH) * s;
+                let cx = x + (CODE_INSET + col * cell) * s;
                 if view.selection.is_some_and(|(a, b)| i >= a && i < b) {
                     self.fill_rect(
                         cx,
                         line_y,
-                        editor_tools::CELL_WIDTH * s,
-                        LINE_HEIGHT * s,
-                        49,
-                        31,
-                        90,
+                        cell * s,
+                        line_height * s,
+                        selection.0,
+                        selection.1,
+                        selection.2,
                     );
                 }
                 let byte = if matches!(input[i], b'\t' | b'\r') {
@@ -463,19 +493,26 @@ impl super::DisplayDevice {
                 } else {
                     input[i]
                 };
-                self.editor_glyph(cx, line_y + 3 * s, byte, s, tokens[i].color());
+                let role = match tokens[i] {
+                    Token::Keyword => 5,
+                    Token::String => 6,
+                    Token::Number => 7,
+                    Token::Comment => 8,
+                    _ => 4,
+                };
+                self.editor_glyph(cx, line_y + 3 * s, byte, s, appearance.color(role));
             }
             if let Some((visible, cursor)) = crate::ui::text_input::caret(4) {
                 if visible && view.field == Field::None && cursor >= start && cursor <= start + take
                 {
                     self.fill_rect(
-                        x + (CODE_INSET + (cursor - start) * editor_tools::CELL_WIDTH) * s,
+                        x + (CODE_INSET + (cursor - start) * cell) * s,
                         line_y + 3 * s,
                         s,
-                        19 * s,
-                        34,
-                        211,
-                        238,
+                        (line_height - 4) * s,
+                        appearance.color(4).0,
+                        appearance.color(4).1,
+                        appearance.color(4).2,
                     );
                 }
             }
@@ -512,13 +549,24 @@ impl super::DisplayDevice {
         let view = editor_tools::current();
         let p = g.popup(view.menu);
         self.app_card(p, (15, 27, 46), (49, 92, 123), s);
-        for i in 0..view.menu.count() {
+        let cap = g.menu_capacity();
+        let start = view.menu_index / cap * cap;
+        for i in start..(start + cap).min(view.menu.count()) {
             let item = view.menu.entry(i).unwrap();
-            let r = g.menu_row(view.menu, i);
+            let r = g.menu_row(view.menu, i - start);
             if i == view.menu_index {
                 self.app_card(r, (20, 54, 76), (36, 137, 169), s);
             }
-            let selected = matches!(item.command,crate::ui::editor_chrome::Command::Language(index) if editor_tools::LANGUAGES[index]==view.language);
+            let prefs = editor_tools::preferences::current();
+            let selected = match item.command {
+                crate::ui::editor_chrome::Command::Language(i) => {
+                    editor_tools::LANGUAGES[i] == view.language
+                }
+                crate::ui::editor_chrome::Command::Scheme(i) => i == prefs.scheme as usize,
+                crate::ui::editor_chrome::Command::Font(i) => i == prefs.font as usize,
+                crate::ui::editor_chrome::Command::Size(i) => i == prefs.size as usize,
+                _ => false,
+            };
             self.app_label(
                 Rect {
                     x: r.x + 10 * s as i32,
@@ -554,10 +602,26 @@ impl super::DisplayDevice {
                 s,
             );
         }
+        if view.menu.count() > cap {
+            self.app_label(
+                g.menu_row(view.menu, cap),
+                b"< Previous page",
+                CYAN,
+                false,
+                s,
+            );
+            self.app_label(
+                g.menu_row(view.menu, cap + 1),
+                b"Next page >",
+                CYAN,
+                false,
+                s,
+            );
+        }
     }
     // ------------------------=
     // FUNC: editor_glyph
-    // DESC: Rasterizes bundled JetBrains Mono within the fixed cell used by caret and pointer selection.
+    // DESC: Rasterizes the selected bundled font and size using the same cell metrics as caret and pointer selection.
     // ------------------=
     pub(super) fn editor_glyph(
         &mut self,
@@ -570,19 +634,21 @@ impl super::DisplayDevice {
         if !(32..=126).contains(&byte) {
             return;
         }
+        let record = editor_tools::preferences::current().record();
+        let cell = record[0] as usize;
+        let height = record[1] as usize;
         if self.render_clip.is_some_and(|clip| {
             x >= clip.right
                 || y >= clip.bottom
-                || x + editor_tools::CELL_WIDTH * scale <= clip.left
-                || y + editor_tools::FONT_HEIGHT * scale <= clip.top
+                || x + cell * scale <= clip.left
+                || y + height * scale <= clip.top
         }) {
             return;
         }
-        let glyph = (byte as usize - 32) * editor_tools::FONT_WIDTH;
-        for row in 0..editor_tools::FONT_HEIGHT * scale {
-            for col in 0..editor_tools::CELL_WIDTH * scale {
-                let a = editor_tools::FONT_ATLAS
-                    [row / scale * editor_tools::FONT_WIDTH * 95 + glyph + col / scale];
+        let glyph = (byte as usize - 32) * 24;
+        for row in 0..height * scale {
+            for col in 0..cell * scale {
+                let a = record[4 + row / scale * 24 * 95 + glyph + col / scale];
                 if a != 0 {
                     self.blend_color(
                         (x + col) as i32,

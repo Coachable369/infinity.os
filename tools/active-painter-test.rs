@@ -9,6 +9,9 @@ mod runtime { pub use super::{font_faces,font_preferences,font}; }
 mod primitives;
 #[path = "../kernel/core/bootstrap/personalization_view.rs"]
 mod personalization_view;
+#[path="../kernel/core/bootstrap/app_style.rs"] mod app_style;
+#[path="../kernel/core/bootstrap/assistant_view.rs"] mod assistant_view;
+#[path="../kernel/core/bootstrap/editor_view.rs"] mod editor_view;
 #[cfg(baseline)]
 #[path = "../build/primitives-before.rs"]
 mod primitives;
@@ -91,6 +94,16 @@ mod retained_windows;
 #[path = "../kernel/core/bootstrap/window_chrome.rs"]
 mod window_chrome;
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: set_render_clip
+    // DESC: Supplies the production editor's caret clipping boundary in the framebuffer fixture.
+    // ------------------=
+    fn set_render_clip(&mut self,x:usize,y:usize,w:usize,h:usize){self.render_clip=Some(Region{left:x,top:y,right:x+w,bottom:y+h});}
+    // ------------------------=
+    // FUNC: clear_render_clip
+    // DESC: Restores the full framebuffer boundary after a caret-only repaint.
+    // ------------------=
+    fn clear_render_clip(&mut self){self.render_clip=None;}
     // ------------------------=
     // FUNC: intersect_render_clip
     // DESC: Preserves parent clipping while exercising the production settings label renderer.
@@ -288,6 +301,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    editor_scheme_pixels();
     font_library_pixels();
     thinking_text_pixels_test();
     retained_theme_test();
@@ -353,6 +367,38 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: editor_scheme_pixels
+// DESC: Captures all ten production editor schemes and asserts unchanged chrome plus changed document pixels.
+// ------------------=
+fn editor_scheme_pixels(){
+    use std::io::Write;
+    use ui::editor_tools::{self,preferences::{self,Preferences}};
+    let width=1100;let height=700;
+    let layout=ui::system_layout::SystemLayout::new(width,height);
+    let window=layout.desktop_app_window_geometry(20,30,960,920,false);
+    let mut view=editor_tools::Presentation::new();view.language=editor_tools::Language::Rust;
+    view.filename[..7].copy_from_slice(b"main.rs");view.filename_len=7;
+    let code=b"// Native InfinityOS editor\nfn main() {\n    let answer = 42;\n    println!(\"Hello, Infinity!\");\n}\n";
+    view.cursor=code.iter().position(|c|*c==b'4').unwrap();view.selection=Some((view.cursor,view.cursor+2));
+    let mut title=None;let mut body_pixels=Vec::new();
+    std::fs::create_dir_all("builds/validation/editor").unwrap();
+    for scheme in 0..10 {
+        preferences::publish(Preferences{scheme,font:0,size:2});editor_tools::publish(view);
+        let mut pixels=vec![0x20120bu32;width*height];
+        let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        d.editor_window(window,code,0,true,false,1);
+        let g=ui::editor_chrome::Layout::new(window.window,1,false,editor_tools::Field::None);
+        let top=&pixels[(window.window.y as usize+5)*width..(window.window.y as usize+40)*width];
+        if let Some(ref old)=title{assert_eq!(top,old)}else{title=Some(top.to_vec())}
+        body_pixels.push(pixels[(g.body.y as usize+2)*width+g.body.x as usize+100]);
+        let mut f=std::fs::File::create(format!("builds/validation/editor/scheme-{scheme}.ppm")).unwrap();write!(f,"P6\n{width} {height}\n255\n").unwrap();
+        for p in pixels {f.write_all(&[p as u8,(p>>8)as u8,(p>>16)as u8]).unwrap();}
+    }
+    body_pixels.sort_unstable();body_pixels.dedup();assert_eq!(body_pixels.len(),10);
+    preferences::publish(Preferences::new());editor_tools::publish(editor_tools::Presentation::new());
 }
 
 // ------------------------=

@@ -73,8 +73,8 @@ AUTHENTICATION_MOTION_ASSETS := assets/desktop/infinity-auth-success-stage-v1.bm
 	assets/desktop/infinity-auth-success-ripple-v1.bmp \
 	assets/desktop/infinity-auth-success-splash-v1.bmp
 KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) $(AUTHENTICATION_MOTION_ASSETS) $(SYSTEM_SOUND_ASSETS) sdk/c/examples/hello.c
-FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt) assets/fonts/InfinityUI-library.bin
-KERNEL_SOURCES += assets/fonts/InfinityUI-library.bin
+FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt) assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
+KERNEL_SOURCES += assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
 	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
@@ -384,7 +384,7 @@ $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(
 	@mkdir -p $(BUILD)/installed-fat/EFI/BOOT $(BUILD)/installed-fat/EFI/InfinityOS/Fonts $(BUILD)/installed-fat/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat/EFI/InfinityOS/Applications $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Installer $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Mesh
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/installed-fat/EFI/BOOT/BOOTX64.EFI
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/installed-fat/EFI/InfinityOS/infinity.efi
-	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin $(BUILD)/installed-fat/EFI/InfinityOS/Fonts/
+	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/installed-fat/EFI/InfinityOS/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/installed-fat/EFI/InfinityOS/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/
 	cp $(WALLPAPER_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers/
@@ -407,7 +407,7 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	cp $(BUILD)/x86_64/kernel.elf $(BUILD)/fat/EFI/INFINITY/KERNEL.ELF
 	rm -rf $(BUILD)/fat/EFI/INFINITY/PAYLOAD
 	$(BROWSER_STAGE_X86)
-	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin $(BUILD)/fat/EFI/INFINITY/FONTS/
+	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/fat/EFI/INFINITY/FONTS/
 	cp assets/fonts/OFL-*.txt $(BUILD)/fat/EFI/INFINITY/FONT-LICENSES/
 	cp -R assets/skins/. $(BUILD)/fat/EFI/INFINITY/INFINITYUI/
 	cp $(WALLPAPER_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Wallpapers/
@@ -491,6 +491,8 @@ editor-window-test:
 	@mkdir -p build/behavior-tests
 	rustc --edition=2021 tools/editor-window-test.rs -o build/behavior-tests/editor-window-test
 	build/behavior-tests/editor-window-test
+	rustc --edition=2021 tools/editor-upgrade-test.rs -o build/behavior-tests/editor-upgrade-test
+	build/behavior-tests/editor-upgrade-test
 
 installer-entropy-test:
 	@mkdir -p build/behavior-tests
@@ -699,7 +701,7 @@ $(BUILD)/test-media/InfinityOS-x86.bootmedia: $(BUILD)/infinity-x86.img $(UI_ASS
 	rm -rf $(BUILD)/iso-x86/System/InfinityUI/Icons $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Crash
 	@mkdir -p $(BUILD)/iso-x86/System/Fonts $(BUILD)/iso-x86/System/FontLicenses $(BUILD)/iso-x86/System/Applications $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Installer $(BUILD)/iso-x86/System/InfinityUI/Crash
 	cp $< $(BUILD)/iso-x86/x86-boot.img
-	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin $(BUILD)/iso-x86/System/Fonts/
+	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/iso-x86/System/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/iso-x86/System/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/iso-x86/System/InfinityUI/
 	cp $(WALLPAPER_ASSETS) $(BUILD)/iso-x86/System/InfinityUI/Wallpapers/
@@ -736,7 +738,7 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 	@mkdir -p $(BUILD)/installed-fat-aarch64/EFI/BOOT $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Applications $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Installer $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Mesh
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/installed-fat-aarch64/EFI/BOOT/BOOTAA64.EFI
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/infinity.efi
-	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts/
+	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/
 	cp $(WALLPAPER_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers/
@@ -786,7 +788,7 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	cp $(BUILD)/aarch64/kernel.elf $(BUILD)/fat-aarch64/EFI/INFINITY/KERNEL.ELF
 	rm -rf $(BUILD)/fat-aarch64/EFI/INFINITY/PAYLOAD
 	$(BROWSER_STAGE_ARM)
-	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin $(BUILD)/fat-aarch64/EFI/INFINITY/FONTS/
+	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/fat-aarch64/EFI/INFINITY/FONTS/
 	cp assets/fonts/OFL-*.txt $(BUILD)/fat-aarch64/EFI/INFINITY/FONT-LICENSES/
 	cp -R assets/skins/. $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/
 	cp $(WALLPAPER_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Wallpapers/
@@ -815,7 +817,7 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	cp $(BUILD)/aarch64/kernel-qemu.elf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/KERNEL.ELF
 	rm -rf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/PAYLOAD
 	$(BROWSER_STAGE_QEMU)
-	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONTS/
+	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONTS/
 	cp assets/fonts/OFL-*.txt $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONT-LICENSES/
 	cp -R assets/skins/. $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/
 	cp $(WALLPAPER_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers/
@@ -857,3 +859,6 @@ clean:
 
 assets/fonts/InfinityUI-library.bin: tools/build-font-library.py kernel/runtime/font.rs $(wildcard assets/fonts/*.ttf assets/fonts/InfinityUI-*.atlas assets/fonts/InfinityUI-*.metrics assets/fonts/InfinityUI-*.kern)
 	python3 tools/build-font-library.py
+
+assets/fonts/InfinityEditor-library.bin: tools/build-editor-fonts.py $(wildcard assets/fonts/*.ttf)
+	python3 tools/build-editor-fonts.py

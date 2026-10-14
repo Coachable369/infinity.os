@@ -784,6 +784,28 @@ pub(crate) fn font_preferences(owner:[u8;16], session:[u8;16], save:Option<crate
 }
 
 // ------------------------=
+// FUNC: editor_preferences
+// DESC: Commits versioned editor appearance in an authenticated private native object, with bounded version history.
+// ------------------=
+pub(crate) fn editor_preferences(owner:[u8;16],session:[u8;16],save:Option<crate::ui::editor_tools::preferences::Preferences>)->Result<crate::ui::editor_tools::preferences::Preferences,object::ObjectError> {
+    use crate::ui::editor_tools::preferences::Preferences;
+    let _=browser_favorites_path(owner,session)?;
+    let mut path=[0u8;47];path[..15].copy_from_slice(b"/system/editor/");
+    for(i,byte)in owner.iter().enumerate(){path[15+i*2]=b"0123456789abcdef"[(byte>>4)as usize];path[16+i*2]=b"0123456789abcdef"[(byte&15)as usize];}
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|{
+        let id=match store.resolve(&path){Ok(id)=>Some(id),Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>None,Err(e)=>return Err(e)};
+        if let Some(p)=save {
+            Preferences::decode(&p.encode()).ok_or(object::ObjectError::CorruptContent)?;
+            if let Some(id)=id {store.replace_state(id,&p.encode())?;}else{store.create_attached(b"@editor-preferences",object::ObjectType::Metadata,object::Space::System,&p.encode(),&path)?;}
+            Ok(p)
+        }else if let Some(id)=id {let mut b=[0;8];let n=store.read_editor_preferences(id,&mut b)?;Preferences::decode(&b[..n]).ok_or(object::ObjectError::CorruptContent)}else{Ok(Preferences::new())}
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: browser_favorites_save
 // DESC: Commits a validated browser-owned per-profile object through native atomic checkpoint storage.
 // ------------------=

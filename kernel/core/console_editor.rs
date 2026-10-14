@@ -58,6 +58,47 @@ impl ConsoleRuntime {
                 C::Delete => self.delete_editor_document(),
                 C::Close => self.request_editor_action(PendingDocumentAction::Close),
                 C::Syntax => self.editor_tools.open_menu(Menu::Syntax),
+                C::Schemes => self.editor_tools.open_menu(Menu::Schemes),
+                C::Fonts => self.editor_tools.open_menu(Menu::Fonts),
+                C::Sizes => self.editor_tools.open_menu(Menu::Sizes),
+                C::Actions => self.editor_tools.open_menu(Menu::Actions),
+                C::Scheme(i) | C::Font(i) | C::Size(i) => {
+                    use crate::ui::editor_tools::preferences as p;
+                    let mut next = p::current();
+                    match command {
+                        C::Scheme(_) => next.scheme = i as u8,
+                        C::Font(_) => next.font = i as u8,
+                        _ => next.size = i as u8,
+                    }
+                    if matches!(command, C::Font(_))
+                        && !crate::runtime::font_preferences::current()
+                            .contains(p::FONT_IDS[i.min(3)])
+                    {
+                        self.editor_tools.notice = b"Restore this font in Settings > Fonts first.";
+                    } else if crate::storage::editor_preferences(
+                        self.current_user.0,
+                        self.current_session.0,
+                        Some(next),
+                    )
+                    .is_ok()
+                    {
+                        p::publish(next);
+                        self.editor_tools.notice = b"Editor appearance saved.";
+                    } else {
+                        self.editor_tools.notice = b"Could not save editor preferences; unchanged.";
+                    }
+                }
+                C::Transform(action) => {
+                    self.editor_tools.notice = if crate::ui::editor_tools::actions::apply(
+                        &mut self.editor_document,
+                        action,
+                        self.editor_tools.language.comment_prefix(),
+                    ) {
+                        b"Done. Ctrl+Z undoes text changes."
+                    } else {
+                        b"No change: check selection, syntax, boundary or document capacity."
+                    };
+                }
                 C::Assistant => {
                     self.input_window_assistant(ConsoleKey::Shortcut(b'i'));
                 }
@@ -115,6 +156,21 @@ impl ConsoleRuntime {
         }
         if self.editor_tools.menu != Menu::None {
             if let Some(row) = g.row_at(self.editor_tools.menu, p) {
+                let count = self.editor_tools.menu.count();
+                if row >= count {
+                    if clicked {
+                        let cap = g.menu_capacity();
+                        let page = self.editor_tools.menu_index / cap;
+                        let pages = (count + cap - 1) / cap;
+                        self.editor_tools.menu_index = if row == count {
+                            ((page + pages - 1) % pages) * cap
+                        } else {
+                            ((page + 1) % pages) * cap
+                        };
+                        self.redraw();
+                    }
+                    return true;
+                }
                 if self.editor_tools.menu_index != row {
                     self.editor_tools.menu_index = row;
                     self.redraw();
@@ -244,6 +300,22 @@ impl ConsoleRuntime {
         }
         if let ConsoleKey::Shortcut(c) = key {
             match c.to_ascii_lowercase() {
+                b'l' => self.editor_command(crate::ui::editor_chrome::Command::Transform(
+                    crate::ui::editor_tools::actions::Action::Line,
+                )),
+                b'j' => self.editor_command(crate::ui::editor_chrome::Command::Transform(
+                    crate::ui::editor_tools::actions::Action::Join,
+                )),
+                b'/' => self.editor_command(crate::ui::editor_chrome::Command::Transform(
+                    crate::ui::editor_tools::actions::Action::Comment,
+                )),
+                b'+' | b'=' => self.editor_command(crate::ui::editor_chrome::Command::Size(
+                    (crate::ui::editor_tools::preferences::current().size as usize + 1).min(5),
+                )),
+                b'-' => self.editor_command(crate::ui::editor_chrome::Command::Size(
+                    (crate::ui::editor_tools::preferences::current().size as usize)
+                        .saturating_sub(1),
+                )),
                 b'z' => self.editor_tool_action(0),
                 b'y' => self.editor_tool_action(1),
                 b'f' => self.editor_tool_action(2),
@@ -254,18 +326,23 @@ impl ConsoleRuntime {
                     .select(0, self.editor_document.bytes().len()),
                 b'c' | b'x' => {
                     if let Some((a, b)) = self.editor_document.selection() {
-                        let copied=self.copy_workplace_text(&self.editor_document.bytes()[a..b]);
+                        let copied = self.copy_workplace_text(&self.editor_document.bytes()[a..b]);
                         if copied && c.to_ascii_lowercase() == b'x' {
                             self.editor_document.replace_selection(b"");
                         }
                     }
                 }
                 b'v' => {
-                    let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
+                    let mut bytes = [0; crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
                     match self.read_workplace_text(&mut bytes) {
-                        Ok(n) if self.editor_document.replace_selection(&bytes[..n])=>{},
-                        Ok(_)=>self.editor_tools.notice=b"Paste rejected: unsupported text or 16 KiB limit.",
-                        Err(_)=>self.editor_tools.notice=b"Clipboard empty, expired, or unavailable.",
+                        Ok(n) if self.editor_document.replace_selection(&bytes[..n]) => {}
+                        Ok(_) => {
+                            self.editor_tools.notice =
+                                b"Paste rejected: unsupported text or 16 KiB limit."
+                        }
+                        Err(_) => {
+                            self.editor_tools.notice = b"Clipboard empty, expired, or unavailable."
+                        }
                     }
                 }
                 b's' => {
@@ -422,8 +499,17 @@ impl ConsoleRuntime {
                                 0
                             }
                             _ => {
-                                self.editor_tools.notice =
-                                    b"Unknown command. Ctrl+P to see supported commands.";
+                                if let Some((_, action)) = crate::ui::editor_tools::actions::ITEMS
+                                    .iter()
+                                    .find(|(label, _)| label.eq_ignore_ascii_case(query))
+                                {
+                                    self.editor_command(
+                                        crate::ui::editor_chrome::Command::Transform(*action),
+                                    );
+                                } else {
+                                    self.editor_tools.notice =
+                                        b"Unknown command. Use Edit > Text actions or View.";
+                                }
                                 0
                             }
                         };
@@ -476,7 +562,7 @@ impl ConsoleRuntime {
         let y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
         let row = self.editor_scroll_row
             + (y - g.body.y - 8 * s as i32).max(0) as usize
-                / (crate::ui::editor_chrome::LINE_HEIGHT * s);
+                / (crate::ui::editor_tools::preferences::current().line() * s);
         let cols = g.columns();
         let bytes = self.editor_document.bytes();
         let start = crate::ui::text_editor::visual_line_start(bytes, cols.max(1), row);
@@ -488,7 +574,7 @@ impl ConsoleRuntime {
         (start
             + (x - g.body.x - crate::ui::editor_chrome::CODE_INSET as i32 * s as i32).max(0)
                 as usize
-                / (crate::ui::editor_tools::CELL_WIDTH * s))
+                / (crate::ui::editor_tools::preferences::current().cell() * s))
             .min(end)
     }
 }

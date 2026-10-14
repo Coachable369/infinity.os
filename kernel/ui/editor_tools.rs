@@ -1,4 +1,8 @@
 //! Native code-editor presentation and allocation-free lexical classification.
+#[path = "editor_actions.rs"]
+pub mod actions;
+#[path = "editor_preferences.rs"]
+pub mod preferences;
 pub const CELL_WIDTH: usize = 10;
 pub const FONT_WIDTH: usize = 14;
 pub const FONT_HEIGHT: usize = 20;
@@ -15,8 +19,18 @@ pub enum Language {
     Shell,
     Html,
     Css,
+    Ruby,
+    Go,
+    Java,
+    Swift,
+    Kotlin,
+    CSharp,
+    Sql,
+    Lua,
+    Yaml,
+    Toml,
 }
-pub const LANGUAGES: [Language; 9] = [
+pub const LANGUAGES: [Language; 19] = [
     Language::Plain,
     Language::Rust,
     Language::Python,
@@ -26,6 +40,16 @@ pub const LANGUAGES: [Language; 9] = [
     Language::Shell,
     Language::Html,
     Language::Css,
+    Language::Ruby,
+    Language::Go,
+    Language::Java,
+    Language::Swift,
+    Language::Kotlin,
+    Language::CSharp,
+    Language::Sql,
+    Language::Lua,
+    Language::Yaml,
+    Language::Toml,
 ];
 impl Language {
     // ------------------------=
@@ -43,6 +67,16 @@ impl Language {
             Self::Shell => b"Shell",
             Self::Html => b"HTML",
             Self::Css => b"CSS",
+            Self::Ruby => b"Ruby",
+            Self::Go => b"Go",
+            Self::Java => b"Java",
+            Self::Swift => b"Swift",
+            Self::Kotlin => b"Kotlin",
+            Self::CSharp => b"C#",
+            Self::Sql => b"SQL",
+            Self::Lua => b"Lua",
+            Self::Yaml => b"YAML",
+            Self::Toml => b"TOML",
         }
     }
     // ------------------------=
@@ -60,7 +94,29 @@ impl Language {
             b"sh" | b"bash" | b"zsh" => Self::Shell,
             b"html" | b"xml" => Self::Html,
             b"css" => Self::Css,
+            b"rb" => Self::Ruby,
+            b"go" => Self::Go,
+            b"java" => Self::Java,
+            b"swift" => Self::Swift,
+            b"kt" | b"kts" => Self::Kotlin,
+            b"cs" => Self::CSharp,
+            b"sql" => Self::Sql,
+            b"lua" => Self::Lua,
+            b"yml" | b"yaml" => Self::Yaml,
+            b"toml" => Self::Toml,
             _ => Self::Plain,
+        }
+    }
+    // ------------------------=
+    // FUNC: comment_prefix
+    // DESC: Returns a real line-comment delimiter or none for modes without line comments.
+    // ------------------=
+    pub fn comment_prefix(self) -> &'static [u8] {
+        match self {
+            Self::Python | Self::Shell | Self::Ruby | Self::Yaml | Self::Toml => b"# ",
+            Self::Sql | Self::Lua => b"-- ",
+            Self::Plain | Self::Json | Self::Html | Self::Css => b"",
+            _ => b"// ",
         }
     }
 }
@@ -100,12 +156,165 @@ pub fn highlight(bytes: &[u8], language: Language, out: &mut [Token]) {
     if language == Language::Plain {
         return;
     }
-    let hash_comments = matches!(language, Language::Python | Language::Shell);
+    let hash_comments = matches!(
+        language,
+        Language::Python | Language::Shell | Language::Ruby | Language::Yaml | Language::Toml
+    );
     let slash_comments = matches!(
         language,
-        Language::Rust | Language::JavaScript | Language::C | Language::Css
+        Language::Rust
+            | Language::JavaScript
+            | Language::C
+            | Language::Css
+            | Language::Go
+            | Language::Java
+            | Language::Swift
+            | Language::Kotlin
+            | Language::CSharp
     );
     let keywords: &[&[u8]] = match language {
+        Language::Ruby => &[
+            b"def", b"end", b"class", b"module", b"do", b"if", b"else", b"elsif", b"unless",
+            b"require", b"yield", b"return", b"true", b"false", b"nil",
+        ],
+        Language::Go => &[
+            b"package",
+            b"import",
+            b"func",
+            b"var",
+            b"const",
+            b"type",
+            b"struct",
+            b"interface",
+            b"map",
+            b"chan",
+            b"go",
+            b"defer",
+            b"range",
+            b"if",
+            b"else",
+            b"for",
+            b"return",
+            b"nil",
+            b"true",
+            b"false",
+        ],
+        Language::Java => &[
+            b"package",
+            b"import",
+            b"public",
+            b"private",
+            b"protected",
+            b"class",
+            b"interface",
+            b"extends",
+            b"implements",
+            b"static",
+            b"final",
+            b"void",
+            b"int",
+            b"new",
+            b"return",
+            b"if",
+            b"else",
+            b"for",
+            b"try",
+            b"catch",
+            b"null",
+            b"true",
+            b"false",
+        ],
+        Language::Swift => &[
+            b"import",
+            b"func",
+            b"let",
+            b"var",
+            b"class",
+            b"struct",
+            b"enum",
+            b"protocol",
+            b"extension",
+            b"guard",
+            b"if",
+            b"else",
+            b"return",
+            b"nil",
+            b"true",
+            b"false",
+            b"async",
+            b"await",
+            b"throws",
+        ],
+        Language::Kotlin => &[
+            b"package",
+            b"import",
+            b"fun",
+            b"val",
+            b"var",
+            b"class",
+            b"object",
+            b"interface",
+            b"data",
+            b"when",
+            b"is",
+            b"in",
+            b"if",
+            b"else",
+            b"return",
+            b"null",
+            b"true",
+            b"false",
+            b"suspend",
+        ],
+        Language::CSharp => &[
+            b"using",
+            b"namespace",
+            b"public",
+            b"private",
+            b"class",
+            b"struct",
+            b"interface",
+            b"static",
+            b"void",
+            b"int",
+            b"string",
+            b"var",
+            b"new",
+            b"return",
+            b"if",
+            b"else",
+            b"foreach",
+            b"async",
+            b"await",
+            b"null",
+            b"true",
+            b"false",
+        ],
+        Language::Sql => &[
+            b"select", b"from", b"where", b"insert", b"into", b"values", b"update", b"set",
+            b"delete", b"create", b"table", b"join", b"on", b"as", b"and", b"or", b"null",
+            b"order", b"by", b"group", b"limit",
+        ],
+        Language::Lua => &[
+            b"local",
+            b"function",
+            b"end",
+            b"if",
+            b"then",
+            b"else",
+            b"elseif",
+            b"for",
+            b"while",
+            b"do",
+            b"return",
+            b"nil",
+            b"true",
+            b"false",
+            b"and",
+            b"or",
+            b"not",
+        ],
+        Language::Yaml | Language::Toml => &[b"true", b"false", b"null", b"yes", b"no"],
         Language::Rust => &[
             b"fn", b"let", b"mut", b"pub", b"use", b"mod", b"impl", b"struct", b"enum", b"match",
             b"if", b"else", b"for", b"while", b"return", b"self", b"Self", b"const", b"true",
@@ -186,12 +395,22 @@ pub fn highlight(bytes: &[u8], language: Language, out: &mut [Token]) {
         let tail = &bytes[i..n];
         let token = if (hash_comments && bytes[i] == b'#')
             || (slash_comments && tail.starts_with(b"//"))
+            || (matches!(language, Language::Sql | Language::Lua)
+                && tail.starts_with(b"--")
+                && !(language == Language::Lua && tail.starts_with(b"--[[")))
         {
             while i < n && bytes[i] != b'\n' {
                 i += 1;
             }
             Token::Comment
-        } else if slash_comments && tail.starts_with(b"/*") {
+        } else if language == Language::Lua && tail.starts_with(b"--[[") {
+            i += 4;
+            while i < n && !bytes[i..n].starts_with(b"]]") {
+                i += 1;
+            }
+            i = (i + 2).min(n);
+            Token::Comment
+        } else if (slash_comments || language == Language::Sql) && tail.starts_with(b"/*") {
             i += 2;
             while i < n && !bytes[i..n].starts_with(b"*/") {
                 i += 1;
@@ -230,7 +449,12 @@ pub fn highlight(bytes: &[u8], language: Language, out: &mut [Token]) {
             while i < n && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                 i += 1;
             }
-            if keywords.contains(&&bytes[start..i]) {
+            if keywords.contains(&&bytes[start..i])
+                || (language == Language::Sql
+                    && keywords
+                        .iter()
+                        .any(|k| k.eq_ignore_ascii_case(&bytes[start..i])))
+            {
                 Token::Keyword
             } else {
                 Token::Text
@@ -257,6 +481,7 @@ pub enum Field {
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Presentation {
+    pub appearance: [u8; 8],
     pub menu: super::editor_chrome::Menu,
     pub menu_index: usize,
     pub filename: [u8; 64],
@@ -287,7 +512,13 @@ impl Presentation {
                 .position(|l| *l == self.language)
                 .unwrap_or(0)
         } else {
-            0
+            let p = preferences::current();
+            match menu {
+                super::editor_chrome::Menu::Schemes => p.scheme as usize,
+                super::editor_chrome::Menu::Fonts => p.font as usize,
+                super::editor_chrome::Menu::Sizes => p.size as usize,
+                _ => 0,
+            }
         };
     }
     // ------------------------=
@@ -338,6 +569,7 @@ impl Presentation {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            appearance: [b'I', b'E', b'D', 1, 0, 0, 1, 0],
             menu: super::editor_chrome::Menu::None,
             menu_index: 0,
             filename: [0; 64],
@@ -363,7 +595,8 @@ static REVISION: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::
 // FUNC: publish
 // DESC: Publishes bounded presentation on the serialized native UI thread.
 // ------------------=
-pub fn publish(value: Presentation) {
+pub fn publish(mut value: Presentation) {
+    value.appearance = preferences::current().encode();
     unsafe {
         if *(&raw const VIEW) != value {
             *(&raw mut VIEW) = value;

@@ -33,11 +33,15 @@ impl Layout {
             let take = (end - start).min(columns);
             let result = (cursor >= start && cursor <= start + take).then(|| Rect {
                 x: self.body.x
-                    + ((CODE_INSET + (cursor - start) * super::editor_tools::CELL_WIDTH)
+                    + ((CODE_INSET
+                        + (cursor - start) * super::editor_tools::preferences::current().cell())
                         * self.scale) as i32,
-                y: self.body.y + ((11 + row * LINE_HEIGHT) * self.scale) as i32,
+                y: self.body.y
+                    + ((11 + row * super::editor_tools::preferences::current().line()) * self.scale)
+                        as i32,
                 width: self.scale as u32,
-                height: (19 * self.scale) as u32,
+                height: ((super::editor_tools::preferences::current().line() - 4) * self.scale)
+                    as u32,
             });
             start = if take == columns {
                 start + take
@@ -123,6 +127,10 @@ pub enum Menu {
     Selection,
     View,
     Syntax,
+    Schemes,
+    Fonts,
+    Sizes,
+    Actions,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
@@ -147,6 +155,14 @@ pub enum Command {
     Palette,
     Performance,
     Language(usize),
+    Schemes,
+    Fonts,
+    Sizes,
+    Actions,
+    Scheme(usize),
+    Font(usize),
+    Size(usize),
+    Transform(super::editor_tools::actions::Action),
 }
 #[derive(Clone, Copy)]
 pub struct Entry {
@@ -186,7 +202,12 @@ const FILE: [Entry; 6] = [
         command: Command::Close,
     },
 ];
-const EDIT: [Entry; 7] = [
+const EDIT: [Entry; 8] = [
+    Entry {
+        label: b"Text actions",
+        shortcut: b">",
+        command: Command::Actions,
+    },
     Entry {
         label: b"Undo",
         shortcut: b"Ctrl+Z",
@@ -240,7 +261,22 @@ const SELECTION: [Entry; 3] = [
         command: Command::GoTo,
     },
 ];
-const VIEW: [Entry; 4] = [
+const VIEW: [Entry; 7] = [
+    Entry {
+        label: b"Color scheme",
+        shortcut: b">",
+        command: Command::Schemes,
+    },
+    Entry {
+        label: b"Editor font",
+        shortcut: b">",
+        command: Command::Fonts,
+    },
+    Entry {
+        label: b"Text size",
+        shortcut: b">",
+        command: Command::Sizes,
+    },
     Entry {
         label: b"Syntax highlighting",
         shortcut: b">",
@@ -275,6 +311,10 @@ impl Menu {
             Self::Selection => SELECTION.len(),
             Self::View => VIEW.len(),
             Self::Syntax => super::editor_tools::LANGUAGES.len(),
+            Self::Schemes => 10,
+            Self::Fonts => 4,
+            Self::Sizes => 6,
+            Self::Actions => super::editor_tools::actions::ITEMS.len(),
         }
     }
     // ------------------------=
@@ -282,6 +322,33 @@ impl Menu {
     // DESC: Maps each visible row to its executable command and keyboard hint.
     // ------------------=
     pub fn entry(self, index: usize) -> Option<Entry> {
+        use super::editor_tools::{actions, preferences as p};
+        let extra = match self {
+            Self::Schemes => p::NAMES.get(index).map(|label| Entry {
+                label,
+                shortcut: b"",
+                command: Command::Scheme(index),
+            }),
+            Self::Fonts => p::FONTS.get(index).map(|label| Entry {
+                label,
+                shortcut: b"",
+                command: Command::Font(index),
+            }),
+            Self::Sizes => p::SIZE_NAMES.get(index).map(|label| Entry {
+                label,
+                shortcut: b"",
+                command: Command::Size(index),
+            }),
+            Self::Actions => actions::ITEMS.get(index).map(|(label, a)| Entry {
+                label,
+                shortcut: b"",
+                command: Command::Transform(*a),
+            }),
+            _ => None,
+        };
+        if extra.is_some() {
+            return extra;
+        }
         if self == Self::Syntax {
             return super::editor_tools::LANGUAGES.get(index).map(|l| Entry {
                 label: l.name(),
@@ -421,9 +488,9 @@ impl Layout {
     pub fn menu_button(self, menu: Menu) -> Rect {
         let (x, w) = match menu {
             Menu::File => (8, 48),
-            Menu::Edit => (60, 44),
+            Menu::Edit | Menu::Actions => (60, 44),
             Menu::Selection => (108, 92),
-            Menu::View => (208, 56),
+            Menu::View | Menu::Schemes | Menu::Fonts | Menu::Sizes => (208, 56),
             _ => (0, 0),
         };
         box_at(
@@ -454,7 +521,11 @@ impl Layout {
     pub fn popup(self, menu: Menu) -> Rect {
         let s = self.scale as u32;
         let w = (300 * s).min(self.menu_bar.width.saturating_sub(16 * s));
-        let h = menu.count() as u32 * ROW_HEIGHT * s + 16 * s;
+        let h = (menu.count().min(self.menu_capacity())
+            + usize::from(menu.count() > self.menu_capacity()) * 2) as u32
+            * ROW_HEIGHT
+            * s
+            + 16 * s;
         let x = if menu == Menu::Syntax {
             self.syntax.right() - w as i32
         } else {
@@ -489,7 +560,31 @@ impl Layout {
     // DESC: Resolves clicks only within real menu rows, never the underlying document.
     // ------------------=
     pub fn row_at(self, menu: Menu, p: Point) -> Option<usize> {
-        (0..menu.count()).find(|i| self.menu_row(menu, *i).contains(p))
+        let cap = self.menu_capacity();
+        let start = super::editor_tools::current().menu_index / cap * cap;
+        for row in 0..menu.count().saturating_sub(start).min(cap) {
+            if self.menu_row(menu, row).contains(p) {
+                return Some(start + row);
+            }
+        }
+        if menu.count() > cap {
+            for nav in 0..2 {
+                if self.menu_row(menu, cap + nav).contains(p) {
+                    return Some(menu.count() + nav);
+                }
+            }
+        }
+        None
+    }
+    // ------------------------=
+    // FUNC: menu_capacity
+    // DESC: Keeps paged native menus and navigation inside the actual window height.
+    // ------------------=
+    pub fn menu_capacity(self) -> usize {
+        ((self.status.y - self.menu_bar.bottom()).max(0) as usize
+            / (ROW_HEIGHT as usize * self.scale))
+            .saturating_sub(3)
+            .clamp(1, 8)
     }
     // ------------------------=
     // FUNC: columns
@@ -497,14 +592,15 @@ impl Layout {
     // ------------------=
     pub fn columns(self) -> usize {
         (self.body.width as usize).saturating_sub((CODE_INSET + 16) * self.scale)
-            / (super::editor_tools::CELL_WIDTH * self.scale)
+            / (super::editor_tools::preferences::current().cell() * self.scale)
     }
     // ------------------------=
     // FUNC: rows
     // DESC: Excludes document and status chrome from the code viewport.
     // ------------------=
     pub fn rows(self) -> usize {
-        (self.body.height as usize).saturating_sub(16 * self.scale) / (LINE_HEIGHT * self.scale)
+        (self.body.height as usize).saturating_sub(16 * self.scale)
+            / (super::editor_tools::preferences::current().line() * self.scale)
     }
     // ------------------------=
     // FUNC: scrollbar
