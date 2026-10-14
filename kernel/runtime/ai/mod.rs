@@ -4,6 +4,7 @@ pub mod chat;
 pub mod control;
 pub mod generation;
 pub mod intent;
+pub mod mapping;
 pub mod memory;
 pub mod model;
 pub mod provider;
@@ -47,6 +48,7 @@ pub struct AiRuntime {
     app_saved: Option<qwen::service::Conversation>,
     chat_owner: [u8; 16],
     pending_control: Option<control::Command>,
+    instruction_mapping: mapping::ConfiguredMap,
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
     pub qwen_metrics: qwen::metrics::Metrics,
@@ -297,7 +299,10 @@ impl AiRuntime {
     pub fn submit_chat(&mut self) -> bool {
         if self.app_owner.is_some() || self.pending_control.is_some() || !self.chat.enabled()
             || self.qwen.as_ref().is_some_and(|s| s.busy()) { return false; }
-        if let Some(command) = control::Command::explicit(self.chat.input()) {
+        self.instruction_mapping.refresh();
+        let input = self.chat.input();
+        let mapped = self.instruction_mapping.resolve(input);
+        if let Some(command) = mapped.or_else(|| control::Command::explicit(input)) {
             self.chat.begin_native_turn();
             self.chat.generation_state = chat::GenerationState::Running;
             self.pending_control = Some(command);
@@ -464,6 +469,7 @@ impl AiRuntime {
             app_saved: None,
             chat_owner: [0; 16],
             pending_control: None,
+            instruction_mapping: mapping::ConfiguredMap::new(),
             qwen_tokens: 0,
             qwen_decode_ns: 0,
             qwen_metrics: qwen::metrics::Metrics::new(),

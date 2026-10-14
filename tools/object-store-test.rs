@@ -262,6 +262,14 @@ fn main() {
     assert_eq!(completed_stages, [56, 57, 59, 60, 62, 64, 65, 66]);
     assert!(completed_stages.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(store.runtime_bootstrap_valid());
+    let mapping=store.resolve(b"/system/ai/instruction-mappings.json").expect("AI instruction mapping");
+    let mut mapping_bytes=[0u8;16*1024];
+    let mapping_length=store.read(mapping,None,&mut mapping_bytes).unwrap();
+    assert_eq!(&mapping_bytes[..mapping_length],include_bytes!("../system/ai/instruction-mappings.json"));
+    store.write(mapping,b"user-edited mapping").unwrap();
+    assert_eq!(store.ensure_ai_instruction_mapping().unwrap(),mapping);
+    let preserved=store.read(mapping,None,&mut mapping_bytes).unwrap();
+    assert_eq!(&mapping_bytes[..preserved],b"user-edited mapping");
     // This fixture exercises all five free namespace slots. The independent
     // provisioning test above verifies the sample; delete it here as a user
     // may do, retaining the same namespace budget for the lifecycle tests.
@@ -491,7 +499,8 @@ fn main() {
     // Bootstrap contents precede this object: kernel, recovery, runtime,
     // service registry, capability policy, local model, AI bootstrap, voice
     // framework, agent policy, organization schema, identity state, and native
-    // network state, and declarative shell-profile state.
+    // network state, the four-block editable AI mapping, and declarative
+    // shell-profile state. The constant counts allocation blocks.
     content_disk.flip(
         (STORE_RELATIVE_LBA + 80 + storage::object::BOOTSTRAP_CONTENT_OBJECTS * 8) as usize,
         0,

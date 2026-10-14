@@ -2556,6 +2556,11 @@ impl ConsoleRuntime {
                 self.activate_launcher_action(entry.action);return Some(true);
             },
             Command::Menu(menu) => {self.open_shell_menu(menu);return Some(self.mode==ConsoleMode::SystemMenu);},
+            Command::AiInstructionMapping => {
+                self.open_text_editor_path(crate::runtime::ai::mapping::PATH);
+                return Some(self.editor_window.visible && self.desktop_app == DesktopAppKind::TextEditor
+                    && self.editor_document_path[..self.editor_document_path_length] == *crate::runtime::ai::mapping::PATH);
+            },
             Command::Focus(app) => return self.dispatch_ai_window(app, false),
             Command::Close(app) => return self.dispatch_ai_window(app, true),
             Command::CloseActive => {
@@ -3644,7 +3649,7 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: save_editor_document
-    // DESC: Creates or updates the Text Editor document as a native Personal-space object.
+    // DESC: Creates or updates the Text Editor document at its authoritative native object path.
     // ------------------=
     fn save_editor_document(&mut self) -> bool {
         if self.editor_document_path_length == 0 {
@@ -3659,7 +3664,9 @@ impl ConsoleRuntime {
         .is_ok();
         if saved {
             self.editor_document.save();
-            self.editor_tools.notice=b"Saved to your Personal Space.";
+            self.editor_tools.notice=if self.editor_document_path[..self.editor_document_path_length]
+                == *crate::runtime::ai::mapping::PATH {b"Saved AI instruction mappings to System Space."}
+                else {b"Saved to your Personal Space."};
             crate::output_text(b"[editor] document persisted\n");
         } else {
             self.editor_tools.notice=b"Save failed. Your modified document remains in memory.";

@@ -29,7 +29,10 @@ pub const ROOT_B: u64 = 1;
 pub const BANK_A: u64 = 8;
 pub const BANK_B: u64 = 40;
 const CONTENT: u64 = 80;
-pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 16;
+// Historical name retained for layout consumers: this is the number of 4 KiB
+// allocation blocks consumed by bootstrap content, not the object count.
+pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 20;
+const AI_INSTRUCTION_MAPPING: &[u8] = include_bytes!("../../system/ai/instruction-mappings.json");
 // Thirteen object-table sectors fit in each 32-sector metadata bank. The first
 // six retain their original offsets and the remaining seven occupy the bank's
 // reserved tail, leaving useful object headroom after bootstrap System objects.
@@ -692,6 +695,13 @@ impl<D: BlockDevice> ObjectStore<D> {
         ));
         self.write_record(ai_service, &ai_bootstrap)?;
         self.attach_record(b"/system/ai/bootstrap", ai_service)?;
+        let ai_mapping = self.create_record(
+            b"instruction-mappings.json",
+            ObjectType::Text,
+            Space::System,
+        )?;
+        self.write_record(ai_mapping, AI_INSTRUCTION_MAPPING)?;
+        self.attach_record(b"/system/ai/instruction-mappings.json", ai_mapping)?;
         progress(62, b"INSTALLING VOICE, AGENT AND ORGANIZATION POLICY");
         let voice = self.create_record(
             b"voice-framework",
@@ -859,6 +869,20 @@ impl<D: BlockDevice> ObjectStore<D> {
             return false;
         }
         true
+    }
+
+    // ------------------------=
+    // FUNC: ensure_ai_instruction_mapping
+    // DESC: Adds the editable default mapping to an older installed store without replacing any existing user version.
+    // ------------------=
+    pub fn ensure_ai_instruction_mapping(&mut self) -> Result<ObjectId,ObjectError> {
+        match self.resolve(b"/system/ai/instruction-mappings.json") {
+            Ok(id)=>Ok(id),
+            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>self.create_attached(
+                b"instruction-mappings.json",ObjectType::Text,Space::System,AI_INSTRUCTION_MAPPING,
+                b"/system/ai/instruction-mappings.json"),
+            Err(error)=>Err(error),
+        }
     }
 
     // ------------------------=

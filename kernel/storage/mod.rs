@@ -335,6 +335,9 @@ pub fn initialize_object_store() {
                 if store.recover_editor_documents().is_err() {
                     crate::output_text(b"[storage] legacy Documents recovery incomplete; original references retained\n");
                 }
+                if store.ensure_ai_instruction_mapping().is_err() {
+                    crate::output_text(b"[storage] AI instruction mapping migration incomplete; existing data retained\n");
+                }
                 crate::output_text(b"[storage] container valid\n[storage] pool online\n");
                 crate::output_text(
                     b"[object] committed generation loaded\n[object] object index online\n",
@@ -659,6 +662,10 @@ pub fn object_save_download<P:object::ObjectCapabilityPolicy>(request:object::Do
 // DESC: Implements the object write path operation.
 // ------------------=
 pub fn object_write_path(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectError> {
+    if path == crate::runtime::ai::mapping::PATH
+        && crate::runtime::ai::mapping::validate(content).is_err() {
+        return Err(object::ObjectError::CorruptContent);
+    }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         with_store(|s| {
@@ -694,6 +701,23 @@ pub fn object_read_path(
         let _ = (path, version, out);
         Err(object::ObjectError::SpaceUnavailable)
     }
+}
+
+// ------------------------=
+// FUNC: ai_instruction_mapping_load
+// DESC: Reads the current editable AI instruction map from authoritative installed System Space.
+// ------------------=
+pub fn ai_instruction_mapping_load(out:&mut [u8])->Result<usize,object::ObjectError>{
+    object_read_path(crate::runtime::ai::mapping::PATH,None,out).map(|(_,length)|length)
+}
+
+// ------------------------=
+// FUNC: ai_instruction_mapping_commit
+// DESC: Validates and transactionally versions an edited AI mapping before it can affect voice or chat dispatch.
+// ------------------=
+pub fn ai_instruction_mapping_commit(content:&[u8])->Result<u32,object::ObjectError>{
+    crate::runtime::ai::mapping::validate(content).map_err(|_|object::ObjectError::CorruptContent)?;
+    checkpoint_state(crate::runtime::ai::mapping::PATH,content)
 }
 
 // ------------------------=

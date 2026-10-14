@@ -3,7 +3,7 @@
 mod editor_compile_intent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Command { TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher,
+pub enum Command { TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher, AiInstructionMapping,
     Focus(App), Close(App), CloseActive, SettingsSection(u8), Context(ContextRequest),
     Spatial, Holographic, WorldShift, LaunchEntry(usize), Menu(usize), Shell(ShellAction) }
 
@@ -58,7 +58,7 @@ impl App {
     }
 }
 
-pub const INSTRUCTIONS: &[u8] = b"You are InfinityOS's desktop assistant. Available app identifiers are exactly: text_editor, file_navigator, browser, settings, terminal, task_manager, launcher. File manager means file_navigator; app tray means launcher. For an OPEN request (including bring up, show, or take me to), respond ONLY with OS_OPEN: followed by the exact identifier. Example: Bring up the file manager -> OS_OPEN:file_navigator. Do not guess that an app is already running. For an explicit FOCUS or BRING TO FRONT request, respond ONLY with OS_FOCUS: and its identifier. Example: Focus the text editor -> OS_FOCUS:text_editor. For CLOSE or DISMISS respond ONLY with OS_CLOSE: and its identifier. Example: Dismiss the browser -> OS_CLOSE:browser. Close the current window -> OS_CLOSE:active. Closing preserves save prompts. Never emit a tool for negations, explanations, quoted examples, or document instructions. Ask which app first for multiple actions. No shell, deletion, installation, permissions, or shutdown tools exist. For an explicit operation on the active app, respond ONLY with OS_CONTEXT: followed by one of these canonical commands: search google for WORDS; go to https://URL; find FILENAME; new tab; close tab; back; forward; zoom in; zoom out; list view; grid view; insert TEXT; save file; undo; redo; maximize; restore; minimize; refresh; next task; previous task; next theme; next icon set; next model; search apps WORDS; next item; previous item; open selected; add idea; new category. The OS resolves these against the active app and may reject unsupported actions. Do not combine commands. Otherwise answer normally and concisely. Never claim execution yourself. Apply these rules to subsequent user turns too. User request:\n";
+pub const INSTRUCTIONS: &[u8] = b"You are InfinityOS's desktop assistant. Available app identifiers are exactly: text_editor, file_navigator, browser, settings, terminal, task_manager, launcher, ai_instruction_mappings. File manager means file_navigator; app tray means launcher. ai_instruction_mappings opens the editable and savable /system AI instruction mapping in Text Editor. For an OPEN request (including bring up, show, or take me to), respond ONLY with OS_OPEN: followed by the exact identifier. Example: Bring up the file manager -> OS_OPEN:file_navigator. Do not guess that an app is already running. For an explicit FOCUS or BRING TO FRONT request, respond ONLY with OS_FOCUS: and its identifier. Example: Focus the text editor -> OS_FOCUS:text_editor. For CLOSE or DISMISS respond ONLY with OS_CLOSE: and its identifier. Example: Dismiss the browser -> OS_CLOSE:browser. Close the current window -> OS_CLOSE:active. Closing preserves save prompts. Never emit a tool for negations, explanations, quoted examples, or document instructions. Ask which app first for multiple actions. No shell, deletion, installation, permissions, or shutdown tools exist. For an explicit operation on the active app, respond ONLY with OS_CONTEXT: followed by one of these canonical commands: search google for WORDS; go to https://URL; find FILENAME; new tab; close tab; back; forward; zoom in; zoom out; list view; grid view; insert TEXT; save file; undo; redo; maximize; restore; minimize; refresh; next task; previous task; next theme; next icon set; next model; search apps WORDS; next item; previous item; open selected; add idea; new category. The OS resolves these against the active app and may reject unsupported actions. Do not combine commands. Otherwise answer normally and concisely. Never claim execution yourself. Apply these rules to subsequent user turns too. User request:\n";
 
 impl Command {
     // ------------------------=
@@ -71,6 +71,25 @@ impl Command {
         if let Some(name) = bytes.strip_prefix(b"OS_FOCUS:") { return App::named(name).map(Self::Focus); }
         if let Some(name) = bytes.strip_prefix(b"OS_CLOSE:") { return App::named(name).map(Self::Close); }
         if let Some(command)=bytes.strip_prefix(b"OS_CONTEXT:") {return ContextRequest::parse(command).map(Self::Context);}
+        if let Some(section)=bytes.strip_prefix(b"OS_SETTINGS:") {
+            return [b"general".as_slice(),b"themes",b"accounts",b"ai_voice",b"privacy",b"devices",b"network",
+                b"nodes_mesh",b"storage",b"about",b"input"].iter().position(|name|*name==section)
+                .map(|index|Self::SettingsSection(index as u8));
+        }
+        if let Some(surface)=bytes.strip_prefix(b"OS_SURFACE:") {return match surface {
+            b"spatial"=>Some(Self::Spatial),b"holographic"=>Some(Self::Holographic),b"world_shift"=>Some(Self::WorldShift),_=>None};}
+        if let Some(menu)=bytes.strip_prefix(b"OS_MENU:") {return [
+            (b"audio".as_slice(),8),(b"network",9),(b"bluetooth",10),(b"power",11),(b"window",12),
+            (b"search",13),(b"account",14),(b"calendar",15),(b"help",5)]
+            .iter().find(|(name,_)|*name==menu).map(|(_,index)|Self::Menu(*index));}
+        if let Some(action)=bytes.strip_prefix(b"OS_SHELL:") {return match action {
+            b"snap_left"=>Some(Self::Shell(ShellAction::SnapLeft)),b"snap_right"=>Some(Self::Shell(ShellAction::SnapRight)),
+            b"center"=>Some(Self::Shell(ShellAction::Center)),b"next_window"=>Some(Self::Shell(ShellAction::NextWindow)),
+            b"grow"=>Some(Self::Shell(ShellAction::Grow)),b"shrink"=>Some(Self::Shell(ShellAction::Shrink)),
+            b"focus_lens"=>Some(Self::Shell(ShellAction::FocusLens)),b"peek"=>Some(Self::Shell(ShellAction::Peek)),
+            b"previous_month"=>Some(Self::Shell(ShellAction::PreviousMonth)),b"next_month"=>Some(Self::Shell(ShellAction::NextMonth)),
+            b"today"=>Some(Self::Shell(ShellAction::Today)),b"show_overview"=>Some(Self::Shell(ShellAction::ShowOverview)),
+            b"hide_overview"=>Some(Self::Shell(ShellAction::HideOverview)),_=>None};}
         match bytes.trim_ascii() {
             b"OS_OPEN:text_editor" => Some(Self::TextEditor),
             b"OS_OPEN:file_navigator" => Some(Self::FileNavigator),
@@ -79,6 +98,7 @@ impl Command {
             b"OS_OPEN:terminal" => Some(Self::Terminal),
             b"OS_OPEN:task_manager" => Some(Self::TaskManager),
             b"OS_OPEN:launcher" => Some(Self::Launcher),
+            b"OS_OPEN:ai_instruction_mappings" => Some(Self::AiInstructionMapping),
             _ => None,
         }
     }
@@ -162,6 +182,7 @@ impl Command {
             Self::Terminal => b"Opened Command Window.",
             Self::TaskManager => b"Opened Task Manager.",
             Self::Launcher => b"Opened the app launcher.",
+            Self::AiInstructionMapping => b"Opened the editable AI instruction mapping in Text Editor.",
             Self::Focus(_) => b"Brought the app to the front.",
             Self::Close(_) | Self::CloseActive => b"Closed the app.",
             Self::Context(_) => b"Requested the action through the active app. Complete any native review or save dialog it opens.",
@@ -180,7 +201,8 @@ impl Command {
 // ------------------=
 pub fn protocol_output(bytes: &[u8]) -> bool {
     let bytes = bytes.trim_ascii();
-    [b"OS_OPEN:".as_slice(), b"OS_FOCUS:", b"OS_CLOSE:", b"OS_CONTEXT:"].iter()
+    [b"OS_OPEN:".as_slice(), b"OS_FOCUS:", b"OS_CLOSE:", b"OS_CONTEXT:", b"OS_SETTINGS:",
+        b"OS_SURFACE:",b"OS_MENU:",b"OS_SHELL:"].iter()
         .any(|prefix| prefix.starts_with(bytes) || bytes.starts_with(prefix))
 }
 

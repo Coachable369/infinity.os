@@ -789,6 +789,7 @@ fn desktop_chat() {
 // DESC: Runs the Milestone 6 host acceptance suite.
 // ------------------=
 fn main() {
+    instruction_mapping_contract();
     control_contract();
     if std::env::args().any(|arg| arg == "--app-native" || arg == "--control-native") {
         app_native();
@@ -800,6 +801,31 @@ fn main() {
     services_and_events();
     desktop_chat();
     println!("PASS Milestone 6 native AI host acceptance");
+}
+
+// ------------------------=
+// FUNC: instruction_mapping_contract
+// DESC: Verifies editable aliases, dynamic arguments, typed-target rejection and direct runtime dispatch without model inference.
+// ------------------=
+fn instruction_mapping_contract() {
+    use runtime::ai::{control::{Command,ContextRequest},mapping};
+    assert!(mapping::validate(mapping::DEFAULT).is_ok());
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"show my files").unwrap(),Some(Command::FileNavigator));
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"edit ai instructions").unwrap(),Some(Command::AiInstructionMapping));
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"  SHOW   MY   FILES! ").unwrap(),Some(Command::FileNavigator));
+    let expected=ContextRequest::parse(b"search google for Infinity OS").unwrap();
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"Google Infinity OS").unwrap(),Some(Command::Context(expected)));
+    let custom=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"os.app.open.editor","scope":"os","target":"OS_OPEN:text_editor","aliases":["paint code","code canvas"]}]}"#;
+    assert!(mapping::validate(custom).is_ok());
+    assert_eq!(mapping::resolve(custom,b"code canvas").unwrap(),Some(Command::TextEditor));
+    let unsafe_target=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"bad","scope":"os","target":"SYSTEM_CALL:delete","aliases":["erase everything"]}]}"#;
+    assert_eq!(mapping::validate(unsafe_target),Err(mapping::Error::InvalidTarget));
+    let duplicate=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"one","scope":"os","target":"OS_OPEN:settings","aliases":["same alias"]},{"id":"two","scope":"os","target":"OS_OPEN:browser","aliases":["SAME ALIAS"]}]}"#;
+    assert_eq!(mapping::validate(duplicate),Err(mapping::Error::DuplicateAlias));
+    let mut ai=AiRuntime::new();ai.bind_chat_owner([0x51;16]);
+    for byte in b"show my files" {assert!(ai.chat.push_input(*byte));}
+    assert!(ai.submit_chat());
+    assert_eq!(ai.take_control([0x51;16],true),Some(Command::FileNavigator));
 }
 
 // ------------------------=
