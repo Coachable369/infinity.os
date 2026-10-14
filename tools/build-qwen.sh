@@ -105,12 +105,14 @@ iso_size=$(python3 tools/iso-staging.py size "${payload_build}/live")
 python3 tools/iso-staging.py check "$payload_build" 1073741824
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
+# Preserve the exact current live kernel before the consumptive staging copy
+# transfers and removes the live tree.
+cp "${payload_build}/live/EFI/INFINITY/KERNEL.ELF" "${payload_build}/current-live-kernel.elf"
 python3 tools/iso-staging.py consume "${payload_build}/live" "${payload_build}/iso/efi.img"
 # The ISO's EFI image now owns the live payload. Release this private mktemp
 # duplicate before allocating the final ISO alongside the previous release,
 # retaining only the exact current live kernel needed by the publication gate.
-mv "${payload_build}/live/EFI/INFINITY/KERNEL.ELF" "${payload_build}/current-live-kernel.elf"
-rm -r -- "${payload_build}/live"
+test ! -d "${payload_build}/live" || rm -r -- "${payload_build}/live"
 # Publish only after model and installed-kernel parity have passed. Keep a failed
 # image out of the canonical filename used by provisioning.
 python3 tools/iso-staging.py check builds "$((iso_size + 1073741824))"
