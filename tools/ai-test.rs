@@ -992,7 +992,7 @@ fn control_contract() {
     for output in [b"OS_OPEN:terminal\nrm -rf /".as_slice(), b"OS_OPEN:delete", b"OS_OPEN:"] {
         control::publish(&mut chat, &mut pending, output, true, true);
         assert_eq!(pending, None);
-        assert_eq!(chat.generation_state, GenerationState::Failed);
+        assert_eq!(chat.generation_state, GenerationState::Complete);
     }
     let output = b"OS_OPEN:text_editor";
     for end in 0..=output.len() {

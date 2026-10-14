@@ -538,11 +538,22 @@ impl ConsoleRuntime {
                     panel.focused = false;
                 }
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                {success=compiler_commands::start(self);}
+                {
+                    let compile=compiler_commands::start(self);
+                    success=compile.is_ok();
+                    panel.reply(match compile {
+                        Ok(())=>b"Compiling this source snapshot in isolated user mode. You can keep editing; the result will appear here.",
+                        Err(compiler_commands::StartError::Busy)=>b"A native build is already active. Its result will appear here when it finishes.",
+                        Err(compiler_commands::StartError::SessionUnavailable)=>b"Compilation requires the current authenticated session. Sign in again, then retry.",
+                        Err(compiler_commands::StartError::AiDisabled)=>b"Compilation through Infinity AI is disabled in Settings.",
+                        Err(compiler_commands::StartError::ClockUnavailable)=>b"Compilation is waiting for the system clock service. Retry after startup completes.",
+                        Err(compiler_commands::StartError::CapabilityUnavailable)=>b"Compilation could not acquire a temporary output capability. Expired capabilities were reclaimed; retry once.",
+                        Err(compiler_commands::StartError::CompilerUnavailable)=>b"The native compiler execution platform is unavailable on this boot.",
+                        Err(compiler_commands::StartError::SourceInvalid)=>b"This document is empty or exceeds the native compiler source limit.",
+                    });
+                }
                 #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
-                {success=false;}
-                panel.reply(if success {b"Compiling this source snapshot in isolated user mode. You can keep editing; the result will appear here."}
-                    else{b"Compilation could not start. Check for an active build, native compiler availability, and an authenticated session."});
+                {success=false;panel.reply(b"The native compiler is not included in this build.");}
                 assistant::write(id,panel);return success;
             }
             Action::Undo if id == 2 => success = self.editor_document.undo(),

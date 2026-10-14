@@ -220,6 +220,10 @@ pub fn publish(chat: &mut super::chat::ChatRuntime, pending: &mut Option<Command
         }
     }
     chat.update_native_response(b"I could not resolve a supported OS command. No action was taken.");
-    chat.generation_state = super::chat::GenerationState::Failed;
+    // The model's tool record failed validation, but the bounded native
+    // fallback above is a complete user-visible answer. Publishing it as a
+    // failed generation makes the voice conversation discard that answer and
+    // stop listening instead of speaking the failure receipt.
+    chat.generation_state = super::chat::GenerationState::Complete;
     true
 }

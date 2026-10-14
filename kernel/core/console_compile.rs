@@ -13,6 +13,17 @@ pub static mut INFINITY_NATIVE_APP_SNAPSHOT:[u64;8]=[0x494e464341505031,1,0,0,0,
 #[no_mangle]
 pub static mut INFINITY_NATIVE_APP_NAME:[u8;28]=[0;28];
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(super) enum StartError {
+    Busy,
+    SessionUnavailable,
+    AiDisabled,
+    ClockUnavailable,
+    CapabilityUnavailable,
+    CompilerUnavailable,
+    SourceInvalid,
+}
+
 // ------------------------=
 // FUNC: active
 // DESC: Requires a live authenticated owner session before starting or continuing native compilation.
@@ -37,23 +48,33 @@ impl crate::storage::object::ObjectCapabilityPolicy for Lease {
 }
 // ------------------------=
 // FUNC: start
-// DESC: Starts an approved immutable editor snapshot and issues a short-lived executable-publication lease.
+// DESC: Starts an approved immutable editor snapshot, reclaiming expired authority before issuing its publication lease.
 // ------------------=
-pub(super) fn start(console:&ConsoleRuntime)->bool {unsafe {
-    if LEASE.is_some() || !active(console) || !console.ai_chat_allowed(){return false;}
-    let Some(now)=crate::runtime::node_client::clock() else{return false;};
+pub(super) fn start(console:&ConsoleRuntime)->Result<(),StartError> {unsafe {
+    if LEASE.is_some() {return Err(StartError::Busy);}
+    if !active(console) {return Err(StartError::SessionUnavailable);}
+    if !console.ai_chat_allowed() {return Err(StartError::AiDisabled);}
+    let Some(now)=crate::runtime::node_client::clock() else{return Err(StartError::ClockUnavailable);};
     let owner=SecurityIdentity(console.current_session.0);
-    let capability=crate::runtime::with_runtime(|r|r.capabilities.grant(CapabilityType::ObjectWrite,0,1,0,
-        owner,owner,Some(now.saturating_add(125)),0).ok()).flatten();
-    let Some(capability)=capability else{return false;};
+    let capability=crate::runtime::with_runtime(|r|{
+        r.capabilities.reclaim_expired_leaves(now);
+        r.capabilities.grant(CapabilityType::ObjectWrite,0,1,0,
+            owner,owner,Some(now.saturating_add(125)),0).ok()
+    }).flatten();
+    let Some(capability)=capability else{return Err(StartError::CapabilityUnavailable);};
     let ticks=crate::runtime::ai::qwen::workers::clock_ns();
-    if job::start(owner,console.editor_document.bytes(),ticks).is_err() {
-        crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(capability,owner);});return false;
+    if let Err(error)=job::start(owner,console.editor_document.bytes(),ticks) {
+        crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(capability,owner);});
+        return Err(match error {
+            job::Error::Busy=>StartError::Busy,
+            job::Error::Unavailable=>StartError::CompilerUnavailable,
+            job::Error::SourceTooLarge=>StartError::SourceInvalid,
+        });
     }
     let mut name=[0;28];name[..8].copy_from_slice(b"program-");
     for i in 0..16 {name[8+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
     name[24..].copy_from_slice(b".elf");
-    LEASE=Some(Lease{owner,capability,name});true
+    LEASE=Some(Lease{owner,capability,name});Ok(())
 }}
 // ------------------------=
 // FUNC: poll
