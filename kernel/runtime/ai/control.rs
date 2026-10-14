@@ -1,4 +1,6 @@
 //! Bounded desktop tools. Model output is data until an authenticated UI dispatch.
+#[path = "../../ui/editor_compile_intent.rs"]
+mod editor_compile_intent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command { TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher,
@@ -27,7 +29,7 @@ impl ContextRequest {
             b"next task",b"previous task",b"next theme",b"next icon set",b"next model",
             b"next item",b"previous item",b"open selected",b"add idea",b"new category"];
         let prefixes=[b"search google for ".as_slice(),b"google ",b"search for ",b"find ",b"find file ",b"insert ",b"open folder ",b"type ",b"search apps ",b"go to ",b"open url ",b"navigate to "];
-        if !exact.iter().any(|v|input.eq_ignore_ascii_case(v)) && !prefixes.iter().any(|v|
+        if editor_compile_intent::parse(input).is_none() && !exact.iter().any(|v|input.eq_ignore_ascii_case(v)) && !prefixes.iter().any(|v|
             input.len()>v.len() && input[..v.len()].eq_ignore_ascii_case(v)) {return None;}
         let mut request=Self{bytes:[0;256],length:input.len()};
         request.bytes[..input.len()].copy_from_slice(input);Some(request)

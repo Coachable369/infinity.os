@@ -539,6 +539,34 @@ fn generated_editor_actions() {
         assert_eq!(panel.take_action(12), Action::None);
     }
     panel.request_len = 0;
+    for command in [b"save and compile my code".as_slice(), b"Please save and compile this file.",
+        b"  SAVE THEN COMPILE MY PROGRAM  "] {
+        panel.input[..command.len()].copy_from_slice(command); panel.length = command.len();
+        assert!(!panel.propose(false, 12));
+        assert!(panel.propose(true, 12));
+        assert_eq!(panel.take_action(13), Action::None);
+        assert!(panel.propose(true, 12));
+        assert_eq!(panel.take_action(12), Action::SaveCompile);
+        assert!(ai::supports(2, Action::SaveCompile));
+        assert!(!ai::supports(0, Action::SaveCompile));
+        panel.defer_compile_until_saved();
+        assert_eq!(panel.take_action(12), Action::None);
+        assert!(panel.finish_compile_save(true, 12));
+        assert!(!panel.finish_compile_save(true, 12));
+        assert_eq!(panel.take_action(12), Action::Compile);
+        assert_eq!(panel.take_action(12), Action::None);
+        panel.defer_compile_until_saved();
+        assert!(!panel.finish_compile_save(false, 12));
+        assert!(!panel.finish_compile_save(true, 12));
+        panel.defer_compile_until_saved();
+        assert!(!panel.finish_compile_save(true, 13));
+        assert_eq!(panel.pending, Action::None);
+        assert_eq!(document.bytes(), b"hello world");
+    }
+    for command in [b"do not save and compile my code".as_slice(), b"explain save and compile my code",
+        b"\"save and compile my code\"", b"save and compile my code then run it"] {
+        assert_eq!(ai::editor_compile_intent::parse(command), None);
+    }
     panel.input[..7].copy_from_slice(b"compile");panel.length=7;
     assert!(panel.propose(true,12));
     assert_eq!(panel.take_action(12),Action::Compile);

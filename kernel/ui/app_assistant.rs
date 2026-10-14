@@ -2,6 +2,8 @@
 use super::geometry::{Point, Rect};
 #[path = "assistant_tab.rs"]
 pub mod tab_style;
+#[path = "editor_compile_intent.rs"]
+pub mod editor_compile_intent;
 pub const PANEL_SLOTS: usize = 16;
 pub const TAB_WIDTH: usize = 28;
 pub const TAB_HEIGHT: usize = 104;
@@ -41,6 +43,7 @@ pub enum Action {
     Redo,
     SelectAll,
     Save,
+    SaveCompile,
     Refresh,
     Navigate,
     Replace,
@@ -87,7 +90,7 @@ pub fn supports(owner:usize,action:Action)->bool {
         Action::Back|Action::Forward=>owner==0||navigator,
         Action::ZoomIn|Action::ZoomOut=>matches!(owner,0|12),
         Action::FindFile|Action::Navigate|Action::ListView|Action::GridView=>navigator,
-        Action::Find|Action::Insert|Action::Undo|Action::Redo|Action::SelectAll|Action::Save|Action::Replace|Action::Clear|Action::Compile|Action::ReplaceCompile=>owner==2,
+        Action::Find|Action::Insert|Action::Undo|Action::Redo|Action::SelectAll|Action::Save|Action::SaveCompile|Action::Replace|Action::Clear|Action::Compile|Action::ReplaceCompile=>owner==2,
         Action::DraftCommand=>owner==1,
         Action::NextTask|Action::PreviousTask=>owner==3,
         Action::CycleTheme|Action::CycleIcons|Action::CycleModel=>owner==4,
@@ -127,6 +130,7 @@ pub struct Panel {
     pub request_len: usize,
     pub response_len: usize,
     pub pending: Action,
+    pub awaiting_compile_save: bool,
     pub argument: [u8; 4096],
     pub argument_len: usize,
     pub document_revision: u64,
@@ -225,6 +229,7 @@ impl Panel {
             request_len: 0,
             response_len: 0,
             pending: Action::None,
+            awaiting_compile_save: false,
             argument: [0; 4096],
             argument_len: 0,
             document_revision: 0,
@@ -245,6 +250,7 @@ impl Panel {
     pub fn propose(&mut self, editor: bool, revision: u64) -> bool {
         self.generation = GenerationStatus::Idle;
         self.pending = Action::None;
+        self.awaiting_compile_save = false;
         self.argument_len = 0;
         let mut command = self.input;
         for c in &mut command[..self.length] {
@@ -252,6 +258,9 @@ impl Panel {
         }
         let text = &command[..self.length];
         let action = match text {
+            _ if editor && editor_compile_intent::parse(text).is_some() => {
+                if editor_compile_intent::parse(text) == Some(true) { Action::SaveCompile } else { Action::Compile }
+            }
             b"maximize" | b"maximize window" => Action::Maximize,
             b"restore" | b"restore window" => Action::Restore,
             b"minimize" | b"minimize window" => Action::Minimize,
@@ -285,6 +294,10 @@ impl Panel {
         }
         self.pending = action;
         self.document_revision = revision;
+        if action == Action::SaveCompile {
+            self.reply(b"Save the current editor document, then compile that source with native Clang. The executable will not run automatically.");
+            return true;
+        }
         if action == Action::Compile {
             self.reply(b"Compile a snapshot of this document with native Clang. Apply to confirm; the resulting executable is not run automatically.");
             return true;
@@ -315,12 +328,35 @@ impl Panel {
                 | Action::Redo
                 | Action::SelectAll
                 | Action::Save
+                | Action::SaveCompile
         ) && revision != self.document_revision
         {
             self.reply(b"The document changed. Submit the request again before applying.");
             return Action::None;
         }
         action
+    }
+
+    // ------------------------=
+    // FUNC: defer_compile_until_saved
+    // DESC: Arms a one-shot continuation only after an authorized action opens Save As.
+    // ------------------=
+    pub fn defer_compile_until_saved(&mut self) {
+        self.pending = Action::None;
+        self.awaiting_compile_save = true;
+    }
+
+    // ------------------------=
+    // FUNC: finish_compile_save
+    // DESC: Consumes a save continuation, rejecting cancellation and changed documents.
+    // ------------------=
+    pub fn finish_compile_save(&mut self, saved: bool, revision: u64) -> bool {
+        if !self.awaiting_compile_save { return false; }
+        self.awaiting_compile_save = false;
+        self.pending = Action::None;
+        if !saved || revision != self.document_revision { return false; }
+        self.pending = Action::Compile;
+        true
     }
 
     // ------------------------=

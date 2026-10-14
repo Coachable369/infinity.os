@@ -517,7 +517,17 @@ impl ConsoleRuntime {
             Action::Insert | Action::Replace | Action::Clear if id == 2 => {
                 success = panel.edit_document(action, &mut self.editor_document);
             }
-            Action::Compile | Action::ReplaceCompile if id == 2 => {
+            Action::Compile | Action::ReplaceCompile | Action::SaveCompile if id == 2 => {
+                if action == Action::SaveCompile && !self.save_editor_document() {
+                    if self.editor_dialog == EditorDialog::SaveAs {
+                        panel.defer_compile_until_saved();
+                        panel.reply(b"Choose a filename and location in Save As. Compilation will start after the document is saved.");
+                    } else {
+                        panel.reply(b"Save failed. Nothing was compiled; your code remains in the editor.");
+                    }
+                    assistant::write(id, panel);
+                    return false;
+                }
                 if action==Action::ReplaceCompile && !panel.edit_document(action,&mut self.editor_document) {
                     panel.reply(b"The generated source could not be applied. Nothing was compiled.");
                     assistant::write(id,panel);return false;

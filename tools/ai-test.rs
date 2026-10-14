@@ -914,7 +914,8 @@ fn app_native() {
 // ------------------=
 fn control_contract() {
     use runtime::ai::control::{self, App, Command};
-    for text in [b"Search google for Hello World".as_slice(),b"find Hello.c",b"new tab",b"next icon set",b"type echo Hello"] {
+    for text in [b"Search google for Hello World".as_slice(),b"find Hello.c",b"new tab",b"next icon set",b"type echo Hello",
+        b"save and compile my code",b"save then compile this file",b"compile my code"] {
         let expected=control::ContextRequest::parse(text).unwrap();
         assert_eq!(&expected.bytes[..expected.length],text);
         let mut ai=Box::new(AiRuntime::new());ai.bind_chat_owner([1;16]);
@@ -924,7 +925,8 @@ fn control_contract() {
         assert_eq!(ai.take_control([1;16],true),None);
         assert_eq!(Command::explicit(text),Some(Command::Context(expected)));
     }
-    for text in [b"do not close tab".as_slice(),b"explain new tab",b"\"new tab\"",b"next model and delete files"] {
+    for text in [b"do not close tab".as_slice(),b"explain new tab",b"\"new tab\"",b"next model and delete files",
+        b"do not save and compile my code",b"explain save and compile",b"save and compile my code and run it"] {
         assert_eq!(control::ContextRequest::parse(text),None);
     }
     assert_eq!(Command::explicit(b"open calendar"),Some(Command::Menu(15)));

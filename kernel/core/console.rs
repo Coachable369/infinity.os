@@ -3882,13 +3882,16 @@ impl ConsoleRuntime {
         self.detect_editor_language();
         self.editor_document.save();
         let pending = self.editor_pending_action;
+        let mut panel = crate::ui::app_assistant::read(2);
+        let resume = panel.finish_compile_save(pending == PendingDocumentAction::None, self.assistant_revision());
+        crate::ui::app_assistant::write(2, panel);
         self.editor_dialog = EditorDialog::None;
         self.system_focus = 0;
         self.reset_input();
         self.output.clear();
         if pending != PendingDocumentAction::None {
             self.perform_editor_action(pending);
-        }
+        } else if resume { self.apply_window_assistant(2); }
     }
 
     // ------------------------=
@@ -3896,6 +3899,9 @@ impl ConsoleRuntime {
     // DESC: Closes the editor naming or object-picker sheet and clears its transient input.
     // ------------------=
     fn close_editor_dialog(&mut self) {
+        let mut panel = crate::ui::app_assistant::read(2);
+        panel.finish_compile_save(false, self.assistant_revision());
+        crate::ui::app_assistant::write(2, panel);
         self.editor_dialog = EditorDialog::None;
         self.editor_pending_action = PendingDocumentAction::None;
         self.system_focus = 0;
