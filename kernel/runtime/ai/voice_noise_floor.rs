@@ -29,7 +29,7 @@ impl NoiseFloor {
     pub const fn threshold(&self) -> u16 { self.threshold }
     // ------------------------=
     // FUNC: push
-    // DESC: Uses median frame energy so startup zeros and isolated clicks cannot dominate the ambient baseline.
+    // DESC: Uses the greater of whole-window and settled-tail medians so startup gain ramping cannot underestimate ambient noise.
     // ------------------=
     pub fn push(&mut self, pcm: &[i16]) -> usize {
         let mut consumed = 0;
@@ -44,8 +44,14 @@ impl NoiseFloor {
                 self.energy = 0;
                 self.frames += 1;
                 if self.ready() {
+                    // Capture devices can ramp their gain throughout the first
+                    // half second. Earlier quiet frames are not the settled
+                    // room level. A tail median still rejects isolated clicks.
+                    let mut tail = [0u32; 9];
+                    tail.copy_from_slice(&self.energies[FRAMES - 9..]);
+                    tail.sort_unstable();
                     self.energies.sort_unstable();
-                    let baseline = u64::from(self.energies[FRAMES / 2]);
+                    let baseline = u64::from(self.energies[FRAMES / 2].max(tail[4]));
                     let mut low = 0u64;
                     let mut high = 32769u64;
                     while high - low > 1 {
@@ -102,6 +108,21 @@ mod tests {
             for chunk in pcm.chunks(size) { floor.push(chunk); }
             assert!(floor.ready());
             assert_eq!(floor.threshold(), 1000);
+        }
+    }
+    // ------------------------=
+    // FUNC: settled_gain_is_not_diluted_by_cold_frames
+    // DESC: Verifies a late capture gain ramp uses its settled level without adding readiness delay or retaining PCM.
+    // ------------------=
+    #[test]
+    fn settled_gain_is_not_diluted_by_cold_frames() {
+        for size in [1, 17, 320, 701, 8000] {
+            let mut pcm = std::vec![0; FRAME * 15];
+            pcm.extend_from_slice(&[400; FRAME * 10]);
+            let mut floor = NoiseFloor::new();
+            for chunk in pcm.chunks(size) { floor.push(chunk); }
+            assert!(floor.ready());
+            assert_eq!(floor.threshold(), 800);
         }
     }
 }

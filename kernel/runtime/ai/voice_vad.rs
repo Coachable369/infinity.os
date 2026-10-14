@@ -69,14 +69,18 @@ impl Detector {
                 let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
                 if voiced {
                     self.consecutive += 1;
-                    self.last_voice = self.samples;
+                    // Apply the same sustained-voice requirement at the tail
+                    // as at onset. One noisy frame must not extend a phrase
+                    // indefinitely or keep the retry gate latched.
+                    if self.consecutive >= ONSET_FRAMES { self.last_voice = self.samples; }
                     if self.state == VadState::Waiting && self.consecutive >= ONSET_FRAMES {
                         self.segment.start = self.samples.saturating_sub(ONSET_FRAMES * FRAME + PRE_ROLL);
                         self.state = VadState::Speech;
                     }
                 } else { self.consecutive = 0; }
                 self.frame_samples = 0; self.energy = 0;
-                if self.state == VadState::Speech && self.samples - self.last_voice >= END_SILENCE {
+                if self.state == VadState::Speech && self.consecutive == 0
+                    && self.samples - self.last_voice >= END_SILENCE {
                     self.segment.end = (self.last_voice + TAIL).min(self.samples);
                     self.state = VadState::Complete;
                 }
@@ -106,9 +110,10 @@ impl Detector {
             self.energy += (value * value) as u64;
             if self.frame_samples == FRAME {
                 let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
-                self.limit_silence = if voiced { 0 } else { self.limit_silence + FRAME };
+                self.consecutive = if voiced { self.consecutive + 1 } else { 0 };
+                self.limit_silence = if self.consecutive >= ONSET_FRAMES { 0 } else { self.limit_silence + FRAME };
                 self.frame_samples = 0; self.energy = 0;
-                if self.limit_silence >= END_SILENCE { self.state = VadState::NoSpeech; }
+                if self.consecutive == 0 && self.limit_silence >= END_SILENCE { self.state = VadState::NoSpeech; }
             }
         }
         consumed
@@ -280,7 +285,7 @@ mod tests {
         assert_eq!(value.state(), VadState::Limit);
         value.push(&[0; END_SILENCE - FRAME]);
         assert_eq!(value.state(), VadState::Limit);
-        value.push(&[1000; FRAME]);
+        value.push(&[1000; FRAME * ONSET_FRAMES]);
         value.push(&[0; END_SILENCE - FRAME]);
         assert_eq!(value.state(), VadState::Limit);
         value.push(&[0; FRAME]);
@@ -289,5 +294,24 @@ mod tests {
         value.clear(300);
         value.push(&[1000; FRAME * 5]); value.push(&[0; END_SILENCE]);
         assert_eq!(value.state(), VadState::Complete);
+    }
+
+    // ------------------------=
+    // FUNC: intermittent_background_does_not_latch_speech_or_retry
+    // DESC: Exercises measured low-level background with isolated threshold crossings after speech and after an overlong segment.
+    // ------------------=
+    #[test]
+    fn intermittent_background_does_not_latch_speech_or_retry() {
+        for overlong in [false, true] {
+            let mut value = Utterance::new(434);
+            for _ in 0..if overlong { MAX_SAMPLES / FRAME } else { 10 } {
+                value.push(&[1200; FRAME]);
+            }
+            for frame in 0..END_SILENCE / FRAME {
+                value.push(&[if frame % 5 == 2 { 570 } else { 380 }; FRAME]);
+            }
+            assert_eq!(value.state(), if overlong { VadState::NoSpeech } else { VadState::Complete });
+            assert_eq!(value.speech().is_none(), overlong);
+        }
     }
 }

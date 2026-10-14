@@ -4,6 +4,8 @@
 pub struct ThinkingAnimation {
     pub frame: u64,
     active: bool,
+    veil: bool,
+    body_dirty: bool,
 }
 
 impl ThinkingAnimation {
@@ -15,7 +17,26 @@ impl ThinkingAnimation {
         Self {
             frame: 0,
             active: false,
+            veil: false,
+            body_dirty: false,
         }
+    }
+    // ------------------------=
+    // FUNC: set_veil
+    // DESC: Invalidates the complete assistant body on both loading-cover edges, including removal.
+    // ------------------=
+    pub fn set_veil(&mut self, visible: bool) -> bool {
+        let changed = self.veil != visible;
+        self.body_dirty |= changed;
+        self.veil = visible;
+        changed
+    }
+    // ------------------------=
+    // FUNC: take_body_damage
+    // DESC: Retains transition damage until the renderer consumes it; visible loading animation also needs the body.
+    // ------------------=
+    pub fn take_body_damage(&mut self) -> bool {
+        core::mem::replace(&mut self.body_dirty, false) || self.veil
     }
     // ------------------------=
     // FUNC: advance
@@ -58,6 +79,13 @@ mod tests {
     // ------------------=
     #[test]
     fn readiness_orbit_is_inside_damage() {
+        let mut animation = ThinkingAnimation::new();
+        assert!(animation.set_veil(true));
+        assert!(animation.take_body_damage());
+        assert!(animation.set_veil(false));
+        assert!(!animation.set_veil(false));
+        assert!(animation.take_body_damage());
+        assert!(!animation.take_body_damage());
         for scale in [1, 2, 3] {
             let height = 600 * scale as u32;
             assert_eq!(repaint_height(height, scale, true), height);

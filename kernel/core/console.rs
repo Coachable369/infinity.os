@@ -1458,13 +1458,10 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: ai_chat_preparing
-    // DESC: Shares the rendered voice readiness veil with composer input admission.
+    // DESC: Blocks the composer only while its selected language model is unavailable, independent of microphone calibration.
     // ------------------=
     fn ai_chat_preparing(&self) -> bool {
-        #[cfg(target_os = "none")]
-        { self.voice_microphone_allowed() && crate::runtime::ai::voice_conversation::preparing() }
-        #[cfg(not(target_os = "none"))]
-        { false }
+        crate::runtime::ai::with_ai_runtime(|ai| !ai.chat.selected_model_ready())
     }
 
     // ------------------------=

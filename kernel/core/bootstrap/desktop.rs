@@ -29,7 +29,10 @@ pub fn thinking_animation_tick(visible: bool) -> bool {
         | crate::runtime::ai::voice_conversation::State::Starting); }
     let now = crate::ui::performance::monotonic_ns().unwrap_or(0);
     unsafe {
-        let changed = (&mut *(&raw mut THINKING_ANIMATION)).advance(active, now);
+        let veil = visible && crate::runtime::ai::with_ai_runtime(|ai|
+            ai.chat.enabled() && !ai.chat.minimized() && !ai.chat.selected_model_ready());
+        let animation = &mut *(&raw mut THINKING_ANIMATION);
+        let changed = animation.set_veil(veil) | animation.advance(active || veil, now);
         THINKING_HEADER_DIRTY |= changed;
         changed
     }
@@ -9999,7 +10002,7 @@ impl super::DisplayDevice {
             accent_b,
             1,
         );
-        if voice_starting {
+        if !chat.selected_model_ready() {
             let loading_left = geometry.timeline.x.max(0) as usize;
             let loading_top = geometry.timeline.y.max(0) as usize;
             let loading_width = geometry.timeline.width as usize;
@@ -10040,9 +10043,7 @@ impl super::DisplayDevice {
             );
             self.ui_text_centered(
                 loading_left, loading_width, center_y + 66 * scale,
-                if crate::runtime::ai::voice_conversation::calibrating() {
-                    b"Checking microphone background level"
-                } else { b"Loading local language and speech models" }, 137, 178, 198, 1,
+                b"Loading local language model", 137, 178, 198, 1,
             );
             self.ui_text_centered(
                 loading_left, loading_width, center_y + 86 * scale,
@@ -10778,6 +10779,7 @@ pub fn system_ui_present(
             let browser_changed=core::mem::replace(&mut *(&raw mut LAST_BROWSER_REVISION),browser_revision)!=browser_revision
                 && crate::console::browser_window().visible && matches!(screen,2|4|8|9|10|11);
             let thinking_header_changed = core::mem::replace(&mut *(&raw mut THINKING_HEADER_DIRTY), false);
+            let thinking_body_changed = (&mut *(&raw mut THINKING_ANIMATION)).take_body_damage();
             let command_input_only = screen == 8 && console.last_system_screen == 8
                 && !assistant_changed
                 && content_changed && static_content == console.last_system_static_content
@@ -11304,12 +11306,8 @@ pub fn system_ui_present(
                 let mut widgets = layout.ai_chat_geometry(false).panel;
                 if thinking_header_changed && !content_changed {
                     widgets = layout.ai_chat_geometry(false).panel;
-                    #[cfg(target_os="none")]
-                    let preparing = crate::runtime::ai::voice_conversation::preparing();
-                    #[cfg(not(target_os="none"))]
-                    let preparing = false;
                     widgets.height = crate::ui::thinking::repaint_height(
-                        widgets.height, layout.scale(), preparing);
+                        widgets.height, layout.scale(), thinking_body_changed);
                 }
                 console.display.set_render_clip(
                     widgets.x.max(0) as usize,

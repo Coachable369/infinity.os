@@ -72,20 +72,20 @@ glass surface, retains the model card above it, and uses a large eight-segment
 cyan orbit with a two-line wait message. The orbit advances through the existing
 desktop animation frame; no timer, bitmap, blur, or paint-time allocation is added.
 
-- State: visible until the language model, microphone route, output route, and
-  resident speech recognizer all report usable.
+- State: visible only while the selected language model is unavailable.
 - Primary copy: `PREPARING CONVERSATION`.
-- Secondary copy explains model loading, then changes to `Checking microphone background level`.
+- Secondary copy explains language model loading. Microphone preparation stays
+  in the voice header; it must not cover an otherwise usable text conversation.
 - Input and send controls are covered during preparation. Capture opens only after
   model readiness, then measures 500 ms of ambient PCM before admitting speech.
   Active or temporarily unavailable playback holds calibration so login sound
   cannot become the microphone noise floor. No calibration audio is retained.
 - Surface, border, typography, cyan focus, and 8px rhythm reuse the assistant kit.
 
-Readiness integration (2026-10-11): keep the veil visible through the `Starting`
-state, including the interval between warmup publication and microphone
-admission. The same state blocks composer keyboard/paste, send, and timeline
-clicks; model selection, minimize, close, and voice cancellation remain available.
+Readiness integration: model unavailability blocks composer keyboard/paste,
+send, and timeline clicks; model selection, minimize, close, and voice cancellation
+remain available. Both veil visibility edges invalidate the entire widget body;
+after removal, subsequent animation damage returns to the header only.
 Terminal failures must show their existing error state rather than a perpetual
 loading veil. Reuse this element; no additional loading artwork is needed.
 
