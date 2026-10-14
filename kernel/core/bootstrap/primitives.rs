@@ -768,16 +768,7 @@ impl super::DisplayDevice {
             UI_FONT_NATIVE_SIZE_PX,
             UI_FONT_SIZE_PX.saturating_mul(scale),
         );
-        let metrics = if semibold {
-            UI_FONT_SEMIBOLD_METRICS
-        } else {
-            UI_FONT_METRICS
-        };
-        let kerning = if semibold {
-            UI_FONT_SEMIBOLD_KERN
-        } else {
-            UI_FONT_KERN
-        };
+        let (_,metrics,kerning)=crate::runtime::font_faces::face(crate::runtime::font_faces::selected(),semibold);
         let mut width = 0usize;
         let mut previous = None;
         for byte in text {
@@ -902,23 +893,17 @@ impl super::DisplayDevice {
     // FUNC: ui_text_raster
     // DESC: Rasterizes the existing native font at an explicit pixel size without changing global typography.
     // ------------------=
-    pub(super) fn ui_text_raster(&mut self, mut x: usize, y: usize, text: &[u8], red: u8, green: u8,
+    pub(super) fn ui_text_raster(&mut self, x: usize, y: usize, text: &[u8], red: u8, green: u8,
         blue: u8, font_size: FontSize, semibold: bool, shade: Option<(usize,usize)>) {
-        let atlas = if semibold {
-            UI_FONT_SEMIBOLD_ATLAS
-        } else {
-            UI_FONT_ATLAS
-        };
-        let metrics = if semibold {
-            UI_FONT_SEMIBOLD_METRICS
-        } else {
-            UI_FONT_METRICS
-        };
-        let kerning = if semibold {
-            UI_FONT_SEMIBOLD_KERN
-        } else {
-            UI_FONT_KERN
-        };
+        self.ui_text_raster_face(x,y,text,red,green,blue,font_size,semibold,shade,crate::runtime::font_faces::selected());
+    }
+    // ------------------------=
+    // FUNC: ui_text_raster_face
+    // DESC: Draws an explicit immutable font preview without mutating the active UI family.
+    // ------------------=
+    pub(super) fn ui_text_raster_face(&mut self, mut x: usize, y: usize, text: &[u8], red: u8, green: u8,
+        blue: u8, font_size: FontSize, semibold: bool, shade: Option<(usize,usize)>,face:u8) {
+        let (atlas,metrics,kerning)=crate::runtime::font_faces::face(face,semibold);
         let glyph_width = font_size.scale_usize(UI_FONT_CELL_WIDTH).max(1);
         let glyph_height = font_size.scale_usize(UI_FONT_CELL_HEIGHT).max(1);
         let mut previous = None;

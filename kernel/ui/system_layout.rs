@@ -3261,6 +3261,7 @@ impl SystemLayout {
 // DESC: Returns the logical inline well height needed by each Settings row's real controls or explanation.
 // ------------------=
 const fn settings_detail_height(index: usize, section: usize) -> usize {
+    if section == 1 && index == 6 { return 488; }
     if section == 5 && index == 2 { return 620; }
     if section == 1 && index == 7 { return 400; }
     if section == 8 { return 144; }

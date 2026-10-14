@@ -5591,7 +5591,7 @@ impl super::DisplayDevice {
                 (b"Secondary", b"Custom color"),
                 (b"Opacity", opacity_text),
                 (b"Blur", &blur_value),
-                (b"UI Scale", b"Automatic"),
+                (b"Fonts", crate::runtime::font::FontCatalog::new().by_id(crate::runtime::font_faces::selected() as u32).map(|f|f.family).unwrap_or(b"Roboto")),
                 (b"Wallpaper", b"Cosmic Horizon"),
             ],
             2 => [
@@ -5764,7 +5764,7 @@ impl super::DisplayDevice {
             let value_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue);
             let disclosure_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure);
             // Input labels are coupled to the preference operation, not decorative template copy.
-            let label = if focus == 10 { *label } else {
+            let label = if focus == 10 || (focus == 1 && index == 6) { *label } else {
                 authored_label.map(|element| element.text)
                     .filter(|text| !text.is_empty()).unwrap_or(*label)
             };
@@ -5990,6 +5990,9 @@ impl super::DisplayDevice {
                     let row=crate::ui::system_layout::SystemLayout::new(self.width,self.height)
                         .settings_row_geometry_for_section(settings_window,index,focus);
                     self.settings_personalization_panel(row.detail,scale,focus==5);
+                } else if focus == 1 && index == 6 {
+                    let row=layout.settings_row_geometry_for_section(settings_window,index,focus);
+                    self.settings_font_library(row.detail,scale);
                 } else if focus == 1 && index == 2 {
                     self.settings_color_picker(settings_window, scale, true);
                 } else if focus == 1 && index == 3 {
@@ -10701,7 +10704,9 @@ pub fn system_ui_present(
             let launcher_state_changed = console.last_launcher_state != launcher_state;
             let launcher_interaction_changed =
                 console.last_launcher_interaction_state != launcher_interaction_state;
-            let structural_change_without_window = crate::ui::spatial::take_world_damage() || (!bounded_menu_change
+            let font_changed=crate::ui::font_library::take_damage();
+            if font_changed {super::retained_windows::invalidate();}
+            let structural_change_without_window = font_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
                 && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
                     || (!desktop_layer_focus_changed
                         && crate::ui::redraw::focus_change_requires_structural_redraw(

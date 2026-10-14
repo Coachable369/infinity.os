@@ -1,4 +1,9 @@
 #![allow(dead_code)]
+#[path = "../kernel/runtime/font_faces.rs"] pub mod font_faces;
+#[path = "../kernel/runtime/font_preferences.rs"] pub mod font_preferences;
+#[path = "../kernel/runtime/font.rs"] pub mod font;
+mod runtime { pub use super::{font_faces,font_preferences,font}; }
+#[path = "../kernel/core/bootstrap/font_library_view.rs"] mod font_library_view;
 #[cfg(not(baseline))]
 #[path = "../kernel/core/bootstrap/primitives.rs"]
 mod primitives;
@@ -283,6 +288,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    font_library_pixels();
     thinking_text_pixels_test();
     retained_theme_test();
     icon_downscale_test();
@@ -347,6 +353,27 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: font_library_pixels
+// DESC: Exercises the actual Settings font painter and exports production pixels for visual review.
+// ------------------=
+fn font_library_pixels() {
+    use std::io::Write;
+    let width=620;let height=520;
+    let mut pixels=vec![0x081522u32;width*height];
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    ui::font_library::set_page(0);
+    let bounds=ui::geometry::Rect{x:16,y:16,width:588,height:488};
+    display.settings_font_library(bounds,1);
+    assert!(pixels.iter().any(|p|*p!=0x081522));
+    assert!(pixels[..width*16].iter().all(|p|*p==0x081522));
+    std::fs::create_dir_all("builds/validation/fonts").unwrap();
+    let mut file=std::fs::File::create("builds/validation/fonts/settings-fonts.ppm").unwrap();
+    write!(file,"P6\n{width} {height}\n255\n").unwrap();
+    for p in pixels {file.write_all(&[p as u8,(p>>8) as u8,(p>>16) as u8]).unwrap();}
 }
 
 // ------------------------=

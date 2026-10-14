@@ -24,6 +24,7 @@ mod installer;
 mod launcher_backdrop;
 mod primitives;
 mod personalization_view;
+mod font_library_view;
 mod retained_windows;
 mod template_compositor;
 mod window_chrome;

@@ -254,6 +254,74 @@ impl ConsoleRuntime {
         self.spatial.notice = b"Selected ring. Wheel or +/- zooms. Add idea attaches here; drag ideas to another category.";
     }
     // ------------------------=
+    // FUNC: restore_font_preferences
+    // DESC: Resets profile font state before loading the authenticated user's native checkpoint.
+    // ------------------=
+    pub(super) fn restore_font_preferences(&mut self) {
+        let state=crate::storage::font_preferences(self.current_user.0,self.current_session.0,None)
+            .unwrap_or(crate::runtime::font_preferences::Preferences::new());
+        crate::runtime::font_preferences::publish(state);
+        crate::runtime::font_faces::publish(state.selected);
+        crate::ui::font_library::set_page(0);
+        crate::ui::font_library::set_status(0);
+    }
+    // ------------------------=
+    // FUNC: settings_font_pointer
+    // DESC: Commits per-profile availability and selected face before changing live native UI rendering.
+    // ------------------=
+    pub(super) fn settings_font_pointer(&mut self, layout:SystemLayout, clicked:bool)->bool {
+        use crate::ui::font_library::{self,Layout};
+        if !clicked || self.system_focus!=1 || self.settings_window.expanded_row!=Some(6) {return false;}
+        let geometry=layout.settings_window_geometry_for_section(self.settings_window,1);
+        let detail=layout.settings_row_geometry_for_section(self.settings_window,6,1).detail;
+        let p=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+        let Some(action)=Layout::new(detail,layout.scale()).hit(p,geometry.viewport,font_library::page()) else {return false;};
+        self.settings_font_action(action);
+        true
+    }
+    // ------------------------=
+    // FUNC: settings_font_action
+    // DESC: Applies the same durable font transaction for keyboard and pointer activation.
+    // ------------------=
+    fn settings_font_action(&mut self,action:crate::ui::font_library::Action) {
+        use crate::ui::font_library::{self,Action};
+        let mut state=crate::runtime::font_preferences::current();
+        let changed=match action {
+            Action::Previous=>{font_library::set_page(font_library::page().saturating_sub(1));return;},
+            Action::Next=>{font_library::set_page(font_library::page()+1);return;},
+            Action::Use(id)=>state.select(id),
+            Action::Toggle(id)=>if state.contains(id) {state.remove(id)}else{state.install(id)},
+        };
+        if changed.is_err() {return;}
+        match crate::storage::font_preferences(self.current_user.0,self.current_session.0,Some(state)) {
+            Ok(saved)=>{
+                crate::runtime::font_preferences::publish(saved);
+                crate::runtime::font_faces::publish(saved.selected);
+                font_library::set_status(1);
+            },
+            Err(_)=>font_library::set_status(2),
+        }
+    }
+    // ------------------------=
+    // FUNC: settings_font_key
+    // DESC: Supports bounded arrow navigation, Enter selection, Delete availability and Escape dismissal.
+    // ------------------=
+    pub(super) fn settings_font_key(&mut self,key:ConsoleKey)->bool {
+        use crate::ui::font_library::{self,Action};
+        if self.mode!=ConsoleMode::Settings || self.system_focus!=1 || self.settings_window.expanded_row!=Some(6) {return false;}
+        match key {
+            ConsoleKey::Up=>font_library::set_focus(font_library::focus().saturating_sub(1)),
+            ConsoleKey::Down=>font_library::set_focus(font_library::focus()+1),
+            ConsoleKey::Left=>self.settings_font_action(Action::Previous),
+            ConsoleKey::Right=>self.settings_font_action(Action::Next),
+            ConsoleKey::Enter=>self.settings_font_action(Action::Use((font_library::page()*6+font_library::focus()+1) as u8)),
+            ConsoleKey::Delete=>self.settings_font_action(Action::Toggle((font_library::page()*6+font_library::focus()+1) as u8)),
+            ConsoleKey::Escape=>{self.settings_window.expanded_row=None;},
+            _=>return false,
+        }
+        true
+    }
+    // ------------------------=
     // FUNC: settings_personalization_pointer
     // DESC: Captures native sliders, previews changes immediately and commits user-owned preferences only on release.
     // ------------------=

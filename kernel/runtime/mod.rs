@@ -43,6 +43,8 @@ pub mod native_task_arm;
 #[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
 pub mod native_cpu;
 pub mod font;
+pub mod font_preferences;
+pub mod font_faces;
 pub mod fabric;
 pub mod storage_client;
 pub mod storage_operator;

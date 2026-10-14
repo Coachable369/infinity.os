@@ -748,6 +748,42 @@ fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectEr
 }
 
 // ------------------------=
+// FUNC: font_preferences
+// DESC: Loads or commits a session-bound font registry through durable native object checkpoints.
+// ------------------=
+pub(crate) fn font_preferences(owner:[u8;16], session:[u8;16], save:Option<crate::runtime::font_preferences::Preferences>)
+    -> Result<crate::runtime::font_preferences::Preferences,object::ObjectError> {
+    use crate::runtime::font_preferences::Preferences;
+    // Reuse the exact active-session authorization; derive a distinct namespace.
+    let _=browser_favorites_path(owner,session)?;
+    let mut path=[0u8;46]; path[..14].copy_from_slice(b"/system/fonts/");
+    for (i,byte) in owner.iter().enumerate() {
+        path[14+i*2]=b"0123456789abcdef"[(byte>>4) as usize];
+        path[15+i*2]=b"0123456789abcdef"[(byte&15) as usize];
+    }
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store| {
+        let id=match store.resolve(&path) {
+            Ok(id)=>Some(id),
+            Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>None,
+            Err(e)=>return Err(e),
+        };
+        let value=if let Some(id)=id {
+            let mut bytes=[0;crate::runtime::font_preferences::BYTES];
+            let len=store.read_font_preferences(id,&mut bytes)?;
+            Preferences::decode(&bytes[..len]).map_err(|_|object::ObjectError::CorruptContent)?
+        }else{Preferences::new()};
+        if let Some(next)=save {
+            if let Some(id)=id {store.replace_state(id,&next.encode())?;}
+            else {store.create_attached(b"@font-preferences",object::ObjectType::Metadata,object::Space::System,&next.encode(),&path)?;}
+            Ok(next)
+        }else{Ok(value)}
+    })}
+    #[cfg(target_arch = "x86")]
+    {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: browser_favorites_save
 // DESC: Commits a validated browser-owned per-profile object through native atomic checkpoint storage.
 // ------------------=

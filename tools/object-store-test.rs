@@ -3,6 +3,8 @@ mod storage;
 mod spatial_path;
 #[path="../sdk/infinity-browser-core/favorites.rs"]
 mod favorites;
+#[path="../kernel/runtime/font_preferences.rs"]
+mod font_preferences;
 
 use std::{
     cell::{Cell, RefCell},
@@ -249,6 +251,7 @@ fn main() {
     download_transaction(test_sectors);
     private_spatial_checkpoint(test_sectors);
     private_browser_favorites(test_sectors);
+    private_font_preferences(test_sectors);
     private_browser_settings(test_sectors);
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
@@ -817,6 +820,32 @@ fn private_browser_favorites(sectors:usize) {
         assert_eq!(favorites::Favorites::decode(&bytes[..length]).unwrap().count(),if fail {1}else{2});
         let length=mounted.read_browser_favorites(other_id,&mut bytes).unwrap();
         assert_eq!(favorites::Favorites::decode(&bytes[..length]).unwrap().count(),0);
+    }
+}
+
+// ------------------------=
+// FUNC: private_font_preferences
+// DESC: Verifies private font selection survives remount, write failure rolls back, and repeated changes retain bounded history.
+// ------------------=
+fn private_font_preferences(sectors:usize) {
+    for fail in [false,true] {
+        let backing=MemoryDisk::new(sectors);let disk=FailingDisk::new(backing.clone());
+        let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x96;16]).unwrap();
+        let old=font_preferences::Preferences::new();
+        let id=store.create_attached(b"@font-preferences",ObjectType::Metadata,Space::System,&old.encode(),b"/system/fonts/test-user").unwrap();
+        let mut bytes=[0;16];
+        assert_eq!(store.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));
+        assert_eq!(store.write(id,b"replace"),Err(ObjectError::Unauthorized));
+        assert_eq!(store.remove(id),Err(ObjectError::Unauthorized));
+        assert_eq!(store.copy_attached(id,b"/home/default/leaked"),Err(ObjectError::Unauthorized));
+        for _ in 0..70 {store.replace_state(id,&old.encode()).unwrap();}
+        assert_eq!(store.history_count(id),1);
+        let mut next=old;next.select(1).unwrap();next.remove(3).unwrap();
+        if fail {disk.arm(0);}
+        let result=store.replace_state(id,&next.encode());disk.disarm();assert_eq!(result.is_err(),fail);
+        drop(store);let mut mounted=ObjectStore::mount(backing,0).unwrap();
+        let n=mounted.read_font_preferences(id,&mut bytes).unwrap();
+        assert_eq!(font_preferences::Preferences::decode(&bytes[..n]).unwrap(),if fail {old}else{next});
     }
 }
 

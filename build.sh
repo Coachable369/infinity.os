@@ -31,6 +31,7 @@ python3 tools/installer-output-test.py
 python3 tools/boot-loader-parity-test.py
 python3 tools/iso-kernel-freshness-test.py
 python3 tools/voice-pipeline-test.py
+sh tools/font-library-test.sh
 make install-boot-handoff-test
 make aarch64-bootstrap
 sh tools/build-hermes.sh --target aarch64
@@ -50,6 +51,7 @@ python3 tools/installer-output-test.py
 python3 tools/boot-loader-parity-test.py
 python3 tools/iso-kernel-freshness-test.py
 python3 tools/voice-pipeline-test.py
+sh tools/font-library-test.sh
 make install-boot-handoff-test
 make build/test-media/InfinityOS-x86_64.bootmedia
 sh tools/build-hermes.sh --target x86_64
@@ -67,6 +69,7 @@ python3 tools/installer-output-test.py
 python3 tools/boot-loader-parity-test.py
 python3 tools/iso-kernel-freshness-test.py
 python3 tools/voice-pipeline-test.py
+sh tools/font-library-test.sh
 python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
@@ -110,6 +113,7 @@ if [ "$target" != all ]; then
     python3 tools/boot-loader-parity-test.py
     python3 tools/iso-kernel-freshness-test.py
     python3 tools/voice-pipeline-test.py
+    sh tools/font-library-test.sh
     make install-boot-handoff-test
     if [ "$target" = aarch64 ]; then
         make aarch64-bootstrap
@@ -146,6 +150,7 @@ python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
 cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
 CARGO_TARGET_DIR=build/behavior-harness cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin browser-entropy-test
+sh tools/font-library-test.sh
 
 echo "==> Building InfinityOS for x86_64 and AArch64"
 

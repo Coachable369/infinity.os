@@ -3472,6 +3472,7 @@ impl ConsoleRuntime {
     // DESC: Restores the authenticated user's last durable cross-session desktop layout.
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
+        self.restore_font_preferences();
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         self.restore_app_shortcuts();
         crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::new());
@@ -5975,6 +5976,7 @@ impl ConsoleRuntime {
     // DESC: Navigates the top-bar menu and functional Settings pages using shared typed services.
     // ------------------=
     fn input_shell(&mut self, key: ConsoleKey) {
+        if self.settings_font_key(key) {return;}
         if self.mode == ConsoleMode::AppLauncher {
             if matches!(key, ConsoleKey::Escape) {
                 if crate::ui::app_launcher::navigation::clear_before_dismiss(self.command_length) {
@@ -8760,6 +8762,10 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
+            if self.settings_font_pointer(layout, clicked) {
+                self.redraw();
+                return;
+            }
             if self.settings_personalization_pointer(layout, clicked, released, left_button) {
                 self.present_continuous_motion(released);
                 return;

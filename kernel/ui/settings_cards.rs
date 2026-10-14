@@ -41,7 +41,7 @@ pub fn content(row: Rect, scale: usize) -> CardContent {
 pub fn description(section: usize, row: usize) -> &'static [u8] {
     let items: &[&[u8]] = match section {
         0 => &[b"Your device's network identity", b"Current system language", b"Current regional configuration", b"Installed system generation", b"System update availability"],
-        1 => &[b"Window and control materials", b"Icons throughout your desktop", b"Primary interface accent", b"Secondary interface accent", b"Glass transparency", b"Background diffusion", b"Automatic display sizing", b"Your desktop background"],
+        1 => &[b"Window and control materials", b"Icons throughout your desktop", b"Primary interface accent", b"Secondary interface accent", b"Glass transparency", b"Background diffusion", b"Manage openly licensed fonts", b"Your desktop background"],
         2 => &[b"Signed-in local identity", b"Authentication information", b"Current session details", b"Your private storage space", b"Local profile information"],
         3 => &[b"Local and remote routing policy", b"Show or hide desktop chat", b"Choose an installed local model", b"Remote processing restrictions", b"Microphone authorization", b"Voice activation availability", b"Installed model access"],
         4 => &[b"Authority is granted explicitly", b"Microphone capability status", b"Remote processing permission", b"Lock after a period of inactivity", b"Protected interaction boundary"],
