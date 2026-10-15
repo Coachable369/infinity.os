@@ -5046,13 +5046,13 @@ impl super::DisplayDevice {
                 250,
                 1,
             );
-            for index in 0..3usize {
-                let control_size = 18 * scale;
-                let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * scale);
+            for (index,control) in crate::ui::app_launcher::window_controls::bounds(
+                crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},
+                title_height as u32,scale).into_iter().enumerate() {
                 self.window_control(
-                    control_left,
-                    title_center_y.saturating_sub(control_size / 2),
-                    control_size,
+                    control.x.max(0) as usize,
+                    control.y.max(0) as usize,
+                    control.width as usize,
                     index,
                     settings_window.maximized,
                 );
@@ -5392,13 +5392,12 @@ impl super::DisplayDevice {
             250,
             1,
         );
-        for index in 0..3usize {
-            let control_size = 18 * scale;
-            let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * scale);
+        for (index,control) in crate::ui::app_launcher::window_controls::bounds(
+            geometry.window,geometry.title.height,scale).into_iter().enumerate() {
             self.window_control(
-                control_left,
-                title_center_y.saturating_sub(control_size / 2),
-                control_size,
+                control.x.max(0) as usize,
+                control.y.max(0) as usize,
+                control.width as usize,
                 index,
                 settings_window.maximized,
             );
@@ -8861,14 +8860,13 @@ impl super::DisplayDevice {
                 (221, 233, 241), false, scale,
             );
         }
-        for index in 0..3usize {
-            let control_size = 20 * scale;
-            let control_left =
-                browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * scale);
+        for (index,control) in crate::ui::app_launcher::window_controls::bounds(
+            crate::ui::geometry::Rect{x:browser_left as i32,y:browser_top as i32,width:browser_width as u32,height:browser_height as u32},
+            title_h as u32,scale).into_iter().enumerate() {
             self.window_control(
-                control_left,
-                title_center_y.saturating_sub(control_size / 2),
-                control_size,
+                control.x.max(0) as usize,
+                control.y.max(0) as usize,
+                control.width as usize,
                 index,
                 window_maximized,
             );
@@ -11637,7 +11635,13 @@ pub fn system_ui_present(
                 console.display.system_top_bar_clock(clock);
             }
             if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10 | 11) {
-                for damage in [crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                let control_damage=crate::ui::app_launcher::window_controls::take_damage();
+                for rect in control_damage.into_iter().flatten() {
+                    for slot in 0..13 {super::retained_windows::invalidate_region(slot,super::PresentRegion {
+                        left:rect.x.max(0) as usize,top:rect.y.max(0) as usize,
+                        right:rect.right().max(0) as usize,bottom:rect.bottom().max(0) as usize});}
+                }
+                for damage in [control_damage[0],control_damage[1],crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {

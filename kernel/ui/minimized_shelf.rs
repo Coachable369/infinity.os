@@ -55,7 +55,7 @@ impl State {
     // ------------------=
     pub const fn new() -> Self {
         Self {
-            left: true,
+            left: false,
             drag: None,
             floating: [0; 2],
             mask: 0,

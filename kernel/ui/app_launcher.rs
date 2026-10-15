@@ -13,6 +13,8 @@ pub mod motion;
 pub mod navigation;
 #[path = "minimized_shelf.rs"]
 pub mod minimized_shelf;
+#[path = "window_controls.rs"]
+pub mod window_controls;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[path = "app_shortcuts.rs"]
 pub mod shortcuts;

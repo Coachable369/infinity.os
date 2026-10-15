@@ -1184,19 +1184,10 @@ impl SystemLayout {
                     window_maximized,
                 );
             let title_height = 34 * self.scale;
-            for index in 0..3usize {
-                let control_left = browser_left
-                    + browser_width.saturating_sub((28 + (2 - index) * 27) * self.scale);
-                if rect(
-                    control_left,
-                    browser_top + 7 * self.scale,
-                    20 * self.scale,
-                    20 * self.scale,
-                )
-                .contains(point)
-                {
-                    return Some(DesktopTarget::HomeControl(index));
-                }
+            let controls=crate::ui::app_launcher::window_controls::bounds(
+                rect(browser_left,browser_top,browser_width,browser_height),title_height as u32,self.scale);
+            if let Some(index)=crate::ui::app_launcher::window_controls::hit(controls,point) {
+                return Some(DesktopTarget::HomeControl(index));
             }
             if !window_maximized {
                 if let Some(handle) = native_window_resize_target(
@@ -2556,21 +2547,9 @@ impl SystemLayout {
     ) -> Option<SettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
         let geometry = self.settings_window_geometry_for_section(state, section);
-        let left = geometry.window.x.max(0) as usize;
-        let top = geometry.window.y.max(0) as usize;
-        let width = geometry.window.width as usize;
-        for index in 0..3usize {
-            let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * self.scale);
-            if rect(
-                control_left,
-                top + (geometry.title.height as usize).saturating_sub(24 * self.scale) / 2,
-                20 * self.scale,
-                24 * self.scale,
-            )
-            .contains(point)
-            {
-                return Some(SettingsTarget::WindowControl(index));
-            }
+        let controls=crate::ui::app_launcher::window_controls::bounds(geometry.window,geometry.title.height,self.scale);
+        if let Some(index)=crate::ui::app_launcher::window_controls::hit(controls,point) {
+            return Some(SettingsTarget::WindowControl(index));
         }
         if !state.maximized {
             if let Some(handle) = native_window_resize_target(geometry.window, point, self.scale) {

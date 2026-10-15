@@ -446,7 +446,7 @@ impl super::DisplayDevice {
     // FUNC: blend_color_unchecked
     // DESC: Blends one already-clipped pixel; batch callers record damage once per primitive.
     // ------------------=
-    fn blend_color_unchecked(
+    pub(super) fn blend_color_unchecked(
         &mut self,
         x: usize,
         y: usize,

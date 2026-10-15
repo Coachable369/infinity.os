@@ -589,6 +589,8 @@ ui-install-parity-test: x86 x86_64 aarch64
 input-regression-test:
 	@sh tools/clipboard-cursor-test.sh
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test tools/window-controls-test.rs -o build/behavior-tests/window-controls-test
+	@build/behavior-tests/window-controls-test --test-threads=1
 	@rustc --edition=2021 -A warnings --test tools/personalization-test.rs -o build/behavior-tests/personalization-test
 	@build/behavior-tests/personalization-test --test-threads=1
 	@rustc --edition=2021 --test tools/desktop-widgets-test.rs -o build/behavior-tests/desktop-widgets-test

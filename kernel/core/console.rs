@@ -4,6 +4,8 @@ mod window_workflows;
 mod spatial_controller;
 #[path = "minimized_shelf_controller.rs"]
 mod minimized_shelf_controller;
+#[path = "window_controls_controller.rs"]
+mod window_controls_controller;
 #[path = "desktop_widgets_controller.rs"]
 mod desktop_widgets_controller;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -1184,6 +1186,7 @@ impl ConsoleRuntime {
             unsafe { BROWSER_WINDOW=browser; }
             crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open,browser.visible],active,self.system_focus);
         }
+        self.publish_window_control_snapshot();
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
         crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
         self.publish_text_input_presentation();
@@ -7561,6 +7564,8 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        let window_controls_changed=self.publish_window_controls();
+        if window_controls_changed {self.redraw();}
         if (self.spatial.open || self.mode==ConsoleMode::AppLauncher) && self.pointer_window_assistant(clicked) {
             if self.spatial.open {crate::bootstrap::spatial_invalidate_transition();}
             if clicked {self.redraw();}return;
@@ -7598,6 +7603,7 @@ impl ConsoleRuntime {
             // close/minimize (and title dragging) require a second click.
             self.redraw();
         }
+        if clicked && self.dispatch_window_control(layout) {self.redraw();return;}
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !self.app_window_dragging && self.app_window_resizing.is_none()
             && !self.settings_window_dragging && self.settings_window_resizing.is_none() && self.pointer_window_assistant(clicked) {
             if clicked {self.redraw();} else {
@@ -9114,7 +9120,7 @@ impl ConsoleRuntime {
             && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
         {
             self.publish_text_input_presentation();
-            if desktop_polish_changed {
+            if desktop_polish_changed || window_controls_changed {
                 self.redraw();
             } else {
                 crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);

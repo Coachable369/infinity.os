@@ -49,7 +49,7 @@ impl super::DisplayDevice {
         input: &[u8],
         scroll: usize,
         saved: bool,
-        _maximized: bool,
+        maximized: bool,
         s: usize,
     ) {
         let view = editor_tools::current();
@@ -94,7 +94,7 @@ impl super::DisplayDevice {
             .iter()
             .enumerate()
         {
-            self.app_symbol(*r, [b'-', b'm', b'x'][i], MUTED, s);
+            self.window_control(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,i,maximized);
         }
         for (m, label) in [
             (Menu::File, b"File".as_slice()),

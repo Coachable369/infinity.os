@@ -68,11 +68,10 @@ impl DisplayDevice {
         self.outline_rounded_rect(left,top,window.width as usize,window.height as usize,8*scale,65,80,112);
         self.fill_rect_alpha(left+1,top+1,window.width as usize-2,layout.content.y as usize-1,8,17,30,238);
         let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
-        for (index,(red,green,blue)) in [(255,91,87),(255,194,48),(42,195,72)].into_iter().enumerate() {
-            self.fill_rounded_rect_alpha(left+(18+index*22)*scale,top+18*scale,12*scale,12*scale,6*scale,red,green,blue,255);
-        }
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
-            let r=offset(r);self.browser_glyph(r,7+index,true,scale);
+            let r=offset(r);let size=r.width.min(r.height) as usize;
+            self.window_control(r.x.max(0) as usize+(r.width as usize-size)/2,
+                r.y.max(0) as usize+(r.height as usize-size)/2,size,index,state.maximized);
         }
         for index in 0..tab_count {
             let Some((tab,close))=layout.tab(index,tab_count) else {continue;};

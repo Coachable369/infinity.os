@@ -95,6 +95,16 @@ mod retained_windows;
 mod window_chrome;
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: active_primary_rgb
+    // DESC: Supplies the deterministic default primary tint for production chrome pixel tests.
+    // ------------------=
+    fn active_primary_rgb(&self)->u32 { 0x0d2238 }
+    // ------------------------=
+    // FUNC: active_accent_rgb
+    // DESC: Supplies the deterministic default accent tint for production chrome pixel tests.
+    // ------------------=
+    fn active_accent_rgb(&self)->u32 { 0x38bdf8 }
+    // ------------------------=
     // FUNC: set_render_clip
     // DESC: Supplies the production editor's caret clipping boundary in the framebuffer fixture.
     // ------------------=
@@ -302,6 +312,9 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--window-controls-only") {
+        window_controls_test();window_control_states_proof();return;
+    }
     editor_scheme_pixels();
     font_library_pixels();
     thinking_text_pixels_test();
@@ -558,6 +571,31 @@ fn window_controls_test() {
         ppm.extend_from_slice(&[pixel as u8, (pixel >> 8) as u8, (pixel >> 16) as u8]);
     }
     std::fs::write("build/window-controls-proof.ppm", ppm).unwrap();
+}
+
+// ------------------------=
+// FUNC: window_control_states_proof
+// DESC: Captures actual normal, hover and pressed native button rendering with clear glyphs and transparent corners.
+// ------------------=
+fn window_control_states_proof() {
+    use ui::{geometry::Rect,app_launcher::window_controls as controls};
+    let (width,height)=(512,240);
+    let mut pixels=vec![0x001a0b05u32;width*height];
+    let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    for state in 0..3 {
+        for (i,(index,maximized)) in [(0,false),(1,false),(1,true),(2,false)].into_iter().enumerate() {
+            let (x,y)=(32+i*120,20+state*72);
+            let rect=Rect{x:x as i32,y:y as i32,width:48,height:48};
+            controls::publish(if state==0 {None}else{Some(controls::Highlight{rect,pressed:state==2})});
+            d.window_control(x,y,48,index,maximized);
+            assert_eq!(pixels[y*width+x],0x001a0b05);
+        }
+    }
+    controls::publish(None);let _=controls::take_damage();
+    let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();
+    for pixel in pixels {ppm.extend_from_slice(&[pixel as u8,(pixel>>8) as u8,(pixel>>16) as u8]);}
+    std::fs::write("build/window-control-states-proof.ppm",ppm).unwrap();
 }
 
 // ------------------------=
