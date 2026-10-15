@@ -183,9 +183,14 @@ fn verify_settings_chrome_targets() {
             let state = SettingsWindowState { x: 60, y: 80, width: 850, height: 760,
                 maximized: false, expanded_row: None, scroll_offset: 0, control_focus: 0, row_count: 8 };
             let geometry = layout.settings_window_geometry_for_section(state, section);
-            for index in 0..3 {
-                let x = geometry.window.right() - (26 + (2 - index as i32) * 25) * scale + 10 * scale;
-                let y = geometry.title.y + geometry.title.height as i32 / 2;
+            let controls = ui::app_launcher::window_controls::bounds(
+                geometry.window,
+                geometry.title.height,
+                scale as usize,
+            );
+            for (index, control) in controls.into_iter().enumerate() {
+                let x = control.x + control.width as i32 / 2;
+                let y = control.y + control.height as i32 / 2;
                 assert_eq!(layout.settings_target_for_section(x * 1000 / width as i32,
                     y * 1000 / height as i32, state, section), Some(SettingsTarget::WindowControl(index)));
             }

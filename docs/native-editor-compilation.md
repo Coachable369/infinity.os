@@ -216,10 +216,19 @@ test VM), obtain actual reviewed model-generated source, compile it, and open
 the saved ELF through File Navigator with exit status checked. Repeat on x86.
 Any production fix requires a new full release build and renewed installed proof.
 
-- One compiler job and one console application at a time.
+- One compiler job and one console application at a time. An authenticated owner
+  can now inspect or cancel its compiler job, but there is not yet a bounded
+  multi-job queue or task-manager integration.
 - Source 16 KiB; object/executable 256 KiB; diagnostics 8 KiB; application output
   4 KiB. Compiler deadline 120 seconds; application deadline 60 seconds.
-- Small freestanding C SDK, not a complete hosted C standard library.
+- The C SDK now includes a bounded allocator, core strings/memory, integer
+  conversion, sorting/searching, character classification, fixed-width types,
+  limits, variadic arguments and bounded formatted output. It remains an
+  intentionally incomplete hosted C/POSIX environment: time, locale, signals,
+  process creation and broad POSIX interfaces are not supplied.
+- Authenticated console users can issue `cc <absolute-source>`,
+  `run <absolute-executable>`, `cc-status`, and `cc-cancel`. Stable `-o` naming,
+  current-directory resolution, pipelines and debugger tooling remain absent.
 - The new isolated launcher currently grants console output only. Native GUI
   window/event/surface syscalls and generated-app catalog icons are not connected
   to this launcher; full graphical app generation is not accepted by this work.

@@ -36,6 +36,7 @@ int infinity_app_entry(const InfinityAppApi *host) {
     if (!host || host->version != INFINITY_APP_ABI || host->size < sizeof(*host) || !host->write_stdout)
         return 126;
     infinity_host = host;
+    infinity_libc_reset();
     infinity_stdio_reset();
     int result = main();
     if (infinity_stdio_finish() && result == 0) result = 74;

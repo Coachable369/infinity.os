@@ -2,7 +2,7 @@
 use super::{native_compiler_task::Task, native_compiler_package as package,
     native_memory::{KernelAccessMap, memory_mut}, native_cpu as cpu, native_job_files::File,
     native_process::State, execution::SecurityIdentity};
-const SOURCE_LIMIT: usize = 16 * 1024;
+pub const SOURCE_LIMIT: usize = 16 * 1024;
 const BINARY_LIMIT: usize = 256 * 1024;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Status { Idle, Compile, Link, Complete, Failed, Cancelled }
@@ -44,7 +44,7 @@ pub unsafe fn platform()->Option<(KernelAccessMap,cpu::Controller)> {PLATFORM.ma
 pub unsafe fn start(owner:SecurityIdentity,source:&[u8],now:u64)->Result<(),Error> {
     let job=&mut *(&raw mut JOB);
     if matches!(job.status,Status::Compile|Status::Link) || job.task.is_some() {return Err(Error::Busy);}
-    if PLATFORM.is_none() {return Err(Error::Unavailable);}
+    if core::ptr::addr_of!(PLATFORM).read().is_none() {return Err(Error::Unavailable);}
     if source.is_empty() || source.len()>SOURCE_LIMIT {return Err(Error::SourceTooLarge);}
     job.source[..source.len()].copy_from_slice(source);job.source_length=source.len();
     job.owner=owner;job.object_length=0;job.binary_length=0;job.diagnostic_length=0;job.truncated=false;
@@ -58,6 +58,18 @@ pub unsafe fn start(owner:SecurityIdentity,source:&[u8],now:u64)->Result<(),Erro
 // ------------------=
 pub unsafe fn status(owner:SecurityIdentity)->Status {
     let job=&*(&raw const JOB);if job.owner==owner {job.status}else{Status::Idle}
+}
+// ------------------------=
+// FUNC: cancel
+// DESC: Cancels only the owning session's active build and immediately reclaims its private compiler mappings.
+// ------------------=
+pub unsafe fn cancel(owner:SecurityIdentity)->bool {
+    let job=&mut *(&raw mut JOB);
+    if job.owner!=owner || !matches!(job.status,Status::Compile|Status::Link) {return false;}
+    if let Some(task)=job.task.take() {let _=task.release(memory_mut());}
+    job.status=Status::Cancelled;
+    publish();
+    true
 }
 // ------------------------=
 // FUNC: poll
@@ -108,7 +120,17 @@ unsafe fn advance(owner:SecurityIdentity,authorized:bool,now:u64)->bool {
     }
     let files=[File{path:b"/input.o",bytes:&job.object[..job.object_length]},
         File{path:b"/app.ld",bytes:package::LINK_SCRIPT},File{path:b"/crt.o",bytes:package::CRT},
-        File{path:b"/sdk/stdio.h",bytes:super::native_compiler_task::STDIO},File{path:b"/sdk/stddef.h",bytes:super::native_compiler_task::STDDEF}];
+        File{path:b"/sdk/stdio.h",bytes:super::native_compiler_task::STDIO},
+        File{path:b"/sdk/stddef.h",bytes:super::native_compiler_task::STDDEF},
+        File{path:b"/sdk/string.h",bytes:super::native_compiler_task::STRING},
+        File{path:b"/sdk/stdlib.h",bytes:super::native_compiler_task::STDLIB},
+        File{path:b"/sdk/stdint.h",bytes:super::native_compiler_task::STDINT},
+        File{path:b"/sdk/stdbool.h",bytes:super::native_compiler_task::STDBOOL},
+        File{path:b"/sdk/stdarg.h",bytes:super::native_compiler_task::STDARG},
+        File{path:b"/sdk/limits.h",bytes:super::native_compiler_task::LIMITS},
+        File{path:b"/sdk/errno.h",bytes:super::native_compiler_task::ERRNO},
+        File{path:b"/sdk/ctype.h",bytes:super::native_compiler_task::CTYPE},
+        File{path:b"/sdk/assert.h",bytes:super::native_compiler_task::ASSERT}];
     let input=&job.source[..job.source_length];
     let task=job.task.as_mut().unwrap();
     // Compiler output goes into the binary scratch buffer. On success it becomes

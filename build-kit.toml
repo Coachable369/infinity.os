@@ -54,6 +54,10 @@ clean = false
 command = ["sh", "-c", "mkdir -p build/native-c && rustc --edition=2021 -A warnings tools/native-c-probe/io-test.rs -o build/native-c/io-test && build/native-c/io-test"]
 clean = false
 
+[profiles.native-c-production-tests]
+command = ["sh", "tools/native-c-production-test.sh"]
+clean = false
+
 [profiles.native-process-supervision-tests]
 command = ["sh", "-c", "rustc --edition=2021 -A warnings tools/native-process-supervision-test.rs -o build/native-process-supervision-test && build/native-process-supervision-test"]
 clean = false

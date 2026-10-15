@@ -9197,6 +9197,8 @@ impl ConsoleRuntime {
         if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if compiler_commands::command(self,&command[..length]) {self.reset_input();return;}
         if &command[..length] == b"spatial" {
             self.reset_input();
             crate::bootstrap::spatial_animation_timings(true);

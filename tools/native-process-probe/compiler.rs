@@ -1,6 +1,6 @@
 use super::{native_memory::*, native_c_image::Image, cpu::{self, Tables, Controller, Context, MACHINE}, emit, finish, IMAGE};
 const COMPILE: bool = option_env!("INFINITY_COMPILER_SOURCE").is_some();
-const SOURCE: &[u8] = b"#include <stdio.h>\nint answer(int x) { return x * 7 + 5; }\nint main(void) { if (puts(\"native C\") < 0) return 99; return answer(7); }\n";
+const SOURCE: &[u8] = b"#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <ctype.h>\nstatic int compare(const void *a,const void *b){return *(const int*)a-*(const int*)b;}\nint main(void){int *v=calloc(4,sizeof *v);if(!v)return 90;v[0]=7;v[1]=1;v[2]=5;v[3]=3;qsort(v,4,sizeof *v,compare);int key=5;int *found=bsearch(&key,v,4,sizeof *v,compare);char out[32];int n=snprintf(out,sizeof out,\"%s:%d\",\"native\",found?*found:0);int ok=n==8&&!strcmp(out,\"native:5\")&&toupper('c')=='C'&&puts(out)>=0;free(v);return ok?54:91;}\n";
 const LINK: bool = option_env!("INFINITY_LINK_INPUT").is_some();
 static LINK_INPUT: &[u8] = include_bytes!(env!("INFINITY_LINK_INPUT_BYTES"));
 static LINK_SCRIPT: &[u8] = include_bytes!("../../sdk/c/application.ld");
@@ -50,7 +50,16 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller
         super::native_job_files::File { path: b"/app.ld", bytes: LINK_SCRIPT },
         super::native_job_files::File { path: b"/crt.o", bytes: CRT },
         super::native_job_files::File { path: b"/sdk/stdio.h", bytes:super::native_compiler_task::STDIO },
-        super::native_job_files::File { path: b"/sdk/stddef.h", bytes:super::native_compiler_task::STDDEF }];
+        super::native_job_files::File { path: b"/sdk/stddef.h", bytes:super::native_compiler_task::STDDEF },
+        super::native_job_files::File { path: b"/sdk/string.h", bytes:super::native_compiler_task::STRING },
+        super::native_job_files::File { path: b"/sdk/stdlib.h", bytes:super::native_compiler_task::STDLIB },
+        super::native_job_files::File { path: b"/sdk/stdint.h", bytes:super::native_compiler_task::STDINT },
+        super::native_job_files::File { path: b"/sdk/stdbool.h", bytes:super::native_compiler_task::STDBOOL },
+        super::native_job_files::File { path: b"/sdk/stdarg.h", bytes:super::native_compiler_task::STDARG },
+        super::native_job_files::File { path: b"/sdk/limits.h", bytes:super::native_compiler_task::LIMITS },
+        super::native_job_files::File { path: b"/sdk/errno.h", bytes:super::native_compiler_task::ERRNO },
+        super::native_job_files::File { path: b"/sdk/ctype.h", bytes:super::native_compiler_task::CTYPE },
+        super::native_job_files::File { path: b"/sdk/assert.h", bytes:super::native_compiler_task::ASSERT }];
     for visit in 0..1_000_000u64 {
         let result = task.poll(cpu::clock_ns().unwrap_or(0), true, memory, source,
             &inputs, &mut output, &mut diagnostic);

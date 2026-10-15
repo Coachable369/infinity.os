@@ -1,7 +1,7 @@
 #ifndef INFINITY_STDIO_H
 #define INFINITY_STDIO_H
-/* Initial native ABI surface, not a claim of a complete ISO C library. */
 #include <stddef.h>
+#include <stdarg.h>
 #define EOF (-1)
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -25,4 +25,7 @@ char *fgets(char *data, int size, FILE *stream);
 int fputs(const char *text, FILE *stream);
 int puts(const char *text);
 int putchar(int character);
+int printf(const char *format, ...);
+int snprintf(char *output, size_t size, const char *format, ...);
+int vsnprintf(char *output, size_t size, const char *format, va_list arguments);
 #endif

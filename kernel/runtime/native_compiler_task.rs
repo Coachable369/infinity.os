@@ -10,6 +10,15 @@ pub const LINK_ARGS:&[&[u8]]=&[b"ld.lld",b"-static",b"-pie",b"--strip-all",b"--n
     b"-z",b"max-page-size=4096",b"--entry=infinity_app_start",b"-T",b"/app.ld",b"-o",b"-",b"/input.o",b"/crt.o"];
 pub static STDIO:&[u8]=include_bytes!("../../sdk/c/include/stdio.h");
 pub static STDDEF:&[u8]=include_bytes!("../../sdk/c/compiler-headers/stddef.h");
+pub static STRING:&[u8]=include_bytes!("../../sdk/c/include/string.h");
+pub static STDLIB:&[u8]=include_bytes!("../../sdk/c/include/stdlib.h");
+pub static STDINT:&[u8]=include_bytes!("../../sdk/c/include/stdint.h");
+pub static STDBOOL:&[u8]=include_bytes!("../../sdk/c/include/stdbool.h");
+pub static STDARG:&[u8]=include_bytes!("../../sdk/c/include/stdarg.h");
+pub static LIMITS:&[u8]=include_bytes!("../../sdk/c/include/limits.h");
+pub static ERRNO:&[u8]=include_bytes!("../../sdk/c/include/errno.h");
+pub static CTYPE:&[u8]=include_bytes!("../../sdk/c/include/ctype.h");
+pub static ASSERT:&[u8]=include_bytes!("../../sdk/c/include/assert.h");
 
 pub struct Task {
     process: Option<Process<cpu::BoundContext>>,

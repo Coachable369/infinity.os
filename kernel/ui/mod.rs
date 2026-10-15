@@ -33,6 +33,7 @@ pub mod input_router;
 pub mod installer_layout;
 pub mod installer_template;
 pub mod localization;
+pub mod native_development;
 pub mod object_picker;
 pub mod performance;
 pub mod platform;

@@ -4,4 +4,5 @@
 extern const InfinityAppApi *infinity_host __attribute__((visibility("hidden")));
 void infinity_stdio_reset(void);
 int infinity_stdio_finish(void);
+void infinity_libc_reset(void);
 #endif

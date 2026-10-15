@@ -14,12 +14,12 @@ linker=${LD_LLD:-/opt/homebrew/bin/ld.lld}
 destination=builds/toolchains/$architecture
 scratch=$work/application-sdk
 mkdir -p "$scratch" "$destination"
-for unit in runtime stdio isolated; do
+for unit in runtime libc format stdio isolated; do
   "$llvm/clang" --target="$architecture-none-elf" -ffreestanding -fno-stack-protector \
     -fno-unwind-tables -fno-asynchronous-unwind-tables -fPIE "$cpu" -Os \
     -Isdk/c/include -isystem "$work/sysroot/$architecture-unknown-elf/include" \
     -c "sdk/c/$unit.c" -o "$scratch/$unit.o"
 done
-"$linker" -r "$scratch/runtime.o" "$scratch/stdio.o" "$scratch/isolated.o" -o "$destination/application-crt.o.part"
+"$linker" -r "$scratch/runtime.o" "$scratch/libc.o" "$scratch/format.o" "$scratch/stdio.o" "$scratch/isolated.o" -o "$destination/application-crt.o.part"
 mv "$destination/application-crt.o.part" "$destination/application-crt.o"
 (cd "$destination" && shasum -a 256 clang.elf lld.elf application-crt.o > SHA256SUMS)

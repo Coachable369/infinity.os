@@ -46,6 +46,31 @@ older trusted C library probe remains a fixture, not a launcher for arbitrary
 applications. The dated sections below record earlier port work; the latest
 status in this section takes precedence over those historical checkpoints.
 
+### Production hardening checkpoint: 2026-10-15
+
+The installed SDK now supplies process-local dynamic allocation with split and
+coalesced reuse, checked `calloc`/`realloc`, thread-local `errno`, core memory and
+string operations, integer conversion, sorting/searching, ASCII character
+classification, fixed-width integer/limit headers, assertions, variadic
+arguments, and bounded `printf`/`snprintf` formatting. The same runtime objects
+and headers are embedded for ARM64 and x86_64; compiler packaging deliberately
+places these application headers after the compiler runtime's Newlib headers so
+the two ABIs cannot shadow one another.
+
+The console exposes authenticated, capability-checked `cc <absolute-source>`,
+`run <absolute-executable>`, `cc-status`, and `cc-cancel` commands. Compilation
+uses an immutable ObjectStore snapshot, publishes a new executable without
+overwriting an existing object, and routes diagnostics to the requesting
+console. Cancellation immediately releases compiler task resources. Native
+programs retain private page tables, finite deadlines and console-output-only
+authority.
+
+Behavioral coverage compiles and executes allocator, string, conversion,
+sorting, formatting, character, `errno`, rejection, cancellation, and command
+parsing cases on both target ABIs. This checkpoint narrows the hosted-library
+and operability gaps; it does not claim a complete ISO-installed development
+environment until release and detached-media verification pass.
+
 ## Fast verification
 
 Run `./build-kit native-compiler-storage-tests` for ObjectStore and compiler file
@@ -57,16 +82,21 @@ Exit status and structured artifacts decide success; printed prose is diagnostic
 
 ## Remaining implementation sequence
 
-1. Discover native interrupt controllers from firmware and bind bounded process
-   visits to the production desktop scheduler, including cleanup after failure.
-2. Package Clang, LLD and SDK resources in the installed System Generation;
-   support larger writable compiler outputs beyond the 16 KiB snapshot limit.
+1. Replace the single global compiler/application slots with a bounded per-user
+   job table, quotas, queueing and task-manager visibility. Increase source,
+   diagnostic, executable and stdout capacities through streamed ObjectStore
+   objects rather than enlarging static kernel buffers.
+2. Complete the hosted C surface needed by real applications: wider formatted
+   I/O, time, locale-independent numeric conversion, process termination and a
+   documented POSIX subset. Keep unsupported interfaces absent or explicitly
+   capability-denied rather than silently emulated.
 3. Bind the implemented retained-surface store, GUI trap dispatcher and native
    input adapter to the production process lifecycle, desktop compositor and
    device event loop. The service-level paths are tested; installed GUI apps
    are not yet demonstrated.
-4. Connect console compilation, application metadata, icons, double-click launch
-   and Hermes voice-generated applications to that isolated process path.
+4. Add stable output naming/current-directory semantics, application metadata,
+   icons, double-click launch, debugger/symbol diagnostics and Hermes-generated
+   applications to the isolated process path.
 5. Verify editable source, native compilation, GUI interaction, cancellation and
    crash isolation after cold installation with media detached on both targets.
    Generate fresh installer ISOs through `./build-kit full`.

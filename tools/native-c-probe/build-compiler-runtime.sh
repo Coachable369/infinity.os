@@ -20,6 +20,6 @@ mkdir -p "$output"
 for unit in start entry isolated platform dlfcn files heap time serial_sync serial_tls pthread namespace process newlib; do
   "$compiler" --target="$target" --sysroot="$sysroot" \
     -std=c17 -O2 -fPIE "$cpu_flags" -ffunction-sections -fdata-sections \
-    -Wall -Wextra -Werror -include sdk/compiler/target.h -Isdk/compiler/include -Isdk/c/include \
+    -Wall -Wextra -Werror -include sdk/compiler/target.h -Isdk/compiler/include -idirafter sdk/c/include \
     -c "sdk/compiler/$unit.c" -o "$output/compiler-$unit.o"
 done
