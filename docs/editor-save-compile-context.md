@@ -19,11 +19,16 @@ negated, explanatory, and compound run requests are not interpreted as this tool
 
 ## Verification status
 
-Behavioral cases were added to `tools/editor-assistant-test.rs` and
-`tools/ai-test.rs`. Execution is pending: the build kit rejected the focused test
-because release build `20261014T004941694309Z-63659` already owns the lock.
-No installed-system acceptance or updated-ISO claim is made for this change.
-After that build releases its lock, run:
+Behavioral cases in `tools/editor-assistant-test.rs` and `tools/ai-test.rs`
+passed through build manifest `20261015T074020297018Z-64611.json`.
+Save As now validates the original source fingerprint before changing its path,
+then binds compilation to the new saved-path fingerprint. This avoids rejecting
+an unchanged document merely because it acquired a filename.
+
+The disposable installed harness has a `--save-compile` mode covering Save As
+cancellation/retry, named-document saving, and compiler success/error outcomes.
+Installed-system acceptance and refreshed release evidence remain pending.
+Release and focused verification commands:
 
 ```sh
 ./build-kit run make editor-assistant-test ai-test

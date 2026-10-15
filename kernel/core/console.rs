@@ -3892,6 +3892,9 @@ impl ConsoleRuntime {
         if crate::storage::object_create_note_at(name.bytes(),self.editor_document.bytes(),path.bytes()).is_err() {
             self.editor_picker.error=4;return;
         }
+        // Save As changes the path included in assistant_revision. Validate the
+        // approved source before that rename, then bind compilation to the saved path.
+        let source_revision = self.assistant_revision();
         self.editor_document_path[..path.len].copy_from_slice(path.bytes());
         self.editor_document_path_length=path.len;
         self.editor_document_name[..name.len].copy_from_slice(name.bytes());
@@ -3900,7 +3903,8 @@ impl ConsoleRuntime {
         self.editor_document.save();
         let pending = self.editor_pending_action;
         let mut panel = crate::ui::app_assistant::read(2);
-        let resume = panel.finish_compile_save(pending == PendingDocumentAction::None, self.assistant_revision());
+        let resume = panel.finish_compile_save(pending == PendingDocumentAction::None, source_revision);
+        if resume { panel.document_revision = self.assistant_revision(); }
         crate::ui::app_assistant::write(2, panel);
         self.editor_dialog = EditorDialog::None;
         self.system_focus = 0;

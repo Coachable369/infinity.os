@@ -553,7 +553,10 @@ fn generated_editor_actions() {
         assert_eq!(panel.take_action(12), Action::None);
         assert!(panel.finish_compile_save(true, 12));
         assert!(!panel.finish_compile_save(true, 12));
-        assert_eq!(panel.take_action(12), Action::Compile);
+        // Save As validates the original source, then rebinds to the new path's fingerprint.
+        panel.document_revision = 14;
+        assert_eq!(panel.take_action(14), Action::Compile);
+        panel.document_revision = 12;
         assert_eq!(panel.take_action(12), Action::None);
         panel.defer_compile_until_saved();
         assert!(!panel.finish_compile_save(false, 12));

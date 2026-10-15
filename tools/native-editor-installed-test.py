@@ -155,10 +155,25 @@ def compile_document(guest, source, expected):
     previous = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
     ui.panel_click(guest, "toggle")
     ui.wait_feature(guest, lambda p: p[13] and p[15])
-    ui.text(guest, "compile this program")
+    ui.text(guest, "save and compile my code" if getattr(guest, "save_compile", False) else "compile this program")
     if getattr(guest, "trace_native_faults", False):
         guest.qmp("trace-event-set-state", {"name": "hvf_data_abort", "enable": True})
     guest.key("ret")
+    if getattr(guest, "save_compile", False) and not getattr(guest, "source_named", False):
+        # The first source has no namespace object. Cancellation must not start
+        # the compiler, and retrying must resume once after a real Save As.
+        ui.wait_editor_dialog(guest, 1)
+        guest.key("esc")
+        ui.wait_editor_dialog(guest, 0)
+        assert read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2] == previous
+        ui.panel_click(guest, "composer")
+        ui.text(guest, "save and compile my code")
+        guest.key("ret")
+        ui.wait_editor_dialog(guest, 1)
+        ui.text(guest, "save-compile-proof.c")
+        guest.key("ret")
+        ui.wait_feature(guest, lambda p: p[11] and p[12] == 2)
+        guest.source_named = True
     # Explicit commands can apply directly; generated proposals require review.
     if ui.features(guest)[14]:
         ui.panel_click(guest, "apply")
@@ -221,6 +236,7 @@ def main():
     parser.add_argument("--accel", choices=("hvf", "tcg"), help="Explicit accelerator for diagnosing installed execution transitions")
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
     parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
+    parser.add_argument("--save-compile", action="store_true", help="Exercise save-and-compile, Save As cancellation, and subsequent named-source saving")
     parser.add_argument("--generation-only", action="store_true", help="Retest generated-source acceptance without repeating passing manual-source cases")
     parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
@@ -251,6 +267,7 @@ def main():
     guest.arch = args.arch
     guest.acceleration = args.accel or ("hvf" if args.arch == "aarch64" else "tcg")
     guest.trace_native_faults = args.trace_native_faults
+    guest.save_compile = args.save_compile
     # Suppress the base harness's unrelated browser patching path.
     guest.patched = True
     guest.boot_timeout_seconds = 600
