@@ -17,6 +17,7 @@ pub mod compositor;
 pub mod crash_layout;
 pub mod desktop_stack;
 pub mod desktop_effects;
+pub mod desktop_polish;
 pub mod desktop_widgets;
 pub mod editor_tools;
 pub mod editor_chrome;

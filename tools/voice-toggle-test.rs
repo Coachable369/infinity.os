@@ -307,6 +307,11 @@ impl Ai {
         PROMPTS.lock().unwrap().push(std::mem::take(&mut *COMPOSER.lock().unwrap()));
         TURNS.fetch_add(1,Ordering::SeqCst);INPUT_LENGTH.store(0,Ordering::SeqCst);true
     }
+    // ------------------------=
+    // FUNC: submit_voice_chat
+    // DESC: Mirrors the production voice-origin submission seam while retaining deterministic fixture accounting.
+    // ------------------=
+    fn submit_voice_chat(&mut self)->bool{self.submit_chat()}
 }
 // ------------------------=
 // FUNC: with_ai_runtime

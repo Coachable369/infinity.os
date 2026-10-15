@@ -7529,6 +7529,15 @@ impl ConsoleRuntime {
     // ------------------=
     fn pointer_interaction(&mut self, buttons: u8) {
         let buttons = crate::ui::input_preferences::current().buttons(buttons);
+        let desktop_polish_changed = matches!(
+            self.mode,
+            ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::AppLauncher
+        ) && crate::ui::desktop_polish::publish(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+            self.pointer_x,
+            self.pointer_y,
+        );
         // Activate on the press edge. VirtualBox can consume the release packet
         // used to capture a relative USB pointer, so release-edge activation
         // makes a visibly moving mouse appear unable to click.
@@ -9101,7 +9110,11 @@ impl ConsoleRuntime {
             && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
         {
             self.publish_text_input_presentation();
-            crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            if desktop_polish_changed {
+                self.redraw();
+            } else {
+                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            }
         } else {
             self.redraw();
         }

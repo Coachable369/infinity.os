@@ -1640,6 +1640,7 @@ impl super::DisplayDevice {
         let backdrop_alpha = self.active_background_alpha(176);
         let rail_alpha = self.active_background_alpha(238);
         let highlight_alpha = self.active_background_alpha(88);
+        let hover = crate::ui::desktop_polish::current();
         self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, backdrop_alpha);
         self.fill_rounded_rect_alpha(
             rail_inset,
@@ -1694,29 +1695,43 @@ impl super::DisplayDevice {
             outline_b,
             150,
         );
+        self.fill_rect_alpha(
+            12 * scale,
+            3 * scale,
+            self.width.saturating_sub(24 * scale),
+            1,
+            179,
+            223,
+            247,
+            74,
+        );
 
         let brand_width = (280 * scale).min(self.width / 3);
-        if active_menu == Some(0) {
-            self.fill_rounded_rect_alpha(
-                8 * scale,
-                4 * scale,
-                brand_width,
-                height.saturating_sub(8 * scale),
-                7 * scale,
-                selection_r,
-                selection_g,
-                selection_b,
-                188,
-            );
-        }
-        let logo = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-            .top_bar_logo_geometry();
-        self.top_bar_infinity_icon(
-            logo.x.max(0) as usize + logo.width as usize / 2,
-            logo.y.max(0) as usize + logo.height as usize / 2,
-            logo.width as usize,
+        let brand_active = active_menu == Some(0)
+            || matches!(hover, crate::ui::desktop_polish::HoverTarget::Brand);
+        self.fill_rounded_rect_alpha(
+            8 * scale,
+            4 * scale,
+            brand_width,
+            height.saturating_sub(8 * scale),
+            7 * scale,
+            if brand_active { selection_r } else { 8 },
+            if brand_active { selection_g } else { 27 },
+            if brand_active { selection_b } else { 45 },
+            if brand_active { 172 } else { 116 },
         );
-        self.ui_text(68 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
+        self.top_bar_infinity_icon(36 * scale, content_y, 68 * scale);
+        self.ui_text(76 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
+        self.fill_rect_alpha(
+            brand_width.saturating_sub(1),
+            10 * scale,
+            1,
+            height.saturating_sub(20 * scale),
+            outline_r,
+            outline_g,
+            outline_b,
+            104,
+        );
 
         let help_x = 610 * scale;
         if active_menu == Some(5) {
@@ -1743,8 +1758,31 @@ impl super::DisplayDevice {
             .width
             .saturating_sub(7 * status_width + clock_width + 10 * scale);
         let private_width = self.ui_text_width(b"LOCAL  |  PRIVATE", 1);
+        let private_left = status_left.saturating_sub(private_width + 28 * scale);
+        self.fill_rounded_rect_alpha(
+            private_left,
+            7 * scale,
+            private_width + 18 * scale,
+            height.saturating_sub(14 * scale),
+            height.saturating_sub(14 * scale) / 2,
+            5,
+            27,
+            45,
+            210,
+        );
+        self.fill_rounded_rect_alpha(
+            private_left + 7 * scale,
+            content_y.saturating_sub(2 * scale),
+            4 * scale,
+            4 * scale,
+            2 * scale,
+            33,
+            224,
+            151,
+            255,
+        );
         self.ui_text(
-            status_left.saturating_sub(private_width + 18 * scale),
+            private_left + 14 * scale,
             text_y,
             b"LOCAL  |  PRIVATE",
             211,
@@ -1754,6 +1792,33 @@ impl super::DisplayDevice {
         );
         for (index, kind) in [0usize, 1, 2, 3, 13, 4, 5].iter().enumerate() {
             let center = status_left + index * status_width + status_width / 2;
+            let hovered = matches!(
+                hover,
+                crate::ui::desktop_polish::HoverTarget::Status(value) if value == index
+            );
+            self.fill_rounded_rect_alpha(
+                center.saturating_sub(13 * scale),
+                content_y.saturating_sub(13 * scale),
+                26 * scale,
+                26 * scale,
+                13 * scale,
+                if hovered { selection_r } else { 6 },
+                if hovered { selection_g } else { 28 },
+                if hovered { selection_b } else { 47 },
+                if hovered { 142 } else { 76 },
+            );
+            if hovered {
+                self.outline_rounded_rect(
+                    center.saturating_sub(13 * scale),
+                    content_y.saturating_sub(13 * scale),
+                    26 * scale,
+                    26 * scale,
+                    13 * scale,
+                    outline_r,
+                    outline_g,
+                    outline_b,
+                );
+            }
             self.system_status_icon(center, status_y, *kind, icon_size);
         }
         self.paint_system_top_bar_clock_well(clock, height, scale);
@@ -1775,6 +1840,10 @@ impl super::DisplayDevice {
         let separator_left = segment_left.saturating_sub(3 * scale);
         let separator_top = 8 * scale;
         let separator_height = height.saturating_sub(16 * scale);
+        let hovered = matches!(
+            crate::ui::desktop_polish::current(),
+            crate::ui::desktop_polish::HoverTarget::Clock
+        );
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         self.fill_rect_alpha(
@@ -1797,6 +1866,28 @@ impl super::DisplayDevice {
             8,
             92,
         );
+        self.fill_rounded_rect_alpha(
+            segment_left + 5 * scale,
+            6 * scale,
+            segment_width.saturating_sub(10 * scale),
+            height.saturating_sub(12 * scale),
+            8 * scale,
+            if hovered { 21 } else { 5 },
+            if hovered { 73 } else { 24 },
+            if hovered { 108 } else { 42 },
+            if hovered { 176 } else { 122 },
+        );
+        self.fill_rounded_rect_alpha(
+            segment_left + 12 * scale,
+            height / 2 - 2 * scale,
+            4 * scale,
+            4 * scale,
+            2 * scale,
+            33,
+            224,
+            151,
+            255,
+        );
 
         let mut time = *b"00:00:00";
         time[0] = b'0' + clock.hour / 10;
@@ -1807,7 +1898,7 @@ impl super::DisplayDevice {
         time[7] = b'0' + clock.second % 10;
         let time_width = self.ui_text_width(&time, 1);
         self.ui_text_strong(
-            segment_left + segment_width.saturating_sub(time_width) / 2,
+            segment_left + 7 * scale + segment_width.saturating_sub(time_width + 7 * scale) / 2,
             height / 2 - UI_FONT_CELL_HEIGHT / 2,
             &time,
             226,
@@ -8553,6 +8644,23 @@ impl super::DisplayDevice {
     // DESC: Paints desktop widgets, objects and dock once beneath the ordered application windows.
     // ------------------=
     fn desktop_base(&mut self,scale:usize,desktop_items:u8,desktop_item_positions:&[[i32;2];7],launcher_open:bool) {
+        let vignette = (self.width / 22).max(16 * scale);
+        for step in 0..4 {
+            let alpha = (22usize.saturating_sub(step * 4)) as u8;
+            let inset = step * vignette / 4;
+            let edge = (vignette / 4).max(1);
+            self.fill_rect_alpha(inset, 0, edge, self.height, 0, 4, 12, alpha);
+            self.fill_rect_alpha(
+                self.width.saturating_sub(inset + edge),
+                0,
+                edge,
+                self.height,
+                0,
+                4,
+                12,
+                alpha,
+            );
+        }
         self.desktop_widgets(scale);
         let shortcuts=crate::ui::app_launcher::shortcuts::current();
         for (id,position) in shortcuts.stationary_positions().iter().enumerate() {
@@ -10358,6 +10466,28 @@ impl super::DisplayDevice {
         let dock_height = geometry.dock.height as usize;
         let dock_left = geometry.dock.x.max(0) as usize;
         let dock_top = geometry.dock.y.max(0) as usize;
+        self.fill_rounded_rect_alpha(
+            dock_left.saturating_sub(10 * scale),
+            dock_top + 9 * scale,
+            dock_width.saturating_add(20 * scale),
+            dock_height + 8 * scale,
+            22 * scale,
+            0,
+            2,
+            10,
+            128,
+        );
+        self.fill_rounded_rect_alpha(
+            dock_left.saturating_sub(4 * scale),
+            dock_top + 4 * scale,
+            dock_width.saturating_add(8 * scale),
+            dock_height + 3 * scale,
+            18 * scale,
+            16,
+            23,
+            65,
+            72,
+        );
         self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
         let (dock_r, dock_g, dock_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Dock);
@@ -10373,34 +10503,122 @@ impl super::DisplayDevice {
             dock_b,
             dock_alpha,
         );
+        self.fill_rect_alpha(
+            dock_left + 18 * scale,
+            dock_top + 3 * scale,
+            dock_width.saturating_sub(36 * scale),
+            1,
+            164,
+            224,
+            252,
+            105,
+        );
         let entries = &crate::ui::app_launcher::DESKTOP_DOCK_ENTRIES;
         let icon_gap = dock_width / entries.len();
+        let stack = crate::ui::desktop_stack::current();
+        let widget_state = crate::ui::desktop_widgets::current();
+        let hovered = match crate::ui::desktop_polish::current() {
+            crate::ui::desktop_polish::HoverTarget::Dock(index) => Some(index),
+            _ => None,
+        };
         for (index, entry) in entries.iter().enumerate() {
             let size = 46 * scale;
             let x = dock_left + icon_gap / 2 + index * icon_gap;
+            let is_hovered = hovered == Some(index);
+            let icon_top = dock_top + (if is_hovered { 7 } else { 10 }) * scale;
+            if is_hovered {
+                self.fill_rounded_rect_alpha(
+                    x.saturating_sub(5 * scale),
+                    icon_top.saturating_sub(4 * scale),
+                    size + 10 * scale,
+                    size + 10 * scale,
+                    16 * scale,
+                    31,
+                    116,
+                    171,
+                    104,
+                );
+                self.outline_rounded_rect(
+                    x.saturating_sub(3 * scale),
+                    icon_top.saturating_sub(2 * scale),
+                    size + 6 * scale,
+                    size + 6 * scale,
+                    14 * scale,
+                    91,
+                    210,
+                    255,
+                );
+            }
+            let running = crate::ui::desktop_polish::dock_running(
+                index,
+                launcher_open,
+                stack.visible,
+                stack.settings_section,
+                widget_state.visible & 2 != 0,
+            );
             if index == 0 {
-                self.launcher_dock_icon(x, dock_top + 10 * scale, size, launcher_open);
+                self.launcher_dock_icon(x, icon_top, size, launcher_open);
             } else {
                 self.desktop_app_icon(
                     x,
-                    dock_top + 10 * scale,
+                    icon_top,
                     size,
                     entry.icon_kind,
-                    matches!(index, 1 | 2),
+                    running,
                 );
             }
             if index == 6 {
                 self.fill_rect_alpha(
                     x.saturating_sub(icon_gap / 3),
-                    dock_top + 10 * scale,
+                    dock_top + 12 * scale,
                     1,
-                    size,
-                    69,
-                    91,
-                    108,
-                    180,
+                    size.saturating_sub(4 * scale),
+                    87,
+                    137,
+                    171,
+                    190,
                 );
             }
+        }
+        if let Some(index) = hovered {
+            let label = crate::ui::desktop_polish::dock_label(index);
+            let label_width = self.ui_text_width(label, 1) + 20 * scale;
+            let center = dock_left + icon_gap / 2 + index * icon_gap + 23 * scale;
+            let left = center
+                .saturating_sub(label_width / 2)
+                .clamp(8 * scale, self.width.saturating_sub(label_width + 8 * scale));
+            let top = dock_top.saturating_sub(35 * scale);
+            self.fill_rounded_rect_alpha(
+                left,
+                top,
+                label_width,
+                28 * scale,
+                8 * scale,
+                3,
+                20,
+                35,
+                238,
+            );
+            self.outline_rounded_rect(
+                left,
+                top,
+                label_width,
+                28 * scale,
+                8 * scale,
+                75,
+                170,
+                216,
+            );
+            self.ui_text_centered_strong(
+                left,
+                label_width,
+                top + 6 * scale,
+                label,
+                226,
+                239,
+                248,
+                1,
+            );
         }
     }
 
