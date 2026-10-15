@@ -26,12 +26,16 @@ impl super::DisplayDevice {
         self.mark_dirty_rect(clip.left,clip.top,clip.right-clip.left,clip.bottom-clip.top);
         let cx = (x + size / 2) as i32;
         let cy = (y + size / 2) as i32;
-        let r = (size / 4) as i32;
+        let r = (size / 5).max(3) as i32;
         let center=controls::pixel(size,size/2,size/2,state,primary,accent,index==2);
         let luminance=(u32::from(center.0)*54+u32::from(center.1)*183+u32::from(center.2)*19)/256;
         let color = if luminance>150 {(15,25,36)}else{(226,242,252)};
         match index {
-            0 => self.icon_line(cx - r, cy, cx + r, cy, color, size),
+            0 => {
+                for offset in 0..unit as i32 {
+                    self.line(cx-r,cy+offset,cx+r,cy+offset,color.0,color.1,color.2);
+                }
+            }
             1 => {
                 let shift = if maximized { 2 * unit } else { 0 };
                 if maximized {
@@ -58,8 +62,10 @@ impl super::DisplayDevice {
                 }
             }
             _ => {
-                self.icon_line(cx - r, cy - r, cx + r, cy + r, color, size);
-                self.icon_line(cx + r, cy - r, cx - r, cy + r, color, size);
+                for offset in 0..unit as i32 {
+                    self.line(cx-r+offset,cy-r,cx+r+offset,cy+r,color.0,color.1,color.2);
+                    self.line(cx+r+offset,cy-r,cx-r+offset,cy+r,color.0,color.1,color.2);
+                }
             }
         }
     }

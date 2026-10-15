@@ -61,7 +61,7 @@ pub fn take_damage() -> [Option<Rect>;2] {
 // FUNC: pixel
 // DESC: Area-filters authored alpha and tints neutral glass without allocations or decoding.
 // ------------------=
-pub fn pixel(size: usize,x:usize,y:usize,state:usize,primary:u32,accent:u32,close:bool)->(u8,u8,u8,u8) {
+pub fn pixel(size: usize,x:usize,y:usize,state:usize,primary:u32,accent:u32,_close:bool)->(u8,u8,u8,u8) {
     if size==0 || x>=size || y>=size {return (0,0,0,0);}
     let (x0,y0)=(x*SIDE/size,y*SIDE/size);
     let (x1,y1)=(((x+1)*SIDE/size).max(x0+1).min(SIDE),((y+1)*SIDE/size).max(y0+1).min(SIDE));
@@ -73,11 +73,16 @@ pub fn pixel(size: usize,x:usize,y:usize,state:usize,primary:u32,accent:u32,clos
     }}
     if alpha==0 {return (0,0,0,0);}
     let lum=lum/alpha;
-    let tint=if close && state!=0 {0xee5868}else if state!=0 {accent}else{primary};
+    // Keep the authored reflections instead of flooding the whole face with accent.
+    // Closing is a normal window action, not a destructive/error state.
+    let accent_weight=if state==0 {0}else if state==1 {32}else{20};
+    let reflection=lum.saturating_sub(48)*3/5;
     let channel=|shift:u32| {
-        let base=(tint>>shift)&255u32;
-        let value=(base*2+lum)/3;
-        (if state==2 {value*3/4}else{value}).min(255) as u8
+        let base=(primary>>shift)&255u32;
+        let accent=(accent>>shift)&255u32;
+        let glass=(base*(256-accent_weight)+accent*accent_weight)/256;
+        let glass=if state==2 {glass*4/5}else{glass};
+        (glass+(255-glass)*reflection/255).min(255) as u8
     };
     (channel(16),channel(8),channel(0),(alpha/((x1-x0)*(y1-y0)) as u32) as u8)
 }

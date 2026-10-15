@@ -43,6 +43,8 @@ fn geometry_states_and_theme_pixels() {
                     let mut pixels=Vec::new();
                     for y in 0..26 {for x in 0..26 {
                         pixels.push(controls::pixel(26,x,y,state,primary,accent,close));
+                        assert_eq!(controls::pixel(26,x,y,state,primary,accent,true),
+                                   controls::pixel(26,x,y,state,primary,accent,false));
                     }}
                     assert_eq!(pixels[0].3,0);
                     assert!(pixels[13*26+13].3>230);

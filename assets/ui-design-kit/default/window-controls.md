@@ -9,8 +9,10 @@ geometry is 26 logical pixels square, 8 pixel gutters, 12 pixel right inset,
 vertically centered within the title bar. Browser controls retain their native
 layout hit boxes and center the same square material within them.
 
-Neutral authored glass is tinted using the current primary and accent colors;
-close hover/press uses the semantic danger tint. White native minus, square,
+Neutral authored glass retains its reflections over the current primary color;
+hover adds only 12.5% accent and press adds 7.8% with a darker inset.
+Close uses exactly the same material as its neighbors, never a special red fill.
+Small, fine native minus, square,
 overlapping restore squares and X remain crisp at every display scale. Normal
 is quiet, hover lifts the rim, pressed darkens the inset. No idle animation.
 Do not add decorative traffic lights alongside these functional controls.
@@ -28,6 +30,13 @@ overlays semantic native glyphs rather than resampling glyph artwork. Glyphs
 switch to dark ink on light plates to retain contrast across theme colors.
 
 ## Verification status — 2026-10-15
+
+Follow-up glass correction: reuse the generated master with restrained tinting
+and fine smaller glyphs; remove special red Close states. Palette regression
+coverage now requires identical Close/other control material for every pixel.
+Verification of this correction is pending: build-kit is occupied by full build
+`20261015T105720045095Z-60242`. Prior evidence below predates this correction;
+do not treat that running release as verified to contain it.
 
 - Focused behavioral geometry, interaction-state, shelf, native UI and production
   painter checks passed: `builds/manifests/20261015T102059936160Z-3932.json`.
