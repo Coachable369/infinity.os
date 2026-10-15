@@ -21,6 +21,15 @@ pub fn insertion_index(mut queue:impl ExactSizeIterator<Item=(bool,Priority)>,pr
 }
 
 // ------------------------=
+// FUNC: eviction_index
+// DESC: Selects the least important queued request so parsing dependencies survive resource-heavy pages.
+// ------------------=
+pub fn eviction_index(queue:impl Iterator<Item=(bool,Priority)>,incoming:Priority)->Option<usize> {
+    queue.enumerate().filter_map(|(index,(active,current))|
+        (!active && current>incoming).then_some(index)).last()
+}
+
+// ------------------------=
 // FUNC: retry_pre_header
 // DESC: Retries bounded idempotent requests that fail before any response metadata reaches the engine.
 // ------------------=
@@ -47,6 +56,8 @@ mod tests {
         assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,3,4,6,2,1]);
         assert_eq!(insertion_index(core::iter::empty(),Priority::Document),0);
         assert_eq!(classify(false,""),Priority::Critical);
+        assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Critical),Some(6));
+        assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Other),None);
         assert!(retry_pre_header("GET",0));
         assert!(retry_pre_header("GET",1));
         assert!(!retry_pre_header("GET",2));

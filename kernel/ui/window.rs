@@ -371,7 +371,7 @@ impl WindowServer {
             if window.state != WindowState::Normal {
                 return Err(WindowError::InvalidBounds);
             }
-            let visible_title_width = window.bounds.width.min(144) as i32;
+            let visible_title_width = window.bounds.width.min(72) as i32;
             let title_height = window.bounds.height.min(48) as i32;
             let minimum_x = work_area.x.saturating_sub(
                 window.bounds.width.saturating_sub(visible_title_width as u32) as i32,

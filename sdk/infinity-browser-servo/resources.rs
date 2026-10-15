@@ -9,7 +9,7 @@ mod resource_order;
 #[path="compression.rs"] mod compression;
 
 pub const MAX_BODY: usize = 4 * 1024 * 1024;
-const MAX_REQUESTS: usize = 256;
+const MAX_REQUESTS: usize = 512;
 const TIMEOUT_NS: u64 = 120_000_000_000;
 
 pub struct Response {
@@ -126,7 +126,7 @@ impl<P: Provider> Resources<P> {
         // Dropping without interception invokes Servo's own local scheme handler.
         // These schemes cannot open an ambient socket; retain Servo's origin/CSP checks.
         if matches!(url.scheme(), "data" | "blob" | "about") { return; }
-        if state.pending.len() == MAX_REQUESTS || !matches!(request.method.as_str(),"GET"|"HEAD"|"POST"|"PUT"|"PATCH"|"DELETE"|"OPTIONS")
+        if !matches!(request.method.as_str(),"GET"|"HEAD"|"POST"|"PUT"|"PATCH"|"DELETE"|"OPTIONS")
             || request.body.len()>64*1024
             || !matches!(url.scheme(), "http" | "https") || url.as_str().len() > 8192
             || !url.username().is_empty() || url.password().is_some() {
@@ -135,6 +135,16 @@ impl<P: Provider> Resources<P> {
         // Queue metadata, not response buffers. Start the transfer deadline only
         // when this resource reaches the head of the serialized native transport.
         let priority=resource_order::classify(request.is_for_main_frame,request.destination.as_str());
+        if state.pending.len() == MAX_REQUESTS {
+            if let Some(index)=resource_order::eviction_index(
+                state.pending.iter().map(|pending|(pending.id!=0,pending.priority)),priority)
+            {
+                let displaced=state.pending.remove(index);
+                fail_load(&mut state,displaced.load);
+            } else {
+                fail_load(&mut state,load);return;
+            }
+        }
         // Keep active work and equal-priority FIFO order; unblock document
         // parsing/layout before spending the serialized transport on media.
         let at=resource_order::insertion_index(state.pending.iter().map(|pending|(pending.id!=0,pending.priority)),priority);

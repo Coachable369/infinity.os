@@ -1555,57 +1555,60 @@ impl SystemLayout {
             let inset = 10 * self.scale;
             let top = self.top_bar_height() + inset;
             (
-                inset,
-                top,
+                inset as i32,
+                top as i32,
                 self.width.saturating_sub(inset * 2),
                 self.height.saturating_sub(top + 92 * self.scale),
             )
         } else {
             (
-                self.width * window_x.clamp(0, 900) as usize / 1000,
-                self.height * window_y.clamp(50, 850) as usize / 1000,
+                (self.width as i64 * window_x as i64 / 1000) as i32,
+                (self.height as i64 * window_y.clamp(50, 850) as i64 / 1000) as i32,
                 (self.width * window_width.clamp(420, 900) as usize / 1000).min(self.width),
-                (self.height * window_height.clamp(self.desktop_app_minimum_height(), 820) as usize / 1000).min(self.height),
+                (self.height
+                    * window_height.clamp(self.desktop_app_minimum_height(), 820) as usize
+                    / 1000)
+                    .min(self.height),
             )
         };
         let title_height = 48 * self.scale;
         let control_size = 26 * self.scale;
         let control_gap = 8 * self.scale;
-        let close_left = left + width.saturating_sub(control_size + 12 * self.scale);
-        let maximize_left = close_left.saturating_sub(control_size + control_gap);
-        let minimize_left = maximize_left.saturating_sub(control_size + control_gap);
-        let toolbar_top = top + title_height;
+        let close_left = left.saturating_add(width.saturating_sub(control_size + 12 * self.scale) as i32);
+        let maximize_left = close_left.saturating_sub((control_size + control_gap) as i32);
+        let minimize_left = maximize_left.saturating_sub((control_size + control_gap) as i32);
+        let toolbar_top = top.saturating_add(title_height as i32);
         let toolbar_height = 42 * self.scale;
         DesktopAppWindowGeometry {
-            window: rect(left, top, width, height),
-            title: rect(
-                left + 12 * self.scale,
+            window: signed_rect(left, top, width, height),
+            title: signed_rect(
+                left.saturating_add((12 * self.scale) as i32),
                 top,
-                minimize_left.saturating_sub(left + 20 * self.scale),
+                minimize_left.saturating_sub(left.saturating_add((20 * self.scale) as i32)).max(0) as usize,
                 title_height,
             ),
-            minimize: rect(
+            minimize: signed_rect(
                 minimize_left,
-                top + 11 * self.scale,
+                top.saturating_add((11 * self.scale) as i32),
                 control_size,
                 control_size,
             ),
-            maximize: rect(
+            maximize: signed_rect(
                 maximize_left,
-                top + 11 * self.scale,
+                top.saturating_add((11 * self.scale) as i32),
                 control_size,
                 control_size,
             ),
-            close: rect(
+            close: signed_rect(
                 close_left,
-                top + 11 * self.scale,
+                top.saturating_add((11 * self.scale) as i32),
                 control_size,
                 control_size,
             ),
-            toolbar: rect(left, toolbar_top, width, toolbar_height),
-            content: rect(
-                left + 16 * self.scale,
-                toolbar_top + toolbar_height + 12 * self.scale,
+            toolbar: signed_rect(left, toolbar_top, width, toolbar_height),
+            content: signed_rect(
+                left.saturating_add((16 * self.scale) as i32),
+                toolbar_top.saturating_add((toolbar_height + 12 * self.scale) as i32),
                 width.saturating_sub(32 * self.scale),
                 height.saturating_sub(title_height + toolbar_height + 28 * self.scale),
             ),
@@ -3383,14 +3386,28 @@ pub fn movable_window_position(
     width: i32,
     height: i32,
 ) -> (i32, i32) {
-    let side_overhang = width.saturating_sub(180).clamp(0, 180);
+    let visible_chrome = width.clamp(1, 72);
     let bottom_overhang = height.saturating_sub(140).clamp(0, 120);
-    let maximum_x = 1000i32.saturating_sub(width).saturating_add(side_overhang);
+    let minimum_x = visible_chrome.saturating_sub(width);
+    let maximum_x = 1000i32.saturating_sub(visible_chrome);
     let maximum_y = 920i32.saturating_sub(height).saturating_add(bottom_overhang);
     (
-        requested_x.clamp(0, maximum_x.max(0)),
+        requested_x.clamp(minimum_x.min(0), maximum_x.max(0)),
         requested_y.clamp(50, maximum_y.max(50)),
     )
+}
+
+// ------------------------=
+// FUNC: signed_rect
+// DESC: Constructs desktop geometry that may extend beyond the visible horizontal workspace.
+// ------------------=
+fn signed_rect(left: i32, top: i32, width: usize, height: usize) -> Rect {
+    Rect {
+        x: left,
+        y: top,
+        width: width.min(u32::MAX as usize) as u32,
+        height: height.min(u32::MAX as usize) as u32,
+    }
 }
 
 // ------------------------=

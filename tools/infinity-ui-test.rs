@@ -1381,8 +1381,14 @@ fn installed_system_hit_geometry_test() {
         resize_home_window(100, 200, 430, 380, 0, 350, 450),
         (230, 320, 300, 260)
     );
-    assert_eq!(movable_window_position(900, 900, 600, 500), (580, 540));
-    assert_eq!(movable_window_position(-200, 0, 600, 500), (0, 50));
+    assert_eq!(movable_window_position(900, 900, 600, 500), (900, 540));
+    assert_eq!(movable_window_position(990, 900, 600, 500), (928, 540));
+    assert_eq!(movable_window_position(-200, 0, 600, 500), (-200, 50));
+    assert_eq!(movable_window_position(-900, 200, 600, 500), (-528, 200));
+    let overhung = SystemLayout::new(2000, 1000)
+        .desktop_app_window_geometry(-528, 200, 600, 500, false);
+    assert_eq!(overhung.window.x, -1056);
+    assert_eq!(overhung.window.right(), 144);
     assert_eq!(
         square.system_menu_target(0, 50, 50),
         SystemMenuTarget::Item(0)
@@ -2062,14 +2068,14 @@ fn window_isolation_test() {
         server
             .move_window(ContextId(1), first, Point { x: -500, y: 40 }, work_area)
             .unwrap().x,
-        -156
+        -228
     );
     assert_eq!(
         server
             .move_window(ContextId(1), first, Point { x: 1200, y: 700 }, work_area)
             .unwrap(),
         Rect {
-            x: 1136,
+            x: 1200,
             y: 672,
             width: 300,
             height: 200
@@ -2080,7 +2086,7 @@ fn window_isolation_test() {
             .resize_window(ContextId(1), first, 500, 300, work_area)
             .unwrap(),
         Rect {
-            x: 1136,
+            x: 1200,
             y: 672,
             width: 300,
             height: 200
@@ -2134,7 +2140,7 @@ fn window_isolation_test() {
             .unwrap()
             .new_bounds,
         Rect {
-            x: 1136,
+            x: 1200,
             y: 672,
             width: 300,
             height: 200

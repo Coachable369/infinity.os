@@ -51,22 +51,18 @@ impl DisplayDevice {
             255,
             14,
         );
-        self.ui_text_centered(
-            x,
-            w,
-            y + w / 10,
-            if snap.is_some() {
-                b"SNAP"
-            } else if state.drag.is_some() {
-                b"MOVE"
-            } else {
-                b"DRAG"
-            },
-            137,
-            199,
-            228,
-            1,
-        );
+        if snap.is_some() || state.drag.is_some() {
+            self.ui_text_centered(
+                x,
+                w,
+                y + w / 10,
+                if snap.is_some() { b"SNAP" } else { b"MOVE" },
+                137,
+                199,
+                228,
+                1,
+            );
+        }
         if state.count() == 0 {
             self.ui_text_centered(x, w, y + h / 2 + w / 3, b"None", 143, 174, 195, 1);
         }

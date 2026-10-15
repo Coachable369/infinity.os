@@ -76,20 +76,6 @@ impl super::DisplayDevice {
             s,
         );
         self.app_text(x + 48 * s, y + 15 * s, b"Text Editor", TEXT, true, s);
-        if g.search.width > 70 * s as u32 {
-            self.app_card(g.search, (15, 27, 46), (33, 58, 85), s);
-            self.app_label(
-                Rect {
-                    x: g.search.x + 12 * s as i32,
-                    width: g.search.width - 24 * s as u32,
-                    ..g.search
-                },
-                b"Search in file...   Ctrl+F",
-                MUTED,
-                false,
-                s,
-            );
-        }
         for (i, r) in [window.minimize, window.maximize, window.close]
             .iter()
             .enumerate()
