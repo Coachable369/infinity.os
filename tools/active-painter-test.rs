@@ -98,6 +98,7 @@ impl DisplayDevice {
     // FUNC: set_render_clip
     // DESC: Supplies the production editor's caret clipping boundary in the framebuffer fixture.
     // ------------------=
+    #[cfg(not(test))]
     fn set_render_clip(&mut self,x:usize,y:usize,w:usize,h:usize){self.render_clip=Some(Region{left:x,top:y,right:x+w,bottom:y+h});}
     // ------------------------=
     // FUNC: clear_render_clip

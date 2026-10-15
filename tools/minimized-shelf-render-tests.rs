@@ -101,7 +101,7 @@ impl DisplayDevice {
     // FUNC: set_render_clip
     // DESC: Supplies the host framebuffer clipping boundary used by the production sprite renderer.
     // ------------------=
-    fn set_render_clip(&mut self, x: usize, y: usize, width: usize, height: usize) {
+    pub(crate) fn set_render_clip(&mut self, x: usize, y: usize, width: usize, height: usize) {
         self.render_clip = Some(Region {left:x.min(self.width), top:y.min(self.height),
             right:x.saturating_add(width).min(self.width), bottom:y.saturating_add(height).min(self.height)});
     }
