@@ -1,5 +1,7 @@
 //! Native shell geometry from the IDesign Kit. Coordinates are window-local pixels.
 use crate::Viewport;
+pub const MENU_ROW_HEIGHT: u32 = 28;
+pub const MENU_PADDING: u32 = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, FileMenu, SettingsMenu, Minimize, Maximize, Close, Content, NewTab, Favorite, FavoritesPrevious, FavoritesNext }
@@ -50,9 +52,10 @@ impl Layout {
     pub fn menu_item(&self,menu:u8,index:usize)->Option<Viewport> {
         if index>=match menu {1=>3,2|3=>1,4=>8,_=>0} {return None;}
         let s=self.tabs.height/36;let anchor=match menu {1=>self.file_menu,2=>self.settings_menu,3=>self.edit_menu,_=>self.view_menu};
-        let top=anchor.y+anchor.height as i32;
-        let height=if menu==4 {(32*s).min((self.status.y-top).max(0) as u32/8)}else{32*s};
-        Some(Viewport{x:anchor.x,y:top+(index as u32*height) as i32,width:208*s,height})
+        let top=anchor.y+anchor.height as i32+(MENU_PADDING*s)as i32;
+        let height=if menu==4 {(MENU_ROW_HEIGHT*s).min((self.status.y-top).max(0) as u32/8)}else{MENU_ROW_HEIGHT*s};
+        Some(Viewport{x:anchor.x+4*s as i32,y:top+(index as u32*height) as i32,
+            width:208*s-8*s,height})
     }
     // ------------------------=
     // FUNC: with_favorites
@@ -205,7 +208,7 @@ mod tests {
             assert!(l.view_menu.x>l.edit_menu.x+l.edit_menu.width as i32);
             for i in 0..4 {let r=l.find_control(i);assert!(l.content.local(r.x,r.y).is_some());
                 if i<3 {assert!(r.x+r.width as i32<=l.find_control(i+1).x);}}
-            for i in 0..3 {let r=l.menu_item(1,i).unwrap();assert_eq!(r.height,32*s);assert!(r.x+(r.width as i32)<900*s as i32);}
+            for i in 0..3 {let r=l.menu_item(1,i).unwrap();assert_eq!(r.height,MENU_ROW_HEIGHT*s);assert!(r.x+(r.width as i32)<900*s as i32);}
         }
     }
     // ------------------------=

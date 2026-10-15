@@ -155,29 +155,30 @@ impl ConsoleRuntime {
             }
         }
         if self.editor_tools.menu != Menu::None {
-            if let Some(row) = g.row_at(self.editor_tools.menu, p) {
-                let count = self.editor_tools.menu.count();
-                if row >= count {
-                    if clicked {
-                        let cap = g.menu_capacity();
-                        let page = self.editor_tools.menu_index / cap;
-                        let pages = (count + cap - 1) / cap;
-                        self.editor_tools.menu_index = if row == count {
-                            ((page + pages - 1) % pages) * cap
-                        } else {
-                            ((page + 1) % pages) * cap
-                        };
-                        self.redraw();
+            if let Some(hit) = g.row_at(self.editor_tools.menu, p) {
+                match hit {
+                    crate::ui::editor_chrome::MenuHit::ScrollUp => {
+                        if clicked && self.editor_tools.menu_index > 0 {
+                            self.editor_tools.menu_index -= 1;
+                            self.redraw();
+                        }
                     }
-                    return true;
-                }
-                if self.editor_tools.menu_index != row {
-                    self.editor_tools.menu_index = row;
-                    self.redraw();
-                }
-                if clicked {
-                    if let Some(command) = self.editor_tools.choose_menu() {
-                        self.editor_command(command);
+                    crate::ui::editor_chrome::MenuHit::ScrollDown => {
+                        if clicked && self.editor_tools.menu_index + 1 < self.editor_tools.menu.count() {
+                            self.editor_tools.menu_index += 1;
+                            self.redraw();
+                        }
+                    }
+                    crate::ui::editor_chrome::MenuHit::Entry(row) => {
+                        if self.editor_tools.menu_index != row {
+                            self.editor_tools.menu_index = row;
+                            self.redraw();
+                        }
+                        if clicked {
+                            if let Some(command) = self.editor_tools.choose_menu() {
+                                self.editor_command(command);
+                            }
+                        }
                     }
                 }
             } else if clicked {

@@ -11,7 +11,74 @@ const STRONG_METRICS: &[u8] =
     include_bytes!("../../../assets/fonts/InfinityUI-Semibold-16.metrics");
 const KERN: &[u8] = include_bytes!("../../../assets/fonts/InfinityUI-Regular-16.kern");
 const STRONG_KERN: &[u8] = include_bytes!("../../../assets/fonts/InfinityUI-Semibold-16.kern");
+const MENU_FONT: &[u8] = include_bytes!("../../../assets/fonts/InfinityBrowser-Regular-14.atlas");
+const MENU_METRICS: &[u8] = include_bytes!("../../../assets/fonts/InfinityBrowser-Regular-14.metrics");
+const MENU_KERN: &[u8] = include_bytes!("../../../assets/fonts/InfinityBrowser-Regular-14.kern");
 impl super::DisplayDevice {
+    // ------------------------=
+    // FUNC: app_menu_text_width
+    // DESC: Measures the shared compact 14 px Inter application-menu face.
+    // ------------------=
+    pub(super) fn app_menu_text_width(&self, text: &[u8], scale: usize) -> usize {
+        let mut width = 0usize;
+        let mut previous = None;
+        for &byte in text {
+            if !(32..=126).contains(&byte) { previous = None; continue; }
+            let index = (byte - 32) as usize;
+            if let Some(left) = previous {
+                width = width.saturating_add_signed(
+                    (MENU_KERN[left * 95 + index] as isize - 128) * scale as isize,
+                );
+            }
+            width += MENU_METRICS[index] as usize * scale;
+            previous = Some(index);
+        }
+        width
+    }
+    // ------------------------=
+    // FUNC: app_menu_label
+    // DESC: Paints and clips one compact Inter application-menu label inside its shared row geometry.
+    // ------------------=
+    pub(super) fn app_menu_label(&mut self, row: Rect, text: &[u8], color: (u8,u8,u8), scale: usize) {
+        let old_clip = self.render_clip;
+        self.intersect_render_clip(row.x.max(0) as usize, row.y.max(0) as usize,
+            row.width as usize, row.height as usize);
+        let mut end = text.len();
+        while end > 0 && self.app_menu_text_width(&text[..end], scale) > row.width as usize { end -= 1; }
+        let mut x = row.x.max(0) as usize;
+        let y = row.y.max(0) as usize + (row.height as usize).saturating_sub(20 * scale) / 2;
+        let mut previous = None;
+        for &byte in &text[..end] {
+            if !(32..=126).contains(&byte) { previous = None; continue; }
+            let index = (byte - 32) as usize;
+            if let Some(left) = previous {
+                x = Self::font_position_advance(x,
+                    (MENU_KERN[left * 95 + index] as isize - 128) * scale as isize);
+            }
+            for gy in 0..20 * scale { for gx in 0..14 * scale {
+                let alpha = MENU_FONT[gy / scale * 14 * 95 + index * 14 + gx / scale];
+                if alpha != 0 { self.blend_color((x + gx) as i32, (y + gy) as i32,
+                    color.0, color.1, color.2, alpha); }
+            }}
+            x += MENU_METRICS[index] as usize * scale;
+            previous = Some(index);
+        }
+        self.render_clip = old_clip;
+    }
+    // ------------------------=
+    // FUNC: app_dropdown_panel
+    // DESC: Draws the shared smoked-navy application dropdown surface and restrained cyan border.
+    // ------------------=
+    pub(super) fn app_dropdown_panel(&mut self, panel: Rect, scale: usize) {
+        self.app_card(panel, (8, 22, 38), (49, 114, 151), scale);
+    }
+    // ------------------------=
+    // FUNC: app_dropdown_row
+    // DESC: Draws a compact selected application-menu row using the reusable cyan glass focus state.
+    // ------------------=
+    pub(super) fn app_dropdown_row(&mut self, row: Rect, selected: bool, scale: usize) {
+        if selected { self.app_card(row, (16, 58, 82), (34, 145, 183), scale); }
+    }
     // ------------------------=
     // FUNC: app_text_width
     // DESC: Measures compact app typography with the same advances and kerning used for painting.
@@ -181,6 +248,7 @@ impl super::DisplayDevice {
             b'x' => &[(-5, -5, 5, 5), (-5, 5, 5, -5)],
             b'+' => &[(-5, 0, 5, 0), (0, -5, 0, 5)],
             b'^' => &[(0, 7, 0, -7), (-5, -2, 0, -7), (0, -7, 5, -2)],
+            b'v' => &[(0, -7, 0, 7), (-5, 2, 0, 7), (0, 7, 5, 2)],
             b'-' => &[(-5, 0, 5, 0)],
             b'm' => &[
                 (-5, -5, 5, -5),

@@ -260,9 +260,19 @@ impl DisplayDevice {
             for (i,label) in [(1,b"<" as &[u8]),(2,b">"),(3,b"X")] {let r=offset(layout.find_control(i));
                 self.browser_surface(r,skin::button(false,skin::Interaction::Normal));self.browser_label(Viewport{y:r.y+9*scale as i32,..r},label,14*scale,true);}
         }
-        for index in 0..if view.chrome_menu==4 {tab_count}else{3} {
+        let menu_count=if view.chrome_menu==4 {tab_count}else if matches!(view.chrome_menu,2|3){1}else if view.chrome_menu==1{3}else{0};
+        if menu_count>0 {
+            let first=offset(layout.menu_item(view.chrome_menu,0).unwrap());
+            let last=offset(layout.menu_item(view.chrome_menu,menu_count-1).unwrap());
+            self.app_dropdown_panel(crate::ui::geometry::Rect{x:first.x-(4*scale)as i32,
+                y:first.y-(infinity_browser_core::layout::MENU_PADDING*scale as u32)as i32,
+                width:first.width+8*scale as u32,
+                height:(last.y+last.height as i32-first.y
+                    +(infinity_browser_core::layout::MENU_PADDING*2*scale as u32)as i32)as u32},scale);
+        }
+        for index in 0..menu_count {
             let Some(r)=layout.menu_item(view.chrome_menu,index) else {continue;};let r=offset(r);
-            self.browser_surface(r,skin::button(false,if index==view.menu_focus {skin::Interaction::Hovered}else{skin::Interaction::Normal}));
+            if index==view.menu_focus {self.app_dropdown_row(crate::ui::geometry::Rect{x:r.x,y:r.y,width:r.width,height:r.height},true,scale);}
             let name:&[u8]=match view.chrome_menu {2=>b"Browser settings",3=>b"Find on page    Ctrl+F",4=>{
                 let tab=&view.tabs[index];if view.welcome_open {b"Welcome"}else if tab.length==0 {b"New tab"}else{&tab.title[..tab.length]}
             },_=>match index {0=>b"New tab     Ctrl+T",1=>b"Close tab   Ctrl+W",_=>b"Close window"}};

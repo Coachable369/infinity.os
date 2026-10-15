@@ -121,7 +121,8 @@ fn main() {
                 v.menu = menu;
                 v.menu_index = index;
                 editor_tools::publish(v);
-                let r = g.menu_row(menu, index % g.menu_capacity());
+                let visible=ui::app_menu::window(menu.count(),g.menu_capacity(),index);
+                let r = g.menu_row(menu, index-visible.first);
                 assert_eq!(
                     g.row_at(
                         menu,
@@ -130,7 +131,7 @@ fn main() {
                             y: r.y + 1
                         }
                     ),
-                    Some(index)
+                    Some(ui::editor_chrome::MenuHit::Entry(index))
                 );
                 assert!(r.bottom() <= g.status.y);
                 assert!(menu.entry(index).is_some());

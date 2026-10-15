@@ -25,7 +25,7 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    native_window_resize_target, resize_home_window, resize_native_window,
+    movable_window_position, native_window_resize_target, resize_home_window, resize_native_window,
     window_motion_damage_regions, window_transition_damage, AiChatTarget, AppLauncherTarget,
     DesktopAppWindowTarget, DesktopTarget, EditorDialogTarget, EditorScrollTarget,
     OnboardingTarget, SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout,
@@ -1381,6 +1381,8 @@ fn installed_system_hit_geometry_test() {
         resize_home_window(100, 200, 430, 380, 0, 350, 450),
         (230, 320, 300, 260)
     );
+    assert_eq!(movable_window_position(900, 900, 600, 500), (580, 540));
+    assert_eq!(movable_window_position(-200, 0, 600, 500), (0, 50));
     assert_eq!(
         square.system_menu_target(0, 50, 50),
         SystemMenuTarget::Item(0)
@@ -2058,11 +2060,17 @@ fn window_isolation_test() {
     assert_eq!(server.capture_pointer(ContextId(1), first), Ok(()));
     assert_eq!(
         server
+            .move_window(ContextId(1), first, Point { x: -500, y: 40 }, work_area)
+            .unwrap().x,
+        -156
+    );
+    assert_eq!(
+        server
             .move_window(ContextId(1), first, Point { x: 1200, y: 700 }, work_area)
             .unwrap(),
         Rect {
-            x: 980,
-            y: 520,
+            x: 1136,
+            y: 672,
             width: 300,
             height: 200
         }
@@ -2072,8 +2080,8 @@ fn window_isolation_test() {
             .resize_window(ContextId(1), first, 500, 300, work_area)
             .unwrap(),
         Rect {
-            x: 980,
-            y: 520,
+            x: 1136,
+            y: 672,
             width: 300,
             height: 200
         }
@@ -2084,7 +2092,7 @@ fn window_isolation_test() {
         Err(WindowError::AccessDenied)
     );
     assert_eq!(server.context_failed(ContextId(2)), 1);
-    assert_eq!(server.hit_test(Point { x: 1000, y: 540 }), Some(first));
+    assert_eq!(server.hit_test(Point { x: 1200, y: 690 }), Some(first));
     assert_eq!(
         server.create(
             ContextId(1),
@@ -2126,8 +2134,8 @@ fn window_isolation_test() {
             .unwrap()
             .new_bounds,
         Rect {
-            x: 980,
-            y: 520,
+            x: 1136,
+            y: 672,
             width: 300,
             height: 200
         }

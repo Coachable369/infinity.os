@@ -406,7 +406,7 @@ impl SystemLayout {
             browser_left + offset * self.scale,
             browser_top + 32 * self.scale,
             width * self.scale,
-            (12 + item_count * 30) * self.scale,
+            (super::app_menu::PANEL_PADDING * 2 + item_count * super::app_menu::ROW_HEIGHT) * self.scale,
         )
     }
 
@@ -506,9 +506,10 @@ impl SystemLayout {
         if menu_open != 0 {
             let menu = self.file_navigator_menu_geometry(left, top, menu_open, menu_items);
             if menu.contains(point) {
-                let row_top = menu.y + (6 * self.scale) as i32;
+                let row_top = menu.y + (super::app_menu::PANEL_PADDING * self.scale) as i32;
                 if point.y >= row_top {
-                    let row = (point.y - row_top) as usize / (30 * self.scale).max(1);
+                    let row = (point.y - row_top) as usize
+                        / (super::app_menu::ROW_HEIGHT * self.scale).max(1);
                     if row < menu_items {
                         return Some(DesktopTarget::HomeMenuItem(row));
                     }
@@ -3370,6 +3371,26 @@ pub fn resize_native_window(
         (y, height)
     };
     (next_x, next_y, next_width, next_height)
+}
+
+// ------------------------=
+// FUNC: movable_window_position
+// DESC: Allows a bounded desktop-edge overhang while preserving enough visible chrome to recover the window.
+// ------------------=
+pub fn movable_window_position(
+    requested_x: i32,
+    requested_y: i32,
+    width: i32,
+    height: i32,
+) -> (i32, i32) {
+    let side_overhang = width.saturating_sub(180).clamp(0, 180);
+    let bottom_overhang = height.saturating_sub(140).clamp(0, 120);
+    let maximum_x = 1000i32.saturating_sub(width).saturating_add(side_overhang);
+    let maximum_y = 920i32.saturating_sub(height).saturating_add(bottom_overhang);
+    (
+        requested_x.clamp(0, maximum_x.max(0)),
+        requested_y.clamp(50, maximum_y.max(50)),
+    )
 }
 
 // ------------------------=

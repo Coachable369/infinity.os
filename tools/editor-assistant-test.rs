@@ -789,12 +789,21 @@ fn menus_and_viewport() {
                         view.menu = menu;
                         view.menu_index = index;
                         ui::editor_tools::publish(view);
-                        let row = layout.menu_row(menu, index % layout.menu_capacity());
+                        let visible = ui::app_menu::window(menu.count(), layout.menu_capacity(), index);
+                        let row = layout.menu_row(menu, index - visible.first);
                         let point = Point {
                             x: row.x + 2,
                             y: row.y + 2,
                         };
-                        assert_eq!(layout.row_at(menu, point), Some(index));
+                        assert_eq!(layout.row_at(menu, point), Some(ui::editor_chrome::MenuHit::Entry(index)));
+                        if visible.overflow {
+                            let up = layout.menu_scroll_row(menu, false);
+                            let down = layout.menu_scroll_row(menu, true);
+                            assert_eq!(layout.row_at(menu, Point{x:up.x+2,y:up.y+2}),
+                                Some(ui::editor_chrome::MenuHit::ScrollUp));
+                            assert_eq!(layout.row_at(menu, Point{x:down.x+2,y:down.y+2}),
+                                Some(ui::editor_chrome::MenuHit::ScrollDown));
+                        }
                     }
                 }
                 let scrollbar = layout.scrollbar(100, 100);

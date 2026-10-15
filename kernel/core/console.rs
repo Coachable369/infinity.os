@@ -1745,9 +1745,11 @@ impl ConsoleRuntime {
             if point_x >= toolbar_left + 10 * scale as i32
                 && point_x < toolbar_left + 10 * scale as i32 + menu_width
                 && point_y >= menu_top
-                && point_y < menu_top + 214 * scale as i32
+                && point_y < menu_top + (crate::ui::app_menu::panel_height(6,false)*scale) as i32
             {
-                let action = ((point_y - menu_top - 8 * scale as i32) / (32 * scale) as i32)
+                let action = ((point_y - menu_top
+                    - (crate::ui::app_menu::PANEL_PADDING*scale) as i32)
+                    / (crate::ui::app_menu::ROW_HEIGHT*scale) as i32)
                     .clamp(0, 5) as u8;
                 self.shell_menu = 0;
                 match action {
@@ -1809,9 +1811,10 @@ impl ConsoleRuntime {
         if point_x >= performance_left
             && point_x < performance_left + 232 * scale
             && point_y >= menu_top
-            && point_y < menu_top + 140 * scale
+            && point_y < menu_top + (crate::ui::app_menu::panel_height(4,false) as i32 * scale)
         {
-            let row = ((point_y - menu_top - 6 * scale) / (30 * scale)).clamp(0, 3);
+            let row = ((point_y-menu_top-(crate::ui::app_menu::PANEL_PADDING as i32*scale))
+                /(crate::ui::app_menu::ROW_HEIGHT as i32*scale)).clamp(0,3);
             self.shell_menu = 0;
             let image = match self.desktop_app {
                 DesktopAppKind::TextEditor => crate::runtime::task_manager::IMAGE_TEXT_EDITOR,
@@ -7092,6 +7095,12 @@ impl ConsoleRuntime {
             }
         }
         if self.mode == ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::TextEditor {
+            if self.editor_tools.menu != crate::ui::editor_chrome::Menu::None {
+                let amount = crate::ui::input_preferences::current().wheel(vertical);
+                self.editor_tools.menu_step(if amount < 0 { -1 } else { 1 });
+                self.redraw();
+                return true;
+            }
             self.scroll_editor(vertical);
             self.redraw();
             return true;
@@ -8012,10 +8021,10 @@ impl ConsoleRuntime {
                 return;
             } else if self.app_window_dragging {
                 if left_button {
-                    self.app_window_x = (self.pointer_x - self.app_window_drag_offset_x)
-                        .clamp(0, 1000i32.saturating_sub(self.app_window_width));
-                    self.app_window_y = (self.pointer_y - self.app_window_drag_offset_y)
-                        .clamp(50, 900i32.saturating_sub(self.app_window_height));
+                    (self.app_window_x,self.app_window_y)=crate::ui::system_layout::movable_window_position(
+                        self.pointer_x-self.app_window_drag_offset_x,
+                        self.pointer_y-self.app_window_drag_offset_y,
+                        self.app_window_width,self.app_window_height);
                 }
                 if released {
                     self.app_window_dragging = false;
@@ -8313,10 +8322,10 @@ impl ConsoleRuntime {
                 return;
             } else if self.home_window_dragging {
                 if left_button {
-                    self.home_window_x = (self.pointer_x - self.home_window_drag_offset_x)
-                        .clamp(0, 1000i32.saturating_sub(self.home_window_width));
-                    self.home_window_y = (self.pointer_y - self.home_window_drag_offset_y)
-                        .clamp(50, 920i32.saturating_sub(self.home_window_height));
+                    (self.home_window_x,self.home_window_y)=crate::ui::system_layout::movable_window_position(
+                        self.pointer_x-self.home_window_drag_offset_x,
+                        self.pointer_y-self.home_window_drag_offset_y,
+                        self.home_window_width,self.home_window_height);
                 }
                 if released {
                     self.home_window_dragging = false;
@@ -8892,10 +8901,10 @@ impl ConsoleRuntime {
                 return;
             } else if self.settings_window_dragging {
                 if left_button {
-                    self.settings_window.x = (self.pointer_x - self.settings_window_drag_offset_x)
-                        .clamp(0, 1000i32.saturating_sub(self.settings_window.width));
-                    self.settings_window.y = (self.pointer_y - self.settings_window_drag_offset_y)
-                        .clamp(50, 920i32.saturating_sub(self.settings_window.height));
+                    (self.settings_window.x,self.settings_window.y)=crate::ui::system_layout::movable_window_position(
+                        self.pointer_x-self.settings_window_drag_offset_x,
+                        self.pointer_y-self.settings_window_drag_offset_y,
+                        self.settings_window.width,self.settings_window.height);
                 }
                 if released {
                     self.settings_window_dragging = false;

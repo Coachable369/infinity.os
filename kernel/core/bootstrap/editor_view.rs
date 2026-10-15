@@ -543,19 +543,19 @@ impl super::DisplayDevice {
     }
     // ------------------------=
     // FUNC: editor_popup
-    // DESC: Paints executable menu rows, shortcut hints and the selected syntax mode.
+    // DESC: Paints compact executable menu rows, continuous scroll arrows, shortcut hints and the selected syntax mode.
     // ------------------=
     fn editor_popup(&mut self, g: Layout, s: usize) {
         let view = editor_tools::current();
         let p = g.popup(view.menu);
-        self.app_card(p, (15, 27, 46), (49, 92, 123), s);
+        self.app_dropdown_panel(p, s);
         let cap = g.menu_capacity();
-        let start = view.menu_index / cap * cap;
-        for i in start..(start + cap).min(view.menu.count()) {
+        let window = crate::ui::app_menu::window(view.menu.count(), cap, view.menu_index);
+        for i in window.first..window.first + window.visible {
             let item = view.menu.entry(i).unwrap();
-            let r = g.menu_row(view.menu, i - start);
+            let r = g.menu_row(view.menu, i - window.first);
             if i == view.menu_index {
-                self.app_card(r, (20, 54, 76), (36, 137, 169), s);
+                self.app_dropdown_row(r, true, s);
             }
             let prefs = editor_tools::preferences::current();
             let selected = match item.command {
@@ -567,7 +567,7 @@ impl super::DisplayDevice {
                 crate::ui::editor_chrome::Command::Size(i) => i == prefs.size as usize,
                 _ => false,
             };
-            self.app_label(
+            self.app_menu_label(
                 Rect {
                     x: r.x + 10 * s as i32,
                     width: 18 * s as u32,
@@ -575,11 +575,10 @@ impl super::DisplayDevice {
                 },
                 if selected { b">" } else { b"" },
                 CYAN,
-                true,
                 s,
             );
-            let hint = self.app_text_width(item.shortcut, false, s);
-            self.app_label(
+            let hint = self.app_menu_text_width(item.shortcut, s);
+            self.app_menu_label(
                 Rect {
                     x: r.x + 30 * s as i32,
                     width: r.width.saturating_sub((54 * s + hint) as u32),
@@ -587,10 +586,9 @@ impl super::DisplayDevice {
                 },
                 item.label,
                 TEXT,
-                false,
                 s,
             );
-            self.app_label(
+            self.app_menu_label(
                 Rect {
                     x: r.right() - 12 * s as i32 - hint as i32,
                     width: hint as u32,
@@ -598,25 +596,14 @@ impl super::DisplayDevice {
                 },
                 item.shortcut,
                 MUTED,
-                false,
                 s,
             );
         }
-        if view.menu.count() > cap {
-            self.app_label(
-                g.menu_row(view.menu, cap),
-                b"< Previous page",
-                CYAN,
-                false,
-                s,
-            );
-            self.app_label(
-                g.menu_row(view.menu, cap + 1),
-                b"Next page >",
-                CYAN,
-                false,
-                s,
-            );
+        if window.overflow {
+            let up = g.menu_scroll_row(view.menu, false);
+            let down = g.menu_scroll_row(view.menu, true);
+            self.app_symbol(up, b'^', if window.can_scroll_up { CYAN } else { MUTED }, s);
+            self.app_symbol(down, b'v', if window.can_scroll_down { CYAN } else { MUTED }, s);
         }
     }
     // ------------------------=

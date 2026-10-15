@@ -3884,27 +3884,9 @@ impl super::DisplayDevice {
         let menu_left = left + 220 * scale;
         let menu_top = top + 42 * scale;
         let menu_width = 232 * scale;
-        self.fill_rounded_rect_alpha(
-            menu_left,
-            menu_top,
-            menu_width,
-            140 * scale,
-            9 * scale,
-            5,
-            18,
-            31,
-            250,
-        );
-        self.outline_rounded_rect(
-            menu_left,
-            menu_top,
-            menu_width,
-            140 * scale,
-            9 * scale,
-            74,
-            171,
-            218,
-        );
+        self.app_dropdown_panel(crate::ui::geometry::Rect{x:menu_left as i32,y:menu_top as i32,
+            width:menu_width as u32,
+            height:(crate::ui::app_menu::panel_height(4,false)*scale)as u32},scale);
         let image = if screen == 9 {
             crate::runtime::task_manager::IMAGE_TEXT_EDITOR
         } else if screen == 10 {
@@ -3935,23 +3917,20 @@ impl super::DisplayDevice {
                     | (1, crate::runtime::resource_policy::ResourceMode::Balanced)
                     | (2, crate::runtime::resource_policy::ResourceMode::Expanded)
             );
-            self.ui_text(
-                menu_left + 14 * scale,
-                menu_top + (12 + row * 30) * scale,
+            let row_top=menu_top+(crate::ui::app_menu::PANEL_PADDING
+                +row*crate::ui::app_menu::ROW_HEIGHT)*scale;
+            self.app_menu_label(
+                crate::ui::geometry::Rect{x:(menu_left+14*scale)as i32,y:row_top as i32,
+                    width:(18*scale)as u32,height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                 if marked { b"*" } else { b"" },
-                94,
-                211,
-                250,
-                1,
+                (94,211,250),scale,
             );
-            self.ui_text(
-                menu_left + 32 * scale,
-                menu_top + (12 + row * 30) * scale,
+            self.app_menu_label(
+                crate::ui::geometry::Rect{x:(menu_left+32*scale)as i32,y:row_top as i32,
+                    width:(menu_width-46*scale)as u32,
+                    height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                 label,
-                220,
-                232,
-                240,
-                1,
+                (220,232,240),scale,
             );
         }
     }
@@ -4251,7 +4230,7 @@ impl super::DisplayDevice {
             1,
         );
         if menu_open {
-            self.render_task_manager_menu(geometry, scale, (accent_r, accent_g, accent_b));
+            self.render_task_manager_menu(geometry, scale);
         }
     }
 
@@ -4305,22 +4284,10 @@ impl super::DisplayDevice {
         &mut self,
         geometry: crate::ui::system_layout::DesktopAppWindowGeometry,
         scale: usize,
-        accent: (u8, u8, u8),
     ) {
         let left = geometry.toolbar.x.max(0) as usize + 10 * scale;
         let top = geometry.toolbar.bottom().max(0) as usize - 2 * scale;
         let width = 232 * scale;
-        self.fill_rounded_rect_alpha(left, top, width, 214 * scale, 10 * scale, 3, 15, 27, 250);
-        self.outline_rounded_rect(
-            left,
-            top,
-            width,
-            214 * scale,
-            10 * scale,
-            accent.0,
-            accent.1,
-            accent.2,
-        );
         let labels: [&[u8]; 6] = [
             b"Launch File Navigator",
             b"Relaunch Selected",
@@ -4329,8 +4296,12 @@ impl super::DisplayDevice {
             b"End Selected Task",
             b"Refresh Now",
         ];
+        let panel = crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,
+            height:(crate::ui::app_menu::panel_height(labels.len(),false)*scale)as u32};
+        self.app_dropdown_panel(panel, scale);
         for (index, label) in labels.iter().enumerate() {
-            let row_top = top + (8 + index * 32) * scale;
+            let row_top = top + (crate::ui::app_menu::PANEL_PADDING
+                + index * crate::ui::app_menu::ROW_HEIGHT) * scale;
             if index == 4 {
                 self.fill_rect_alpha(
                     left + 12 * scale,
@@ -4343,14 +4314,12 @@ impl super::DisplayDevice {
                     180,
                 );
             }
-            self.ui_text(
-                left + 18 * scale,
-                row_top + 8 * scale,
+            self.app_menu_label(
+                crate::ui::geometry::Rect{x:(left+14*scale)as i32,y:row_top as i32,
+                    width:(width-28*scale)as u32,
+                    height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                 label,
-                if index == 4 { 255 } else { 218 },
-                if index == 4 { 149 } else { 232 },
-                if index == 4 { 149 } else { 241 },
-                1,
+                if index==4 {(255,149,149)}else{(218,232,241)},scale,
             );
         }
     }
@@ -9481,38 +9450,22 @@ impl super::DisplayDevice {
             let menu_left = menu.x.max(0) as usize;
             let menu_top = menu.y.max(0) as usize;
             let actions = context.context_actions();
-            self.fill_rounded_rect_alpha(
-                menu_left,
-                menu_top,
-                menu.width as usize,
-                menu.height as usize,
-                8 * scale,
-                5,
-                18,
-                31,
-                246,
-            );
-            self.outline_rounded_rect(
-                menu_left,
-                menu_top,
-                menu.width as usize,
-                menu.height as usize,
-                8 * scale,
-                73,
-                180,
-                229,
-            );
+            self.app_dropdown_panel(menu, scale);
             for (index, action) in actions.iter().enumerate() {
-                let row_top = menu_top + (6 + index * 28) * scale;
+                let row_top = menu_top + (crate::ui::app_menu::PANEL_PADDING
+                    + index * crate::ui::app_menu::ROW_HEIGHT) * scale;
+                let row = crate::ui::geometry::Rect{x:(menu_left+5*scale)as i32,y:row_top as i32,
+                    width:(menu.width as usize-10*scale)as u32,
+                    height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32};
                 if index == context.menu_selection as usize {
-                    self.fill_rounded_rect_alpha(menu_left + 5 * scale, row_top,
-                        menu.width as usize - 10 * scale, 28 * scale, 4 * scale, 20, 66, 91, 255);
+                    self.app_dropdown_row(row, true, scale);
                 }
-                self.app_text(
-                    menu_left + 14 * scale,
-                    row_top + 2 * scale,
+                self.app_menu_label(
+                    crate::ui::geometry::Rect{x:(menu_left+14*scale)as i32,y:row_top as i32,
+                        width:(menu.width as usize-28*scale)as u32,
+                        height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                     action.label(),
-                    (215, 231, 241), false, scale,
+                    (215, 231, 241), scale,
                 );
             }
         }
@@ -9554,44 +9507,18 @@ impl super::DisplayDevice {
                 );
             let menu_left = menu_rect.x.max(0) as usize;
             let menu_top = menu_rect.y.max(0) as usize;
-            self.fill_rounded_rect_alpha(
-                menu_left,
-                menu_top,
-                menu_rect.width as usize,
-                menu_rect.height as usize,
-                9 * scale,
-                5,
-                18,
-                31,
-                248,
-            );
-            self.outline_rounded_rect(
-                menu_left,
-                menu_top,
-                menu_rect.width as usize,
-                menu_rect.height as usize,
-                9 * scale,
-                74,
-                171,
-                218,
-            );
+            self.app_dropdown_panel(menu_rect, scale);
             let selected = navigator_state
                 .map(|state| state.menu_selection as usize)
                 .unwrap_or(0);
             for (index, label) in labels.iter().enumerate() {
-                let row_top = menu_top + (6 + index * 30) * scale;
+                let row_top = menu_top + (crate::ui::app_menu::PANEL_PADDING
+                    + index * crate::ui::app_menu::ROW_HEIGHT) * scale;
+                let row = crate::ui::geometry::Rect{x:(menu_left+5*scale)as i32,y:row_top as i32,
+                    width:(menu_rect.width as usize-10*scale)as u32,
+                    height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32};
                 if index == selected {
-                    self.fill_rounded_rect_alpha(
-                        menu_left + 5 * scale,
-                        row_top,
-                        menu_rect.width as usize - 10 * scale,
-                        28 * scale,
-                        5 * scale,
-                        selection_r,
-                        selection_g,
-                        selection_b,
-                        190,
-                    );
+                    self.app_dropdown_row(row, true, scale);
                 }
                 let marked = match (menu, index) {
                     (crate::runtime::object_navigation::FileNavigatorMenu::View, 0) => {
@@ -9625,23 +9552,18 @@ impl super::DisplayDevice {
                     }
                     _ => false,
                 };
-                self.ui_text(
-                    menu_left + 14 * scale,
-                    row_top + 6 * scale,
+                self.app_menu_label(
+                    crate::ui::geometry::Rect{x:(menu_left+14*scale)as i32,y:row_top as i32,
+                        width:(18*scale)as u32,height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                     if marked { b"*" } else { b"" },
-                    94,
-                    211,
-                    250,
-                    1,
+                    (94,211,250),scale,
                 );
-                self.ui_text(
-                    menu_left + 32 * scale,
-                    row_top + 6 * scale,
+                self.app_menu_label(
+                    crate::ui::geometry::Rect{x:(menu_left+32*scale)as i32,y:row_top as i32,
+                        width:(menu_rect.width as usize-46*scale)as u32,
+                        height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                     label,
-                    220,
-                    232,
-                    240,
-                    1,
+                    (220,232,240),scale,
                 );
             }
         }

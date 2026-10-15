@@ -114,7 +114,7 @@ for an unrelated pointer event. Typed chat remains usable during that pause.
 
 ## Clipboard and loading interactions
 
-Reuse the native context-menu surface, 30px rows, Inter labels, cyan focus,
+Reuse the native context-menu surface, compact 28px rows, Inter labels, cyan focus,
 and the File Navigator location field for Paste To. No new panel recipe.
 All magnifying glasses reuse generated theme role 27 (`27-search.png`),
 including browser chrome; do not substitute procedural strokes.
@@ -133,6 +133,15 @@ six production frames at their actual 32px size, not enlarged concept art.
 Only cursor damage is presented, never a full-window repaint for animation.
 Loading cancellation, completion, error, lock and window dismissal restore the
 normal cursor. Master and packed sprite use the existing design-kit install list.
+
+## Compact application menus
+
+Application menu bars reuse one smoked-navy glass dropdown recipe: a soft cyan
+outline, 6px interior padding, compact 28px command rows, native 14px Inter labels,
+and a restrained cyan focus surface. Menus longer than the available viewport use
+24px arrow-only scroll rows at the top and bottom. They scroll continuously by one
+command with pointer, wheel, or keyboard input; never expose page-number, Next Page,
+or Previous Page copy. `ui::app_menu` owns the shared density and viewport policy.
 
 ## Generation
 

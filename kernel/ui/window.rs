@@ -357,7 +357,7 @@ impl WindowServer {
 
     // ------------------------=
     // FUNC: move_window
-    // DESC: Moves an owned window while constraining its title bar and body to the usable work area.
+    // DESC: Moves an owned window partly beyond desktop sides while retaining recoverable title chrome in the work area.
     // ------------------=
     pub fn move_window(
         &mut self,
@@ -371,15 +371,16 @@ impl WindowServer {
             if window.state != WindowState::Normal {
                 return Err(WindowError::InvalidBounds);
             }
-            let maximum_x = work_area
-                .x
-                .saturating_add(work_area.width.saturating_sub(window.bounds.width) as i32);
-            let maximum_y = work_area
-                .y
-                .saturating_add(work_area.height.saturating_sub(window.bounds.height) as i32);
+            let visible_title_width = window.bounds.width.min(144) as i32;
+            let title_height = window.bounds.height.min(48) as i32;
+            let minimum_x = work_area.x.saturating_sub(
+                window.bounds.width.saturating_sub(visible_title_width as u32) as i32,
+            );
+            let maximum_x = work_area.right().saturating_sub(visible_title_width);
+            let maximum_y = work_area.bottom().saturating_sub(title_height);
             let old_bounds = window.bounds;
             window.previous_bounds = old_bounds;
-            window.bounds.x = requested.x.clamp(work_area.x, maximum_x.max(work_area.x));
+            window.bounds.x = requested.x.clamp(minimum_x.min(work_area.x), maximum_x.max(work_area.x));
             window.bounds.y = requested.y.clamp(work_area.y, maximum_y.max(work_area.y));
             (old_bounds, window.bounds, window.owner)
         };
@@ -401,8 +402,10 @@ impl WindowServer {
     ) -> Result<Rect, WindowError> {
         let (old_bounds, new_bounds, owner) = {
             let window = self.mutate(caller, id)?;
-            let available_width = work_area.right().saturating_sub(window.bounds.x).max(0) as u32;
-            let available_height = work_area.bottom().saturating_sub(window.bounds.y).max(0) as u32;
+            let available_width = (work_area.right().saturating_sub(window.bounds.x).max(0) as u32)
+                .max(window.bounds.width);
+            let available_height = (work_area.bottom().saturating_sub(window.bounds.y).max(0) as u32)
+                .max(window.bounds.height);
             if window.state != WindowState::Normal
                 || available_width < window.minimum_width
                 || available_height < window.minimum_height

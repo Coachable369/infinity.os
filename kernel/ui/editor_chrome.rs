@@ -3,7 +3,7 @@ use super::{
     editor_tools::Field,
     geometry::{Point, Rect},
 };
-pub const ROW_HEIGHT: u32 = 32;
+pub const ROW_HEIGHT: u32 = super::app_menu::ROW_HEIGHT as u32;
 pub const LINE_HEIGHT: usize = 22;
 pub const CODE_INSET: usize = 96;
 
@@ -131,6 +131,12 @@ pub enum Menu {
     Fonts,
     Sizes,
     Actions,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuHit {
+    Entry(usize),
+    ScrollUp,
+    ScrollDown,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
@@ -521,11 +527,9 @@ impl Layout {
     pub fn popup(self, menu: Menu) -> Rect {
         let s = self.scale as u32;
         let w = (300 * s).min(self.menu_bar.width.saturating_sub(16 * s));
-        let h = (menu.count().min(self.menu_capacity())
-            + usize::from(menu.count() > self.menu_capacity()) * 2) as u32
-            * ROW_HEIGHT
-            * s
-            + 16 * s;
+        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
+            super::editor_tools::current().menu_index);
+        let h = super::app_menu::panel_height(view.visible, view.overflow) as u32 * s;
         let x = if menu == Menu::Syntax {
             self.syntax.right() - w as i32
         } else {
@@ -548,43 +552,68 @@ impl Layout {
     pub fn menu_row(self, menu: Menu, index: usize) -> Rect {
         let p = self.popup(menu);
         let s = self.scale as u32;
+        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
+            super::editor_tools::current().menu_index);
+        let arrow = usize::from(view.overflow) * super::app_menu::SCROLL_ROW_HEIGHT;
         box_at(
             p.x + 4 * self.scale as i32,
-            p.y + (8 + index as u32 * ROW_HEIGHT) as i32 * self.scale as i32,
+            p.y + (super::app_menu::PANEL_PADDING + arrow + index * ROW_HEIGHT as usize) as i32
+                * self.scale as i32,
             p.width.saturating_sub(8 * s),
             ROW_HEIGHT * s,
+        )
+    }
+    // ------------------------=
+    // FUNC: menu_scroll_row
+    // DESC: Returns the arrow-only top or bottom row surrounding an overflowing continuous menu.
+    // ------------------=
+    pub fn menu_scroll_row(self, menu: Menu, down: bool) -> Rect {
+        let panel = self.popup(menu);
+        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
+            super::editor_tools::current().menu_index);
+        let top = if down {
+            super::app_menu::PANEL_PADDING
+                + super::app_menu::SCROLL_ROW_HEIGHT
+                + view.visible * super::app_menu::ROW_HEIGHT
+        } else {
+            super::app_menu::PANEL_PADDING
+        };
+        box_at(
+            panel.x + 4 * self.scale as i32,
+            panel.y + (top * self.scale) as i32,
+            panel.width.saturating_sub((8 * self.scale) as u32),
+            (super::app_menu::SCROLL_ROW_HEIGHT * self.scale) as u32,
         )
     }
     // ------------------------=
     // FUNC: row_at
     // DESC: Resolves clicks only within real menu rows, never the underlying document.
     // ------------------=
-    pub fn row_at(self, menu: Menu, p: Point) -> Option<usize> {
-        let cap = self.menu_capacity();
-        let start = super::editor_tools::current().menu_index / cap * cap;
-        for row in 0..menu.count().saturating_sub(start).min(cap) {
-            if self.menu_row(menu, row).contains(p) {
-                return Some(start + row);
-            }
+    pub fn row_at(self, menu: Menu, p: Point) -> Option<MenuHit> {
+        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
+            super::editor_tools::current().menu_index);
+        if view.overflow && self.menu_scroll_row(menu, false).contains(p) {
+            return Some(MenuHit::ScrollUp);
         }
-        if menu.count() > cap {
-            for nav in 0..2 {
-                if self.menu_row(menu, cap + nav).contains(p) {
-                    return Some(menu.count() + nav);
-                }
+        if view.overflow && self.menu_scroll_row(menu, true).contains(p) {
+            return Some(MenuHit::ScrollDown);
+        }
+        for row in 0..view.visible {
+            if self.menu_row(menu, row).contains(p) {
+                return Some(MenuHit::Entry(view.first + row));
             }
         }
         None
     }
     // ------------------------=
     // FUNC: menu_capacity
-    // DESC: Keeps paged native menus and navigation inside the actual window height.
+    // DESC: Keeps compact continuously scrolling menus inside the actual window height.
     // ------------------=
     pub fn menu_capacity(self) -> usize {
         ((self.status.y - self.menu_bar.bottom()).max(0) as usize
             / (ROW_HEIGHT as usize * self.scale))
             .saturating_sub(3)
-            .clamp(1, 8)
+            .clamp(1, super::app_menu::MAX_VISIBLE_ROWS)
     }
     // ------------------------=
     // FUNC: columns
