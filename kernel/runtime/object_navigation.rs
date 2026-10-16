@@ -22,7 +22,11 @@ pub const FILE_NAVIGATOR_NO_SELECTION: u16 = u16::MAX;
 pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContextAction { Open, OpenWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo, NewFolder, List, Grid, Sort, TextEditor, FileNavigator, Unavailable, Back }
+pub enum ContextAction {
+    Open, OpenWith, SetDefaultWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo,
+    NewFolder, List, Grid, Sort, Handler0, Handler1, Handler2, Handler3, Handler4,
+    Handler5, Handler6, Handler7, Unavailable, Back,
+}
 
 impl ContextAction {
     // ------------------------=
@@ -31,12 +35,25 @@ impl ContextAction {
     // ------------------=
     pub const fn label(self) -> &'static [u8] {
         match self {
-            Self::Open => b"Open", Self::OpenWith => b"Open With...", Self::Rename => b"Rename",
+            Self::Open => b"Open", Self::OpenWith => b"Open With...", Self::SetDefaultWith => b"Always Open With...", Self::Rename => b"Rename",
             Self::Duplicate => b"Duplicate", Self::Trash => b"Move to Trash", Self::NewFolder => b"New Folder",
             Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
-            Self::TextEditor => b"Text Editor", Self::FileNavigator => b"File Navigator",
+            Self::Handler0 | Self::Handler1 | Self::Handler2 | Self::Handler3 | Self::Handler4
+                | Self::Handler5 | Self::Handler6 | Self::Handler7 => b"Application",
             Self::Unavailable => b"No compatible app", Self::Back => b"Back",
             Self::Copy => b"Copy", Self::Cut => b"Cut", Self::Paste => b"Paste", Self::PasteTo => b"Paste to...",
+        }
+    }
+
+    // ------------------------=
+    // FUNC: handler_index
+    // DESC: Resolves a typed chooser row to its stable compatible-handler index.
+    // ------------------=
+    pub const fn handler_index(self) -> Option<usize> {
+        match self {
+            Self::Handler0 => Some(0), Self::Handler1 => Some(1), Self::Handler2 => Some(2), Self::Handler3 => Some(3),
+            Self::Handler4 => Some(4), Self::Handler5 => Some(5), Self::Handler6 => Some(6), Self::Handler7 => Some(7),
+            _ => None,
         }
     }
 }
@@ -1092,6 +1109,10 @@ pub struct FileNavigatorState {
     pub context_y: i32,
     pub context_item: u16,
     pub context_open_with: bool,
+    pub context_set_default: bool,
+    pub context_handler_count: u8,
+    pub context_default_handler: u8,
+    pub context_handler_labels: [ByteText<32>; 8],
     pub context_target: OpenTarget,
     pub menu_open: Option<FileNavigatorMenu>,
     pub menu_selection: u8,
@@ -1401,6 +1422,10 @@ impl FileNavigatorState {
             context_y: 0,
             context_item: FILE_NAVIGATOR_NO_SELECTION,
             context_open_with: false,
+            context_set_default: false,
+            context_handler_count: 0,
+            context_default_handler: u8::MAX,
+            context_handler_labels: [ByteText::empty(); 8],
             context_target: OpenTarget::Unsupported,
             menu_open: None,
             menu_selection: 0,
@@ -1606,6 +1631,10 @@ impl FileNavigatorState {
             .unwrap_or(FILE_NAVIGATOR_NO_SELECTION);
         self.selected_index = self.context_item;
         self.context_open_with = false;
+        self.context_set_default = false;
+        self.context_handler_count = 0;
+        self.context_default_handler = u8::MAX;
+        self.context_handler_labels = [ByteText::empty(); 8];
         self.context_target = OpenTarget::Unsupported;
         self.menu_selection = 0;
         self.menu_open = None;
@@ -1621,15 +1650,33 @@ impl FileNavigatorState {
     pub fn context_actions(&self) -> &'static [ContextAction] {
         use ContextAction::*;
         if self.context_open_with {
-            return match self.context_target {
-                OpenTarget::TextEditor => &[TextEditor, Back],
-                OpenTarget::FileNavigator => &[FileNavigator, Back],
-                OpenTarget::Unsupported => &[Unavailable, Back],
+            return match self.context_handler_count.min(8) {
+                0 => &[Unavailable, Back],
+                1 => &[Handler0, Back],
+                2 => &[Handler0, Handler1, Back],
+                3 => &[Handler0, Handler1, Handler2, Back],
+                4 => &[Handler0, Handler1, Handler2, Handler3, Back],
+                5 => &[Handler0, Handler1, Handler2, Handler3, Handler4, Back],
+                6 => &[Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Back],
+                7 => &[Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Handler6, Back],
+                _ => &[Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Handler6, Handler7, Back],
             };
         }
         if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, PasteTo, List, Grid, Sort] }
         else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
-        else { &[Open, OpenWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
+        else { &[Open, OpenWith, SetDefaultWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
+    }
+
+    // ------------------------=
+    // FUNC: context_action_label
+    // DESC: Supplies a registered application name for chooser rows and shared copy for other actions.
+    // ------------------=
+    pub fn context_action_label(&self, action: ContextAction) -> &[u8] {
+        action.handler_index()
+            .and_then(|index| self.context_handler_labels.get(index))
+            .map(ByteText::as_bytes)
+            .filter(|label| !label.is_empty())
+            .unwrap_or_else(|| action.label())
     }
 
     // ------------------------=

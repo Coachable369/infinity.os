@@ -13,6 +13,7 @@ pub const FILE_NAVIGATOR_INSTALLED_BYTES: u64 = 224 * 1024;
 pub const TEXT_EDITOR_INSTALLED_BYTES: u64 = 176 * 1024;
 pub const COMMAND_WINDOW_INSTALLED_BYTES: u64 = 128 * 1024;
 pub const TASK_MANAGER_INSTALLED_BYTES: u64 = 208 * 1024;
+pub const MAX_CUSTOM_APPLICATION_IMAGES: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskManagerError {
@@ -42,6 +43,7 @@ pub struct TaskManager {
     previous_handles: [u16; super::execution::MAX_CONTEXTS],
     previous_ticks: [u64; super::execution::MAX_CONTEXTS],
     cpu_share_percent: [u8; super::execution::MAX_CONTEXTS],
+    installed_application_images: [u32; MAX_CUSTOM_APPLICATION_IMAGES],
 }
 
 impl TaskManager {
@@ -54,7 +56,29 @@ impl TaskManager {
             previous_handles: [0; super::execution::MAX_CONTEXTS],
             previous_ticks: [0; super::execution::MAX_CONTEXTS],
             cpu_share_percent: [0; super::execution::MAX_CONTEXTS],
+            installed_application_images: [0; MAX_CUSTOM_APPLICATION_IMAGES],
         }
+    }
+
+    // ------------------------=
+    // FUNC: register_application_image
+    // DESC: Makes one nonzero custom installed image identity eligible for isolated application launch.
+    // ------------------=
+    pub fn register_application_image(&mut self, image_identity: u32) -> Result<(), TaskManagerError> {
+        if image_identity == 0 { return Err(TaskManagerError::UnknownApplication); }
+        if is_application_image(image_identity) || self.installed_application_images.contains(&image_identity) { return Ok(()); }
+        let slot = self.installed_application_images.iter_mut().find(|value| **value == 0)
+            .ok_or(TaskManagerError::UnknownApplication)?;
+        *slot = image_identity;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: has_application_image
+    // DESC: Reports whether a built-in or registered custom application image is installed.
+    // ------------------=
+    pub fn has_application_image(&self, image_identity: u32) -> bool {
+        is_application_image(image_identity) || self.installed_application_images.contains(&image_identity)
     }
 
     // ------------------------=
@@ -156,7 +180,7 @@ impl TaskManager {
         execution: &mut ExecutionManager,
         image_identity: u32,
     ) -> Result<ContextHandle, TaskManagerError> {
-        if !is_application_image(image_identity) {
+        if !self.has_application_image(image_identity) {
             return Err(TaskManagerError::UnknownApplication);
         }
         let slot = (0..super::execution::MAX_CONTEXTS)

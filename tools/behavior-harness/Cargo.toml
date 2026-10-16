@@ -113,6 +113,10 @@ name = "file-navigator-workspace-test"
 path = "../file-navigator-workspace-test.rs"
 
 [[bin]]
+name = "application-association-test"
+path = "../application-association-test.rs"
+
+[[bin]]
 name = "ai-test"
 path = "../ai-test.rs"
 

@@ -69,6 +69,7 @@ pub mod resource_policy;
 pub mod scheduler;
 pub mod service;
 pub mod task_manager;
+pub mod application_association;
 
 use capability::{CapabilityManager, CapabilityType};
 use event::{EventClass, EventFabric, RoutingDomain};
@@ -251,6 +252,7 @@ pub struct InfinityRuntime {
     pub node_links: node_links::NodeLinks,
     pub resources: resource_policy::ApplicationResourceManager,
     pub task_manager: task_manager::TaskManager,
+    pub associations: application_association::Registry,
     pub shell_profiles: Option<object_navigation::ShellProfileService>,
     pub file_navigator: Option<object_navigation::FileNavigatorState>,
     pub file_navigators: object_navigation::FileNavigatorWorkspace,
@@ -288,6 +290,38 @@ pub struct InfinityRuntime {
     settings_network_route_capability: Option<u64>,
     settings_network_policy_capability: Option<u64>,
     onboarding_network_profile_capability: Option<u64>,
+}
+
+impl InfinityRuntime {
+    // ------------------------=
+    // FUNC: install_application_handler
+    // DESC: Exposes one installed custom image to task launch and file-association discovery without allowing built-in identity aliasing.
+    // ------------------=
+    pub fn install_application_handler(
+        &mut self,
+        handler: application_association::ApplicationHandler,
+    ) -> Result<(), application_association::AssociationError> {
+        if let application_association::LaunchAdapter::InstalledApplication(image) = handler.launch {
+            if task_manager::is_application_image(image) {
+                return Err(application_association::AssociationError::InvalidManifest);
+            }
+            self.task_manager.register_application_image(image)
+                .map_err(|_| application_association::AssociationError::ApplicationUnavailable)?;
+        }
+        self.associations.install(handler)
+    }
+
+    // ------------------------=
+    // FUNC: install_application_manifest
+    // DESC: Registers one bounded custom application manifest with task launch and file-opening services.
+    // ------------------=
+    pub fn install_application_manifest(
+        &mut self,
+        manifest: &[u8],
+    ) -> Result<(), application_association::AssociationError> {
+        let handler = application_association::ApplicationHandler::from_manifest(manifest)?;
+        self.install_application_handler(handler)
+    }
 }
 
 #[cfg(test)]
@@ -362,6 +396,7 @@ impl InfinityRuntime {
             node_transport: node::transport::NodeTransport::new(),
             resources: resource_policy::ApplicationResourceManager::new(),
             task_manager: task_manager::TaskManager::new(),
+            associations: application_association::Registry::new(),
             shell_profiles: None,
             file_navigator: None,
             file_navigators: object_navigation::FileNavigatorWorkspace::new(),

@@ -12,7 +12,8 @@ for test_name in \
     file-navigator-layout-test \
     desktop-layout-identity-test \
     task-manager-test \
-    file-navigator-workspace-test
+    file-navigator-workspace-test \
+    application-association-test
 do
     CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
         --manifest-path tools/behavior-harness/Cargo.toml --bin "$test_name"

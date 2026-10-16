@@ -93,6 +93,9 @@ fn publish_navigator(console: &ConsoleRuntime, generation: u64) {
         data[22] = state.scroll_offset as u64;
         data[30] = state.workplace_notice as u64;
         data[31]=state.paste_to_editing as u64;data[32]=state.editor_selected as u64;
+        data[33]=state.context_set_default as u64;
+        data[34]=state.context_handler_count as u64;
+        data[35]=state.context_default_handler as u64;
         let menu = layout.file_navigator_context_geometry(state.context_x,state.context_y,state.context_actions().len());
         data[23..27].copy_from_slice(&[menu.x as u64,menu.y as u64,menu.width as u64,menu.height as u64]);
         if let Some(entry) = (state.selected_index != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION)

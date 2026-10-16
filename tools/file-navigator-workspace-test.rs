@@ -79,14 +79,18 @@ fn main() {
         .launch(b"/home/default", 41)
         .expect("first navigator");
     let mut first_window = workspace.window(first).expect("first window");
-    use object_navigation::{ContextAction as A, OpenTarget};
+    use object_navigation::{ByteText, ContextAction as A, OpenTarget};
     first_window.state.open_context_menu(500, 500, Some(4));
     first_window.state.context_target = OpenTarget::TextEditor;
     assert_eq!(first_window.state.selected_index, 4);
-    assert_eq!(first_window.state.context_actions(), &[A::Open, A::OpenWith, A::Rename, A::Duplicate, A::Copy, A::Cut, A::Paste, A::PasteTo, A::Trash]);
+    assert_eq!(first_window.state.context_actions(), &[A::Open, A::OpenWith, A::SetDefaultWith, A::Rename, A::Duplicate, A::Copy, A::Cut, A::Paste, A::PasteTo, A::Trash]);
+    first_window.state.context_handler_count = 2;
+    first_window.state.context_handler_labels[0] = ByteText::new(b"Text Editor").unwrap();
+    first_window.state.context_handler_labels[1] = ByteText::new(b"Markdown Studio").unwrap();
     first_window.state.context_open_with = true;
-    assert_eq!(first_window.state.context_actions(), &[A::TextEditor, A::Back]);
-    first_window.state.context_target = OpenTarget::Unsupported;
+    assert_eq!(first_window.state.context_actions(), &[A::Handler0, A::Handler1, A::Back]);
+    assert_eq!(first_window.state.context_action_label(A::Handler1), b"Markdown Studio");
+    first_window.state.context_handler_count = 0;
     assert_eq!(first_window.state.context_actions(), &[A::Unavailable, A::Back]);
     first_window.state.open_context_menu(500, 500, None);
     assert!(!first_window.state.context_open_with);

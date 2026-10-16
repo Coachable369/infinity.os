@@ -806,6 +806,28 @@ pub(crate) fn editor_preferences(owner:[u8;16],session:[u8;16],save:Option<crate
 }
 
 // ------------------------=
+// FUNC: file_association_preferences
+// DESC: Loads or atomically commits authenticated per-user default application associations in native System Space.
+// ------------------=
+pub(crate) fn file_association_preferences(owner:[u8;16],session:[u8;16],save:Option<&[u8]>,out:&mut [u8])
+    ->Result<usize,object::ObjectError> {
+    let _=browser_favorites_path(owner,session)?;
+    let mut path=[0u8;53];path[..21].copy_from_slice(b"/system/associations/");
+    for(i,byte)in owner.iter().enumerate(){path[21+i*2]=b"0123456789abcdef"[(byte>>4)as usize];path[22+i*2]=b"0123456789abcdef"[(byte&15)as usize];}
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|{
+        let id=match store.resolve(&path){Ok(id)=>Some(id),Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>None,Err(e)=>return Err(e)};
+        if let Some(bytes)=save {
+            if bytes.len()!=crate::runtime::application_association::ASSOCIATION_STATE_BYTES{return Err(object::ObjectError::InvalidObject);}
+            if let Some(id)=id{store.replace_state(id,bytes)?;}else{store.create_attached(b"@file-associations",object::ObjectType::Metadata,object::Space::System,bytes,&path)?;}
+            if out.len()<bytes.len(){return Err(object::ObjectError::InsufficientCapacity);}out[..bytes.len()].copy_from_slice(bytes);Ok(bytes.len())
+        }else if let Some(id)=id{store.read(id,None,out)}else{Err(object::ObjectError::NamespaceNotFound)}
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=(path,save,out);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: browser_favorites_save
 // DESC: Commits a validated browser-owned per-profile object through native atomic checkpoint storage.
 // ------------------=

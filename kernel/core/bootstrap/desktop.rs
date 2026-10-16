@@ -9330,7 +9330,13 @@ impl super::DisplayDevice {
         );
         let workplace_notice=navigator_state.map(|state|state.workplace_notice).unwrap_or(0);
         if workplace_notice!=0 {
-            let text:&[u8]=match workplace_notice {1=>b"Paste complete",2=>b"Ready to move",3=>b"Copied",_=>b"Transfer failed; source or destination unavailable"};
+            let text:&[u8]=match workplace_notice {
+                1=>b"Paste complete",2=>b"Ready to move",3=>b"Copied",4=>b"Transfer failed; source or destination unavailable",
+                5=>b"No installed application can open this object",
+                6=>b"The selected application is unavailable or incompatible",
+                7=>b"Opened with the selected application",
+                _=>b"File operation could not be completed",
+            };
             let limit=browser_width.saturating_sub(sidebar_w+28*scale)/(8*scale);
             self.ui_text(browser_left+sidebar_w+14*scale,status_top+5*scale,&text[..text.len().min(limit)],142,185,210,1);
         } else {
@@ -9460,11 +9466,17 @@ impl super::DisplayDevice {
                 if index == context.menu_selection as usize {
                     self.app_dropdown_row(row, true, scale);
                 }
+                let marked = action.handler_index().is_some_and(|handler| handler as u8 == context.context_default_handler);
                 self.app_menu_label(
-                    crate::ui::geometry::Rect{x:(menu_left+14*scale)as i32,y:row_top as i32,
-                        width:(menu.width as usize-28*scale)as u32,
+                    crate::ui::geometry::Rect{x:(menu_left+12*scale)as i32,y:row_top as i32,
+                        width:(16*scale)as u32,height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
+                    if marked { b"*" } else { b"" }, (94,211,250), scale,
+                );
+                self.app_menu_label(
+                    crate::ui::geometry::Rect{x:(menu_left+30*scale)as i32,y:row_top as i32,
+                        width:(menu.width as usize-44*scale)as u32,
                         height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
-                    action.label(),
+                    context.context_action_label(*action),
                     (215, 231, 241), scale,
                 );
             }

@@ -139,7 +139,7 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/installer-screens.iuit assets/boot/configuration-screens.iuit assets/boot/settings-screens.iuit \
 	$(CRASH_ASSETS) $(NODE_ASSETS)
 
-.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test installer-layout-test installer-template-runtime installer-template-test force-installer-template-compile component-manifest-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test milestone-9-test milestone-11-test resource-policy-test network-test icon-theme-test settings-color-test settings-timeout-test desktop-system-test ui-install-parity-test input-regression-test app-launcher-interaction-test worldshift-art-test task-manager-test file-navigator-workspace-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test installer-layout-test installer-template-runtime installer-template-test force-installer-template-compile component-manifest-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test milestone-9-test milestone-11-test resource-policy-test network-test icon-theme-test settings-color-test settings-timeout-test desktop-system-test ui-install-parity-test input-regression-test app-launcher-interaction-test worldshift-art-test task-manager-test file-navigator-workspace-test application-association-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
 
 assets/sounds/boot.pcm: assets/sounds/boot.mp3 tools/build-system-sound.sh
 	tools/build-system-sound.sh $< $@
@@ -632,6 +632,10 @@ resource-policy-test:
 file-navigator-workspace-test:
 	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
 		--manifest-path tools/behavior-harness/Cargo.toml --bin file-navigator-workspace-test
+
+application-association-test:
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
+		--manifest-path tools/behavior-harness/Cargo.toml --bin application-association-test
 
 installed-object-test:
 	@rustc --edition=2021 -C opt-level=2 tools/installed-object-test.rs -o build/installed-object-test

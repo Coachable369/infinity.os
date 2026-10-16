@@ -65,6 +65,11 @@ fn main() {
         .task_manager
         .launch(&mut system.execution, IMAGE_TASK_MANAGER)
         .unwrap();
+    system.install_application_manifest(
+        b"identity=app.example.markdown-studio\ndisplay-name=Markdown Studio\nimage-id=0xb001\nopen-extensions=md\n",
+    ).unwrap();
+    let custom = system.task_manager.launch(&mut system.execution, 0xb001).unwrap();
+    assert_eq!(system.task_manager.inspect(&system.execution, custom).unwrap().image_identity, 0xb001);
     assert_ne!(files, editor);
     assert_ne!(editor, manager);
     assert_eq!(
@@ -169,7 +174,7 @@ fn main() {
     assert_eq!(system.execution.get(files).unwrap().usage.memory_bytes, 0);
     assert_eq!(
         system.task_manager.task_count(&system.execution),
-        services + 3
+        services + 4
     );
     println!("PASS Task Manager: authoritative monitoring, app launch/end/relaunch, pause/resume, throttling, priority, and system-task protection");
 }
