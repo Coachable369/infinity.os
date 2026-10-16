@@ -9,7 +9,10 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
     // Each bounded span still becomes resident before hardware playback.
     const INITIAL_LIMIT: usize = 80;
     const PROVIDER_LIMIT: usize = 160;
-    const FIRST_WORD_WINDOW: usize = 64;
+    // The initial phrase controls spoken time-to-first-response. Keep it short
+    // enough to start synthesis after a few generated words; follow-up spans
+    // retain the larger provider limit so playback remains continuous.
+    const FIRST_WORD_WINDOW: usize = 24;
     let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
     let scan_limit = bytes.len().min(phrase_limit);
     if complete && bytes.len() <= phrase_limit { return bytes.len(); }
@@ -76,8 +79,8 @@ mod tests {
             at+=count;
         }
         assert_eq!(super::next(&text[..23],false,true),0);
-        assert_eq!(super::next(&text[..66],false,true),0);
-        assert_eq!(super::next(&text[..67],false,true),67);
+        assert_eq!(super::next(&text[..24],false,true),0);
+        assert_eq!(super::next(&text[..25],false,true),25);
     }
 
     // ------------------------=
@@ -100,7 +103,7 @@ mod tests {
     #[test]
     fn streaming_chunks_match_native_graph_boundaries() {
         let text=b"One two three four five six seven eight nine ten eleven twelve thirteen fourteen.";
-        assert_eq!(super::next(text,false,true),72);
+        assert_eq!(super::next(text,false,true),28);
         let complete=super::next(text,true,true);
         assert_eq!(complete,72);
     }
@@ -112,9 +115,8 @@ mod tests {
     #[test]
     fn short_sentences_share_one_synthesis_request() {
         let text = b"Hello! How can I help you today?";
-        for available in 1..text.len() {
-            assert_eq!(super::next(&text[..available], false, true), 0);
-        }
+        for available in 1..25 { assert_eq!(super::next(&text[..available], false, true), 0); }
+        assert_eq!(super::next(&text[..28], false, true), 26);
         assert_eq!(super::next(text, true, true), text.len());
         let followup = b"Yes. It is ready. You can use it now.";
         assert_eq!(super::next(followup, true, false), followup.len());
