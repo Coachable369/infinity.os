@@ -206,6 +206,22 @@ impl DisplayDevice {
         bounds: (usize, usize, usize, usize),
         paint: impl FnOnce(&mut Self),
     ) {
+        self.retained_window_at(slot,(bounds.0 as i32,bounds.1 as i32,bounds.2,bounds.3),paint);
+    }
+
+    // ------------------------=
+    // FUNC: retained_window_at
+    // DESC: Crops a retained surface at a signed screen origin without reflowing its contents at the left edge.
+    // ------------------=
+    pub(super) fn retained_window_at(
+        &mut self,
+        slot: usize,
+        signed_bounds: (i32,i32,usize,usize),
+        paint: impl FnOnce(&mut Self),
+    ) {
+        let crop_x=signed_bounds.0.saturating_neg().max(0) as usize;
+        let crop_y=signed_bounds.1.saturating_neg().max(0) as usize;
+        let bounds=(signed_bounds.0.max(0) as usize,signed_bounds.1.max(0) as usize,signed_bounds.2,signed_bounds.3);
         if self.recording_surface || slot >= SLOTS || self.stride * self.height > SCRATCH_PIXELS {
             paint(self);
             return;
@@ -228,7 +244,7 @@ impl DisplayDevice {
             paint(self);
             return;
         }
-        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+        let Some(region) = self.clipped_render_region(left, top, width.saturating_sub(crop_x), height.saturating_sub(crop_y)) else {
             return;
         };
         let icon_theme = self.active_icon_theme();
@@ -240,7 +256,7 @@ impl DisplayDevice {
                 || cache.height != height
                 || cache.inset != inset;
             if rebuild || cache.damage.is_some() {
-                let changed = if rebuild {
+                let changed = if rebuild || crop_x!=0 || crop_y!=0 {
                     PresentRegion {
                         left,
                         top,
@@ -291,14 +307,14 @@ impl DisplayDevice {
             let effect_opacity=crate::ui::desktop_effects::opacity();
             let (opacity, blur) = self.active_background_effects();
             if effect_opacity==255 && slot != 5 && blur >= 2 && opacity < 100 && !self.fast_motion_frame {
-                self.blur_framebuffer_region(bounds.0, bounds.1, bounds.2, bounds.3, blur as usize);
+                self.blur_framebuffer_region(bounds.0, bounds.1, bounds.2.saturating_sub(crop_x), bounds.3.saturating_sub(crop_y), blur as usize);
             }
             for y in region.top..region.bottom {
                 if y & 31 == 0 {
                     crate::ui::input_capture::poll();
                 }
                 for x in region.left..region.right {
-                    let source = cache.pixels[(y - top) * width + x - left];
+                    let source = cache.pixels[(y - top + crop_y) * width + x - left + crop_x];
                     let source=if effect_opacity==255 {source} else {
                         crate::ui::desktop_effects::fade_pixel(source,effect_opacity)
                     };

@@ -3292,11 +3292,11 @@ impl super::DisplayDevice {
                     maximized,
                 )
                 .window;
-            self.retained_window(
+            self.retained_window_at(
                 (screen.saturating_sub(8) + 1) as usize,
                 (
-                    rect.x.max(0) as usize,
-                    rect.y.max(0) as usize,
+                    rect.x,
+                    rect.y,
                     rect.width as usize,
                     rect.height as usize,
                 ),
@@ -3307,7 +3307,7 @@ impl super::DisplayDevice {
                         output_lines,
                         output_lengths,
                         output_count,
-                        window_x,
+                        window_x.max(0),
                         window_y,
                         window_width,
                         window_height,

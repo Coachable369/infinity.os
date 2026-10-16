@@ -312,6 +312,9 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--window-clipping-only") {
+        retained_surface_test();retained_left_edge_test();return;
+    }
     if std::env::args().any(|arg|arg=="--window-controls-only") {
         window_controls_test();window_control_states_proof();return;
     }
@@ -325,6 +328,7 @@ fn main() {
     retained_window_benchmark();
     damage_test();
     retained_surface_test();
+    retained_left_edge_test();
     retained_partial_update_test();
     retained_projection_revision_test();
     let mut full = vec![0x102030u32; 2560 * 1600];
@@ -752,6 +756,38 @@ fn retained_surface_test() {
         painted += 1;
     });
     assert_eq!(painted, 2);
+}
+
+// ------------------------=
+// FUNC: retained_left_edge_test
+// DESC: Checks signed left-edge cropping pixel-for-pixel, bounded erasure and cached motion back into view.
+// ------------------=
+fn retained_left_edge_test() {
+    retained_windows::invalidate();
+    let background=0x302010u32;
+    let mut pixels=vec![background;320*200];
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width:320,height:200,stride:320,
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut paints=0;
+    for left in [40,0,-1,-12,-70,-110,-12,0,40] {
+        // A compositor reconstructs the old/new exposed areas from lower layers.
+        pixels.fill(background);
+        display.retained_window_at(0,(left,40,100,80),|target| {
+            paints+=1;
+            for y in 40..120 {for x in 0..100 {
+                target.fill_rect(left.max(0) as usize+x,y,1,1,(x+1) as u8,(y-39) as u8,90);
+            }}
+        });
+        for y in 0..200 {for x in 0..320 {
+            let local=x as i32-left;
+            let expected=if (0..100).contains(&local)&&(40..120).contains(&y) {
+                (90<<16)|(((y-39) as u32)<<8)|(local as u32+1)
+            } else {background};
+            assert_eq!(pixels[y*320+x],expected,"left={left}, pixel=({x},{y})");
+        }}
+    }
+    // Only the edge-padding transitions rebuild, never each negative drag step.
+    assert_eq!(paints,3);
 }
 
 // ------------------------=
