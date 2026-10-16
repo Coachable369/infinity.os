@@ -167,6 +167,23 @@ impl AiRuntime {
         let mut budget = qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
         while budget.next(crate::ui::performance::monotonic_ns()) {
             let result = service.poll();
+            let framed = if result.is_ok() {
+                crate::ui::app_assistant::Panel::completed_output_length(service.output())
+            } else { None };
+            if let Some(end) = framed {
+                let mut output = [0u8; 16384];
+                output[..end].copy_from_slice(&service.output()[..end]);
+                service.cancel();
+                let mut panel = crate::ui::app_assistant::read(id);
+                panel.generation = if panel.accept_for_owner(id, &output[..end], true) {
+                    crate::ui::app_assistant::GenerationStatus::Complete
+                } else { crate::ui::app_assistant::GenerationStatus::Failed };
+                crate::ui::app_assistant::write(id, panel);
+                if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
+                else { service.clear_conversation(); }
+                self.app_owner = None;
+                return true;
+            }
             if result.is_err() || !service.busy() {
                 let mut panel = crate::ui::app_assistant::read(id);
                 if result.is_err() {
@@ -187,7 +204,11 @@ impl AiRuntime {
             }
             if result == Ok(true) {
                 let mut panel = crate::ui::app_assistant::read(id);
-                panel.reply(service.output());
+                if id == 2 && crate::ui::app_assistant::editor_compile_intent::create_application(
+                    &panel.request[..panel.request_len]) {
+                    panel.stage_generated_source(service.output());
+                    panel.reply(b"Generating complete C source for the editor...");
+                } else { panel.reply(service.output()); }
                 crate::ui::app_assistant::write(id, panel);
                 return true;
             }

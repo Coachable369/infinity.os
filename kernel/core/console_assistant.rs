@@ -413,8 +413,25 @@ impl ConsoleRuntime {
             panel.length=0;panel.caret=0;
             assistant::write(2,panel);return true;
         }
-        if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return false; }
-        self.apply_window_assistant(2)
+        let previewed=self.apply_streamed_editor_source();
+        if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return previewed; }
+        self.apply_window_assistant(2) || previewed
+    }
+    // ------------------------=
+    // FUNC: apply_streamed_editor_source
+    // DESC: Mirrors authorized in-progress application source into the owning editor while final save and compilation remain completion-gated.
+    // ------------------=
+    fn apply_streamed_editor_source(&mut self)->bool {
+        let mut panel=assistant::read(2);
+        if !matches!(panel.generation,assistant::GenerationStatus::Running|assistant::GenerationStatus::Complete)
+            || !assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len])
+            || panel.argument_len==0 || self.editor_document.bytes()==&panel.argument[..panel.argument_len] {return false;}
+        let checkpoint=self.editor_document.bytes().is_empty();
+        if !self.editor_document.replace_generation_preview(&panel.argument[..panel.argument_len],checkpoint) {return false;}
+        self.editor_scroll_row=0;
+        panel.document_revision=self.assistant_revision();
+        assistant::write(2,panel);
+        true
     }
     // ------------------------=
     // FUNC: apply_window_assistant
@@ -569,7 +586,8 @@ impl ConsoleRuntime {
                     assistant::write(id, panel);
                     return false;
                 }
-                if action==Action::ReplaceCompile && !panel.edit_document(action,&mut self.editor_document) {
+                if action==Action::ReplaceCompile && self.editor_document.bytes()!=&panel.argument[..panel.argument_len]
+                    && !panel.edit_document(action,&mut self.editor_document) {
                     panel.reply(b"The generated source could not be applied. Nothing was compiled.");
                     assistant::write(id,panel);return false;
                 }

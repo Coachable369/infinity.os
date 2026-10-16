@@ -464,6 +464,24 @@ impl TextDocument {
         true
     }
     // ------------------------=
+    // FUNC: replace_generation_preview
+    // DESC: Replaces a live generated-source preview while retaining one undo checkpoint and leaving save state dirty.
+    // ------------------=
+    pub fn replace_generation_preview(&mut self, content: &[u8], checkpoint: bool) -> bool {
+        if content.len() > DOCUMENT_CAPACITY
+            || content.iter().any(|byte| !(32..=126).contains(byte)
+                && !matches!(*byte, b'\n' | b'\t' | b'\r')) { return false; }
+        if self.bytes() == content { return true; }
+        if checkpoint { self.checkpoint(); }
+        self.bytes[..content.len()].copy_from_slice(content);
+        self.length = content.len();
+        self.cursor = content.len();
+        self.anchor = self.cursor;
+        self.revision = self.revision.max(self.saved_revision).wrapping_add(1);
+        self.redo_count = 0;
+        true
+    }
+    // ------------------------=
     // FUNC: find
     // DESC: Selects the next literal match with wrapping and optional ASCII case folding.
     // ------------------=

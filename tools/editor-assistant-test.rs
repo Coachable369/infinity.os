@@ -393,6 +393,27 @@ fn main() {
 // DESC: Checks explicit creation authority, complete-source admission, revision fencing and exactly-once application.
 // ------------------=
 fn application_creation() {
+    for (output, expected) in [
+        (b"REPLACE_COMPILE\nint main(void){return 0;}\nEND_ACTION".as_slice(), Some(52)),
+        (b"CHAT\nDone\nEND_ACTION\n  ", Some(20)),
+        (b"REPLACE_COMPILE\nint main(void){return 0;}", None),
+        (b"prose\nEND_ACTION", None),
+    ] { assert_eq!(ai::Panel::completed_output_length(output), expected); }
+    let mut long = ai::Panel::new();
+    let response = [b'x'; 3072];
+    long.reply(&response);
+    assert_eq!(long.response_len, response.len());
+    assert_eq!(&long.response[..long.response_len], &response);
+    long.request[..30].copy_from_slice(b"create a simple calculator app");long.request_len=30;
+    assert!(long.stage_generated_source(b"REPLACE_COMPILE\nint main(void) {\n    return 0;\n}\nEND_ACT"));
+    assert_eq!(&long.argument[..long.argument_len],b"int main(void) {\n    return 0;\n}");
+    let mut preview=TextDocument::new();
+    assert!(preview.replace_generation_preview(&long.argument[..long.argument_len],true));
+    assert!(!preview.is_saved());
+    assert!(long.stage_generated_source(b"REPLACE_COMPILE\nint main(void) {\n    return 54;\n}\nEND_ACTION"));
+    assert!(preview.replace_generation_preview(&long.argument[..long.argument_len],false));
+    assert_eq!(preview.bytes(),b"int main(void) {\n    return 54;\n}");
+    assert!(preview.undo());assert!(preview.bytes().is_empty());
     for request in [b"create a basic calculator application".as_slice(), b"Please build a calculator app.", b"generate a C application"] {
         assert!(ai::editor_compile_intent::create_application(request));
         let mut panel=ai::Panel::new();
@@ -403,6 +424,7 @@ fn application_creation() {
         assert!(!panel.apply_generated_compile_requested());
         panel.generation=ai::GenerationStatus::Complete;
         assert!(panel.apply_generated_compile_requested());
+        assert_eq!(&panel.response[..panel.response_len], b"Source generation complete. Applying it to the editor, saving it in Documents, and starting native compilation.");
         assert_eq!(panel.take_action(9),Action::None);
         assert!(panel.accept_for_owner(2,b"REPLACE\nint main(void){return 7;}\nEND_ACTION",true));
         assert_eq!(panel.take_action(8),Action::ReplaceCompile);

@@ -125,7 +125,7 @@ pub struct Panel {
     pub scroll_max: u32,
     pub scroll_drag: bool,
     pub scroll_grab: u32,
-    pub response: [u8; 512],
+    pub response: [u8; 4096],
     pub request: [u8; 1024],
     pub request_len: usize,
     pub response_len: usize,
@@ -226,7 +226,7 @@ impl Panel {
             scroll_max: 0,
             scroll_drag: false,
             scroll_grab: 0,
-            response: [0; 512],
+            response: [0; 4096],
             request: [0; 1024],
             request_len: 0,
             response_len: 0,
@@ -244,6 +244,45 @@ impl Panel {
     pub fn reply(&mut self, bytes: &[u8]) {
         self.response_len = bytes.len().min(self.response.len());
         self.response[..self.response_len].copy_from_slice(&bytes[..self.response_len]);
+    }
+    // ------------------------=
+    // FUNC: completed_output_length
+    // DESC: Recognizes a complete framed model action so app inference can hand it off without waiting for an unrelated model end token.
+    // ------------------=
+    pub fn completed_output_length(output: &[u8]) -> Option<usize> {
+        let first = output.iter().position(|byte| *byte == b'\n')?;
+        if ![b"ACTION".as_slice(), b"INSERT", b"REPLACE", b"REPLACE_COMPILE", b"CHAT"]
+            .iter().any(|kind| &output[..first] == *kind) { return None; }
+        let marker = b"\nEND_ACTION";
+        let relative = output[first + 1..].windows(marker.len()).position(|window| window == marker)?;
+        let end = first + 1 + relative + marker.len();
+        if output.get(end).is_some_and(|byte| !byte.is_ascii_whitespace()) { return None; }
+        Some(end)
+    }
+    // ------------------------=
+    // FUNC: stage_generated_source
+    // DESC: Extracts a bounded in-progress source body for live editor preview without granting save, compile, or execution authority.
+    // ------------------=
+    pub fn stage_generated_source(&mut self, output: &[u8]) -> bool {
+        if !editor_compile_intent::create_application(&self.request[..self.request_len]) { return false; }
+        let content = if let Some(split) = output.iter().position(|byte| *byte == b'\n') {
+            if !matches!(&output[..split], b"REPLACE" | b"REPLACE_COMPILE") { return false; }
+            &output[split + 1..]
+        } else { return false; };
+        let marker = b"\nEND_ACTION";
+        let mut end = content.windows(marker.len()).position(|window| window == marker).unwrap_or(content.len());
+        if end == content.len() {
+            for length in (1..marker.len()).rev() {
+                if content.ends_with(&marker[..length]) { end -= length; break; }
+            }
+        }
+        let content = &content[..end];
+        if content.is_empty() || content.len() > self.argument.len()
+            || content.iter().any(|byte| !matches!(*byte, b'\n' | b'\r' | b'\t' | 32..=126)) { return false; }
+        if self.argument_len == content.len() && self.argument[..self.argument_len] == *content { return false; }
+        self.argument[..content.len()].copy_from_slice(content);
+        self.argument_len = content.len();
+        true
     }
     // ------------------------=
     // FUNC: propose
@@ -424,7 +463,9 @@ impl Panel {
         self.argument[..content.len()].copy_from_slice(content);
         self.argument_len = content.len();
         self.pending = action;
-        self.reply(content);
+        if action == Action::ReplaceCompile && self.requested_generation_compile() {
+            self.reply(b"Source generation complete. Applying it to the editor, saving it in Documents, and starting native compilation.");
+        } else { self.reply(content); }
         true
     }
 
