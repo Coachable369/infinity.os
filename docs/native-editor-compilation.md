@@ -55,6 +55,26 @@ the complete link; the production image loader verifies the packaged binaries.
 
 ## Evidence and boundaries
 
+### Creation workflow verification — 2026-10-16
+
+An installed ARM QEMU disk, cold-booted without installer media and then updated
+with the focused test kernel, exercised desktop intent admission, real Hermes C
+generation, owned Documents source saving, native Clang/LLD, automatic launch and
+interactive terminal input. The generated application executed and exited, but
+its arithmetic was incorrect: `2 + 3` produced `2`, and `9 * 6` produced `0`.
+The saved source confirmed incorrect generated operand parsing. This is **not a
+passing calculator acceptance**. Manifest:
+`builds/manifests/20261016T082940174846Z-30527.json`.
+
+Explicit application creation also accepts complete bounded raw C (or a C fence)
+when the model omits the action wrapper. Ordinary edits, incomplete responses,
+other app owners and model-origin creation requests do not gain that authority.
+Native compilation remains the gate before execution. A calculator-specific
+prompt hint was tested and removed after it also produced incorrect logic.
+No canned source was substituted. Automatic semantic testing/repair of arbitrary
+generated applications is not implemented. x86 installed creation acceptance
+remains unproven; successful architecture-level native compiler probes are separate.
+
 `builds/validation/native-apps/{aarch64-gic3-compiler,x86_64-compiler}/pipeline.json`
 records actual guest Clang compilation, LLD linking, isolated execution returning
 54, rejection of malformed C, and frame reclamation. The source uses the native
