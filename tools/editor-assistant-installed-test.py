@@ -67,7 +67,7 @@ def wait_feature(guest, predicate):
 # ------------------=
 def text(guest, value):
     aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash", ";": "semicolon", "\n": "ret", "\t": "tab", ",": "comma"}
-    shifted = {"(": "9", ")": "0", "{": "bracket_left", "}": "bracket_right", '"': "apostrophe", "!": "1", ":": "semicolon"}
+    shifted = {"(": "9", ")": "0", "{": "bracket_left", "}": "bracket_right", '"': "apostrophe", "!": "1", ":": "semicolon", "+": "equal", "*": "8"}
     for c in value:
         guest.key(*(("shift", shifted[c]) if c in shifted else ("shift", c.lower()) if c.isupper() else (aliases.get(c, c),)))
 
