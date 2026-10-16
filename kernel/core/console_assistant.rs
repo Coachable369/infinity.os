@@ -44,6 +44,27 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn dispatch_context_request(&mut self, input:&[u8])->bool {
         if !self.ai_chat_allowed() {return false;}
+        if assistant::editor_compile_intent::create_application(input) {
+            self.open_text_editor();
+            self.ai_chat_focus=0;
+            let mut panel=assistant::read(2);
+            panel.expanded=true;panel.focused=false;
+            if !self.editor_document.is_saved() && !self.editor_document.bytes().is_empty() {
+                panel.reply(b"Save or discard your current document, then request the new application again. Your edits have not been changed.");
+                assistant::write(2,panel);return false;
+            }
+            if matches!(panel.generation,assistant::GenerationStatus::Queued|assistant::GenerationStatus::Running) {
+                panel.reply(b"An application is already being generated.");assistant::write(2,panel);return false;
+            }
+            self.perform_editor_action(PendingDocumentAction::New);
+            panel.pending=Action::None;panel.argument_len=0;panel.awaiting_compile_save=false;
+            panel.input[..input.len()].copy_from_slice(input);panel.length=input.len();
+            panel.request=panel.input;panel.request_len=input.len();
+            panel.document_revision=self.assistant_revision();
+            panel.generation=assistant::GenerationStatus::Queued;
+            panel.reply(b"Creating a native C application. Source will be saved in Documents, compiled, then launched.");
+            assistant::write(2,panel);return true;
+        }
         let Some((id,_))=self.assistant_owner() else{return false;};
         let mut panel=assistant::read(id);
         if input.len()>panel.input.len() {return false;}
@@ -373,6 +394,25 @@ impl ConsoleRuntime {
     // DESC: Puts explicitly requested completed C into its original editor and starts compilation once, retaining revision and capability checks.
     // ------------------=
     pub(super) fn apply_completed_editor_compile(&mut self) -> bool {
+        let mut panel=assistant::read(2);
+        if panel.generation==assistant::GenerationStatus::Queued {
+            // Admission happens after the intent broker releases its control turn.
+            if !self.ai_chat_allowed() || !self.assistant_owner_alive(2) || !panel.expanded
+                || panel.document_revision!=self.assistant_revision() {
+                panel.generation=assistant::GenerationStatus::Cancelled;
+                panel.reply(b"Application creation cancelled because its editor or session changed.");
+            } else {
+                let mut prompt=[0u8;6144];
+                if let Some(n)=panel.generation_prompt(true,b"",&mut prompt) {
+                    match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_turn(2,&prompt[..n])) {
+                        Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating C source locally...");},
+                        Err(message)=>{panel.generation=assistant::GenerationStatus::Failed;panel.reply(message);},
+                    }
+                } else {panel.generation=assistant::GenerationStatus::Failed;panel.reply(b"Application request is too large.");}
+            }
+            panel.length=0;panel.caret=0;
+            assistant::write(2,panel);return true;
+        }
         if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return false; }
         self.apply_window_assistant(2)
     }
@@ -540,7 +580,8 @@ impl ConsoleRuntime {
                 }
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 {
-                    let compile=compiler_commands::start(self);
+                    let create=action==Action::ReplaceCompile && assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len]);
+                    let compile=if action==Action::ReplaceCompile {compiler_commands::save_generated_and_build(self,create)} else {compiler_commands::start(self)};
                     success=compile.is_ok();
                     panel.reply(match compile {
                         Ok(())=>b"Compiling this source snapshot in isolated user mode. You can keep editing; the result will appear here.",
@@ -551,6 +592,7 @@ impl ConsoleRuntime {
                         Err(compiler_commands::StartError::CapabilityUnavailable)=>b"Compilation could not acquire a temporary output capability. Expired capabilities were reclaimed; retry once.",
                         Err(compiler_commands::StartError::CompilerUnavailable)=>b"The native compiler execution platform is unavailable on this boot.",
                         Err(compiler_commands::StartError::SourceInvalid)=>b"This document is empty or exceeds the native compiler source limit.",
+                        Err(compiler_commands::StartError::SaveFailed)=>b"Source could not be saved in Documents. Nothing was compiled or launched; your source remains in the editor.",
                     });
                 }
                 #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]

@@ -7,7 +7,26 @@ source, or compile the current document on an explicit compile request. An expli
 generation-and-compilation request puts the generated code directly into the editor
 and starts compilation there, without a second Apply click. The edit remains
 revision-fenced and undoable. Other generated edits retain their review step.
-Compilation does not automatically execute the result.
+Ordinary compilation does not automatically execute the result. Generated C is
+saved as a new user-owned `app-c-<id>.c` in Documents before compilation.
+
+An explicit **create a basic calculator application** request in desktop chat,
+voice (after the wake word), or an app assistant runs the full workflow: intent
+admission → open editor → shared-model generation → revision-fenced source edit →
+save in native Object Store → native Clang/LLD → publish ELF → launch. No Apply,
+Save As, or manual Run step is required for this explicit application request.
+An existing dirty document is preserved and creation asks the user to save or
+discard it first. Failed generation, save, compilation, publication or launch
+is surfaced through the existing assistant/console; no fallback canned program
+or host compiler is used. Model output alone cannot authorize application creation.
+
+This initial application workflow targets interactive native **terminal** C apps,
+not graphical widgets. `infinity/console.h` provides `infinity_read_line`, backed
+by a checked user-memory syscall. Waiting input parks the task without consuming
+CPU slices. Output streams during execution; input never enters shell history or
+command execution. Ctrl+C cancels, Ctrl+D sends EOF, and closing the terminal or
+ending its authenticated session cancels the process and reclaims its pages.
+GUI window/surface SDK services are not yet connected to this launcher.
 
 The desktop captures an immutable source snapshot and runs native Clang, then
 native LLD, as preemptible user-mode processes. Successful output is stored as a
@@ -45,7 +64,9 @@ guest probes, **not installed desktop acceptance**.
 `tools/native-editor-installed-test.py` exercises installation, cold boot without
 media, real attached-panel input, valid/invalid C, executable publication and
 execution through File Navigator. It also requests actual local-model C generation
-and uses the normal Apply control before compiling that proposal. A passing run is required before
+without a second Apply click. Its `--create-application` case requests a calculator
+through desktop AI and checks automatic launch and an arithmetic-derived exit code.
+A passing run is required before
 claiming installed acceptance; merely adding the test is not evidence of passing.
 
 Run each installed check through the build authority after building the release:

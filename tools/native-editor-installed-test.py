@@ -225,6 +225,52 @@ def generate_program(guest):
     raise AssertionError("Local model did not produce a complete compile proposal")
 
 # ------------------------=
+# FUNC: create_application
+# DESC: Uses real desktop chat and keyboard input to verify automatic application creation and arithmetic-derived exit status.
+# ------------------=
+def create_application(guest):
+    before = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+    guest.key("ctrl", "j")
+    ui.text(guest, "Create an integer calculator supporting addition and multiplication reading expressions as a op b and quit to exit with the last calculated result as its exit code application")
+    guest.key("ret")
+    ui.wait_feature(guest, lambda p: p[12] == 2)
+    deadline = time.monotonic() + 600
+    while time.monotonic() < deadline:
+        build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
+        if build[2] > before and build[3]:
+            features = ui.features(guest)
+            assert features[7] > 0 and features[11] == 1
+            break
+        time.sleep(.5)
+    else:
+        raise AssertionError("Creation did not reach native compilation")
+    compiled = wait_build(guest, before, 3)
+    ui.wait_feature(guest, lambda p: p[12] == 1)
+    assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[3] == 2
+    guest.screenshot("generated-calculator-running")
+    for expression in ("2 + 3", "9 * 6", "quit"):
+        ui.text(guest, expression)
+        guest.key("ret")
+        # Wait for actual input consumption, not an arbitrary inter-command sleep.
+        end = time.monotonic() + 30
+        while time.monotonic() < end:
+            state = read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)
+            if state[3] != 2 or state[6] == 1:
+                break
+            time.sleep(.1)
+        else:
+            raise AssertionError("Application did not consume terminal input")
+    end = time.monotonic() + 30
+    while time.monotonic() < end:
+        state = read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)
+        if state[3] >= 3:
+            assert state[3] == 3 and state[6] == 54, state
+            guest.screenshot("generated-calculator-complete")
+            return {"compile": compiled, "application": state, "arithmetic_exit": 54}
+        time.sleep(.1)
+    raise AssertionError("Generated calculator did not exit")
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs, cold-boots without ISO, compiles valid and invalid source, opens the stored ELF through File Navigator and checks its actual exit.
 # ------------------=
@@ -238,6 +284,7 @@ def main():
     parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
     parser.add_argument("--save-compile", action="store_true", help="Exercise save-and-compile, Save As cancellation, and subsequent named-source saving")
     parser.add_argument("--generation-only", action="store_true", help="Retest generated-source acceptance without repeating passing manual-source cases")
+    parser.add_argument("--create-application", action="store_true", help="Exercise desktop intent through generated, saved, compiled and automatically launched interactive C")
     parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
@@ -296,6 +343,10 @@ def main():
             guest.install()
             guest.stop()
             report["identity"] = guest.onboard()
+        if args.create_application:
+            report["creation"] = create_application(guest)
+            report["installed_acceptance"] = True
+            return
         guest.launch("text", 5)
         ui.wait_feature(guest, lambda p: p[12] == 2)
         if not args.generation_only:

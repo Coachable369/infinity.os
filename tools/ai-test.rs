@@ -815,6 +815,19 @@ fn main() {
 fn shared_request_ingress_contract() {
     use runtime::ai::{control::Command, kit::{RequestOrigin, RequestRoute, AuditOutcome}};
     let owner = [0x63; 16];
+    let creation=b"create a basic calculator application";
+    let expected=Command::Context(runtime::ai::control::ContextRequest::parse(creation).unwrap());
+    assert_eq!(Command::decode(b"OS_CONTEXT:create a basic calculator application"),None);
+    for voice in [false,true] {
+        let mut ai=AiRuntime::new();ai.bind_chat_owner(owner);
+        for &byte in creation {assert!(ai.chat.push_input(byte));}
+        assert!(if voice{ai.submit_voice_chat()}else{ai.submit_chat()});
+        assert_eq!(ai.take_control(owner,true),Some(expected));
+        ai.finish_control(expected,true);
+        assert!(!ai.control_pending());
+    }
+    let mut attached=AiRuntime::new();attached.bind_chat_owner(owner);
+    assert_eq!(attached.route_application_request(2,creation),Ok(RequestRoute::Control(expected)));
     for origin in [RequestOrigin::DesktopChat, RequestOrigin::Voice, RequestOrigin::Application(2)] {
         let mut ai = AiRuntime::new();
         ai.bind_chat_owner(owner);

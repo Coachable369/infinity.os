@@ -371,6 +371,7 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    application_creation();
     assistant_controls();
     contextual_searches();
     generated_editor_actions();
@@ -384,6 +385,33 @@ fn main() {
     ai::reset();
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
+    }
+}
+
+// ------------------------=
+// FUNC: application_creation
+// DESC: Checks explicit creation authority, complete-source admission, revision fencing and exactly-once application.
+// ------------------=
+fn application_creation() {
+    for request in [b"create a basic calculator application".as_slice(), b"Please build a calculator app.", b"generate a C application"] {
+        assert!(ai::editor_compile_intent::create_application(request));
+        let mut panel=ai::Panel::new();
+        panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+        panel.document_revision=8;
+        assert!(panel.accept_for_owner(2,b"REPLACE\nint main(void){return 7;}\nEND_ACTION",true));
+        panel.generation=ai::GenerationStatus::Running;
+        assert!(!panel.apply_generated_compile_requested());
+        panel.generation=ai::GenerationStatus::Complete;
+        assert!(panel.apply_generated_compile_requested());
+        assert_eq!(panel.take_action(9),Action::None);
+        assert!(panel.accept_for_owner(2,b"REPLACE\nint main(void){return 7;}\nEND_ACTION",true));
+        assert_eq!(panel.take_action(8),Action::ReplaceCompile);
+        assert_eq!(panel.take_action(8),Action::None);
+    }
+    for request in [b"explain how to create a calculator app".as_slice(), b"do not create a calculator app",
+        b"create only source for a calculator app", b"create a calculator app then delete files",
+        b"\"create a calculator app\"", b"create an app without compiling", b"create application"] {
+        assert!(!ai::editor_compile_intent::create_application(request));
     }
 }
 

@@ -159,8 +159,16 @@ fn hello_document_provisioning(sectors: usize) {
     assert_eq!(&bytes[..len], include_bytes!("../sdk/c/examples/hello.c"));
     let edited = b"int main(void) { return 23; }\n";
     let version = store.write(id, edited).unwrap();
+    let owner=storage::object::ObjectId([0x71;16]);
+    let generated=store.create_owned_attached(b"calculator.c",ObjectType::Text,Space::Personal,edited,
+        b"/home/default/documents/calculator.c",owner).unwrap();
+    assert_eq!(store.create_owned_attached(b"calculator.c",ObjectType::Text,Space::Personal,b"replacement",
+        b"/home/default/documents/calculator.c",owner),Err(ObjectError::NameConflict));
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
+    assert_eq!(store.metadata(generated).unwrap().owner,owner);
+    assert_eq!(store.resolve(b"/home/default/documents/calculator.c").unwrap(),generated);
+    let length=store.read(generated,None,&mut bytes).unwrap();assert_eq!(&bytes[..length],edited);
     assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), id);
     assert_eq!(store.metadata(id).unwrap().current_version, version);
     let len = store.read(id, None, &mut bytes).unwrap();

@@ -2,7 +2,12 @@
 use super::*;
 use crate::runtime::{native_compile_job as job, execution::SecurityIdentity, capability::CapabilityType};
 use crate::ui::app_assistant as assistant;
-struct Lease { owner: SecurityIdentity, capability:u64, name:[u8;28] }
+#[path = "../runtime/native_console_input.rs"]
+mod native_input;
+static mut APP_INPUT:native_input::Input=native_input::Input::new();
+static mut APP_CANCEL:bool=false;
+static mut APP_LINE_OPEN:bool=false;
+struct Lease { owner: SecurityIdentity, capability:u64, name:[u8;28], launch: bool }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ReplyTarget { Assistant, Console }
 static mut LEASE: Option<Lease> = None;
@@ -26,6 +31,7 @@ pub(super) enum StartError {
     CapabilityUnavailable,
     CompilerUnavailable,
     SourceInvalid,
+    SaveFailed,
 }
 
 // ------------------------=
@@ -59,6 +65,32 @@ pub(super) fn start(console:&ConsoleRuntime)->Result<(),StartError> {unsafe {
 }}
 
 // ------------------------=
+// FUNC: save_generated_and_build
+// DESC: Persists generated C under a collision-safe Documents name before admitting a build and optional explicitly requested launch.
+// ------------------=
+pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result:bool)->Result<(),StartError> {unsafe {
+    if APP_ACTIVE || (&*(&raw const LEASE)).is_some() {return Err(StartError::Busy);}
+    if !active(console) {return Err(StartError::SessionUnavailable);}
+    if !console.ai_chat_allowed() {return Err(StartError::AiDisabled);}
+    let ticks=crate::runtime::ai::qwen::workers::clock_ns();
+    let mut name=[0u8;24];name[..6].copy_from_slice(b"app-c-");
+    for i in 0..16 {name[6+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
+    name[22..].copy_from_slice(b".c");
+    let base=crate::storage::object::DOCUMENTS_PATH;
+    let mut path=[0u8;95];path[..base.len()].copy_from_slice(base);path[base.len()]=b'/';
+    let length=base.len()+1+name.len();path[base.len()+1..length].copy_from_slice(&name);
+    crate::storage::object_create_owned_note_at(&name,console.editor_document.bytes(),&path[..length],
+        crate::storage::object::ObjectId(console.current_user.0))
+        .map_err(|_|StartError::SaveFailed)?;
+    console.editor_document_path[..length].copy_from_slice(&path[..length]);console.editor_document_path_length=length;
+    console.editor_document_name[..name.len()].copy_from_slice(&name);console.editor_document_name_length=name.len();
+    console.editor_document.save();console.detect_editor_language();
+    start_source(console,console.editor_document.bytes(),ReplyTarget::Assistant,true)?;
+    if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {lease.launch=launch_result;}
+    Ok(())
+}}
+
+// ------------------------=
 // FUNC: start_source
 // DESC: Starts one immutable source snapshot for an explicit UI or console owner without ambient filesystem access.
 // ------------------=
@@ -86,7 +118,7 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],reply:ReplyTarget,re
     let mut name=[0;28];name[..8].copy_from_slice(b"program-");
     for i in 0..16 {name[8+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
     name[24..].copy_from_slice(b".elf");
-    REPLY_TARGET=reply;LEASE=Some(Lease{owner,capability,name});Ok(())
+    REPLY_TARGET=reply;LEASE=Some(Lease{owner,capability,name,launch:false});Ok(())
 }
 
 // ------------------------=
@@ -125,6 +157,7 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
         Err(StartError::CapabilityUnavailable)=>console.output.write_line(b"cc: output capability unavailable."),
         Err(StartError::CompilerUnavailable)=>console.output.write_line(b"cc: native compiler unavailable on this boot."),
         Err(StartError::SourceInvalid)=>console.output.write_line(b"cc: empty or oversized source."),
+        Err(StartError::SaveFailed)=>console.output.write_line(b"cc: source could not be saved."),
         Err(StartError::AiDisabled)=>console.output.write_line(b"cc: unexpected policy failure."),
     }
     true
@@ -139,6 +172,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     let owner=SecurityIdentity(console.current_session.0);
     let now=crate::runtime::ai::qwen::workers::clock_ns();
     let target=REPLY_TARGET;
+    let mut launch_path=[0u8;95];let mut launch_length=0;
     let allowed=active(console)&&(target==ReplyTarget::Console||console.ai_chat_allowed()&&console.assistant_owner_alive(2))
         && <Lease as crate::storage::object::ObjectCapabilityPolicy>::authorize(lease,crate::storage::object::ObjectOperation::Create,None);
     if !job::poll(owner,allowed,now){return;}
@@ -155,6 +189,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                     owner:crate::storage::object::ObjectId(console.current_user.0),
                 },lease);
                 if let Ok(reference)=saved {
+                    if lease.launch {launch_path[..length].copy_from_slice(&path[..length]);launch_length=length;}
                     INFINITY_NATIVE_APP_NAME=lease.name;
                     let state=&mut *(&raw mut INFINITY_NATIVE_APP_SNAPSHOT);
                     state[2]=state[2].wrapping_add(1);state[3]=1;
@@ -180,6 +215,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     }
     let lease=core::ptr::addr_of_mut!(LEASE).replace(None).unwrap();
     crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(lease.capability,lease.owner);});
+    if launch_length>0 {launch(console,&launch_path[..launch_length]);}
 }}
 
 // ------------------------=
@@ -188,9 +224,16 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
 // ------------------=
 pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
     if !path.ends_with(b".elf") {return false;}
+    if APP_ACTIVE {
+        console.command_window_suspended=true;console.open_command_window();
+        console.output.write_line(b"A native program is already running. Exit it or press Ctrl+C before launching another.");
+        APP_LINE_OPEN=false;console.redraw();return true;
+    }
     console.open_command_window();
-    if APP_ACTIVE || !active(console) {
-        console.output.write_line(b"Cannot launch: another native program is active or the session is unavailable.");return true;
+    console.ai_chat_focus=0;
+    let mut panel=assistant::read(1);panel.focused=false;assistant::write(1,panel);
+    if !active(console) {
+        console.output.write_line(b"Cannot launch: the authenticated session is unavailable.");return true;
     }
     let Some((kernel,controller))=job::platform() else {
         console.output.write_line(b"Native execution is unavailable on this boot.");return true;
@@ -200,12 +243,14 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
         console.output.write_line(b"Cannot read this executable.");return true;
     };
     let owner=SecurityIdentity(console.current_session.0);
-    let now=crate::runtime::ai::qwen::workers::clock_ns();
     match crate::runtime::native_app_task::Task::start(&bytes[..length],owner,2,
-        crate::runtime::native_memory::memory_mut(),kernel,controller,now.saturating_add(60_000_000_000)) {
+        crate::runtime::native_memory::memory_mut(),kernel,controller,u64::MAX) {
         Ok(task)=>{
             APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
+            APP_INPUT=native_input::Input::new();APP_CANCEL=false;APP_LINE_OPEN=false;
+            console.reset_input();
             INFINITY_NATIVE_APP_SNAPSHOT[3]=2;
+            INFINITY_NATIVE_APP_SNAPSHOT[6]=0;INFINITY_NATIVE_APP_SNAPSHOT[7]=0;
             console.output.write_line(b"Running isolated native C program...");
         }
         Err(_)=>console.output.write_line(b"Executable rejected: invalid format, architecture, permissions, or insufficient memory."),
@@ -213,14 +258,39 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
     console.redraw();true
 }}
 // ------------------------=
+// FUNC: input
+// DESC: Routes focused terminal input to the running program before shell history or command execution can observe it.
+// ------------------=
+pub(super) fn input(console:&mut ConsoleRuntime,key:ConsoleKey)->bool {unsafe {
+    if !APP_ACTIVE{return false;}
+    match key {
+        ConsoleKey::Shortcut(b'c')=>{APP_CANCEL=true;console.reset_input();},
+        ConsoleKey::Shortcut(b'd')=>{(&mut *(&raw mut APP_INPUT)).close();},
+        ConsoleKey::Enter=>{
+            if (&mut *(&raw mut APP_INPUT)).submit(&console.command[..console.command_length]) {
+                INFINITY_NATIVE_APP_SNAPSHOT[6]=0;
+                console.output.write_line(&console.command[..console.command_length]);
+                APP_LINE_OPEN=false;console.reset_input();
+            }
+        },
+        _=>{console.edit_input(key);},
+    }
+    true
+}}
+// ------------------------=
 // FUNC: poll_app
-// DESC: Runs one bounded application slice and exposes only checked console output; unsupported authority fails explicitly.
+// DESC: Runs one bounded application slice with checked terminal I/O, parked reads and authenticated cancellation.
 // ------------------=
 fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     use crate::runtime::native_process::State;
     let Some((owner,task))=(&mut *(&raw mut APP)).as_mut() else{return;};
-    let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&console.assistant_owner_alive(1);
+    let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&console.assistant_owner_alive(1)&&!APP_CANCEL;
+    if authorized && (&*(&raw const APP_INPUT)).waiting {return;}
     let state=task.poll(crate::runtime::ai::qwen::workers::clock_ns(),authorized,|_,tables,op,args| {
+        if op==0x1003 {
+            return (&mut *(&raw mut APP_INPUT)).read(args[1].min(1024) as usize,|bytes|
+                crate::runtime::native_memory::copy_to_user(tables,args[0],bytes).is_ok());
+        }
         if op!=0x1002{return -88;}
         let length=args[1].min(4096) as usize;
         if length>4096-APP_OUTPUT_LENGTH{return -28;}
@@ -228,16 +298,27 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         if crate::runtime::native_memory::copy_from_user(tables,args[0],&mut buffer[APP_OUTPUT_LENGTH..APP_OUTPUT_LENGTH+length]).is_err(){return -14;}
         APP_OUTPUT_LENGTH+=length;length as i64
     });
+    if APP_OUTPUT_LENGTH>0 {
+        for &byte in &(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH] {
+            if byte==b'\r'{continue;}
+            if !APP_LINE_OPEN {console.output.write_line(b"");APP_LINE_OPEN=true;}
+            if byte==b'\n'{APP_LINE_OPEN=false;continue;}
+            let row=console.output.count-1;
+            if console.output.lengths[row]==LINE_CAPACITY {console.output.write_line(b"");}
+            let row=console.output.count-1;let column=console.output.lengths[row];
+            console.output.lines[row][column]=if byte.is_ascii_graphic()||byte==b' '{byte}else{b' '};
+            console.output.lengths[row]+=1;
+        }
+        INFINITY_NATIVE_APP_SNAPSHOT[7]=INFINITY_NATIVE_APP_SNAPSHOT[7].saturating_add(APP_OUTPUT_LENGTH as u64);
+        APP_OUTPUT_LENGTH=0;console.redraw();
+    }
+    if state==State::Runnable {INFINITY_NATIVE_APP_SNAPSHOT[6]=u64::from((&*(&raw const APP_INPUT)).waiting);}
     if state==State::Runnable{return;}
     let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;
     let released=task.release(crate::runtime::native_memory::memory_mut()).is_ok();
     INFINITY_NATIVE_APP_SNAPSHOT[3]=if matches!(state,State::Exited(_))&&released{3}else{4};
     INFINITY_NATIVE_APP_SNAPSHOT[6]=if let State::Exited(code)=state{code as u64}else{u64::MAX};
-    INFINITY_NATIVE_APP_SNAPSHOT[7]=APP_OUTPUT_LENGTH as u64;
     if owner==SecurityIdentity(console.current_session.0) {
-        for line in (&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH].split(|b|*b==b'\n') {
-            if !line.is_empty(){console.output.write_line(line);}
-        }
         match state {
             State::Exited(code) if released=>console.output.write_number(b"Program exit status: ",code as u64),
             State::Cancelled=>console.output.write_line(b"Program cancelled."),

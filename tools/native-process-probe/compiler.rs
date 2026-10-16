@@ -1,5 +1,6 @@
 use super::{native_memory::*, native_c_image::Image, cpu::{self, Tables, Controller, Context, MACHINE}, emit, finish, IMAGE};
 const COMPILE: bool = option_env!("INFINITY_COMPILER_SOURCE").is_some();
+const INTERACTIVE:bool=option_env!("INFINITY_INTERACTIVE_APP").is_some();
 const SOURCE: &[u8] = b"#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <ctype.h>\nstatic int compare(const void *a,const void *b){return *(const int*)a-*(const int*)b;}\nint main(void){int *v=calloc(4,sizeof *v);if(!v)return 90;v[0]=7;v[1]=1;v[2]=5;v[3]=3;qsort(v,4,sizeof *v,compare);int key=5;int *found=bsearch(&key,v,4,sizeof *v,compare);char out[32];int n=snprintf(out,sizeof out,\"%s:%d\",\"native\",found?*found:0);int ok=n==8&&!strcmp(out,\"native:5\")&&toupper('c')=='C'&&puts(out)>=0;free(v);return ok?54:91;}\n";
 const LINK: bool = option_env!("INFINITY_LINK_INPUT").is_some();
 static LINK_INPUT: &[u8] = include_bytes!(env!("INFINITY_LINK_INPUT_BYTES"));
@@ -13,8 +14,15 @@ static CRT: &[u8] = include_bytes!(env!("INFINITY_APPLICATION_CRT"));
 unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: KernelAccessMap, controller: Controller) -> u64 {
     let mut child = super::native_app_task::Task::start(bytes,super::execution::SecurityIdentity([2;16]),
         2,memory,kernel,controller,u64::MAX).unwrap();
+    let mut offset=0;
+    let input=b"2 + 3\n9 * 6\nquit\n";
     for _ in 0..1000 {
         let result = match child.poll(0,true, |_, tables, operation, args| {
+            if operation==0x1003 && INTERACTIVE {
+                let count=(args[1] as usize).min(input.len()-offset);
+                if copy_to_user(tables,args[0],&input[offset..offset+count]).is_err(){return -14;}
+                offset+=count;return count as i64;
+            }
             if operation != 0x1002 || args[1] > 4096 { return -88; }
             let mut bytes = [0;4096];
             if copy_from_user(tables,args[0],&mut bytes[..args[1] as usize]).is_err() {return -14;}
@@ -25,6 +33,7 @@ unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: Kernel
             _ => panic!("unexpected linked-app trap"),
         };
         child.release(memory).unwrap();
+        if INTERACTIVE {assert_eq!(offset,input.len());}
         return result;
     }
     panic!("guest-linked app exceeded execution budget")
@@ -45,7 +54,7 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller
     let mut output = [0u8;65536];
     let source: &[u8] = if option_env!("INFINITY_COMPILER_INVALID_SOURCE").is_some() {
         b"int main(void) { return ; this is not C; }\n"
-    } else { SOURCE };
+    } else if INTERACTIVE {include_bytes!("../native-c-probe/interactive.c")} else { SOURCE };
     let inputs = [super::native_job_files::File { path: b"/input.o", bytes: LINK_INPUT },
         super::native_job_files::File { path: b"/app.ld", bytes: LINK_SCRIPT },
         super::native_job_files::File { path: b"/crt.o", bytes: CRT },
@@ -59,7 +68,9 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller
         super::native_job_files::File { path: b"/sdk/limits.h", bytes:super::native_compiler_task::LIMITS },
         super::native_job_files::File { path: b"/sdk/errno.h", bytes:super::native_compiler_task::ERRNO },
         super::native_job_files::File { path: b"/sdk/ctype.h", bytes:super::native_compiler_task::CTYPE },
-        super::native_job_files::File { path: b"/sdk/assert.h", bytes:super::native_compiler_task::ASSERT }];
+        super::native_job_files::File { path: b"/sdk/assert.h", bytes:super::native_compiler_task::ASSERT },
+        super::native_job_files::File { path:b"/sdk/infinity/console.h",bytes:super::native_compiler_task::CONSOLE },
+        super::native_job_files::File { path:b"/sdk/infinity/syscall.h",bytes:super::native_compiler_task::SYSCALL }];
     for visit in 0..1_000_000u64 {
         let result = task.poll(cpu::clock_ns().unwrap_or(0), true, memory, source,
             &inputs, &mut output, &mut diagnostic);

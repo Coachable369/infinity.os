@@ -29,7 +29,7 @@ impl ContextRequest {
             b"next task",b"previous task",b"next theme",b"next icon set",b"next model",
             b"next item",b"previous item",b"open selected",b"add idea",b"new category"];
         let prefixes=[b"search google for ".as_slice(),b"google ",b"search for ",b"find ",b"find file ",b"insert ",b"open folder ",b"type ",b"search apps ",b"go to ",b"open url ",b"navigate to "];
-        if editor_compile_intent::parse(input).is_none() && !exact.iter().any(|v|input.eq_ignore_ascii_case(v)) && !prefixes.iter().any(|v|
+        if !editor_compile_intent::create_application(input) && editor_compile_intent::parse(input).is_none() && !exact.iter().any(|v|input.eq_ignore_ascii_case(v)) && !prefixes.iter().any(|v|
             input.len()>v.len() && input[..v.len()].eq_ignore_ascii_case(v)) {return None;}
         let mut request=Self{bytes:[0;256],length:input.len()};
         request.bytes[..input.len()].copy_from_slice(input);Some(request)
@@ -70,7 +70,11 @@ impl Command {
         if bytes == b"OS_CLOSE:active" { return Some(Self::CloseActive); }
         if let Some(name) = bytes.strip_prefix(b"OS_FOCUS:") { return App::named(name).map(Self::Focus); }
         if let Some(name) = bytes.strip_prefix(b"OS_CLOSE:") { return App::named(name).map(Self::Close); }
-        if let Some(command)=bytes.strip_prefix(b"OS_CONTEXT:") {return ContextRequest::parse(command).map(Self::Context);}
+        if let Some(command)=bytes.strip_prefix(b"OS_CONTEXT:") {
+            // Creation authority must originate in the user's direct request, not model output.
+            if editor_compile_intent::create_application(command) {return None;}
+            return ContextRequest::parse(command).map(Self::Context);
+        }
         if let Some(section)=bytes.strip_prefix(b"OS_SETTINGS:") {
             return [b"general".as_slice(),b"themes",b"accounts",b"ai_voice",b"privacy",b"devices",b"network",
                 b"nodes_mesh",b"storage",b"about",b"input"].iter().position(|name|*name==section)
@@ -188,6 +192,8 @@ impl Command {
             Self::AiInstructionMapping => b"Opened the editable AI instruction mapping in Text Editor.",
             Self::Focus(_) => b"Brought the app to the front.",
             Self::Close(_) | Self::CloseActive => b"Closed the app.",
+            Self::Context(request) if editor_compile_intent::create_application(&request.bytes[..request.length]) =>
+                b"Opened Text Editor to create your application. Generated C will be saved in Documents, compiled natively and launched if the build succeeds.",
             Self::Context(_) => b"Requested the action through the active app. Complete any native review or save dialog it opens.",
             Self::SettingsSection(_) => b"Opened the requested Settings category.",
             Self::Spatial | Self::Holographic | Self::WorldShift => b"Opened the requested desktop surface.",

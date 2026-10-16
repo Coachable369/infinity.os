@@ -1044,6 +1044,15 @@ impl<D: BlockDevice> ObjectStore<D> {
         content: &[u8],
         path: &[u8],
     ) -> Result<ObjectId, ObjectError> {
+        self.create_owned_attached(name,kind,space,content,path,ObjectId([0;16]))
+    }
+
+    // ------------------------=
+    // FUNC: create_owned_attached
+    // DESC: Atomically creates a named object with explicit owner identity and rejects namespace collisions.
+    // ------------------=
+    pub fn create_owned_attached(&mut self,name:&[u8],kind:ObjectType,space:Space,content:&[u8],
+        path:&[u8],owner:ObjectId)->Result<ObjectId,ObjectError> {
         let before = self.begin()?;
         let result = (|| {
             validate_path(path)?;
@@ -1056,6 +1065,8 @@ impl<D: BlockDevice> ObjectStore<D> {
                 return Err(ObjectError::NameConflict);
             }
             let id = self.create_record(name, kind, space)?;
+            let index=self.object_index(id)?;
+            self.state.objects[index].owner=owner;
             self.write_record(id, content)?;
             self.attach_record(path, id)?;
             Ok(id)

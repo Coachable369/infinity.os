@@ -9310,6 +9310,8 @@ impl ConsoleRuntime {
     // DESC: Handles input console input or state transitions.
     // ------------------=
     fn input_console(&mut self, key: ConsoleKey) {
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if compiler_commands::input(self,key) {return;}
         if self.workplace_console_key(key) {return;}
         if self.edit_input(key) {
             return;

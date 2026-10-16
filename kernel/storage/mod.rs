@@ -620,6 +620,17 @@ pub fn object_create_note(
     }
 }
 // ------------------------=
+// FUNC: object_create_owned_note_at
+// DESC: Persists a new user-owned text object and its namespace binding atomically without replacing an existing object.
+// ------------------=
+pub fn object_create_owned_note_at(name:&[u8],content:&[u8],path:&[u8],owner:object::ObjectId)
+    ->Result<object::ObjectId,object::ObjectError> {
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|store.create_owned_attached(name,object::ObjectType::Text,object::Space::Personal,content,path,owner))}
+    #[cfg(target_arch="x86")]
+    {let _=(name,content,path,owner);Err(object::ObjectError::SpaceUnavailable)}
+}
+// ------------------------=
 // FUNC: object_create_note_at
 // DESC: Implements the object create note at operation.
 // ------------------=

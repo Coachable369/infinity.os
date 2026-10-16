@@ -1,5 +1,28 @@
 //! Explicit current-document compiler intent shared by voice and attached chat.
 // ------------------------=
+// FUNC: create_application
+// DESC: Admits a direct application creation request, never quoted, negated, or explanatory text.
+// ------------------=
+pub fn create_application(input: &[u8]) -> bool {
+    let Ok(text) = core::str::from_utf8(input) else { return false; };
+    let text = text.trim().trim_end_matches('.');
+    if text.len() > 256 { return false; }
+    let mut words = text.split_ascii_whitespace();
+    let mut verb = words.next().unwrap_or("");
+    if verb.eq_ignore_ascii_case("please") { verb = words.next().unwrap_or(""); }
+    if !["create", "build", "generate", "write"].iter().any(|v| verb.eq_ignore_ascii_case(v)) { return false; }
+    let mut count = 0;
+    let mut last = "";
+    for word in words {
+        if !word.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+            || ["not", "never", "without", "only", "instead", "explain"].iter().any(|v| word.eq_ignore_ascii_case(v)) {
+            return false;
+        }
+        count += 1; last = word;
+    }
+    count >= 2 && ["application", "app"].iter().any(|v| last.eq_ignore_ascii_case(v))
+}
+// ------------------------=
 // FUNC: parse
 // DESC: Returns whether an explicit compile request first requires saving; never accepts embedded instructions.
 // ------------------=
