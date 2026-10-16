@@ -1405,6 +1405,73 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: outline_rounded_rect_signed
+    // DESC: Clips a rounded border at negative screen origins without moving or resizing its logical geometry.
+    // ------------------=
+    pub(super) fn outline_rounded_rect_signed(
+        &mut self,
+        left: i32,
+        top: i32,
+        width: usize,
+        height: usize,
+        radius: usize,
+        red: u8,
+        green: u8,
+        blue: u8,
+    ) {
+        let right = left.saturating_add(width.min(i32::MAX as usize) as i32);
+        let bottom = top.saturating_add(height.min(i32::MAX as usize) as i32);
+        let visible_left = left.max(0) as usize;
+        let visible_top = top.max(0) as usize;
+        let visible_right = right.max(0).min(self.width as i32) as usize;
+        let visible_bottom = bottom.max(0).min(self.height as i32) as usize;
+        let Some(region) = self.clipped_render_region(
+            visible_left,
+            visible_top,
+            visible_right.saturating_sub(visible_left),
+            visible_bottom.saturating_sub(visible_top),
+        ) else {
+            return;
+        };
+        let radius = radius.min(width / 2).min(height / 2).max(1) as i64;
+        let outer = radius * radius;
+        let inner_radius = radius.saturating_sub(1);
+        let inner = inner_radius * inner_radius;
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
+                let local_x = i64::from(x as i32) - i64::from(left);
+                let local_y = i64::from(y as i32) - i64::from(top);
+                let width = width as i64;
+                let height = height as i64;
+                let edge = local_x == 0
+                    || local_y == 0
+                    || local_x + 1 == width
+                    || local_y + 1 == height;
+                let dx = if local_x < radius {
+                    radius - local_x
+                } else if local_x >= width - radius {
+                    local_x - (width - radius - 1)
+                } else {
+                    0
+                };
+                let dy = if local_y < radius {
+                    radius - local_y
+                } else if local_y >= height - radius {
+                    local_y - (height - radius - 1)
+                } else {
+                    0
+                };
+                let corner_distance = dx * dx + dy * dy;
+                let corner_edge =
+                    dx > 0 && dy > 0 && corner_distance <= outer && corner_distance >= inner;
+                if (edge && (dx == 0 || dy == 0)) || corner_edge {
+                    self.pixel(x as i32, y as i32, red, green, blue);
+                }
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: outline_rounded_rect_alpha
     // DESC: Draws a translucent one-pixel rounded border for template-authored appearance.
     // ------------------=
