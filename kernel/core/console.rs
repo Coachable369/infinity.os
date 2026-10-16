@@ -13722,7 +13722,13 @@ pub fn poll_native_ai() {
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
         ai_changed |= runtime.apply_completed_editor_compile();
         ai_changed |= crate::runtime::ai::with_ai_runtime(|ai| ai.control_pending());
-        let command = crate::runtime::ai::with_ai_runtime(|ai| ai.take_control(runtime.current_user.0, desktop_allowed));
+        let origin = crate::runtime::ai::with_ai_runtime(|ai| ai.pending_control_origin());
+        let origin_allowed = match origin {
+            Some(crate::runtime::ai::kit::RequestOrigin::Application(id)) =>
+                runtime.assistant_owner().map(|owner| owner.0) == Some(id) && runtime.assistant_owner_alive(id),
+            _ => true,
+        };
+        let command = crate::runtime::ai::with_ai_runtime(|ai| ai.take_control(runtime.current_user.0, desktop_allowed && origin_allowed));
         if let Some(command) = command {
             let success = runtime.dispatch_ai_control(command);
             crate::runtime::ai::with_ai_runtime(|ai| {
@@ -13732,6 +13738,14 @@ pub fn poll_native_ai() {
                     ai.chat.publish_native_completion(b"Please choose Save, Discard, or Cancel in the editor. The app is still open.", true);
                 }
             });
+            if let Some(crate::runtime::ai::kit::RequestOrigin::Application(id)) = origin {
+                // Context actions already publish their detailed result through their original panel.
+                if !matches!(command, crate::runtime::ai::control::Command::Context(_)) {
+                    let mut panel = crate::ui::app_assistant::read(id);
+                    panel.reply(command.result(success == Some(true)));
+                    crate::ui::app_assistant::write(id, panel);
+                }
+            }
             ai_changed = true;
         }
     } }

@@ -292,6 +292,18 @@ impl ExecutionBroker {
     pub const fn pending(&self) -> bool { self.pending.is_some() }
 
     // ------------------------=
+    // FUNC: pending_origin
+    // DESC: Exposes the originating surface for the final native window ownership check.
+    // ------------------=
+    pub fn pending_origin(&self) -> Option<RequestOrigin> { self.pending.map(|request| request.origin) }
+
+    // ------------------------=
+    // FUNC: active_origin
+    // DESC: Keeps action completion attached to the consumer that submitted it.
+    // ------------------=
+    pub fn active_origin(&self) -> Option<RequestOrigin> { self.active.map(|request| request.origin) }
+
+    // ------------------------=
     // FUNC: busy
     // DESC: Reports whether a command is waiting for policy or is currently owned by native dispatch.
     // ------------------=

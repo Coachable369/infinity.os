@@ -792,6 +792,7 @@ fn desktop_chat() {
 // DESC: Runs the Milestone 6 host acceptance suite.
 // ------------------=
 fn main() {
+    shared_request_ingress_contract();
     instruction_mapping_contract();
     aikit_contract();
     control_contract();
@@ -805,6 +806,42 @@ fn main() {
     services_and_events();
     desktop_chat();
     println!("PASS Milestone 6 native AI host acceptance");
+}
+
+// ------------------------=
+// FUNC: shared_request_ingress_contract
+// DESC: Exercises shared voice, desktop and application routing, provenance, exclusion and permission rejection.
+// ------------------=
+fn shared_request_ingress_contract() {
+    use runtime::ai::{control::Command, kit::{RequestOrigin, RequestRoute, AuditOutcome}};
+    let owner = [0x63; 16];
+    for origin in [RequestOrigin::DesktopChat, RequestOrigin::Voice, RequestOrigin::Application(2)] {
+        let mut ai = AiRuntime::new();
+        ai.bind_chat_owner(owner);
+        if origin == RequestOrigin::Application(2) {
+            assert_eq!(ai.route_application_request(2, b"show my files"), Ok(RequestRoute::Control(Command::FileNavigator)));
+        } else {
+            for byte in b"show my files" { assert!(ai.chat.push_input(*byte)); }
+            assert!(if origin == RequestOrigin::Voice { ai.submit_voice_chat() } else { ai.submit_chat() });
+        }
+        assert_eq!(ai.pending_control_origin(), Some(origin));
+        assert!(ai.route_application_request(2, b"open settings").is_err());
+        assert!(ai.submit_app_turn(2, b"unrelated inference").is_err());
+        assert_eq!(ai.take_control(owner, true), Some(Command::FileNavigator));
+        assert_eq!(ai.take_control(owner, true), None);
+        ai.finish_control(Command::FileNavigator, true);
+        let record = ai.control_audit(ai.control_audit_count() - 1).unwrap();
+        assert_eq!(record.request.origin, origin);
+        assert_eq!(record.request.owner, owner);
+        assert_eq!(record.outcome, AuditOutcome::Completed);
+    }
+    let mut ai = AiRuntime::new();
+    ai.bind_chat_owner(owner);
+    assert!(ai.route_application_request(13, b"open settings").is_err());
+    assert!(ai.route_application_request(2, b"open settings").is_ok());
+    assert_eq!(ai.take_control(owner, false), None);
+    assert!(!ai.control_pending());
+    assert!(matches!(ai.control_audit(ai.control_audit_count()-1).unwrap().outcome, AuditOutcome::Denied(_)));
 }
 
 // ------------------------=

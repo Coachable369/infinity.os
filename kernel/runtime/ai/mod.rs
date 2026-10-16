@@ -65,6 +65,39 @@ pub struct AiRuntime {
 
 impl AiRuntime {
     // ------------------------=
+    // FUNC: route_request
+    // DESC: Sends every user request through the same intent engine and stages native actions with caller provenance.
+    // ------------------=
+    fn route_request(&mut self, input: &[u8], origin: RequestOrigin) -> Result<RequestRoute, &'static [u8]> {
+        if !self.chat.enabled() { return Err(b"AI is disabled in Settings."); }
+        if self.app_owner.is_some() || self.execution.busy() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
+            return Err(b"The local model is busy. Wait for the current reply, then retry.");
+        }
+        let request = self.requests.accept(input, self.chat_owner, origin);
+        let route = IntentRouter::route(&mut self.instruction_mapping, &request);
+        if let RequestRoute::Control(command) = route {
+            self.execution.stage(ExecutionRequest { command, owner: request.owner, origin: request.origin,
+                correlation_id: request.correlation_id }).map_err(|_| b"An OS action is already pending.".as_slice())?;
+        }
+        Ok(route)
+    }
+
+    // ------------------------=
+    // FUNC: route_application_request
+    // DESC: Routes raw app input before document context is constructed; context cannot become command authority.
+    // ------------------=
+    pub fn route_application_request(&mut self, id: usize, input: &[u8]) -> Result<RequestRoute, &'static [u8]> {
+        if id >= 13 { return Err(b"Unknown application context."); }
+        self.route_request(input, RequestOrigin::Application(id))
+    }
+
+    // ------------------------=
+    // FUNC: pending_control_origin
+    // DESC: Allows native dispatch to reject actions whose original application is no longer focused.
+    // ------------------=
+    pub fn pending_control_origin(&self) -> Option<RequestOrigin> { self.execution.pending_origin() }
+
+    // ------------------------=
     // FUNC: acceptance_native_output
     // DESC: Exposes decoded bytes only in host acceptance harnesses for failed protocol diagnostics, never in the installed OS.
     // ------------------=
@@ -318,17 +351,15 @@ impl AiRuntime {
     fn submit_chat_from(&mut self, origin: RequestOrigin) -> bool {
         if self.app_owner.is_some() || self.execution.busy() || !self.chat.enabled()
             || self.qwen.as_ref().is_some_and(|s| s.busy()) { return false; }
-        let input = self.chat.input();
-        let request = self.requests.accept(input, self.chat_owner, origin);
-        let route = IntentRouter::route(&mut self.instruction_mapping, &request);
-        if let RequestRoute::Control(command) = route {
-            let staged = self.execution.stage(ExecutionRequest { command, owner: request.owner, origin: request.origin,
-                correlation_id: request.correlation_id }).is_ok();
-            if staged {
-                self.chat.begin_native_turn();
-                self.chat.generation_state = chat::GenerationState::Running;
-            }
-            return staged;
+        let mut input = [0u8; 4096];
+        let length = self.chat.input().len();
+        if length > input.len() { return false; }
+        input[..length].copy_from_slice(self.chat.input());
+        let Ok(route) = self.route_request(&input[..length], origin) else { return false; };
+        if matches!(route, RequestRoute::Control(_)) {
+            self.chat.begin_native_turn();
+            self.chat.generation_state = chat::GenerationState::Running;
+            return true;
         }
         if !matches!(self.chat.selected_model(), chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
             return self.chat.submit_input();
@@ -370,11 +401,19 @@ impl AiRuntime {
     // DESC: Consumes a command exactly once after rechecking the currently authenticated UI owner and permission.
     // ------------------=
     pub fn take_control(&mut self, owner: [u8; 16], allowed: bool) -> Option<control::Command> {
+        let origin = self.execution.pending_origin();
         let context = PolicyContext { requester: owner, owner: self.chat_owner, chat_enabled: self.chat.enabled(), desktop_allowed: allowed };
         match self.execution.take(context) {
             Ok(Some(request)) => Some(request.command),
             Ok(None) => None,
             Err(_) => {
+                if let Some(RequestOrigin::Application(id)) = origin {
+                    let mut panel = crate::ui::app_assistant::read(id);
+                    panel.pending = crate::ui::app_assistant::Action::None;
+                    panel.reply(b"OS action cancelled: its application, session or permission changed.");
+                    crate::ui::app_assistant::write(id, panel);
+                    return None;
+                }
                 self.chat.generation_state = chat::GenerationState::Cancelled;
                 self.chat.update_native_response(b"OS action cancelled: the session or AI permission changed.");
                 None
@@ -393,7 +432,9 @@ impl AiRuntime {
     // DESC: Publishes the dispatcher's actual outcome instead of treating model text as execution evidence.
     // ------------------=
     pub fn finish_control(&mut self, command: control::Command, success: bool) {
+        let origin = self.execution.active_origin();
         if self.execution.finish(command, success).is_err() { return; }
+        if matches!(origin, Some(RequestOrigin::Application(_))) { return; }
         self.chat.update_native_response(command.result(success));
         self.chat.generation_state = if success { chat::GenerationState::Complete } else { chat::GenerationState::Failed };
     }

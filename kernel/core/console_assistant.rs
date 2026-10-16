@@ -310,13 +310,14 @@ impl ConsoleRuntime {
         });
         panel.request = panel.input;
         panel.request_len = panel.length;
-        if let Some(command)=crate::runtime::ai::control::Command::explicit(&panel.input[..panel.length]) {
-            if !matches!(command,crate::runtime::ai::control::Command::Context(_)) {
-                let result=self.dispatch_ai_control(command);
+        match crate::runtime::ai::with_ai_runtime(|ai| ai.route_application_request(id, &panel.input[..panel.length])) {
+            Ok(crate::runtime::ai::kit::RequestRoute::Control(_)) => {
                 panel.length=0;panel.caret=0;
-                panel.reply(if let Some(success)=result {command.result(success)}else{b"The app needs your decision in its save dialog."});
+                panel.reply(b"OS action queued for this application.");
                 assistant::write(id,panel);return;
             }
+            Ok(crate::runtime::ai::kit::RequestRoute::Inference(_)) => {},
+            Err(message) => {panel.reply(message);assistant::write(id,panel);return;}
         }
         if panel.propose_contextual(id) {
             panel.length = 0;
