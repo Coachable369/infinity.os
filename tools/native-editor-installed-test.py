@@ -245,6 +245,7 @@ def create_application(guest):
             guest.screenshot(f"create-model-{captures:02d}")
             captures += 1
         if time.monotonic() >= next_progress:
+            guest.screenshot("create-current")
             print(json.dumps({"creation_state": state}), flush=True)
             guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
                 "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})

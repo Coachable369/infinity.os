@@ -393,6 +393,15 @@ impl Panel {
             return false;
         }
         let body = output.strip_suffix(b"\nEND_ACTION").unwrap_or(output);
+        // A direct user creation request already authorizes this exact workflow.
+        // Some models return complete C without the proposal wrapper. Treat that
+        // as source only; native compilation still validates it before execution.
+        let raw = body.trim_ascii();
+        let raw = raw.strip_prefix(b"```c\n").and_then(|s| s.strip_suffix(b"\n```"))
+            .unwrap_or(raw);
+        let raw_creation = editor && editor_compile_intent::create_application(&self.request[..self.request_len])
+            && [b"#include".as_slice(), b"int main(", b"int main ("].iter().any(|prefix| raw.starts_with(prefix));
+        let (action, content) = if raw_creation { (Action::ReplaceCompile, raw) } else {
         let Some(split) = body.iter().position(|b| *b == b'\n') else {
             self.reply(b"The model response has no action body. Nothing was changed.");
             return false;
@@ -405,7 +414,8 @@ impl Panel {
             b"CHAT" => { self.reply(&body[split + 1..]); return true; }
             _ => { self.reply(b"Unsupported model action. Nothing was changed."); return false; }
         };
-        let content = &body[split + 1..];
+        (action, &body[split + 1..])
+        };
         if content.is_empty() || content.len() > self.argument.len()
             || content.iter().any(|b| !matches!(*b, b'\n' | b'\r' | b'\t' | 32..=126)) {
             self.reply(b"Generated text exceeds the editor limits. Nothing was changed.");

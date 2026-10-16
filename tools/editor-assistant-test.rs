@@ -407,6 +407,16 @@ fn application_creation() {
         assert!(panel.accept_for_owner(2,b"REPLACE\nint main(void){return 7;}\nEND_ACTION",true));
         assert_eq!(panel.take_action(8),Action::ReplaceCompile);
         assert_eq!(panel.take_action(8),Action::None);
+        for source in [b"#include <stdio.h>\nint main(void){return 54;}".as_slice(),
+            b"int main(void){return 54;}", b"```c\nint main(void){return 54;}\n```"] {
+            assert!(!panel.accept_for_owner(2,source,false));
+            assert!(!panel.accept_for_owner(1,source,true));
+            assert!(panel.accept_for_owner(2,source,true));
+            assert_eq!(panel.take_action(8),Action::ReplaceCompile);
+            assert_eq!(panel.take_action(8),Action::None);
+        }
+        panel.request_len=0;
+        assert!(!panel.accept_for_owner(2,b"int main(void){return 54;}",true));
     }
     for request in [b"explain how to create a calculator app".as_slice(), b"do not create a calculator app",
         b"create only source for a calculator app", b"create a calculator app then delete files",
