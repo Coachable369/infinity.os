@@ -235,7 +235,21 @@ def create_application(guest):
     guest.key("ret")
     ui.wait_feature(guest, lambda p: p[12] == 2)
     deadline = time.monotonic() + 600
+    next_progress = 0
+    previous_response = None
+    captures = 0
     while time.monotonic() < deadline:
+        state = ui.features(guest)
+        if state[19] != previous_response and captures < 64:
+            previous_response = state[19]
+            guest.screenshot(f"create-model-{captures:02d}")
+            captures += 1
+        if time.monotonic() >= next_progress:
+            print(json.dumps({"creation_state": state}), flush=True)
+            guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})
+            next_progress = time.monotonic() + 20
+        assert guest.state()[4] not in (9, 10), "Authenticated creation session was lost"
         build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
         if build[2] > before and build[3]:
             features = ui.features(guest)
