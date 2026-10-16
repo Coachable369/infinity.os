@@ -49,9 +49,10 @@ unsafe extern "C" {
 // DESC: Emits fixed-size numeric guest evidence on PL011.
 // ------------------=
 fn emit(value: u64) {
+    let base=if option_env!("INFINITY_PROCESS_VIRTUALBOX").is_some(){0xffdd_f000usize}else{0x0900_0000usize};
     for byte in value.to_le_bytes() { unsafe {
-        while core::ptr::read_volatile(0x09000018 as *const u32) & 32 != 0 {}
-        core::ptr::write_volatile(0x09000000 as *mut u32, byte as u32);
+        while core::ptr::read_volatile((base+0x18) as *const u32) & 32 != 0 {}
+        core::ptr::write_volatile(base as *mut u32, byte as u32);
     } }
 }
 // ------------------------=
@@ -97,6 +98,7 @@ pub unsafe extern "C" fn process_probe() -> ! {
     core::arch::asm!("msr sctlr_el1, {}", "isb", in(reg) sctlr);
     // QEMU's reset controller is disabled; production discovery supplies the
     // existing enabled controller instead of relying on these test addresses.
+    let timer=task::SliceTimer::Physical{interrupt:30};
     let controller = if env!("INFINITY_PROCESS_GIC") == "3" {
         core::ptr::write_volatile(0x08000000 as *mut u32, (1 << 4) | 2);
         core::ptr::write_volatile(0x080a0014 as *mut u32, 0);
@@ -114,10 +116,10 @@ pub unsafe extern "C" fn process_probe() -> ! {
             core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) configured);
             assert_ne!(configured & 2, 0);
         }
-        task::InterruptController::V3 { redistributor: 0x080a0000 }
+        task::InterruptController::V3 { redistributor: 0x080a0000, timer }
     } else {
         core::ptr::write_volatile(0x08000000 as *mut u32, 3);
-        task::InterruptController::V2 { distributor: 0x08000000, cpu: 0x08010000 }
+        task::InterruptController::V2 { distributor: 0x08000000, cpu: 0x08010000, timer }
     };
     let mut memory = NativeMemory::empty();
     memory.initialize((&raw mut POOL) as u64, POOL_BYTES as u64).unwrap();
@@ -143,6 +145,8 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo)
     assert!(cpu::controller_from_handoff(1,0,0xfee00000,0).is_none());
     assert!(cpu::controller_from_handoff(3,1,0x080a0000,0x08000000).is_none());
     assert!(cpu::controller_from_handoff(3,0,0x080a1000,0x08000000).is_none());
+    assert!(cpu::controller_from_handoff(3|(27<<8)|0x10000,0,0x080a0000,0x08000000).is_some());
+    assert!(cpu::controller_from_handoff(3|(15<<8)|0x10000,0,0x080a0000,0x08000000).is_none());
     let controller=cpu::controller_from_handoff(boot.native_controller_kind,
         boot.native_controller_reserved,boot.native_controller_base,boot.native_controller_auxiliary).unwrap();
     let mut memory=NativeMemory::empty();
@@ -168,6 +172,7 @@ fn mapped(address:u64,bytes:u64)->MappedRange {
 // ------------------=
 unsafe fn run_cases(mut memory:NativeMemory,kernel:KernelAccessMap,controller:cpu::Controller)->! {
     let initial=memory.available_pages();
+    let expected_timer=controller.timer_interrupt() as u64;
     if COMPILER { compiler::run(&mut memory, kernel, controller); }
     let image = native_c_image::Image::parse(IMAGE, 183).unwrap();
     let layout = CompilerVirtualLayout { image_base: 0x100000000, heap_base: 0x200000000,
@@ -225,10 +230,10 @@ unsafe fn run_cases(mut memory:NativeMemory,kernel:KernelAccessMap,controller:cp
         assert_eq!(core::ptr::read_volatile(&raw const SENTINEL), 0x1020304050607080);
         assert_eq!(registers.pstate & 15, 0);
         if kind == 3 {
-            assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, 30);
+            assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, expected_timer);
             // A second busy-loop slice must preempt even under split EOI mode.
             task::run(&mut registers, process.page_tables.root_physical_address(), controller, 2000).unwrap();
-            assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, 30);
+            assert_eq!(registers.reason, 1); assert_eq!(registers.syndrome & 1023, expected_timer);
         }
         else {
             assert_eq!(registers.reason, 0);

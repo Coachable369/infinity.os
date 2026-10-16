@@ -78,10 +78,14 @@ int main(void) {
     assert(c.kind==2 && c.base==0x08000000 && c.auxiliary==0x08010000 && reads==0);
     setup(3); c=discover(); assert(c.kind==3 && c.base==0x080c0000 && c.auxiliary==0x08000000 && reads==2);
     setup(3); put64(madt+44+60,0x080c0000); checksum(madt,sizeof(madt)); c=discover(); assert(c.kind==3 && reads==1);
-    setup(3); put64(madt+44+60,0x080a0000); checksum(madt,sizeof(madt)); assert(discover().kind==0);
-    setup(3); madt[9]++; assert(discover().kind==0 && reads==0);
-    setup(3); gtdt[9]++; assert(discover().kind==0 && reads==0);
-    setup(3); put32(gtdt+56,29); checksum(gtdt,sizeof(gtdt)); assert(discover().kind==0 && reads==0);
+    setup(3); put64(madt+44+60,0x080a0000); checksum(madt,sizeof(madt)); assert(discover().reserved==13);
+    setup(3); madt[9]++; assert(discover().reserved==1 && reads==0);
+    setup(3); gtdt[9]++; assert(discover().reserved==2 && reads==0);
+    setup(3); put32(gtdt+56,29); checksum(gtdt,sizeof(gtdt)); assert(discover().reserved==28 && reads==0);
+    setup(3); put32(gtdt+56,26); put32(gtdt+64,27); checksum(gtdt,sizeof(gtdt));
+    c=discover(); assert((c.kind&INFINITY_ARM_CONTROLLER_KIND_MASK)==3);
+    assert((c.kind&INFINITY_ARM_CONTROLLER_VIRTUAL_TIMER)!=0);
+    assert(((c.kind>>INFINITY_ARM_CONTROLLER_TIMER_SHIFT)&255)==27 && c.reserved==0);
     setup(3); madt[45]=0; checksum(madt,sizeof(madt)); assert(discover().kind==0 && reads==0);
     setup(3); madt[45]=255; checksum(madt,sizeof(madt)); assert(discover().kind==0 && reads==0);
     setup(3); put32(madt+44+12,0); checksum(madt,sizeof(madt)); assert(discover().kind==0 && reads==0);

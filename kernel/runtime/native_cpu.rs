@@ -33,10 +33,20 @@ pub fn controller_from_handoff(kind: u32, reserved: u32, base: u64, auxiliary: u
     { if kind == 1 && auxiliary == 0 && base < 64 * 1024 * 1024 * 1024 { Some(base) } else { None } }
     #[cfg(target_arch = "aarch64")]
     {
+        const KIND_MASK:u32=0xff;
+        const TIMER_SHIFT:u32=8;
+        const VIRTUAL_TIMER:u32=0x10000;
         if auxiliary == 0 || auxiliary & 4095 != 0 || auxiliary.checked_add(65536).is_none() { return None; }
-        match kind {
-            2 => Some(Controller::V2 { distributor: base, cpu: auxiliary }),
-            3 if base & 65535 == 0 => Some(Controller::V3 { redistributor: base }),
+        let controller_kind=kind&KIND_MASK;
+        let timer=if kind==controller_kind {task::SliceTimer::Physical{interrupt:30}}
+            else if kind&!0x1ffff==0 && kind&VIRTUAL_TIMER!=0 {
+                let interrupt=((kind>>TIMER_SHIFT)&255) as u8;
+                if !(16..32).contains(&interrupt) {return None;}
+                task::SliceTimer::Virtual{interrupt}
+            }else{return None;};
+        match controller_kind {
+            2 => Some(Controller::V2 { distributor: base, cpu: auxiliary, timer }),
+            3 if base & 65535 == 0 => Some(Controller::V3 { redistributor: base, timer }),
             _ => None,
         }
     }

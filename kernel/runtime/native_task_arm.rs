@@ -30,9 +30,40 @@ impl Registers {
 }
 
 #[derive(Clone, Copy)]
+pub enum SliceTimer {
+    Physical { interrupt: u8 },
+    Virtual { interrupt: u8 },
+}
+
+#[derive(Clone, Copy)]
 pub enum InterruptController {
-    V2 { distributor: u64, cpu: u64 },
-    V3 { redistributor: u64 },
+    V2 { distributor: u64, cpu: u64, timer: SliceTimer },
+    V3 { redistributor: u64, timer: SliceTimer },
+}
+
+impl InterruptController {
+    // ------------------------=
+    // FUNC: timer
+    // DESC: Returns the firmware-validated private timer used for native process slices.
+    // ------------------=
+    const fn timer(self) -> SliceTimer {
+        match self { Self::V2 { timer, .. } | Self::V3 { timer, .. } => timer }
+    }
+    // ------------------------=
+    // FUNC: timer_interrupt
+    // DESC: Exposes the validated timer interrupt for structured platform verification.
+    // ------------------=
+    pub const fn timer_interrupt(self) -> u8 { self.timer().interrupt() }
+}
+
+impl SliceTimer {
+    // ------------------------=
+    // FUNC: interrupt
+    // DESC: Returns the firmware-advertised private interrupt number for this timer.
+    // ------------------=
+    pub const fn interrupt(self) -> u8 {
+        match self { Self::Physical { interrupt } | Self::Virtual { interrupt } => interrupt }
+    }
 }
 
 #[repr(C, align(4096))]
@@ -90,33 +121,46 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
     }
     let daif: u64;
     core::arch::asm!("mrs {}, daif", "msr daifset, #0xf", out(reg) daif);
-    let old_timer: u64;
-    let old_compare: u64;
-    let old_virtual_timer: u64;
+    let timer=controller.timer();
+    let timer_interrupt=timer.interrupt();
     let frequency: u64;
-    core::arch::asm!("mrs {}, cntp_ctl_el0", "mrs {}, cntp_cval_el0", "mrs {}, cntfrq_el0",
-        out(reg) old_timer, out(reg) old_compare, out(reg) frequency);
-    // Firmware may keep PPI27 armed. Preserve its deadline and pending status;
-    // do not acknowledge its tick as an application preemption interrupt.
-    core::arch::asm!("mrs {}, cntv_ctl_el0", out(reg) old_virtual_timer);
-    core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) old_virtual_timer | 2);
+    core::arch::asm!("mrs {}, cntfrq_el0", out(reg) frequency);
+    let (old_timer,old_compare,old_other_timer)=match timer {
+        SliceTimer::Physical { .. } => {
+            let (control,compare,virtual_control):(u64,u64,u64);
+            core::arch::asm!("mrs {}, cntp_ctl_el0", "mrs {}, cntp_cval_el0", "mrs {}, cntv_ctl_el0",
+                out(reg) control,out(reg) compare,out(reg) virtual_control);
+            // Firmware may keep its virtual timer armed. Preserve and mask it so
+            // only the selected physical slice timer can preempt this context.
+            core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) virtual_control|2);
+            (control,compare,virtual_control)
+        }
+        SliceTimer::Virtual { .. } => {
+            let (control,compare):(u64,u64);
+            // Do not touch CNTP on virtualized platforms which reserve or trap it.
+            core::arch::asm!("mrs {}, cntv_ctl_el0", "mrs {}, cntv_cval_el0",
+                out(reg) control,out(reg) compare);
+            (control,compare,0)
+        }
+    };
+    let timer_bit=1u32<<timer_interrupt;
     let (bank, old_control, old_priority, old_group, enabled, old_sre) = match controller {
-        InterruptController::V2 { distributor, cpu } => {
+        InterruptController::V2 { distributor, cpu, .. } => {
             let control = read(cpu);
             let priority = read(cpu + 4);
             let group = read(distributor + 0x80);
             let enabled = read(distributor + 0x100);
-            // Keep the firmware-selected security group. Moving PPI30 to
+            // Keep the firmware-selected security group. Moving the slice timer to
             // Group 1 silently disables slices when firmware enables only
             // distributor Group 0 (QEMU GICv2 without Security Extensions).
-            write(distributor + 0x100, 1 << 30);
+            write(distributor + 0x100, timer_bit);
             write(cpu + 4, 1); // only highest-priority private slice timer
             // AckCtl permits Group 1 acknowledgement through IAR when the
             // platform exposes the secure view (QEMU's non-security model).
             write(cpu, control | 7);
             (distributor, control as u64, priority as u64, group, enabled, 0)
         }
-        InterruptController::V3 { redistributor } => {
+        InterruptController::V3 { redistributor, .. } => {
             let sre: u64;
             core::arch::asm!("mrs {}, ICC_SRE_EL1", out(reg) sre);
             core::arch::asm!("msr ICC_SRE_EL1, {}", "isb", in(reg) sre | 1);
@@ -127,19 +171,23 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
             let bank = redistributor + 0x10000;
             let group = read(bank + 0x80);
             let enabled = read(bank + 0x100);
-            write(bank + 0x80, group | (1 << 30));
-            write(bank + 0x100, 1 << 30);
+            write(bank + 0x80, group | timer_bit);
+            write(bank + 0x100, timer_bit);
             core::arch::asm!("msr ICC_PMR_EL1, {}", "msr ICC_IGRPEN1_EL1, {}", "isb",
                 in(reg) 1u64, in(reg) 1u64);
             (bank, control, priority, group, enabled, sre)
         }
     };
-    let priority_address = (bank + 0x400 + 30) as *mut u8;
+    let priority_address = (bank + 0x400 + timer_interrupt as u64) as *mut u8;
     let old_irq_priority = core::ptr::read_volatile(priority_address);
     core::ptr::write_volatile(priority_address, 0);
     let ticks = (frequency * microseconds as u64 / 1_000_000).max(1);
-    core::arch::asm!("msr cntp_tval_el0, {}", "msr cntp_ctl_el0, {}", "isb",
-        in(reg) ticks, in(reg) 1u64);
+    match timer {
+        SliceTimer::Physical { .. } => core::arch::asm!("msr cntp_tval_el0, {}", "msr cntp_ctl_el0, {}", "isb",
+            in(reg) ticks,in(reg) 1u64),
+        SliceTimer::Virtual { .. } => core::arch::asm!("msr cntv_tval_el0, {}", "msr cntv_ctl_el0, {}", "isb",
+            in(reg) ticks,in(reg) 1u64),
+    }
     frame.pstate &= 0xf0000000; // EL0t, IRQ enabled, no inherited privilege flags.
     let transition=(&raw mut USER_FRAME).cast::<Registers>();
     transition.write(*frame);
@@ -153,7 +201,10 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
                 core::arch::asm!("mrs {}, ICC_IAR1_EL1", out(reg) id); id
             }
         };
-        core::arch::asm!("msr cntp_ctl_el0, {}", "isb", in(reg) 2u64);
+        match timer {
+            SliceTimer::Physical { .. } => core::arch::asm!("msr cntp_ctl_el0, {}", "isb", in(reg) 2u64),
+            SliceTimer::Virtual { .. } => core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) 2u64),
+        }
         frame.syndrome = interrupt;
         if interrupt & 1023 < 1020 {
             match controller {
@@ -164,15 +215,18 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
                     core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) control);
                     if control & 2 != 0 {
                         // Split EOI mode drops priority separately from deactivation.
-                        // Leaving PPI30 active prevents the next slice timer firing.
+                        // Leaving the acknowledged timer active prevents the next slice from firing.
                         core::arch::asm!("msr ICC_DIR_EL1, {}", "isb", in(reg) interrupt);
                     }
                 }
             }
         }
     }
-    core::arch::asm!("msr cntp_ctl_el0, {}", "isb", in(reg) 2u64);
-    if enabled & (1 << 30) == 0 { write(bank + 0x180, 1 << 30); }
+    match timer {
+        SliceTimer::Physical { .. } => core::arch::asm!("msr cntp_ctl_el0, {}", "isb", in(reg) 2u64),
+        SliceTimer::Virtual { .. } => core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) 2u64),
+    }
+    if enabled & timer_bit == 0 { write(bank + 0x180, timer_bit); }
     write(bank + 0x80, old_group);
     core::ptr::write_volatile(priority_address, old_irq_priority);
     match controller {
@@ -182,9 +236,15 @@ pub unsafe fn run(frame: &mut Registers, root: u64, controller: InterruptControl
                 "msr ICC_SRE_EL1, {}", "isb", in(reg) old_priority, in(reg) old_control, in(reg) old_sre);
         }
     }
-    core::arch::asm!("msr cntp_cval_el0, {}", "msr cntp_ctl_el0, {}", "isb",
-        in(reg) old_compare, in(reg) old_timer);
-    core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) old_virtual_timer);
+    match timer {
+        SliceTimer::Physical { .. } => {
+            core::arch::asm!("msr cntp_cval_el0, {}", "msr cntp_ctl_el0, {}", "isb",
+                in(reg) old_compare,in(reg) old_timer);
+            core::arch::asm!("msr cntv_ctl_el0, {}", "isb", in(reg) old_other_timer);
+        }
+        SliceTimer::Virtual { .. } => core::arch::asm!("msr cntv_cval_el0, {}", "msr cntv_ctl_el0, {}", "isb",
+            in(reg) old_compare,in(reg) old_timer),
+    }
     BUSY.store(false, Ordering::Release);
     core::arch::asm!("msr daif, {}", in(reg) daif);
     Ok(())

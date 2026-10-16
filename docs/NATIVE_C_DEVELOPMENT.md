@@ -1009,7 +1009,8 @@ than a guessed address. The legacy 32-bit bootstrap now initializes the full
 392-byte contract instead of emitting its obsolete v8 prefix.
 
 ARM discovery validates MADT and GTDT checksums, record lengths, the enabled
-boot CPU affinity, physical timer PPI30, and bounded GICv3 redistributor ranges.
+boot CPU affinity, a physical PPI30 or firmware-described virtual timer PPI,
+and GICv3 redistributor ranges up to 256 MiB with a bounded 128-frame scan.
 GICv2 supplies distributor and CPU-interface addresses; GICv3 supplies the
 matching redistributor. x86 discovery accepts enabled memory-mapped xAPIC only;
 x2APIC is not implemented. `native_cpu::controller_from_handoff` rejects
@@ -1021,9 +1022,10 @@ available. If all reservations fail, the OS still boots with native process
 memory unavailable; launches must report resource exhaustion. The handoff
 reports the actual reservation, not the requested maximum.
 Previously its production handoff supplied zero, even though bare-metal process
-tests used their own arena. ARM slices preserve and mask the firmware virtual
-timer, then restore it on return. GICv2 retains the firmware-selected security
-group for PPI30 instead of moving it into a potentially disabled group.
+tests used their own arena. ARM slices program the firmware-selected physical
+or virtual timer, mask the unused timer when it is safe to access, and restore
+timer state on return. GICv2 retains the firmware-selected security group for
+its selected PPI instead of moving it into a potentially disabled group.
 
 `./build-kit native-controller-tests` exercises actual parser results, including
 corrupt checksums, malformed records, missing CPUs, unsupported timers, address

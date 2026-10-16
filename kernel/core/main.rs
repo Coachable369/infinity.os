@@ -33,6 +33,17 @@ mod system_sounds;
 mod ui;
 
 use boot_info::{BootInfo, BOOT_MAGIC, BOOT_VERSION};
+
+// ------------------------=
+// FUNC: write_boot_number
+// DESC: Emits one allocation-free decimal boot diagnostic to the architecture serial sink.
+// ------------------=
+unsafe fn write_boot_number(label: &[u8], mut value: u64) {
+    output::write(label);
+    let mut digits=[0u8;20];let mut length=0;
+    loop {digits[19-length]=b'0'+(value%10) as u8;length+=1;value/=10;if value==0{break;}}
+    output::write(&digits[20-length..]);output::write(b"\n");
+}
 use core::{ffi::c_void, panic::PanicInfo};
 
 #[no_mangle]
@@ -140,6 +151,9 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
             data:mapped(info.kernel_data_address,info.kernel_data_bytes),
             stack:mapped(info.kernel_stack_address,info.kernel_stack_bytes),gateway:mapped(0,0),
         },info.native_controller_kind,info.native_controller_reserved,info.native_controller_base,info.native_controller_auxiliary);
+        write_boot_number(b"[native] pool bytes=",info.native_pool_bytes);
+        write_boot_number(b"[native] controller kind=",info.native_controller_kind as u64);
+        write_boot_number(b"[native] controller reason=",info.native_controller_reserved as u64);
     }
     runtime::initialize(cfg!(target_arch = "x86") || info.boot_flags & 32 == 0);
     storage::initialize_installation_identity(

@@ -1645,7 +1645,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->kernel_stack_bytes = (uint64_t)KERNEL_STACK_PAGES * PAGE_SIZE;
     InfinityNativeController controller=discover_native_controller(system);
     info->native_controller_kind=controller.kind;
-    info->native_controller_reserved=0;
+    info->native_controller_reserved=controller.reserved;
     info->native_controller_base=controller.base;
     info->native_controller_auxiliary=controller.auxiliary;
     prepare_payloads(image, system, info, booted_installed_generation);

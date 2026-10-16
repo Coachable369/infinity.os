@@ -59,6 +59,42 @@ def compiler_result(data, work, args):
     print(json.dumps(proof))
 
 # ------------------------=
+# FUNC: virtualbox_result
+# DESC: Validates fixed binary hardware-isolation records captured from the repository-owned VirtualBox ARM guest.
+# ------------------=
+def virtualbox_result(path):
+    data = path.read_bytes()
+    trailer = data[-(12 * 32 + 8):]
+    assert len(trailer) == 12 * 32 + 8
+    rows = list(struct.iter_unpack("<4Q", trailer[:-8]))
+    assert struct.unpack_from("<Q", trailer, 12 * 32)[0] == 0x49534F4C41544544
+    assert [r[2] >> 26 if r[1] == 0 else r[2] for r in rows] == [21, 36, 21, 32, 21, 27, 21, 0, 21, 21, 21, 21]
+    proof = dict(architecture="aarch64", platform="virtualbox-gicv3",
+        firmware_controller_handoff=True, virtual_slice_timer=True, hardware_user_mode=True,
+        supervisor_write_blocked=True, nx_enforced=True, infinite_loop_preempted=True,
+        privileged_instruction_blocked=True, memory_reclaimed=True,
+        kernel_survived_each_case=True, repeated_resume_tls_simd=True,
+        installed_acceptance=False, cases=rows)
+    evidence = ROOT / "builds/validation/native-apps/aarch64-virtualbox-execution.json"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text(json.dumps(proof, indent=2) + "\n")
+    print(json.dumps(proof))
+
+# ------------------------=
+# FUNC: virtualbox_compiler_result
+# DESC: Extracts and validates structured native compiler records following the VirtualBox firmware prefix.
+# ------------------=
+def virtualbox_compiler_result(path, args):
+    data = path.read_bytes()
+    marker = struct.pack("<Q", 0x434C414E47454C30)
+    offset = data.rfind(marker)
+    assert offset >= 0
+    args.arch = "aarch64"
+    work = ROOT / "build/native-process-probe/aarch64-virtualbox-validation"
+    work.mkdir(parents=True, exist_ok=True)
+    compiler_result(data[offset:], work, args)
+
+# ------------------------=
 # FUNC: main
 # DESC: Builds and boots one disposable x86 VM, asserting binary privilege/fault/preemption outcomes.
 # ------------------=
@@ -68,6 +104,9 @@ def main():
     parser.add_argument("--gic", choices=[2, 3], type=int, default=2)
     parser.add_argument("--split-eoi", action="store_true")
     parser.add_argument("--firmware", action="store_true", help="Use production ARM UEFI discovery and handoff")
+    parser.add_argument("--virtualbox", action="store_true", help="Build a production-handoff probe for the repository-owned VirtualBox runner")
+    parser.add_argument("--validate-virtualbox-serial", type=Path, help="Validate binary records captured by the VirtualBox ARM probe")
+    parser.add_argument("--validate-virtualbox-compiler-serial", type=Path, help="Validate compiler records captured by the VirtualBox ARM probe")
     parser.add_argument("--memory", choices=["512M", "1G"], default="1G", help="Firmware guest RAM for low-memory boot coverage")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
@@ -75,12 +114,22 @@ def main():
     parser.add_argument("--reject-invalid-source", action="store_true", help="Verify real compiler failure, diagnostics, no executable output and full memory recovery")
     parser.add_argument("--link-object", type=Path, help="Run native LLD with this object exposed as a read-only guest fixture")
     args = parser.parse_args()
+    if args.validate_virtualbox_serial:
+        virtualbox_result(args.validate_virtualbox_serial)
+        return
+    if args.validate_virtualbox_compiler_serial:
+        virtualbox_compiler_result(args.validate_virtualbox_compiler_serial, args)
+        return
     assert not args.interactive or args.compiler
     assert not args.reject_invalid_source or (args.compiler and args.compile_source and not args.link_object)
     arm = args.arch == "aarch64"
-    assert not args.firmware or (arm and not args.compiler and not args.split_eoi)
+    assert not args.firmware or (arm and not args.split_eoi)
+    assert not args.virtualbox or (arm and args.firmware)
     target = "aarch64-unknown-none-softfloat" if arm else "x86_64-unknown-none"
-    work = ROOT / "build/native-process-probe" / (args.arch + (f"-gic{args.gic}" if arm else "") + ("-firmware" if args.firmware else "") + ("-compiler" if args.compiler else ""))
+    work = ROOT / "build/native-process-probe" / (args.arch + (f"-gic{args.gic}" if arm else "") +
+        ("-firmware" if args.firmware else "") +
+        ("-virtualbox" if args.virtualbox else "") +
+        ("-compiler" if args.compiler else ""))
     work.mkdir(parents=True, exist_ok=True)
     clang = "/opt/homebrew/opt/llvm/bin/clang"
     linker = "/opt/homebrew/opt/lld/bin/ld.lld"
@@ -109,6 +158,9 @@ def main():
     if args.split_eoi:
         assert arm and args.gic == 3
         env["INFINITY_PROCESS_SPLIT_EOI"] = "1"
+    env.pop("INFINITY_PROCESS_VIRTUALBOX", None)
+    if args.virtualbox:
+        env["INFINITY_PROCESS_VIRTUALBOX"] = "1"
     env.pop("INFINITY_COMPILER_PROBE", None)
     env.pop("INFINITY_INTERACTIVE_APP", None)
     if args.interactive:
@@ -133,6 +185,9 @@ def main():
         "tools/native-process-probe/arm.ld" if arm else "linker/x86_64.ld", "-o", str(work / "probe.elf"),
         str(work / "cargo" / target / "release/libinfinity_native_process_probe.a")] +
         (["-e", "infinity_kernel_entry"] if args.firmware else []), check=True)
+    if args.virtualbox:
+        print(work / "probe.elf")
+        return
     if arm:
         boot_args=["-kernel",str(work / "probe.elf")]
         if args.firmware:
@@ -157,8 +212,10 @@ def main():
         assert len(data) == 12 * 32 + 8, data.hex()
         assert struct.unpack_from("<Q", data, 12 * 32)[0] == 0x49534f4c41544544
         rows = list(struct.iter_unpack("<4Q", data[:-8]))
-        assert [r[2] >> 26 if r[1] == 0 else r[2] for r in rows] == [21, 36, 21, 32, 21, 30, 21, 0, 21, 21, 21, 21]
-        proof = dict(architecture=args.arch, firmware_controller_handoff=args.firmware, hardware_user_mode=True, supervisor_write_blocked=True,
+        timer_interrupt = 30
+        assert [r[2] >> 26 if r[1] == 0 else r[2] for r in rows] == [21, 36, 21, 32, 21, timer_interrupt, 21, 0, 21, 21, 21, 21]
+        proof = dict(architecture=args.arch, firmware_controller_handoff=args.firmware,
+            hardware_user_mode=True, supervisor_write_blocked=True,
             nx_enforced=True, infinite_loop_preempted=True, privileged_instruction_blocked=True,
             memory_reclaimed=True, kernel_survived_each_case=True, repeated_resume_tls_simd=True, installed_acceptance=False, cases=rows)
         (work / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
