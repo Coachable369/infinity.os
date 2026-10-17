@@ -1,37 +1,98 @@
 //! Explicit current-document compiler intent shared by voice and attached chat.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ApplicationStyle { Terminal, Ui }
+pub enum ApplicationStyle {
+    Terminal,
+    Ui,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApplicationKind {
+    Calculator,
+    Game,
+    General,
+}
+
+// ------------------------=
+// FUNC: application_kind
+// DESC: Classifies one direct, bounded software-creation request without granting authority to quoted, negated, or explanatory text.
+// ------------------=
+pub fn application_kind(input: &[u8]) -> Option<ApplicationKind> {
+    let Ok(text) = core::str::from_utf8(input) else {
+        return None;
+    };
+    let text = text.trim().trim_end_matches('.');
+    if text.len() > 256 {
+        return None;
+    }
+    let mut words = text.split_ascii_whitespace();
+    let mut verb = words.next().unwrap_or("");
+    if verb.eq_ignore_ascii_case("please") {
+        verb = words.next().unwrap_or("");
+    }
+    if !["create", "build", "generate", "write"]
+        .iter()
+        .any(|value| verb.eq_ignore_ascii_case(value))
+    {
+        return None;
+    }
+    let mut count = 0;
+    let mut application_noun = false;
+    let mut ui = false;
+    let mut product = false;
+    let mut calculator = false;
+    let mut game = false;
+    let mut tail = [""; 3];
+    for word in words {
+        let word = word.trim_end_matches([',', '.']);
+        if word.is_empty()
+            || !word.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || ["not", "never", "without", "only", "instead", "explain"]
+                .iter()
+                .any(|value| word.eq_ignore_ascii_case(value))
+        {
+            return None;
+        }
+        count += 1;
+        tail = [tail[1], tail[2], word];
+        application_noun |= ["application", "app", "program", "tool", "game"]
+            .iter()
+            .any(|value| word.eq_ignore_ascii_case(value));
+        ui |= ["ui", "gui", "graphical", "windowed", "interface", "game", "chess"]
+            .iter()
+            .any(|value| word.eq_ignore_ascii_case(value));
+        product |= ["calculator", "program", "tool", "game", "chess"]
+            .iter()
+            .any(|value| word.eq_ignore_ascii_case(value));
+        calculator |= word.eq_ignore_ascii_case("calculator");
+        game |= ["game", "chess", "checkers", "solitaire", "puzzle"]
+            .iter()
+            .any(|value| word.eq_ignore_ascii_case(value));
+    }
+    let play_tail = tail[0].eq_ignore_ascii_case("and")
+        && tail[1].eq_ignore_ascii_case("play")
+        && tail[2].eq_ignore_ascii_case("me");
+    let named_ending = ["application", "app", "game"]
+        .iter()
+        .any(|value| tail[2].eq_ignore_ascii_case(value));
+    if count < 2 || !(application_noun && (named_ending || play_tail) || ui && product) {
+        return None;
+    }
+    Some(if game {
+        ApplicationKind::Game
+    } else if calculator {
+        ApplicationKind::Calculator
+    } else {
+        ApplicationKind::General
+    })
+}
 
 // ------------------------=
 // FUNC: create_application
 // DESC: Admits a direct application creation request, never quoted, negated, or explanatory text.
 // ------------------=
 pub fn create_application(input: &[u8]) -> bool {
-    let Ok(text) = core::str::from_utf8(input) else { return false; };
-    let text = text.trim().trim_end_matches('.');
-    if text.len() > 256 { return false; }
-    let mut words = text.split_ascii_whitespace();
-    let mut verb = words.next().unwrap_or("");
-    if verb.eq_ignore_ascii_case("please") { verb = words.next().unwrap_or(""); }
-    if !["create", "build", "generate", "write"].iter().any(|v| verb.eq_ignore_ascii_case(v)) { return false; }
-    let mut count = 0;
-    let mut application_noun = false;
-    let mut ui = false;
-    let mut product = false;
-    let mut last = "";
-    for word in words {
-        let word = word.trim_end_matches([',', '.']);
-        if word.is_empty() || !word.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
-            || ["not", "never", "without", "only", "instead", "explain"].iter().any(|v| word.eq_ignore_ascii_case(v)) {
-            return false;
-        }
-        count += 1; last = word;
-        application_noun |= ["application", "app"].iter().any(|v| word.eq_ignore_ascii_case(v));
-        ui |= ["ui", "gui", "graphical", "windowed", "interface"].iter().any(|v| word.eq_ignore_ascii_case(v));
-        product |= ["calculator", "program", "tool"].iter().any(|v| word.eq_ignore_ascii_case(v));
-    }
-    count >= 2 && (application_noun && ["application", "app"].iter().any(|v| last.eq_ignore_ascii_case(v)) || ui && product)
+    application_kind(input).is_some()
 }
 
 // ------------------------=
@@ -39,14 +100,24 @@ pub fn create_application(input: &[u8]) -> bool {
 // DESC: Classifies an admitted creation request as terminal or declarative Infinity UI Kit output.
 // ------------------=
 pub fn application_style(input: &[u8]) -> Option<ApplicationStyle> {
-    if !create_application(input) { return None; }
+    if !create_application(input) {
+        return None;
+    }
     let text = core::str::from_utf8(input).ok()?;
-    Some(if text.split_ascii_whitespace().any(|word| {
-        let word = word.trim_matches(|c: char| c == ',' || c == '.');
-        ["ui", "gui", "graphical", "windowed", "interface"].iter().any(|value| word.eq_ignore_ascii_case(value))
-    }) { ApplicationStyle::Ui } else { ApplicationStyle::Terminal })
+    Some(
+        if application_kind(input) == Some(ApplicationKind::Game)
+            || text.split_ascii_whitespace().any(|word| {
+            let word = word.trim_matches(|c: char| c == ',' || c == '.');
+            ["ui", "gui", "graphical", "windowed", "interface"]
+                .iter()
+                .any(|value| word.eq_ignore_ascii_case(value))
+        }) {
+            ApplicationStyle::Ui
+        } else {
+            ApplicationStyle::Terminal
+        },
+    )
 }
-
 // ------------------------=
 // FUNC: parse
 // DESC: Returns whether an explicit compile request first requires saving; never accepts embedded instructions.

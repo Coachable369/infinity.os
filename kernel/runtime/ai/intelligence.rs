@@ -442,7 +442,8 @@ impl Service {
             || ((contains_case(input, b"create ") || contains_case(input, b"build "))
                 && (contains_case(input, b" app")
                     || contains_case(input, b" software")
-                    || contains_case(input, b" program")));
+                    || contains_case(input, b" program")
+                    || contains_case(input, b" game")));
         if complex {
             RequestClass::ComplexGoal
         } else {
@@ -479,7 +480,8 @@ impl Service {
             || contains_case(objective, b"develop"))
             && (contains_case(objective, b"app")
                 || contains_case(objective, b"software")
-                || contains_case(objective, b"program"));
+                || contains_case(objective, b"program")
+                || contains_case(objective, b"game"));
         let goal = Goal {
             id: goal_id,
             owner,

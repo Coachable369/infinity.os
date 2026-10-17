@@ -394,9 +394,15 @@ fn main() {
 // ------------------=
 fn application_creation() {
     use ai::editor_compile_intent::ApplicationStyle;
+    assert!(!ai::generation_timed_out(Some(1),Some(70_000_000_000),Some(100_000_000_000)));
+    assert!(ai::generation_timed_out(Some(1),Some(1),Some(90_000_000_001)));
+    assert!(ai::generation_timed_out(Some(1),Some(299_000_000_000),Some(300_000_000_001)));
     assert_eq!(ai::editor_compile_intent::application_style(b"build a simple UI C based calculator"),Some(ApplicationStyle::Ui));
     assert_eq!(ai::editor_compile_intent::application_style(b"create a basic calculator application"),Some(ApplicationStyle::Terminal));
     assert_eq!(ai::editor_compile_intent::application_style(b"write a graphical calculator app"),Some(ApplicationStyle::Ui));
+    assert_eq!(ai::editor_compile_intent::application_style(b"create a chess game and play me"),Some(ApplicationStyle::Ui));
+    assert_eq!(ai::editor_compile_intent::application_style(b"build a graphical tic-tac-toe game"),Some(ApplicationStyle::Ui));
+    assert_eq!(ai::editor_compile_intent::application_style(b"create a graphical paint application"),Some(ApplicationStyle::Ui));
     for (output, expected) in [
         (b"REPLACE_COMPILE\nint main(void){return 0;}\nEND_ACTION".as_slice(), Some(52)),
         (b"CHAT\nDone\nEND_ACTION\n  ", Some(20)),
@@ -418,7 +424,13 @@ fn application_creation() {
     assert!(preview.replace_generation_preview(&long.argument[..long.argument_len],false));
     assert_eq!(preview.bytes(),b"int main(void) {\n    return 54;\n}");
     assert!(preview.undo());assert!(preview.bytes().is_empty());
-    for request in [b"create a basic calculator application".as_slice(), b"Please build a calculator app.", b"generate a C application"] {
+    let mut large = [b'x'; 5000];
+    large[..16].copy_from_slice(b"REPLACE_COMPILE\n");
+    assert!(long.stage_generated_source(&large));
+    assert_eq!(long.argument_len, large.len() - 16);
+    assert!(long.stage_generated_source(b" \n\tREPLACE_COMPILE\nint main(void){return 9;}"));
+    assert_eq!(&long.argument[..long.argument_len], b"int main(void){return 9;}");
+    for request in [b"create a basic calculator application".as_slice(), b"Please build a calculator app.", b"generate a C application", b"create a chess game and play me", b"build a graphical tic-tac-toe game", b"create a graphical paint application"] {
         assert!(ai::editor_compile_intent::create_application(request));
         let mut panel=ai::Panel::new();
         panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
@@ -659,7 +671,8 @@ fn generated_editor_actions() {
     assert_eq!(panel.take_action(13), Action::None);
     assert!(panel.accept_generated(b"CHAT\nHello", true, true));
     assert_eq!(panel.pending, Action::None);
-    let oversized = [b"INSERT\n".as_slice(), &[b'x'; 4097], b"\nEND_ACTION"].concat();
+    let oversized_body = vec![b'x'; ai::GENERATED_SOURCE_CAPACITY + 1];
+    let oversized = [b"INSERT\n".as_slice(), &oversized_body, b"\nEND_ACTION"].concat();
     assert!(!panel.accept_generated(&oversized, true, true));
     assert!(document.open(&[b'a'; DOCUMENT_CAPACITY]));
     document.set_cursor(4);

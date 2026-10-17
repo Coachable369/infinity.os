@@ -25,6 +25,10 @@ Stable nonzero element IDs are the interaction contract. Applications update an
 existing element by submitting the same ID. The OS produces activation and close
 events; native applications do not receive framebuffer pointers or style tokens.
 
+The semantic canvas supports up to 96 elements. This accommodates dense native
+tools and complete 8 x 8 game boards while keeping all paint, hit testing, theme,
+focus, and typography ownership inside the OS.
+
 ## States and ownership
 
 Button visuals inherit default, focused, hover, pressed, and disabled recipes

@@ -36,6 +36,14 @@ fn main() {
     assert_eq!(native_uikit::poll(),Some(native_uikit::Event{kind:1,id:7,value:0}));
     assert!(native_uikit::request_close());
     assert_eq!(native_uikit::poll(),Some(native_uikit::Event{kind:2,id:0,value:0}));
+    native_uikit::close();
+    assert!(native_uikit::open(640,640,b"Chess"));
+    for id in 1..=native_uikit::MAX_ELEMENTS as u32 {
+        let x=((id-1)%8)*64;let y=((id-1)/8)*48;
+        assert!(native_uikit::upsert(element(id,native_uikit::ElementKind::Button,x,y)));
+    }
+    assert_eq!(native_uikit::presentation().elements.iter().flatten().count(),96);
+    assert!(!native_uikit::upsert(element(97,native_uikit::ElementKind::Button,0,590)));
     native_uikit::close();assert!(!native_uikit::presentation().active);
     assert_eq!(unsafe{native_uikit::INFINITY_NATIVE_UI_SNAPSHOT}[3],0);
 }

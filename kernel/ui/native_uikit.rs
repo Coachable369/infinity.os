@@ -1,7 +1,7 @@
 //! Bounded declarative UI Kit state for hardware-isolated native C applications.
 //! The OS owns styling and hit testing; applications submit only semantic elements.
 
-pub const MAX_ELEMENTS: usize = 32;
+pub const MAX_ELEMENTS: usize = 96;
 pub const TITLE_CAPACITY: usize = 48;
 pub const LABEL_CAPACITY: usize = 32;
 

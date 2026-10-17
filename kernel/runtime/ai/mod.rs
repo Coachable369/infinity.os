@@ -96,6 +96,9 @@ pub struct AiRuntime {
     active_native: ModelId,
     app_owner: Option<usize>,
     app_saved: Option<qwen::service::Conversation>,
+    app_started_ns: Option<u64>,
+    app_progress_ns: Option<u64>,
+    app_output_length: usize,
     chat_owner: [u8; 16],
     requests: RequestApi,
     execution: ExecutionBroker,
@@ -232,10 +235,16 @@ impl AiRuntime {
         };
         self.app_saved = service.suspend_conversation();
         if service.submit(prompt).is_err() {
-            if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
+            if let Some(saved) = self.app_saved.take() {
+                service.restore_conversation(saved);
+            }
             return Err(b"This request exceeds the local model context. Select a smaller passage and retry.");
         }
         self.app_owner = Some(id);
+        let now = crate::ui::performance::monotonic_ns();
+        self.app_started_ns = now;
+        self.app_progress_ns = now;
+        self.app_output_length = 0;
         Ok(())
     }
 
@@ -261,6 +270,17 @@ impl AiRuntime {
             panel.reply(b"App request cancelled. Nothing was changed.");
             crate::ui::app_assistant::write(id, panel);
         }
+        self.clear_app_turn_timing();
+    }
+
+    // ------------------------=
+    // FUNC: clear_app_turn_timing
+    // DESC: Releases the bounded progress watchdog whenever the app-generation model lease ends.
+    // ------------------=
+    fn clear_app_turn_timing(&mut self) {
+        self.app_started_ns = None;
+        self.app_progress_ns = None;
+        self.app_output_length = 0;
     }
 
     // ------------------------=
@@ -268,14 +288,42 @@ impl AiRuntime {
     // DESC: Cooperatively streams app output and stages complete edits without publishing private text to desktop chat or speech.
     // ------------------=
     fn poll_app_turn(&mut self) -> bool {
-        let Some(id) = self.app_owner else { return false; };
-        let Some(service) = self.qwen.as_mut() else { self.app_owner = None; return false; };
+        let Some(id) = self.app_owner else {
+            return false;
+        };
+        let Some(service) = self.qwen.as_mut() else {
+            self.app_owner = None;
+            self.clear_app_turn_timing();
+            return false;
+        };
         let mut budget = qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
         while budget.next(crate::ui::performance::monotonic_ns()) {
             let result = service.poll();
+            let now = crate::ui::performance::monotonic_ns();
+            if crate::ui::app_assistant::generation_timed_out(
+                self.app_started_ns,
+                self.app_progress_ns,
+                now,
+            ) {
+                service.cancel();
+                let mut panel = crate::ui::app_assistant::read(id);
+                panel.generation = crate::ui::app_assistant::GenerationStatus::Failed;
+                panel.reply(b"Generation stopped after making no bounded progress. The model and microphone are available again; retry the request.");
+                crate::ui::app_assistant::write(id, panel);
+                if let Some(saved) = self.app_saved.take() {
+                    service.restore_conversation(saved);
+                } else {
+                    service.clear_conversation();
+                }
+                self.app_owner = None;
+                self.clear_app_turn_timing();
+                return true;
+            }
             let framed = if result.is_ok() {
                 crate::ui::app_assistant::Panel::completed_output_length(service.output())
-            } else { None };
+            } else {
+                None
+            };
             if let Some(end) = framed {
                 let mut output = [0u8; 16384];
                 output[..end].copy_from_slice(&service.output()[..end]);
@@ -283,11 +331,17 @@ impl AiRuntime {
                 let mut panel = crate::ui::app_assistant::read(id);
                 panel.generation = if panel.accept_for_owner(id, &output[..end], true) {
                     crate::ui::app_assistant::GenerationStatus::Complete
-                } else { crate::ui::app_assistant::GenerationStatus::Failed };
+                } else {
+                    crate::ui::app_assistant::GenerationStatus::Failed
+                };
                 crate::ui::app_assistant::write(id, panel);
-                if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
-                else { service.clear_conversation(); }
+                if let Some(saved) = self.app_saved.take() {
+                    service.restore_conversation(saved);
+                } else {
+                    service.clear_conversation();
+                }
                 self.app_owner = None;
+                self.clear_app_turn_timing();
                 return true;
             }
             if result.is_err() || !service.busy() {
@@ -297,24 +351,46 @@ impl AiRuntime {
                     panel.reply(b"Local generation failed. Nothing was changed; please retry.");
                 } else {
                     let output = service.output();
-                    let end = output.iter().rposition(|b| !b.is_ascii_whitespace()).map_or(0, |i| i + 1);
-                    panel.generation = if panel.accept_for_owner(id, &output[..end], service.completed()) {
-                        crate::ui::app_assistant::GenerationStatus::Complete
-                    } else { crate::ui::app_assistant::GenerationStatus::Failed };
+                    let end = output
+                        .iter()
+                        .rposition(|b| !b.is_ascii_whitespace())
+                        .map_or(0, |i| i + 1);
+                    panel.generation =
+                        if panel.accept_for_owner(id, &output[..end], service.completed()) {
+                            crate::ui::app_assistant::GenerationStatus::Complete
+                        } else {
+                            crate::ui::app_assistant::GenerationStatus::Failed
+                        };
                 }
                 crate::ui::app_assistant::write(id, panel);
-                if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
-                else { service.clear_conversation(); }
+                if let Some(saved) = self.app_saved.take() {
+                    service.restore_conversation(saved);
+                } else {
+                    service.clear_conversation();
+                }
                 self.app_owner = None;
+                self.clear_app_turn_timing();
                 return true;
             }
             if result == Ok(true) {
                 let mut panel = crate::ui::app_assistant::read(id);
-                if id == 2 && crate::ui::app_assistant::editor_compile_intent::create_application(
-                    &panel.request[..panel.request_len]) {
-                    panel.stage_generated_source(service.output());
+                let source_generation = id == 2
+                    && crate::ui::app_assistant::editor_compile_intent::create_application(
+                        &panel.request[..panel.request_len],
+                    );
+                let progressed = if source_generation {
+                    panel.stage_generated_source(service.output())
+                } else {
+                    panel.reply(service.output());
+                    true
+                };
+                if source_generation {
                     panel.reply(b"Generating complete C source for the editor...");
-                } else { panel.reply(service.output()); }
+                }
+                if progressed {
+                    self.app_output_length = service.output().len();
+                    self.app_progress_ns = now;
+                }
                 crate::ui::app_assistant::write(id, panel);
                 return true;
             }
@@ -481,11 +557,14 @@ impl AiRuntime {
 
     // ------------------------=
     // FUNC: submit_chat_from
-    // DESC: Applies shared routing and execution boundaries to a typed desktop or voice chat request.
+    // DESC: Applies shared routing and execution boundaries while letting explicit new user input interrupt a stalled app-generation lease.
     // ------------------=
     fn submit_chat_from(&mut self, origin: RequestOrigin) -> bool {
-        if self.app_owner.is_some()
-            || self.execution.busy()
+        if self.app_owner.is_some() {
+            self.cancel_app_turn();
+        }
+        self.interrupt_active_intelligence();
+        if self.execution.busy()
             || !self.chat.enabled()
             || self.qwen.as_ref().is_some_and(|s| s.busy())
         {
@@ -552,12 +631,33 @@ impl AiRuntime {
             return false;
         }
         self.chat.generation_state = chat::GenerationState::Running;
-        self.qwen_metrics.begin(submitted_ns, service.reused_tokens, service.prefill_tokens);
+        self.qwen_metrics
+            .begin(submitted_ns, service.reused_tokens, service.prefill_tokens);
         self.qwen_tokens = 0;
         self.qwen_decode_ns = 0;
         self.qwen_first_token_ns = None;
         self.chat.begin_native_turn();
         true
+    }
+
+    // ------------------------=
+    // FUNC: interrupt_active_intelligence
+    // DESC: Checkpoints and releases an active plan when the user explicitly submits a newer text or voice objective.
+    // ------------------=
+    fn interrupt_active_intelligence(&mut self) {
+        let Some(id) = self.intelligence_goal.take() else {
+            return;
+        };
+        let owner = self.chat_owner;
+        let mut executor = NativePlanExecutor {
+            broker: &mut self.execution,
+            active: &mut self.intelligence_execution,
+            result: &mut self.intelligence_result,
+            origin: RequestOrigin::DesktopChat,
+        };
+        let _ = self.intelligence.interrupt(id, owner, &mut executor);
+        self.intelligence_summary = None;
+        self.intelligence_checkpoint_pending = true;
     }
     // ------------------------=
     // FUNC: take_control
@@ -565,7 +665,12 @@ impl AiRuntime {
     // ------------------=
     pub fn take_control(&mut self, owner: [u8; 16], allowed: bool) -> Option<control::Command> {
         let origin = self.execution.pending_origin();
-        let context = PolicyContext { requester: owner, owner: self.chat_owner, chat_enabled: self.chat.enabled(), desktop_allowed: allowed };
+        let context = PolicyContext {
+            requester: owner,
+            owner: self.chat_owner,
+            chat_enabled: self.chat.enabled(),
+            desktop_allowed: allowed,
+        };
         match self.execution.take(context) {
             Ok(Some(request)) => Some(request.command),
             Ok(None) => None,
@@ -752,6 +857,9 @@ impl AiRuntime {
             active_native: chat::HERMES_MODEL_ID,
             app_owner: None,
             app_saved: None,
+            app_started_ns: None,
+            app_progress_ns: None,
+            app_output_length: 0,
             chat_owner: [0; 16],
             requests: RequestApi::new(),
             execution: ExecutionBroker::new(),

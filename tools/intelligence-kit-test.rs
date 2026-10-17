@@ -210,6 +210,29 @@ fn main() {
         Service::classify(b"hello there", false),
         RequestClass::Conversation
     );
+    assert_eq!(
+        Service::classify(b"create a chess game and play me", false),
+        RequestClass::ComplexGoal
+    );
+    assert_eq!(
+        Service::classify(b"build a graphical tic-tac-toe game", false),
+        RequestClass::ComplexGoal
+    );
+
+    let mut interrupted = runtime::ai::AiRuntime::new();
+    interrupted.bind_chat_owner(owner);
+    for byte in b"open browser and then open text editor" {
+        assert!(interrupted.chat.push_input(*byte));
+    }
+    assert!(interrupted.submit_voice_chat());
+    for byte in b"open settings" {
+        assert!(interrupted.chat.push_input(*byte));
+    }
+    assert!(interrupted.submit_voice_chat());
+    assert_eq!(
+        interrupted.take_control(owner, true),
+        Some(runtime::ai::control::Command::Settings)
+    );
 
     for voice_request in [false, true] {
         let mut ai = runtime::ai::AiRuntime::new();
