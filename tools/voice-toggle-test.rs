@@ -719,6 +719,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::stop(owner);conversation::poll();
 
     clipped_wake_gate_tests(owner);
+    duplicate_transcript_tests(owner);
     wake_gate_tests(owner);
     repeated_reply_wake_tests(owner);
     next_turn_capture_boundary_tests(owner);
@@ -726,6 +727,33 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
     recognition_failure_recovery_tests(owner);
+}
+
+// ------------------------=
+// FUNC: duplicate_transcript_tests
+// DESC: Exercises repeated wake prefixes and repeated recognizer command copies through the production voice admission path.
+// ------------------=
+fn duplicate_transcript_tests(owner: runtime::execution::SecurityIdentity) {
+    PROMPTS.lock().unwrap().clear();
+    assert!(conversation::start(owner));
+    for transcript in [
+        b"Infinity Infinity open settings".as_slice(),
+        b"Infinity open settings Infinity open settings".as_slice(),
+        b"Infinity open settings Infinity open settings Infinity open settings".as_slice(),
+        b"Infinity open settings open settings open settings".as_slice(),
+    ] {
+        recognize_voice(transcript);
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(), b"open settings");
+        complete_voice_reply();
+    }
+    recognize_voice(b"Infinity explain the Infinity operating system");
+    assert_eq!(
+        PROMPTS.lock().unwrap().last().unwrap(),
+        b"explain the Infinity operating system"
+    );
+    complete_voice_reply();
+    conversation::stop(owner);
+    conversation::poll();
 }
 
 // ------------------------=

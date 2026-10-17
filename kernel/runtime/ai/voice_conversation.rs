@@ -217,18 +217,62 @@ fn normalize_command(input: &[u8], output: &mut [u8]) -> Option<usize> {
             '\u{2026}' => b"...",
             _ if ch.is_whitespace() => b" ",
             _ if ch.is_ascii() && !ch.is_ascii_control() => {
-                if length == output.len() { return None; }
-                output[length] = ch as u8; length += 1;
+                if length == output.len() {
+                    return None;
+                }
+                output[length] = ch as u8;
+                length += 1;
                 continue;
             }
             _ => return None,
         };
-        if bytes == b" " && (length == 0 || output[length - 1] == b' ') { continue; }
-        if bytes.len() > output.len() - length { return None; }
-        output[length..length + bytes.len()].copy_from_slice(bytes); length += bytes.len();
+        if bytes == b" " && (length == 0 || output[length - 1] == b' ') {
+            continue;
+        }
+        if bytes.len() > output.len() - length {
+            return None;
+        }
+        output[length..length + bytes.len()].copy_from_slice(bytes);
+        length += bytes.len();
     }
-    while length != 0 && output[length - 1] == b' ' { length -= 1; }
-    (length != 0).then_some(length)
+    while length != 0 && output[length - 1] == b' ' {
+        length -= 1;
+    }
+    (length != 0).then_some(deduplicated_normalized_length(&output[..length]))
+}
+
+// ------------------------=
+// FUNC: deduplicated_normalized_length
+// DESC: Collapses two or more exact multiword command copies from one recognizer result without altering ordinary repeated words.
+// ------------------=
+fn deduplicated_normalized_length(input: &[u8]) -> usize {
+    for split in 1..input.len() {
+        if input[split] != b' ' || input[..split].iter().filter(|byte| **byte == b' ').count() == 0 {
+            continue;
+        }
+        let candidate = &input[..split];
+        let mut at = split;
+        let mut copies = 1;
+        while at < input.len() {
+            while at < input.len() && input[at] == b' ' {
+                at += 1;
+            }
+            if input.len().saturating_sub(at) < candidate.len()
+                || !input[at..at + candidate.len()]
+                    .iter()
+                    .zip(candidate)
+                    .all(|(left, right)| left.eq_ignore_ascii_case(right))
+            {
+                break;
+            }
+            at += candidate.len();
+            copies += 1;
+        }
+        if copies > 1 && at == input.len() {
+            return candidate.len();
+        }
+    }
+    input.len()
 }
 // ------------------------=
 // FUNC: clear_pending_prompt
@@ -1200,11 +1244,20 @@ pub fn poll() -> bool {
                                 &(&*(&raw const TRANSCRIPT))[..n],
                                 configured_wake_word(OWNER),
                             ) {
-                                wake_word::Match::Absent if RECOGNITION_WAKE_AUTHORIZED => command = Some((0, n)),
+                                wake_word::Match::Absent if RECOGNITION_WAKE_AUTHORIZED => {
+                                    command = Some((0, n))
+                                }
                                 wake_word::Match::Absent => unaddressed = true,
                                 wake_word::Match::WakeOnly => wake_only = true,
                                 wake_word::Match::Command { start } => {
-                                    command = Some((start, n));
+                                    command = Some((
+                                        start,
+                                        wake_word::deduplicated_command_end(
+                                            &(&*(&raw const TRANSCRIPT))[..n],
+                                            configured_wake_word(OWNER),
+                                            start,
+                                        ),
+                                    ));
                                 }
                             }
                         }
