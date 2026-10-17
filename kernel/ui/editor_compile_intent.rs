@@ -14,6 +14,24 @@ pub enum ApplicationKind {
 }
 
 // ------------------------=
+// FUNC: requests_opponent
+// DESC: Recognizes explicit play-against-me authority without granting autonomous interaction for mere game creation.
+// ------------------=
+pub fn requests_opponent(input:&[u8])->bool {
+    let Ok(text)=core::str::from_utf8(input) else{return false;};
+    let text=text.trim().trim_end_matches('.');
+    if !text.split_ascii_whitespace().next().is_some_and(|s|s.eq_ignore_ascii_case("play")) && !create_application(input) {return false;}
+    if text.split_ascii_whitespace().any(|s|["not","never","don't","without"].iter().any(|v|s.eq_ignore_ascii_case(v))) {return false;}
+    let mut words=text.split_ascii_whitespace().rev();
+    if !words.next().is_some_and(|s|s.eq_ignore_ascii_case("me")){return false;}
+    match words.next() {
+        Some(word) if word.eq_ignore_ascii_case("play")=>true,
+        Some(word) if word.eq_ignore_ascii_case("against")=>words.next().is_some_and(|s|s.eq_ignore_ascii_case("play")),
+        _=>false,
+    }
+}
+
+// ------------------------=
 // FUNC: application_kind
 // DESC: Classifies one direct, bounded software-creation request without granting authority to quoted, negated, or explanatory text.
 // ------------------=

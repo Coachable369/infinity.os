@@ -49,6 +49,10 @@ x25519-dalek = { version = "3.0.0", default-features = false, features = ["stati
 zeroize = { version = "1.8.1", default-features = false }
 
 [[bin]]
+name = "application-interaction-model-test"
+path = "../application-interaction-model-test.rs"
+
+[[bin]]
 name = "https-service-test"
 path = "../https-service-test.rs"
 

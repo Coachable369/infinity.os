@@ -17,6 +17,8 @@ struct Lease {
     source_length:usize,
     launch:bool,
     compile_output_reported:bool,
+    interaction_objective:[u8;512],
+    interaction_length:usize,
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ReplyTarget { Assistant, Console }
@@ -118,7 +120,15 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
         start_source(snapshot,snapshot.editor_document.bytes(),&path[..length],ReplyTarget::Assistant,true)?;
     }
     open_build_transcript(console,&path[..length],28);
-    if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {lease.launch=launch_result;}
+    if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {
+        lease.launch=launch_result;
+        let panel=assistant::read(2);
+        let request=&panel.request[..panel.request_len];
+        if launch_result && assistant::editor_compile_intent::create_application(request)
+            && assistant::editor_compile_intent::requests_opponent(request) && request.len()<=512 {
+            lease.interaction_objective[..request.len()].copy_from_slice(request);lease.interaction_length=request.len();
+        }
+    }
     Ok(())
 }}
 
@@ -152,7 +162,7 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],re
     name[24..].copy_from_slice(b".elf");
     let source_length=source_path.len().min(95);
     REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
-        launch:false,compile_output_reported:false });
+        launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0 });
     Ok(())
 }
 
@@ -394,7 +404,12 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     }
     let lease=core::ptr::addr_of_mut!(LEASE).replace(None).unwrap();
     crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(lease.capability,lease.owner);});
-    if launch_length>0 {launch(console,&launch_path[..launch_length]);}
+    if launch_length>0 {
+        launch(console,&launch_path[..launch_length]);
+        if APP_ACTIVE && lease.interaction_length>0 {
+            let _=crate::runtime::ai::with_ai_runtime(|ai|ai.start_application_agent(console.current_user.0,console.current_session.0,&lease.interaction_objective[..lease.interaction_length],true));
+        }
+    }
 }}
 
 // ------------------------=
@@ -435,6 +450,7 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
     match crate::runtime::native_app_task::Task::start(&bytes[..length],owner,2,
         crate::runtime::native_memory::memory_mut(),kernel,controller,u64::MAX) {
         Ok(task)=>{
+            let _=crate::runtime::ai::application_host::attach(console.current_user.0,console.current_session.0);
             APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
             APP_INPUT=native_input::Input::new();APP_CANCEL=false;APP_LINE_OPEN=false;
             console.reset_input();
@@ -496,6 +512,9 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         if (0x1140..=0x1142).contains(&op) {
             return native_uikit_syscall(tables,op,args);
         }
+        if (0x1150..=0x1154).contains(&op) {
+            return native_interaction_syscall(tables,op,args,console.current_session.0);
+        }
         if op!=0x1002{return -88;}
         let length=args[1].min(4096) as usize;
         if length>4096-APP_OUTPUT_LENGTH{return -28;}
@@ -523,6 +542,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if state==State::Runnable{return;}
     let ui_was_active=crate::ui::native_uikit::presentation().active;
     let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;
+    crate::runtime::ai::application_host::detach();
     let released=task.release(crate::runtime::native_memory::memory_mut()).is_ok();
     crate::ui::native_uikit::close();APP_UI_REVISION=0;
     if ui_was_active {
@@ -540,6 +560,31 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         console.redraw();
     }
 }}
+
+// ------------------------=
+// FUNC: native_interaction_syscall
+// DESC: Copies bounded interaction packets across the process boundary without trusting application pointers or identity.
+// ------------------=
+fn native_interaction_syscall<T:crate::runtime::native_memory::PageTable>(tables:&mut T,op:u64,args:[u64;6],session:[u8;16])->i64 {
+    use crate::runtime::native_memory::{copy_from_user,copy_to_user};
+    let length=match op {0x1150=>2072,0x1151=>192,0x1152=>8,0x1153=>72,0x1154=>16,_=>return -3};
+    if args[1]!=length as u64 {return -3;}
+    let mut input=[0u8;2072];
+    if copy_from_user(tables,args[0],&mut input[..length]).is_err(){return -14;}
+    // Validate the complete destination before consuming a deliver-once request.
+    if op==0x1153 && copy_to_user(tables,args[0],&input[..length]).is_err(){return -14;}
+    let mut output=[0u8;72];
+    match crate::runtime::ai::application_host::syscall(op,session,&input[..length],&mut output,crate::runtime::ai::qwen::workers::clock_ns()) {
+        Ok(written)=>{
+            if written>0 && copy_to_user(tables,args[0],&output[..written]).is_err(){return -14;}
+            written as i64
+        },
+        Err(crate::runtime::ai::application::Error::Denied)=>-13,
+        Err(crate::runtime::ai::application::Error::Busy)=>-16,
+        Err(crate::runtime::ai::application::Error::Stale)=>-116,
+        Err(_)=>-3,
+    }
+}
 
 // ------------------------=
 // FUNC: native_uikit_syscall

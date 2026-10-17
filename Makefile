@@ -75,6 +75,7 @@ AUTHENTICATION_MOTION_ASSETS := assets/desktop/infinity-auth-success-stage-v1.bm
 KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) $(AUTHENTICATION_MOTION_ASSETS) $(SYSTEM_SOUND_ASSETS) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt) assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
 KERNEL_SOURCES += assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
+KERNEL_SOURCES += $(wildcard sdk/c/include/*.h sdk/c/include/infinity/*.h sdk/c/compiler-headers/*.h)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
 	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
@@ -491,6 +492,7 @@ object-vm-test:
 .PHONY: editor-assistant-test native-uikit-test authentication-logo-test authentication-motion-test
 native-uikit-test:
 	@mkdir -p build/behavior-tests
+	@sh tools/application-interaction-test.sh
 	@rustc --edition=2021 -A warnings tools/native-uikit-test.rs -o build/behavior-tests/native-uikit-test
 	@build/behavior-tests/native-uikit-test
 	@sh tools/native-c-probe/build-uikit-example.sh

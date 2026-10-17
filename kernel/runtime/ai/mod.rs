@@ -1,3 +1,7 @@
+pub mod application;
+pub mod application_host;
+pub mod application_agent;
+pub mod application_decision;
 pub mod agent;
 pub mod broker;
 pub mod chat;
@@ -96,6 +100,8 @@ pub struct AiRuntime {
     active_native: ModelId,
     app_owner: Option<usize>,
     app_saved: Option<qwen::service::Conversation>,
+    application_agent: Option<application_agent::Agent>,
+    application_saved: Option<qwen::service::Conversation>,
     app_started_ns: Option<u64>,
     app_progress_ns: Option<u64>,
     app_output_length: usize,
@@ -476,6 +482,7 @@ impl AiRuntime {
     // ------------------=
     pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
         if self.chat_owner != owner {
+            self.stop_application_agent();
             self.cancel_app_turn();
             self.execution.cancel();
             self.intelligence = intelligence::Service::new();
@@ -503,6 +510,7 @@ impl AiRuntime {
     // DESC: Cancels active native generation while preserving its partial response.
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
+        self.stop_application_agent();
         if self.app_owner.is_some() { return false; }
         if self.execution.cancel() {
             self.chat.generation_state = chat::GenerationState::Cancelled;
@@ -560,6 +568,7 @@ impl AiRuntime {
     // DESC: Applies shared routing and execution boundaries while letting explicit new user input interrupt a stalled app-generation lease.
     // ------------------=
     fn submit_chat_from(&mut self, origin: RequestOrigin) -> bool {
+        self.stop_application_agent();
         if self.app_owner.is_some() {
             self.cancel_app_turn();
         }
@@ -748,6 +757,7 @@ impl AiRuntime {
     // DESC: Advances local inference outside rendering and publishes model-produced text only.
     // ------------------=
     pub fn poll_qwen(&mut self) -> bool {
+        if self.application_agent.is_some() && self.poll_application_agent() {return true;}
         if self.intelligence_goal.is_some() && self.poll_intelligence_runtime() {
             return true;
         }
@@ -857,6 +867,8 @@ impl AiRuntime {
             active_native: chat::HERMES_MODEL_ID,
             app_owner: None,
             app_saved: None,
+            application_agent: None,
+            application_saved: None,
             app_started_ns: None,
             app_progress_ns: None,
             app_output_length: 0,

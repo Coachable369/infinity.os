@@ -69,7 +69,9 @@ impl ConsoleRuntime {
         let mut panel=assistant::read(id);
         if input.len()>panel.input.len() {return false;}
         panel.input[..input.len()].copy_from_slice(input);panel.length=input.len();panel.caret=input.len();
-        if !panel.propose_contextual(id) && !panel.propose(id==2,self.assistant_revision()) {return false;}
+        if !panel.propose_contextual(id) && !panel.propose(id==2,self.assistant_revision()) {
+            return id==1 && self.dispatch_native_interaction(input);
+        }
         panel.request=panel.input;panel.request_len=panel.length;panel.length=0;panel.caret=0;
         assistant::write(id,panel);
         self.apply_window_assistant(id)
@@ -80,12 +82,30 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn reset_app_assistant_session(&mut self) {
         if self.assistant_session != self.current_session {
+            crate::runtime::ai::with_ai_runtime(|ai| ai.stop_application_agent());
             crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_app_turn());
             assistant::reset();
             self.command_history=infinity_enterprise_core::History::new();
             crate::ui::clipboard::with_shared(|c|c.session(self.current_session.0,false));
             self.assistant_session = self.current_session;
         }
+    }
+    // ------------------------=
+    // FUNC: dispatch_native_interaction
+    // DESC: Routes an explicitly app-directed request through the same authorized model session for typed and voice input.
+    // ------------------=
+    fn dispatch_native_interaction(&mut self,input:&[u8])->bool {
+        if !self.ai_chat_allowed() || crate::runtime::ai::application_host::context().is_none(){return false;}
+        if input.eq_ignore_ascii_case(b"stop") || input.eq_ignore_ascii_case(b"stop playing") || input.eq_ignore_ascii_case(b"pause") {
+            crate::runtime::ai::with_ai_runtime(|ai|ai.stop_application_agent());
+            let mut panel=assistant::read(1);panel.reply(b"AI control paused. You can continue using the app.");assistant::write(1,panel);return true;
+        }
+        // Questions remain conversation, never implicit permission to manipulate an app.
+        let Ok(text)=core::str::from_utf8(input) else{return false;};
+        let verb=text.split_ascii_whitespace().next().unwrap_or("");
+        if !["play","move","place","select","set","add","remove","delete","insert","draw","undo","redo"].iter().any(|v|verb.eq_ignore_ascii_case(v))
+            || text.split_ascii_whitespace().any(|s|["not","never","don't"].iter().any(|v|s.eq_ignore_ascii_case(v))) {return false;}
+        crate::runtime::ai::with_ai_runtime(|ai|ai.start_application_agent(self.current_user.0,self.current_session.0,input,assistant::editor_compile_intent::requests_opponent(input))).is_ok()
     }
     // ------------------------=
     // FUNC: assistant_owner
@@ -354,6 +374,7 @@ impl ConsoleRuntime {
         }
         let direct = panel.propose(id == 2, self.assistant_revision());
         if !direct {
+            if id==1 && self.dispatch_native_interaction(&panel.input[..panel.length]) {return;}
             // Unsupported intents still retain only the prompt supplied to this app.
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
