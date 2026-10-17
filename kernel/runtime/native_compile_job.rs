@@ -161,3 +161,13 @@ pub unsafe fn result<R>(owner:SecurityIdentity,read:impl FnOnce(Status,&[u8],&[u
     if job.owner!=owner || matches!(job.status,Status::Idle|Status::Compile|Status::Link) {return None;}
     Some(read(job.status,&job.binary[..job.binary_length],&job.diagnostics[..job.diagnostic_length],job.truncated))
 }
+
+// ------------------------=
+// FUNC: stage_diagnostics
+// DESC: Borrows diagnostics from one exact in-progress stage transition so the command window can report compiler output before linking replaces it.
+// ------------------=
+pub unsafe fn stage_diagnostics<R>(owner:SecurityIdentity,expected:Status,read:impl FnOnce(&[u8],bool)->R)->Option<R> {
+    let job=&*(&raw const JOB);
+    if job.owner!=owner || job.status!=expected {return None;}
+    Some(read(&job.diagnostics[..job.diagnostic_length],job.truncated))
+}

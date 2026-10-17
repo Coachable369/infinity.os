@@ -141,6 +141,18 @@ def wait_build(guest, previous, expected):
     raise AssertionError(("Native build deadline", transitions))
 
 # ------------------------=
+# FUNC: assert_workflow
+# DESC: Verifies the command, compiler output, publication, launch announcement, and running-process transitions exposed by the installed OS.
+# ------------------=
+def assert_workflow(guest):
+    workflow = read(guest, "INFINITY_NATIVE_WORKFLOW_SNAPSHOT", 9)
+    assert workflow[:2] == (0x494e4643574f524b, 1)
+    assert workflow[2] == workflow[8] and workflow[2] % 2 == 0
+    assert workflow[3] == 5 and workflow[4] > 4 and workflow[6] > 0
+    expected = sum(1 << stage for stage in (1, 2, 3, 4, 5))
+    assert workflow[7] & expected == expected
+
+# ------------------------=
 # FUNC: compile_document
 # DESC: Requests compilation through the actual attached AI composer and confirms through its normal review button when required.
 # ------------------=
@@ -262,6 +274,7 @@ def create_application(guest):
     compiled = wait_build(guest, before, 3)
     ui.wait_feature(guest, lambda p: p[12] == 1)
     assert read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)[3] == 2
+    assert_workflow(guest)
     guest.screenshot("generated-calculator-running")
     for expression in ("2 + 3", "9 * 6", "quit"):
         ui.text(guest, expression)
@@ -399,6 +412,7 @@ def main():
             if app[3] >= 3:
                 assert app[3] == 3 and app[6] == 54, app
                 report["application"] = app
+                assert_workflow(guest)
                 break
             time.sleep(.2)
         else:

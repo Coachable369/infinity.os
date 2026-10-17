@@ -7,7 +7,14 @@ mod native_input;
 static mut APP_INPUT:native_input::Input=native_input::Input::new();
 static mut APP_CANCEL:bool=false;
 static mut APP_LINE_OPEN:bool=false;
-struct Lease { owner: SecurityIdentity, capability:u64, name:[u8;28], launch: bool }
+struct Lease {
+    owner: SecurityIdentity,
+    capability:u64,
+    name:[u8;28],
+    source_length:usize,
+    launch:bool,
+    compile_output_reported:bool,
+}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ReplyTarget { Assistant, Console }
 static mut LEASE: Option<Lease> = None;
@@ -21,6 +28,9 @@ static mut APP_OUTPUT_LENGTH:usize=0;
 pub static mut INFINITY_NATIVE_APP_SNAPSHOT:[u64;8]=[0x494e464341505031,1,0,0,0,0,0,0];
 #[no_mangle]
 pub static mut INFINITY_NATIVE_APP_NAME:[u8;28]=[0;28];
+#[no_mangle]
+pub static mut INFINITY_NATIVE_WORKFLOW_SNAPSHOT:[u64;9]=[0x494e4643574f524b,1,0,0,0,0,0,0,0];
+static mut WORKFLOW_FLAGS:u64=0;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(super) enum StartError {
@@ -60,8 +70,18 @@ impl crate::storage::object::ObjectCapabilityPolicy for Lease {
 // FUNC: start
 // DESC: Starts an approved immutable editor snapshot, reclaiming expired authority before issuing its publication lease.
 // ------------------=
-pub(super) fn start(console:&ConsoleRuntime)->Result<(),StartError> {unsafe {
-    start_source(console,console.editor_document.bytes(),ReplyTarget::Assistant,true)
+pub(super) fn start(console:&mut ConsoleRuntime)->Result<(),StartError> {unsafe {
+    let mut path=[0u8;95];
+    let source_path=if console.editor_document_path_length>0 {
+        &console.editor_document_path[..console.editor_document_path_length]
+    }else{b"<editor-buffer>"};
+    let path_length=source_path.len().min(path.len());path[..path_length].copy_from_slice(&source_path[..path_length]);
+    {
+        let snapshot:&ConsoleRuntime=console;
+        start_source(snapshot,snapshot.editor_document.bytes(),&path[..path_length],ReplyTarget::Assistant,true)?;
+    }
+    open_build_transcript(console,&path[..path_length],28);
+    Ok(())
 }}
 
 // ------------------------=
@@ -85,7 +105,11 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
     console.editor_document_path[..length].copy_from_slice(&path[..length]);console.editor_document_path_length=length;
     console.editor_document_name[..name.len()].copy_from_slice(&name);console.editor_document_name_length=name.len();
     console.editor_document.save();console.detect_editor_language();
-    start_source(console,console.editor_document.bytes(),ReplyTarget::Assistant,true)?;
+    {
+        let snapshot:&ConsoleRuntime=console;
+        start_source(snapshot,snapshot.editor_document.bytes(),&path[..length],ReplyTarget::Assistant,true)?;
+    }
+    open_build_transcript(console,&path[..length],28);
     if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {lease.launch=launch_result;}
     Ok(())
 }}
@@ -94,7 +118,7 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
 // FUNC: start_source
 // DESC: Starts one immutable source snapshot for an explicit UI or console owner without ambient filesystem access.
 // ------------------=
-unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],reply:ReplyTarget,requires_ai:bool)->Result<(),StartError> {
+unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],reply:ReplyTarget,requires_ai:bool)->Result<(),StartError> {
     if core::ptr::addr_of!(LEASE).read().is_some() {return Err(StartError::Busy);}
     if !active(console) {return Err(StartError::SessionUnavailable);}
     if requires_ai && !console.ai_chat_allowed() {return Err(StartError::AiDisabled);}
@@ -118,7 +142,53 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],reply:ReplyTarget,re
     let mut name=[0;28];name[..8].copy_from_slice(b"program-");
     for i in 0..16 {name[8+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
     name[24..].copy_from_slice(b".elf");
-    REPLY_TARGET=reply;LEASE=Some(Lease{owner,capability,name,launch:false});Ok(())
+    let source_length=source_path.len().min(95);
+    REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
+        launch:false,compile_output_reported:false });
+    Ok(())
+}
+
+// ------------------------=
+// FUNC: publish_workflow
+// DESC: Publishes structured compile and launch transitions for installed-runtime behavioral verification.
+// ------------------=
+unsafe fn publish_workflow(stage:u64,command_length:usize,diagnostic_length:usize,output_length:usize) {
+    let state=&mut *(&raw mut INFINITY_NATIVE_WORKFLOW_SNAPSHOT);
+    state[2]=state[2].wrapping_add(1)|1;
+    if stage==1 {state[4]=0;state[5]=0;state[6]=0;state[7]=0;}
+    WORKFLOW_FLAGS|=1u64<<stage.min(63);
+    state[3]=stage;
+    if command_length>0 {state[4]=command_length as u64;}
+    if diagnostic_length>0 {state[5]=diagnostic_length as u64;}
+    if output_length>0 {state[6]=output_length as u64;}
+    state[7]=WORKFLOW_FLAGS;
+    state[2]=state[2].wrapping_add(1);state[8]=state[2];
+}
+
+// ------------------------=
+// FUNC: open_build_transcript
+// DESC: Opens or focuses the command window and records the user-facing native compilation command without discarding an existing terminal transcript.
+// ------------------=
+unsafe fn open_build_transcript(console:&mut ConsoleRuntime,source_path:&[u8],output_length:usize) {
+    WORKFLOW_FLAGS=0;
+    console.command_window_suspended=console.command_window.visible;
+    console.open_command_window();
+    console.output.write_segments(&[b"$ cc ",source_path]);
+    publish_workflow(1,5+source_path.len(),0,output_length);
+    console.redraw();
+}
+
+// ------------------------=
+// FUNC: report_stage_output
+// DESC: Writes bounded compiler or linker diagnostics to the command window, including an explicit successful no-diagnostics result.
+// ------------------=
+fn report_stage_output(console:&mut ConsoleRuntime,label:&[u8],diagnostics:&[u8],truncated:bool) {
+    if diagnostics.is_empty() {
+        console.output.write_segments(&[label,b": no diagnostics."]);
+    }else{
+        for line in diagnostics.split(|byte|*byte==b'\n') {if !line.is_empty(){console.output.write_line(line);}}
+        if truncated {console.output.write_line(b"Compiler output was truncated to its safe display limit.");}
+    }
 }
 
 // ------------------------=
@@ -149,8 +219,8 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
     let Ok((_,length))=crate::storage::object_read_path(path,None,&mut source) else{
         console.output.write_line(b"cc: source object was not found or exceeds the native source limit.");return true;
     };
-    match start_source(console,&source[..length],ReplyTarget::Console,false) {
-        Ok(())=>console.output.write_line(b"Native C build queued."),
+    match start_source(console,&source[..length],path,ReplyTarget::Console,false) {
+        Ok(())=>open_build_transcript(console,path,28),
         Err(StartError::Busy)=>console.output.write_line(b"cc: another native build is active."),
         Err(StartError::SessionUnavailable)=>console.output.write_line(b"cc: an authenticated session is required."),
         Err(StartError::ClockUnavailable)=>console.output.write_line(b"cc: the system clock is not ready."),
@@ -168,18 +238,28 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
 // ------------------=
 pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     poll_app(console);
-    let Some(lease)=(&*(&raw const LEASE)).as_ref() else{return;};
+    let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() else{return;};
     let owner=SecurityIdentity(console.current_session.0);
     let now=crate::runtime::ai::qwen::workers::clock_ns();
     let target=REPLY_TARGET;
     let mut launch_path=[0u8;95];let mut launch_length=0;
     let allowed=active(console)&&(target==ReplyTarget::Console||console.ai_chat_allowed()&&console.assistant_owner_alive(2))
         && <Lease as crate::storage::object::ObjectCapabilityPolicy>::authorize(lease,crate::storage::object::ObjectOperation::Create,None);
-    if !job::poll(owner,allowed,now){return;}
+    let finished=job::poll(owner,allowed,now);
+    if lease.owner==owner && job::status(owner)==job::Status::Link && !lease.compile_output_reported {
+        job::stage_diagnostics(owner,job::Status::Link,|diagnostics,truncated| {
+            report_stage_output(console,b"Compiler output",diagnostics,truncated);
+            publish_workflow(2,5+lease.source_length,diagnostics.len(),lease.name.len());
+        });
+        lease.compile_output_reported=true;
+        console.redraw();
+    }
+    if !finished{return;}
     if lease.owner==owner {
         let mut panel=assistant::read(2);
         job::result(owner,|status,binary,diagnostics,_truncated| {
             if status==job::Status::Complete {
+                report_stage_output(console,b"Linker output",diagnostics,_truncated);
                 let prefix=b"/home/default/";
                 let mut path=[0;95];path[..prefix.len()].copy_from_slice(prefix);
                 path[prefix.len()..prefix.len()+lease.name.len()].copy_from_slice(&lease.name);
@@ -197,19 +277,27 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                     state[5]=u64::from_le_bytes(reference.id.0[8..].try_into().unwrap());
                     let mut message=[0;160];let lead=b"Compiled successfully. Executable: ";
                     message[..lead.len()].copy_from_slice(lead);message[lead.len()..lead.len()+length].copy_from_slice(&path[..length]);
+                    console.output.write_line(&message[..lead.len()+length]);
+                    publish_workflow(3,5+lease.source_length,diagnostics.len(),length);
                     if target==ReplyTarget::Assistant{panel.reply(&message[..lead.len()+length]);}
-                    else{console.output.write_line(&message[..lead.len()+length]);}
-                }else if target==ReplyTarget::Assistant{panel.reply(b"Compilation succeeded, but the executable could not be saved. No existing file was overwritten.");}
-                else{console.output.write_line(b"cc: executable publication failed without overwriting existing data.");}
-            }else if !diagnostics.is_empty(){
-                if target==ReplyTarget::Assistant{panel.reply(diagnostics);}else{
-                    for line in diagnostics.split(|byte|*byte==b'\n'){if !line.is_empty(){console.output.write_line(line);}}
+                }else{
+                    console.output.write_line(b"Executable publication failed; no existing file was overwritten.");
+                    if target==ReplyTarget::Assistant{panel.reply(b"Compilation succeeded, but the executable could not be saved. No existing file was overwritten.");}
                 }
+            }else if !diagnostics.is_empty(){
+                report_stage_output(console,b"Compiler output",diagnostics,_truncated);
+                publish_workflow(6,5+lease.source_length,diagnostics.len(),lease.name.len());
+                if target==ReplyTarget::Assistant{panel.reply(diagnostics);}
             }else if status==job::Status::Cancelled{
+                console.output.write_line(b"Compilation cancelled. No executable was published.");
+                publish_workflow(6,5+lease.source_length,0,lease.name.len());
                 if target==ReplyTarget::Assistant{panel.reply(b"Compilation cancelled. No executable was published.");}
-                else{console.output.write_line(b"cc: build cancelled; no executable was published.");}
-            }else if target==ReplyTarget::Assistant{panel.reply(b"Native compilation failed. The source remains in the editor; no executable was published.");}
-            else{console.output.write_line(b"cc: native compilation failed; no executable was published.");}
+            }else{
+                report_stage_output(console,b"Compiler output",diagnostics,_truncated);
+                console.output.write_line(b"Native compilation failed; no executable was published.");
+                publish_workflow(6,5+lease.source_length,0,lease.name.len());
+                if target==ReplyTarget::Assistant{panel.reply(b"Native compilation failed. The source remains in the editor; no executable was published.");}
+            }
         });
         if target==ReplyTarget::Assistant{assistant::write(2,panel);}console.redraw();
     }
@@ -229,7 +317,11 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
         console.output.write_line(b"A native program is already running. Exit it or press Ctrl+C before launching another.");
         APP_LINE_OPEN=false;console.redraw();return true;
     }
+    console.command_window_suspended=console.command_window.visible;
     console.open_command_window();
+    console.output.write_segments(&[b"Launching application: ",path]);
+    publish_workflow(4,0,0,path.len());
+    console.redraw();
     console.ai_chat_focus=0;
     let mut panel=assistant::read(1);panel.focused=false;assistant::write(1,panel);
     if !active(console) {
@@ -251,7 +343,8 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
             console.reset_input();
             INFINITY_NATIVE_APP_SNAPSHOT[3]=2;
             INFINITY_NATIVE_APP_SNAPSHOT[6]=0;INFINITY_NATIVE_APP_SNAPSHOT[7]=0;
-            console.output.write_line(b"Running isolated native C program...");
+            console.output.write_line(b"Application launched in an isolated native process.");
+            publish_workflow(5,0,0,path.len());
         }
         Err(_)=>console.output.write_line(b"Executable rejected: invalid format, architecture, permissions, or insufficient memory."),
     }
