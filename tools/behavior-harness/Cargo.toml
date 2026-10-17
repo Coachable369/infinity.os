@@ -159,3 +159,7 @@ path = "../ministral-native-test.rs"
 [[bin]]
 name = "browser-entropy-test"
 path = "../browser-entropy-test.rs"
+
+[[bin]]
+name = "intelligence-kit-test"
+path = "../intelligence-kit-test.rs"

@@ -166,6 +166,10 @@ milestone-9-test:
 milestone-11-test:
 	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin milestone-11-compute-test
 
+.PHONY: intelligence-kit-test
+intelligence-kit-test:
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin intelligence-kit-test
+
 .PHONY: milestone-9-service-test
 milestone-9-service-test:
 	@RUST_MIN_STACK=16777216 CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin runtime-test node_reconciliation_tests

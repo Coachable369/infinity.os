@@ -55,6 +55,7 @@ pub enum InferenceMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestRoute {
     Control(control::Command),
+    Goal(u64),
     Inference(InferenceMode),
 }
 

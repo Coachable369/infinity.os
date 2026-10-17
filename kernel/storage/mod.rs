@@ -732,6 +732,35 @@ pub fn ai_instruction_mapping_commit(content:&[u8])->Result<u32,object::ObjectEr
 }
 
 // ------------------------=
+// FUNC: intelligence_state_path
+// DESC: Derives an owner-scoped native System Space path for durable IntelligenceKit checkpoints.
+// ------------------=
+fn intelligence_state_path(owner:[u8;16])->[u8;56]{
+    let mut path=[0u8;56];path[..24].copy_from_slice(b"/system/intelligence/v1/");
+    for(i,byte)in owner.iter().enumerate(){path[24+i*2]=b"0123456789abcdef"[(byte>>4)as usize];path[25+i*2]=b"0123456789abcdef"[(byte&15)as usize];}path
+}
+
+// ------------------------=
+// FUNC: intelligence_state_load
+// DESC: Loads the initiating owner's latest versioned IntelligenceKit checkpoint after active-session validation.
+// ------------------=
+pub fn intelligence_state_load(owner:[u8;16],session:[u8;16],out:&mut[u8])->Result<usize,object::ObjectError>{
+    let _=browser_favorites_path(owner,session)?;object_read_path(&intelligence_state_path(owner),None,out).map(|(_,length)|length)
+}
+
+// ------------------------=
+// FUNC: intelligence_state_commit
+// DESC: Creates or versions an owner-scoped IntelligenceKit checkpoint without granting the restored plan new authority.
+// ------------------=
+pub fn intelligence_state_commit(owner:[u8;16],session:[u8;16],content:&[u8])->Result<u32,object::ObjectError>{
+    let _=browser_favorites_path(owner,session)?;if content.len()<32||&content[..4]!=b"IKIT"||content[16..32]!=owner{return Err(object::ObjectError::CorruptContent);}let path=intelligence_state_path(owner);
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|match store.resolve(&path){Ok(id)=>store.replace_state(id,content),Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>store.create_attached(b"@intelligence-state",object::ObjectType::Metadata,object::Space::System,content,&path).map(|_|1),Err(error)=>Err(error)})}
+    #[cfg(target_arch="x86")]
+    {let _=(path,content);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: identity_state_load
 // DESC: Loads the native identity object without exposing filesystem semantics.
 // ------------------=

@@ -337,6 +337,11 @@ impl ConsoleRuntime {
                 panel.reply(b"OS action queued for this application.");
                 assistant::write(id,panel);return;
             }
+            Ok(crate::runtime::ai::kit::RequestRoute::Goal(_)) => {
+                panel.length=0;panel.caret=0;
+                panel.reply(b"A bounded goal plan was created. Progress and approvals remain tied to this session.");
+                assistant::write(id,panel);return;
+            }
             Ok(crate::runtime::ai::kit::RequestRoute::Inference(_)) => {},
             Err(message) => {panel.reply(message);assistant::write(id,panel);return;}
         }

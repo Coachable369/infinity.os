@@ -3,6 +3,7 @@ pub mod broker;
 pub mod chat;
 pub mod control;
 pub mod generation;
+pub mod intelligence;
 pub mod intent;
 pub mod kit;
 pub mod mapping;
@@ -36,6 +37,53 @@ use provider::local_provider;
 use types::*;
 use voice::VoiceService;
 
+struct NativePlanExecutor<'a> {
+    broker: &'a mut ExecutionBroker,
+    active: &'a mut Option<(u64, control::Command)>,
+    result: &'a mut Option<(u64, bool)>,
+    origin: RequestOrigin,
+}
+
+impl intelligence::Executor for NativePlanExecutor<'_> {
+    // ------------------------=
+    // FUNC: authorize
+    // DESC: Performs sidecar admission while preserving the broker's final session authorization.
+    // ------------------=
+    fn authorize(&self,owner:[u8;16],capability:intelligence::CapabilityDescriptor,_now:u64)->bool {
+        owner != [0;16] && capability.availability == intelligence::Availability::Ready
+    }
+
+    // ------------------------=
+    // FUNC: start
+    // DESC: Converts one installed action into the existing exact-once native execution broker.
+    // ------------------=
+    fn start(&mut self,goal:&intelligence::Goal,task:&intelligence::Task,_:intelligence::CapabilityDescriptor,_now:u64)->Result<u64,intelligence::StartError>{
+        if self.active.is_some() || self.broker.busy(){return Err(intelligence::StartError::Busy);}
+        let command=match task.capability {
+            intelligence::CapabilityId::AiAction(index)=>mapping::CAPABILITY_TARGETS.get(index as usize).and_then(|target|control::Command::decode(target)),
+            intelligence::CapabilityId::DevKit=>control::ContextRequest::parse(goal.objective.as_bytes()).map(control::Command::Context),
+            _=>None,
+        }.ok_or(intelligence::StartError::Unavailable)?;
+        let token=goal.id.rotate_left(17)^task.id as u64;
+        self.broker.stage(ExecutionRequest{command,owner:goal.owner,origin:self.origin,correlation_id:token}).map_err(|_|intelligence::StartError::Busy)?;
+        *self.active=Some((token,command));Ok(token)
+    }
+
+    // ------------------------=
+    // FUNC: observe
+    // DESC: Converts only a verified native dispatcher receipt into task evidence.
+    // ------------------=
+    fn observe(&mut self,token:u64,_now:u64)->intelligence::Observation{
+        if self.result.is_some_and(|result|result.0==token){let success=self.result.take().unwrap().1;*self.active=None;if success{let mut evidence=[0;16];evidence[..8].copy_from_slice(&token.to_le_bytes());return intelligence::Observation::Succeeded(evidence);}return intelligence::Observation::Failed(1);}intelligence::Observation::Running
+    }
+
+    // ------------------------=
+    // FUNC: cancel
+    // DESC: Cancels the exact broker request owned by an interrupted plan task.
+    // ------------------=
+    fn cancel(&mut self,token:u64){if self.active.is_some_and(|active|active.0==token){self.broker.cancel();*self.active=None;*self.result=None;}}
+}
+
 pub struct AiRuntime {
     pub models: ModelRegistry,
     pub providers: kit::ProviderRegistry,
@@ -51,6 +99,12 @@ pub struct AiRuntime {
     chat_owner: [u8; 16],
     requests: RequestApi,
     execution: ExecutionBroker,
+    intelligence: intelligence::Service,
+    intelligence_goal: Option<u64>,
+    intelligence_execution: Option<(u64, control::Command)>,
+    intelligence_result: Option<(u64, bool)>,
+    intelligence_summary: Option<intelligence::PlanSummary>,
+    intelligence_checkpoint_pending: bool,
     instruction_mapping: mapping::ConfiguredMap,
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
@@ -68,16 +122,68 @@ impl AiRuntime {
     // FUNC: route_request
     // DESC: Sends every user request through the same intent engine and stages native actions with caller provenance.
     // ------------------=
-    fn route_request(&mut self, input: &[u8], origin: RequestOrigin) -> Result<RequestRoute, &'static [u8]> {
-        if !self.chat.enabled() { return Err(b"AI is disabled in Settings."); }
-        if self.app_owner.is_some() || self.execution.busy() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
+    fn route_request(
+        &mut self,
+        input: &[u8],
+        origin: RequestOrigin,
+    ) -> Result<RequestRoute, &'static [u8]> {
+        if !self.chat.enabled() {
+            return Err(b"AI is disabled in Settings.");
+        }
+        if self.app_owner.is_some()
+            || self.execution.busy()
+            || self.qwen.as_ref().is_some_and(|s| s.busy())
+        {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
-        let route = IntentRouter::route(&mut self.instruction_mapping, &request);
+        let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
         if let RequestRoute::Control(command) = route {
-            self.execution.stage(ExecutionRequest { command, owner: request.owner, origin: request.origin,
-                correlation_id: request.correlation_id }).map_err(|_| b"An OS action is already pending.".as_slice())?;
+            self.execution
+                .stage(ExecutionRequest {
+                    command,
+                    owner: request.owner,
+                    origin: request.origin,
+                    correlation_id: request.correlation_id,
+                })
+                .map_err(|_| b"An OS action is already pending.".as_slice())?;
+        } else if intelligence::Service::classify(input, false)
+            == intelligence::RequestClass::ComplexGoal
+        {
+            let goal_origin = match origin {
+                RequestOrigin::Voice => intelligence::RequestOrigin::Voice,
+                RequestOrigin::DesktopChat => intelligence::RequestOrigin::Text,
+                RequestOrigin::Application(id) => intelligence::RequestOrigin::Application(id),
+                RequestOrigin::Model => intelligence::RequestOrigin::NativeService,
+            };
+            let limits = intelligence::ExecutionLimits {
+                maximum_tasks: 8,
+                maximum_parallel: 2,
+                maximum_replans: 1,
+                deadline: crate::ui::performance::monotonic_ns()
+                    .unwrap_or(0)
+                    .saturating_add(300_000_000_000),
+            };
+            let id = self
+                .intelligence
+                .propose(
+                    request.owner,
+                    goal_origin,
+                    input,
+                    &intelligence::InstalledCapabilities,
+                    crate::ui::performance::monotonic_ns().unwrap_or(0),
+                    limits,
+                )
+                .map_err(|_| {
+                    b"The objective could not be converted into a safe executable plan.".as_slice()
+                })?;
+            self.intelligence
+                .begin(id, request.owner, &intelligence::InstalledCapabilities)
+                .map_err(|_| b"The plan could not be started safely.".as_slice())?;
+            self.intelligence_goal = Some(id);
+            self.intelligence_summary = None;
+            self.intelligence_checkpoint_pending = true;
+            route = RequestRoute::Goal(id);
         }
         Ok(route)
     }
@@ -296,10 +402,18 @@ impl AiRuntime {
         if self.chat_owner != owner {
             self.cancel_app_turn();
             self.execution.cancel();
+            self.intelligence = intelligence::Service::new();
+            self.intelligence_goal = None;
+            self.intelligence_execution = None;
+            self.intelligence_result = None;
+            self.intelligence_summary = None;
+            self.intelligence_checkpoint_pending = false;
             if let Some(service) = self.qwen.as_mut() {
                 service.clear_conversation();
             }
-            if let Some(service) = self.other_native.as_mut() { service.clear_conversation(); }
+            if let Some(service) = self.other_native.as_mut() {
+                service.clear_conversation();
+            }
             let ministral_ready = self.native_ready(chat::MINISTRAL_MODEL_ID);
             let hermes_ready = self.native_ready(chat::HERMES_MODEL_ID);
             self.chat = ChatRuntime::new();
@@ -370,23 +484,51 @@ impl AiRuntime {
     // DESC: Applies shared routing and execution boundaries to a typed desktop or voice chat request.
     // ------------------=
     fn submit_chat_from(&mut self, origin: RequestOrigin) -> bool {
-        if self.app_owner.is_some() || self.execution.busy() || !self.chat.enabled()
-            || self.qwen.as_ref().is_some_and(|s| s.busy()) { return false; }
+        if self.app_owner.is_some()
+            || self.execution.busy()
+            || !self.chat.enabled()
+            || self.qwen.as_ref().is_some_and(|s| s.busy())
+        {
+            return false;
+        }
         let mut input = [0u8; 4096];
         let length = self.chat.input().len();
-        if length > input.len() { return false; }
+        if length > input.len() {
+            return false;
+        }
         input[..length].copy_from_slice(self.chat.input());
-        let Ok(route) = self.route_request(&input[..length], origin) else { return false; };
+        let Ok(route) = self.route_request(&input[..length], origin) else {
+            return false;
+        };
         if matches!(route, RequestRoute::Control(_)) {
             self.chat.begin_native_turn();
             self.chat.generation_state = chat::GenerationState::Running;
             return true;
         }
-        if !matches!(self.chat.selected_model(), chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
+        if let RequestRoute::Goal(id) = route {
+            self.chat.begin_native_turn();
+            let plan = self.intelligence.inspect(id, self.chat_owner);
+            let message = if plan
+                .is_some_and(|plan| plan.state == intelligence::PlanState::AwaitingApproval)
+            {
+                b"I created a bounded plan. One or more sensitive steps require your approval before execution.".as_slice()
+            } else {
+                b"I created a bounded plan using installed InfinityOS capabilities. Execution will continue asynchronously and report verified progress.".as_slice()
+            };
+            self.chat.update_native_response(message);
+            self.chat.generation_state = chat::GenerationState::Complete;
+            return true;
+        }
+        if !matches!(
+            self.chat.selected_model(),
+            chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID
+        ) {
             return self.chat.submit_input();
         }
         if self.chat.selected_model() != self.active_native {
-            if !self.native_ready(self.chat.selected_model()) { return false; }
+            if !self.native_ready(self.chat.selected_model()) {
+                return false;
+            }
             self.cancel_chat();
             core::mem::swap(&mut self.qwen, &mut self.other_native);
             self.active_native = self.chat.selected_model();
@@ -454,10 +596,23 @@ impl AiRuntime {
     // ------------------=
     pub fn finish_control(&mut self, command: control::Command, success: bool) {
         let origin = self.execution.active_origin();
-        if self.execution.finish(command, success).is_err() { return; }
-        if matches!(origin, Some(RequestOrigin::Application(_))) { return; }
+        if self.execution.finish(command, success).is_err() {
+            return;
+        }
+        if let Some((token, expected)) = self.intelligence_execution {
+            if expected == command {
+                self.intelligence_result = Some((token, success));
+            }
+        }
+        if matches!(origin, Some(RequestOrigin::Application(_))) {
+            return;
+        }
         self.chat.update_native_response(command.result(success));
-        self.chat.generation_state = if success { chat::GenerationState::Complete } else { chat::GenerationState::Failed };
+        self.chat.generation_state = if success {
+            chat::GenerationState::Complete
+        } else {
+            chat::GenerationState::Failed
+        };
     }
 
     // ------------------------=
@@ -472,28 +627,38 @@ impl AiRuntime {
     // FUNC: control_audit_count
     // DESC: Exposes the retained structured execution audit length for diagnostics and behavioral verification.
     // ------------------=
-    pub const fn control_audit_count(&self) -> usize { self.execution.audit_count() }
+    pub const fn control_audit_count(&self) -> usize {
+        self.execution.audit_count()
+    }
 
     // ------------------------=
     // FUNC: control_audit
     // DESC: Returns one chronological structured execution audit record without granting mutation access.
     // ------------------=
-    pub fn control_audit(&self, index: usize) -> Option<kit::AuditRecord> { self.execution.audit(index) }
+    pub fn control_audit(&self, index: usize) -> Option<kit::AuditRecord> {
+        self.execution.audit(index)
+    }
     // ------------------------=
     // FUNC: poll_qwen
     // DESC: Advances local inference outside rendering and publishes model-produced text only.
     // ------------------=
     pub fn poll_qwen(&mut self) -> bool {
-        if self.app_owner.is_some() { return self.poll_app_turn(); }
+        if self.intelligence_goal.is_some() && self.poll_intelligence_runtime() {
+            return true;
+        }
+        if self.app_owner.is_some() {
+            return self.poll_app_turn();
+        }
         if !self.qwen.as_ref().is_some_and(|service| service.busy()) {
             return false;
         }
         let started = crate::ui::performance::monotonic_ns();
         let changed = self.poll_qwen_inner();
         if self.qwen.as_ref().is_some_and(|service| !service.busy()) {
-            self.qwen_metrics.finish(crate::ui::performance::monotonic_ns());
+            self.qwen_metrics
+                .finish(crate::ui::performance::monotonic_ns());
         }
-        if let Some((a,b)) = started.zip(crate::ui::performance::monotonic_ns()) {
+        if let Some((a, b)) = started.zip(crate::ui::performance::monotonic_ns()) {
             self.qwen_metrics.max_pump_ns = self.qwen_metrics.max_pump_ns.max(b.saturating_sub(a));
         }
         changed
@@ -590,6 +755,12 @@ impl AiRuntime {
             chat_owner: [0; 16],
             requests: RequestApi::new(),
             execution: ExecutionBroker::new(),
+            intelligence: intelligence::Service::new(),
+            intelligence_goal: None,
+            intelligence_execution: None,
+            intelligence_result: None,
+            intelligence_summary: None,
+            intelligence_checkpoint_pending: false,
             instruction_mapping: mapping::ConfiguredMap::new(),
             qwen_tokens: 0,
             qwen_decode_ns: 0,
@@ -868,6 +1039,92 @@ impl AiRuntime {
     // ------------------=
     pub const fn last_plan(&self) -> Option<IntentPlan> {
         self.last_plan
+    }
+
+    // ------------------------=
+    // FUNC: intelligence_plan
+    // DESC: Exposes one immutable owner-scoped IntelligenceKit plan to authorized native presentation surfaces.
+    // ------------------=
+    pub fn intelligence_plan(&self, id: u64, owner: [u8; 16]) -> Option<&intelligence::Plan> {
+        self.intelligence.inspect(id, owner)
+    }
+
+    // ------------------------=
+    // FUNC: approve_intelligence_task
+    // DESC: Applies explicit owner approval to one sensitive task without granting native authority.
+    // ------------------=
+    pub fn approve_intelligence_task(&mut self,id:u64,task:u16,owner:[u8;16])->Result<(),intelligence::ServiceError>{
+        self.intelligence.approve(id,task,owner)
+    }
+
+    // ------------------------=
+    // FUNC: poll_intelligence_runtime
+    // DESC: Cooperatively advances the active plan through the existing broker without blocking inference or audio.
+    // ------------------=
+    fn poll_intelligence_runtime(&mut self)->bool{
+        let Some(id)=self.intelligence_goal else{return false;};let owner=self.chat_owner;
+        let origin=self.intelligence.inspect(id,owner).map(|plan|match plan.goal.origin{intelligence::RequestOrigin::Voice=>RequestOrigin::Voice,intelligence::RequestOrigin::Application(id)=>RequestOrigin::Application(id),intelligence::RequestOrigin::Text=>RequestOrigin::DesktopChat,intelligence::RequestOrigin::NativeService=>RequestOrigin::Model}).unwrap_or(RequestOrigin::DesktopChat);
+        let mut executor=NativePlanExecutor{broker:&mut self.execution,active:&mut self.intelligence_execution,result:&mut self.intelligence_result,origin};
+        let Ok(summary)=self.intelligence.poll(id,owner,&intelligence::InstalledCapabilities,&mut executor,crate::ui::performance::monotonic_ns().unwrap_or(0))else{self.intelligence_goal=None;self.chat.update_native_response(b"The goal stopped because its deadline or execution authority changed.");self.chat.generation_state=chat::GenerationState::Failed;return true;};
+        if self.intelligence_summary==Some(summary){return false;}self.intelligence_summary=Some(summary);self.intelligence_checkpoint_pending=true;
+        match summary.state{
+            intelligence::PlanState::Completed=>{self.chat.update_native_response(b"The goal completed. Every plan step returned native verification evidence.");self.chat.generation_state=chat::GenerationState::Complete;self.intelligence_goal=None;},
+            intelligence::PlanState::Failed=>{self.chat.update_native_response(b"The goal stopped at a failed or unavailable step. Completed verified steps were preserved.");self.chat.generation_state=chat::GenerationState::Failed;self.intelligence_goal=None;},
+            intelligence::PlanState::AwaitingApproval=>self.chat.update_native_response(b"The plan is ready, but a sensitive step requires your explicit approval."),
+            intelligence::PlanState::Executing=>self.chat.update_native_response(b"The plan is running through authorized native InfinityOS services."),
+            _=>{},
+        }true
+    }
+
+    // ------------------------=
+    // FUNC: poll_intelligence
+    // DESC: Advances an active goal through caller-supplied native registry and execution adapters.
+    // ------------------=
+    pub fn poll_intelligence<R: intelligence::CapabilityRegistry, E: intelligence::Executor>(
+        &mut self,
+        id: u64,
+        owner: [u8; 16],
+        registry: &R,
+        executor: &mut E,
+        now: u64,
+    ) -> Result<intelligence::PlanSummary, intelligence::ServiceError> {
+        self.intelligence.poll(id, owner, registry, executor, now)
+    }
+
+    // ------------------------=
+    // FUNC: checkpoint_intelligence
+    // DESC: Produces a versioned owner-bound checkpoint suitable for native ObjectStore persistence.
+    // ------------------=
+    pub fn checkpoint_intelligence(
+        &self,
+        id: u64,
+        owner: [u8; 16],
+        out: &mut [u8],
+    ) -> Result<usize, intelligence::ServiceError> {
+        self.intelligence.encode(id, owner, out)
+    }
+
+    // ------------------------=
+    // FUNC: take_intelligence_checkpoint_request
+    // DESC: Coalesces native ObjectStore writes to factual plan state transitions.
+    // ------------------=
+    pub fn take_intelligence_checkpoint_request(&mut self)->Option<u64>{
+        if !self.intelligence_checkpoint_pending{return None;}self.intelligence_checkpoint_pending=false;self.intelligence_summary.map(|summary|summary.goal_id).or(self.intelligence_goal)
+    }
+
+    // ------------------------=
+    // FUNC: restore_intelligence
+    // DESC: Restores interrupted owner-bound work without repeating verified completed steps.
+    // ------------------=
+    pub fn restore_intelligence<R: intelligence::CapabilityRegistry>(
+        &mut self,
+        input: &[u8],
+        owner: [u8; 16],
+        registry: &R,
+    ) -> Result<u64, intelligence::ServiceError> {
+        let id=self.intelligence.restore(input, owner, registry)?;
+        self.intelligence.begin(id,owner,registry)?;
+        self.intelligence_goal=Some(id);self.intelligence_summary=None;self.intelligence_checkpoint_pending=true;Ok(id)
     }
 }
 

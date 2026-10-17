@@ -2525,6 +2525,10 @@ impl ConsoleRuntime {
     // ------------------=
     fn sync_ai_chat_preferences(&mut self) {
         crate::runtime::ai::with_ai_runtime(|runtime| runtime.bind_chat_owner(self.current_user.0));
+        let mut intelligence=[0u8;crate::runtime::ai::intelligence::MAX_STATE_BYTES];
+        if let Ok(length)=crate::storage::intelligence_state_load(self.current_user.0,self.current_session.0,&mut intelligence) {
+            let _=crate::runtime::ai::with_ai_runtime(|runtime|runtime.restore_intelligence(&intelligence[..length],self.current_user.0,&crate::runtime::ai::intelligence::InstalledCapabilities));
+        }
         let preferences =
             crate::runtime::with_runtime(|runtime| runtime.identity.ai_profile(self.current_user))
                 .flatten();
@@ -13765,6 +13769,13 @@ pub fn poll_native_ai() {
         }
     } }
     if ai_changed {
+        let checkpoint=crate::runtime::ai::with_ai_runtime(|ai|ai.take_intelligence_checkpoint_request());
+        if let Some(goal)=checkpoint { unsafe { if let Some(runtime)=(&*(&raw const RUNTIME)).as_ref() {
+            let mut bytes=[0u8;crate::runtime::ai::intelligence::MAX_STATE_BYTES];
+            if let Ok(length)=crate::runtime::ai::with_ai_runtime(|ai|ai.checkpoint_intelligence(goal,runtime.current_user.0,&mut bytes)) {
+                let _=crate::storage::intelligence_state_commit(runtime.current_user.0,runtime.current_session.0,&bytes[..length]);
+            }
+        } } }
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
         if app_turn.is_some() || !desktop_allowed { return; }
         crate::runtime::ai::with_ai_runtime(|ai|ai.record_first_visible_response());

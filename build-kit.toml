@@ -62,6 +62,10 @@ clean = false
 command = ["make", "native-uikit-test", "editor-assistant-test"]
 clean = false
 
+[profiles.intelligence-kit-tests]
+command = ["make", "intelligence-kit-test"]
+clean = false
+
 [profiles.native-process-supervision-tests]
 command = ["sh", "-c", "rustc --edition=2021 -A warnings tools/native-process-supervision-test.rs -o build/native-process-supervision-test && build/native-process-supervision-test"]
 clean = false
