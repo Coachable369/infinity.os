@@ -4,6 +4,9 @@ use crate::runtime::{native_compile_job as job, execution::SecurityIdentity, cap
 use crate::ui::app_assistant as assistant;
 #[path = "../runtime/native_console_input.rs"]
 mod native_input;
+#[path = "../ui/workflow_progress.rs"]
+mod workflow_progress;
+use workflow_progress::{Progress as VoiceProgress, Step as VoiceStep};
 static mut APP_INPUT:native_input::Input=native_input::Input::new();
 static mut APP_CANCEL:bool=false;
 static mut APP_LINE_OPEN:bool=false;
@@ -31,6 +34,10 @@ pub static mut INFINITY_NATIVE_APP_NAME:[u8;28]=[0;28];
 #[no_mangle]
 pub static mut INFINITY_NATIVE_WORKFLOW_SNAPSHOT:[u64;9]=[0x494e4643574f524b,1,0,0,0,0,0,0,0];
 static mut WORKFLOW_FLAGS:u64=0;
+static mut VOICE_PROGRESS:VoiceProgress=VoiceProgress::new();
+static mut VOICE_OWNER:SecurityIdentity=SecurityIdentity([0;16]);
+#[no_mangle]
+pub static mut INFINITY_NATIVE_WORKFLOW_VOICE_SNAPSHOT:[u64;8]=[0x494e46574f494345,1,0,0,0,0,0,0];
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(super) enum StartError {
@@ -166,11 +173,87 @@ unsafe fn publish_workflow(stage:u64,command_length:usize,diagnostic_length:usiz
 }
 
 // ------------------------=
+// FUNC: publish_voice_progress
+// DESC: Publishes content-free narration queue state for installed behavioral verification.
+// ------------------=
+unsafe fn publish_voice_progress() {
+    let (scheduled,announced,pending,in_flight)=(&*(&raw const VOICE_PROGRESS)).snapshot();
+    let state=&mut *(&raw mut INFINITY_NATIVE_WORKFLOW_VOICE_SNAPSHOT);
+    state[2]=state[2].wrapping_add(1)|1;
+    state[3]=scheduled as u64;state[4]=announced as u64;state[5]=pending as u64;
+    state[6]=in_flight.map(|step|step as u64+1).unwrap_or(0);
+    state[2]=state[2].wrapping_add(1);state[7]=state[2];
+}
+
+// ------------------------=
+// FUNC: begin_voice_progress
+// DESC: Starts ordered one-time narration for the authenticated owner of a new native build.
+// ------------------=
+unsafe fn begin_voice_progress(owner:SecurityIdentity) {
+    VOICE_OWNER=owner;
+    (&mut *(&raw mut VOICE_PROGRESS)).begin();
+    publish_voice_progress();
+}
+
+// ------------------------=
+// FUNC: schedule_voice_progress
+// DESC: Queues a typed workflow milestone without duplicating an already scheduled announcement.
+// ------------------=
+unsafe fn schedule_voice_progress(step:VoiceStep) {
+    if (&mut *(&raw mut VOICE_PROGRESS)).schedule(step) {publish_voice_progress();}
+}
+
+// ------------------------=
+// FUNC: voice_progress_enabled
+// DESC: Requires the workflow owner to remain active with AI and spoken output enabled.
+// ------------------=
+fn voice_progress_enabled(console:&ConsoleRuntime,owner:SecurityIdentity)->bool {
+    active(console)&&console.ai_chat_allowed()&&SecurityIdentity(console.current_session.0)==owner
+        && crate::runtime::with_runtime(|runtime|runtime.identity.ai_profile(console.current_user)
+            .map(|profile|profile.speech_output_enabled).unwrap_or(false)).unwrap_or(false)
+}
+
+// ------------------------=
+// FUNC: poll_voice_progress
+// DESC: Speaks queued structural milestones in order without interrupting an AI reply or overlapping native audio.
+// ------------------=
+unsafe fn poll_voice_progress(console:&ConsoleRuntime) {
+    let owner=VOICE_OWNER;
+    let progress=&mut *(&raw mut VOICE_PROGRESS);
+    let (_,_,pending,in_flight)=progress.snapshot();
+    if pending==0&&in_flight.is_none(){return;}
+    if !voice_progress_enabled(console,owner) {progress.discard();publish_voice_progress();return;}
+    use crate::runtime::ai::{voice_conversation::State as ConversationState,voice_output::OutputState};
+    let output=crate::runtime::ai::voice_output::status().state;
+    if in_flight.is_some() {
+        if matches!(output,OutputState::Complete|OutputState::Failed|OutputState::Cancelled) {
+            let _=progress.completed(output==OutputState::Complete);publish_voice_progress();
+        }
+        return;
+    }
+    if !matches!(crate::runtime::ai::voice_conversation::state().0,
+        ConversationState::Off|ConversationState::Listening)
+        || !matches!(output,OutputState::Idle|OutputState::Complete|OutputState::Failed|OutputState::Cancelled) {return;}
+    let Some(step)=progress.next() else{return;};
+    let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000_000;
+    let capability=crate::runtime::with_runtime(|runtime|runtime.capabilities.grant(
+        CapabilityType::AudioOutput,0,1,0,owner,owner,
+        Some(now+crate::runtime::ai::voice_output::OUTPUT_LEASE_SECONDS),0).ok()).flatten();
+    let Some(capability)=capability else{return;};
+    if crate::runtime::ai::voice_output::submit(owner,capability,step.phrase()).is_ok() {
+        let _=progress.submitted(step);publish_voice_progress();
+    }else{
+        crate::runtime::with_runtime(|runtime|{let _=runtime.capabilities.retire_leaf(capability,owner);});
+    }
+}
+
+// ------------------------=
 // FUNC: open_build_transcript
 // DESC: Opens or focuses the command window and records the user-facing native compilation command without discarding an existing terminal transcript.
 // ------------------=
 unsafe fn open_build_transcript(console:&mut ConsoleRuntime,source_path:&[u8],output_length:usize) {
     WORKFLOW_FLAGS=0;
+    begin_voice_progress(SecurityIdentity(console.current_session.0));
     console.command_window_suspended=console.command_window.visible;
     console.open_command_window();
     console.output.write_segments(&[b"$ cc ",source_path]);
@@ -237,6 +320,7 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
 // DESC: Keeps compiler work off input dispatch, cancels lost ownership, and reports actual compiler output through the existing panel.
 // ------------------=
 pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
+    poll_voice_progress(console);
     poll_app(console);
     let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() else{return;};
     let owner=SecurityIdentity(console.current_session.0);
@@ -250,6 +334,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
         job::stage_diagnostics(owner,job::Status::Link,|diagnostics,truncated| {
             report_stage_output(console,b"Compiler output",diagnostics,truncated);
             publish_workflow(2,5+lease.source_length,diagnostics.len(),lease.name.len());
+            schedule_voice_progress(VoiceStep::Linking);
         });
         lease.compile_output_reported=true;
         console.redraw();
@@ -279,23 +364,28 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                     message[..lead.len()].copy_from_slice(lead);message[lead.len()..lead.len()+length].copy_from_slice(&path[..length]);
                     console.output.write_line(&message[..lead.len()+length]);
                     publish_workflow(3,5+lease.source_length,diagnostics.len(),length);
+                    schedule_voice_progress(VoiceStep::ExecutableReady);
                     if target==ReplyTarget::Assistant{panel.reply(&message[..lead.len()+length]);}
                 }else{
                     console.output.write_line(b"Executable publication failed; no existing file was overwritten.");
+                    schedule_voice_progress(VoiceStep::Failed);
                     if target==ReplyTarget::Assistant{panel.reply(b"Compilation succeeded, but the executable could not be saved. No existing file was overwritten.");}
                 }
             }else if !diagnostics.is_empty(){
                 report_stage_output(console,b"Compiler output",diagnostics,_truncated);
                 publish_workflow(6,5+lease.source_length,diagnostics.len(),lease.name.len());
+                schedule_voice_progress(VoiceStep::Failed);
                 if target==ReplyTarget::Assistant{panel.reply(diagnostics);}
             }else if status==job::Status::Cancelled{
                 console.output.write_line(b"Compilation cancelled. No executable was published.");
                 publish_workflow(6,5+lease.source_length,0,lease.name.len());
+                schedule_voice_progress(VoiceStep::Cancelled);
                 if target==ReplyTarget::Assistant{panel.reply(b"Compilation cancelled. No executable was published.");}
             }else{
                 report_stage_output(console,b"Compiler output",diagnostics,_truncated);
                 console.output.write_line(b"Native compilation failed; no executable was published.");
                 publish_workflow(6,5+lease.source_length,0,lease.name.len());
+                schedule_voice_progress(VoiceStep::Failed);
                 if target==ReplyTarget::Assistant{panel.reply(b"Native compilation failed. The source remains in the editor; no executable was published.");}
             }
         });
@@ -335,6 +425,11 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
         console.output.write_line(b"Cannot read this executable.");return true;
     };
     let owner=SecurityIdentity(console.current_session.0);
+    if VOICE_OWNER!=owner || (&*(&raw const VOICE_PROGRESS)).snapshot().0==0 {
+        VOICE_OWNER=owner;
+        (&mut *(&raw mut VOICE_PROGRESS)).discard();
+    }
+    schedule_voice_progress(VoiceStep::Launching);
     match crate::runtime::native_app_task::Task::start(&bytes[..length],owner,2,
         crate::runtime::native_memory::memory_mut(),kernel,controller,u64::MAX) {
         Ok(task)=>{
@@ -345,8 +440,12 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
             INFINITY_NATIVE_APP_SNAPSHOT[6]=0;INFINITY_NATIVE_APP_SNAPSHOT[7]=0;
             console.output.write_line(b"Application launched in an isolated native process.");
             publish_workflow(5,0,0,path.len());
+            schedule_voice_progress(VoiceStep::Running);
         }
-        Err(_)=>console.output.write_line(b"Executable rejected: invalid format, architecture, permissions, or insufficient memory."),
+        Err(_)=>{
+            console.output.write_line(b"Executable rejected: invalid format, architecture, permissions, or insufficient memory.");
+            schedule_voice_progress(VoiceStep::LaunchFailed);
+        },
     }
     console.redraw();true
 }}

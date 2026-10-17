@@ -15,4 +15,8 @@ rustc --edition=2021 -A warnings tools/native-development-command-test.rs \
     -o "$out/command-test"
 "$out/command-test"
 
+rustc --edition=2021 -A warnings tools/native-workflow-voice-test.rs \
+    -o "$out/workflow-voice-test"
+"$out/workflow-voice-test"
+
 sh tools/native-c-probe/build-hello.sh

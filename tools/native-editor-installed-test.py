@@ -80,7 +80,7 @@ def read(guest, symbol, count):
         state = struct.unpack(f"<{count}Q", guest.memory(address, size))
         # App publication uses a monotonic counter, while the feature/build
         # snapshots publish matching even sequence words at both ends.
-        if count == 8 or state[2] == state[-1] and state[2] % 2 == 0:
+        if symbol == "INFINITY_NATIVE_APP_SNAPSHOT" or state[2] == state[-1] and state[2] % 2 == 0:
             return state
         time.sleep(.01)
     raise AssertionError("Diagnostic snapshot remained in flight")
@@ -142,7 +142,7 @@ def wait_build(guest, previous, expected):
 
 # ------------------------=
 # FUNC: assert_workflow
-# DESC: Verifies the command, compiler output, publication, launch announcement, and running-process transitions exposed by the installed OS.
+# DESC: Verifies command output, publication, launch, running-process, and ordered voice milestones exposed by the installed OS.
 # ------------------=
 def assert_workflow(guest):
     workflow = read(guest, "INFINITY_NATIVE_WORKFLOW_SNAPSHOT", 9)
@@ -151,6 +151,11 @@ def assert_workflow(guest):
     assert workflow[3] == 5 and workflow[4] > 4 and workflow[6] > 0
     expected = sum(1 << stage for stage in (1, 2, 3, 4, 5))
     assert workflow[7] & expected == expected
+    narration = read(guest, "INFINITY_NATIVE_WORKFLOW_VOICE_SNAPSHOT", 8)
+    assert narration[:2] == (0x494e46574f494345, 1)
+    assert narration[2] == narration[7] and narration[2] % 2 == 0
+    expected_narration = sum(1 << stage for stage in range(5))
+    assert narration[3] & expected_narration == expected_narration
 
 # ------------------------=
 # FUNC: compile_document
