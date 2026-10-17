@@ -318,12 +318,25 @@ check-tools:
 $(ICON_RUNTIME_ASSETS): $(ICON_THEME_SOURCES)
 	@tools/build-icon-themes.sh
 
-NATIVE_C_SOURCES := tools/build-native-c-toolchain.sh tools/build-native-app-sdk.sh $(shell find sdk/c sdk/compiler -type f)
-builds/toolchains/aarch64/clang.elf builds/toolchains/aarch64/lld.elf builds/toolchains/aarch64/application-crt.o: $(NATIVE_C_SOURCES)
+NATIVE_C_TOOLCHAIN_SOURCES := tools/build-native-c-toolchain.sh $(shell find sdk/compiler -type f)
+NATIVE_C_APP_SDK_SOURCES := tools/build-native-app-sdk.sh $(shell find sdk/c -type f)
+builds/toolchains/aarch64/clang.elf: $(NATIVE_C_TOOLCHAIN_SOURCES)
 	sh tools/build-native-c-toolchain.sh aarch64
 
-builds/toolchains/x86_64/clang.elf builds/toolchains/x86_64/lld.elf builds/toolchains/x86_64/application-crt.o: $(NATIVE_C_SOURCES)
+builds/toolchains/aarch64/lld.elf: builds/toolchains/aarch64/clang.elf
+	@test -f $@
+
+builds/toolchains/aarch64/application-crt.o: $(NATIVE_C_APP_SDK_SOURCES) builds/toolchains/aarch64/clang.elf builds/toolchains/aarch64/lld.elf
+	sh tools/build-native-app-sdk.sh aarch64
+
+builds/toolchains/x86_64/clang.elf: $(NATIVE_C_TOOLCHAIN_SOURCES)
 	sh tools/build-native-c-toolchain.sh x86_64
+
+builds/toolchains/x86_64/lld.elf: builds/toolchains/x86_64/clang.elf
+	@test -f $@
+
+builds/toolchains/x86_64/application-crt.o: $(NATIVE_C_APP_SDK_SOURCES) builds/toolchains/x86_64/clang.elf builds/toolchains/x86_64/lld.elf
+	sh tools/build-native-app-sdk.sh x86_64
 
 $(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: builds/toolchains/aarch64/clang.elf builds/toolchains/aarch64/lld.elf builds/toolchains/aarch64/application-crt.o
 $(BUILD)/x86_64/kernel.o: builds/toolchains/x86_64/clang.elf builds/toolchains/x86_64/lld.elf builds/toolchains/x86_64/application-crt.o
@@ -471,7 +484,13 @@ object-vm-test:
 
 .PHONY: installer-entropy-test
 .PHONY: editor-window-test
-.PHONY: editor-assistant-test authentication-logo-test authentication-motion-test
+.PHONY: editor-assistant-test native-uikit-test authentication-logo-test authentication-motion-test
+native-uikit-test:
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings tools/native-uikit-test.rs -o build/behavior-tests/native-uikit-test
+	@build/behavior-tests/native-uikit-test
+	@sh tools/native-c-probe/build-uikit-example.sh
+
 editor-assistant-test:
 	@mkdir -p build/behavior-tests
 	rustc --edition=2021 tools/editor-assistant-test.rs -o build/behavior-tests/editor-assistant-test

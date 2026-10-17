@@ -58,6 +58,10 @@ clean = false
 command = ["sh", "tools/native-c-production-test.sh"]
 clean = false
 
+[profiles.native-uikit-tests]
+command = ["make", "native-uikit-test", "editor-assistant-test"]
+clean = false
+
 [profiles.native-process-supervision-tests]
 command = ["sh", "-c", "rustc --edition=2021 -A warnings tools/native-process-supervision-test.rs -o build/native-process-supervision-test && build/native-process-supervision-test"]
 clean = false

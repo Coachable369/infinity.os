@@ -3119,6 +3119,10 @@ impl ConsoleRuntime {
     // DESC: Guards dirty Text Editor closure and dismisses other active desktop applications immediately.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        if self.desktop_app==DesktopAppKind::CommandWindow && compiler_commands::close_uikit() {
+            self.redraw();
+            return;
+        }
         if self.desktop_app == DesktopAppKind::TextEditor && !self.editor_document.is_saved() {
             self.request_editor_action(PendingDocumentAction::Close);
             return;
@@ -8319,6 +8323,15 @@ impl ConsoleRuntime {
                                     self.app_window_height,
                                     self.app_window_maximized,
                                 );
+                                if crate::ui::native_uikit::presentation().active {
+                                    let pixel_x=self.system.framebuffer_width as i32*self.pointer_x/1000;
+                                    let pixel_y=self.system.framebuffer_height as i32*self.pointer_y/1000;
+                                    let local_x=pixel_x.saturating_sub(geometry.content.x).max(0) as u32;
+                                    let local_y=pixel_y.saturating_sub(geometry.content.y).max(0) as u32;
+                                    if compiler_commands::activate_uikit(local_x,local_y,
+                                        geometry.content.width,geometry.content.height) {self.redraw();}
+                                    return;
+                                }
                                 let scale = layout.scale();
                                 let field = crate::ui::geometry::Rect {
                                     x: geometry.content.x + (74 * scale) as i32,

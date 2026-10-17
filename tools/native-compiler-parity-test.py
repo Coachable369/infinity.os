@@ -19,7 +19,7 @@ def main():
     for arch in ((args.arch,) if args.arch else ("aarch64", "x86_64")):
         package = ROOT / "builds/toolchains" / arch
         assets = {name: (package / name).read_bytes() for name in ("clang.elf", "lld.elf", "application-crt.o")}
-        for name in ("console.h", "syscall.h"):
+        for name in ("console.h", "syscall.h", "uikit.h"):
             assets["infinity/" + name] = (ROOT / "sdk/c/include/infinity" / name).read_bytes()
         results = {}
         for kernel in ("kernel.elf", "installed-kernel.elf"):

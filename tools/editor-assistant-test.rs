@@ -393,6 +393,10 @@ fn main() {
 // DESC: Checks explicit creation authority, complete-source admission, revision fencing and exactly-once application.
 // ------------------=
 fn application_creation() {
+    use ai::editor_compile_intent::ApplicationStyle;
+    assert_eq!(ai::editor_compile_intent::application_style(b"build a simple UI C based calculator"),Some(ApplicationStyle::Ui));
+    assert_eq!(ai::editor_compile_intent::application_style(b"create a basic calculator application"),Some(ApplicationStyle::Terminal));
+    assert_eq!(ai::editor_compile_intent::application_style(b"write a graphical calculator app"),Some(ApplicationStyle::Ui));
     for (output, expected) in [
         (b"REPLACE_COMPILE\nint main(void){return 0;}\nEND_ACTION".as_slice(), Some(52)),
         (b"CHAT\nDone\nEND_ACTION\n  ", Some(20)),

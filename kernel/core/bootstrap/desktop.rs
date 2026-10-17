@@ -3387,17 +3387,21 @@ impl super::DisplayDevice {
                 25
             };
             let _ = self.themed_icon(left + 30 * scale, top + 24 * scale, icon_role, 32 * scale);
+            let native_ui=crate::ui::native_uikit::presentation();
+            let window_title:&[u8]=if screen==8&&native_ui.active {
+                &native_ui.title[..native_ui.title_length]
+            } else if screen == 9 {
+                b"Text Editor"
+            } else if screen == 10 {
+                b"Task Manager"
+            } else {
+                b"Command Window"
+            };
             self.ui_text_elided_strong(
                 left + 54 * scale,
                 top + 16 * scale,
                 108 * scale,
-                if screen == 9 {
-                    b"Text Editor"
-                } else if screen == 10 {
-                    b"Task Manager"
-                } else {
-                    b"Command Window"
-                },
+                window_title,
                 231,
                 243,
                 250,
@@ -3529,7 +3533,9 @@ impl super::DisplayDevice {
                 self.ui_text(
                     toolbar_left + 16 * scale,
                     toolbar_top + 13 * scale,
-                    b"INFINITY CONSOLE  /  LOCAL SESSION",
+                    if crate::ui::native_uikit::presentation().active {
+                        b"NATIVE C  /  INFINITY UI KIT"
+                    } else { b"INFINITY CONSOLE  /  LOCAL SESSION" },
                     103,
                     193,
                     235,
@@ -3566,6 +3572,10 @@ impl super::DisplayDevice {
         let content_top = geometry.content.y.max(0) as usize;
         let content_width = geometry.content.width as usize;
         let content_height = geometry.content.height as usize;
+        if screen==8 && crate::ui::native_uikit::presentation().active {
+            self.render_native_uikit(geometry.content,scale);
+            return;
+        }
         if screen == 10 {
             self.render_task_manager_dashboard(
                 geometry,
@@ -3651,6 +3661,46 @@ impl super::DisplayDevice {
         }
         if app_menu == 20 {
             self.desktop_native_performance_menu(left, top, screen, scale);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: render_native_uikit
+    // DESC: Renders declarative native C elements with the reusable theme-aware Infinity UI Kit recipe.
+    // ------------------=
+    fn render_native_uikit(&mut self,content:crate::ui::geometry::Rect,scale:usize) {
+        let presentation=crate::ui::native_uikit::presentation();
+        if !presentation.active{return;}
+        let left=content.x.max(0) as usize;let top=content.y.max(0) as usize;
+        let width=content.width as usize;let height=content.height as usize;
+        self.fill_rounded_rect_alpha(left,top,width,height,10*scale,2,11,24,250);
+        let usable_width=width;let usable_height=height;
+        for element in presentation.elements.iter().flatten() {
+            let x=left+(element.x as usize).saturating_mul(usable_width)/presentation.width as usize;
+            let y=top+(element.y as usize).saturating_mul(usable_height)/presentation.height as usize;
+            let w=(element.width as usize).saturating_mul(usable_width)/presentation.width as usize;
+            let h=(element.height as usize).saturating_mul(usable_height)/presentation.height as usize;
+            let label=&element.label[..element.label_length];
+            match element.kind {
+                crate::ui::native_uikit::ElementKind::Label=>{
+                    self.ui_text_elided_strong(x,y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2,w,label,220,237,248);
+                }
+                crate::ui::native_uikit::ElementKind::Display=>{
+                    self.fill_rounded_rect_alpha(x,y,w,h,9*scale,6,24,43,246);
+                    self.outline_rounded_rect(x,y,w,h,9*scale,39,111,151);
+                    let text_width=self.ui_text_width(label,1);
+                    self.ui_text_elided_strong(x+w.saturating_sub(text_width+16*scale),
+                        y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2,w.saturating_sub(24*scale),
+                        label,235,247,253);
+                }
+                crate::ui::native_uikit::ElementKind::Button=>{
+                    self.fill_rounded_rect_alpha(x,y,w,h,9*scale,8,38,65,246);
+                    self.outline_rounded_rect(x,y,w,h,9*scale,44,145,193);
+                    let text_width=self.ui_text_width(label,1);
+                    self.ui_text_strong(x+w.saturating_sub(text_width)/2,
+                        y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2,label,225,242,251,1);
+                }
+            }
         }
     }
 

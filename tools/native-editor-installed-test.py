@@ -304,6 +304,43 @@ def create_application(guest):
     raise AssertionError("Generated calculator did not exit")
 
 # ------------------------=
+# FUNC: create_ui_application
+# DESC: Proves that a desktop request generates, compiles, launches and presents a semantic Infinity UI Kit application.
+# ------------------=
+def create_ui_application(guest):
+    before = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+    guest.key("ctrl", "j")
+    ui.text(guest, "Build a simple UI C based calculator application")
+    guest.key("ret")
+    ui.wait_feature(guest, lambda state: state[12] == 2)
+    deadline = time.monotonic() + 600
+    next_progress = 0
+    while time.monotonic() < deadline:
+        build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
+        if build[2] > before and build[3]:
+            break
+        if time.monotonic() >= next_progress:
+            guest.screenshot("create-ui-current")
+            next_progress = time.monotonic() + 20
+        assert guest.state()[4] not in (9, 10), "Authenticated UI creation session was lost"
+        time.sleep(.5)
+    else:
+        raise AssertionError("UI creation did not reach native compilation")
+    compiled = wait_build(guest, before, 3)
+    ui.wait_feature(guest, lambda state: state[12] == 1)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        presentation = read(guest, "INFINITY_NATIVE_UI_SNAPSHOT", 11)
+        assert presentation[:2] == (0x494e4655494b4954, 1)
+        assert presentation[2] == presentation[10] and presentation[2] % 2 == 0
+        if presentation[3] == 1 and presentation[4:6] == (480, 420) and presentation[6] >= 10:
+            guest.screenshot("generated-ui-calculator-running")
+            guest.key("esc")
+            return {"compile": compiled, "presentation": presentation}
+        time.sleep(.1)
+    raise AssertionError("Generated application did not present a complete UI Kit calculator")
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs, cold-boots without ISO, compiles valid and invalid source, opens the stored ELF through File Navigator and checks its actual exit.
 # ------------------=
@@ -318,6 +355,7 @@ def main():
     parser.add_argument("--save-compile", action="store_true", help="Exercise save-and-compile, Save As cancellation, and subsequent named-source saving")
     parser.add_argument("--generation-only", action="store_true", help="Retest generated-source acceptance without repeating passing manual-source cases")
     parser.add_argument("--create-application", action="store_true", help="Exercise desktop intent through generated, saved, compiled and automatically launched interactive C")
+    parser.add_argument("--create-ui-application", action="store_true", help="Exercise AI-generated native C UI Kit compilation and presentation")
     parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
@@ -378,6 +416,10 @@ def main():
             report["identity"] = guest.onboard()
         if args.create_application:
             report["creation"] = create_application(guest)
+            report["installed_acceptance"] = True
+            return
+        if args.create_ui_application:
+            report["ui_creation"] = create_ui_application(guest)
             report["installed_acceptance"] = True
             return
         guest.launch("text", 5)

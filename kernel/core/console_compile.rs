@@ -27,6 +27,7 @@ static mut APP_ACTIVE: bool = false;
 static mut APP_BYTES:[u8;256*1024]=[0;256*1024];
 static mut APP_OUTPUT:[u8;4096]=[0;4096];
 static mut APP_OUTPUT_LENGTH:usize=0;
+static mut APP_UI_REVISION:u64=0;
 #[no_mangle]
 pub static mut INFINITY_NATIVE_APP_SNAPSHOT:[u64;8]=[0x494e464341505031,1,0,0,0,0,0,0];
 #[no_mangle]
@@ -413,6 +414,7 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
     publish_workflow(4,0,0,path.len());
     console.redraw();
     console.ai_chat_focus=0;
+    crate::ui::native_uikit::close();APP_UI_REVISION=0;
     let mut panel=assistant::read(1);panel.focused=false;assistant::write(1,panel);
     if !active(console) {
         console.output.write_line(b"Cannot launch: the authenticated session is unavailable.");return true;
@@ -455,6 +457,14 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
 // ------------------=
 pub(super) fn input(console:&mut ConsoleRuntime,key:ConsoleKey)->bool {unsafe {
     if !APP_ACTIVE{return false;}
+    if crate::ui::native_uikit::presentation().active {
+        match key {
+            ConsoleKey::Shortcut(b'c')=>APP_CANCEL=true,
+            ConsoleKey::Escape=>{let _=crate::ui::native_uikit::request_close();},
+            _=>{},
+        }
+        return true;
+    }
     match key {
         ConsoleKey::Shortcut(b'c')=>{APP_CANCEL=true;console.reset_input();},
         ConsoleKey::Shortcut(b'd')=>{(&mut *(&raw mut APP_INPUT)).close();},
@@ -483,6 +493,9 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
             return (&mut *(&raw mut APP_INPUT)).read(args[1].min(1024) as usize,|bytes|
                 crate::runtime::native_memory::copy_to_user(tables,args[0],bytes).is_ok());
         }
+        if (0x1140..=0x1142).contains(&op) {
+            return native_uikit_syscall(tables,op,args);
+        }
         if op!=0x1002{return -88;}
         let length=args[1].min(4096) as usize;
         if length>4096-APP_OUTPUT_LENGTH{return -28;}
@@ -490,6 +503,8 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         if crate::runtime::native_memory::copy_from_user(tables,args[0],&mut buffer[APP_OUTPUT_LENGTH..APP_OUTPUT_LENGTH+length]).is_err(){return -14;}
         APP_OUTPUT_LENGTH+=length;length as i64
     });
+    let ui_revision=crate::ui::native_uikit::presentation().revision;
+    if ui_revision!=APP_UI_REVISION {APP_UI_REVISION=ui_revision;console.redraw();}
     if APP_OUTPUT_LENGTH>0 {
         for &byte in &(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH] {
             if byte==b'\r'{continue;}
@@ -506,8 +521,14 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     }
     if state==State::Runnable {INFINITY_NATIVE_APP_SNAPSHOT[6]=u64::from((&*(&raw const APP_INPUT)).waiting);}
     if state==State::Runnable{return;}
+    let ui_was_active=crate::ui::native_uikit::presentation().active;
     let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;
     let released=task.release(crate::runtime::native_memory::memory_mut()).is_ok();
+    crate::ui::native_uikit::close();APP_UI_REVISION=0;
+    if ui_was_active {
+        console.command_window.visible=false;
+        if console.desktop_app==DesktopAppKind::CommandWindow {console.desktop_app=DesktopAppKind::None;}
+    }
     INFINITY_NATIVE_APP_SNAPSHOT[3]=if matches!(state,State::Exited(_))&&released{3}else{4};
     INFINITY_NATIVE_APP_SNAPSHOT[6]=if let State::Exited(code)=state{code as u64}else{u64::MAX};
     if owner==SecurityIdentity(console.current_session.0) {
@@ -519,3 +540,77 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         console.redraw();
     }
 }}
+
+// ------------------------=
+// FUNC: native_uikit_syscall
+// DESC: Decodes bounded declarative UI Kit packets from the active isolated application.
+// ------------------=
+fn native_uikit_syscall<T:crate::runtime::native_memory::PageTable>(tables:&mut T,op:u64,args:[u64;6])->i64 {
+    use crate::runtime::native_memory::{copy_from_user,copy_to_user};
+    if op==0x1140 {
+        if args[1] < 64 {return -3;}
+        let mut bytes=[0u8;64];
+        if copy_from_user(tables,args[0],&mut bytes).is_err(){return -14;}
+        if read_u32(&bytes,0)!=1 {return -3;}
+        let width=read_u32(&bytes,4);let height=read_u32(&bytes,8);
+        let length=read_u32(&bytes,12) as usize;
+        if length==0||length>48{return -3;}
+        return if crate::ui::native_uikit::open(width,height,&bytes[16..16+length]){0}else{-3};
+    }
+    if op==0x1141 {
+        if args[1] < 64 {return -3;}
+        let mut bytes=[0u8;64];
+        if copy_from_user(tables,args[0],&mut bytes).is_err(){return -14;}
+        if read_u32(&bytes,0)!=1 {return -3;}
+        let kind=match read_u32(&bytes,8){
+            1=>crate::ui::native_uikit::ElementKind::Label,
+            2=>crate::ui::native_uikit::ElementKind::Display,
+            3=>crate::ui::native_uikit::ElementKind::Button,
+            _=>return -3,
+        };
+        let length=read_u32(&bytes,28) as usize;
+        if length>32{return -3;}
+        let mut label=[0u8;32];label[..length].copy_from_slice(&bytes[32..32+length]);
+        let element=crate::ui::native_uikit::Element{id:read_u32(&bytes,4),kind,
+            x:read_u32(&bytes,12),y:read_u32(&bytes,16),width:read_u32(&bytes,20),
+            height:read_u32(&bytes,24),label,label_length:length};
+        return if crate::ui::native_uikit::upsert(element){0}else{-3};
+    }
+    if op==0x1142 {
+        if args[1] < 16 {return -3;}
+        let Some(event)=crate::ui::native_uikit::poll() else{return 0;};
+        let mut bytes=[0u8;16];bytes[..4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&event.kind.to_le_bytes());
+        bytes[8..12].copy_from_slice(&event.id.to_le_bytes());
+        bytes[12..].copy_from_slice(&event.value.to_le_bytes());
+        return if copy_to_user(tables,args[0],&bytes).is_ok(){1}else{-14};
+    }
+    -88
+}
+
+// ------------------------=
+// FUNC: read_u32
+// DESC: Reads one aligned-independent little-endian field from a validated UI Kit packet.
+// ------------------=
+fn read_u32(bytes:&[u8],offset:usize)->u32 {
+    u32::from_le_bytes(bytes[offset..offset+4].try_into().unwrap())
+}
+
+// ------------------------=
+// FUNC: activate_uikit
+// DESC: Sends one content-local pointer activation to the running native UI application.
+// ------------------=
+pub(super) fn activate_uikit(x:u32,y:u32,width:u32,height:u32)->bool {
+    let presentation=crate::ui::native_uikit::presentation();
+    if !presentation.active||width==0||height==0{return false;}
+    crate::ui::native_uikit::activate(x.saturating_mul(presentation.width)/width,
+        y.saturating_mul(presentation.height)/height)
+}
+
+// ------------------------=
+// FUNC: close_uikit
+// DESC: Requests graceful native UI closure before the scheduler cancellation fallback.
+// ------------------=
+pub(super) fn close_uikit()->bool {
+    crate::ui::native_uikit::request_close()
+}

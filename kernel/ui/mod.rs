@@ -35,6 +35,7 @@ pub mod installer_layout;
 pub mod installer_template;
 pub mod localization;
 pub mod native_development;
+pub mod native_uikit;
 pub mod object_picker;
 pub mod performance;
 pub mod platform;
