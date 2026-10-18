@@ -18,6 +18,8 @@ use application::*;
 // DESC: Verifies the real shared inference service selects and executes a legal semantic move; this is host evidence, not guest proof.
 // ------------------=
 fn main() {
+    source_preview();
+    if std::env::args().any(|value|value=="--preview-only") {return;}
     let bytes=Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf").unwrap().into_boxed_slice());
     let arena=Box::leak(vec![0u128;1280*1024*1024/16].into_boxed_slice());
     let arena=unsafe{std::slice::from_raw_parts_mut(arena.as_mut_ptr().cast::<u8>(),arena.len()*16)};
@@ -27,6 +29,12 @@ fn main() {
     let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
     let start=std::time::Instant::now();
     while qwen::workers::online()!=4 {assert!(start.elapsed().as_secs()<10);std::thread::yield_now();}
+    if std::env::args().any(|value|value=="--generate") {
+        generation_probe(&mut ai);
+        unsafe {qwen::workers::stop_host_workers();}
+        for worker in workers {worker.join().unwrap();}
+        return;
+    }
     prefill_progress(&mut ai);
     let id=application_host::attach([1;16],[2;16]).unwrap().instance;
     if std::env::args().any(|value|value=="--sensitive") {
@@ -83,6 +91,28 @@ fn main() {
 }
 
 // ------------------------=
+// FUNC: source_preview
+// DESC: Verifies raw source streams only for explicit creation and never grants compile authority before completion.
+// ------------------=
+fn source_preview() {
+    let request=b"create a simple graphical calculator app";
+    let mut panel=ui::app_assistant::Panel::new();
+    panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    panel.generation=ui::app_assistant::GenerationStatus::Running;
+    let first=b"#include <stdio.h>\nint main(void) {";
+    assert!(panel.stage_generated_source(first));
+    assert_eq!(&panel.argument[..panel.argument_len],first);
+    assert_eq!(panel.pending,ui::app_assistant::Action::None);
+    assert!(!panel.apply_generated_compile_requested());
+    let complete=b"#include <stdio.h>\nint main(void) { return 0; }";
+    assert!(panel.stage_generated_source(complete));
+    assert_eq!(&panel.argument[..panel.argument_len],complete);
+    assert!(!panel.accept_for_owner(2,complete,false));
+    panel.request_len=0;
+    assert!(!panel.stage_generated_source(first));
+}
+
+// ------------------------=
 // FUNC: prefill_progress
 // DESC: Proves real Hermes prompt work advances before output and cancellation releases the app lease.
 // ------------------=
@@ -101,6 +131,34 @@ fn prefill_progress(ai:&mut AiRuntime) {
     }
     ai.cancel_app_turn();
     assert_eq!(ai.app_turn_owner(),None);
+}
+
+// ------------------------=
+// FUNC: generation_probe
+// DESC: Exercises the actual editor prompt and records only this fixture's generated source for compiler diagnostics.
+// ------------------=
+fn generation_probe(ai:&mut AiRuntime) {
+    let request=b"Build a simple UI C based calculator application";
+    let mut panel=ui::app_assistant::Panel::new();
+    panel.input[..request.len()].copy_from_slice(request);panel.length=request.len();
+    panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    panel.generation=ui::app_assistant::GenerationStatus::Running;
+    let mut prompt=[0;6144];
+    let length=panel.generation_prompt(true,b"",&mut prompt).unwrap();
+    ui::app_assistant::write(2,panel);
+    ai.submit_app_turn(2,&prompt[..length]).unwrap();
+    let started=std::time::Instant::now();
+    let mut last=Vec::new();
+    while ai.app_turn_owner().is_some() && started.elapsed().as_secs()<300 {
+        ai.poll_qwen();
+        if !ai.acceptance_native_output().is_empty() {last=ai.acceptance_native_output().to_vec();}
+    }
+    let panel=ui::app_assistant::read(2);
+    std::fs::write("build/application-generation-model-output.txt",&last).unwrap();
+    std::fs::write("build/application-generation-model-source.c",&panel.argument[..panel.argument_len]).unwrap();
+    assert!(ai.app_turn_owner().is_none(),"generation probe deadline");
+    assert_eq!(panel.generation,ui::app_assistant::GenerationStatus::Complete);
+    assert!(panel.argument_len>0);
 }
 
 // ------------------------=

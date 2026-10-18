@@ -127,3 +127,20 @@ accepted output, retaining the five-minute overall limit. Real-Hermes regression
 protocol/ABI checks, and both kernel builds passed in
 `20261018T020450513183Z-51622`. Installed retesting and new release packaging of
 this correction remain required; the earlier ISOs do not contain it.
+
+The updated installed clone still failed to reach compilation
+(`20261018T021357284760Z-53772`). An exact-prompt Hermes diagnostic reproduced
+unframed source, invented UIKit calls, and repeated unfinished code. Source
+preview now accepts raw C only for an explicit app-creation request, while
+completion and compilation remain gated. The prompt now includes the actual
+UIKit header rather than expecting the model to know private APIs.
+
+With that reference, generation completed, but real ARM64-targeted compilation
+failed on an invented `infinity/ui.h` include; the generated program also lacked
+the requested calculator semantics and interaction hooks
+(`20261018T023947671033Z-55162`). These are **failed acceptance results**. Do not
+replace them with a hand-written calculator or claim the generated-app plan is
+finished. Compiler-driven bounded repair, generated-contract execution checks,
+and domain-behavior acceptance are still required before general app generation
+can be claimed. The `--generate` diagnostic on the model test preserves its
+fixture output under `build/` and deliberately fails when generation is incomplete.

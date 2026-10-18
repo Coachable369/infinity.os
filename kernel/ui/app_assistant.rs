@@ -222,10 +222,8 @@ impl Panel {
         let request = &self.input[..self.length];
         let style = editor_compile_intent::application_style(request);
         let kind = editor_compile_intent::application_kind(request);
-        let instruction = if kind == Some(editor_compile_intent::ApplicationKind::Game) {
-            b"Write complete C source for the exact native graphical game requested by the user using the reusable Infinity UI Kit. Infer the board, controls, rules, win or completion conditions, and presentation from the USER REQUEST; do not substitute a fixed sample game. If the user asks Infinity AI to play, expose legal actions through the interaction contract below; Hermes selects its moves. Do not substitute a local computer opponent. The FIRST line must be REPLACE_COMPILE. The final line must be END_ACTION. No markdown or explanation. Include <stdio.h>, <stdlib.h>, <string.h>, and <infinity/uikit.h>. Use InfinityUiWindow version 1 and infinity_ui_open. Compose a polished responsive interface from stable nonzero InfinityUiElement IDs using labels, displays, and buttons; up to 96 elements are available. Keep all state and rules in this source, validate every move, expose restart and status feedback, update changed elements with infinity_ui_upsert, poll INFINITY_UI_EVENT_ACTIVATE and INFINITY_UI_EVENT_CLOSE, and call infinity_ui_yield while idle. Keep geometry within a 720 by 680 window. Do not draw raw pixels or invent APIs. Every C function must have the required FUNC and DESC comment header. Stay under 11500 bytes. Only the OS saves, compiles, and launches the result. DOCUMENT CONTEXT:\n".as_slice()
-        } else if style == Some(editor_compile_intent::ApplicationStyle::Ui) {
-            b"Write complete C source for the exact native graphical InfinityOS application in the USER REQUEST using the reusable Infinity UI Kit; do not substitute a calculator or other sample. The FIRST line must be REPLACE_COMPILE. The final line must be END_ACTION. No markdown or explanation.\nMANDATORY HEADERS:\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <infinity/uikit.h>\nUse InfinityUiWindow with version 1 and call infinity_ui_open. Infer an appropriate hierarchy and geometry for the requested workflow. Build a polished interface from InfinityUiElement values with version 1 and stable nonzero IDs using only the documented label, display, and button elements; up to 96 elements are available. Keep every element inside the logical window bounds and update changed values with infinity_ui_upsert. Run an event loop using infinity_ui_poll; handle INFINITY_UI_EVENT_ACTIVATE by element ID, exit on INFINITY_UI_EVENT_CLOSE, and call infinity_ui_yield while idle. Implement the actual requested state transitions, validation, and error feedback. The OS owns window chrome, theme colors, typography, focus, and input; do not draw pixels, invoke a shell, or invent APIs. Every C function must have the required FUNC and DESC comment header. Implement the requested behavior under 11500 bytes. Only the OS saves, compiles, and launches the result. DOCUMENT CONTEXT:\n".as_slice()
+        let instruction = if kind == Some(editor_compile_intent::ApplicationKind::Game) || style == Some(editor_compile_intent::ApplicationStyle::Ui) {
+            b"Implement the requested native graphical C application completely, using ONLY the SDK below. First line REPLACE_COMPILE, last line END_ACTION; no explanation or markdown. Include stdio.h, stdlib.h, string.h, infinity/uikit.h and infinity/interaction.h; do not redefine SDK declarations. Infer the requested rules and controls, not a different sample. Keep source under 9000 bytes. Zero-initialize all SDK structs; set version=1 and explicit title_length/label_length. Window and element coordinates must fit the chosen window. Handle activate and close events, yield while idle, and update changed elements. Every function needs FUNC and DESC comments. Implement the behavior, not placeholders. The OS saves, compiles and launches. SDK REFERENCE (provided by the header, not code to repeat):\n".as_slice()
         } else if editor && style == Some(editor_compile_intent::ApplicationStyle::Terminal) {
             b"Write complete C source for the user's interactive InfinityOS terminal application. The FIRST line must be REPLACE_COMPILE. The final line must be END_ACTION. No markdown or explanation.\nMANDATORY HEADERS:\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <infinity/console.h>\nThe last header already IMPLEMENTS infinity_read_line. DO NOT declare or implement infinity_read_line yourself. Call it from main exactly like this:\nchar line[128];\nint length = infinity_read_line(line, sizeof(line));\nif (length < 0) break;\nIt blocks for terminal input and returns a NUL-terminated line without its newline. Use it inside a repeated loop with a quit command. Parse integers with strtol and its end pointer. Available output is printf, puts, putchar; use integer formatting. Forbidden: fgets, scanf, sscanf, getchar, stdin, FILE, POSIX, host OS calls, shell commands, external libraries. Do not invent missing library functions. Validate operations and division by zero. Implement the requested behavior in int main(void), under 3500 bytes. Only the OS saves, compiles and launches the result. DOCUMENT CONTEXT:\n".as_slice()
         } else if editor {
@@ -241,6 +239,7 @@ impl Panel {
         } else { b"".as_slice() };
         let parts = [
             instruction,
+            if !interaction.is_empty() { include_bytes!("../../sdk/c/include/infinity/uikit.h").as_slice() } else { b"".as_slice() },
             interaction,
             typed_interaction,
             context,
@@ -337,7 +336,11 @@ impl Panel {
             return false;
         }
         let output = output.trim_ascii_start();
-        let content = if let Some(split) = output.iter().position(|byte| *byte == b'\n') {
+        let raw = output.strip_prefix(b"```c\n").unwrap_or(output);
+        let content = if [b"#include".as_slice(), b"int main(", b"int main ("]
+            .iter().any(|prefix| raw.starts_with(prefix)) {
+            raw.strip_suffix(b"\n```").unwrap_or(raw)
+        } else if let Some(split) = output.iter().position(|byte| *byte == b'\n') {
             if !matches!(&output[..split], b"REPLACE" | b"REPLACE_COMPILE") {
                 return false;
             }
