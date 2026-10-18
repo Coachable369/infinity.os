@@ -22,6 +22,14 @@ clean = true
 command = ["sh", "build.sh"]
 clean = false
 
+[profiles.package-aarch64]
+command = ["sh", "build.sh", "--package-only", "--target", "aarch64"]
+clean = false
+
+[profiles.package-x86_64]
+command = ["sh", "build.sh", "--package-only", "--target", "x86_64"]
+clean = false
+
 [profiles.x86_64]
 command = ["sh", "build.sh", "--target", "x86_64"]
 clean = false

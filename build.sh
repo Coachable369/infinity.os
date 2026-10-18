@@ -13,6 +13,11 @@ test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
 test "${TMPDIR:-}" = "$temporary_dir"
 
 target=all
+package_only=false
+if [ "${1:-}" = "--package-only" ]; then
+    package_only=true
+    shift
+fi
 if [ "${1:-}" = "--target" ]; then
     target=${2:-}
     [ "$#" -eq 2 ] || { echo "usage: ./build.sh [--target aarch64|x86_64|all]" >&2; exit 2; }
@@ -21,6 +26,22 @@ elif [ "$#" -ne 0 ]; then
     exit 2
 fi
 case "$target" in aarch64|x86_64|all) ;; *) echo "unsupported build target: $target" >&2; exit 2 ;; esac
+
+# Fast test-ISO handoff after a build: retain native dependency products and
+# defer the broad regression suite, never the publication/parity gates.
+if [ "$package_only" = true ]; then
+    case "$target" in aarch64|x86_64) ;; *) echo "--package-only requires --target aarch64|x86_64" >&2; exit 2 ;; esac
+    test -s "build/$target/installed-kernel.elf" || {
+        echo "No built $target kernel; run ./build-kit $target first." >&2
+        exit 1
+    }
+    export INFINITY_ISO_BUILD_AUTHORITY=build.sh
+    sh tools/build-hermes.sh --target "$target"
+    (cd "$output_dir" && shasum -a 256 "InfinityOS-$target.iso" > "InfinityOS-$target.iso.sha256")
+    (cd "$output_dir" && shasum -a 256 -c "InfinityOS-$target.iso.sha256")
+    echo "Verified $target test ISO: $output_dir/InfinityOS-$target.iso (broad regression suite deferred)"
+    exit 0
+fi
 
 echo "==> FULL COMMAND LIST ($target)"
 if [ "$target" = aarch64 ]; then
