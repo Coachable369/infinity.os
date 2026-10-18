@@ -190,3 +190,15 @@ headers or substitute SDK headers were added.
 `20261018T044405195381Z-58448`: real model repair, ARM64 and x86-64 compilation,
 host execution returning 42, and subsequent model-lease reuse. This resolves the
 `stddef.h` harness failure above, not the separate GUI/chess acceptance gaps.
+
+The real-Hermes interaction regression also passed
+(`20261018T044444495263Z-58543`), followed by the registry and both target C ABI
+checks (`20261018T044531596644Z-58642`). Clean release build
+`20261018T044546039521Z-58672` passed at code revision `b46d47ee`, including both
+kernel builds and release packaging/parity checks. It produced current
+`builds/InfinityOS-aarch64.iso` and `builds/InfinityOS-x86_64.iso` containing the
+compiler-recovery and source-preview changes. Independent verification of both
+entries in `builds/SHA256SUMS` passed in `20261018T062223023626Z-64593`.
+
+These replace the stale-ISO status for this checkpoint. No installed-VM
+calculator/chess or generated-interaction acceptance is claimed by this release.
