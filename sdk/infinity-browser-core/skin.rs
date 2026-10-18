@@ -26,6 +26,32 @@ pub const CORNER_RADIUS: u32 = 10;
 pub const APP_ICON: &str = "infinity-browser-icon-v1-source.png";
 pub const NAVIGATION_ATLAS: &str = "infinity-browser-navigation-v1-source.png";
 
+// ------------------------=
+// FUNC: pill_pixel
+// DESC: Rasterizes a theme-tinted address pill with antialiased outer and inner edges.
+// ------------------=
+pub fn pill_pixel(w:u32,h:u32,x:u32,y:u32,primary:u32,accent:u32,focused:bool)->(u8,u8,u8,u8) {
+    if w==0 || h==0 || x>=w || y>=h {return (0,0,0,0);}
+    let radius=(h.min(w)*2) as i64;let stroke=(h/32).max(1) as i64*4;
+    let mut outer=0u32;let mut inner=0u32;
+    for dy in 0..4 {for dx in 0..4 {
+        let px=(x*4+dx) as i64;let py=(y*4+dy) as i64;
+        let cx=px.clamp(radius,w as i64*4-radius);let cy=radius;
+        let distance=(px-cx)*(px-cx)+(py-cy)*(py-cy);
+        if distance<=radius*radius {outer+=1;}
+        if distance<=(radius-stroke).max(0).pow(2) {inner+=1;}
+    }}
+    if outer==0 {return (0,0,0,0);}
+    let mut rgb=[0;3];
+    for c in 0..3 {
+        let p=(primary>>(16-8*c))&255;let a=(accent>>(16-8*c))&255;
+        let fill=14+p/5+5*y/h;
+        let edge=if focused {(a+fill)/2+20}else{fill+24};
+        rgb[c]=((fill*inner+edge*(outer-inner))/outer).min(255) as u8;
+    }
+    (rgb[0],rgb[1],rgb[2],(outer*255/16) as u8)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Glyph { Back, Forward, Reload, Stop, Download, SiteControls, Menu, Go }
@@ -74,6 +100,23 @@ pub const fn button(primary: bool, state: Interaction) -> Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: address_pill_is_smooth_themed_and_bounded
+    // DESC: Checks fractional edge coverage and actual palette/focus changes across display scales.
+    // ------------------=
+    #[test] fn address_pill_is_smooth_themed_and_bounded() {
+        for s in 1..=4 {
+            let(w,h)=(400*s,32*s);let mut partial=0;
+            assert_eq!(pill_pixel(w,h,0,0,0,0,false).3,0);
+            assert_eq!(pill_pixel(w,h,w/2,h/2,0,0,false).3,255);
+            for y in 0..h {for x in 0..h {
+                let a=pill_pixel(w,h,x,y,0,0,false).3;if a>0 && a<255 {partial+=1;}
+            }}
+            assert!(partial>0);
+            assert_ne!(pill_pixel(w,h,w/2,0,0x203040,0x8090ff,false),pill_pixel(w,h,w/2,0,0x203040,0x8090ff,true));
+            assert_ne!(pill_pixel(w,h,w/2,h/2,0x203040,0,false),pill_pixel(w,h,w/2,h/2,0x502040,0,false));
+        }
+    }
     // ------------------------=
     // FUNC: atlas_cells_cover_source_without_overlap
     // DESC: Verifies all eight glyph slices partition both even and odd sized source images.

@@ -64,16 +64,14 @@ impl DisplayDevice {
             return;
         }
         let left=window.x.max(0) as usize;let top=window.y.max(0) as usize;
-        self.fill_rounded_rect_alpha(left,top,window.width as usize,window.height as usize,8*scale,7,14,26,255);
-        self.outline_rounded_rect(left,top,window.width as usize,window.height as usize,8*scale,65,80,112);
-        self.fill_rect_alpha(left+1,top+1,window.width as usize-2,layout.content.y as usize-1,8,17,30,238);
-        let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
         let [r,g,b]=infinity_browser_core::tab_style::toolbar_color(self.active_primary_rgb());
+        self.fill_rounded_rect_alpha(left,top,window.width as usize,window.height as usize,8*scale,r/2,g/2,b/2,255);
+        self.outline_rounded_rect(left,top,window.width as usize,window.height as usize,8*scale,r+20,g+20,b+20);
+        let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
         self.fill_rect(left+1,top+48*scale,window.width as usize-2,layout.content.y as usize-48*scale,r,g,b);
+        self.fill_rect(left+1,top+80*scale,window.width as usize-2,scale,r+14,g+14,b+14);
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
-            let r=offset(r);let size=r.width.min(r.height) as usize;
-            self.window_control(r.x.max(0) as usize+(r.width as usize-size)/2,
-                r.y.max(0) as usize+(r.height as usize-size)/2,size,index,state.maximized);
+            self.browser_glyph(offset(r),7+index,true,scale);
         }
         for index in 0..tab_count {
             let Some((tab,close))=layout.tab(index,tab_count) else {continue;};
@@ -107,7 +105,7 @@ impl DisplayDevice {
             self.browser_glyph(r,glyph,enabled,scale);
         }
         let address=offset(layout.address);
-        self.browser_surface(address,skin::ADDRESS);
+        self.browser_address_surface(address,view.address_focused);
         self.browser_glyph(Viewport{x:address.x+8*scale as i32,y:address.y+4*scale as i32,width:24*scale as u32,height:24*scale as u32},if view.welcome_open {14}else{5},true,scale);
         let text=if view.address_focused {&view.edit[..view.edit_length]}else{&view.address[..view.address_length]};
         let available=(address.width as usize).saturating_sub(48*scale);
@@ -120,7 +118,6 @@ impl DisplayDevice {
                 if browser_text_width(&text[middle..caret],14*scale)>available.saturating_sub(3) {start=middle+1;}
                 else {end=middle;}
             }
-            self.outline_rounded_rect(address.x as usize,address.y as usize,address.width as usize,address.height as usize,10,0,215,255);
         }
         if view.address_focused && view.address_selected {
             let width=browser_text_width(text,14*scale).min(available);
@@ -132,8 +129,6 @@ impl DisplayDevice {
             let x=browser_text_width(&text[start..caret],14*scale);
             self.fill_rect(address.x as usize+40*scale+x,address.y as usize+7*scale,scale,18*scale,134,158,255);
         }
-        let go=offset(layout.go);
-        self.browser_glyph(go,1,true,scale);
         if view.settings.favorites {
         let star=offset(layout.favorite);
         if view.favorite_saved {self.browser_surface(star,skin::button(true,skin::Interaction::Normal));}
@@ -380,6 +375,17 @@ impl DisplayDevice {
         let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
         for y in 0..r.height {for x in 0..r.width {
             let (red,green,blue,alpha)=infinity_browser_core::tab_style::themed_pixel(r.width,r.height,x,y,active,hover,primary,accent);
+            if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
+        }}
+    }
+    // ------------------------=
+    // FUNC: browser_address_surface
+    // DESC: Paints the approved continuous antialiased pill using current OS theme colors.
+    // ------------------=
+    fn browser_address_surface(&mut self,r:Viewport,focused:bool) {
+        let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
+        for y in 0..r.height {for x in 0..r.width {
+            let (red,green,blue,alpha)=skin::pill_pixel(r.width,r.height,x,y,primary,accent,focused);
             if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
         }}
     }

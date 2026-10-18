@@ -20,6 +20,9 @@ The shared kernel embeds the sprite, so live and installed rendering use identic
 
 ## Browser tabs
 
+The approved full-window [browser chrome](browser-chrome-v5.md) governs navigation,
+window controls, URL-field surfaces and the browser-specific assistant button.
+
 Use [Soft shoulder tabs](browser-tabs-soft-v4.md) and its generated reference
 board. The shared native recipe uses rounded sloping shoulders and OS-themed dark surfaces, Inter labels and separate close targets. The vertical AI adornment is
 unchanged. Rendering stays inside tab bounds with no exterior glow or idle work.

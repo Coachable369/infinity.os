@@ -5,7 +5,7 @@ mod tab;
 // FUNC: label
 // DESC: Overlays the actual native Inter atlas on the production-pixel review board.
 // ------------------=
-fn label(image:&mut [u8],width:usize,mut x:usize,y:usize,text:&[u8],scale:usize) {
+pub(crate) fn label(image:&mut [u8],width:usize,mut x:usize,y:usize,text:&[u8],scale:usize) {
     let size=14*scale;
     let atlas=std::fs::read(format!("assets/fonts/InfinityBrowser-Regular-{size}.atlas")).unwrap();
     let metrics=std::fs::read(format!("assets/fonts/InfinityBrowser-Regular-{size}.metrics")).unwrap();

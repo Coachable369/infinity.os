@@ -11,7 +11,7 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn window_assistant(&mut self, id: usize, window: Rect, s: usize) {
         let panel = assistant::read(id);
-        let g = assistant::geometry_in_viewport(window, self.width, s, panel.expanded);
+        let g = assistant::geometry_for_owner(id, window, self.width, s, panel.expanded);
         let clip = self.render_clip;
         let footprint = window.union(g.toggle).union(Rect {
             x: g.toggle.x - 4 * s as i32,
@@ -143,7 +143,14 @@ impl super::DisplayDevice {
         }
         let t = g.toggle;
         let pulse = if panel.hovered { assistant::glow_intensity(panel.glow_phase) } else { 48 };
-        self.assistant_tab_glass(t, g.tab_left, pulse, s);
+        if id==0 {
+            let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
+            for y in 0..t.height {for x in 0..t.width {
+                let (r,g,b,a)=infinity_browser_core::skin::pill_pixel(t.width,t.height,x,y,primary,accent,panel.hovered);
+                if a!=0 {self.blend_color(t.x+x as i32,t.y+y as i32,r,g,b,a);}
+            }}
+            self.app_ai_mark(inset(t,8*s));
+        }else{self.assistant_tab_glass(t, g.tab_left, pulse, s);}
         self.render_clip = clip;
     }
 

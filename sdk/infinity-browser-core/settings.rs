@@ -7,7 +7,7 @@ impl Settings {
     // FUNC: new
     // DESC: Returns the browser's established defaults.
     // ------------------=
-    pub const fn new()->Self {Self{search:3,favorites:true}}
+    pub const fn new()->Self {Self{search:3,favorites:false}}
     // ------------------------=
     // FUNC: bytes
     // DESC: Encodes a versioned bounded preference record.

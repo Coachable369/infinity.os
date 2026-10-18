@@ -713,9 +713,25 @@ pub fn geometry_in_viewport(
     let tab_left = right_space < tab_width && window.x >= tab_width;
     let mut geometry = geometry_on_side(window, scale, expanded, tab_left);
     if right_space < tab_width && window.x < tab_width {
-        geometry.toggle.x = (viewport_width as i32-tab_width).max(0);
+        geometry.toggle.x = (viewport_width as i32 - tab_width).max(0);
     }
     geometry
+}
+
+// ------------------------=
+// FUNC: geometry_for_owner
+// DESC: Shares the browser's compact external assistant button between paint, input and window activation.
+// ------------------=
+pub fn geometry_for_owner(owner:usize,window:Rect,viewport_width:usize,scale:usize,expanded:bool)->Geometry {
+    let mut g=geometry_in_viewport(window,viewport_width,scale,expanded);
+    if owner==0 {
+        let s=scale.max(1) as u32;let size=32*s;let gap=8*s as i32;
+        let right=window.right()+gap;
+        g.tab_left=right+size as i32>viewport_width as i32 && window.x>=size as i32+gap;
+        g.toggle=Rect{x:if g.tab_left {window.x-gap-size as i32}else{right.min((viewport_width as i32-size as i32).max(0))},
+            y:window.y+if !g.tab_left && right+size as i32>viewport_width as i32 {48*s as i32}else{12*s as i32},width:size,height:size};
+    }
+    g
 }
 
 // ------------------------=

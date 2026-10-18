@@ -167,6 +167,20 @@ fn syntax() {
 // DESC: Verifies independent window state, action allowlists, explicit approval, stale-context rejection and hit geometry.
 // ------------------=
 fn panels() {
+    for scale in 1..=4 {
+        let window=Rect{x:100,y:80,width:800*scale as u32,height:500*scale as u32};
+        let g=ai::geometry_for_owner(0,window,4000,scale,false);
+        assert_eq!(g.toggle.width,32*scale as u32);
+        assert!(g.toggle.right()<=window.right()+((ai::TAB_WIDTH+12)*scale) as i32);
+        assert_eq!(g.toggle.height,g.toggle.width);
+        assert_eq!(g.toggle.y,window.y+12*scale as i32);
+        assert_eq!(ai::hit(g,false,Point{x:g.toggle.x+20*scale as i32,y:g.toggle.y+20*scale as i32}),Some(Target::Toggle));
+        let other=ai::geometry_for_owner(2,window,4000,scale,false);
+        assert_eq!(other.toggle.height,ai::TAB_HEIGHT as u32*scale as u32);
+        let maximized=ai::geometry_for_owner(0,Rect{x:0,y:0,width:1920,height:1080},1920,scale,false);
+        assert!(maximized.toggle.y>=48*scale as i32);
+        assert!(maximized.toggle.right()<=1920);
+    }
     let reference = Rect {
         x: 0,
         y: 0,

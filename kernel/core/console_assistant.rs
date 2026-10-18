@@ -30,7 +30,7 @@ impl ConsoleRuntime {
         let Some((id,window))=self.assistant_owner() else{return false;};
         if !assistant::expanded(id) {return false;}
         let scale=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale();
-        let g=assistant::geometry_in_viewport(window,self.system.framebuffer_width,scale,true);
+        let g=assistant::geometry_for_owner(id,window,self.system.framebuffer_width,scale,true);
         let p=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,y:self.system.framebuffer_height as i32*self.pointer_y/1000};
         if !g.panel.contains(p) {return false;}
         let mut panel=assistant::read(id);
@@ -263,8 +263,8 @@ impl ConsoleRuntime {
             x: self.system.framebuffer_width as i32 * self.pointer_x / 1000,
             y: self.system.framebuffer_height as i32 * self.pointer_y / 1000,
         };
-        let geometry = assistant::geometry_in_viewport(
-            window,
+        let geometry = assistant::geometry_for_owner(
+            id, window,
             self.system.framebuffer_width,
             scale,
             expanded,

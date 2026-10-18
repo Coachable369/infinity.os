@@ -94,10 +94,8 @@ impl Layout {
         let y = title_height + menu_height + gap;
         let rect = |x: u32, y: u32, width, height| Viewport { x: x as i32, y: y as i32, width, height };
         let address_x = gutter + 3 * (control + gap);
-        let go_width = 32 * scale;
-        let downloads_x = width - gutter - control;
-        let go_x = downloads_x - gap - go_width;
-        let menu_x = go_x - gap - control;
+        let menu_x = width - gutter - control;
+        let downloads_x = menu_x - gap - control;
         let window_control = 32 * scale;
         let close_x = width - gutter - window_control;
         let favorites_y = title_height + menu_height + toolbar_height;
@@ -108,13 +106,13 @@ impl Layout {
             edit_menu:rect(gutter+160*scale,title_height,56*scale,menu_height),
             view_menu:rect(gutter+224*scale,title_height,64*scale,menu_height),
             title: rect(0, 0, width, title_height),
-            tabs: rect(104 * scale, 12 * scale, width - 264 * scale, tab_height),
+            tabs: rect(16 * scale, 12 * scale, width - 176 * scale, tab_height),
             new_tab: rect(width - 152 * scale, 12 * scale, 32 * scale, 32 * scale),
             back: rect(gutter, y, control, control),
             forward: rect(gutter + control + gap, y, control, control),
             reload: rect(gutter + 2 * (control + gap), y, control, control),
-            address: rect(address_x, y, menu_x - gap - address_x, control),
-            go: rect(go_x, y, go_width, control),
+            address: rect(address_x, y, downloads_x - gap - address_x, control),
+            go: rect(0, 0, 0, 0),
             downloads: rect(downloads_x, y, control, control),
             menu: rect(menu_x, y, control, control),
             minimize: rect(close_x - 2 * (window_control + gap), 8 * scale, window_control, window_control),
@@ -136,11 +134,6 @@ impl Layout {
     // DESC: Routes page versus native chrome clicks without treating padding as a control.
     // ------------------=
     pub fn hit(&self, x: i32, y: i32) -> Option<Control> {
-        let scale=self.tabs.height/36;
-        for (index,control) in [Control::Close,Control::Minimize,Control::Maximize].into_iter().enumerate() {
-            let bounds=Viewport{x:((14+index as u32*22)*scale) as i32,y:(14*scale) as i32,width:20*scale,height:20*scale};
-            if bounds.local(x,y).is_some() {return Some(control);}
-        }
         for (bounds, control) in [
             (self.file_menu,Control::FileMenu),(self.settings_menu,Control::SettingsMenu),
             (self.back, Control::Back), (self.forward, Control::Forward),
@@ -198,7 +191,10 @@ mod tests {
     fn menus_and_url_settings_have_distinct_targets() {
         for s in 1..=4 {let l=Layout::new(900*s,600*s,s).unwrap();
             assert_eq!(l.settings_menu.x,l.file_menu.x+l.file_menu.width as i32+(8*s) as i32);
-            assert_eq!(l.menu.x,l.address.x+l.address.width as i32+(8*s) as i32);
+            assert_eq!(l.downloads.x,l.address.x+l.address.width as i32+(8*s) as i32);
+            assert_eq!(l.menu.x,l.downloads.x+l.downloads.width as i32+(8*s) as i32);
+            for x in [14,36,58] {assert_eq!(l.hit(x*s as i32,14*s as i32),None);}
+            assert_eq!(l.go.width,0);
             assert_eq!(l.hit(l.file_menu.x+1,l.file_menu.y+1),Some(Control::FileMenu));
             assert_eq!(l.hit(l.settings_menu.x+1,l.settings_menu.y+1),Some(Control::SettingsMenu));
             assert!(l.menu_item(2,1).is_none());assert!(l.menu_item(0,0).is_none());
@@ -313,7 +309,7 @@ mod tests {
             let controls = [
                 (layout.back, Control::Back), (layout.forward, Control::Forward),
                 (layout.reload, Control::Reload), (layout.address, Control::Address),
-                (layout.go, Control::Go), (layout.downloads, Control::Downloads),
+                (layout.downloads, Control::Downloads),
                 (layout.menu, Control::Menu), (layout.minimize, Control::Minimize),
                 (layout.maximize, Control::Maximize), (layout.close, Control::Close),
             ];

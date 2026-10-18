@@ -826,7 +826,7 @@ impl ConsoleRuntime {
         );
         if let Some((id,window))=self.assistant_owner() {
             if crate::ui::app_assistant::expanded(id) {
-                let g=crate::ui::app_assistant::geometry_in_viewport(window,self.system.framebuffer_width,layout.scale(),true);
+                let g=crate::ui::app_assistant::geometry_for_owner(id,window,self.system.framebuffer_width,layout.scale(),true);
                 let p=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,y:self.system.framebuffer_height as i32*self.pointer_y/1000};
                 if g.panel.contains(p) {return g.composer.contains(p);}
             }
@@ -3727,7 +3727,7 @@ impl ConsoleRuntime {
         let active_navigator=crate::runtime::with_runtime(|r|r.file_navigators.active_index()).flatten().unwrap_or(0);
         for (id,panel_id) in [(0,5+active_navigator),(1,1),(2,2),(3,3),(4,4),(5,0)] {
             let panel=crate::ui::app_assistant::read(panel_id);
-            let toggle=crate::ui::app_assistant::geometry_in_viewport(bounds[id],self.system.framebuffer_width,
+            let toggle=crate::ui::app_assistant::geometry_for_owner(panel_id,bounds[id],self.system.framebuffer_width,
                 layout.scale(),panel.expanded).toggle;
             bounds[id]=bounds[id].union(toggle);
         }
