@@ -471,6 +471,7 @@ impl super::DisplayDevice {
     // DESC: Paints the high-resolution authenticated-session wallpaper without baked interface elements.
     // ------------------=
     pub(super) fn paint_desktop_background(&mut self) {
+        if crate::ui::user_wallpaper::bitmap(|b|{if let Some(b)=b{self.paint_bitmap_cover_rect(b,0,0,self.width,self.height);true}else{false}}){return;}
         if let Some(bitmap) = super::spatial_view::WORLD_ART.get(crate::ui::spatial::desktop_world() as usize) {
             self.paint_bitmap_cover_rect(bitmap, 0, 0, self.width, self.height);
             return;
@@ -730,6 +731,7 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
     ) {
+        if crate::ui::user_wallpaper::bitmap(|b|{if let Some(b)=b{self.paint_bitmap_cover_rect(b,left,top,width,height);true}else{false}}){return;}
         if let Some(bitmap) = super::spatial_view::WORLD_ART.get(crate::ui::spatial::desktop_world() as usize) {
             self.paint_bitmap_cover_rect(bitmap, left, top, width, height);
             return;
@@ -10914,7 +10916,8 @@ pub fn system_ui_present(
                 console.last_launcher_interaction_state != launcher_interaction_state;
             let font_changed=crate::ui::font_library::take_damage();
             if font_changed {super::retained_windows::invalidate();}
-            let structural_change_without_window = font_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
+            let wallpaper_changed=crate::ui::user_wallpaper::take_damage(console.display.width,console.display.height).is_some();
+            let structural_change_without_window = font_changed || wallpaper_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
                 && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
                     || (!desktop_layer_focus_changed
                         && crate::ui::redraw::focus_change_requires_structural_redraw(

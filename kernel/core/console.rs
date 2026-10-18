@@ -3553,6 +3553,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
         self.restore_font_preferences();
+        self.restore_desktop_wallpaper();
         self.restore_file_association_preferences();
         let mut appearance = crate::storage::editor_preferences(
             self.current_user.0, self.current_session.0, None,
@@ -7336,6 +7337,7 @@ impl ConsoleRuntime {
             } else {
             match action {
                 A::Preview => self.preview_file(path),
+                A::SetWallpaper => self.set_desktop_wallpaper(path,true),
                 A::Open => self.open_file_navigator_selection(),
                 A::Rename => {
                     let name = crate::runtime::object_navigation::namespace_basename(path);
@@ -7430,6 +7432,7 @@ impl ConsoleRuntime {
         let _ = crate::runtime::with_runtime(|runtime| {
             if let Some(navigator) = runtime.file_navigator.as_mut() {
                 navigator.context_handler_labels = labels;
+                navigator.context_image = metadata.kind != crate::storage::object::ObjectType::NamespaceNode && crate::ui::user_wallpaper::image_path(path);
                 navigator.context_handler_count = count;
                 navigator.context_default_handler = default_handler;
                 navigator.context_target = target;
@@ -9666,6 +9669,13 @@ impl ConsoleRuntime {
                 let target=if target.len()>=2 && target.first()==Some(&b'"') && target.last()==Some(&b'"') {&target[1..target.len()-1]}else{target};
                 self.preview_file(target);
             }else{self.output.write_line(b"Usage: preview <path>");}
+            return true;
+        }
+        if first == b"wallpaper" {
+            if let Some(target)=command_tail(command,1){
+                let target=if target.len()>=2&&target.first()==Some(&b'"')&&target.last()==Some(&b'"'){&target[1..target.len()-1]}else{target};
+                self.set_desktop_wallpaper(target,true);
+            }else{self.output.write_line(b"Usage: wallpaper <image-path>");}
             return true;
         }
         if first == b"open" {

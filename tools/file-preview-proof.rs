@@ -69,4 +69,7 @@ pub fn render(){use crate::file_preview as p;let mut state=p::Preview::new();sta
     state.length=p::load(|b|{b[..text.len()].copy_from_slice(text);Some(text.len())}).unwrap();state.lines=p::text_rows(text,state.columns(),|_,_|{});p::publish(state);
     let mut d=DisplayDevice{pixels:vec![12;1024*768*3],width:1024,height:768};d.file_preview_overlay();
     use std::io::Write;let mut out=std::fs::File::create("builds/file-preview-proof.ppm").unwrap();write!(out,"P6\n1024 768\n255\n").unwrap();out.write_all(&d.pixels).unwrap();p::close();
+    state=p::Preview::new();state.open=true;state.menu=true;state.rect=Rect{x:40,y:40,width:300,height:72};
+    let path=b"/home/default/pictures/sky.png";state.path[..path.len()].copy_from_slice(path);state.path_len=path.len();p::publish(state);
+    d.pixels.fill(12);d.file_preview_overlay();let mut out=std::fs::File::create("builds/wallpaper-menu-proof.ppm").unwrap();write!(out,"P6\n1024 768\n255\n").unwrap();out.write_all(&d.pixels).unwrap();p::close();
 }

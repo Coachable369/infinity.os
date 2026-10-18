@@ -230,6 +230,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn synchronize_workplace(&mut self) {
         let active=self.workplace_authorized(false);
+        crate::ui::user_wallpaper::session(self.current_user.0,active);
         let preview=crate::ui::file_preview::current();
         if preview.open && (!active || preview.owner!=self.current_session.0) {crate::ui::file_preview::close();}
         if self.workplace_session!=self.current_session.0 {

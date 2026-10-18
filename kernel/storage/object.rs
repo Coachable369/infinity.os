@@ -1457,6 +1457,16 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: read_wallpaper_preference
+    // DESC: Restricts private wallpaper references to their authenticated native service.
+    // ------------------=
+    pub(crate) fn read_wallpaper_preference(&mut self,id:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
+        let record=&self.state.objects[self.object_index(id)?];
+        if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@wallpaper"{return Err(ObjectError::Unauthorized);}
+        self.read_internal(id,None,out)
+    }
+
+    // ------------------------=
     // FUNC: read_browser_favorites
     // DESC: Reads private browser state only through the authenticated native browser service.
     // ------------------=

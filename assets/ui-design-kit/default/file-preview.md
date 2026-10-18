@@ -33,3 +33,13 @@ using a host framebuffer adapter and authored Inter atlases; its rendered review
 is not installed-VM proof. Use `./build-kit file-preview-tests` for focused tests.
 ARM64 and x86_64 checks and a fresh release remain separate from installed desktop
 interaction acceptance. No installed-runtime verification is claimed here.
+
+Image context menus also offer `Set as desktop wallpaper...`, using the same
+compact menu recipe (300px width to retain the full label). BMP and supported PNG
+files are decoded once, fitted to a bounded 1920x1080 cache and cover-cropped by
+the existing wallpaper painter. Transparency composites against black. The image
+reference is saved per authenticated user; the source file must remain available.
+Missing, deleted or newly inaccessible sources fall back to packaged wallpaper
+on login. Private cache pixels clear on lock or user change. Custom artwork takes
+precedence over packaged World Shift backgrounds. Unsupported image formats open
+the preview's explicit unsupported state rather than changing the wallpaper.

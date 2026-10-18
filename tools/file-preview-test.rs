@@ -3,7 +3,8 @@
 #[path="../kernel/ui/bitmap.rs"] pub mod bitmap;
 #[path="../kernel/ui/preview_png.rs"] pub mod preview_png;
 #[path="../kernel/ui/file_preview.rs"] pub mod file_preview;
-pub mod ui {pub use crate::{geometry,bitmap,preview_png,file_preview};}
+#[path="../kernel/ui/user_wallpaper.rs"] pub mod user_wallpaper;
+pub mod ui {pub use crate::{geometry,bitmap,preview_png,file_preview,user_wallpaper};}
 pub mod runtime {pub mod object_navigation {
     // ------------------------=
     // FUNC: namespace_basename
@@ -19,6 +20,25 @@ pub mod runtime {pub mod object_navigation {
 fn main() {proof::render();}
 #[cfg(test)] mod tests {
 use super::*;
+#[test]
+// ------------------------=
+// FUNC: wallpaper_pixels_and_session_revocation
+// DESC: Verifies decoded wallpaper pixels, bounds rejection and private cache revocation.
+// ------------------=
+fn wallpaper_pixels_and_session_revocation(){
+    let mut out=[0u8;70];
+    let n=user_wallpaper::encode(&mut out,2,2,|x,y|Some([x as u8*200,y as u8*120,80,255])).unwrap();
+    let b=bitmap::RuntimeBitmap::parse(&out[..n]).unwrap();assert_eq!(b.rgba(1,1),Some([200,120,80,255]));
+    assert!(user_wallpaper::encode(&mut out,3,2,|_,_|Some([0;4])).is_none());
+    assert!(user_wallpaper::encode(&mut out,0,1,|_,_|Some([0;4])).is_none());
+    assert!(user_wallpaper::image_path(b"/home/me/photo.PNG"));assert!(!user_wallpaper::image_path(b"/home/me/photo.txt"));
+    assert!(user_wallpaper::install([1;16],1,1,|_,_|Some([70,80,90,255])));
+    assert!(user_wallpaper::take_damage(800,600).is_some());assert!(user_wallpaper::take_damage(800,600).is_none());
+    user_wallpaper::session([1;16],true);assert!(user_wallpaper::bitmap(|b|b.is_some()));
+    user_wallpaper::session([2;16],true);assert!(user_wallpaper::bitmap(|b|b.is_none()));
+    assert!(user_wallpaper::install([1;16],1,1,|_,_|Some([70,80,90,255])));
+    user_wallpaper::session([1;16],false);assert!(user_wallpaper::bitmap(|b|b.is_none()));
+}
 // ------------------------=
 // FUNC: decode
 // DESC: Runs production PNG parsing against the same bounded native zlib adapter.

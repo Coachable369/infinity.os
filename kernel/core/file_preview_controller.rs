@@ -30,6 +30,13 @@ impl ConsoleRuntime {
     // DESC: Resolves relative paths and reads only authorized Personal Space content without invoking a file association.
     // ------------------=
     pub(super) fn preview_file(&mut self,path:&[u8]) {
+        self.load_preview_file(path,true);
+    }
+    // ------------------------=
+    // FUNC: load_preview_file
+    // DESC: Shares authenticated decoding between read-only preview and wallpaper selection.
+    // ------------------=
+    fn load_preview_file(&mut self,path:&[u8],show:bool) {
         preview::close();
         if !self.workplace_authorized(false) {self.output.write_line(b"Preview requires an authorized session.");return;}
         let path=if path.starts_with(b"/"){crate::runtime::object_navigation::normalize_absolute_path(path)}
@@ -56,8 +63,38 @@ impl ConsoleRuntime {
                 }
             }
         }
-        if !matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) {self.open_command_window();}
-        preview::publish(state);self.reflow_preview();self.redraw();
+        state.open=show;
+        if show&&!matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) {self.open_command_window();}
+        preview::publish(state);self.reflow_preview();if show{self.redraw();}
+    }
+    // ------------------------=
+    // FUNC: set_desktop_wallpaper
+    // DESC: Validates source access and decoding before saving a per-user reference and publishing cover artwork.
+    // ------------------=
+    pub(super) fn set_desktop_wallpaper(&mut self,path:&[u8],save:bool){
+        if !self.workplace_authorized(save){return;}
+        self.load_preview_file(path,false);let state=preview::current();
+        if !matches!(state.kind,Kind::Bitmap|Kind::Png){if save{self.preview_file(path);}else{preview::close();}return;}
+        if save&&crate::storage::wallpaper_preference(self.current_user.0,self.current_session.0,Some(&state.path[..state.path_len])).is_err(){
+            self.output.write_line(b"Wallpaper could not be saved. The previous wallpaper is unchanged.");preview::close();return;
+        }
+        let owner=self.current_user.0;
+        // Bound the retained cache to 1920x1080 while preserving source proportions.
+        let install=|w:usize,h:usize,pixel:&mut dyn FnMut(usize,usize)->Option<[u8;4]>|{
+            let divisor=((w+1919)/1920).max((h+1079)/1080).max(1);let dw=(w/divisor).max(1);let dh=(h/divisor).max(1);
+            crate::ui::user_wallpaper::install(owner,dw,dh,|x,y|pixel(x*w/dw,y*h/dh))
+        };
+        if state.kind==Kind::Bitmap{preview::content(|b|{if let Some(b)=crate::ui::bitmap::RuntimeBitmap::parse(b){install(b.width(),b.height(),&mut|x,y|b.rgba(x,y));}});}
+        else{preview::png(|p,raw|{install(p.width,p.height,&mut|x,y|p.rgba(raw,x,y));});}
+        preview::close();if save{self.redraw();}
+    }
+    // ------------------------=
+    // FUNC: restore_desktop_wallpaper
+    // DESC: Restores only an accessible saved image, falling back to packaged artwork if missing or unsupported.
+    // ------------------=
+    pub(super) fn restore_desktop_wallpaper(&mut self){
+        crate::ui::user_wallpaper::session([0;16],false);
+        if let Ok((path,n))=crate::storage::wallpaper_preference(self.current_user.0,self.current_session.0,None){self.set_desktop_wallpaper(&path[..n],false);}
     }
     // ------------------------=
     // FUNC: reflow_preview
@@ -84,7 +121,7 @@ impl ConsoleRuntime {
         let mut v=preview::current();if !v.open{return false;}
         if !self.workplace_authorized(false)||v.owner!=self.current_session.0 {preview::close();return false;}
         let p=Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,y:self.system.framebuffer_height as i32*self.pointer_y/1000};
-        if v.menu {if clicked {if v.rect.contains(p){self.preview_file(&v.path[..v.path_len]);}else{preview::close();}}return true;}
+        if v.menu {if clicked {if v.rect.contains(p){if p.y>=v.rect.y+36*v.scale as i32&&crate::ui::user_wallpaper::image_path(&v.path[..v.path_len]){self.set_desktop_wallpaper(&v.path[..v.path_len],true);}else{self.preview_file(&v.path[..v.path_len]);}}else{preview::close();}}return true;}
         if clicked && v.close_rect().contains(p) {preview::close();return true;}
         if let Some((origin,r,edge))=v.drag {
             if left {let dx=p.x-origin.x;let dy=p.y-origin.y;
@@ -124,7 +161,8 @@ impl ConsoleRuntime {
         let mut v=Preview::new();v.open=true;v.menu=true;v.owner=self.current_session.0;
         v.path[..path.len()].copy_from_slice(path);v.path_len=path.len();
         v.scale=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale();
-        let w=(200*v.scale).min(self.system.framebuffer_width);let h=40*v.scale;
+        let image=crate::ui::user_wallpaper::image_path(path);
+        let w=(300*v.scale).min(self.system.framebuffer_width);let h=if image{72*v.scale}else{40*v.scale};
         v.rect=Rect{x:(self.system.framebuffer_width as i32*self.pointer_x/1000).clamp(0,(self.system.framebuffer_width-w) as i32),y:(self.system.framebuffer_height as i32*self.pointer_y/1000).clamp(0,self.system.framebuffer_height.saturating_sub(h) as i32),width:w as u32,height:h as u32};
         preview::publish(v);true
     }

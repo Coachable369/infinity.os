@@ -23,7 +23,7 @@ pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContextAction {
-    Open, Preview, OpenWith, SetDefaultWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo,
+    Open, Preview, SetWallpaper, OpenWith, SetDefaultWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo,
     NewFolder, List, Grid, Sort, Handler0, Handler1, Handler2, Handler3, Handler4,
     Handler5, Handler6, Handler7, Unavailable, Back,
 }
@@ -35,7 +35,7 @@ impl ContextAction {
     // ------------------=
     pub const fn label(self) -> &'static [u8] {
         match self {
-            Self::Open => b"Open", Self::Preview => b"Preview", Self::OpenWith => b"Open With...", Self::SetDefaultWith => b"Always Open With...", Self::Rename => b"Rename",
+            Self::Open => b"Open", Self::Preview => b"Preview", Self::SetWallpaper => b"Set as desktop wallpaper...", Self::OpenWith => b"Open With...", Self::SetDefaultWith => b"Always Open With...", Self::Rename => b"Rename",
             Self::Duplicate => b"Duplicate", Self::Trash => b"Move to Trash", Self::NewFolder => b"New Folder",
             Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
             Self::Handler0 | Self::Handler1 | Self::Handler2 | Self::Handler3 | Self::Handler4
@@ -1110,6 +1110,7 @@ pub struct FileNavigatorState {
     pub context_item: u16,
     pub context_open_with: bool,
     pub context_set_default: bool,
+    pub context_image: bool,
     pub context_handler_count: u8,
     pub context_default_handler: u8,
     pub context_handler_labels: [ByteText<32>; 8],
@@ -1423,6 +1424,7 @@ impl FileNavigatorState {
             context_item: FILE_NAVIGATOR_NO_SELECTION,
             context_open_with: false,
             context_set_default: false,
+            context_image: false,
             context_handler_count: 0,
             context_default_handler: u8::MAX,
             context_handler_labels: [ByteText::empty(); 8],
@@ -1632,6 +1634,7 @@ impl FileNavigatorState {
         self.selected_index = self.context_item;
         self.context_open_with = false;
         self.context_set_default = false;
+        self.context_image = false;
         self.context_handler_count = 0;
         self.context_default_handler = u8::MAX;
         self.context_handler_labels = [ByteText::empty(); 8];
@@ -1664,6 +1667,7 @@ impl FileNavigatorState {
         }
         if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, PasteTo, List, Grid, Sort] }
         else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
+        else if self.context_image { &[Open,Preview,SetWallpaper,OpenWith,SetDefaultWith,Rename,Duplicate,Copy,Cut,Paste,PasteTo,Trash] }
         else { &[Open, Preview, OpenWith, SetDefaultWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
     }
 

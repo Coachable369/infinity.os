@@ -85,6 +85,10 @@ fn main() {
     assert_eq!(first_window.state.selected_index, 4);
     assert_eq!(first_window.state.context_actions(), &[A::Open, A::Preview, A::OpenWith, A::SetDefaultWith, A::Rename, A::Duplicate, A::Copy, A::Cut, A::Paste, A::PasteTo, A::Trash]);
     first_window.state.context_handler_count = 2;
+    first_window.state.context_image = true;
+    assert_eq!(first_window.state.context_actions()[2], A::SetWallpaper);
+    assert_eq!(first_window.state.context_actions().len(), 12);
+    first_window.state.context_image = false;
     first_window.state.context_handler_labels[0] = ByteText::new(b"Text Editor").unwrap();
     first_window.state.context_handler_labels[1] = ByteText::new(b"Markdown Studio").unwrap();
     first_window.state.context_open_with = true;

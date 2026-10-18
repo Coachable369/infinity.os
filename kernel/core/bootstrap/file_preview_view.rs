@@ -13,7 +13,8 @@ impl super::DisplayDevice {
         let (ar,ag,ab)=((accent>>16) as u8,(accent>>8) as u8,accent as u8);
         self.fill_rounded_rect_alpha(x,y,w,h,8*s,r/2,g/2,b/2,255);
         self.outline_rounded_rect(x,y,w,h,8*s,ar,ag,ab);
-        if v.menu {self.app_text(x+16*s,y+8*s,b"Preview",(222,235,245),false,s);return;}
+        if v.menu {self.app_text(x+16*s,y+8*s,b"Preview",(222,235,245),false,s);
+            if crate::ui::user_wallpaper::image_path(&v.path[..v.path_len]){self.app_text(x+16*s,y+40*s,b"Set as desktop wallpaper...",(222,235,245),false,s);}return;}
         let mut title=v.rect;title.x+=20*s as i32;title.y+=16*s as i32;title.width=title.width.saturating_sub(80*s as u32);title.height=24*s as u32;
         self.app_label(title,crate::runtime::object_navigation::namespace_basename(&v.path[..v.path_len]),(232,241,250),true,s);
         let c=v.close_rect();let cx=c.x+c.width as i32/2;let cy=c.y+c.height as i32/2;let d=5*s as i32;

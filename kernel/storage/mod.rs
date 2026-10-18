@@ -824,6 +824,31 @@ pub(crate) fn font_preferences(owner:[u8;16], session:[u8;16], save:Option<crate
 }
 
 // ------------------------=
+// FUNC: wallpaper_preference
+// DESC: Persists an authenticated owner's image reference; source ownership is rechecked on every login.
+// ------------------=
+pub(crate) fn wallpaper_preference(owner:[u8;16],session:[u8;16],save:Option<&[u8]>)->Result<([u8;96],usize),object::ObjectError>{
+    let _=browser_favorites_path(owner,session)?;
+    let mut path=[0u8;50];path[..18].copy_from_slice(b"/system/wallpaper/");
+    for(i,b)in owner.iter().enumerate(){path[18+i*2]=b"0123456789abcdef"[(b>>4)as usize];path[19+i*2]=b"0123456789abcdef"[(b&15)as usize];}
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|{
+        let id=match store.resolve(&path){Ok(id)=>Some(id),Err(object::ObjectError::NotFound|object::ObjectError::NamespaceNotFound)=>None,Err(e)=>return Err(e)};
+        let mut bytes=[0u8;100];bytes[..4].copy_from_slice(b"IWP1");
+        let n=if let Some(value)=save{
+            if value.len()>96||!value.starts_with(b"/"){return Err(object::ObjectError::CorruptContent);}
+            bytes[4..4+value.len()].copy_from_slice(value);
+            if let Some(id)=id{store.replace_state(id,&bytes[..4+value.len()])?;}else{store.create_attached(b"@wallpaper",object::ObjectType::Metadata,object::Space::System,&bytes[..4+value.len()],&path)?;}
+            4+value.len()
+        }else if let Some(id)=id{store.read_wallpaper_preference(id,&mut bytes)?}else{return Err(object::ObjectError::NotFound);};
+        if n<5||n>100||&bytes[..4]!=b"IWP1"||bytes[4]!=b'/'{return Err(object::ObjectError::CorruptContent);}
+        let mut value=[0u8;96];value[..n-4].copy_from_slice(&bytes[4..n]);Ok((value,n-4))
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: editor_preferences
 // DESC: Commits versioned editor appearance in an authenticated private native object, with bounded version history.
 // ------------------=
