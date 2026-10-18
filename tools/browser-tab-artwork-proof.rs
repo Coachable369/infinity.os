@@ -2,6 +2,30 @@
 mod tab;
 
 // ------------------------=
+// FUNC: label
+// DESC: Overlays the actual native Inter atlas on the production-pixel review board.
+// ------------------=
+fn label(image:&mut [u8],width:usize,mut x:usize,y:usize,text:&[u8],scale:usize) {
+    let size=14*scale;
+    let atlas=std::fs::read(format!("assets/fonts/InfinityBrowser-Regular-{size}.atlas")).unwrap();
+    let metrics=std::fs::read(format!("assets/fonts/InfinityBrowser-Regular-{size}.metrics")).unwrap();
+    let kern=std::fs::read(format!("assets/fonts/InfinityBrowser-Regular-{size}.kern")).unwrap();
+    let mut previous=None;
+    for &byte in text {
+        let index=(byte-32) as usize;
+        if let Some(left)=previous {x=x.saturating_add_signed(kern[left*95+index] as isize-128);}
+        for gy in 0..size+6 {for gx in 0..size {
+            let a=atlas[gy*size*95+index*size+gx] as u32;
+            let at=((y+gy)*width+x+gx)*3;
+            for (c,value) in [217u32,227,245].into_iter().enumerate() {
+                image[at+c]=((image[at+c] as u32*(255-a)+value*a)/255) as u8;
+            }
+        }}
+        x+=metrics[index] as usize;previous=Some(index);
+    }
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Renders actual production tab pixels across interaction states and scales for visual review.
 // ------------------=
@@ -32,6 +56,17 @@ fn main() {
             }
         }}
     }
+    for (index,text) in [b"Inactive" as &[u8],b"Hover",b"Active",b"Active + hover"].into_iter().enumerate() {
+        label(&mut image,width,60+index*248,46,text,1);
+        let cx=24+index*248+204;let cy=53;
+        for d in 0..9 {
+            for x in [cx-4+d,cx+4-d] {
+                let at=((cy-4+d)*width+x)*3;image[at..at+3].copy_from_slice(&[217,227,245]);
+            }
+        }
+    }
+    label(&mut image,width,56,182,b"Compact",2);
+    label(&mut image,width,404,182,b"Infinity Browser",2);
     use std::io::Write;
     let mut output=std::fs::File::create("build/behavior-tests/browser-tab-artwork-proof.ppm").unwrap();
     write!(output,"P6\n{width} {height}\n255\n").unwrap();

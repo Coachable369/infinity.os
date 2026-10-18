@@ -78,13 +78,13 @@ impl DisplayDevice {
             let tab=offset(tab);let close=offset(close);let entry=&view.tabs[index];
             self.browser_tab(tab,view.welcome_open || entry.id==view.active_tab,entry.id==view.hovered_tab);
             if tab.width>=112*scale as u32 {
-                self.browser_glyph(Viewport{x:tab.x+28*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
+                self.browser_glyph(Viewport{x:tab.x+12*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
             }
-            self.browser_label(Viewport{x:tab.x+52*scale as i32,y:tab.y+11*scale as i32,
-                width:tab.width.saturating_sub(100*scale as u32),height:20*scale as u32},
+            self.browser_label(Viewport{x:tab.x+36*scale as i32,y:tab.y+11*scale as i32,
+                width:tab.width.saturating_sub(76*scale as u32),height:20*scale as u32},
                 if view.welcome_open {b"Welcome"}else if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
             if view.hovered_tab==entry.id && view.hovered_close {
-                self.fill_rounded_rect_alpha(close.x as usize,close.y as usize,close.width as usize,close.height as usize,5*scale,92,76,158,170);
+                self.browser_tab(close,false,true);
             }
             let cx=close.x+close.width as i32/2;let cy=close.y+close.height as i32/2;
             let d=4*scale as i32;
@@ -92,6 +92,7 @@ impl DisplayDevice {
             self.line(cx+d,cy-d,cx-d,cy+d,217,227,245);
         }
         let new_tab=offset(layout.new_tab);
+        self.browser_tab(new_tab,false,false);
         self.browser_glyph(new_tab,11,true,scale);
         for (r,name,id) in [(layout.file_menu,b"File" as &[u8],1),(layout.settings_menu,b"Settings" as &[u8],2),(layout.edit_menu,b"Edit" as &[u8],3),(layout.view_menu,b"View" as &[u8],4)] {
             let r=offset(r);
@@ -371,14 +372,9 @@ impl DisplayDevice {
     }
     // ------------------------=
     // FUNC: browser_tab
-    // DESC: Paints the horizontal AI-adornment glass silhouette with antialiased sapphire-violet shoulders.
+    // DESC: Paints kit-matched clipped cyan tabs entirely within their shared hit and damage bounds.
     // ------------------=
     fn browser_tab(&mut self,r:Viewport,active:bool,hover:bool) {
-        let radius=(r.height/36).max(1) as i32*6;
-        for y in -radius..r.height as i32 {for x in -radius..r.width as i32+radius {
-            let (red,green,blue,alpha)=infinity_browser_core::tab_style::halo(r.width,r.height,x,y,active,hover);
-            if alpha!=0 {self.blend_color(r.x+x,r.y+y,red,green,blue,alpha);}
-        }}
         for y in 0..r.height {for x in 0..r.width {
             let (red,green,blue,alpha)=infinity_browser_core::tab_style::pixel(r.width,r.height,x,y,active,hover);
             if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
