@@ -1,0 +1,63 @@
+Native Qwen image engine port -- NOT INSTALLED / NOT RUNNABLE
+
+This work is isolated from Hermes, Ministral, speech, and their model artifacts.
+It does not add a selectable chat model or claim image-generation acceptance.
+No inference server, Python runtime, Metal, CUDA, RPC, or network service is
+part of the target configuration. Python/CMake are build-time tools only.
+
+Pinned engine: leejet/stable-diffusion.cpp
+  b13a48219d5cdf408edcb93da6cd69b612ed03d3
+Pinned independent GGML:
+  dc998771e700d49bbdf9a39cede22bb5b3311767
+Native libc++ source is the existing pinned LLVM checkout, with a SEPARATE
+image runtime build enabling filesystem streams and RTTI. Speech runtime
+configuration and existing model files are unchanged.
+
+Observed verification (2026-10-18):
+- All configured CPU engine translation units cross-compile for aarch64-none-elf.
+  Manifest: builds/manifests/20261018T161223057009Z-76968.json
+- The native service adapter link audit fails. This is a build diagnostic,
+  NOT behavioral or image-inference acceptance.
+  Manifest: builds/manifests/20261018T161433593186Z-77185.json
+  Details: build/image-native/aarch64/link-audit.json
+- No x86_64 engine compile, VM inference, real-weight image generation,
+  installed-system parity, or replacement release ISO has been verified.
+
+Strong unresolved symbols from the link audit:
+  __cxa_allocate_exception, __cxa_throw, __dso_handle, __emutls_get_address,
+  __extenddftf2, __trunctfdf2, _open, pathconf, posix_memalign,
+  pthread_cond_init, sysconf.
+Two additional weak TLS initialization references appear in the diagnostic
+list; they must be classified separately from required strong imports:
+  _ZTHN2sd15parallel_detail6activeE
+  _ZTHN2sd15parallel_detail8executorE
+
+Further runtime requirements already identified:
+- ModelLoader::load_tensors creates std::thread even with n_threads=1;
+  the current native compiler pthread bridge deliberately rejects thread
+  creation. A reviewed serial loader or real native worker adapter is needed.
+- Exceptions must terminate/quarantine an image job, never unwind into Rust
+  or abort the kernel. The current compile flags are not proof of that boundary.
+- Link and privately namespace the complete runtime before integrating it;
+  these objects must NOT be linked unprefixed into the kernel.
+- Bind immutable model reads and memory reservations to native capability
+  authority; no ambient filesystem access or speculative large static heap.
+- Pin/verify model components, generate actual pixels, support cancellation,
+  save authorized Downloads objects, then connect thumbnails and previews.
+- Keep Hermes default; add genuine readiness only after the backend and model
+  package pass acceptance. Both architectures and fresh installations matter.
+
+Reproduction (all commands require the build kit):
+  ./build-kit run python3 tools/voice-native-runtime/newlib.py
+  ./build-kit run python3 tools/voice-kokoro/prepare-native.py
+  ./build-kit run python3 tools/image-native/prepare.py
+  ./build-kit run python3 tools/image-native/prepare-runtime.py
+  ./build-kit run python3 tools/image-native/native-build.py
+  ./build-kit run python3 tools/image-native/link-native.py
+
+Default target is ARM64. For x86_64 use INFINITY_VOICE_TARGET=x86_64 in the
+build-kit command environment for each target-dependent step; the variable
+selects the shared native toolchain adapter, not a speech-model modification.
+
+The port remains outside release profiles until these gates pass. Do not use
+object compilation, symbol inspection, or a failed link as inference evidence.
