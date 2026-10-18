@@ -512,7 +512,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         if (0x1140..=0x1142).contains(&op) {
             return native_uikit_syscall(tables,op,args);
         }
-        if (0x1150..=0x1154).contains(&op) {
+        if (0x1150..=0x1156).contains(&op) {
             return native_interaction_syscall(tables,op,args,console.current_session.0);
         }
         if op!=0x1002{return -88;}
@@ -567,13 +567,13 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
 // ------------------=
 fn native_interaction_syscall<T:crate::runtime::native_memory::PageTable>(tables:&mut T,op:u64,args:[u64;6],session:[u8;16])->i64 {
     use crate::runtime::native_memory::{copy_from_user,copy_to_user};
-    let length=match op {0x1150=>2072,0x1151=>192,0x1152=>8,0x1153=>72,0x1154=>16,_=>return -3};
+    let length=match op {0x1150=>2072,0x1151=>192,0x1152=>8,0x1153=>72,0x1154=>16,0x1155=>416,0x1156=>592,_=>return -3};
     if args[1]!=length as u64 {return -3;}
     let mut input=[0u8;2072];
     if copy_from_user(tables,args[0],&mut input[..length]).is_err(){return -14;}
     // Validate the complete destination before consuming a deliver-once request.
-    if op==0x1153 && copy_to_user(tables,args[0],&input[..length]).is_err(){return -14;}
-    let mut output=[0u8;72];
+    if matches!(op,0x1153|0x1156) && copy_to_user(tables,args[0],&input[..length]).is_err(){return -14;}
+    let mut output=[0u8;592];
     match crate::runtime::ai::application_host::syscall(op,session,&input[..length],&mut output,crate::runtime::ai::qwen::workers::clock_ns()) {
         Ok(written)=>{
             if written>0 && copy_to_user(tables,args[0],&output[..written]).is_err(){return -14;}

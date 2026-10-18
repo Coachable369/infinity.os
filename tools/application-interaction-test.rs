@@ -31,6 +31,8 @@ fn publish(registry: &mut Registry, id: u64, revision: u64, risk: Risk) {
 // ------------------=
 fn main() {
     host_packets();
+    typed_actions();
+    approvals();
     assert!(editor_compile_intent::requests_opponent(b"create a chess game and play me"));
     assert!(editor_compile_intent::requests_opponent(b"play against me"));
     assert!(!editor_compile_intent::requests_opponent(b"create a chess game"));
@@ -79,6 +81,103 @@ fn main() {
     let relaunched=registry.register([1;16],[2;16]).unwrap();
     assert_ne!(id,relaunched);
     assert!(matches!(registry.observe(id,[1;16],[2;16]),Err(Error::Missing)));
+}
+
+// ------------------------=
+// FUNC: approvals
+// DESC: Verifies review quarantine, exact-token approval, expiry, changed state and revocation without dispatching unintended actions.
+// ------------------=
+fn approvals() {
+    let mut registry=Box::new(Registry::new());
+    let id=registry.register([1;16],[2;16]).unwrap();
+    publish(&mut registry,id,1,Risk::Sensitive);registry.grant(id,[1;16],[2;16],true).unwrap();
+    let state=registry.observe(id,[1;16],[2;16]).unwrap();
+    assert_eq!(application_decision::parse_for_state(b"CHOICE:3:board.placeMark",&state).unwrap().id,3);
+    assert!(application_decision::parse_for_state(b"CHOICE:3:document.clear",&state).is_none());
+    assert!(application_decision::parse_for_state(b"CHOICE:3:board.placeMark\nCHOICE:4",&state).is_none());
+    assert!(application_decision::parse_for_state(b"CHOICE:4:board.placeMark",&state).is_none());
+    let review=registry.prepare_review(id,[1;16],[2;16],1,3,None,&[],10).unwrap();
+    assert_eq!(registry.poll(id,[1;16],[2;16],11),Ok(None));
+    assert_eq!(registry.approve_review(id,[3;16],[2;16],review.token,12),Err(Error::Denied));
+    assert_eq!(registry.approve_review(id,[1;16],[3;16],review.token,12),Err(Error::Denied));
+    assert_eq!(registry.approve_review(id,[1;16],[2;16],review.token+1,12),Err(Error::Denied));
+    let approved=registry.approve_review(id,[1;16],[2;16],review.token,12).unwrap();
+    assert_eq!(approved.token,review.token);
+    assert_eq!(registry.approve_review(id,[1;16],[2;16],review.token,13),Err(Error::Missing));
+    assert_eq!(registry.poll(id,[1;16],[2;16],13),Ok(Some(approved)));
+    registry.finish(id,[1;16],[2;16],approved.token,Outcome::Rejected,14).unwrap();
+    let expired=registry.prepare_review(id,[1;16],[2;16],1,3,None,&[],20).unwrap();
+    assert_eq!(registry.approve_review(id,[1;16],[2;16],expired.token,expired.deadline),Err(Error::Expired));
+    assert_eq!(registry.poll(id,[1;16],[2;16],expired.deadline),Ok(None));
+    let stale=registry.prepare_review(id,[1;16],[2;16],1,3,None,&[],30).unwrap();
+    publish(&mut registry,id,2,Risk::Sensitive);
+    assert_eq!(registry.approve_review(id,[1;16],[2;16],stale.token,31),Err(Error::Missing));
+    let revoked=registry.prepare_review(id,[1;16],[2;16],2,3,None,&[],40).unwrap();
+    registry.grant(id,[1;16],[2;16],false).unwrap();
+    assert!(registry.approve_review(id,[1;16],[2;16],revoked.token,41).is_err());
+    registry.grant(id,[1;16],[2;16],true).unwrap();
+    assert_eq!(registry.poll(id,[1;16],[2;16],42),Ok(None));
+}
+
+// ------------------------=
+// FUNC: typed_actions
+// DESC: Exercises typed document edits, bounds, pinned references and atomic ABI delivery with observable content changes.
+// ------------------=
+fn typed_actions() {
+    use application_decision::parse_proposal;
+    let context=application_host::attach([1;16],[2;16]).unwrap();
+    let mut packet=[0u8;2072];packet[..4].copy_from_slice(&1u32.to_le_bytes());
+    packet[4..8].copy_from_slice(&1u32.to_le_bytes());packet[8..16].copy_from_slice(&1u64.to_le_bytes());
+    packet[16..20].copy_from_slice(&5u32.to_le_bytes());packet[24..29].copy_from_slice(b"hello");
+    let mut output=[0u8;592];
+    application_host::syscall(0x1150,[2;16],&packet,&mut output,1).unwrap();
+    let mut action=[0u8;416];action[..4].copy_from_slice(&1u32.to_le_bytes());
+    action[4..8].copy_from_slice(&9u32.to_le_bytes());action[8..12].copy_from_slice(&1u32.to_le_bytes());
+    action[16..31].copy_from_slice(b"document.insert");action[64..75].copy_from_slice(b"insert text");
+    action[160..168].copy_from_slice(&42i64.to_le_bytes());
+    for (index,(name,kind,minimum,maximum)) in [
+        (b"document".as_slice(),3u32,42i64,42i64), (b"position",1,0,5), (b"select",2,0,1), (b"reserved",0,0,0)
+    ].iter().enumerate() {
+        let at=192+index*48;action[at..at+name.len()].copy_from_slice(name);
+        action[at+24..at+28].copy_from_slice(&kind.to_le_bytes());
+        action[at+32..at+40].copy_from_slice(&minimum.to_le_bytes());action[at+40..at+48].copy_from_slice(&maximum.to_le_bytes());
+    }
+    action[384..391].copy_from_slice(b"content");action[408..412].copy_from_slice(&32u32.to_le_bytes());
+    application_host::syscall(0x1155,[2;16],&action,&mut output,1).unwrap();
+    application_host::syscall(0x1152,[2;16],&packet[..8],&mut output,1).unwrap();
+    application_host::with_registry(|r|r.grant(context.instance,[1;16],[2;16],true)).unwrap();
+    for (arguments,text) in [
+        ([43,5,0,0],b"world".as_slice()), ([42,6,0,0],b"world"), ([42,5,2,0],b"world"),
+        ([42,5,0,1],b"world"), ([42,5,0,0],&[0xff]), ([42,5,0,0],b"bad\0text"),
+        ([42,5,0,0],&[b'a';33]),
+    ] {
+        assert_eq!(application_host::with_registry(|r|r.propose_payload(context.instance,[1;16],[2;16],1,9,Some(arguments),text,false,2,100)),Err(Error::Invalid));
+    }
+    assert_eq!(application_host::with_registry(|r|r.propose(context.instance,[1;16],[2;16],1,9,false,2,100)),Err(Error::Invalid));
+    let proposal=parse_proposal("ACTION:9 42 5 1 0\nTEXT:7: 世界".as_bytes()).unwrap();
+    let request=application_host::with_registry(|r|r.propose_payload(context.instance,[1;16],[2;16],1,proposal.id,proposal.arguments,proposal.text,false,2,100)).unwrap();
+    assert_eq!(application_host::syscall(0x1153,[2;16],&packet[..8],&mut output,3),Err(Error::Invalid));
+    assert_eq!(application_host::syscall(0x1156,[2;16],&packet[..8],&mut output[..591],3),Err(Error::Invalid));
+    assert_eq!(application_host::syscall(0x1156,[2;16],&packet[..8],&mut output,3),Ok(592));
+    assert_eq!(u64::from_le_bytes(output[8..16].try_into().unwrap()),request.token);
+    let position=i64::from_le_bytes(output[48..56].try_into().unwrap()) as usize;
+    let length=u32::from_le_bytes(output[72..76].try_into().unwrap()) as usize;
+    let mut document=String::from("hello");
+    document.insert_str(position,core::str::from_utf8(&output[80..80+length]).unwrap());
+    assert_eq!(document,"hello 世界");
+    assert_eq!(application_host::syscall(0x1156,[2;16],&packet[..8],&mut output,4),Ok(0));
+    application_host::with_registry(|r|{
+        r.begin(context.instance,[1;16],[2;16],2,document.as_bytes(),false,false).unwrap();
+        r.commit(context.instance,[1;16],[2;16]).unwrap();
+        assert_eq!(r.finish(context.instance,[1;16],[2;16],request.token,Outcome::Applied,5).unwrap().revision,2);
+    });
+    for input in [b"ACTION:9 42 5 0\nTEXT:1:x".as_slice(),b"ACTION:9 42 5 0 0 0\nTEXT:1:x",b"ACTION:0 42 5 0 0\nTEXT:1:x",b"ACTION:9 42 9223372036854775808 0 0\nTEXT:1:x",b"ACTION:9 42 5 0 0\nother:x",b"ACTION:9 42 5 0 0\nTEXT:2:x",b"ACTION:9 42 5 0 0\nTEXT:1:xTrailing",b"ACTION:9 42 5 0 0\nTEXT:0:x"] {
+        assert!(parse_proposal(input).is_none());
+    }
+    // Command-looking content is literal data, not a second execution proposal.
+    let literal=parse_proposal(b"ACTION:9 42 0 0 0\nTEXT:17:CHOICE:3\nACTION:4").unwrap();
+    assert_eq!(literal.text,b"CHOICE:3\nACTION:4");
+    application_host::detach();
 }
 
 // ------------------------=

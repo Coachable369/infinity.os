@@ -35,6 +35,44 @@ typedef struct InfinityAiResult {
     uint32_t version, outcome;
     uint64_t token;
 } InfinityAiResult;
+#define INFINITY_AI_FIXED 0u
+#define INFINITY_AI_INTEGER 1u
+#define INFINITY_AI_BOOLEAN 2u
+#define INFINITY_AI_REFERENCE 3u
+/* All four parameters need distinct names, including unused FIXED zero slots.
+ * References are positive app-local IDs with minimum == maximum, not OS handles.
+ * Text is length-delimited UTF-8, not necessarily zero-terminated. */
+typedef struct InfinityAiParameter {
+    char name[24];
+    uint32_t kind, reserved;
+    int64_t minimum, maximum;
+} InfinityAiParameter;
+typedef struct InfinityAiAction {
+    InfinityAiChoice choice;
+    InfinityAiParameter parameters[4];
+    char text_name[24];
+    uint32_t text_limit, reserved;
+} InfinityAiAction;
+typedef struct InfinityAiTypedRequest {
+    InfinityAiRequest request;
+    uint32_t text_length, typed;
+    char text[512];
+} InfinityAiTypedRequest;
+// ------------------------=
+// FUNC: infinity_ai_action
+// DESC: Stages a typed action with bounded integer, boolean, pinned reference and UTF-8 text parameters.
+// ------------------=
+static inline int64_t infinity_ai_action(const InfinityAiAction *action) {
+    return infinity_system_call(0x1155,(uintptr_t)action,sizeof(*action),0,0,0,0);
+}
+// ------------------------=
+// FUNC: infinity_ai_poll_typed
+// DESC: Receives either action format without truncation; returns 592 bytes, zero idle, or a negative error.
+// ------------------=
+static inline int64_t infinity_ai_poll_typed(InfinityAiTypedRequest *request) {
+    request->request.version=1;
+    return infinity_system_call(0x1156,(uintptr_t)request,sizeof(*request),0,0,0,0);
+}
 // ------------------------=
 // FUNC: infinity_ai_begin
 // DESC: Stages a new observation with a strictly increasing revision.

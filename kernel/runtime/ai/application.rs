@@ -4,6 +4,26 @@ pub const VERSION: u32 = 1;
 pub const MAX_INSTANCES: usize = 8;
 pub const MAX_CHOICES: usize = 128;
 pub const STATE_BYTES: usize = 2048;
+pub const TEXT_BYTES: usize = 512;
+pub const MAX_SCHEMAS: usize = 16;
+
+/// A reference is app-local and pinned by the app, never a model-supplied OS handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParameterKind { Fixed, Integer, Boolean, Reference }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Parameter {
+    pub name: [u8; 24],
+    pub kind: ParameterKind,
+    pub minimum: i64,
+    pub maximum: i64,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Schema {
+    pub choice: u32,
+    pub parameters: [Parameter; 4],
+    pub text_name: [u8; 24],
+    pub text_limit: usize,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Missing, Denied, Capacity, Invalid, Stale, Busy, Expired, Approval, UnknownOutcome }
@@ -27,6 +47,9 @@ pub struct Request {
     pub revision: u64,
     pub choice: Choice,
     pub deadline: u64,
+    pub typed: bool,
+    pub text: [u8; TEXT_BYTES],
+    pub text_length: usize,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Receipt {
@@ -43,6 +66,7 @@ pub struct Snapshot {
     pub state: [u8; STATE_BYTES],
     pub length: usize,
     pub choices: [Option<Choice>; MAX_CHOICES],
+    pub schemas: [Option<Schema>; MAX_SCHEMAS],
 }
 impl Snapshot {
     // ------------------------=
@@ -50,7 +74,7 @@ impl Snapshot {
     // DESC: Creates an unpublished observation with no legal actions.
     // ------------------=
     pub const fn new() -> Self {
-        Self { revision: 0, agent_turn: false, terminal: false, state: [0; STATE_BYTES], length: 0, choices: [None; MAX_CHOICES] }
+        Self { revision: 0, agent_turn: false, terminal: false, state: [0; STATE_BYTES], length: 0, choices: [None; MAX_CHOICES], schemas: [None; MAX_SCHEMAS] }
     }
 }
 #[derive(Clone, Copy)]
@@ -61,6 +85,7 @@ struct Instance {
     snapshot: Snapshot,
     staging: Option<Snapshot>,
     request: Option<Request>,
+    review: Option<Request>,
     delivered: bool,
     receipt: Option<Receipt>,
     granted: bool,
@@ -101,7 +126,7 @@ impl Registry {
         let slot = self.instances.iter().position(Option::is_none).ok_or(Error::Capacity)?;
         let id = self.next()?;
         self.instances[slot] = Some(Instance { id, owner, session, snapshot: Snapshot::new(), staging: None,
-            request: None, delivered: false, receipt: None, granted: false });
+            request: None, review: None, delivered: false, receipt: None, granted: false });
         Ok(id)
     }
     // ------------------------=
@@ -143,12 +168,40 @@ impl Registry {
         Ok(())
     }
     // ------------------------=
+    // FUNC: offer_schema
+    // DESC: Publishes a bounded typed action; reference parameters are pinned to app-provided local handles.
+    // ------------------=
+    pub fn offer_schema(&mut self, id: u64, owner: [u8;16], session: [u8;16], choice: Choice, schema: Schema) -> Result<(), Error> {
+        if schema.choice != choice.id || schema.text_limit > TEXT_BYTES
+            || (schema.text_limit > 0 && !identifier(&schema.text_name)) { return Err(Error::Invalid); }
+        for (index, parameter) in schema.parameters.iter().enumerate() {
+            if !identifier(&parameter.name) || parameter.minimum > parameter.maximum
+                || choice.arguments[index] < parameter.minimum || choice.arguments[index] > parameter.maximum {
+                return Err(Error::Invalid);
+            }
+            match parameter.kind {
+                ParameterKind::Fixed | ParameterKind::Reference if parameter.minimum != parameter.maximum => return Err(Error::Invalid),
+                ParameterKind::Reference if parameter.minimum <= 0 => return Err(Error::Invalid),
+                ParameterKind::Boolean if parameter.minimum != 0 || parameter.maximum != 1 => return Err(Error::Invalid),
+                _ => (),
+            }
+            if schema.parameters[..index].iter().any(|other| other.name == parameter.name)
+                || (schema.text_limit > 0 && parameter.name == schema.text_name) { return Err(Error::Invalid); }
+        }
+        let next = self.instance(id, owner, session)?.staging.as_ref().ok_or(Error::Invalid)?;
+        let slot = next.schemas.iter().position(Option::is_none).ok_or(Error::Capacity)?;
+        self.offer(id, owner, session, choice)?;
+        self.instance(id, owner, session)?.staging.as_mut().ok_or(Error::Invalid)?.schemas[slot] = Some(schema);
+        Ok(())
+    }
+    // ------------------------=
     // FUNC: commit
     // DESC: Atomically publishes the next observation and expires any undelivered stale proposal.
     // ------------------=
     pub fn commit(&mut self, id: u64, owner: [u8; 16], session: [u8; 16]) -> Result<(), Error> {
         let entry = self.instance(id, owner, session)?;
         entry.snapshot = entry.staging.take().ok_or(Error::Invalid)?;
+        entry.review = None;
         if entry.request.is_some() && !entry.delivered { Self::cancel_entry(entry); }
         Ok(())
     }
@@ -167,17 +220,75 @@ impl Registry {
     // ------------------=
     pub fn propose(&mut self, id: u64, owner: [u8; 16], session: [u8; 16], revision: u64,
         choice_id: u32, approved: bool, now: u64, deadline: u64) -> Result<Request, Error> {
+        self.propose_payload(id, owner, session, revision, choice_id, None, &[], approved, now, deadline)
+    }
+    // ------------------------=
+    // FUNC: propose_payload
+    // DESC: Validates typed model parameters against the exact published revision without widening authority.
+    // ------------------=
+    pub fn propose_payload(&mut self, id: u64, owner: [u8;16], session: [u8;16], revision: u64,
+        choice_id: u32, arguments: Option<[i64;4]>, text: &[u8], approved: bool, now: u64, deadline: u64) -> Result<Request, Error> {
         if deadline <= now || deadline - now > 30_000_000_000 { return Err(Error::Expired); }
         let token = self.next()?;
         let entry = self.instance(id, owner, session)?;
         if !entry.granted { return Err(Error::Denied); }
-        if entry.request.is_some() { return Err(Error::Busy); }
+        if entry.request.is_some() || entry.review.is_some() { return Err(Error::Busy); }
         if entry.snapshot.revision != revision { return Err(Error::Stale); }
         if entry.snapshot.terminal || !entry.snapshot.agent_turn { return Err(Error::Denied); }
-        let choice = *entry.snapshot.choices.iter().flatten().find(|item| item.id == choice_id).ok_or(Error::Invalid)?;
+        let mut choice = *entry.snapshot.choices.iter().flatten().find(|item| item.id == choice_id).ok_or(Error::Invalid)?;
         if choice.risk == Risk::Sensitive && !approved { return Err(Error::Approval); }
-        let request = Request { token, instance: id, revision, choice, deadline };
+        let schema = entry.snapshot.schemas.iter().flatten().find(|schema| schema.choice == choice_id);
+        if let Some(schema) = schema {
+            let values = arguments.ok_or(Error::Invalid)?;
+            if text.len() > schema.text_limit || core::str::from_utf8(text).is_err() || text.contains(&0) { return Err(Error::Invalid); }
+            for (value, parameter) in values.iter().zip(schema.parameters.iter()) {
+                if *value < parameter.minimum || *value > parameter.maximum { return Err(Error::Invalid); }
+            }
+            choice.arguments = values;
+        } else if arguments.is_some() || !text.is_empty() { return Err(Error::Invalid); }
+        let mut payload = [0; TEXT_BYTES]; payload[..text.len()].copy_from_slice(text);
+        let request = Request { token, instance: id, revision, choice, deadline, typed: schema.is_some(), text: payload, text_length: text.len() };
         entry.request = Some(request); entry.delivered = false; entry.receipt = None;
+        Ok(request)
+    }
+    // ------------------------=
+    // FUNC: prepare_review
+    // DESC: Atomically validates and quarantines a proposal; no app can poll it until trusted user approval.
+    // ------------------=
+    pub fn prepare_review(&mut self, id:u64, owner:[u8;16], session:[u8;16], revision:u64,
+        choice:u32, arguments:Option<[i64;4]>, text:&[u8], now:u64) -> Result<Request,Error> {
+        // No callbacks or execution occur between validation and quarantine.
+        let mut proposal=self.propose_payload(id,owner,session,revision,choice,arguments,text,true,now,now.saturating_add(10_000_000_000))?;
+        proposal.deadline=now.saturating_add(120_000_000_000);
+        let entry=self.instance(id,owner,session)?;
+        entry.request=None;entry.review=Some(proposal);
+        Ok(proposal)
+    }
+    // ------------------------=
+    // FUNC: review
+    // DESC: Returns a still-current pending review to its authorized owner without dispatching it.
+    // ------------------=
+    pub fn review(&mut self,id:u64,owner:[u8;16],session:[u8;16],now:u64)->Result<Option<Request>,Error> {
+        let entry=self.instance(id,owner,session)?;
+        if !entry.granted{return Err(Error::Denied);}
+        if entry.review.is_some_and(|r|r.deadline<=now){entry.review=None;}
+        Ok(entry.review)
+    }
+    // ------------------------=
+    // FUNC: approve_review
+    // DESC: Dispatches exactly the reviewed token after rechecking user, session, state, grant, turn and deadline.
+    // ------------------=
+    pub fn approve_review(&mut self,id:u64,owner:[u8;16],session:[u8;16],token:u64,now:u64)->Result<Request,Error> {
+        let entry=self.instance(id,owner,session)?;
+        let mut request=entry.review.ok_or(Error::Missing)?;
+        if !entry.granted || request.token!=token{return Err(Error::Denied);}
+        if request.deadline<=now{entry.review=None;return Err(Error::Expired);}
+        if request.revision!=entry.snapshot.revision || !entry.snapshot.agent_turn || entry.snapshot.terminal {
+            entry.review=None;return Err(Error::Stale);
+        }
+        if entry.request.is_some(){return Err(Error::Busy);}
+        entry.review=None;request.deadline=now.saturating_add(10_000_000_000);
+        entry.request=Some(request);entry.delivered=false;entry.receipt=None;
         Ok(request)
     }
     // ------------------------=
@@ -185,10 +296,18 @@ impl Registry {
     // DESC: Delivers an action at most once and rechecks session, grant, state, and deadline.
     // ------------------=
     pub fn poll(&mut self, id: u64, owner: [u8; 16], session: [u8; 16], now: u64) -> Result<Option<Request>, Error> {
+        self.poll_payload(id, owner, session, now, true)
+    }
+    // ------------------------=
+    // FUNC: poll_payload
+    // DESC: Rejects incompatible legacy receivers before consuming a typed deliver-once request.
+    // ------------------=
+    pub fn poll_payload(&mut self, id: u64, owner: [u8;16], session: [u8;16], now: u64, typed: bool) -> Result<Option<Request>, Error> {
         let entry = self.instance(id, owner, session)?;
         let Some(request) = entry.request else { return Ok(None); };
         if now >= request.deadline { Self::cancel_entry(entry); return Err(Error::Expired); }
         if entry.delivered { return Ok(None); }
+        if request.typed && !typed { return Err(Error::Invalid); }
         if !entry.granted || request.revision != entry.snapshot.revision { Self::cancel_entry(entry); return Err(Error::Stale); }
         entry.delivered = true;
         Ok(Some(request))
@@ -222,6 +341,7 @@ impl Registry {
     // DESC: Distinguishes cancellation before dispatch from an unknown outcome after delivery.
     // ------------------=
     fn cancel_entry(entry: &mut Instance) {
+        entry.review = None;
         if let Some(request) = entry.request.take() {
             entry.receipt = Some(Receipt { token: request.token, instance: entry.id, revision: entry.snapshot.revision,
                 outcome: if entry.delivered { Outcome::Unknown } else { Outcome::Cancelled } });

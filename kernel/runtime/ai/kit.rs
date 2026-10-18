@@ -114,7 +114,30 @@ pub struct CapabilityDescriptor {
 
 pub struct CapabilityDirectory;
 
+#[derive(Clone, Copy)]
+pub struct ApplicationCapabilityDescriptor {
+    pub instance: u64,
+    pub revision: u64,
+    pub action: super::application::Choice,
+    pub schema: Option<super::application::Schema>,
+    pub available: bool,
+}
+
+
 impl CapabilityDirectory {
+    // ------------------------=
+    // FUNC: application_descriptor
+    // DESC: Discovers an explicitly authorized live app contract without copying it into the static OS mapping list.
+    // ------------------=
+    pub fn application_descriptor(context: super::application_host::Context, index: usize) -> Result<ApplicationCapabilityDescriptor, super::application::Error> {
+        let state=super::application_host::with_registry(|r|r.observe(context.instance,context.owner,context.session))?;
+        let action=*state.choices.get(index).and_then(Option::as_ref).ok_or(super::application::Error::Missing)?;
+        Ok(ApplicationCapabilityDescriptor {
+            instance:context.instance,revision:state.revision,action,
+            schema:state.schemas.iter().flatten().find(|schema|schema.choice==action.id).copied(),
+            available:state.agent_turn && !state.terminal,
+        })
+    }
     // ------------------------=
     // FUNC: count
     // DESC: Reports the authoritative installed AI capability count without maintaining a second inventory.

@@ -1,6 +1,6 @@
 //! Cooperative Hermes lease for a user-authorized application interaction session.
 use super::{application::{Error, Outcome}, application_host::{self, Context}, AiRuntime, qwen};
-use super::application_decision::{parse_choice,decision_prompt};
+use super::application_decision::{parse_proposal,parse_for_state,decision_prompt};
 
 pub struct Agent {
     context: Context,
@@ -9,6 +9,7 @@ pub struct Agent {
     continuous: bool,
     revision: u64,
     token: Option<u64>,
+    approval: Option<u64>,
     inference: bool,
     deadline: u64,
     remaining: u16,
@@ -25,7 +26,7 @@ impl AiRuntime {
         self.stop_application_agent();
         application_host::with_registry(|r|r.grant(c.instance,owner,session,true))?;
         let mut text=[0;512];text[..objective.len()].copy_from_slice(objective);
-        self.application_agent=Some(Agent{context:c,objective:text,length:objective.len(),continuous,revision:0,token:None,inference:false,deadline:qwen::workers::clock_ns().saturating_add(10_000_000_000),remaining:256});
+        self.application_agent=Some(Agent{context:c,objective:text,length:objective.len(),continuous,revision:0,token:None,approval:None,inference:false,deadline:qwen::workers::clock_ns().saturating_add(10_000_000_000),remaining:256});
         status(b"AI interaction enabled for this app. Waiting for its published state.");
         Ok(())
     }
@@ -37,8 +38,32 @@ impl AiRuntime {
         if let Some(agent)=self.application_agent.take() {
             let c=agent.context;
             let _=application_host::with_registry(|r|r.grant(c.instance,c.owner,c.session,false));
+            if let Some(token)=agent.approval {
+                let mut panel=crate::ui::app_assistant::read(1);
+                if panel.pending==crate::ui::app_assistant::Action::NativeApproval && panel.argument_len==8 && panel.argument[..8]==token.to_le_bytes() {
+                    panel.pending=crate::ui::app_assistant::Action::None;
+                    crate::ui::app_assistant::write(1,panel);
+                }
+            }
             if agent.inference {self.release_application_inference();}
         }
+    }
+    // ------------------------=
+    // FUNC: approve_application_action
+    // DESC: Accepts an explicit trusted UI approval for the exact live user/session/token, never model text.
+    // ------------------=
+    pub fn approve_application_action(&mut self,owner:[u8;16],session:[u8;16],token:u64)->Result<(),Error> {
+        let agent=self.application_agent.as_mut().ok_or(Error::Missing)?;
+        let c=agent.context;
+        if c.owner!=owner || c.session!=session || agent.approval!=Some(token) || !self.chat.enabled() {return Err(Error::Denied);}
+        let request=application_host::with_registry(|r|r.approve_review(c.instance,owner,session,token,qwen::workers::clock_ns()))?;
+        agent.approval=None;agent.token=Some(request.token);agent.remaining-=1;
+        let mut panel=crate::ui::app_assistant::read(1);
+        if panel.pending==crate::ui::app_assistant::Action::NativeApproval && panel.argument_len==8 && panel.argument[..8]==token.to_le_bytes() {
+            panel.pending=crate::ui::app_assistant::Action::None;
+            crate::ui::app_assistant::write(1,panel);
+        }
+        Ok(())
     }
     // ------------------------=
     // FUNC: release_application_inference
@@ -63,6 +88,14 @@ impl AiRuntime {
         }
         let observation=application_host::with_registry(|r|r.observe(c.instance,c.owner,c.session));
         let Ok(state)=observation else{self.application_agent=Some(agent);self.stop_application_agent();return false;};
+        if let Some(token)=agent.approval {
+            let review=application_host::with_registry(|r|r.review(c.instance,c.owner,c.session,now));
+            if !matches!(review,Ok(Some(request)) if request.token==token) {
+                status(b"The review expired or app state changed. Nothing was executed; submit a new request.");
+                self.application_agent=Some(agent);self.stop_application_agent();return true;
+            }
+            self.application_agent=Some(agent);return false;
+        }
         if state.revision==0 && now>=agent.deadline {
             status(b"This app did not publish an AI interaction contract. AI control stopped; the app remains usable.");
             self.application_agent=Some(agent);self.stop_application_agent();return true;
@@ -88,22 +121,49 @@ impl AiRuntime {
             let Some(service)=self.qwen.as_mut() else{self.application_agent=Some(agent);self.stop_application_agent();return false;};
             let mut budget=qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
             let mut failed=false;
+            let mut framed=false;
             while budget.next(crate::ui::performance::monotonic_ns()) {
                 if service.poll().is_err(){failed=true;break;}
-                if !service.busy() || service.output().len()>256 {break;}
+                if parse_proposal(service.output()).is_some_and(|p|p.arguments.is_some()) {framed=true;break;}
+                if !service.busy() || service.output().len()>768 {break;}
             }
-            if failed || now>=agent.deadline || service.output().len()>256 || state.revision!=agent.revision {
+            if failed || now>=agent.deadline || service.output().len()>768 || state.revision!=agent.revision {
                 status(b"AI decision interrupted, stale, or timed out. Control paused; you can continue using the app.");
                 self.application_agent=Some(agent);self.stop_application_agent();return true;
             }
-            if service.busy(){self.application_agent=Some(agent);return true;}
-            let selected=if service.completed(){parse_choice(service.output())}else{None};
+            if service.busy() && !framed {self.application_agent=Some(agent);return true;}
+            let mut response=[0u8;768];
+            let length=service.output().len();response[..length].copy_from_slice(service.output());
+            let selected=if service.completed() || framed {parse_for_state(&response[..length],&state)}else{None};
             self.release_application_inference();agent.inference=false;
-            let proposed=selected.ok_or(Error::Invalid).and_then(|id|application_host::with_registry(|r|
-                r.propose(c.instance,c.owner,c.session,agent.revision,id,false,now,now.saturating_add(10_000_000_000))));
+            if let Some(proposal)=selected.as_ref().filter(|p|state.choices.iter().flatten().any(|c|c.id==p.id && c.risk==super::application::Risk::Sensitive)) {
+                let review=application_host::with_registry(|r|r.prepare_review(c.instance,c.owner,c.session,agent.revision,proposal.id,proposal.arguments,proposal.text,now));
+                if let Ok(request)=review {
+                    let mut message=[0u8;4096];
+                    if let Some(length)=super::application_decision::review_text(&request,&mut message) {
+                        let mut panel=crate::ui::app_assistant::read(1);
+                        panel.reply(&message[..length]);panel.expanded=true;
+                        panel.pending=crate::ui::app_assistant::Action::NativeApproval;
+                        panel.argument[..8].copy_from_slice(&request.token.to_le_bytes());panel.argument_len=8;
+                        crate::ui::app_assistant::write(1,panel);
+                        agent.approval=Some(request.token);self.application_agent=Some(agent);return true;
+                    }
+                }
+                status(b"This action could not be prepared for review. Nothing executed.");
+                self.application_agent=Some(agent);self.stop_application_agent();return true;
+            }
+            let proposed=selected.ok_or(Error::Invalid).and_then(|proposal|application_host::with_registry(|r|
+                r.propose_payload(c.instance,c.owner,c.session,agent.revision,proposal.id,proposal.arguments,proposal.text,false,now,now.saturating_add(10_000_000_000))));
             match proposed {
                 Ok(request)=>{agent.token=Some(request.token);agent.remaining-=1;status(b"AI action sent. Waiting for the app's updated state and receipt.");self.application_agent=Some(agent);},
-                Err(_)=>{status(b"The proposed action was invalid or needs approval. No action executed; AI control paused.");self.application_agent=Some(agent);self.stop_application_agent();},
+                Err(_)=>{
+                    let mut message=[0u8;1024];
+                    let prefix=b"Invalid app proposal. No action executed; AI control paused. Unaccepted model output:\n";
+                    message[..prefix.len()].copy_from_slice(prefix);
+                    message[prefix.len()..prefix.len()+length].copy_from_slice(&response[..length]);
+                    status(&message[..prefix.len()+length]);
+                    self.application_agent=Some(agent);self.stop_application_agent();
+                },
             }
             return true;
         }

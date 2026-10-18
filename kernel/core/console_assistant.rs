@@ -313,6 +313,9 @@ impl ConsoleRuntime {
             }
             Target::Composer => {panel.focused = true;panel.caret=panel.length;},
             Target::Dismiss => {
+                if panel.pending==Action::NativeApproval {
+                    crate::runtime::ai::with_ai_runtime(|ai|ai.stop_application_agent());
+                }
                 panel.pending = Action::None;
                 panel.reply(b"Proposal dismissed. The app is unchanged.");
             }
@@ -339,6 +342,10 @@ impl ConsoleRuntime {
         let mut panel = assistant::read(id);
         if panel.length == 0 {
             return;
+        }
+        if id==1 {
+            crate::runtime::ai::with_ai_runtime(|ai|ai.stop_application_agent());
+            panel.pending=Action::None;panel.argument_len=0;
         }
         if !self.ai_chat_allowed() {
             panel.pending = Action::None;
@@ -483,6 +490,14 @@ impl ConsoleRuntime {
         }
         let mut success = true;
         match action {
+            Action::NativeApproval if id==1 => {
+                let result=if panel.argument_len==8 {
+                    let token=u64::from_le_bytes(panel.argument[..8].try_into().unwrap());
+                    crate::runtime::ai::with_ai_runtime(|ai|ai.approve_application_action(self.current_user.0,self.current_session.0,token)).is_ok()
+                } else {false};
+                panel.reply(if result {b"Approved action dispatched. Waiting for the app's result."}else{b"This approval is stale or no longer authorized. No action dispatched."});
+                assistant::write(id,panel);return result;
+            },
             Action::NavigateWeb if id==0 => {
                 #[cfg(feature="native-browser")]
                 browser_controller::request_access(self,&panel.argument[..panel.argument_len]);

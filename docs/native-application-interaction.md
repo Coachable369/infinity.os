@@ -36,6 +36,21 @@ inside packets. The syscall's pointer and exact packet length are checked.
 | Commit observation | `0x1152` | 8 bytes | Publish state and choices atomically |
 | Poll request | `0x1153` | 72 bytes | Deliver token, instance, expected revision, deadline, choice and arguments once |
 | Finish request | `0x1154` | 16 bytes | Acknowledge applied/rejected using the exact token |
+| Offer typed action | `0x1155` | 416 bytes | Choice plus four named parameter constraints and bounded UTF-8 text |
+| Poll typed request | `0x1156` | 592 bytes | Original request plus text length, typed flag and 512-byte payload |
+
+Typed schemas support bounded integers, booleans, fixed values, and pinned
+app-local object references. References cannot be substituted by the model and
+are not OS handles. Each action supports one arbitrary UTF-8 text payload; larger
+documents need app-defined bounded edits. Up to 16 typed schemas can be published
+per observation. AIKit's `CapabilityDirectory::application_descriptor` exposes
+live contracts only to the granted owner/session. This is not a second static
+action inventory.
+
+Generated non-game UI apps are instructed to use `InfinityAiAction` and
+`InfinityAiTypedRequest` where finite choices cannot express their input space.
+The original choice ABI remains an active contract; its poll operation rejects
+typed requests without consuming them. Typed receivers accept both formats.
 
 Successful completion requires a newer published revision. This is app-provided
 execution evidence, **not an independent proof of domain correctness**. Tests
@@ -49,11 +64,14 @@ Never expose hidden cards, private opponent state, or unrelated documents.
 
 - Eight registry slots; currently one live native process is connected.
 - 128 legal choices per observation, four fixed integer arguments per choice.
-- No dynamic string/object argument schema in this initial ABI.
+- Typed input constraints are revalidated before dispatch; UTF-8 length, integer
+  ranges, boolean domains and pinned references are enforced.
 - 256 actions per continuous session; 90-second model decision deadline;
   10-second contract-startup and action-acknowledgment deadlines.
-- Sensitive choices are not sent to the model and cannot be dispatched without
-  explicit approval. An approval UI has not yet been implemented.
+- Sensitive proposals are quarantined in an inspectable review and displayed
+  through the existing assistant Apply/Dismiss UI. A trusted approval must match
+  the exact user, session, instance, revision and one-shot token. Reviews expire
+  after two minutes or when app state changes. They do not hold the model lease.
 - Undelivered cancellation is distinct from a delivered-but-unacknowledged
   unknown outcome. Neither is automatically replayed.
 - Closing the app, changing user/session, disabling AI, locking the desktop,
@@ -71,18 +89,18 @@ Run only through the build kit:
 ./build-kit full
 ```
 
-The first exercises registry/host transitions and compiles SDK layouts for both
-CPU targets. The second uses pinned Hermes weights and observes an actual
-fixture board change. Neither substitutes for installed-VM gameplay.
+The first exercises registry/host transitions, typed document edits, approval
+quarantine, and compiles SDK layouts for both CPU targets. The second uses pinned
+Hermes weights and observes actual fixture board/document changes through the
+runtime agent. Neither substitutes for generated-C or installed-VM gameplay.
 
 ## Remaining acceptance work
 
 1. Replace the native launcher/UI singleton with per-process window/session
    routing; prove two apps cannot receive one another's actions.
-2. Add full typed parameter schemas, variable text/object references, scoped
-   capability grants, inspectable action discovery through AIKit, and an explicit
-   sensitive-action review path. Fixed legal choices alone do not cover general
-   document editing or data applications.
+2. Extend the bounded scalar/text schema when real application contracts require
+   collections or multiple text fields; add finer action-family grants. Current
+   grants are scoped to a live app instance, with per-operation sensitive review.
 3. Integrate ongoing interaction tasks and evidence into IntelligenceKit plans,
    including inspect/resume behavior without persisting ambient authority.
 4. Verify generated contract behavior, not just the presence of declarations or
