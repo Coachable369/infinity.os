@@ -1,5 +1,7 @@
 #[path = "window_workflows.rs"]
 mod window_workflows;
+#[path = "file_preview_controller.rs"]
+mod file_preview_controller;
 #[path = "spatial_controller.rs"]
 mod spatial_controller;
 #[path = "minimized_shelf_controller.rs"]
@@ -970,6 +972,18 @@ impl ConsoleRuntime {
     // DESC: Resolves the directional resize pointer for the captured or hovered active window handle.
     // ------------------=
     fn resize_pointer_shape(&self) -> Option<crate::ui::text_input::PointerShape> {
+        let preview=crate::ui::file_preview::current();
+        if preview.open {
+            use crate::ui::text_input::PointerShape as S;
+            let x=self.system.framebuffer_width as i32*self.pointer_x/1000;
+            let y=self.system.framebuffer_height as i32*self.pointer_y/1000;
+            let r=preview.rect;let margin=(8*preview.scale) as i32;
+            let left=x>=r.x&&x<r.x+margin;let right=x<r.right()&&x>=r.right()-margin;
+            let bottom=y<r.bottom()&&y>=r.bottom()-margin;
+            return Some(if preview.menu || !r.contains(crate::ui::geometry::Point{x,y}) {S::Default}
+                else if bottom&&left {S::ResizeNorthEastSouthWest}else if bottom&&right {S::ResizeNorthWestSouthEast}
+                else if left||right {S::ResizeHorizontal}else if bottom {S::ResizeVertical}else{S::Default});
+        }
         let layout = crate::ui::system_layout::SystemLayout::new(
             self.system.framebuffer_width as usize,
             self.system.framebuffer_height as usize,
@@ -1333,6 +1347,7 @@ impl ConsoleRuntime {
             if matches!(key,ConsoleKey::Escape) {return;}
         }
         self.synchronize_workplace();
+        if self.preview_key(key) {self.redraw();return;}
         if self.clipboard_menu_key(key) {self.redraw();return;}
         if self.authentication_success.active() {
             return;
@@ -4069,6 +4084,7 @@ impl ConsoleRuntime {
     // DESC: Reconstructs visible Desktop references from the persistent human namespace.
     // ------------------=
     fn refresh_desktop_items(&mut self) {
+        self.refresh_desktop_preview_files();
         let mut items = 0u8;
         for item in 0..6usize {
             if let Some((_, target)) = Self::desktop_reference_paths(item) {
@@ -7117,6 +7133,10 @@ impl ConsoleRuntime {
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
+        let mut preview=crate::ui::file_preview::current();
+        if preview.open && self.workplace_authorized(false) && preview.owner==self.current_session.0 {
+            preview.scroll_by(-(vertical as isize)*3);crate::ui::file_preview::publish(preview);self.redraw();return true;
+        }
         let mut dismissed=false;
         if vertical!=0 {crate::ui::desktop_effects::mutate(|effects| dismissed=effects.dismiss_peek());}
         if dismissed {self.advance_desktop_effects();self.redraw();return true;}
@@ -7315,6 +7335,7 @@ impl ConsoleRuntime {
                 }
             } else {
             match action {
+                A::Preview => self.preview_file(path),
                 A::Open => self.open_file_navigator_selection(),
                 A::Rename => {
                     let name = crate::runtime::object_navigation::namespace_basename(path);
@@ -7726,6 +7747,9 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        let preview_before=crate::ui::file_preview::current();
+        if self.preview_pointer(clicked,left_button) {if preview_before!=crate::ui::file_preview::current(){self.redraw();}return;}
+        if right_clicked && self.desktop_preview_menu() {self.redraw();return;}
         let window_controls_changed=self.publish_window_controls();
         if window_controls_changed {self.redraw();}
         if (self.spatial.open || self.mode==ConsoleMode::AppLauncher) && self.pointer_window_assistant(clicked) {
@@ -9635,6 +9659,13 @@ impl ConsoleRuntime {
                 }
             }
             self.output.write_number(b"Search results: ", found as u64);
+            return true;
+        }
+        if first == b"preview" {
+            if let Some(target)=command_tail(command,1) {
+                let target=if target.len()>=2 && target.first()==Some(&b'"') && target.last()==Some(&b'"') {&target[1..target.len()-1]}else{target};
+                self.preview_file(target);
+            }else{self.output.write_line(b"Usage: preview <path>");}
             return true;
         }
         if first == b"open" {

@@ -230,12 +230,15 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn synchronize_workplace(&mut self) {
         let active=self.workplace_authorized(false);
+        let preview=crate::ui::file_preview::current();
+        if preview.open && (!active || preview.owner!=self.current_session.0) {crate::ui::file_preview::close();}
         if self.workplace_session!=self.current_session.0 {
+            crate::ui::file_preview::set_desktop_files([crate::ui::file_preview::EMPTY_FILE;16]);
             clipboard_menu::close();
             self.command_history=work::History::new();self.workplace_session=self.current_session.0;
             self.workplace_result=[0;8];
         }
-        if !active {self.command_history.clear();clipboard_menu::close();}
+        if !active {self.command_history.clear();clipboard_menu::close();crate::ui::file_preview::set_desktop_files([crate::ui::file_preview::EMPTY_FILE;16]);}
         let now=now_ms();
         clipboard::with_shared(|c|{c.session(self.current_session.0,active);c.expire(now);});
         let mut menu=clipboard_menu::current();

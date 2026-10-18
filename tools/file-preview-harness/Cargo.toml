@@ -1,0 +1,11 @@
+[package]
+name = "infinity-file-preview-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+miniz_oxide = { version = "0.8.9", default-features = false }
+
+[[bin]]
+name = "file-preview-test"
+path = "../file-preview-test.rs"

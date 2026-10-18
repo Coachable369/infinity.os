@@ -8706,6 +8706,14 @@ impl super::DisplayDevice {
             let pixel_y = self.height * y.clamp(90, 880) as usize / 1000;
             self.desktop_icon(pixel_x, pixel_y, name, *kind);
         }
+        for (index,file) in crate::ui::file_preview::desktop_files().iter().enumerate() {
+            if file.length==0 {continue;}
+            let r=crate::ui::file_preview::desktop_rect(index,self.width,self.height);
+            if r.bottom() as usize>=self.height.saturating_sub(100*scale){continue;}
+            self.themed_icon(r.x as usize+r.width as usize/2,r.y as usize+24,49,44);
+            self.app_label(crate::ui::geometry::Rect{x:r.x,y:r.y+54,width:r.width,height:28},
+                crate::runtime::object_navigation::namespace_basename(&file.path[..file.length]),(221,235,243),false,1);
+        }
         self.desktop_dock(scale, launcher_open);
     }
     // ------------------------=
@@ -11625,7 +11633,7 @@ pub fn system_ui_present(
                         left:rect.x.max(0) as usize,top:rect.y.max(0) as usize,
                         right:rect.right().max(0) as usize,bottom:rect.bottom().max(0) as usize});}
                 }
-                for damage in [control_damage[0],control_damage[1],crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                for damage in [control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {
@@ -11653,6 +11661,7 @@ pub fn system_ui_present(
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;
             console.display.clipboard_overlay();
+            if matches!(screen,2|4|7|8|9|10|11) {console.display.file_preview_overlay();}
             console.save_and_draw_cursor(cursor_x, cursor_y);
             console.last_system_screen = screen;
             console.last_system_step = step;

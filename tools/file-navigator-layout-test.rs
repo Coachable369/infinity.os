@@ -155,7 +155,7 @@ fn main() {
         None
     );
     assert_eq!(layout.file_navigator_context_action(500, 500, row_five_x, row_five_y, 5), Some(4));
-    for rows in 1..=9 {
+    for rows in 1..=11 {
         let bounds = layout.file_navigator_context_geometry(990, 990, rows);
         assert_eq!(bounds.height, (12 + rows * 28) as u32);
         assert!(bounds.right() <= 1600 && bounds.bottom() <= 1000);

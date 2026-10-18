@@ -23,6 +23,8 @@ pub mod desktop_widgets;
 pub mod editor_tools;
 pub mod editor_chrome;
 pub mod geometry;
+pub mod file_preview;
+pub mod preview_png;
 pub mod icon_theme;
 pub mod input;
 pub mod input_batch;

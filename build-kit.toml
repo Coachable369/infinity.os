@@ -38,6 +38,10 @@ clean = false
 command = ["make", "test"]
 clean = false
 
+[profiles.file-preview-tests]
+command = ["cargo", "test", "--manifest-path", "tools/file-preview-harness/Cargo.toml"]
+clean = false
+
 [profiles.window-controls-tests]
 command = ["sh", "tools/window-controls-test.sh"]
 clean = false

@@ -21,6 +21,7 @@ infinity-enterprise-core = { path = "sdk/infinity-enterprise-core" }
 infinity-browser-core = { path = "sdk/infinity-browser-core" }
 infinity-http = { path = "kernel/runtime/http" }
 libm = { version = "0.2", default-features = false }
+miniz_oxide = { version = "0.8.9", default-features = false }
 chacha20poly1305 = { version = "0.11.0", default-features = false }
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize"] }
 hkdf = { version = "0.13.0", default-features = false }

@@ -23,7 +23,7 @@ pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContextAction {
-    Open, OpenWith, SetDefaultWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo,
+    Open, Preview, OpenWith, SetDefaultWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo,
     NewFolder, List, Grid, Sort, Handler0, Handler1, Handler2, Handler3, Handler4,
     Handler5, Handler6, Handler7, Unavailable, Back,
 }
@@ -35,7 +35,7 @@ impl ContextAction {
     // ------------------=
     pub const fn label(self) -> &'static [u8] {
         match self {
-            Self::Open => b"Open", Self::OpenWith => b"Open With...", Self::SetDefaultWith => b"Always Open With...", Self::Rename => b"Rename",
+            Self::Open => b"Open", Self::Preview => b"Preview", Self::OpenWith => b"Open With...", Self::SetDefaultWith => b"Always Open With...", Self::Rename => b"Rename",
             Self::Duplicate => b"Duplicate", Self::Trash => b"Move to Trash", Self::NewFolder => b"New Folder",
             Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
             Self::Handler0 | Self::Handler1 | Self::Handler2 | Self::Handler3 | Self::Handler4
@@ -1664,7 +1664,7 @@ impl FileNavigatorState {
         }
         if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, PasteTo, List, Grid, Sort] }
         else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
-        else { &[Open, OpenWith, SetDefaultWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
+        else { &[Open, Preview, OpenWith, SetDefaultWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
     }
 
     // ------------------------=

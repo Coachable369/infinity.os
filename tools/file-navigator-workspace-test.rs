@@ -83,7 +83,7 @@ fn main() {
     first_window.state.open_context_menu(500, 500, Some(4));
     first_window.state.context_target = OpenTarget::TextEditor;
     assert_eq!(first_window.state.selected_index, 4);
-    assert_eq!(first_window.state.context_actions(), &[A::Open, A::OpenWith, A::SetDefaultWith, A::Rename, A::Duplicate, A::Copy, A::Cut, A::Paste, A::PasteTo, A::Trash]);
+    assert_eq!(first_window.state.context_actions(), &[A::Open, A::Preview, A::OpenWith, A::SetDefaultWith, A::Rename, A::Duplicate, A::Copy, A::Cut, A::Paste, A::PasteTo, A::Trash]);
     first_window.state.context_handler_count = 2;
     first_window.state.context_handler_labels[0] = ByteText::new(b"Text Editor").unwrap();
     first_window.state.context_handler_labels[1] = ByteText::new(b"Markdown Studio").unwrap();

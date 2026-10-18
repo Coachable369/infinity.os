@@ -117,6 +117,9 @@ normal cursor. Master and packed sprite use the existing design-kit install list
 
 ## Compact application menus
 
+The shared read-only [file preview](file-preview.md) reuses these menu surfaces,
+native Inter typography and theme colors for desktop, navigator and CLI entry points.
+
 Application menu bars reuse one smoked-navy glass dropdown recipe: a soft cyan
 outline, 6px interior padding, compact 28px command rows, native 14px Inter labels,
 and a restrained cyan focus surface. Menus longer than the available viewport use
