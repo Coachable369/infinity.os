@@ -20,9 +20,8 @@ The shared kernel embeds the sprite, so live and installed rendering use identic
 
 ## Browser tabs
 
-Use [Tron Lightrail tabs](browser-tabs-tron-v3.md) and its generated reference
-board. The shared native recipe uses clipped navy surfaces, cyan active light
-rails, Inter labels and separate close targets. The vertical AI adornment is
+Use [Soft shoulder tabs](browser-tabs-soft-v4.md) and its generated reference
+board. The shared native recipe uses rounded sloping shoulders and OS-themed dark surfaces, Inter labels and separate close targets. The vertical AI adornment is
 unchanged. Rendering stays inside tab bounds with no exterior glow or idle work.
 
 `sdk/infinity-browser-core/tab_style.rs` owns the shared pixel and hit recipe.

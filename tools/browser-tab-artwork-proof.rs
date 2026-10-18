@@ -33,6 +33,11 @@ fn main() {
     let (width,height)=(1024usize,280usize);
     let mut image=vec![0u8;width*height*3];
     for pixel in image.chunks_exact_mut(3) {pixel.copy_from_slice(&[8,17,30]);}
+    for (top,bottom) in [(71,105),(232,270)] {
+        for y in top..bottom {for x in 24..1000 {
+            let at=(y*width+x)*3;image[at..at+3].copy_from_slice(&tab::toolbar_color(0x082238));
+        }}
+    }
     for (index,(active,hover)) in [(false,false),(false,true),(true,false),(true,true)].into_iter().enumerate() {
         let (w,h,x0,y0)=(224,36,24+index as i32*248,35);
         for y in -6..h as i32 {for x in -6..w as i32+6 {
@@ -58,7 +63,7 @@ fn main() {
     }
     for (index,text) in [b"Inactive" as &[u8],b"Hover",b"Active",b"Active + hover"].into_iter().enumerate() {
         label(&mut image,width,60+index*248,46,text,1);
-        let cx=24+index*248+204;let cy=53;
+        let cx=24+index*248+196;let cy=53;
         for d in 0..9 {
             for x in [cx-4+d,cx+4-d] {
                 let at=((cy-4+d)*width+x)*3;image[at..at+3].copy_from_slice(&[217,227,245]);

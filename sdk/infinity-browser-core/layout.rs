@@ -180,7 +180,7 @@ impl Layout {
         let slot = (self.tabs.width / count as u32).min(232 * scale);
         let tab = Viewport { x: self.tabs.x + (index as u32 * slot) as i32,
             y: self.tabs.y, width: slot - 8 * scale, height: 36 * scale };
-        let close_inset = (44 * scale).min(tab.width / 2 + 12 * scale);
+        let close_inset = (40 * scale).min(tab.width / 2 + 12 * scale);
         let close = Viewport { x: tab.x + tab.width as i32 - close_inset as i32,
             y: tab.y + (6 * scale) as i32, width: 24 * scale, height: 24 * scale };
         Some((tab, close))

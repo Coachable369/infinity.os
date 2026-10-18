@@ -68,6 +68,8 @@ impl DisplayDevice {
         self.outline_rounded_rect(left,top,window.width as usize,window.height as usize,8*scale,65,80,112);
         self.fill_rect_alpha(left+1,top+1,window.width as usize-2,layout.content.y as usize-1,8,17,30,238);
         let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
+        let [r,g,b]=infinity_browser_core::tab_style::toolbar_color(self.active_primary_rgb());
+        self.fill_rect(left+1,top+48*scale,window.width as usize-2,layout.content.y as usize-48*scale,r,g,b);
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
             let r=offset(r);let size=r.width.min(r.height) as usize;
             self.window_control(r.x.max(0) as usize+(r.width as usize-size)/2,
@@ -81,10 +83,11 @@ impl DisplayDevice {
                 self.browser_glyph(Viewport{x:tab.x+12*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
             }
             self.browser_label(Viewport{x:tab.x+36*scale as i32,y:tab.y+11*scale as i32,
-                width:tab.width.saturating_sub(76*scale as u32),height:20*scale as u32},
+                width:tab.width.saturating_sub(84*scale as u32),height:20*scale as u32},
                 if view.welcome_open {b"Welcome"}else if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
             if view.hovered_tab==entry.id && view.hovered_close {
-                self.browser_tab(close,false,true);
+                let (r,g,b)=rgb(self.active_accent_rgb());
+                self.fill_rounded_rect_alpha(close.x as usize,close.y as usize,close.width as usize,close.height as usize,6*scale,r,g,b,48);
             }
             let cx=close.x+close.width as i32/2;let cy=close.y+close.height as i32/2;
             let d=4*scale as i32;
@@ -92,7 +95,6 @@ impl DisplayDevice {
             self.line(cx+d,cy-d,cx-d,cy+d,217,227,245);
         }
         let new_tab=offset(layout.new_tab);
-        self.browser_tab(new_tab,false,false);
         self.browser_glyph(new_tab,11,true,scale);
         for (r,name,id) in [(layout.file_menu,b"File" as &[u8],1),(layout.settings_menu,b"Settings" as &[u8],2),(layout.edit_menu,b"Edit" as &[u8],3),(layout.view_menu,b"View" as &[u8],4)] {
             let r=offset(r);
@@ -372,11 +374,12 @@ impl DisplayDevice {
     }
     // ------------------------=
     // FUNC: browser_tab
-    // DESC: Paints kit-matched clipped cyan tabs entirely within their shared hit and damage bounds.
+    // DESC: Paints soft sloping tabs using the current OS Primary and Accent colors.
     // ------------------=
     fn browser_tab(&mut self,r:Viewport,active:bool,hover:bool) {
+        let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
         for y in 0..r.height {for x in 0..r.width {
-            let (red,green,blue,alpha)=infinity_browser_core::tab_style::pixel(r.width,r.height,x,y,active,hover);
+            let (red,green,blue,alpha)=infinity_browser_core::tab_style::themed_pixel(r.width,r.height,x,y,active,hover,primary,accent);
             if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
         }}
     }
