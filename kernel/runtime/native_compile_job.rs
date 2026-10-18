@@ -73,9 +73,13 @@ pub unsafe fn cancel(owner:SecurityIdentity)->bool {
 }
 // ------------------------=
 // FUNC: poll
-// DESC: Advances one compiler slice, releases its private mappings between stages and cancels immediately when authority is lost.
+// DESC: Advances one compiler slice and reports owner-bound terminal jobs until the caller consumes its lease, including cancellation between polls.
 // ------------------=
 pub unsafe fn poll(owner:SecurityIdentity,authorized:bool,now:u64)->bool {
+    let current=&*(&raw const JOB);
+    if current.owner==owner && matches!(current.status,Status::Complete|Status::Failed|Status::Cancelled) {
+        return true;
+    }
     let before=(&*(&raw const JOB)).status;
     let changed=advance(owner,authorized,now);
     if before!=(&*(&raw const JOB)).status {publish();}
@@ -134,7 +138,9 @@ unsafe fn advance(owner:SecurityIdentity,authorized:bool,now:u64)->bool {
         File{path:b"/sdk/infinity/console.h",bytes:super::native_compiler_task::CONSOLE},
         File{path:b"/sdk/infinity/syscall.h",bytes:super::native_compiler_task::SYSCALL},
         File{path:b"/sdk/infinity/uikit.h",bytes:super::native_compiler_task::UIKIT},
-        File{path:b"/sdk/infinity/interaction.h",bytes:super::native_compiler_task::INTERACTION}];
+        File{path:b"/sdk/infinity/interaction.h",bytes:super::native_compiler_task::INTERACTION},
+        File{path:b"/sdk/infinity/app.h",bytes:super::native_compiler_task::APP},
+        File{path:b"/sdk/infinity/app_api.h",bytes:super::native_compiler_task::APP_API}];
     let input=&job.source[..job.source_length];
     let task=job.task.as_mut().unwrap();
     // Compiler output goes into the binary scratch buffer. On success it becomes

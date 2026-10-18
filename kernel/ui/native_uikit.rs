@@ -88,26 +88,55 @@ static mut STATE: State = State::new();
 #[no_mangle]
 pub static mut INFINITY_NATIVE_UI_SNAPSHOT: [u64; 11] =
     [0x494e4655494b4954, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+#[no_mangle]
+pub static mut INFINITY_NATIVE_UI_ELEMENTS: [u8; MAX_ELEMENTS * 64] = [0; MAX_ELEMENTS * 64];
+#[no_mangle]
+pub static mut INFINITY_NATIVE_UI_EVENT_RECEIPT: [u64; 4] = [0; 4];
 
 // ------------------------=
 // FUNC: publish
 // DESC: Publishes a seqlocked semantic UI state for installed-runtime behavioral acceptance.
 // ------------------=
-fn publish(presentation: Presentation, event: Option<Event>) { unsafe {
-    let sequence = (&raw const INFINITY_NATIVE_UI_SNAPSHOT[2]).read_volatile()
-        .wrapping_add(2) & !1;
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[2]).write_volatile(sequence | 1);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[3]).write_volatile(presentation.active as u64);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[4]).write_volatile(presentation.width as u64);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[5]).write_volatile(presentation.height as u64);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[6]).write_volatile(
-        presentation.elements.iter().filter(|element| element.is_some()).count() as u64);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[7]).write_volatile(presentation.revision);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[8]).write_volatile(event.map_or(0, |value| value.kind as u64));
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[9]).write_volatile(event.map_or(0, |value| value.id as u64));
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[10]).write_volatile(sequence);
-    (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[2]).write_volatile(sequence);
-}}
+fn publish(presentation: Presentation, event: Option<Event>, consumed: bool) {
+    unsafe {
+        let sequence = (&raw const INFINITY_NATIVE_UI_SNAPSHOT[2])
+            .read_volatile()
+            .wrapping_add(2)
+            & !1;
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[2]).write_volatile(sequence | 1);
+        let receipt=&mut *(&raw mut INFINITY_NATIVE_UI_EVENT_RECEIPT);
+        if !presentation.active || presentation.revision==1 && event.is_none() {*receipt=[0;4];}
+        if let Some(event)=event {
+            receipt[0]=receipt[0].saturating_add(1);receipt[1]=event.kind as u64;receipt[2]=event.id as u64;
+        }
+        if consumed {receipt[3]=receipt[3].saturating_add(1);}
+        let records=&mut *(&raw mut INFINITY_NATIVE_UI_ELEMENTS);records.fill(0);
+        for (index,element) in presentation.elements.iter().flatten().enumerate() {
+            let record=&mut records[index*64..(index+1)*64];
+            let values=[1,element.id,element.kind as u32,element.x,element.y,element.width,element.height,element.label_length as u32];
+            for (slot,value) in values.into_iter().enumerate(){record[slot*4..slot*4+4].copy_from_slice(&value.to_le_bytes());}
+            record[32..64].copy_from_slice(&element.label);
+        }
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[3]).write_volatile(presentation.active as u64);
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[4]).write_volatile(presentation.width as u64);
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[5]).write_volatile(presentation.height as u64);
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[6]).write_volatile(
+            presentation
+                .elements
+                .iter()
+                .filter(|element| element.is_some())
+                .count() as u64,
+        );
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[7]).write_volatile(presentation.revision);
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[8])
+            .write_volatile(event.map_or(0, |value| value.kind as u64));
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[9])
+            .write_volatile(event.map_or(0, |value| value.id as u64));
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[10]).write_volatile(sequence);
+        (&raw mut INFINITY_NATIVE_UI_SNAPSHOT[2]).write_volatile(sequence);
+    }
+}
 
 // ------------------------=
 // FUNC: open
@@ -127,7 +156,7 @@ pub fn open(width: u32, height: u32, title: &[u8]) -> bool { unsafe {
     state.presentation.title_length = title.len();
     state.presentation.revision = 1;
     state.events = [None; 16]; state.event_head = 0; state.event_length = 0;
-    publish(state.presentation, None);
+    publish(state.presentation, None, false);
     true
 }}
 
@@ -148,7 +177,7 @@ pub fn upsert(element: Element) -> bool { unsafe {
     let Some(index) = index else { return false; };
     presentation.elements[index] = Some(element);
     presentation.revision = presentation.revision.wrapping_add(1).max(1);
-    publish(*presentation, None);
+    publish(*presentation, None, false);
     true
 }}
 
@@ -164,7 +193,7 @@ pub fn activate(x: u32, y: u32) -> bool { unsafe {
             && y < element.y.saturating_add(element.height)).copied() else { return false; };
     let event = Event { kind: 1, id: element.id, value: 0 };
     let accepted = state.push(event);
-    if accepted { publish(state.presentation, Some(event)); }
+    if accepted { publish(state.presentation, Some(event), false); }
     accepted
 }}
 
@@ -176,7 +205,7 @@ pub fn request_close() -> bool { unsafe {
     let state = &mut *(&raw mut STATE);
     let event = Event { kind: 2, id: 0, value: 0 };
     let accepted = state.presentation.active && state.push(event);
-    if accepted { publish(state.presentation, Some(event)); }
+    if accepted { publish(state.presentation, Some(event), false); }
     accepted
 }}
 
@@ -190,6 +219,7 @@ pub fn poll() -> Option<Event> { unsafe {
     let event = state.events[state.event_head].take();
     state.event_head = (state.event_head + 1) % state.events.len();
     state.event_length -= 1;
+    if event.is_some() { publish(state.presentation, None, true); }
     event
 }}
 
@@ -205,5 +235,5 @@ pub fn presentation() -> Presentation { unsafe { (&*(&raw const STATE)).presenta
 // ------------------=
 pub fn close() { unsafe {
     *(&mut *(&raw mut STATE)) = State::new();
-    publish(Presentation::new(), None);
+    publish(Presentation::new(), None, false);
 } }

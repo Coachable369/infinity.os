@@ -67,6 +67,47 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 }
 
 // ------------------------=
+// FUNC: export_generated
+// DESC: Extracts bounded generated C and native executables from the stopped private test disk through its actual read-only ObjectStore.
+// ------------------=
+fn export_generated<D: BlockDevice>(store: &mut ObjectStore<D>, directory: &str) {
+    use std::fmt::Write;
+    let root = std::env::current_dir().unwrap().canonicalize().unwrap();
+    assert!(root.join("build-kit.toml").is_file());
+    let destination = std::path::Path::new(directory);
+    let parent = destination.parent().unwrap().canonicalize().unwrap();
+    assert!(parent.starts_with(root.join("build")) || parent.starts_with(root.join("builds")));
+    std::fs::create_dir(destination).expect("fresh artifact export directory");
+    let mut records = Vec::new();
+    for index in 0..4096 {
+        let Some((path, object)) = store.namespace_entry(index) else { break; };
+        let source = path.starts_with(b"/home/default/documents/app-c-") && path.ends_with(b".c");
+        let executable = path.starts_with(b"/home/default/program-") && path.ends_with(b".elf");
+        if !source && !executable { continue; }
+        let path = path.to_vec();
+        let metadata = store.metadata(object).expect("generated object metadata");
+        assert!(metadata.logical_size > 0 && metadata.logical_size <= 16 * 1024 * 1024);
+        assert!(records.len() < 128);
+        let mut content = vec![0; metadata.logical_size as usize];
+        assert_eq!(store.read(object, None, &mut content).expect("generated object bytes"), content.len());
+        if executable {
+            assert!(content.len() >= 64 && &content[..6] == b"\x7fELF\x02\x01");
+        }
+        let mut object_hex = String::new();
+        let mut path_hex = String::new();
+        for value in object.0 { write!(object_hex, "{value:02x}").unwrap(); }
+        for value in path { write!(path_hex, "{value:02x}").unwrap(); }
+        let name = format!("{}.{}", object_hex, if source { "c" } else { "elf" });
+        std::fs::write(destination.join(&name), &content).expect("write extracted artifact");
+        records.push(format!("{{\"object\":\"{object_hex}\",\"path_hex\":\"{path_hex}\",\"file\":\"{name}\",\"source\":{source},\"version\":{},\"bytes\":{},\"crc32\":{}}}",
+                             metadata.current_version, content.len(), storage::object::crc32(&content)));
+    }
+    assert!(!records.is_empty(), "No generated artifact was persisted");
+    let report = format!("{{\"version\":1,\"read_only_native_storage\":true,\"artifacts\":[{}]}}\n", records.join(","));
+    std::fs::write(destination.join("objects.json"), report).expect("write artifact receipt");
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Verifies installed native runtime, networking, AI, organization, and date/time System objects.
 // ------------------=
@@ -78,6 +119,12 @@ fn main() {
     let container_lba = read_u64(&entries, 128 + 32);
     assert!(container_lba > 0, "Infinity Container partition missing");
     let mut store = ObjectStore::mount(disk, container_lba).expect("mount native Object Store");
+    let arguments: Vec<String> = std::env::args().collect();
+    if arguments.get(2).map(String::as_str) == Some("--export-generated") {
+        assert_eq!(arguments.len(), 4);
+        export_generated(&mut store, &arguments[3]);
+        return;
+    }
     let date_time = store.date_time_configuration().expect("installed date/time configuration");
     assert!(date_time.is_valid(), "installed date/time configuration invalid");
     assert!(store.runtime_bootstrap_valid(), "native runtime/AI objects invalid");

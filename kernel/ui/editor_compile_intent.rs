@@ -60,7 +60,7 @@ pub fn application_kind(input: &[u8]) -> Option<ApplicationKind> {
     let mut product = false;
     let mut calculator = false;
     let mut game = false;
-    let mut tail = [""; 3];
+    let mut tail = [""; 4];
     for word in words {
         let word = word.trim_end_matches([',', '.']);
         if word.is_empty()
@@ -72,7 +72,7 @@ pub fn application_kind(input: &[u8]) -> Option<ApplicationKind> {
             return None;
         }
         count += 1;
-        tail = [tail[1], tail[2], word];
+        tail = [tail[1], tail[2], tail[3], word];
         application_noun |= ["application", "app", "program", "tool", "game"]
             .iter()
             .any(|value| word.eq_ignore_ascii_case(value));
@@ -87,16 +87,18 @@ pub fn application_kind(input: &[u8]) -> Option<ApplicationKind> {
             .iter()
             .any(|value| word.eq_ignore_ascii_case(value));
     }
-    let play_tail = tail[0].eq_ignore_ascii_case("and")
-        && tail[1].eq_ignore_ascii_case("play")
-        && tail[2].eq_ignore_ascii_case("me");
+    let play_tail = (count >= 4 && tail[1].eq_ignore_ascii_case("and")
+        && tail[2].eq_ignore_ascii_case("play") && tail[3].eq_ignore_ascii_case("me"))
+        || (count >= 5 && tail[0].eq_ignore_ascii_case("and")
+            && tail[1].eq_ignore_ascii_case("play") && tail[2].eq_ignore_ascii_case("against")
+            && tail[3].eq_ignore_ascii_case("me"));
     let named_ending = ["application", "app", "game"]
         .iter()
-        .any(|value| tail[2].eq_ignore_ascii_case(value));
-    if count < 2 || !(application_noun && (named_ending || play_tail) || ui && product) {
+        .any(|value| tail[3].eq_ignore_ascii_case(value));
+    if count < 2 || !(application_noun && named_ending || ui && product || play_tail) {
         return None;
     }
-    Some(if game {
+    Some(if game || play_tail {
         ApplicationKind::Game
     } else if calculator {
         ApplicationKind::Calculator
@@ -122,14 +124,17 @@ pub fn application_style(input: &[u8]) -> Option<ApplicationStyle> {
         return None;
     }
     let text = core::str::from_utf8(input).ok()?;
+    let terminal=text.split_ascii_whitespace().any(|word|["terminal","cli","command-line"]
+        .iter().any(|value|word.trim_matches([',','.']).eq_ignore_ascii_case(value)));
     Some(
-        if application_kind(input) == Some(ApplicationKind::Game)
+        if !terminal && (application_kind(input) == Some(ApplicationKind::Game)
+            || application_kind(input) == Some(ApplicationKind::General)
             || text.split_ascii_whitespace().any(|word| {
             let word = word.trim_matches(|c: char| c == ',' || c == '.');
             ["ui", "gui", "graphical", "windowed", "interface"]
                 .iter()
                 .any(|value| word.eq_ignore_ascii_case(value))
-        }) {
+        })) {
             ApplicationStyle::Ui
         } else {
             ApplicationStyle::Terminal

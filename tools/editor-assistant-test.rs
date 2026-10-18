@@ -385,6 +385,8 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    rejected_creation_retains_terminal_state();
+    generated_redraw_batching();
     application_creation();
     assistant_controls();
     contextual_searches();
@@ -403,6 +405,109 @@ fn main() {
 }
 
 // ------------------------=
+// FUNC: rejected_creation_retains_terminal_state
+// DESC: Verifies a pre-dispatch rejection cannot become stale-goal cancellation or mutate existing source and admitted work.
+// ------------------=
+fn rejected_creation_retains_terminal_state() {
+    use ai::{GenerationStatus as S,Panel};
+    let mut document=TextDocument::new();
+    assert!(document.append_generation_preview(b"int partial",true));
+    assert!(document.insert(b' '));
+    let original=document.bytes().to_vec();
+    let mut panel=Panel::new();
+    panel.workflow_goal=Some(9);
+    panel.argument[..11].copy_from_slice(b"int partial");panel.argument_len=11;
+    panel.pending=Action::ReplaceCompile;panel.awaiting_compile_save=true;
+    assert!(panel.reject_unstarted_generation());
+    assert_eq!(panel.generation,S::Failed);
+    assert_eq!(panel.workflow_goal,None);
+    assert_eq!(panel.pending,Action::None);
+    assert!(!panel.awaiting_compile_save);
+    assert!(!panel.cancel_workflow(9));
+    assert_eq!(panel.generation,S::Failed);
+    assert!(!panel.apply_generated_compile_requested());
+    assert_eq!(&panel.argument[..panel.argument_len],b"int partial");
+    assert_eq!(document.bytes(),original);
+    assert!(!document.is_saved());
+    for state in [S::Queued,S::Running,S::Complete,S::Failed,S::Cancelled] {
+        let mut admitted=panel;admitted.workflow_goal=Some(10);admitted.generation=state;
+        let before=admitted;
+        assert!(!admitted.reject_unstarted_generation());
+        assert!(admitted==before);
+    }
+}
+
+// ------------------------=
+// FUNC: generated_redraw_batching
+// DESC: Exercises production stream updates and document delivery to prove hidden token changes do not redraw, while first/status/conversation updates and bounded final draining remain visible.
+// ------------------=
+fn generated_redraw_batching() {
+    use ai::GenerationStatus;
+    let request=b"Create a simple graphical calculator app";
+    let mut panel=ai::Panel::new();
+    panel.request[..request.len()].copy_from_slice(request);
+    panel.request_len=request.len();panel.generation=GenerationStatus::Running;
+    let first=panel.stream_model_output(2,b"REPLACE_");
+    assert!(!first.progressed && first.redraw);
+    let prefix=b"REPLACE_COMPILE\n";
+    let header=panel.stream_model_output(2,prefix);
+    assert!(!header.progressed && !header.redraw);
+    let source=b"int main(void) {\n    return 0;\n}";
+    let mut response=prefix.to_vec();response.extend_from_slice(source);
+    let update=panel.stream_model_output(2,&response[..prefix.len()+15]);
+    assert!(update.progressed && !update.redraw);
+    let mut document=TextDocument::new();
+    assert!(document.open(b"original"));
+    let first=panel.stream.ready(&panel.argument[..panel.argument_len],Some(1),false).unwrap();
+    assert!(document.append_generation_preview(&panel.argument[first.clone()],true));
+    assert!(panel.stream.committed(first.end,Some(1)));
+    let first_length=document.bytes().len();
+    let mut progressed=0;
+    for end in prefix.len()+16..=response.len() {
+        let update=panel.stream_model_output(2,&response[..end]);
+        progressed+=usize::from(update.progressed);
+        assert!(!update.redraw);
+        assert!(panel.stream.ready(&panel.argument[..panel.argument_len],Some(end as u64*1_000_000),false).is_none());
+        assert_eq!(document.bytes().len(),first_length);
+        assert_eq!(panel.pending,Action::None);
+    }
+    assert!(progressed>1);
+    assert!(panel.argument_len>first_length);
+    // A separately published checkpoint must still transition visibly back to
+    // the streaming status, once, without re-rendering every following token.
+    panel.reply(b"checkpoint");
+    assert!(panel.stream_model_output(2,&response).redraw);
+    assert!(!panel.stream_model_output(2,&response).redraw);
+    response.extend_from_slice(b"\nEND_ACTION");
+    assert!(panel.accept_for_owner(2,&response,true));
+    panel.generation=GenerationStatus::Complete;
+    assert!(panel.apply_generated_compile_requested());
+    while let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],Some(2),true) {
+        assert!(range.len()<=ai::generation_stream::MAX_FLUSH_BYTES);
+        assert!(document.append_generation_preview(&panel.argument[range.clone()],false));
+        assert!(panel.stream.committed(range.end,Some(2)));
+    }
+    assert_eq!(document.bytes(),source);
+    assert_eq!(panel.stream.delivered,panel.argument_len);
+    assert!(document.undo());assert_eq!(document.bytes(),b"original");
+    // Ordinary editor conversation and non-editor application streams retain
+    // their previous token-by-token presentation contract.
+    for owner in [0,1,2,3,12] {
+        let mut conversation=ai::Panel::new();
+        if owner!=2 {
+            conversation.request[..request.len()].copy_from_slice(request);
+            conversation.request_len=request.len();
+        }
+        for output in [b"x".as_slice(),b"xy",b"xyz"] {
+            let update=conversation.stream_model_output(owner,output);
+            assert!(update.progressed && update.redraw);
+            assert_eq!(conversation.response_len,output.len());
+            assert_eq!(conversation.argument_len,0);
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: application_creation
 // DESC: Checks explicit creation authority, complete-source admission, revision fencing and exactly-once application.
 // ------------------=
@@ -410,7 +515,8 @@ fn application_creation() {
     use ai::editor_compile_intent::ApplicationStyle;
     assert!(!ai::generation_timed_out(Some(1),Some(70_000_000_000),Some(100_000_000_000)));
     assert!(ai::generation_timed_out(Some(1),Some(1),Some(90_000_000_001)));
-    assert!(ai::generation_timed_out(Some(1),Some(299_000_000_000),Some(300_000_000_001)));
+    assert!(!ai::generation_timed_out(Some(1),Some(535_000_000_000),Some(536_000_000_000)));
+    assert!(ai::generation_timed_out(Some(1),Some(599_000_000_000),Some(600_000_000_001)));
     assert_eq!(ai::editor_compile_intent::application_style(b"build a simple UI C based calculator"),Some(ApplicationStyle::Ui));
     assert_eq!(ai::editor_compile_intent::application_style(b"create a basic calculator application"),Some(ApplicationStyle::Terminal));
     assert_eq!(ai::editor_compile_intent::application_style(b"write a graphical calculator app"),Some(ApplicationStyle::Ui));

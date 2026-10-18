@@ -2,6 +2,7 @@
 #[path="../kernel/runtime/mod.rs"] mod runtime;
 #[path="storage.rs"] mod storage;
 #[path="../kernel/ui/mod.rs"] mod ui;
+#[path="application-generation-probe.rs"] mod generation_probe;
 mod console {
     #[derive(Clone,Copy)]
     pub enum ConsoleKey {Character(u8),Backspace,Delete,Left,Right,Home,End,Enter}
@@ -18,15 +19,35 @@ use application::*;
 // DESC: Verifies the real shared inference service selects and executes a legal semantic move; this is host evidence, not guest proof.
 // ------------------=
 fn main() {
+    if std::env::args().any(|value|value=="--export-generation-prompt") {
+        generation_probe::export_generation_prompt().unwrap();
+        return;
+    }
     source_preview();
     repair_boundaries();
+    generation_probe::repair_api_boundaries();
+    repair_diagnostic_priority();
+    source_reserve_boundaries();
     if std::env::args().any(|value|value=="--preview-only") {return;}
-    let bytes=Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf").unwrap().into_boxed_slice());
+    let arguments:Vec<_>=std::env::args().collect();
+    let selected=arguments.iter().position(|value|value=="--model")
+        .map(|index|arguments.get(index+1).expect("--model requires hermes or ministral").as_str()).unwrap_or("hermes");
+    assert!(matches!(selected,"hermes"|"ministral"),"--model requires hermes or ministral");
+    assert!(selected=="hermes" || arguments.iter().any(|value|value=="--generate"),"Alternate model comparison currently requires --generate");
+    let path=if selected=="ministral" {"model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf"}
+        else {"model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf"};
+    let bytes=Box::leak(std::fs::read(path).unwrap().into_boxed_slice());
     let arena=Box::leak(vec![0u128;1280*1024*1024/16].into_boxed_slice());
     let arena=unsafe{std::slice::from_raw_parts_mut(arena.as_mut_ptr().cast::<u8>(),arena.len()*16)};
     let mut ai=Box::new(AiRuntime::new());
-    assert!(ai.load_hermes(bytes,arena));
+    let model=if selected=="ministral" {
+        assert!(ai.load_ministral(bytes,arena));runtime::ai::chat::MINISTRAL_MODEL_ID
+    } else {assert!(ai.load_hermes(bytes,arena));runtime::ai::chat::HERMES_MODEL_ID};
     ai.bind_chat_owner([1;16]);
+    let index=runtime::ai::chat::CHAT_MODELS.iter().position(|entry|entry.id==model).unwrap();
+    assert!(ai.chat.select_model_index(index));
+    source_reserve_releases_lease(&mut ai);
+    if arguments.iter().any(|value|value=="--admission-only") {return;}
     let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
     let start=std::time::Instant::now();
     while qwen::workers::online()!=4 {assert!(start.elapsed().as_secs()<10);std::thread::yield_now();}
@@ -37,9 +58,10 @@ fn main() {
         return;
     }
     if std::env::args().any(|value|value=="--generate") {
-        generation_probe(&mut ai);
+        let result=generation_probe::run(&mut ai);
         unsafe {qwen::workers::stop_host_workers();}
         for worker in workers {worker.join().unwrap();}
+        result.unwrap();
         return;
     }
     prefill_progress(&mut ai);
@@ -95,6 +117,72 @@ fn main() {
     application_host::detach();
     unsafe {qwen::workers::stop_host_workers();}
     for worker in workers {worker.join().unwrap();}
+}
+
+// ------------------------=
+// FUNC: source_reserve_boundaries
+// DESC: Checks typed application-source admission at exact context limits without changing ordinary conversational admission.
+// ------------------=
+fn source_reserve_boundaries() {
+    use qwen::service::{submission_fits,SubmissionKind};
+    for count in [0,1,1024,2559] {assert!(submission_fits(count,SubmissionKind::ApplicationSource));}
+    for count in [2560,4095,4096,usize::MAX] {assert!(!submission_fits(count,SubmissionKind::ApplicationSource));}
+    assert!(submission_fits(4094,SubmissionKind::Conversation));
+    assert!(!submission_fits(4096,SubmissionKind::Conversation));
+}
+
+// ------------------------=
+// FUNC: source_reserve_releases_lease
+// DESC: Uses the actual model tokenizer to reject an oversized source turn and proves immediate reuse of the same app inference lease.
+// ------------------=
+fn source_reserve_releases_lease(ai:&mut AiRuntime) {
+    ui::app_assistant::reset();
+    assert!(ai.submit_app_source(2,&b"a ".repeat(3000)).is_err());
+    assert_eq!(ai.app_turn_owner(),None);
+    assert!(ai.submit_app_turn(1,b"Say hello.").is_ok());
+    assert_eq!(ai.app_turn_owner(),Some(1));
+    ai.cancel_app_turn();assert_eq!(ai.app_turn_owner(),None);
+    let request=b"Create a calendar app";
+    let mut panel=ui::app_assistant::Panel::new();
+    panel.input[..request.len()].copy_from_slice(request);panel.length=request.len();
+    panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    let mut prompt=[0u8;6144];
+    let length=panel.generation_prompt(true,b"",&mut prompt).unwrap();
+    ui::app_assistant::write(2,panel);
+    assert!(ai.submit_app_source(2,&prompt[..length]).is_ok());
+    assert_eq!(ai.app_turn_owner(),Some(2));
+    ai.cancel_app_turn();assert_eq!(ai.app_turn_owner(),None);
+    ui::app_assistant::reset();
+}
+
+// ------------------------=
+// FUNC: repair_diagnostic_priority
+// DESC: Verifies warning-heavy compiler output cannot evict error records from bounded repair feedback and preserves unknown diagnostic bytes.
+// ------------------=
+fn repair_diagnostic_priority() {
+    use ui::app_assistant::{compiler_diagnostics,Panel,GenerationStatus};
+    let mut diagnostics=Vec::new();
+    for _ in 0..5 {diagnostics.extend_from_slice(b"source.c:24:3: warning: ");diagnostics.extend_from_slice(&[b'w';300]);diagnostics.push(b'\n');}
+    diagnostics.extend_from_slice(b"source.c:42:3: error: invalid argument count\n header.h:84:1: note: declared here\nsource.c:75:4: error: invalid operand types\n");
+    let original=diagnostics.clone();
+    let mut buffer=[0u8;1024];let selected=compiler_diagnostics::prioritize(&diagnostics,&mut buffer);
+    assert_eq!(selected.errors,2);assert_eq!(selected.notes,1);assert!(selected.truncated);
+    assert_eq!(diagnostics,original);assert!(selected.bytes<=buffer.len());
+    let replay=compiler_diagnostics::prioritize(&buffer[..selected.bytes],&mut [0u8;1024]);
+    assert_eq!(replay.errors,2);assert_eq!(replay.notes,1);
+    let request=b"create a graphical calculator app";
+    let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    panel.generation=GenerationStatus::Complete;
+    assert!(panel.queue_compiler_repair(request,7,7,&diagnostics));
+    let report=compiler_diagnostics::prioritize(&panel.repair_diagnostics[..panel.repair_diagnostics_len],&mut buffer);
+    assert_eq!(report.errors,2);assert_eq!(report.notes,1);
+    let mut raw=[0;3];let unknown=compiler_diagnostics::prioritize(&[9,8,7,6],&mut raw);
+    assert_eq!(raw,[9,8,7]);assert_eq!(unknown.bytes,3);assert!(unknown.truncated);
+    assert_eq!(unknown.errors,0);
+    let mut guard=[0xa5;4];let empty=compiler_diagnostics::prioritize(&diagnostics,&mut guard[..0]);
+    assert_eq!(guard,[0xa5;4]);assert_eq!(empty.bytes,0);assert!(empty.truncated);
+    let fatal=compiler_diagnostics::prioritize(b"ld.lld: error: unresolved symbol\nfatal error: invalid source\n",&mut buffer);
+    assert_eq!(fatal.errors,2);
 }
 
 // ------------------------=
@@ -172,7 +260,7 @@ fn compiler_repair_probe(ai:&mut AiRuntime) {
     assert!(panel.queue_compiler_repair(request,7,7,&failed.stderr));
     let mut prompt=[0;6144];let length=panel.compiler_repair_prompt(source,&mut prompt).unwrap();
     panel.generation=GenerationStatus::Running;ui::app_assistant::write(2,panel);
-    ai.submit_app_turn(2,&prompt[..length]).unwrap();
+    ai.submit_app_source(2,&prompt[..length]).unwrap();
     let started=std::time::Instant::now();
     let mut last=Vec::new();
     while ai.app_turn_owner().is_some() && started.elapsed().as_secs()<300 {ai.poll_qwen();if !ai.acceptance_native_output().is_empty(){last=ai.acceptance_native_output().to_vec();}}
@@ -213,6 +301,53 @@ fn source_preview() {
     assert!(!panel.accept_for_owner(2,complete,false));
     panel.request_len=0;
     assert!(!panel.stage_generated_source(first));
+    buffered_source_preview();
+}
+
+// ------------------------=
+// FUNC: buffered_source_preview
+// DESC: Drives real token-fragment framing into paced editor buffers, preserving exact source, completion authority and one undo checkpoint.
+// ------------------=
+fn buffered_source_preview() {
+    use ui::app_assistant::{Panel,GenerationStatus};
+    let request=b"Create a simple graphical calculator app";
+    let source=b"#include <stdio.h>\n// function body\nint main(void) {\n    return 0;\n}";
+    for (prefix,suffix) in [(b"REPLACE_COMPILE\n".as_slice(),b"\nEND_ACTION".as_slice()),
+        (b"REPLACE_COMPILE\n```c\n".as_slice(),b"\n```\nEND_ACTION".as_slice()),
+        (b"```c\n".as_slice(),b"\n```".as_slice()),(b"".as_slice(),b"\n   ".as_slice())] {
+        let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);
+        panel.request_len=request.len();panel.generation=GenerationStatus::Running;
+        let mut document=ui::text_editor::TextDocument::new();
+        assert!(document.replace_generation_preview(b"original",false));
+        let mut response=prefix.to_vec();response.extend_from_slice(source);response.extend_from_slice(suffix);
+        for end in 1..response.len() {
+            panel.stage_generated_source(&response[..end]);
+            let now=Some(end as u64*100_000_000);
+            if let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],now,false) {
+                if range.start>0 {assert_eq!(document.bytes(),&panel.argument[..range.start]);}
+                assert!(document.append_generation_preview(&panel.argument[range.clone()],range.start==0));
+                assert!(panel.stream.committed(range.end,now));
+                assert!(source.starts_with(document.bytes()));
+            }
+            assert!(!panel.apply_generated_compile_requested());
+        }
+        assert!(panel.accept_generated(&response,true,true));panel.generation=GenerationStatus::Complete;
+        while let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],None,true) {
+            assert!(document.append_generation_preview(&panel.argument[range.clone()],range.start==0));
+            assert!(panel.stream.committed(range.end,None));
+        }
+        assert_eq!(document.bytes(),source);
+        assert!(panel.apply_generated_compile_requested());
+        assert!(document.undo());assert_eq!(document.bytes(),b"original");
+    }
+    let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);
+    panel.request_len=request.len();
+    assert!(!panel.accept_generated(b"REPLACE_COMPILE\n```c\nint main(void){return 0;}\nEND_ACTION",true,true));
+    assert!(!panel.apply_generated_compile_requested());
+    // Ordinary literal Markdown edits retain their requested fences.
+    let mut literal=Panel::new();
+    assert!(literal.accept_generated(b"REPLACE\n```c\nint main(void){return 0;}\n```\nEND_ACTION",true,true));
+    assert_eq!(&literal.argument[..literal.argument_len],b"```c\nint main(void){return 0;}\n```");
 }
 
 // ------------------------=
@@ -234,34 +369,6 @@ fn prefill_progress(ai:&mut AiRuntime) {
     }
     ai.cancel_app_turn();
     assert_eq!(ai.app_turn_owner(),None);
-}
-
-// ------------------------=
-// FUNC: generation_probe
-// DESC: Exercises the actual editor prompt and records only this fixture's generated source for compiler diagnostics.
-// ------------------=
-fn generation_probe(ai:&mut AiRuntime) {
-    let request=b"Build a simple UI C based calculator application";
-    let mut panel=ui::app_assistant::Panel::new();
-    panel.input[..request.len()].copy_from_slice(request);panel.length=request.len();
-    panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
-    panel.generation=ui::app_assistant::GenerationStatus::Running;
-    let mut prompt=[0;6144];
-    let length=panel.generation_prompt(true,b"",&mut prompt).unwrap();
-    ui::app_assistant::write(2,panel);
-    ai.submit_app_turn(2,&prompt[..length]).unwrap();
-    let started=std::time::Instant::now();
-    let mut last=Vec::new();
-    while ai.app_turn_owner().is_some() && started.elapsed().as_secs()<300 {
-        ai.poll_qwen();
-        if !ai.acceptance_native_output().is_empty() {last=ai.acceptance_native_output().to_vec();}
-    }
-    let panel=ui::app_assistant::read(2);
-    std::fs::write("build/application-generation-model-output.txt",&last).unwrap();
-    std::fs::write("build/application-generation-model-source.c",&panel.argument[..panel.argument_len]).unwrap();
-    assert!(ai.app_turn_owner().is_none(),"generation probe deadline");
-    assert_eq!(panel.generation,ui::app_assistant::GenerationStatus::Complete);
-    assert!(panel.argument_len>0);
 }
 
 // ------------------------=

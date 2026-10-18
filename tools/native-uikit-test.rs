@@ -29,11 +29,17 @@ fn main() {
     assert!(snapshot.active);assert_eq!(snapshot.elements.iter().flatten().count(),1);
     let published=unsafe{native_uikit::INFINITY_NATIVE_UI_SNAPSHOT};
     assert_eq!(published[6],1);assert_eq!(published[7],3);
+    assert_eq!(published[2],published[10]);assert_eq!(published[2]%2,0);
+    let elements=unsafe{native_uikit::INFINITY_NATIVE_UI_ELEMENTS};
+    let fields:Vec<_>=elements[..32].chunks_exact(4).map(|bytes|u32::from_le_bytes(bytes.try_into().unwrap())).collect();
+    assert_eq!(fields,[1,7,3,30,110,90,48,5]);
+    assert_eq!(&elements[32..64],&updated.label);
     assert!(!native_uikit::activate(20,100));
     assert!(native_uikit::activate(35,115));
     let activated=unsafe{native_uikit::INFINITY_NATIVE_UI_SNAPSHOT};
     assert_eq!(activated[8..10],[1,7]);
     assert_eq!(native_uikit::poll(),Some(native_uikit::Event{kind:1,id:7,value:0}));
+    assert_eq!(unsafe{native_uikit::INFINITY_NATIVE_UI_EVENT_RECEIPT},[1,1,7,1]);
     assert!(native_uikit::request_close());
     assert_eq!(native_uikit::poll(),Some(native_uikit::Event{kind:2,id:0,value:0}));
     native_uikit::close();
@@ -46,4 +52,6 @@ fn main() {
     assert!(!native_uikit::upsert(element(97,native_uikit::ElementKind::Button,0,590)));
     native_uikit::close();assert!(!native_uikit::presentation().active);
     assert_eq!(unsafe{native_uikit::INFINITY_NATIVE_UI_SNAPSHOT}[3],0);
+    assert!(unsafe{native_uikit::INFINITY_NATIVE_UI_ELEMENTS}.iter().all(|value|*value==0));
+    assert_eq!(unsafe{native_uikit::INFINITY_NATIVE_UI_EVENT_RECEIPT},[0;4]);
 }

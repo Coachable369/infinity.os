@@ -5,6 +5,60 @@ use super::application::{self, Choice, Error, Outcome, Parameter, ParameterKind,
 pub struct Context { pub instance: u64, pub owner: [u8;16], pub session: [u8;16] }
 static mut REGISTRY: Registry = Registry::new();
 static mut CURRENT: Option<Context> = None;
+#[no_mangle]
+pub static mut INFINITY_APP_INTERACTION_SNAPSHOT:[u64;18]=[0x494e4641494e5431,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+#[no_mangle]
+pub static mut INFINITY_APP_INTERACTION_STATE:[u8;application::STATE_BYTES]=[0;application::STATE_BYTES];
+#[no_mangle]
+pub static mut INFINITY_APP_INTERACTION_CHOICES:[u8;application::MAX_CHOICES*416]=[0;application::MAX_CHOICES*416];
+static mut DIAGNOSTIC_COUNTS:[u64;7]=[0;7];
+
+// ------------------------=
+// FUNC: publish_diagnostics
+// DESC: Exports only the live process's published contract and real syscall receipts under one read-only diagnostic seqlock.
+// ------------------=
+fn publish_diagnostics() {
+    unsafe {
+        let snapshot=CURRENT.and_then(|c|(&mut *(&raw mut REGISTRY)).diagnostic_snapshot(c.instance,c.owner,c.session).ok());
+        let target=core::ptr::addr_of_mut!(INFINITY_APP_INTERACTION_SNAPSHOT).cast::<u64>();
+        let sequence=target.add(2).read_volatile().wrapping_add(2)&!1;
+        target.add(2).write_volatile(sequence|1);
+        let state=&mut *(&raw mut INFINITY_APP_INTERACTION_STATE);state.fill(0);
+        let records=&mut *(&raw mut INFINITY_APP_INTERACTION_CHOICES);records.fill(0);
+        let mut choice_count=0;let mut schema_count=0;
+        if let Some(snapshot)=snapshot {
+            state[..snapshot.length].copy_from_slice(&snapshot.state[..snapshot.length]);
+            for (index,choice) in snapshot.choices.iter().flatten().enumerate() {
+                let record=&mut records[index*416..(index+1)*416];
+                record[..4].copy_from_slice(&1u32.to_le_bytes());
+                record[4..8].copy_from_slice(&choice.id.to_le_bytes());
+                record[8..12].copy_from_slice(&(choice.risk as u32).to_le_bytes());
+                record[16..64].copy_from_slice(&choice.action);record[64..160].copy_from_slice(&choice.label);
+                for (slot,value) in choice.arguments.iter().enumerate(){record[160+slot*8..168+slot*8].copy_from_slice(&value.to_le_bytes());}
+                if let Some(schema)=snapshot.schemas.iter().flatten().find(|schema|schema.choice==choice.id) {
+                    record[12..16].copy_from_slice(&1u32.to_le_bytes());schema_count+=1;
+                    for (slot,parameter) in schema.parameters.iter().enumerate() {
+                        let at=192+slot*48;record[at..at+24].copy_from_slice(&parameter.name);
+                        record[at+24..at+28].copy_from_slice(&(parameter.kind as u32).to_le_bytes());
+                        record[at+32..at+40].copy_from_slice(&parameter.minimum.to_le_bytes());
+                        record[at+40..at+48].copy_from_slice(&parameter.maximum.to_le_bytes());
+                    }
+                    record[384..408].copy_from_slice(&schema.text_name);
+                    record[408..412].copy_from_slice(&(schema.text_limit as u32).to_le_bytes());
+                }
+                choice_count+=1;
+            }
+        }
+        let values=[CURRENT.map_or(0,|c|c.instance),snapshot.map_or(0,|s|s.revision),
+            snapshot.map_or(0,|s|s.agent_turn as u64),snapshot.map_or(0,|s|s.terminal as u64),
+            snapshot.map_or(0,|s|s.length as u64),choice_count,schema_count,
+            DIAGNOSTIC_COUNTS[0],DIAGNOSTIC_COUNTS[1],DIAGNOSTIC_COUNTS[2],DIAGNOSTIC_COUNTS[3],
+            DIAGNOSTIC_COUNTS[4],DIAGNOSTIC_COUNTS[5],DIAGNOSTIC_COUNTS[6]];
+        for (index,value) in values.into_iter().enumerate(){target.add(index+3).write_volatile(value);}
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+        target.add(17).write_volatile(sequence);target.add(2).write_volatile(sequence);
+    }
+}
 
 // ------------------------=
 // FUNC: attach
@@ -14,7 +68,8 @@ pub fn attach(owner: [u8;16], session: [u8;16]) -> Result<Context, Error> {
     detach();
     unsafe {
         let instance = (&mut *(&raw mut REGISTRY)).register(owner,session)?;
-        let context=Context{instance,owner,session}; CURRENT=Some(context); Ok(context)
+        let context=Context{instance,owner,session}; CURRENT=Some(context); DIAGNOSTIC_COUNTS=[0;7];
+        publish_diagnostics();Ok(context)
     }
 }
 // ------------------------=
@@ -23,6 +78,7 @@ pub fn attach(owner: [u8;16], session: [u8;16]) -> Result<Context, Error> {
 // ------------------=
 pub fn detach() {
     unsafe { if let Some(c)=core::ptr::addr_of_mut!(CURRENT).replace(None) { let _=(&mut *(&raw mut REGISTRY)).close(c.instance,c.owner,c.session); } }
+    unsafe {DIAGNOSTIC_COUNTS=[0;7];}publish_diagnostics();
 }
 // ------------------------=
 // FUNC: context
@@ -51,7 +107,7 @@ pub fn syscall(operation:u64, session:[u8;16], input:&[u8], output:&mut [u8], no
     let c=context().ok_or(Error::Missing)?;
     if session!=c.session {return Err(Error::Denied);}
     if input.len()<8 || u32_at(input,0)!=application::VERSION {return Err(Error::Invalid);}
-    with_registry(|registry|match operation {
+    let result=with_registry(|registry|match operation {
         0x1150=>{
             if input.len()!=24+application::STATE_BYTES {return Err(Error::Invalid);}
             let length=u32_at(input,16) as usize;
@@ -105,7 +161,23 @@ pub fn syscall(operation:u64, session:[u8;16], input:&[u8], output:&mut [u8], no
             registry.finish(c.instance,c.owner,c.session,u64_at(input,8),outcome,now)?;Ok(0)
         },
         _=>Err(Error::Invalid),
-    })
+    });
+    if let Ok(length)=result {
+        unsafe {
+            if operation==0x1152 {DIAGNOSTIC_COUNTS[0]=DIAGNOSTIC_COUNTS[0].saturating_add(1);}
+            if matches!(operation,0x1153|0x1156) && length>0 {
+                DIAGNOSTIC_COUNTS[1]=DIAGNOSTIC_COUNTS[1].saturating_add(1);
+                DIAGNOSTIC_COUNTS[4]=u32_at(output,4) as u64;DIAGNOSTIC_COUNTS[5]=u64_at(output,8);
+            }
+            if operation==0x1154 {
+                let outcome=u32_at(input,4) as usize;
+                DIAGNOSTIC_COUNTS[2+outcome]=DIAGNOSTIC_COUNTS[2+outcome].saturating_add(1);
+                DIAGNOSTIC_COUNTS[6]=outcome as u64+1;
+            }
+        }
+        if matches!(operation,0x1152|0x1154) || matches!(operation,0x1153|0x1156) && length>0 {publish_diagnostics();}
+    }
+    result
 }
 // ------------------------=
 // FUNC: u32_at

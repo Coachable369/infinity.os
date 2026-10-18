@@ -1,9 +1,11 @@
 """Native editor compilation acceptance through real input on a disposable installed OS."""
 import importlib.util
 import argparse
+import array
 import functools
 import hashlib
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -11,6 +13,7 @@ import struct
 import subprocess
 import sys
 import time
+import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("editor_ui", ROOT / "tools/editor-assistant-installed-test.py")
@@ -20,6 +23,9 @@ base = ui.base
 guest_spec = importlib.util.spec_from_file_location("desktop_guest", ROOT / "tools/servo-platform-probe/run-desktop-installed.py")
 desktop = importlib.util.module_from_spec(guest_spec)
 guest_spec.loader.exec_module(desktop)
+case_spec = importlib.util.spec_from_file_location("native_application_case", ROOT / "tools/native-application-case.py")
+application_case = importlib.util.module_from_spec(case_spec)
+case_spec.loader.exec_module(application_case)
 
 # Each run extracts immutable kernel artifacts once. Avoid rereading a gigabyte
 # ELF on every guest-state poll while measuring responsiveness.
@@ -353,6 +359,480 @@ def create_ui_application(guest):
     raise AssertionError("Generated application did not present a complete UI Kit calculator")
 
 # ------------------------=
+# FUNC: generation_progress
+# DESC: Reads the versioned generation snapshot for prompt prefill, model output and actual editor delivery.
+# ------------------=
+def generation_progress(guest):
+    state = read(guest, "INFINITY_APP_GENERATION_SNAPSHOT", 14)
+    assert state[:2] == (0x494e4647454e3031, 1)
+    return {"sequence": state[2], **dict(zip(("status", "prompt_tokens", "processed_tokens", "generated_tokens",
+                     "output_bytes", "source_bytes", "editor_bytes", "editor_flushes",
+                     "repairs", "clock_ns"), state[3:13]))}
+
+# ------------------------=
+# FUNC: voice_runtime_state
+# DESC: Reads content-free audio admission diagnostics without inferring readiness from UI copy or modifying guest state.
+# ------------------=
+def voice_runtime_state(guest):
+    state = read(guest, "INFINITY_NATIVE_WORKFLOW_AUDIO_SNAPSHOT", 16)
+    assert state[:2] == (0x494e46415544494f, 1)
+    values = dict(zip(("conversation", "output", "error", "playback_hz", "capture_available",
+                       "input_prepared", "input_failed", "frames", "first_playback_ns",
+                       "output_owner_matches", "pending", "inflight"), state[3:15]))
+    if values["error"] >= 1 << 63:
+        values["error"] -= 1 << 64
+    return values
+
+# ------------------------=
+# FUNC: diagnostic_bytes
+# DESC: Reads a bounded exported data buffer without writing guest memory or injecting application actions.
+# ------------------=
+def diagnostic_bytes(guest, symbol, expected_size):
+    address, size = base.symbol(guest.work.parent / "artifacts/installed-kernel.elf", symbol)
+    assert size == expected_size
+    return guest.memory(address, size)
+
+# ------------------------=
+# FUNC: interaction_state
+# DESC: Reads one coherent published application contract and real native syscall receipts as structured fields.
+# ------------------=
+def interaction_state(guest):
+    for _ in range(20):
+        header = read(guest, "INFINITY_APP_INTERACTION_SNAPSHOT", 18)
+        assert header[:2] == (0x494e4641494e5431, 1)
+        assert header[7] <= 2048 and header[8] <= 128 and header[9] <= 16
+        state = diagnostic_bytes(guest, "INFINITY_APP_INTERACTION_STATE", 2048)[:header[7]]
+        records = diagnostic_bytes(guest, "INFINITY_APP_INTERACTION_CHOICES", 128 * 416)
+        if read(guest, "INFINITY_APP_INTERACTION_SNAPSHOT", 18)[2] == header[2]:
+            break
+    else:
+        raise AssertionError("Application contract changed during every diagnostic capture")
+    choices = []
+    for index in range(header[8]):
+        record = records[index * 416:(index + 1) * 416]
+        version, identifier, risk, typed = struct.unpack_from("<4I", record)
+        assert version == 1 and risk <= 2 and typed <= 1
+        choice = {"id": identifier, "risk": risk, "typed": bool(typed),
+                  "action": record[16:64].split(b"\0", 1)[0].decode("utf-8"),
+                  "arguments": struct.unpack_from("<4q", record, 160)}
+        if typed:
+            choice["parameters"] = []
+            for slot in range(4):
+                at = 192 + slot * 48
+                choice["parameters"].append({"name": record[at:at+24].split(b"\0", 1)[0].decode("utf-8"),
+                    "kind": struct.unpack_from("<I", record, at+24)[0],
+                    "minimum": struct.unpack_from("<q", record, at+32)[0],
+                    "maximum": struct.unpack_from("<q", record, at+40)[0]})
+            choice["text_name"] = record[384:408].split(b"\0", 1)[0].decode("utf-8")
+            choice["text_limit"] = struct.unpack_from("<I", record, 408)[0]
+        choices.append(choice)
+    result = dict(zip(("instance", "revision", "agent_turn", "terminal", "state_bytes",
+                       "choice_count", "schema_count", "commits", "delivered", "applied",
+                       "rejected", "last_choice", "last_token", "last_result"), header[3:17]))
+    result["choices"] = choices
+    # Free-form observation prose is diagnostic only. A JSON object may provide
+    # typed app-local state, which domain tests must corroborate through real UI.
+    result["observation"] = state.decode("utf-8")
+    try:
+        result["structured_observation"] = json.loads(state)
+    except (ValueError, UnicodeDecodeError):
+        result["structured_observation"] = None
+    return result
+
+# ------------------------=
+# FUNC: native_ui_state
+# DESC: Reads actual generated native UI IDs, values and rectangles using the renderer's coherent diagnostic snapshot.
+# ------------------=
+def native_ui_state(guest):
+    for _ in range(20):
+        header = read(guest, "INFINITY_NATIVE_UI_SNAPSHOT", 11)
+        assert header[:2] == (0x494e4655494b4954, 1) and header[6] <= 96
+        records = diagnostic_bytes(guest, "INFINITY_NATIVE_UI_ELEMENTS", 96 * 64)
+        receipt = struct.unpack("<4Q", diagnostic_bytes(guest, "INFINITY_NATIVE_UI_EVENT_RECEIPT", 32))
+        if read(guest, "INFINITY_NATIVE_UI_SNAPSHOT", 11)[2] == header[2]:
+            break
+    else:
+        raise AssertionError("Native UI changed during every diagnostic capture")
+    elements = []
+    for index in range(header[6]):
+        record = records[index*64:(index+1)*64]
+        version, identifier, kind, x, y, width, height, length = struct.unpack_from("<8I", record)
+        assert version == 1 and kind in (1, 2, 3) and length <= 32
+        elements.append({"id": identifier, "kind": kind, "x": x, "y": y,
+                         "width": width, "height": height, "value": record[32:32+length].decode("utf-8")})
+    return {"sequence": header[2], "active": bool(header[3]), "width": header[4], "height": header[5],
+            "revision": header[7], "event_kind": receipt[1], "event_id": receipt[2],
+            "queued_events": receipt[0], "consumed_events": receipt[3], "elements": elements}
+
+# ------------------------=
+# FUNC: click_native_element
+# DESC: Converts an actual generated button's semantic rectangle to desktop pixels and delivers a real user pointer click.
+# ------------------=
+def click_native_element(guest, identifier):
+    state = native_ui_state(guest)
+    candidates = [element for element in state["elements"] if element["id"] == identifier and element["kind"] == 3]
+    assert len(candidates) == 1, {"missing_native_button": identifier}
+    element = candidates[0]
+    owner = features(guest)
+    assert owner[12] == 1
+    x, y, width, height = owner[21:25]
+    display = guest.state()
+    scale = 2 if display[11] >= 2560 and display[12] >= 1440 else 1
+    # Shared DesktopAppWindowGeometry reserves 48 title, 42 toolbar, 12 top
+    # content inset, and 16 left/right/bottom units at the current UI scale.
+    content = (x + 16*scale, y + 102*scale, width - 32*scale, height - 118*scale)
+    target_x = content[0] + (element["x"]*2 + element["width"]) * content[2] // (state["width"]*2)
+    target_y = content[1] + (element["y"]*2 + element["height"]) * content[3] // (state["height"]*2)
+    adaptive_click(guest, target_x, target_y)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        after = native_ui_state(guest)
+        if after["queued_events"] > state["queued_events"] and after["consumed_events"] > state["consumed_events"] and after["event_kind"] == 1 and after["event_id"] == identifier:
+            return after
+        time.sleep(.1)
+    raise AssertionError({"button_activation_not_delivered": identifier})
+
+# ------------------------=
+# FUNC: export_generated_artifacts
+# DESC: Extracts the stopped private VM's actual stored C and ELF, correlating them with editor and publication identities.
+# ------------------=
+def export_generated_artifacts(guest, generation, architecture):
+    assert guest.process is None or guest.process.poll() is not None
+    destination = guest.work.parent / "generated-application" / f"stored-artifacts-{time.time_ns()}"
+    destination.parent.mkdir(exist_ok=True)
+    subprocess.run([str(ROOT / "build/tools/installed-object-test"), str(guest.disk),
+                    "--export-generated", str(destination)], check=True)
+    receipt = json.loads((destination / "objects.json").read_text())
+    assert receipt["version"] == 1 and receipt["read_only_native_storage"]
+    source_match = None
+    executable_match = None
+    for artifact in receipt["artifacts"]:
+        path = destination / artifact["file"]
+        assert path.parent == destination and path.name == artifact["file"]
+        content = path.read_bytes()
+        assert len(content) == artifact["bytes"] and zlib.crc32(content) == artifact["crc32"]
+        artifact["sha256"] = hashlib.sha256(content).hexdigest()
+        if generation and artifact["source"]:
+            fingerprint = 1469598103934665603
+            for value in content:
+                fingerprint = ((fingerprint ^ value) * 1099511628211) & ((1 << 64) - 1)
+            if len(content) == generation["saved_source_bytes"] and fingerprint == generation["saved_source_fingerprint"]:
+                source_match = artifact["file"]
+        if generation and not artifact["source"] and artifact["object"] == generation["published_executable_object"]:
+            assert content[:6] == b"\x7fELF\x02\x01"
+            assert struct.unpack_from("<H", content, 18)[0] == {"aarch64": 183, "x86_64": 62}[architecture]
+            executable_match = artifact["file"]
+    receipt.update(source_matches_live_editor=source_match, executable_matches_publication=executable_match)
+    (destination / "objects.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    if generation:
+        assert source_match and executable_match, "Stored artifacts differ from the actual editor/publication snapshot"
+    return {"directory": str(destination), **receipt}
+
+# ------------------------=
+# FUNC: create_requested_application
+# DESC: Exercises an arbitrary desktop request and captures generation, native compilation and real presentation without claiming domain correctness.
+# ------------------=
+def create_requested_application(guest, request, timeout, case_path=None):
+    before = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+    evidence = guest.work.parent / "generated-application"
+    evidence.mkdir(exist_ok=True)
+    (evidence / "request.txt").write_text(request)
+    guest.key("ctrl", "j")
+    ui.text(guest, request)
+    guest.key("ret")
+    ui.wait_feature(guest, lambda state: state[12] == 2)
+    started = time.monotonic()
+    next_capture = 0
+    source_lengths = []
+    progress = []
+    with (evidence / "progress.jsonl").open("w") as output:
+        while time.monotonic() - started < timeout:
+            snapshot = generation_progress(guest)
+            snapshot["elapsed_seconds"] = time.monotonic() - started
+            progress.append(snapshot)
+            output.write(json.dumps(snapshot) + "\n")
+            output.flush()
+            length = features(guest)[7]
+            if length and (not source_lengths or source_lengths[-1] != length):
+                source_lengths.append(length)
+            build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
+            if build[2] > before and build[3]:
+                break
+            if time.monotonic() >= next_capture:
+                print(json.dumps({"generation": snapshot}), flush=True)
+                guest.screenshot("generated-request-current")
+                guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                    "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})
+                next_capture = time.monotonic() + 10
+            assert snapshot["status"] not in (4, 5), snapshot
+            assert guest.state()[4] not in (9, 10), "Authenticated generation session was lost"
+            time.sleep(.5)
+        else:
+            raise AssertionError({"generation_deadline_seconds": timeout, "last_progress": progress[-1]})
+    compiled = wait_build(guest, before, 3)
+    ui.wait_feature(guest, lambda state: state[12] == 1)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        presentation = read(guest, "INFINITY_NATIVE_UI_SNAPSHOT", 11)
+        assert presentation[:2] == (0x494e4655494b4954, 1)
+        if presentation[3] == 1 and presentation[4] > 0 and presentation[5] > 0 and presentation[6] > 0:
+            guest.screenshot("generated-request-running")
+            assert len(source_lengths) >= 2, {"missing_incremental_editor_output": source_lengths}
+            ui_state = native_ui_state(guest)
+            contract = interaction_state(guest)
+            saved = features(guest)
+            published = read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8)
+            (evidence / "ui-state.json").write_text(json.dumps(ui_state, indent=2) + "\n")
+            (evidence / "interaction-state.json").write_text(json.dumps(contract, indent=2) + "\n")
+            result = {"request": request, "compile": compiled, "presentation": presentation,
+                    "streamed_editor_lengths": source_lengths, "progress": progress,
+                    "ui": ui_state, "interaction": contract,
+                    "saved_source_bytes": saved[7], "saved_source_fingerprint": saved[16],
+                    "published_executable_object": struct.pack("<2Q", *published[4:6]).hex(),
+                    "native_generation_compile_presentation": True, "domain_behavior_verified": False}
+            if case_path is not None:
+                result["domain_case"] = application_case.run(guest, case_path, evidence / f"domain-case-{time.time_ns()}",
+                                                             native_ui_state, interaction_state, click_native_element)
+                result["domain_behavior_verified"] = result["domain_case"]["passed"]
+            return result
+        time.sleep(.1)
+    raise AssertionError("Generated native application did not present a UI")
+
+# ------------------------=
+# FUNC: cancel_generation_by_edit
+# DESC: Delivers an actual editor keystroke and verifies revision-fenced cancellation without saving or compiling partial source.
+# ------------------=
+def cancel_generation_by_edit(guest):
+    before = features(guest)
+    assert before[12] == 2
+    build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
+    ui.click(guest, before[30] + min(80, before[27] // 2),
+             before[29] + min(16, before[28] // 2))
+    guest.key("spc")
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        state = features(guest)
+        progress = generation_progress(guest)
+        if progress["status"] == 5 and state[16] != before[16]:
+            assert read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2] == build[2]
+            return {"generation": progress, "document_bytes": state[7],
+                    "document_fingerprint": state[16], "build_sequence_unchanged": True}
+        time.sleep(.1)
+    raise AssertionError({"edit_did_not_cancel_generation": progress,
+                          "document_before": before[16], "document_after": state[16]})
+
+# ------------------------=
+# FUNC: wait_cancelled_checkpoint
+# DESC: Requires the real cancelled generation's terminal speech receipt without submitting another request or trusting narration prose.
+# ------------------=
+def wait_cancelled_checkpoint(guest, result, evidence):
+    deadline = time.monotonic() + 60
+    next_diagnostic = 0
+    while time.monotonic() < deadline:
+        narration = read(guest, "INFINITY_NATIVE_WORKFLOW_VOICE_SNAPSHOT", 8)
+        assert narration[:2] == (0x494e46574f494345, 1)
+        progress = generation_progress(guest)
+        record = {"scheduled_mask": narration[3], "announced_mask": narration[4],
+                  "pending": narration[5], "inflight": narration[6],
+                  "generation": progress, "voice_runtime": voice_runtime_state(guest),
+                  "audio_capture_bytes": guest.audio_capture.stat().st_size}
+        result["terminal_checkpoint"] = record
+        (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
+        assert progress["status"] == 5, {"cancelled_generation_changed": record}
+        if narration[4] & (1 << 15):
+            result["announced_checkpoints"] = narration[4]
+            result["audio_request_end_byte"] = record["audio_capture_bytes"]
+            result["audio_terminal_end_byte"] = record["audio_capture_bytes"]
+            return record
+        if time.monotonic() >= next_diagnostic:
+            print(json.dumps({"terminal_checkpoint_wait": record}), flush=True)
+            next_diagnostic = time.monotonic() + 10
+        time.sleep(.2)
+    raise AssertionError({"cancelled_checkpoint_not_completed": record})
+
+# ------------------------=
+# FUNC: prepare_streaming_request
+# DESC: Cancels a restored goal through the actual desktop controls before entering a new fixture request, preserving unsaved editor contents.
+# ------------------=
+def prepare_streaming_request(guest, request):
+    before = generation_progress(guest)
+    guest.key("ctrl", "j")
+    guest.key("esc")
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        after = generation_progress(guest)
+        if after["status"] not in (1, 2) and after["prompt_tokens"] == 0:
+            break
+        time.sleep(.2)
+    else:
+        raise AssertionError({"restored_goal_still_active": after})
+    assert features(guest)[7] == 0, "Fresh fixture admission requires an empty editor; unsaved source was preserved"
+    guest.key("ctrl", "j")
+    # Desktop Ctrl+X clears the current composer through its supported editing
+    # path; it does not replace or delete the editor's document.
+    guest.key("ctrl", "x")
+    ui.text(guest, request)
+    guest.screenshot("native-streaming-request-entered")
+    guest.key("ret")
+    ui.wait_feature(guest, lambda state: state[12] == 2)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        admitted = generation_progress(guest)
+        if admitted["sequence"] > after["sequence"] and admitted["status"] == 2 and admitted["prompt_tokens"] > 0:
+            break
+        time.sleep(.2)
+    else:
+        raise AssertionError({"new_request_not_admitted": admitted, "prior_generation": after})
+    guest.screenshot("native-streaming-request-admitted")
+    return {"previous_generation": before, "quiescent_generation": after,
+            "admitted_generation": admitted,
+            "request_bytes": len(request.encode()),
+            "request_sha256": hashlib.sha256(request.encode()).hexdigest()}
+
+# ------------------------=
+# FUNC: verify_generation_streaming
+# DESC: Observes real model/editor progress before completion, then proves cancellation releases the inference lease for a new request.
+# ------------------=
+def verify_generation_streaming(guest, request, timeout):
+    evidence = guest.work.parent / f"streaming-{time.time_ns()}"
+    evidence.mkdir()
+    (evidence / "request.txt").write_text(request)
+    result = {"streaming_verified": False, "cancel_and_readmission_verified": False,
+              "generated_application_acceptance": False, "audio_capture_playback_verified": False,
+              "evidence_directory": str(evidence),
+              "audio_scope": ("terminal_only" if getattr(guest, "terminal_audio_only", False)
+                              else "sustained_generation_and_terminal" if getattr(guest, "audio_capture", None) else "none")}
+    guest.streaming_evidence = result
+    result["request_admission"] = prepare_streaming_request(guest, request)
+    if getattr(guest, "audio_capture", None):
+        result["audio_request_start_byte"] = guest.audio_capture.stat().st_size
+    started = time.monotonic()
+    next_capture = 0
+    deliveries = []
+    sustained_audio = bool(getattr(guest, "audio_capture", None)) and not getattr(guest, "terminal_audio_only", False)
+    minimum_bytes = 1024 if sustained_audio else 1
+    next_source_capture = 256
+    with (evidence / "progress.jsonl").open("w") as output:
+        while time.monotonic() - started < timeout:
+            progress = generation_progress(guest)
+            state = features(guest)
+            narration = read(guest, "INFINITY_NATIVE_WORKFLOW_VOICE_SNAPSHOT", 8)
+            assert narration[:2] == (0x494e46574f494345, 1)
+            record = {"elapsed_seconds": time.monotonic() - started, "generation": progress,
+                      "editor_bytes": state[7], "editor_fingerprint": state[16],
+                      "narration": {"scheduled_mask": narration[3], "announced_mask": narration[4],
+                                    "pending": narration[5], "inflight": narration[6]}}
+            if getattr(guest, "audio_capture", None):
+                record["audio_capture_bytes"] = guest.audio_capture.stat().st_size
+                record["voice_runtime"] = voice_runtime_state(guest)
+            result["last_observation"] = record
+            output.write(json.dumps(record) + "\n")
+            output.flush()
+            assert progress["editor_bytes"] <= 256 * progress["editor_flushes"], record
+            assert progress["status"] not in (3, 4, 5), {"ended_before_streaming_verified": record}
+            if (progress["status"] == 2 and progress["generated_tokens"] > 0
+                    and progress["editor_bytes"] > 0 and state[7] > 0
+                    and (not deliveries or progress["editor_bytes"] > deliveries[-1]["generation"]["editor_bytes"]
+                         and state[16] != deliveries[-1]["editor_fingerprint"])):
+                deliveries.append(record)
+                if len(deliveries) <= 2 or progress["editor_bytes"] >= next_source_capture:
+                    guest.screenshot(f"native-streaming-{progress['editor_bytes']:05d}-bytes")
+                    next_source_capture = max(next_source_capture, (progress["editor_bytes"] // 256 + 1) * 256)
+            if (len(deliveries) >= 2 and progress["editor_bytes"] >= minimum_bytes
+                    and (not sustained_audio or narration[4] & (1 << 17))):
+                break
+            if time.monotonic() >= next_capture:
+                print(json.dumps({"streaming_probe": record}), flush=True)
+                guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                    "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})
+                next_capture = time.monotonic() + 20
+            assert guest.state()[4] not in (9, 10), "Authenticated streaming session was lost"
+            time.sleep(.2)
+        else:
+            raise AssertionError({"streaming_deadline_seconds": timeout, "last_progress": record})
+    result.update(streaming_verified=True, minimum_delivered_bytes=minimum_bytes, deliveries=deliveries,
+                  sustained_generation_checkpoint_verified=sustained_audio and bool(narration[4] & (1 << 17)))
+    if getattr(guest, "audio_capture", None):
+        result["audio_request_end_byte"] = guest.audio_capture.stat().st_size
+        result["announced_checkpoints"] = narration[4]
+        result["voice_runtime"] = record["voice_runtime"]
+    (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
+    if getattr(guest, "audio_capture", None):
+        result["audio_terminal_start_byte"] = guest.audio_capture.stat().st_size
+    cancelled = cancel_generation_by_edit(guest)
+    result["cancelled"] = cancelled
+    (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
+    guest.screenshot("native-streaming-cancelled")
+    if getattr(guest, "audio_capture", None):
+        wait_cancelled_checkpoint(guest, result, evidence)
+    # Use the same attached application service, not a fast-path OS action, so
+    # Running plus processed prompt tokens proves the shared model was admitted.
+    ui.panel_click(guest, "composer")
+    ui.wait_feature(guest, lambda state: state[13] and state[15])
+    # A second app would correctly be refused while cancellation leaves unsaved
+    # source. Ordinary inference exercises admission without replacing that work.
+    followup = "Explain how a counter variable changes when incremented"
+    ui.text(guest, followup)
+    ui.wait_feature(guest, lambda state: state[18] == len(followup))
+    guest.key("ret")
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        resumed = generation_progress(guest)
+        result["readmission_latest"] = resumed
+        assert resumed["status"] != 4, {"fresh_generation_failed": resumed}
+        if resumed["status"] == 2 and resumed["prompt_tokens"] > 0 and resumed["processed_tokens"] > 0:
+            break
+        time.sleep(.2)
+    else:
+        (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
+        raise AssertionError({"fresh_generation_not_admitted": resumed})
+    assert features(guest)[16] == cancelled["document_fingerprint"], "Ordinary inference changed unsaved source"
+    guest.screenshot("native-streaming-readmitted")
+    followup_cancelled = cancel_generation_by_edit(guest)
+    result.update(cancel_and_readmission_verified=True, readmitted=resumed,
+                  followup_cancelled=followup_cancelled)
+    (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps({"streaming_probe_passed": True, "evidence": str(evidence)}), flush=True)
+    return result
+
+# ------------------------=
+# FUNC: verify_checkpoint_audio
+# DESC: Checks stopped QEMU HDA PCM emitted during the actual generation interval, independently of narration prose.
+# ------------------=
+def verify_checkpoint_audio(guest, streaming):
+    raw = guest.audio_capture.read_bytes()
+    assert raw[:4] == b"RIFF" and raw[8:16] == b"WAVEfmt " and raw[36:40] == b"data"
+    assert struct.unpack_from("<HHIIHH", raw, 20) == (1, 2, 48000, 192000, 4, 16)
+    start = max(44, streaming["audio_request_start_byte"])
+    end = min(len(raw), streaming["audio_request_end_byte"])
+    start += (44 - start) % 4
+    end -= (end - 44) % 4
+    samples = array.array("h", raw[start:end])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    nonzero = sum(abs(sample) > 100 for sample in samples)
+    assert nonzero > 4800
+    if streaming["audio_scope"] != "terminal_only":
+        assert streaming["announced_checkpoints"] & (1 << 17)
+    terminal_nonzero = None
+    if streaming.get("audio_terminal_end_byte") is not None:
+        terminal_start = max(44, streaming["audio_terminal_start_byte"])
+        terminal_end = min(len(raw), streaming["audio_terminal_end_byte"])
+        terminal_start += (44 - terminal_start) % 4
+        terminal_end -= (terminal_end - 44) % 4
+        terminal_samples = array.array("h", raw[terminal_start:terminal_end])
+        if sys.byteorder != "little":
+            terminal_samples.byteswap()
+        terminal_nonzero = sum(abs(sample) > 100 for sample in terminal_samples)
+        assert streaming["announced_checkpoints"] & (1 << 15) and terminal_nonzero > 4800
+    return {"path": str(guest.audio_capture), "sha256": hashlib.sha256(raw).hexdigest(),
+            "sample_rate": 48000, "channels": 2, "observed_interval_bytes": end-start,
+            "non_silent_samples": nonzero, "terminal_non_silent_samples": terminal_nonzero,
+            "announced_mask": streaming["announced_checkpoints"],
+            "audio_scope": streaming["audio_scope"],
+            "checkpoint_pcm_verified": True, "microphone_verified": False}
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs, cold-boots without ISO, compiles valid and invalid source, opens the stored ELF through File Navigator and checks its actual exit.
 # ------------------=
@@ -363,20 +843,53 @@ def main():
     parser.add_argument("--reuse-installed", action="store_true", help="Continue failed workflow checks on this harness's already cold-boot-verified disk")
     parser.add_argument("--accel", choices=("hvf", "tcg"), help="Explicit accelerator for diagnosing installed execution transitions")
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
+    parser.add_argument("--boot-only", action="store_true", help="Verify detached installed boot, account setup and cold-boot identity only; retain the stopped private disk without application generation")
+    parser.add_argument("--streaming-only", action="store_true", help="Verify real incremental model/editor output and cancellation/readmission only; not generated application acceptance")
+    parser.add_argument("--audio-checkpoints", action="store_true", help="Add actual emulated HDA/WAV and require checkpoint completion plus non-silent PCM during --streaming-only")
+    parser.add_argument("--terminal-audio-only", action="store_true", help="Isolate spoken cancellation after two real source deliveries; does not claim the sustained-generation checkpoint")
     parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
     parser.add_argument("--save-compile", action="store_true", help="Exercise save-and-compile, Save As cancellation, and subsequent named-source saving")
     parser.add_argument("--generation-only", action="store_true", help="Retest generated-source acceptance without repeating passing manual-source cases")
     parser.add_argument("--create-application", action="store_true", help="Exercise desktop intent through generated, saved, compiled and automatically launched interactive C")
     parser.add_argument("--create-ui-application", action="store_true", help="Exercise AI-generated native C UI Kit compilation and presentation")
+    parser.add_argument("--generate-request", help="Generate arbitrary UI application through the real desktop; domain behavior requires separate verification")
+    parser.add_argument("--generation-timeout", type=int, default=600, help="Bound arbitrary application generation in seconds (1..3600)")
+    parser.add_argument("--application-case", type=pathlib.Path, help="Repository-local bounded JSON real-input/typed-domain assertions for --generate-request")
     parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
     if args.update_kernel and not args.reuse_installed:
         parser.error("--update-kernel requires --reuse-installed")
+    if (args.audio_checkpoints or args.terminal_audio_only) and not args.streaming_only:
+        parser.error("Audio checkpoint modes require --streaming-only")
+    if args.audio_checkpoints and args.terminal_audio_only:
+        parser.error("Choose sustained audio checkpoints or terminal-only audio, not both")
     if args.generation_only and args.compiler_only:
         parser.error("Choose one focused case")
+    if args.boot_only and (args.streaming_only or args.generate_request or args.create_application or args.create_ui_application
+                          or args.compiler_only or args.generation_only or args.save_compile):
+        parser.error("--boot-only cannot be combined with an application workflow")
+    if not 1 <= args.generation_timeout <= 3600:
+        parser.error("--generation-timeout must be within 1..3600")
+    if args.generate_request and (args.create_application or args.create_ui_application or args.compiler_only or args.generation_only):
+        parser.error("--generate-request cannot be combined with another focused case")
+    if args.application_case and not args.generate_request:
+        parser.error("--application-case requires --generate-request")
+    if args.streaming_only and (args.application_case or args.create_application or args.create_ui_application
+                               or args.compiler_only or args.generation_only or args.save_compile):
+        parser.error("--streaming-only cannot be combined with other application cases")
+    if args.application_case:
+        args.application_case = args.application_case.resolve()
+        args.application_case.relative_to(ROOT)
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
+    if args.generate_request or args.streaming_only:
+        if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
+            parser.error("Generated application acceptance must run through ./build-kit run")
+    if args.generate_request and not args.streaming_only:
+        (ROOT / "build/tools").mkdir(parents=True, exist_ok=True)
+        subprocess.run(["rustc", "--edition=2021", "-A", "warnings", str(ROOT / "tools/installed-object-test.rs"),
+                        "-o", str(ROOT / "build/tools/installed-object-test")], check=True)
     work = args.work.resolve()
     work.relative_to(ROOT / "build")
     work.mkdir(exist_ok=args.reuse_installed)
@@ -398,6 +911,9 @@ def main():
     guest.acceleration = args.accel or ("hvf" if args.arch == "aarch64" else "tcg")
     guest.trace_native_faults = args.trace_native_faults
     guest.save_compile = args.save_compile
+    guest.terminal_audio_only = args.terminal_audio_only
+    if args.audio_checkpoints or args.terminal_audio_only:
+        guest.audio_capture = guest.work / f"workflow-checkpoints-{time.time_ns()}.wav"
     # Suppress the base harness's unrelated browser patching path.
     guest.patched = True
     guest.boot_timeout_seconds = 600
@@ -426,6 +942,30 @@ def main():
             guest.install()
             guest.stop()
             report["identity"] = guest.onboard()
+        if args.boot_only:
+            state = guest.state()
+            assert state[3] == 1 and state[4] == 5 and state[9] & 3 == 3
+            assert report["identity"]["cold_boot_identity"]
+            report["installed_boot_verified"] = True
+            report["generated_workflow_passed"] = False
+            report["domain_behavior_verified"] = False
+            report["desktop_state"] = list(state)
+            guest.screenshot("native-baseline-desktop")
+            return
+        if args.generate_request:
+            if args.streaming_only:
+                report["streaming"] = verify_generation_streaming(guest, args.generate_request, args.generation_timeout)
+                report["installed_boot_verified"] = True
+                return
+            report["generated_application"] = create_requested_application(guest, args.generate_request, args.generation_timeout, args.application_case)
+            report["generated_workflow_passed"] = True
+            report["domain_behavior_verified"] = report["generated_application"]["domain_behavior_verified"]
+            report["installed_acceptance"] = report["domain_behavior_verified"]
+            return
+        if args.streaming_only:
+            report["streaming"] = verify_generation_streaming(guest, "Create a simple graphical calculator app", args.generation_timeout)
+            report["installed_boot_verified"] = True
+            return
         if args.create_application:
             report["creation"] = create_application(guest)
             report["installed_acceptance"] = True
@@ -484,6 +1024,8 @@ def main():
         report["compiler_workflow_passed"] = True
     except BaseException as error:
         report["failure"] = repr(error)
+        if getattr(guest, "streaming_evidence", None):
+            report["streaming"] = guest.streaming_evidence
         if guest.process is not None and guest.process.poll() is None:
             try:
                 registers = guest.qmp("human-monitor-command", {"command-line": "info registers"})
@@ -495,7 +1037,6 @@ def main():
                 report["diagnostic_failure"] = type(diagnostic_error).__name__
         raise
     finally:
-        (work / "evidence.json").write_text(json.dumps(report, indent=2) + "\n")
         try:
             guest.stop()
         except OSError:
@@ -506,11 +1047,29 @@ def main():
                 except subprocess.TimeoutExpired:
                     guest.process.kill()
                     guest.process.wait(timeout=20)
+        export_failed = False
+        if (args.audio_checkpoints or args.terminal_audio_only) and report.get("streaming", {}).get("announced_checkpoints"):
+            try:
+                report["checkpoint_audio"] = verify_checkpoint_audio(guest, report["streaming"])
+                report["streaming"]["audio_capture_playback_verified"] = True
+            except (AssertionError, OSError) as error:
+                report["checkpoint_audio_failure"] = repr(error)
+                export_failed = True
+        if args.generate_request and not args.streaming_only:
+            try:
+                report["stored_artifacts"] = export_generated_artifacts(guest, report.get("generated_application"), args.arch)
+            except (AssertionError, OSError, subprocess.CalledProcessError) as error:
+                report["artifact_export_failure"] = repr(error)
+                export_failed = report.get("generated_workflow_passed", False)
+                report["installed_acceptance"] = False
+        (work / "evidence.json").write_text(json.dumps(report, indent=2) + "\n")
         evidence = ROOT / "builds/validation/native-apps" / (args.arch + "-installed")
         evidence.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(work / "evidence.json", evidence / "evidence.json")
         for screenshot in guest.work.glob("*.ppm"):
             shutil.copyfile(screenshot, evidence / screenshot.name)
+        if export_failed:
+            raise AssertionError("Generated application artifacts could not be verified from installed storage")
     print(json.dumps(report))
 
 if __name__ == "__main__":

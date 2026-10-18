@@ -63,6 +63,8 @@ static mut PENDING_PROMPT_UNTIL: u64 = 0;
 static mut REPLY: [u8; 16384] = [0; 16384];
 static mut REPLY_LENGTH: usize = 0;
 static mut REPLY_AT: usize = 0;
+static mut REPLY_OUTPUT_REQUEST: u64 = 0;
+static mut STOP_ALL_OUTPUT: bool = true;
 static mut SYNC_VISIBLE_AT: usize = 0;
 static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
@@ -324,6 +326,10 @@ unsafe fn queue_command(input: &[u8]) -> bool {
         true
     });
     if !inserted { clear_pending_prompt(false); return false; }
+    // An addressed command takes priority over a background workflow
+    // announcement. The existing provider retains its buffers until its
+    // cancellation acknowledgement; reply admission below waits for it.
+    let _ = voice_output::stop(OWNER);
     PENDING_PROMPT_LENGTH = length;
     PENDING_PROMPT_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
     PENDING_PROMPT_WORD = configured_wake_word(OWNER);
@@ -344,6 +350,7 @@ unsafe fn submit_pending_transcript() -> bool {
         }
         if !ai.submit_voice_chat() { return false; }
         CHAT_TURN = ai.chat.turn_id();
+        REPLY_OUTPUT_REQUEST = 0;
         REPLY_AT = 0;
         REPLY_LENGTH = 0;
         SYNC_VISIBLE_AT = 0;
@@ -667,6 +674,14 @@ pub fn toggle(owner: SecurityIdentity) -> bool {
 // DESC: Immediately closes the microphone and requests bounded worker, inference, and playback cancellation.
 // ------------------=
 pub fn stop(owner: SecurityIdentity) -> bool {
+    stop_session(owner,true,true)
+}
+
+// ------------------------=
+// FUNC: stop_session
+// DESC: Releases audio resources while keeping recovery of completed speech separate from explicit workflow cancellation.
+// ------------------=
+fn stop_session(owner: SecurityIdentity,cancel_turn:bool,all_output:bool) -> bool {
     unsafe {
         if OWNER != owner || STATE == State::Off {
             return false;
@@ -678,8 +693,10 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         INPUT_CAP = 0;
         CAPABILITY_REPLACE_AT = 0;
         voice_input::stop(owner);
-        voice_output::stop(owner);
-        if matches!(STATE, State::Thinking | State::Speaking) {
+        STOP_ALL_OUTPUT = all_output;
+        if all_output { voice_output::stop(owner); }
+        else { voice_output::stop_request(owner,REPLY_OUTPUT_REQUEST); }
+        if cancel_turn && matches!(STATE, State::Thinking | State::Speaking) {
             super::with_ai_runtime(|ai| {
                 if ai.chat.turn_id() == CHAT_TURN {
                     ai.cancel_chat();
@@ -711,6 +728,21 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         STATE = State::Stopping;
         true
     }
+}
+// ------------------------=
+// FUNC: recover_reply
+// DESC: Restores previously enabled listening after a failed turn, never after user mute, revoked authority, or a fatal speech engine error.
+// ------------------=
+unsafe fn recover_reply() {
+    let restart = CONTINUOUS && active_owner(OWNER) && !voice_input::prepare_failed();
+    // A completed acknowledgment can belong to an asynchronously running
+    // application goal. Recovering its audio must not revoke that goal.
+    // A still-generating conversational reply does need cancellation so it
+    // cannot hold the model while listening resumes.
+    let cancel_turn=super::with_ai_runtime(|ai|
+        ai.chat.turn_id()==CHAT_TURN && ai.chat.generation_state==GenerationState::Running);
+    stop_session(OWNER,cancel_turn,false);
+    RESTART_LISTENING = restart;
 }
 // ------------------------=
 // FUNC: speak_next
@@ -768,6 +800,18 @@ unsafe fn speak_next() -> bool {
     let remaining = &(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH];
     let count = speech_chunk::next(remaining, REPLY_COMPLETE, REPLY_AT == 0);
     if count == 0 { STATE = State::Thinking; return true; }
+    // Compilation and generation narration share this single native output
+    // owner. Contention is admission backpressure, not a microphone failure.
+    // Do not treat a background phrase as lookahead for this reply.
+    let available = matches!(voice_output::status().state,
+        voice_output::OutputState::Idle | voice_output::OutputState::Complete
+            | voice_output::OutputState::Failed | voice_output::OutputState::Cancelled
+            | voice_output::OutputState::Buffered)
+        || (REPLY_AT != 0 && voice_output::can_prefetch());
+    if !available {
+        STATE = State::Thinking;
+        return true;
+    }
     let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, voice_output::OUTPUT_LEASE_SECONDS) else {
         trace(b"speech output lease denied");
         return false;
@@ -781,6 +825,7 @@ unsafe fn speak_next() -> bool {
         return false;
     }
     trace(b"speech queued");
+    REPLY_OUTPUT_REQUEST = voice_output::request_id(OWNER).unwrap_or(0);
     if TURN_TIMING_ACTIVE {
         (&mut *(&raw mut TURN_TIMING)).observe(Milestone::SpeechQueued, super::qwen::workers::clock_ns());
     }
@@ -818,6 +863,10 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
     unsafe {
         if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) { return; }
         if STATE == State::Listening && OWNER != owner { return; }
+        if !super::with_ai_runtime(|ai| ai.chat.turn_id() == turn
+            && matches!(ai.chat.generation_state,GenerationState::Running|GenerationState::Complete)) {
+            return;
+        }
         let continuous = STATE == State::Listening;
         report_timing();
         TURN_TIMING_ACTIVE = false;
@@ -837,6 +886,7 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         SYNC_VISIBLE_AT = 0;
         RESTART_LISTENING = false;
         CHAT_TURN = turn;
+        REPLY_OUTPUT_REQUEST = 0;
         STATE = State::Thinking;
     }
 }
@@ -1112,16 +1162,23 @@ pub fn poll() -> bool {
             clear_wake_command();
             trace(b"wake command revoked by context change");
         }
-        if matches!(STATE, State::Thinking | State::Speaking)
-            && super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN || matches!(ai.chat.generation_state,
-                GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
-            trace(b"conversation stopped model state");
-            stop(OWNER);
+        if matches!(STATE, State::Thinking | State::Speaking) {
+            let (turn, generation) = super::with_ai_runtime(|ai|
+                (ai.chat.turn_id(), ai.chat.generation_state));
+            if turn != CHAT_TURN {
+                trace(b"conversation stopped replaced turn");
+                stop(OWNER);
+            } else if matches!(generation, GenerationState::Failed
+                | GenerationState::Cancelled | GenerationState::ContextFull) {
+                trace(b"conversation recovering failed turn");
+                recover_reply();
+            }
         }
         // Recognition retains one following utterance so wake-only decoding
         // cannot erase an immediately spoken command. Inference and playback
         // still own the accepted turn; their input is drained, never queued.
-        if STATE == State::Recognizing && !capture_frame(false) {
+        let narration_playing = voice_output::status().state == voice_output::OutputState::Speaking;
+        if STATE == State::Recognizing && !capture_frame(narration_playing) {
             trace(b"conversation stopped recognition capture");
             stop(OWNER);
             return true;
@@ -1154,7 +1211,7 @@ pub fn poll() -> bool {
                     clear_wake_command();
                     trace(b"wake command window expired");
                 }
-                if (&*(&raw const UTTERANCE)).state() != VadState::Complete && !capture_frame(false) {
+                if (&*(&raw const UTTERANCE)).state() != VadState::Complete && !capture_frame(narration_playing) {
                     trace(b"conversation stopped capture frame");
                     stop(OWNER);
                     return true;
@@ -1359,7 +1416,7 @@ pub fn poll() -> bool {
                 if matches!(generation, GenerationState::Running | GenerationState::Complete) {
                     refresh_reply();
                     if !speak_next() {
-                        stop(OWNER);
+                        recover_reply();
                     }
                 } else if matches!(
                     generation,
@@ -1367,7 +1424,7 @@ pub fn poll() -> bool {
                         | GenerationState::Cancelled
                         | GenerationState::ContextFull
                 ) {
-                    stop(OWNER);
+                    recover_reply();
                 }
             }
             State::Speaking => match voice_output::status().state {
@@ -1375,20 +1432,20 @@ pub fn poll() -> bool {
                     presentation_changed |= synchronize_visible_reply();
                     refresh_reply();
                     if !speak_next() {
-                        stop(OWNER);
+                        recover_reply();
                     }
                 }
                 voice_output::OutputState::Buffered => {
                     refresh_reply();
-                    if !speak_next() { stop(OWNER); }
+                    if !speak_next() { recover_reply(); }
                 }
                 voice_output::OutputState::Speaking if voice_output::can_prefetch() => {
                     refresh_reply();
-                    if !speak_next() { stop(OWNER); }
+                    if !speak_next() { recover_reply(); }
                 }
                 voice_output::OutputState::Failed | voice_output::OutputState::Cancelled => {
                     trace(b"speech output failed or cancelled");
-                    stop(OWNER);
+                    recover_reply();
                 }
                 _ => {}
             },
@@ -1396,14 +1453,14 @@ pub fn poll() -> bool {
                 if !matches!(
                     voice_input::status().state,
                     voice_input::InputState::Queued | voice_input::InputState::Recognizing
-                ) && !matches!(
+                ) && (!(STOP_ALL_OUTPUT || voice_output::request_id(OWNER) == Some(REPLY_OUTPUT_REQUEST)) || !matches!(
                     voice_output::status().state,
                     voice_output::OutputState::Queued
                         | voice_output::OutputState::Synthesizing
                         | voice_output::OutputState::Ready
                         | voice_output::OutputState::Speaking
                         | voice_output::OutputState::Buffered
-                ) {
+                )) {
                     STATE = State::Off;
                     if RESTART_LISTENING {
                         RESTART_LISTENING = false;

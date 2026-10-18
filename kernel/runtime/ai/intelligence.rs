@@ -5,6 +5,9 @@
 //! through adapters and treats every generated plan as untrusted data until
 //! native authorization and execution adapters accept each step.
 
+#[path = "software_execution.rs"]
+pub mod software;
+
 pub const API_VERSION: u16 = 1;
 pub const STATE_SCHEMA_VERSION: u16 = 1;
 pub const MAX_GOALS: usize = 4;
@@ -37,6 +40,7 @@ pub enum CapabilityId {
     ObjectStorage,
     UiServices,
     InfinityPool,
+    ApplicationInteraction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +156,16 @@ impl CapabilityRegistry for InstalledCapabilities {
                 risk: Risk::External,
                 reversible: false,
                 dependency: None,
+                availability: Availability::Ready,
+            },
+            CapabilityId::ApplicationInteraction => CapabilityDescriptor {
+                id,
+                input: Contract::ExecutionReceipt,
+                output: Contract::ExecutionReceipt,
+                required_permission: 32,
+                risk: Risk::Reversible,
+                reversible: true,
+                dependency: Some(CapabilityId::UiServices),
                 availability: Availability::Ready,
             },
         };
@@ -439,11 +453,7 @@ impl Service {
             || contains_case(input, b"build and ")
             || starts_case(input, b"my goal is ")
             || starts_case(input, b"i need you to ")
-            || ((contains_case(input, b"create ") || contains_case(input, b"build "))
-                && (contains_case(input, b" app")
-                    || contains_case(input, b" software")
-                    || contains_case(input, b" program")
-                    || contains_case(input, b" game")));
+            || crate::ui::app_assistant::editor_compile_intent::create_application(input);
         if complex {
             RequestClass::ComplexGoal
         } else {
@@ -475,13 +485,8 @@ impl Service {
         let objective_text = BoundedText::new(objective).ok_or(ServiceError::InvalidGoal)?;
         let goal_id = self.next_goal_id;
         self.next_goal_id = self.next_goal_id.saturating_add(1).max(1);
-        let software = (contains_case(objective, b"create")
-            || contains_case(objective, b"build")
-            || contains_case(objective, b"develop"))
-            && (contains_case(objective, b"app")
-                || contains_case(objective, b"software")
-                || contains_case(objective, b"program")
-                || contains_case(objective, b"game"));
+        let software = crate::ui::app_assistant::editor_compile_intent::create_application(objective);
+        let interaction = software && crate::ui::app_assistant::editor_compile_intent::requests_opponent(objective);
         let goal = Goal {
             id: goal_id,
             owner,
@@ -525,11 +530,11 @@ impl Service {
                 &mut plan,
                 CapabilityId::DevKit,
                 b"Generate and compile the required native C application",
-                objective,
+                b"Use this goal's original objective; preserve all requested functionality",
                 Contract::ApplicationArtifact,
                 b"Use compiler diagnostics and a completed native artifact",
                 &[],
-                FailurePolicy::ReplanAffected,
+                FailurePolicy::Stop,
             )?;
             push_task(
                 &mut plan,
@@ -539,8 +544,20 @@ impl Service {
                 Contract::ExecutionReceipt,
                 b"Observe the native application lifecycle launch event",
                 &[1],
-                FailurePolicy::RetryOnce,
+                FailurePolicy::Stop,
             )?;
+            if interaction {
+                push_task(
+                    &mut plan,
+                    CapabilityId::ApplicationInteraction,
+                    b"Enable the requested AI interaction with the launched application",
+                    b"Use the explicitly requested interaction in the original objective",
+                    Contract::ExecutionReceipt,
+                    b"Observe an owner-granted live application publishing its versioned action contract",
+                    &[2],
+                    FailurePolicy::Stop,
+                )?;
+            }
         } else if contains_case(objective, b"organize")
             || contains_case(objective, b"catalog")
             || contains_case(objective, b"archive")
@@ -601,10 +618,19 @@ impl Service {
         }
         plan.goal = goal;
         validate_plan(&plan, registry)?;
+        for task in plan.tasks.iter().flatten() {
+            plan.goal.required_permissions |= registry.describe(task.capability)
+                .ok_or(ServiceError::InvalidPlan)?.required_permission;
+        }
         let slot = self
             .plans
             .iter()
             .position(Option::is_none)
+            .or_else(|| self.plans.iter().enumerate()
+                .filter_map(|(index,entry)|entry.as_ref().filter(|plan|matches!(plan.state,
+                    PlanState::Completed | PlanState::Failed | PlanState::Cancelled))
+                    .map(|plan|(index,plan.goal.id)))
+                .min_by_key(|(_,id)|*id).map(|(index,_)|index))
             .ok_or(ServiceError::Full)?;
         self.plans[slot] = Some(plan);
         self.emit(goal_id, None, EventKind::Proposed);
@@ -628,6 +654,7 @@ impl Service {
             return Err(ServiceError::Busy);
         }
         for task in plan.tasks.iter_mut().flatten() {
+            if task.state == TaskState::Succeeded { continue; }
             let descriptor = registry
                 .describe(task.capability)
                 .ok_or(ServiceError::InvalidPlan)?;
@@ -1401,6 +1428,7 @@ fn encode_capability(value: CapabilityId, out: &mut [u8]) {
         CapabilityId::ObjectStorage => (3, 0),
         CapabilityId::UiServices => (4, 0),
         CapabilityId::InfinityPool => (5, 0),
+        CapabilityId::ApplicationInteraction => (6, 0),
     };
     out[0] = kind;
     put_u16(out, 1, id);
@@ -1417,6 +1445,7 @@ fn decode_capability(input: &[u8]) -> Result<CapabilityId, ServiceError> {
         Some(3) => Ok(CapabilityId::ObjectStorage),
         Some(4) => Ok(CapabilityId::UiServices),
         Some(5) => Ok(CapabilityId::InfinityPool),
+        Some(6) => Ok(CapabilityId::ApplicationInteraction),
         _ => Err(ServiceError::Persistence),
     }
 }

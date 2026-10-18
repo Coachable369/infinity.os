@@ -28,7 +28,35 @@ pub struct Conversation {
     count: usize,
     desktop_context: bool,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InferenceProgress {
+    pub prompt_tokens: usize,
+    pub processed_tokens: usize,
+    pub generated_tokens: usize,
+    pub output_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubmissionKind { Conversation, ApplicationSource }
+
+// ------------------------=
+// FUNC: submission_fits
+// DESC: Reserves a bounded source-rewrite budget plus an end token without changing the conversation context or ordinary chat policy.
+// ------------------=
+pub fn submission_fits(prompt_tokens:usize,kind:SubmissionKind)->bool {
+    let reserve=match kind {SubmissionKind::Conversation=>0,SubmissionKind::ApplicationSource=>1536};
+    prompt_tokens.checked_add(reserve).is_some_and(|total|total<CONTEXT)
+}
 impl Service {
+    // ------------------------=
+    // FUNC: progress
+    // DESC: Reports actual inference work independently of generated prose for UI checkpoints and behavioral diagnostics.
+    // ------------------=
+    pub fn progress(&self) -> InferenceProgress {
+        let prompt_tokens = self.prompt_count.saturating_sub(self.generated);
+        InferenceProgress { prompt_tokens, processed_tokens: self.consumed.min(prompt_tokens),
+            generated_tokens: self.generated, output_bytes: self.output_count }
+    }
     // ------------------------=
     // FUNC: suspend_conversation
     // DESC: Retains idle desktop tokens while an isolated app turn temporarily borrows this model's cache.
@@ -179,6 +207,14 @@ impl Service {
     // DESC: Formats an explicit non-thinking user turn and schedules native generation.
     // ------------------=
     pub fn submit(&mut self, text: &[u8]) -> Result<(), Error> {
+        self.submit_with_kind(text,SubmissionKind::Conversation)
+    }
+
+    // ------------------------=
+    // FUNC: submit_with_kind
+    // DESC: Admits a typed inference purpose only when its complete tokenized prompt leaves the required output budget.
+    // ------------------=
+    pub fn submit_with_kind(&mut self, text: &[u8],kind:SubmissionKind) -> Result<(), Error> {
         if self.busy || text.is_empty() {
             return Err(Error::Unsupported);
         }
@@ -187,7 +223,9 @@ impl Service {
         self.engine.profile = super::metrics::Profile::new();
         self.worker_start = super::workers::kernel_profile_ns();
         let previous = self.prompt_count;
-        let result = self.append_turn(text);
+        let result = self.append_turn(text).and_then(|()| {
+            if submission_fits(self.prompt_count,kind) {Ok(())} else {Err(Error::Overflow)}
+        });
         if let Err(error) = result {
             self.prompt_count = previous;
             return Err(error);

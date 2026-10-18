@@ -17,6 +17,22 @@ MODELS = (
     (3, 2_147_023_008, "9ed150d4367e68df0ac8e1540f6ddc65b42d0ee26378329d1ecbca60f93fc5f8"),
     (4, 2_019_373_888, "91776fe0f6cd7483d9d5e06162fdd1f8f0262c15ced269791b4d96a655e8a5a2"),
 )
+MEDIA = {
+    "InfinityOS-aarch64.iso": ("aarch64", "virtualbox"),
+    "InfinityOS-x86_64.iso": ("x86_64", "virtualbox"),
+    "InfinityOS-aarch64-qemu-models.bootmedia": ("aarch64", "qemu"),
+}
+
+
+# ------------------------=
+# FUNC: media_target
+# DESC: Resolves only declared release and isolated test-media targets without inferring unknown architectures.
+# ------------------=
+def media_target(iso: Path) -> tuple[str, str]:
+    try:
+        return MEDIA[iso.name.removesuffix(".partial")]
+    except KeyError as error:
+        raise RuntimeError(f"unrecognized media target: {iso.name}") from error
 
 
 # ------------------------=
@@ -99,10 +115,7 @@ def verify_model(installed_esp: Path, slot: int, expected_bytes: int, expected_h
 def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Path) -> None:
     # The publisher validates before its atomic rename. Apply identical byte
     # checks to that private candidate and the final published filename.
-    release_name = iso.name.removesuffix(".partial")
-    architecture = "aarch64" if release_name == "InfinityOS-aarch64.iso" else "x86_64"
-    if release_name not in ("InfinityOS-aarch64.iso", "InfinityOS-x86_64.iso"):
-        raise RuntimeError(f"unrecognized release architecture: {iso.name}")
+    architecture, _ = media_target(iso)
     name = "BOOTAA64.EFI" if architecture == "aarch64" else "BOOTX64.EFI"
     expected = (ROOT / "build" / architecture / name).read_bytes()
     if not expected:
@@ -146,6 +159,7 @@ def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Pat
 # DESC: Proves that a published ISO embeds both verified models in its fresh-install System Generation.
 # ------------------=
 def verify_iso(iso: Path) -> None:
+    architecture, platform = media_target(iso)
     if not iso.is_file() or iso.stat().st_size == 0:
         raise RuntimeError(f"missing ISO: {iso}")
     temporary_root = ROOT / "build" / "tmp"
@@ -166,7 +180,9 @@ def verify_iso(iso: Path) -> None:
             present, length, _ = stream_member(live_esp, member, sink)
             if not present or not length:
                 raise RuntimeError(f"missing kernel artifact: {member}")
-            validate_kernel_layout(sink.header)
+            validate_kernel_layout(sink.header, platform)
+            if struct.unpack_from("<H", sink.header, 18)[0] != {"aarch64": 183, "x86_64": 62}[architecture]:
+                raise RuntimeError("kernel architecture does not match the selected media target")
         verify_boot_loader(iso, live_esp, installed_esp, work)
         for model in MODELS:
             verify_model(installed_esp, *model)

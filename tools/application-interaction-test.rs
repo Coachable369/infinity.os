@@ -30,6 +30,7 @@ fn publish(registry: &mut Registry, id: u64, revision: u64, risk: Risk) {
 // DESC: Exercises instance isolation, atomic observations, verified results, approvals, stale moves, and bounded recovery.
 // ------------------=
 fn main() {
+    generic_creation_opponent();
     host_packets();
     typed_actions();
     approvals();
@@ -81,6 +82,37 @@ fn main() {
     let relaunched=registry.register([1;16],[2;16]).unwrap();
     assert_ne!(id,relaunched);
     assert!(matches!(registry.observe(id,[1;16],[2;16]),Err(Error::Missing)));
+}
+
+// ------------------------=
+// FUNC: generic_creation_opponent
+// DESC: Routes unknown game names by an explicit creation-and-opponent suffix while preserving bounded direct-instruction authority.
+// ------------------=
+fn generic_creation_opponent() {
+    use editor_compile_intent::{application_kind,application_style,create_application,requests_opponent,ApplicationKind,ApplicationStyle};
+    for input in [b"create Othello and play me".as_slice(),b"create Reversi and play against me",
+        b"Please BUILD a new hex-grid strategy and play against me.",
+        b"generate NebulaTiles and play me",b"write a terminal OrbitRace and play me"] {
+        assert_eq!(application_kind(input),Some(ApplicationKind::Game));
+        assert!(create_application(input));assert!(requests_opponent(input));
+    }
+    assert_eq!(application_style(b"create Othello and play me"),Some(ApplicationStyle::Ui));
+    assert_eq!(application_style(b"create terminal Othello and play me"),Some(ApplicationStyle::Terminal));
+    for input in [b"create and play me".as_slice(),b"create and play against me",
+        b"create Othello",b"create Othello and play someone",b"create Reversi and play me later",
+        b"explain how to create Othello and play me",b"do not create Othello and play me",
+        b"create Othello but do not play me",b"create Reversi without play against me",
+        b"create Othello and never play me",b"create Othello and don't play me",
+        b"\"create Othello and play me\"",b"create \"Othello and play me\"",
+        b"create Othello; and play me"] {
+        assert_eq!(application_kind(input),None);assert!(!requests_opponent(input));
+    }
+    let mut oversized=vec![b'x';257];oversized.splice(..7,b"create ".iter().copied());
+    oversized.extend_from_slice(b" and play me");
+    assert_eq!(application_kind(&oversized),None);assert!(!requests_opponent(&oversized));
+    assert!(!requests_opponent(b"create a Reversi game"));
+    assert!(requests_opponent(b"play against me"));
+    assert_eq!(application_kind(b"create a calendar app"),Some(ApplicationKind::General));
 }
 
 // ------------------------=
@@ -145,6 +177,11 @@ fn typed_actions() {
     action[384..391].copy_from_slice(b"content");action[408..412].copy_from_slice(&32u32.to_le_bytes());
     application_host::syscall(0x1155,[2;16],&action,&mut output,1).unwrap();
     application_host::syscall(0x1152,[2;16],&packet[..8],&mut output,1).unwrap();
+    let diagnostic=unsafe{application_host::INFINITY_APP_INTERACTION_SNAPSHOT};
+    assert_eq!(&diagnostic[8..11],&[1,1,1]);
+    let exported=unsafe{application_host::INFINITY_APP_INTERACTION_CHOICES};
+    assert_eq!(u32::from_le_bytes(exported[12..16].try_into().unwrap()),1);
+    assert_eq!(&exported[192..416],&action[192..416]);
     application_host::with_registry(|r|r.grant(context.instance,[1;16],[2;16],true)).unwrap();
     for (arguments,text) in [
         ([43,5,0,0],b"world".as_slice()), ([42,6,0,0],b"world"), ([42,5,2,0],b"world"),
@@ -206,12 +243,30 @@ fn host_packets() {
     application_host::syscall(0x1151,[2;16],&offer,&mut output,1).unwrap();
     application_host::syscall(0x1152,[2;16],&packet[..8],&mut output,1).unwrap();
     assert!(matches!(application_host::observe([1;16]),Err(Error::Denied)));
+    let diagnostic=unsafe{application_host::INFINITY_APP_INTERACTION_SNAPSHOT};
+    assert_eq!(diagnostic[2],diagnostic[17]);assert_eq!(diagnostic[2]%2,0);
+    assert_eq!(&diagnostic[3..11],&[context.instance,1,1,0,5,1,0,1]);
+    let exported=unsafe{application_host::INFINITY_APP_INTERACTION_CHOICES};
+    assert_eq!(&exported[..192],&offer);
+    assert_eq!(unsafe{application_host::INFINITY_APP_INTERACTION_STATE}[..5],packet[24..29]);
     application_host::with_registry(|r|r.grant(context.instance,[1;16],[2;16],true)).unwrap();
     let request=application_host::with_registry(|r|r.propose(context.instance,[1;16],[2;16],1,3,false,2,100)).unwrap();
     assert_eq!(application_host::syscall(0x1153,[2;16],&packet[..8],&mut output,3),Ok(72));
     assert_eq!(u64::from_le_bytes(output[8..16].try_into().unwrap()),request.token);
     assert_eq!(i64::from_le_bytes(output[40..48].try_into().unwrap()),2);
     assert_eq!(application_host::syscall(0x1153,[2;16],&packet[..8],&mut output,4),Ok(0));
+    let diagnostic=unsafe{application_host::INFINITY_APP_INTERACTION_SNAPSHOT};
+    assert_eq!(diagnostic[11],1);assert_eq!(diagnostic[14],3);assert_eq!(diagnostic[15],request.token);
+    packet[8..16].copy_from_slice(&2u64.to_le_bytes());
+    application_host::syscall(0x1150,[2;16],&packet,&mut output,5).unwrap();
+    application_host::syscall(0x1152,[2;16],&packet[..8],&mut output,5).unwrap();
+    let mut receipt=[0;16];receipt[..4].copy_from_slice(&1u32.to_le_bytes());receipt[8..16].copy_from_slice(&request.token.to_le_bytes());
+    application_host::syscall(0x1154,[2;16],&receipt,&mut output,6).unwrap();
+    let diagnostic=unsafe{application_host::INFINITY_APP_INTERACTION_SNAPSHOT};
+    assert_eq!(diagnostic[4],2);assert_eq!(&diagnostic[10..14],&[2,1,1,0]);assert_eq!(diagnostic[16],1);
     application_host::detach();
     assert!(application_host::context().is_none());
+    assert_eq!(unsafe{application_host::INFINITY_APP_INTERACTION_SNAPSHOT}[3],0);
+    assert!(unsafe{application_host::INFINITY_APP_INTERACTION_STATE}.iter().all(|value|*value==0));
+    assert!(unsafe{application_host::INFINITY_APP_INTERACTION_CHOICES}.iter().all(|value|*value==0));
 }

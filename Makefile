@@ -258,11 +258,15 @@ performance-test:
 		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
 
 .PHONY: active-painter-test
-active-painter-test:
+build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-browser-core/*.rs) assets/ui-design-kit/default/browser-welcome-hero-v1.bmp
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z sdk/infinity-browser-core/lib.rs -o $@
+
+active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 -C opt-level=z -Awarnings tools/memory-throughput-test.rs -o build/behavior-tests/memory-throughput-test
 	@build/behavior-tests/memory-throughput-test
-	@rustc --edition=2021 -C opt-level=z -Awarnings tools/active-painter-test.rs -o build/behavior-tests/active-painter-test
+	@rustc --edition=2021 -C opt-level=z -Awarnings --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib tools/active-painter-test.rs -o build/behavior-tests/active-painter-test
 	@build/behavior-tests/active-painter-test
 
 icon-theme-test:

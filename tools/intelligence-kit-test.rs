@@ -196,10 +196,229 @@ fn finish<R: CapabilityRegistry>(
 }
 
 // ------------------------=
+// FUNC: software_receipts
+// DESC: Verifies native software tasks cannot succeed from dispatch, generated text, stale identities, or unordered callbacks.
+// ------------------=
+fn software_receipts() {
+    use runtime::ai::intelligence::software::{Event, Execution};
+    let owner=[7;16];
+    let mut execution=Execution::new(5,owner);
+    assert!(execution.begin(101,CapabilityId::DevKit));
+    assert_eq!(execution.observe(101),Observation::Running);
+    assert!(!execution.record(5,owner,Event::Compiled{artifact:[9;16]}));
+    assert!(!execution.record(6,owner,Event::SourceSaved{object:[3;16],revision:4}));
+    assert!(!execution.record(5,[8;16],Event::SourceSaved{object:[3;16],revision:4}));
+    assert!(!execution.record(5,owner,Event::SourceSaved{object:[0;16],revision:4}));
+    assert!(execution.record(5,owner,Event::SourceSaved{object:[3;16],revision:4}));
+    assert_eq!(execution.observe(101),Observation::Running);
+    assert!(!execution.record(5,owner,Event::Launched{context:2}));
+    assert!(execution.record(5,owner,Event::Compiled{artifact:[9;16]}));
+    assert_eq!(execution.observe(101),Observation::Succeeded([9;16]));
+    assert!(execution.begin(102,CapabilityId::UiServices));
+    assert_eq!(execution.observe(102),Observation::Running);
+    assert!(execution.record(5,owner,Event::Launched{context:2}));
+    assert!(matches!(execution.observe(102),Observation::Succeeded(_)));
+    assert!(execution.begin(103,CapabilityId::ApplicationInteraction));
+    assert_eq!(execution.observe(103),Observation::Running);
+    assert!(!execution.record(5,owner,Event::InteractionReady{context:9,revision:1}));
+    assert!(!execution.record(5,owner,Event::InteractionReady{context:2,revision:0}));
+    assert!(execution.record(5,owner,Event::InteractionReady{context:2,revision:1}));
+    assert!(matches!(execution.observe(103),Observation::Succeeded(_)));
+    assert!(execution.interaction_active);
+    assert_eq!(execution.applied_actions,0);
+    assert!(execution.record(5,owner,Event::InteractionApplied{context:2,revision:2,token:11}));
+    assert!(!execution.record(5,owner,Event::InteractionApplied{context:2,revision:2,token:11}));
+    assert_eq!(execution.applied_actions,1);
+    assert!(execution.record(5,owner,Event::InteractionStopped{context:2}));
+    assert!(!execution.interaction_active);
+    assert_eq!(execution.applied_actions,1);
+    let mut cancelled=Execution::new(6,owner);
+    assert!(cancelled.begin(9,CapabilityId::DevKit));
+    cancelled.cancel(9);
+    assert!(!cancelled.record(6,owner,Event::SourceSaved{object:[3;16],revision:4}));
+}
+
+// ------------------------=
+// FUNC: native_software_plan
+// DESC: Exercises the real shared voice/text router and native plan executor with actual typed lifecycle receipts for differing app goals.
+// ------------------=
+fn native_software_plan() {
+    use runtime::ai::intelligence::software::Event;
+    let owner=[7;16];
+    for (objective,voice,interaction) in [
+        (b"generate a chess game and play me".as_slice(),true,true),
+        (b"create a graphical calendar app".as_slice(),false,false),
+    ] {
+        let mut ai=runtime::ai::AiRuntime::new();
+        ai.bind_chat_owner(owner);
+        for byte in objective {assert!(ai.chat.push_input(*byte));}
+        assert!(if voice {ai.submit_voice_chat()}else{ai.submit_chat()});
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().task_count,if interaction{3}else{2});
+        assert!(ai.poll_qwen());
+        let command=ai.take_control(owner,true).unwrap();
+        assert!(matches!(command,runtime::ai::control::Command::Context(_)));
+        assert_eq!(ai.software_execution_id(),Some(1));
+        ai.finish_control(command,true);
+        ai.poll_qwen();
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[0].unwrap().state,TaskState::Running);
+        assert!(ai.record_software_event(1,owner,Event::SourceSaved{object:[2;16],revision:12}));
+        ai.poll_qwen();
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[0].unwrap().state,TaskState::Running);
+        assert!(ai.record_software_event(1,owner,Event::Compiled{artifact:[3;16]}));
+        ai.poll_qwen();
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[0].unwrap().state,TaskState::Succeeded);
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[1].unwrap().state,TaskState::Running);
+        assert!(ai.record_software_event(1,owner,Event::Launched{context:99}));
+        ai.poll_qwen();
+        if interaction {
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Executing);
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[2].unwrap().state,TaskState::Running);
+            assert!(ai.record_software_event(1,owner,Event::InteractionReady{context:99,revision:1}));
+            ai.poll_qwen();
+        }
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Completed);
+        assert_eq!(ai.software_execution(owner).unwrap().interaction_active,interaction);
+        assert_eq!(ai.software_execution(owner).unwrap().applied_actions,0);
+        assert!(ai.software_execution([8;16]).is_none());
+    }
+
+    let mut ai=runtime::ai::AiRuntime::new();
+    ai.bind_chat_owner(owner);
+    for byte in b"create a graphical notes app" {assert!(ai.chat.push_input(*byte));}
+    assert!(ai.submit_chat());ai.poll_qwen();
+    let command=ai.take_control(owner,true).unwrap();
+    ai.finish_control(command,true);
+    assert!(ai.record_software_event(1,owner,Event::Failed{code:7}));
+    ai.poll_qwen();
+    assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Failed);
+    assert!(!ai.control_pending());
+    for byte in b"open browser" {assert!(ai.chat.push_input(*byte));}
+    assert!(ai.submit_voice_chat());
+    assert_eq!(ai.take_control(owner,true),Some(runtime::ai::control::Command::Browser));
+}
+
+// ------------------------=
+// FUNC: interrupt_software_plan
+// DESC: Proves stop and new voice requests release exact plan leases while stale callbacks cannot complete a replacement goal.
+// ------------------=
+fn interrupt_software_plan() {
+    use runtime::ai::intelligence::software::Event;
+    let owner=[7;16];
+    for explicit_stop in [true,false] {
+        let mut ai=runtime::ai::AiRuntime::new();ai.bind_chat_owner(owner);
+        for byte in b"create a graphical notes app" {assert!(ai.chat.push_input(*byte));}
+        assert!(ai.submit_voice_chat());ai.poll_qwen();
+        let command=ai.take_control(owner,true).unwrap();
+        ai.finish_control(command,true);ai.poll_qwen();
+        if explicit_stop {
+            assert!(ai.cancel_chat());
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Interrupted);
+            assert_eq!(ai.take_intelligence_checkpoint_request(),Some(1));
+        }
+        for byte in b"create a graphical calendar app" {assert!(ai.chat.push_input(*byte));}
+        assert!(ai.submit_voice_chat());ai.poll_qwen();
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Interrupted);
+        assert_eq!(ai.software_execution_id(),Some(2));
+        assert!(!ai.record_software_event(1,owner,Event::SourceSaved{object:[2;16],revision:1}));
+        assert!(!ai.record_software_event(1,owner,Event::Compiled{artifact:[3;16]}));
+        assert!(!ai.record_software_event(1,owner,Event::Failed{code:9}));
+        assert_eq!(ai.software_execution(owner).unwrap().source,[0;16]);
+        let replacement=ai.take_control(owner,true).unwrap();
+        ai.finish_control(command,true);
+        assert_eq!(ai.intelligence_plan(2,owner).unwrap().tasks[0].unwrap().state,TaskState::Running);
+        ai.finish_control(replacement,true);
+        assert!(ai.record_software_event(2,owner,Event::SourceSaved{object:[4;16],revision:2}));
+        assert!(ai.record_software_event(2,owner,Event::Compiled{artifact:[5;16]}));
+        assert!(ai.record_software_event(2,owner,Event::Launched{context:3}));
+        ai.poll_qwen();ai.poll_qwen();
+        assert_eq!(ai.intelligence_plan(2,owner).unwrap().state,PlanState::Completed);
+    }
+}
+
+// ------------------------=
+// FUNC: queued_goal_fencing
+// DESC: Exercises queued replacement, exact-goal cancellation, stale admission and receipt rejection without requiring inference weights.
+// ------------------=
+fn queued_goal_fencing() {
+    use runtime::ai::kit::RequestRoute;
+    use runtime::ai::intelligence::software::Event;
+    use ui::app_assistant::{self as assistant,Action,GenerationStatus,Panel};
+    let owner=[7;16];
+    for replacement in [b"create a graphical calendar app".as_slice(),b"open browser"] {
+        assistant::reset();
+        let mut ai=runtime::ai::AiRuntime::new();ai.bind_chat_owner(owner);
+        assert_eq!(ai.route_application_request(2,b"create a graphical notes app"),Ok(RequestRoute::Goal(1)));
+        ai.poll_qwen();
+        let command=ai.take_control(owner,true).unwrap();ai.finish_control(command,true);ai.poll_qwen();
+        let mut old=Panel::new();old.workflow_goal=Some(1);old.generation=GenerationStatus::Queued;
+        old.argument[..3].copy_from_slice(b"old");old.argument_len=3;old.pending=Action::ReplaceCompile;
+        assistant::write(2,old);
+        let mut unrelated=old;unrelated.workflow_goal=Some(99);assistant::write(3,unrelated);
+        assert!(ai.generation_workflow_current(Some(1)));
+        assert_eq!(ai.software_goal_for_request(b"create a graphical notes app"),Some(1));
+        let routed=ai.route_application_request(2,replacement).unwrap();
+        let cancelled=assistant::read(2);
+        assert_eq!(cancelled.generation,GenerationStatus::Cancelled);
+        assert_eq!(cancelled.pending,Action::None);
+        assert_eq!(&cancelled.argument[..cancelled.argument_len],b"old");
+        assert!(assistant::read(3)==unrelated);
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Interrupted);
+        assert!(!ai.generation_workflow_current(Some(1)));
+        assert!(!old.workflow_matches(ai.software_execution_id()));
+        assert!(ai.submit_app_turn(2,b"stale prompt").is_err());
+        assert_eq!(ai.app_turn_owner(),None);
+        if routed==RequestRoute::Goal(2) {
+            ai.poll_qwen();
+            assert!(ai.generation_workflow_current(Some(2)));
+            assert_eq!(ai.software_goal_for_request(b"create a graphical notes app"),None);
+            assert_eq!(ai.software_goal_for_request(replacement),Some(2));
+            assert!(!ai.record_software_event(1,owner,Event::Failed{code:5}));
+            assert!(!ai.record_software_event(1,owner,Event::SourceSaved{object:[9;16],revision:3}));
+            assert_eq!(ai.software_execution(owner).unwrap().source,[0;16]);
+            assert_eq!(ai.intelligence_plan(2,owner).unwrap().state,PlanState::Executing);
+        } else {
+            assert_eq!(routed,RequestRoute::Control(runtime::ai::control::Command::Browser));
+        }
+    }
+    assistant::reset();
+}
+
+// ------------------------=
+// FUNC: completed_source_edit_fence
+// DESC: Proves editing after model completion cancels pending source drain and compile while preserving both user edits and model bytes.
+// ------------------=
+fn completed_source_edit_fence() {
+    use ui::app_assistant::{Action,GenerationStatus,Panel};
+    let source=b"#include <stdio.h>\nint main(void){return 0;}";
+    for delivered in [0,source.len()] {
+        let mut panel=Panel::new();panel.workflow_goal=Some(1);panel.document_revision=17;
+        let request=b"create a graphical notes app";
+        panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+        assert!(panel.accept_generated(source,true,true));
+        panel.generation=GenerationStatus::Complete;panel.stream.delivered=delivered;
+        assert!(panel.apply_generated_compile_requested());
+        assert!(!panel.cancel_source_on_revision(17));
+        let mut document=ui::text_editor::TextDocument::new();
+        for byte in b"user edits" {assert!(document.insert(*byte));}
+        assert!(panel.cancel_source_on_revision(18));
+        assert_eq!(panel.generation,GenerationStatus::Cancelled);
+        assert_eq!(panel.pending,Action::None);
+        assert!(!panel.apply_generated_compile_requested());
+        assert_eq!(&panel.argument[..panel.argument_len],source);
+        assert_eq!(document.bytes(),b"user edits");
+    }
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Verifies IntelligenceKit routing, discovery, DAG execution, recovery, persistence, ingress parity, and authorization.
 // ------------------=
 fn main() {
+    software_receipts();
+    native_software_plan();
+    interrupt_software_plan();
+    queued_goal_fencing();
+    completed_source_edit_fence();
     let owner = [7; 16];
     let registry = InstalledCapabilities;
     assert_eq!(
@@ -350,6 +569,9 @@ fn main() {
         .flatten()
         .filter(|task| task.state != TaskState::Succeeded)
         .all(|task| task.state == TaskState::Pending));
+    resumed.begin(generated,owner,&registry).unwrap();
+    assert_eq!(resumed.inspect(generated,owner).unwrap().tasks.iter().flatten()
+        .filter(|task|task.state==TaskState::Succeeded).count(),completed_before);
 
     let mut ingress = Service::new();
     let voice = ingress

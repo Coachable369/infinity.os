@@ -6,7 +6,8 @@ use crate::ui::app_assistant as assistant;
 mod native_input;
 #[path = "../ui/workflow_progress.rs"]
 mod workflow_progress;
-use workflow_progress::{Progress as VoiceProgress, Step as VoiceStep};
+use workflow_progress::Progress as VoiceProgress;
+pub(super) use workflow_progress::Step as VoiceStep;
 static mut APP_INPUT:native_input::Input=native_input::Input::new();
 static mut APP_CANCEL:bool=false;
 static mut APP_LINE_OPEN:bool=false;
@@ -23,6 +24,7 @@ struct Lease {
     document_revision:u64,
     request:[u8;1024],
     request_length:usize,
+    software_goal:Option<u64>,
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ReplyTarget { Assistant, Console }
@@ -45,6 +47,11 @@ static mut VOICE_PROGRESS:VoiceProgress=VoiceProgress::new();
 static mut VOICE_OWNER:SecurityIdentity=SecurityIdentity([0;16]);
 #[no_mangle]
 pub static mut INFINITY_NATIVE_WORKFLOW_VOICE_SNAPSHOT:[u64;8]=[0x494e46574f494345,1,0,0,0,0,0,0];
+// Version 1: magic, version, sequence, conversation state, output state/error,
+// playback Hz, capture, recognizer prepared/failed, output frames, first playback
+// time, output owner match, pending count, in-flight step + 1, closing sequence.
+#[no_mangle]
+pub static mut INFINITY_NATIVE_WORKFLOW_AUDIO_SNAPSHOT:[u64;16]=[0x494e46415544494f,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(super) enum StartError {
@@ -106,6 +113,10 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
     if APP_ACTIVE || (&*(&raw const LEASE)).is_some() {return Err(StartError::Busy);}
     if !active(console) {return Err(StartError::SessionUnavailable);}
     if !console.ai_chat_allowed() {return Err(StartError::AiDisabled);}
+    let software_goal=assistant::read(2).workflow_goal;
+    if !crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(software_goal)) {
+        return Err(StartError::SourceInvalid);
+    }
     let ticks=crate::runtime::ai::qwen::workers::clock_ns();
     let mut name=[0u8;24];name[..6].copy_from_slice(b"app-c-");
     for i in 0..16 {name[6+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
@@ -113,9 +124,14 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
     let base=crate::storage::object::DOCUMENTS_PATH;
     let mut path=[0u8;95];path[..base.len()].copy_from_slice(base);path[base.len()]=b'/';
     let length=base.len()+1+name.len();path[base.len()+1..length].copy_from_slice(&name);
-    crate::storage::object_create_owned_note_at(&name,console.editor_document.bytes(),&path[..length],
+    let source_object=crate::storage::object_create_owned_note_at(&name,console.editor_document.bytes(),&path[..length],
         crate::storage::object::ObjectId(console.current_user.0))
         .map_err(|_|StartError::SaveFailed)?;
+    if let Some(goal)=software_goal {
+        crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
+            crate::runtime::ai::intelligence::software::Event::SourceSaved{object:source_object.0,revision:ticks}));
+    }
+    generation_progress(console,VoiceStep::Saved);
     console.editor_document_path[..length].copy_from_slice(&path[..length]);console.editor_document_path_length=length;
     console.editor_document_name[..name.len()].copy_from_slice(&name);console.editor_document_name_length=name.len();
     console.editor_document.save();console.detect_editor_language();
@@ -129,6 +145,7 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
         let panel=assistant::read(2);
         let request=&panel.request[..panel.request_len];
         lease.generated=true;
+        lease.software_goal=software_goal;
         lease.request[..request.len()].copy_from_slice(request);lease.request_length=request.len();
         if launch_result && assistant::editor_compile_intent::create_application(request)
             && assistant::editor_compile_intent::requests_opponent(request) && request.len()<=512 {
@@ -169,7 +186,7 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],re
     let source_length=source_path.len().min(95);
     REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
         launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0,
-        generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0 });
+        generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0,software_goal:None });
     Ok(())
 }
 
@@ -204,13 +221,80 @@ unsafe fn publish_voice_progress() {
 }
 
 // ------------------------=
+// FUNC: publish_voice_devices
+// DESC: Exposes actual speech and audio-device state without changing admission, authority, capture, or playback.
+// ------------------=
+unsafe fn publish_voice_devices() {
+    use crate::runtime::ai::{voice_conversation,voice_input,voice_output};
+    use core::sync::atomic::{fence,Ordering};
+    let output=voice_output::status();
+    let (_,_,pending,in_flight)=(&*(&raw const VOICE_PROGRESS)).snapshot();
+    let fields=[voice_conversation::state().0 as u64,output.state as u64,
+        output.error as i64 as u64,crate::drivers::audio::playback_rate().unwrap_or(0) as u64,
+        crate::drivers::audio::capture_available() as u64,voice_input::prepared() as u64,
+        voice_input::prepare_failed() as u64,output.frames as u64,output.first_playback_ns,
+        voice_output::owned_by(VOICE_OWNER) as u64,pending as u64,
+        in_flight.map(|step|step as u64+1).unwrap_or(0)];
+    let state=core::ptr::addr_of_mut!(INFINITY_NATIVE_WORKFLOW_AUDIO_SNAPSHOT).cast::<u64>();
+    let sequence=core::ptr::read_volatile(state.add(2)).wrapping_add(1)|1;
+    core::ptr::write_volatile(state.add(2),sequence);
+    fence(Ordering::Release);
+    for (index,value) in fields.iter().enumerate() {
+        core::ptr::write_volatile(state.add(3+index),*value);
+    }
+    fence(Ordering::Release);
+    core::ptr::write_volatile(state.add(15),sequence.wrapping_add(1));
+    core::ptr::write_volatile(state.add(2),sequence.wrapping_add(1));
+}
+
+// ------------------------=
 // FUNC: begin_voice_progress
 // DESC: Starts ordered one-time narration for the authenticated owner of a new native build.
 // ------------------=
 unsafe fn begin_voice_progress(owner:SecurityIdentity) {
-    VOICE_OWNER=owner;
-    (&mut *(&raw mut VOICE_PROGRESS)).begin();
+    let progress=&mut *(&raw mut VOICE_PROGRESS);
+    let panel=assistant::read(2);
+    let request=&panel.request[..panel.request_len.min(panel.request.len())];
+    if VOICE_OWNER==owner && progress.generating() && progress.generation_matches(panel.workflow_goal,request)
+        && crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(panel.workflow_goal)) {
+        let _=progress.schedule(VoiceStep::CompileStarted);
+    }else{
+        if let Some(request)=progress.output_request() {let _=crate::runtime::ai::voice_output::stop_request(VOICE_OWNER,request);}
+        VOICE_OWNER=owner;
+        progress.begin();
+    }
     publish_voice_progress();
+}
+
+// ------------------------=
+// FUNC: generation_progress
+// DESC: Queues factual generation milestones on the existing native speech path without delaying the application workflow.
+// ------------------=
+pub(super) fn generation_progress(console:&ConsoleRuntime,step:VoiceStep) {
+    let owner=SecurityIdentity(console.current_session.0);
+    if !voice_progress_enabled(console,owner) {return;}
+    unsafe {
+        let progress=&mut *(&raw mut VOICE_PROGRESS);
+        let panel=assistant::read(2);
+        let request=&panel.request[..panel.request_len.min(panel.request.len())];
+        if step==VoiceStep::Planning {
+            let Some(goal)=panel.workflow_goal else{return;};
+            if !assistant::editor_compile_intent::create_application(request)
+                || !crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(Some(goal))) {return;}
+            if let Some(request)=progress.output_request() {let _=crate::runtime::ai::voice_output::stop_request(VOICE_OWNER,request);}
+            VOICE_OWNER=owner;
+            if !progress.begin_generation_for(goal,request) {return;}
+        }else if VOICE_OWNER==owner && progress.generation_matches(panel.workflow_goal,request) {
+            let scheduled=if matches!(step,VoiceStep::GenerationFailed|VoiceStep::GenerationCancelled) {
+                progress.generation_terminal(panel.workflow_goal,request,
+                    crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(panel.workflow_goal)),step)
+            }else{progress.schedule(step)};
+            if scheduled && step==VoiceStep::Generating {
+                progress.generation_started(crate::runtime::ai::qwen::workers::clock_ns());
+            }
+        }else{return;}
+        publish_voice_progress();
+    }
 }
 
 // ------------------------=
@@ -236,17 +320,57 @@ fn voice_progress_enabled(console:&ConsoleRuntime,owner:SecurityIdentity)->bool 
 // DESC: Speaks queued structural milestones in order without interrupting an AI reply or overlapping native audio.
 // ------------------=
 unsafe fn poll_voice_progress(console:&ConsoleRuntime) {
+    publish_voice_devices();
     let owner=VOICE_OWNER;
     let progress=&mut *(&raw mut VOICE_PROGRESS);
+    let panel=assistant::read(2);
+    let request=&panel.request[..panel.request_len.min(panel.request.len())];
+    let creates=assistant::editor_compile_intent::create_application(request);
+    let (current,terminal_permitted,app_owner,inference)=crate::runtime::ai::with_ai_runtime(|ai|{
+        let current=ai.generation_workflow_current(panel.workflow_goal);
+        let terminal_permitted=current || panel.workflow_goal.is_some_and(|goal|
+            ai.intelligence_plan(goal,console.current_user.0)
+                .is_some_and(|plan|plan.state==crate::runtime::ai::intelligence::PlanState::Failed));
+        (current,terminal_permitted,ai.app_turn_owner(),
+            (ai.app_turn_owner()==Some(2)).then(||ai.app_generation_progress()).flatten())
+    });
+    let terminal=match panel.generation {
+        assistant::GenerationStatus::Failed=>Some(VoiceStep::GenerationFailed),
+        assistant::GenerationStatus::Cancelled=>Some(VoiceStep::GenerationCancelled),
+        _=>None,
+    };
+    if creates && terminal.is_some_and(|step|progress.generation_terminal(panel.workflow_goal,request,current,step)) {
+        publish_voice_progress();
+    }
+    let output_request=progress.output_request();
+    if !progress.retain_generation_terminal(panel.workflow_goal,request,terminal_permitted)
+        || !progress.retain_generation(panel.workflow_goal,request,creates,current
+        && matches!(panel.generation,assistant::GenerationStatus::Queued|assistant::GenerationStatus::Running|assistant::GenerationStatus::Complete)) {
+        if let Some(request)=output_request {let _=crate::runtime::ai::voice_output::stop_request(owner,request);}
+        publish_voice_progress();return;
+    }
+    if progress.observes_generation(app_owner,panel.workflow_goal,request,creates,current)
+        && panel.generation==assistant::GenerationStatus::Running && inference.is_some() {
+        let now=crate::runtime::ai::qwen::workers::clock_ns();
+        let prefill_changed=inference.is_some_and(|inference|progress.prefill_progress(
+            inference.processed_tokens,inference.prompt_tokens,inference.generated_tokens,panel.stream.delivered,now));
+        let source_changed=progress.source_progress(panel.stream.delivered,now);
+        if prefill_changed || source_changed {publish_voice_progress();}
+    } else if progress.prefill_finished() {
+        publish_voice_progress();
+    }
     let (_,_,pending,in_flight)=progress.snapshot();
     if pending==0&&in_flight.is_none(){return;}
-    if !voice_progress_enabled(console,owner) {progress.discard();publish_voice_progress();return;}
+    if !voice_progress_enabled(console,owner) {
+        if let Some(request)=progress.output_request(){let _=crate::runtime::ai::voice_output::stop_request(owner,request);}
+        progress.discard();publish_voice_progress();return;
+    }
     use crate::runtime::ai::{voice_conversation::State as ConversationState,voice_output::OutputState};
     let output=crate::runtime::ai::voice_output::status().state;
     if in_flight.is_some() {
-        if matches!(output,OutputState::Complete|OutputState::Failed|OutputState::Cancelled) {
-            let _=progress.completed(output==OutputState::Complete);publish_voice_progress();
-        }
+        let terminal=matches!(output,OutputState::Complete|OutputState::Failed|OutputState::Cancelled)
+            .then_some(output==OutputState::Complete);
+        if progress.observe_output(crate::runtime::ai::voice_output::request_id(owner),terminal) {publish_voice_progress();}
         return;
     }
     if !matches!(crate::runtime::ai::voice_conversation::state().0,
@@ -259,7 +383,9 @@ unsafe fn poll_voice_progress(console:&ConsoleRuntime) {
         Some(now+crate::runtime::ai::voice_output::OUTPUT_LEASE_SECONDS),0).ok()).flatten();
     let Some(capability)=capability else{return;};
     if crate::runtime::ai::voice_output::submit(owner,capability,step.phrase()).is_ok() {
-        let _=progress.submitted(step);publish_voice_progress();
+        if let Some(request)=crate::runtime::ai::voice_output::request_id(owner) {
+            let _=progress.submitted_request(step,request);publish_voice_progress();
+        }
     }else{
         crate::runtime::with_runtime(|runtime|{let _=runtime.capabilities.retire_leaf(capability,owner);});
     }
@@ -340,15 +466,22 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
 pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     poll_voice_progress(console);
     poll_app(console);
+    if crate::runtime::ai::with_ai_runtime(|ai|ai.software_execution(console.current_user.0)
+        .is_some_and(|execution|execution.interaction_active)) {
+        generation_progress(console,VoiceStep::InteractionReady);
+    }
     let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() else{return;};
     let owner=SecurityIdentity(console.current_session.0);
     let now=crate::runtime::ai::qwen::workers::clock_ns();
     let target=REPLY_TARGET;
     let mut launch_path=[0u8;95];let mut launch_length=0;
-    let allowed=active(console)&&(target==ReplyTarget::Console||console.ai_chat_allowed()&&console.assistant_owner_alive(2))
+    let workflow_current=!lease.generated || assistant::read(2).workflow_goal==lease.software_goal
+        && crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(lease.software_goal));
+    if !workflow_current {let _=job::cancel(lease.owner);}
+    let allowed=workflow_current && active(console)&&(target==ReplyTarget::Console||console.ai_chat_allowed()&&console.assistant_owner_alive(2))
         && <Lease as crate::storage::object::ObjectCapabilityPolicy>::authorize(lease,crate::storage::object::ObjectOperation::Create,None);
-    let finished=job::poll(owner,allowed,now);
-    if lease.owner==owner && job::status(owner)==job::Status::Link && !lease.compile_output_reported {
+    let finished=job::poll(owner,allowed,now) || !workflow_current;
+    if workflow_current && lease.owner==owner && job::status(owner)==job::Status::Link && !lease.compile_output_reported {
         job::stage_diagnostics(owner,job::Status::Link,|diagnostics,truncated| {
             report_stage_output(console,b"Compiler output",diagnostics,truncated);
             publish_workflow(2,5+lease.source_length,diagnostics.len(),lease.name.len());
@@ -358,7 +491,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
         console.redraw();
     }
     if !finished{return;}
-    if lease.owner==owner {
+    if workflow_current && lease.owner==owner {
         let mut panel=assistant::read(2);
         job::result(owner,|status,binary,diagnostics,_truncated| {
             if status==job::Status::Complete {
@@ -372,6 +505,10 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                     owner:crate::storage::object::ObjectId(console.current_user.0),
                 },lease);
                 if let Ok(reference)=saved {
+                    if let Some(goal)=lease.software_goal {
+                        crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
+                            crate::runtime::ai::intelligence::software::Event::Compiled{artifact:reference.id.0}));
+                    }
                     if lease.launch {launch_path[..length].copy_from_slice(&path[..length]);launch_length=length;}
                     INFINITY_NATIVE_APP_NAME=lease.name;
                     let state=&mut *(&raw mut INFINITY_NATIVE_APP_SNAPSHOT);
@@ -392,14 +529,17 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
             }else if !diagnostics.is_empty(){
                 report_stage_output(console,b"Compiler output",diagnostics,_truncated);
                 publish_workflow(6,5+lease.source_length,diagnostics.len(),lease.name.len());
-                schedule_voice_progress(VoiceStep::Failed);
+                let mut repairing=false;
                 if target==ReplyTarget::Assistant {
                     panel.reply(diagnostics);
                     if status==job::Status::Failed && allowed && lease.generated
                         && panel.queue_compiler_repair(&lease.request[..lease.request_length],lease.document_revision,console.assistant_revision(),diagnostics) {
+                        repairing=true;
                         panel.reply(b"The compiler found errors. Repairing this unchanged source using its diagnostics (maximum two attempts). Your source is saved; no app has launched.");
                     }
                 }
+                schedule_voice_progress(if repairing {VoiceStep::Repairing}
+                    else if status==job::Status::Cancelled {VoiceStep::Cancelled}else{VoiceStep::Failed});
             }else if status==job::Status::Cancelled{
                 console.output.write_line(b"Compilation cancelled. No executable was published.");
                 publish_workflow(6,5+lease.source_length,0,lease.name.len());
@@ -413,13 +553,28 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                 if target==ReplyTarget::Assistant{panel.reply(b"Native compilation failed. The source remains in the editor; no executable was published.");}
             }
         });
+        if let Some(goal)=lease.software_goal {
+            if launch_length==0 && panel.generation!=assistant::GenerationStatus::Queued {
+                crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
+                    crate::runtime::ai::intelligence::software::Event::Failed{code:2}));
+            }
+        }
         if target==ReplyTarget::Assistant{assistant::write(2,panel);}console.redraw();
     }
     let lease=core::ptr::addr_of_mut!(LEASE).replace(None).unwrap();
     crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(lease.capability,lease.owner);});
     if launch_length>0 {
+        let previous_context=crate::runtime::ai::application_host::context().map(|context|context.instance);
         launch(console,&launch_path[..launch_length]);
-        if APP_ACTIVE && lease.interaction_length>0 {
+        let launched_context=crate::runtime::ai::application_host::context().map(|context|context.instance)
+            .filter(|context|Some(*context)!=previous_context && APP_ACTIVE);
+        if let Some(goal)=lease.software_goal {
+            let event=launched_context.map(|context|
+                crate::runtime::ai::intelligence::software::Event::Launched{context})
+                .unwrap_or(crate::runtime::ai::intelligence::software::Event::Failed{code:3});
+            crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,event));
+        }
+        if launched_context.is_some() && lease.interaction_length>0 {
             let _=crate::runtime::ai::with_ai_runtime(|ai|ai.start_application_agent(console.current_user.0,console.current_session.0,&lease.interaction_objective[..lease.interaction_length],true));
         }
     }

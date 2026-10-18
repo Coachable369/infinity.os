@@ -29,6 +29,17 @@ The semantic canvas supports up to 96 elements. This accommodates dense native
 tools and complete 8 x 8 game boards while keeping all paint, hit testing, theme,
 focus, and typography ownership inside the OS.
 
+## Generated application grid layout
+
+`infinity/app.h` reuses these same label and button elements through `app_grid`,
+`app_cell`, and `app_status`; it introduces no separate visual recipe. The compact
+layout reserves a 32-unit status label at (20,20), begins buttons at (20,64), and
+uses 56-unit square buttons with 12-unit gaps and 20-unit outer margins. The
+window is at least 320×240; an 8×8 layout is 572×616. A 9×8 layout is 572×684,
+allowing an additional control row within the native canvas. Rows are limited to 9,
+columns to 12, and cells to 95 so the status remains within the 96-element cap.
+Apps keep stable positive cell IDs and supply their own labels and behavior.
+
 ## States and ownership
 
 Button visuals inherit default, focused, hover, pressed, and disabled recipes

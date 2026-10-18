@@ -303,6 +303,11 @@ class Guest(base.Guest):
         elif installer:
             command += ["-drive", f"if=none,id=cd,format=raw,media=cdrom,file={artifacts / 'installer.iso'}",
                 "-device", "scsi-cd,drive=cd,bootindex=0"]
+        if getattr(self, "audio_capture", None) is not None:
+            capture = self.audio_capture.resolve()
+            capture.relative_to(ROOT / "build")
+            command += ["-audiodev", f"wav,id=audio,out.frequency=48000,path={capture}",
+                        "-device", "intel-hda", "-device", "hda-duplex,audiodev=audio"]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log)
         deadline = time.monotonic() + 20
         while not qmp.exists():

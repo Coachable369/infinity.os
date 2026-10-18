@@ -1,6 +1,29 @@
 //! Per-window local assistance and explicit, fenced app action execution.
 use super::*;
 use crate::ui::app_assistant::{self as assistant, Action, Target};
+#[no_mangle]
+pub static mut INFINITY_APP_GENERATION_SNAPSHOT:[u64;14]=[0x494e4647454e3031,1,0,0,0,0,0,0,0,0,0,0,0,0];
+// ------------------------=
+// FUNC: publish_generation_snapshot
+// DESC: Publishes seqlocked inference and editor-delivery counts without exposing user source or granting execution authority.
+// ------------------=
+fn publish_generation_snapshot() {
+    let panel=assistant::read(2);
+    let progress=crate::runtime::ai::with_ai_runtime(|ai|ai.app_generation_progress());
+    unsafe {
+        let target=core::ptr::addr_of_mut!(INFINITY_APP_GENERATION_SNAPSHOT).cast::<u64>();
+        let sequence=target.add(2).read_volatile().wrapping_add(2)&!1;
+        target.add(2).write_volatile(sequence|1);
+        let values=[panel.generation as u64,progress.map_or(0,|p|p.prompt_tokens as u64),
+            progress.map_or(0,|p|p.processed_tokens as u64),progress.map_or(0,|p|p.generated_tokens as u64),
+            progress.map_or(0,|p|p.output_bytes as u64),panel.argument_len as u64,panel.stream.delivered as u64,
+            panel.stream.flushes as u64,panel.repair_attempts as u64,crate::runtime::ai::qwen::workers::clock_ns()];
+        for (index,value) in values.into_iter().enumerate(){target.add(index+3).write_volatile(value);}
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+        target.add(13).write_volatile(sequence);
+        target.add(2).write_volatile(sequence);
+    }
+}
 impl ConsoleRuntime {
     // ------------------------=
     // FUNC: assistant_owner_alive
@@ -45,11 +68,14 @@ impl ConsoleRuntime {
     pub(super) fn dispatch_context_request(&mut self, input:&[u8])->bool {
         if !self.ai_chat_allowed() {return false;}
         if assistant::editor_compile_intent::create_application(input) {
+            let Some(goal)=crate::runtime::ai::with_ai_runtime(|ai|ai.software_goal_for_request(input)) else{return false;};
+            if input.len()>1024 {return false;}
             self.open_text_editor();
             self.ai_chat_focus=0;
             let mut panel=assistant::read(2);
             panel.expanded=true;panel.focused=false;
             if !self.editor_document.is_saved() && !self.editor_document.bytes().is_empty() {
+                panel.reject_unstarted_generation();
                 panel.reply(b"Save or discard your current document, then request the new application again. Your edits have not been changed.");
                 assistant::write(2,panel);return false;
             }
@@ -58,13 +84,18 @@ impl ConsoleRuntime {
             }
             self.perform_editor_action(PendingDocumentAction::New);
             panel.pending=Action::None;panel.argument_len=0;panel.awaiting_compile_save=false;
+            panel.stream=assistant::generation_stream::Stream::new();
             panel.repair_attempts=0;panel.repair_diagnostics_len=0;
             panel.input[..input.len()].copy_from_slice(input);panel.length=input.len();
             panel.request=panel.input;panel.request_len=input.len();
             panel.document_revision=self.assistant_revision();
+            panel.workflow_goal=Some(goal);
             panel.generation=assistant::GenerationStatus::Queued;
             panel.reply(b"Creating a native C application. Source will be saved in Documents, compiled, then launched.");
-            assistant::write(2,panel);return true;
+            assistant::write(2,panel);
+            compiler_commands::generation_progress(self,compiler_commands::VoiceStep::Planning);
+            compiler_commands::generation_progress(self,compiler_commands::VoiceStep::PlanReady);
+            return true;
         }
         let Some((id,_))=self.assistant_owner() else{return false;};
         let mut panel=assistant::read(id);
@@ -360,13 +391,19 @@ impl ConsoleRuntime {
         panel.request = panel.input;
         panel.request_len = panel.length;
         panel.repair_attempts=0;panel.repair_diagnostics_len=0;
+        panel.stream=assistant::generation_stream::Stream::new();
+        panel.workflow_goal=None;
+        panel.generation=assistant::GenerationStatus::Idle;
+        panel.pending=Action::None;
+        panel.awaiting_compile_save=false;
         match crate::runtime::ai::with_ai_runtime(|ai| ai.route_application_request(id, &panel.input[..panel.length])) {
             Ok(crate::runtime::ai::kit::RequestRoute::Control(_)) => {
                 panel.length=0;panel.caret=0;
                 panel.reply(b"OS action queued for this application.");
                 assistant::write(id,panel);return;
             }
-            Ok(crate::runtime::ai::kit::RequestRoute::Goal(_)) => {
+            Ok(crate::runtime::ai::kit::RequestRoute::Goal(goal)) => {
+                panel.workflow_goal=Some(goal);
                 panel.length=0;panel.caret=0;
                 panel.reply(b"A bounded goal plan was created. Progress and approvals remain tied to this session.");
                 assistant::write(id,panel);return;
@@ -402,6 +439,7 @@ impl ConsoleRuntime {
                 } else { assistant::help(id) };
                 panel.document_revision = self.assistant_revision();
                 if let Some(n) = panel.generation_prompt(id == 2, context, &mut prompt) {
+                    assistant::write(id,panel);
                     match crate::runtime::ai::with_ai_runtime(|ai| ai.submit_app_turn(id, &prompt[..n])) {
                         Ok(()) => {
                             panel.generation = assistant::GenerationStatus::Running;
@@ -429,7 +467,18 @@ impl ConsoleRuntime {
     // DESC: Puts explicitly requested completed C into its original editor and starts compilation once, retaining revision and capability checks.
     // ------------------=
     pub(super) fn apply_completed_editor_compile(&mut self) -> bool {
+        publish_generation_snapshot();
         let mut panel=assistant::read(2);
+        if panel.generation==assistant::GenerationStatus::Complete && panel.pending==Action::None
+            && panel.stream.delivered>=panel.argument_len {return false;}
+        if !crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(panel.workflow_goal)) {
+            if panel.workflow_goal.is_some_and(|goal|panel.cancel_workflow(goal)) {
+                panel.reply(b"This generation belongs to an interrupted goal. Partial source is preserved; no save or compile will run.");
+                assistant::write(2,panel);
+                return true;
+            }
+            return false;
+        }
         if panel.generation==assistant::GenerationStatus::Queued {
             // Admission happens after the intent broker releases its control turn.
             if !self.ai_chat_allowed() || !self.assistant_owner_alive(2) || !panel.expanded
@@ -437,26 +486,52 @@ impl ConsoleRuntime {
                 panel.generation=assistant::GenerationStatus::Cancelled;
                 panel.reply(b"Application creation cancelled because its editor or session changed.");
             } else {
-                let mut prompt=[0u8;6144];
+                let mut prompt=[0u8;16*1024];
                 let prompt_length=if panel.repair_diagnostics_len>0 {
                     panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt)
                 } else {panel.generation_prompt(true,b"",&mut prompt)};
                 if let Some(n)=prompt_length {
-                    match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_turn(2,&prompt[..n])) {
-                        Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating C source locally...");},
+                    match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_source(2,&prompt[..n])) {
+                        Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating C source locally...");
+                            compiler_commands::generation_progress(self,compiler_commands::VoiceStep::Generating);},
                         Err(message)=>{panel.generation=assistant::GenerationStatus::Failed;panel.reply(message);},
                     }
                 } else {panel.generation=assistant::GenerationStatus::Failed;panel.reply(b"Application request is too large.");}
             }
             panel.length=0;panel.caret=0;
-            assistant::write(2,panel);return true;
+            assistant::write(2,panel);
+            if matches!(panel.generation,assistant::GenerationStatus::Failed|assistant::GenerationStatus::Cancelled) {
+                compiler_commands::generation_progress(self,if panel.generation==assistant::GenerationStatus::Failed {
+                    compiler_commands::VoiceStep::GenerationFailed
+                }else{compiler_commands::VoiceStep::GenerationCancelled});
+            }
+            return true;
         }
-        if panel.generation==assistant::GenerationStatus::Running && panel.document_revision!=self.assistant_revision() {
+        if panel.cancel_source_on_revision(self.assistant_revision()) {
             crate::runtime::ai::with_ai_runtime(|ai|{if ai.app_turn_owner()==Some(2){ai.cancel_app_turn();}});
+            panel.reply(b"Generation cancelled because you edited the document. Your edits and partial generated source are preserved; nothing will be saved or compiled automatically.");
+            assistant::write(2,panel);
+            compiler_commands::generation_progress(self,compiler_commands::VoiceStep::GenerationCancelled);
+            if let Some(goal)=panel.workflow_goal {
+                crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,self.current_user.0,
+                    crate::runtime::ai::intelligence::software::Event::Failed{code:4}));
+            }
             return true;
         }
         let previewed=self.apply_streamed_editor_source();
+        let current=assistant::read(2);
+        if matches!(current.generation,assistant::GenerationStatus::Failed|assistant::GenerationStatus::Cancelled) {
+            compiler_commands::generation_progress(self,if current.generation==assistant::GenerationStatus::Failed {
+                compiler_commands::VoiceStep::GenerationFailed
+            }else{compiler_commands::VoiceStep::GenerationCancelled});
+            crate::runtime::ai::with_ai_runtime(|ai|{if let Some(goal)=current.workflow_goal {
+                ai.record_software_event(goal,self.current_user.0,crate::runtime::ai::intelligence::software::Event::Failed{code:1});
+            }});
+        }
+        if current.generation==assistant::GenerationStatus::Complete && current.stream.delivered<current.argument_len
+            && assistant::editor_compile_intent::create_application(&current.request[..current.request_len]) {return previewed;}
         if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return previewed; }
+        compiler_commands::generation_progress(self,compiler_commands::VoiceStep::SourceReady);
         self.apply_window_assistant(2) || previewed
     }
     // ------------------------=
@@ -466,12 +541,16 @@ impl ConsoleRuntime {
     fn apply_streamed_editor_source(&mut self)->bool {
         let mut panel=assistant::read(2);
         if !matches!(panel.generation,assistant::GenerationStatus::Running|assistant::GenerationStatus::Complete)
+            || !crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(panel.workflow_goal))
             || !assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len])
-            || panel.document_revision!=self.assistant_revision()
-            || panel.argument_len==0 || self.editor_document.bytes()==&panel.argument[..panel.argument_len] {return false;}
-        let checkpoint=self.editor_document.bytes().is_empty();
-        if !self.editor_document.replace_generation_preview(&panel.argument[..panel.argument_len],checkpoint) {return false;}
-        self.editor_scroll_row=0;
+            || panel.document_revision!=self.assistant_revision() || panel.argument_len==0 {return false;}
+        let now=crate::ui::performance::monotonic_ns();
+        let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],now,
+            panel.generation==assistant::GenerationStatus::Complete) else{return false;};
+        let follow_tail=self.editor_scroll_geometry().maximum_scroll.saturating_sub(self.editor_scroll_row)<=1;
+        if !self.editor_document.append_generation_preview(&panel.argument[range.clone()],range.start==0) {return false;}
+        panel.stream.committed(range.end,now);
+        if follow_tail {self.editor_scroll_row=self.editor_scroll_geometry().maximum_scroll;}
         panel.document_revision=self.assistant_revision();
         assistant::write(2,panel);
         true
@@ -493,6 +572,11 @@ impl ConsoleRuntime {
             return false;
         }
         let mut panel = assistant::read(id);
+        if !crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(panel.workflow_goal)) {
+            if let Some(goal)=panel.workflow_goal {panel.cancel_workflow(goal);}
+            assistant::write(id,panel);
+            return false;
+        }
         let action = panel.take_action(self.assistant_revision());
         if !assistant::supports(id,action) {
             assistant::write(id, panel);
@@ -643,8 +727,10 @@ impl ConsoleRuntime {
                     assistant::write(id,panel);return false;
                 }
                 if action == Action::ReplaceCompile {
-                    self.editor_document.set_cursor(0);
-                    self.editor_scroll_row = 0;
+                    if panel.stream.delivered == 0 {
+                        self.editor_document.set_cursor(0);
+                        self.editor_scroll_row = 0;
+                    }
                     panel.focused = false;
                 }
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -652,6 +738,7 @@ impl ConsoleRuntime {
                     let create=action==Action::ReplaceCompile && assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len]);
                     let compile=if action==Action::ReplaceCompile {compiler_commands::save_generated_and_build(self,create)} else {compiler_commands::start(self)};
                     success=compile.is_ok();
+                    if create && !success {panel.generation=assistant::GenerationStatus::Failed;}
                     panel.reply(match compile {
                         Ok(())=>b"Compiling this source snapshot in isolated user mode. You can keep editing; the result will appear here.",
                         Err(compiler_commands::StartError::Busy)=>b"A native build is already active. Its result will appear here when it finishes.",

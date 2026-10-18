@@ -482,6 +482,26 @@ impl TextDocument {
         true
     }
     // ------------------------=
+    // FUNC: append_generation_preview
+    // DESC: Commits one bounded generated-source buffer without copying the previously displayed document or adding per-token undo snapshots.
+    // ------------------=
+    pub fn append_generation_preview(&mut self, content: &[u8], first: bool) -> bool {
+        if content.len() > 256 || content.is_empty()
+            || content.iter().any(|byte| !(32..=126).contains(byte) && !matches!(*byte, b'\n' | b'\t' | b'\r')) {
+            return false;
+        }
+        let offset = if first { 0 } else { self.length };
+        if content.len() > DOCUMENT_CAPACITY - offset { return false; }
+        if first { self.checkpoint(); }
+        self.bytes[offset..offset + content.len()].copy_from_slice(content);
+        self.length = offset + content.len();
+        self.cursor = self.length;
+        self.anchor = self.cursor;
+        self.revision = self.revision.max(self.saved_revision).wrapping_add(1);
+        self.redo_count = 0;
+        true
+    }
+    // ------------------------=
     // FUNC: find
     // DESC: Selects the next literal match with wrapping and optional ASCII case folding.
     // ------------------=

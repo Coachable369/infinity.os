@@ -8,24 +8,41 @@ if test "${INFINITY_ISO_BUILD_AUTHORITY:-}" != build.sh; then
     exit 2
 fi
 arch=aarch64
-if test "$#" -eq 2 && test "$1" = --target; then arch=$2; elif test "$#" -ne 0; then exit 2; fi
+machine=native
+while test "$#" -gt 0; do
+    case "$1" in
+        --target) test "$#" -ge 2 || exit 2; arch=$2; shift 2 ;;
+        --machine) test "$#" -ge 2 || exit 2; machine=$2; shift 2 ;;
+        *) exit 2 ;;
+    esac
+done
 case "$arch" in
     aarch64) triple=aarch64-unknown-none-softfloat; boot=BOOTAA64.EFI; installed_fat=build/installed-fat-aarch64 ;;
     x86_64) triple=x86_64-unknown-none; boot=BOOTX64.EFI; installed_fat=build/installed-fat ;;
     *) echo 'Unsupported native model target' >&2; exit 2 ;;
 esac
+case "$machine" in native) ;; qemu) test "$arch" = aarch64 || exit 2 ;; *) exit 2 ;; esac
 ministral=model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
 hermes=${INFINITY_HERMES_MODEL:-}
-if test -z "$hermes"; then exec sh tools/build-hermes.sh --target "$arch"; fi
+if test -z "$hermes"; then exec sh tools/build-hermes.sh --target "$arch" --machine "$machine"; fi
 test -f "$hermes"
 mkdir -p model-cache build/qwen build/hermes build/tools builds
 installer_output=builds/InfinityOS-$arch.iso
+installed_kernel=build/$arch/installed-kernel.elf
+linker_script=linker/$arch.ld
+if test "$machine" = qemu; then
+    installer_output=build/test-media/InfinityOS-aarch64-qemu-models.bootmedia
+    installed_kernel=build/aarch64/installed-kernel-qemu.elf
+    linker_script=linker/aarch64-qemu.ld
+    mkdir -p build/test-media
+fi
 if test -n "${QWEN_ISO_OUTPUT:-}" && test "$QWEN_ISO_OUTPUT" != "$installer_output"; then
     echo "ERROR: installer output is fixed at $installer_output" >&2
     exit 1
 fi
 # A fresh staging tree cannot inherit removed model shards from an older build.
 lock=builds/.$arch-build-lock
+if test "$machine" = qemu; then lock=builds/.$arch-qemu-build-lock; fi
 if ! mkdir "$lock" 2>/dev/null; then
     echo "ERROR: $arch ISO build already active ($lock)." >&2
     exit 1
@@ -49,11 +66,11 @@ python3 tools/iso-staging.py check build "$((2 * (model_bytes + secondary_bytes)
 # model caches and unrelated architecture outputs remain available.
 rm -f "build/$arch/installed-kernel.o" \
       "build/$arch/installed-kernel.stamp" \
-      "build/$arch/installed-kernel.elf" \
+      "$installed_kernel" \
       "build/$arch/libinstalled-kernel.a" \
       "build/$arch/installed-esp.img" \
       "build/browser-payload/$arch/manifest.rs"
-make build/$arch/$boot build/$arch/installed-kernel.elf build/$arch/installed-esp.img
+make build/$arch/$boot "$installed_kernel" build/$arch/installed-esp.img
 CARGO_TARGET_DIR=build/behavior-harness cargo build --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack
 mkdir -p ${payload_build}/installed/EFI/INFINITY/PAYLOAD ${payload_build}/live/EFI/BOOT ${payload_build}/live/EFI/INFINITY/PAYLOAD ${payload_build}/iso
 mkdir -p ${payload_build}/iso/EFI/BOOT
@@ -79,10 +96,10 @@ if test -n "$hermes"; then
     CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
 fi
 python3 tools/iso-staging.py check "$payload_build" "$((esp_size + 1073741824))"
-build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
+build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img "$installed_kernel" ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
-cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/$arch/installed-kernel.elf
+cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - "$installed_kernel"
 # Its validated bytes now belong to the payload shards. Release only this
 # invocation's disposable ESP before allocating another full EFI image.
 rm -- "${payload_build}/installed-esp.img"
@@ -95,10 +112,10 @@ if test "$(cat build/browser-mode)" = 1; then
     set -- --strip-debug --undefined=infinity_browser_private_infinity_browser_run "build/servo-platform-probe/browser-private-$arch.o"
 fi
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target "$triple" --features "$payload_features"
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/$arch.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o "$@"
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T "$linker_script" -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o "$@"
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
-python3 tools/voice-kokoro/install-parity.py build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
-build/tools/cursor-install-parity build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+python3 tools/voice-kokoro/install-parity.py "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+build/tools/cursor-install-parity "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 cp build/$arch/$boot ${payload_build}/live/EFI/BOOT/
 rm -r -- "${payload_build}/cargo"
 iso_size=$(python3 tools/iso-staging.py size "${payload_build}/live")
@@ -115,12 +132,12 @@ python3 tools/iso-staging.py consume "${payload_build}/live" "${payload_build}/i
 test ! -d "${payload_build}/live" || rm -r -- "${payload_build}/live"
 # Publish only after model and installed-kernel parity have passed. Keep a failed
 # image out of the canonical filename used by provisioning.
-python3 tools/iso-staging.py check builds "$((iso_size + 1073741824))"
+python3 tools/iso-staging.py check "$(dirname "$installer_output")" "$((iso_size + 1073741824))"
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "$installer_output.partial" ${payload_build}/iso
 python3 tools/iso-kernel-freshness.py \
     "$installer_output.partial" \
     "${payload_build}/current-live-kernel.elf" \
-    "build/$arch/installed-kernel.elf"
+    "$installed_kernel"
 python3 tools/full-bundle-iso-test.py "$installer_output.partial"
-python3 tools/audio-install-parity.py "$installer_output.partial" "$arch"
+python3 tools/audio-install-parity.py "$installer_output.partial" "$arch" "$installed_kernel"
 mv "$installer_output.partial" "$installer_output"

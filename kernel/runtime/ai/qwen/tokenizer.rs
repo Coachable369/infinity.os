@@ -210,18 +210,20 @@ fn tekken_piece_length(text: &str) -> Result<usize, Error> {
         }
         return Ok(end);
     }
-    // Numeric, punctuation, and whitespace alternatives are shared, except
-    // Tekken has no contraction branch and accepts trailing slash after newline.
-    if b[0] == b'\'' {
-        return Ok(1);
-    }
-    let mut end = piece_length(text);
-    if b[..end].iter().any(|c| *c == b'\r' || *c == b'\n') && !b[0].is_ascii_whitespace() {
+    // Tekken has no contraction branch. Its punctuation alternative includes
+    // apostrophes and permits trailing slash/newline bytes even after a space.
+    let punctuation = |c: u8| !c.is_ascii_whitespace() && !c.is_ascii_alphanumeric();
+    if punctuation(b[0]) || (b[0] == b' ' && b.get(1).is_some_and(|c| punctuation(*c))) {
+        let mut end = usize::from(b[0] == b' ');
+        while end < b.len() && punctuation(b[end]) {
+            end += 1;
+        }
         while end < b.len() && matches!(b[end], b'\r' | b'\n' | b'/') {
             end += 1;
         }
+        return Ok(end);
     }
-    Ok(end)
+    Ok(piece_length(text))
 }
 // ------------------------=
 // FUNC: piece_length
@@ -293,5 +295,73 @@ fn piece_length(text: &str) -> usize {
         last_start
     } else {
         length
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ------------------------=
+    // FUNC: tekken_ascii_piece_boundaries
+    // DESC: Exercises Tekken punctuation suffixes and case branches without changing the other tokenizer's contractions.
+    // ------------------=
+    #[test]
+    fn tekken_ascii_piece_boundaries() {
+        for (input, expected) in [
+            ("');next", 3),
+            ("';next", 2),
+            ("''", 2),
+            ("'0'", 1),
+            ("'string", 7),
+            ("\";\n/next", 4),
+            (" //\n/next", 5),
+            (" //\n//!", 6),
+            ("123", 1),
+            ("HTTPServer", 10),
+            ("serverHTTP", 6),
+            ("\n /", 1),
+        ] {
+            assert_eq!(tekken_piece_length(input), Ok(expected), "{input:?}");
+        }
+        assert_eq!(tekken_piece_length("'string"), Ok(7));
+        assert_eq!(piece_length("'string"), 2);
+        assert_eq!(tekken_piece_length("café"), Err(Error::Unsupported));
+    }
+
+    // ------------------------=
+    // FUNC: tekken_punctuation_token_ids
+    // DESC: Verifies punctuation pieces reach ranked BPE intact, preserve output bounds, and decode to their original bytes.
+    // ------------------=
+    #[test]
+    fn tekken_punctuation_token_ids() {
+        let mut vocabulary = [
+            Entry { bytes: b"'", id: 1 },
+            Entry { bytes: b")", id: 2 },
+            Entry { bytes: b";", id: 3 },
+            Entry { bytes: b"')", id: 4 },
+            Entry { bytes: b"');", id: 5 },
+        ];
+        vocabulary.sort_unstable_by(|a, b| a.bytes.cmp(b.bytes));
+        let mut merges = [
+            Entry { bytes: b"' )", id: 0 },
+            Entry { bytes: b"') ;", id: 1 },
+        ];
+        merges.sort_unstable_by(|a, b| a.bytes.cmp(b.bytes));
+        for tekken in [true, false] {
+            let tokenizer = Tokenizer {
+                vocabulary: &vocabulary,
+                merges: &merges,
+                tekken,
+                llama: !tekken,
+            };
+            let mut ids = [u32::MAX; 4];
+            assert_eq!(tokenizer.encode("');", &mut ids), Ok(1));
+            assert_eq!(ids, [5, u32::MAX, u32::MAX, u32::MAX]);
+            let mut decoded = [0; 3];
+            assert_eq!(tokenizer.decode(ids[0], &mut decoded), Ok(3));
+            assert_eq!(decoded, *b"');");
+            assert_eq!(tokenizer.encode("');", &mut []), Err(Error::Overflow));
+        }
     }
 }

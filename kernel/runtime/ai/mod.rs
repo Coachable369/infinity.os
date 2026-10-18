@@ -41,10 +41,24 @@ use provider::local_provider;
 use types::*;
 use voice::VoiceService;
 
+struct ProgressMessage<'a> { bytes: &'a mut [u8], length: usize }
+impl core::fmt::Write for ProgressMessage<'_> {
+    // ------------------------=
+    // FUNC: write_str
+    // DESC: Formats a bounded content-free progress label without allocation.
+    // ------------------=
+    fn write_str(&mut self, text: &str) -> core::fmt::Result {
+        if text.len() > self.bytes.len()-self.length {return Err(core::fmt::Error);}
+        self.bytes[self.length..self.length+text.len()].copy_from_slice(text.as_bytes());
+        self.length+=text.len();Ok(())
+    }
+}
+
 struct NativePlanExecutor<'a> {
     broker: &'a mut ExecutionBroker,
     active: &'a mut Option<(u64, control::Command)>,
     result: &'a mut Option<(u64, bool)>,
+    software: &'a mut Option<intelligence::software::Execution>,
     origin: RequestOrigin,
 }
 
@@ -63,21 +77,41 @@ impl intelligence::Executor for NativePlanExecutor<'_> {
     // ------------------=
     fn start(&mut self,goal:&intelligence::Goal,task:&intelligence::Task,_:intelligence::CapabilityDescriptor,_now:u64)->Result<u64,intelligence::StartError>{
         if self.active.is_some() || self.broker.busy(){return Err(intelligence::StartError::Busy);}
+        let token=goal.id.rotate_left(17)^task.id as u64;
+        if matches!(task.capability, intelligence::CapabilityId::UiServices | intelligence::CapabilityId::ApplicationInteraction) {
+            let execution=self.software.as_mut().filter(|execution|execution.goal==goal.id && execution.owner==goal.owner)
+                .ok_or(intelligence::StartError::Unavailable)?;
+            return if execution.begin(token,task.capability) {Ok(token)} else {Err(intelligence::StartError::Busy)};
+        }
         let command=match task.capability {
             intelligence::CapabilityId::AiAction(index)=>mapping::CAPABILITY_TARGETS.get(index as usize).and_then(|target|control::Command::decode(target)),
             intelligence::CapabilityId::DevKit=>control::ContextRequest::parse(goal.objective.as_bytes()).map(control::Command::Context),
             _=>None,
         }.ok_or(intelligence::StartError::Unavailable)?;
-        let token=goal.id.rotate_left(17)^task.id as u64;
         self.broker.stage(ExecutionRequest{command,owner:goal.owner,origin:self.origin,correlation_id:token}).map_err(|_|intelligence::StartError::Busy)?;
+        if task.capability==intelligence::CapabilityId::DevKit {
+            let mut execution=intelligence::software::Execution::new(goal.id,goal.owner);
+            execution.begin(token,task.capability);
+            *self.software=Some(execution);
+        }
         *self.active=Some((token,command));Ok(token)
     }
 
     // ------------------------=
     // FUNC: observe
-    // DESC: Converts only a verified native dispatcher receipt into task evidence.
+    // DESC: Requires workflow receipts for software tasks; dispatcher admission alone never verifies generated software.
     // ------------------=
     fn observe(&mut self,token:u64,_now:u64)->intelligence::Observation{
+        if let Some(execution)=self.software.as_mut().filter(|execution|execution.owns(token)) {
+            if self.result.is_some_and(|result|result.0==token) {
+                let success=self.result.take().unwrap().1;
+                *self.active=None;
+                if !success {execution.record(execution.goal,execution.owner,intelligence::software::Event::Failed{code:1});}
+            }
+            let observation=execution.observe(token);
+            if !matches!(observation,intelligence::Observation::Running) {*self.active=None;}
+            return observation;
+        }
         if self.result.is_some_and(|result|result.0==token){let success=self.result.take().unwrap().1;*self.active=None;if success{let mut evidence=[0;16];evidence[..8].copy_from_slice(&token.to_le_bytes());return intelligence::Observation::Succeeded(evidence);}return intelligence::Observation::Failed(1);}intelligence::Observation::Running
     }
 
@@ -85,7 +119,10 @@ impl intelligence::Executor for NativePlanExecutor<'_> {
     // FUNC: cancel
     // DESC: Cancels the exact broker request owned by an interrupted plan task.
     // ------------------=
-    fn cancel(&mut self,token:u64){if self.active.is_some_and(|active|active.0==token){self.broker.cancel();*self.active=None;*self.result=None;}}
+    fn cancel(&mut self,token:u64){
+        if let Some(execution)=self.software.as_mut(){execution.cancel(token);}
+        if self.active.is_some_and(|active|active.0==token){self.broker.cancel();*self.active=None;*self.result=None;}
+    }
 }
 
 pub struct AiRuntime {
@@ -99,6 +136,7 @@ pub struct AiRuntime {
     other_native: Option<qwen::service::Service>,
     active_native: ModelId,
     app_owner: Option<usize>,
+    app_workflow_goal: Option<u64>,
     app_saved: Option<qwen::service::Conversation>,
     application_agent: Option<application_agent::Agent>,
     application_saved: Option<qwen::service::Conversation>,
@@ -112,6 +150,7 @@ pub struct AiRuntime {
     intelligence_goal: Option<u64>,
     intelligence_execution: Option<(u64, control::Command)>,
     intelligence_result: Option<(u64, bool)>,
+    software_execution: Option<intelligence::software::Execution>,
     intelligence_summary: Option<intelligence::PlanSummary>,
     intelligence_checkpoint_pending: bool,
     instruction_mapping: mapping::ConfiguredMap,
@@ -147,7 +186,8 @@ impl AiRuntime {
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
-        if let RequestRoute::Control(command) = route {
+        let software_goal=crate::ui::app_assistant::editor_compile_intent::create_application(input);
+        if let (RequestRoute::Control(command), false) = (route, software_goal) {
             self.execution
                 .stage(ExecutionRequest {
                     command,
@@ -171,7 +211,7 @@ impl AiRuntime {
                 maximum_replans: 1,
                 deadline: crate::ui::performance::monotonic_ns()
                     .unwrap_or(0)
-                    .saturating_add(300_000_000_000),
+                    .saturating_add(if software_goal {1_200_000_000_000} else {300_000_000_000}),
             };
             let id = self
                 .intelligence
@@ -201,8 +241,18 @@ impl AiRuntime {
     // FUNC: route_application_request
     // DESC: Routes raw app input before document context is constructed; context cannot become command authority.
     // ------------------=
-    pub fn route_application_request(&mut self, id: usize, input: &[u8]) -> Result<RequestRoute, &'static [u8]> {
-        if id >= 13 { return Err(b"Unknown application context."); }
+    pub fn route_application_request(
+        &mut self,
+        id: usize,
+        input: &[u8],
+    ) -> Result<RequestRoute, &'static [u8]> {
+        if id >= 13 {
+            return Err(b"Unknown application context.");
+        }
+        if input.is_empty() { return Err(b"An application request is required."); }
+        self.stop_application_agent();
+        self.cancel_app_turn();
+        self.interrupt_active_intelligence();
         self.route_request(input, RequestOrigin::Application(id))
     }
 
@@ -235,8 +285,33 @@ impl AiRuntime {
     // DESC: Borrows the loaded model exclusively for isolated app inference without changing desktop conversation messages.
     // ------------------=
     pub fn submit_app_turn(&mut self, id: usize, prompt: &[u8]) -> Result<(), &'static [u8]> {
-        if !self.chat.enabled() { return Err(b"AI is disabled in Settings."); }
-        if self.app_owner.is_some() || self.execution.busy() || self.qwen.as_ref().is_some_and(|s| s.busy()) {
+        self.submit_app_request(id,prompt,qwen::service::SubmissionKind::Conversation)
+    }
+
+    // ------------------------=
+    // FUNC: submit_app_source
+    // DESC: Reserves a useful bounded source-generation budget while reusing the same authorized application inference lease.
+    // ------------------=
+    pub fn submit_app_source(&mut self,id:usize,prompt:&[u8])->Result<(),&'static [u8]> {
+        self.submit_app_request(id,prompt,qwen::service::SubmissionKind::ApplicationSource)
+    }
+
+    // ------------------------=
+    // FUNC: submit_app_request
+    // DESC: Shares app-model admission, context restoration and cancellation across conversational and typed source requests.
+    // ------------------=
+    fn submit_app_request(&mut self,id:usize,prompt:&[u8],kind:qwen::service::SubmissionKind)->Result<(),&'static [u8]> {
+        if !self.chat.enabled() {
+            return Err(b"AI is disabled in Settings.");
+        }
+        let workflow_goal=crate::ui::app_assistant::read(id).workflow_goal;
+        if !self.generation_workflow_current(workflow_goal) {
+            return Err(b"This application request belongs to an interrupted goal.");
+        }
+        if self.app_owner.is_some()
+            || self.execution.busy()
+            || self.qwen.as_ref().is_some_and(|s| s.busy())
+        {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let selected = self.chat.selected_model();
@@ -249,13 +324,16 @@ impl AiRuntime {
             return Err(b"The local language model is still loading or is not installed.");
         };
         self.app_saved = service.suspend_conversation();
-        if service.submit(prompt).is_err() {
+        if service.submit_with_kind(prompt,kind).is_err() {
             if let Some(saved) = self.app_saved.take() {
                 service.restore_conversation(saved);
             }
-            return Err(b"This request exceeds the local model context. Select a smaller passage and retry.");
+            return Err(if kind==qwen::service::SubmissionKind::ApplicationSource {
+                b"This source request leaves insufficient local context for a complete rewrite. Reduce the application scope or source size and retry."
+            } else {b"This request exceeds the local model context. Select a smaller passage and retry."});
         }
         self.app_owner = Some(id);
+        self.app_workflow_goal = workflow_goal;
         let now = crate::ui::performance::monotonic_ns();
         self.app_started_ns = now;
         self.app_progress_ns = now;
@@ -267,7 +345,16 @@ impl AiRuntime {
     // FUNC: app_turn_owner
     // DESC: Exposes only the window lease so the console can cancel on focus or permission changes.
     // ------------------=
-    pub fn app_turn_owner(&self) -> Option<usize> { self.app_owner }
+    pub fn app_turn_owner(&self) -> Option<usize> {
+        self.app_owner
+    }
+    // ------------------------=
+    // FUNC: app_generation_progress
+    // DESC: Exposes content-free progress for the current isolated application-generation lease.
+    // ------------------=
+    pub fn app_generation_progress(&self) -> Option<qwen::service::InferenceProgress> {
+        self.app_owner.and_then(|_| self.qwen.as_ref().map(|service| service.progress()))
+    }
 
     // ------------------------=
     // FUNC: cancel_app_turn
@@ -276,14 +363,19 @@ impl AiRuntime {
     pub fn cancel_app_turn(&mut self) {
         if let Some(id) = self.app_owner.take() {
             if let Some(service) = self.qwen.as_mut() {
-                if let Some(saved) = self.app_saved.take() { service.restore_conversation(saved); }
-                else { service.clear_conversation(); }
+                if let Some(saved) = self.app_saved.take() {
+                    service.restore_conversation(saved);
+                } else {
+                    service.clear_conversation();
+                }
             }
             let mut panel = crate::ui::app_assistant::read(id);
-            panel.pending = crate::ui::app_assistant::Action::None;
-            panel.generation = crate::ui::app_assistant::GenerationStatus::Cancelled;
-            panel.reply(b"App request cancelled. Nothing was changed.");
-            crate::ui::app_assistant::write(id, panel);
+            if panel.workflow_goal == self.app_workflow_goal {
+                panel.pending = crate::ui::app_assistant::Action::None;
+                panel.generation = crate::ui::app_assistant::GenerationStatus::Cancelled;
+                panel.reply(b"App request cancelled. Any streamed source remains in the editor; no further code will be applied.");
+                crate::ui::app_assistant::write(id, panel);
+            }
         }
         self.clear_app_turn_timing();
     }
@@ -293,6 +385,7 @@ impl AiRuntime {
     // DESC: Releases the bounded progress watchdog whenever the app-generation model lease ends.
     // ------------------=
     fn clear_app_turn_timing(&mut self) {
+        self.app_workflow_goal = None;
         self.app_started_ns = None;
         self.app_progress_ns = None;
         self.app_progress_tokens = 0;
@@ -306,7 +399,16 @@ impl AiRuntime {
         let Some(id) = self.app_owner else {
             return false;
         };
+        if crate::ui::app_assistant::read(id).workflow_goal != self.app_workflow_goal
+            || !self.generation_workflow_current(self.app_workflow_goal) {
+            self.cancel_app_turn();
+            return true;
+        }
         let Some(service) = self.qwen.as_mut() else {
+            let mut panel = crate::ui::app_assistant::read(id);
+            panel.generation = crate::ui::app_assistant::GenerationStatus::Failed;
+            panel.reply(b"The local model became unavailable. Any streamed source remains in the editor. You can retry or cancel.");
+            crate::ui::app_assistant::write(id, panel);
             self.app_owner = None;
             self.clear_app_turn_timing();
             return false;
@@ -319,8 +421,21 @@ impl AiRuntime {
             // Repeated waiting polls do not renew the watchdog; the overall
             // deadline still bounds a model that emits unusable output.
             if result.is_ok() && service.progress_tokens() > self.app_progress_tokens {
+                let previous=self.app_progress_tokens;
                 self.app_progress_tokens = service.progress_tokens();
                 self.app_progress_ns = now;
+                let progress=service.progress();
+                if progress.generated_tokens==0 && previous/32!=self.app_progress_tokens/32 {
+                    let mut panel=crate::ui::app_assistant::read(id);
+                    let mut message=[0u8;128];
+                    let mut writer=ProgressMessage{bytes:&mut message,length:0};
+                    use core::fmt::Write;
+                    let _=write!(&mut writer,"Preparing SDK context: {} / {} tokens. Code will stream into the editor.",progress.processed_tokens,progress.prompt_tokens);
+                    let length=writer.length;
+                    panel.reply(&message[..length]);
+                    crate::ui::app_assistant::write(id,panel);
+                    return true;
+                }
             }
             if crate::ui::app_assistant::generation_timed_out(
                 self.app_started_ns,
@@ -330,7 +445,7 @@ impl AiRuntime {
                 service.cancel();
                 let mut panel = crate::ui::app_assistant::read(id);
                 panel.generation = crate::ui::app_assistant::GenerationStatus::Failed;
-                panel.reply(b"Generation stopped after making no bounded progress. The model and microphone are available again; retry the request.");
+                panel.reply(b"Generation reached its progress or time limit. Partial source remains in the editor. The model is available for another request.");
                 crate::ui::app_assistant::write(id, panel);
                 if let Some(saved) = self.app_saved.take() {
                     service.restore_conversation(saved);
@@ -370,7 +485,7 @@ impl AiRuntime {
                 let mut panel = crate::ui::app_assistant::read(id);
                 if result.is_err() {
                     panel.generation = crate::ui::app_assistant::GenerationStatus::Failed;
-                    panel.reply(b"Local generation failed. Nothing was changed; please retry.");
+                    panel.reply(b"Local generation failed. Partial source remains in the editor; you can retry or cancel.");
                 } else {
                     let output = service.output();
                     let end = output
@@ -396,24 +511,15 @@ impl AiRuntime {
             }
             if result == Ok(true) {
                 let mut panel = crate::ui::app_assistant::read(id);
-                let source_generation = id == 2
-                    && crate::ui::app_assistant::editor_compile_intent::create_application(
-                        &panel.request[..panel.request_len],
-                    );
-                let progressed = if source_generation {
-                    panel.stage_generated_source(service.output())
-                } else {
-                    panel.reply(service.output());
-                    true
-                };
-                if source_generation {
-                    panel.reply(b"Generating complete C source for the editor...");
-                }
-                if progressed {
+                let update=panel.stream_model_output(id,service.output());
+                if update.progressed {
                     self.app_progress_ns = now;
                 }
                 crate::ui::app_assistant::write(id, panel);
-                return true;
+                // The editor consumer requests presentation only when it has
+                // committed a paced buffer. Hidden source bytes alone do not
+                // invalidate the desktop; final/error paths above still do.
+                return update.redraw;
             }
         }
         false
@@ -504,6 +610,7 @@ impl AiRuntime {
             self.intelligence_goal = None;
             self.intelligence_execution = None;
             self.intelligence_result = None;
+            self.software_execution = None;
             self.intelligence_summary = None;
             self.intelligence_checkpoint_pending = false;
             if let Some(service) = self.qwen.as_mut() {
@@ -525,9 +632,14 @@ impl AiRuntime {
     // DESC: Cancels active native generation while preserving its partial response.
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
+        let active_work=self.application_agent.is_some() || self.app_owner.is_some() || self.intelligence_goal.is_some();
         self.stop_application_agent();
-        if self.app_owner.is_some() { return false; }
-        if self.execution.cancel() {
+        if self.app_owner.is_some() {
+            self.cancel_app_turn();
+        }
+        self.interrupt_active_intelligence();
+        let broker_cancelled=self.execution.cancel();
+        if active_work || broker_cancelled {
             self.chat.generation_state = chat::GenerationState::Cancelled;
             return true;
         }
@@ -673,14 +785,26 @@ impl AiRuntime {
             return;
         };
         let owner = self.chat_owner;
+        for panel_id in 0..crate::ui::app_assistant::PANEL_SLOTS {
+            let mut panel=crate::ui::app_assistant::read(panel_id);
+            if panel.cancel_workflow(id) {
+                panel.reply(b"The previous goal was interrupted. Its partial source is preserved and will not be saved or compiled automatically.");
+                crate::ui::app_assistant::write(panel_id,panel);
+            }
+        }
         let mut executor = NativePlanExecutor {
             broker: &mut self.execution,
             active: &mut self.intelligence_execution,
             result: &mut self.intelligence_result,
+            software: &mut self.software_execution,
             origin: RequestOrigin::DesktopChat,
         };
         let _ = self.intelligence.interrupt(id, owner, &mut executor);
-        self.intelligence_summary = None;
+        self.intelligence_summary = self.intelligence.inspect(id,owner).map(|plan|intelligence::PlanSummary{
+            goal_id:id,state:plan.state,total:plan.task_count,
+            completed:plan.tasks.iter().flatten().filter(|task|task.state==intelligence::TaskState::Succeeded).count() as u8,
+            failed_task:plan.tasks.iter().flatten().find(|task|task.state==intelligence::TaskState::Failed).map(|task|task.id),
+        });
         self.intelligence_checkpoint_pending = true;
     }
     // ------------------------=
@@ -699,6 +823,9 @@ impl AiRuntime {
             Ok(Some(request)) => Some(request.command),
             Ok(None) => None,
             Err(_) => {
+                if let Some((token,_))=self.intelligence_execution {
+                    self.intelligence_result=Some((token,false));
+                }
                 if let Some(RequestOrigin::Application(id)) = origin {
                     let mut panel = crate::ui::app_assistant::read(id);
                     panel.pending = crate::ui::app_assistant::Action::None;
@@ -731,6 +858,9 @@ impl AiRuntime {
         if let Some((token, expected)) = self.intelligence_execution {
             if expected == command {
                 self.intelligence_result = Some((token, success));
+                if self.software_execution.as_ref().is_some_and(|execution|execution.owns(token)) {
+                    return;
+                }
             }
         }
         if matches!(origin, Some(RequestOrigin::Application(_))) {
@@ -881,6 +1011,7 @@ impl AiRuntime {
             other_native: None,
             active_native: chat::HERMES_MODEL_ID,
             app_owner: None,
+            app_workflow_goal: None,
             app_saved: None,
             application_agent: None,
             application_saved: None,
@@ -894,6 +1025,7 @@ impl AiRuntime {
             intelligence_goal: None,
             intelligence_execution: None,
             intelligence_result: None,
+            software_execution: None,
             intelligence_summary: None,
             intelligence_checkpoint_pending: false,
             instruction_mapping: mapping::ConfiguredMap::new(),
@@ -1199,12 +1331,19 @@ impl AiRuntime {
     fn poll_intelligence_runtime(&mut self)->bool{
         let Some(id)=self.intelligence_goal else{return false;};let owner=self.chat_owner;
         let origin=self.intelligence.inspect(id,owner).map(|plan|match plan.goal.origin{intelligence::RequestOrigin::Voice=>RequestOrigin::Voice,intelligence::RequestOrigin::Application(id)=>RequestOrigin::Application(id),intelligence::RequestOrigin::Text=>RequestOrigin::DesktopChat,intelligence::RequestOrigin::NativeService=>RequestOrigin::Model}).unwrap_or(RequestOrigin::DesktopChat);
-        let mut executor=NativePlanExecutor{broker:&mut self.execution,active:&mut self.intelligence_execution,result:&mut self.intelligence_result,origin};
-        let Ok(summary)=self.intelligence.poll(id,owner,&intelligence::InstalledCapabilities,&mut executor,crate::ui::performance::monotonic_ns().unwrap_or(0))else{self.intelligence_goal=None;self.chat.update_native_response(b"The goal stopped because its deadline or execution authority changed.");self.chat.generation_state=chat::GenerationState::Failed;return true;};
+        let mut executor=NativePlanExecutor{broker:&mut self.execution,active:&mut self.intelligence_execution,result:&mut self.intelligence_result,software:&mut self.software_execution,origin};
+        let Ok(summary)=self.intelligence.poll(id,owner,&intelligence::InstalledCapabilities,&mut executor,crate::ui::performance::monotonic_ns().unwrap_or(0))else{self.intelligence_goal=None;self.cancel_app_turn();self.stop_application_agent();self.chat.update_native_response(b"The goal stopped because its deadline or execution authority changed.");self.chat.generation_state=chat::GenerationState::Failed;return true;};
         if self.intelligence_summary==Some(summary){return false;}self.intelligence_summary=Some(summary);self.intelligence_checkpoint_pending=true;
         match summary.state{
-            intelligence::PlanState::Completed=>{self.chat.update_native_response(b"The goal completed. Every plan step returned native verification evidence.");self.chat.generation_state=chat::GenerationState::Complete;self.intelligence_goal=None;},
-            intelligence::PlanState::Failed=>{self.chat.update_native_response(b"The goal stopped at a failed or unavailable step. Completed verified steps were preserved.");self.chat.generation_state=chat::GenerationState::Failed;self.intelligence_goal=None;},
+            intelligence::PlanState::Completed=>{
+                let message=match self.software_execution.as_ref().filter(|execution|execution.goal==id) {
+                    Some(execution) if execution.interaction_active=>b"The application was saved, compiled and launched. Its AI interaction contract is ready; the interactive session continues separately.".as_slice(),
+                    Some(_)=>b"The application source and executable were saved, and the native process launched successfully.".as_slice(),
+                    None=>b"The goal completed. Every plan step returned native verification evidence.".as_slice(),
+                };
+                self.chat.update_native_response(message);self.chat.generation_state=chat::GenerationState::Complete;self.intelligence_goal=None;
+            },
+            intelligence::PlanState::Failed=>{self.cancel_app_turn();self.stop_application_agent();self.chat.update_native_response(b"The goal stopped at a failed or unavailable step. Completed verified steps were preserved.");self.chat.generation_state=chat::GenerationState::Failed;self.intelligence_goal=None;},
             intelligence::PlanState::AwaitingApproval=>self.chat.update_native_response(b"The plan is ready, but a sensitive step requires your explicit approval."),
             intelligence::PlanState::Executing=>self.chat.update_native_response(b"The plan is running through authorized native InfinityOS services."),
             _=>{},
@@ -1245,6 +1384,53 @@ impl AiRuntime {
     // ------------------=
     pub fn take_intelligence_checkpoint_request(&mut self)->Option<u64>{
         if !self.intelligence_checkpoint_pending{return None;}self.intelligence_checkpoint_pending=false;self.intelligence_summary.map(|summary|summary.goal_id).or(self.intelligence_goal)
+    }
+
+    // ------------------------=
+    // FUNC: software_execution_id
+    // DESC: Supplies the exact active goal identity for a trusted generated-source compilation lease.
+    // ------------------=
+    pub fn software_execution_id(&self)->Option<u64>{
+        self.software_execution.as_ref().filter(|execution|Some(execution.goal)==self.intelligence_goal)
+            .map(|execution|execution.goal)
+    }
+
+    // ------------------------=
+    // FUNC: software_goal_for_request
+    // DESC: Binds dispatch only to the exact originating goal command, rejecting an older dequeued command after replacement.
+    // ------------------=
+    pub fn software_goal_for_request(&self,input:&[u8])->Option<u64> {
+        let goal=self.software_execution_id()?;
+        let plan=self.intelligence.inspect(goal,self.chat_owner)?;
+        let request=control::ContextRequest::parse(plan.goal.objective.as_bytes())?;
+        (input==&request.bytes[..request.length]).then_some(goal)
+    }
+
+    // ------------------------=
+    // FUNC: generation_workflow_current
+    // DESC: Validates an immutable generation lease against the authenticated active software goal, never a newly captured ambient goal.
+    // ------------------=
+    pub fn generation_workflow_current(&self,goal:Option<u64>)->bool {
+        goal.is_none() || goal==self.software_execution_id()
+            && self.software_execution.as_ref().is_some_and(|execution|execution.owner==self.chat_owner)
+    }
+
+    // ------------------------=
+    // FUNC: record_software_event
+    // DESC: Records actual owner-bound storage, compiler, process, and interaction receipts without accepting generated claims.
+    // ------------------=
+    pub fn record_software_event(&mut self,goal:u64,owner:[u8;16],event:intelligence::software::Event)->bool{
+        let accepted=self.software_execution.as_mut().is_some_and(|execution|execution.record(goal,owner,event));
+        if accepted {self.intelligence_checkpoint_pending=true;}
+        accepted
+    }
+
+    // ------------------------=
+    // FUNC: software_execution
+    // DESC: Exposes verified workflow and ongoing interaction evidence to owner-scoped native observers.
+    // ------------------=
+    pub fn software_execution(&self,owner:[u8;16])->Option<&intelligence::software::Execution>{
+        self.software_execution.as_ref().filter(|execution|execution.owner==owner)
     }
 
     // ------------------------=

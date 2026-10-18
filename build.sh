@@ -14,18 +14,21 @@ test "${TMPDIR:-}" = "$temporary_dir"
 
 target=all
 package_only=false
-if [ "${1:-}" = "--package-only" ]; then
-    package_only=true
-    shift
-fi
-if [ "${1:-}" = "--target" ]; then
-    target=${2:-}
-    [ "$#" -eq 2 ] || { echo "usage: ./build.sh [--target aarch64|x86_64|all]" >&2; exit 2; }
-elif [ "$#" -ne 0 ]; then
-    echo "usage: ./build.sh [--target aarch64|x86_64|all]" >&2
+machine=native
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --package-only) package_only=true; shift ;;
+        --target) [ "$#" -ge 2 ] || exit 2; target=$2; shift 2 ;;
+        --machine) [ "$#" -ge 2 ] || exit 2; machine=$2; shift 2 ;;
+        *) echo "usage: ./build.sh [--package-only] [--target aarch64|x86_64|all] [--machine native|qemu]" >&2; exit 2 ;;
+    esac
+done
+case "$target" in aarch64|x86_64|all) ;; *) echo "unsupported build target: $target" >&2; exit 2 ;; esac
+case "$machine" in native|qemu) ;; *) echo "unsupported machine: $machine" >&2; exit 2 ;; esac
+if [ "$machine" = qemu ] && { [ "$target" != aarch64 ] || [ "$package_only" != true ]; }; then
+    echo "QEMU model media requires --package-only --target aarch64 --machine qemu" >&2
     exit 2
 fi
-case "$target" in aarch64|x86_64|all) ;; *) echo "unsupported build target: $target" >&2; exit 2 ;; esac
 
 # Fast test-ISO handoff after a build: retain native dependency products and
 # defer the broad regression suite, never the publication/parity gates.
@@ -36,6 +39,14 @@ if [ "$package_only" = true ]; then
         exit 1
     }
     export INFINITY_ISO_BUILD_AUTHORITY=build.sh
+    if [ "$machine" = qemu ]; then
+        python3 tools/kernel-layout-test.py
+        sh tools/build-hermes.sh --target "$target" --machine qemu
+        (cd "$project_root/build/test-media" && shasum -a 256 InfinityOS-aarch64-qemu-models.bootmedia > InfinityOS-aarch64-qemu-models.bootmedia.sha256)
+        (cd "$project_root/build/test-media" && shasum -a 256 -c InfinityOS-aarch64-qemu-models.bootmedia.sha256)
+        echo "Verified ARM QEMU model test media: $project_root/build/test-media/InfinityOS-aarch64-qemu-models.bootmedia (canonical ISOs unchanged; broad regressions deferred)"
+        exit 0
+    fi
     sh tools/build-hermes.sh --target "$target"
     (cd "$output_dir" && shasum -a 256 "InfinityOS-$target.iso" > "InfinityOS-$target.iso.sha256")
     (cd "$output_dir" && shasum -a 256 -c "InfinityOS-$target.iso.sha256")
@@ -113,6 +124,12 @@ make aarch64-bootstrap
 make system-sound-test system-sound-install-parity-test authentication-motion-test installer-capacity-test installer-entropy-test editor-window-test active-painter-test video-driver-test
 make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
+python3 tools/native-compiler-parity-test.py
+sh tools/native-c-production-test.sh
+sh tools/application-interaction-test.sh
+make editor-assistant-test
+CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin application-interaction-model-test -- --preview-only
+python3 tools/native-application-case-test.py
 make crash-screen-test component-manifest-test settings-color-test installer-template-test milestone-7x-test ai-test object-test fabric-test network-test network-wire-test http-transport-test https-service-test native-https-test native-https-arm-test native-https-rsa-test native-tls-test milestone-9-test milestone-9-service-test performance-test resource-policy-test
 tools/ui-install-parity-test.sh build/infinity-x86_64.img build/infinity-aarch64.img build/infinity-aarch64-qemu.img build/x86_64/installed-esp.img build/aarch64/installed-esp.img
 make input-regression-test app-launcher-interaction-test
@@ -215,6 +232,15 @@ make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
 python3 tools/native-compiler-parity-test.py
 python3 tools/kernel-layout-test.py
+# Bounded native-generation regressions run real executable entrypoints, not
+# empty Rust test harnesses. Preview-only returns before loading model weights.
+sh tools/native-c-production-test.sh
+sh tools/application-interaction-test.sh
+make editor-assistant-test
+CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release \
+    --manifest-path tools/behavior-harness/Cargo.toml \
+    --bin application-interaction-model-test -- --preview-only
+python3 tools/native-application-case-test.py
 make crash-screen-test
 make component-manifest-test
 make settings-color-test

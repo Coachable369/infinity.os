@@ -13,7 +13,9 @@ def main():
     arch = sys.argv[2] if len(sys.argv) > 2 else "aarch64"
     assert arch in ("aarch64", "x86_64")
     boot = "BOOTAA64.EFI" if arch == "aarch64" else "BOOTX64.EFI"
-    installed = (root / f"build/{arch}/installed-kernel.elf").read_bytes()
+    installed_path = Path(sys.argv[3]).resolve() if len(sys.argv) > 3 else root / f"build/{arch}/installed-kernel.elf"
+    installed_path.relative_to(root / "build")
+    installed = installed_path.read_bytes()
     assert installed[:6] == b"\x7fELF\x02\x01" and int.from_bytes(installed[18:20], "little") == (183 if arch == "aarch64" else 62)
     # Check the complete immutable Whisper model bytes, not source/log text or symbols.
     model = (root / "model-cache/whisper-tiny.en.bin").read_bytes()

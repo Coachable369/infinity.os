@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "action": "expect",
+      "within_seconds": 30,
+      "save_as": "empty_board",
+      "state": {
+        "board": {
+          "ids": [
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":0,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":1,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":2,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":0,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":1,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":2,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":0,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":1,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":2,"bounds":[20,64,192,192]}}
+          ],
+          "counts": {"":9,"X":0,"O":0}
+        },
+        "contract": {"agent_turn":{"eq":0},"terminal":{"eq":0},"choice_count":{"eq":9}}
+      }
+    },
+    {"action":"click","id":{"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":0,"bounds":[20,64,192,192]}}},
+    {
+      "action":"expect",
+      "within_seconds":180,
+      "state": {
+        "board": {
+          "ids":[{"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":0,"bounds":[20,64,192,192]}}],
+          "cells":["X"]
+        },
+        "contract":{"applied":{"after":"empty_board"},"agent_turn":{"eq":0},"terminal":{"eq":0},"revision":{"after":"empty_board"}}
+      }
+    },
+    {
+      "action":"expect",
+      "save_as":"first_exchange",
+      "state": {
+        "board": {
+          "ids": [
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":0,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":1,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":2,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":0,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":1,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":2,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":0,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":1,"bounds":[20,64,192,192]}},
+            {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":2,"bounds":[20,64,192,192]}}
+          ],
+          "counts":{"":7,"X":1,"O":1}
+        },
+        "contract":{"agent_turn":{"eq":0},"terminal":{"eq":0},"choice_count":{"eq":7}}
+      }
+    },
+    {"action":"click","id":{"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":0,"bounds":[20,64,192,192]}}},
+    {
+      "action":"expect_unchanged",
+      "from":"first_exchange",
+      "for_seconds":3,
+      "ui_ids": [
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":0,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":1,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":0,"column":2,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":0,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":1,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":1,"column":2,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":0,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":1,"bounds":[20,64,192,192]}},
+        {"kind":3,"grid":{"rows":3,"columns":3,"row":2,"column":2,"bounds":[20,64,192,192]}}
+      ],
+      "contract_fields":["revision","applied","delivered","agent_turn","terminal","choice_count"]
+    }
+  ]
+}

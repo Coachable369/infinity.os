@@ -37,6 +37,10 @@ impl AiRuntime {
     pub fn stop_application_agent(&mut self) {
         if let Some(agent)=self.application_agent.take() {
             let c=agent.context;
+            if self.software_execution(c.owner).is_some_and(|execution|execution.context==c.instance && execution.interaction_revision==0) {
+                self.record_application_receipt(c,super::intelligence::software::Event::Failed{code:30});
+            }
+            self.record_application_receipt(c,super::intelligence::software::Event::InteractionStopped{context:c.instance});
             let _=application_host::with_registry(|r|r.grant(c.instance,c.owner,c.session,false));
             if let Some(token)=agent.approval {
                 let mut panel=crate::ui::app_assistant::read(1);
@@ -46,6 +50,16 @@ impl AiRuntime {
                 }
             }
             if agent.inference {self.release_application_inference();}
+        }
+    }
+    // ------------------------=
+    // FUNC: record_application_receipt
+    // DESC: Connects real granted application state and action receipts to the exact generating goal without creating execution authority.
+    // ------------------=
+    fn record_application_receipt(&mut self,context:Context,event:super::intelligence::software::Event) {
+        if let Some(goal)=self.software_execution(context.owner)
+            .filter(|execution|execution.context==context.instance).map(|execution|execution.goal) {
+            self.record_software_event(goal,context.owner,event);
         }
     }
     // ------------------------=
@@ -88,6 +102,9 @@ impl AiRuntime {
         }
         let observation=application_host::with_registry(|r|r.observe(c.instance,c.owner,c.session));
         let Ok(state)=observation else{self.application_agent=Some(agent);self.stop_application_agent();return false;};
+        if state.revision>0 && state.choices.iter().any(Option::is_some) {
+            self.record_application_receipt(c,super::intelligence::software::Event::InteractionReady{context:c.instance,revision:state.revision});
+        }
         if let Some(token)=agent.approval {
             let review=application_host::with_registry(|r|r.review(c.instance,c.owner,c.session,now));
             if !matches!(review,Ok(Some(request)) if request.token==token) {
@@ -105,6 +122,10 @@ impl AiRuntime {
             if let Ok(Some(result))=receipt {
                 if result.token==token {
                     agent.token=None;
+                    if result.outcome==Outcome::Applied {
+                        self.record_application_receipt(c,super::intelligence::software::Event::InteractionApplied{
+                            context:c.instance,revision:result.revision,token:result.token});
+                    }
                     if result.outcome!=Outcome::Applied || !agent.continuous || agent.remaining==0 {
                         status(if result.outcome==Outcome::Applied {b"App confirmed the action and published updated state."}else{b"App action did not complete reliably. AI control paused; no automatic retry."});
                         self.application_agent=Some(agent);self.stop_application_agent();return true;

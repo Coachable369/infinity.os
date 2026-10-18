@@ -23,6 +23,8 @@ pub static CONSOLE:&[u8]=include_bytes!("../../sdk/c/include/infinity/console.h"
 pub static SYSCALL:&[u8]=include_bytes!("../../sdk/c/include/infinity/syscall.h");
 pub static UIKIT:&[u8]=include_bytes!("../../sdk/c/include/infinity/uikit.h");
 pub static INTERACTION: &[u8] = include_bytes!("../../sdk/c/include/infinity/interaction.h");
+pub static APP: &[u8] = include_bytes!("../../sdk/c/include/infinity/app.h");
+pub static APP_API: &[u8] = include_bytes!("../../sdk/c/include/infinity/app_api.h");
 
 pub struct Task {
     process: Option<Process<cpu::BoundContext>>,

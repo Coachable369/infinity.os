@@ -21,12 +21,21 @@ static READY: AtomicBool = AtomicBool::new(false);
 static RECOGNITION_ERROR: AtomicUsize = AtomicUsize::new(0);
 static HOLD_RECOGNITION: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
+static OUTPUT_REQUEST: AtomicUsize = AtomicUsize::new(0);
+static OUTPUT_STOPS: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_FRAMES: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_SEQUENCE: AtomicUsize = AtomicUsize::new(1);
 static FIRST_PLAYBACK_NS: AtomicUsize = AtomicUsize::new(0);
 static NOW: AtomicUsize = AtomicUsize::new(1);
 static TURNS: AtomicUsize = AtomicUsize::new(0);
 static STREAMING: AtomicBool = AtomicBool::new(false);
+static GENERATION_FAILURE: AtomicUsize = AtomicUsize::new(0);
+static HOLD_OUTPUT_STOP: AtomicBool = AtomicBool::new(false);
+static OUTPUT_SUBMIT_FAILURE: AtomicBool = AtomicBool::new(false);
+static OUTPUT_SUBMIT_REJECTIONS: AtomicUsize = AtomicUsize::new(0);
+static CANCEL_CALLS: AtomicUsize = AtomicUsize::new(0);
+static BACKGROUND_GOAL: AtomicBool = AtomicBool::new(false);
+static APP_GENERATING: AtomicBool = AtomicBool::new(false);
 static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
 static LONG_REPLY: AtomicBool = AtomicBool::new(false);
 const SHORT_RESPONSE: &[u8] = b"Hi. This is the next phrase of the response.";
@@ -295,9 +304,14 @@ impl Ai {
     fn bind_chat_owner(&mut self,user:[u8;16]){assert_eq!(user,[2;16]);}
     // ------------------------=
     // FUNC: cancel_chat
-    // DESC: Supplies the cancellation seam.
+    // DESC: Models observable cancellation of background work as well as active conversational inference.
     // ------------------=
-    fn cancel_chat(&mut self){}
+    fn cancel_chat(&mut self){
+        CANCEL_CALLS.fetch_add(1,Ordering::SeqCst);
+        BACKGROUND_GOAL.store(false,Ordering::SeqCst);
+        APP_GENERATING.store(false,Ordering::SeqCst);
+        STREAMING.store(false,Ordering::SeqCst);
+    }
     // ------------------------=
     // FUNC: submit_chat
     // DESC: Rejects unused generation in lifecycle-only tests.
@@ -305,6 +319,7 @@ impl Ai {
     fn submit_chat(&mut self)->bool{
         if !MODEL_READY.load(Ordering::SeqCst) || !CHAT_READY.load(Ordering::SeqCst) {return false;}
         PROMPTS.lock().unwrap().push(std::mem::take(&mut *COMPOSER.lock().unwrap()));
+        GENERATION_FAILURE.store(0,Ordering::SeqCst);
         TURNS.fetch_add(1,Ordering::SeqCst);INPUT_LENGTH.store(0,Ordering::SeqCst);true
     }
     // ------------------------=
@@ -319,7 +334,12 @@ impl Ai {
 // ------------------=
 fn with_ai_runtime<T>(f:impl FnOnce(&mut Ai)->T)->T{
     let input=COMPOSER.lock().unwrap().clone();
-    f(&mut Ai{chat:chat::Chat{input,generation_state:if STREAMING.load(Ordering::SeqCst){chat::GenerationState::Running}else{chat::GenerationState::Complete}}})
+    let generation_state=match GENERATION_FAILURE.load(Ordering::SeqCst) {
+        1=>chat::GenerationState::Failed, 2=>chat::GenerationState::Cancelled,
+        3=>chat::GenerationState::ContextFull,
+        _=>if STREAMING.load(Ordering::SeqCst){chat::GenerationState::Running}else{chat::GenerationState::Complete},
+    };
+    f(&mut Ai{chat:chat::Chat{input,generation_state}})
 }
 mod qwen {pub mod workers {
     // ------------------------=
@@ -409,7 +429,7 @@ mod voice_output {
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
     #[derive(PartialEq)]
-    pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled,Buffered}
+    pub enum OutputState {Idle,Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled,Buffered}
     pub struct Status {pub state:OutputState,pub first_playback_ns:u64}
     pub struct PlaybackProgress {pub sequence:usize,pub frames:usize,pub total_frames:usize,pub content_position:usize,pub content_boundary:bool}
     // ------------------------=
@@ -426,22 +446,45 @@ mod voice_output {
     // FUNC: status
     // DESC: Models an acknowledged playback stop.
     // ------------------=
-    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,4=>OutputState::Buffered,_=>OutputState::Cancelled},first_playback_ns:crate::FIRST_PLAYBACK_NS.load(crate::Ordering::SeqCst) as u64}}
+    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,4=>OutputState::Buffered,5=>OutputState::Failed,_=>OutputState::Cancelled},first_playback_ns:crate::FIRST_PLAYBACK_NS.load(crate::Ordering::SeqCst) as u64}}
     // ------------------------=
     // FUNC: stop
     // DESC: Supplies the audio-output cancellation seam.
     // ------------------=
-    pub fn stop(_:SecurityIdentity){crate::OUTPUT.store(0,crate::Ordering::SeqCst);}
+    pub fn stop(_:SecurityIdentity){
+        crate::OUTPUT_STOPS.fetch_add(1,crate::Ordering::SeqCst);
+        if !crate::HOLD_OUTPUT_STOP.load(crate::Ordering::SeqCst){crate::OUTPUT.store(0,crate::Ordering::SeqCst);}
+    }
+    // ------------------------=
+    // FUNC: request_id
+    // DESC: Exposes the accepted fixture job independently of its shared session identity.
+    // ------------------=
+    pub fn request_id(owner:SecurityIdentity)->Option<u64>{
+        let request=crate::OUTPUT_REQUEST.load(crate::Ordering::SeqCst) as u64;
+        (owner.0==[1;16] && request!=0).then_some(request)
+    }
+    // ------------------------=
+    // FUNC: stop_request
+    // DESC: Counts a stop side effect only for an exact current request receipt.
+    // ------------------=
+    pub fn stop_request(owner:SecurityIdentity,request:u64)->bool{
+        if request!=0 && request_id(owner)==Some(request) {stop(owner);true} else {false}
+    }
     // ------------------------=
     // FUNC: submit
     // DESC: Rejects unused synthesis jobs during lifecycle testing.
     // ------------------=
     pub fn submit(_:SecurityIdentity,_:u64,text:&[u8])->Result<(),()>{
         if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
+        if crate::OUTPUT_SUBMIT_FAILURE.load(crate::Ordering::SeqCst) {
+            crate::OUTPUT_SUBMIT_REJECTIONS.fetch_add(1,crate::Ordering::SeqCst);
+            return Err(());
+        }
         if crate::OUTPUT.load(crate::Ordering::SeqCst)==3
             || (crate::OUTPUT.load(crate::Ordering::SeqCst)==1 && !can_prefetch()){return Err(());}
         assert!(text.len()<=160);
         crate::PHRASES.lock().unwrap().push(text.to_vec());
+        crate::OUTPUT_REQUEST.fetch_add(1,crate::Ordering::SeqCst);
         crate::OUTPUT.store(3,crate::Ordering::SeqCst);Ok(())
     }
     // ------------------------=
@@ -726,7 +769,185 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     wake_handoff_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
+    workflow_narration_and_failure_tests(owner);
+    audio_failure_workflow_boundary_tests(owner);
+    terminal_workflow_speech_isolation_tests(owner);
     recognition_failure_recovery_tests(owner);
+}
+
+// ------------------------=
+// FUNC: terminal_workflow_speech_isolation_tests
+// DESC: Replays terminal chat admission and stale conversational recovery after a newer workflow job is accepted, preserving audio and microphone reuse.
+// ------------------=
+fn terminal_workflow_speech_isolation_tests(owner:runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    for failure in 1..=3 {
+        assert!(conversation::start(owner));
+        GENERATION_FAILURE.store(failure,Ordering::SeqCst);
+        conversation::speak_visible_reply(owner,1);
+        assert_eq!(conversation::state().0,State::Listening);
+        voice_output::submit(owner,1,b"Workflow ended.").unwrap();
+        let stops=OUTPUT_STOPS.load(Ordering::SeqCst);
+        conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        assert_eq!(OUTPUT.load(Ordering::SeqCst),3);
+        assert_eq!(OUTPUT_STOPS.load(Ordering::SeqCst),stops);
+        // Explicit user stop remains session-wide even for foreign-producer speech.
+        conversation::stop(owner);conversation::poll();
+        assert_eq!(OUTPUT.load(Ordering::SeqCst),0);
+        assert_eq!(OUTPUT_STOPS.load(Ordering::SeqCst),stops+1);
+        assert_eq!(conversation::state().0,State::Off);
+        GENERATION_FAILURE.store(0,Ordering::SeqCst);
+    }
+    for had_reply in [false,true] {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity begin an application");
+        if had_reply {
+            conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
+            OUTPUT.store(2,Ordering::SeqCst);
+        }
+        voice_output::submit(owner,1,b"Generation cancelled.").unwrap();
+        let request=voice_output::request_id(owner);
+        let stops=OUTPUT_STOPS.load(Ordering::SeqCst);
+        let cancelled=CANCEL_CALLS.load(Ordering::SeqCst);
+        GENERATION_FAILURE.store(1,Ordering::SeqCst);
+        conversation::poll();conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        assert_eq!(OUTPUT.load(Ordering::SeqCst),3);
+        assert_eq!(voice_output::request_id(owner),request);
+        assert_eq!(OUTPUT_STOPS.load(Ordering::SeqCst),stops);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancelled);
+        OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        conversation::stop(owner);conversation::poll();
+        GENERATION_FAILURE.store(0,Ordering::SeqCst);
+    }
+}
+
+// ------------------------=
+// FUNC: audio_failure_workflow_boundary_tests
+// DESC: Keeps completed acknowledgment audio failures from cancelling background work while explicit stop and running-reply recovery still release their owned work.
+// ------------------=
+fn audio_failure_workflow_boundary_tests(owner:runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    for failure in [0,5,6] {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity create an application");
+        BACKGROUND_GOAL.store(true,Ordering::SeqCst);
+        APP_GENERATING.store(true,Ordering::SeqCst);
+        let cancelled=CANCEL_CALLS.load(Ordering::SeqCst);
+        let rejected=OUTPUT_SUBMIT_REJECTIONS.load(Ordering::SeqCst);
+        if failure==6 {
+            OUTPUT_SUBMIT_FAILURE.store(true,Ordering::SeqCst);
+        } else {
+            conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
+            OUTPUT.store(failure,Ordering::SeqCst);
+        }
+        conversation::poll();conversation::poll();
+        OUTPUT_SUBMIT_FAILURE.store(false,Ordering::SeqCst);
+        assert_eq!(conversation::state().0,State::Listening);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancelled);
+        assert_eq!(OUTPUT_SUBMIT_REJECTIONS.load(Ordering::SeqCst),rejected+usize::from(failure==6));
+        assert!(BACKGROUND_GOAL.load(Ordering::SeqCst));
+        assert!(APP_GENERATING.load(Ordering::SeqCst));
+        assert!(!conversation::wake_armed());
+        let turns=TURNS.load(Ordering::SeqCst);
+        recognize_voice(b"unaddressed follow-up");
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        conversation::stop(owner);conversation::poll();
+        BACKGROUND_GOAL.store(false,Ordering::SeqCst);APP_GENERATING.store(false,Ordering::SeqCst);
+    }
+    for speaking in [false,true] {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity begin a workflow");
+        if speaking {conversation::poll();assert_eq!(conversation::state().0,State::Speaking);}
+        BACKGROUND_GOAL.store(true,Ordering::SeqCst);APP_GENERATING.store(true,Ordering::SeqCst);
+        let cancelled=CANCEL_CALLS.load(Ordering::SeqCst);
+        conversation::stop(owner);conversation::poll();
+        assert_eq!(conversation::state().0,State::Off);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancelled+1);
+        assert!(!BACKGROUND_GOAL.load(Ordering::SeqCst));assert!(!APP_GENERATING.load(Ordering::SeqCst));
+    }
+    assert!(conversation::start(owner));
+    recognize_voice(b"Infinity describe the current task");
+    STREAMING.store(true,Ordering::SeqCst);LONG_REPLY.store(true,Ordering::SeqCst);
+    OUTPUT_SUBMIT_FAILURE.store(true,Ordering::SeqCst);
+    let cancelled=CANCEL_CALLS.load(Ordering::SeqCst);
+    let rejected=OUTPUT_SUBMIT_REJECTIONS.load(Ordering::SeqCst);
+    conversation::poll();conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancelled+1);
+    assert_eq!(OUTPUT_SUBMIT_REJECTIONS.load(Ordering::SeqCst),rejected+1);
+    assert!(!STREAMING.load(Ordering::SeqCst));
+    OUTPUT_SUBMIT_FAILURE.store(false,Ordering::SeqCst);LONG_REPLY.store(false,Ordering::SeqCst);
+    conversation::stop(owner);conversation::poll();
+}
+
+// ------------------------=
+// FUNC: workflow_narration_and_failure_tests
+// DESC: Exercises speech admission contention, addressed narration interruption, and safe microphone recovery after unsuccessful model turns.
+// ------------------=
+fn workflow_narration_and_failure_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    let turns=TURNS.load(Ordering::SeqCst);
+    OUTPUT.store(3,Ordering::SeqCst);
+    HOLD_OUTPUT_STOP.store(true,Ordering::SeqCst);
+    recognize_voice(b"unaddressed background words");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    assert_eq!(conversation::state().0,State::Listening);
+    recognize_voice(b"Infinity cancel that generation");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    let phrases=PHRASES.lock().unwrap().len();
+    for _ in 0..8 {
+        conversation::poll();
+        assert_eq!(conversation::state().0,State::Thinking);
+        assert_eq!(PHRASES.lock().unwrap().len(),phrases);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    }
+    HOLD_OUTPUT_STOP.store(false,Ordering::SeqCst);
+    OUTPUT.store(0,Ordering::SeqCst);
+    complete_voice_reply();
+    conversation::stop(owner);conversation::poll();
+
+    for failure in 1..=3 {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity create an application");
+        GENERATION_FAILURE.store(failure,Ordering::SeqCst);
+        conversation::poll();conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        assert!(!conversation::wake_armed());
+        let turns=TURNS.load(Ordering::SeqCst);
+        recognize_voice(b"unaddressed follow-up");
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        recognize_voice(b"Infinity open settings");
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+        complete_voice_reply();
+        conversation::stop(owner);conversation::poll();
+    }
+    for terminal_output in [0,5] {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity report progress");
+        conversation::poll();
+        assert_eq!(conversation::state().0,State::Speaking);
+        OUTPUT.store(terminal_output,Ordering::SeqCst);
+        conversation::poll();conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        conversation::stop(owner);conversation::poll();
+    }
+    // Explicit mute and lock remain terminal even when a turn has failed.
+    for revoke in [false,true] {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity begin a workflow");
+        GENERATION_FAILURE.store(1,Ordering::SeqCst);
+        if revoke {ACTIVE.store(false,Ordering::SeqCst);} else {conversation::stop(owner);}
+        conversation::poll();conversation::poll();
+        assert_eq!(conversation::state().0,State::Off);
+        ACTIVE.store(true,Ordering::SeqCst);
+        GENERATION_FAILURE.store(0,Ordering::SeqCst);
+    }
 }
 
 // ------------------------=

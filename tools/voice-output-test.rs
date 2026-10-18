@@ -290,6 +290,7 @@ unsafe extern "C" fn infinity_kokoro_native_diagnostics(out: *mut usize) {
 fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     use voice_output::{OutputState as S, *};
     let owner = runtime::execution::SecurityIdentity([1; 16]);
+    assert!(!owned_by(owner));
     // Real warmup and output state machines overlap on separate workers. A
     // busy reply stays queued with its buffers unavailable until warmup exits.
     NATIVE_BUSY.store(true,Ordering::Release);
@@ -303,6 +304,8 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     let thread=std::thread::spawn(move||unsafe {prepare();});
     while !PREPARE_ENTERED.load(Ordering::Acquire) {std::thread::yield_now();}
     submit(owner,1,b"Typed reply during preparation.").unwrap();
+    assert!(owned_by(owner));
+    assert!(!owned_by(runtime::execution::SecurityIdentity([2;16])));
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     assert_eq!(status().state,S::Queued);
     assert_eq!(status().error,0);
@@ -401,6 +404,7 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     poll(); assert_eq!(status().state, S::Cancelled);
     assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
     REVOKED.store(false, Ordering::SeqCst);
+    exact_output_request_cancellation(owner);
     // Buffer every span into one generation and start hardware only after the
     // final span is resident, eliminating phrase-boundary silence.
     HOLD.store(true, Ordering::SeqCst);
@@ -765,4 +769,33 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
         assert!(unsafe { (&*(&raw const TASK)).is_none() });
     }
     assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),calls);
+}
+
+// ------------------------=
+// FUNC: exact_output_request_cancellation
+// DESC: Executes real speech job receipts, proving stale or foreign cancellation cannot stop a newer same-session job while current and explicit stops still work.
+// ------------------=
+fn exact_output_request_cancellation(owner:runtime::execution::SecurityIdentity) {
+    use voice_output::{OutputState as S,*};
+    submit(owner,1,b"Conversational acknowledgment.").unwrap();
+    let old=request_id(owner).unwrap();
+    assert!(stop_request(owner,old));
+    unsafe {(&mut *(&raw mut TASK)).take().unwrap()();}
+    poll();assert_eq!(status().state,S::Cancelled);
+    let played=PLAYED.load(Ordering::SeqCst);
+    submit(owner,1,b"Workflow cancelled.").unwrap();
+    let current=request_id(owner).unwrap();
+    assert_ne!(current,old);
+    assert!(!stop_request(owner,old));
+    assert!(!stop_request(owner,0));
+    assert!(!stop_request(runtime::execution::SecurityIdentity([2;16]),current));
+    unsafe {(&mut *(&raw mut TASK)).take().unwrap()();}
+    assert_eq!(status().state,S::Ready);
+    poll();poll();assert_eq!(status().state,S::Complete);
+    assert!(status().frames>0);assert_eq!(status().error,0);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1);
+    submit(owner,1,b"Explicit stop still wins.").unwrap();
+    assert!(stop(owner));
+    unsafe {(&mut *(&raw mut TASK)).take().unwrap()();}
+    poll();assert_eq!(status().state,S::Cancelled);
 }

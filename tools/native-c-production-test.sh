@@ -19,4 +19,8 @@ rustc --edition=2021 -A warnings tools/native-workflow-voice-test.rs \
     -o "$out/workflow-voice-test"
 "$out/workflow-voice-test"
 
+rustc --edition=2021 -A warnings tools/generation-stream-test.rs \
+    -o "$out/generation-stream-test"
+"$out/generation-stream-test"
+
 sh tools/native-c-probe/build-hello.sh

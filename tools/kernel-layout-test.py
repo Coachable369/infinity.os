@@ -48,6 +48,30 @@ class LayoutTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate(image([(start, size)]))
 
+    # ------------------------=
+    # FUNC: test_qemu_map_is_explicit
+    # DESC: Allows QEMU RAM through the VirtualBox device hole only for an explicitly selected QEMU kernel.
+    # ------------------=
+    def test_qemu_map_is_explicit(self):
+        header = image([(0x50000000, 0xA0000000), (0x100000000, 0x60000000)])
+        self.assertEqual(validate(header, "qemu"),
+                         [(0x50000000, 0xF0000000), (0x100000000, 0x160000000)])
+        with self.assertRaises(ValueError):
+            validate(header)
+
+    # ------------------------=
+    # FUNC: test_qemu_rejects_wrong_base_or_ram_extent
+    # DESC: Rejects canonical VirtualBox kernels, out-of-RAM segments and unrelated ELF targets in QEMU media.
+    # ------------------=
+    def test_qemu_rejects_wrong_base_or_ram_extent(self):
+        for ranges in ([(0x10000000, 4096)], [(0x50000000, 4096), (0x33FFFF000, 4097)]):
+            with self.assertRaises(ValueError):
+                validate(image(ranges), "qemu")
+        wrong_architecture = image([(0x50000000, 4096)])
+        struct.pack_into("<H", wrong_architecture, 18, 62)
+        with self.assertRaises(ValueError):
+            validate(wrong_architecture, "qemu")
+
 
 if __name__ == "__main__":
     unittest.main()

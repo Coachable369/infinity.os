@@ -13,6 +13,7 @@ pub const SYNTHESIS_SECONDS: u64 = 90;
 pub const OUTPUT_LEASE_SECONDS: u64 = SYNTHESIS_SECONDS + 40;
 static STATE: AtomicUsize = AtomicUsize::new(0);
 static CANCEL: AtomicBool = AtomicBool::new(false);
+static REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 static RESPONSE_QUEUED_NS: AtomicU64 = AtomicU64::new(0);
 static SPAN_QUEUED_NS: AtomicU64 = AtomicU64::new(0);
 static QUEUE_WAIT_NS: AtomicU64 = AtomicU64::new(0);
@@ -208,6 +209,7 @@ fn submit_mode(owner: SecurityIdentity, capability: u64, text: &[u8], content_st
         CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
         (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
         FRAMES = 0; PEAK = 0; ERROR = 0; ELAPSED = 0; CANCEL.store(false, Ordering::Release);
+        REQUEST_ID.store(REQUEST_ID.load(Ordering::Relaxed).wrapping_add(1).max(1), Ordering::Release);
         SPAN_QUEUED_NS.store(now, Ordering::Release);
         QUEUE_WAIT_NS.store(0, Ordering::Release);
         STATE.store(1, Ordering::Release);
@@ -296,6 +298,20 @@ pub fn stop(owner: SecurityIdentity) -> bool {
     true
 }
 // ------------------------=
+// FUNC: request_id
+// DESC: Identifies the accepted speech job for its session so independent producers cannot cancel each other's later work.
+// ------------------=
+pub fn request_id(owner: SecurityIdentity) -> Option<u64> {
+    owned_by(owner).then(|| REQUEST_ID.load(Ordering::Acquire)).filter(|id| *id != 0)
+}
+// ------------------------=
+// FUNC: stop_request
+// DESC: Cancels an exact accepted job on the BSP; an obsolete producer receipt never stops a newer same-session announcement.
+// ------------------=
+pub fn stop_request(owner: SecurityIdentity, request: u64) -> bool {
+    request != 0 && request_id(owner) == Some(request) && stop(owner)
+}
+// ------------------------=
 // FUNC: status
 // DESC: Provides non-private diagnostics, reading worker metrics only after completion publication.
 // ------------------=
@@ -308,6 +324,13 @@ pub fn status() -> OutputStatus {
         queue_wait_ns: QUEUE_WAIT_NS.load(Ordering::Acquire),
         first_playback_ns: FIRST_PLAYBACK_NS.load(Ordering::Acquire),
         error: if (3..=8).contains(&state) { unsafe { ERROR } } else { 0 } }
+}
+// ------------------------=
+// FUNC: owned_by
+// DESC: Reports whether a non-idle speech job belongs to the supplied session without exposing its identity.
+// ------------------=
+pub fn owned_by(owner: SecurityIdentity) -> bool {
+    STATE.load(Ordering::Acquire) != 0 && unsafe { OWNER == owner }
 }
 // ------------------------=
 // FUNC: retire

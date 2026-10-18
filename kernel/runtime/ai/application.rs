@@ -215,6 +215,13 @@ impl Registry {
         Ok(entry.snapshot)
     }
     // ------------------------=
+    // FUNC: diagnostic_snapshot
+    // DESC: Copies an exact trusted process's published contract for read-only guest diagnostics without granting agent execution.
+    // ------------------=
+    pub(super) fn diagnostic_snapshot(&mut self, id: u64, owner: [u8;16], session: [u8;16]) -> Result<Snapshot, Error> {
+        Ok(self.instance(id,owner,session)?.snapshot)
+    }
+    // ------------------------=
     // FUNC: propose
     // DESC: Validates a model-selected legal choice against current state and explicit approval.
     // ------------------=
