@@ -133,17 +133,38 @@ fn repair_boundaries() {
 }
 
 // ------------------------=
+// FUNC: repair_compiler
+// DESC: Keeps SDK headers isolated from host libc while explicitly retaining the selected compiler's builtin C headers.
+// ------------------=
+fn repair_compiler(compiler:&str, builtin_include:&std::path::Path)->std::process::Command {
+    let mut command=std::process::Command::new(compiler);
+    command.args(["-nostdinc","-Isdk/c/include","-isystem"]).arg(builtin_include);
+    command
+}
+
+// ------------------------=
 // FUNC: compiler_repair_probe
 // DESC: Feeds a real Clang failure to Hermes through the production repair prompt, compiles its correction, and checks executable behavior rather than prose.
 // ------------------=
 fn compiler_repair_probe(ai:&mut AiRuntime) {
     use ui::app_assistant::{Panel,GenerationStatus};
     let compiler=std::env::var("CC").unwrap_or_else(|_|"/opt/homebrew/opt/llvm/bin/clang".to_owned());
+    let resource=std::process::Command::new(&compiler).arg("-print-resource-dir").output().unwrap();
+    assert!(resource.status.success());
+    let builtin_include=std::path::PathBuf::from(std::str::from_utf8(&resource.stdout).unwrap().trim()).join("include");
+    assert!(builtin_include.join("stddef.h").is_file());
     let path="build/application-repair-source.c";
     let executable="build/application-repair-executable";
+    // Prove the toolchain can compile SDK and builtin headers before interpreting
+    // a failing compile as a source error suitable for model repair.
+    std::fs::write(path,b"#include <stdio.h>\n#include <stddef.h>\n#include <stdint.h>\n_Static_assert(sizeof(size_t)==8, \"64-bit target\");\nint main(void){return 42;}\n").unwrap();
+    for target in ["aarch64-none-elf","x86_64-none-elf"] {
+        let preflight=repair_compiler(&compiler,&builtin_include).args(["-target",target,"-ffreestanding","-std=c17","-Werror","-c",path,"-o","build/application-repair-preflight.o"]).output().unwrap();
+        assert!(preflight.status.success(),"{}",String::from_utf8_lossy(&preflight.stderr));
+    }
     let source=b"// ------------------------=\n// FUNC: main\n// DESC: Returns the requested exit code.\n// ------------------=\nint main(void) { return 42 }\n";
     std::fs::write(path,source).unwrap();
-    let failed=std::process::Command::new(&compiler).args(["--target=aarch64-none-elf","-nostdinc","-Isdk/c/include","-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o","build/application-repair-aarch64.o"]).output().unwrap();
+    let failed=repair_compiler(&compiler,&builtin_include).args(["--target=aarch64-none-elf","-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o","build/application-repair-aarch64.o"]).output().unwrap();
     assert!(!failed.status.success());
     let request=b"Create an exit status 42 command line app";
     let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
@@ -162,10 +183,10 @@ fn compiler_repair_probe(ai:&mut AiRuntime) {
     std::fs::write(path,&panel.argument[..panel.argument_len]).unwrap();
     for target in ["aarch64-none-elf","x86_64-none-elf"] {
         let output=format!("build/application-repair-{target}.o");
-        let compiled=std::process::Command::new(&compiler).args(["-target",target,"-nostdinc","-Isdk/c/include","-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o",&output]).output().unwrap();
+        let compiled=repair_compiler(&compiler,&builtin_include).args(["-target",target,"-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o",&output]).output().unwrap();
         assert!(compiled.status.success(),"{}",String::from_utf8_lossy(&compiled.stderr));
     }
-    let compiled=std::process::Command::new(&compiler).args(["-nostdinc","-Isdk/c/include","-std=c17","-Wall","-Wextra","-Werror",path,"-o",executable]).output().unwrap();
+    let compiled=repair_compiler(&compiler,&builtin_include).args(["-std=c17","-Wall","-Wextra","-Werror",path,"-o",executable]).output().unwrap();
     assert!(compiled.status.success(),"{}",String::from_utf8_lossy(&compiled.stderr));
     let result=std::process::Command::new(executable).output().unwrap();
     assert_eq!(result.status.code(),Some(42));assert!(result.stdout.is_empty());assert!(result.stderr.is_empty());

@@ -164,7 +164,7 @@ corrected the source, and the resulting executable returned status 42. Typed
 tests exercised revision/request fences, two-attempt exhaustion and completion
 gating. This is **host evidence, not installed native acceptance**.
 
-The stricter dual-target rerun stopped at the correction-loop limit. Its
+The initial stricter dual-target rerun stopped at the correction-loop limit. Its
 `-nostdinc` compiler invocation cannot find the compiler-provided `stddef.h`
 required by the SDK's `stdio.h` (manifest
 `20261018T042944167639Z-57691`). Fix the probe's builtin-header search path to
@@ -177,3 +177,16 @@ No fresh ISOs were produced for this checkpoint. General GUI generation, real
 calculator behavior, generated AI hooks, chess play and installed-runtime
 acceptance remain unproven. Successful compilation alone is not their acceptance
 criterion.
+
+### Compiler-header correction
+
+The repair harness now obtains the selected Clang's resource directory and adds
+its builtin include directory explicitly, retaining `-nostdinc` and the native
+SDK headers. A valid header-dependent C preflight must compile for both targets
+before a compiler failure can be supplied as repair evidence. No host libc
+headers or substitute SDK headers were added.
+
+`./build-kit application-generation-repair-test` passed in
+`20261018T044405195381Z-58448`: real model repair, ARM64 and x86-64 compilation,
+host execution returning 42, and subsequent model-lease reuse. This resolves the
+`stddef.h` harness failure above, not the separate GUI/chess acceptance gaps.
