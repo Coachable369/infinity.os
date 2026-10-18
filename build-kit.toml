@@ -42,10 +42,6 @@ clean = false
 command = ["cargo", "test", "--manifest-path", "tools/file-preview-harness/Cargo.toml"]
 clean = false
 
-[profiles.image-core-tests]
-command = ["cargo", "test", "--manifest-path", "sdk/infinity-image-core/Cargo.toml"]
-clean = false
-
 [profiles.window-controls-tests]
 command = ["sh", "tools/window-controls-test.sh"]
 clean = false
