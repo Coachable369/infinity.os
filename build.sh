@@ -75,6 +75,7 @@ python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
 cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
 cargo test --manifest-path tools/file-preview-harness/Cargo.toml
+cargo test --manifest-path sdk/infinity-image-core/Cargo.toml
 cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin browser-entropy-test
 [optional legacy smoke media] make x86
 make build/test-media/InfinityOS-x86_64.bootmedia

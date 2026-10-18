@@ -1,0 +1,56 @@
+InfinityOS native image backend -- implementation checkpoint
+
+Constraint: entirely native and offline at runtime. Existing conversational
+model artifacts, selection defaults, tokenizer state, KV caches and execution
+paths must remain unchanged. No cloud fallback or host-side inference service.
+
+Implemented and behaviorally tested:
+- no_std, dependency-free CPU reference kernels, shared by ARM64 and x86_64;
+- bounded zero-copy BF16/F16/F32 safetensors tensor views (unescaped exporter
+  names and string metadata; up to eight dimensions); package authentication
+  remains the native installer's responsibility;
+- BF16 matrix/vector tiles, Qwen 2x2 latent packing and its inverse;
+- streaming stable attention without an NxN scratch matrix;
+- validated explicit schedules and finite, transactional Euler integration;
+- independent image-job lifecycle with bounded steps, resource admission,
+  cancellation, session/deadline checks and owned storage receipts.
+
+This crate is not yet a Qwen image generator. It is intentionally not registered
+as an installed/selectable model. Tests use numerical and binary fixtures, not
+real Qwen weights, and do not demonstrate end-to-end image inference.
+
+Remaining acceptance gates, in implementation order:
+1. Pin the exact supported model revision and all component hashes. Build an
+   independently owned, streamed/quantized image weight package and verify
+   source-to-package numerical agreement. Do not modify current text models.
+2. Implement Qwen2.5-VL text-only conditioning, prompt template and tokenizer
+   handling against reference embeddings. No need to load its unused vision
+   tower for text-to-image conditioning.
+3. Implement Qwen image dual-stream transformer, positional embeddings,
+   normalization, timestep modulation and guidance. Verify intermediate
+   activations and the complete denoising loop against reference tensors.
+4. Implement the image VAE decoder, latent scaling and bounded RGB output;
+   compare actual decoded pixels, not merely dimensions or completion state.
+5. Bind image work to native memory reservations and cooperative worker yields;
+   preserve conversational and audio responsiveness. Reject insufficient
+   resources before generation rather than evicting existing models.
+6. Integrate authenticated job submission and real readiness, persistent native
+   Downloads objects, image-message references, thumbnails and preview actions.
+   Completion requires a successful native storage commit, not generated prose.
+7. Include all artifacts in fresh-install generation, verify both architectures
+   and installed boots with no network; test failure/cancellation and confirm
+   that Hermes remains default with unchanged conversational behavior.
+
+Build-kit verification:
+  ./build-kit image-core-tests
+  ./build-kit run cargo test --manifest-path sdk/infinity-image-core/Cargo.toml
+
+Architecture references (specification only; not runtime dependencies):
+  https://huggingface.co/Qwen/Qwen-Image
+  https://huggingface.co/Qwen/Qwen-Image-2512/raw/main/model_index.json
+  https://huggingface.co/Qwen/Qwen-Image-2512/raw/main/transformer/config.json
+  https://huggingface.co/docs/safetensors/en/index
+
+The reference original model indices declare 40,860,802,176 transformer bytes
+and 16,584,333,312 text-encoder bytes before decoder weights. These are audit
+figures, not an installed-memory requirement or a selected quantization format.
