@@ -144,3 +144,36 @@ finished. Compiler-driven bounded repair, generated-contract execution checks,
 and domain-behavior acceptance are still required before general app generation
 can be claimed. The `--generate` diagnostic on the model test preserves its
 fixture output under `build/` and deliberately fails when generation is incomplete.
+
+## Bounded compiler recovery checkpoint (2026-10-18 UTC)
+
+Generated applications now queue at most two compiler-diagnostic repair attempts
+through the existing model service. Admission requires the original request,
+unchanged editor revision, active session and compiler publication authority.
+Manual builds, cancellation and empty diagnostics do not trigger repair. Source
+that cannot fit the bounded repair context is retained rather than truncated.
+Editing during streaming cancels the model lease; generated previews cannot
+overwrite that edit. Each attempted source remains saved in Documents.
+
+Raw C beginning with complete function comments is now recognized for streaming
+and final staging, exclusively for an explicit creation request. Comment-only,
+incomplete comments and conversational prefixes remain rejected.
+
+The host repair probe passed: real Clang rejected a missing semicolon, Hermes
+corrected the source, and the resulting executable returned status 42. Typed
+tests exercised revision/request fences, two-attempt exhaustion and completion
+gating. This is **host evidence, not installed native acceptance**.
+
+The stricter dual-target rerun stopped at the correction-loop limit. Its
+`-nostdinc` compiler invocation cannot find the compiler-provided `stddef.h`
+required by the SDK's `stdio.h` (manifest
+`20261018T042944167639Z-57691`). Fix the probe's builtin-header search path to
+match the real toolchain before rerunning `./build-kit
+application-generation-repair-test`. Do not add a fake SDK header or remove the
+cross-target check. The combined run short-circuited before interaction regressions
+and kernel builds, so those checks remain pending for this change.
+
+No fresh ISOs were produced for this checkpoint. General GUI generation, real
+calculator behavior, generated AI hooks, chess play and installed-runtime
+acceptance remain unproven. Successful compilation alone is not their acceptance
+criterion.

@@ -19,6 +19,10 @@ struct Lease {
     compile_output_reported:bool,
     interaction_objective:[u8;512],
     interaction_length:usize,
+    generated:bool,
+    document_revision:u64,
+    request:[u8;1024],
+    request_length:usize,
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ReplyTarget { Assistant, Console }
@@ -124,6 +128,8 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
         lease.launch=launch_result;
         let panel=assistant::read(2);
         let request=&panel.request[..panel.request_len];
+        lease.generated=true;
+        lease.request[..request.len()].copy_from_slice(request);lease.request_length=request.len();
         if launch_result && assistant::editor_compile_intent::create_application(request)
             && assistant::editor_compile_intent::requests_opponent(request) && request.len()<=512 {
             lease.interaction_objective[..request.len()].copy_from_slice(request);lease.interaction_length=request.len();
@@ -162,7 +168,8 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],re
     name[24..].copy_from_slice(b".elf");
     let source_length=source_path.len().min(95);
     REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
-        launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0 });
+        launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0,
+        generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0 });
     Ok(())
 }
 
@@ -386,7 +393,13 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                 report_stage_output(console,b"Compiler output",diagnostics,_truncated);
                 publish_workflow(6,5+lease.source_length,diagnostics.len(),lease.name.len());
                 schedule_voice_progress(VoiceStep::Failed);
-                if target==ReplyTarget::Assistant{panel.reply(diagnostics);}
+                if target==ReplyTarget::Assistant {
+                    panel.reply(diagnostics);
+                    if status==job::Status::Failed && allowed && lease.generated
+                        && panel.queue_compiler_repair(&lease.request[..lease.request_length],lease.document_revision,console.assistant_revision(),diagnostics) {
+                        panel.reply(b"The compiler found errors. Repairing this unchanged source using its diagnostics (maximum two attempts). Your source is saved; no app has launched.");
+                    }
+                }
             }else if status==job::Status::Cancelled{
                 console.output.write_line(b"Compilation cancelled. No executable was published.");
                 publish_workflow(6,5+lease.source_length,0,lease.name.len());

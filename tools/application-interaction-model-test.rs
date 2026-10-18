@@ -19,6 +19,7 @@ use application::*;
 // ------------------=
 fn main() {
     source_preview();
+    repair_boundaries();
     if std::env::args().any(|value|value=="--preview-only") {return;}
     let bytes=Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf").unwrap().into_boxed_slice());
     let arena=Box::leak(vec![0u128;1280*1024*1024/16].into_boxed_slice());
@@ -29,6 +30,12 @@ fn main() {
     let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
     let start=std::time::Instant::now();
     while qwen::workers::online()!=4 {assert!(start.elapsed().as_secs()<10);std::thread::yield_now();}
+    if std::env::args().any(|value|value=="--repair") {
+        compiler_repair_probe(&mut ai);
+        unsafe {qwen::workers::stop_host_workers();}
+        for worker in workers {worker.join().unwrap();}
+        return;
+    }
     if std::env::args().any(|value|value=="--generate") {
         generation_probe(&mut ai);
         unsafe {qwen::workers::stop_host_workers();}
@@ -88,6 +95,81 @@ fn main() {
     application_host::detach();
     unsafe {qwen::workers::stop_host_workers();}
     for worker in workers {worker.join().unwrap();}
+}
+
+// ------------------------=
+// FUNC: repair_boundaries
+// DESC: Verifies repair budgets, revision and request fencing, completion gating, and exact source preservation on oversized context.
+// ------------------=
+fn repair_boundaries() {
+    use ui::app_assistant::{Panel,GenerationStatus,Action};
+    let request=b"Create a simple graphical calculator app";
+    let mut panel=Panel::new();
+    panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    panel.generation=GenerationStatus::Complete;
+    let commented=b"// function documentation\n/* more documentation */\nint main(void){return 0;}";
+    assert!(panel.stage_generated_source(commented));assert_eq!(&panel.argument[..panel.argument_len],commented);
+    assert!(!panel.stage_generated_source(b"// incomplete comment"));
+    assert!(!panel.stage_generated_source(b"/* incomplete comment"));
+    assert!(!panel.stage_generated_source(b"Here is code:\nint main(void){return 0;}"));
+    assert!(panel.accept_generated(commented,true,true));
+    assert_eq!(&panel.argument[..panel.argument_len],commented);
+    let initial=panel;
+    assert!(!panel.queue_compiler_repair(request,4,5,b"diagnostic"));assert!(panel==initial);
+    assert!(!panel.queue_compiler_repair(b"different request",4,4,b"diagnostic"));assert!(panel==initial);
+    assert!(!panel.queue_compiler_repair(request,4,4,b""));assert!(panel==initial);
+    for attempt in 1..=2 {
+        assert!(panel.queue_compiler_repair(request,4,4,b"diagnostic"));
+        assert_eq!(panel.repair_attempts,attempt);assert_eq!(panel.generation,GenerationStatus::Queued);
+        assert_eq!(panel.pending,Action::None);assert!(!panel.apply_generated_compile_requested());
+        let mut short=[0;16];assert_eq!(panel.compiler_repair_prompt(b"int main(void){return 0;}",&mut short),None);
+        assert_eq!(short,[0;16]);
+        assert!(!panel.queue_compiler_repair(request,4,4,b"diagnostic"));
+        panel.generation=GenerationStatus::Complete;
+    }
+    assert!(!panel.queue_compiler_repair(request,4,4,b"diagnostic"));
+    panel.generation=GenerationStatus::Cancelled;
+    assert!(!panel.queue_compiler_repair(request,4,4,b"diagnostic"));
+}
+
+// ------------------------=
+// FUNC: compiler_repair_probe
+// DESC: Feeds a real Clang failure to Hermes through the production repair prompt, compiles its correction, and checks executable behavior rather than prose.
+// ------------------=
+fn compiler_repair_probe(ai:&mut AiRuntime) {
+    use ui::app_assistant::{Panel,GenerationStatus};
+    let compiler=std::env::var("CC").unwrap_or_else(|_|"/opt/homebrew/opt/llvm/bin/clang".to_owned());
+    let path="build/application-repair-source.c";
+    let executable="build/application-repair-executable";
+    let source=b"// ------------------------=\n// FUNC: main\n// DESC: Returns the requested exit code.\n// ------------------=\nint main(void) { return 42 }\n";
+    std::fs::write(path,source).unwrap();
+    let failed=std::process::Command::new(&compiler).args(["--target=aarch64-none-elf","-nostdinc","-Isdk/c/include","-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o","build/application-repair-aarch64.o"]).output().unwrap();
+    assert!(!failed.status.success());
+    let request=b"Create an exit status 42 command line app";
+    let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    panel.generation=GenerationStatus::Complete;
+    assert!(panel.queue_compiler_repair(request,7,7,&failed.stderr));
+    let mut prompt=[0;6144];let length=panel.compiler_repair_prompt(source,&mut prompt).unwrap();
+    panel.generation=GenerationStatus::Running;ui::app_assistant::write(2,panel);
+    ai.submit_app_turn(2,&prompt[..length]).unwrap();
+    let started=std::time::Instant::now();
+    let mut last=Vec::new();
+    while ai.app_turn_owner().is_some() && started.elapsed().as_secs()<300 {ai.poll_qwen();if !ai.acceptance_native_output().is_empty(){last=ai.acceptance_native_output().to_vec();}}
+    assert!(ai.app_turn_owner().is_none());
+    std::fs::write("build/application-repair-model-output.txt",&last).unwrap();
+    let panel=ui::app_assistant::read(2);assert_eq!(panel.generation,GenerationStatus::Complete,"{}",String::from_utf8_lossy(&panel.response[..panel.response_len]));
+    assert!(panel.apply_generated_compile_requested());assert_eq!(panel.repair_attempts,1);
+    std::fs::write(path,&panel.argument[..panel.argument_len]).unwrap();
+    for target in ["aarch64-none-elf","x86_64-none-elf"] {
+        let output=format!("build/application-repair-{target}.o");
+        let compiled=std::process::Command::new(&compiler).args(["-target",target,"-nostdinc","-Isdk/c/include","-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o",&output]).output().unwrap();
+        assert!(compiled.status.success(),"{}",String::from_utf8_lossy(&compiled.stderr));
+    }
+    let compiled=std::process::Command::new(&compiler).args(["-nostdinc","-Isdk/c/include","-std=c17","-Wall","-Wextra","-Werror",path,"-o",executable]).output().unwrap();
+    assert!(compiled.status.success(),"{}",String::from_utf8_lossy(&compiled.stderr));
+    let result=std::process::Command::new(executable).output().unwrap();
+    assert_eq!(result.status.code(),Some(42));assert!(result.stdout.is_empty());assert!(result.stderr.is_empty());
+    assert!(ai.submit_app_turn(1,b"Say hello.").is_ok());ai.cancel_app_turn();
 }
 
 // ------------------------=

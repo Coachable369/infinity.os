@@ -58,6 +58,7 @@ impl ConsoleRuntime {
             }
             self.perform_editor_action(PendingDocumentAction::New);
             panel.pending=Action::None;panel.argument_len=0;panel.awaiting_compile_save=false;
+            panel.repair_attempts=0;panel.repair_diagnostics_len=0;
             panel.input[..input.len()].copy_from_slice(input);panel.length=input.len();
             panel.request=panel.input;panel.request_len=input.len();
             panel.document_revision=self.assistant_revision();
@@ -358,6 +359,7 @@ impl ConsoleRuntime {
         });
         panel.request = panel.input;
         panel.request_len = panel.length;
+        panel.repair_attempts=0;panel.repair_diagnostics_len=0;
         match crate::runtime::ai::with_ai_runtime(|ai| ai.route_application_request(id, &panel.input[..panel.length])) {
             Ok(crate::runtime::ai::kit::RequestRoute::Control(_)) => {
                 panel.length=0;panel.caret=0;
@@ -436,7 +438,10 @@ impl ConsoleRuntime {
                 panel.reply(b"Application creation cancelled because its editor or session changed.");
             } else {
                 let mut prompt=[0u8;6144];
-                if let Some(n)=panel.generation_prompt(true,b"",&mut prompt) {
+                let prompt_length=if panel.repair_diagnostics_len>0 {
+                    panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt)
+                } else {panel.generation_prompt(true,b"",&mut prompt)};
+                if let Some(n)=prompt_length {
                     match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_turn(2,&prompt[..n])) {
                         Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating C source locally...");},
                         Err(message)=>{panel.generation=assistant::GenerationStatus::Failed;panel.reply(message);},
@@ -445,6 +450,10 @@ impl ConsoleRuntime {
             }
             panel.length=0;panel.caret=0;
             assistant::write(2,panel);return true;
+        }
+        if panel.generation==assistant::GenerationStatus::Running && panel.document_revision!=self.assistant_revision() {
+            crate::runtime::ai::with_ai_runtime(|ai|{if ai.app_turn_owner()==Some(2){ai.cancel_app_turn();}});
+            return true;
         }
         let previewed=self.apply_streamed_editor_source();
         if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return previewed; }
@@ -458,6 +467,7 @@ impl ConsoleRuntime {
         let mut panel=assistant::read(2);
         if !matches!(panel.generation,assistant::GenerationStatus::Running|assistant::GenerationStatus::Complete)
             || !assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len])
+            || panel.document_revision!=self.assistant_revision()
             || panel.argument_len==0 || self.editor_document.bytes()==&panel.argument[..panel.argument_len] {return false;}
         let checkpoint=self.editor_document.bytes().is_empty();
         if !self.editor_document.replace_generation_preview(&panel.argument[..panel.argument_len],checkpoint) {return false;}

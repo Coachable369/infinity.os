@@ -70,6 +70,10 @@ clean = false
 command = ["sh", "-c", "CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin application-interaction-model-test"]
 clean = false
 
+[profiles.application-generation-repair-test]
+command = ["sh", "-c", "CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin application-interaction-model-test -- --repair"]
+clean = false
+
 [profiles.intelligence-kit-tests]
 command = ["make", "intelligence-kit-test"]
 clean = false
