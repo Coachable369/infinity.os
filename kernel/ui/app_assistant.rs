@@ -124,7 +124,7 @@ pub const GENERATED_SOURCE_CAPACITY: usize = 12 * 1024;
 
 // ------------------------=
 // FUNC: generation_timed_out
-// DESC: Bounds an app-generation lease to ninety seconds without valid source progress and five minutes overall.
+// DESC: Bounds an app-generation lease to ninety seconds without model-token or accepted-source progress and five minutes overall.
 // ------------------=
 pub fn generation_timed_out(started: Option<u64>, progress: Option<u64>, now: Option<u64>) -> bool {
     let Some(now) = now else { return false; };

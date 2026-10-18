@@ -315,18 +315,29 @@ def create_ui_application(guest):
     ui.wait_feature(guest, lambda state: state[12] == 2)
     deadline = time.monotonic() + 600
     next_progress = 0
+    streamed_lengths = []
+    activity_direction = 1
     while time.monotonic() < deadline:
+        length = features(guest)[7]
+        if length and (not streamed_lengths or streamed_lengths[-1] != length):
+            streamed_lengths.append(length)
         build = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
         if build[2] > before and build[3]:
             break
         if time.monotonic() >= next_progress:
             guest.screenshot("create-ui-current")
+            # Model a present user moving the pointer, without disabling the
+            # real inactivity lock or changing the document being generated.
+            guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                "axis": "x", "value": activity_direction}}]})
+            activity_direction = -activity_direction
             next_progress = time.monotonic() + 20
         assert guest.state()[4] not in (9, 10), "Authenticated UI creation session was lost"
         time.sleep(.5)
     else:
         raise AssertionError("UI creation did not reach native compilation")
     compiled = wait_build(guest, before, 3)
+    assert len(streamed_lengths) >= 2, {"missing_incremental_editor_output": streamed_lengths}
     ui.wait_feature(guest, lambda state: state[12] == 1)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
@@ -336,7 +347,8 @@ def create_ui_application(guest):
         if presentation[3] == 1 and presentation[4:6] == (480, 420) and presentation[6] >= 10:
             guest.screenshot("generated-ui-calculator-running")
             guest.key("esc")
-            return {"compile": compiled, "presentation": presentation}
+            return {"compile": compiled, "presentation": presentation,
+                    "streamed_editor_lengths": streamed_lengths}
         time.sleep(.1)
     raise AssertionError("Generated application did not present a complete UI Kit calculator")
 

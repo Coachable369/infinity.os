@@ -27,6 +27,7 @@ fn main() {
     let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
     let start=std::time::Instant::now();
     while qwen::workers::online()!=4 {assert!(start.elapsed().as_secs()<10);std::thread::yield_now();}
+    prefill_progress(&mut ai);
     let id=application_host::attach([1;16],[2;16]).unwrap().instance;
     if std::env::args().any(|value|value=="--sensitive") {
         sensitive_action(&mut ai,id);
@@ -79,6 +80,27 @@ fn main() {
     application_host::detach();
     unsafe {qwen::workers::stop_host_workers();}
     for worker in workers {worker.join().unwrap();}
+}
+
+// ------------------------=
+// FUNC: prefill_progress
+// DESC: Proves real Hermes prompt work advances before output and cancellation releases the app lease.
+// ------------------=
+fn prefill_progress(ai:&mut AiRuntime) {
+    ai.submit_app_turn(1,b"Read this context before answering: a document editor exposes typed insertion actions with an object reference, a position, and bounded UTF-8 text. Explain the purpose in one short sentence.").unwrap();
+    let initial=ai.acceptance_native_progress();
+    let started=std::time::Instant::now();
+    loop {
+        assert!(started.elapsed().as_secs()<30,"prefill work deadline");
+        ai.poll_qwen();
+        if ai.acceptance_native_progress()>initial {
+            assert!(ai.acceptance_native_output().is_empty());
+            assert_eq!(ai.app_turn_owner(),Some(1));
+            break;
+        }
+    }
+    ai.cancel_app_turn();
+    assert_eq!(ai.app_turn_owner(),None);
 }
 
 // ------------------------=

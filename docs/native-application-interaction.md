@@ -113,3 +113,17 @@ runtime agent. Neither substitutes for generated-C or installed-VM gameplay.
    live and newly installed boot paths without the ISO attached.
 
 Do not describe this checkpoint as a complete general app-agent platform.
+
+## Installed verification checkpoint (2026-10-18 UTC)
+
+The `7f1309cf` clean release passed dual-architecture packaging and checksum
+verification (`20261018T000824196272Z-42401`). ARM64 QEMU-compatible media
+installed and cold-booted without ISO media, but UI app generation hit its
+no-progress watchdog before any source appeared. The x86_64 software-emulated
+installation was interrupted while still writing; it is not an acceptance pass.
+
+The watchdog now counts actual prompt-processing token progress as well as
+accepted output, retaining the five-minute overall limit. Real-Hermes regression,
+protocol/ABI checks, and both kernel builds passed in
+`20261018T020450513183Z-51622`. Installed retesting and new release packaging of
+this correction remain required; the earlier ISOs do not contain it.

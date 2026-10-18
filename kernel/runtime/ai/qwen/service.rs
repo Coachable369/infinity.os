@@ -316,6 +316,13 @@ impl Service {
         &self.output[..self.output_count]
     }
     // ------------------------=
+    // FUNC: progress_tokens
+    // DESC: Reports monotonic token work within this request, including prompt prefill before visible output exists.
+    // ------------------=
+    pub fn progress_tokens(&self) -> usize {
+        self.consumed
+    }
+    // ------------------------=
     // FUNC: poll
     // DESC: Advances one bounded engine slice and returns whether visible output changed.
     // ------------------=

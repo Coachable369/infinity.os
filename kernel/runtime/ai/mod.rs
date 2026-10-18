@@ -104,7 +104,7 @@ pub struct AiRuntime {
     application_saved: Option<qwen::service::Conversation>,
     app_started_ns: Option<u64>,
     app_progress_ns: Option<u64>,
-    app_output_length: usize,
+    app_progress_tokens: usize,
     chat_owner: [u8; 16],
     requests: RequestApi,
     execution: ExecutionBroker,
@@ -222,6 +222,15 @@ impl AiRuntime {
     }
 
     // ------------------------=
+    // FUNC: acceptance_native_progress
+    // DESC: Exposes completed token work to host behavioral tests without model text or guest memory access.
+    // ------------------=
+    #[cfg(not(target_os = "none"))]
+    pub fn acceptance_native_progress(&self) -> usize {
+        self.qwen.as_ref().map_or(0, |service| service.progress_tokens())
+    }
+
+    // ------------------------=
     // FUNC: submit_app_turn
     // DESC: Borrows the loaded model exclusively for isolated app inference without changing desktop conversation messages.
     // ------------------=
@@ -250,7 +259,7 @@ impl AiRuntime {
         let now = crate::ui::performance::monotonic_ns();
         self.app_started_ns = now;
         self.app_progress_ns = now;
-        self.app_output_length = 0;
+        self.app_progress_tokens = service.progress_tokens();
         Ok(())
     }
 
@@ -286,7 +295,7 @@ impl AiRuntime {
     fn clear_app_turn_timing(&mut self) {
         self.app_started_ns = None;
         self.app_progress_ns = None;
-        self.app_output_length = 0;
+        self.app_progress_tokens = 0;
     }
 
     // ------------------------=
@@ -306,6 +315,13 @@ impl AiRuntime {
         while budget.next(crate::ui::performance::monotonic_ns()) {
             let result = service.poll();
             let now = crate::ui::performance::monotonic_ns();
+            // Prefill advances real inference work without producing source text.
+            // Repeated waiting polls do not renew the watchdog; the overall
+            // deadline still bounds a model that emits unusable output.
+            if result.is_ok() && service.progress_tokens() > self.app_progress_tokens {
+                self.app_progress_tokens = service.progress_tokens();
+                self.app_progress_ns = now;
+            }
             if crate::ui::app_assistant::generation_timed_out(
                 self.app_started_ns,
                 self.app_progress_ns,
@@ -394,7 +410,6 @@ impl AiRuntime {
                     panel.reply(b"Generating complete C source for the editor...");
                 }
                 if progressed {
-                    self.app_output_length = service.output().len();
                     self.app_progress_ns = now;
                 }
                 crate::ui::app_assistant::write(id, panel);
@@ -871,7 +886,7 @@ impl AiRuntime {
             application_saved: None,
             app_started_ns: None,
             app_progress_ns: None,
-            app_output_length: 0,
+            app_progress_tokens: 0,
             chat_owner: [0; 16],
             requests: RequestApi::new(),
             execution: ExecutionBroker::new(),
