@@ -39,6 +39,16 @@ if [ "$package_only" = true ]; then
     sh tools/build-hermes.sh --target "$target"
     (cd "$output_dir" && shasum -a 256 "InfinityOS-$target.iso" > "InfinityOS-$target.iso.sha256")
     (cd "$output_dir" && shasum -a 256 -c "InfinityOS-$target.iso.sha256")
+    checksum_index=$(mktemp "$temporary_dir/iso-checksums.XXXXXX")
+    if [ -f "$output_dir/SHA256SUMS" ]; then
+        awk -v image="InfinityOS-$target.iso" '$2 != image && $2 != "./" image' "$output_dir/SHA256SUMS" > "$checksum_index"
+    fi
+    cat "$output_dir/InfinityOS-$target.iso.sha256" >> "$checksum_index"
+    mv "$checksum_index" "$output_dir/SHA256SUMS"
+    if [ "$target" = aarch64 ]; then
+        cp tools/configure-virtualbox-arm64.sh tools/start-virtualbox-arm64.sh "$output_dir/"
+        chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"
+    fi
     echo "Verified $target test ISO: $output_dir/InfinityOS-$target.iso (broad regression suite deferred)"
     exit 0
 fi
