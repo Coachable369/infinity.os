@@ -579,7 +579,11 @@ voice-vad-test:
 ai-test:
 	@tools/ai-test.sh
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test causal_attention
+	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test native_attention_softmax_preserves_bits
+	@python3 tools/native-editor-installed-test.py --benchmark-metrics-test
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test -A warnings tools/installed-object-test.rs -o build/behavior-tests/installed-profile-test
+	@build/behavior-tests/installed-profile-test profile_model_projection_validates_envelope
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/pump.rs -o build/behavior-tests/qwen-pump-test
 	@build/behavior-tests/qwen-pump-test
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/metrics.rs -o build/behavior-tests/qwen-metrics-test

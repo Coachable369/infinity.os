@@ -67,7 +67,10 @@ class NativeGuest(desktop.Guest):
     # ------------------=
     def key(self, *codes):
         before = self.state()
+        sent_ns = time.monotonic_ns()
         self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 150})
+        self.last_key_receipt = {"codes": codes, "sent_monotonic_ns": sent_ns,
+                                 "accepted_monotonic_ns": time.monotonic_ns()}
         time.sleep(.2)
         transition = before is not None and codes == ("ret",) and (
             before[4] in (9, 10) and before[8] == 1 or before[4] == 3 and before[5] == 6)
@@ -847,10 +850,12 @@ def prepare_streaming_request(guest, request):
     ui.text(guest, request)
     guest.screenshot("native-streaming-request-entered")
     guest.key("ret")
+    submission = dict(guest.last_key_receipt)
     ui.wait_feature(guest, lambda state: state[12] == 2)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         admitted = generation_progress(guest)
+        observed_ns = time.monotonic_ns()
         if admitted["sequence"] > after["sequence"] and admitted["status"] == 2 and admitted["prompt_tokens"] > 0:
             break
         time.sleep(.2)
@@ -859,8 +864,235 @@ def prepare_streaming_request(guest, request):
     guest.screenshot("native-streaming-request-admitted")
     return {"previous_generation": before, "quiescent_generation": after,
             "admitted_generation": admitted,
+            "submission": submission, "admission_observed_monotonic_ns": observed_ns,
             "request_bytes": len(request.encode()),
             "request_sha256": hashlib.sha256(request.encode()).hexdigest()}
+
+# ------------------------=
+# FUNC: benchmark_model_identity
+# DESC: Hashes the actual selected model shards from the stopped private installation without copying or modifying model data.
+# ------------------=
+def benchmark_model_identity(disk, model):
+    profile = json.loads(subprocess.check_output([str(ROOT / "build/tools/installed-object-test"),
+                                                 str(disk), "--profile-only"], text=True))
+    expected_index = 3 if model == "hermes" else 4
+    assert profile["read_only"] and profile["active_user_count"] == 1
+    assert profile["profiles"] == [{"chat_model_index": expected_index, "chat_enabled": True}], profile
+    module_spec = importlib.util.spec_from_file_location("bundle_identity", ROOT / "tools/full-bundle-iso-test.py")
+    bundle = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(bundle)
+    slot = 4 if model == "hermes" else 3
+    _, length, digest = next(entry for entry in bundle.MODELS if entry[0] == slot)
+    with disk.open("rb") as source:
+        source.seek(512)
+        header = bytearray(source.read(512))
+        assert header[:8] == b"EFI PART"
+        expected_crc = struct.unpack_from("<I", header, 16)[0]
+        struct.pack_into("<I", header, 16, 0)
+        assert zlib.crc32(header[:struct.unpack_from("<I", header, 12)[0]]) == expected_crc
+        lba, count, stride, entries_crc = struct.unpack_from("<QIII", header, 72)
+        assert 0 < count <= 128 and stride == 128
+        source.seek(lba * 512)
+        entries = source.read(count * stride)
+        assert zlib.crc32(entries) == entries_crc
+        esp = [struct.unpack_from("<Q", entries, i + 32)[0] for i in range(0, len(entries), stride)
+               if entries[i:i+16] == bytes.fromhex("28732ac11ff8d211ba4b00a0c93ec93b")]
+    assert len(esp) == 1
+    bundle.verify_model(pathlib.Path(str(disk) + "@@" + str(esp[0] * 512)), slot, length, digest)
+    return {"name": model, "slot": slot, "bytes": length, "sha256": digest,
+            "verified_from_installed_esp": True, "persisted_profile": profile,
+            "selection": "Persisted native user profile, decoded before boot; no active-model snapshot exists in baseline"}
+
+# ------------------------=
+# FUNC: benchmark_metrics
+# DESC: Derives interval-bounded token and delivery metrics from real sampled counters without treating prose as an outcome.
+# ------------------=
+def benchmark_metrics(samples, submitted_ns):
+    assert samples
+    first_token = next((row for row in samples if row["generation"]["generated_tokens"] > 0), None)
+    first_editor = next((row for row in samples if row["generation"]["editor_bytes"] > 0 and row["editor_bytes"] > 0), None)
+    prefill = next((row for row in samples if row["generation"]["prompt_tokens"] > 0
+                   and row["generation"]["processed_tokens"] >= row["generation"]["prompt_tokens"]), None)
+    result = {"sampling_period_seconds": .2, "sample_count": len(samples),
+              "maximum_sample_gap_seconds": max((b["observed_ns"] - a["observed_ns"]) / 1e9
+                                                 for a, b in zip(samples, samples[1:])) if len(samples) > 1 else 0,
+              "last": samples[-1], "delivery_lag_intervals_seconds": []}
+    for name, row in (("first_token", first_token), ("first_editor_delivery", first_editor), ("prefill_complete", prefill)):
+        if row is not None:
+            index = samples.index(row)
+            lower = samples[index - 1]["read_started_ns"] if index else submitted_ns
+            result[name + "_seconds"] = {"lower": max(0, (lower - submitted_ns) / 1e9),
+                                        "upper": (row["observed_ns"] - submitted_ns) / 1e9}
+    if first_token is not None:
+        last = samples[-1]
+        seconds = (last["observed_ns"] - first_token["observed_ns"]) / 1e9
+        tokens = last["generation"]["generated_tokens"] - first_token["generation"]["generated_tokens"]
+        result.update(decode_seconds=seconds, decode_tokens=tokens,
+                      decode_tokens_per_second=tokens / seconds if seconds > 0 else None)
+        fixed = next((row for row in samples if row["generation"]["generated_tokens"]
+                      >= first_token["generation"]["generated_tokens"] + 128), None)
+        if fixed is not None:
+            duration = (fixed["observed_ns"] - first_token["observed_ns"]) / 1e9
+            count = fixed["generation"]["generated_tokens"] - first_token["generation"]["generated_tokens"]
+            result["fixed_128_token_window"] = {"seconds": duration, "actual_token_delta": count,
+                "tokens_per_second": count / duration, "first": first_token, "last": fixed,
+                "endpoint_read_span_seconds": (fixed["observed_ns"] - fixed["read_started_ns"]
+                    + first_token["observed_ns"] - first_token["read_started_ns"]) / 1e9}
+    source_marks = []
+    previous_source = 0
+    for index, row in enumerate(samples):
+        source_bytes = row["generation"]["source_bytes"]
+        if source_bytes > previous_source:
+            source_marks.append((source_bytes, samples[index - 1]["read_started_ns"] if index else submitted_ns,
+                                 row["observed_ns"]))
+            previous_source = source_bytes
+        delivered = min(row["generation"]["editor_bytes"], row["editor_bytes"])
+        while source_marks and delivered >= source_marks[0][0]:
+            watermark, source_lower, source_upper = source_marks.pop(0)
+            delivery_lower = samples[index - 1]["read_started_ns"] if index else submitted_ns
+            result["delivery_lag_intervals_seconds"].append({"bytes": watermark,
+                "lower": max(0, (delivery_lower - source_upper) / 1e9),
+                "upper": max(0, (row["observed_ns"] - source_lower) / 1e9)})
+    result["maximum_observed_backlog_bytes"] = max(max(0, row["generation"]["source_bytes"]
+        - min(row["generation"]["editor_bytes"], row["editor_bytes"])) for row in samples)
+    result["editor_flushes"] = samples[-1]["generation"]["editor_flushes"]
+    result["editor_delivered_bytes"] = samples[-1]["generation"]["editor_bytes"]
+    boundaries = {}
+    for token in (16, 128):
+        for index, row in enumerate(samples):
+            if row["generation"]["generated_tokens"] >= token:
+                boundaries[token] = {"lower_ns": samples[index - 1]["read_started_ns"] if index else submitted_ns,
+                                     "upper_ns": row["observed_ns"],
+                                     "actual_counter": row["generation"]["generated_tokens"]}
+                break
+    if len(boundaries) == 2:
+        first, last = boundaries[16], boundaries[128]
+        shortest = (last["lower_ns"] - first["upper_ns"]) / 1e9
+        longest = (last["upper_ns"] - first["lower_ns"]) / 1e9
+        result["absolute_token_16_to_128"] = {"tokens": 112, "start": first, "end": last,
+            "duration_seconds": {"lower": max(0, shortest), "upper": longest},
+            "tokens_per_second": {"lower": 112 / longest if longest > 0 else None,
+                                  "upper": 112 / shortest if shortest > 0 else None},
+            "scope": "Bounds on observing published counters; not exact internal inference-event timestamps"}
+    return result
+
+# ------------------------=
+# FUNC: test_benchmark_metrics
+# DESC: Exercises measured-counter reduction for prefill, delayed delivery, fixed token windows and burst sampling; not model or installed acceptance.
+# ------------------=
+def test_benchmark_metrics():
+    rows = [{"read_started_ns": int((seconds - .01) * 1e9), "observed_ns": int(seconds * 1e9),
+             "editor_bytes": delivered, "generation": {"generated_tokens": tokens, "prompt_tokens": 10,
+             "processed_tokens": 10 if tokens else 5, "source_bytes": source,
+             "editor_bytes": delivered, "editor_flushes": flushes}}
+            for seconds, tokens, source, delivered, flushes in
+            [(1, 0, 0, 0, 0), (2, 1, 50, 10, 1), (32, 65, 100, 50, 2),
+             (62, 129, 200, 200, 3), (122, 257, 500, 500, 4)]]
+    prefill = benchmark_metrics(rows[:1], 0)
+    assert "first_token_seconds" not in prefill and "decode_tokens_per_second" not in prefill
+    assert prefill["editor_flushes"] == 0 and prefill["delivery_lag_intervals_seconds"] == []
+    result = benchmark_metrics(rows, 0)
+    assert result["decode_tokens"] == 256 and result["decode_seconds"] == 120
+    fixed = result["fixed_128_token_window"]
+    assert fixed["actual_token_delta"] == 128 and fixed["seconds"] == 60
+    assert abs(fixed["tokens_per_second"] - 128 / 60) < 1e-9
+    assert result["maximum_observed_backlog_bytes"] == 50 and result["editor_flushes"] == 4
+    assert result["first_token_seconds"] == {"lower": .99, "upper": 2.0}
+    assert result["delivery_lag_intervals_seconds"][0] == {"bytes": 50, "lower": 0, "upper": 31.01}
+    assert len(result["delivery_lag_intervals_seconds"]) == 4
+    burst = [dict(row, generation=dict(row["generation"])) for row in rows[:4]]
+    burst[-1]["generation"]["generated_tokens"] = 132
+    assert benchmark_metrics(burst, 0)["fixed_128_token_window"]["actual_token_delta"] == 131
+    absolute = result["absolute_token_16_to_128"]
+    assert absolute["start"]["actual_counter"] == 65 and absolute["end"]["actual_counter"] == 129
+    assert absolute["duration_seconds"] == {"lower": 0, "upper": 60.01}
+    assert abs(absolute["tokens_per_second"]["lower"] - 112 / 60.01) < 1e-9
+    assert absolute["tokens_per_second"]["upper"] is None
+    dense = [dict(row, generation=dict(row["generation"])) for row in rows[:4]]
+    for row, token in zip(dense, (14, 16, 127, 128)):
+        row["generation"]["generated_tokens"] = token
+    bounded = benchmark_metrics(dense, 0)["absolute_token_16_to_128"]
+    assert bounded["duration_seconds"] == {"lower": 29.99, "upper": 61.01}
+    assert abs(bounded["tokens_per_second"]["upper"] - 112 / 29.99) < 1e-9
+    print(json.dumps({"benchmark_metric_tests_passed": True, "installed_performance_evidence": False}))
+
+# ------------------------=
+# FUNC: benchmark_generation
+# DESC: Measures an unchanged installed model through real desktop input, records sampled timings, then cancels without compiling generated code.
+# ------------------=
+def benchmark_generation(guest, request, timeout, model, identity):
+    evidence = guest.work.parent / f"benchmark-{time.time_ns()}"
+    evidence.mkdir()
+    (evidence / "request.txt").write_text(request)
+    with (guest.work.parent / "artifacts/installed-kernel.elf").open("rb") as source:
+        kernel_hash = hashlib.file_digest(source, "sha256").hexdigest()
+    result = {"benchmark_completed": False, "generated_application_acceptance": False,
+              "evidence_directory": str(evidence), "model": identity,
+              "kernel_sha256": kernel_hash, "hardware": {"architecture": guest.arch,
+              "acceleration": guest.acceleration, "vcpus": 4, "memory_mib": 12288,
+              "display": list(guest.state()[11:13]), "audio_device": False},
+              "minimum_decode_tokens": 128, "minimum_decode_seconds": 60,
+              "measurement_scope": "Host input receipt plus sampled guest counters; not exact runtime event timestamps or application correctness"}
+    guest.benchmark_evidence = result
+    samples = []
+    try:
+        result["compiler_sequence_before"] = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+        admission = prepare_streaming_request(guest, request)
+        result["request_admission"] = admission
+        submitted_ns = admission["submission"]["sent_monotonic_ns"]
+        result["admission_seconds"] = (admission["admission_observed_monotonic_ns"] - submitted_ns) / 1e9
+        next_diagnostic = 0
+        first_editor_capture = False
+        with (evidence / "progress.jsonl").open("w") as output:
+            while (time.monotonic_ns() - submitted_ns) / 1e9 < timeout:
+                read_started_ns = time.monotonic_ns()
+                progress = generation_progress(guest)
+                state = features(guest)
+                record = {"read_started_ns": read_started_ns, "observed_ns": time.monotonic_ns(),
+                          "generation": progress, "editor_bytes": state[7], "editor_fingerprint": state[16]}
+                samples.append(record)
+                output.write(json.dumps(record) + "\n")
+                output.flush()
+                assert progress["repairs"] == 0, "Repair changed the measured generation attempt"
+                assert progress["status"] == 2, {"ended_before_sustained_window": record}
+                metrics = benchmark_metrics(samples, submitted_ns)
+                result["metrics"] = metrics
+                if not first_editor_capture and progress["editor_bytes"] > 0 and state[7] > 0:
+                    capture_started_ns = time.monotonic_ns()
+                    screenshot = guest.screenshot("native-benchmark-first-editor-delivery")
+                    result["first_editor_frame_capture"] = {"path": str(screenshot),
+                        "started_seconds": (capture_started_ns - submitted_ns) / 1e9,
+                        "finished_seconds": (time.monotonic_ns() - submitted_ns) / 1e9,
+                        "delivered_bytes": progress["editor_bytes"],
+                        "sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest(),
+                        "scope": "Actual framebuffer captured after first observed document delivery; not exact first-present time"}
+                    first_editor_capture = True
+                if metrics.get("decode_tokens", 0) >= 128 and metrics.get("decode_seconds", 0) >= 60:
+                    assert first_editor_capture and metrics["editor_delivered_bytes"] > 0
+                    break
+                if time.monotonic() >= next_diagnostic:
+                    print(json.dumps({"generation_benchmark": record, "elapsed_seconds":
+                          (record["observed_ns"] - submitted_ns) / 1e9}), flush=True)
+                    guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {
+                        "axis": "x", "value": -1 if guest.state()[13] > 500 else 1}}]})
+                    next_diagnostic = time.monotonic() + 20
+                assert guest.state()[4] not in (9, 10), "Authenticated benchmark session was lost"
+                time.sleep(.2)
+            else:
+                raise AssertionError({"benchmark_timeout_seconds": timeout, "last": samples[-1] if samples else None})
+        guest.screenshot("native-benchmark-sustained-editor")
+        result["cancelled"] = cancel_generation_by_edit(guest)
+        result["compiler_sequence_after"] = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+        assert result["compiler_sequence_before"] == result["compiler_sequence_after"], "Compilation contaminated the generation benchmark"
+        result["benchmark_completed"] = True
+        print(json.dumps({"generation_benchmark_completed": True, "evidence": str(evidence),
+                          "decode_tokens_per_second": result["metrics"]["decode_tokens_per_second"]}), flush=True)
+        return result
+    except BaseException as error:
+        result["failure"] = repr(error)
+        raise
+    finally:
+        (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
 
 # ------------------------=
 # FUNC: verify_generation_streaming
@@ -1010,6 +1242,10 @@ def verify_checkpoint_audio(guest, streaming):
 # DESC: Installs, cold-boots without ISO, compiles valid and invalid source, opens the stored ELF through File Navigator and checks its actual exit.
 # ------------------=
 def main():
+    if sys.argv[1:] == ["--benchmark-metrics-test"]:
+        assert os.environ.get("INFINITY_BUILD_KIT_ACTIVE") == "1", "Use ./build-kit run"
+        test_benchmark_metrics()
+        return
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=pathlib.Path, help="Explicit QEMU-compatible test media for ARM; never substitute silently for the published VirtualBox ISO")
@@ -1019,6 +1255,8 @@ def main():
     parser.add_argument("--boot-only", action="store_true", help="Verify detached installed boot, account setup and cold-boot identity only; retain the stopped private disk without application generation")
     parser.add_argument("--editor-lifecycle-only", action="store_true", help="Verify actual unsaved editor minimize, close Cancel, and close Discard/reopen behavior without model generation or compilation")
     parser.add_argument("--streaming-only", action="store_true", help="Verify real incremental model/editor output and cancellation/readmission only; not generated application acceptance")
+    parser.add_argument("--benchmark-generation", action="store_true", help="Measure at least 128 decode tokens and 60 seconds of installed generation without compilation; requires --generate-request")
+    parser.add_argument("--benchmark-model", choices=("hermes", "ministral"), default="hermes", help="Require this model in the private installation's persisted profile; never change model selection during measurement")
     parser.add_argument("--audio-checkpoints", action="store_true", help="Add actual emulated HDA/WAV and require checkpoint completion plus non-silent PCM during --streaming-only")
     parser.add_argument("--terminal-audio-only", action="store_true", help="Isolate spoken cancellation after two real source deliveries; does not claim the sustained-generation checkpoint")
     parser.add_argument("--compiler-only", action="store_true", help="Diagnose compile, publication and launch without claiming model-generation acceptance")
@@ -1034,6 +1272,10 @@ def main():
     args = parser.parse_args()
     if args.update_kernel and not args.reuse_installed:
         parser.error("--update-kernel requires --reuse-installed")
+    if args.benchmark_generation and (not args.generate_request or not args.reuse_installed or args.arch != "aarch64"
+            or args.streaming_only or args.editor_lifecycle_only or args.boot_only or args.application_case
+            or args.save_compile or args.compiler_only or args.generation_only):
+        parser.error("--benchmark-generation requires an isolated reused ARM installation and --generate-request, without another focused mode")
     if (args.audio_checkpoints or args.terminal_audio_only) and not args.streaming_only:
         parser.error("Audio checkpoint modes require --streaming-only")
     if args.audio_checkpoints and args.terminal_audio_only:
@@ -1064,6 +1306,8 @@ def main():
     if args.generate_request or args.streaming_only or args.editor_lifecycle_only:
         if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
             parser.error("Generated application acceptance must run through ./build-kit run")
+    # Both app artifact export and the benchmark's read-only profile validation
+    # depend on this native ObjectStore helper; do not require a stale prior build.
     if args.generate_request and not args.streaming_only:
         (ROOT / "build/tools").mkdir(parents=True, exist_ok=True)
         subprocess.run(["rustc", "--edition=2021", "-A", "warnings", str(ROOT / "tools/installed-object-test.rs"),
@@ -1111,6 +1355,8 @@ def main():
     elif previous_report and "updated_kernel_sha256" in previous_report:
         report["updated_kernel_sha256"] = previous_report["updated_kernel_sha256"]
         report["canonical_release_media"] = False
+    if args.benchmark_generation:
+        report["benchmark_model"] = benchmark_model_identity(guest.work / "installed.raw", args.benchmark_model)
     try:
         if args.reuse_installed:
             guest.boot(False)
@@ -1135,6 +1381,11 @@ def main():
             report["installed_boot_verified"] = True
             report["generated_workflow_passed"] = False
             report["domain_behavior_verified"] = False
+            return
+        if args.benchmark_generation:
+            report["benchmark"] = benchmark_generation(guest, args.generate_request, args.generation_timeout,
+                                                        args.benchmark_model, report["benchmark_model"])
+            report["installed_boot_verified"] = True
             return
         if args.generate_request:
             if args.streaming_only:
@@ -1212,6 +1463,8 @@ def main():
             report["streaming"] = guest.streaming_evidence
         if getattr(guest, "editor_lifecycle_evidence", None):
             report["editor_lifecycle"] = guest.editor_lifecycle_evidence
+        if getattr(guest, "benchmark_evidence", None):
+            report["benchmark"] = guest.benchmark_evidence
         if guest.process is not None and guest.process.poll() is None:
             try:
                 registers = guest.qmp("human-monitor-command", {"command-line": "info registers"})
@@ -1241,7 +1494,7 @@ def main():
             except (AssertionError, OSError) as error:
                 report["checkpoint_audio_failure"] = repr(error)
                 export_failed = True
-        if args.generate_request and not args.streaming_only:
+        if args.generate_request and not args.streaming_only and not args.benchmark_generation:
             try:
                 report["stored_artifacts"] = export_generated_artifacts(guest, report.get("generated_application"), args.arch)
             except (AssertionError, OSError, subprocess.CalledProcessError) as error:

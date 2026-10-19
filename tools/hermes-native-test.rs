@@ -54,6 +54,10 @@ fn main() {
             let prefill = service.prefill_tokens;
             let mut tokens = 0;
             let mut token_times = Vec::new();
+            let verify_poll_contract = std::env::var_os("HERMES_TEST_POLL_CONTRACT").is_some();
+            let mut observed_output = Vec::new();
+            let mut total_polls = 0u64;
+            let mut unchanged_polls = 0u64;
             // Optional real-model scheduler experiment. The delay represents host
             // event/firmware work, not measured guest latency. Default stays unpaced.
             let pump = std::env::var("HERMES_TEST_PUMP").unwrap_or_default();
@@ -74,7 +78,20 @@ fn main() {
                         break;
                     }
                     polls += 1;
-                    if service.poll().unwrap() {
+                    total_polls += 1;
+                    let before_length = service.output().len();
+                    let emitted = service.poll().unwrap();
+                    if !emitted {
+                        unchanged_polls += 1;
+                        assert_eq!(service.output().len(), before_length);
+                        if verify_poll_contract { assert_eq!(service.output(), observed_output); }
+                    }
+                    if emitted {
+                        if verify_poll_contract {
+                            assert_eq!(&service.output()[..observed_output.len()], observed_output);
+                            observed_output.clear();
+                            observed_output.extend_from_slice(service.output());
+                        }
                         tokens += 1;
                         token_times.push(start.elapsed().as_nanos() as u64);
                         if !pump.is_empty() {
@@ -92,6 +109,10 @@ fn main() {
                 "Timing requires a complete response, not the token limit"
             );
             assert!(!service.output().is_empty());
+            let final_output = service.output().to_vec();
+            assert!(service.completed());
+            assert!(!service.poll().unwrap());
+            assert_eq!(service.output(), final_output);
             if let Some(mut path) = std::env::var_os("HERMES_TEST_REPORT") {
                 // Binary timing and generated-byte evidence avoids using formatted
                 // console output or a particular answer as the test oracle.
@@ -111,7 +132,9 @@ fn main() {
                 if turns > 1 {
                     path.push(format!(".turn{turn}"));
                 }
-                std::fs::write(path, report).unwrap();
+                std::fs::write(&path, report).unwrap();
+                path.push(".polls.json");
+                std::fs::write(path, format!("{{\"polls\":{total_polls},\"unchanged_polls\":{unchanged_polls},\"output_events\":{tokens},\"byte_contract_checked\":{verify_poll_contract}}}\n")).unwrap();
             }
             println!(
                 "turn={turn} reused={reused} prefill={prefill} tokens={tokens} complete_ms={:.3}",

@@ -312,6 +312,9 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if let Some(label)=std::env::args().find_map(|arg|arg.strip_prefix("--editor-streaming-benchmark=").map(str::to_owned)) {
+        editor_streaming_benchmark(&label);return;
+    }
     if std::env::args().any(|arg|arg=="--editor-typography-only") {
         editor_typography_pixels();return;
     }
@@ -393,12 +396,66 @@ fn main() {
 }
 
 // ------------------------=
+// FUNC: editor_streaming_benchmark
+// DESC: Measures real streamed-document append/reflow and production document painting independently of LLM generation or transport speed.
+// ------------------=
+fn editor_streaming_benchmark(label:&str) {
+    use std::{hint::black_box,io::Write};
+    use ui::editor_tools::{self,preferences::{self,Preferences}};
+    assert!(matches!(label,"before"|"after"));
+    preferences::publish(Preferences::new());
+    let source=b"    int next_value = current_value + 1; /* bounded streamed source */\n";
+    let mut records=Vec::new();
+    for length in [1024,4096,16384] {
+        let input:Vec<u8>=source.iter().copied().cycle().take(length).collect();
+        let mut append_times=Vec::new();
+        for _ in 0..9 {
+            let mut document=ui::text_editor::TextDocument::new();
+            let begin=Instant::now();
+            for (index,chunk) in input.chunks(32).enumerate() {
+                black_box(ui::text_editor::visual_line_count(document.bytes(),80));
+                assert!(document.append_generation_preview(black_box(chunk),index==0));
+                black_box(ui::text_editor::visual_line_count(document.bytes(),80));
+            }
+            append_times.push(begin.elapsed().as_nanos());
+            assert_eq!(document.bytes(),input);assert!(document.undo());assert!(document.bytes().is_empty());
+        }
+        append_times.sort_unstable();
+        for scale in [1,2] {
+            let (width,height)=(1000*scale,660*scale);
+            let window=ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(20,30,960,920,false);
+            let g=ui::editor_chrome::Layout::new(window.window,scale,false,editor_tools::Field::None);
+            let scroll=ui::text_editor::visual_line_count(&input,g.columns()).saturating_sub(g.rows());
+            let mut view=editor_tools::Presentation::new();view.language=editor_tools::Language::C;view.cursor=input.len();editor_tools::publish(view);
+            let mut pixels=vec![0u32;width*height];
+            let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+                render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+            let mut times=Vec::new();let mut damage=0;
+            for sample in 0..12 {
+                display.submissions=0;let begin=Instant::now();
+                display.editor_window(window,black_box(&input),scroll,false,false,scale);
+                let elapsed=begin.elapsed().as_nanos();black_box(&pixels);
+                if sample>=3 {times.push(elapsed);damage=display.submissions;}
+            }
+            times.sort_unstable();
+            let record=format!("{{\"bytes\":{length},\"scale\":{scale},\"frames\":9,\"paint_median_ns\":{},\"paint_max_ns\":{},\"damage_submissions\":{damage},\"append_and_reflow_32byte_chunks_median_ns\":{}}}",times[4],times[8],append_times[4]);
+            println!("{record}");records.push(record);
+        }
+    }
+    std::fs::create_dir_all("builds/validation/editor").unwrap();
+    let mut file=std::fs::File::create(format!("builds/validation/editor/streaming-{label}.json")).unwrap();
+    writeln!(file,"[{}]",records.join(",\n")).unwrap();
+    preferences::publish(Preferences::new());editor_tools::publish(editor_tools::Presentation::new());
+}
+
+// ------------------------=
 // FUNC: editor_typography_pixels
 // DESC: Verifies native atlas coverage, independent ink/advance metrics and unchanged chrome at nine zoom levels, then captures real editor pixels.
 // ------------------=
 fn editor_typography_pixels() {
     use std::io::Write;
     use ui::editor_tools::{self,preferences::{self,Preferences}};
+    editor_glyph_damage_pixels();
     for font in 0..4 {
         for size in 0..preferences::SIZES.len() as u8 {
             let p=Preferences{scheme:0,font,size};preferences::publish(p);
@@ -459,6 +516,43 @@ fn editor_typography_pixels() {
     }
     ui::text_input::set_presentation(false,false,0,0,false);
     preferences::publish(Preferences::new());editor_tools::publish(editor_tools::Presentation::new());
+}
+
+// ------------------------=
+// FUNC: editor_glyph_damage_pixels
+// DESC: Compares batched glyphs against original per-pixel composition across clips, zoom, font families, formats and retained-alpha surfaces.
+// ------------------=
+fn editor_glyph_damage_pixels() {
+    use ui::editor_tools::preferences::{self,Preferences};
+    for font in 0..4 {
+        for size in 0..preferences::SIZES.len() as u8 {
+            let p=Preferences{scheme:0,font,size};preferences::publish(p);let record=p.record();
+            for scale in [1,2] {
+                for format in [0,1] {
+                    for recording_surface in [false,true] {
+                        for clip in [None,Some(Region{left:7,top:9,right:22,bottom:25}),Some(Region{left:60,top:60,right:64,bottom:72})] {
+                            for byte in b" Mj[]" {
+                                let mut actual=vec![0x7f203040u32;64*72];let mut expected=actual.clone();
+                                let mut display=DisplayDevice{buffer:actual.as_mut_ptr(),width:64,height:72,stride:64,format,
+                                    render_clip:clip,fast_motion_frame:false,submissions:0,recording_surface};
+                                let mut reference=display;reference.buffer=expected.as_mut_ptr();
+                                for row in 0..record[1] as usize*scale {
+                                    for column in 0..record[3] as usize*scale {
+                                        let alpha=record[4+row/scale*24*95+(*byte as usize-32)*24+column/scale];
+                                        if alpha!=0 {reference.blend_color((4+column) as i32,(4+row) as i32,221,232,244,alpha);}
+                                    }
+                                }
+                                display.editor_glyph(4,4,*byte,scale,(221,232,244));
+                                assert_eq!(actual,expected);
+                                assert_eq!(display.submissions,u64::from(reference.submissions>0));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    preferences::publish(Preferences::new());
 }
 
 // ------------------------=

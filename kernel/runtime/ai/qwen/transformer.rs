@@ -718,6 +718,15 @@ fn attend(
         max = max.max(scores[time]);
     }
     let mut sum = 0f32;
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        extern "C" {
+            fn infinity_attention_softmax(scores: *mut f32, maximum: *const f32,
+                count: usize, sum: *mut f32);
+        }
+        infinity_attention_softmax(scores.as_mut_ptr(), &max, position + 1, &mut sum);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
     for score in &mut scores[..=position] {
         *score = libm::expf(*score - max);
         sum += *score;
@@ -838,6 +847,56 @@ fn adjacent_rope(values: &mut [f32], rotary: &[(f32, f32); 64]) {
 
 #[cfg(all(test, target_arch = "aarch64"))]
 mod activation_tests {
+    // ------------------------=
+    // FUNC: assert_same_float
+    // DESC: Requires identical numerical results while treating NaN payload transport as nonsemantic.
+    // ------------------=
+    fn assert_same_float(actual: f32, expected: f32) {
+        if expected.is_nan() { assert!(actual.is_nan()); }
+        else { assert_eq!(actual.to_bits(), expected.to_bits()); }
+    }
+    // ------------------------=
+    // FUNC: native_attention_softmax_preserves_bits
+    // DESC: Compares every probability numerator and serial sum against libm, covering causal lengths, underflow and untouched tail storage.
+    // ------------------=
+    #[test]
+    fn native_attention_softmax_preserves_bits() {
+        let mut inputs: Vec<f32> = (-24000..=0).map(|i| i as f32 / 200.0).collect();
+        inputs.extend([0.0, -0.0, -f32::MIN_POSITIVE, -f32::from_bits(1),
+            -f32::MAX, f32::NEG_INFINITY, f32::INFINITY, f32::NAN]);
+        let mut seed = 17u32;
+        for _ in 0..65536 {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let value = -f32::from_bits(seed & 0x7fff_ffff);
+            if value.is_finite() { inputs.push(value); }
+        }
+        for maximum in [0.0, 12.125, -23.875, f32::MIN_POSITIVE, f32::from_bits(1),
+            -f32::from_bits(1), f32::NEG_INFINITY, f32::INFINITY, f32::NAN] {
+          for count in [0, 1, 2, 32, 256, 1024, 4096] {
+            for chunk in inputs.chunks(count.max(1)) {
+                let count = count.min(chunk.len());
+                let mut actual = chunk[..count].to_vec();
+                actual.push(12345.0);
+                let expected: Vec<f32> = chunk[..count].iter().map(|score|libm::expf(*score-maximum)).collect();
+                let mut expected_sum = 0.0f32;
+                for value in &expected { expected_sum += *value; }
+                let mut sum = f32::NAN;
+                unsafe {
+                    extern "C" {
+                        fn infinity_attention_softmax(scores: *mut f32, maximum: *const f32,
+                            count: usize, sum: *mut f32);
+                    }
+                    infinity_attention_softmax(actual.as_mut_ptr(), &maximum, count, &mut sum);
+                }
+                assert_eq!(actual[count], 12345.0);
+                assert_same_float(sum, expected_sum);
+                for (actual, expected) in actual[..count].iter().zip(expected) {
+                    assert_same_float(*actual, expected);
+                }
+            }
+          }
+        }
+    }
     // ------------------------=
     // FUNC: native_swiglu_matches_reference
     // DESC: Compares native activation against the previous scalar libm path across saturation and normal ranges.

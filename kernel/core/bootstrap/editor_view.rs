@@ -602,29 +602,32 @@ impl super::DisplayDevice {
         let record = editor_tools::preferences::current().record();
         let ink_width = record[3] as usize;
         let height = record[1] as usize;
-        if self.render_clip.is_some_and(|clip| {
-            x >= clip.right
-                || y >= clip.bottom
-                || x + ink_width * scale <= clip.left
-                || y + height * scale <= clip.top
-        }) {
-            return;
-        }
+        let left=x.max(self.render_clip.map_or(0,|clip|clip.left));
+        let top=y.max(self.render_clip.map_or(0,|clip|clip.top));
+        let right=x.saturating_add(ink_width.saturating_mul(scale)).min(self.width)
+            .min(self.render_clip.map_or(self.width,|clip|clip.right));
+        let bottom=y.saturating_add(height.saturating_mul(scale)).min(self.height)
+            .min(self.render_clip.map_or(self.height,|clip|clip.bottom));
+        if left>=right || top>=bottom {return;}
         let glyph = (byte as usize - 32) * 24;
-        for row in 0..height * scale {
-            for col in 0..ink_width * scale {
-                let a = record[4 + row / scale * 24 * 95 + glyph + col / scale];
+        let mut painted=false;
+        for py in top..bottom {
+            let row=4+(py-y)/scale*24*95+glyph;
+            for px in left..right {
+                let a = record[row+(px-x)/scale];
                 if a != 0 {
-                    self.blend_color(
-                        (x + col) as i32,
-                        (y + row) as i32,
+                    self.blend_color_unchecked(
+                        px,
+                        py,
                         color.0,
                         color.1,
                         color.2,
                         a,
                     );
+                    painted=true;
                 }
             }
         }
+        if painted {self.mark_dirty_rect(left,top,right-left,bottom-top);}
     }
 }

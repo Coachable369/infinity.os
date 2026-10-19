@@ -431,6 +431,15 @@ buffered editor delivery, and completion/failure remain visible. Ordinary chat
 keeps its existing incremental presentation. The whole generated edit has one undo checkpoint. Auto-follow applies
 only when the reader was already near the bottom.
 
+Application inference scans for a complete source frame only when the model
+service reports changed output. Prefill and worker-wait polls cannot change the
+append-only output and no longer repeatedly parse the same source. Completion,
+EOS, capacity and failure paths retain final validation. The real-model service
+test checks byte-for-byte immutability on unchanged polls, append-only growth on
+output events, and final-output retention after EOS. This optimization does not
+change the 2 ms cooperative budget, source limits, paced delivery or admission
+rules.
+
 Every generation is fenced by its originating goal and the editor revision.
 Replacing the goal or editing during either live streaming or the final drain
 cancels the pending automatic apply/save/compile and preserves current document

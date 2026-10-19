@@ -474,7 +474,12 @@ impl AiRuntime {
                 self.clear_app_turn_timing();
                 return true;
             }
-            let framed = if result.is_ok() {
+            // Service output is append-only during this lease, and Ok(true)
+            // is its visible-output change notification. Waiting for a worker
+            // or advancing prefill cannot complete an unchanged source frame;
+            // do not rescan up to 16 KiB on every cooperative waiting poll.
+            // The terminal path below still validates the entire final output.
+            let framed = if result == Ok(true) {
                 crate::ui::app_assistant::Panel::completed_output_length(service.output())
             } else {
                 None

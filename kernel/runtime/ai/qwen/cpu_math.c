@@ -107,6 +107,21 @@ void infinity_attention_scores(const float *query, const float *keys,
     attention_fp_leave(saved);
 }
 // ------------------------=
+// FUNC: infinity_attention_softmax
+// DESC: Evaluates one causal head's unchanged libm exponential and serial sum with native FP through a pointer-only ABI.
+// ------------------=
+void infinity_attention_softmax(float *scores, const float *maximum,
+                                size_t count, float *sum) {
+    uint64_t saved = attention_fp_enter();
+    float total = 0.0f;
+    for (size_t i = 0; i < count; ++i) {
+        scores[i] = native_expf(scores[i] - *maximum);
+        total += scores[i];
+    }
+    *sum = total;
+    attention_fp_leave(saved);
+}
+// ------------------------=
 // FUNC: infinity_attention_values
 // DESC: Accumulates one causal value head using independent NEON lanes without reassociation or fused rounding.
 // ------------------=

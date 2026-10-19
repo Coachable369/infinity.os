@@ -38,3 +38,34 @@
 Built media: `build/qwen/InfinityOS-Qwen3-8B-aarch64.iso`. Full fresh-install UI
 interaction and measured installed mouse responsiveness remain pending; passing
 geometry tests are not a claim of measured input latency.
+
+## Generated-source repaint follow-up (2026-10-19 UTC)
+
+The editor clips each glyph once, composites its unchanged coverage mask through
+the existing pixel blender, and submits one conservative damage rectangle for
+the glyph instead of one rectangle per ink pixel. Geometry, colors, alpha,
+font advance, source buffering, undo, and cancellation are unchanged.
+
+The production editor-window painter was measured after three warmup frames,
+using nine timed frames per case. For a 16 KiB document at 2× scale, the host
+median decreased from 18.801 ms to 17.298 ms (8.0%); damage submissions decreased
+from 295,403 to 53,882 (81.8%). At 1×, the median decreased from 4.832 ms to
+4.619 ms. These are **host repaint measurements, not token-generation speed or
+installed input latency**. The host fixture also excludes the kernel damage
+region merger. Appending the entire 16 KiB source in 32-byte chunks, including
+two wrap scans per chunk, took about 16 ms total; the document buffer was not
+rewritten without evidence of a bottleneck.
+
+All nine full-window zoom captures remained pixel-identical. Behavioral glyph
+checks compare the old per-pixel composition with batching across four font
+families, nine sizes, two scales, pixel formats, clipping and retained-alpha
+surfaces. Each painted glyph now produces exactly one damage submission.
+
+Reproduce through the build authority: build `active-painter-test` with
+`./build-kit run make active-painter-test`, then run the resulting executable
+through `./build-kit run` with `--editor-streaming-benchmark=before` or `=after`.
+Use separately preserved binaries for meaningful before/after comparisons.
+`--editor-typography-only` exercises pixel parity. Evidence is retained in
+`builds/validation/editor/streaming-{before,after}.json`; manifests are
+`20261019T025852266450Z-57890`, `20261019T030010960403Z-57995` and
+`20261019T030057532668Z-58169`.

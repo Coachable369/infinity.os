@@ -67,6 +67,74 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 }
 
 // ------------------------=
+// FUNC: profile_models
+// DESC: Validates the documented identity disk envelope and returns only active users' persisted model indices, never identity or credential data.
+// ------------------=
+fn profile_models(bytes: &[u8]) -> Option<Vec<(u8, bool)>> {
+    if bytes.len() < 4096 || &bytes[..8] != b"INFIDN1\0" { return None; }
+    let version = u16::from_le_bytes(bytes[8..10].try_into().ok()?);
+    // Identity versions 1/2/3 contain the same eight 160-byte user records.
+    // Reject future layouts rather than interpreting unknown private fields.
+    if !matches!((version, bytes.len()), (1, 4096) | (2, 5632) | (3, 10768))
+        || u16::from_le_bytes(bytes[10..12].try_into().ok()?) as usize != bytes.len() { return None; }
+    let checksum = bytes[..bytes.len()-4].iter().fold(0x811c9dc5u32,
+        |sum, byte| (sum ^ *byte as u32).wrapping_mul(0x01000193));
+    if u32::from_le_bytes(bytes[bytes.len()-4..].try_into().ok()?) != checksum { return None; }
+    let mut models = Vec::new();
+    for index in 0..8 {
+        let at = 160 + index * 160;
+        if bytes[at] == 0 || bytes[at+1] != 1 { continue; }
+        let flags = bytes[at+157];
+        let selected = (flags >> 2) & 15;
+        models.push((if flags & 0x80 == 0 || selected > 4 { 3 } else { selected },
+                     flags & 0x80 == 0 || flags & 2 != 0));
+    }
+    Some(models)
+}
+
+// ------------------------=
+// FUNC: inspect_profile_models
+// DESC: Reads persisted AI selection from a stopped private installation through the read-only native ObjectStore and emits only numeric preferences.
+// ------------------=
+fn inspect_profile_models<D: BlockDevice>(store: &mut ObjectStore<D>) {
+    let object = store.resolve(b"/system/identity/state").expect("identity state");
+    let size = store.metadata(object).unwrap().logical_size as usize;
+    assert!(size <= 16 * 1024);
+    let mut bytes = vec![0; size];
+    assert_eq!(store.read(object, None, &mut bytes).unwrap(), size);
+    let models = profile_models(&bytes).expect("valid versioned identity preferences");
+    let records: Vec<_> = models.iter().map(|(index, enabled)|
+        format!("{{\"chat_model_index\":{index},\"chat_enabled\":{enabled}}}")).collect();
+    println!("{{\"active_user_count\":{},\"profiles\":[{}],\"read_only\":true}}", models.len(), records.join(","));
+}
+
+// ------------------------=
+// FUNC: profile_model_projection_validates_envelope
+// DESC: Verifies model projection, legacy defaults, inactive-user exclusion and corruption rejection without exposing or changing private fields.
+// ------------------=
+#[test]
+fn profile_model_projection_validates_envelope() {
+    for (version, size) in [(1u16, 4096usize), (2, 5632), (3, 10768)] {
+        let mut bytes = vec![0u8; size];
+        bytes[..8].copy_from_slice(b"INFIDN1\0");
+        bytes[8..10].copy_from_slice(&version.to_le_bytes());
+        bytes[10..12].copy_from_slice(&(size as u16).to_le_bytes());
+        for (index, flags) in [0x8e, 0x92, 0x80, 0x00, 0xfe].into_iter().enumerate() {
+            let at = 160 + index * 160;
+            bytes[at] = 1; bytes[at+1] = 1; bytes[at+157] = flags;
+        }
+        bytes[960] = 1; bytes[961] = 2;
+        let checksum = bytes[..size-4].iter().fold(0x811c9dc5u32,
+            |sum, byte| (sum ^ *byte as u32).wrapping_mul(0x01000193));
+        bytes[size-4..].copy_from_slice(&checksum.to_le_bytes());
+        assert_eq!(profile_models(&bytes), Some(vec![(3,true),(4,true),(0,false),(3,true),(3,true)]));
+        bytes[317] ^= 1;
+        assert_eq!(profile_models(&bytes), None);
+        assert_eq!(profile_models(&bytes[..100]), None);
+    }
+}
+
+// ------------------------=
 // FUNC: export_generated
 // DESC: Extracts bounded generated C and native executables from the stopped private test disk through its actual read-only ObjectStore.
 // ------------------=
@@ -120,6 +188,11 @@ fn main() {
     assert!(container_lba > 0, "Infinity Container partition missing");
     let mut store = ObjectStore::mount(disk, container_lba).expect("mount native Object Store");
     let arguments: Vec<String> = std::env::args().collect();
+    if arguments.get(2).map(String::as_str) == Some("--profile-only") {
+        assert_eq!(arguments.len(), 3);
+        inspect_profile_models(&mut store);
+        return;
+    }
     if arguments.get(2).map(String::as_str) == Some("--export-generated") {
         assert_eq!(arguments.len(), 4);
         export_generated(&mut store, &arguments[3]);
