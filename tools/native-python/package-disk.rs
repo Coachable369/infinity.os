@@ -5,7 +5,7 @@
 #[path = "../../sdk/infinity-browser-core/favorites.rs"] mod favorites;
 #[path = "../../kernel/runtime/font_preferences.rs"] mod font_preferences;
 use std::{fs::{File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}, path::Path};
-use storage::{BlockDevice, object::{ObjectStore, ObjectId, ObjectType, Space}};
+use storage::{BlockDevice, object::{ObjectStore, ObjectId, ObjectType, ObjectQueryRequest, Space}};
 
 struct Disk { file: File, sectors: u64, writable: bool }
 impl BlockDevice for Disk {
@@ -67,14 +67,69 @@ fn first_owner(store: &mut ObjectStore<Disk>) -> ObjectId {
 }
 
 // ------------------------=
+// FUNC: seed_inputs
+// DESC: Reuses four private fixture objects across phases, reserving namespace capacity and proving package bytes remain unchanged.
+// ------------------=
+fn seed_inputs(store: &mut ObjectStore<Disk>, directory: &Path, owner: ObjectId, phase: &str, architecture: &str) {
+    let native = match architecture {
+        "aarch64" => "infinity_test_native-1.0.0-cp313-cp313-infinityos_aarch64.whl",
+        "x86_64" => "infinity_test_native-1.0.0-cp313-cp313-infinityos_x86_64.whl",
+        _ => panic!("Unsupported fixture architecture"),
+    };
+    let names = match phase {
+        "install" => ["infinity_test_base-1.0.0-py3-none-any.whl", "infinity_test_app-1.0.0-py3-none-any.whl", "import.py", "metadata.py"],
+        "reject" => ["infinity_test_platform-1.0.0-cp313-cp313-win_amd64.whl", "infinity_test_escape-1.0.0-py3-none-any.whl", "import.py", native],
+        "upgrade" => ["infinity_test_base-1.0.0-py3-none-any.whl", "infinity_test_app-1.1.0-py3-none-any.whl", "upgraded.py", "absent.py"],
+        _ => panic!("Unsupported fixture phase"),
+    };
+    let mut previous = vec![0; 8 * 1024 * 1024];
+    let (revision, length) = store.read_python_packages(owner, &mut previous).unwrap();
+    previous.truncate(length);
+    for (index, name) in names.iter().enumerate() {
+        let bytes = std::fs::read(directory.join(name)).unwrap();
+        assert!(bytes.len() <= 16 * 1024);
+        let label = format!("pip-fixture-{index}");
+        let existing = (0..256).filter_map(|i| store.query_nth(ObjectQueryRequest {
+            kind: Some(ObjectType::Text), space: Some(Space::Personal), include_tombstones: false,
+        }, i)).find(|item| &item.display_name[..item.display_name_length as usize] == label.as_bytes());
+        let path = format!("/home/default/documents/{name}");
+        let object = if let Some(existing) = existing {
+            let id = existing.object.id;
+            assert_eq!(store.metadata(id).unwrap().owner, owner);
+            assert_eq!(store.namespace_refs(id), 1);
+            let old_path = store.namespace_ref_nth(id, 0).unwrap().to_vec();
+            assert!(old_path.starts_with(b"/home/default/documents/"));
+            if old_path != path.as_bytes() { store.move_entry(&old_path, path.as_bytes()).unwrap(); }
+            store.replace_state(id, &bytes).unwrap();
+            id
+        } else {
+            assert_eq!(phase, "install", "Later phases may only reuse fixture objects");
+            let used = (0..storage::object::NAMESPACE_CAPACITY).filter(|i| store.namespace_entry(*i).is_some()).count();
+            assert!(used + (names.len() - index) + usize::from(revision.is_none()) <= storage::object::NAMESPACE_CAPACITY,
+                "Fresh test disk lacks room for four fixture inputs and its private package archive");
+            store.create_owned_attached(label.as_bytes(), ObjectType::Text, Space::Personal, &bytes, path.as_bytes(), owner).unwrap()
+        };
+        let mut actual = vec![0; bytes.len()];
+        assert_eq!(store.read(object, None, &mut actual).unwrap(), bytes.len());
+        assert_eq!(actual, bytes);
+    }
+    let mut after = vec![0; 8 * 1024 * 1024];
+    let (after_revision, after_length) = store.read_python_packages(owner, &mut after).unwrap();
+    assert_eq!(revision, after_revision);
+    assert_eq!(previous, after[..after_length]);
+    println!("{{\"seeded_inputs\":4,\"reused_phase\":\"{phase}\",\"package_state_changed\":false}}");
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Seeds only immutable wheel/script fixtures or exports a user's committed package archive from an explicitly stopped private test disk.
 // ------------------=
 fn main() {
     assert_eq!(std::env::var("INFINITY_BUILD_KIT_ACTIVE").as_deref(), Ok("1"));
     let args: Vec<_> = std::env::args().collect();
-    assert_eq!(args.len(), 4);
+    assert!(args.len() == 4 || args.len() == 6);
     assert!(matches!(args[1].as_str(), "seed" | "inspect"));
+    assert_eq!(args.len(), if args[1] == "seed" { 6 } else { 4 });
     let path = fixture_path(&args[2]);
     assert_eq!(path.extension().unwrap(), "raw");
     let directory = fixture_path(&args[3]);
@@ -89,23 +144,7 @@ fn main() {
     let mut store = ObjectStore::mount(disk, partition).unwrap();
     let owner = first_owner(&mut store);
     if writable {
-        let names = ["infinity_test_base-1.0.0-py3-none-any.whl", "infinity_test_app-1.0.0-py3-none-any.whl",
-            "infinity_test_app-1.1.0-py3-none-any.whl",
-            "infinity_test_escape-1.0.0-py3-none-any.whl", "infinity_test_platform-1.0.0-cp313-cp313-win_amd64.whl",
-            "infinity_test_native-1.0.0-cp313-cp313-infinityos_aarch64.whl",
-            "infinity_test_native-1.0.0-cp313-cp313-infinityos_x86_64.whl",
-            "import.py", "metadata.py", "absent.py", "isolated.py", "upgraded.py"];
-        for (index, name) in names.iter().enumerate() {
-            let bytes = std::fs::read(directory.join(name)).unwrap();
-            assert!(bytes.len() <= 1024 * 1024);
-            let path = format!("/home/default/documents/{name}");
-            let object = store.create_owned_attached(format!("pip-fixture-{index}").as_bytes(),
-                ObjectType::Text, Space::Personal, &bytes, path.as_bytes(), owner).unwrap();
-            let mut actual = vec![0; bytes.len()];
-            assert_eq!(store.read(object, None, &mut actual).unwrap(), bytes.len());
-            assert_eq!(actual, bytes);
-        }
-        println!("{{\"seeded_inputs\":{},\"package_state_changed\":false}}", names.len());
+        seed_inputs(&mut store, &directory, owner, &args[4], &args[5]);
     } else {
         let mut bytes = vec![0; 8 * 1024 * 1024];
         let (revision, length) = store.read_python_packages(owner, &mut bytes).unwrap();

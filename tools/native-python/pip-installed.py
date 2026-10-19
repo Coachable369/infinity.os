@@ -26,6 +26,32 @@ def module(name, path):
 
 
 # ------------------------=
+# FUNC: validate_media_layout
+# DESC: Checks both media-owned ELF load maps against the selected emulator before creating a VM or changing a disk.
+# ------------------=
+def validate_media_layout(artifacts, architecture):
+    layout = module("native_package_kernel_layout", ROOT / "tools/kernel_layout.py")
+    platform = "qemu" if architecture == "aarch64" else "virtualbox"
+    expected_machine = {"aarch64": 183, "x86_64": 62}[architecture]
+    ranges = {}
+    for name in ("kernel.elf", "installed-kernel.elf"):
+        with (artifacts / name).open("rb") as stream:
+            header = stream.read(65536)
+        try:
+            if len(header) < 20 or struct.unpack_from("<H", header, 18)[0] != expected_machine:
+                raise ValueError("Kernel architecture does not match the selected guest")
+            ranges[name] = layout.validate(header, platform=platform)
+        except ValueError as error:
+            if architecture == "aarch64":
+                raise ValueError(f"{name}: {error}. This QEMU runner requires ARM QEMU-linked media; "
+                                 "use --iso build/test-media/InfinityOS-aarch64-qemu.bootmedia "
+                                 "(or InfinityOS-aarch64-qemu-models.bootmedia). "
+                                 "The published ARM ISO is for VirtualBox, not QEMU virt.") from error
+            raise ValueError(f"{name}: {error}") from error
+    return {"emulator": "qemu-virt" if architecture == "aarch64" else "qemu-pc", "load_ranges": ranges}
+
+
+# ------------------------=
 # FUNC: execute
 # DESC: Submits real console input and verifies typed exit and memory-reclamation receipts rather than output prose.
 # ------------------=
@@ -104,6 +130,20 @@ def resume(guest):
 
 
 # ------------------------=
+# FUNC: seed
+# DESC: Swaps only four test-input objects on the stopped disk while preserving the committed package archive and namespace headroom.
+# ------------------=
+def seed(guest, helper, fixtures, phase):
+    guest.stop()
+    result = subprocess.run([str(helper), "seed", str(guest.disk), str(fixtures), phase, guest.arch],
+                            check=True, capture_output=True, text=True)
+    receipt = json.loads(result.stdout)
+    assert receipt["seeded_inputs"] == 4 and not receipt["package_state_changed"]
+    assert receipt["reused_phase"] == phase
+    return receipt
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs real media and proves native pip dependency resolution, package data, cold persistence, failed-install atomicity and removal.
 # ------------------=
@@ -122,8 +162,12 @@ def main():
     work = ROOT / "build" / f"browser-installed-pip-{args.arch}-{time.time_ns()}"
     artifacts = work / "artifacts"
     artifacts.mkdir(parents=True)
-    shutil.copyfile(iso, artifacts / "installer.iso")
     kernels = native.desktop.extract_media_kernels(iso, artifacts, args.arch)
+    try:
+        layout = validate_media_layout(artifacts, args.arch)
+    except ValueError as error:
+        parser.error(str(error))
+    shutil.copyfile(iso, artifacts / "installer.iso")
     fixture_dir = work / "package-fixtures"
     fixtures.verify_fixtures()
     fixture_manifest = fixtures.write_inputs(fixture_dir)
@@ -141,7 +185,8 @@ def main():
     destination = ROOT / "builds/validation/native-python" / args.arch / ("pip-installed-" + str(time.time_ns()))
     destination.mkdir(parents=True)
     proof = {"architecture": args.arch, "installed_acceptance": False, "media_kernels": kernels,
-             "fixture_manifest": fixture_manifest, "stages": [], "authenticated_second_user_test": False}
+             "media_layout": layout, "fixture_manifest": fixture_manifest, "stages": [],
+             "authenticated_second_user_test": False}
     documents = "/home/default/documents/"
     try:
         guest.install()
@@ -150,10 +195,10 @@ def main():
                         str(artifacts / "installed-kernel.elf"), "--verify-only"], check=True)
         guest.onboard()
         guest.stop()
-        result = subprocess.run([str(helper), "seed", str(guest.disk), str(fixture_dir)],
-                                check=True, capture_output=True, text=True)
-        proof["fixture_seed"] = json.loads(result.stdout)
+        proof["fixture_phases"] = [seed(guest, helper, fixture_dir, "install")]
         resume(guest)
+        proof["stages"].append(execute(guest, python, "python " + documents + "hello.py"))
+        proof["stages"].append(execute(guest, python, "python " + documents + "native_demo.py"))
         proof["stages"].append(execute(guest, python, "python -m pip --version"))
         proof["stages"].append(execute(guest, python, "pip install " + documents + fixtures.APP))
         proof["stages"].append(execute(guest, python, "python " + documents + "import.py"))
@@ -162,6 +207,7 @@ def main():
         assert entries["/packages/infinity_test_app/nested/numbers.txt"]["bytes"] == b"19 35\n"
         assert entries["/packages/infinity_test_base/__init__.py"]["bytes"] == fixtures.BASE_SOURCE
         proof["installed_archive"] = before
+        proof["fixture_phases"].append(seed(guest, helper, fixture_dir, "reject"))
         resume(guest)
         proof["stages"].append(execute(guest, python, "python " + documents + "import.py"))
         proof["cold_boot_import"] = True
@@ -170,6 +216,7 @@ def main():
         after, _ = inspect(guest, helper, destination / "rejected")
         assert before["archive_sha256"] == after["archive_sha256"] and before["version"] == after["version"]
         proof["failed_install_preserved_state"] = True
+        proof["fixture_phases"].append(seed(guest, helper, fixture_dir, "upgrade"))
         resume(guest)
         proof["stages"].append(execute(guest, python, "pip install --upgrade " + documents + fixtures.UPGRADE))
         proof["stages"].append(execute(guest, python, "python " + documents + "upgraded.py"))

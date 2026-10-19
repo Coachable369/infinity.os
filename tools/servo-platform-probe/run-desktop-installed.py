@@ -55,7 +55,7 @@ def extract_media_kernels(iso, artifacts, arch):
         parts=sorted((temporary/"payload").glob("P1-*.BIN"))
         assert parts and len(parts)<=8
         assert [part.name for part in parts]==[f"P1-{index:03}.BIN" for index in range(len(parts))]
-        assert 0<sum(part.stat().st_size for part in parts)<=1024**3
+        assert 0<sum(part.stat().st_size for part in parts)<=1536*1024**2
         with (temporary/"installed.elf").open("wb") as output:
             for part in parts:
                 with part.open("rb") as source: shutil.copyfileobj(source,output,1024*1024)

@@ -32,6 +32,8 @@ fn main() {
     assert_eq!(layout::store_relative_lba(256 * 2048 + 1), Ok(layout::LARGE_STORE_RELATIVE_LBA));
     assert_eq!(layout::store_relative_lba(512 * 2048), Ok(layout::LARGE_STORE_RELATIVE_LBA));
     assert_eq!(layout::store_relative_lba(512 * 2048 + 1), Ok(layout::BROWSER_STORE_RELATIVE_LBA));
+    assert_eq!(layout::store_relative_lba(1024 * 2048), Ok(layout::BROWSER_STORE_RELATIVE_LBA));
+    assert_eq!(layout::store_relative_lba(1024 * 2048 + 1), Ok(layout::EXTENDED_STORE_RELATIVE_LBA));
     let maximum = layout::plan_entire_disk(
         REPROVISION_DISK_BLOCKS,
         arm_esp_blocks,
@@ -40,7 +42,7 @@ fn main() {
     .unwrap();
     assert_eq!(
         maximum.kernel_lba + maximum_kernel_blocks,
-        maximum.container_first + layout::BROWSER_STORE_RELATIVE_LBA
+        maximum.container_first + layout::EXTENDED_STORE_RELATIVE_LBA
     );
     assert_eq!(
         layout::plan_entire_disk(

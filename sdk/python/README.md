@@ -50,6 +50,36 @@ last command is a hardware-isolated guest test, not installed acceptance.
 It checks a calculated exit status and memory reclamation, not diagnostic prose.
 Until that gate and command-line integration pass, this port is not released.
 
+The pip lifecycle probe executes the real native interpreter and bundled pip,
+including dependency resolution, compressed wheels, metadata, rejected wheels,
+upgrade, archive remount, and uninstall:
+
+```sh
+./build-kit run python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-pip
+./build-kit run python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-pip
+```
+
+That isolated-process probe does not prove the installed console or an OS reboot.
+After `./build-kit full`, run the following separately in the exclusive build
+slot for fresh installation, authenticated console commands, cold-boot package
+imports, upgrade, failure rollback, and uninstall:
+
+```sh
+./build-kit run python3 tools/native-python/pip-installed.py --arch aarch64 --iso build/test-media/InfinityOS-aarch64-qemu.bootmedia
+./build-kit run python3 tools/native-python/pip-installed.py --arch x86_64 --iso builds/InfinityOS-x86_64.iso
+```
+
+The ARM command intentionally uses QEMU-linked test media: its live and installed
+kernels start at `0x50000000`, inside QEMU virt RAM. The published
+`builds/InfinityOS-aarch64.iso` starts at `0x10000000` for VirtualBox and must not
+be passed to this QEMU runner. The harness validates actual ELF load ranges,
+not filenames, before starting a VM. For ARM full-model-bundle testing, create
+`./build-kit package-aarch64-qemu` and substitute
+`build/test-media/InfinityOS-aarch64-qemu-models.bootmedia`. The focused Python/pip
+test does not need the model bundle. Both commands install unchanged media on a
+new disposable disk; they never replace an installed kernel offline. A separate
+authenticated second-user session test is not claimed by this harness.
+
 ## Console integration
 
 The native console accepts `python /home/default/documents/hello.py` and the

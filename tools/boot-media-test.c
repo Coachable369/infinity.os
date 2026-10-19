@@ -236,7 +236,9 @@ int main(void) {
     assert(installed_kernel_size_valid(sizeof(Elf64Header)));
     assert(installed_kernel_size_valid(UINT64_C(802)*1024*1024));
     assert(installed_kernel_size_valid(UINT64_C(1024)*1024*1024));
-    assert(!installed_kernel_size_valid(UINT64_C(1024)*1024*1024+1));
+    assert(installed_kernel_size_valid(UINT64_C(1024)*1024*1024+1));
+    assert(installed_kernel_size_valid(UINT64_C(1536)*1024*1024));
+    assert(!installed_kernel_size_valid(UINT64_C(1536)*1024*1024+1));
     EFI_BOOT_SERVICES boot = {0};
     boot.allocate_pages = test_image_allocate; boot.free_pages = test_image_free;
     assert(!allocate_kernel_image(&boot, 0));

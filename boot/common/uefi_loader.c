@@ -614,7 +614,7 @@ static EFI_STATUS read_blocks_bounded(
 // DESC: Bounds installed ELF payloads before allocation, matching the native generation reservation.
 // ------------------=
 static int installed_kernel_size_valid(uint64_t bytes) {
-    return bytes >= sizeof(Elf64Header) && bytes <= UINT64_C(1024) * 1024 * 1024;
+    return bytes >= sizeof(Elf64Header) && bytes <= UINT64_C(1536) * 1024 * 1024;
 }
 
 // ------------------------=

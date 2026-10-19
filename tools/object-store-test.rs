@@ -23,6 +23,40 @@ use storage::{
 
 #[derive(Clone)]
 struct MemoryDisk(Rc<RefCell<Vec<[u8; 512]>>>, Rc<Cell<Option<u64>>>);
+
+#[derive(Clone)]
+struct SparseDisk {
+    sectors: u64,
+    bytes: Rc<RefCell<std::collections::BTreeMap<u64, [u8; 512]>>>,
+}
+impl BlockDevice for SparseDisk {
+    // ------------------------=
+    // FUNC: block_count
+    // DESC: Exposes large install geometry without allocating every empty fixture sector.
+    // ------------------=
+    fn block_count(&self) -> u64 { self.sectors }
+    // ------------------------=
+    // FUNC: read_sector
+    // DESC: Reads durable fixture bytes, with never-written valid sectors returning zeroes.
+    // ------------------=
+    fn read_sector(&mut self, lba: u64, out: &mut [u8; 512]) -> bool {
+        if lba >= self.sectors { return false; }
+        *out = self.bytes.borrow().get(&lba).copied().unwrap_or([0; 512]); true
+    }
+    // ------------------------=
+    // FUNC: write_sector
+    // DESC: Persists only in-range sectors through the production block-device contract.
+    // ------------------=
+    fn write_sector(&mut self, lba: u64, input: &[u8; 512]) -> bool {
+        if lba >= self.sectors { return false; }
+        self.bytes.borrow_mut().insert(lba, *input); true
+    }
+    // ------------------------=
+    // FUNC: flush
+    // DESC: Completes synchronous sparse fixture writes.
+    // ------------------=
+    fn flush(&mut self) -> bool { true }
+}
 impl MemoryDisk {
     // ------------------------=
     // FUNC: new
@@ -264,6 +298,7 @@ fn main() {
     private_editor_preferences(test_sectors);
     private_browser_settings(test_sectors);
     legacy_store_mount(test_sectors);
+    large_kernel_store_mount();
     checkpoint_replacement(test_sectors);
     editor_documents_recovery(test_sectors);
     hello_document_provisioning(test_sectors);
@@ -933,10 +968,15 @@ fn legacy_store_mount(sectors: usize) {
 // DESC: Verifies the expanded location persists ordinary objects without touching the historical kernel/store area.
 // ------------------=
 fn large_kernel_store_mount() {
-    for offset in [storage::layout::LARGE_STORE_RELATIVE_LBA, storage::layout::BROWSER_STORE_RELATIVE_LBA] {
+    for offset in [storage::layout::LARGE_STORE_RELATIVE_LBA, storage::layout::BROWSER_STORE_RELATIVE_LBA,
+                   storage::layout::EXTENDED_STORE_RELATIVE_LBA] {
     let sectors = offset + 32_768;
-    let disk = MemoryDisk::new(sectors as usize);
-    disk.0.borrow_mut()[STORE_RELATIVE_LBA as usize] = [0xa5; 512];
+    let disk = SparseDisk { sectors, bytes: Rc::new(RefCell::new(std::collections::BTreeMap::new())) };
+    let protected = [storage::layout::LEGACY_STORE_RELATIVE_LBA, STORE_RELATIVE_LBA,
+        storage::layout::LARGE_STORE_RELATIVE_LBA, storage::layout::BROWSER_STORE_RELATIVE_LBA, offset - 1];
+    for sector in protected.into_iter().filter(|sector| *sector < offset) {
+        disk.bytes.borrow_mut().insert(sector, [0xa5; 512]);
+    }
     let mut store = ObjectStore::format_with_progress_at(disk.clone(), 0, sectors, [0x71; 16],
         offset, &mut |_, _| {}).unwrap();
     let documents = store.resolve(b"/home/default/documents").unwrap();
@@ -945,7 +985,9 @@ fn large_kernel_store_mount() {
     let mut mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
     assert!(mounted.runtime_bootstrap_valid());
     assert_eq!(mounted.resolve(b"/home/default/large-kernel-link").unwrap(), documents);
-    assert_eq!(disk.0.borrow()[STORE_RELATIVE_LBA as usize], [0xa5; 512]);
+    for sector in protected.into_iter().filter(|sector| *sector < offset) {
+        assert_eq!(disk.bytes.borrow().get(&sector), Some(&[0xa5; 512]));
+    }
     }
 }
 
