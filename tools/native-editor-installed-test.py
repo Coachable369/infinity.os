@@ -395,6 +395,27 @@ def editor_window_control(guest, control):
     scale = 2 if display[11] >= 2560 and display[12] >= 1440 else 1
     target_x = x + width - (93 if control == "minimize" else 25) * scale
     target_y = y + 24 * scale
+    chrome = read(guest, "INFINITY_WINDOW_CONTROL_SNAPSHOT", 81)
+    assert chrome[:2] == (0x494e465743545231, 1)
+    if chrome[7] and chrome[5] <= target_x < chrome[5] + chrome[7] and target_y >= chrome[6]:
+        # The retained minimized-app rail can cover Close in the small test
+        # viewport. Move the real titlebar above it; do not click through it or
+        # change desktop state through debugger memory.
+        title_x = x + min(width // 3, 200 * scale)
+        clear_y = max(60 * scale, chrome[6] - 16 * scale)
+        assert clear_y < target_y
+        guest.width, guest.height = display[11:13]
+        guest.click(title_x, target_y, press=False)
+        guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": True}}]})
+        guest.wait(lambda snapshot: snapshot[15] & 1, "titlebar drag pressed", timeout=30)
+        guest.click(title_x, clear_y, press=False)
+        guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
+        guest.wait(lambda snapshot: not snapshot[15] & 1, "titlebar drag released", timeout=30)
+        moved = ui.wait_feature(guest, lambda snapshot: snapshot[12] == 2 and snapshot[22] < y)
+        x, y, width, _ = moved[21:25]
+        target_x = x + width - (93 if control == "minimize" else 25) * scale
+        target_y = y + 24 * scale
+        assert target_y < chrome[6], {"close_still_occluded": (target_x, target_y), "rail_top": chrome[6]}
     assert 0 <= target_x < display[11] and 0 <= target_y < display[12]
     ui.click(guest, target_x, target_y)
 
@@ -448,8 +469,13 @@ def verify_editor_lifecycle(guest):
     # action. This is not LLM-generated application evidence; it makes the later
     # transaction-clearing assertion non-vacuous without an expensive model run.
     addition = "// retained"
-    ui.panel_click(guest, "toggle")
+    if not features(guest)[13]:
+        ui.panel_click(guest, "toggle")
+    ui.wait_feature(guest, lambda state: state[13])
+    ui.panel_click(guest, "composer")
     ui.wait_feature(guest, lambda state: state[13] and state[15])
+    guest.key("ctrl", "x")
+    ui.wait_feature(guest, lambda state: state[18] == 0)
     ui.text(guest, "insert " + addition)
     guest.key("ret")
     ui.wait_feature(guest, lambda state: state[7] == len(source + addition) and state[14] == 0)
