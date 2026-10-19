@@ -23,6 +23,7 @@ pub mod native_compile_job;
 pub mod native_c_image;
 pub mod native_arguments;
 pub mod native_python_scope;
+pub mod native_python_packages;
 pub mod native_extensions;
 pub mod native_job_directories;
 #[cfg(all(feature="native-python", target_os="none", any(target_arch="aarch64", target_arch="x86_64")))]

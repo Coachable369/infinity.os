@@ -2,6 +2,7 @@
 # Host adapter tests; callbacks are controlled fixtures, not installed providers.
 set -eu
 cd "$(dirname "$0")/../.."
+. tools/require-build-kit.sh
 mkdir -p build/native-c
 /opt/homebrew/opt/llvm/bin/clang -std=c17 -Wall -Wextra -Werror \
   -Isdk/compiler/include sdk/compiler/platform.c tools/native-c-probe/directory-test.c \

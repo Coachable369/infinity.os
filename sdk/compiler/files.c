@@ -66,6 +66,9 @@ int open(const char *path, int flags, ...) {
 #ifdef O_BINARY
         | O_BINARY /* Object Store byte streams require no text translation. */
 #endif
+#ifdef O_NOFOLLOW
+        | O_NOFOLLOW
+#endif
         ;
     if (flags & ~supported) return file_error(ENOTSUP);
     uint32_t mode;
@@ -81,6 +84,9 @@ int open(const char *path, int flags, ...) {
     if (flags & O_TRUNC) mode |= 8;
     if (flags & O_APPEND) mode |= 16;
     if (flags & O_EXCL) mode |= 32;
+#ifdef O_NOFOLLOW
+    if (flags & O_NOFOLLOW) mode |= 128;
+#endif
     const InfinityCompilerHost *host = infinity_compiler_get_host();
     if (!host || !host->files || !host->files->open || !host->files->close)
         return file_error(ENOSYS);
@@ -276,6 +282,12 @@ int stat(const char *path, struct stat *out) {
 }
 
 // ------------------------=
+// FUNC: lstat
+// DESC: Inspects the native non-symbolic namespace using only the bound file provider.
+// ------------------=
+int lstat(const char *path, struct stat *out) { return stat(path, out); }
+
+// ------------------------=
 // FUNC: access
 // DESC: Checks effective native rights without granting subsequent operations authority.
 // ------------------=
@@ -331,5 +343,29 @@ int ftruncate(int fd, off_t length) {
     if (length < 0) return file_error(EINVAL);
     if (!slot->api.truncate) return file_error(ENOSYS);
     int error = slot->api.truncate(slot->context, slot->object, (uint64_t)length);
+    return error ? file_error(error) : 0;
+}
+
+// ------------------------=
+// FUNC: fsync
+// DESC: Flushes a valid writable descriptor within the owning provider's explicit transaction contract.
+// ------------------=
+int fsync(int fd) {
+    struct FileSlot *slot = lookup(fd);
+    if (!slot) return -1;
+    if (!slot->api.flush) return file_error(ENOSYS);
+    int error = slot->api.flush(slot->context, slot->object);
+    return error ? file_error(error) : 0;
+}
+// ------------------------=
+// FUNC: fchmod
+// DESC: Applies supported permissions to a generation-checked descriptor without broadening native grants.
+// ------------------=
+int fchmod(int fd, mode_t mode) {
+    struct FileSlot *slot = lookup(fd);
+    if (!slot) return -1;
+    if (mode & ~0777) return file_error(ENOTSUP);
+    if (!slot->api.permissions) return file_error(ENOSYS);
+    int error = slot->api.permissions(slot->context, slot->object, mode);
     return error ? file_error(error) : 0;
 }

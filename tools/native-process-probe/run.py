@@ -1,13 +1,88 @@
 """Real user-mode execution tests; not installed compiler/window acceptance."""
 from pathlib import Path
 import argparse
+import importlib.util
 import json
 import os
 import shutil
 import struct
 import subprocess
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# ------------------------=
+# FUNC: pip_result
+# DESC: Validates per-process pip lifecycle exits, archive commits and memory reclamation using binary native receipts.
+# ------------------=
+def pip_result(data, work, args):
+    destination = ROOT / "builds/validation/native-python" / args.arch
+    run = destination / ("pip-probe-" + str(time.time_ns()))
+    run.mkdir(parents=True)
+    (run / "result.bin").write_bytes(data)
+    proof = dict(architecture=args.arch, native_python_pip=False, hardware_user_mode=True,
+                 stages=[], installed_acceptance=False, authenticated_user_isolation=False,
+                 reboot_persistence=False)
+    (run / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
+    assert len(data) >= 24
+    marker, version, count = struct.unpack_from("<3Q", data)
+    assert marker == 0x5049504C49464531 and version == 1 and count == (1 if args.python_pip_imports else 13)
+    offset = 24
+    stages = []
+    names = ["version", "install", "import", "metadata", "reject-platform", "reject-traversal",
+             "persisted-import", "isolated-namespace", "upgrade", "upgraded-import", "reject-native", "uninstall", "removed"]
+    if args.python_pip_imports:
+        names = ["install-uninstall-imports"]
+    previous_hash = None
+    for index in range(count):
+        assert len(data) >= offset + 80
+        stage, status, visits, before, after, archive_bytes, digest, committed, stdout, stderr = struct.unpack_from("<10Q", data, offset)
+        offset += 80
+        assert stage == index and visits > 0 and before == after
+        assert archive_bytes > 0 and stdout <= 65536 and stderr <= 65536
+        output_size = (stdout + 7) // 8 * 8
+        error_size = (stderr + 7) // 8 * 8
+        assert len(data) >= offset + output_size + error_size
+        output = data[offset:offset + stdout]
+        (work / (names[index] + "-stdout.log")).write_bytes(output)
+        (run / (names[index] + "-stdout.log")).write_bytes(output)
+        offset += output_size
+        errors = data[offset:offset + stderr]
+        (work / (names[index] + "-stderr.log")).write_bytes(errors)
+        (run / (names[index] + "-stderr.log")).write_bytes(errors)
+        offset += error_size
+        proof["observed_stage"] = dict(name=names[index], exit_status=status, before_pages=before,
+                                        after_pages=after, archive_bytes=archive_bytes,
+                                        archive_fingerprint=digest, committed=bool(committed))
+        proof["stages"] = stages
+        (run / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
+        if index in (4, 5, 10):
+            assert 0 < status < 256 and not committed and digest == previous_hash
+        else:
+            assert status == 0, (names[index], status, (work / (names[index] + "-stderr.log")).read_text(errors="replace"))
+        if index in (1, 8, 11):
+            assert committed == 1 and digest != previous_hash
+        if index in (2, 3, 6, 7, 9, 12):
+            assert not committed and digest == previous_hash
+        previous_hash = digest
+        stages.append(dict(name=names[index], exit_status=status, poll_visits=visits,
+                           memory_reclaimed=True, committed=bool(committed), archive_bytes=archive_bytes,
+                           archive_fingerprint=digest, stdout_bytes=stdout, stderr_bytes=stderr))
+    assert data[offset:] == struct.pack("<Q", 0x504950434F4D504C)
+    if args.python_pip_imports:
+        proof.update(native_python_pip=False, install_uninstall_imports=True, stages=stages)
+        (run / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
+        print(json.dumps(proof))
+        return
+    proof = dict(architecture=args.arch, native_python_pip=True, hardware_user_mode=True,
+                 actual_upstream_pip=True, archive_remount_between_processes=True,
+                 isolated_empty_namespace=True, memory_reclaimed=True, stages=stages,
+                 installed_acceptance=False, authenticated_user_isolation=False,
+                 reboot_persistence=False)
+    (run / "evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
+    (destination / "pip-lifecycle.json").write_text(json.dumps(proof, indent=2) + "\n")
+    (destination / "pip-lifecycle.bin").write_bytes(data)
+    print(json.dumps(proof))
 
 # ------------------------=
 # FUNC: compiler_result
@@ -121,6 +196,8 @@ def virtualbox_compiler_result(path, args):
 # DESC: Builds and boots one disposable x86 VM, asserting binary privilege/fault/preemption outcomes.
 # ------------------=
 def main():
+    if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
+        raise SystemExit("Use ./build-kit run python3 tools/native-process-probe/run.py")
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
     parser.add_argument("--gic", choices=[2, 3], type=int, default=2)
@@ -132,6 +209,8 @@ def main():
     parser.add_argument("--memory", choices=["512M", "1G"], default="1G", help="Firmware guest RAM for low-memory boot coverage")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--python-script", action="store_true", help="Execute a real Python script using the supplied native interpreter image")
+    parser.add_argument("--python-pip", action="store_true", help="Run actual pip install/import/metadata/rejection/uninstall across serialized native package mounts")
+    parser.add_argument("--python-pip-imports", action="store_true", help="Diagnose native installer imports before pip's eager-import audit can mask their exceptions")
     parser.add_argument("--python-extension", type=Path, help="Import and call an actual CPython native extension in the guest")
     parser.add_argument("--python-validation", choices=("valid", "invalid"), help="Run the production -c syntax validator without executing the granted Python source")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
@@ -147,6 +226,8 @@ def main():
         return
     assert not args.interactive or args.compiler
     assert not args.python_script or (args.compiler and not args.compile_source and not args.link_object)
+    assert not args.python_pip or (args.compiler and not args.python_script and not args.compile_source and not args.link_object and not args.firmware and not args.virtualbox)
+    assert not args.python_pip_imports or args.python_pip
     assert not args.python_extension or args.python_script
     assert not args.python_validation or (args.python_script and not args.python_extension)
     assert not args.reject_invalid_source or (args.compiler and args.compile_source and not args.link_object)
@@ -180,6 +261,17 @@ def main():
         str(work / "user.o"), str(work / "isolated.o"), "-o", str(work / "user.elf")], check=True)
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(work / "cargo"),
         INFINITY_PROCESS_IMAGE=str(work / "user.elf"), INFINITY_PROCESS_GIC=str(args.gic))
+    if args.python_pip:
+        spec = importlib.util.spec_from_file_location("pip_fixtures", ROOT / "tools/native-python/package-tests.py")
+        fixtures = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixtures)
+        fixtures.verify_fixtures()
+        fixture_dir = work / "pip-fixtures"
+        fixtures.write_inputs(fixture_dir)
+        env["INFINITY_PIP_FIXTURES"] = str(fixture_dir)
+    env.pop("INFINITY_PIP_IMPORT_ONLY", None)
+    if args.python_pip_imports:
+        env["INFINITY_PIP_IMPORT_ONLY"] = "1"
     # Compiler probes use the actual isolated main() CRT shipped with the SDK.
     env["INFINITY_APPLICATION_CRT"] = str(ROOT / "builds/toolchains" / args.arch / "application-crt.o") if args.compiler else str(work / "user.o")
     env.pop("INFINITY_PROCESS_SPLIT_EOI", None)
@@ -221,7 +313,8 @@ def main():
         assert args.compiler
         env["INFINITY_COMPILER_SOURCE"] = "1"
     subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target",
-        target, "--manifest-path", "tools/native-process-probe/Cargo.toml"], env=env, check=True)
+        target, "--manifest-path", "tools/native-process-probe/Cargo.toml"] +
+        (["--features", "python-pip-probe"] if args.python_pip else []), env=env, check=True)
     subprocess.run([linker, "-nostdlib", "-static", "-T",
         "tools/native-process-probe/arm.ld" if arm else "linker/x86_64.ld", "-o", str(work / "probe.elf"),
         str(work / "cargo" / target / "release/libinfinity_native_process_probe.a")] +
@@ -243,8 +336,11 @@ def main():
             subprocess.run(["qemu-system-aarch64", "-machine", f"virt,gic-version={args.gic}", "-cpu", "max",
                 "-m", args.memory if args.firmware else "512M", "-display", "none", "-monitor", "none",
                 "-qmp", f"unix:{work / 'monitor.sock'},server=on,wait=off", "-serial", f"file:{work / 'result.bin'}",
-                *boot_args], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120 if args.compiler or args.firmware else 30)
+                *boot_args], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600 if args.python_pip else 120 if args.compiler or args.firmware else 30)
         data = (work / "result.bin").read_bytes()
+        if args.python_pip:
+            pip_result(data, work, args)
+            return
         if args.firmware:
             data=data[-(12*32+8):]  # Only the fixed binary result trailer is acceptance evidence.
         if args.compiler:
@@ -272,9 +368,12 @@ def main():
             "-drive", "if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd",
             "-drive", f"format=raw,file=fat:rw:{esp}", "-boot", "order=c", "-net", "none",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-debugcon", f"file:{work / 'result.bin'}",
-            "-display", "none", "-serial", "stdio", "-no-reboot"], stdout=log, stderr=subprocess.STDOUT, timeout=120 if args.compiler else 60)
+            "-display", "none", "-serial", "stdio", "-no-reboot"], stdout=log, stderr=subprocess.STDOUT, timeout=600 if args.python_pip else 120 if args.compiler else 60)
     data = (work / "result.bin").read_bytes()
     assert run.returncode == 33, (run.returncode, data.hex(), (work / "qemu.log").read_text()[-2000:])
+    if args.python_pip:
+        pip_result(data, work, args)
+        return
     if args.compiler:
         compiler_result(data, work, args)
         return

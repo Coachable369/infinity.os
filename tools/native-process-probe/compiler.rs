@@ -1,4 +1,6 @@
 use super::{native_memory::*, native_c_image::Image, cpu::{self, Tables, Controller, Context, MACHINE}, emit, finish, IMAGE};
+#[cfg(feature = "python-pip-probe")]
+#[path = "pip.rs"] mod pip;
 const COMPILE: bool = option_env!("INFINITY_COMPILER_SOURCE").is_some();
 const PYTHON: bool = option_env!("INFINITY_PYTHON_PROBE").is_some();
 const PYTHON_EXTENSION: bool = option_env!("INFINITY_PYTHON_EXTENSION_PROBE").is_some();
@@ -52,6 +54,8 @@ unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: Kernel
 // DESC: Exercises the production bounded compiler task against real user-mode Clang and LLD, not a fixture-specific syscall loop.
 // ------------------=
 pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller: Controller) -> ! {
+    #[cfg(feature = "python-pip-probe")]
+    pip::run(memory, kernel, controller);
     let initial = memory.available_pages();
     let compile=super::native_compiler_task::COMPILE_ARGS;
     let link=super::native_compiler_task::LINK_ARGS;

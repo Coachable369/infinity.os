@@ -3,6 +3,7 @@
 #ifndef INFINITY_PYCONFIG_H
 #define INFINITY_PYCONFIG_H
 #define PLATFORM "infinityos"
+#define ABIFLAGS ""
 #if defined(__aarch64__)
 #define MULTIARCH "aarch64-infinityos"
 #define SOABI "cpython-313-aarch64-infinityos"
@@ -61,7 +62,14 @@
 #define HAVE_LSTAT 1
 #define HAVE_READLINK 1
 #define HAVE_FTRUNCATE 1
+#define HAVE_FSYNC 1
+#define HAVE_FCHMOD 1
+#define HAVE_CHMOD 1
+#define HAVE_UMASK 1
+#define HAVE_GETENTROPY 1
+#define HAVE_SYS_RANDOM_H 1
 #define HAVE_GETCWD 1
+#define HAVE_GETPID 1
 #define HAVE_LONG_LONG 1
 #define HAVE_SNPRINTF 1
 #define HAVE_VSNPRINTF 1

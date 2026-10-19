@@ -291,15 +291,55 @@ static int isolated_terminate(void *context, int status) {
     for (;;) infinity_system_call(INFINITY_SYS_YIELD, 0, 0, 0, 0, 0, 0);
 }
 
+// ------------------------=
+// FUNC: isolated_file_flush
+// DESC: Flushes staged bytes through the owning native transaction, never through host storage.
+// ------------------=
+static int isolated_file_flush(void *context, uint64_t handle) {
+    (void)context;
+    return service_result(infinity_system_call(INFINITY_COMPILER_FILE_FLUSH, handle, 0, 0, 0, 0, 0));
+}
+// ------------------------=
+// FUNC: isolated_file_permissions
+// DESC: Marshals a capability-checked descriptor permission request.
+// ------------------=
+static int isolated_file_permissions(void *context, uint64_t handle, uint32_t mode) {
+    (void)context;
+    return service_result(infinity_system_call(INFINITY_COMPILER_FILE_CHMOD, handle, mode, 0, 0, 0, 0));
+}
+// ------------------------=
+// FUNC: isolated_namespace_rename
+// DESC: Marshals an atomic scoped reference move across the user boundary.
+// ------------------=
+static int isolated_namespace_rename(void *context, const char *source, const char *target) {
+    (void)context;
+    return service_result(infinity_system_call(INFINITY_COMPILER_NAMESPACE_RENAME, (uintptr_t)source, (uintptr_t)target, 0, 0, 0, 0));
+}
+// ------------------------=
+// FUNC: isolated_namespace_rmdir
+// DESC: Requests removal of an empty authorized namespace.
+// ------------------=
+static int isolated_namespace_rmdir(void *context, const char *path) {
+    (void)context;
+    return service_result(infinity_system_call(INFINITY_COMPILER_NAMESPACE_RMDIR, (uintptr_t)path, 0, 0, 0, 0, 0));
+}
+// ------------------------=
+// FUNC: isolated_namespace_permissions
+// DESC: Marshals scoped path permissions without changing the initiating user's grant.
+// ------------------=
+static int isolated_namespace_permissions(void *context, const char *path, uint32_t mode) {
+    (void)context;
+    return service_result(infinity_system_call(INFINITY_COMPILER_NAMESPACE_CHMOD, (uintptr_t)path, mode, 0, 0, 0, 0));
+}
 static const InfinityCompilerFiles files = {
     isolated_file_open, isolated_file_read, isolated_file_write, isolated_file_seek,
     isolated_file_close, isolated_file_read_at, isolated_file_inspect,
-    isolated_file_inspect_path, isolated_file_truncate
+    isolated_file_inspect_path, isolated_file_truncate, isolated_file_flush, isolated_file_permissions
 };
 static const InfinityCompilerNamespace namespaces = {
     isolated_namespace_current, isolated_namespace_resolve, isolated_namespace_change,
     isolated_namespace_create, isolated_namespace_remove, isolated_namespace_link,
-    isolated_namespace_read_link
+    isolated_namespace_read_link, isolated_namespace_rename, isolated_namespace_rmdir, isolated_namespace_permissions
 };
 static const InfinityCompilerConsole console = {
     isolated_console_read, isolated_console_write, isolated_console_is_terminal
@@ -333,4 +373,3 @@ int infinity_compiler_isolated_host(const InfinityIsolatedCompilerLaunch *launch
     };
     return 0;
 }
-

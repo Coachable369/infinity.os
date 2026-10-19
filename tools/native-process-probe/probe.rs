@@ -13,6 +13,8 @@ use native_memory::*;
 #[path = "../../kernel/runtime/native_compiler_launch.rs"] mod native_compiler_launch;
 #[path = "../../kernel/runtime/native_job_files.rs"] mod native_job_files;
 #[path = "../../kernel/runtime/native_job_directories.rs"] mod native_job_directories;
+#[cfg(feature = "python-pip-probe")]
+#[path = "../../kernel/runtime/native_python_packages.rs"] mod native_python_packages;
 #[path = "../../kernel/runtime/native_arguments.rs"] mod native_arguments;
 #[path = "../../kernel/runtime/native_extensions.rs"] mod native_extensions;
 #[path = "../../kernel/runtime/native_compiler_task.rs"] mod native_compiler_task;

@@ -1,7 +1,8 @@
 //! Native Python command execution. Object snapshots are private to one authenticated session.
 use super::ConsoleRuntime;
 use crate::runtime::{execution::SecurityIdentity, native_compiler_task::Task,
-    native_job_files::File, native_memory::memory_mut, native_process::State};
+    native_job_files::File, native_memory::memory_mut, native_process::State,
+    native_python_packages::{Vfs, MAX_ARCHIVE, admit_pip, PipMode, PolicyError}};
 #[path = "../runtime/native_python_workflow.rs"]
 mod workflow;
 use crate::runtime::ai::intelligence::software::Event;
@@ -17,6 +18,11 @@ struct Job {
     output: [u8; 32768], errors: [u8; 8192],
     initial_pages: u64,
     generated: Option<Generated>,
+    filesystem: Vfs,
+    archive: [u8; MAX_ARCHIVE],
+    package_revision: Option<crate::storage::object::PythonPackageRevision>,
+    package_owner: [u8; 16],
+    pip: bool,
 }
 #[derive(Clone, Copy)]
 struct Generated {
@@ -24,7 +30,8 @@ struct Generated {
     request: u64, phase: workflow::Phase, launch: bool,
 }
 static mut JOB: Job = Job { task: None, owner: SecurityIdentity([0; 16]),
-    files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None };
+    files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
+    filesystem: Vfs::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false };
 static mut NEXT_TASK_ID: u32 = 0x50590001;
 
 #[no_mangle]
@@ -80,6 +87,104 @@ fn snapshot(target: &mut Snapshot, path: &[u8], user: [u8; 16]) -> Result<(), &'
 }
 
 // ------------------------=
+// FUNC: prepare_packages
+// DESC: Starts each invocation from the current user's committed archive with no inherited staged writes or previous-user files.
+// ------------------=
+fn prepare_packages(console: &ConsoleRuntime, job: &mut Job, writable: bool) -> Result<(), &'static [u8]> {
+    job.filesystem.reset(writable); job.archive.fill(0); job.count = 0; job.generated = None;
+    job.pip = writable; job.package_owner = console.current_user.0;
+    let (revision, length) = crate::storage::python_packages_load(console.current_user.0,
+        console.current_session.0, &mut job.archive)
+        .map_err(|_| b"python: cannot load this user's installed packages.".as_slice())?;
+    job.package_revision = revision;
+    if length > 0 { job.filesystem.load_archive(&job.archive[..length])
+        .map_err(|_| b"python: installed package archive is invalid; no code was executed.".as_slice())?; }
+    job.archive.fill(0); Ok(())
+}
+
+// ------------------------=
+// FUNC: mount_wheel
+// DESC: Snapshots an authorized wheel into the read-only offline wheelhouse without exposing its native directory to pip.
+// ------------------=
+fn mount_wheel(console: &ConsoleRuntime, job: &mut Job, path: &[u8]) -> Result<(), &'static [u8]> {
+    if !path.starts_with(b"/") || path.len() > 95 || !path.ends_with(b".whl") {
+        return Err(b"pip: supply an absolute ObjectStore path to a .whl file.");
+    }
+    let name = path.rsplit(|b| *b == b'/').next().unwrap_or(b"");
+    if name.is_empty() || name.len() > 95 { return Err(b"pip: invalid wheel filename."); }
+    let mut mounted = [0; 101]; mounted[..6].copy_from_slice(b"/work/"); mounted[6..6 + name.len()].copy_from_slice(name);
+    let mounted = &mounted[..6 + name.len()];
+    let (metadata, _) = crate::storage::object_inspect_path(path).map_err(|_| b"pip: wheel object not found.".as_slice())?;
+    if !crate::runtime::native_python_scope::readable(metadata.owner.0, console.current_user.0,
+        metadata.space == crate::storage::object::Space::Personal, path) { return Err(b"pip: wheel belongs to another user or protected space."); }
+    let (id, length) = crate::storage::object_read_path(path, Some(metadata.current_version), &mut job.archive[..4 * 1024 * 1024])
+        .map_err(|_| b"pip: cannot snapshot wheel (maximum 4 MiB).".as_slice())?;
+    if id != metadata.object.id { return Err(b"pip: wheel changed while opening."); }
+    if let Ok(existing) = job.filesystem.read(mounted) {
+        let same = existing == &job.archive[..length]; job.archive[..length].fill(0);
+        return if same { Ok(()) } else { Err(b"pip: different wheels share one filename; use a single unambiguous wheelhouse.") };
+    }
+    job.filesystem.mount_readonly(mounted, &job.archive[..length])
+        .map_err(|_| b"pip: offline wheelhouse exceeds the bounded process filesystem.".as_slice())?;
+    job.archive[..length].fill(0); Ok(())
+}
+
+// ------------------------=
+// FUNC: start_pip
+// DESC: Admits only bounded offline wheel operations into a staged per-user package transaction; no source builds, URLs or target overrides.
+// ------------------=
+unsafe fn start_pip(console: &ConsoleRuntime, arguments: &[&[u8]]) -> Result<(), &'static [u8]> {
+    let job = &mut *(&raw mut JOB);
+    if job.task.is_some() { return Err(b"pip: Python is already running; use python-cancel."); }
+    if !active(console) { return Err(b"pip: an authenticated session is required."); }
+    let mode = admit_pip(arguments).map_err(|error| match error {
+        PolicyError::Command => b"pip: supported offline commands: install, uninstall -y, list, show, check, freeze, help, --version.".as_slice(),
+        PolicyError::Confirmation => b"pip: use uninstall -y NAME to explicitly confirm removal.",
+        PolicyError::Option => b"pip: this option is not supported by the confined offline installer.",
+        PolicyError::Input => b"pip: only local wheels and package names are supported; URLs, source trees and requirement files are unavailable.",
+        PolicyError::SelfModification => b"pip: the OS-managed pip installation cannot be replaced or removed.",
+    })?;
+    let install = mode == PipMode::Install;
+    prepare_packages(console, job, mode != PipMode::ReadOnly)?;
+    job.pip = true;
+    let mut owned = [[0u8; 256]; 24]; let mut lengths = [0usize; 24];
+    if arguments.len() > owned.len() { return Err(b"pip: too many arguments."); }
+    for (i, value) in arguments.iter().enumerate() {
+        if install && value.starts_with(b"/") {
+            mount_wheel(console, job, value)?;
+            let slash = value.iter().rposition(|b| *b == b'/').ok_or(b"pip: invalid wheel path.".as_slice())?;
+            let directory = if slash == 0 { b"/".as_slice() } else { &value[..slash] };
+            for n in 0..crate::storage::object::NAMESPACE_CAPACITY {
+                let Some(entry) = crate::storage::namespace_child_nth(directory, n)
+                    .map_err(|_| b"pip: cannot inspect offline dependency wheels.".as_slice())? else { break; };
+                let sibling = &entry.path[..entry.path_len as usize];
+                if sibling.ends_with(b".whl") {
+                    let (metadata, _) = crate::storage::object_inspect_path(sibling)
+                        .map_err(|_| b"pip: dependency wheel changed.".as_slice())?;
+                    if crate::runtime::native_python_scope::readable(metadata.owner.0, console.current_user.0,
+                        metadata.space == crate::storage::object::Space::Personal, sibling) { mount_wheel(console, job, sibling)?; }
+                }
+            }
+            let name = &value[slash + 1..]; owned[i][..6].copy_from_slice(b"/work/");
+            owned[i][6..6 + name.len()].copy_from_slice(name); lengths[i] = 6 + name.len();
+        } else {
+            if value.len() > owned[i].len() { return Err(b"pip: argument too long."); }
+            owned[i][..value.len()].copy_from_slice(value); lengths[i] = value.len();
+        }
+    }
+    let mut args: [&[u8]; 32] = [&[]; 32];
+    args[..5].copy_from_slice(&[b"/system/python", b"-m", b"pip", b"--disable-pip-version-check", b"--no-cache-dir"]);
+    let mut count = 5;
+    for i in 0..arguments.len() { args[count] = &owned[i][..lengths[i]]; count += 1; }
+    if arguments.is_empty() { args[count] = b"--help"; count += 1; }
+    if install {
+        if count + 5 > args.len() { return Err(b"pip: too many install arguments."); }
+        for value in [b"--no-index".as_slice(), b"--find-links=/work", b"--only-binary=:all:", b"--progress-bar=off", b"--no-compile"] { args[count] = value; count += 1; }
+    }
+    start_task(console, job, &args[..count])
+}
+
+// ------------------------=
 // FUNC: start
 // DESC: Captures script-local imports and launches one isolated, cancellable native CPython process.
 // ------------------=
@@ -87,7 +192,7 @@ unsafe fn start(console: &ConsoleRuntime, path: &[u8], arguments: &[&[u8]], expe
     let job = &mut *(&raw mut JOB);
     if job.task.is_some() { return Err(b"python: a script is already running; use python-cancel."); }
     if !active(console) { return Err(b"python: an authenticated session is required."); }
-    job.generated = None;
+    prepare_packages(console, job, false)?;
     snapshot(&mut job.files[0], path, console.current_user.0)?;
     if expected_source.is_some_and(|source| source != &job.files[0].bytes[..job.files[0].len]) {
         return Err(b"python: saved source changed before validation; no code was executed.");
@@ -108,6 +213,10 @@ unsafe fn start(console: &ConsoleRuntime, path: &[u8], arguments: &[&[u8]], expe
         if job.count == job.files.len() { return Err(b"python: script directory exceeds eight Python/native input objects."); }
         snapshot(&mut job.files[job.count], candidate, console.current_user.0)?;
         job.count += 1;
+    }
+    for source in job.files.iter().take(job.count) {
+        job.filesystem.mount_readonly(&source.path[..source.path_len], &source.bytes[..source.len])
+            .map_err(|_| b"python: cannot mount private script inputs.".as_slice())?;
     }
     start_task(console, job, arguments)
 }
@@ -266,16 +375,32 @@ pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsa
         return true;
     }
     let mut words = input.split(|b| b.is_ascii_whitespace()).filter(|word| !word.is_empty());
-    if !matches!(words.next(), Some(b"python") | Some(b"python3")) { return false; }
+    let name = words.next();
+    if !matches!(name, Some(b"python") | Some(b"python3") | Some(b"pip") | Some(b"pip3")) { return false; }
     let mut args: [&[u8]; 32] = [&[]; 32]; args[0] = b"/system/python";
     let mut count = 1;
     for word in words {
         if count == args.len() { console.output.write_line(b"python: too many arguments (maximum 31)."); return true; }
         args[count] = word; count += 1;
     }
+    let pip = matches!(name, Some(b"pip") | Some(b"pip3"));
+    if pip || count >= 3 && args[1] == b"-m" && args[2] == b"pip" {
+        let result = start_pip(console, if pip { &args[1..count] } else { &args[3..count] });
+        console.output.write_line(match result { Ok(()) => b"pip started: offline wheels, private per-user packages.", Err(error) => error });
+        return true;
+    }
+    if count >= 3 && args[1] == b"-m" || count == 2 && matches!(args[1], b"--version" | b"-V") {
+        let job = &mut *(&raw mut JOB);
+        let result = if job.task.is_some() { Err(b"python: a script is already running; use python-cancel.".as_slice()) }
+            else if !active(console) { Err(b"python: an authenticated session is required.".as_slice()) }
+            else { prepare_packages(console, job, false).and_then(|_| start_task(console, job, &args[..count])) };
+        console.output.write_line(match result { Ok(()) => b"Python module started.", Err(error) => error });
+        return true;
+    }
     if count < 2 || args[1] == b"--help" {
         console.output.write_line(b"python /home/default/documents/hello.py [arguments]");
         console.output.write_line(b"python-cancel stops your running script. Paths must be absolute.");
+        console.output.write_line(b"pip install /absolute/package.whl; pip list; pip show NAME; pip uninstall -y NAME");
         return true;
     }
     match start(console, args[1], &args[..count], None) {
@@ -292,14 +417,15 @@ pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsa
 pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let job = &mut *(&raw mut JOB);
     let Some(task) = job.task.as_mut() else { return; };
-    let authorized = job.owner == SecurityIdentity(console.current_session.0) && active(console)
+    let authorized = job.owner == SecurityIdentity(console.current_session.0) && job.package_owner == console.current_user.0 && active(console)
         && job.generated.is_none_or(|generated| generated_current(console, generated));
     let mut files: [File<'_>; 8] = core::array::from_fn(|_| File { path: b"", bytes: b"" });
     for (file, source) in files.iter_mut().zip(job.files.iter()).take(job.count) {
         *file = File { path: &source.path[..source.path_len], bytes: &source.bytes[..source.len] };
     }
-    let result = task.poll(crate::runtime::ai::qwen::workers::clock_ns(), authorized, memory_mut(),
-        b"", &files[..job.count], &mut job.output, &mut job.errors);
+    let result = task.poll_with_filesystem(crate::runtime::ai::qwen::workers::clock_ns(), authorized, memory_mut(),
+        b"", &files[..job.count], &mut job.output, &mut job.errors,
+        |tables, operation, arguments| job.filesystem.syscall(tables, operation, arguments));
     if matches!(result, State::Runnable) { return; }
     let execution = task.execution_id();
     let lengths = task.result_lengths(b"", &mut job.output, &mut job.errors);
@@ -310,20 +436,38 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
             }
             if truncated { console.output.write_line(b"python: output exceeded capture limit."); }
         }
-        console.output.write_line(match result {
+        if !job.pip { console.output.write_line(match result {
             State::Exited(0) => b"Python completed successfully.",
             State::Exited(_) => b"Python exited with an error.",
             State::Cancelled => b"Python cancelled.",
             State::Deadline => b"Python exceeded its two-minute execution limit.",
             _ => b"Python process faulted; native runtime stopped it.",
-        });
+        }); }
     }
     let cleanup = job.task.take().unwrap().release(memory_mut()).is_ok();
     if !cleanup && authorized {
         console.output.write_line(b"python: process cleanup failed.");
     }
-    let state = match result { State::Exited(_) if cleanup => 2, State::Cancelled => 3, _ => 4 };
-    let exit = match result { State::Exited(code) => code, _ => -1 };
+    let mut packages_committed = true;
+    if job.pip && authorized && cleanup && result == State::Exited(0) && job.filesystem.dirty() {
+        packages_committed = job.filesystem.encode(&mut job.archive).ok().is_some_and(|length|
+            crate::storage::python_packages_save(job.package_owner, console.current_session.0,
+                job.package_revision, &job.archive[..length]).is_ok());
+        console.output.write_line(if packages_committed { b"pip: package changes saved for this user." }
+            else { b"pip: package transaction could not be saved (session, version or storage changed). Previous packages remain unchanged." });
+    } else if job.pip && job.filesystem.dirty() && authorized {
+        console.output.write_line(b"pip: unsuccessful operation discarded; installed packages remain unchanged.");
+    }
+    if job.pip && authorized {
+        console.output.write_line(match result {
+            State::Exited(0) if cleanup && packages_committed => b"pip completed successfully.",
+            State::Cancelled => b"pip cancelled; no package changes were committed.",
+            State::Deadline => b"pip exceeded its two-minute limit; no package changes were committed.",
+            _ => b"pip did not complete successfully; previous installed packages remain unchanged.",
+        });
+    }
+    let state = match result { State::Exited(_) if cleanup && packages_committed => 2, State::Cancelled => 3, _ => 4 };
+    let exit = match result { State::Exited(code) if packages_committed => code, _ => -1 };
     let (stdout, stderr, _) = lengths.unwrap_or((0, 0, false));
     publish(state, exit, stdout, stderr, job.initial_pages, memory_mut().available_pages() as u64);
     if let Some(generated) = job.generated {
@@ -339,5 +483,6 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     }
     job.generated = None;
     job.count = 0;
+    job.pip = false; job.archive.fill(0); job.filesystem.reset(false);
     console.redraw();
 }}

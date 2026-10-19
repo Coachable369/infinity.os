@@ -41,6 +41,10 @@ def main():
     for arch in ("aarch64", "x86_64"):
         package = ROOT / "builds/toolchains" / arch
         run(storage, package / "infinity_native_test.so", package / "python-license.txt")
+    packages = output / "package-storage"
+    run("rustc", "--edition=2021", "-A", "warnings", "-O", ROOT / "tools/native-python/package-storage-test.rs", "-o", packages)
+    run(packages)
+    run("python3", ROOT / "tools/native-python/package-tests.py")
 
 if __name__ == "__main__":
     main()

@@ -47,9 +47,15 @@ fn main() {
     let extension = std::fs::read(&args[1]).unwrap();
     let license = std::fs::read(&args[2]).unwrap();
     assert!(license.len() > storage::object::MAX_CONTENT);
+    assert!(license.len() <= 512 * 1024);
     let sectors = STORE_RELATIVE_LBA as usize + 32768;
     let disk = Disk(Rc::new(RefCell::new(vec![[0; 512]; sectors])));
     let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x51; 16]).unwrap();
+    let generation = store.generation();
+    assert_eq!(store.seed_python_examples(&extension, &vec![0; 512 * 1024 + 1]),
+        Err(storage::object::ObjectError::InsufficientCapacity));
+    assert_eq!(store.generation(), generation);
+    assert!(store.resolve(b"/system/licenses/python").is_err());
     store.seed_python_examples(&extension, &license).unwrap();
     // The bootstrap helper participates in the formatter's final metadata commit.
     // A normal namespace transaction commits that same pending state in this fixture.

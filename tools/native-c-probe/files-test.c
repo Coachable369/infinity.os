@@ -104,12 +104,27 @@ static int object_truncate(void *context, uint64_t id, uint64_t length) {
     assert(context == &denied && id == 41 && length == 7); return denied;
 }
 // ------------------------=
+// FUNC: object_flush
+// DESC: Checks descriptor ownership and exact transaction flush failure propagation.
+// ------------------=
+static int object_flush(void *context, uint64_t id) {
+    assert(context == &denied && id == 41); return denied;
+}
+// ------------------------=
+// FUNC: object_permissions
+// DESC: Verifies descriptor permission forwarding without adding namespace authority.
+// ------------------=
+static int object_permissions(void *context, uint64_t id, uint32_t mode) {
+    assert(mode == 0644); return object_flush(context, id);
+}
+// ------------------------=
 // FUNC: main
 // DESC: Tests mode translation, revocation, ownership, stale descriptors, reuse and bounded capacity.
 // ------------------=
 int main(void) {
     InfinityCompilerFiles files = {object_open, object_read, object_write, object_seek, object_close,
-                                  object_read_at, object_inspect, path_inspect, object_truncate};
+                                  object_read_at, object_inspect, path_inspect, object_truncate,
+                                  object_flush, object_permissions};
     InfinityCompilerConsole console = {.read = console_read, .write = console_write};
     InfinityCompilerHost services = {.context = &denied, .files = &files, .console = &console};
     char console_buffer[4] = {0};
@@ -132,6 +147,8 @@ int main(void) {
     assert(fcntl(fd, F_GETFL) == O_RDWR);
     assert(fcntl(fd, F_SETFL, O_APPEND) == -1 && errno == ENOTSUP);
     assert(ftruncate(fd, 7) == 0);
+    assert(fsync(fd) == 0 && fchmod(fd, 0644) == 0);
+    assert(fchmod(fd, 04755) == -1 && errno == ENOTSUP);
     char buffer[4] = {0};
     host = 0;
     assert(read(fd, buffer, sizeof buffer) == 3 && memcmp(buffer, "abc", 3) == 0);
@@ -142,6 +159,7 @@ int main(void) {
     assert(fstat(fd, &info) == 0 && info.st_size == 3 && info.st_ino == 41 && S_ISREG(info.st_mode));
     host = &services;
     assert(stat("object", &info) == 0 && info.st_mtime == 123);
+    assert(lstat("object", &info) == 0 && info.st_ino == 41);
     assert(access("object", R_OK | W_OK) == 0);
     assert(access("object", X_OK) == -1 && errno == EACCES);
     metadata.size = UINT64_MAX;
@@ -151,12 +169,23 @@ int main(void) {
     assert(fstat(fd, &info) == -1 && errno == EIO && info.st_mtime == 123);
     metadata.modified_nanoseconds = 456;
     denied = EACCES;
+    assert(fsync(fd) == -1 && errno == EACCES);
+    assert(fchmod(fd, 0644) == -1 && errno == EACCES);
     assert(ftruncate(fd, 7) == -1 && errno == EACCES);
     assert(fstat(fd, &info) == -1 && errno == EACCES && info.st_size == 3);
     assert(read(fd, buffer, 3) == -1 && errno == EACCES);
     assert(close(fd) == -1 && errno == EACCES && closes == 1);
     assert(read(fd, buffer, 3) == -1 && errno == EBADF);
+    assert(fsync(fd) == -1 && errno == EBADF);
     denied = 0; host = &services;
+#ifdef O_NOFOLLOW
+    int nofollow = open("object", O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    assert(nofollow >= 3 && observed_mode == (39 | 128));
+    assert(close(nofollow) == 0);
+    denied = ENOTSUP;
+    assert(open("object", O_RDONLY | O_NOFOLLOW) == -1 && errno == ENOTSUP);
+    denied = 0;
+#endif
     int next = open("object", O_RDONLY);
     assert(next != fd && next >= 3);
     assert(write(next, "xyz", 3) == -1 && errno == EBADF);

@@ -37,6 +37,8 @@ pub struct Task {
     files: Files,
     libraries: super::native_extensions::Libraries,
     launch_secret: Option<[u8; 32]>,
+    entropy_secret: Option<[u8; 32]>,
+    entropy_sequence: u64,
     directories: super::native_job_directories::Directories,
     streams: native_stdio::State,
 }
@@ -66,6 +68,7 @@ impl Task {
             owner, id, session, controller, deadline, sleep_until: 0, cache_offset: 0, cancelled: false,
             mappings: PrivateMappings::new(id, 256), files: Files::new(),
             libraries: super::native_extensions::Libraries::new(id), launch_secret: None,
+            entropy_secret: None, entropy_sequence: 0,
             directories: super::native_job_directories::Directories::new(), streams: native_stdio::State::default() })
     }
     // ------------------------=
@@ -113,10 +116,17 @@ impl Task {
     pub fn cancel(&mut self) { self.cancelled = true; if let Some(process) = self.process.as_mut() { process.cancel(); } }
     // ------------------------=
     // FUNC: set_launch_secret
-    // DESC: Supplies a boot-derived one-use secret before native code starts, without granting an entropy device.
+    // DESC: Separates the one-use hash secret from a bounded random stream rooted in validated boot entropy.
     // ------------------=
     pub fn set_launch_secret(&mut self, secret: [u8; 32]) {
-        if self.process.is_none() && self.launch_secret.is_none() { self.launch_secret = Some(secret); }
+        if self.process.is_none() && self.entropy_secret.is_none() {
+            let mut launch = [0; 32];
+            if hkdf::Hkdf::<sha2::Sha256>::new(Some(b"InfinityOS native Python hash seed v1"), &secret)
+                .expand(b"launch", &mut launch).is_ok() {
+                self.launch_secret = Some(launch);
+                self.entropy_secret = Some(secret);
+            }
+        }
     }
     // ------------------------=
     // FUNC: poll
@@ -124,6 +134,17 @@ impl Task {
     // ------------------=
     pub fn poll(&mut self, now: u64, authorized: bool, memory: &mut NativeMemory, input: &[u8],
         files: &[File<'_>], output: &mut [u8], diagnostics: &mut [u8]) -> State {
+        self.poll_with_filesystem(now, authorized, memory, input, files, output, diagnostics, |_, _, _| None)
+    }
+    // ------------------------=
+    // FUNC: poll_with_filesystem
+    // DESC: Runs the same isolated task with an explicitly granted filesystem adapter; authorization precedes every operation.
+    // ------------------=
+    pub fn poll_with_filesystem(
+        &mut self, now: u64, authorized: bool, memory: &mut NativeMemory,
+        input: &[u8], files: &[File<'_>], output: &mut [u8], diagnostics: &mut [u8],
+        mut filesystem: impl FnMut(&mut cpu::Tables, u64, [u64; 6]) -> Option<i64>,
+    ) -> State {
         if !authorized { self.cancel(); }
         if self.cancelled { return State::Cancelled; }
         if now >= self.deadline { return State::Deadline; }
@@ -155,10 +176,32 @@ impl Task {
         let libraries = &mut self.libraries;
         let executable = self.bytes;
         let secret = &mut self.launch_secret;
+        let entropy = &self.entropy_secret;
+        let entropy_sequence = &mut self.entropy_sequence;
         let directories = &mut self.directories;
         let sleep_until = &mut self.sleep_until;
         let state = self.process.as_mut().unwrap().step(now, |_, operation, a| {
-            match operation {
+                // Only filesystem operations may be delegated. A package mount
+                // cannot override memory, entropy, extension, or process services.
+                if matches!(operation, 0x1206..=0x1208 | 0x120b..=0x121a | 0x1233..=0x1237) {
+                    if let Some(result) = filesystem(tables, operation, a) { return result; }
+                }
+                match operation {
+                0x1205 => {
+                    if a[1] > 256 { return -22; }
+                    if a[1] == 0 { return 0; }
+                    let Some(seed) = entropy.as_ref() else { return -13; };
+                    let Some(sequence) = entropy_sequence.checked_add(1) else { return -75; };
+                    if check_user_range(tables, a[0], a[1] as usize, true).is_err() { return -14; }
+                    let mut bytes = [0; 256];
+                    let count = a[1] as usize;
+                    if hkdf::Hkdf::<sha2::Sha256>::new(Some(b"InfinityOS native Python random stream v1"), seed)
+                        .expand(&sequence.to_le_bytes(), &mut bytes[..count]).is_err() { return -5; }
+                    let result = copy_to_user(tables, a[0], &bytes[..count]).map_or(-14, |_| 0);
+                    bytes.fill(0);
+                    if result == 0 { *entropy_sequence = sequence; }
+                    result
+                }
                 0x1206 | 0x1207 | 0x1208 | 0x1215 => directories.syscall(tables, files, operation, a),
                 0x1232 => {
                     if a[1] != 32 { return -22; }
@@ -214,6 +257,8 @@ impl Task {
     pub fn release(mut self, memory: &mut NativeMemory) -> Result<(), MemoryError> {
         if let Some(secret) = self.launch_secret.as_mut() { secret.fill(0); }
         self.launch_secret = None;
+        if let Some(secret) = self.entropy_secret.as_mut() { secret.fill(0); }
+        self.entropy_secret = None;
         self.cancel();
         if let Some(preparation) = self.preparation.take() { preparation.release(memory)?; }
         if let Some(mut space) = self.address_space.take() {

@@ -20,12 +20,6 @@ int clock_getres(clockid_t clock, struct timespec *out) {
 int pause(void) { errno = ENOTSUP; return -1; }
 
 // ------------------------=
-// FUNC: rmdir
-// DESC: Prevents directory mutation through read-only Object Store snapshots.
-// ------------------=
-int rmdir(const char *path) { errno = path ? EROFS : EFAULT; return -1; }
-
-// ------------------------=
 // FUNC: _times
 // DESC: Rejects unavailable process CPU accounting rather than reporting wall time as CPU time.
 // ------------------=

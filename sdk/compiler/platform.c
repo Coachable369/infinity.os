@@ -13,8 +13,8 @@ static const InfinityCompilerHost *host;
 static InfinityCompilerHost crash_owner;
 static int crash_registered;
 
-/* Handles never recycle, so a closed pointer cannot become another directory.
-   This initial bridge bounds each compiler process to 64 directory opens. */
+/* POSIX directory pointers expire on close. Reuse inactive slots so a package
+   traversal is bounded by concurrent cursors, not lifetime directory opens. */
 struct InfinityDirectory {
     InfinityCompilerHost owner;
     uint64_t cursor;
@@ -22,7 +22,6 @@ struct InfinityDirectory {
     struct dirent entry;
 };
 static struct InfinityDirectory directories[64];
-static size_t directory_count;
 
 // ------------------------=
 // FUNC: infinity_compiler_set_host
@@ -111,13 +110,6 @@ pid_t wait4(pid_t pid, int *status, int options, struct rusage *usage) {
     (void)pid; (void)status; (void)options; (void)usage; return fail(ENOSYS);
 }
 // ------------------------=
-// FUNC: lstat
-// DESC: Rejects unbound link metadata queries rather than falling through to host storage.
-// ------------------=
-int lstat(const char *path, struct stat *out) {
-    return fail(path && out ? ENOSYS : EFAULT);
-}
-// ------------------------=
 // FUNC: madvise
 // DESC: Reports unavailable memory advice without promising page eviction or prefetch.
 // ------------------=
@@ -130,7 +122,7 @@ int madvise(void *address, size_t size, int advice) {
 // DESC: Checks handle identity before dereferencing caller-provided pointers.
 // ------------------=
 static int valid_directory(DIR *directory) {
-    for (size_t i = 0; i < directory_count; ++i)
+    for (size_t i = 0; i < 64; ++i)
         if (directory == &directories[i]) return directory->active;
     return 0;
 }
@@ -143,12 +135,14 @@ DIR *opendir(const char *path) {
     if (!path || !*path) { fail(EINVAL); return 0; }
     if (!host || !host->directory_open || !host->directory_next ||
         !host->directory_close) { fail(ENOSYS); return 0; }
-    if (directory_count == 64) { fail(EMFILE); return 0; }
+    size_t index = 0;
+    while (index < 64 && directories[index].active) ++index;
+    if (index == 64) { fail(EMFILE); return 0; }
     InfinityCompilerHost owner = *host;
     uint64_t cursor = 0;
     int error = owner.directory_open(owner.context, path, &cursor);
     if (error) { fail(error); return 0; }
-    DIR *directory = &directories[directory_count++];
+    DIR *directory = &directories[index];
     directory->owner = owner;
     directory->cursor = cursor;
     directory->active = 1;
@@ -161,7 +155,7 @@ DIR *opendir(const char *path) {
 // ------------------=
 struct dirent *readdir(DIR *directory) {
     if (!valid_directory(directory)) { fail(EBADF); return 0; }
-    char name[96] = {0};
+    char name[256] = {0};
     int error = directory->owner.directory_next(directory->owner.context,
         directory->cursor, name, sizeof name);
     if (error) { fail(error); return 0; }
@@ -181,7 +175,7 @@ struct dirent *readdir(DIR *directory) {
 
 // ------------------------=
 // FUNC: closedir
-// DESC: Closes through the opening provider and permanently invalidates the handle.
+// DESC: Closes through the opening provider and releases the cursor slot.
 // ------------------=
 int closedir(DIR *directory) {
     if (!valid_directory(directory)) return fail(EBADF);

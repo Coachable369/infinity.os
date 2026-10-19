@@ -788,6 +788,33 @@ fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectEr
 }
 
 // ------------------------=
+// FUNC: python_packages_load
+// DESC: Loads only the active profile's package archive without granting generic system-object access.
+// ------------------=
+pub(crate) fn python_packages_load(owner: [u8; 16], session: [u8; 16], out: &mut [u8])
+    -> Result<(Option<object::PythonPackageRevision>, usize), object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    { with_store(|store| store.read_python_packages(object::ObjectId(owner), out)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = out; Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: python_packages_save
+// DESC: Rechecks the exact active owner/session and publishes a successful package transaction with an optimistic version fence.
+// ------------------=
+pub(crate) fn python_packages_save(owner: [u8; 16], session: [u8; 16],
+    expected: Option<object::PythonPackageRevision>, content: &[u8])
+    -> Result<object::PythonPackageRevision, object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    { with_store(|store| store.save_python_packages(object::ObjectId(owner), expected, content)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = (expected, content); Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
 // FUNC: font_preferences
 // DESC: Loads or commits a session-bound font registry through durable native object checkpoints.
 // ------------------=

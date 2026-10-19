@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 typedef struct InfinityDirectory DIR;
-struct dirent { char d_name[96]; };
+struct dirent { char d_name[256]; };
 DIR *opendir(const char *);
 struct dirent *readdir(DIR *);
 int closedir(DIR *);

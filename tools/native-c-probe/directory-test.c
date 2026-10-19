@@ -24,7 +24,7 @@ static int open_fixture(void *context, const char *path, uint64_t *cursor) {
 // DESC: Supplies bounded entries, malformed entries and failures for adapter tests.
 // ------------------=
 static int next_fixture(void *context, uint64_t cursor, char *out, size_t size) {
-    assert(context == &opens && cursor > 0 && size == 96);
+    assert(context == &opens && cursor > 0 && size == 256);
     if (!next_name) memset(out, 'x', size);
     else strcpy(out, next_name);
     return next_error;
@@ -67,8 +67,12 @@ int main(void) {
     assert(closedir(first) == -1 && errno == EBADF && closes == 1);
     assert(closedir(second) == 0);
     infinity_compiler_set_host(&services);
-    for (int i = 2; i < 64; ++i) { DIR *d = opendir("/allowed"); assert(d); assert(!closedir(d)); }
-    assert(!opendir("/allowed") && errno == EMFILE && opens == 64);
+    for (int i = 0; i < 1024; ++i) { DIR *d = opendir("/allowed"); assert(d); assert(!closedir(d)); }
+    DIR *cursors[64];
+    for (int i = 0; i < 64; ++i) { cursors[i] = opendir("/allowed"); assert(cursors[i]); }
+    int previous_opens = opens;
+    assert(!opendir("/allowed") && errno == EMFILE && opens == previous_opens);
+    for (int i = 0; i < 64; ++i) assert(!closedir(cursors[i]));
     struct statvfs stats = {7, 8, 9, 10, 11};
     assert(statvfs("/allowed", &stats) == -1 && errno == ENOSYS);
     assert(stats.f_blocks == 8 && stats.f_flags == 11);

@@ -9,6 +9,13 @@ crate-type = ["staticlib"]
 
 [workspace]
 
+[features]
+python-pip-probe = []
+
+[dependencies]
+hkdf = { version = "0.13.0", default-features = false }
+sha2 = { version = "0.11.0", default-features = false }
+
 [profile.release]
 panic = "abort"
 opt-level = 2

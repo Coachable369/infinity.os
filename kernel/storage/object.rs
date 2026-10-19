@@ -13,6 +13,9 @@ mod reserved_pair;
 mod pool_stream;
 #[path = "object_metadata_mutation.rs"]
 mod metadata_mutation;
+#[path = "object_python_packages.rs"]
+mod python_packages;
+pub use python_packages::PythonPackageRevision;
 
 #[path = "../runtime/ai/generation.rs"]
 mod ai_generation_asset;
@@ -765,7 +768,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Seeds fresh-install extension examples and full license notices using bounded native object extents.
     // ------------------=
     pub(crate) fn seed_python_examples(&mut self, extension_bytes: &[u8], license_bytes: &[u8]) -> Result<(), ObjectError> {
-            if extension_bytes.len() > MAX_CONTENT || license_bytes.len() > 64 * 1024 {
+            if extension_bytes.len() > MAX_CONTENT || license_bytes.len() > 512 * 1024 {
                 return Err(ObjectError::InsufficientCapacity);
             }
             let example = self.create_record(b"native_demo.py", ObjectType::Text, Space::Personal)?;
@@ -775,7 +778,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.write_record(extension, extension_bytes)?;
             self.attach_record(b"/home/default/documents/infinity_native_test.so", extension)?;
             let license = self.create_record(b"python-license", ObjectType::Text, Space::System)?;
-            self.write_record_limit(license, license_bytes, 64 * 1024)?;
+            self.write_record_limit(license, license_bytes, 512 * 1024)?;
             self.attach_record(b"/system/licenses/python", license)?;
         Ok(())
     }
@@ -1475,7 +1478,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     fn allow_public_spatial_access(&self,id:ObjectId)->Result<(),ObjectError> {
         let record=&self.state.objects[self.object_index(id)?];
-        if record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences") {
+        if record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences"|b"@python-packages") {
             Err(ObjectError::Unauthorized)
         }else{Ok(())}
     }
@@ -1576,6 +1579,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the attach operation.
     // ------------------=
     pub fn attach(&mut self, path: &[u8], id: ObjectId) -> Result<(), ObjectError> {
+        self.allow_package_namespace_mutation(id)?;
         let before = self.begin()?;
         let result = (|| {
             self.object_index(id)?;
@@ -1698,6 +1702,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                     continue;
                 }
                 let suffix = &path[from.len()..];
+                self.allow_package_namespace_mutation(entry.target)?;
                 if to.len() + suffix.len() > MAX_PATH {
                     return Err(ObjectError::InvalidPath);
                 }
@@ -1738,6 +1743,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the detach operation.
     // ------------------=
     pub fn detach(&mut self, path: &[u8]) -> Result<(), ObjectError> {
+        self.allow_package_namespace_mutation(self.resolve(path)?)?;
         let before = self.begin()?;
         let result = (|| {
             let slot = self
@@ -1779,6 +1785,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Removes or invalidates remove path state.
     // ------------------=
     pub fn remove_path(&mut self, path: &[u8]) -> Result<ObjectId, ObjectError> {
+        self.allow_package_namespace_mutation(self.resolve(path)?)?;
         let before = self.begin()?;
         let result = (|| {
             let slot = self
@@ -3057,7 +3064,10 @@ fn decode_version(s: &[u8], o: usize) -> Result<VersionRecord, ObjectError> {
     id.copy_from_slice(&s[o + 4..o + 20]);
     let blocks = get16(s, o + 28);
     let role = s[o + 1];
-    let limit = if matches!(role, 0 | 3) { MAX_CONTENT }
+    // Decoding must accept the largest service-owned ordinary extent.
+    // Public create/write operations retain their separate smaller bounds.
+    let limit = if role == 0 { python_packages::MAX_PACKAGE_STATE }
+        else if role == 3 { MAX_CONTENT }
         else if matches!(role, 4 | 5) { extents::MAX_SYSTEM_CONTENT }
         else { extents::MAX_STAGED_CONTENT };
     if role > 5 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
@@ -3188,7 +3198,13 @@ fn validate_state(state: &State) -> Result<(), ObjectError> {
         {
             return Err(ObjectError::CorruptMetadata);
         }
-        if !state.objects.iter().any(|o| o.used && o.id == v.object) {
+        let Some(object) = state.objects.iter().find(|o| o.used && o.id == v.object) else {
+            return Err(ObjectError::CorruptMetadata);
+        };
+        if &object.name[..object.name_len as usize] == b"@python-packages"
+            && (object.kind != ObjectType::Metadata as u8 || object.space != Space::System as u8
+                || object.owner.0 == [0; 16] || v.storage_role != 0)
+        {
             return Err(ObjectError::CorruptMetadata);
         }
         for other in state.versions[..index].iter().filter(|other| other.used) {

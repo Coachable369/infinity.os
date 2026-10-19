@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     PyConfig config;
     PyConfig_InitIsolatedConfig(&config);
     config.parse_argv = 1;
-    config.safe_path = 1; /* Only the explicit script directory is searched. */
+    config.safe_path = 1; /* Search only the declared native mounts and explicit script directory. */
     config.site_import = 0;
     config.write_bytecode = 0;
     config.install_signal_handlers = 0;
@@ -31,6 +31,18 @@ int main(int argc, char **argv) {
     memset(seed, 0, sizeof seed);
     config.module_search_paths_set = 1;
     PyStatus status = PyConfig_SetBytesArgv(&config, argc, argv);
+    if (!PyStatus_Exception(status))
+        status = PyConfig_SetString(&config, &config.stdlib_dir, L"/stdlib");
+    if (!PyStatus_Exception(status))
+        status = PyConfig_SetString(&config, &config.prefix, L"/system/python");
+    if (!PyStatus_Exception(status))
+        status = PyConfig_SetString(&config, &config.exec_prefix, L"/system/python");
+    if (!PyStatus_Exception(status))
+        status = PyWideStringList_Append(&config.module_search_paths, L"/stdlib");
+    if (!PyStatus_Exception(status))
+        status = PyWideStringList_Append(&config.module_search_paths, L"/packages");
+    if (!PyStatus_Exception(status))
+        status = PyWideStringList_Append(&config.module_search_paths, L"/work");
     if (!PyStatus_Exception(status) && argc > 1 && argv[1][0] == '/') {
         wchar_t *directory = Py_DecodeLocale(argv[1], NULL);
         if (!directory) { PyConfig_Clear(&config); return 125; }
@@ -48,5 +60,14 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Python initialization failed: %s\n", status.err_msg);
         return 125;
     }
+    PyObject *platform = PyImport_ImportModule("_infinity_platform");
+    PyObject *configured = platform ? PyObject_CallMethod(platform, "configure", NULL) : NULL;
+    Py_XDECREF(platform);
+    if (!configured) {
+        PyErr_Print();
+        Py_FinalizeEx();
+        return 125;
+    }
+    Py_DECREF(configured);
     return Py_RunMain();
 }

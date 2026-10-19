@@ -15,7 +15,9 @@ typedef struct InfinityCompilerMetadata {
 } InfinityCompilerMetadata;
 typedef struct InfinityCompilerFiles {
     /* Native mode bits: read=1, write=2, create=4, truncate=8, append=16,
-       exclusive=32. Provider must authorize each operation, including revocation.
+       exclusive=32, text-object=64, no-follow=128. A provider accepting no-follow
+       must reject symbolic-link resolution; unsupported mode bits fail closed.
+       Provider must authorize each operation, including revocation.
        Reads use an opened ObjectStore snapshot; writes commit native versions. */
     int (*open)(void *, const char *, uint32_t, uint64_t *);
     int (*read)(void *, uint64_t, void *, size_t, size_t *);
@@ -27,9 +29,12 @@ typedef struct InfinityCompilerFiles {
     int (*inspect)(void *, uint64_t, InfinityCompilerMetadata *);
     int (*inspect_path)(void *, const char *, InfinityCompilerMetadata *);
     int (*truncate)(void *, uint64_t, uint64_t);
+    /* Optional transaction-aware operations. Missing providers fail explicitly. */
+    int (*flush)(void *, uint64_t);
+    int (*permissions)(void *, uint64_t, uint32_t);
 } InfinityCompilerFiles;
 typedef struct InfinityCompilerNamespace {
-    /* Output paths are canonical native references, at most 95 bytes, without
+    /* Output paths are canonical native references, at most 255 bytes, without
        a NUL terminator. Every request is capability checked by the provider. */
     int (*current)(void *, char *, size_t, size_t *);
     int (*resolve)(void *, const char *, char *, size_t, size_t *);
@@ -40,6 +45,9 @@ typedef struct InfinityCompilerNamespace {
        aliases may be rejected when the namespace does not support them. */
     int (*link)(void *, const char *, const char *, uint32_t);
     int (*read_link)(void *, const char *, char *, size_t, size_t *);
+    int (*rename)(void *, const char *, const char *);
+    int (*remove_directory)(void *, const char *);
+    int (*permissions)(void *, const char *, uint32_t);
 } InfinityCompilerNamespace;
 typedef struct InfinityCompilerConsole {
     /* Stream numbers are the launch-bound standard streams 0, 1 and 2. */

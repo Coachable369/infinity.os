@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <stdio.h>
 static const InfinityCompilerHost *host;
 static int failure, changes, malformed, links;
 // ------------------------=
@@ -18,7 +19,7 @@ const InfinityCompilerHost *infinity_compiler_get_host(void) { return host; }
 // ------------------=
 static int current(void *context, char *out, size_t size, size_t *length) {
     (void)context; assert(size >= 5); memcpy(out, "/work", 5); *length = 5;
-    if (malformed == 1) *length = 96;
+    if (malformed == 1) *length = 256;
     if (malformed == 2) out[0] = 'x';
     if (malformed == 3) out[2] = 0;
     return failure;
@@ -56,13 +57,29 @@ static int read_alias(void *context, const char *path, char *out, size_t size, s
     return failure;
 }
 // ------------------------=
+// FUNC: move_reference
+// DESC: Verifies atomic rename argument forwarding and denial propagation.
+// ------------------=
+static int move_reference(void *context, const char *source, const char *target) {
+    (void)context; assert(!strcmp(source, "source") && !strcmp(target, "target"));
+    return failure;
+}
+// ------------------------=
+// FUNC: path_permissions
+// DESC: Checks that path permissions reach only the explicitly bound provider.
+// ------------------=
+static int path_permissions(void *context, const char *path, uint32_t mode) {
+    (void)context; assert(!strcmp(path, "work") && mode == 0644); return failure;
+}
+// ------------------------=
 // FUNC: main
 // DESC: Tests atomic path output, buffer bounds, allocation and mutation denial.
 // ------------------=
 int main(void) {
-    char out[96] = {42};
+    char out[256] = {42};
     assert(!getcwd(out, sizeof out) && errno == ENOSYS && out[0] == 42);
-    InfinityCompilerNamespace api = {current, resolve, change, change, change, alias, read_alias};
+    InfinityCompilerNamespace api = {current, resolve, change, change, change, alias, read_alias,
+        move_reference, change, path_permissions};
     InfinityCompilerHost service = {.namespaces = &api}; host = &service;
     assert(!getcwd(out, 5) && errno == ERANGE && out[0] == 42);
     assert(getcwd(out, sizeof out) == out && memcmp(out, "/work", 6) == 0);
@@ -86,5 +103,14 @@ int main(void) {
     assert(link(0, "created") == -1 && errno == EINVAL);
     assert(readlink("", out, sizeof out) == -1 && errno == EINVAL);
     assert(chdir("") == -1 && errno == EINVAL && changes == 3);
+    malformed = 0;
+    assert(rename("source", "target") == 0 && chmod("work", 0644) == 0);
+    assert(rmdir("work") == 0 && changes == 4);
+    failure = EACCES;
+    assert(rename("source", "target") == -1 && errno == EACCES);
+    assert(rmdir("work") == -1 && errno == EACCES && changes == 4);
+    assert(chmod("work", 0644) == -1 && errno == EACCES);
+    assert(chmod("work", 04755) == -1 && errno == ENOTSUP);
+    assert(umask(0077) == 0022 && umask(0022) == 0077);
     return 0;
 }

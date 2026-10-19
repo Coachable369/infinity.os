@@ -133,10 +133,12 @@ python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolc
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation valid
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation invalid
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-extension builds/toolchains/aarch64/infinity_native_test.so
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-pip
 python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script
 python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation valid
 python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation invalid
 python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-extension builds/toolchains/x86_64/infinity_native_test.so
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-pip
 sh tools/native-c-production-test.sh
 sh tools/application-interaction-test.sh
 make editor-assistant-test
@@ -256,6 +258,8 @@ python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolch
 python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation invalid
 python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-extension builds/toolchains/x86_64/infinity_native_test.so
 python3 tools/kernel-layout-test.py
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-pip
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-pip
 # Bounded native-generation regressions run real executable entrypoints, not
 # empty Rust test harnesses. Preview-only returns before loading model weights.
 sh tools/native-c-production-test.sh

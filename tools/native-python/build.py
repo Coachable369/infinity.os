@@ -12,12 +12,114 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = "3.13.16"
 SHA = "f4b1bfb3c79b5bb11b8d228a12504163b4c0dab4d679828d8f5f26b6cb6ab35d"
 LLVM = Path(os.environ.get("LLVM_BIN", "/opt/homebrew/opt/llvm/bin"))
 LLVM_REVISION = "ea7d852a70e8bdfaf601d6626a760f9771b2c4b4"
+ZLIB_CRATE_VERSION = "1.1.29"
+ZLIB_CRATE_SHA = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
+
+# ------------------------=
+# FUNC: compression_sources
+# DESC: Reuses the browser's pinned zlib source crate while retaining a clean-build independent archive.
+# ------------------=
+def compression_sources():
+    archive = ROOT / f"third_party/python/libz-sys-{ZLIB_CRATE_VERSION}.crate"
+    if not archive.exists():
+        cached = sorted((ROOT / "build/servo-cargo-home/registry/cache").glob(f"*/{archive.name}"))
+        if cached:
+            shutil.copyfile(cached[0], archive)
+        else:
+            with urllib.request.urlopen(f"https://static.crates.io/crates/libz-sys/{archive.name}", timeout=60) as response:
+                archive.write_bytes(response.read())
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != ZLIB_CRATE_SHA:
+        raise SystemExit("zlib source crate checksum mismatch")
+    destination = archive.parent / f"libz-sys-{ZLIB_CRATE_VERSION}"
+    if not destination.exists():
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(archive.parent, filter="data")
+    source = destination / "src/zlib"
+    units = "adler32 compress crc32 deflate infback inffast inflate inftrees trees uncompr zutil".split()
+    return source, [source / f"{unit}.c" for unit in units]
+
+# ------------------------=
+# FUNC: frozen_library
+# DESC: Freezes upstream pip and its standard-library dependencies with exact bundled resources and native target metadata.
+# ------------------=
+def frozen_library(source, arch):
+    library = source / "Lib"
+    names = {
+        "_frozen_importlib": ("importlib/_bootstrap.py", (library / "importlib/_bootstrap.py").read_bytes()),
+        "_frozen_importlib_external": ("importlib/_bootstrap_external.py", (library / "importlib/_bootstrap_external.py").read_bytes()),
+        "zipimport": ("zipimport.py", (library / "zipimport.py").read_bytes()),
+    }
+    excluded = {"test", "tests", "idlelib", "tkinter", "turtledemo", "ensurepip", "venv", "_pyrepl"}
+    for path in sorted(library.rglob("*.py")):
+        relative = path.relative_to(library)
+        if any(part in excluded for part in relative.parts):
+            continue
+        name = relative.with_suffix("").as_posix().replace("/__init__", "").replace("/", ".")
+        body = path.read_bytes()
+        if name == "subprocess":
+            before = b'{"emscripten", "wasi", "ios", "tvos", "watchos"}'
+            if body.count(before) != 1:
+                raise SystemExit("CPython subprocess platform contract changed")
+            body = body.replace(before, b'{"emscripten", "wasi", "ios", "tvos", "watchos", "infinityos"}')
+        names[name] = (relative.as_posix(), body)
+    for name, filename in (("socket", "socket_unavailable.py"), ("select", "select_unavailable.py"),
+                           ("mmap", "mmap_unavailable.py"),
+                           ("_infinity_platform", "platform.py")):
+        names[name] = (name + ".py", (ROOT / "sdk/python" / filename).read_bytes())
+    resources, metadata = {}, {}
+    wheel = library / "ensurepip/_bundled/pip-26.2.1-py3-none-any.whl"
+    with zipfile.ZipFile(wheel) as bundle:
+        for entry in bundle.infolist():
+            if entry.is_dir():
+                continue
+            body = bundle.read(entry)
+            if entry.filename.endswith(".py"):
+                if entry.filename == "pip/_internal/utils/compatibility_tags.py":
+                    # This package service only grants importable pure-Python
+                    # wheel contents. Keep the interpreter's real native ABI,
+                    # but restrict every pip candidate/support-index consumer.
+                    before = b"    return supported\n"
+                    if body.count(before) != 1:
+                        raise SystemExit("pip supported-wheel tag contract changed")
+                    body = body.replace(before,
+                        b'    return [tag for tag in supported if tag.abi == "none" and tag.platform == "any"]\n')
+                if entry.filename == "pip/_vendor/platformdirs/unix.py":
+                    # InfinityOS grants capability-scoped namespaces, not a
+                    # Unix root UID. Keep upstream's ordinary per-user paths
+                    # without inventing a numeric user identity.
+                    before = b"    from os import getuid"
+                    root_check = b"self.use_site_for_root and getuid() == 0"
+                    if body.count(before) != 1 or body.count(root_check) != 1:
+                        raise SystemExit("pip platformdirs UID contract changed")
+                    body = body.replace(before, b'    getuid = getattr(os, "getuid", None)')
+                    body = body.replace(root_check, b"self.use_site_for_root and getuid is not None and getuid() == 0")
+                    body = body.replace(b'        if sys.platform.startswith("openbsd"):',
+                        b'        if sys.platform == "infinityos":\n            path = f"{gettempdir()}/runtime"\n        elif sys.platform.startswith("openbsd"):')
+                    body = body.replace(b'path = f"{gettempdir()}/runtime-{getuid()}"',
+                        b'path = f"{gettempdir()}/runtime" if getuid is None else f"{gettempdir()}/runtime-{getuid()}"')
+                name = entry.filename[:-3].replace("/__init__", "").replace("/", ".")
+                names[name] = (entry.filename, body)
+            else:
+                resources[entry.filename] = body
+                if entry.filename.startswith("pip-26.2.1.dist-info/"):
+                    metadata[entry.filename.split("/", 1)[1]] = body
+    resource_code = f"RESOURCES = {resources!r}\nPIP_METADATA = {metadata!r}\n"
+    names["_infinity_resources"] = ("_infinity_resources.py", resource_code.encode())
+    native_config = dict(SOABI=f"cpython-313-{arch}-infinityos", EXT_SUFFIX=".so",
+        MULTIARCH=f"{arch}-infinityos", Py_GIL_DISABLED=0, Py_DEBUG=0, WITH_PYMALLOC=1,
+        ABIFLAGS="", VERSION="3.13", LDVERSION="3.13", py_version_short="3.13",
+        prefix="/system/python", exec_prefix="/system/python", LIBDIR="/system/python/lib",
+        CC="clang", CFLAGS="", LDSHARED="", SHLIB_SUFFIX=".so", EXE="", SIZEOF_VOID_P=8)
+    name = f"_sysconfigdata__infinityos_{arch}-infinityos"
+    names[name] = (name + ".py", ("build_time_vars = " + repr(native_config) + "\n").encode())
+    return names, wheel
 
 # ------------------------=
 # FUNC: arithmetic_sources
@@ -119,7 +221,9 @@ def main():
         with (native_lib / "build.log").open("wb") as log:
             run("make", "-j4", "all-target-newlib", cwd=native_lib, stdout=log, stderr=subprocess.STDOUT)
         newlib = native_lib / f"{arch}-none-elf/newlib"
+    compression, zlib_sources = compression_sources()
     includes = [out, ROOT / "sdk/python/include", source / "Include", source / "Include/internal", source,
+                source / "Modules/_hacl/include", source / "Modules/expat", compression,
                 ROOT / "sdk/compiler/include", newlib / "targ-include", newlib,
                 ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include"]
     flags = [f"--target={arch}-none-elf", "-std=c11", "-O2", "-fPIE", "-ffunction-sections", "-fdata-sections",
@@ -151,29 +255,33 @@ def main():
         fields = line.split()
         modules.append(fields[0])
         sources += [source / "Modules" / x for x in fields[1:] if x.endswith(".c")]
+    extra_modules = {
+        "array": ["arraymodule.c"], "_bisect": ["_bisectmodule.c"], "_csv": ["_csv.c"],
+        "_heapq": ["_heapqmodule.c"], "_json": ["_json.c"], "_opcode": ["_opcode.c"],
+        "_contextvars": ["_contextvarsmodule.c"],
+        "_pickle": ["_pickle.c"], "_random": ["_randommodule.c"], "_struct": ["_struct.c"],
+        "math": ["mathmodule.c"], "cmath": ["cmathmodule.c"], "_datetime": ["_datetimemodule.c"],
+        "binascii": ["binascii.c"], "zlib": ["zlibmodule.c"], "unicodedata": ["unicodedata.c"],
+        "pyexpat": ["pyexpat.c", "expat/xmlparse.c", "expat/xmlrole.c", "expat/xmltok.c"],
+        "_md5": ["md5module.c", "_hacl/Hacl_Hash_MD5.c"],
+        "_sha1": ["sha1module.c", "_hacl/Hacl_Hash_SHA1.c"],
+        "_sha2": ["sha2module.c", "_hacl/Hacl_Hash_SHA2.c"],
+        "_sha3": ["sha3module.c", "_hacl/Hacl_Hash_SHA3.c"],
+        "_blake2": ["_blake2/blake2module.c", "_blake2/blake2b_impl.c", "_blake2/blake2s_impl.c"],
+    }
+    for name, units in extra_modules.items():
+        modules.append(name)
+        sources += [source / "Modules" / unit for unit in units]
+    sources += zlib_sources
     config = (source / "Modules/config.c.in").read_text()
     config = config.replace("/* -- ADDMODULE MARKER 1 -- */", "\n".join(f"extern PyObject *PyInit_{m}(void);" for m in modules))
     config = config.replace("/* -- ADDMODULE MARKER 2 -- */", "\n".join(f'{{"{m}", PyInit_{m}}},' for m in modules))
     (out / "config.c").write_text(config)
     frozen = ['#include "Python.h"', '#include "pycore_import.h"']
     entries = [[], []]
-    names = {"_frozen_importlib": "importlib/_bootstrap.py", "_frozen_importlib_external": "importlib/_bootstrap_external.py", "zipimport": "zipimport.py"}
-    # CPython 3.13 registers -c source through linecache before running it;
-    # this is needed by native syntax validation, not just traceback display.
-    stdlib = "abc codecs io _collections_abc _sitebuiltins genericpath ntpath posixpath os site stat keyword types reprlib functools operator collections enum copyreg warnings re json importlib linecache".split()
-    for name in stdlib:
-        path = source / "Lib" / name
-        if path.is_dir():
-            for item in sorted(path.rglob("*.py")):
-                relative = item.relative_to(source / "Lib").with_suffix("").as_posix()
-                names[relative.replace("/__init__", "").replace("/", ".")] = item.relative_to(source / "Lib").as_posix()
-        else:
-            names[name] = name + ".py"
-    for item in sorted((source / "Lib/encodings").glob("*.py")):
-        name = "encodings" if item.stem == "__init__" else "encodings." + item.stem
-        names[name] = "encodings/" + item.name
-    for index, (name, filename) in enumerate(names.items()):
-        data = marshal.dumps(compile((source / "Lib" / filename).read_bytes(), f"<frozen {name}>", "exec", optimize=0))
+    names, pip_wheel = frozen_library(source, arch)
+    for index, (name, (filename, body)) in enumerate(names.items()):
+        data = marshal.dumps(compile(body, f"/stdlib/{filename}", "exec", optimize=0))
         frozen.append(f"static const unsigned char data_{index}[]={{" + ",".join(map(str, data)) + "};")
         entries[0 if index < 3 else 1].append(f'{{"{name}",data_{index},{len(data)},{int(filename.endswith("/__init__.py"))}}},')
     for index, suffix in enumerate(("Bootstrap", "Stdlib")):
@@ -197,7 +305,10 @@ def main():
     # ------------------=
     def compile_unit(path):
         obj = out / (hashlib.sha256(str(path).encode()).hexdigest()[:12] + "-" + path.stem + ".o")
-        command = [str(LLVM / "clang"), *flags, "-c", str(path), "-o", str(obj)]
+        # CPython's installation PREFIX is not a third-party library macro;
+        # Expat uses PREFIX as an XML namespace structure type.
+        unit_flags = [*flags, "-UPREFIX"] if path.parent == source / "Modules/expat" else flags
+        command = [str(LLVM / "clang"), *unit_flags, "-c", str(path), "-o", str(obj)]
         result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (obj.with_suffix(".log")).write_bytes(result.stdout)
         if result.returncode:
@@ -220,6 +331,8 @@ def main():
         print(result.stdout.decode(errors="replace")[:16000])
         raise SystemExit(f"Native Python link failed; see {out / 'link.log'}")
     evidence = dict(architecture=arch, cpython_version=VERSION, source_archive_sha256=SHA,
+        pip_version="26.2.1", pip_wheel_sha256=hashlib.sha256(pip_wheel.read_bytes()).hexdigest(),
+        frozen_module_count=len(names), builtin_modules=modules,
         executable_sha256=hashlib.sha256((out / "python.elf").read_bytes()).hexdigest(),
         compiled=True, runtime_verified=False, installed_verified=False)
     package = ROOT / "builds/toolchains" / arch
@@ -228,7 +341,14 @@ def main():
         temporary = package / (name + ".partial")
         shutil.copyfile(out / name, temporary)
         temporary.replace(package / name)
-    (package / "python-license.txt").write_bytes((source / "LICENSE").read_bytes() + b"\n\nLLVM compiler runtime:\n" + arithmetic_license.read_bytes())
+    notices = [(source / "LICENSE").read_bytes(), b"\n\nLLVM compiler runtime:\n", arithmetic_license.read_bytes(),
+               b"\n\nzlib:\n", (compression / "zlib.h").read_bytes().split(b"#ifndef", 1)[0],
+               b"\n\nBundled Expat:\n", (source / "Modules/expat/COPYING").read_bytes()]
+    with zipfile.ZipFile(pip_wheel) as bundle:
+        for name in bundle.namelist():
+            if "/licenses/" in name or name.endswith(("LICENSE", "LICENSE.txt", "COPYING")):
+                notices += [b"\n\n" + name.encode() + b":\n", bundle.read(name)]
+    (package / "python-license.txt").write_bytes(b"".join(notices))
     (ROOT / "builds/validation/native-python" / arch / "build.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(out / "python.elf")
 
