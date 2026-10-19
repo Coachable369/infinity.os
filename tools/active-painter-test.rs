@@ -10,6 +10,8 @@ mod primitives;
 #[path = "../kernel/core/bootstrap/personalization_view.rs"]
 mod personalization_view;
 #[path="../kernel/core/bootstrap/app_style.rs"] mod app_style;
+#[path="../kernel/core/bootstrap/ai_widget_view.rs"] mod ai_widget_view;
+#[path="ai-widget-tests.rs"] mod ai_widget_tests;
 #[path="../kernel/core/bootstrap/assistant_view.rs"] mod assistant_view;
 #[path="../kernel/core/bootstrap/editor_view.rs"] mod editor_view;
 #[cfg(baseline)]
@@ -312,6 +314,9 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--ai-widget-only") {
+        ai_widget_tests::verify();return;
+    }
     if let Some(label)=std::env::args().find_map(|arg|arg.strip_prefix("--editor-streaming-benchmark=").map(str::to_owned)) {
         editor_streaming_benchmark(&label);return;
     }
@@ -325,6 +330,7 @@ fn main() {
         window_controls_test();window_control_states_proof();return;
     }
     editor_scheme_pixels();
+    ai_widget_tests::verify();
     editor_typography_pixels();
     font_library_pixels();
     thinking_text_pixels_test();

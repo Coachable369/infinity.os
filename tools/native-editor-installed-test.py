@@ -1254,6 +1254,7 @@ def main():
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
     parser.add_argument("--boot-only", action="store_true", help="Verify detached installed boot, account setup and cold-boot identity only; retain the stopped private disk without application generation")
     parser.add_argument("--editor-lifecycle-only", action="store_true", help="Verify actual unsaved editor minimize, close Cancel, and close Discard/reopen behavior without model generation or compilation")
+    parser.add_argument("--widget-controls-only", action="store_true", help="Verify desktop composer focus, overflow, real status-menu actions and cancellation on a detached installation")
     parser.add_argument("--streaming-only", action="store_true", help="Verify real incremental model/editor output and cancellation/readmission only; not generated application acceptance")
     parser.add_argument("--benchmark-generation", action="store_true", help="Measure at least 128 decode tokens and 60 seconds of installed generation without compilation; requires --generate-request")
     parser.add_argument("--benchmark-model", choices=("hermes", "ministral"), default="hermes", help="Require this model in the private installation's persisted profile; never change model selection during measurement")
@@ -1272,6 +1273,10 @@ def main():
     args = parser.parse_args()
     if args.update_kernel and not args.reuse_installed:
         parser.error("--update-kernel requires --reuse-installed")
+    if args.widget_controls_only and (args.boot_only or args.editor_lifecycle_only or args.streaming_only
+            or args.benchmark_generation or args.generate_request or args.create_application
+            or args.create_ui_application or args.compiler_only or args.generation_only or args.save_compile):
+        parser.error("--widget-controls-only cannot be combined with another focused case")
     if args.benchmark_generation and (not args.generate_request or not args.reuse_installed or args.arch != "aarch64"
             or args.streaming_only or args.editor_lifecycle_only or args.boot_only or args.application_case
             or args.save_compile or args.compiler_only or args.generation_only):
@@ -1303,7 +1308,7 @@ def main():
         args.application_case.relative_to(ROOT)
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
-    if args.generate_request or args.streaming_only or args.editor_lifecycle_only:
+    if args.generate_request or args.streaming_only or args.editor_lifecycle_only or args.widget_controls_only:
         if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
             parser.error("Generated application acceptance must run through ./build-kit run")
     # Both app artifact export and the benchmark's read-only profile validation
@@ -1378,6 +1383,15 @@ def main():
             return
         if args.editor_lifecycle_only:
             report["editor_lifecycle"] = verify_editor_lifecycle(guest)
+            report["installed_boot_verified"] = True
+            report["generated_workflow_passed"] = False
+            report["domain_behavior_verified"] = False
+            return
+        if args.widget_controls_only:
+            widget_spec = importlib.util.spec_from_file_location("ai_widget_acceptance", ROOT / "tools/ai-widget-installed-test.py")
+            widget = importlib.util.module_from_spec(widget_spec)
+            widget_spec.loader.exec_module(widget)
+            report["widget_controls"] = widget.verify(guest, sys.modules[__name__])
             report["installed_boot_verified"] = True
             report["generated_workflow_passed"] = False
             report["domain_behavior_verified"] = False

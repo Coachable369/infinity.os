@@ -59,6 +59,7 @@ pub enum DesktopTarget {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AiChatTarget {
+    Status,
     Model,
     Timeline,
     Composer,
@@ -71,6 +72,7 @@ pub enum AiChatTarget {
 pub struct AiChatGeometry {
     pub panel: Rect,
     pub header: Rect,
+    pub status: Rect,
     pub model: Rect,
     pub timeline: Rect,
     pub composer: Rect,
@@ -635,15 +637,24 @@ impl SystemLayout {
     pub fn ai_chat_geometry(self, minimized: bool) -> AiChatGeometry {
         let panel = crate::ui::desktop_widgets::current().rect(1,self.width,self.height,self.scale,minimized);
         let (left,top,width,height) = (panel.x.max(0) as usize,panel.y.max(0) as usize,panel.width as usize,panel.height as usize);
-        let header_height = 46 * self.scale;
+        let compact = width < 340 * self.scale && !minimized;
+        let header_height = if compact { 82 } else { 46 } * self.scale;
         let model_top = top + header_height + 8 * self.scale;
         let model_height = 42 * self.scale;
         let composer_height = 46 * self.scale;
-        let send_width = 86 * self.scale;
+        let send_width = if compact { 48 } else { 86 } * self.scale;
         let composer_top = top + height.saturating_sub(composer_height + 12 * self.scale);
         AiChatGeometry {
             panel: rect(left, top, width, height),
             header: rect(left, top, width, header_height),
+            status: if compact {
+                rect(left + 12 * self.scale, top + 44 * self.scale,
+                    width.saturating_sub(24 * self.scale), 30 * self.scale)
+            } else {
+                let status_width = width.saturating_sub(if minimized { 88 } else { 176 } * self.scale).min(154 * self.scale);
+                rect(left + width.saturating_sub(status_width + 76 * self.scale), top + 8 * self.scale,
+                    status_width, 30 * self.scale)
+            },
             model: rect(
                 left + 12 * self.scale,
                 model_top,
@@ -669,16 +680,16 @@ impl SystemLayout {
                 composer_height,
             ),
             minimize: rect(
-                left + width.saturating_sub(58 * self.scale),
-                top + 10 * self.scale,
-                20 * self.scale,
-                20 * self.scale,
+                left + width.saturating_sub(68 * self.scale),
+                top + 8 * self.scale,
+                28 * self.scale,
+                28 * self.scale,
             ),
             close: rect(
-                left + width.saturating_sub(30 * self.scale),
-                top + 10 * self.scale,
-                20 * self.scale,
-                20 * self.scale,
+                left + width.saturating_sub(36 * self.scale),
+                top + 8 * self.scale,
+                28 * self.scale,
+                28 * self.scale,
             ),
         }
     }
@@ -746,6 +757,9 @@ impl SystemLayout {
         }
         if geometry.minimize.contains(point) {
             return Some(AiChatTarget::Minimize);
+        }
+        if geometry.status.contains(point) {
+            return Some(AiChatTarget::Status);
         }
         if minimized || !geometry.panel.contains(point) {
             return None;

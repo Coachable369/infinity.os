@@ -9920,11 +9920,11 @@ impl super::DisplayDevice {
                     && profile.activation != crate::runtime::identity::VoiceActivation::Disabled
             })
             .unwrap_or(false);
-        let wake_prompt: &[u8] = match voice_profile.map(|profile| profile.wake_word) {
-            Some(crate::runtime::identity::WakeWord::Computer) => b"SAY COMPUTER",
-            _ => b"SAY INFINITY",
-        };
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let wake_prompt: &[u8] = match voice_profile.map(|profile|profile.wake_word) {
+            Some(crate::runtime::identity::WakeWord::Computer)=>b"Say Computer",
+            _=>b"Say Infinity",
+        };
         let geometry = layout.ai_chat_geometry(chat.minimized());
         let left = geometry.panel.x.max(0) as usize;
         let top = geometry.panel.y.max(0) as usize;
@@ -9934,124 +9934,69 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
         self.glass_panel(left, top, width, height, false);
         for row in 0..3 { for col in 0..2 { self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226); } }
-        self.ui_text_strong(
-            left + 16 * scale,
-            top + 15 * scale,
-            b"AI CHAT",
-            accent_r,
-            accent_g,
-            accent_b,
-            1,
-        );
-        let mut throughput = [0u8; 32];
-        let throughput_len = crate::runtime::ai::with_ai_runtime(|runtime| {
-            if !matches!(chat.selected_model(), crate::runtime::ai::chat::MINISTRAL_MODEL_ID | crate::runtime::ai::chat::HERMES_MODEL_ID)
-                || runtime.qwen_tokens < 2 || runtime.qwen_decode_ns == 0 { return 0; }
-            let tenths = runtime.qwen_tokens.saturating_sub(1).saturating_mul(10_000_000_000)
-                / runtime.qwen_decode_ns;
-            let n = navigator_decimal(&mut throughput, (tenths / 10) as usize);
-            throughput[n] = b'.';
-            throughput[n + 1] = b'0' + (tenths % 10) as u8;
-            throughput[n + 2..n + 8].copy_from_slice(b" TOK/S");
-            n + 8
-        });
+        let app_progress = crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_generation_progress());
+        let can_stop = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
+            || crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_turn_owner().is_some())
+            || matches!(crate::ui::app_assistant::read(2).generation,
+                crate::ui::app_assistant::GenerationStatus::Queued | crate::ui::app_assistant::GenerationStatus::Running);
+        #[cfg(target_os="none")]
+        let can_stop = can_stop || matches!(crate::runtime::ai::voice_conversation::state().0,
+            crate::runtime::ai::voice_conversation::State::Recognizing |
+            crate::runtime::ai::voice_conversation::State::Submitting |
+            crate::runtime::ai::voice_conversation::State::Thinking |
+            crate::runtime::ai::voice_conversation::State::Speaking);
         #[cfg(target_os="none")]
         let voice_starting = {
             voice_enabled && crate::runtime::ai::voice_conversation::preparing()
         };
         #[cfg(not(target_os="none"))]
         let voice_starting = false;
-        let state = if chat.minimized() {
-            b"LOCAL  +".as_slice()
+        let state = if let Some(progress) = app_progress {
+            if progress.generated_tokens == 0 { b"Preparing".as_slice() } else { b"Generating".as_slice() }
+        } else if matches!(crate::ui::app_assistant::read(2).generation,
+            crate::ui::app_assistant::GenerationStatus::Queued | crate::ui::app_assistant::GenerationStatus::Running) {
+            b"Preparing".as_slice()
         } else if !chat.selected_model_ready() {
-            b"UNAVAILABLE".as_slice()
+            b"Preparing".as_slice()
         } else {
             use crate::runtime::ai::chat::GenerationState;
             match chat.generation_state {
-                GenerationState::Running => b"Thinking...".as_slice(),
-                GenerationState::Cancelled => b"CANCELLED".as_slice(),
-                GenerationState::Failed => b"FAILED".as_slice(),
-                GenerationState::ContextFull => b"CONTEXT FULL".as_slice(),
-                GenerationState::Complete if throughput_len != 0 => &throughput[..throughput_len],
-                _ => b"LOCAL  READY".as_slice(),
+                GenerationState::Running => b"Generating".as_slice(),
+                GenerationState::Cancelled => b"Cancelled".as_slice(),
+                GenerationState::Failed => b"Failed".as_slice(),
+                GenerationState::ContextFull => b"Context full".as_slice(),
+                _ => b"Ready".as_slice(),
             }
         };
         #[cfg(target_os="none")]
         let state = {
-            use crate::runtime::ai::voice_conversation::{state,State};
-            if !voice_enabled {
-                b"VOICE OFF".as_slice()
+            use crate::runtime::ai::voice_conversation::{state as voice_state,State};
+            if app_progress.is_some() || chat.generation_state == crate::runtime::ai::chat::GenerationState::Running || !chat.selected_model_ready() {
+                state
+            } else if !voice_enabled {
+                b"Voice off".as_slice()
             } else if voice_starting {
-                b"STARTING...".as_slice()
-            } else { match state().0 {
-                State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
-                State::Off=>b"VOICE OFF".as_slice(),State::Starting=>b"STARTING...".as_slice(),
+                b"Preparing".as_slice()
+            } else { match voice_state().0 {
+                State::Off=>b"Voice off".as_slice(),State::Starting=>b"Preparing".as_slice(),
                 State::Listening=>if crate::runtime::ai::voice_conversation::waiting_for_pause() {
-                    b"PAUSE TO RETRY".as_slice()
-                } else if crate::runtime::ai::voice_conversation::wake_armed() {b"GO AHEAD".as_slice()} else {wake_prompt},
-                State::Recognizing=>b"HEARING".as_slice(),State::Submitting=>b"QUEUED".as_slice(),
-                State::Thinking=>b"THINKING".as_slice(),
+                    b"Pause to retry".as_slice()
+                } else if crate::runtime::ai::voice_conversation::wake_armed() {b"Go ahead".as_slice()} else {wake_prompt},
+                State::Recognizing=>b"Recognizing".as_slice(),State::Submitting=>b"Queued".as_slice(),
+                State::Thinking=>b"Generating".as_slice(),
                 State::Speaking=>match crate::runtime::ai::voice_output::status().state {
-                    crate::runtime::ai::voice_output::OutputState::Speaking=>b"SPEAKING".as_slice(),
-                    _=>b"PREPARING SPEECH".as_slice(),
-                },State::Stopping=>b"STOPPING".as_slice(),
-                State::Failed=>b"UNAVAILABLE".as_slice(),
+                    crate::runtime::ai::voice_output::OutputState::Speaking=>b"Speaking".as_slice(),
+                    _=>b"Preparing speech".as_slice(),
+                },State::Stopping=>b"Stopping".as_slice(),
+                State::Failed=>b"Unavailable".as_slice(),
             }}
         };
-        let state_width = self.ui_text_width(state, 1);
-        let thinking = (chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
-            || voice_starting) && !chat.minimized();
-        let state_x = left + width.saturating_sub(state_width + 72 * scale);
         let frame = unsafe { THINKING_ANIMATION.frame as usize };
-        #[cfg(target_os="none")]
-        {
-            use crate::runtime::ai::voice_conversation::{state,State,indicator};
-            let region=indicator::control(geometry.panel,scale);
-            self.outline_rounded_rect(region.x.max(0)as usize,region.y.max(0)as usize,region.width as usize,region.height as usize,8*scale,46,107,137);
-            let (voice,level)=state();
-            if voice_enabled && voice==State::Listening{
-                let x=region.x+6*scale as i32;
-                let y=top as i32+23*scale as i32;
-                let available=(state_x as i32-x-6*scale as i32).max(0)as usize;
-                for offset in 1..available.min(42*scale){
-                    let a=indicator::sample((offset-1)/scale,frame,level)*scale as i32;
-                    let b=indicator::sample(offset/scale,frame,level)*scale as i32;
-                    self.line(x+offset as i32-1,y+a,x+offset as i32,y+b,80,215,249);
-                }
-            }
-        }
-        self.ui_text_shaded(
-            state_x,
-            top + 15 * scale,
-            state,
-            139,
-            184,
-            207,
-            1,
-            false,
-            thinking.then_some((frame * 3 * scale, 96 * scale)),
-        );
-        self.ui_text(
-            geometry.minimize.x.max(0) as usize + 5 * scale,
-            geometry.minimize.y.max(0) as usize + 2 * scale,
-            if chat.minimized() { b"+" } else { b"-" },
-            225,
-            238,
-            246,
-            1,
-        );
-        self.ui_text(
-            geometry.close.x.max(0) as usize + 4 * scale,
-            geometry.close.y.max(0) as usize + 2 * scale,
-            b"x",
-            225,
-            238,
-            246,
-            1,
-        );
+        self.ai_widget_header(geometry,state,chat.minimized(),can_stop || voice_starting,scale,(accent_r,accent_g,accent_b));
         if chat.minimized()
-            || self.render_clip.is_some_and(|clip| clip.bottom <= top + 48 * scale)
+            || self.render_clip.is_some_and(|clip| clip.bottom <= geometry.header.bottom().max(0) as usize)
         {
+            self.ai_widget_status_menu(geometry.status,crate::ui::ai_widget::current_menu(),voice_enabled,can_stop,scale);
             return;
         }
         let model = chat.selected_model_descriptor();
@@ -10152,6 +10097,7 @@ impl super::DisplayDevice {
                 loading_left, loading_width, center_y + 86 * scale,
                 b"Please wait before speaking", accent_r, accent_g, accent_b, 1,
             );
+            self.ai_widget_status_menu(geometry.status,crate::ui::ai_widget::current_menu(),voice_enabled,can_stop,scale);
             return;
         }
         let timeline_left = geometry.timeline.x.max(0) as usize;
@@ -10321,51 +10267,9 @@ impl super::DisplayDevice {
                 );
             }
         }
-        let composer_left = geometry.composer.x.max(0) as usize;
-        let composer_top = geometry.composer.y.max(0) as usize;
-        self.fill_rounded_rect_alpha(
-            composer_left,
-            composer_top,
-            geometry.composer.width as usize,
-            geometry.composer.height as usize,
-            9 * scale,
-            3,
-            16,
-            28,
-            236,
-        );
-        self.outline_rounded_rect(
-            composer_left,
-            composer_top,
-            geometry.composer.width as usize,
-            geometry.composer.height as usize,
-            9 * scale,
-            accent_r / 2,
-            accent_g / 2,
-            accent_b / 2,
-        );
         let composer_text = chat.input();
-        self.ui_text(
-            composer_left + 12 * scale,
-            composer_top + 15 * scale,
-            if composer_text.is_empty() {
-                if chat.selected_model_ready() { b"Ask InfinityOS..." } else { b"Preparing local AI..." }
-            } else {
-                composer_text
-            },
-            if composer_text.is_empty() { 130 } else { 224 },
-            if composer_text.is_empty() { 151 } else { 235 },
-            if composer_text.is_empty() { 168 } else { 243 },
-            1,
-        );
-        self.text_field_caret(
-            composer_left + 12 * scale,
-            composer_top,
-            geometry.composer.height as usize,
-            composer_text,
-            true,
-            3,
-        );
+        self.ai_widget_composer(geometry.composer,composer_text,chat.input_cursor(),
+            crate::ui::text_input::caret(3),scale,(accent_r,accent_g,accent_b));
         let send_left = geometry.send.x.max(0) as usize;
         let send_top = geometry.send.y.max(0) as usize;
         let send_width = geometry.send.width as usize;
@@ -10405,7 +10309,7 @@ impl super::DisplayDevice {
             if send_ready { 228 } else { 107 },
             if send_ready { 255 } else { 126 },
         );
-        self.ui_text_centered_strong(
+        if send_width >= 86 * scale { self.ui_text_centered_strong(
             send_left,
             send_width.saturating_sub(15 * scale),
             send_top + send_height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
@@ -10414,8 +10318,9 @@ impl super::DisplayDevice {
             if send_ready { 253 } else { 177 },
             if send_ready { 255 } else { 190 },
             1,
-        );
-        let arrow_x = send_left.saturating_add(send_width).saturating_sub(17 * scale) as i32;
+        ); }
+        let arrow_x = if send_width >= 86 * scale { send_left + send_width - 17 * scale }
+            else { send_left + send_width / 2 } as i32;
         let arrow_y = send_top.saturating_add(send_height / 2) as i32;
         let arrow_color = if send_ready { (250, 253, 255) } else { (120, 145, 160) };
         self.line(
@@ -10445,6 +10350,7 @@ impl super::DisplayDevice {
             arrow_color.1,
             arrow_color.2,
         );
+        self.ai_widget_status_menu(geometry.status,crate::ui::ai_widget::current_menu(),voice_enabled,can_stop,scale);
     }
 
     // ------------------------=
@@ -10797,6 +10703,7 @@ pub fn system_ui_present(
             console.system_ui_active = true;
             console.restore_cursor();
             let mut chat_content = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.state_hash());
+            chat_content ^= crate::ui::ai_widget::menu_hash().wrapping_mul(0x94d049bb133111eb);
             #[cfg(target_os="none")]
             { chat_content ^= (crate::runtime::ai::voice_conversation::state().0 as u64).wrapping_mul(0x9e3779b97f4a7c15); }
             let chat_changed = console.last_chat_content != chat_content;
@@ -11523,7 +11430,8 @@ pub fn system_ui_present(
                 if thinking_header_changed && !content_changed {
                     widgets = layout.ai_chat_geometry(false).panel;
                     widgets.height = crate::ui::thinking::repaint_height(
-                        widgets.height, layout.scale(), thinking_body_changed);
+                        widgets.height, layout.scale(), thinking_body_changed)
+                        .max(layout.ai_chat_geometry(false).header.height);
                 }
                 console.display.set_render_clip(
                     widgets.x.max(0) as usize,

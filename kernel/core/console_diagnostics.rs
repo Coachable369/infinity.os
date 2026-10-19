@@ -38,6 +38,78 @@ static mut INFINITY_COMPUTE_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
 #[used]
 #[no_mangle]
 static mut INFINITY_WORKPLACE_DIAGNOSTIC_SNAPSHOT: [u64;32]=[0;32];
+#[used]
+#[no_mangle]
+static mut INFINITY_AI_WIDGET_DIAGNOSTIC_SNAPSHOT: [u64; 48] = [0; 48];
+
+// ------------------------=
+// FUNC: publish_ai_widget
+// DESC: Publishes authenticated composer geometry, counts and control state without copying prompts or granting input authority.
+// ------------------=
+fn publish_ai_widget(console: &ConsoleRuntime, generation: u64) {
+    let mut data = [0u64; 48];
+    data[0] = 0x494e464149574431;
+    data[1] = 1;
+    data[2] = generation;
+    data[47] = generation;
+    if console.ai_chat_allowed() {
+        let chat = crate::runtime::ai::with_ai_runtime(|ai| {
+            data[15] = ai.app_turn_owner().map(|id| id as u64 + 1).unwrap_or(0);
+            ai.chat
+        });
+        let layout = crate::ui::system_layout::SystemLayout::new(
+            console.system.framebuffer_width, console.system.framebuffer_height);
+        let geometry = layout.ai_chat_geometry(chat.minimized());
+        data[3] = chat.enabled() as u64;
+        data[4] = console.ai_chat_focus as u64;
+        data[5] = chat.input().len() as u64;
+        data[6] = chat.input_cursor() as u64;
+        if let Some((visible, _)) = crate::ui::text_input::caret(3) {
+            data[7] = 1;
+            data[8] = visible as u64;
+        }
+        data[9] = chat.generation_state as u64;
+        data[10] = chat.selected_model_ready() as u64;
+        data[11] = crate::runtime::with_runtime(|runtime| {
+            runtime.identity.voice_profile(console.current_user).is_some_and(|profile|
+                profile.enabled && profile.activation != crate::runtime::identity::VoiceActivation::Disabled)
+        }).unwrap_or(false) as u64;
+        #[cfg(target_os = "none")]
+        {
+            data[12] = crate::runtime::ai::voice_conversation::state().0 as u64;
+            data[13] = crate::runtime::ai::voice_conversation::waiting_for_pause() as u64;
+        }
+        data[14] = chat.turn_id();
+        for (index, rect) in [geometry.panel, geometry.composer, geometry.send, geometry.header]
+            .iter().enumerate()
+        {
+            let at = 16 + index * 4;
+            data[at..at + 4].copy_from_slice(&[
+                rect.x as u64, rect.y as u64, rect.width as u64, rect.height as u64]);
+        }
+        let menu = crate::ui::ai_widget::current_menu();
+        let menu_rect = crate::ui::ai_widget::MenuGeometry::new(geometry.status,
+            console.system.framebuffer_width, console.system.framebuffer_height, layout.scale()).panel;
+        data[32..36].copy_from_slice(&[menu_rect.x as u64, menu_rect.y as u64,
+            menu_rect.width as u64, menu_rect.height as u64]);
+        data[36] = menu.open as u64;
+        data[37] = menu.selected as u64;
+        data[38..42].copy_from_slice(&[geometry.status.x as u64, geometry.status.y as u64,
+            geometry.status.width as u64, geometry.status.height as u64]);
+        data[42] = chat.selected_model_index() as u64;
+        data[43] = chat.minimized() as u64;
+        data[44] = console.ai_chat_can_stop() as u64;
+    }
+    unsafe {
+        let pointer = (&raw mut INFINITY_AI_WIDGET_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(pointer.add(2), generation | 1);
+        for index in 0..48 {
+            if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); }
+        }
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2), generation);
+    }
+}
 
 // ------------------------=
 // FUNC: publish_workplace
@@ -389,6 +461,7 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         let generation = core::ptr::read_volatile(pointer.add(2)).wrapping_add(2) & !1;
         publish_settings(console, generation);
         publish_navigator(console, generation);
+        publish_ai_widget(console, generation);
         core::ptr::write_volatile(pointer.add(2), generation | 1);
         data[2] = generation; data[511] = generation;
         for index in 0..512 { if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); } }

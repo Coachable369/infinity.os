@@ -791,6 +791,7 @@ impl ConsoleRuntime {
     // DESC: Reports whether the current native surface owns an editable text caret.
     // ------------------=
     fn text_input_focused(&self) -> bool {
+        if self.ai_chat_composer_focused() { return true; }
         if self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)).is_some() {return true;}
         match self.mode {
             ConsoleMode::Onboarding => {
@@ -933,13 +934,10 @@ impl ConsoleRuntime {
     // DESC: Publishes focused caret and I-beam state immediately before framebuffer composition.
     // ------------------=
     fn publish_text_input_presentation(&self) {
-        let (cursor, kind) = if let Some(caret)=self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)) {
+        let (cursor, kind) = if self.ai_chat_composer_focused() {
+            (crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.input_cursor()),3)
+        } else if let Some(caret)=self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)) {
             (caret,5)
-        } else if self.ai_chat_focus == 2 {
-            (
-                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.input_cursor()),
-                3,
-            )
         } else if self.desktop_app == DesktopAppKind::TextEditor
             && self.editor_dialog == EditorDialog::None
         {
@@ -1201,6 +1199,9 @@ impl ConsoleRuntime {
             crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open,browser.visible],active,self.system_focus);
         }
         self.publish_window_control_snapshot();
+        if !matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
+            crate::ui::ai_widget::publish_menu(Default::default());
+        }
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
         crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
         self.publish_text_input_presentation();
@@ -1420,11 +1421,13 @@ impl ConsoleRuntime {
             self.set_ai_chat_enabled(true);
             crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_minimized(false));
             self.ai_chat_focus = 2;
+            crate::ui::ai_widget::publish_menu(Default::default());
             self.redraw();
             return;
         }
         #[cfg(feature="native-browser")]
         if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::Browser
+            && self.ai_chat_focus == 0
             && crate::runtime::browser::presentation().address_focused && !crate::ui::app_assistant::read(0).focused {
             browser_controller::key(self,key);self.redraw();return;
         }
@@ -1483,10 +1486,129 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: ai_chat_composer_focused
+    // DESC: Gives an explicitly focused desktop prompt priority without leaking its caret into locked or hidden views.
+    // ------------------=
+    fn ai_chat_composer_focused(&self) -> bool {
+        self.ai_chat_focus == 2 && !self.current_session.is_zero()
+            && matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings)
+            && crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.enabled() && !runtime.chat.minimized())
+    }
+
+    // ------------------------=
+    // FUNC: ai_chat_can_stop
+    // DESC: Reports real app-generation, chat and voice activity eligible for the explicit shared Stop action.
+    // ------------------=
+    fn ai_chat_can_stop(&self) -> bool {
+        let busy = crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_turn_owner().is_some()
+            || runtime.chat.generation_state == crate::runtime::ai::chat::GenerationState::Running)
+            || matches!(crate::ui::app_assistant::read(2).generation,
+                crate::ui::app_assistant::GenerationStatus::Queued | crate::ui::app_assistant::GenerationStatus::Running);
+        #[cfg(target_os="none")]
+        let busy = busy || matches!(crate::runtime::ai::voice_conversation::state().0,
+            crate::runtime::ai::voice_conversation::State::Recognizing |
+            crate::runtime::ai::voice_conversation::State::Submitting |
+            crate::runtime::ai::voice_conversation::State::Thinking |
+            crate::runtime::ai::voice_conversation::State::Speaking);
+        busy
+    }
+
+    // ------------------------=
+    // FUNC: execute_ai_chat_status_action
+    // DESC: Dispatches trusted menu actions through the existing cancellation, permission and Settings paths.
+    // ------------------=
+    fn execute_ai_chat_status_action(&mut self, action: crate::ui::ai_widget::MenuAction) {
+        use crate::ui::ai_widget::{publish_menu,MenuAction};
+        publish_menu(Default::default());
+        if self.current_session.is_zero() || !self.ai_chat_allowed() { self.ai_chat_focus=0; return; }
+        self.ai_chat_focus=6;
+        match action {
+            MenuAction::Voice => {
+                let enabled = self.voice_microphone_allowed();
+                self.set_voice_microphone_enabled(!enabled);
+                #[cfg(target_os="none")]
+                if !enabled && self.voice_microphone_allowed() {
+                    crate::runtime::ai::voice_conversation::start(crate::runtime::execution::SecurityIdentity(self.current_session.0));
+                }
+            }
+            MenuAction::Stop => {
+                #[cfg(target_os="none")]
+                let resume_listening = self.voice_microphone_allowed() && !matches!(
+                    crate::runtime::ai::voice_conversation::state().0,
+                    crate::runtime::ai::voice_conversation::State::Off | crate::runtime::ai::voice_conversation::State::Failed);
+                crate::runtime::ai::with_ai_runtime(|runtime| runtime.cancel_chat());
+                #[cfg(target_os="none")]
+                {
+                    let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
+                    crate::runtime::ai::voice_conversation::stop(owner);
+                    if resume_listening { crate::runtime::ai::voice_conversation::start(owner); }
+                }
+            }
+            MenuAction::Settings => { self.ai_chat_focus=0; self.open_settings(3); }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: ai_chat_status_menu_pointer
+    // DESC: Captures only the open status menu, with inert padding and outside-click dismissal before any underlying action.
+    // ------------------=
+    fn ai_chat_status_menu_pointer(&mut self, clicked: bool) -> bool {
+        use crate::ui::ai_widget::{current_menu,publish_menu,MenuGeometry};
+        let mut menu=current_menu();
+        if !menu.open {return false;}
+        if !matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings) {
+            publish_menu(Default::default());return false;
+        }
+        let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
+        let minimized=crate::runtime::ai::with_ai_runtime(|runtime|runtime.chat.minimized());
+        let anchor=layout.ai_chat_geometry(minimized).status;
+        let geometry=MenuGeometry::new(anchor,self.system.framebuffer_width,self.system.framebuffer_height,layout.scale());
+        let point=layout.point(self.pointer_x,self.pointer_y);
+        let row=geometry.hit(point);
+        let covered=self.assistant_owner().is_some_and(|(_,rect)|rect.contains(point));
+        if clicked {
+            if !covered {
+                if let Some(row)=row {
+                    menu.selected=row;
+                    if let Some(action)=menu.action(self.ai_chat_can_stop()) {
+                        self.execute_ai_chat_status_action(action);self.redraw();return true;
+                    }
+                }
+            }
+            if covered || (!geometry.panel.contains(point) || anchor.contains(point)) {menu.open=false;}
+            publish_menu(menu);self.redraw();return true;
+        }
+        if !covered {
+            if let Some(row)=row {
+                if menu.selected!=row {menu.selected=row;publish_menu(menu);self.redraw();}
+                return true;
+            }
+        }
+        false
+    }
+
+    // ------------------------=
     // FUNC: input_ai_chat
     // DESC: Handles keyboard navigation, model selection, and bounded chat composer editing.
     // ------------------=
     fn input_ai_chat(&mut self, key: ConsoleKey) -> bool {
+        let mut menu = crate::ui::ai_widget::current_menu();
+        if menu.open {
+            match key {
+                ConsoleKey::Up | ConsoleKey::Tab(true) => menu.move_selection(true),
+                ConsoleKey::Down | ConsoleKey::Tab(false) => menu.move_selection(false),
+                ConsoleKey::Home => menu.selected=0,
+                ConsoleKey::End => menu.selected=2,
+                ConsoleKey::Enter => {
+                    if let Some(action)=menu.action(self.ai_chat_can_stop()) {self.execute_ai_chat_status_action(action);}
+                    return true;
+                }
+                ConsoleKey::Escape => menu.open=false,
+                _=>{},
+            }
+            crate::ui::ai_widget::publish_menu(menu);
+            return true;
+        }
         if self.ai_chat_preparing() && matches!(self.ai_chat_focus, 2 | 3)
             && !matches!(key, ConsoleKey::Escape | ConsoleKey::Shortcut(b'm' | b'c')) {
             return true;
@@ -1532,11 +1654,11 @@ impl ConsoleRuntime {
             ConsoleKey::Tab(reverse) => {
                 self.ai_chat_focus = if reverse {
                     if self.ai_chat_focus <= 1 {
-                        5
+                        6
                     } else {
                         self.ai_chat_focus - 1
                     }
-                } else if self.ai_chat_focus >= 5 {
+                } else if self.ai_chat_focus >= 6 {
                     1
                 } else {
                     self.ai_chat_focus + 1
@@ -1552,6 +1674,7 @@ impl ConsoleRuntime {
                     runtime.chat.set_minimized(!runtime.chat.minimized())
                 }),
                 5 => self.set_ai_chat_enabled(false),
+                6 => crate::ui::ai_widget::publish_menu(crate::ui::ai_widget::MenuState {open:true,selected:0}),
                 _ => {}
             },
             ConsoleKey::Escape => {
@@ -2754,6 +2877,7 @@ impl ConsoleRuntime {
         });
         self.ai_chat_focus = 0;
         if changed {
+            crate::ui::ai_widget::publish_menu(Default::default());
             self.persist_ai_chat_preferences();
         }
     }
@@ -7790,6 +7914,7 @@ impl ConsoleRuntime {
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if self.app_shortcuts_pointer(clicked, released) {return;}
+        if self.ai_chat_status_menu_pointer(clicked) { return; }
         if (crate::ui::desktop_widgets::current().menu.is_some() || crate::ui::desktop_widgets::current().drag.is_some())
             && self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         if self.minimized_shelf_pointer(clicked, right_clicked) { return; }
@@ -8015,20 +8140,6 @@ impl ConsoleRuntime {
                     y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,
                 })).unwrap_or(false);
             if clicked && chat_state.0 && !over_window && self.resize_pointer_shape().is_none() {
-                #[cfg(target_os="none")]
-                {
-                    use crate::runtime::ai::voice_conversation::{self,indicator};
-                    let rect=indicator::control(layout.ai_chat_geometry(chat_state.1).panel,layout.scale());
-                    let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
-                    if rect.contains(point){
-                        let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
-                        let active = !matches!(voice_conversation::state().0,
-                            voice_conversation::State::Off | voice_conversation::State::Failed);
-                        self.set_voice_microphone_enabled(!active);
-                        if !active { voice_conversation::start(owner); }
-                        self.redraw();return;
-                    }
-                }
                 if let Some(target) =
                     layout.ai_chat_target(self.pointer_x, self.pointer_y, chat_state.1)
                 {
@@ -8038,20 +8149,24 @@ impl ConsoleRuntime {
                         return;
                     }
                     match target {
+                        AiChatTarget::Status => {
+                            self.ai_chat_focus=6;
+                            crate::ui::ai_widget::publish_menu(crate::ui::ai_widget::MenuState {open:true,selected:0});
+                        }
                         AiChatTarget::Model => {
                             self.ai_chat_focus = 1;
                             self.select_next_chat_model();
                         }
                         AiChatTarget::Composer => {
                             self.ai_chat_focus = 2;
+                            self.caret_visible = true;
                             let field = layout.ai_chat_geometry(chat_state.1).composer;
-                            let length = crate::runtime::ai::with_ai_runtime(|runtime| {
-                                runtime.chat.input().len()
-                            });
-                            let cursor =
-                                self.clicked_caret_index(field, 12 * layout.scale(), length);
                             crate::runtime::ai::with_ai_runtime(|runtime| {
-                                runtime.chat.set_input_cursor(cursor)
+                                let view=crate::ui::ai_widget::prompt_viewport(runtime.chat.input(),runtime.chat.input_cursor(),
+                                    (field.width as usize).saturating_sub(24*layout.scale()),layout.scale());
+                                let cursor=crate::ui::ai_widget::caret_at(runtime.chat.input(),view,
+                                    layout.point(self.pointer_x,self.pointer_y).x-field.x-(12*layout.scale())as i32,layout.scale());
+                                runtime.chat.set_input_cursor(cursor);
                             });
                         }
                         AiChatTarget::Send => {

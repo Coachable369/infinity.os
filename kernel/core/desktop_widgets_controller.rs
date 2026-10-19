@@ -126,8 +126,7 @@ impl ConsoleRuntime {
                 }
                 let rect = state.rect(id, width, height, scale, minimized && id == 1);
                 if rect.contains(point) {
-                    #[cfg(all(target_os="none",target_arch="aarch64"))]
-                    if id==1 && crate::runtime::ai::voice_conversation::indicator::control(rect,scale).contains(point) { return false; }
+                    if id==1 && layout.ai_chat_geometry(minimized).status.contains(point) { return false; }
                     if point.y < rect.y + (40 * scale) as i32
                         && point.x < rect.right() - (80 * scale) as i32
                     {

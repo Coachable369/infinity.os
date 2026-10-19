@@ -393,7 +393,9 @@ unsafe fn clear_wake_command() {
 // DESC: Erases the single pending utterance and endpoint carry without touching microphone authority.
 // ------------------=
 unsafe fn clear_captured_turn() {
-    (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
+    (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
+        (&*(&raw const NOISE_FLOOR)).threshold(),
+        (&*(&raw const NOISE_FLOOR)).continuation_threshold());
     (&mut *(&raw mut HANDOFF_PCM)).fill(0);
     HANDOFF_LENGTH = 0;
     UTTERANCE_STARTED_AT = 0;
@@ -744,6 +746,40 @@ unsafe fn recover_reply() {
     stop_session(OWNER,cancel_turn,false);
     RESTART_LISTENING = restart;
 }
+
+// ------------------------=
+// FUNC: resume_background_listening
+// DESC: Gives a continuous microphone back to the user when a completed acknowledgment is waiting behind independently owned workflow narration.
+// ------------------=
+unsafe fn resume_background_listening() -> bool {
+    if !CONTINUOUS || !matches!(STATE, State::Thinking | State::Speaking)
+        || !super::with_ai_runtime(|ai| ai.chat.turn_id() == CHAT_TURN
+            && ai.chat.generation_state == GenerationState::Complete
+            && ai.app_turn_owner().is_some())
+        || voice_output::request_id(OWNER) == Some(REPLY_OUTPUT_REQUEST)
+        || !matches!(voice_output::status().state,
+            voice_output::OutputState::Queued | voice_output::OutputState::Synthesizing
+                | voice_output::OutputState::Ready | voice_output::OutputState::Speaking
+                | voice_output::OutputState::Buffered)
+    {
+        return false;
+    }
+    // The workflow already narrates its own phase. Do not cancel that exact
+    // output request, append the acknowledgment to it, or keep discarding new
+    // microphone input while it waits for an inference worker. Listening uses
+    // the normal playback echo suppression and wake authorization below.
+    REPLY_AT = REPLY_LENGTH;
+    SYNC_VISIBLE_AT = REPLY_LENGTH;
+    REPLY_COMPLETE = true;
+    REPLY_OUTPUT_REQUEST = 0;
+    clear_wake_command();
+    report_timing();
+    TURN_TIMING_ACTIVE = false;
+    if !listen() {
+        recover_reply();
+    }
+    true
+}
 // ------------------------=
 // FUNC: speak_next
 // DESC: Queues a complete sentence or bounded word-aligned segment from the visible response.
@@ -871,7 +907,9 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         report_timing();
         TURN_TIMING_ACTIVE = false;
         if continuous && INPUT_CAP != 0 {
-            (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
+            (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
+                (&*(&raw const NOISE_FLOOR)).threshold(),
+                (&*(&raw const NOISE_FLOOR)).continuation_threshold());
             (&mut *(&raw mut RESAMPLER)).clear();
             (&mut *(&raw mut RAW)).fill(0);
             (&mut *(&raw mut MONO)).fill(0);
@@ -1123,7 +1161,9 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     }
     (&mut *(&raw mut RAW)).fill(0);(&mut *(&raw mut MONO)).fill(0);
     if duplex && matches!((&*(&raw const UTTERANCE)).state(),VadState::NoSpeech|VadState::Limit) {
-        (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
+        (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
+            (&*(&raw const NOISE_FLOOR)).threshold(),
+            (&*(&raw const NOISE_FLOOR)).continuation_threshold());
     }
     true
 }
@@ -1174,6 +1214,7 @@ pub fn poll() -> bool {
                 recover_reply();
             }
         }
+        presentation_changed |= resume_background_listening();
         // Recognition retains one following utterance so wake-only decoding
         // cannot erase an immediately spoken command. Inference and playback
         // still own the accepted turn; their input is drained, never queued.
@@ -1243,7 +1284,9 @@ pub fn poll() -> bool {
                             && UTTERANCE_STARTED_AT < WAKE_ARMED_UNTIL;
                         FOLLOWUP_ONSET_UNTIL = super::qwen::workers::clock_ns()
                             .saturating_add(WAKE_COMMAND_WINDOW_NS);
-                        (&mut *(&raw mut UTTERANCE)).clear((&*(&raw const NOISE_FLOOR)).threshold());
+                        (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
+                            (&*(&raw const NOISE_FLOOR)).threshold(),
+                            (&*(&raw const NOISE_FLOOR)).continuation_threshold());
                         UTTERANCE_STARTED_AT = 0;
                         UTTERANCE_ENDED_AT = 0;
                         LAST_VAD_STATE = VadState::Waiting;

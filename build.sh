@@ -34,10 +34,8 @@ fi
 # defer the broad regression suite, never the publication/parity gates.
 if [ "$package_only" = true ]; then
     case "$target" in aarch64|x86_64) ;; *) echo "--package-only requires --target aarch64|x86_64" >&2; exit 2 ;; esac
-    test -s "build/$target/installed-kernel.elf" || {
-        echo "No built $target kernel; run ./build-kit $target first." >&2
-        exit 1
-    }
+    # The packaging pipeline forcibly rebuilds this target's installed kernel
+    # and refreshes its assets itself. A prior full build is not a prerequisite.
     export INFINITY_ISO_BUILD_AUTHORITY=build.sh
     if [ "$machine" = qemu ]; then
         python3 tools/kernel-layout-test.py

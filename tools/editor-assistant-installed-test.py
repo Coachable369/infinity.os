@@ -26,6 +26,7 @@ def verify_artifacts():
             path = ROOT / "build" / architecture / name
             _, size = base.symbol(path, "INFINITY_APP_FEATURE_SNAPSHOT")
             assert size == 256
+            assert base.symbol(path, "INFINITY_AI_WIDGET_DIAGNOSTIC_SNAPSHOT")[1] == 384
             with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
                 assert binary.find(font) >= 0, (architecture, name, "missing code font")
                 assert all(binary.find(atlas) >= 0 for atlas in ui_fonts), (architecture, name, "missing compact UI typography")

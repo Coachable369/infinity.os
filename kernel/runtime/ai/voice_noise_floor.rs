@@ -8,6 +8,7 @@ pub struct NoiseFloor {
     energy: u64,
     energies: [u32; FRAMES],
     threshold: u16,
+    continuation_threshold: u16,
 }
 impl NoiseFloor {
     // ------------------------=
@@ -15,7 +16,7 @@ impl NoiseFloor {
     // DESC: Starts a half-second 16-kHz calibration with the established minimum speech threshold.
     // ------------------=
     pub const fn new() -> Self {
-        Self { samples: 0, frames: 0, energy: 0, energies: [0; FRAMES], threshold: 300 }
+        Self { samples: 0, frames: 0, energy: 0, energies: [0; FRAMES], threshold: 300, continuation_threshold: 300 }
     }
     // ------------------------=
     // FUNC: ready
@@ -27,6 +28,13 @@ impl NoiseFloor {
     // DESC: Returns a bounded speech floor with six decibels of separation from measured ambient sound.
     // ------------------=
     pub const fn threshold(&self) -> u16 { self.threshold }
+    // ------------------------=
+    // FUNC: continuation_threshold
+    // DESC: Keeps confirmed quieter speech above measured ambient without lowering the stricter new-utterance gate.
+    // ------------------=
+    pub const fn continuation_threshold(&self) -> u16 {
+        self.continuation_threshold
+    }
     // ------------------------=
     // FUNC: push
     // DESC: Uses the greater of whole-window and settled-tail medians so startup gain ramping cannot underestimate ambient noise.
@@ -59,6 +67,7 @@ impl NoiseFloor {
                         if middle * middle <= baseline { low = middle; } else { high = middle; }
                     }
                     self.threshold = (low * 2).clamp(300, 3000) as u16;
+                    self.continuation_threshold = (low * 3 / 2).max(150).min(u64::from(self.threshold)) as u16;
                 }
             }
         }
@@ -123,6 +132,25 @@ mod tests {
             for chunk in pcm.chunks(size) { floor.push(chunk); }
             assert!(floor.ready());
             assert_eq!(floor.threshold(), 800);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: continuation_gate_stays_above_calibrated_ambient
+    // DESC: Verifies quieter continuation remains separated from actual noise and cannot exceed the onset gate.
+    // ------------------=
+    #[test]
+    fn continuation_gate_stays_above_calibrated_ambient() {
+        for (ambient, onset, continuation) in [(0, 300, 150), (100, 300, 150),
+            (400, 800, 600), (700, 1400, 1050), (32767, 3000, 3000)] {
+            let mut floor = NoiseFloor::new();
+            assert_eq!(floor.continuation_threshold(), 300);
+            floor.push(&[ambient; FRAME * FRAMES]);
+            assert!(floor.ready());
+            assert_eq!(floor.threshold(), onset);
+            assert_eq!(floor.continuation_threshold(), continuation);
+            assert!(floor.continuation_threshold() <= floor.threshold());
+            if ambient < 3000 { assert!(floor.continuation_threshold() > ambient as u16); }
         }
     }
 }

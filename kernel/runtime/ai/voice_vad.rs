@@ -4,10 +4,10 @@ pub const FRAME: usize = 320;
 pub const MAX_SAMPLES: usize = RATE * 10;
 const PRE_ROLL: usize = RATE / 5;
 const ONSET_FRAMES: usize = 3;
-const TAIL: usize = RATE / 10;
-// Four hundred milliseconds keeps natural intra-sentence pauses while avoiding
-// an unnecessary extra 200 ms after the user has clearly finished speaking.
-const END_SILENCE: usize = RATE * 2 / 5;
+const AMBIENT_FRAMES: usize = 9;
+// A normal hesitation between a product name and the rest of a command must
+// not submit that prefix as a finished instruction. This remains sample-based.
+pub const END_SILENCE: usize = RATE * 4 / 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VadState { Waiting, Speech, Complete, NoSpeech, Limit, Cancelled }
@@ -25,6 +25,9 @@ pub struct Detector {
     last_voice: usize,
     segment: Segment,
     threshold: u16,
+    continuation_threshold: u16,
+    waiting_energies: [u32; AMBIENT_FRAMES],
+    waiting_frames: usize,
     limit_silence: usize,
 }
 impl Detector {
@@ -35,6 +38,8 @@ impl Detector {
     pub const fn new(threshold: u16) -> Self {
         Self { state: VadState::Waiting, samples: 0, frame_samples: 0, energy: 0,
             consecutive: 0, last_voice: 0, segment: Segment { start: 0, end: 0 }, threshold,
+            continuation_threshold: threshold,
+            waiting_energies: [0; AMBIENT_FRAMES], waiting_frames: 0,
             limit_silence: 0 }
     }
     // ------------------------=
@@ -49,7 +54,7 @@ impl Detector {
     pub const fn samples(&self) -> usize { self.samples }
     // ------------------------=
     // FUNC: segment
-    // DESC: Exposes only completed speech bounds, excluding most trailing silence.
+    // DESC: Exposes completed speech with its captured endpoint tail, preserving quiet final consonants.
     // ------------------=
     pub fn segment(&self) -> Option<Segment> {
         if self.state == VadState::Complete { Some(self.segment) } else { None }
@@ -66,7 +71,14 @@ impl Detector {
             let value = i64::from(sample);
             self.energy += (value * value) as u64;
             if self.frame_samples == FRAME {
-                let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
+                let threshold = if self.state == VadState::Speech {
+                    self.continuation_threshold
+                } else { self.threshold };
+                let voiced = self.energy >= u64::from(threshold.max(1)).pow(2) * FRAME as u64;
+                if self.state == VadState::Waiting {
+                    if voiced { self.waiting_frames = 0; }
+                    else { self.observe_waiting_ambient(); }
+                }
                 if voiced {
                     self.consecutive += 1;
                     // Apply the same sustained-voice requirement at the tail
@@ -81,7 +93,7 @@ impl Detector {
                 self.frame_samples = 0; self.energy = 0;
                 if self.state == VadState::Speech && self.consecutive == 0
                     && self.samples - self.last_voice >= END_SILENCE {
-                    self.segment.end = (self.last_voice + TAIL).min(self.samples);
+                    self.segment.end = self.samples;
                     self.state = VadState::Complete;
                 }
             }
@@ -98,6 +110,29 @@ impl Detector {
         consumed
     }
     // ------------------------=
+    // FUNC: observe_waiting_ambient
+    // DESC: Raises only the calibrated continuation floor from a short median of pre-speech ambient frames; never learns an active phrase.
+    // ------------------=
+    fn observe_waiting_ambient(&mut self) {
+        if self.continuation_threshold >= self.threshold { return; }
+        self.waiting_energies[self.waiting_frames] = (self.energy / FRAME as u64) as u32;
+        self.waiting_frames += 1;
+        if self.waiting_frames != AMBIENT_FRAMES { return; }
+        self.waiting_frames = 0;
+        let mut energies = self.waiting_energies;
+        energies.sort_unstable();
+        let median = u64::from(energies[AMBIENT_FRAMES / 2]);
+        let mut low = 0u64;
+        let mut high = 32769u64;
+        while high - low > 1 {
+            let middle = (low + high) / 2;
+            if middle * middle <= median { low = middle; }
+            else { high = middle; }
+        }
+        let raised = (low * 3 / 2).min(u64::from(self.threshold)) as u16;
+        self.continuation_threshold = self.continuation_threshold.max(raised);
+    }
+    // ------------------------=
     // FUNC: drain_limit
     // DESC: Discards an overlong utterance until a real end pause without storing or submitting a truncated command.
     // ------------------=
@@ -109,7 +144,7 @@ impl Detector {
             let value = i64::from(sample);
             self.energy += (value * value) as u64;
             if self.frame_samples == FRAME {
-                let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
+                let voiced = self.energy >= u64::from(self.continuation_threshold.max(1)).pow(2) * FRAME as u64;
                 self.consecutive = if voiced { self.consecutive + 1 } else { 0 };
                 self.limit_silence = if self.consecutive >= ONSET_FRAMES { 0 } else { self.limit_silence + FRAME };
                 self.frame_samples = 0; self.energy = 0;
@@ -125,6 +160,7 @@ impl Detector {
     pub fn cancel(&mut self) {
         self.state = VadState::Cancelled; self.segment = Segment { start: 0, end: 0 };
         self.energy = 0; self.frame_samples = 0; self.consecutive = 0; self.last_voice = 0;
+        self.waiting_energies.fill(0); self.waiting_frames = 0;
     }
 }
 
@@ -183,7 +219,7 @@ impl Utterance {
     }
     // ------------------------=
     // FUNC: speech
-    // DESC: Borrows a trimmed completed utterance; partial speech and failure never reach STT.
+    // DESC: Borrows completed speech with its full endpoint tail; partial speech and failure never reach STT.
     // ------------------=
     pub fn speech(&self) -> Option<&[i16]> {
         self.detector.segment().map(|s| &self.pcm[s.start..s.end])
@@ -194,6 +230,14 @@ impl Utterance {
     // ------------------=
     pub fn clear(&mut self, threshold: u16) {
         self.pcm.fill(0); self.detector = Detector::new(threshold);
+    }
+    // ------------------------=
+    // FUNC: clear_with_continuation
+    // DESC: Resets private PCM with calibrated onset and quieter continuation gates; unconfirmed noise cannot start a turn.
+    // ------------------=
+    pub fn clear_with_continuation(&mut self, threshold: u16, continuation: u16) {
+        self.clear(threshold);
+        self.detector.continuation_threshold = continuation.max(1).min(threshold.max(1));
     }
     // ------------------------=
     // FUNC: cancel
@@ -258,7 +302,7 @@ mod tests {
     #[test]
     // ------------------------=
     // FUNC: completes_after_conversational_end_pause
-    // DESC: Proves a finished utterance advances after 400 ms of silence without treating a shorter thinking pause as completion.
+    // DESC: Proves a finished utterance advances after 800 ms of silence without treating a shorter thinking pause as completion.
     // ------------------=
     fn completes_after_conversational_end_pause() {
         let mut value = Utterance::new(300);
@@ -268,6 +312,135 @@ mod tests {
         value.push(&[0; FRAME]);
         assert_eq!(value.state(), VadState::Complete);
         assert!(value.speech().is_some());
+    }
+
+    // ------------------------=
+    // FUNC: short_pause_retains_entire_command
+    // DESC: Preserves both spoken portions across normal half-second hesitations for arbitrary driver chunk boundaries.
+    // ------------------=
+    #[test]
+    fn short_pause_retains_entire_command() {
+        for pause in [RATE / 2, RATE * 7 / 10] {
+            let mut input = std::vec![0; PRE_ROLL];
+            input.extend_from_slice(&[1000; RATE]);
+            input.extend(std::iter::repeat_n(0, pause));
+            input.extend_from_slice(&[1300; RATE / 2]);
+            input.extend_from_slice(&[0; END_SILENCE]);
+            for chunk in [1, 17, 319, 320, 701, 4096] {
+                let mut value = Utterance::new(300);
+                for block in input.chunks(chunk) { assert_eq!(value.push(block), block.len()); }
+                assert_eq!(value.state(), VadState::Complete);
+                assert_eq!(value.speech().unwrap(), input);
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: calibrated_gate_retains_quiet_long_continuation
+    // DESC: Keeps a quieter 1.5-second tail after a thinking pause without permitting that level to start its own utterance.
+    // ------------------=
+    #[test]
+    fn calibrated_gate_retains_quiet_long_continuation() {
+        let mut input = std::vec![100; PRE_ROLL];
+        input.extend_from_slice(&[1000; RATE / 5]);
+        input.extend_from_slice(&[100; RATE / 2]);
+        input.extend_from_slice(&[220; RATE * 3 / 2]);
+        input.extend_from_slice(&[100; END_SILENCE]);
+        for chunk in [1, 17, 319, 320, 701, 4096] {
+            let mut value = Utterance::new(300);
+            value.clear_with_continuation(300, 150);
+            for block in input.chunks(chunk) { assert_eq!(value.push(block), block.len()); }
+            assert_eq!(value.state(), VadState::Complete);
+            assert_eq!(value.speech().unwrap(), input);
+            value.clear_with_continuation(300, 150);
+            value.push(&[220; RATE * 2]);
+            assert_eq!(value.state(), VadState::Waiting);
+            assert_eq!(value.speech(), None);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: endpoint_tail_preserves_soft_final_phonemes
+    // DESC: Retains captured below-gate trailing audio instead of clipping everything after the first 100 milliseconds.
+    // ------------------=
+    #[test]
+    fn endpoint_tail_preserves_soft_final_phonemes() {
+        let mut input = std::vec![1000; FRAME * 5];
+        input.extend_from_slice(&[120; RATE / 2]);
+        input.extend_from_slice(&[0; END_SILENCE]);
+        for chunk in [1, 17, 319, 320, 701, 4096] {
+            let mut value = Utterance::new(300);
+            value.clear_with_continuation(300, 150);
+            for block in input.chunks(chunk) { value.push(block); }
+            assert_eq!(value.state(), VadState::Complete);
+            assert_eq!(value.speech().unwrap(), &input[..FRAME * 5 + END_SILENCE]);
+            assert_eq!(value.speech().unwrap().iter().filter(|&&sample| sample == 120).count(), RATE / 2);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: calibrated_noise_and_quiet_overflow_fail_closed
+    // DESC: Rejects measured ambient and isolated clicks while keeping the ten-second privacy bound for quiet continuous speech.
+    // ------------------=
+    #[test]
+    fn calibrated_noise_and_quiet_overflow_fail_closed() {
+        for overlong in [false, true] {
+            let mut value = Utterance::new(800);
+            value.clear_with_continuation(800, 600);
+            value.push(&[1600; FRAME * ONSET_FRAMES]);
+            if overlong {
+                value.push(&[700; MAX_SAMPLES]);
+                assert_eq!(value.state(), VadState::Limit);
+                assert!(value.speech().is_none());
+                assert!(value.pcm.iter().all(|&sample| sample == 0));
+            }
+            for frame in 0..END_SILENCE / FRAME {
+                value.push(&[if frame % 5 == 2 { 900 } else { 400 }; FRAME]);
+            }
+            assert_eq!(value.state(), if overlong { VadState::NoSpeech } else { VadState::Complete });
+            assert_eq!(value.speech().is_none(), overlong);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: waiting_gain_rise_does_not_hold_the_endpoint_open
+    // DESC: Reproduces calibrated RMS217 rising to ambient380 before speech, then proves bounded release and reset to the measured floor.
+    // ------------------=
+    #[test]
+    fn waiting_gain_rise_does_not_hold_the_endpoint_open() {
+        for chunk in [1, 17, 319, 320, 701, 4096] {
+            let mut value = Utterance::new(434);
+            value.clear_with_continuation(434, 325);
+            let mut input = std::vec![380; PRE_ROLL];
+            input.extend_from_slice(&[1200; RATE / 5]);
+            input.extend_from_slice(&[380; END_SILENCE]);
+            for block in input.chunks(chunk) { assert_eq!(value.push(block), block.len()); }
+            assert_eq!(value.state(), VadState::Complete);
+            assert_eq!(value.speech().unwrap(), input);
+            assert_eq!(value.detector.continuation_threshold, 434);
+            value.clear_with_continuation(434, 325);
+            assert_eq!(value.detector.continuation_threshold, 325);
+            assert_eq!(value.detector.waiting_frames, 0);
+            assert!(value.detector.waiting_energies.iter().all(|&energy| energy == 0));
+        }
+    }
+
+    // ------------------------=
+    // FUNC: waiting_ambient_median_rejects_isolated_blips
+    // DESC: Leaves the calibrated quiet-tail gate unchanged after an isolated sub-onset noise transient.
+    // ------------------=
+    #[test]
+    fn waiting_ambient_median_rejects_isolated_blips() {
+        let mut value = Utterance::new(434);
+        value.clear_with_continuation(434, 325);
+        value.push(&[430; FRAME]);
+        value.push(&[217; FRAME * (AMBIENT_FRAMES - 1)]);
+        assert_eq!(value.state(), VadState::Waiting);
+        assert_eq!(value.detector.continuation_threshold, 325);
+        value.push(&[1200; FRAME * ONSET_FRAMES]);
+        value.push(&[350; RATE]);
+        assert_eq!(value.state(), VadState::Speech);
+        assert_eq!(value.detector.continuation_threshold, 325);
     }
 
     #[test]

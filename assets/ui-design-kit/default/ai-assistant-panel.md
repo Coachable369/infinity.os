@@ -18,3 +18,23 @@ scrollable attached-conversation layout; it does not add an icon family.
 
 Behavioral geometry tests are in `tools/editor-assistant-test.rs`. Installed
 render/capture comparison remains required before claiming visual acceptance.
+
+## Desktop widget controls
+
+The desktop prompt reuses the authored 16px native app face, cyan focus border,
+and clipped single-line caret. Keep the full stored prompt; horizontally scroll
+only when the caret leaves the visible slice. Pointer insertion uses the same
+proportional advances and kerning as painting, not an assumed character width.
+
+The header status is a native glass dropdown with a chevron, 14px menu typography,
+28px command rows, and distinct 28px minimize/close targets. Below 340 logical
+pixels the status occupies its own row; the composer gets a compact icon-only
+send action. Reuse the existing smoked-glass panel recipe and native glyphs:
+no additional bitmap or icon family is needed. Status actions control voice,
+stop the current response, and open AI & Voice Settings through existing OS APIs.
+Keyboard arrows/Tab navigate, Enter activates, and Escape/outside click dismisses.
+
+`tools/ai-widget-tests.rs` provides typed input/menu and production pixel checks
+through `active-painter-test --ai-widget-only`. These new checks and installed
+visual review have not yet been run; the current user-requested handoff skips
+additional tests in favor of building an ARM installer for their fresh-install test.

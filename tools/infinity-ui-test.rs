@@ -416,6 +416,7 @@ fn desktop_ai_chat_layout_test() {
         (geometry.send, AiChatTarget::Send),
         (geometry.minimize, AiChatTarget::Minimize),
         (geometry.close, AiChatTarget::Close),
+        (geometry.status, AiChatTarget::Status),
     ] {
         let (x, y) = normalized(rect);
         assert_eq!(layout.ai_chat_target(x, y, false), Some(target));

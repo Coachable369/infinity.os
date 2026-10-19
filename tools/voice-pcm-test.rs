@@ -83,7 +83,7 @@ fn main() {
         let mut utterance = vad::Utterance::new(300);
         for block in converted.chunks(160) { utterance.push(block); }
         assert_eq!(utterance.state(), vad::VadState::Complete);
-        assert!((11_000..14_000).contains(&utterance.speech().unwrap().len()));
+        assert!((23_000..26_000).contains(&utterance.speech().unwrap().len()));
         utterance.cancel();
         assert_eq!(utterance.speech(), None);
         utterance.clear(300);

@@ -1,4 +1,5 @@
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod vad;
+#[path = "../kernel/runtime/ai/voice_noise_floor.rs"] mod noise_floor;
 use vad::*;
 // ------------------------=
 // FUNC: main
@@ -24,9 +25,9 @@ fn main() {
     input.extend_from_slice(&[0; RATE]);
     let mut whole = Detector::new(300);
     let accepted = whole.push(&input);
-    assert_eq!(accepted, RATE + RATE / 2 + RATE * 2 / 5);
+    assert_eq!(accepted, RATE + RATE / 2 + END_SILENCE);
     let segment = whole.segment().unwrap();
-    assert_eq!(segment, Segment { start: RATE - RATE / 5, end: RATE + RATE / 2 + RATE / 10 });
+    assert_eq!(segment, Segment { start: RATE - RATE / 5, end: accepted });
     for chunk_size in [1, 17, 319, 320, 701, 4096] {
         let mut chunked = Detector::new(300);
         let consumed: usize = input.chunks(chunk_size).map(|c| chunked.push(c)).sum();
@@ -48,5 +49,21 @@ fn main() {
     for _ in 0..40 { utterance.push(&[0; FRAME]); }
     assert_eq!(utterance.state(), VadState::Complete);
     assert_eq!(utterance.speech().unwrap().iter().filter(|&&s| s == 1000).count(), FRAME * 100);
+    // Exercise the same measured noise -> capture gates -> complete PCM path
+    // used by the controller, including a quiet tail longer than the endpoint.
+    let mut floor = noise_floor::NoiseFloor::new();
+    floor.push(&[100; RATE / 2]);
+    assert!(floor.ready());
+    let mut command = vec![100; RATE / 5];
+    command.extend_from_slice(&[1200; RATE]);
+    command.extend_from_slice(&[100; RATE / 2]);
+    command.extend_from_slice(&[220; RATE * 3 / 2]);
+    command.extend_from_slice(&[100; END_SILENCE]);
+    for chunk in [1, 17, 320, 701, 4096] {
+        utterance.clear_with_continuation(floor.threshold(), floor.continuation_threshold());
+        for block in command.chunks(chunk) { assert_eq!(utterance.push(block), block.len()); }
+        assert_eq!(utterance.state(), VadState::Complete);
+        assert_eq!(utterance.speech().unwrap(), command);
+    }
     println!("Voice PCM segmentation: PASS");
 }
