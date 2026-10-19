@@ -1785,7 +1785,7 @@ impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: paint_bitmap_cover_rect
-    // DESC: Samples a bitmap with cover scaling and paints only the requested rectangle.
+    // DESC: Restores a cover-scaled RGB or BGRA background with deterministic alpha over black.
     // ------------------=
     pub(super) fn paint_bitmap_cover_rect(
         &mut self,
@@ -1795,48 +1795,68 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
     ) {
-        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" {
+        self.paint_bitmap_background_rect(bitmap, left, top, width, height, true);
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: paint_bitmap_top_fit_rect
+    // DESC: Preserves a complete authored header canvas, centered horizontally and pinned to the screen top.
+    // ------------------=
+    pub(super) fn paint_bitmap_top_fit_rect(
+        &mut self, bitmap: &[u8], left: usize, top: usize, width: usize, height: usize,
+    ) {
+        self.paint_bitmap_background_rect(bitmap, left, top, width, height, false);
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: paint_bitmap_background_rect
+    // DESC: Uses the shared validated bitmap geometry to restore RGB/BGRA backgrounds without accumulating alpha or animation trails.
+    // ------------------=
+    fn paint_bitmap_background_rect(
+        &mut self, bitmap: &[u8], left: usize, top: usize, width: usize, height: usize,
+        cover: bool,
+    ) {
+        let Some(bitmap) = crate::ui::bitmap::RuntimeBitmap::parse(bitmap) else {
             return;
-        }
-        let offset = le32(bitmap, 10) as usize;
-        let source_width = le32(bitmap, 18) as usize;
-        let signed_height = le32(bitmap, 22) as i32;
-        let source_height = signed_height.unsigned_abs() as usize;
-        if le16(bitmap, 28) != 24 || source_width == 0 || source_height == 0 {
+        };
+        let Some(mut placement) = bitmap.placement(self.width, self.height, [0; 4], cover) else {
             return;
-        }
-        let row_bytes = (source_width * 3 + 3) & !3;
-        let (crop_x, crop_y, crop_width, crop_height) =
-            if source_width * self.height > source_height * self.width {
-                let width = source_height * self.width / self.height;
-                ((source_width - width) / 2, 0, width, source_height)
-            } else {
-                let height = source_width * self.height / self.width;
-                (0, (source_height - height) / 2, source_width, height)
-            };
+        };
+        if !cover { placement.destination_top = 0; }
         let Some(region) = self.clipped_render_region(left, top, width, height) else {
             return;
         };
         for y in region.top..region.bottom {
-            let logical_y = crop_y + y * crop_height / self.height;
-            let source_y = if signed_height < 0 {
-                logical_y
-            } else {
-                source_height - 1 - logical_y
-            };
+            let source_y = if y >= placement.destination_top
+                && y < placement.destination_top + placement.destination_height
+            {
+                Some(placement.source_top + (y - placement.destination_top)
+                    * placement.source_height / placement.destination_height)
+            } else { None };
             for x in region.left..region.right {
-                let source_x = crop_x + x * crop_width / self.width;
-                let index = offset + source_y * row_bytes + source_x * 3;
-                if index + 2 >= bitmap.len() {
-                    return;
-                }
-                self.write_rgb_unchecked(
-                    x,
-                    y,
-                    bitmap[index + 2],
-                    bitmap[index + 1],
-                    bitmap[index],
-                );
+                let [red, green, blue, alpha] = if x < placement.destination_left
+                    || x >= placement.destination_left + placement.destination_width
+                    || source_y.is_none()
+                {
+                    [0; 4]
+                } else {
+                    let source_x = placement.source_left + (x - placement.destination_left)
+                        * placement.source_width / placement.destination_width;
+                    bitmap.rgba(source_x, source_y.unwrap()).unwrap_or([0; 4])
+                };
+                // A background restore must replace every damaged pixel, not
+                // blend transparent artwork over the previous animation frame.
+                let color = if alpha == 255 {
+                    [red, green, blue]
+                } else {
+                    let alpha = alpha as u16;
+                    [(red as u16 * alpha / 255) as u8,
+                     (green as u16 * alpha / 255) as u8,
+                     (blue as u16 * alpha / 255) as u8]
+                };
+                self.write_rgb_unchecked(x, y, color[0], color[1], color[2]);
             }
         }
         self.mark_dirty_rect(

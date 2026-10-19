@@ -1,5 +1,14 @@
 # Infinity UI Design Kit — Default
 
+The existing 1672 × 941 bootstrap header and emblem BMPs retain their authored
+straight alpha. Fit the header top-aligned over black; do not crop its lettering.
+The emblem canvas fits within 52% of display width/height, centered, at 16% from
+the top. Its particle path follows the main ribbon in source pixels: crossing
+(837, 405), horizontal half-span 574, vertical half-span 210; exclude padding
+and reflection. Reveal, paint and old-trail restoration use one shared rectangle.
+The source art was visually inspected; animation remains to be checked after
+fresh installation.
+
 First reusable component: `ai-window-tab-v1.png`, a transparent AI-generated PNG master.
 Use for the attached assistant on every application window. Navy smoked glass,
 smooth shoulders, tight blue/violet light rim, one embedded four-point sparkle.

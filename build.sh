@@ -46,6 +46,9 @@ if [ "$package_only" = true ]; then
         exit 0
     fi
     sh tools/build-hermes.sh --target "$target"
+    if python3 -c 'import sys, tomllib; sys.exit("native-python" not in tomllib.load(open("Cargo.toml", "rb"))["features"]["default"])'; then
+        python3 tools/native-python/parity.py --arch "$target" --iso "$output_dir/InfinityOS-$target.iso"
+    fi
     (cd "$output_dir" && shasum -a 256 "InfinityOS-$target.iso" > "InfinityOS-$target.iso.sha256")
     (cd "$output_dir" && shasum -a 256 -c "InfinityOS-$target.iso.sha256")
     checksum_index=$(mktemp "$temporary_dir/iso-checksums.XXXXXX")

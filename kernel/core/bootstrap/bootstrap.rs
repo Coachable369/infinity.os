@@ -28,7 +28,7 @@ pub(super) const FIGLET_LINE_HEIGHT_PX: usize = 17;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const EMBLEM_BMP: &[u8] = include_bytes!("../../../assets/boot/infinity-emblem-v2.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(super) const BOOT_EMBLEM_TOP_PERCENT: usize = 23;
+pub(super) const BOOT_EMBLEM_TOP_PERCENT: usize = 16;
 
 // Installer-only calibration: the ISO reveal pulse follows the visible ribbon
 // centerline in the composited bootstrap artwork, which sits 50 pixels below
@@ -61,7 +61,7 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
     ) {
-        self.paint_bitmap_cover_rect(SPLASH_BMP, left, top, width, height);
+        self.paint_bitmap_top_fit_rect(SPLASH_BMP, left, top, width, height);
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -91,30 +91,44 @@ impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: infinity_screen_position
-    // DESC: Converts an infinity-path phase into scaled screen coordinates.
+    // DESC: Maps the particle phase onto the visible ribbon centerline, excluding canvas padding and reflection.
     // ------------------=
     pub(super) fn infinity_screen_position(&self, phase: usize, bootstrap: bool) -> (i32, i32) {
         let (left, top, width, height) = if bootstrap {
-            let source_width = le32(EMBLEM_BMP, 18) as usize;
-            let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-            let width = (self.width * 52 / 100)
-                .min((self.height * 70 / 100) * source_width / source_height);
-            let height = width * source_height / source_width;
-            (
-                (self.width - width) / 2,
-                self.height * BOOT_EMBLEM_TOP_PERCENT / 100,
-                width,
-                height,
-            )
+            self.boot_emblem_geometry()
         } else {
             self.console_emblem_geometry()
         };
         let (px, py) = infinity_point(phase);
-        let center_x = left as i32 + width as i32 / 2;
-        let center_y = top as i32 + height as i32 / 2;
+        // The 1672x941 master includes transparent padding and a reflection.
+        // Trace the main ribbon in source pixels: crossing (837,405), outer
+        // lobe centers x263/x1411, and upper/lower centerlines y195/y615.
+        // Old and new trail positions share this mapping during restoration.
+        let source_x = 837 + px * 574 / 112;
+        let source_y = 405 + py * 210 / 62;
         (
-            center_x + px * width as i32 / 224,
-            center_y + py * height as i32 / 124,
+            left as i32 + source_x * width as i32 / 1672,
+            top as i32 + source_y * height as i32 / 941,
+        )
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: boot_emblem_geometry
+    // DESC: Fits the authored emblem between the header and startup panel using one paint and restore rectangle.
+    // ------------------=
+    pub(super) fn boot_emblem_geometry(&self) -> (usize, usize, usize, usize) {
+        let source_width = le32(EMBLEM_BMP, 18) as usize;
+        let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
+        let width = (self.width * 52 / 100)
+            .min((self.height * 52 / 100) * source_width / source_height)
+            .max(1);
+        let height = (width * source_height / source_width).max(1);
+        (
+            self.width.saturating_sub(width) / 2,
+            self.height * BOOT_EMBLEM_TOP_PERCENT / 100,
+            width,
+            height,
         )
     }
 
@@ -153,13 +167,7 @@ impl super::DisplayDevice {
         if EMBLEM_BMP.len() < 138 || &EMBLEM_BMP[0..2] != b"BM" {
             return;
         }
-        let source_width = le32(EMBLEM_BMP, 18) as usize;
-        let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-        let target_width =
-            (self.width * 52 / 100).min((self.height * 70 / 100) * source_width / source_height);
-        let target_height = target_width * source_height / source_width;
-        let left = (self.width - target_width) / 2;
-        let top = self.height * BOOT_EMBLEM_TOP_PERCENT / 100;
+        let (left, top, target_width, target_height) = self.boot_emblem_geometry();
         for x in 0..target_width {
             let before = reveal::opacity(x, target_width, step, total);
             let after = reveal::opacity(x, target_width, step + 1, total);
@@ -177,11 +185,7 @@ impl super::DisplayDevice {
     // DESC: Blends an opacity-controlled horizontal range of the infinity emblem.
     // ------------------=
     pub(super) fn emblem_range(&mut self, first_x: usize, last_x: usize, opacity: u8) {
-        let source_width = le32(EMBLEM_BMP, 18) as usize;
-        let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-        let target_width =
-            (self.width * 52 / 100).min((self.height * 70 / 100) * source_width / source_height);
-        let target_height = target_width * source_height / source_width;
+        let (_, _, _, target_height) = self.boot_emblem_geometry();
         self.emblem_rect(first_x, 0, last_x, target_height, opacity);
     }
 
@@ -201,13 +205,7 @@ impl super::DisplayDevice {
         if EMBLEM_BMP.len() < 138 || &EMBLEM_BMP[0..2] != b"BM" || le16(EMBLEM_BMP, 28) != 32 {
             return;
         }
-        let source_width = le32(EMBLEM_BMP, 18) as usize;
-        let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-        let target_width =
-            (self.width * 52 / 100).min((self.height * 70 / 100) * source_width / source_height);
-        let target_height = target_width * source_height / source_width;
-        let left = (self.width - target_width) / 2;
-        let top = self.height * BOOT_EMBLEM_TOP_PERCENT / 100;
+        let (left, top, target_width, target_height) = self.boot_emblem_geometry();
         self.emblem_rect_at(
             left,
             top,
@@ -297,13 +295,7 @@ impl super::DisplayDevice {
     // DESC: Draws the complete infinity emblem after its reveal animation finishes.
     // ------------------=
     pub(super) fn finish_emblem(&mut self) {
-        let source_width = le32(EMBLEM_BMP, 18) as usize;
-        let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-        let target_width =
-            (self.width * 52 / 100).min((self.height * 70 / 100) * source_width / source_height);
-        let target_height = target_width * source_height / source_width;
-        let left = (self.width - target_width) / 2;
-        let top = self.height * BOOT_EMBLEM_TOP_PERCENT / 100;
+        let (left, top, target_width, target_height) = self.boot_emblem_geometry();
         let padding = self.ui_scale() * 32;
         self.paint_background_rect(
             left.saturating_sub(padding),
@@ -348,17 +340,7 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn restore_emblem_particle(&mut self, x: i32, y: i32, radius: i32, bootstrap: bool) {
         let (emblem_left, emblem_top, target_width, target_height) = if bootstrap {
-            let source_width = le32(EMBLEM_BMP, 18) as usize;
-            let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-            let target_width = (self.width * 52 / 100)
-                .min((self.height * 70 / 100) * source_width / source_height);
-            let target_height = target_width * source_height / source_width;
-            (
-                (self.width - target_width) / 2,
-                self.height * BOOT_EMBLEM_TOP_PERCENT / 100,
-                target_width,
-                target_height,
-            )
+            self.boot_emblem_geometry()
         } else {
             self.console_emblem_geometry()
         };
