@@ -620,15 +620,30 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
         submit_progressive_span(owner,1,b"Second.",6,13,true).unwrap();
         assert!(!can_prefetch());
         assert!(submit_progressive_span(owner,1,b"Extra.",13,19,true).is_err());
-        if slow {PLAYING.store(false,Ordering::SeqCst);poll();}
+        if slow {
+            PLAYING.store(false,Ordering::SeqCst);poll();
+            // A genuine synthesis underrun remains queued, not falsely
+            // completed or replayed. It must not publish silence/stale PCM.
+            NOW.fetch_add(5_000_000_000,Ordering::SeqCst);
+            for _ in 0..4 {poll();}
+            assert_eq!(status().state,S::Queued);
+            assert_eq!(PLAYED_PCM.lock().unwrap().len(),batches+1);
+            assert!(!PLAYING.load(Ordering::SeqCst));
+            assert!(!can_prefetch());
+        }
         unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
         poll();
+        assert_eq!(status().queue_wait_ns,if slow {5_000_000_000} else {0});
+        assert_eq!(status().synthesis_ns,1_000_000_000);
         if !slow {
             assert_eq!(status().state,S::Ready);
             assert_eq!(*BUFFERED_PCM.lock().unwrap(),immutable);
             assert_eq!(PLAYED_PCM.lock().unwrap().len(),batches+1);
             PLAYING.store(false,Ordering::SeqCst);poll();
         }
+        // Both a prepared lookahead and a genuinely delayed one publish on
+        // the first eligible poll, without an extra scheduling cooldown.
+        assert_eq!(PLAYED_PCM.lock().unwrap().len(),batches+2);
         assert_eq!(status().state,S::Speaking);
         assert_eq!(status().first_playback_ns,accepted+1_000_000_000);
         assert_eq!(&PLAYED_CONTENT.lock().unwrap()[batches..],&[vec![(0,6)],vec![(6,13)]]);

@@ -15,6 +15,7 @@ use ui::{
 // DESC: Exercises real transformations, rollback, syntax tokens, font records and paged hit geometry.
 // ------------------=
 fn main() {
+    zoom_and_pointer_metrics();
     let cases: &[(Action, &[u8], &[u8])] = &[
         (Action::DeleteLine, b"one\ntwo\n", b"two\n"),
         (Action::MoveDown, b"one\ntwo", b"two\none"),
@@ -80,11 +81,13 @@ fn main() {
     }
     for scheme in 0..10 {
         for font in 0..4 {
-            for size in 0..6 {
+            for size in 0..preferences::SIZES.len() as u8 {
                 let p = Preferences { scheme, font, size };
                 assert_eq!(Preferences::decode(&p.encode()), Some(p));
                 assert!(p.cell() > 0 && p.cell() <= 24);
                 assert!(p.line() <= 36);
+                assert_eq!(p.record()[2] as usize, preferences::SIZES[size as usize]);
+                assert!((1..=24).contains(&p.record()[3]));
                 assert!(p.record()[4..].iter().any(|p| *p != 0));
             }
         }
@@ -140,4 +143,56 @@ fn main() {
     }
     preferences::publish(Preferences::new());
     println!("Editor upgrade behavioral checks passed");
+}
+
+// ------------------------=
+// FUNC: zoom_and_pointer_metrics
+// DESC: Exercises every zoom step, legacy size migration, and real caret-to-pointer roundtrips after reflow and scrolling.
+// ------------------=
+fn zoom_and_pointer_metrics() {
+    use ui::{editor_chrome::{Layout, CODE_INSET}, geometry::{Point, Rect}};
+    for (old, pixels) in [12,14,16,18,20,24].into_iter().enumerate() {
+        let migrated=Preferences::decode(&[b'I',b'E',b'D',1,9,3,old as u8,0]).unwrap();
+        assert_eq!(preferences::SIZES[migrated.size as usize],pixels);
+        assert_eq!(Preferences::decode(&migrated.encode()),Some(migrated));
+    }
+    assert!(Preferences::decode(&[b'I',b'E',b'D',1,0,0,6,0]).is_none());
+    let mut p=Preferences{scheme:7,font:2,size:0};
+    for size in 0..preferences::SIZES.len() {
+        assert_eq!(p.size as usize,size);
+        assert_eq!((p.scheme,p.font),(7,2));
+        p=p.zoom_shortcut(if size%2==0 {b'='} else {b'+'}).unwrap();
+    }
+    assert_eq!(p.size as usize,preferences::SIZES.len()-1);
+    for size in (0..preferences::SIZES.len()).rev() {
+        assert_eq!(p.size as usize,size);
+        p=p.zoom_shortcut(if size%2==0 {b'-'} else {b'_'}).unwrap();
+    }
+    assert_eq!(p.size,0);
+    assert_eq!(p.zoom_shortcut(b'0').unwrap().size,preferences::DEFAULT_SIZE);
+    assert!(p.zoom_shortcut(b'f').is_none());
+    for font in 0..4 {
+        for size in 0..preferences::SIZES.len() as u8 {
+            let p=Preferences{scheme:0,font,size};preferences::publish(p);
+            for scale in 1..=3 {
+                let g=Layout::new(Rect{x:25,y:17,width:800*scale as u32,height:500*scale as u32},scale,false,editor_tools::Field::None);
+                let columns=g.columns();
+                let bytes=vec![b'a';columns*(g.rows()+5)+3];
+                for scroll in [0,3] {
+                    for row in 0..g.rows().min(3) {
+                        for column in [0,1,columns/2,columns-1] {
+                            let index=(scroll+row)*columns+column;
+                            let point=Point{x:g.body.x+((CODE_INSET+column*p.cell())*scale) as i32,
+                                y:g.body.y+((11+row*p.line())*scale) as i32};
+                            assert_eq!(g.pointer_index(&bytes,scroll,point),index);
+                            assert!(g.caret_damage(&bytes,index,scroll).any(|rect|rect.x==point.x && rect.y==point.y && rect.width==scale as u32));
+                        }
+                    }
+                }
+                let newline=b"abc\nde\nf";
+                assert_eq!(g.pointer_index(newline,0,Point{x:g.body.right()-1,y:g.body.y+8*scale as i32}),3);
+            }
+        }
+    }
+    preferences::publish(Preferences::new());
 }

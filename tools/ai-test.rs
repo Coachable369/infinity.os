@@ -815,6 +815,39 @@ fn main() {
 fn shared_request_ingress_contract() {
     use runtime::ai::{control::Command, kit::{RequestOrigin, RequestRoute, AuditOutcome}};
     let owner = [0x63; 16];
+    let repair=b"Fix code in code editor";
+    for status in [ui::app_assistant::GenerationStatus::Queued,ui::app_assistant::GenerationStatus::Complete] {
+        ui::app_assistant::reset();
+        let mut ai=AiRuntime::new();ai.bind_chat_owner(owner);
+        let mut panel=ui::app_assistant::Panel::new();
+        assert!(panel.queue_user_repair(repair,1,b"int main(void){return 0;}",b""));
+        panel.generation=status;panel.pending=ui::app_assistant::Action::ReplaceCompile;
+        panel.argument[..3].copy_from_slice(b"int");panel.argument_len=3;
+        ui::app_assistant::write(2,panel);assert_eq!(ai.app_turn_owner(),None);
+        assert!(ai.cancel_chat());
+        let stopped=ui::app_assistant::read(2);
+        assert_eq!(stopped.generation,ui::app_assistant::GenerationStatus::Cancelled);
+        assert_eq!(stopped.pending,ui::app_assistant::Action::None);
+        assert_eq!(stopped.argument_len,0);assert_eq!(&stopped.argument[..3],&[0;3]);
+        assert_eq!(stopped.stream.delivered,0);assert!(!stopped.apply_generated_compile_requested());
+    }
+    ui::app_assistant::reset();
+    let repair_command=Command::Context(runtime::ai::control::ContextRequest::parse(repair).unwrap());
+    assert_eq!(Command::explicit(repair),Some(repair_command));
+    assert_eq!(Command::decode(b"OS_CONTEXT:fix code in code editor"),None);
+    for input in [b"explain how to fix code".as_slice(),b"do not fix code",b"\"fix code\"",b"fix code then launch"] {
+        assert_eq!(runtime::ai::control::ContextRequest::parse(input),None);
+    }
+    for voice in [false,true] {
+        let mut ai=AiRuntime::new();ai.bind_chat_owner(owner);
+        for byte in repair {assert!(ai.chat.push_input(*byte));}
+        assert!(if voice {ai.submit_voice_chat()} else {ai.submit_chat()});
+        assert!(ai.intelligence_plan(1,owner).is_none());
+        assert_eq!(ai.take_control(owner,true),Some(repair_command));
+        ai.finish_control(repair_command,true);assert!(!ai.control_pending());
+    }
+    let mut repair_app=AiRuntime::new();repair_app.bind_chat_owner(owner);
+    assert_eq!(repair_app.route_application_request(2,repair),Ok(RequestRoute::Control(repair_command)));
     let creation=b"create a basic calculator application";
     let expected=Command::Context(runtime::ai::control::ContextRequest::parse(creation).unwrap());
     assert_eq!(Command::decode(b"OS_CONTEXT:create a basic calculator application"),None);
@@ -822,12 +855,27 @@ fn shared_request_ingress_contract() {
         let mut ai=AiRuntime::new();ai.bind_chat_owner(owner);
         for &byte in creation {assert!(ai.chat.push_input(byte));}
         assert!(if voice{ai.submit_voice_chat()}else{ai.submit_chat()});
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().task_count,2);
+        ai.poll_qwen();
         assert_eq!(ai.take_control(owner,true),Some(expected));
         ai.finish_control(expected,true);
         assert!(!ai.control_pending());
+        ai.poll_qwen();
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[0].unwrap().state,
+            runtime::ai::intelligence::TaskState::Running);
     }
     let mut attached=AiRuntime::new();attached.bind_chat_owner(owner);
-    assert_eq!(attached.route_application_request(2,creation),Ok(RequestRoute::Control(expected)));
+    assert_eq!(attached.route_application_request(2,creation),Ok(RequestRoute::Goal(1)));
+    let state=attached.intelligence_plan(1,owner).unwrap().state;
+    let mut presentation=ui::app_assistant::Panel::new();presentation.workflow_goal=Some(1);
+    ui::app_assistant::write(2,presentation);
+    // The authorized creation transaction detaches its presentation binding
+    // before New resets the previous buffer; ordinary New retains cancellation.
+    presentation.workflow_goal=None;ui::app_assistant::write(2,presentation);
+    attached.cancel_editor_request();
+    assert_eq!(attached.intelligence_plan(1,owner).unwrap().state,state);
+    attached.poll_qwen();
+    assert_eq!(attached.take_control(owner,true),Some(expected));
     for origin in [RequestOrigin::DesktopChat, RequestOrigin::Voice, RequestOrigin::Application(2)] {
         let mut ai = AiRuntime::new();
         ai.bind_chat_owner(owner);

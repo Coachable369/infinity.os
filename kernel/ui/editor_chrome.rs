@@ -319,7 +319,7 @@ impl Menu {
             Self::Syntax => super::editor_tools::LANGUAGES.len(),
             Self::Schemes => 10,
             Self::Fonts => 4,
-            Self::Sizes => 6,
+            Self::Sizes => super::editor_tools::preferences::SIZES.len(),
             Self::Actions => super::editor_tools::actions::ITEMS.len(),
         }
     }
@@ -630,6 +630,20 @@ impl Layout {
     pub fn rows(self) -> usize {
         (self.body.height as usize).saturating_sub(16 * self.scale)
             / (super::editor_tools::preferences::current().line() * self.scale)
+    }
+    // ------------------------=
+    // FUNC: pointer_index
+    // DESC: Maps document clicks and drag selection onto the same font advance, line height and wrap grid used by painting and caret damage.
+    // ------------------=
+    pub fn pointer_index(self,input:&[u8],scroll:usize,point:Point) -> usize {
+        let p=super::editor_tools::preferences::current();
+        let row=scroll+(point.y-self.body.y-8*self.scale as i32).max(0) as usize/(p.line()*self.scale);
+        let columns=self.columns().max(1);
+        let start=super::text_editor::visual_line_start(input,columns,row);
+        let end=input[start..].iter().position(|byte|*byte==b'\n')
+            .map_or(input.len(),|offset|start+offset).min(start+columns);
+        (start+(point.x-self.body.x-(CODE_INSET*self.scale) as i32).max(0) as usize
+            /(p.cell()*self.scale)).min(end)
     }
     // ------------------------=
     // FUNC: scrollbar

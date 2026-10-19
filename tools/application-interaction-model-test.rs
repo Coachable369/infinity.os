@@ -51,7 +51,7 @@ fn main() {
     let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
     let start=std::time::Instant::now();
     while qwen::workers::online()!=4 {assert!(start.elapsed().as_secs()<10);std::thread::yield_now();}
-    if std::env::args().any(|value|value=="--repair") {
+    if std::env::args().any(|value|value=="--repair" || value=="--repair-current") {
         compiler_repair_probe(&mut ai);
         unsafe {qwen::workers::stop_host_workers();}
         for worker in workers {worker.join().unwrap();}
@@ -152,6 +152,16 @@ fn source_reserve_releases_lease(ai:&mut AiRuntime) {
     assert!(ai.submit_app_source(2,&prompt[..length]).is_ok());
     assert_eq!(ai.app_turn_owner(),Some(2));
     ai.cancel_app_turn();assert_eq!(ai.app_turn_owner(),None);
+    for diagnostics in [b"".as_slice(),b"source.c:1:25: error: expected ';' after return statement"] {
+        let mut repair=ui::app_assistant::Panel::new();
+        let source=b"int main(void){return 42}";
+        assert!(repair.queue_user_repair(b"Fix code in code editor",9,source,diagnostics));
+        let length=repair.compiler_repair_prompt(source,&mut prompt).unwrap();
+        ui::app_assistant::write(2,repair);
+        assert!(ai.submit_app_source(2,&prompt[..length]).is_ok());
+        assert_eq!(ai.app_turn_owner(),Some(2));
+        ai.cancel_app_turn();assert_eq!(ai.app_turn_owner(),None);
+    }
     ui::app_assistant::reset();
 }
 
@@ -183,6 +193,17 @@ fn repair_diagnostic_priority() {
     assert_eq!(guard,[0xa5;4]);assert_eq!(empty.bytes,0);assert!(empty.truncated);
     let fatal=compiler_diagnostics::prioritize(b"ld.lld: error: unresolved symbol\nfatal error: invalid source\n",&mut buffer);
     assert_eq!(fatal.errors,2);
+    let mut receipt=compiler_diagnostics::Receipt::new();
+    let mut copy=[0x5a;1024];
+    assert_eq!(receipt.copy_for([1;16],5,&mut copy),0);
+    receipt.record([1;16],5,&diagnostics);
+    assert_eq!(receipt.copy_for([2;16],5,&mut copy),0);assert_eq!(copy,[0x5a;1024]);
+    assert_eq!(receipt.copy_for([1;16],6,&mut copy),0);assert_eq!(copy,[0x5a;1024]);
+    let count=receipt.copy_for([1;16],5,&mut copy);
+    assert!(count>0);
+    let projection=compiler_diagnostics::prioritize(&copy[..count],&mut buffer);
+    assert_eq!(projection.errors,2);assert_eq!(projection.notes,1);
+    receipt.record([1;16],5,b"");assert_eq!(receipt.copy_for([1;16],5,&mut copy),0);
 }
 
 // ------------------------=
@@ -254,10 +275,16 @@ fn compiler_repair_probe(ai:&mut AiRuntime) {
     std::fs::write(path,source).unwrap();
     let failed=repair_compiler(&compiler,&builtin_include).args(["--target=aarch64-none-elf","-ffreestanding","-std=c17","-Wall","-Wextra","-Werror","-c",path,"-o","build/application-repair-aarch64.o"]).output().unwrap();
     assert!(!failed.status.success());
-    let request=b"Create an exit status 42 command line app";
-    let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
-    panel.generation=GenerationStatus::Complete;
-    assert!(panel.queue_compiler_repair(request,7,7,&failed.stderr));
+    let current=std::env::args().any(|value|value=="--repair-current");
+    let request=if current {b"Fix code in code editor".as_slice()} else {b"Create an exit status 42 command line app".as_slice()};
+    let mut panel=Panel::new();
+    if current {
+        assert!(panel.queue_user_repair(request,7,source,&failed.stderr));
+    } else {
+        panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+        panel.generation=GenerationStatus::Complete;
+        assert!(panel.queue_compiler_repair(request,7,7,&failed.stderr));
+    }
     let mut prompt=[0;6144];let length=panel.compiler_repair_prompt(source,&mut prompt).unwrap();
     panel.generation=GenerationStatus::Running;ui::app_assistant::write(2,panel);
     ai.submit_app_source(2,&prompt[..length]).unwrap();
@@ -267,7 +294,7 @@ fn compiler_repair_probe(ai:&mut AiRuntime) {
     assert!(ai.app_turn_owner().is_none());
     std::fs::write("build/application-repair-model-output.txt",&last).unwrap();
     let panel=ui::app_assistant::read(2);assert_eq!(panel.generation,GenerationStatus::Complete,"{}",String::from_utf8_lossy(&panel.response[..panel.response_len]));
-    assert!(panel.apply_generated_compile_requested());assert_eq!(panel.repair_attempts,1);
+    assert!(panel.apply_generated_compile_requested());assert_eq!(panel.repair_attempts,if current {0}else{1});
     std::fs::write(path,&panel.argument[..panel.argument_len]).unwrap();
     for target in ["aarch64-none-elf","x86_64-none-elf"] {
         let output=format!("build/application-repair-{target}.o");

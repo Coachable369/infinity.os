@@ -67,6 +67,21 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn dispatch_context_request(&mut self, input:&[u8])->bool {
         if !self.ai_chat_allowed() {return false;}
+        if assistant::editor_compile_intent::repair(input).is_some() {
+            if self.editor_dialog!=EditorDialog::None {return false;}
+            self.open_text_editor();self.ai_chat_focus=0;
+            let mut panel=assistant::read(2);
+            let mut diagnostics=[0u8;1024];
+            #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            let diagnostic_length=compiler_commands::repair_diagnostics(self,&mut diagnostics);
+            #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
+            let diagnostic_length=0;
+            panel.expanded=true;panel.focused=false;
+            let queued=panel.queue_user_repair(input,self.assistant_revision(),self.editor_document.bytes(),&diagnostics[..diagnostic_length]);
+            panel.reply(if queued {b"Repairing the current source and checking it with the native compiler. No application will launch automatically."}
+                else {b"Open a nonempty source document and finish or cancel any active generation before asking to fix its code."});
+            assistant::write(2,panel);return queued;
+        }
         if assistant::editor_compile_intent::create_application(input) {
             let Some(goal)=crate::runtime::ai::with_ai_runtime(|ai|ai.software_goal_for_request(input)) else{return false;};
             if input.len()>1024 {return false;}
@@ -82,7 +97,13 @@ impl ConsoleRuntime {
             if matches!(panel.generation,assistant::GenerationStatus::Queued|assistant::GenerationStatus::Running) {
                 panel.reply(b"An application is already being generated.");assistant::write(2,panel);return false;
             }
+            // New normally revokes the current editor goal. This New belongs to
+            // the exact goal already authorized above, so detach only its old
+            // presentation binding while the document transaction is reset.
+            let mut previous=assistant::read(2);previous.workflow_goal=None;
+            assistant::write(2,previous);
             self.perform_editor_action(PendingDocumentAction::New);
+            panel.reset_delivery();
             panel.pending=Action::None;panel.argument_len=0;panel.awaiting_compile_save=false;
             panel.stream=assistant::generation_stream::Stream::new();
             panel.repair_attempts=0;panel.repair_diagnostics_len=0;
@@ -388,6 +409,7 @@ impl ConsoleRuntime {
         crate::runtime::ai::with_ai_runtime(|ai| {
             if ai.app_turn_owner() == Some(id) { ai.cancel_app_turn(); }
         });
+        panel.reset_delivery();
         panel.request = panel.input;
         panel.request_len = panel.length;
         panel.repair_attempts=0;panel.repair_diagnostics_len=0;
@@ -487,7 +509,8 @@ impl ConsoleRuntime {
                 panel.reply(b"Application creation cancelled because its editor or session changed.");
             } else {
                 let mut prompt=[0u8;16*1024];
-                let prompt_length=if panel.repair_diagnostics_len>0 {
+                let prompt_length=if panel.repair_diagnostics_len>0
+                    || assistant::editor_compile_intent::repair(&panel.request[..panel.request_len]).is_some() {
                     panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt)
                 } else {panel.generation_prompt(true,b"",&mut prompt)};
                 if let Some(n)=prompt_length {
@@ -529,7 +552,7 @@ impl ConsoleRuntime {
             }});
         }
         if current.generation==assistant::GenerationStatus::Complete && current.stream.delivered<current.argument_len
-            && assistant::editor_compile_intent::create_application(&current.request[..current.request_len]) {return previewed;}
+            && assistant::editor_compile_intent::source_request(&current.request[..current.request_len]) {return previewed;}
         if !self.assistant_owner_alive(2) || !assistant::read(2).apply_generated_compile_requested() { return previewed; }
         compiler_commands::generation_progress(self,compiler_commands::VoiceStep::SourceReady);
         self.apply_window_assistant(2) || previewed
@@ -540,9 +563,10 @@ impl ConsoleRuntime {
     // ------------------=
     fn apply_streamed_editor_source(&mut self)->bool {
         let mut panel=assistant::read(2);
-        if !matches!(panel.generation,assistant::GenerationStatus::Running|assistant::GenerationStatus::Complete)
+        if !self.assistant_owner_alive(2)
+            || !matches!(panel.generation,assistant::GenerationStatus::Running|assistant::GenerationStatus::Complete)
             || !crate::runtime::ai::with_ai_runtime(|ai|ai.generation_workflow_current(panel.workflow_goal))
-            || !assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len])
+            || !assistant::editor_compile_intent::source_request(&panel.request[..panel.request_len])
             || panel.document_revision!=self.assistant_revision() || panel.argument_len==0 {return false;}
         let now=crate::ui::performance::monotonic_ns();
         let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],now,
@@ -738,7 +762,7 @@ impl ConsoleRuntime {
                     let create=action==Action::ReplaceCompile && assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len]);
                     let compile=if action==Action::ReplaceCompile {compiler_commands::save_generated_and_build(self,create)} else {compiler_commands::start(self)};
                     success=compile.is_ok();
-                    if create && !success {panel.generation=assistant::GenerationStatus::Failed;}
+                    if action==Action::ReplaceCompile && !success {panel.generation=assistant::GenerationStatus::Failed;}
                     panel.reply(match compile {
                         Ok(())=>b"Compiling this source snapshot in isolated user mode. You can keep editing; the result will appear here.",
                         Err(compiler_commands::StartError::Busy)=>b"A native build is already active. Its result will appear here when it finishes.",
@@ -748,7 +772,7 @@ impl ConsoleRuntime {
                         Err(compiler_commands::StartError::CapabilityUnavailable)=>b"Compilation could not acquire a temporary output capability. Expired capabilities were reclaimed; retry once.",
                         Err(compiler_commands::StartError::CompilerUnavailable)=>b"The native compiler execution platform is unavailable on this boot.",
                         Err(compiler_commands::StartError::SourceInvalid)=>b"This document is empty or exceeds the native compiler source limit.",
-                        Err(compiler_commands::StartError::SaveFailed)=>b"Source could not be saved in Documents. Nothing was compiled or launched; your source remains in the editor.",
+                        Err(compiler_commands::StartError::SaveFailed)=>b"Source could not be saved at the selected location. Nothing was compiled or launched; your source remains in the editor.",
                     });
                 }
                 #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]

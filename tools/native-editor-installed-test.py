@@ -370,6 +370,153 @@ def generation_progress(guest):
                      "repairs", "clock_ns"), state[3:13]))}
 
 # ------------------------=
+# FUNC: editor_lifecycle_state
+# DESC: Reads document integrity, dialog state and the actual source transaction without pausing or writing guest memory.
+# ------------------=
+def editor_lifecycle_state(guest):
+    state = features(guest)
+    navigator = read(guest, "INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT", 64)
+    assert navigator[:2] == (0x494e464e41563131, 1)
+    return {"document_bytes": state[7], "document_fingerprint": state[16],
+            "saved": bool(state[11]), "owner": state[12], "dialog": navigator[9],
+            "document_path_crc32": navigator[13], "panel_expanded": bool(state[13]),
+            "pending_action": state[14], "composer_bytes": state[18],
+            "response_bytes": state[19], "generation": generation_progress(guest)}
+
+# ------------------------=
+# FUNC: editor_window_control
+# DESC: Clicks the real shared titlebar control using the observed window bounds and display scale.
+# ------------------=
+def editor_window_control(guest, control):
+    state = features(guest)
+    assert state[12] == 2 and control in ("minimize", "close")
+    x, y, width, _ = state[21:25]
+    display = guest.state()
+    scale = 2 if display[11] >= 2560 and display[12] >= 1440 else 1
+    target_x = x + width - (93 if control == "minimize" else 25) * scale
+    target_y = y + 24 * scale
+    assert 0 <= target_x < display[11] and 0 <= target_y < display[12]
+    ui.click(guest, target_x, target_y)
+
+# ------------------------=
+# FUNC: verify_editor_lifecycle
+# DESC: Exercises unsaved typing, minimize, Cancel and Discard through real input and checks preserved bytes and cleared assistant state.
+# ------------------=
+def verify_editor_lifecycle(guest):
+    evidence = guest.work.parent / f"editor-lifecycle-{time.time_ns()}"
+    evidence.mkdir()
+    result = {"passed": False, "generated_application_acceptance": False,
+              "model_stop_retry_verified": False, "evidence_directory": str(evidence), "stages": []}
+    guest.editor_lifecycle_evidence = result
+
+    # ------------------------=
+    # FUNC: record
+    # DESC: Persists partial typed lifecycle receipts so a later assertion failure does not erase earlier observations.
+    # ------------------=
+    def record(stage):
+        state = editor_lifecycle_state(guest)
+        result["stages"].append({"stage": stage, **state})
+        (evidence / "evidence.json").write_text(json.dumps(result, indent=2) + "\n")
+        guest.screenshot("editor-lifecycle-" + stage)
+        return state
+
+    # A restored plan is not this test's request. Stop it through supported UI;
+    # never overwrite an existing unsaved document to make the fixture pass.
+    guest.key("ctrl", "j")
+    guest.key("esc")
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        generation = generation_progress(guest)
+        if generation["status"] not in (1, 2) and generation["prompt_tokens"] == 0:
+            break
+        time.sleep(.1)
+    else:
+        raise AssertionError({"restored_request_not_stopped": generation})
+    guest.launch("text", 5)
+    initial = ui.wait_feature(guest, lambda state: state[12] == 2)
+    assert initial[7] == 0 and initial[11], "Lifecycle fixture requires an empty saved editor; existing work was not replaced"
+    assert editor_lifecycle_state(guest)["dialog"] == 0
+    if initial[13]:
+        ui.panel_click(guest, "toggle")
+    state = features(guest)
+    ui.click(guest, state[30] + min(80, state[27] // 2), state[29] + min(16, state[28] // 2))
+    source = "int main(void) { return 7; }\n"
+    ui.text(guest, source)
+    ui.wait_feature(guest, lambda state: state[7] == len(source) and not state[11])
+
+    # Populate real assistant source bytes through its existing local insertion
+    # action. This is not LLM-generated application evidence; it makes the later
+    # transaction-clearing assertion non-vacuous without an expensive model run.
+    addition = "// retained"
+    ui.panel_click(guest, "toggle")
+    ui.wait_feature(guest, lambda state: state[13] and state[15])
+    ui.text(guest, "insert " + addition)
+    guest.key("ret")
+    ui.wait_feature(guest, lambda state: state[7] == len(source + addition) and state[14] == 0)
+    fingerprint = 1469598103934665603
+    for byte in (source + addition).encode("ascii"):
+        fingerprint = ((fingerprint ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    deadline = time.monotonic() + 30
+    while generation_progress(guest)["source_bytes"] != len(addition):
+        assert time.monotonic() < deadline, generation_progress(guest)
+        time.sleep(.1)
+    original = record("unsaved")
+    assert original["document_fingerprint"] == fingerprint and not original["saved"]
+    assert original["response_bytes"] > 0
+    build_sequence = read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+    editor_window_control(guest, "minimize")
+    ui.wait_feature(guest, lambda state: state[12] != 2)
+    minimized = record("minimized")
+    assert minimized["document_fingerprint"] == fingerprint and minimized["dialog"] == 0
+    guest.launch("text", 5)
+    ui.wait_feature(guest, lambda state: state[12] == 2)
+    restored = record("restored")
+    assert restored["document_fingerprint"] == fingerprint and not restored["saved"]
+    assert restored["generation"]["source_bytes"] == len(addition)
+    editor_window_control(guest, "close")
+    ui.wait_editor_dialog(guest, 3)
+    assert record("close-prompt")["document_fingerprint"] == fingerprint
+    guest.key("esc")
+    ui.wait_editor_dialog(guest, 0)
+    cancelled = record("close-cancelled")
+    assert cancelled["owner"] == 2 and cancelled["document_fingerprint"] == fingerprint and not cancelled["saved"]
+    assert cancelled["generation"]["source_bytes"] == len(addition)
+    editor_window_control(guest, "close")
+    ui.wait_editor_dialog(guest, 3)
+    # The real three-choice sheet initially focuses Save (2); Left selects
+    # Discard (1). No string matching or direct state injection is involved.
+    guest.key("left")
+    guest.key("ret")
+    ui.wait_editor_dialog(guest, 0)
+    ui.wait_feature(guest, lambda state: state[12] != 2 and state[7] == 0 and state[11])
+    record("discarded")
+    guest.launch("text", 5)
+    ui.wait_feature(guest, lambda state: state[12] == 2)
+    deadline = time.monotonic() + 30
+    cleared_fields = ("status", "prompt_tokens", "processed_tokens", "generated_tokens", "output_bytes",
+                      "source_bytes", "editor_bytes", "editor_flushes", "repairs")
+    while True:
+        reopened = editor_lifecycle_state(guest)
+        if all(reopened["generation"][key] == 0 for key in cleared_fields):
+            break
+        assert time.monotonic() < deadline, {"source_transaction_not_cleared": reopened}
+        time.sleep(.1)
+    assert reopened["document_bytes"] == 0 and reopened["document_fingerprint"] == initial[16] and reopened["saved"]
+    assert reopened["document_path_crc32"] == zlib.crc32(b"")
+    assert not reopened["panel_expanded"] and reopened["pending_action"] == reopened["composer_bytes"] == reopened["response_bytes"] == 0
+    # Observe later event-loop ticks to reject delayed stale source resurrection.
+    until = time.monotonic() + 2
+    while time.monotonic() < until:
+        state = editor_lifecycle_state(guest)
+        assert state["document_bytes"] == 0 and all(state["generation"][key] == 0 for key in cleared_fields), state
+        time.sleep(.1)
+    assert read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2] == build_sequence
+    result.update(passed=True, minimize_preserves=True, close_cancel_preserves=True,
+                  discard_reopens_blank=True, source_transaction_cleared=True, no_compile_started=True)
+    record("reopened-empty")
+    return result
+
+# ------------------------=
 # FUNC: voice_runtime_state
 # DESC: Reads content-free audio admission diagnostics without inferring readiness from UI copy or modifying guest state.
 # ------------------=
@@ -844,6 +991,7 @@ def main():
     parser.add_argument("--accel", choices=("hvf", "tcg"), help="Explicit accelerator for diagnosing installed execution transitions")
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
     parser.add_argument("--boot-only", action="store_true", help="Verify detached installed boot, account setup and cold-boot identity only; retain the stopped private disk without application generation")
+    parser.add_argument("--editor-lifecycle-only", action="store_true", help="Verify actual unsaved editor minimize, close Cancel, and close Discard/reopen behavior without model generation or compilation")
     parser.add_argument("--streaming-only", action="store_true", help="Verify real incremental model/editor output and cancellation/readmission only; not generated application acceptance")
     parser.add_argument("--audio-checkpoints", action="store_true", help="Add actual emulated HDA/WAV and require checkpoint completion plus non-silent PCM during --streaming-only")
     parser.add_argument("--terminal-audio-only", action="store_true", help="Isolate spoken cancellation after two real source deliveries; does not claim the sustained-generation checkpoint")
@@ -866,6 +1014,10 @@ def main():
         parser.error("Choose sustained audio checkpoints or terminal-only audio, not both")
     if args.generation_only and args.compiler_only:
         parser.error("Choose one focused case")
+    if args.editor_lifecycle_only and (args.boot_only or args.streaming_only or args.generate_request
+                                      or args.create_application or args.create_ui_application or args.compiler_only
+                                      or args.generation_only or args.save_compile):
+        parser.error("--editor-lifecycle-only cannot be combined with another focused case")
     if args.boot_only and (args.streaming_only or args.generate_request or args.create_application or args.create_ui_application
                           or args.compiler_only or args.generation_only or args.save_compile):
         parser.error("--boot-only cannot be combined with an application workflow")
@@ -883,7 +1035,7 @@ def main():
         args.application_case.relative_to(ROOT)
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
-    if args.generate_request or args.streaming_only:
+    if args.generate_request or args.streaming_only or args.editor_lifecycle_only:
         if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
             parser.error("Generated application acceptance must run through ./build-kit run")
     if args.generate_request and not args.streaming_only:
@@ -951,6 +1103,12 @@ def main():
             report["domain_behavior_verified"] = False
             report["desktop_state"] = list(state)
             guest.screenshot("native-baseline-desktop")
+            return
+        if args.editor_lifecycle_only:
+            report["editor_lifecycle"] = verify_editor_lifecycle(guest)
+            report["installed_boot_verified"] = True
+            report["generated_workflow_passed"] = False
+            report["domain_behavior_verified"] = False
             return
         if args.generate_request:
             if args.streaming_only:
@@ -1026,6 +1184,8 @@ def main():
         report["failure"] = repr(error)
         if getattr(guest, "streaming_evidence", None):
             report["streaming"] = guest.streaming_evidence
+        if getattr(guest, "editor_lifecycle_evidence", None):
+            report["editor_lifecycle"] = guest.editor_lifecycle_evidence
         if guest.process is not None and guest.process.poll() is None:
             try:
                 registers = guest.qmp("human-monitor-command", {"command-line": "info registers"})

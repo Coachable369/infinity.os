@@ -1,7 +1,8 @@
 //! Interior-only editor appearance, persisted independently of system window chrome.
 use core::sync::atomic::{AtomicU32, Ordering};
-pub const SIZES: [usize; 6] = [12, 14, 16, 18, 20, 24];
-pub const SIZE_NAMES: [&[u8]; 6] = [b"12 px", b"14 px", b"16 px", b"18 px", b"20 px", b"24 px"];
+pub const SIZES: [usize; 9] = [8, 10, 12, 14, 16, 18, 20, 22, 24];
+pub const SIZE_NAMES: [&[u8]; 9] = [b"8 px", b"10 px", b"12 px", b"14 px", b"16 px", b"18 px", b"20 px", b"22 px", b"24 px"];
+pub const DEFAULT_SIZE: u8 = 3;
 pub const FONTS: [&[u8]; 4] = [
     b"JetBrains Mono",
     b"Fira Code",
@@ -54,14 +55,14 @@ pub const PALETTES: [[u32; 9]; 10] = [
     ],
 ];
 const RECORD: usize = 4 + 24 * 32 * 95;
-const DATA: &[u8; RECORD * 24] = include_bytes!("../../assets/fonts/InfinityEditor-library.bin");
+const DATA: &[u8; RECORD * FONTS.len() * SIZES.len()] = include_bytes!("../../assets/fonts/InfinityEditor-library.bin");
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Preferences {
     pub scheme: u8,
     pub font: u8,
     pub size: u8,
 }
-static CURRENT: AtomicU32 = AtomicU32::new(1 << 16);
+static CURRENT: AtomicU32 = AtomicU32::new((DEFAULT_SIZE as u32) << 16);
 impl Preferences {
     // ------------------------=
     // FUNC: new
@@ -71,7 +72,7 @@ impl Preferences {
         Self {
             scheme: 0,
             font: 0,
-            size: 1,
+            size: DEFAULT_SIZE,
         }
     }
     // ------------------------=
@@ -79,18 +80,19 @@ impl Preferences {
     // DESC: Encodes a bounded versioned per-profile appearance record.
     // ------------------=
     pub fn encode(self) -> [u8; 8] {
-        [b'I', b'E', b'D', 1, self.scheme, self.font, self.size, 0]
+        [b'I', b'E', b'D', 2, self.scheme, self.font, self.size, 0]
     }
     // ------------------------=
     // FUNC: decode
-    // DESC: Rejects unknown versions and out-of-range appearance values.
+    // DESC: Migrates prior size indices without changing their pixel size and rejects unknown versions or invalid appearance values.
     // ------------------=
     pub fn decode(b: &[u8]) -> Option<Self> {
         if b.len() != 8
-            || b[..4] != [b'I', b'E', b'D', 1]
+            || b[..3] != [b'I', b'E', b'D']
+            || !matches!(b[3],1|2)
             || b[4] >= 10
             || b[5] >= 4
-            || b[6] >= 6
+            || b[6] as usize >= if b[3]==1 {6} else {SIZES.len()}
             || b[7] != 0
         {
             return None;
@@ -98,15 +100,28 @@ impl Preferences {
         Some(Self {
             scheme: b[4],
             font: b[5],
-            size: b[6],
+            size: if b[3]==1 {[2,3,4,5,6,8][b[6] as usize]} else {b[6]},
         })
+    }
+    // ------------------------=
+    // FUNC: zoom_shortcut
+    // DESC: Resolves repeated Control or Command zoom keys through every native size, retaining the selected scheme and font.
+    // ------------------=
+    pub fn zoom_shortcut(self,key:u8) -> Option<Self> {
+        let size=match key {
+            b'+'|b'='=>(self.size as usize+1).min(SIZES.len()-1) as u8,
+            b'-'|b'_' => self.size.saturating_sub(1),
+            b'0'=>DEFAULT_SIZE,
+            _=>return None,
+        };
+        Some(Self{size,..self})
     }
     // ------------------------=
     // FUNC: record
     // DESC: Resolves exact-size native glyph pixels without decoding during paint.
     // ------------------=
     pub fn record(self) -> &'static [u8] {
-        let start = (self.font.min(3) as usize * 6 + self.size.min(5) as usize) * RECORD;
+        let start = (self.font.min(3) as usize * SIZES.len() + (self.size as usize).min(SIZES.len()-1)) * RECORD;
         &DATA[start..start + RECORD]
     }
     // ------------------------=

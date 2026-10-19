@@ -451,29 +451,21 @@ impl super::DisplayDevice {
             }
             let mut n = [0; 20];
             let number = decimal(logical, &mut n);
-            let width = self.app_text_width(number, false, s);
-            self.app_text(
-                x + 58 * s - width.min(56 * s),
-                line_y,
-                number,
-                appearance.color(8),
-                false,
-                s,
-            );
+            let width = number.len() * cell * s;
+            for (column, byte) in number.iter().enumerate() {
+                self.editor_glyph(x + 58 * s - width.min(56 * s) + column * cell * s,
+                    line_y + 3 * s, *byte, s, appearance.color(8));
+            }
+            if let Some((a,b))=view.selection {
+                let selected_start=a.max(start).min(start+take);
+                let selected_end=b.min(start+take).max(selected_start);
+                self.fill_rect(x+(CODE_INSET+(selected_start-start)*cell)*s,line_y,
+                    (selected_end-selected_start)*cell*s,line_height*s,
+                    selection.0,selection.1,selection.2);
+            }
             for col in 0..take {
                 let i = start + col;
                 let cx = x + (CODE_INSET + col * cell) * s;
-                if view.selection.is_some_and(|(a, b)| i >= a && i < b) {
-                    self.fill_rect(
-                        cx,
-                        line_y,
-                        cell * s,
-                        line_height * s,
-                        selection.0,
-                        selection.1,
-                        selection.2,
-                    );
-                }
                 let byte = if matches!(input[i], b'\t' | b'\r') {
                     b' '
                 } else {
@@ -608,19 +600,19 @@ impl super::DisplayDevice {
             return;
         }
         let record = editor_tools::preferences::current().record();
-        let cell = record[0] as usize;
+        let ink_width = record[3] as usize;
         let height = record[1] as usize;
         if self.render_clip.is_some_and(|clip| {
             x >= clip.right
                 || y >= clip.bottom
-                || x + cell * scale <= clip.left
+                || x + ink_width * scale <= clip.left
                 || y + height * scale <= clip.top
         }) {
             return;
         }
         let glyph = (byte as usize - 32) * 24;
         for row in 0..height * scale {
-            for col in 0..cell * scale {
+            for col in 0..ink_width * scale {
                 let a = record[4 + row / scale * 24 * 95 + glyph + col / scale];
                 if a != 0 {
                     self.blend_color(

@@ -3162,7 +3162,14 @@ impl ConsoleRuntime {
             self.command_window_suspended = false;
         }
         match self.desktop_app {
-            DesktopAppKind::TextEditor => self.editor_window.visible = false,
+            DesktopAppKind::TextEditor => {
+                self.reset_editor_generation();
+                self.editor_window.visible = false;
+                self.editor_document.clear();
+                self.editor_document_path_length = 0;
+                self.editor_document_name_length = 0;
+                self.editor_scroll_row = 0;
+            },
             DesktopAppKind::CommandWindow => self.command_window.visible = false,
             DesktopAppKind::TaskManager => self.task_manager_window.visible = false,
             DesktopAppKind::Browser => self.browser_window.visible = false,
@@ -3809,6 +3816,7 @@ impl ConsoleRuntime {
     // DESC: Opens the native object picker after the active buffer has passed its dirty-document decision.
     // ------------------=
     fn open_editor_document_unchecked(&mut self) {
+        self.reset_editor_generation();
         self.editor_dialog = EditorDialog::Open;
         if self.editor_picker.location.len==0 { self.editor_picker.set_location(b"/"); }
         self.editor_picker.field=2; self.editor_picker.error=0;
@@ -3833,6 +3841,15 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: reset_editor_generation
+    // DESC: Ends the old document's source transaction before an authorized close, new buffer, or open transition.
+    // ------------------=
+    fn reset_editor_generation(&mut self) {
+        crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_editor_request());
+        crate::ui::app_assistant::write(2, crate::ui::app_assistant::Panel::new());
+    }
+
+    // ------------------------=
     // FUNC: perform_editor_action
     // DESC: Applies an already-authorized close, new-buffer, or open-picker transition exactly once.
     // ------------------=
@@ -3842,6 +3859,7 @@ impl ConsoleRuntime {
         match action {
             PendingDocumentAction::Close => self.close_desktop_app_unchecked(),
             PendingDocumentAction::New => {
+                self.reset_editor_generation();
                 self.editor_document.clear();
                 self.editor_document_path_length = 0;
                 self.editor_document_name_length = 0;
@@ -3919,6 +3937,7 @@ impl ConsoleRuntime {
             )
             .is_ok()
         {
+            self.reset_editor_generation();
             self.editor_document.clear();
             self.editor_document_path_length = 0;
             self.editor_document_name_length = 0;
@@ -8310,11 +8329,7 @@ impl ConsoleRuntime {
                             let _ = self.checkpoint_desktop_layout();
                         }
                         DesktopAppWindowTarget::NewDocument => {
-                            if !self.editor_document.is_saved() {self.editor_tools.notice=b"Save your modified document before creating a new one.";self.redraw();return;}
-                            self.editor_document.clear();
-                            self.editor_document_path_length = 0;
-                            self.editor_document_name_length = 0;
-                            self.editor_scroll_row = 0;
+                            self.request_editor_action(PendingDocumentAction::New);
                         }
                         DesktopAppWindowTarget::OpenDocument => self.open_editor_document(),
                         DesktopAppWindowTarget::SaveDocument => {

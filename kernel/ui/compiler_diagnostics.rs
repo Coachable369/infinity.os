@@ -9,6 +9,39 @@ pub struct Projection {
     pub truncated: bool,
 }
 
+pub struct Receipt {
+    owner: [u8;16],
+    revision: u64,
+    bytes: [u8;1024],
+    length: usize,
+}
+
+impl Receipt {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates an empty bounded compiler receipt with no document or session authority.
+    // ------------------=
+    pub const fn new() -> Self {Self {owner:[0;16],revision:0,bytes:[0;1024],length:0}}
+
+    // ------------------------=
+    // FUNC: record
+    // DESC: Retains only actual compiler diagnostics tied to the exact initiating session and document revision.
+    // ------------------=
+    pub fn record(&mut self, owner:[u8;16], revision:u64, diagnostics:&[u8]) {
+        self.owner=owner;self.revision=revision;
+        self.length=prioritize(diagnostics,&mut self.bytes).bytes;
+    }
+
+    // ------------------------=
+    // FUNC: copy_for
+    // DESC: Supplies compiler feedback only for the same unchanged document and session, never stale diagnostics for another editor buffer.
+    // ------------------=
+    pub fn copy_for(&self, owner:[u8;16], revision:u64, output:&mut [u8])->usize {
+        if self.owner!=owner || self.revision!=revision {return 0;}
+        let length=self.length.min(output.len());output[..length].copy_from_slice(&self.bytes[..length]);length
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Severity { Error, Note, Warning, Other }
 

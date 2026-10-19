@@ -371,13 +371,25 @@ impl AiRuntime {
             }
             let mut panel = crate::ui::app_assistant::read(id);
             if panel.workflow_goal == self.app_workflow_goal {
-                panel.pending = crate::ui::app_assistant::Action::None;
-                panel.generation = crate::ui::app_assistant::GenerationStatus::Cancelled;
+                panel.cancel_delivery();
                 panel.reply(b"App request cancelled. Any streamed source remains in the editor; no further code will be applied.");
                 crate::ui::app_assistant::write(id, panel);
             }
         }
         self.clear_app_turn_timing();
+    }
+
+    // ------------------------=
+    // FUNC: cancel_editor_request
+    // DESC: Revokes only the closing editor's inference and matching goal without interrupting unrelated desktop conversation.
+    // ------------------=
+    pub fn cancel_editor_request(&mut self) {
+        let goal = crate::ui::app_assistant::read(2).workflow_goal;
+        if self.app_owner == Some(2) { self.cancel_app_turn(); }
+        if goal.is_some() && goal == self.intelligence_goal { self.interrupt_active_intelligence(); }
+        let mut panel = crate::ui::app_assistant::read(2);
+        panel.cancel_delivery();
+        crate::ui::app_assistant::write(2, panel);
     }
 
     // ------------------------=
@@ -399,6 +411,12 @@ impl AiRuntime {
         let Some(id) = self.app_owner else {
             return false;
         };
+        let panel = crate::ui::app_assistant::read(id);
+        if panel.generation != crate::ui::app_assistant::GenerationStatus::Running {
+            self.cancel_app_turn();
+            crate::ui::app_assistant::write(id, panel);
+            return true;
+        }
         if crate::ui::app_assistant::read(id).workflow_goal != self.app_workflow_goal
             || !self.generation_workflow_current(self.app_workflow_goal) {
             self.cancel_app_turn();
@@ -632,7 +650,15 @@ impl AiRuntime {
     // DESC: Cancels active native generation while preserving its partial response.
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
-        let active_work=self.application_agent.is_some() || self.app_owner.is_some() || self.intelligence_goal.is_some();
+        let mut editor = crate::ui::app_assistant::read(2);
+        let editor_active = matches!(editor.generation, crate::ui::app_assistant::GenerationStatus::Queued | crate::ui::app_assistant::GenerationStatus::Running)
+            || editor.generation == crate::ui::app_assistant::GenerationStatus::Complete
+                && (editor.stream.delivered < editor.argument_len || editor.apply_generated_compile_requested());
+        let active_work=self.application_agent.is_some() || self.app_owner.is_some() || self.intelligence_goal.is_some() || editor_active;
+        if editor_active {
+            editor.cancel_delivery();
+            crate::ui::app_assistant::write(2, editor);
+        }
         self.stop_application_agent();
         if self.app_owner.is_some() {
             self.cancel_app_turn();

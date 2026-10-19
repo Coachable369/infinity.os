@@ -668,16 +668,19 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::speak_visible_reply(owner,1);
     conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(PHRASES.lock().unwrap().len(),before);
-    // A few generated words are sufficient to leave Thinking and begin the
-    // first native synthesis request; the answer is still being generated.
-    VISIBLE.store(31,Ordering::SeqCst);
-    conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
-    assert_eq!(PHRASES.lock().unwrap().len(),before);
-    VISIBLE.store(32,Ordering::SeqCst);
+    // A slow, unpunctuated stream does not manufacture a spoken pause at the
+    // old 24/80-byte cutoffs. Its hard provider bound still starts playback
+    // before the complete answer, without waiting indefinitely for punctuation.
+    for available in [24,32,80,159] {
+        VISIBLE.store(available,Ordering::SeqCst);
+        conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
+        assert_eq!(PHRASES.lock().unwrap().len(),before);
+    }
+    VISIBLE.store(160,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(PHRASES.lock().unwrap().len(),before+1);
     let first_length=PHRASES.lock().unwrap()[before].len();
-    assert_eq!(first_length,32);
+    assert_eq!(first_length,LONG_RESPONSE[..160].iter().rposition(u8::is_ascii_whitespace).unwrap()+1);
     assert_eq!(SPANS.lock().unwrap()[spans],(0,first_length,false));
     OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Thinking);
@@ -685,14 +688,8 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(PHRASES.lock().unwrap().len(),before+2);
-    let second_end=PHRASES.lock().unwrap()[before..].concat().len();
-    assert!(second_end<LONG_RESPONSE.len());
-    assert_eq!(PHRASES.lock().unwrap()[before..].concat(),LONG_RESPONSE[..second_end]);
-    assert_eq!(SPANS.lock().unwrap()[spans+1],(first_length,second_end,false));
-    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(PHRASES.lock().unwrap()[before..].concat(),LONG_RESPONSE);
-    assert_eq!(SPANS.lock().unwrap()[spans+2],(second_end,LONG_RESPONSE.len(),true));
+    assert_eq!(SPANS.lock().unwrap()[spans+1],(first_length,LONG_RESPONSE.len(),true));
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
     LONG_REPLY.store(false,Ordering::SeqCst);

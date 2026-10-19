@@ -1,5 +1,40 @@
 # Native Text Editor compilation
 
+## Source delivery and repair — 2026-10-18
+
+Live preview and final admission share a single source-frame parser. Only the
+first completed action is accepted; repeated headers, incomplete fences and
+partial control markers cannot become C source. CRLF and indented delimiters
+are accepted. Protocol-looking text inside C strings and comments is retained.
+A changed already-delivered prefix fails closed rather than appending a second
+program. Delivery remains bounded to 256 bytes per paced flush.
+
+STOP revokes pending compilation and discards undelivered bytes, including the
+interval after inference completes but before the editor finishes draining.
+Already displayed source remains recoverable. An authorized Close/Discard or
+New ends that document's transaction; the next request starts at offset zero.
+Minimize and a cancelled unsaved-work dialog retain the document.
+
+Direct requests such as “Fix the code in the code editor” use the authenticated
+editor action path. They capture the complete current source and its revision,
+with actual compiler feedback only when its session and revision still match.
+Corrected code streams into the main document, is saved to its existing path
+(or a new Documents object for an untitled file), and compiled. Repair alone
+never authorizes launching the executable. Model text cannot grant itself this
+repair authority. Automatic diagnostic-driven recovery remains limited to two
+attempts; unchanged source and exact request ownership are required.
+
+Creation and repair prompts share native-header, declaration-order and real-SDK
+constraints. These reduce avoidable compiler errors; they do not guarantee
+first-pass compilation or semantic correctness for arbitrary model-generated C.
+The compiler result, not the model's claim, determines success.
+
+`editor-assistant-test` exercises bytewise streaming, repeated frames, cancellation,
+retry replacement, current-document repair and stale revisions. The model harness
+also supports `--repair-current`: real local inference repairs Clang-rejected
+source, both target compilers consume that result, and an executable exit result
+checks behavior. Host harness results are separate from installed-VM evidence.
+
 ## Contract
 
 The attached editor assistant can propose `REPLACE_COMPILE` with complete C

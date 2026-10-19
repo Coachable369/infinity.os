@@ -20,24 +20,97 @@ impl ContextRequest {
     // DESC: Recognizes explicit bounded app commands while preserving argument case and excluding ambient model text.
     // ------------------=
     pub fn parse(input: &[u8]) -> Option<Self> {
-        let input=input.trim_ascii();
-        if input.len()>256 {return None;}
-        let input=if input.get(..7).is_some_and(|v|v.eq_ignore_ascii_case(b"please ")) {&input[7..]}else{input};
-        let exact=[b"maximize".as_slice(),b"maximize window",b"restore",b"restore window",b"minimize",b"minimize window",
-            b"refresh",b"back",b"go back",b"forward",b"go forward",b"new tab",b"close tab",b"zoom in",b"zoom out",
-            b"list view",b"grid view",b"undo",b"redo",b"select all",b"save",b"save file",b"save document",b"clear",b"clear text",
-            b"next task",b"previous task",b"next theme",b"next icon set",b"next model",
-            b"next item",b"previous item",b"open selected",b"add idea",b"new category"];
-        let prefixes=[b"search google for ".as_slice(),b"google ",b"search for ",b"find ",b"find file ",b"insert ",b"open folder ",b"type ",b"search apps ",b"go to ",b"open url ",b"navigate to "];
-        if !editor_compile_intent::create_application(input) && editor_compile_intent::parse(input).is_none() && !exact.iter().any(|v|input.eq_ignore_ascii_case(v)) && !prefixes.iter().any(|v|
-            input.len()>v.len() && input[..v.len()].eq_ignore_ascii_case(v)) {return None;}
-        let mut request=Self{bytes:[0;256],length:input.len()};
-        request.bytes[..input.len()].copy_from_slice(input);Some(request)
+        let input = input.trim_ascii();
+        if input.len() > 256 {
+            return None;
+        }
+        let input = if input
+            .get(..7)
+            .is_some_and(|v| v.eq_ignore_ascii_case(b"please "))
+        {
+            &input[7..]
+        } else {
+            input
+        };
+        let exact = [
+            b"maximize".as_slice(),
+            b"maximize window",
+            b"restore",
+            b"restore window",
+            b"minimize",
+            b"minimize window",
+            b"refresh",
+            b"back",
+            b"go back",
+            b"forward",
+            b"go forward",
+            b"new tab",
+            b"close tab",
+            b"zoom in",
+            b"zoom out",
+            b"list view",
+            b"grid view",
+            b"undo",
+            b"redo",
+            b"select all",
+            b"save",
+            b"save file",
+            b"save document",
+            b"clear",
+            b"clear text",
+            b"next task",
+            b"previous task",
+            b"next theme",
+            b"next icon set",
+            b"next model",
+            b"next item",
+            b"previous item",
+            b"open selected",
+            b"add idea",
+            b"new category",
+        ];
+        let prefixes = [
+            b"search google for ".as_slice(),
+            b"google ",
+            b"search for ",
+            b"find ",
+            b"find file ",
+            b"insert ",
+            b"open folder ",
+            b"type ",
+            b"search apps ",
+            b"go to ",
+            b"open url ",
+            b"navigate to ",
+        ];
+        if !editor_compile_intent::source_request(input)
+            && editor_compile_intent::parse(input).is_none()
+            && !exact.iter().any(|v| input.eq_ignore_ascii_case(v))
+            && !prefixes
+                .iter()
+                .any(|v| input.len() > v.len() && input[..v.len()].eq_ignore_ascii_case(v))
+        {
+            return None;
+        }
+        let mut request = Self {
+            bytes: [0; 256],
+            length: input.len(),
+        };
+        request.bytes[..input.len()].copy_from_slice(input);
+        Some(request)
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum App { TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher }
+pub enum App {
+    TextEditor,
+    FileNavigator,
+    Browser,
+    Settings,
+    Terminal,
+    TaskManager,
+    Launcher,
+}
 
 impl App {
     // ------------------------=
@@ -67,36 +140,91 @@ impl Command {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let bytes = bytes.trim_ascii();
-        if bytes == b"OS_CLOSE:active" { return Some(Self::CloseActive); }
-        if let Some(name) = bytes.strip_prefix(b"OS_FOCUS:") { return App::named(name).map(Self::Focus); }
-        if let Some(name) = bytes.strip_prefix(b"OS_CLOSE:") { return App::named(name).map(Self::Close); }
-        if let Some(command)=bytes.strip_prefix(b"OS_CONTEXT:") {
-            // Creation authority must originate in the user's direct request, not model output.
-            if editor_compile_intent::create_application(command) {return None;}
+        if bytes == b"OS_CLOSE:active" {
+            return Some(Self::CloseActive);
+        }
+        if let Some(name) = bytes.strip_prefix(b"OS_FOCUS:") {
+            return App::named(name).map(Self::Focus);
+        }
+        if let Some(name) = bytes.strip_prefix(b"OS_CLOSE:") {
+            return App::named(name).map(Self::Close);
+        }
+        if let Some(command) = bytes.strip_prefix(b"OS_CONTEXT:") {
+            // Source mutation authority must originate in the user's direct request, not model output.
+            if editor_compile_intent::source_request(command) {
+                return None;
+            }
             return ContextRequest::parse(command).map(Self::Context);
         }
-        if let Some(section)=bytes.strip_prefix(b"OS_SETTINGS:") {
-            return [b"general".as_slice(),b"themes",b"accounts",b"ai_voice",b"privacy",b"devices",b"network",
-                b"nodes_mesh",b"storage",b"about",b"input"].iter().position(|name|*name==section)
-                .map(|index|Self::SettingsSection(index as u8));
+        if let Some(section) = bytes.strip_prefix(b"OS_SETTINGS:") {
+            return [
+                b"general".as_slice(),
+                b"themes",
+                b"accounts",
+                b"ai_voice",
+                b"privacy",
+                b"devices",
+                b"network",
+                b"nodes_mesh",
+                b"storage",
+                b"about",
+                b"input",
+            ]
+            .iter()
+            .position(|name| *name == section)
+            .map(|index| Self::SettingsSection(index as u8));
         }
-        if let Some(surface)=bytes.strip_prefix(b"OS_SURFACE:") {return match surface {
-            b"spatial"=>Some(Self::Spatial),b"holographic"=>Some(Self::Holographic),b"world_shift"=>Some(Self::WorldShift),_=>None};}
-        if let Some(entry)=bytes.strip_prefix(b"OS_LAUNCH:") {return match entry {
-            b"documents"=>Some(Self::LaunchEntry(1)),b"projects"=>Some(Self::LaunchEntry(2)),
-            b"media"=>Some(Self::LaunchEntry(3)),b"recycle_bin"=>Some(Self::LaunchEntry(4)),_=>None};}
-        if let Some(menu)=bytes.strip_prefix(b"OS_MENU:") {return [
-            (b"audio".as_slice(),8),(b"network",9),(b"bluetooth",10),(b"power",11),(b"window",12),
-            (b"search",13),(b"account",14),(b"calendar",15),(b"help",5)]
-            .iter().find(|(name,_)|*name==menu).map(|(_,index)|Self::Menu(*index));}
-        if let Some(action)=bytes.strip_prefix(b"OS_SHELL:") {return match action {
-            b"snap_left"=>Some(Self::Shell(ShellAction::SnapLeft)),b"snap_right"=>Some(Self::Shell(ShellAction::SnapRight)),
-            b"center"=>Some(Self::Shell(ShellAction::Center)),b"next_window"=>Some(Self::Shell(ShellAction::NextWindow)),
-            b"grow"=>Some(Self::Shell(ShellAction::Grow)),b"shrink"=>Some(Self::Shell(ShellAction::Shrink)),
-            b"focus_lens"=>Some(Self::Shell(ShellAction::FocusLens)),b"peek"=>Some(Self::Shell(ShellAction::Peek)),
-            b"previous_month"=>Some(Self::Shell(ShellAction::PreviousMonth)),b"next_month"=>Some(Self::Shell(ShellAction::NextMonth)),
-            b"today"=>Some(Self::Shell(ShellAction::Today)),b"show_overview"=>Some(Self::Shell(ShellAction::ShowOverview)),
-            b"hide_overview"=>Some(Self::Shell(ShellAction::HideOverview)),_=>None};}
+        if let Some(surface) = bytes.strip_prefix(b"OS_SURFACE:") {
+            return match surface {
+                b"spatial" => Some(Self::Spatial),
+                b"holographic" => Some(Self::Holographic),
+                b"world_shift" => Some(Self::WorldShift),
+                _ => None,
+            };
+        }
+        if let Some(entry) = bytes.strip_prefix(b"OS_LAUNCH:") {
+            return match entry {
+                b"documents" => Some(Self::LaunchEntry(1)),
+                b"projects" => Some(Self::LaunchEntry(2)),
+                b"media" => Some(Self::LaunchEntry(3)),
+                b"recycle_bin" => Some(Self::LaunchEntry(4)),
+                _ => None,
+            };
+        }
+        if let Some(menu) = bytes.strip_prefix(b"OS_MENU:") {
+            return [
+                (b"audio".as_slice(), 8),
+                (b"network", 9),
+                (b"bluetooth", 10),
+                (b"power", 11),
+                (b"window", 12),
+                (b"search", 13),
+                (b"account", 14),
+                (b"calendar", 15),
+                (b"help", 5),
+            ]
+            .iter()
+            .find(|(name, _)| *name == menu)
+            .map(|(_, index)| Self::Menu(*index));
+        }
+        if let Some(action) = bytes.strip_prefix(b"OS_SHELL:") {
+            return match action {
+                b"snap_left" => Some(Self::Shell(ShellAction::SnapLeft)),
+                b"snap_right" => Some(Self::Shell(ShellAction::SnapRight)),
+                b"center" => Some(Self::Shell(ShellAction::Center)),
+                b"next_window" => Some(Self::Shell(ShellAction::NextWindow)),
+                b"grow" => Some(Self::Shell(ShellAction::Grow)),
+                b"shrink" => Some(Self::Shell(ShellAction::Shrink)),
+                b"focus_lens" => Some(Self::Shell(ShellAction::FocusLens)),
+                b"peek" => Some(Self::Shell(ShellAction::Peek)),
+                b"previous_month" => Some(Self::Shell(ShellAction::PreviousMonth)),
+                b"next_month" => Some(Self::Shell(ShellAction::NextMonth)),
+                b"today" => Some(Self::Shell(ShellAction::Today)),
+                b"show_overview" => Some(Self::Shell(ShellAction::ShowOverview)),
+                b"hide_overview" => Some(Self::Shell(ShellAction::HideOverview)),
+                _ => None,
+            };
+        }
         match bytes.trim_ascii() {
             b"OS_OPEN:text_editor" => Some(Self::TextEditor),
             b"OS_OPEN:file_navigator" => Some(Self::FileNavigator),
@@ -180,7 +308,9 @@ impl Command {
     // DESC: Supplies an execution receipt only after the UI dispatcher verifies the resulting surface.
     // ------------------=
     pub fn result(self, success: bool) -> &'static [u8] {
-        if !success { return b"The OS could not complete that action. The app may not be open, or a dialog needs attention."; }
+        if !success {
+            return b"The OS could not complete that action. The app may not be open, or a dialog needs attention.";
+        }
         match self {
             Self::TextEditor => b"Opened Text Editor.",
             Self::FileNavigator => b"Opened File Navigator.",
@@ -194,6 +324,8 @@ impl Command {
             Self::Close(_) | Self::CloseActive => b"Closed the app.",
             Self::Context(request) if editor_compile_intent::create_application(&request.bytes[..request.length]) =>
                 b"Opened Text Editor to create your application. Generated C will be saved in Documents, compiled natively and launched if the build succeeds.",
+            Self::Context(request) if editor_compile_intent::repair(&request.bytes[..request.length]).is_some() =>
+                b"Repairing the current editor source and checking it with the native compiler. The application will not launch automatically.",
             Self::Context(_) => b"Requested the action through the active app. Complete any native review or save dialog it opens.",
             Self::SettingsSection(_) => b"Opened the requested Settings category.",
             Self::Spatial | Self::Holographic | Self::WorldShift => b"Opened the requested desktop surface.",

@@ -30,6 +30,7 @@ struct Lease {
 enum ReplyTarget { Assistant, Console }
 static mut LEASE: Option<Lease> = None;
 static mut REPLY_TARGET: ReplyTarget = ReplyTarget::Assistant;
+static mut EDITOR_DIAGNOSTICS:assistant::compiler_diagnostics::Receipt=assistant::compiler_diagnostics::Receipt::new();
 static mut APP: Option<(SecurityIdentity,crate::runtime::native_app_task::Task)> = None;
 static mut APP_ACTIVE: bool = false;
 static mut APP_BYTES:[u8;256*1024]=[0;256*1024];
@@ -106,8 +107,17 @@ pub(super) fn start(console:&mut ConsoleRuntime)->Result<(),StartError> {unsafe 
 }}
 
 // ------------------------=
+// FUNC: repair_diagnostics
+// DESC: Reads actual failed-compile feedback only for this authenticated session's unchanged editor snapshot.
+// ------------------=
+pub(super) fn repair_diagnostics(console:&ConsoleRuntime,output:&mut [u8])->usize {
+    if !active(console) || !console.ai_chat_allowed() {return 0;}
+    unsafe {(&*(&raw const EDITOR_DIAGNOSTICS)).copy_for(console.current_session.0,console.assistant_revision(),output)}
+}
+
+// ------------------------=
 // FUNC: save_generated_and_build
-// DESC: Persists generated C under a collision-safe Documents name before admitting a build and optional explicitly requested launch.
+// DESC: Saves explicit repairs to the current path or new source to Documents before admitting a build; only application creation may auto-launch.
 // ------------------=
 pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result:bool)->Result<(),StartError> {unsafe {
     if APP_ACTIVE || (&*(&raw const LEASE)).is_some() {return Err(StartError::Busy);}
@@ -118,22 +128,32 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
         return Err(StartError::SourceInvalid);
     }
     let ticks=crate::runtime::ai::qwen::workers::clock_ns();
-    let mut name=[0u8;24];name[..6].copy_from_slice(b"app-c-");
-    for i in 0..16 {name[6+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
-    name[22..].copy_from_slice(b".c");
-    let base=crate::storage::object::DOCUMENTS_PATH;
-    let mut path=[0u8;95];path[..base.len()].copy_from_slice(base);path[base.len()]=b'/';
-    let length=base.len()+1+name.len();path[base.len()+1..length].copy_from_slice(&name);
-    let source_object=crate::storage::object_create_owned_note_at(&name,console.editor_document.bytes(),&path[..length],
-        crate::storage::object::ObjectId(console.current_user.0))
-        .map_err(|_|StartError::SaveFailed)?;
-    if let Some(goal)=software_goal {
-        crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
-            crate::runtime::ai::intelligence::software::Event::SourceSaved{object:source_object.0,revision:ticks}));
+    let request_panel=assistant::read(2);
+    let repair=assistant::editor_compile_intent::repair(&request_panel.request[..request_panel.request_len]).is_some();
+    let mut path=[0u8;95];
+    let length;
+    if repair && console.editor_document_path_length>0 {
+        length=console.editor_document_path_length;
+        if length>path.len() || !console.save_editor_document() {return Err(StartError::SaveFailed);}
+        path[..length].copy_from_slice(&console.editor_document_path[..length]);
+    } else {
+        let mut name=[0u8;24];name[..6].copy_from_slice(b"app-c-");
+        for i in 0..16 {name[6+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
+        name[22..].copy_from_slice(b".c");
+        let base=crate::storage::object::DOCUMENTS_PATH;
+        path[..base.len()].copy_from_slice(base);path[base.len()]=b'/';
+        length=base.len()+1+name.len();path[base.len()+1..length].copy_from_slice(&name);
+        let source_object=crate::storage::object_create_owned_note_at(&name,console.editor_document.bytes(),&path[..length],
+            crate::storage::object::ObjectId(console.current_user.0))
+            .map_err(|_|StartError::SaveFailed)?;
+        if let Some(goal)=software_goal {
+            crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
+                crate::runtime::ai::intelligence::software::Event::SourceSaved{object:source_object.0,revision:ticks}));
+        }
+        console.editor_document_path[..length].copy_from_slice(&path[..length]);console.editor_document_path_length=length;
+        console.editor_document_name[..name.len()].copy_from_slice(&name);console.editor_document_name_length=name.len();
     }
     generation_progress(console,VoiceStep::Saved);
-    console.editor_document_path[..length].copy_from_slice(&path[..length]);console.editor_document_path_length=length;
-    console.editor_document_name[..name.len()].copy_from_slice(&name);console.editor_document_name_length=name.len();
     console.editor_document.save();console.detect_editor_language();
     {
         let snapshot:&ConsoleRuntime=console;
@@ -141,7 +161,7 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
     }
     open_build_transcript(console,&path[..length],28);
     if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {
-        lease.launch=launch_result;
+        lease.launch=launch_result && !repair;
         let panel=assistant::read(2);
         let request=&panel.request[..panel.request_len];
         lease.generated=true;
@@ -187,6 +207,7 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],re
     REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
         launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0,
         generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0,software_goal:None });
+    if reply==ReplyTarget::Assistant {(&mut *(&raw mut EDITOR_DIAGNOSTICS)).record(owner.0,console.assistant_revision(),b"");}
     Ok(())
 }
 
@@ -494,6 +515,10 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     if workflow_current && lease.owner==owner {
         let mut panel=assistant::read(2);
         job::result(owner,|status,binary,diagnostics,_truncated| {
+            if target==ReplyTarget::Assistant {
+                (&mut *(&raw mut EDITOR_DIAGNOSTICS)).record(owner.0,lease.document_revision,
+                    if status==job::Status::Failed {diagnostics} else {b""});
+            }
             if status==job::Status::Complete {
                 report_stage_output(console,b"Linker output",diagnostics,_truncated);
                 let prefix=b"/home/default/";

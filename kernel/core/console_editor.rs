@@ -300,6 +300,10 @@ impl ConsoleRuntime {
             return true;
         }
         if let ConsoleKey::Shortcut(c) = key {
+            if let Some(next)=crate::ui::editor_tools::preferences::current().zoom_shortcut(c) {
+                self.editor_command(crate::ui::editor_chrome::Command::Size(next.size as usize));
+                return true;
+            }
             match c.to_ascii_lowercase() {
                 b'l' => self.editor_command(crate::ui::editor_chrome::Command::Transform(
                     crate::ui::editor_tools::actions::Action::Line,
@@ -309,13 +313,6 @@ impl ConsoleRuntime {
                 )),
                 b'/' => self.editor_command(crate::ui::editor_chrome::Command::Transform(
                     crate::ui::editor_tools::actions::Action::Comment,
-                )),
-                b'+' | b'=' => self.editor_command(crate::ui::editor_chrome::Command::Size(
-                    (crate::ui::editor_tools::preferences::current().size as usize + 1).min(5),
-                )),
-                b'-' => self.editor_command(crate::ui::editor_chrome::Command::Size(
-                    (crate::ui::editor_tools::preferences::current().size as usize)
-                        .saturating_sub(1),
                 )),
                 b'z' => self.editor_tool_action(0),
                 b'y' => self.editor_tool_action(1),
@@ -556,26 +553,10 @@ impl ConsoleRuntime {
     // FUNC: editor_pointer_index
     // DESC: Maps drag selection to the same monospace buffer grid used for rendering.
     // ------------------=
-    pub(super) fn editor_pointer_index(&self, l: SystemLayout) -> usize {
+    pub(super) fn editor_pointer_index(&self, _l: SystemLayout) -> usize {
         let g = self.editor_layout();
-        let s = l.scale().max(1);
         let x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
         let y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
-        let row = self.editor_scroll_row
-            + (y - g.body.y - 8 * s as i32).max(0) as usize
-                / (crate::ui::editor_tools::preferences::current().line() * s);
-        let cols = g.columns();
-        let bytes = self.editor_document.bytes();
-        let start = crate::ui::text_editor::visual_line_start(bytes, cols.max(1), row);
-        let end = bytes[start..]
-            .iter()
-            .position(|b| *b == b'\n')
-            .map_or(bytes.len(), |i| start + i)
-            .min(start + cols.max(1));
-        (start
-            + (x - g.body.x - crate::ui::editor_chrome::CODE_INSET as i32 * s as i32).max(0)
-                as usize
-                / (crate::ui::editor_tools::preferences::current().cell() * s))
-            .min(end)
+        g.pointer_index(self.editor_document.bytes(),self.editor_scroll_row,crate::ui::geometry::Point{x,y})
     }
 }

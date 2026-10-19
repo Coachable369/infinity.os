@@ -312,6 +312,9 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--editor-typography-only") {
+        editor_typography_pixels();return;
+    }
     if std::env::args().any(|arg|arg=="--window-clipping-only") {
         retained_surface_test();retained_left_edge_test();signed_active_outline_test();return;
     }
@@ -319,6 +322,7 @@ fn main() {
         window_controls_test();window_control_states_proof();return;
     }
     editor_scheme_pixels();
+    editor_typography_pixels();
     font_library_pixels();
     thinking_text_pixels_test();
     retained_theme_test();
@@ -386,6 +390,75 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: editor_typography_pixels
+// DESC: Verifies native atlas coverage, independent ink/advance metrics and unchanged chrome at nine zoom levels, then captures real editor pixels.
+// ------------------=
+fn editor_typography_pixels() {
+    use std::io::Write;
+    use ui::editor_tools::{self,preferences::{self,Preferences}};
+    for font in 0..4 {
+        for size in 0..preferences::SIZES.len() as u8 {
+            let p=Preferences{scheme:0,font,size};preferences::publish(p);
+            let record=p.record();
+            for scale in 1..=2 {
+                let mut pixels=vec![0u32;64*72];
+                let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width:64,height:72,stride:64,
+                    format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+                for byte in 32..=126 {
+                    pixels.fill(0);
+                    display.editor_glyph(4,4,byte,scale,(255,255,255));
+                    for y in 0..72 {
+                        for x in 0..64 {
+                            let alpha=if x>=4 && y>=4 && x<4+record[3] as usize*scale && y<4+record[1] as usize*scale {
+                                record[4+(y-4)/scale*24*95+(byte as usize-32)*24+(x-4)/scale] as u32
+                            }else{0};
+                            assert_eq!(pixels[y*64+x],alpha*0x010101);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let (width,height)=(1100,700);
+    let window=ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(20,30,960,920,false);
+    let code=b"// Native C source - precise, compact monospace\n#include <stdio.h>\n\nint main(void) {\n    int total = 42;\n    for (int i = 0; i < 4; ++i) {\n        total += i;\n    }\n    printf(\"Total: %d\\n\", total);\n    return 0;\n}\n";
+    let mut view=editor_tools::Presentation::new();view.language=editor_tools::Language::C;
+    view.filename[..6].copy_from_slice(b"main.c");view.filename_len=6;
+    view.cursor=code.iter().position(|byte|*byte==b'4').unwrap();view.selection=Some((view.cursor,view.cursor+2));
+    std::fs::create_dir_all("builds/validation/editor").unwrap();
+    let mut title=None;let mut signatures=Vec::new();
+    for size in 0..preferences::SIZES.len() as u8 {
+        let p=Preferences{scheme:0,font:0,size};preferences::publish(p);editor_tools::publish(view);
+        ui::text_input::set_presentation(true,true,view.cursor,4,false);
+        let mut pixels=vec![0x20120bu32;width*height];
+        let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+            render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        display.editor_window(window,code,0,true,false,1);
+        let g=ui::editor_chrome::Layout::new(window.window,1,false,editor_tools::Field::None);
+        let chrome=&pixels[(window.window.y as usize+5)*width..g.body.y as usize*width];
+        if let Some(ref previous)=title {assert_eq!(chrome,previous);}else{title=Some(chrome.to_vec());}
+        let signature=pixels[g.body.y as usize*width..g.body.bottom() as usize*width]
+            .iter().fold(0u64,|hash,pixel|hash.wrapping_mul(1099511628211)^*pixel as u64);
+        assert!(!signatures.contains(&signature));signatures.push(signature);
+        let caret=g.caret_damage(code,view.cursor,0).next().unwrap();
+        assert_eq!(g.pointer_index(code,0,ui::geometry::Point{x:caret.x,y:caret.y}),view.cursor);
+        let (red,green,blue)=p.color(4);let caret_color=red as u32|((green as u32)<<8)|((blue as u32)<<16);
+        for y in caret.y..caret.bottom() {
+            assert_eq!(pixels[y as usize*width+caret.x as usize],caret_color);
+        }
+        let (red,green,blue)=p.color(3);let selection_color=red as u32|((green as u32)<<8)|((blue as u32)<<16);
+        for x in caret.x..caret.x+2*p.cell() as i32 {
+            assert_eq!(pixels[(caret.y as usize-2)*width+x as usize],selection_color);
+        }
+        let mut file=std::fs::File::create(format!("builds/validation/editor/zoom-{}.ppm",preferences::SIZES[size as usize])).unwrap();
+        write!(file,"P6\n{width} {height}\n255\n").unwrap();
+        for pixel in pixels {file.write_all(&[pixel as u8,(pixel>>8) as u8,(pixel>>16) as u8]).unwrap();}
+    }
+    ui::text_input::set_presentation(false,false,0,0,false);
+    preferences::publish(Preferences::new());editor_tools::publish(editor_tools::Presentation::new());
 }
 
 // ------------------------=

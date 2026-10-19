@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
+#[path = "editor-source-frame-tests.rs"]
+mod source_frame_tests;
 use ui::{
     app_assistant::{self as ai, Action, Target},
     editor_tools::{highlight, Language, Token},
@@ -385,9 +387,11 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    source_frame_tests::run();
     rejected_creation_retains_terminal_state();
     generated_redraw_batching();
     application_creation();
+    current_document_repair();
     assistant_controls();
     contextual_searches();
     generated_editor_actions();
@@ -402,6 +406,63 @@ fn main() {
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
     }
+}
+
+// ------------------------=
+// FUNC: current_document_repair
+// DESC: Verifies direct repair authority, current-document preservation, atomic context limits, compiler retries and stale-edit rejection.
+// ------------------=
+fn current_document_repair() {
+    use ai::editor_compile_intent::{self as intent,RepairIntent};
+    let source=b"int main(void){return missing;}";
+    let request=b"Fix code in code editor";
+    for input in [request.as_slice(),b"Please repair the code in the text editor.",
+        b"correct this code",b"fix compiler errors",b"fix the current code in the editor",
+        b"fix   my code"] {
+        assert_eq!(intent::repair(input),Some(RepairIntent::CurrentDocument));
+        assert!(intent::source_request(input));assert!(!intent::create_application(input));
+        assert!(!intent::requests_opponent(input));
+    }
+    for input in [b"Do not fix code".as_slice(),b"explain how to fix code",b"\"fix code\"",
+        b"fix code then delete files",b"fix code without compiling",b"fix code and launch",
+        b"fix compiler errors and change permissions",b"fix",b"fix the calendar"] {
+        assert_eq!(intent::repair(input),None);assert!(!intent::source_request(input));
+    }
+    let mut panel=ai::Panel::new();
+    let empty=panel;
+    assert!(!panel.queue_user_repair(request,8,b"",b""));assert!(panel==empty);
+    assert!(!panel.queue_user_repair(b"explain how to fix code",8,source,b""));assert!(panel==empty);
+    assert!(panel.queue_user_repair(request,8,source,b""));
+    assert_eq!(panel.generation,ai::GenerationStatus::Queued);
+    assert_eq!(panel.document_revision,8);assert_eq!(panel.workflow_goal,None);
+    assert_eq!(panel.repair_attempts,0);assert_eq!(panel.argument_len,0);
+    let queued=panel;
+    assert!(!panel.queue_user_repair(request,9,source,b"diagnostic"));assert!(panel==queued);
+    let mut small=[0x5a;16];
+    assert_eq!(panel.compiler_repair_prompt(source,&mut small),None);assert_eq!(small,[0x5a;16]);
+    assert_eq!(panel.compiler_repair_prompt(b"",&mut small),None);
+    let mut prompt=[0;16384];assert!(panel.compiler_repair_prompt(source,&mut prompt).is_some());
+    panel.generation=ai::GenerationStatus::Running;
+    assert!(panel.accept_for_owner(2,b"REPLACE_COMPILE\nint main(void){return 0;}\nEND_ACTION",true));
+    assert!(!panel.apply_generated_compile_requested());
+    panel.generation=ai::GenerationStatus::Complete;
+    assert!(panel.apply_generated_compile_requested());
+    let mut edited=panel;assert!(edited.cancel_source_on_revision(9));
+    assert_eq!(edited.generation,ai::GenerationStatus::Cancelled);assert_eq!(edited.take_action(9),Action::None);
+    assert_eq!(panel.take_action(8),Action::ReplaceCompile);
+    let mut document=TextDocument::new();assert!(document.open(source));
+    assert!(document.replace_generation_preview(&panel.argument[..panel.argument_len],true));
+    assert_eq!(document.bytes(),b"int main(void){return 0;}");
+    assert!(document.undo());assert_eq!(document.bytes(),source);
+    for attempt in 1..=2 {
+        assert!(panel.queue_compiler_repair(request,8,8,b"error: unresolved symbol"));
+        assert_eq!(panel.repair_attempts,attempt);assert_eq!(panel.generation,ai::GenerationStatus::Queued);
+        assert!(panel.compiler_repair_prompt(source,&mut prompt).is_some());
+        panel.generation=ai::GenerationStatus::Complete;
+    }
+    let final_state=panel;
+    assert!(!panel.queue_compiler_repair(request,8,8,b"error: unresolved symbol"));assert!(panel==final_state);
+    assert!(!panel.queue_compiler_repair(request,8,9,b"error: unresolved symbol"));assert!(panel==final_state);
 }
 
 // ------------------------=

@@ -13,6 +13,51 @@ pub enum ApplicationKind {
     General,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepairIntent {
+    CurrentDocument,
+}
+
+// ------------------------=
+// FUNC: repair
+// DESC: Admits one direct current-document repair request, excluding quoted, negated, explanatory and compound instructions.
+// ------------------=
+pub fn repair(input: &[u8]) -> Option<RepairIntent> {
+    if input.len() > 256 { return None; }
+    let text=core::str::from_utf8(input).ok()?.trim().trim_end_matches('.');
+    let mut words=text.split_ascii_whitespace();
+    let mut verb=words.next()?;
+    if verb.eq_ignore_ascii_case("please") { verb=words.next()?; }
+    if !["fix","repair","correct"].iter().any(|value|verb.eq_ignore_ascii_case(value)) {return None;}
+    let mut tail=[0u8;256];
+    let mut length=0;
+    for word in words {
+        if length>0 {tail[length]=b' ';length+=1;}
+        if length+word.len()>tail.len(){return None;}
+        for byte in word.bytes(){tail[length]=byte.to_ascii_lowercase();length+=1;}
+    }
+    let tail=&tail[..length];
+    for subject in [b"code".as_slice(),b"the code",b"my code",b"this code",b"the current code",
+        b"this program",b"the program",b"my program",b"this file",b"the current file",
+        b"compiler errors",b"the compiler errors",b"compilation errors",b"the compilation errors"] {
+        if tail==subject {return Some(RepairIntent::CurrentDocument);}
+        if let Some(location)=tail.strip_prefix(subject) {
+            if [b" in code editor".as_slice(),b" in the code editor",b" in text editor",b" in the text editor",b" in editor",
+                b" in the editor",b" in this document",b" in the current document"]
+                .iter().any(|value|location==*value) {return Some(RepairIntent::CurrentDocument);}
+        }
+    }
+    None
+}
+
+// ------------------------=
+// FUNC: source_request
+// DESC: Identifies explicit user authority for source generation or current-document repair and compile verification, never automatic repair launch.
+// ------------------=
+pub fn source_request(input: &[u8]) -> bool {
+    create_application(input) || repair(input).is_some()
+}
+
 // ------------------------=
 // FUNC: requests_opponent
 // DESC: Recognizes explicit play-against-me authority without granting autonomous interaction for mere game creation.

@@ -131,6 +131,7 @@ fn editor_pool_roundtrip() {
 // ------------------=
 fn main() {
     editor_pool_roundtrip();
+    editor_zoom_remount();
     let mut p = ui::object_picker::Picker::new();
     assert!(p.set_location(b"/"));
     p.add(b"/personal/documents/first.txt", false);
@@ -216,4 +217,30 @@ fn main() {
     stack.sync([true;5],4,6);
     assert!(!stack.visible[ui::desktop_stack::BROWSER]);
     assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(4));
+}
+
+// ------------------------=
+// FUNC: editor_zoom_remount
+// DESC: Migrates a real private v1 preference object, repeatedly changes zoom and verifies each exact size survives a native Object Store remount.
+// ------------------=
+fn editor_zoom_remount() {
+    use ui::editor_tools::preferences::{self,Preferences};
+    let sectors=storage::object::STORE_RELATIVE_LBA as usize+32_768;
+    let disk=MemoryDisk::new(sectors);
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x43;16]).unwrap();
+    let id=store.create_attached(b"@editor-preferences",ObjectType::Metadata,Space::System,
+        &[b'I',b'E',b'D',1,2,1,1,0],b"/system/editor/zoom-test").unwrap();
+    let mut data=[0;8];
+    assert_eq!(store.read_editor_preferences(id,&mut data).unwrap(),8);
+    let mut p=Preferences::decode(&data).unwrap();
+    assert_eq!(preferences::SIZES[p.size as usize],14);
+    for key in b"----++++++++++----------0" {
+        p=p.zoom_shortcut(*key).unwrap();
+        store.replace_state(id,&p.encode()).unwrap();
+        drop(store);
+        store=ObjectStore::mount(disk.clone(),0).unwrap();
+        assert_eq!(store.read_editor_preferences(id,&mut data).unwrap(),8);
+        assert_eq!(Preferences::decode(&data),Some(p));
+        assert_eq!(store.history_count(id),1);
+    }
 }

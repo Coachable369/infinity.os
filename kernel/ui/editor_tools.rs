@@ -569,7 +569,7 @@ impl Presentation {
     // ------------------=
     pub const fn new() -> Self {
         Self {
-            appearance: [b'I', b'E', b'D', 1, 0, 0, 1, 0],
+            appearance: [b'I', b'E', b'D', 2, 0, 0, preferences::DEFAULT_SIZE, 0],
             menu: super::editor_chrome::Menu::None,
             menu_index: 0,
             filename: [0; 64],
