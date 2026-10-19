@@ -266,6 +266,17 @@ impl<P: Provider> Resources<P> {
                 } else { None };
                 if !valid { state.provider.cancel(id); fail_load(&mut state,pending.load); progressed=true; continue; }
                 response.status_code = status.try_into().unwrap();
+                // Fetch follows Location after inspecting these headers. Keeping an
+                // irrelevant redirect body on our serialized transport prevents the
+                // redirected request from starting (notably challenge -> results).
+                // Servo still owns redirect limits, method rewriting, cookies and CORS.
+                if matches!(status,301|302|303|307|308) && response.headers.contains_key(http::header::LOCATION) {
+                    response.headers.remove(http::header::CONTENT_LENGTH);
+                    response.headers.remove(http::header::CONTENT_ENCODING);
+                    state.provider.cancel(id);
+                    pending.load.intercept(response).finish();
+                    return true;
+                }
                 state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,
                     load: pending.load.intercept(response), attachment, encoded:compressed.then(Vec::new) });
                 return true;

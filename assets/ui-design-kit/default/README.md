@@ -32,15 +32,15 @@ unchanged. Rendering stays inside tab bounds with no exterior glow or idle work.
 for all four states and crowded/full-width examples. Both installed design-kit
 payloads include the reference board and specification through the common list.
 
-## Welcome hero and charcoal page
+## Welcome hero and navy page
 
 Kit gap: no matching welcome-page illustration existed. `browser-welcome-hero-v1.png`
 is the built-in imagegen extraction of the approved browser mockup's blue/cyan
 glass infinity loop and reflection, with all surrounding UI removed and alpha preserved.
 `tools/build-browser-welcome-artwork.py` derives a bounded 960px-wide 32-bit BMP.
 Both native kernels embed that same BMP; both installed ESPs carry master and derivative.
-Use aspect-fit, never crop the loop or reflection. Charcoal page #202124, cards
-#292B2F, borders #44474D, accent #22D3EE. Reuse authored Inter atlases and native
+Use aspect-fit, never crop the loop or reflection. Navy page #121F33 to #0D1A29,
+cards #1C2A3E, borders #394D6A; see `browser-welcome.md`. Reuse authored Inter atlases and native
 button states. `infinity-browser-core/welcome.rs` owns responsive spacing and hit targets.
 The tab-stack and search glyphs extend the existing native browser stroke family.
 

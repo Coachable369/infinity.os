@@ -17,7 +17,7 @@ impl Layout {
     // FUNC: height
     // DESC: Gives the full scrollable page extent in physical pixels.
     // ------------------=
-    pub fn height(&self)->u32 {if self.narrow {660*self.scale}else{380*self.scale}}
+    pub fn height(&self)->u32 {if self.narrow {800*self.scale}else{508*self.scale}}
     // ------------------------=
     // FUNC: rect
     // DESC: Maps authored logical coordinates into the shared content plane.
@@ -29,14 +29,14 @@ impl Layout {
     // FUNC: button
     // DESC: Returns two distinct keyboard-accessible native action targets.
     // ------------------=
-    pub fn button(&self,index:usize)->Viewport {self.rect(32+index as u32*180,166,164,36)}
+    pub fn button(&self,index:usize)->Viewport {self.rect(32+index as u32*180,252,164,36)}
     // ------------------------=
     // FUNC: hero
     // DESC: Keeps the complete transparent hero separate from text and controls.
     // ------------------=
     pub fn hero(&self)->Viewport {
         let w=self.area.width/self.scale;
-        if self.narrow {self.rect(32,214,w-64,166)}else{let x=(w/2+12).max(400);self.rect(x,16,w-x-32,192)}
+        if self.narrow {self.rect(32,308,w-64,166)}else{let x=w*3/5;self.rect(x,24,w-x-24,264)}
     }
     // ------------------------=
     // FUNC: card
@@ -44,8 +44,8 @@ impl Layout {
     // ------------------=
     pub fn card(&self,index:usize)->Viewport {
         let w=self.area.width/self.scale;
-        if self.narrow {self.rect(32,392+index as u32*70,w-64,60)}
-        else {let width=(w-96)/3;self.rect(32+index as u32*(width+16),224,width,100)}
+        if self.narrow {self.rect(32,490+index as u32*86,w-64,76)}
+        else {let width=(w-96)/3;self.rect(32+index as u32*(width+16),316,width,136)}
     }
 }
 #[cfg(test)]

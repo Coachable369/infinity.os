@@ -322,16 +322,22 @@ impl DisplayDevice {
     // ------------------=
     fn browser_welcome(&mut self,content:Viewport,scale:usize,focus:usize,scroll:u32) {
         let old_clip=self.render_clip;
-        self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,32,33,36);
+        // A bounded scanline gradient keeps the native text crisp without a full-page bitmap.
+        for y in 0..content.height {
+            let shade=(y.min(520*scale as u32)*10/(520*scale as u32)) as u8;
+            self.fill_rect(content.x as usize,content.y as usize+y as usize,content.width as usize,1,18-shade/2,31-shade/2,51-shade);
+        }
         let Some(clip)=self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,content.width as usize,content.height as usize) else {return;};
         self.render_clip=Some(clip);
         let l=infinity_browser_core::welcome::Layout::new(content,scale as u32,scroll);
         let width=l.area.width/scale as u32;
-        let copy_width=if l.narrow {width-64}else{width/2-24};
-        for (y,text,color,size) in [(24,b"Welcome to" as &[u8],(248,249,250),28),
-            (62,b"Infinity Browser",(34,211,238),28),(110,b"Your next discovery starts here.",(196,200,207),14),
-            (132,b"Search, explore, and make the web your own.",(196,200,207),14)] {
-            let r=l.rect(32,y,copy_width,36);
+        let copy_width=if l.narrow {width-64}else{width*3/5-48};
+        let headline=if width>=1000 {42}else{28};
+        for (y,text,color,size) in [(40,b"InfinityOS" as &[u8],(183,199,237),14),
+            (88,b"A more human",(241,245,255),headline),
+            (142,b"browsing experience.",(223,232,255),headline),
+            (210,b"Explore. Create. Stay in flow.",(160,181,220),14)] {
+            let r=l.rect(32,y,copy_width,48);
             if r.y>=content.y && r.y+r.height as i32<=content.y+content.height as i32 {self.browser_label_color(r,text,size*scale,false,color);}
         }
         let hero=l.hero();
@@ -347,20 +353,20 @@ impl DisplayDevice {
             self.browser_label_color(Viewport{y:r.y+10*scale as i32,..r},if index==0 {b"Start browsing"}else{b"Browser settings"},14*scale,true,if index==0 {(3,27,44)}else{(231,242,250)});
             if index==focus {self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,8*scale,34,211,238);}
         }
-        for (index,(title,detail)) in [(b"Keep your place" as &[u8],b"Switch open tabs from View." as &[u8]),
-            (b"Save what matters",b"Star a page to add it to Favorites."),(b"Find it faster",b"Search page text with Ctrl+F.")].into_iter().enumerate() {
+        for (index,(title,detail)) in [(b"Continue browsing" as &[u8],b"Find open tabs in View." as &[u8]),
+            (b"Your bookmarks",b"Save favorites with the star."),(b"Explore InfinityOS",b"Make it yours in Settings.")].into_iter().enumerate() {
             let r=l.card(index);if r.y<content.y || r.y+r.height as i32>content.y+content.height as i32 {continue;}
-            self.fill_rounded_rect_alpha(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10*scale,41,43,47,255);
-            self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10*scale,68,71,77);
-            let inset=if l.narrow {56}else{12}*scale as i32;
-            let title_y=if l.narrow {10}else{44}*scale as i32;
+            self.fill_rounded_rect_alpha(r.x as usize,r.y as usize,r.width as usize,r.height as usize,12*scale,28,42,62,230);
+            self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,12*scale,57,77,106);
+            let inset=if l.narrow {56}else{20}*scale as i32;
+            let title_y=if l.narrow {14}else{66}*scale as i32;
             let text=Viewport{x:r.x+inset,y:r.y+title_y,width:r.width-inset as u32-12*scale as u32,height:20*scale as u32};
-            self.browser_label_color(text,title,14*scale,!l.narrow,(248,249,250));
-            self.browser_label_color(Viewport{y:text.y+24*scale as i32,..text},detail,14*scale,!l.narrow,(196,200,207));
-            let icon=Viewport{x:if l.narrow {r.x+12*scale as i32}else{r.x+r.width as i32/2-12*scale as i32},y:r.y+10*scale as i32,width:24*scale as u32,height:24*scale as u32};
-            self.browser_glyph(icon,if index==0 {15}else if index==1 {16}else{14},true,scale);
+            self.browser_label_color(text,title,14*scale,false,(241,245,255));
+            self.browser_label_color(Viewport{y:text.y+24*scale as i32,..text},detail,14*scale,false,(166,186,222));
+            let icon=Viewport{x:r.x+20*scale as i32,y:r.y+18*scale as i32,width:24*scale as u32,height:24*scale as u32};
+            self.browser_glyph(icon,if index==0 {15}else if index==1 {16}else{10},true,scale);
         }
-        let r=l.rect(32,if l.narrow {622}else{350},width-64,20);
+        let r=l.rect(32,if l.narrow {764}else{476},width-64,20);
         if r.y>=content.y && r.y+r.height as i32<=content.y+content.height as i32 {
             self.browser_label_color(r,b"Infinity AI is one click away on the side of your window.",14*scale,false,(164,172,182));
         }

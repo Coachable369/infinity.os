@@ -258,6 +258,9 @@ performance-test:
 		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
 
 .PHONY: active-painter-test
+assets/ui-design-kit/default/browser-welcome-hero-v1.bmp: assets/ui-design-kit/default/browser-welcome-hero-v1.png tools/build-browser-welcome-artwork.py
+	python3 tools/build-browser-welcome-artwork.py
+
 build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-browser-core/*.rs) assets/ui-design-kit/default/browser-welcome-hero-v1.bmp
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z sdk/infinity-browser-core/lib.rs -o $@

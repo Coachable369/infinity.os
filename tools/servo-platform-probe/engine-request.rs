@@ -1,7 +1,7 @@
 use super::{resources, ResourceDelegate, Servo};
 use std::{cell::Cell, rc::Rc, time::{Duration, Instant}};
 
-struct Provider { observed: Rc<Cell<u32>> }
+struct Provider { observed: Rc<Cell<u32>>, headed: u64, released: Rc<Cell<u32>> }
 impl resources::Provider for Provider {
     // ------------------------=
     // FUNC: begin
@@ -40,10 +40,23 @@ impl resources::Provider for Provider {
         Ok(Some(resources::Response{status,headers,body}))
     }
     // ------------------------=
+    // FUNC: poll_stream
+    // DESC: Withholds redirect EOF forever to prove subsequent fetches do not wait for an irrelevant body.
+    // ------------------=
+    fn poll_stream(&mut self,id:u64)->Result<Option<resources::Event>,()> {
+        if matches!(id,2|3) {
+            if self.headed==id {return Ok(None);}
+            self.headed=id;
+            let response=self.poll(id)?.ok_or(())?;
+            return Ok(Some(resources::Event::Head(response.status,response.headers)));
+        }
+        self.poll(id).map(|r|r.map(resources::Event::Complete))
+    }
+    // ------------------------=
     // FUNC: cancel
     // DESC: Releases the completed in-memory fixture transaction.
     // ------------------=
-    fn cancel(&mut self,_:u64) {}
+    fn cancel(&mut self,id:u64) {if matches!(id,2|3){self.released.set(self.released.get()|1<<id);}}
 }
 
 // ------------------------=
@@ -52,7 +65,8 @@ impl resources::Provider for Provider {
 // ------------------=
 pub fn verify(engine:&Servo)->bool {
     let observed=Rc::new(Cell::new(0));
-    let resources=Rc::new(resources::Resources::new(Provider{observed:observed.clone()},super::super::monotonic));
+    let released=Rc::new(Cell::new(0));
+    let resources=Rc::new(resources::Resources::new(Provider{observed:observed.clone(),headed:0,released:released.clone()},super::super::monotonic));
     engine.set_delegate(resources.clone());
     let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));
     let Ok(context)=servo::SoftwareRenderingContext::new((128,128).into()) else{return false;};
@@ -65,7 +79,7 @@ pub fn verify(engine:&Servo)->bool {
         if repaint.replace(false) {view.paint();}
         std::thread::sleep(Duration::from_millis(1));
     }
-    let passed=observed.get()==31;
+    let passed=observed.get()==31 && released.get()==12;
     super::super::record(2,46,observed.get() as u64);
     resources.close();drop(view);super::drain_close(engine);passed
 }
