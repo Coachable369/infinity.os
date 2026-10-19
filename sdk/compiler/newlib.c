@@ -5,6 +5,13 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <stddef.h>
+#include <fcntl.h>
+
+// ------------------------=
+// FUNC: _open
+// DESC: Routes Newlib opens through the same launch-bound Object Store grants.
+// ------------------=
+int _open(const char *path, int flags, int mode) { return open(path, flags, mode); }
 
 // ------------------------=
 // FUNC: _close

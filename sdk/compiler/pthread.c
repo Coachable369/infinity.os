@@ -3,6 +3,7 @@
 #include <infinity/serial_sync.h>
 #include <infinity/serial_tls.h>
 #include <errno.h>
+#include <unistd.h>
 
 // ------------------------=
 // FUNC: serial
@@ -99,6 +100,11 @@ int pthread_join(pthread_t thread, void **result) {
 // ------------------=
 int pthread_detach(pthread_t thread) { (void)thread; return ENOTSUP; }
 // ------------------------=
+// FUNC: pthread_exit
+// DESC: Terminates the only thread and therefore the isolated process after running registered TLS cleanup.
+// ------------------=
+void pthread_exit(void *result) { (void)result; infinity_thread_cleanup(); _exit(0); }
+// ------------------------=
 // FUNC: pthread_key_create
 // DESC: Allocates a thread-local key only under the serial execution guarantee.
 // ------------------=
@@ -117,6 +123,55 @@ int pthread_setspecific(pthread_key_t key, const void *value) {
 // DESC: Returns only this serial invocation's key value.
 // ------------------=
 void *pthread_getspecific(pthread_key_t key) { return serial() ? infinity_key_get(key) : 0; }
+// ------------------------=
+// FUNC: pthread_key_delete
+// DESC: Invalidates an invocation-local key while rejecting stale key handles.
+// ------------------=
+int pthread_key_delete(pthread_key_t key) { return serial() ? infinity_key_delete(key) : ENOTSUP; }
+// ------------------------=
+// FUNC: pthread_cond_init
+// DESC: Initializes a private serial condition; non-default attributes require a native threading implementation.
+// ------------------=
+int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr) {
+    if (!serial()) return ENOTSUP;
+    if (!cond) return EINVAL;
+    if (attr) return ENOTSUP;
+    *cond = 1; return 0;
+}
+// ------------------------=
+// FUNC: pthread_attr_init
+// DESC: Describes the supported serial process stack without granting additional threads.
+// ------------------=
+int pthread_attr_init(pthread_attr_t *attr) {
+    if (!attr) return EINVAL;
+    *attr = (pthread_attr_t){0}; attr->is_initialized = 1;
+    attr->stacksize = 1024 * 1024; attr->detachstate = PTHREAD_CREATE_JOINABLE;
+    return 0;
+}
+// ------------------------=
+// FUNC: pthread_attr_destroy
+// DESC: Invalidates an initialized thread attribute value.
+// ------------------=
+int pthread_attr_destroy(pthread_attr_t *attr) {
+    if (!attr || !attr->is_initialized) return EINVAL;
+    attr->is_initialized = 0; return 0;
+}
+// ------------------------=
+// FUNC: pthread_attr_getstacksize
+// DESC: Returns the explicitly recorded native stack size.
+// ------------------=
+int pthread_attr_getstacksize(const pthread_attr_t *attr, size_t *size) {
+    if (!attr || !attr->is_initialized || !size) return EINVAL;
+    *size = (size_t)attr->stacksize; return 0;
+}
+// ------------------------=
+// FUNC: pthread_attr_setstacksize
+// DESC: Bounds requested stack metadata; pthread_create still rejects unsupported worker creation.
+// ------------------=
+int pthread_attr_setstacksize(pthread_attr_t *attr, size_t size) {
+    if (!attr || !attr->is_initialized || size < 16384 || size > 64 * 1024 * 1024) return EINVAL;
+    attr->stacksize = (int)size; return 0;
+}
 // ------------------------=
 // FUNC: __cxa_thread_atexit
 // DESC: Registers cleanup for a static compiler image; dynamic module unload is unsupported.

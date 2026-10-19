@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 
 enum InfinityUIKit {
     enum Metrics {
@@ -50,6 +51,94 @@ enum InfinityUIKit {
         static let nativeAccent = accent.color
         static let nativeAccentBright = accentBright.color
     }
+
+    enum EclipseAccess {
+        static let background = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
+        static let surface = StudioColor(red: 16, green: 27, blue: 58, alpha: 255)
+        static let elevated = StudioColor(red: 26, green: 46, blue: 99, alpha: 255)
+        static let primary = StudioColor(red: 62, green: 111, blue: 255, alpha: 255)
+        static let border = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
+        static let mutedBorder = StudioColor(red: 67, green: 88, blue: 140, alpha: 255)
+        static let focus = StudioColor(red: 179, green: 164, blue: 255, alpha: 255)
+        static let text = StudioColor(red: 241, green: 246, blue: 255, alpha: 255)
+        static let secondary = StudioColor(red: 170, green: 186, blue: 221, alpha: 255)
+        static let focusAnimation = Animation.timingCurve(1 / 3, 2 / 3, 2 / 3, 1, duration: 0.14)
+        @MainActor private static var fontDescriptors: [URL: CTFontDescriptor] = [:]
+
+        // ------------------------=
+        // FUNC: nativeFont
+        // DESC: Loads the same variable Inter asset as native FontKit and binds the regular or semibold weight without changing other Studio typography.
+        // ------------------=
+        @MainActor static func nativeFont(size: CGFloat, semibold: Bool, projectRoot: URL?) -> CTFont? {
+            guard let projectRoot else { return nil }
+            let url = projectRoot.appending(path: "assets/fonts/Inter-Variable.ttf").standardizedFileURL
+            let descriptor: CTFontDescriptor
+            if let cached = fontDescriptors[url] {
+                descriptor = cached
+            } else {
+                guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+                      let loaded = descriptors.first else { return nil }
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+                fontDescriptors[url] = loaded
+                descriptor = loaded
+            }
+            // FontKit rasterizes the named Regular/SemiBold instances at their
+            // default optical size. Do not let host size-dependent optical
+            // shaping change preview geometry as the user zooms the canvas.
+            let variation = [NSNumber(value: 0x77676874): NSNumber(value: semibold ? 600 : 400),
+                             NSNumber(value: 0x6f70737a): NSNumber(value: 14)]
+            let weighted = CTFontDescriptorCreateCopyWithAttributes(descriptor,
+                [kCTFontVariationAttribute: variation] as CFDictionary)
+            return CTFontCreateWithFontDescriptor(weighted, max(1, size), nil)
+        }
+
+        // ------------------------=
+        // FUNC: font
+        // DESC: Provides Eclipse-only SwiftUI typography from the registered project asset rather than the host system face.
+        // ------------------=
+        @MainActor static func font(size: CGFloat, semibold: Bool = false, projectRoot: URL?) -> Font {
+            if let loaded = nativeFont(size: size, semibold: semibold, projectRoot: projectRoot) {
+                return Font(loaded)
+            }
+            return .custom("Inter", size: max(1, size))
+        }
+
+        // ------------------------=
+        // FUNC: matches
+        // DESC: Selects only authored Eclipse surface colors, irrespective of their independently editable opacity.
+        // ------------------=
+        static func matches(_ fill: StudioColor) -> Bool {
+            [background, surface, elevated, primary].contains { $0.sameRGB(as: fill) }
+        }
+
+        // ------------------------=
+        // FUNC: progressDiameter
+        // DESC: Uses the runtime's left-aligned circular progress footprint without stretching a wide authored layer.
+        // ------------------=
+        static func progressDiameter(_ size: CGSize) -> CGFloat {
+            max(0, min(size.width, size.height))
+        }
+
+        // ------------------------=
+        // FUNC: glyph
+        // DESC: Loads the exact native 64px RGBA cell so configuration previews reuse the installed glyph coverage and colors.
+        // ------------------=
+        static func glyph(_ index: Int, projectRoot: URL?) -> NSImage? {
+            guard (0..<16).contains(index), let projectRoot,
+                  let atlas = try? Data(contentsOf: projectRoot.appending(path: "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba")),
+                  atlas.count == 16 * 64 * 64 * 4
+            else { return nil }
+            let cellSize = 64 * 64 * 4
+            let bytes = atlas.subdata(in: index * cellSize..<(index + 1) * cellSize)
+            guard let provider = CGDataProvider(data: bytes as CFData),
+                  let image = CGImage(width: 64, height: 64, bitsPerComponent: 8, bitsPerPixel: 32,
+                    bytesPerRow: 256, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                    provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+            else { return nil }
+            return NSImage(cgImage: image, size: NSSize(width: 64, height: 64))
+        }
+    }
 }
 
 enum InfinityStudioButtonEmphasis {
@@ -73,6 +162,7 @@ struct InfinityUIKitVisualRecipe: Equatable {
     let highlightOpacity: Double
     let glowOpacity: Double
     let borderWidth: CGFloat
+    let eclipseAccess: Bool
 }
 
 extension InfinityUIKit {
@@ -84,8 +174,12 @@ extension InfinityUIKit {
         role: StudioElementRole,
         state: InfinityUIKitInteractionState,
         authoredFill: StudioColor,
-        authoredBorder: StudioColor
+        authoredBorder: StudioColor,
+        configuration: Bool = false
     ) -> InfinityUIKitVisualRecipe {
+        if configuration && EclipseAccess.matches(authoredFill) {
+            return eclipseRecipe(state: state, fill: authoredFill, border: authoredBorder)
+        }
         let active = state == .hover || state == .focused
         let pressed = state == .pressed
         let isPrimary = role == .primaryButton
@@ -117,12 +211,60 @@ extension InfinityUIKit {
             text: isBadge ? Palette.accentBright : Palette.textPrimary,
             highlightOpacity: pressed ? 0.22 : (active ? 0.58 : 0.34),
             glowOpacity: state == .focused ? 0.72 : (state == .hover ? 0.38 : (isPrimary ? 0.16 : 0)),
-            borderWidth: state == .focused ? 1.5 : 1
+            borderWidth: state == .focused ? 1.5 : 1,
+            eclipseAccess: false
         )
+    }
+
+    // ------------------------=
+    // FUNC: eclipseRecipe
+    // DESC: Mirrors native access_surface endpoints, pressed mixing and inward-only focus treatment without recoloring other collections.
+    // ------------------=
+    private static func eclipseRecipe(state: InfinityUIKitInteractionState, fill: StudioColor,
+                                      border: StudioColor) -> InfinityUIKitVisualRecipe {
+        let primary = fill.sameRGB(as: EclipseAccess.primary)
+        let active = state != .idle && (fill.alpha != 0 || border.alpha != 0)
+        var top = primary ? StudioColor(red: 49, green: 174, blue: 255, alpha: fill.alpha)
+            : fill.mixed(with: EclipseAccess.border, amount: 20)
+        var bottom = primary ? StudioColor(red: 22, green: 62, blue: 220, alpha: fill.alpha) : fill
+        if primary && state == .pressed {
+            top = top.mixed(with: EclipseAccess.elevated, amount: 56)
+            bottom = bottom.mixed(with: EclipseAccess.elevated, amount: 56)
+        }
+        return InfinityUIKitVisualRecipe(fillTop: top, fillBottom: bottom,
+            border: active ? EclipseAccess.focus : border, text: EclipseAccess.text,
+            highlightOpacity: 0, glowOpacity: active ? 1 : 0, borderWidth: 1, eclipseAccess: true)
     }
 }
 
 extension StudioColor {
+    // ------------------------=
+    // FUNC: withAlpha
+    // DESC: Keeps an authored palette color while changing only its independent opacity byte.
+    // ------------------=
+    func withAlpha(_ alpha: UInt8) -> StudioColor {
+        StudioColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
+    // ------------------------=
+    // FUNC: sameRGB
+    // DESC: Compares authored palette identity without conflating it with surface alpha.
+    // ------------------=
+    func sameRGB(as other: StudioColor) -> Bool {
+        red == other.red && green == other.green && blue == other.blue
+    }
+
+    // ------------------------=
+    // FUNC: mixed
+    // DESC: Matches the native integer palette interpolation while retaining the authored surface opacity.
+    // ------------------=
+    func mixed(with other: StudioColor, amount: UInt8) -> StudioColor {
+        let t = Int(amount)
+        return StudioColor(red: UInt8((Int(red) * (255 - t) + Int(other.red) * t) / 255),
+            green: UInt8((Int(green) * (255 - t) + Int(other.green) * t) / 255),
+            blue: UInt8((Int(blue) * (255 - t) + Int(other.blue) * t) / 255), alpha: alpha)
+    }
+
     // ------------------------=
     // FUNC: adjusting
     // DESC: Applies clamped byte-channel offsets used by both default and interactive glass control states.
@@ -134,6 +276,45 @@ extension StudioColor {
             blue: UInt8((Int(self.blue) + blue).clamped(to: 0...255)),
             alpha: alpha
         )
+    }
+}
+
+struct EclipseAccessSurface: View {
+    let recipe: InfinityUIKitVisualRecipe
+    let radius: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: radius)
+            .fill(LinearGradient(colors: [recipe.fillTop.color, recipe.fillBottom.color],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay {
+                EclipseAccessFocusGlow(amount: recipe.glowOpacity * Double(recipe.fillTop.alpha) / 255)
+                    .clipShape(RoundedRectangle(cornerRadius: radius))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: radius).strokeBorder(recipe.border.color, lineWidth: 1)
+            }
+    }
+}
+
+private struct EclipseAccessFocusGlow: View, Animatable {
+    nonisolated var amount: Double
+
+    nonisolated var animatableData: Double {
+        get { amount }
+        set { amount = newValue }
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            // Native focus light is confined to the first five inward pixels.
+            for distance in 1..<5 where size.width > CGFloat(distance * 2) && size.height > CGFloat(distance * 2) {
+                let inset = CGFloat(distance) + 0.5
+                let rect = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
+                context.stroke(Path(rect), with: .color(InfinityUIKit.EclipseAccess.border.color
+                    .opacity(Double(5 - distance) / 20 * amount)), lineWidth: 1)
+            }
+        }
     }
 }
 

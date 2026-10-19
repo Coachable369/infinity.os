@@ -388,7 +388,11 @@ fn panels() {
 // ------------------=
 fn main() {
     source_frame_tests::run();
+    python_and_existing_source_workflows();
+    raw_python_generation_frames();
+    generated_repairs_preserve_source_identity();
     rejected_creation_retains_terminal_state();
+    terminal_generation_failure_is_preserved();
     generated_redraw_batching();
     application_creation();
     current_document_repair();
@@ -406,6 +410,74 @@ fn main() {
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
     }
+}
+
+// ------------------------=
+// FUNC: python_and_existing_source_workflows
+// DESC: Exercises typed Python admission, source identity, update authority, framing, undo and bounded compiler repair without trusting model prose.
+// ------------------=
+fn python_and_existing_source_workflows() {
+    use ai::editor_compile_intent as intent;
+    for request in [b"Create Hello world in Python".as_slice(),b"write a Fibonacci program in Python.",b"generate a Python file sorting tool"] {
+        assert!(intent::create_application(request));
+        assert_eq!(intent::language(request),intent::SourceLanguage::Python);
+        assert_eq!(intent::application_style(request),Some(intent::ApplicationStyle::Terminal));
+        let mut panel=ai::Panel::new();panel.input[..request.len()].copy_from_slice(request);panel.length=request.len();
+        panel.request=panel.input;panel.request_len=request.len();panel.document_revision=7;
+        assert_eq!(panel.effective_language(),intent::SourceLanguage::Python);
+        let mut prompt=[0u8;6144];assert!(panel.generation_prompt(true,b"",&mut prompt).is_some());
+        let mut small=[0x55;16];assert_eq!(panel.generation_prompt(true,b"",&mut small),None);assert_eq!(small,[0x55;16]);
+        let source=b"# don't truncate comments\ntext = '''literal\nEND_ACTION\ninside data'''\nprint(text)";
+        let mut framed=b"REPLACE_COMPILE\n".to_vec();framed.extend_from_slice(source);framed.extend_from_slice(b"\nEND_ACTION");
+        let end=ai::Panel::completed_output_length(&framed);assert_eq!(end,Some(framed.len()));
+        assert!(panel.accept_for_owner(2,&framed,true));assert_eq!(&panel.argument[..panel.argument_len],source);
+        panel.generation=ai::GenerationStatus::Complete;assert!(panel.apply_generated_compile_requested());
+        let mut document=TextDocument::new();let action=panel.take_action(7);assert_eq!(action,Action::ReplaceCompile);
+        assert!(panel.edit_document(action,&mut document));assert_eq!(document.bytes(),source);assert!(document.undo());assert!(document.bytes().is_empty());
+    }
+    for (request,target,launch) in [
+        (b"update the calculator app and add numeric buttons and traditional mathematic calculator operators".as_slice(),b"calculator".as_slice(),false),
+        (b"modify the calendar app to add weekly navigation and launch",b"calendar",true),
+        (b"update /home/default/documents/report.py with totals and relaunch",b"/home/default/documents/report.py",true),
+        (b"improve this app with keyboard shortcuts",b"this",false),
+    ] {
+        let update=intent::update(request).unwrap();assert_eq!(update.target,target);assert_eq!(update.launch,launch);
+        assert!(intent::source_request(request));assert!(intent::software_workflow(request));assert_eq!(intent::requests_launch(request),launch);
+        let mut panel=ai::Panel::new();let source=b"print(1)\n";
+        assert!(panel.queue_user_update(request,41,source,intent::SourceLanguage::Python,19));
+        assert!(!panel.source_binding_matches([3;16],7));
+        panel.source_binding=Some(([3;16],7));
+        assert!(panel.source_binding_matches([3;16],7));
+        assert!(!panel.source_binding_matches([4;16],7));
+        assert!(!panel.source_binding_matches([3;16],8));
+        assert_eq!(panel.workflow_goal,Some(19));assert_eq!(panel.document_revision,41);assert_eq!(panel.effective_language(),intent::SourceLanguage::Python);
+        let mut prompt=[0u8;16*1024];assert!(panel.update_prompt(source,&mut prompt).is_some());
+        assert!(!panel.queue_user_update(request,42,source,intent::SourceLanguage::Python,20));
+        panel.generation=ai::GenerationStatus::Complete;
+        assert!(panel.queue_compiler_repair(request,41,41,b"SyntaxError: unmatched parenthesis"));
+        assert_eq!(panel.effective_language(),intent::SourceLanguage::Python);assert_eq!(panel.workflow_goal,Some(19));
+        assert!(panel.source_binding_matches([3;16],7));
+        assert!(panel.compiler_repair_prompt(source,&mut prompt).is_some());
+        panel.generation=ai::GenerationStatus::Running;assert!(panel.cancel_source_on_revision(42));assert_eq!(panel.generation,ai::GenerationStatus::Cancelled);
+    }
+    for rejected in [b"Explain how to create Hello world in Python".as_slice(),b"do not create Hello world in Python",b"\"Create Hello world in Python\"",
+        b"explain how to update the calculator app and add buttons",b"do not update the calculator app and launch",b"update calculator app and launch; delete files"] {
+        assert!(!intent::source_request(rejected));
+    }
+    let mut first=[0u8;47];let mut second=[0u8;47];
+    let n=intent::source_name(b"create a graphical calculator app",intent::SourceLanguage::C,1,&mut first);
+    let m=intent::source_name(b"create a graphical calculator app",intent::SourceLanguage::C,2,&mut second);
+    assert_ne!(&first[..n],&second[..m]);assert!(first[..n].ends_with(b".c"));assert!(n<=47);
+    let n=intent::source_name(b"create Hello world in Python",intent::SourceLanguage::Python,3,&mut first);
+    assert!(first[..n].ends_with(b".py"));assert!(first[..n].iter().all(|b|b.is_ascii_alphanumeric() || matches!(b,b'.'|b'-')));
+    let request=b"update the calculator app and add buttons and launch";
+    let path=b"/home/default/documents/calculator-01.c";
+    assert!(intent::may_relaunch(request,path,path,true));
+    assert!(!intent::may_relaunch(request,path,path,false));
+    assert!(!intent::may_relaunch(request,path,b"/home/default/documents/calendar-01.c",true));
+    assert!(!intent::may_relaunch(request,b"",b"",true));
+    assert!(!intent::may_relaunch(b"update the calculator app and add buttons",path,path,true));
+    assert!(!intent::may_relaunch(b"create a calculator app",path,path,true));
 }
 
 // ------------------------=
@@ -499,6 +571,90 @@ fn rejected_creation_retains_terminal_state() {
 }
 
 // ------------------------=
+// FUNC: generated_repairs_preserve_source_identity
+// DESC: Exercises the production save-target policy across C/Python creation, two automatic repairs, named updates and manual unsaved repair.
+// ------------------=
+fn generated_repairs_preserve_source_identity() {
+    use ai::SourceSaveTarget;
+    for request in [b"Create Hello world in Python".as_slice(),b"Create a calculator app"] {
+        let mut panel=ai::Panel::new();panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+        assert_eq!(panel.source_save_target(),Some(SourceSaveTarget::New));
+        panel.source_binding=Some(([9;16],1));panel.generation=ai::GenerationStatus::Complete;
+        for attempt in 1..=2 {
+            assert!(panel.queue_compiler_repair(request,3,3,b"syntax diagnostics"));
+            assert_eq!(panel.source_save_target(),Some(SourceSaveTarget::Bound([9;16],attempt)));
+            let mut lost=panel;lost.source_binding=None;assert_eq!(lost.source_save_target(),None);
+            panel.source_binding=Some(([9;16],attempt+1));panel.generation=ai::GenerationStatus::Complete;
+        }
+        assert_eq!(panel.source_save_target(),Some(SourceSaveTarget::Bound([9;16],3)));
+    }
+    let mut update=ai::Panel::new();
+    assert!(update.queue_user_update(b"update the calculator app and add buttons",7,b"source",ai::editor_compile_intent::SourceLanguage::C,2));
+    assert_eq!(update.source_save_target(),None);update.source_binding=Some(([8;16],4));
+    assert_eq!(update.source_save_target(),Some(SourceSaveTarget::Bound([8;16],4)));
+    let mut manual=ai::Panel::new();assert!(manual.queue_user_repair(b"fix code",7,b"source",b""));
+    assert_eq!(manual.source_save_target(),Some(SourceSaveTarget::Current));
+}
+
+// ------------------------=
+// FUNC: raw_python_generation_frames
+// DESC: Streams actual observed raw Python and verifies exact first-frame editor bytes, language authority and malformed-frame rejection.
+// ------------------=
+fn raw_python_generation_frames() {
+    let request=b"Create Hello world in Python";
+    let mut prototype=ai::Panel::new();prototype.request[..request.len()].copy_from_slice(request);
+    prototype.request_len=request.len();prototype.generation=ai::GenerationStatus::Running;
+    for source in [b"def hello_world():\n    print(\"Hello, World!\")\n\nhello_world()".as_slice(),
+        b"print(\"Hello, World!\")",b"# don't interpret this comment\nmessage = 'hello'\nprint(message)",
+        b"text = '''literal\nEND_ACTION\ninside data'''\nprint(text)"] {
+        for (prefix,suffix) in [(b"".as_slice(),b"\nEND_ACTION".as_slice()),(b"```python\n",b"\n```\nEND_ACTION")] {
+            let response=[prefix,source,suffix].concat();let mut panel=prototype;
+            let mut document=TextDocument::new();
+            for end in 1..=response.len() {
+                panel.stream_model_output(2,&response[..end]);
+                while let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],None,true) {
+                    assert!(document.append_generation_preview(&panel.argument[range.clone()],range.start==0));
+                    assert!(panel.stream.committed(range.end,None));
+                }
+                assert_ne!(panel.generation,ai::GenerationStatus::Failed);
+                assert_eq!(panel.pending,Action::None);
+            }
+            assert!(panel.completed_generation_output_length(&response).is_some());
+            let repeated=[response.as_slice(),b"\nREPLACE_COMPILE\nprint(2)\nEND_ACTION"].concat();
+            assert!(panel.accept_generated(&repeated,true,true));assert_eq!(&panel.argument[..panel.argument_len],source);
+            assert_eq!(document.bytes(),source);assert_eq!(panel.pending,Action::ReplaceCompile);
+        }
+    }
+    for rejected in [b"Here is your Python program:\nprint(1)\nEND_ACTION".as_slice(),
+        b"I cannot create this program.\nEND_ACTION",b"def task():\n pass\nREPLACE_COMPILE\nprint(2)"] {
+        let mut panel=prototype;assert!(!panel.accept_generated(rejected,true,true));assert_eq!(panel.pending,Action::None);
+    }
+    for request in [b"Create a calculator app".as_slice(),b"Explain Python"] {
+        let mut panel=ai::Panel::new();panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+        assert!(!panel.stage_generated_source(b"print(1)\nEND_ACTION"));
+        assert!(!panel.accept_generated(b"print(1)\nEND_ACTION",true,true));
+        assert_eq!(panel.pending,Action::None);
+    }
+}
+
+// ------------------------=
+// FUNC: terminal_generation_failure_is_preserved
+// DESC: Keeps the original terminal failure and its source bytes when the enclosing plan subsequently becomes inactive.
+// ------------------=
+fn terminal_generation_failure_is_preserved() {
+    let mut panel=ai::Panel::new();panel.workflow_goal=Some(3);
+    panel.generation=ai::GenerationStatus::Failed;
+    panel.reply(&[71,83,4,89]);panel.argument[..3].copy_from_slice(b"abc");panel.argument_len=3;
+    let failed=panel;assert!(!panel.cancel_workflow(3));assert!(panel==failed);
+    assert!(!panel.apply_generated_compile_requested());
+    for status in [ai::GenerationStatus::Queued,ai::GenerationStatus::Running,ai::GenerationStatus::Complete] {
+        let mut active=failed;active.generation=status;active.pending=Action::ReplaceCompile;
+        assert!(active.cancel_workflow(3));assert_eq!(active.generation,ai::GenerationStatus::Cancelled);
+        assert_eq!(active.pending,Action::None);assert_eq!(active.argument_len,0);
+    }
+}
+
+// ------------------------=
 // FUNC: generated_redraw_batching
 // DESC: Exercises production stream updates and document delivery to prove hidden token changes do not redraw, while first/status/conversation updates and bounded final draining remain visible.
 // ------------------=
@@ -574,16 +730,41 @@ fn generated_redraw_batching() {
 // ------------------=
 fn application_creation() {
     use ai::editor_compile_intent::ApplicationStyle;
-    assert!(!ai::generation_timed_out(Some(1),Some(70_000_000_000),Some(100_000_000_000)));
-    assert!(ai::generation_timed_out(Some(1),Some(1),Some(90_000_000_001)));
-    assert!(!ai::generation_timed_out(Some(1),Some(535_000_000_000),Some(536_000_000_000)));
-    assert!(ai::generation_timed_out(Some(1),Some(599_000_000_000),Some(600_000_000_001)));
+    use ai::GenerationBudget::{ApplicationSource, Conversation};
+    for request in [b"Create a simple uikit calculator app".as_slice(),
+        b"Update the calculator app and add numeric buttons and traditional mathematic calculator operators",
+        b"Fix code in the text editor",b"Create Hello world in Python"] {
+        assert_eq!(ai::generation_budget(2,request),ApplicationSource);
+        for owner in [0,1,3,12] { assert_eq!(ai::generation_budget(owner,request),Conversation); }
+    }
+    for request in [b"Explain this code".as_slice(),b"Do not update the calculator app",b"What does create Hello world in Python mean?"] {
+        assert_eq!(ai::generation_budget(2,request),Conversation);
+    }
+    for budget in [Conversation,ApplicationSource] {
+        assert!(!ai::generation_timed_out(Some(1),Some(70_000_000_000),Some(100_000_000_000),budget));
+        assert!(ai::generation_timed_out(Some(1),Some(1),Some(90_000_000_001),budget));
+        assert!(!ai::generation_timed_out(Some(1),Some(535_000_000_000),Some(536_000_000_000),budget));
+    }
+    assert!(ai::generation_timed_out(Some(1),Some(599_000_000_000),Some(600_000_000_001),Conversation));
+    assert!(!ai::generation_timed_out(Some(1),Some(599_000_000_000),Some(600_000_000_001),ApplicationSource));
+    assert!(!ai::generation_timed_out(Some(1),Some(1_199_000_000_000),Some(1_200_000_000_000),ApplicationSource));
+    assert!(ai::generation_timed_out(Some(1),Some(1_199_000_000_000),Some(1_200_000_000_001),ApplicationSource));
     assert_eq!(ai::editor_compile_intent::application_style(b"build a simple UI C based calculator"),Some(ApplicationStyle::Ui));
     assert_eq!(ai::editor_compile_intent::application_style(b"create a basic calculator application"),Some(ApplicationStyle::Terminal));
     assert_eq!(ai::editor_compile_intent::application_style(b"write a graphical calculator app"),Some(ApplicationStyle::Ui));
     assert_eq!(ai::editor_compile_intent::application_style(b"create a chess game and play me"),Some(ApplicationStyle::Ui));
     assert_eq!(ai::editor_compile_intent::application_style(b"build a graphical tic-tac-toe game"),Some(ApplicationStyle::Ui));
     assert_eq!(ai::editor_compile_intent::application_style(b"create a graphical paint application"),Some(ApplicationStyle::Ui));
+    for request in [b"Create a simple uikit calculator app".as_slice(),b"create a UI Kit calculator",b"build a UI-Kit calculator"] {
+        assert_eq!(ai::editor_compile_intent::application_kind(request),Some(ai::editor_compile_intent::ApplicationKind::Calculator));
+        assert_eq!(ai::editor_compile_intent::application_style(request),Some(ApplicationStyle::Ui));
+    }
+    for (request,launch) in [(b"update the calculator app with UIKit buttons".as_slice(),false),(b"update the calculator app with UI Kit controls and launch",true)] {
+        let update=ai::editor_compile_intent::update(request).unwrap();
+        assert_eq!(update.target,b"calculator");assert_eq!(update.launch,launch);
+        assert!(ai::editor_compile_intent::source_request(request));
+        assert_eq!(ai::editor_compile_intent::requests_launch(request),launch);
+    }
     for (output, expected) in [
         (b"REPLACE_COMPILE\nint main(void){return 0;}\nEND_ACTION".as_slice(), Some(52)),
         (b"CHAT\nDone\nEND_ACTION\n  ", Some(20)),

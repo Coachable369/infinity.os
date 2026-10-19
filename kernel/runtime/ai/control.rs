@@ -323,7 +323,9 @@ impl Command {
             Self::Focus(_) => b"Brought the app to the front.",
             Self::Close(_) | Self::CloseActive => b"Closed the app.",
             Self::Context(request) if editor_compile_intent::create_application(&request.bytes[..request.length]) =>
-                b"Opened Text Editor to create your application. Generated C will be saved in Documents, compiled natively and launched if the build succeeds.",
+                b"Opened Text Editor to create your application. Source will be saved in Documents, validated by its native toolchain and launched if validation succeeds.",
+            Self::Context(request) if editor_compile_intent::update(&request.bytes[..request.length]).is_some() =>
+                b"Resolving the existing application source for your requested changes. It will be saved and validated; relaunch requires your explicit request.",
             Self::Context(request) if editor_compile_intent::repair(&request.bytes[..request.length]).is_some() =>
                 b"Repairing the current editor source and checking it with the native compiler. The application will not launch automatically.",
             Self::Context(_) => b"Requested the action through the active app. Complete any native review or save dialog it opens.",

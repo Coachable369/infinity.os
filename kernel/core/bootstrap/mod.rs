@@ -5,6 +5,8 @@ use crate::boot_info::BootInfo;
 mod bootstrap;
 mod crash;
 mod desktop;
+mod access_style;
+mod access_view;
 mod ai_widget_view;
 mod file_preview_view;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -29,11 +31,13 @@ mod personalization_view;
 mod font_library_view;
 mod retained_windows;
 mod template_compositor;
+mod template_font;
 mod window_chrome;
 
 use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
+pub use self::access_style::animate as access_animation_tick;
 pub use self::crash::show_fatal_crash;
 pub use self::desktop::{system_ui_authentication_success, system_ui_authentication_opacity, system_ui_cursor, system_ui_editor_blink,
     system_ui_present, thinking_animation_tick};

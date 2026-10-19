@@ -1,6 +1,7 @@
 /build/
 /builds/
 /model-cache/
+/third_party/python/
 **/target/
 **/.build/
 **/__pycache__/

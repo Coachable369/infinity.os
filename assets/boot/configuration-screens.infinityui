@@ -7,9 +7,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -33,7 +33,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0001-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -46,9 +46,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -58,15 +58,15 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
             "height" : 736,
-            "width" : 880,
+            "width" : 340,
             "x" : 40,
             "y" : 128
           },
@@ -77,17 +77,17 @@
           "kind" : 4,
           "locked" : false,
           "name" : "Configuration Card",
-          "opacity" : 45,
+          "opacity" : 100,
           "role" : 2,
           "text" : "",
           "zIndex" : 1
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -97,10 +97,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -124,9 +124,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -137,8 +137,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -163,9 +163,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -176,9 +176,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -202,9 +202,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -214,10 +214,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -241,9 +241,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -253,10 +253,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -280,9 +280,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -293,9 +293,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -319,9 +319,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -332,9 +332,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -358,9 +358,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -371,8 +371,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -397,9 +397,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -411,8 +411,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -437,8 +437,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -450,8 +450,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -475,9 +475,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -488,9 +488,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -514,9 +514,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -527,9 +527,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -553,9 +553,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -566,9 +566,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -592,9 +592,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -605,9 +605,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -631,9 +631,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -644,9 +644,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -670,9 +670,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -683,9 +683,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -709,9 +709,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -722,9 +722,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -748,9 +748,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -760,10 +760,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -787,9 +787,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -800,8 +800,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 16,
@@ -826,9 +826,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -839,9 +839,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -865,9 +865,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -877,10 +877,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -904,9 +904,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -917,8 +917,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 16,
@@ -943,9 +943,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -956,9 +956,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -982,9 +982,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -994,10 +994,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -1021,9 +1021,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1034,8 +1034,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 16,
@@ -1060,9 +1060,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1073,9 +1073,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -1099,9 +1099,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1118,10 +1118,10 @@
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 258,
-            "width" : 258,
-            "x" : 510,
-            "y" : 360
+            "height" : 210,
+            "width" : 210,
+            "x" : 620,
+            "y" : 580
           },
           "hidden" : false,
           "id" : "975A6824-68B2-4932-9BDD-EAB028ADEFB2",
@@ -1134,6 +1134,45 @@
           "role" : 6,
           "text" : "",
           "zIndex" : 9
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 1,
@@ -1144,9 +1183,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1170,7 +1209,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0002-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -1183,9 +1222,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -1195,15 +1234,15 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
             "height" : 736,
-            "width" : 880,
+            "width" : 340,
             "x" : 40,
             "y" : 128
           },
@@ -1214,17 +1253,17 @@
           "kind" : 4,
           "locked" : false,
           "name" : "Configuration Card",
-          "opacity" : 72,
+          "opacity" : 100,
           "role" : 2,
           "text" : "",
           "zIndex" : 1
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -1234,15 +1273,15 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 498,
-            "width" : 369,
+            "height" : 504,
+            "width" : 298,
             "x" : 61,
             "y" : 222
           },
@@ -1261,9 +1300,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1274,14 +1313,14 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
           "frame" : {
-            "height" : 40,
-            "width" : 368,
+            "height" : 72,
+            "width" : 276,
             "x" : 72,
             "y" : 270
           },
@@ -1300,9 +1339,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1313,9 +1352,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -1339,9 +1378,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1351,16 +1390,16 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
             "height" : 47,
             "width" : 276,
-            "x" : 90,
+            "x" : 72,
             "y" : 520
           },
           "hidden" : false,
@@ -1378,9 +1417,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1390,10 +1429,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -1417,9 +1456,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1430,9 +1469,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -1456,9 +1495,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1469,16 +1508,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
-            "height" : 20,
-            "width" : 148,
-            "x" : 330,
-            "y" : 150
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0002-0009-8000-000000000001",
@@ -1495,9 +1534,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1508,8 +1547,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -1534,9 +1573,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1548,8 +1587,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -1574,8 +1613,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1587,8 +1626,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -1613,8 +1652,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1626,8 +1665,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -1651,9 +1690,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1664,9 +1703,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -1690,9 +1729,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1703,9 +1742,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -1729,9 +1768,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1742,9 +1781,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -1768,9 +1807,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1781,9 +1820,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -1807,9 +1846,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1820,9 +1859,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -1846,9 +1885,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1859,9 +1898,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -1885,9 +1924,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1898,16 +1937,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
-            "red" : 241
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 24,
           "frame" : {
-            "height" : 67,
-            "width" : 348,
-            "x" : 90,
-            "y" : 470
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 464
           },
           "hidden" : false,
           "id" : "815EC2B1-396A-4800-9462-FA097FAB75DF",
@@ -1918,15 +1957,15 @@
           "name" : "New Text",
           "opacity" : 84,
           "role" : 5,
-          "text" : "Let’s Name Your Compute Node",
+          "text" : "Let\u2019s Name Your Compute Node",
           "zIndex" : 9
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1943,10 +1982,10 @@
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 329,
-            "width" : 329,
-            "x" : 510,
-            "y" : 300
+            "height" : 210,
+            "width" : 210,
+            "x" : 620,
+            "y" : 580
           },
           "hidden" : false,
           "id" : "60F0D725-D479-4D57-A0D1-3097760B7A34",
@@ -1959,6 +1998,45 @@
           "role" : 6,
           "text" : "",
           "zIndex" : 10
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 2,
@@ -1969,9 +2047,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -1995,7 +2073,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0003-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -2008,9 +2086,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -2020,10 +2098,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -2046,10 +2124,10 @@
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -2059,10 +2137,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -2086,9 +2164,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2099,8 +2177,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -2125,9 +2203,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2138,9 +2216,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -2164,9 +2242,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2176,10 +2254,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -2203,9 +2281,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2215,10 +2293,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -2242,9 +2320,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2255,9 +2333,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -2281,9 +2359,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2294,9 +2372,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -2320,9 +2398,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2333,8 +2411,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -2359,9 +2437,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2373,8 +2451,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -2399,8 +2477,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2412,8 +2490,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -2438,8 +2516,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2451,8 +2529,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -2477,8 +2555,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2490,8 +2568,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -2515,9 +2593,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2528,9 +2606,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -2554,9 +2632,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2567,9 +2645,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -2593,9 +2671,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2606,9 +2684,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -2632,9 +2710,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2645,9 +2723,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -2671,9 +2749,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2684,9 +2762,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -2706,6 +2784,45 @@
           "role" : 18,
           "text" : "",
           "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 3,
@@ -2716,9 +2833,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2742,7 +2859,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0004-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -2755,9 +2872,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -2767,10 +2884,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -2793,10 +2910,10 @@
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -2806,10 +2923,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -2833,9 +2950,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2846,8 +2963,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -2872,9 +2989,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2885,9 +3002,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -2911,9 +3028,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2923,10 +3040,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -2950,9 +3067,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -2962,10 +3079,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -2989,9 +3106,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3002,9 +3119,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -3028,9 +3145,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3041,9 +3158,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -3067,9 +3184,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3080,8 +3197,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -3106,9 +3223,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3120,8 +3237,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -3146,8 +3263,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3159,8 +3276,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -3185,8 +3302,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3198,8 +3315,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -3224,8 +3341,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3237,8 +3354,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -3263,8 +3380,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3276,8 +3393,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -3301,9 +3418,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3314,9 +3431,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -3340,9 +3457,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3353,9 +3470,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -3379,9 +3496,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3392,9 +3509,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -3418,9 +3535,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3431,9 +3548,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -3453,6 +3570,45 @@
           "role" : 18,
           "text" : "",
           "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 4,
@@ -3463,9 +3619,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3489,7 +3645,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0005-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -3502,9 +3658,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -3514,10 +3670,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -3540,10 +3696,10 @@
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -3553,10 +3709,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -3580,9 +3736,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3593,8 +3749,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -3619,9 +3775,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3632,9 +3788,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -3658,9 +3814,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3670,10 +3826,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -3697,9 +3853,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3709,10 +3865,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -3736,9 +3892,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3749,9 +3905,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -3775,9 +3931,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3788,9 +3944,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -3814,9 +3970,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3827,8 +3983,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -3853,9 +4009,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3867,8 +4023,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -3893,8 +4049,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3906,8 +4062,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -3932,8 +4088,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3945,8 +4101,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -3971,8 +4127,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -3984,8 +4140,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4010,8 +4166,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4023,8 +4179,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4049,8 +4205,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4062,8 +4218,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4087,9 +4243,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4100,9 +4256,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -4126,9 +4282,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4139,9 +4295,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -4165,9 +4321,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4178,9 +4334,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -4200,6 +4356,45 @@
           "role" : 18,
           "text" : "",
           "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 5,
@@ -4210,9 +4405,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4236,7 +4431,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0006-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -4249,9 +4444,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -4261,10 +4456,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -4287,10 +4482,10 @@
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -4300,10 +4495,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -4327,9 +4522,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4340,8 +4535,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -4366,9 +4561,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4379,9 +4574,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -4405,9 +4600,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4417,10 +4612,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -4444,9 +4639,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4456,10 +4651,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -4483,9 +4678,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4496,9 +4691,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -4522,9 +4717,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4535,9 +4730,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -4561,9 +4756,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4574,8 +4769,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -4600,9 +4795,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4614,8 +4809,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -4640,8 +4835,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4653,8 +4848,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4679,8 +4874,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4692,8 +4887,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4718,8 +4913,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4731,8 +4926,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4757,8 +4952,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4770,8 +4965,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4796,8 +4991,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4809,8 +5004,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4835,8 +5030,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4848,8 +5043,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -4873,9 +5068,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4886,9 +5081,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -4912,9 +5107,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4925,9 +5120,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -4951,9 +5146,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -4963,10 +5158,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -4990,9 +5185,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5003,8 +5198,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -5029,9 +5224,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5043,8 +5238,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -5068,9 +5263,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5080,10 +5275,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -5107,9 +5302,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5120,8 +5315,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -5146,9 +5341,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5160,8 +5355,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -5185,9 +5380,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5197,10 +5392,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -5224,9 +5419,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5237,8 +5432,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -5263,9 +5458,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5277,8 +5472,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -5302,9 +5497,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5314,10 +5509,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -5341,9 +5536,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5354,8 +5549,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -5380,9 +5575,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5394,8 +5589,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -5415,6 +5610,45 @@
           "role" : 0,
           "text" : "DEFAULT DARK",
           "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 6,
@@ -5425,9 +5659,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5451,7 +5685,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0007-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -5464,9 +5698,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -5476,10 +5710,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -5502,10 +5736,10 @@
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -5515,10 +5749,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -5542,9 +5776,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5555,8 +5789,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -5581,9 +5815,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5594,9 +5828,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -5620,9 +5854,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5632,10 +5866,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -5659,9 +5893,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5671,10 +5905,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -5698,9 +5932,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5711,9 +5945,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -5737,9 +5971,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5750,9 +5984,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -5776,9 +6010,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5789,8 +6023,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -5815,9 +6049,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5829,8 +6063,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -5855,8 +6089,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5868,8 +6102,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -5894,8 +6128,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5907,8 +6141,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -5933,8 +6167,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5946,8 +6180,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -5972,8 +6206,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -5985,8 +6219,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6011,8 +6245,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6024,8 +6258,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6050,8 +6284,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6063,8 +6297,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6089,8 +6323,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6102,8 +6336,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6127,9 +6361,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6140,9 +6374,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 99,
+            "green" : 46,
+            "red" : 26
           },
           "fontSize" : 8,
           "frame" : {
@@ -6162,6 +6396,45 @@
           "role" : 18,
           "text" : "",
           "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 7,
@@ -6172,9 +6445,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6198,7 +6471,7 @@
           },
           "hidden" : false,
           "id" : "4F534346-0008-0001-8000-000000000001",
-          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "imageAsset" : "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png",
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -6211,9 +6484,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -6223,10 +6496,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 230,
-            "blue" : 29,
-            "green" : 18,
-            "red" : 10
+            "alpha" : 235,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -6249,10 +6522,10 @@
         },
         {
           "border" : {
-            "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "alpha" : 0,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -6262,10 +6535,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -6289,9 +6562,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6302,8 +6575,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 30,
@@ -6328,9 +6601,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6341,9 +6614,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 17,
           "frame" : {
@@ -6367,9 +6640,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 95,
-            "green" : 72,
-            "red" : 40
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6379,10 +6652,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 20,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 245,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 19,
           "frame" : {
@@ -6406,9 +6679,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 69,
-            "red" : 42
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6418,10 +6691,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 255,
-            "blue" : 27,
-            "green" : 15,
-            "red" : 5
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 20,
           "frame" : {
@@ -6445,9 +6718,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 231,
-            "green" : 181,
-            "red" : 40
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6458,9 +6731,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 84,
-            "green" : 54,
-            "red" : 8
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 20,
           "frame" : {
@@ -6484,9 +6757,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6497,9 +6770,9 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 198,
-            "green" : 184,
-            "red" : 174
+            "blue" : 221,
+            "green" : 186,
+            "red" : 170
           },
           "fontSize" : 13,
           "frame" : {
@@ -6523,9 +6796,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6536,8 +6809,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 17,
@@ -6562,9 +6835,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6576,8 +6849,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 14,
           "frame" : {
@@ -6602,8 +6875,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6615,8 +6888,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6641,8 +6914,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6654,8 +6927,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6680,8 +6953,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6693,8 +6966,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6719,8 +6992,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6732,8 +7005,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6758,8 +7031,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6771,8 +7044,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6797,8 +7070,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6810,8 +7083,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6836,8 +7109,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6849,8 +7122,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6875,8 +7148,8 @@
           "border" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6888,8 +7161,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "green" : 111,
+            "red" : 62
           },
           "fontSize" : 8,
           "frame" : {
@@ -6913,9 +7186,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6925,10 +7198,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -6952,9 +7225,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -6965,8 +7238,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -6991,9 +7264,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7005,8 +7278,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -7030,9 +7303,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7042,10 +7315,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -7069,9 +7342,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7082,8 +7355,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -7108,9 +7381,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7122,8 +7395,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -7147,9 +7420,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7159,10 +7432,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -7186,9 +7459,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7199,8 +7472,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -7225,9 +7498,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7239,8 +7512,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -7264,9 +7537,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 91,
-            "green" : 71,
-            "red" : 51
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7276,10 +7549,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 240,
-            "blue" : 42,
-            "green" : 29,
-            "red" : 18
+            "alpha" : 245,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
           },
           "fontSize" : 19,
           "frame" : {
@@ -7303,9 +7576,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7316,8 +7589,8 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 250,
-            "green" : 245,
+            "blue" : 255,
+            "green" : 246,
             "red" : 241
           },
           "fontSize" : 15,
@@ -7342,9 +7615,9 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 255,
-            "green" : 191,
-            "red" : 32
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
           },
           "cornerRadius" : 10,
           "crop" : {
@@ -7356,8 +7629,8 @@
           "fill" : {
             "alpha" : 255,
             "blue" : 255,
-            "green" : 232,
-            "red" : 156
+            "green" : 199,
+            "red" : 134
           },
           "fontSize" : 13,
           "frame" : {
@@ -7377,6 +7650,45 @@
           "role" : 0,
           "text" : "READY",
           "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 100,
+            "width" : 440,
+            "x" : 510,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-E001-8000-000000000001",
+          "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Eclipse Access Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 40
         }
       ],
       "id" : 8,

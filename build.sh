@@ -46,6 +46,7 @@ if [ "$package_only" = true ]; then
         exit 0
     fi
     sh tools/build-hermes.sh --target "$target"
+    python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
     if python3 -c 'import sys, tomllib; sys.exit("native-python" not in tomllib.load(open("Cargo.toml", "rb"))["features"]["default"])'; then
         python3 tools/native-python/parity.py --arch "$target" --iso "$output_dir/InfinityOS-$target.iso"
     fi
@@ -126,6 +127,16 @@ make system-sound-test system-sound-install-parity-test authentication-motion-te
 make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
 python3 tools/native-compiler-parity-test.py
+python3 tools/native-python/parity.py
+python3 tools/native-python/verify-loader.py
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation valid
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation invalid
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-extension builds/toolchains/aarch64/infinity_native_test.so
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation valid
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation invalid
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-extension builds/toolchains/x86_64/infinity_native_test.so
 sh tools/native-c-production-test.sh
 sh tools/application-interaction-test.sh
 make editor-assistant-test
@@ -181,7 +192,9 @@ if [ "$target" != all ]; then
         (cd "$output_dir" && shasum -a 256 InfinityOS-x86_64.iso > SHA256SUMS)
     fi
     python3 tools/browser-artwork-parity.py
+    python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
     python3 tools/native-compiler-parity-test.py --arch "$target"
+    python3 tools/native-python/parity.py --arch "$target"
     echo "InfinityOS $target full-bundle ISO is ready in $output_dir"
     exit 0
 fi
@@ -232,12 +245,23 @@ make video-driver-test
 make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
 python3 tools/native-compiler-parity-test.py
+python3 tools/native-python/parity.py
+python3 tools/native-python/verify-loader.py
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation valid
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation invalid
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-extension builds/toolchains/aarch64/infinity_native_test.so
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation valid
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-validation invalid
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-extension builds/toolchains/x86_64/infinity_native_test.so
 python3 tools/kernel-layout-test.py
 # Bounded native-generation regressions run real executable entrypoints, not
 # empty Rust test harnesses. Preview-only returns before loading model weights.
 sh tools/native-c-production-test.sh
 sh tools/application-interaction-test.sh
 make editor-assistant-test
+make eclipse-access-test
 CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release \
     --manifest-path tools/behavior-harness/Cargo.toml \
     --bin application-interaction-model-test -- --preview-only
@@ -273,6 +297,7 @@ make app-launcher-interaction-test
 sh tools/build-hermes.sh --target x86_64
 sh tools/build-hermes.sh
 python3 tools/browser-artwork-parity.py
+python3 tools/design-kit-parity.py --kernel build/aarch64/installed-kernel.elf --kernel build/x86_64/installed-kernel.elf
 
 # Build targets publish directly into builds; there is no second installer copy.
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"

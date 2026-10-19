@@ -34,6 +34,9 @@ int main(void) {
     assert(infinity_key_create(&key, 0) == 0);
     assert(infinity_key_set(key, &mutex) == 0 && infinity_key_get(key) == &mutex);
     assert(infinity_key_set(0, &mutex) == EINVAL && !infinity_key_get(0));
+    assert(infinity_key_delete(key) == 0);
+    assert(infinity_key_delete(key) == EINVAL);
+    assert(infinity_key_set(key, &mutex) == EINVAL && !infinity_key_get(key));
     assert(infinity_thread_destructor(destroy_value, (void *)1) == 0);
     assert(infinity_thread_destructor(destroy_value, (void *)2) == 0);
     infinity_thread_cleanup();

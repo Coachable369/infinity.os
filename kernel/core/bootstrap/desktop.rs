@@ -1,6 +1,8 @@
 //! Authentication, onboarding, desktop shell, menus, settings, windows, and file management.
 
 use super::*;
+use super::access_style as access;
+use super::installer::{INSTALLER_FONT_CELL_HEIGHT, INSTALLER_FONT_NATIVE_SIZE_PX};
 #[path = "minimized_shelf.rs"]
 mod minimized_shelf;
 #[path = "desktop_widget_menu.rs"]
@@ -40,7 +42,7 @@ pub fn thinking_animation_tick(visible: bool) -> bool {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const AUTHENTICATION_BMP: &[u8] =
-    include_bytes!("../../../assets/desktop/infinity-auth-success-stage-v1.bmp");
+    include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const AUTHENTICATION_ORB_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-auth-success-orb-v1.bmp");
@@ -55,7 +57,7 @@ pub(super) const DESKTOP_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-shell-wallpaper-v3.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const ONBOARDING_BMP: &[u8] =
-    include_bytes!("../../../assets/desktop/infinity-onboarding-wallpaper-v1.bmp");
+    include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-topbar-icon-v2.bmp");
@@ -139,6 +141,26 @@ pub(super) const AURORA_HARMONY_LAUNCHER_BMP: &[u8] =
     include_bytes!("../../../assets/icons/runtime/aurora-harmony-launcher-256.bmp");
 
 impl super::DisplayDevice {
+    // ------------------------=
+    // FUNC: access_label
+    // DESC: Fits antialiased pre-session typography to its responsive control without changing hit geometry.
+    // ------------------=
+    pub(super) fn access_label(&mut self, bounds: (usize, usize, usize, usize), text: &[u8],
+        pixels: usize, color: access::Rgb, centered: bool, strong: bool) {
+        let (left, top, width, height) = bounds;
+        let mut pixels = pixels.max(8).min(height * 6 / 7).max(1);
+        while pixels > 8 && self.access_text_width(text, pixels, strong) > width {
+            pixels -= 1;
+        }
+        let text_width = self.access_text_width(text, pixels, strong);
+        let previous = self.render_clip;
+        self.intersect_render_clip(left, top, width, height);
+        self.access_text(left + if centered { width.saturating_sub(text_width) / 2 } else { 0 },
+            top + height.saturating_sub(pixels * 7 / 6) / 2, text,
+            color.0, color.1, color.2, 255, pixels, strong);
+        self.render_clip = previous;
+    }
+
     // ------------------------=
     // FUNC: clipboard_overlay
     // DESC: Paints native clipboard actions and bounded paged text using the shared menu surface.
@@ -490,7 +512,6 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn paint_authentication_background(&mut self) {
         match self.skin_visual_mode() {
-            1 => self.fill_rect(0, 0, self.width, self.height, 232, 237, 243),
             2 => self.fill_rect(0, 0, self.width, self.height, 0, 0, 0),
             _ => {
                 self.paint_bitmap_cover_rect(AUTHENTICATION_BMP, 0, 0, self.width, self.height);
@@ -512,7 +533,6 @@ impl super::DisplayDevice {
         height: usize,
     ) {
         match self.skin_visual_mode() {
-            1 => self.fill_rect(left, top, width, height, 232, 237, 243),
             2 => self.fill_rect(left, top, width, height, 0, 0, 0),
             _ => self.paint_bitmap_cover_rect(AUTHENTICATION_BMP, left, top, width, height),
         }
@@ -880,119 +900,54 @@ impl super::DisplayDevice {
 
         if paint_header {
             let top_height = sw(64).max(38);
-            self.fill_rect_alpha(0, 0, self.width, top_height, 1, 6, 13, 238);
-            self.outline_rect(0, top_height.saturating_sub(1), self.width, 1, 15, 31, 48);
+            self.fill_rect_alpha(0, 0, self.width, top_height, 9, 15, 38, 238);
+            self.outline_rect(0, top_height.saturating_sub(1), self.width, 1, 67, 88, 140);
             self.top_bar_infinity_icon(sx(57), top_height / 2, sw(64));
-            self.ui_text(
-                sx(92),
-                top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
-                b"WELCOME TO I N F I N I T Y O S",
-                239,
-                244,
-                249,
-                1,
-            );
-            self.ui_text(
-                sx(1302),
-                top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
-                b"MACHINE NAME",
-                229,
-                235,
-                241,
-                1,
-            );
-            self.authentication_icon(sx(1497), top_height / 2, 1, sw(21), false);
+            self.access_label((sx(92), 0, sw(650), top_height),
+                b"WELCOME TO I N F I N I T Y O S", sw(21), access::TEXT, false, false);
+            let machine = crate::runtime::with_runtime(|runtime| runtime.identity.machine()).flatten();
+            let name = machine.map(|value| value.display_name)
+                .unwrap_or(crate::runtime::identity::ShortText::empty());
+            self.access_label((sx(1210), 0, sw(240), top_height),
+                name.as_bytes(), sw(20), access::SECONDARY, true, false);
+            self.access_icon(sx(1497), top_height / 2, 1, sw(21), false);
         }
 
         let card_x = sx(54);
         let card_y = sy(123);
         let card_w = sw(521);
         let card_h = sw(754);
-        self.glass_panel(card_x, card_y, card_w, card_h, true);
+        self.access_panel(card_x, card_y, card_w, card_h);
+        if paint_header {
+            self.access_wordmark(sx(900), sy(92), sw(570), sw(92));
+        }
         self.top_bar_infinity_icon(card_x + card_w / 2, card_y + sw(91), sw(156));
-        self.ui_text_centered(
-            card_x,
-            card_w,
-            card_y + sw(148),
-            if locked {
-                b"Welcome Back"
-            } else {
-                b"Welcome to InfinityOS"
-            },
-            244,
-            247,
-            251,
-            2,
-        );
-        self.ui_text_centered(
-            card_x,
-            card_w,
-            card_y + sw(198),
-            b"Secure. Limitless.",
-            188,
-            198,
-            211,
-            1,
-        );
+        self.access_label((card_x + sw(28), card_y + sw(148), card_w - sw(56), sw(49)),
+            if locked { b"Welcome Back" } else { b"Welcome to InfinityOS" },
+            sw(36), access::TEXT, true, true);
+        self.access_label((card_x + sw(28), card_y + sw(202), card_w - sw(56), sw(31)),
+            b"Secure. Limitless.", sw(22), access::SECONDARY, true, false);
 
         let inner_x = card_x + sw(49);
         let inner_w = card_w.saturating_sub(sw(98));
         let user_y = card_y + sw(253);
-        self.fill_rounded_rect_alpha(
+        self.access_surface(
             inner_x,
             user_y,
             inner_w,
             sw(86),
             sw(13),
-            2,
-            10,
-            20,
-            if focus == 0 { 248 } else { 224 },
+            access::BACKGROUND, access::MUTED_BORDER, 255, focus == 0,
         );
-        self.outline_rounded_rect(
-            inner_x,
-            user_y,
-            inner_w,
-            sw(86),
-            sw(13),
-            if focus == 0 { 37 } else { 44 },
-            if focus == 0 { 183 } else { 66 },
-            if focus == 0 { 234 } else { 89 },
-        );
-        self.authentication_icon(inner_x + sw(45), user_y + sw(43), 2, sw(50), focus == 0);
+        self.access_icon(inner_x + sw(45), user_y + sw(43), 2, sw(50), focus == 0);
         let user = crate::runtime::with_runtime(|runtime| runtime.identity.user_nth(selected_user))
             .flatten();
-        if let Some(value) = user {
-            self.ui_text(
-                inner_x + sw(91),
-                user_y + sw(25),
-                value.display_name.as_bytes(),
-                237,
-                242,
-                248,
-                1,
-            );
-        } else {
-            self.ui_text(
-                inner_x + sw(91),
-                user_y + sw(25),
-                b"Aurelius",
-                237,
-                242,
-                248,
-                1,
-            );
-        }
-        self.ui_text(
-            inner_x + sw(91),
-            user_y + sw(53),
-            b"Last signed in 2 minutes ago",
-            151,
-            162,
-            177,
-            1,
-        );
-        self.authentication_icon(
+        self.access_label((inner_x + sw(91), user_y + sw(17), inner_w - sw(140), sw(29)),
+            user.as_ref().map(|value| value.display_name.as_bytes()).unwrap_or(b"Select an account"),
+            sw(22), access::TEXT, false, true);
+        self.access_label((inner_x + sw(91), user_y + sw(49), inner_w - sw(140), sw(24)),
+            b"Local account on this device", sw(17), access::SECONDARY, false, false);
+        self.access_icon(
             inner_x + inner_w - sw(28),
             user_y + sw(43),
             3,
@@ -1004,38 +959,18 @@ impl super::DisplayDevice {
         self.authentication_password_field(inner_x, password_y, inner_w, sw(57), input, focus == 1);
 
         let sign_y = card_y + sw(439);
-        self.fill_rounded_rect_alpha(
+        self.access_surface(
             inner_x,
             sign_y,
             inner_w,
             sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
             sw(13),
-            7,
-            48,
-            79,
-            if focus == 2 { 248 } else { 226 },
+            access::PRIMARY, access::BORDER, 255, focus == 2,
         );
-        self.outline_rounded_rect(
-            inner_x,
-            sign_y,
-            inner_w,
-            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
-            sw(13),
-            34,
-            182,
-            235,
-        );
-        self.ui_text_centered(
-            inner_x,
-            inner_w,
-            sign_y + sw(18),
-            if locked { b"Unlock" } else { b"Sign In" },
-            247,
-            250,
-            253,
-            1,
-        );
-        self.authentication_icon(
+        self.access_label((inner_x + sw(40), sign_y, inner_w - sw(80),
+            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT)),
+            if locked { b"Unlock" } else { b"Sign In" }, sw(22), access::TEXT, true, true);
+        self.access_icon(
             inner_x + inner_w - sw(30),
             sign_y + sw(28),
             4,
@@ -1044,61 +979,33 @@ impl super::DisplayDevice {
         );
 
         let separator_y = card_y + sw(527);
-        self.fill_rect(inner_x, separator_y, inner_w, 1, 18, 31, 45);
+        self.fill_rect(inner_x, separator_y, inner_w, 1, 67, 88, 140);
         self.fill_rect_alpha(
             inner_x + inner_w / 2 - sw(23),
             separator_y - sw(10),
             sw(46),
             sw(20),
-            4,
-            12,
-            22,
+            16,
+            27,
+            58,
             255,
         );
-        self.ui_text_centered(
-            inner_x + inner_w / 2 - sw(23),
-            sw(46),
-            separator_y - sw(8),
-            b"or",
-            157,
-            168,
-            183,
-            1,
-        );
+        self.access_label((inner_x + inner_w / 2 - sw(23), separator_y - sw(12), sw(46), sw(24)),
+            b"or", sw(18), access::SECONDARY, true, false);
 
         let key_y = card_y + sw(557);
-        self.fill_rounded_rect_alpha(
+        self.access_surface(
             inner_x,
             key_y,
             inner_w,
             sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
             sw(13),
-            5,
-            16,
-            28,
-            if focus == 3 { 248 } else { 224 },
+            access::ELEVATED, access::MUTED_BORDER, 255, focus == 3,
         );
-        self.outline_rounded_rect(
-            inner_x,
-            key_y,
-            inner_w,
-            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
-            sw(13),
-            if focus == 3 { 34 } else { 37 },
-            if focus == 3 { 182 } else { 59 },
-            if focus == 3 { 235 } else { 79 },
-        );
-        self.ui_text_centered(
-            inner_x,
-            inner_w,
-            key_y + sw(17),
-            b"Sign In with Security Key",
-            235,
-            240,
-            246,
-            1,
-        );
-        self.authentication_icon(
+        self.access_label((inner_x + sw(28), key_y, inner_w - sw(72),
+            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT)),
+            b"Sign In with Security Key", sw(21), access::TEXT, true, false);
+        self.access_icon(
             inner_x + inner_w - sw(31),
             key_y + sw(27),
             5,
@@ -1111,45 +1018,30 @@ impl super::DisplayDevice {
         let action_labels: [&[u8]; 3] = [b"Add User", b"Forgot Password?", b"Options"];
         for (index, label) in action_labels.iter().enumerate() {
             let center = inner_x + third * index + third / 2;
-            self.authentication_icon(center, actions_y, 6 + index, sw(27), focus == index + 4);
-            self.ui_text_centered(
-                inner_x + third * index,
-                third,
-                actions_y + sw(31),
-                label,
-                if focus == index + 4 { 255 } else { 209 },
-                if focus == index + 4 { 255 } else { 217 },
-                if focus == index + 4 { 255 } else { 226 },
-                1,
-            );
+            self.access_icon(center, actions_y, 6 + index, sw(27), focus == index + 4);
+            self.access_label((inner_x + third * index + sw(4), actions_y + sw(25),
+                third - sw(8), sw(33)), label, sw(18),
+                if focus == index + 4 { access::TEXT } else { access::SECONDARY }, true, false);
         }
 
         let tray_x = sx(529);
         let tray_y = sy(914);
         let tray_w = sw(478);
         let tray_h = sw(90);
-        self.glass_panel(tray_x, tray_y, tray_w, tray_h, false);
+        self.access_panel(tray_x, tray_y, tray_w, tray_h);
         let utility_labels: [&[u8]; 4] = [b"Shut Down", b"Restart", b"Network", b"Accessibility"];
         for (index, label) in utility_labels.iter().enumerate() {
             let cell = tray_w / 4;
             let center = tray_x + cell * index + cell / 2;
-            self.authentication_icon(
+            self.access_icon(
                 center,
                 tray_y + sw(31),
                 9 + index,
                 sw(25),
                 focus == index + 7,
             );
-            self.ui_text_centered(
-                tray_x + cell * index,
-                cell,
-                tray_y + sw(57),
-                label,
-                if focus == index + 7 { 255 } else { 221 },
-                if focus == index + 7 { 255 } else { 228 },
-                if focus == index + 7 { 255 } else { 236 },
-                1,
-            );
+            self.access_label((tray_x + cell * index + sw(5), tray_y + sw(52), cell - sw(10), sw(28)),
+                label, sw(18), if focus == index + 7 { access::TEXT } else { access::SECONDARY }, true, false);
         }
     }
 
@@ -1201,50 +1093,33 @@ impl super::DisplayDevice {
         input: &[u8],
         focused: bool,
     ) {
-        self.fill_rounded_rect_alpha(x, y, width, height, height / 4, 2, 9, 18, 255);
-        self.outline_rounded_rect(
-            x,
-            y,
-            width,
-            height,
-            height / 4,
-            if focused { 34 } else { 37 },
-            if focused { 182 } else { 58 },
-            if focused { 235 } else { 78 },
-        );
-        self.authentication_icon(x + height / 2, y + height / 2, 5, height / 3, focused);
-        if input.is_empty() {
-            self.ui_text(
-                x + height,
-                y + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
-                b"Enter your password",
-                115,
-                126,
-                142,
-                1,
-            );
-        } else {
-            let mut masked = [0u8; 64];
-            let length = input.len().min(masked.len());
-            masked[..length].fill(b'*');
-            self.ui_text(
-                x + height,
-                y + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
-                &masked[..length],
-                238,
-                244,
-                249,
-                1,
-            );
+        self.access_surface(x, y, width, height, height / 4, access::BACKGROUND,
+            access::MUTED_BORDER, 255, focused);
+        self.access_icon(x + height / 2, y + height / 2, 5, height / 3, focused);
+        let previous_clip = self.render_clip;
+        self.intersect_render_clip(x + height, y + 2,
+            width.saturating_sub(height * 2), height.saturating_sub(4));
+        let mut masked = [0u8; 64];
+        let length = input.len().min(masked.len());
+        masked[..length].fill(b'*');
+        let pixels = (height * 21 / 57).max(8);
+        let color = if input.is_empty() { access::SECONDARY } else { access::TEXT };
+        let text = if input.is_empty() { b"Enter your password".as_slice() } else { &masked[..length] };
+        let text_top = y + height.saturating_sub(pixels * 7 / 6) / 2;
+        self.access_text(x + height, text_top, text, color.0, color.1, color.2, 255, pixels, false);
+        if let Some((true, index)) = crate::ui::text_input::caret(1).filter(|_| focused) {
+            let caret_x = x + height + self.access_text_width(&masked[..index.min(length)], pixels, false);
+            self.fill_rect(caret_x, text_top, 1, pixels * 7 / 6,
+                access::FOCUS.0, access::FOCUS.1, access::FOCUS.2);
         }
-        self.authentication_icon(
+        self.render_clip = previous_clip;
+        self.access_icon(
             x + width - height / 2,
             y + height / 2,
             13,
             height / 3,
             focused,
         );
-        self.text_field_caret(x + height, y, height, input, focused, 1);
     }
 
     // ------------------------=
@@ -1260,6 +1135,15 @@ impl super::DisplayDevice {
         focused: bool,
         kind: usize,
     ) {
+        self.text_field_caret_color(text_left, top, height, input, focused, kind, (112, 221, 255));
+    }
+
+    // ------------------------=
+    // FUNC: text_field_caret_color
+    // DESC: Shares insertion geometry while keeping the pre-session palette separate from desktop controls.
+    // ------------------=
+    fn text_field_caret_color(&mut self, text_left: usize, top: usize, height: usize,
+        input: &[u8], focused: bool, kind: usize, color: access::Rgb) {
         let Some((visible, index)) = crate::ui::text_input::caret(kind) else {
             return;
         };
@@ -1273,9 +1157,7 @@ impl super::DisplayDevice {
             top + height / 2 - 10,
             self.ui_scale().max(1),
             20,
-            112,
-            221,
-            255,
+            color.0, color.1, color.2,
         );
     }
 
@@ -1962,17 +1844,18 @@ impl super::DisplayDevice {
     pub(super) fn system_identity_bar(&mut self) -> usize {
         let scale = self.ui_scale().max(1);
         let height = (46 * scale).min(self.height / 12).max(40);
-        self.fill_rect_alpha(0, 0, self.width, height, 0, 4, 10, 232);
-        self.fill_rect_alpha(0, 0, self.width, height / 2, 14, 26, 39, 54);
-        self.fill_rect_alpha(0, height.saturating_sub(1), self.width, 1, 50, 70, 87, 170);
-        self.small_infinity_mark(35 * scale, height / 2, 48 * scale);
+        self.fill_rect_alpha(0, 0, self.width, height,
+            access::BACKGROUND.0, access::BACKGROUND.1, access::BACKGROUND.2, 232);
+        self.fill_rect_alpha(0, height.saturating_sub(1), self.width, 1,
+            access::MUTED_BORDER.0, access::MUTED_BORDER.1, access::MUTED_BORDER.2, 170);
+        self.top_bar_infinity_icon(35 * scale, height / 2, 48 * scale);
         self.ui_text_strong(
             64 * scale,
             height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             b"INFINITYOS",
-            241,
-            246,
-            250,
+            access::TEXT.0,
+            access::TEXT.1,
+            access::TEXT.2,
             1,
         );
         let status = b"LOCAL  |  PRIVATE";
@@ -1982,12 +1865,12 @@ impl super::DisplayDevice {
             wifi_center.saturating_sub(status_width + 36 * scale),
             height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             status,
-            211,
-            221,
-            231,
+            access::SECONDARY.0,
+            access::SECONDARY.1,
+            access::SECONDARY.2,
             1,
         );
-        self.system_status_icon(wifi_center, height / 2, 1, 18 * scale);
+        self.access_icon(wifi_center, height / 2, 1, 18 * scale, false);
         height
     }
 
@@ -2273,7 +2156,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: onboarding_step_indicator
-    // DESC: Renders seven compact progress segments with completed, current, and remaining states.
+    // DESC: Renders the kit's circular progress markers with completed, current, and remaining states.
     // ------------------=
     pub(super) fn onboarding_step_indicator(
         &mut self,
@@ -2295,14 +2178,18 @@ impl super::DisplayDevice {
         let segment_width = width.saturating_sub(gap * 6) / 7;
         for index in 0..7usize {
             let x = left + index * (segment_width + gap);
-            let (red, green, blue, alpha) = if index < visual_step {
-                (63, 197, 239, 235)
-            } else if index == visual_step {
-                (159, 230, 255, 255)
-            } else {
-                (61, 80, 96, 180)
-            };
-            self.fill_rounded_rect_alpha(x, top, segment_width, 4, 2, red, green, blue, alpha);
+            let diameter = 24.min(segment_width);
+            let center_x = x + segment_width / 2;
+            if index < 6 {
+                self.fill_rect_alpha(center_x + diameter / 2, top + diameter / 2,
+                    segment_width + gap - diameter, 1,
+                    access::MUTED_BORDER.0, access::MUTED_BORDER.1, access::MUTED_BORDER.2, 255);
+            }
+            self.access_surface(center_x - diameter / 2, top, diameter, diameter,
+                diameter / 2, if index <= visual_step { access::PRIMARY } else { access::BACKGROUND },
+                if index <= visual_step { access::BORDER } else { access::MUTED_BORDER }, 255, false);
+            self.access_label((center_x - diameter / 2, top, diameter, diameter),
+                &[b'1' + index as u8], 13, access::TEXT, true, true);
         }
     }
 
@@ -2411,6 +2298,7 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn onboarding_input_field(
         &mut self,
+        step: usize,
         left: usize,
         top: usize,
         width: usize,
@@ -2423,17 +2311,8 @@ impl super::DisplayDevice {
         let radius = (height / 4).clamp(8, 14);
         // Focus changes can repaint this field independently of the glass card.
         // Use an opaque base so repeated bounded updates remain color-stable.
-        self.fill_rounded_rect_alpha(left, top, width, height, radius, 2, 10, 20, 255);
-        self.outline_rounded_rect(
-            left,
-            top,
-            width,
-            height,
-            radius,
-            if focused { 67 } else { 40 },
-            if focused { 192 } else { 72 },
-            if focused { 241 } else { 95 },
-        );
+        self.access_surface(left, top, width, height, radius, access::BACKGROUND,
+            access::MUTED_BORDER, 255, focused);
         let mut shown = [0u8; 64];
         let shown_len = input.len().min(shown.len());
         if masked {
@@ -2447,27 +2326,34 @@ impl super::DisplayDevice {
             &shown[..shown_len]
         };
         let color = if shown_len == 0 {
-            (119, 133, 149)
+            access::SECONDARY
         } else {
-            (239, 245, 250)
+            access::TEXT
         };
-        self.ui_text(
-            left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
-            top + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
-            display,
-            color.0,
-            color.1,
-            color.2,
-            1,
-        );
-        self.text_field_caret(
-            left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
-            top,
-            height,
-            &shown[..shown_len],
-            focused,
-            1,
-        );
+        let pixels = crate::ui::installer_template::InstallerTemplate::parse(
+            crate::ui::installer_layout::CONFIGURATION_TEMPLATE_BYTES).ok()
+            .and_then(|template| template.element(step.saturating_add(1) as u8,
+                crate::ui::installer_template::InstallerTemplateRole::Input))
+            .map(|element| (element.font_size as usize * self.height / 1000).max(6))
+            .unwrap_or((18 * self.height / 1000).max(6));
+        let text_height = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels)
+            .scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
+        let inset = (crate::ui::system_layout::UI_GUTTER * self.height / 1000).max(4);
+        let text_left = left.saturating_add(inset);
+        let text_top = top + height.saturating_sub(text_height) / 2;
+        let previous_clip = self.render_clip;
+        self.intersect_render_clip(left + inset, top + 2,
+            width.saturating_sub(inset * 2), height.saturating_sub(4));
+        self.access_text(text_left, text_top, display, color.0, color.1, color.2,
+            255, pixels, false);
+        if focused {
+            if let Some((true, index)) = crate::ui::text_input::caret(1) {
+                let caret_x = text_left + self.access_text_width(&shown[..index.min(shown_len)], pixels, false);
+                self.fill_rect(caret_x, text_top, self.ui_scale().max(1), text_height,
+                    access::FOCUS.0, access::FOCUS.1, access::FOCUS.2);
+            }
+        }
+        self.render_clip = previous_clip;
     }
 
     // ------------------------=
@@ -2515,25 +2401,11 @@ impl super::DisplayDevice {
 
         let inner_left = card_left + 32 * scale;
         let inner_width = card_width.saturating_sub(64 * scale);
-        self.small_infinity_mark(inner_left + 25 * scale, card_top + 34 * scale, 45 * scale);
-        self.ui_text_strong(
-            inner_left + 55 * scale,
-            card_top + 24 * scale,
-            b"INFINITYOS",
-            237,
-            244,
-            249,
-            1,
-        );
-        self.ui_text(
-            card_left + card_width.saturating_sub(102 * scale),
-            card_top + 24 * scale,
-            b"LOCAL  |  PRIVATE",
-            135,
-            155,
-            174,
-            1,
-        );
+        self.top_bar_infinity_icon(inner_left + 25 * scale, card_top + 34 * scale, 45 * scale);
+        self.access_label((inner_left + 55 * scale, card_top + 20 * scale,
+            inner_width / 2, 28 * scale), b"INFINITYOS", 18 * scale, access::TEXT, false, true);
+        self.access_label((inner_left + inner_width * 2 / 3, card_top + 20 * scale,
+            inner_width / 3, 28 * scale), b"LOCAL  |  PRIVATE", 12 * scale, access::SECONDARY, false, false);
         self.onboarding_step_indicator(inner_left, card_top + 66 * scale, inner_width, step);
 
         let (eyebrow, title, description, placeholder): (&[u8], &[u8], &[u8], &[u8]) = match step {
@@ -2547,7 +2419,8 @@ impl super::DisplayDevice {
             _ => (b"READY", b"Your Infinity begins here", b"Your identity, Personal Space, privacy policy, and Default Dark appearance are ready.", b""),
         };
         let content_top = card_top + 94 * scale;
-        self.ui_text_strong(inner_left, content_top, eyebrow, 72, 196, 238, 1);
+        self.access_label((inner_left, content_top, inner_width, 24 * scale), eyebrow,
+            14 * scale, access::BORDER, false, true);
         let authored_title = crate::ui::installer_layout::configuration_template_text(
             step,
             crate::ui::installer_template::InstallerTemplateRole::Title,
@@ -2570,29 +2443,23 @@ impl super::DisplayDevice {
             self.width,
             self.height,
         );
-        self.ui_text_fit_strong(
+        self.access_label((
             title_frame.map(|frame| frame.left).unwrap_or(inner_left),
             title_frame
                 .map(|frame| frame.top)
                 .unwrap_or(content_top + 35 * scale),
             title_frame.map(|frame| frame.width).unwrap_or(inner_width),
-            authored_title,
-            245,
-            248,
-            251,
-            if self.width >= 1500 { 2 } else { 1 },
-        );
-        self.ui_text_wrapped(
+            title_frame.map(|frame| frame.height).unwrap_or(42 * scale)),
+            authored_title, 32 * scale, access::TEXT, false, true);
+        self.access_text_wrapped(
             body_frame.map(|frame| frame.left).unwrap_or(inner_left),
             body_frame
                 .map(|frame| frame.top)
                 .unwrap_or(content_top + 82 * scale),
             body_frame.map(|frame| frame.width).unwrap_or(inner_width),
             authored_description,
-            178,
-            190,
-            204,
-            2,
+            access::SECONDARY.0, access::SECONDARY.1, access::SECONDARY.2,
+            255, 16 * scale, false,
         );
 
         let body_top = content_top + 132 * scale;
@@ -2616,42 +2483,21 @@ impl super::DisplayDevice {
             ];
             for (index, (heading, detail, icon)) in items.iter().enumerate() {
                 let row_top = body_top + index * 68 * scale;
-                self.fill_rounded_rect_alpha(
-                    inner_left,
-                    row_top,
-                    inner_width,
-                    54 * scale,
-                    12 * scale,
-                    8,
-                    23,
-                    38,
-                    208,
-                );
-                self.authentication_icon(
+                self.access_surface(inner_left,row_top,inner_width,54*scale,12*scale,
+                    access::BACKGROUND,access::MUTED_BORDER,240,false);
+                self.access_icon(
                     inner_left + 24 * scale,
                     row_top + 27 * scale,
                     *icon,
                     24 * scale,
                     true,
                 );
-                self.ui_text_strong(
-                    inner_left + 50 * scale,
-                    row_top + 8 * scale,
-                    heading,
-                    227,
-                    239,
-                    247,
-                    1,
-                );
-                self.ui_text(
-                    inner_left + 50 * scale,
-                    row_top + 29 * scale,
-                    detail,
-                    145,
-                    162,
-                    178,
-                    1,
-                );
+                self.access_label((inner_left + 50 * scale, row_top + 5 * scale,
+                    inner_width.saturating_sub(62 * scale), 23 * scale), heading,
+                    16 * scale, access::TEXT, false, true);
+                self.access_label((inner_left + 50 * scale, row_top + 28 * scale,
+                    inner_width.saturating_sub(62 * scale), 21 * scale), detail,
+                    14 * scale, access::SECONDARY, false, false);
             }
         } else if (1..=4).contains(&step) {
             let authored_input = crate::ui::installer_layout::configuration_template_input_rect(
@@ -2675,20 +2521,15 @@ impl super::DisplayDevice {
             )
             .filter(|value| !value.is_empty())
             .unwrap_or(placeholder);
-            self.ui_text_strong(
-                input_left,
-                input_top.saturating_sub(28 * scale),
+            self.access_label((input_left, input_top.saturating_sub(28 * scale), input_width, 24 * scale),
                 if step == 4 {
                     b"PASSWORD"
                 } else {
                     b"PROFILE DETAIL"
                 },
-                151,
-                168,
-                184,
-                1,
-            );
+                14 * scale, access::SECONDARY, false, true);
             self.onboarding_input_field(
+                step,
                 input_left,
                 input_top,
                 input_width,
@@ -2709,15 +2550,8 @@ impl super::DisplayDevice {
             } else {
                 b"You can revise this value from Settings later.".as_slice()
             };
-            self.ui_text(
-                input_left,
-                input_top + input_height + 10 * scale,
-                helper,
-                if validation_error { 255 } else { 132 },
-                if validation_error { 118 } else { 151 },
-                if validation_error { 126 } else { 168 },
-                1,
-            );
+            self.access_label((input_left, input_top + input_height + 10 * scale, input_width, 24 * scale),
+                helper, 14 * scale, if validation_error { access::ERROR } else { access::SECONDARY }, false, false);
         } else if step == 5 {
             let privacy_rows: [(&[u8], &[u8], usize); 4] = [
                 (b"Local AI", b"On", 7usize),
@@ -2727,43 +2561,21 @@ impl super::DisplayDevice {
             ];
             for (index, (label, value, icon)) in privacy_rows.iter().enumerate() {
                 let row_top = body_top + index * 54 * scale;
-                self.fill_rounded_rect_alpha(
-                    inner_left,
-                    row_top,
-                    inner_width,
-                    44 * scale,
-                    10 * scale,
-                    6,
-                    19,
-                    32,
-                    216,
-                );
-                self.authentication_icon(
+                self.access_surface(inner_left,row_top,inner_width,44*scale,10*scale,
+                    access::BACKGROUND,access::MUTED_BORDER,240,false);
+                self.access_icon(
                     inner_left + 22 * scale,
                     row_top + 22 * scale,
                     *icon,
                     20 * scale,
                     false,
                 );
-                self.ui_text_strong(
-                    inner_left + 46 * scale,
-                    row_top + 12 * scale,
-                    label,
-                    220,
-                    231,
-                    239,
-                    1,
-                );
-                let value_width = self.ui_text_width(value, 1);
-                self.ui_text(
-                    inner_left + inner_width.saturating_sub(value_width + 16 * scale),
-                    row_top + 12 * scale,
-                    value,
-                    105,
-                    204,
-                    240,
-                    1,
-                );
+                self.access_label((inner_left + 46 * scale, row_top + 8 * scale,
+                    inner_width / 2 - 46 * scale, 28 * scale), label,
+                    14 * scale, access::TEXT, false, true);
+                self.access_label((inner_left + inner_width / 2 + 8 * scale, row_top + 8 * scale,
+                    inner_width / 2 - 24 * scale, 28 * scale), value,
+                    14 * scale, access::BORDER, false, false);
             }
         } else if step == 6 {
             self.onboarding_network_rows(
@@ -2774,42 +2586,17 @@ impl super::DisplayDevice {
                 validation_error,
             );
         } else {
-            self.fill_rounded_rect_alpha(
-                inner_left,
-                body_top,
-                inner_width,
-                150 * scale,
-                14 * scale,
-                6,
-                21,
-                35,
-                220,
-            );
-            self.small_infinity_mark(
+            self.access_surface(inner_left,body_top,inner_width,150*scale,14*scale,
+                access::BACKGROUND,access::MUTED_BORDER,240,false);
+            self.top_bar_infinity_icon(
                 inner_left + inner_width / 2,
                 body_top + 48 * scale,
                 82 * scale,
             );
-            self.ui_text_centered_strong(
-                inner_left,
-                inner_width,
-                body_top + 82 * scale,
-                b"Everything is ready",
-                235,
-                243,
-                249,
-                1,
-            );
-            self.ui_text_centered(
-                inner_left,
-                inner_width,
-                body_top + 110 * scale,
-                b"Enter a secure, local-first InfinityOS session.",
-                151,
-                166,
-                181,
-                1,
-            );
+            self.access_label((inner_left, body_top + 82 * scale, inner_width, 28 * scale),
+                b"Everything is ready", 18 * scale, access::TEXT, true, true);
+            self.access_label((inner_left, body_top + 110 * scale, inner_width, 24 * scale),
+                b"Enter a secure, local-first InfinityOS session.", 14 * scale, access::SECONDARY, true, false);
         }
 
         self.onboarding_actions(step, focus);
@@ -2841,6 +2628,7 @@ impl super::DisplayDevice {
                 )
                 .unwrap_or(b"");
                 self.onboarding_input_field(
+                    step,
                     frame.left,
                     frame.top,
                     frame.width,
@@ -2851,9 +2639,8 @@ impl super::DisplayDevice {
                     placeholder,
                 );
                 if validation_error {
-                    self.ui_text(
-                        frame.left,
-                        frame.bottom().saturating_add(8 * self.ui_scale().max(1)),
+                    self.access_label((frame.left,
+                        frame.bottom().saturating_add(8 * self.ui_scale().max(1)), frame.width, 24 * self.ui_scale().max(1)),
                         if input_variable
                             == crate::ui::installer_template::InstallerTemplateVariable::Password
                         {
@@ -2861,11 +2648,7 @@ impl super::DisplayDevice {
                         } else {
                             b"This field is required before continuing."
                         },
-                        255,
-                        118,
-                        126,
-                        1,
-                    );
+                        14 * self.ui_scale().max(1), access::ERROR, false, false);
                 }
             }
         } else if step == 6 {
@@ -2916,19 +2699,19 @@ impl super::DisplayDevice {
             (
                 b"Wired network",
                 wired_detail,
-                4usize,
+                15usize,
                 NetworkSetupMode::Wired,
             ),
             (
                 b"Wi-Fi",
                 wireless_detail,
-                3usize,
+                1usize,
                 NetworkSetupMode::Wireless,
             ),
             (
                 b"Continue offline",
                 b"Set up networking later in Settings",
-                8usize,
+                16usize,
                 NetworkSetupMode::Offline,
             ),
         ];
@@ -2974,52 +2757,30 @@ impl super::DisplayDevice {
                             })
                             .unwrap_or(2));
             let is_focused = focus == index + 2;
-            self.fill_rounded_rect_alpha(
-                left,
-                row_top,
-                width,
-                row_height,
-                radius,
-                if is_focused { 9 } else { 5 },
-                if is_focused { 44 } else { 20 },
-                if is_focused { 68 } else { 34 },
-                255,
-            );
-            self.outline_rounded_rect(
-                left,
-                row_top,
-                width,
-                row_height,
-                radius,
-                if is_focused || is_selected { 55 } else { 31 },
-                if is_focused || is_selected { 194 } else { 74 },
-                if is_focused || is_selected { 238 } else { 98 },
-            );
-            self.authentication_icon(
+            self.access_surface(left,row_top,width,row_height,radius,
+                if is_selected { access::ELEVATED } else { access::BACKGROUND },
+                if is_selected { access::BORDER } else { access::MUTED_BORDER },255,is_focused);
+            self.access_icon(
                 left + inset + icon_size / 2,
                 row_top + row_height / 2,
                 *icon,
                 icon_size,
                 is_selected,
             );
-            self.template_text(
+            self.access_text(
                 label_left,
                 row_top + row_height * 14 / 100,
                 label,
-                226,
-                237,
-                245,
+                access::TEXT.0, access::TEXT.1, access::TEXT.2,
                 255,
                 font_size,
                 true,
             );
-            self.template_text(
+            self.access_text(
                 label_left,
                 row_top + row_height * 54 / 100,
                 detail,
-                133,
-                157,
-                177,
+                access::SECONDARY.0, access::SECONDARY.1, access::SECONDARY.2,
                 255,
                 font_size,
                 false,
@@ -3034,14 +2795,12 @@ impl super::DisplayDevice {
                 } else {
                     b"SELECTED"
                 };
-                let status_width = self.template_text_width(status, font_size, false);
-                self.template_text(
+                let status_width = self.access_text_width(status, font_size, false);
+                self.access_text(
                     left + width.saturating_sub(inset + status_width),
                     row_top + row_height.saturating_sub(font_size) / 2,
                     status,
-                    88,
-                    207,
-                    244,
+                    access::BORDER.0, access::BORDER.1, access::BORDER.2,
                     255,
                     font_size,
                     false,
@@ -3054,16 +2813,13 @@ impl super::DisplayDevice {
                 self.width,
                 self.height,
             );
-            self.ui_text(
+            self.access_label((
                 last.map(|frame| frame.left).unwrap_or(left),
                 last.map(|frame| frame.bottom() + 8 * scale)
                     .unwrap_or(top + 178 * scale),
+                width, 32 * scale),
                 b"That connection is unavailable. Connect hardware or choose Offline.",
-                255,
-                118,
-                126,
-                1,
-            );
+                14 * scale, access::ERROR, false, false);
         }
     }
 
@@ -3114,7 +2870,7 @@ impl super::DisplayDevice {
             let back_height = authored_back
                 .map(|frame| frame.height)
                 .unwrap_or(button_height);
-            self.polished_button(
+            self.access_button(
                 back_left,
                 back_top,
                 back_width,
@@ -3141,7 +2897,7 @@ impl super::DisplayDevice {
             let primary_height = authored_primary
                 .map(|frame| frame.height)
                 .unwrap_or(button_height);
-            self.polished_button(
+            self.access_button(
                 primary_left,
                 primary_top,
                 primary_width,
@@ -3163,7 +2919,7 @@ impl super::DisplayDevice {
             let primary_height = authored_primary
                 .map(|frame| frame.height)
                 .unwrap_or(button_height);
-            self.polished_button(
+            self.access_button(
                 primary_left,
                 primary_top,
                 primary_width,
@@ -3187,12 +2943,19 @@ impl super::DisplayDevice {
         focus: usize,
         validation_error: bool,
     ) {
-        // Recompose the same authored scene on focus changes so translucent surfaces
-        // and live controls cannot leave stale pixels at legacy coordinates.
+        // Restore the authored backdrop under the card, bounded to its exact frame.
+        // This also contains focus-easing damage without repainting the wallpaper.
+        let previous_clip=self.render_clip;
+        if let Some(card)=crate::ui::installer_layout::configuration_template_rect(step,
+            crate::ui::installer_template::InstallerTemplateRole::Console,self.width,self.height) {
+            self.intersect_render_clip(card.left,card.top,card.width,card.height);
+        }
         if self.configuration_template_screen(step) {
             self.configuration_template_live_content(step, input, masked, focus, validation_error);
+            self.render_clip=previous_clip;
             return;
         }
+        self.render_clip=previous_clip;
         if crate::ui::installer_layout::configuration_template_input_variable(step)
             != crate::ui::installer_template::InstallerTemplateVariable::None
         {
@@ -3224,6 +2987,7 @@ impl super::DisplayDevice {
                 crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .onboarding_input_geometry(step);
             self.onboarding_input_field(
+                step,
                 authored_input
                     .map(|frame| frame.x.max(0) as usize)
                     .unwrap_or(inner_left),
@@ -7603,7 +7367,7 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
     ) {
-        self.glass_panel_with_palette(left, top, width, height, true, (2, 12, 24), (34, 83, 112));
+        self.access_panel(left, top, width, height);
     }
 
 
@@ -10522,44 +10286,30 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: system_login_animation
-    // DESC: Redraws only a narrow background strip and animated orbit lights on login to avoid full-frame flicker.
+    // DESC: Reuses the authored ripple under the resting orb, restoring only bounded water pixels and never erasing the access wordmark or controls.
     // ------------------=
     pub(super) fn system_login_animation(&mut self, phase: usize) {
-        let old_phase = (phase + 382) % 384;
-        let radius = (self.height / 180).max(3);
-        for index in 0..7usize {
-            let old_position = (old_phase + index * 47) % 384;
-            let (old_x, old_y) = infinity_point(old_position);
-            let old_screen_x =
-                self.width as i32 * 75 / 100 + old_x * self.width as i32 * 43 / 22_400;
-            let old_screen_y =
-                self.height as i32 * 34 / 100 + old_y * self.height as i32 * 30 / 12_400;
-            let restore = radius * 5;
-            self.paint_authentication_background_rect(
-                old_screen_x.saturating_sub(restore as i32).max(0) as usize,
-                old_screen_y.saturating_sub(restore as i32).max(0) as usize,
-                restore * 2,
-                restore * 2,
+        if self.skin_visual_mode() != 0 || crate::console::reduced_motion() { return; }
+        use crate::ui::authentication_motion as motion;
+        let elapsed_ms = crate::ui::performance::monotonic_ns().map(|now| now / 1_000_000)
+            .unwrap_or((phase % 384) as u64 * motion::IDLE_PERIOD_MS / 384);
+        let presentation = motion::idle_presentation(elapsed_ms, false);
+        let (offset_x, offset_y, scale) = self.authentication_art_geometry();
+        let center_x = offset_x + motion::ARTWORK_CENTER_X as i32 * scale as i32 / 1_000;
+        let water_y = offset_y + motion::ARTWORK_WATER_Y as i32 * scale as i32 / 1_000;
+        let previous_clip = self.render_clip;
+        for (mut left, mut top, mut right, mut bottom) in motion::idle_water_regions(self.width, self.height) {
+            if let Some(clip) = previous_clip {
+                left = left.max(clip.left);
+                top = top.max(clip.top);
+                right = right.min(clip.right);
+                bottom = bottom.min(clip.bottom);
+            }
+            self.authentication_success_frame_region(
+                presentation, left, top, right, bottom, offset_y, scale, center_x, water_y,
             );
         }
-        for index in 0..7usize {
-            let position = (phase + index * 47) % 384;
-            let (path_x, path_y) = infinity_point(position);
-            let x = self.width as i32 * 75 / 100 + path_x * self.width as i32 * 43 / 22_400;
-            let y = self.height as i32 * 34 / 100 + path_y * self.height as i32 * 30 / 12_400;
-            let orb_radius = if index == 0 {
-                radius
-            } else {
-                (radius / 2).max(2)
-            };
-            self.star_orb(
-                x,
-                y,
-                orb_radius as i32,
-                (230usize.saturating_sub(index * 25)) as u8,
-                index == 0,
-            );
-        }
+        self.render_clip = previous_clip;
     }
 
     // ------------------------=
@@ -10587,14 +10337,12 @@ impl super::DisplayDevice {
             let inner_x = card_x + 49usize.saturating_mul(fit) / 1000;
             let inner_w = card_w.saturating_sub(98usize.saturating_mul(fit) / 1000);
             let password_y = card_y + 356usize.saturating_mul(fit) / 1000;
-            self.authentication_password_field(
-                inner_x,
-                password_y,
-                inner_w,
-                57usize.saturating_mul(fit) / 1000,
-                input,
-                true,
-            );
+            let password_h = 57usize.saturating_mul(fit) / 1000;
+            let previous_clip = self.render_clip;
+            self.intersect_render_clip(inner_x, password_y, inner_w, password_h);
+            self.paint_authentication_background_rect(inner_x, password_y, inner_w, password_h);
+            self.authentication_frame(screen == 6, step, input, 1, false);
+            self.render_clip = previous_clip;
             return;
         }
         let Some(field) = crate::ui::installer_layout::configuration_template_input_rect(
@@ -10611,7 +10359,21 @@ impl super::DisplayDevice {
             4 => b"Create a password",
             _ => b"",
         };
+        let previous_clip = self.render_clip;
+        self.intersect_render_clip(field.left, field.top, field.width, field.height);
+        // Restore both wallpaper and parent card before fractional edge coverage.
+        // Repeated typing and caret frames must produce identical surface pixels.
+        if !self.configuration_template_screen(step) {
+            self.paint_first_boot_background();
+            self.onboarding_frame(step, input, masked, 1, false);
+            self.render_clip = previous_clip;
+            return;
+        }
+        let placeholder = crate::ui::installer_layout::configuration_template_text(step,
+            crate::ui::installer_template::InstallerTemplateRole::Input)
+            .filter(|value| !value.is_empty()).unwrap_or(placeholder);
         self.onboarding_input_field(
+            step,
             field.left,
             field.top,
             field.width,
@@ -10621,6 +10383,7 @@ impl super::DisplayDevice {
             true,
             placeholder,
         );
+        self.render_clip = previous_clip;
     }
 }
 
@@ -10736,6 +10499,7 @@ pub fn system_ui_present(
                     editor_scroll_row, editor_dialog, editor_dialog_input, editor_dialog_focus)
                     ^ (chat_content as u32 ^ (chat_content >> 32) as u32)
             } else { 0 };
+            let access_motion = matches!(screen, 1 | 5 | 6) && super::access_style::take_dirty();
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
             let icon_theme = console.display.active_icon_theme();
@@ -11373,8 +11137,8 @@ pub fn system_ui_present(
                 full_surface_redrawn = true;
             } else if crate::ui::redraw::onboarding_controls_require_repaint(
                 screen,
-                pointer_changed,
-                focus_changed,
+                pointer_changed || access_motion,
+                focus_changed || access_motion,
             ) {
                 console.display.onboarding_focus_controls(
                     step,
@@ -11385,8 +11149,8 @@ pub fn system_ui_present(
                 );
             } else if crate::ui::redraw::authentication_controls_require_repaint(
                 screen,
-                pointer_changed,
-                focus_changed,
+                pointer_changed || access_motion,
+                focus_changed || access_motion,
             ) {
                 console
                     .display

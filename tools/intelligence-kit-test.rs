@@ -352,6 +352,9 @@ fn queued_goal_fencing() {
         let command=ai.take_control(owner,true).unwrap();ai.finish_control(command,true);ai.poll_qwen();
         let mut old=Panel::new();old.workflow_goal=Some(1);old.generation=GenerationStatus::Queued;
         old.argument[..3].copy_from_slice(b"old");old.argument_len=3;old.pending=Action::ReplaceCompile;
+        let mut delivered=old;delivered.stream.delivered=2;
+        assert!(delivered.cancel_workflow(1));assert_eq!(&delivered.argument[..delivered.argument_len],b"ol");
+        assert_eq!(delivered.argument[2],0);
         assistant::write(2,old);
         let mut unrelated=old;unrelated.workflow_goal=Some(99);assistant::write(3,unrelated);
         assert!(ai.generation_workflow_current(Some(1)));
@@ -360,7 +363,7 @@ fn queued_goal_fencing() {
         let cancelled=assistant::read(2);
         assert_eq!(cancelled.generation,GenerationStatus::Cancelled);
         assert_eq!(cancelled.pending,Action::None);
-        assert_eq!(&cancelled.argument[..cancelled.argument_len],b"old");
+        assert_eq!(cancelled.argument_len,0);assert_eq!(&cancelled.argument[..3],&[0;3]);
         assert!(assistant::read(3)==unrelated);
         assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Interrupted);
         assert!(!ai.generation_workflow_current(Some(1)));
@@ -385,7 +388,7 @@ fn queued_goal_fencing() {
 
 // ------------------------=
 // FUNC: completed_source_edit_fence
-// DESC: Proves editing after model completion cancels pending source drain and compile while preserving both user edits and model bytes.
+// DESC: Proves editing after model completion cancels pending drain and compile, preserves user edits and delivered source, and erases undelivered bytes.
 // ------------------=
 fn completed_source_edit_fence() {
     use ui::app_assistant::{Action,GenerationStatus,Panel};
@@ -404,7 +407,8 @@ fn completed_source_edit_fence() {
         assert_eq!(panel.generation,GenerationStatus::Cancelled);
         assert_eq!(panel.pending,Action::None);
         assert!(!panel.apply_generated_compile_requested());
-        assert_eq!(&panel.argument[..panel.argument_len],source);
+        assert_eq!(&panel.argument[..panel.argument_len],&source[..delivered]);
+        assert!(panel.argument[delivered..source.len()].iter().all(|byte|*byte==0));
         assert_eq!(document.bytes(),b"user edits");
     }
 }
@@ -414,6 +418,7 @@ fn completed_source_edit_fence() {
 // DESC: Verifies IntelligenceKit routing, discovery, DAG execution, recovery, persistence, ingress parity, and authorization.
 // ------------------=
 fn main() {
+    language_and_update_plans();
     software_receipts();
     native_software_plan();
     interrupt_software_plan();
@@ -636,4 +641,43 @@ fn main() {
     assert_eq!(executor.starts, 0);
 
     println!("IntelligenceKit goal planning and execution behavior: PASS");
+}
+
+// ------------------------=
+// FUNC: language_and_update_plans
+// DESC: Verifies shared voice/text routing, native validation evidence and explicit update-launch dependency authority.
+// ------------------=
+fn language_and_update_plans() {
+    use runtime::ai::intelligence::software::Event;
+    let owner=[7;16];
+    for voice in [false,true] {
+        for (request,launch) in [
+            (b"Create Hello world in Python".as_slice(),true),
+            (b"update the calculator app and add numeric buttons and traditional mathematic calculator operators",false),
+            (b"update the calendar app and add weekly navigation and launch",true),
+        ] {
+            let mut ai=runtime::ai::AiRuntime::new();ai.bind_chat_owner(owner);
+            for byte in request {assert!(ai.chat.push_input(*byte));}
+            assert!(if voice {ai.submit_voice_chat()} else {ai.submit_chat()});ai.poll_qwen();
+            let command=ai.take_control(owner,true).unwrap();
+            assert!(matches!(command,runtime::ai::control::Command::Context(_)));
+            assert_eq!(ai.software_goal_for_request(request),Some(1));
+            ai.finish_control(command,true);ai.poll_qwen();
+            let plan=ai.intelligence_plan(1,owner).unwrap();assert_eq!(plan.task_count,if launch {2}else{1});
+            assert_eq!(plan.tasks[0].unwrap().capability,CapabilityId::DevKit);
+            assert_eq!(plan.tasks[0].unwrap().state,TaskState::Running);
+            assert!(!ai.record_software_event(1,[8;16],Event::SourceSaved{object:[2;16],revision:1}));
+            assert!(!ai.record_software_event(1,owner,Event::Compiled{artifact:[2;16]}));
+            assert!(ai.record_software_event(1,owner,Event::SourceSaved{object:[2;16],revision:1}));ai.poll_qwen();
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Executing);
+            assert!(ai.record_software_event(1,owner,Event::Compiled{artifact:[2;16]}));ai.poll_qwen();
+            if launch {
+                assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Executing);
+                assert_eq!(ai.intelligence_plan(1,owner).unwrap().tasks[1].unwrap().capability,CapabilityId::UiServices);
+                assert!(ai.record_software_event(1,owner,Event::Launched{context:55}));ai.poll_qwen();
+            }
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Completed);
+            assert_eq!(ai.software_execution(owner).unwrap().context,if launch {55}else{0});
+        }
+    }
 }

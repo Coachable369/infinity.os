@@ -776,6 +776,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     repeated_reply_wake_tests(owner);
     next_turn_capture_boundary_tests(owner);
     wake_handoff_tests(owner);
+    wake_boundary_capture_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
     workflow_narration_and_failure_tests(owner);
@@ -1707,6 +1708,53 @@ fn wake_handoff_tests(owner: runtime::execution::SecurityIdentity) {
         assert!(!conversation::wake_armed());
         assert_eq!(TURNS.load(Ordering::SeqCst),turns);
     }
+    conversation::stop(owner);BUSY.store(false,Ordering::SeqCst);conversation::poll();
+    HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+}
+
+// ------------------------=
+// FUNC: wake_boundary_capture_tests
+// DESC: Preserves complete calibrated PCM and submits exactly one command for repeated Unicode wake addresses at quiet, normal and loud input levels.
+// ------------------=
+fn wake_boundary_capture_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    HOLD_RECOGNITION.store(true,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    for (amplitude, transcript) in [
+        (360i16,"“Hey, Infinity”—Hey, Infinity—open settings"),
+        (1000,"Infinity\u{a0}Infinity—open settings"),
+        (6000,"Hey—Infinity—open settings… Hey—Infinity—open settings…"),
+    ] {
+        let before=RECOGNITION_REQUESTS.lock().unwrap().len();
+        let turns=TURNS.load(Ordering::SeqCst);
+        let mut pcm=vec![120;3200];
+        pcm.extend((0..4800).map(|index| if index%80<40 {amplitude} else {-amplitude}));
+        pcm.extend_from_slice(&[0;8000]);
+        pcm.extend((0..24000).map(|index| if index%80<40 {220} else {-220}));
+        pcm.extend_from_slice(&vec![0;voice_vad::END_SILENCE]);
+        MICROPHONE.lock().unwrap().extend(pcm);
+        drain_microphone();
+        assert_eq!(conversation::state().0,State::Recognizing);
+        assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),before+1);
+        let captured=RECOGNIZED.lock().unwrap();
+        assert_eq!(captured.iter().filter(|&&value|value==120).count(),3200);
+        assert_eq!(captured.iter().filter(|&&value|value.unsigned_abs()==amplitude as u16).count(),4800);
+        assert_eq!(captured.iter().filter(|&&value|value.unsigned_abs()==220).count(),24000);
+        drop(captured);
+        finish_recognition(transcript.as_bytes());
+        assert_eq!(conversation::state().0,State::Thinking);
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"open settings");
+        complete_voice_reply();
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    }
+    let turns=TURNS.load(Ordering::SeqCst);
+    begin_delayed_recognition(1000);
+    finish_recognition("Hey—affinity, open settings".as_bytes());
+    assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    assert!(!conversation::wake_armed());
     conversation::stop(owner);BUSY.store(false,Ordering::SeqCst);conversation::poll();
     HOLD_RECOGNITION.store(false,Ordering::SeqCst);
 }

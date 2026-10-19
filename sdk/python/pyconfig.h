@@ -1,0 +1,102 @@
+/* InfinityOS CPython ABI: LP64, little endian, Newlib, isolated serial process.
+ * Optional OS facilities are deliberately absent, not falsely advertised. */
+#ifndef INFINITY_PYCONFIG_H
+#define INFINITY_PYCONFIG_H
+#define PLATFORM "infinityos"
+#if defined(__aarch64__)
+#define MULTIARCH "aarch64-infinityos"
+#define SOABI "cpython-313-aarch64-infinityos"
+#elif defined(__x86_64__)
+#define MULTIARCH "x86_64-infinityos"
+#define SOABI "cpython-313-x86_64-infinityos"
+#else
+#error "Unsupported InfinityOS Python target"
+#endif
+#define HAVE_DYNAMIC_LOADING 1
+#define HAVE_DLOPEN 1
+#define HAVE_DLFCN_H 1
+#define SIZEOF_VOID_P 8
+#define SIZEOF_SIZE_T 8
+#define SIZEOF_LONG 8
+#define SIZEOF_LONG_LONG 8
+#define SIZEOF_INT 4
+#define SIZEOF_SHORT 2
+#define SIZEOF_FLOAT 4
+#define SIZEOF_DOUBLE 8
+#define SIZEOF_WCHAR_T 4
+#define SIZEOF_OFF_T 8
+#define SIZEOF_TIME_T 8
+#define SIZEOF_PTHREAD_T 4
+#define ALIGNOF_LONG 8
+#define ALIGNOF_SIZE_T 8
+#define DOUBLE_IS_LITTLE_ENDIAN_IEEE754 1
+#define HAVE_STDINT_H 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_SYS_TIME_H 1
+#define HAVE_SYS_TIMES_H 1
+#define HAVE_DIRENT_H 1
+#define HAVE_ERRNO_H 1
+#define HAVE_SIGNAL_H 1
+#define HAVE_FCNTL_H 1
+#define HAVE_UTIME_H 1
+#define HAVE_CLOCK 1
+#define _Py_FORCE_UTF8_LOCALE 1
+#define _PYTHONFRAMEWORK ""
+#define HAVE_WCHAR_H 1
+#define HAVE_PTHREAD_H 1
+#define HAVE_STD_ATOMIC 1
+#define HAVE_BUILTIN_ATOMIC 1
+#define HAVE_ALLOCA_H 1
+#define HAVE_ALLOCA 1
+#define HAVE_CLOCK_GETTIME 1
+#define HAVE_NANOSLEEP 1
+#define HAVE_GETTIMEOFDAY 1
+#define HAVE_FSTAT 1
+#define HAVE_LSTAT 1
+#define HAVE_READLINK 1
+#define HAVE_FTRUNCATE 1
+#define HAVE_GETCWD 1
+#define HAVE_LONG_LONG 1
+#define HAVE_SNPRINTF 1
+#define HAVE_VSNPRINTF 1
+#define HAVE_STRDUP 1
+#define HAVE_STRFTIME 1
+#define HAVE_WCSFTIME 1
+#define HAVE_MBRTOWC 1
+#define HAVE_WCRTOMB 1
+#define HAVE_MBRLEN 1
+#define HAVE_WCSCOLL 1
+#define HAVE_WCSXFRM 1
+#define HAVE_ISINF 1
+#define HAVE_ISNAN 1
+#define HAVE_ISFINITE 1
+#define HAVE_COPYSIGN 1
+#define HAVE_ROUND 1
+#define HAVE_HYPOT 1
+#define HAVE_LOG1P 1
+#define HAVE_EXPM1 1
+#define HAVE_ACOSH 1
+#define HAVE_ASINH 1
+#define HAVE_ATANH 1
+#define HAVE_ERF 1
+#define HAVE_ERFC 1
+#define HAVE_TGAMMA 1
+#define HAVE_LGAMMA 1
+#define HAVE_FMA 1
+#define HAVE_LOG2 1
+#define HAVE_DECL_ISFINITE 1
+#define HAVE_DECL_ISINF 1
+#define HAVE_DECL_ISNAN 1
+#define HAVE_USABLE_WCHAR_T 1
+#define WITH_PYMALLOC 1
+#define WITH_DOC_STRINGS 1
+#define PY_FORMAT_SIZE_T "z"
+#define _POSIX_THREADS 1
+#define _GNU_SOURCE 1
+#endif

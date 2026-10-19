@@ -25,7 +25,24 @@ const COMPUTER_ALIASES: &[&[u8]] = &[b"computer", b"compute her"];
 // DESC: Recognizes punctuation and whitespace allowed between a wake phrase and its command.
 // ------------------=
 const fn is_separator(byte: u8) -> bool {
-    byte.is_ascii_whitespace() || matches!(byte, b',' | b'.' | b':' | b';' | b'!' | b'?' | b'-')
+    byte.is_ascii_whitespace()
+        || matches!(byte, b',' | b'.' | b':' | b';' | b'!' | b'?' | b'-' | b'\'' | b'"')
+}
+
+// ------------------------=
+// FUNC: separator_length
+// DESC: Recognizes complete UTF-8 spacing and spoken punctuation without treating arbitrary non-ASCII suffixes as wake boundaries.
+// ------------------=
+fn separator_length(transcript: &[u8], at: usize) -> usize {
+    match transcript.get(at..) {
+        Some([byte, ..]) if is_separator(*byte) => 1,
+        Some([0xc2, 0x85 | 0xa0, ..]) => 2,
+        Some([0xe2, 0x80, byte, ..])
+            if matches!(*byte, 0x80..=0x8a | 0x90..=0x95 | 0x98..=0x9f | 0xa6 | 0xa8 | 0xa9 | 0xaf) => 3,
+        Some([0xe2, 0x81, 0x9f, ..]) | Some([0xe3, 0x80, 0x80, ..])
+            | Some([0xe2, 0x88, 0x92, ..]) => 3,
+        _ => 0,
+    }
 }
 
 // ------------------------=
@@ -52,7 +69,7 @@ fn match_alias(transcript: &[u8], start: usize, alias: &[u8]) -> Option<usize> {
     let end = start + alias.len();
     // A clipped wake token must end here; accepting any non-alphanumeric byte
     // would also authorize names such as `infin_extra` or `finityé`.
-    if end < transcript.len() && !is_separator(transcript[end]) {
+    if end < transcript.len() && separator_length(transcript, end) == 0 {
         return None;
     }
     Some(end)
@@ -74,10 +91,11 @@ fn aliases(wake_word: WakeWord) -> &'static [&'static [u8]] {
 // DESC: Advances across only the reviewed punctuation and whitespace accepted around a wake phrase.
 // ------------------=
 fn skip_separators(transcript: &[u8], mut at: usize) -> usize {
-    while at < transcript.len() && is_separator(transcript[at]) {
-        at += 1;
+    loop {
+        let length = separator_length(transcript, at);
+        if length == 0 { return at; }
+        at += length;
     }
-    at
 }
 
 // ------------------------=
@@ -91,11 +109,10 @@ fn match_wake(transcript: &[u8], at: usize, wake_word: WakeWord) -> Option<usize
 }
 
 // ------------------------=
-// FUNC: classify
-// DESC: Requires the configured phrase at the start and returns the bounded command suffix.
+// FUNC: match_address
+// DESC: Accepts an optional Hey only when followed by an exact configured wake phrase, including repeated addressed prefixes.
 // ------------------=
-pub fn classify(transcript: &[u8], wake_word: WakeWord) -> Match {
-    let mut at = skip_separators(transcript, 0);
+fn match_address(transcript: &[u8], mut at: usize, wake_word: WakeWord) -> Option<usize> {
     if transcript
         .get(at..at.saturating_add(3))
         .is_some_and(|prefix| {
@@ -103,19 +120,26 @@ pub fn classify(transcript: &[u8], wake_word: WakeWord) -> Match {
                 .iter()
                 .zip(b"hey")
                 .all(|(left, right)| equal_folded(*left, *right))
-                && transcript
-                    .get(at + 3)
-                    .is_some_and(|byte| is_separator(*byte))
+                && separator_length(transcript, at + 3) != 0
         })
     {
         at = skip_separators(transcript, at + 3);
     }
-    let Some(mut at) = match_wake(transcript, at, wake_word) else {
+    match_wake(transcript, at, wake_word)
+}
+
+// ------------------------=
+// FUNC: classify
+// DESC: Requires the configured phrase at the start and returns the exact command suffix after all repeated wake prefixes.
+// ------------------=
+pub fn classify(transcript: &[u8], wake_word: WakeWord) -> Match {
+    let at = skip_separators(transcript, 0);
+    let Some(mut at) = match_address(transcript, at, wake_word) else {
         return Match::Absent;
     };
     loop {
         at = skip_separators(transcript, at);
-        let Some(next) = match_wake(transcript, at, wake_word) else {
+        let Some(next) = match_address(transcript, at, wake_word) else {
             break;
         };
         at = next;
@@ -138,13 +162,18 @@ pub fn deduplicated_command_end(
 ) -> usize {
     let mut repeated = [0usize; 4];
     let mut count = 0;
-    let mut at = command_start.saturating_add(1);
+    let mut at = command_start;
     while at < transcript.len() && count < repeated.len() {
-        if is_separator(transcript[at - 1]) && match_wake(transcript, at, wake_word).is_some() {
-            repeated[count] = at;
-            count += 1;
+        if separator_length(transcript, at) != 0 {
+            at = skip_separators(transcript, at);
+            if let Some(end) = match_address(transcript, at, wake_word) {
+                repeated[count] = at;
+                count += 1;
+                at = end;
+            }
+        } else {
+            at += 1;
         }
-        at += 1;
     }
     if count == 0 {
         return transcript.len();
@@ -177,11 +206,19 @@ pub fn deduplicated_command_end(
 // FUNC: trim_command_end
 // DESC: Trims separators from one candidate command boundary without changing command content.
 // ------------------=
-fn trim_command_end(transcript: &[u8], start: usize, mut end: usize) -> usize {
-    while end > start && is_separator(transcript[end - 1]) {
-        end -= 1;
+fn trim_command_end(transcript: &[u8], start: usize, end: usize) -> usize {
+    let mut at = start;
+    let mut trimmed = start;
+    while at < end {
+        let separator = separator_length(&transcript[..end], at);
+        if separator != 0 {
+            at += separator;
+        } else {
+            at += 1;
+            trimmed = at;
+        }
     }
-    end
+    trimmed
 }
 
 // ------------------------=
@@ -361,5 +398,52 @@ mod tests {
             assert_eq!(classify(alias, WakeWord::Infinity), Match::Absent);
             assert_eq!(classify(alias, WakeWord::Computer), Match::WakeOnly);
         }
+    }
+
+    // ------------------------=
+    // FUNC: unicode_boundaries_and_repeated_addresses_preserve_command_bytes
+    // DESC: Accepts exact wake tokens around complete Unicode punctuation and removes repeated Hey prefixes without rewriting the command.
+    // ------------------=
+    #[test]
+    fn unicode_boundaries_and_repeated_addresses_preserve_command_bytes() {
+        for separator in ["\u{a0}", "\u{2009}", "\u{202f}", "—", "…", "“", "”", "\"", "'"] {
+            let input = std::format!("{separator}Hey{separator}Infinity{separator}HEY, finity{separator}open settings");
+            let Match::Command { start } = classify(input.as_bytes(), WakeWord::Infinity) else {
+                panic!("exact repeated wake address rejected");
+            };
+            assert_eq!(&input.as_bytes()[start..], b"open settings");
+            assert_eq!(classify(std::format!("Infinity{separator}Hey, Infinity{separator}").as_bytes(),
+                WakeWord::Infinity), Match::WakeOnly);
+        }
+        let input = "Infinity—open settings… Hey, Infinity—open settings…";
+        let Match::Command { start } = classify(input.as_bytes(), WakeWord::Infinity) else {
+            panic!("exact wake address rejected");
+        };
+        let end = super::deduplicated_command_end(input.as_bytes(), WakeWord::Infinity, start);
+        assert_eq!(&input.as_bytes()[start..end], b"open settings");
+        let input = b"Infinity, hey there, keep this whole command";
+        let Match::Command { start } = classify(input, WakeWord::Infinity) else {
+            panic!("exact wake address rejected");
+        };
+        assert_eq!(&input[start..], b"hey there, keep this whole command");
+    }
+
+    // ------------------------=
+    // FUNC: unicode_wake_boundaries_remain_fail_closed
+    // DESC: Rejects attached letters, invisible joiners, malformed UTF-8 prefixes and the unselected wake phrase rather than matching arbitrary Unicode.
+    // ------------------=
+    #[test]
+    fn unicode_wake_boundaries_remain_fail_closed() {
+        for input in ["Infinityé help", "Infinity\u{200b}help", "Infinity\u{200d}help",
+            "Infinity/help", "Infinity_extra help", "Infinity‖help", "Hey—affinity help",
+            "they said—Infinity help", "HeyInfinity help"] {
+            assert_eq!(classify(input.as_bytes(), WakeWord::Infinity), Match::Absent);
+        }
+        for input in [b"Infinity\xe2\x80".as_slice(), b"Infinity\xc2",
+            b"\xe2\x80Infinity help", b"Infinity\xffhelp"] {
+            assert_eq!(classify(input, WakeWord::Infinity), Match::Absent);
+        }
+        assert_eq!(classify("“Infinity”—help".as_bytes(), WakeWord::Computer), Match::Absent);
+        assert_eq!(classify("Hey—Computer—help".as_bytes(), WakeWord::Infinity), Match::Absent);
     }
 }

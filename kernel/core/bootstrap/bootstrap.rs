@@ -27,9 +27,6 @@ pub(super) const FIGLET_LINE_HEIGHT_PX: usize = 17;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const EMBLEM_BMP: &[u8] = include_bytes!("../../../assets/boot/infinity-emblem-v2.bmp");
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(super) const BOOT_EMBLEM_TOP_PERCENT: usize = 16;
-
 // Installer-only calibration: the ISO reveal pulse follows the visible ribbon
 // centerline in the composited bootstrap artwork, which sits 50 pixels below
 // the original mathematical path origin.
@@ -115,20 +112,13 @@ impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: boot_emblem_geometry
-    // DESC: Fits the authored emblem between the header and startup panel using one paint and restore rectangle.
+    // DESC: Shares one paint and restore rectangle, with the installed loading emblem exactly 100 physical pixels lower.
     // ------------------=
     pub(super) fn boot_emblem_geometry(&self) -> (usize, usize, usize, usize) {
         let source_width = le32(EMBLEM_BMP, 18) as usize;
         let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
-        let width = (self.width * 52 / 100)
-            .min((self.height * 52 / 100) * source_width / source_height)
-            .max(1);
-        let height = (width * source_height / source_width).max(1);
-        (
-            self.width.saturating_sub(width) / 2,
-            self.height * BOOT_EMBLEM_TOP_PERCENT / 100,
-            width,
-            height,
+        reveal::emblem_geometry(
+            self.width, self.height, source_width, source_height, cfg!(feature = "installer"),
         )
     }
 

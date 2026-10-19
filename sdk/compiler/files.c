@@ -24,6 +24,7 @@ struct FileSlot {
     int open_flags, descriptor_flags;
 };
 static struct FileSlot slots[128];
+static int standard_descriptor_flags[3];
 
 // ------------------------=
 // FUNC: standard_stream
@@ -61,7 +62,11 @@ static struct FileSlot *lookup(int fd) {
 // ------------------=
 int open(const char *path, int flags, ...) {
     if (!path || !*path) return file_error(EINVAL);
-    const int supported = O_ACCMODE | O_CREAT | O_TRUNC | O_APPEND | O_EXCL | O_CLOEXEC;
+    const int supported = O_ACCMODE | O_CREAT | O_TRUNC | O_APPEND | O_EXCL | O_CLOEXEC
+#ifdef O_BINARY
+        | O_BINARY /* Object Store byte streams require no text translation. */
+#endif
+        ;
     if (flags & ~supported) return file_error(ENOTSUP);
     uint32_t mode;
     switch (flags & O_ACCMODE) {
@@ -289,6 +294,18 @@ int access(const char *path, int mode) {
 // DESC: Maintains descriptor flags; unsupported locking and duplication requests remain explicit errors.
 // ------------------=
 int fcntl(int fd, int command, ...) {
+    if (fd >= 0 && fd <= 2) {
+        if (!standard_stream(fd, 0)) return -1;
+        if (command == F_GETFD) return standard_descriptor_flags[fd];
+        if (command == F_GETFL) return fd == 0 ? O_RDONLY : O_WRONLY;
+        if (command == F_SETFD) {
+            va_list args; va_start(args, command);
+            int flags = va_arg(args, int); va_end(args);
+            if (flags & ~FD_CLOEXEC) return file_error(EINVAL);
+            standard_descriptor_flags[fd] = flags; return 0;
+        }
+        return file_error(ENOTSUP);
+    }
     struct FileSlot *slot = lookup(fd);
     if (!slot) return -1;
     if (command == F_GETFD) return slot->descriptor_flags;

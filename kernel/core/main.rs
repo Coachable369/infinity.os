@@ -156,6 +156,8 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
         write_boot_number(b"[native] controller reason=",info.native_controller_reserved as u64);
     }
     runtime::initialize(cfg!(target_arch = "x86") || info.boot_flags & 32 == 0);
+    #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    unsafe { runtime::native_python_entropy::initialize(&info.firmware_entropy, info.firmware_entropy_valid == 1); }
     storage::initialize_installation_identity(
         &info.firmware_entropy,
         info.firmware_entropy_valid == 1,

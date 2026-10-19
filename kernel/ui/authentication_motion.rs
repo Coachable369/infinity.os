@@ -14,6 +14,8 @@ pub const DAMAGE_LEFT: u16 = 790;
 pub const DAMAGE_TOP: u16 = 570;
 pub const DAMAGE_RIGHT: u16 = 1_920;
 pub const DAMAGE_BOTTOM: u16 = 1_080;
+pub const IDLE_PERIOD_MS: u64 = 3_200;
+const IDLE_MAX_RIPPLE_SCALE: u16 = 900;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Presentation {
@@ -28,6 +30,64 @@ pub struct Presentation {
     pub secondary_ripple_opacity: u8,
     pub splash_scale: u16,
     pub splash_opacity: u8,
+}
+
+// ------------------------=
+// FUNC: idle_presentation
+// DESC: Expands one quiet water ring on a fixed elapsed-time loop without moving the resting orb or starting success choreography.
+// ------------------=
+pub const fn idle_presentation(elapsed_ms: u64, reduced_motion: bool) -> Presentation {
+    let resting = presentation_at(0);
+    if reduced_motion { return resting; }
+    let progress = ((elapsed_ms % IDLE_PERIOD_MS) * 1_000 / IDLE_PERIOD_MS) as u16;
+    Presentation {
+        primary_ripple_scale: lerp(180, IDLE_MAX_RIPPLE_SCALE, progress),
+        primary_ripple_opacity: opacity_between(progress, 0, 180, 1_000, 64),
+        ..resting
+    }
+}
+
+// ------------------------=
+// FUNC: idle_water_regions
+// DESC: Bounds old and new idle rings to water pixels and subtracts the login card and utility tray without touching branding.
+// ------------------=
+pub fn idle_water_regions(width: usize, height: usize) -> [(usize, usize, usize, usize); 6] {
+    if width == 0 || height == 0 { return [(0, 0, 0, 0); 6]; }
+    let scale = (width.saturating_mul(1_000) / 1_920)
+        .max(height.saturating_mul(1_000) / 1_080).max(1);
+    let offset_x = (width as i64 - (1_920 * scale / 1_000) as i64) / 2;
+    let offset_y = (height as i64 - (1_080 * scale / 1_000) as i64) / 2;
+    let center_x = offset_x + (ARTWORK_CENTER_X as usize * scale / 1_000) as i64;
+    let water_y = offset_y + (ARTWORK_WATER_Y as usize * scale / 1_000) as i64;
+    let half_width = (768 * scale / 1_000 * IDLE_MAX_RIPPLE_SCALE as usize / 1_000) / 2 + 2;
+    let half_height = (344 * scale / 1_000 * IDLE_MAX_RIPPLE_SCALE as usize / 1_000) / 2 + 2;
+    let left = (center_x - half_width as i64).clamp(0, width as i64) as usize;
+    let top = (water_y - half_height as i64).clamp(0, height as i64) as usize;
+    let right = (center_x + half_width as i64 + 1).clamp(0, width as i64) as usize;
+    let bottom = (water_y + half_height as i64 + 1).clamp(0, height as i64) as usize;
+    let fit = (width.saturating_mul(1_000) / 1_536)
+        .min(height.saturating_mul(1_000) / 1_024).max(1);
+    let ui_x = width.saturating_sub(1_536 * fit / 1_000) / 2;
+    let ui_y = height.saturating_sub(1_024 * fit / 1_000) / 2;
+    let card_right = ui_x + 54 * fit / 1_000 + 521 * fit / 1_000;
+    let card_top = ui_y + 123 * fit / 1_000;
+    let card_bottom = card_top + 754 * fit / 1_000;
+    let tray_left = ui_x + 529 * fit / 1_000;
+    let tray_top = ui_y + 914 * fit / 1_000;
+    let tray_right = tray_left + 478 * fit / 1_000;
+    let tray_bottom = tray_top + 90 * fit / 1_000;
+    let mut regions = [
+        (left, top, right, bottom.min(card_top)),
+        (left.max(card_right), top.max(card_top), right, bottom.min(card_bottom)),
+        (left, top.max(card_bottom), right, bottom.min(tray_top)),
+        (left, top.max(tray_top), right.min(tray_left), bottom.min(tray_bottom)),
+        (left.max(tray_right), top.max(tray_top), right, bottom.min(tray_bottom)),
+        (left, top.max(tray_bottom), right, bottom),
+    ];
+    for region in &mut regions {
+        if region.0 >= region.2 || region.1 >= region.3 { *region = (0, 0, 0, 0); }
+    }
+    regions
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -273,6 +333,75 @@ pub const fn presentation_at(elapsed_ms: u16) -> Presentation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ------------------------=
+    // FUNC: idle_ripple_is_subtle_periodic_and_does_not_authenticate
+    // DESC: Checks actual wave growth, smooth invisible endpoints, elapsed-time repetition and reduced-motion suppression.
+    // ------------------=
+    #[test]
+    fn idle_ripple_is_subtle_periodic_and_does_not_authenticate() {
+        let resting = presentation_at(0);
+        let mut previous_scale = 0;
+        let mut visible = 0;
+        for time in 0..IDLE_PERIOD_MS {
+            let frame = idle_presentation(time, false);
+            assert!(frame.primary_ripple_scale >= previous_scale);
+            assert!(frame.primary_ripple_scale <= IDLE_MAX_RIPPLE_SCALE);
+            assert!(frame.primary_ripple_opacity <= 64);
+            assert_eq!(frame.orb_y_per_mille, resting.orb_y_per_mille);
+            assert_eq!(frame.orb_opacity, resting.orb_opacity);
+            assert_eq!(frame.orb_width_per_mille, resting.orb_width_per_mille);
+            assert_eq!(frame.orb_height_per_mille, resting.orb_height_per_mille);
+            assert_eq!(frame.splash_opacity, 0);
+            assert_eq!(frame.secondary_ripple_opacity, 0);
+            assert_eq!(frame.progress, 0);
+            assert_eq!(frame, idle_presentation(time + IDLE_PERIOD_MS * 17, false));
+            assert_eq!(idle_presentation(time, true), resting);
+            visible += usize::from(frame.primary_ripple_opacity > 0);
+            previous_scale = frame.primary_ripple_scale;
+        }
+        assert!(visible > 2_000);
+        assert_eq!(idle_presentation(0, false).primary_ripple_opacity, 0);
+        assert_eq!(idle_presentation(IDLE_PERIOD_MS - 1, false).primary_ripple_opacity, 0);
+    }
+
+    // ------------------------=
+    // FUNC: idle_damage_protects_wordmark_controls_and_display_bounds
+    // DESC: Verifies compact and scaled water-only damage excludes branding, credentials and tray, without full-screen redraw.
+    // ------------------=
+    #[test]
+    fn idle_damage_protects_wordmark_controls_and_display_bounds() {
+        for (width, height) in [(640, 480), (1024, 768), (2560, 1440), (3440, 1440)] {
+            let fit = (width * 1_000 / 1_536).min(height * 1_000 / 1_024);
+            let x = (width - 1_536 * fit / 1_000) / 2;
+            let y = (height - 1_024 * fit / 1_000) / 2;
+            let protected = [
+                (0, 0, width, (64 * fit / 1_000).max(38)),
+                (x + 900 * fit / 1_000, y + 92 * fit / 1_000,
+                    x + 900 * fit / 1_000 + 570 * fit / 1_000,
+                    y + 92 * fit / 1_000 + 92 * fit / 1_000),
+                (x + 54 * fit / 1_000, y + 123 * fit / 1_000,
+                    x + 54 * fit / 1_000 + 521 * fit / 1_000,
+                    y + 123 * fit / 1_000 + 754 * fit / 1_000),
+                (x + 529 * fit / 1_000, y + 914 * fit / 1_000,
+                    x + 529 * fit / 1_000 + 478 * fit / 1_000,
+                    y + 914 * fit / 1_000 + 90 * fit / 1_000),
+            ];
+            let regions = idle_water_regions(width, height);
+            let mut area = 0;
+            for (index, (left, top, right, bottom)) in regions.into_iter().enumerate() {
+                assert!(left <= right && top <= bottom && right <= width && bottom <= height);
+                if left == right || top == bottom { continue; }
+                area += (right - left) * (bottom - top);
+                assert!(top >= height / 2);
+                for (l, t, r, b) in protected.into_iter().chain(regions[..index].iter().copied()) {
+                    assert!(left >= r || right <= l || top >= b || bottom <= t);
+                }
+            }
+            assert!(area > 0 && area < width * height / 7);
+        }
+        assert_eq!(idle_water_regions(0, 768), [(0, 0, 0, 0); 6]);
+    }
 
     // ------------------------=
     // FUNC: successful_authentication_runs_complete_motion_sequence

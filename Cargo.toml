@@ -8,8 +8,9 @@ path = "kernel/core/main.rs"
 crate-type = ["staticlib"]
 
 [features]
-default = ["native-compiler"]
+default = ["native-compiler", "native-python"]
 native-compiler = []
+native-python = ["native-compiler"]
 installer = []
 streamed-payload = ["installer"]
 browser-installer-payload = ["streamed-payload"]

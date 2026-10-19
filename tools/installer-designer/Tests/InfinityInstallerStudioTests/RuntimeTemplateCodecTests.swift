@@ -773,19 +773,19 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             let primary = try XCTUnwrap(screen.elements.first { $0.role == .primaryButton })
 
             XCTAssertEqual(card.frame, InfinityUIKit.Metrics.configurationCard)
-            XCTAssertEqual(card.fill, InfinityUIKit.Palette.panel)
-            XCTAssertEqual(card.border, InfinityUIKit.Palette.border)
+            XCTAssertEqual(card.fill, InfinityUIKit.EclipseAccess.surface.withAlpha(235))
+            XCTAssertEqual(card.border, InfinityUIKit.EclipseAccess.mutedBorder)
             XCTAssertEqual(card.cornerRadius, 16)
             XCTAssertEqual(content.frame, InfinityUIKit.Metrics.configurationContent)
-            XCTAssertEqual(content.fill, InfinityUIKit.Palette.panelRaised)
+            XCTAssertEqual(content.fill, InfinityUIKit.EclipseAccess.surface.withAlpha(0))
             XCTAssertEqual(title.frame.x - content.frame.x, 11)
             XCTAssertEqual(body.frame.x, title.frame.x)
             XCTAssertEqual(back.frame.height, 47)
             XCTAssertEqual(primary.frame.height, 47)
-            XCTAssertEqual(primary.fill, InfinityUIKit.Palette.primaryAction)
-            XCTAssertEqual(primary.border, InfinityUIKit.Palette.primaryActionBorder)
-            XCTAssertEqual(back.fill, InfinityUIKit.Palette.secondaryAction)
-            XCTAssertEqual(back.border, InfinityUIKit.Palette.secondaryActionBorder)
+            XCTAssertEqual(primary.fill, InfinityUIKit.EclipseAccess.primary)
+            XCTAssertEqual(primary.border, InfinityUIKit.EclipseAccess.border)
+            XCTAssertEqual(back.fill, InfinityUIKit.EclipseAccess.surface.withAlpha(245))
+            XCTAssertEqual(back.border, InfinityUIKit.EclipseAccess.mutedBorder)
         }
 
         let welcome = configuration.screens[0]
@@ -804,8 +804,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         for screen in configuration.screens[1...4] {
             let input = try XCTUnwrap(screen.elements.first { $0.role == .input })
             XCTAssertEqual(input.frame, InfinityUIKit.Metrics.configurationInput)
-            XCTAssertEqual(input.fill, InfinityUIKit.Palette.field)
-            XCTAssertEqual(input.border, InfinityUIKit.Palette.fieldBorder)
+            XCTAssertEqual(input.fill, InfinityUIKit.EclipseAccess.background.withAlpha(245))
+            XCTAssertEqual(input.border, InfinityUIKit.EclipseAccess.mutedBorder)
             XCTAssertEqual(input.cornerRadius, 10)
         }
     }

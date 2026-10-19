@@ -26,15 +26,32 @@ def compiler_result(data, work, args):
     (work / "compiler-console.log").write_bytes(diagnostic)
     if not (args.compile_source or args.link_object) or status:
         print(diagnostic.decode("utf-8", errors="replace"))
-    assert marker == 0x434c414e47454c30 and written > 0 and calls > 1 and free == initial
+    assert marker == 0x434c414e47454c30 and calls > 1 and free == initial
+    if args.python_validation:
+        # The fixture normally prints and exits 54. Validating it must neither
+        # execute those side effects nor misclassify a missing stdlib as syntax.
+        assert output_length == 0
+        if args.python_validation == "invalid":
+            assert status == 65 and diagnostic_length > 0 and written > 0
+        else:
+            assert status == 0 and diagnostic_length == 0 and written == 0
+    else:
+        assert written > 0
     if args.reject_invalid_source:
         assert status != 0 and output_length == 0 and diagnostic_length > 0
+    elif args.python_validation:
+        pass
+    elif args.python_script:
+        assert status == 54
     else:
         assert status == 0
     proof = dict(architecture=args.arch, real_native_toolchain=True, hardware_user_mode=True,
         exit_status=status, console_bytes=written, poll_visits=calls, memory_reclaimed=True,
         compiled_source=args.compile_source, installed_acceptance=False)
     proof["interactive_input"] = args.interactive
+    proof["native_python_script"] = args.python_script
+    proof["native_python_extension"] = bool(args.python_extension)
+    proof["native_python_validation"] = args.python_validation
     machine = 183 if args.arch == "aarch64" else 62
     if args.reject_invalid_source:
         proof["invalid_source_rejected"] = True
@@ -50,8 +67,13 @@ def compiler_result(data, work, args):
         proof["native_linked"] = True
         assert app_status == 54
         proof["guest_linked_app_exit"] = app_status
-    stage = "invalid" if args.reject_invalid_source else "link" if args.link_object else "compile" if args.compile_source else "version"
+    stage = "python-validation-" + args.python_validation if args.python_validation else "python-extension" if args.python_extension else "python-script" if args.python_script else "invalid" if args.reject_invalid_source else "link" if args.link_object else "compile" if args.compile_source else "version"
     (work / f"{stage}-evidence.json").write_text(json.dumps(proof, indent=2) + "\n")
+    if args.python_script:
+        evidence = ROOT / "builds/validation/native-python" / args.arch
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence / f"{stage}.json").write_text(json.dumps(proof, indent=2) + "\n")
+        (evidence / f"{stage}.bin").write_bytes(data)
     if args.interactive:
         evidence = ROOT / "builds/validation/native-apps" / (args.arch + "-interactive")
         evidence.mkdir(parents=True, exist_ok=True)
@@ -109,6 +131,9 @@ def main():
     parser.add_argument("--validate-virtualbox-compiler-serial", type=Path, help="Validate compiler records captured by the VirtualBox ARM probe")
     parser.add_argument("--memory", choices=["512M", "1G"], default="1G", help="Firmware guest RAM for low-memory boot coverage")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
+    parser.add_argument("--python-script", action="store_true", help="Execute a real Python script using the supplied native interpreter image")
+    parser.add_argument("--python-extension", type=Path, help="Import and call an actual CPython native extension in the guest")
+    parser.add_argument("--python-validation", choices=("valid", "invalid"), help="Run the production -c syntax validator without executing the granted Python source")
     parser.add_argument("--compile-source", action="store_true", help="Compile real C from a bounded native input stream to an ELF object")
     parser.add_argument("--interactive", action="store_true", help="Compile and exercise the native interactive calculator fixture")
     parser.add_argument("--reject-invalid-source", action="store_true", help="Verify real compiler failure, diagnostics, no executable output and full memory recovery")
@@ -121,6 +146,9 @@ def main():
         virtualbox_compiler_result(args.validate_virtualbox_compiler_serial, args)
         return
     assert not args.interactive or args.compiler
+    assert not args.python_script or (args.compiler and not args.compile_source and not args.link_object)
+    assert not args.python_extension or args.python_script
+    assert not args.python_validation or (args.python_script and not args.python_extension)
     assert not args.reject_invalid_source or (args.compiler and args.compile_source and not args.link_object)
     arm = args.arch == "aarch64"
     assert not args.firmware or (arm and not args.split_eoi)
@@ -162,6 +190,19 @@ def main():
     if args.virtualbox:
         env["INFINITY_PROCESS_VIRTUALBOX"] = "1"
     env.pop("INFINITY_COMPILER_PROBE", None)
+    env.pop("INFINITY_PYTHON_PROBE", None)
+    env.pop("INFINITY_PYTHON_EXTENSION_PROBE", None)
+    env.pop("INFINITY_PYTHON_VALIDATION_PROBE", None)
+    env.pop("INFINITY_PYTHON_INVALID_PROBE", None)
+    if args.python_validation:
+        env["INFINITY_PYTHON_VALIDATION_PROBE"] = "1"
+        if args.python_validation == "invalid":
+            env["INFINITY_PYTHON_INVALID_PROBE"] = "1"
+    env["INFINITY_PYTHON_EXTENSION_BYTES"] = str(args.python_extension.resolve()) if args.python_extension else str(work / "user.o")
+    if args.python_extension:
+        env["INFINITY_PYTHON_EXTENSION_PROBE"] = "1"
+    if args.python_script:
+        env["INFINITY_PYTHON_PROBE"] = "1"
     env.pop("INFINITY_INTERACTIVE_APP", None)
     if args.interactive:
         env["INFINITY_INTERACTIVE_APP"] = "1"

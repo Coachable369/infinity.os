@@ -751,6 +751,32 @@ impl<D: BlockDevice> ObjectStore<D> {
         let hello = self.create_record(b"hello.c", ObjectType::Text, Space::Personal)?;
         self.write_record(hello, include_bytes!("../../sdk/c/examples/hello.c"))?;
         self.attach_record(b"/home/default/documents/hello.c", hello)?;
+        let python = self.create_record(b"hello.py", ObjectType::Text, Space::Personal)?;
+        self.write_record(python, include_bytes!("../../sdk/python/examples/hello.py"))?;
+        self.attach_record(b"/home/default/documents/hello.py", python)?;
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        self.seed_python_examples(crate::runtime::native_python_package::EXAMPLE_EXTENSION,
+            crate::runtime::native_python_package::LICENSE)?;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: seed_python_examples
+    // DESC: Seeds fresh-install extension examples and full license notices using bounded native object extents.
+    // ------------------=
+    pub(crate) fn seed_python_examples(&mut self, extension_bytes: &[u8], license_bytes: &[u8]) -> Result<(), ObjectError> {
+            if extension_bytes.len() > MAX_CONTENT || license_bytes.len() > 64 * 1024 {
+                return Err(ObjectError::InsufficientCapacity);
+            }
+            let example = self.create_record(b"native_demo.py", ObjectType::Text, Space::Personal)?;
+            self.write_record(example, include_bytes!("../../sdk/python/examples/native_demo.py"))?;
+            self.attach_record(b"/home/default/documents/native_demo.py", example)?;
+            let extension = self.create_record(b"infinity_native_test.so", ObjectType::Blob, Space::Personal)?;
+            self.write_record(extension, extension_bytes)?;
+            self.attach_record(b"/home/default/documents/infinity_native_test.so", extension)?;
+            let license = self.create_record(b"python-license", ObjectType::Text, Space::System)?;
+            self.write_record_limit(license, license_bytes, 64 * 1024)?;
+            self.attach_record(b"/system/licenses/python", license)?;
         Ok(())
     }
 
@@ -1379,7 +1405,15 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Writes or updates write record data.
     // ------------------=
     fn write_record(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
-        if content.len() > MAX_CONTENT {
+        self.write_record_limit(id, content, MAX_CONTENT)
+    }
+
+    // ------------------------=
+    // FUNC: write_record_limit
+    // DESC: Uses the same transactional native extents with an explicit service-specific content bound.
+    // ------------------=
+    fn write_record_limit(&mut self, id: ObjectId, content: &[u8], limit: usize) -> Result<u32, ObjectError> {
+        if content.len() > limit {
             return Err(ObjectError::InsufficientCapacity);
         }
         let object = self.object_index(id)?;

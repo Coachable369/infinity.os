@@ -1,4 +1,27 @@
-//! Allocation-free light-front timing for the bootstrap emblem.
+//! Allocation-free geometry and light-front timing for the bootstrap emblem.
+
+// ------------------------=
+// FUNC: emblem_geometry
+// DESC: Preserves ISO placement while moving only the installed loading emblem down 100 physical framebuffer pixels.
+// ------------------=
+pub(crate) fn emblem_geometry(
+    screen_width: usize,
+    screen_height: usize,
+    source_width: usize,
+    source_height: usize,
+    installer: bool,
+) -> (usize, usize, usize, usize) {
+    let width = (screen_width * 52 / 100)
+        .min((screen_height * 52 / 100) * source_width / source_height)
+        .max(1);
+    let height = (width * source_height / source_width).max(1);
+    (
+        screen_width.saturating_sub(width) / 2,
+        screen_height * 16 / 100 + if installer { 0 } else { 100 },
+        width,
+        height,
+    )
+}
 
 // ------------------------=
 // FUNC: opacity
@@ -15,6 +38,22 @@ pub(crate) fn opacity(x: usize, width: usize, frame: usize, frames: usize) -> u8
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: installed_emblem_moves_exactly_one_hundred_physical_pixels
+    // DESC: Checks ISO geometry and the installed-only translation across compact, scaled and wide framebuffers.
+    // ------------------=
+    #[test]
+    fn installed_emblem_moves_exactly_one_hundred_physical_pixels() {
+        for (width, height) in [(1024, 768), (1280, 720), (2560, 1440), (3440, 1440)] {
+            let iso = emblem_geometry(width, height, 1672, 941, true);
+            let installed = emblem_geometry(width, height, 1672, 941, false);
+            assert_eq!(iso.1, height * 16 / 100);
+            assert_eq!(installed, (iso.0, iso.1 + 100, iso.2, iso.3));
+            assert_eq!(iso.2, (width * 52 / 100).min((height * 52 / 100) * 1672 / 941));
+            assert_eq!(iso.3, iso.2 * 941 / 1672);
+        }
+    }
+
     // ------------------------=
     // FUNC: reveal_is_symmetric_monotone_and_complete
     // DESC: Checks all sampled pixels through the entire exposure sequence.

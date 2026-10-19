@@ -3,6 +3,58 @@ use super::*;
 use crate::ui::app_assistant::{self as assistant, Action, Target};
 #[no_mangle]
 pub static mut INFINITY_APP_GENERATION_SNAPSHOT:[u64;14]=[0x494e4647454e3031,1,0,0,0,0,0,0,0,0,0,0,0,0];
+#[no_mangle]
+pub static mut INFINITY_SOURCE_WORKFLOW_SNAPSHOT:[u64;24]=[0x494e465352433031,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+#[no_mangle]
+pub static mut INFINITY_SOURCE_WORKFLOW_PATH:[u8;95]=[0;95];
+// ------------------------=
+// FUNC: publish_source_workflow_snapshot
+// DESC: Exposes owner-scoped goal state and actual source/version receipts for read-only installed validation without admitting actions or exposing source contents.
+// ------------------=
+fn publish_source_workflow_snapshot(console:&ConsoleRuntime) {
+    use crate::runtime::ai::intelligence::{PlanState,TaskState};
+    let panel=assistant::read(2);
+    let mut values=[0u64;20];
+    crate::runtime::ai::with_ai_runtime(|ai| {
+        if let Some(execution)=ai.software_execution(console.current_user.0) {
+            values[0]=execution.goal;
+            if let Some(plan)=ai.intelligence_plan(execution.goal,console.current_user.0) {
+                values[1]=match plan.state {PlanState::Proposed=>1,PlanState::AwaitingApproval=>2,PlanState::Executing=>3,
+                    PlanState::Interrupted=>4,PlanState::Completed=>5,PlanState::Failed=>6,PlanState::Cancelled=>7};
+                values[2]=plan.task_count as u64;
+                values[3]=plan.tasks[..plan.task_count as usize].iter().filter(|task|task.as_ref().is_some_and(|task|task.state==TaskState::Succeeded)).count() as u64;
+            }
+            values[4]=u64::from_le_bytes(execution.source[..8].try_into().unwrap());
+            values[5]=u64::from_le_bytes(execution.source[8..].try_into().unwrap());
+            values[6]=execution.source_revision;
+            values[7]=u64::from_le_bytes(execution.artifact[..8].try_into().unwrap());
+            values[8]=u64::from_le_bytes(execution.artifact[8..].try_into().unwrap());
+            values[9]=execution.context;
+            values[19]=u64::from(ai.software_execution_id()==Some(execution.goal));
+        }
+    });
+    if let Some((object,version))=panel.source_binding {
+        values[10]=u64::from_le_bytes(object[..8].try_into().unwrap());
+        values[11]=u64::from_le_bytes(object[8..].try_into().unwrap());values[12]=version as u64;
+    }
+    let path_length=console.editor_document_path_length.min(95);
+    values[13]=panel.effective_language() as u64;
+    values[14]=crate::storage::object::crc32(&console.editor_document_path[..path_length]) as u64;
+    values[15]=path_length as u64;
+    values[16]=assistant::fingerprint(&panel.request[..panel.request_len],0,None);
+    values[17]=console.editor_document.bytes().len() as u64;
+    values[18]=u64::from(console.editor_document.is_saved());
+    unsafe {
+        let target=core::ptr::addr_of_mut!(INFINITY_SOURCE_WORKFLOW_SNAPSHOT).cast::<u64>();
+        let sequence=target.add(2).read_volatile().wrapping_add(2)&!1;
+        target.add(2).write_volatile(sequence|1);
+        let path=core::ptr::addr_of_mut!(INFINITY_SOURCE_WORKFLOW_PATH).cast::<u8>();
+        for index in 0..95 {path.add(index).write_volatile(if index<path_length {console.editor_document_path[index]}else{0});}
+        for (index,value) in values.into_iter().enumerate(){target.add(index+3).write_volatile(value);}
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+        target.add(23).write_volatile(sequence);target.add(2).write_volatile(sequence);
+    }
+}
 // ------------------------=
 // FUNC: publish_generation_snapshot
 // DESC: Publishes seqlocked inference and editor-delivery counts without exposing user source or granting execution authority.
@@ -67,6 +119,25 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn dispatch_context_request(&mut self, input:&[u8])->bool {
         if !self.ai_chat_allowed() {return false;}
+        if let Some(update)=assistant::editor_compile_intent::update(input) {
+            let Some(goal)=crate::runtime::ai::with_ai_runtime(|ai|ai.software_goal_for_request(input)) else{return false;};
+            if self.editor_dialog!=EditorDialog::None {return false;}
+            let mut panel=assistant::read(2);
+            if matches!(panel.generation,assistant::GenerationStatus::Queued|assistant::GenerationStatus::Running) {return false;}
+            let (language,object,version)=match self.resolve_assistant_update_source(update.target) {
+                Ok(binding)=>binding,
+                Err(message)=>{panel.reject_unstarted_generation();panel.reply(message);assistant::write(2,panel);return false;},
+            };
+            panel.expanded=true;panel.focused=false;self.ai_chat_focus=0;
+            let queued=panel.queue_user_update(input,self.assistant_revision(),self.editor_document.bytes(),language,goal);
+            if queued {panel.source_binding=Some((object,version));}
+            panel.reply(if queued {b"Updating the resolved source document. Existing behavior will be preserved, then the file will be saved and validated."}
+                else {b"This source cannot be updated safely in the current editor state. No file was changed."});
+            assistant::write(2,panel);
+            if queued {compiler_commands::generation_progress(self,compiler_commands::VoiceStep::Planning);
+                compiler_commands::generation_progress(self,compiler_commands::VoiceStep::PlanReady);}
+            return queued;
+        }
         if assistant::editor_compile_intent::repair(input).is_some() {
             if self.editor_dialog!=EditorDialog::None {return false;}
             self.open_text_editor();self.ai_chat_focus=0;
@@ -77,6 +148,9 @@ impl ConsoleRuntime {
             #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
             let diagnostic_length=0;
             panel.expanded=true;panel.focused=false;
+            panel.source_language=if self.editor_document_path[..self.editor_document_path_length].ends_with(b".py") {
+                assistant::editor_compile_intent::SourceLanguage::Python
+            }else{assistant::editor_compile_intent::SourceLanguage::C};
             let queued=panel.queue_user_repair(input,self.assistant_revision(),self.editor_document.bytes(),&diagnostics[..diagnostic_length]);
             panel.reply(if queued {b"Repairing the current source and checking it with the native compiler. No application will launch automatically."}
                 else {b"Open a nonempty source document and finish or cancel any active generation before asking to fix its code."});
@@ -111,8 +185,10 @@ impl ConsoleRuntime {
             panel.request=panel.input;panel.request_len=input.len();
             panel.document_revision=self.assistant_revision();
             panel.workflow_goal=Some(goal);
+            panel.source_language=assistant::editor_compile_intent::language(input);
+            panel.source_binding=None;
             panel.generation=assistant::GenerationStatus::Queued;
-            panel.reply(b"Creating a native C application. Source will be saved in Documents, compiled, then launched.");
+            panel.reply(b"Creating your application. Source will be saved in Documents, validated by its native language toolchain, then launched.");
             assistant::write(2,panel);
             compiler_commands::generation_progress(self,compiler_commands::VoiceStep::Planning);
             compiler_commands::generation_progress(self,compiler_commands::VoiceStep::PlanReady);
@@ -490,6 +566,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn apply_completed_editor_compile(&mut self) -> bool {
         publish_generation_snapshot();
+        publish_source_workflow_snapshot(self);
         let mut panel=assistant::read(2);
         if panel.generation==assistant::GenerationStatus::Complete && panel.pending==Action::None
             && panel.stream.delivered>=panel.argument_len {return false;}
@@ -512,10 +589,12 @@ impl ConsoleRuntime {
                 let prompt_length=if panel.repair_diagnostics_len>0
                     || assistant::editor_compile_intent::repair(&panel.request[..panel.request_len]).is_some() {
                     panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt)
+                } else if assistant::editor_compile_intent::update(&panel.request[..panel.request_len]).is_some() {
+                    panel.update_prompt(self.editor_document.bytes(),&mut prompt)
                 } else {panel.generation_prompt(true,b"",&mut prompt)};
                 if let Some(n)=prompt_length {
                     match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_source(2,&prompt[..n])) {
-                        Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating C source locally...");
+                        Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating source locally...");
                             compiler_commands::generation_progress(self,compiler_commands::VoiceStep::Generating);},
                         Err(message)=>{panel.generation=assistant::GenerationStatus::Failed;panel.reply(message);},
                     }
@@ -759,8 +838,27 @@ impl ConsoleRuntime {
                 }
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 {
-                    let create=action==Action::ReplaceCompile && assistant::editor_compile_intent::create_application(&panel.request[..panel.request_len]);
-                    let compile=if action==Action::ReplaceCompile {compiler_commands::save_generated_and_build(self,create)} else {compiler_commands::start(self)};
+                    let launch=action==Action::ReplaceCompile && assistant::editor_compile_intent::requests_launch(&panel.request[..panel.request_len]);
+                    if action==Action::ReplaceCompile && panel.effective_language()==assistant::editor_compile_intent::SourceLanguage::Python {
+                        #[cfg(feature="native-python")]
+                        let result=match compiler_commands::save_generated_source(self) {
+                            Ok((path,length))=>python_commands::generated(self,&path[..length],panel.workflow_goal,launch),
+                            Err(_)=>Err(b"Python source could not be saved. Nothing was launched; the document remains in the editor.".as_slice()),
+                        };
+                        #[cfg(not(feature="native-python"))]
+                        let result:Result<(),&'static [u8]>=Err(b"Native Python is not included in this build. Your source remains in the editor.");
+                        panel.source_binding=assistant::read(id).source_binding;
+                        success=result.is_ok();
+                        if let Err(message)=result {
+                            panel.generation=assistant::GenerationStatus::Failed;panel.reply(message);
+                            if let Some(goal)=panel.workflow_goal {crate::runtime::ai::with_ai_runtime(|ai|
+                                ai.record_software_event(goal,self.current_user.0,crate::runtime::ai::intelligence::software::Event::Failed{code:5}));}
+                        }
+                        else {panel.reply(b"Python source saved. The native interpreter is checking its syntax before any authorized execution.");}
+                        assistant::write(id,panel);return success;
+                    }
+                    let compile=if action==Action::ReplaceCompile {compiler_commands::save_generated_and_build(self,launch)} else {compiler_commands::start(self)};
+                    panel.source_binding=assistant::read(id).source_binding;
                     success=compile.is_ok();
                     if action==Action::ReplaceCompile && !success {panel.generation=assistant::GenerationStatus::Failed;}
                     panel.reply(match compile {

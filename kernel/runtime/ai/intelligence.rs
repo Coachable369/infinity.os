@@ -453,7 +453,7 @@ impl Service {
             || contains_case(input, b"build and ")
             || starts_case(input, b"my goal is ")
             || starts_case(input, b"i need you to ")
-            || crate::ui::app_assistant::editor_compile_intent::create_application(input);
+            || crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
         if complex {
             RequestClass::ComplexGoal
         } else {
@@ -485,7 +485,8 @@ impl Service {
         let objective_text = BoundedText::new(objective).ok_or(ServiceError::InvalidGoal)?;
         let goal_id = self.next_goal_id;
         self.next_goal_id = self.next_goal_id.saturating_add(1).max(1);
-        let software = crate::ui::app_assistant::editor_compile_intent::create_application(objective);
+        let software = crate::ui::app_assistant::editor_compile_intent::software_workflow(objective);
+        let launch = software && crate::ui::app_assistant::editor_compile_intent::requests_launch(objective);
         let interaction = software && crate::ui::app_assistant::editor_compile_intent::requests_opponent(objective);
         let goal = Goal {
             id: goal_id,
@@ -493,13 +494,15 @@ impl Service {
             origin,
             objective: objective_text,
             desired_outcome: BoundedText::new(if software {
-                b"A compiled, launchable native application"
+                b"Saved source validated by its native language toolchain"
             } else {
                 b"The requested objective is achieved"
             })
             .unwrap(),
-            success_criteria: BoundedText::new(if software {
-                b"Compiler succeeds and the application lifecycle reports a successful launch"
+            success_criteria: BoundedText::new(if launch {
+                b"Native source validation succeeds and the application lifecycle reports a successful launch"
+            } else if software {
+                b"The requested source is saved and native validation succeeds; do not launch without explicit authority"
             } else {
                 b"Every planned step returns native verification evidence"
             })
@@ -529,14 +532,14 @@ impl Service {
             push_task(
                 &mut plan,
                 CapabilityId::DevKit,
-                b"Generate and compile the required native C application",
+                b"Generate or update the source and validate it through its native language toolchain",
                 b"Use this goal's original objective; preserve all requested functionality",
                 Contract::ApplicationArtifact,
-                b"Use compiler diagnostics and a completed native artifact",
+                b"Use actual compiler or interpreter validation and a persisted native artifact",
                 &[],
                 FailurePolicy::Stop,
             )?;
-            push_task(
+            if launch {push_task(
                 &mut plan,
                 CapabilityId::UiServices,
                 b"Launch the generated application",
@@ -545,7 +548,7 @@ impl Service {
                 b"Observe the native application lifecycle launch event",
                 &[1],
                 FailurePolicy::Stop,
-            )?;
+            )?;}
             if interaction {
                 push_task(
                     &mut plan,

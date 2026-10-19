@@ -1997,17 +1997,11 @@ impl super::DisplayDevice {
             .destination_height
             .min(self.height.saturating_sub(draw_top))
         {
-            let source_y =
-                placement.source_top + y * placement.source_height / placement.destination_height;
             for x in 0..placement
                 .destination_width
                 .min(self.width.saturating_sub(draw_left))
             {
-                let source_x = placement.source_left
-                    + x * placement.source_width / placement.destination_width;
-                let Some([red, green, blue, source_alpha]) = bitmap.rgba(source_x, source_y) else {
-                    return;
-                };
+                let [red, green, blue, source_alpha] = bitmap.filtered_rgba(placement, x, y);
                 let alpha = (source_alpha as u16 * opacity as u16 / 255) as u8;
                 self.blend_color(
                     (draw_left + x) as i32,

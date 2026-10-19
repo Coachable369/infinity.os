@@ -1,6 +1,7 @@
 //! Installer artwork, typography, storage screens, cards, controls, and composition.
 
 use super::*;
+use super::template_font::face as template_face;
 
 pub(super) const INSTALLER_FONT_NATIVE_SIZE_PX: usize = 24;
 pub(super) const INSTALLER_FONT_SIZE_PX: usize = 24;
@@ -511,17 +512,24 @@ impl super::DisplayDevice {
     // DESC: Measures template text at its authored pixel size using the packaged installer face.
     // ------------------=
     pub(super) fn template_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
+        self.template_text_width_face(text, pixels, semibold, None)
+    }
+
+    // ------------------------=
+    // FUNC: access_text_width
+    // DESC: Measures Eclipse text with the immutable Inter family regardless of the signed-in desktop font preference.
+    // ------------------=
+    pub(super) fn access_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
+        self.template_text_width_face(text, pixels, semibold, Some(1))
+    }
+
+    // ------------------------=
+    // FUNC: template_text_width_face
+    // DESC: Uses one explicitly selected native face for advance and kerning while retaining legacy Roboto when no family is requested.
+    // ------------------=
+    fn template_text_width_face(&self, text: &[u8], pixels: usize, semibold: bool, family: Option<u8>) -> usize {
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let metrics = if semibold {
-            INSTALLER_FONT_SEMIBOLD_METRICS
-        } else {
-            INSTALLER_FONT_METRICS
-        };
-        let kerning = if semibold {
-            INSTALLER_FONT_SEMIBOLD_KERN
-        } else {
-            INSTALLER_FONT_KERN
-        };
+        let (_, metrics, kerning) = template_face(family, semibold);
         let mut width = 0usize;
         let mut previous = None;
         for byte in text {
@@ -549,8 +557,8 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn template_text(
         &mut self,
-        mut x: usize,
-        mut y: usize,
+        x: usize,
+        y: usize,
         text: &[u8],
         red: u8,
         green: u8,
@@ -559,23 +567,27 @@ impl super::DisplayDevice {
         pixels: usize,
         semibold: bool,
     ) {
+        self.template_text_face(x, y, text, red, green, blue, opacity, pixels, semibold, None);
+    }
+
+    // ------------------------=
+    // FUNC: access_text
+    // DESC: Paints Eclipse labels using the same explicit Inter face that supplies their measurement and wrapping.
+    // ------------------=
+    pub(super) fn access_text(&mut self, x: usize, y: usize, text: &[u8], red: u8, green: u8,
+        blue: u8, opacity: u8, pixels: usize, semibold: bool) {
+        self.template_text_face(x, y, text, red, green, blue, opacity, pixels, semibold, Some(1));
+    }
+
+    // ------------------------=
+    // FUNC: template_text_face
+    // DESC: Rasterizes an explicit native family or the unchanged legacy installer face with matching glyph metrics.
+    // ------------------=
+    fn template_text_face(&mut self, mut x: usize, mut y: usize, text: &[u8], red: u8,
+        green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool, family: Option<u8>) {
         let line_start = x;
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let atlas = if semibold {
-            INSTALLER_FONT_SEMIBOLD_ATLAS
-        } else {
-            INSTALLER_FONT_ATLAS
-        };
-        let metrics = if semibold {
-            INSTALLER_FONT_SEMIBOLD_METRICS
-        } else {
-            INSTALLER_FONT_METRICS
-        };
-        let kerning = if semibold {
-            INSTALLER_FONT_SEMIBOLD_KERN
-        } else {
-            INSTALLER_FONT_KERN
-        };
+        let (atlas, metrics, kerning) = template_face(family, semibold);
         let glyph_width = font_size.scale_usize(INSTALLER_FONT_CELL_WIDTH).max(1);
         let glyph_height = font_size.scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
         let line_advance = glyph_height.saturating_add(font_size.scale_usize(4));
@@ -641,6 +653,25 @@ impl super::DisplayDevice {
         pixels: usize,
         semibold: bool,
     ) {
+        self.template_text_wrapped_face(x, y, max_width, text, red, green, blue, opacity, pixels, semibold, None);
+    }
+
+    // ------------------------=
+    // FUNC: access_text_wrapped
+    // DESC: Wraps Eclipse copy with Inter advances without changing legacy installer typography.
+    // ------------------=
+    pub(super) fn access_text_wrapped(&mut self, x: usize, y: usize, max_width: usize,
+        text: &[u8], red: u8, green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool) {
+        self.template_text_wrapped_face(x, y, max_width, text, red, green, blue, opacity, pixels, semibold, Some(1));
+    }
+
+    // ------------------------=
+    // FUNC: template_text_wrapped_face
+    // DESC: Keeps paragraph wrapping and final rasterization on the same explicit font selection.
+    // ------------------=
+    fn template_text_wrapped_face(&mut self, x: usize, y: usize, max_width: usize,
+        text: &[u8], red: u8, green: u8, blue: u8, opacity: u8, pixels: usize,
+        semibold: bool, family: Option<u8>) {
         let mut start = 0usize;
         let mut line = 0usize;
         let line_advance = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1))
@@ -663,7 +694,7 @@ impl super::DisplayDevice {
                 if end < paragraph_end && text[end] == b' ' {
                     last_space = Some(end);
                 }
-                if self.template_text_width(&text[start..end], pixels, semibold) > max_width {
+                if self.template_text_width_face(&text[start..end], pixels, semibold, family) > max_width {
                     end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
                     break;
                 }
@@ -672,7 +703,7 @@ impl super::DisplayDevice {
                 }
                 end += 1;
             }
-            self.template_text(
+            self.template_text_face(
                 x,
                 y + line * line_advance,
                 &text[start..end],
@@ -682,6 +713,7 @@ impl super::DisplayDevice {
                 opacity,
                 pixels,
                 semibold,
+                family,
             );
             line += 1;
             start = if end == paragraph_end && explicit_end.is_some() {

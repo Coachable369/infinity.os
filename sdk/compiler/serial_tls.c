@@ -1,7 +1,7 @@
 #include <infinity/serial_tls.h>
 #include <errno.h>
 #include <stddef.h>
-struct Key { const void *value; void (*destroy)(void *); };
+struct Key { const void *value; void (*destroy)(void *); int active; };
 struct Destructor { void (*call)(void *); void *argument; };
 static struct Key keys[128];
 static uint32_t key_count;
@@ -16,6 +16,7 @@ int infinity_key_create(uint32_t *out, void (*destroy)(void *)) {
     if (!out) return EINVAL;
     if (key_count == 128) return EAGAIN;
     keys[key_count].destroy = destroy;
+    keys[key_count].active = 1;
     *out = ++key_count;
     return 0;
 }
@@ -24,7 +25,7 @@ int infinity_key_create(uint32_t *out, void (*destroy)(void *)) {
 // DESC: Sets a valid invocation-local value without aliasing invalid keys.
 // ------------------=
 int infinity_key_set(uint32_t key, const void *value) {
-    if (!key || key > key_count) return EINVAL;
+    if (!key || key > key_count || !keys[key - 1].active) return EINVAL;
     keys[key - 1].value = value; return 0;
 }
 // ------------------------=
@@ -32,7 +33,16 @@ int infinity_key_set(uint32_t key, const void *value) {
 // DESC: Retrieves the sole thread's value, returning null for invalid keys.
 // ------------------=
 void *infinity_key_get(uint32_t key) {
-    return key && key <= key_count ? (void *)keys[key - 1].value : 0;
+    return key && key <= key_count && keys[key - 1].active ? (void *)keys[key - 1].value : 0;
+}
+// ------------------------=
+// FUNC: infinity_key_delete
+// DESC: Invalidates a serial TLS key without invoking its destructor or recycling a stale handle.
+// ------------------=
+int infinity_key_delete(uint32_t key) {
+    if (!key || key > key_count || !keys[key - 1].active) return EINVAL;
+    keys[key - 1] = (struct Key){0};
+    return 0;
 }
 // ------------------------=
 // FUNC: infinity_thread_destructor

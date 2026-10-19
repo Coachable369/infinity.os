@@ -186,7 +186,7 @@ impl AiRuntime {
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
-        let software_goal=crate::ui::app_assistant::editor_compile_intent::create_application(input);
+        let software_goal=crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
         if let (RequestRoute::Control(command), false) = (route, software_goal) {
             self.execution
                 .stage(ExecutionRequest {
@@ -459,6 +459,7 @@ impl AiRuntime {
                 self.app_started_ns,
                 self.app_progress_ns,
                 now,
+                crate::ui::app_assistant::generation_budget(id, &panel.request[..panel.request_len]),
             ) {
                 service.cancel();
                 let mut panel = crate::ui::app_assistant::read(id);
@@ -480,7 +481,7 @@ impl AiRuntime {
             // do not rescan up to 16 KiB on every cooperative waiting poll.
             // The terminal path below still validates the entire final output.
             let framed = if result == Ok(true) {
-                crate::ui::app_assistant::Panel::completed_output_length(service.output())
+                crate::ui::app_assistant::read(id).completed_generation_output_length(service.output())
             } else {
                 None
             };
@@ -1369,7 +1370,8 @@ impl AiRuntime {
             intelligence::PlanState::Completed=>{
                 let message=match self.software_execution.as_ref().filter(|execution|execution.goal==id) {
                     Some(execution) if execution.interaction_active=>b"The application was saved, compiled and launched. Its AI interaction contract is ready; the interactive session continues separately.".as_slice(),
-                    Some(_)=>b"The application source and executable were saved, and the native process launched successfully.".as_slice(),
+                    Some(execution) if execution.context==0=>b"The requested source was saved and validated by its native toolchain. No application was launched.".as_slice(),
+                    Some(_)=>b"The application source was saved and validated, and the native process launched successfully.".as_slice(),
                     None=>b"The goal completed. Every plan step returned native verification evidence.".as_slice(),
                 };
                 self.chat.update_native_response(message);self.chat.generation_state=chat::GenerationState::Complete;self.intelligence_goal=None;

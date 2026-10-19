@@ -954,7 +954,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             .make(
                 name: "First-Boot Background", kind: .image, role: .masthead,
                 frame: CanvasRect(x: 0, y: 0, width: 1000, height: 1000),
-                imageAsset: "assets/desktop/infinity-onboarding-wallpaper-v1.png", zIndex: 0
+                imageAsset: "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png", zIndex: 0
             ),
             .make(
                 name: "Configuration Card", kind: .console, role: .console,
@@ -1005,18 +1005,18 @@ struct InstallerStudioDocument: Codable, Hashable {
                 text: eyebrow, zIndex: 6
             ),
         ]
-        elements[1].fill = InfinityUIKit.Palette.panel
-        elements[1].border = InfinityUIKit.Palette.border
+        elements[1].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(235)
+        elements[1].border = InfinityUIKit.EclipseAccess.mutedBorder
         elements[1].cornerRadius = 16
-        elements[2].fill = InfinityUIKit.Palette.panelRaised
-        elements[2].border = InfinityUIKit.Palette.border
+        elements[2].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(0)
+        elements[2].border = InfinityUIKit.EclipseAccess.mutedBorder.withAlpha(0)
         elements[2].cornerRadius = 16
-        elements[3].fill = InfinityUIKit.Palette.textPrimary
+        elements[3].fill = InfinityUIKit.EclipseAccess.text
         elements[3].fontSize = 30
-        elements[4].fill = InfinityUIKit.Palette.textSecondary
+        elements[4].fill = InfinityUIKit.EclipseAccess.secondary
         elements[4].fontSize = 17
-        elements[5].fill = InfinityUIKit.Palette.field
-        elements[5].border = InfinityUIKit.Palette.fieldBorder
+        elements[5].fill = InfinityUIKit.EclipseAccess.background.withAlpha(245)
+        elements[5].border = InfinityUIKit.EclipseAccess.mutedBorder
         elements[5].cornerRadius = 10
         elements[5].inputVariable = switch step {
         case 1: .machineNodeName
@@ -1025,11 +1025,15 @@ struct InstallerStudioDocument: Codable, Hashable {
         case 4: .password
         default: .none
         }
-        elements[8].fill = InfinityUIKit.Palette.textSecondary
+        elements[6].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(245)
+        elements[6].border = InfinityUIKit.EclipseAccess.mutedBorder
+        elements[7].fill = InfinityUIKit.EclipseAccess.primary
+        elements[7].border = InfinityUIKit.EclipseAccess.border
+        elements[8].fill = InfinityUIKit.EclipseAccess.secondary
         elements[8].fontSize = 13
-        elements[9].fill = InfinityUIKit.Palette.textPrimary
+        elements[9].fill = InfinityUIKit.EclipseAccess.text
         elements[9].fontSize = 17
-        elements[10].fill = InfinityUIKit.Palette.accent
+        elements[10].fill = InfinityUIKit.EclipseAccess.border
         elements[10].fontSize = 14
 
         for progressIndex in 0..<8 {
@@ -1040,10 +1044,10 @@ struct InstallerStudioDocument: Codable, Hashable {
                 text: "", zIndex: 6
             )
             segment.fill = progressIndex <= step
-                ? InfinityUIKit.Palette.accent
-                : InfinityUIKit.Palette.border
-            segment.border = segment.fill
-            segment.cornerRadius = 2
+                ? InfinityUIKit.EclipseAccess.primary
+                : InfinityUIKit.EclipseAccess.elevated
+            segment.border = progressIndex <= step ? InfinityUIKit.EclipseAccess.border : InfinityUIKit.EclipseAccess.mutedBorder
+            segment.cornerRadius = 10
             elements.append(segment)
         }
         if placeholder.isEmpty {
@@ -1095,6 +1099,11 @@ struct InstallerStudioDocument: Codable, Hashable {
                 )
             }
         }
+        var wordmark = StudioElement.make(name: "Eclipse Access Wordmark", kind: .image, role: .image,
+            frame: CanvasRect(x: 510, y: 400, width: 440, height: 100),
+            imageAsset: "assets/boot/infinity-eclipse-header-v1.bmp", zIndex: 40)
+        wordmark.crop = ImageCrop(left: 14, top: 1, right: 12, bottom: 80)
+        elements.append(wordmark)
         return elements
     }
 
@@ -1114,22 +1123,22 @@ struct InstallerStudioDocument: Codable, Hashable {
             name: "\(prefix) Card \(index + 1)", kind: .panel,
             frame: CanvasRect(x: 72, y: top, width: 276, height: 54), zIndex: 6
         )
-        panel.fill = InfinityUIKit.Palette.panelRaised
-        panel.border = InfinityUIKit.Palette.border
+        panel.fill = InfinityUIKit.EclipseAccess.elevated.withAlpha(240)
+        panel.border = InfinityUIKit.EclipseAccess.mutedBorder
         panel.cornerRadius = 10
         var headingElement = StudioElement.make(
             name: "\(prefix) Heading \(index + 1)", kind: .text,
             frame: CanvasRect(x: 82, y: top + 8, width: 256, height: 20),
             text: heading, zIndex: 7
         )
-        headingElement.fill = InfinityUIKit.Palette.textPrimary
+        headingElement.fill = InfinityUIKit.EclipseAccess.text
         headingElement.fontSize = 16
         var detailElement = StudioElement.make(
             name: "\(prefix) Detail \(index + 1)", kind: .text,
             frame: CanvasRect(x: 82, y: top + 29, width: 256, height: 20),
             text: detail, zIndex: 7
         )
-        detailElement.fill = InfinityUIKit.Palette.textSecondary
+        detailElement.fill = InfinityUIKit.EclipseAccess.secondary
         detailElement.fontSize = 13
         elements.append(contentsOf: [panel, headingElement, detailElement])
     }
@@ -1149,22 +1158,22 @@ struct InstallerStudioDocument: Codable, Hashable {
             name: "Setting Card \(index + 1)", kind: .panel,
             frame: CanvasRect(x: 72, y: top, width: 276, height: 44), zIndex: 6
         )
-        panel.fill = InfinityUIKit.Palette.panelRaised
-        panel.border = InfinityUIKit.Palette.border
+        panel.fill = InfinityUIKit.EclipseAccess.elevated.withAlpha(240)
+        panel.border = InfinityUIKit.EclipseAccess.mutedBorder
         panel.cornerRadius = 10
         var labelElement = StudioElement.make(
             name: "Setting Label \(index + 1)", kind: .text,
             frame: CanvasRect(x: 82, y: top + 12, width: 153, height: 20),
             text: label, zIndex: 7
         )
-        labelElement.fill = InfinityUIKit.Palette.textPrimary
+        labelElement.fill = InfinityUIKit.EclipseAccess.text
         labelElement.fontSize = 15
         var valueElement = StudioElement.make(
             name: "Setting Value \(index + 1)", kind: .text,
             frame: CanvasRect(x: 235, y: top + 12, width: 103, height: 20),
             text: value, zIndex: 7
         )
-        valueElement.fill = InfinityUIKit.Palette.accentBright
+        valueElement.fill = InfinityUIKit.EclipseAccess.border
         valueElement.fontSize = 13
         elements.append(contentsOf: [panel, labelElement, valueElement])
     }

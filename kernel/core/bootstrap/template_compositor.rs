@@ -7,6 +7,7 @@ use super::installer::{
     INSTALLER_MASTHEAD_BMP, INSTALLER_PROGRESS_HERO_BMP, INSTALLER_WELCOME_MASTHEAD_BMP,
 };
 use super::*;
+use super::installer::{INSTALLER_FONT_CELL_HEIGHT, INSTALLER_FONT_NATIVE_SIZE_PX};
 use crate::ui::installer_layout::{
     scale_template_rect, CONFIGURATION_TEMPLATE_BYTES, INSTALLER_TEMPLATE_BYTES,
 };
@@ -132,6 +133,10 @@ impl DisplayDevice {
             let is_navigation = element.role == InstallerTemplateRole::BackButton as u8
                 || element.role == InstallerTemplateRole::PrimaryButton as u8
                 || element.role == InstallerTemplateRole::Footer as u8;
+            // Configuration live content paints these once with the actual
+            // navigation focus; avoid accumulating their translucent edges.
+            if full_scene && bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
+                && is_navigation { continue; }
             if full_scene || is_navigation {
                 if element.kind == 6 {
                     let (percent, label) = progress.unwrap_or((0, element.text));
@@ -153,10 +158,82 @@ impl DisplayDevice {
                 } else {
                     None
                 };
-                self.template_element(element, image, navigation);
+                if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
+                    && matches!(element.kind, 1 | 4 | 5)
+                {
+                    self.access_template_control(element, navigation);
+                } else if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
+                    && element.kind == 3
+                {
+                    self.configuration_template_text_layer(element);
+                } else {
+                    self.template_element(element, image, navigation);
+                }
             }
         }
         true
+    }
+
+    // ------------------------=
+    // FUNC: configuration_template_text_layer
+    // DESC: Uses the authored Inter typography and fits only single-line-height titles so responsive aspect ratios cannot hide their final words.
+    // ------------------=
+    fn configuration_template_text_layer(&mut self, element: InstallerTemplateElement<'_>) {
+        let rect = scale_template_rect(element.frame, self.width, self.height);
+        let strong = element.role == InstallerTemplateRole::Title as u8;
+        let mut pixels = (element.font_size as usize * self.height / 1000).max(6);
+        let line_height = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels)
+            .scale_usize(INSTALLER_FONT_CELL_HEIGHT);
+        let line_advance = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels)
+            .scale_usize(INSTALLER_FONT_CELL_HEIGHT + 4);
+        if strong && !element.text.contains(&b'\n') && rect.height < line_height + line_advance {
+            while pixels > 6 && self.access_text_width(element.text, pixels, strong) > rect.width {
+                pixels -= 1;
+            }
+        }
+        let previous_clip = self.render_clip;
+        self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+        self.access_text_wrapped(rect.left, rect.top, rect.width, element.text,
+            element.fill[0], element.fill[1], element.fill[2],
+            (element.fill[3] as u16 * element.opacity as u16 / 100) as u8, pixels, strong);
+        self.render_clip = previous_clip;
+    }
+
+    // ------------------------=
+    // FUNC: access_template_control
+    // DESC: Renders saved configuration controls with the approved Access gradient, focus easing and subpixel edges.
+    // ------------------=
+    fn access_template_control(&mut self, element: InstallerTemplateElement<'_>,
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>) {
+        use super::access_style as palette;
+        let rect=scale_template_rect(element.frame,self.width,self.height);
+        let focused=navigation.is_some_and(|(focus,_,_)|
+            (element.role==InstallerTemplateRole::BackButton as u8 && focus==0)
+            || (element.role==InstallerTemplateRole::PrimaryButton as u8 && focus==1));
+        let fill=(element.fill[0],element.fill[1],element.fill[2]);
+        let border=(element.border[0],element.border[1],element.border[2]);
+        let opacity=(element.fill[3] as u16*element.opacity as u16/100) as u8;
+        let border_opacity=(element.border[3] as u16*element.opacity as u16/100) as u8;
+        let text_opacity=(255u16*element.opacity as u16/100) as u8;
+        let radius=(element.corner_radius as usize*self.height/1000).max(1);
+        if element.role==InstallerTemplateRole::ProgressSegment as u8 {
+            let size=rect.height.min(rect.width);
+            self.access_surface_alpha(rect.left,rect.top,size,size,size/2,fill,border,
+                opacity,border_opacity,false);
+            return;
+        }
+        self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,radius,fill,border,
+            opacity,border_opacity,focused);
+        if element.kind==5 {
+            let font=(element.font_size as usize*self.height/1000).max(6);
+            let width=self.access_text_width(element.text,font,true);
+            let previous=self.render_clip;
+            self.intersect_render_clip(rect.left,rect.top,rect.width,rect.height);
+            self.access_text(rect.left+rect.width.saturating_sub(width)/2,
+                rect.top+rect.height.saturating_sub(font*7/6)/2,
+                element.text,palette::TEXT.0,palette::TEXT.1,palette::TEXT.2,text_opacity,font,true);
+            self.render_clip=previous;
+        }
     }
 
     // ------------------------=
@@ -351,7 +428,11 @@ impl DisplayDevice {
             } else if name.ends_with(b"infinity-installer-masthead-v1.png") {
                 INSTALLER_WELCOME_MASTHEAD_BMP
             } else if name.ends_with(b"infinity-onboarding-wallpaper-v1.png") {
+                include_bytes!("../../../assets/desktop/infinity-onboarding-wallpaper-v1.bmp")
+            } else if name.ends_with(b"eclipse-access-wallpaper-v1.png") {
                 ONBOARDING_BMP
+            } else if name.ends_with(b"infinity-eclipse-header-v1.bmp") {
+                super::bootstrap::SPLASH_BMP
             } else if name.ends_with(b"infinity-installer-progress-hero-v1.png") {
                 INSTALLER_PROGRESS_HERO_BMP
             } else {

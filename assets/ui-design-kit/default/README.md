@@ -1,11 +1,17 @@
 # Infinity UI Design Kit — Default
 
+First-run setup and login use the approved [Eclipse Access kit](eclipse-access-v1.md).
+Its reference board, generated wallpaper and mask glyph family, exact palette,
+antialiased surfaces and 140ms focus/pressed states are the pre-session contract.
+
 The existing 1672 × 941 bootstrap header and emblem BMPs retain their authored
 straight alpha. Fit the header top-aligned over black; do not crop its lettering.
 The emblem canvas fits within 52% of display width/height, centered, at 16% from
 the top. Its particle path follows the main ribbon in source pixels: crossing
 (837, 405), horizontal half-span 574, vertical half-span 210; exclude padding
 and reflection. Reveal, paint and old-trail restoration use one shared rectangle.
+Installed-OS loading adds exactly 100 physical pixels to the emblem's vertical
+position; ISO startup, header and progress-bar placement remain unchanged.
 The source art was visually inspected; animation remains to be checked after
 fresh installation.
 

@@ -670,7 +670,7 @@ def click_native_element(guest, identifier):
 
 # ------------------------=
 # FUNC: export_generated_artifacts
-# DESC: Extracts the stopped private VM's actual stored C and ELF, correlating them with editor and publication identities.
+# DESC: Extracts the stopped private VM's actual stored C, Python and ELF, correlating them with editor and publication identities.
 # ------------------=
 def export_generated_artifacts(guest, generation, architecture):
     assert guest.process is None or guest.process.poll() is not None
@@ -1255,6 +1255,9 @@ def main():
     parser.add_argument("--boot-only", action="store_true", help="Verify detached installed boot, account setup and cold-boot identity only; retain the stopped private disk without application generation")
     parser.add_argument("--editor-lifecycle-only", action="store_true", help="Verify actual unsaved editor minimize, close Cancel, and close Discard/reopen behavior without model generation or compilation")
     parser.add_argument("--widget-controls-only", action="store_true", help="Verify desktop composer focus, overflow, real status-menu actions and cancellation on a detached installation")
+    parser.add_argument("--source-workflows", action="store_true", help="Verify real Python creation plus named C updates, no-launch completion and explicit relaunch through the installed native services")
+    parser.add_argument("--source-workflows-python-evidence", type=pathlib.Path, help="Reuse a byte-verified completed Python stage from a prior report; run only the failed C stages in this guest")
+    parser.add_argument("--source-workflows-update-evidence", type=pathlib.Path, help="Independently verify updates of prior actual generated C source; does not claim the prior application's UI passed")
     parser.add_argument("--streaming-only", action="store_true", help="Verify real incremental model/editor output and cancellation/readmission only; not generated application acceptance")
     parser.add_argument("--benchmark-generation", action="store_true", help="Measure at least 128 decode tokens and 60 seconds of installed generation without compilation; requires --generate-request")
     parser.add_argument("--benchmark-model", choices=("hermes", "ministral"), default="hermes", help="Require this model in the private installation's persisted profile; never change model selection during measurement")
@@ -1271,8 +1274,22 @@ def main():
     parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
+    if args.source_workflows_python_evidence:
+        if not args.source_workflows:
+            parser.error("--source-workflows-python-evidence requires --source-workflows")
+        args.source_workflows_python_evidence = args.source_workflows_python_evidence.resolve()
+        args.source_workflows_python_evidence.relative_to(ROOT)
+    if args.source_workflows_update_evidence:
+        if not args.source_workflows or not args.reuse_installed or not args.source_workflows_python_evidence:
+            parser.error("--source-workflows-update-evidence requires --source-workflows, --reuse-installed and prior Python evidence")
+        args.source_workflows_update_evidence = args.source_workflows_update_evidence.resolve()
+        args.source_workflows_update_evidence.relative_to(ROOT)
     if args.update_kernel and not args.reuse_installed:
         parser.error("--update-kernel requires --reuse-installed")
+    if args.source_workflows and (args.boot_only or args.editor_lifecycle_only or args.widget_controls_only
+            or args.streaming_only or args.benchmark_generation or args.generate_request or args.application_case
+            or args.create_application or args.create_ui_application or args.compiler_only or args.generation_only or args.save_compile):
+        parser.error("--source-workflows cannot be combined with another focused case")
     if args.widget_controls_only and (args.boot_only or args.editor_lifecycle_only or args.streaming_only
             or args.benchmark_generation or args.generate_request or args.create_application
             or args.create_ui_application or args.compiler_only or args.generation_only or args.save_compile):
@@ -1308,12 +1325,12 @@ def main():
         args.application_case.relative_to(ROOT)
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
-    if args.generate_request or args.streaming_only or args.editor_lifecycle_only or args.widget_controls_only:
+    if args.generate_request or args.streaming_only or args.editor_lifecycle_only or args.widget_controls_only or args.source_workflows:
         if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
             parser.error("Generated application acceptance must run through ./build-kit run")
     # Both app artifact export and the benchmark's read-only profile validation
     # depend on this native ObjectStore helper; do not require a stale prior build.
-    if args.generate_request and not args.streaming_only:
+    if (args.generate_request and not args.streaming_only) or args.source_workflows:
         (ROOT / "build/tools").mkdir(parents=True, exist_ok=True)
         subprocess.run(["rustc", "--edition=2021", "-A", "warnings", str(ROOT / "tools/installed-object-test.rs"),
                         "-o", str(ROOT / "build/tools/installed-object-test")], check=True)
@@ -1371,6 +1388,18 @@ def main():
             guest.install()
             guest.stop()
             report["identity"] = guest.onboard()
+        if args.source_workflows:
+            workflow_spec = importlib.util.spec_from_file_location("native_source_workflows", ROOT / "tools/native-source-workflow-installed.py")
+            workflow = importlib.util.module_from_spec(workflow_spec)
+            workflow_spec.loader.exec_module(workflow)
+            report["source_workflows"] = workflow.verify(guest, sys.modules[__name__], args.generation_timeout,
+                                                        args.source_workflows_python_evidence,
+                                                        args.source_workflows_update_evidence)
+            report["installed_acceptance_scope"] = report["source_workflows"]["scope"]
+            report["installed_boot_verified"] = True
+            report["generated_workflow_passed"] = report["source_workflows"]["passed"]
+            report["installed_acceptance"] = report["source_workflows"]["passed"]
+            return
         if args.boot_only:
             state = guest.state()
             assert state[3] == 1 and state[4] == 5 and state[9] & 3 == 3
@@ -1473,6 +1502,8 @@ def main():
         report["compiler_workflow_passed"] = True
     except BaseException as error:
         report["failure"] = repr(error)
+        if getattr(guest, "source_workflow_evidence", None):
+            report["source_workflows"] = guest.source_workflow_evidence
         if getattr(guest, "streaming_evidence", None):
             report["streaming"] = guest.streaming_evidence
         if getattr(guest, "editor_lifecycle_evidence", None):
@@ -1501,6 +1532,14 @@ def main():
                     guest.process.kill()
                     guest.process.wait(timeout=20)
         export_failed = False
+        if args.source_workflows and report.get("source_workflows", {}).get("stages"):
+            try:
+                report["stored_artifacts"] = export_generated_artifacts(guest, None, args.arch)
+                report["source_export_verification"] = workflow.verify_exports(report["stored_artifacts"], report["source_workflows"])
+            except (AssertionError, OSError, subprocess.CalledProcessError) as error:
+                report["artifact_export_failure"] = repr(error)
+                report["installed_acceptance"] = False
+                export_failed = True
         if (args.audio_checkpoints or args.terminal_audio_only) and report.get("streaming", {}).get("announced_checkpoints"):
             try:
                 report["checkpoint_audio"] = verify_checkpoint_audio(guest, report["streaming"])

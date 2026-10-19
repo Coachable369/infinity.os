@@ -103,6 +103,7 @@ INSTALLER_DESIGNER_SOURCES := $(shell find tools/installer-designer/Sources -typ
 CRASH_ASSETS := $(shell find assets/crash -type f)
 APPLICATION_ASSETS := $(shell find assets/apps -type f)
 DESIGN_KIT_ASSETS := $(shell find assets/ui-design-kit/default -type f)
+DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp
 KERNEL_SOURCES += $(DESIGN_KIT_ASSETS)
 KERNEL_SOURCES += $(wildcard sdk/infinity-enterprise-core/*.rs) sdk/infinity-enterprise-core/Cargo.toml
 
@@ -261,6 +262,9 @@ performance-test:
 assets/ui-design-kit/default/browser-welcome-hero-v1.bmp: assets/ui-design-kit/default/browser-welcome-hero-v1.png tools/build-browser-welcome-artwork.py
 	python3 tools/build-browser-welcome-artwork.py
 
+assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp: assets/ui-design-kit/default/eclipse-access-glyphs-v1.png assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png tools/build-access-artwork.py
+	python3 tools/build-access-artwork.py
+
 build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-browser-core/*.rs) assets/ui-design-kit/default/browser-welcome-hero-v1.bmp
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z sdk/infinity-browser-core/lib.rs -o $@
@@ -331,6 +335,22 @@ $(ICON_RUNTIME_ASSETS): $(ICON_THEME_SOURCES)
 	@tools/build-icon-themes.sh
 
 NATIVE_C_TOOLCHAIN_SOURCES := tools/build-native-c-toolchain.sh $(shell find sdk/compiler -type f)
+NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/extension.c tools/native-python/library.c $(shell find sdk/python sdk/compiler -type f)
+
+builds/toolchains/aarch64/python.elf: $(NATIVE_PYTHON_SOURCES)
+	python3 tools/native-python/build.py aarch64
+
+builds/toolchains/x86_64/python.elf: $(NATIVE_PYTHON_SOURCES)
+	python3 tools/native-python/build.py x86_64
+
+builds/toolchains/aarch64/infinity_native_test.so builds/toolchains/aarch64/python-license.txt: builds/toolchains/aarch64/python.elf
+	@test -s $@ || python3 tools/native-python/build.py aarch64
+
+builds/toolchains/x86_64/infinity_native_test.so builds/toolchains/x86_64/python-license.txt: builds/toolchains/x86_64/python.elf
+	@test -s $@ || python3 tools/native-python/build.py x86_64
+
+$(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: builds/toolchains/aarch64/python.elf builds/toolchains/aarch64/infinity_native_test.so builds/toolchains/aarch64/python-license.txt
+$(BUILD)/x86_64/kernel.o $(BUILD)/x86_64/installed-kernel.o: builds/toolchains/x86_64/python.elf builds/toolchains/x86_64/infinity_native_test.so builds/toolchains/x86_64/python-license.txt
 NATIVE_C_APP_SDK_SOURCES := tools/build-native-app-sdk.sh $(shell find sdk/c -type f)
 builds/toolchains/aarch64/clang.elf: $(NATIVE_C_TOOLCHAIN_SOURCES)
 	sh tools/build-native-c-toolchain.sh aarch64
@@ -496,7 +516,7 @@ object-vm-test:
 
 .PHONY: installer-entropy-test
 .PHONY: editor-window-test
-.PHONY: editor-assistant-test native-uikit-test authentication-logo-test authentication-motion-test
+.PHONY: editor-assistant-test native-uikit-test authentication-logo-test authentication-motion-test eclipse-access-test
 native-uikit-test:
 	@mkdir -p build/behavior-tests
 	@sh tools/application-interaction-test.sh
@@ -508,6 +528,11 @@ editor-assistant-test:
 	@mkdir -p build/behavior-tests
 	rustc --edition=2021 tools/editor-assistant-test.rs -o build/behavior-tests/editor-assistant-test
 	build/behavior-tests/editor-assistant-test
+	$(RUSTC) --edition=2021 --test kernel/ui/editor_source_lookup.rs -o build/behavior-tests/editor-source-lookup
+	build/behavior-tests/editor-source-lookup
+	$(RUSTC) --edition=2021 --test kernel/runtime/native_python_workflow.rs -o build/behavior-tests/native-python-workflow
+	build/behavior-tests/native-python-workflow
+	python3 tools/native-source-workflow-test.py
 
 authentication-logo-test: x86_64
 	@mkdir -p $(BUILD)/tmp; work=$$(mktemp -d $(BUILD)/tmp/infinity-auth-logo.XXXXXX); rmdir "$$work"; \
@@ -518,6 +543,13 @@ authentication-motion-test:
 	$(RUSTC) --edition=2021 --test kernel/ui/authentication_motion.rs \
 		-o build/behavior-tests/authentication-motion-test
 	build/behavior-tests/authentication-motion-test
+
+eclipse-access-test:
+	@mkdir -p build/behavior-tests
+	$(RUSTC) --edition=2021 --test tools/eclipse-font-test.rs -o build/behavior-tests/eclipse-font-test
+	build/behavior-tests/eclipse-font-test --test-threads=1
+	$(RUSTC) --edition=2021 --test tools/eclipse-access-test.rs -o build/behavior-tests/eclipse-access-test
+	build/behavior-tests/eclipse-access-test --test-threads=1
 
 editor-window-test:
 	@mkdir -p build/behavior-tests

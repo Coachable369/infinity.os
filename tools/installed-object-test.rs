@@ -149,7 +149,8 @@ fn export_generated<D: BlockDevice>(store: &mut ObjectStore<D>, directory: &str)
     let mut records = Vec::new();
     for index in 0..4096 {
         let Some((path, object)) = store.namespace_entry(index) else { break; };
-        let source = path.starts_with(b"/home/default/documents/app-c-") && path.ends_with(b".c");
+        let source = path.starts_with(b"/home/default/documents/") && (path.ends_with(b".c") || path.ends_with(b".py"));
+        let extension = if path.ends_with(b".py") {"py"} else if source {"c"} else {"elf"};
         let executable = path.starts_with(b"/home/default/program-") && path.ends_with(b".elf");
         if !source && !executable { continue; }
         let path = path.to_vec();
@@ -165,7 +166,7 @@ fn export_generated<D: BlockDevice>(store: &mut ObjectStore<D>, directory: &str)
         let mut path_hex = String::new();
         for value in object.0 { write!(object_hex, "{value:02x}").unwrap(); }
         for value in path { write!(path_hex, "{value:02x}").unwrap(); }
-        let name = format!("{}.{}", object_hex, if source { "c" } else { "elf" });
+        let name = format!("{}.{}", object_hex, extension);
         std::fs::write(destination.join(&name), &content).expect("write extracted artifact");
         records.push(format!("{{\"object\":\"{object_hex}\",\"path_hex\":\"{path_hex}\",\"file\":\"{name}\",\"source\":{source},\"version\":{},\"bytes\":{},\"crc32\":{}}}",
                              metadata.current_version, content.len(), storage::object::crc32(&content)));

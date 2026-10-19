@@ -52,9 +52,14 @@ mod pool_commands;
 mod editor_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
+#[path = "console_source.rs"]
+mod source_commands;
 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 #[path="console_compile.rs"]
 mod compiler_commands;
+#[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+#[path="console_python.rs"]
+mod python_commands;
 #[path = "console_enterprise.rs"]
 mod enterprise_commands;
 #[path="../ui/clipboard_menu.rs"]
@@ -1180,6 +1185,12 @@ impl ConsoleRuntime {
     // DESC: Composes a committed scene; spatial refresh suppresses physical presentation until its overlay is complete.
     // ------------------=
     fn redraw_scene(&self) {
+        if matches!(self.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
+            let time=crate::ui::performance::monotonic_ns();
+            let key=(self.mode as u32)*65536+(self.system_step as u32)*256+self.system_focus as u32;
+            crate::bootstrap::access_animation_tick(key,time.unwrap_or(0)/1_000_000,
+                self.pointer_pressed,self.spatial.state.reduced_motion || time.is_none());
+        }
         self.publish_minimized_shelf();
         let mut editor_view = self.editor_tools;
         editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
@@ -9519,6 +9530,8 @@ impl ConsoleRuntime {
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
         #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if compiler_commands::command(self,&command[..length]) {self.reset_input();return;}
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if python_commands::command(self,&command[..length]) {self.reset_input();return;}
         if &command[..length] == b"spatial" {
             self.reset_input();
             crate::bootstrap::spatial_animation_timings(true);
@@ -13853,10 +13866,20 @@ static mut BROWSER_WINDOW:DesktopAppWindowState=DesktopAppWindowState::new(100,1
 pub fn browser_window()->DesktopAppWindowState {unsafe {BROWSER_WINDOW}}
 
 // ------------------------=
+// FUNC: reduced_motion
+// DESC: Reads the existing UI preference for bounded pre-session animation without modifying authentication or user state.
+// ------------------=
+pub fn reduced_motion() -> bool {
+    unsafe { (&*(&raw const RUNTIME)).as_ref().map(|runtime| runtime.spatial.state.reduced_motion).unwrap_or(false) }
+}
+
+// ------------------------=
 // FUNC: poll_native_ai
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){python_commands::poll(runtime);}}
     #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){compiler_commands::poll(runtime);}}
     #[cfg(target_os = "none")]
@@ -14123,6 +14146,15 @@ pub fn ui_animation_tick() -> bool {
                 crate::ui::authentication_motion::Advance::Idle => {}
             }
             return true;
+        }
+        if matches!(runtime.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
+            let time = crate::ui::performance::monotonic_ns();
+            let key = (runtime.mode as u32)*65536 + (runtime.system_step as u32)*256 + runtime.system_focus as u32;
+            if crate::bootstrap::access_animation_tick(key, time.unwrap_or(0)/1_000_000,
+                runtime.pointer_pressed, runtime.spatial.state.reduced_motion || time.is_none()) {
+                runtime.redraw();
+                return true;
+            }
         }
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
         #[cfg(feature="native-browser")]

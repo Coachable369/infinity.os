@@ -30,29 +30,43 @@ pub struct Task {
     process: Option<Process<cpu::BoundContext>>,
     address_space: Option<ProcessAddressSpace<cpu::Tables>>,
     preparation: Option<ProcessPreparation<cpu::Tables>>,
-    image: Image, bytes: &'static [u8], args: &'static [&'static [u8]],
+    image: Image, bytes: &'static [u8], args: super::native_arguments::Arguments,
     owner: SecurityIdentity, id: u32, session: u32, controller: cpu::Controller,
-    deadline: u64, cache_offset: usize, cancelled: bool,
+    deadline: u64, sleep_until: u64, cache_offset: usize, cancelled: bool,
     mappings: PrivateMappings,
     files: Files,
+    libraries: super::native_extensions::Libraries,
+    launch_secret: Option<[u8; 32]>,
+    directories: super::native_job_directories::Directories,
     streams: native_stdio::State,
 }
 
 impl Task {
     // ------------------------=
+    // FUNC: execution_id
+    // DESC: Exposes the actual native process identifier only after at least one user-mode execution visit.
+    // ------------------=
+    pub fn execution_id(&self) -> Option<u32> {
+        self.process.as_ref().filter(|process| process.counters().0 > 0).map(|_| self.id)
+    }
+
+    // ------------------------=
     // FUNC: start
     // DESC: Reserves a checked compiler job; bulk preparation is deferred to bounded cancellable polls.
     // ------------------=
-    pub unsafe fn start(bytes: &'static [u8], args: &'static [&'static [u8]], owner: SecurityIdentity, id: u32,
+    pub unsafe fn start(bytes: &'static [u8], args: &[&[u8]], owner: SecurityIdentity, id: u32,
         session: u32, memory: &mut NativeMemory, _kernel: KernelAccessMap,
         controller: cpu::Controller, deadline: u64) -> Result<Self, MemoryError> {
+        let args = super::native_arguments::Arguments::new(args).ok_or(MemoryError::InvalidAddress)?;
         let image = Image::parse_compiler(bytes, cpu::MACHINE).map_err(|_| MemoryError::InvalidAddress)?;
         let layout = CompilerVirtualLayout { image_base: image.virtual_base as u64,
             heap_base: 0x200000000, heap_pages: 16384, stack_guard_base: 0x300000000, stack_pages: 256 };
         let preparation = ProcessPreparation::<cpu::Tables>::new(memory, id, image, layout)?;
         Ok(Self { process: None, address_space: None, preparation: Some(preparation), image, bytes, args,
-            owner, id, session, controller, deadline, cache_offset: 0, cancelled: false,
-            mappings: PrivateMappings::new(id, 256), files: Files::new(), streams: native_stdio::State::default() })
+            owner, id, session, controller, deadline, sleep_until: 0, cache_offset: 0, cancelled: false,
+            mappings: PrivateMappings::new(id, 256), files: Files::new(),
+            libraries: super::native_extensions::Libraries::new(id), launch_secret: None,
+            directories: super::native_job_directories::Directories::new(), streams: native_stdio::State::default() })
     }
     // ------------------------=
     // FUNC: prepare_next
@@ -77,8 +91,13 @@ impl Task {
         let storage = core::slice::from_raw_parts_mut((space.heap.physical_address+4096) as *mut u8, 4096);
         let tls = template.initialize_at(self.bytes, cpu::MACHINE, storage, 0x200001000)
             .map_err(|_| MemoryError::InvalidAddress)?.thread_pointer();
+        let mut arguments: [&[u8]; 32] = [&[]; 32];
+        for (index, argument) in arguments.iter_mut().take(self.args.count()).enumerate() {
+            *argument = self.args.get(index).ok_or(MemoryError::InvalidAddress)?;
+        }
         launch::write(&mut space.page_tables, 0x200000000, launch::Invocation {
-            arguments: self.args, executable: b"/system/compiler", home: b"/", node: b"InfinityOS",
+            arguments: &arguments[..self.args.count()],
+            executable: if arguments[0].starts_with(b"/") { arguments[0] } else { b"/system/compiler" }, home: b"/", node: b"InfinityOS",
             process: self.id, session: self.session, heap: 0x200010000, heap_bytes: 64*1024*1024-65536,
         })?;
         cpu::finish_preparation(space, memory, self.controller)?;
@@ -93,6 +112,13 @@ impl Task {
     // ------------------=
     pub fn cancel(&mut self) { self.cancelled = true; if let Some(process) = self.process.as_mut() { process.cancel(); } }
     // ------------------------=
+    // FUNC: set_launch_secret
+    // DESC: Supplies a boot-derived one-use secret before native code starts, without granting an entropy device.
+    // ------------------=
+    pub fn set_launch_secret(&mut self, secret: [u8; 32]) {
+        if self.process.is_none() && self.launch_secret.is_none() { self.launch_secret = Some(secret); }
+    }
+    // ------------------------=
     // FUNC: poll
     // DESC: Runs at most one preemptible slice and one checked service operation before returning to the desktop.
     // ------------------=
@@ -101,6 +127,7 @@ impl Task {
         if !authorized { self.cancel(); }
         if self.cancelled { return State::Cancelled; }
         if now >= self.deadline { return State::Deadline; }
+        if now < self.sleep_until { return State::Runnable; }
         if self.process.is_none() {
             // Amortize firmware HID polling without allowing an unbounded load.
             // The timer is optional; without it, retain one bounded chunk.
@@ -125,8 +152,23 @@ impl Task {
         let tables = &mut self.address_space.as_mut().unwrap().page_tables;
         let mappings = &mut self.mappings;
         let handles = &mut self.files;
+        let libraries = &mut self.libraries;
+        let executable = self.bytes;
+        let secret = &mut self.launch_secret;
+        let directories = &mut self.directories;
+        let sleep_until = &mut self.sleep_until;
         let state = self.process.as_mut().unwrap().step(now, |_, operation, a| {
             match operation {
+                0x1206 | 0x1207 | 0x1208 | 0x1215 => directories.syscall(tables, files, operation, a),
+                0x1232 => {
+                    if a[1] != 32 { return -22; }
+                    let Some(bytes) = secret.as_ref() else { return -13; };
+                    if copy_to_user(tables, a[0], bytes).is_err() { return -14; }
+                    if let Some(bytes) = secret.as_mut() { bytes.fill(0); }
+                    *secret = None; 0
+                }
+                0x1230 | 0x1231 => libraries.syscall(memory, tables, executable, files,
+                    cpu::MACHINE, operation, a, |address, size| unsafe { cpu::clean_instruction_range(address, size) }),
                 0x121b | 0x121c | 0x121d => streams.syscall(tables, operation, a),
                 0x120b | 0x120c | 0x1210 | 0x120e | 0x120f | 0x1211 | 0x1212 => handles.syscall(tables, files, operation, a),
                 0x1201 if matches!(a[2],1|3) && a[3] == 34 && a[4] as i32 == -1 && a[5] == 0 => {
@@ -138,6 +180,12 @@ impl Task {
                 }
                 0x1202 => mappings.unmap(tables, memory, a[0], a[1]).map_or(-22, |_| 0),
                 0x1200 => copy_to_user(tables,a[1],&now.to_le_bytes()).map_or(-14, |_| 0),
+                0x1209 => {
+                    let Some(wake) = now.checked_add(a[0]) else { return -75; };
+                    if copy_to_user(tables, a[1], &0u64.to_le_bytes()).is_err() { return -14; }
+                    *sleep_until = wake;
+                    0
+                }
                 0x1214 => {
                     if a[1] < 1 { return -34; }
                     if check_user_range(tables,a[2],8,true).is_err() { return -14; }
@@ -164,9 +212,12 @@ impl Task {
     // DESC: Reclaims dynamic mappings and the entire private address space only after execution has been stopped.
     // ------------------=
     pub fn release(mut self, memory: &mut NativeMemory) -> Result<(), MemoryError> {
+        if let Some(secret) = self.launch_secret.as_mut() { secret.fill(0); }
+        self.launch_secret = None;
         self.cancel();
         if let Some(preparation) = self.preparation.take() { preparation.release(memory)?; }
         if let Some(mut space) = self.address_space.take() {
+            self.libraries.release_all(&mut space.page_tables, memory)?;
             self.mappings.release_all(&mut space.page_tables, memory)?;
             space.release(memory)?;
         }

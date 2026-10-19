@@ -177,6 +177,33 @@ impl<'a> RuntimeBitmap<'a> {
         };
         Some([red, green, blue, alpha])
     }
+
+    // ------------------------=
+    // FUNC: filtered_rgba
+    // DESC: Samples a bounded destination footprint in premultiplied alpha so reduced artwork retains smooth edges without dark fringes.
+    // ------------------=
+    pub fn filtered_rgba(self, placement: RuntimeBitmapPlacement, x: usize, y: usize) -> [u8; 4] {
+        let nx = placement.source_width.div_ceil(placement.destination_width).clamp(1, 4);
+        let ny = placement.source_height.div_ceil(placement.destination_height).clamp(1, 4);
+        let mut sum = [0u32; 4];
+        for iy in 0..ny {
+            let sy = placement.source_top + ((y * ny * 2 + iy * 2 + 1) * placement.source_height
+                / (placement.destination_height * ny * 2)).min(placement.source_height - 1);
+            for ix in 0..nx {
+                let sx = placement.source_left + ((x * nx * 2 + ix * 2 + 1) * placement.source_width
+                    / (placement.destination_width * nx * 2)).min(placement.source_width - 1);
+                if let Some([r, g, b, a]) = self.rgba(sx, sy) {
+                    sum[0] += r as u32 * a as u32;
+                    sum[1] += g as u32 * a as u32;
+                    sum[2] += b as u32 * a as u32;
+                    sum[3] += a as u32;
+                }
+            }
+        }
+        if sum[3] == 0 { return [0; 4]; }
+        [(sum[0] / sum[3]) as u8, (sum[1] / sum[3]) as u8,
+         (sum[2] / sum[3]) as u8, (sum[3] / (nx * ny) as u32) as u8]
+    }
 }
 
 // ------------------------=

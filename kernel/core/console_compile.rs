@@ -25,6 +25,8 @@ struct Lease {
     request:[u8;1024],
     request_length:usize,
     software_goal:Option<u64>,
+    source_path:[u8;95],
+    source_path_length:usize,
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ReplyTarget { Assistant, Console }
@@ -33,6 +35,8 @@ static mut REPLY_TARGET: ReplyTarget = ReplyTarget::Assistant;
 static mut EDITOR_DIAGNOSTICS:assistant::compiler_diagnostics::Receipt=assistant::compiler_diagnostics::Receipt::new();
 static mut APP: Option<(SecurityIdentity,crate::runtime::native_app_task::Task)> = None;
 static mut APP_ACTIVE: bool = false;
+static mut APP_SOURCE_PATH:[u8;95]=[0;95];
+static mut APP_SOURCE_PATH_LENGTH:usize=0;
 static mut APP_BYTES:[u8;256*1024]=[0;256*1024];
 static mut APP_OUTPUT:[u8;4096]=[0;4096];
 static mut APP_OUTPUT_LENGTH:usize=0;
@@ -116,11 +120,10 @@ pub(super) fn repair_diagnostics(console:&ConsoleRuntime,output:&mut [u8])->usiz
 }
 
 // ------------------------=
-// FUNC: save_generated_and_build
-// DESC: Saves explicit repairs to the current path or new source to Documents before admitting a build; only application creation may auto-launch.
+// FUNC: save_generated_source
+// DESC: Persists an authorized complete source transaction at its resolved path or a fresh discoverable Documents name and records actual storage evidence.
 // ------------------=
-pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result:bool)->Result<(),StartError> {unsafe {
-    if APP_ACTIVE || (&*(&raw const LEASE)).is_some() {return Err(StartError::Busy);}
+pub(super) fn save_generated_source(console:&mut ConsoleRuntime)->Result<([u8;95],usize),StartError> {
     if !active(console) {return Err(StartError::SessionUnavailable);}
     if !console.ai_chat_allowed() {return Err(StartError::AiDisabled);}
     let software_goal=assistant::read(2).workflow_goal;
@@ -128,40 +131,77 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
         return Err(StartError::SourceInvalid);
     }
     let ticks=crate::runtime::ai::qwen::workers::clock_ns();
+    if ticks==0 {return Err(StartError::ClockUnavailable);}
     let request_panel=assistant::read(2);
-    let repair=assistant::editor_compile_intent::repair(&request_panel.request[..request_panel.request_len]).is_some();
+    let request=&request_panel.request[..request_panel.request_len];
+    let target=request_panel.source_save_target().ok_or(StartError::SaveFailed)?;
+    let existing=target!=assistant::SourceSaveTarget::New;
+    if matches!(target,assistant::SourceSaveTarget::Bound(_, _)) && console.editor_document_path_length==0 {
+        return Err(StartError::SaveFailed);
+    }
     let mut path=[0u8;95];
     let length;
-    if repair && console.editor_document_path_length>0 {
+    let source_object;
+    if existing && console.editor_document_path_length>0 {
         length=console.editor_document_path_length;
-        if length>path.len() || !console.save_editor_document() {return Err(StartError::SaveFailed);}
+        if length>path.len() {return Err(StartError::SaveFailed);}
+        if let assistant::SourceSaveTarget::Bound(object,version)=target {
+            let metadata=crate::storage::object_inspect_path(&console.editor_document_path[..length]).map_err(|_|StartError::SaveFailed)?.0;
+            if metadata.owner.0!=console.current_user.0 || metadata.space!=crate::storage::object::Space::Personal
+                || metadata.object.id.0!=object || metadata.current_version!=version {return Err(StartError::SaveFailed);}
+        }
+        if !console.save_editor_document() {return Err(StartError::SaveFailed);}
         path[..length].copy_from_slice(&console.editor_document_path[..length]);
+        source_object=crate::storage::object_inspect_path(&path[..length]).map_err(|_|StartError::SaveFailed)?.0.object.id;
     } else {
-        let mut name=[0u8;24];name[..6].copy_from_slice(b"app-c-");
-        for i in 0..16 {name[6+i]=b"0123456789abcdef"[((ticks>>((15-i)*4))&15) as usize];}
-        name[22..].copy_from_slice(b".c");
+        let mut name=[0u8;47];
+        let name_length=assistant::editor_compile_intent::source_name(request,request_panel.effective_language(),ticks,&mut name);
+        let name=&name[..name_length];
         let base=crate::storage::object::DOCUMENTS_PATH;
         path[..base.len()].copy_from_slice(base);path[base.len()]=b'/';
-        length=base.len()+1+name.len();path[base.len()+1..length].copy_from_slice(&name);
-        let source_object=crate::storage::object_create_owned_note_at(&name,console.editor_document.bytes(),&path[..length],
+        length=base.len()+1+name.len();path[base.len()+1..length].copy_from_slice(name);
+        source_object=crate::storage::object_create_owned_note_at(name,console.editor_document.bytes(),&path[..length],
             crate::storage::object::ObjectId(console.current_user.0))
             .map_err(|_|StartError::SaveFailed)?;
-        if let Some(goal)=software_goal {
-            crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
-                crate::runtime::ai::intelligence::software::Event::SourceSaved{object:source_object.0,revision:ticks}));
-        }
         console.editor_document_path[..length].copy_from_slice(&path[..length]);console.editor_document_path_length=length;
-        console.editor_document_name[..name.len()].copy_from_slice(&name);console.editor_document_name_length=name.len();
+        console.editor_document_name[..name.len()].copy_from_slice(name);console.editor_document_name_length=name.len();
+    }
+    let metadata=crate::storage::object_inspect_path(&path[..length]).map_err(|_|StartError::SaveFailed)?.0;
+    let mut saved_panel=assistant::read(2);
+    saved_panel.source_binding=Some((metadata.object.id.0,metadata.current_version));
+    assistant::write(2,saved_panel);
+    if let Some(goal)=software_goal {
+        crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
+            crate::runtime::ai::intelligence::software::Event::SourceSaved{object:source_object.0,revision:ticks}));
     }
     generation_progress(console,VoiceStep::Saved);
     console.editor_document.save();console.detect_editor_language();
+    Ok((path,length))
+}
+
+// ------------------------=
+// FUNC: save_generated_and_build
+// DESC: Compiles the saved source snapshot and allows relaunch only for the exact explicitly updated running application.
+// ------------------=
+pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result:bool)->Result<(),StartError> {unsafe {
+    if (&*(&raw const LEASE)).is_some() {return Err(StartError::Busy);}
+    let request_panel=assistant::read(2);
+    let request=&request_panel.request[..request_panel.request_len];
+    let software_goal=request_panel.workflow_goal;
+    if APP_ACTIVE && launch_result && !assistant::editor_compile_intent::may_relaunch(request,
+        &console.editor_document_path[..console.editor_document_path_length],
+        &(&*(&raw const APP_SOURCE_PATH))[..APP_SOURCE_PATH_LENGTH],
+        (&*(&raw const APP)).as_ref().is_some_and(|(owner,_)|*owner==SecurityIdentity(console.current_session.0))) {
+        return Err(StartError::Busy);
+    }
+    let (path,length)=save_generated_source(console)?;
     {
         let snapshot:&ConsoleRuntime=console;
         start_source(snapshot,snapshot.editor_document.bytes(),&path[..length],ReplyTarget::Assistant,true)?;
     }
     open_build_transcript(console,&path[..length],28);
     if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {
-        lease.launch=launch_result && !repair;
+        lease.launch=launch_result && assistant::editor_compile_intent::requests_launch(request);
         let panel=assistant::read(2);
         let request=&panel.request[..panel.request_len];
         lease.generated=true;
@@ -206,7 +246,9 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],re
     let source_length=source_path.len().min(95);
     REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
         launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0,
-        generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0,software_goal:None });
+        generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0,software_goal:None,
+        source_path:{let mut path=[0;95];let length=source_path.len().min(path.len());path[..length].copy_from_slice(&source_path[..length]);path},
+        source_path_length:source_path.len().min(95) });
     if reply==ReplyTarget::Assistant {(&mut *(&raw mut EDITOR_DIAGNOSTICS)).record(owner.0,console.assistant_revision(),b"");}
     Ok(())
 }
@@ -514,6 +556,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     if !finished{return;}
     if workflow_current && lease.owner==owner {
         let mut panel=assistant::read(2);
+        let mut published_artifact=false;
         job::result(owner,|status,binary,diagnostics,_truncated| {
             if target==ReplyTarget::Assistant {
                 (&mut *(&raw mut EDITOR_DIAGNOSTICS)).record(owner.0,lease.document_revision,
@@ -530,6 +573,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                     owner:crate::storage::object::ObjectId(console.current_user.0),
                 },lease);
                 if let Ok(reference)=saved {
+                    published_artifact=true;
                     if let Some(goal)=lease.software_goal {
                         crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
                             crate::runtime::ai::intelligence::software::Event::Compiled{artifact:reference.id.0}));
@@ -579,7 +623,7 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
             }
         });
         if let Some(goal)=lease.software_goal {
-            if launch_length==0 && panel.generation!=assistant::GenerationStatus::Queued {
+            if !published_artifact && panel.generation!=assistant::GenerationStatus::Queued {
                 crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,console.current_user.0,
                     crate::runtime::ai::intelligence::software::Event::Failed{code:2}));
             }
@@ -589,10 +633,16 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
     let lease=core::ptr::addr_of_mut!(LEASE).replace(None).unwrap();
     crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(lease.capability,lease.owner);});
     if launch_length>0 {
+        if APP_ACTIVE && assistant::editor_compile_intent::may_relaunch(&lease.request[..lease.request_length],
+            &lease.source_path[..lease.source_path_length],&(&*(&raw const APP_SOURCE_PATH))[..APP_SOURCE_PATH_LENGTH],
+            (&*(&raw const APP)).as_ref().is_some_and(|(owner,_)|*owner==lease.owner)) {
+            APP_CANCEL=true;poll_app(console);
+        }
         let previous_context=crate::runtime::ai::application_host::context().map(|context|context.instance);
         launch(console,&launch_path[..launch_length]);
         let launched_context=crate::runtime::ai::application_host::context().map(|context|context.instance)
             .filter(|context|Some(*context)!=previous_context && APP_ACTIVE);
+        if launched_context.is_some() {APP_SOURCE_PATH=lease.source_path;APP_SOURCE_PATH_LENGTH=lease.source_path_length;}
         if let Some(goal)=lease.software_goal {
             let event=launched_context.map(|context|
                 crate::runtime::ai::intelligence::software::Event::Launched{context})
@@ -645,6 +695,7 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
         Ok(task)=>{
             let _=crate::runtime::ai::application_host::attach(console.current_user.0,console.current_session.0);
             APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
+            APP_SOURCE_PATH_LENGTH=0;
             APP_INPUT=native_input::Input::new();APP_CANCEL=false;APP_LINE_OPEN=false;
             console.reset_input();
             INFINITY_NATIVE_APP_SNAPSHOT[3]=2;
@@ -734,7 +785,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if state==State::Runnable {INFINITY_NATIVE_APP_SNAPSHOT[6]=u64::from((&*(&raw const APP_INPUT)).waiting);}
     if state==State::Runnable{return;}
     let ui_was_active=crate::ui::native_uikit::presentation().active;
-    let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;
+    let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;APP_SOURCE_PATH_LENGTH=0;
     crate::runtime::ai::application_host::detach();
     let released=task.release(crate::runtime::native_memory::memory_mut()).is_ok();
     crate::ui::native_uikit::close();APP_UI_REVISION=0;

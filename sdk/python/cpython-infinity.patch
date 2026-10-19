@@ -1,0 +1,45 @@
+--- a/Modules/timemodule.c
++++ b/Modules/timemodule.c
+@@ -187,7 +187,7 @@
+ {
+ #ifdef _AIX
+     long long clk_id = PyLong_AsLongLong(obj);
+-#elif defined(__DragonFly__)
++#elif defined(__DragonFly__) || defined(__INFINITY__)
+     long clk_id = PyLong_AsLong(obj);
+ #else
+     int clk_id = PyLong_AsInt(obj);
+--- a/Modules/posixmodule.c
++++ b/Modules/posixmodule.c
+@@ -16182,6 +16182,17 @@
+             goto error;
+     }
+ 
++#ifdef __INFINITY__
++    /* Native directory cursors expose names; obtain identity from metadata. */
++    struct stat native_stat;
++    if (!joined_path || stat(joined_path, &native_stat) != 0) {
++        PyMem_Free(joined_path);
++        PyErr_SetFromErrno(PyExc_OSError);
++        goto error;
++    }
++    d_ino = native_stat.st_ino;
++#endif
++
+     if (!path->narrow || !PyBytes_Check(path->object)) {
+         entry->name = PyUnicode_DecodeFSDefaultAndSize(name, name_len);
+         if (joined_path)
+@@ -16354,7 +16365,12 @@
+             PyObject *module = PyType_GetModule(Py_TYPE(iterator));
+             entry = DirEntry_from_posix_info(module,
+                                              &iterator->path, direntp->d_name,
+-                                             name_len, direntp->d_ino
++                                             name_len,
++#ifdef __INFINITY__
++                                             0 /* Filled from native metadata above. */
++#else
++                                             direntp->d_ino
++#endif
+ #ifdef HAVE_DIRENT_D_TYPE
+                                              , direntp->d_type
+ #endif
