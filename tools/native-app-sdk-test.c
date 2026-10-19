@@ -244,6 +244,28 @@ static void test_publication(void) {
 }
 
 // ------------------------=
+// FUNC: test_state_status_not_data
+// DESC: Proves observation calls return native status while application-owned data and initialized description remain independent, with publication still explicit.
+// ------------------=
+static void test_state_status_not_data(void) {
+    reset_boundary();
+    int value=37;char description[32];
+    int length=snprintf(description,sizeof(description),"%d",value);
+    CHECK(length==2);
+    uint64_t revision=infinity_app_revision;
+    CHECK(app_state(0,0,description)==0);
+    CHECK(value==37 && infinity_app_revision==revision);
+    CHECK(state_packet.length==(uint32_t)length);
+    same_bytes(state_packet.text,description,(size_t)length+1);
+    CHECK(app_publish()==0 && infinity_app_revision==revision+1);
+    value=-9;length=snprintf(description,sizeof(description),"%d",value);
+    CHECK(length==2);write_result=-13;
+    CHECK(app_state(0,0,description)==-13);
+    CHECK(value==-9 && infinity_app_revision==revision+1);
+    write_result=0;
+}
+
+// ------------------------=
 // FUNC: registry_identifier
 // DESC: Independently checks the published native registry's alphabetic-first identifier contract at the packet boundary.
 // ------------------=
@@ -566,5 +588,5 @@ static void test_grid_helpers(void) {
 // DESC: Executes real SDK helpers against deterministic native service results and exits nonzero on any behavioral failure.
 // ------------------=
 int main(void) {
-    test_ui_packets();test_publication();test_choices();test_incomplete_contracts();test_events();test_event_loop();test_grid_helpers();return 0;
+    test_ui_packets();test_publication();test_state_status_not_data();test_choices();test_incomplete_contracts();test_events();test_event_loop();test_grid_helpers();return 0;
 }
