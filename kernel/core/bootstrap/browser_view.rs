@@ -1,5 +1,7 @@
 //! Native browser chrome and retained viewport. Servo never owns desktop drawing.
 use super::DisplayDevice;
+#[path = "../../ui/browser_glyphs.rs"]
+mod glyph_artwork;
 use infinity_browser_core::{layout::Layout,skin,Viewport,frames::Frame};
 use crate::ui::system_layout::DesktopAppWindowState;
 static mut REVISION:Option<u64>=None;
@@ -87,10 +89,7 @@ impl DisplayDevice {
                 let (r,g,b)=rgb(self.active_accent_rgb());
                 self.fill_rounded_rect_alpha(close.x as usize,close.y as usize,close.width as usize,close.height as usize,6*scale,r,g,b,48);
             }
-            let cx=close.x+close.width as i32/2;let cy=close.y+close.height as i32/2;
-            let d=4*scale as i32;
-            self.line(cx-d,cy-d,cx+d,cy+d,217,227,245);
-            self.line(cx+d,cy-d,cx-d,cy+d,217,227,245);
+            self.browser_glyph(close,9,true,scale);
         }
         let new_tab=offset(layout.new_tab);
         self.browser_glyph(new_tab,11,true,scale);
@@ -255,8 +254,8 @@ impl DisplayDevice {
                 for d in digits[..used].iter().rev() {count[n]=*d;n+=1;}
             }}
             self.browser_label(Viewport{x:r.x+r.width as i32-100*scale as i32,y:r.y+9*scale as i32,width:96*scale as u32,..r},&count[..n],14*scale,false);
-            for (i,label) in [(1,b"<" as &[u8]),(2,b">"),(3,b"X")] {let r=offset(layout.find_control(i));
-                self.browser_surface(r,skin::button(false,skin::Interaction::Normal));self.browser_label(Viewport{y:r.y+9*scale as i32,..r},label,14*scale,true);}
+            for (i,glyph) in [(1,0),(2,1),(3,9)] {let r=offset(layout.find_control(i));
+                self.browser_surface(r,skin::button(false,skin::Interaction::Normal));self.browser_glyph(r,glyph,true,scale);}
         }
         let menu_count=if view.chrome_menu==4 {tab_count}else if matches!(view.chrome_menu,2|3){1}else if view.chrome_menu==1{3}else{0};
         if menu_count>0 {
@@ -391,34 +390,19 @@ impl DisplayDevice {
     }
     // ------------------------=
     // FUNC: browser_glyph
-    // DESC: Draws quiet kit-matched chrome strokes at native resolution without boxed bitmap buttons.
+    // DESC: Paints the generated reusable browser glyph family with clipped alpha and no paint-time allocation.
     // ------------------=
     fn browser_glyph(&mut self,r:Viewport,glyph:usize,enabled:bool,scale:usize) {
-        let cx=r.x+r.width as i32/2;let cy=r.y+r.height as i32/2;let s=scale as i32;
-        if glyph==14 {
-            let _=self.themed_icon(cx.max(0) as usize,cy.max(0) as usize,27,24*scale);
-            return;
-        }
-        let color=if enabled {if glyph>=14 {(34,211,238)}else{(196,207,232)}}else{(91,108,139)};
-        let mut stroke=|x1:i32,y1:i32,x2:i32,y2:i32| {
-            for offset in 0..scale as i32 {self.line(cx+x1*s,cy+y1*s+offset,cx+x2*s,cy+y2*s+offset,color.0,color.1,color.2);}
-        };
-        match glyph {
-            0|1=>{let sign=if glyph==0 {-1}else{1};stroke(-7,0,7,0);stroke(sign*7,0,sign, -6);stroke(sign*7,0,sign,6);}
-            2=>{for (a,b,c,d) in [(-5,-5,2,-7),(2,-7,7,-3),(7,-3,7,0),(-5,-5,-7,0),(-7,0,-5,5),(-5,5,2,7),(2,7,6,4),(7,-7,7,-1),(7,-1,1,-1)] {stroke(a,b,c,d);}}
-            4=>{stroke(0,-7,0,3);stroke(-4,-1,0,3);stroke(0,3,4,-1);stroke(-6,4,-6,7);stroke(-6,7,6,7);stroke(6,7,6,4);}
-            5=>{for (a,b,c,d) in [(-4,-1,-4,6),(-4,6,4,6),(4,6,4,-1),(4,-1,-4,-1),(-3,-1,-3,-5),(-3,-5,0,-7),(0,-7,3,-5),(3,-5,3,-1)] {stroke(a,b,c,d);}}
-            6=>{stroke(-7,0,-6,0);stroke(0,0,1,0);stroke(7,0,8,0);}
-            7=>stroke(-5,0,5,0),
-            8=>{stroke(-5,-5,5,-5);stroke(5,-5,5,5);stroke(5,5,-5,5);stroke(-5,5,-5,-5);}
-            9=>{stroke(-5,-5,5,5);stroke(5,-5,-5,5);}
-            10=>{for (a,b,c,d) in [(-5,-7,2,-7),(2,-7,5,-4),(5,-4,5,7),(5,7,-5,7),(-5,7,-5,-7),(2,-7,2,-3),(2,-3,5,-3),(-2,0,2,0),(-2,3,2,3)] {stroke(a,b,c,d);}}
-            12|16=>{for (a,b,c,d) in [(0,-8,2,-3),(2,-3,8,-2),(8,-2,4,2),(4,2,5,8),(5,8,0,5),(0,5,-5,8),(-5,8,-4,2),(-4,2,-8,-2),(-8,-2,-2,-3),(-2,-3,0,-8)] {stroke(a,b,c,d);}}
-            15=>{for (a,b,c,d) in [(-8,-3,3,-3),(3,-3,3,8),(3,8,-8,8),(-8,8,-8,-3),(-5,-6,6,-6),(6,-6,6,5),(-2,-9,9,-9),(9,-9,9,2)] {stroke(a,b,c,d);}}
-            13=>{for (a,b,c,d) in [(-3,-6,3,-6),(3,-6,6,-3),(6,-3,6,3),(6,3,3,6),(3,6,-3,6),(-3,6,-6,3),(-6,3,-6,-3),(-6,-3,-3,-6),
-                (0,-9,0,-6),(0,6,0,9),(-9,0,-6,0),(6,0,9,0),(-6,-6,-4,-4),(4,4,6,6),(-6,6,-4,4),(4,-4,6,-6),(-2,-2,2,-2),(2,-2,2,2),(2,2,-2,2),(-2,2,-2,-2)] {stroke(a,b,c,d);}}
-            _=>{stroke(-7,0,7,0);stroke(0,-7,0,7);}
-        }
+        let size=(24*scale).min(r.width as usize).min(r.height as usize);
+        let left=r.x+(r.width as i32-size as i32)/2;
+        let top=r.y+(r.height as i32-size as i32)/2;
+        for y in 0..size {for x in 0..size {
+            let (red,green,blue,alpha)=glyph_artwork::pixel(glyph,size,x,y,enabled);
+            let px=left+x as i32;let py=top+y as i32;
+            if alpha!=0 && px>=0 && py>=0 {
+                self.blend_color(px,py,red,green,blue,alpha);
+            }
+        }}
     }
     // ------------------------=
     // FUNC: browser_surface
