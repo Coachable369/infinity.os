@@ -8,7 +8,7 @@ pub const DEFAULT_BACKGROUND_OPACITY: u8 = 88;
 pub const DEFAULT_BACKGROUND_BLUR: u8 = 4;
 pub const SKIN_ID_BYTES: usize = 32;
 pub const SKIN_HEADER_BYTES: usize = 64;
-pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
+pub const DEFAULT_PRIMARY_RGB: u32 = 0x101b3a;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -296,6 +296,7 @@ impl SkinRegistry {
     pub fn color(&self, role: ColorRole) -> Color {
         match (role, self.accent_override) {
             (ColorRole::Accent, Some(accent)) => accent,
+            (ColorRole::Focus, Some(accent)) if accent.rgb24() == 0x3e6fff => Color::rgb(0xffffff),
             (ColorRole::AccentBright | ColorRole::Focus, Some(accent)) => {
                 mix_color(accent, Color::rgb(0x00ff_ffff), 112)
             }
@@ -586,18 +587,18 @@ pub const fn default_dark_skin() -> SkinPackage {
         parent: None,
         format_version: 1,
         minimum_ui_abi: 1,
-        content_hash: 0x9f43_8a5b_8de7_2101,
+        content_hash: 0x9f43_8a5b_8de7_2102,
         trusted: true,
         tokens: SkinTokens {
             colors: [
-                Color(0xff02070f),
-                Color(0xe60a121d),
-                Color(0xf0121d2a),
-                Color(0xff33475b),
-                Color(0xfff1f5fa),
-                Color(0xffaeb8c6),
-                Color(0xff4da3ff),
-                Color(0xff9ce8ff),
+                Color(0xff090f26),
+                Color(0xe6101b3a),
+                Color(0xf01a2e63),
+                Color(0xff86c7ff),
+                Color(0xffffffff),
+                Color(0xffbebebe),
+                Color(0xff3e6fff),
+                Color(0xff86c7ff),
                 Color(0xffffffff),
                 Color(0xff50d890),
                 Color(0xffffc857),

@@ -59,9 +59,9 @@ enum InfinityUIKit {
         static let primary = StudioColor(red: 62, green: 111, blue: 255, alpha: 255)
         static let border = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
         static let mutedBorder = StudioColor(red: 67, green: 88, blue: 140, alpha: 255)
-        static let focus = StudioColor(red: 179, green: 164, blue: 255, alpha: 255)
-        static let text = StudioColor(red: 241, green: 246, blue: 255, alpha: 255)
-        static let secondary = StudioColor(red: 170, green: 186, blue: 221, alpha: 255)
+        static let focus = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)
+        static let text = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)
+        static let secondary = StudioColor(red: 190, green: 190, blue: 190, alpha: 255)
         static let focusAnimation = Animation.timingCurve(1 / 3, 2 / 3, 2 / 3, 1, duration: 0.14)
         @MainActor private static var fontDescriptors: [URL: CTFontDescriptor] = [:]
 

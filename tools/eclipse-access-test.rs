@@ -7,6 +7,11 @@ mod access_style;
 mod access_view;
 #[path = "../kernel/ui/bitmap.rs"]
 mod bitmap;
+#[path = "../kernel/ui/geometry.rs"]
+mod geometry;
+#[path = "../kernel/ui/skin.rs"]
+mod skin;
+pub const INFINITY_UI_ABI_VERSION: u16 = 1;
 mod bootstrap {
     pub const SPLASH_BMP: &[u8] = include_bytes!("../assets/boot/infinity-eclipse-header-v1.bmp");
 }
@@ -17,6 +22,38 @@ struct Region { left: usize, top: usize, right: usize, bottom: usize }
 struct Wordmark { original: bool, rectangle: [usize; 4], crop: [u8; 4], opacity: u8, fill: bool }
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Label { rectangle: [usize; 4], bytes: Vec<u8>, color: [u8; 3], pixels: usize, centered: bool, strong: bool }
+
+// ------------------------=
+// FUNC: neutral_access_and_matching_desktop_palette
+// DESC: Checks actual focus pixels, neutral text and default desktop token parity without changing custom themes.
+// ------------------=
+#[test]
+fn neutral_access_and_matching_desktop_palette() {
+    let tokens=skin::default_dark_skin().tokens;
+    for (role,expected) in [(skin::ColorRole::Canvas,access_style::BACKGROUND),
+        (skin::ColorRole::Panel,access_style::SURFACE),(skin::ColorRole::PanelRaised,access_style::ELEVATED),
+        (skin::ColorRole::Border,access_style::BORDER),(skin::ColorRole::Accent,access_style::PRIMARY),
+        (skin::ColorRole::Focus,access_style::FOCUS),(skin::ColorRole::TextPrimary,access_style::TEXT),
+        (skin::ColorRole::TextSecondary,access_style::SECONDARY)] {
+        assert_eq!(tokens.color(role).channels(),expected);
+    }
+    assert_eq!(access_style::TEXT,(255,255,255));
+    assert_eq!(access_style::SECONDARY,(190,190,190));
+    let mut registry=skin::SkinRegistry::new();
+    registry.set_accent(0x3e6fff,skin::AppearanceScope::User).unwrap();
+    assert_eq!(registry.color(skin::ColorRole::Focus).channels(),(255,255,255));
+    registry.set_accent(0xc08040,skin::AppearanceScope::User).unwrap();
+    assert_eq!(registry.color(skin::ColorRole::Accent).rgb24(),0xc08040);
+    access_style::animate(123,0,false,true);
+    let mut display=DisplayDevice::new(320,140);
+    for (i,focused) in [false,true].into_iter().enumerate() {
+        display.access_surface(12,12+i*60,296,44,10,access_style::SURFACE,access_style::BORDER,255,focused);
+    }
+    assert_eq!(&display.pixels[72*320+160][..3],&[255,255,255]);
+    let mut image=format!("P6\n320 140\n255\n").into_bytes();
+    for pixel in display.pixels {image.extend_from_slice(&pixel[..3]);}
+    std::fs::write("build/behavior-tests/eclipse-white-focus.ppm",image).unwrap();
+}
 struct DisplayDevice {
     width: usize,
     height: usize,

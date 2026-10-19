@@ -6,9 +6,9 @@ pub const ELEVATED: Rgb = (26, 46, 99);
 pub const PRIMARY: Rgb = (62, 111, 255);
 pub const BORDER: Rgb = (134, 199, 255);
 pub const MUTED_BORDER: Rgb = (67, 88, 140);
-pub const FOCUS: Rgb = (179, 164, 255);
-pub const TEXT: Rgb = (241, 246, 255);
-pub const SECONDARY: Rgb = (170, 186, 221);
+pub const FOCUS: Rgb = (255, 255, 255);
+pub const TEXT: Rgb = (255, 255, 255);
+pub const SECONDARY: Rgb = (190, 190, 190);
 pub const ERROR: Rgb = (255, 118, 145);
 
 #[derive(Clone, Copy)]
