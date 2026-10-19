@@ -24,7 +24,9 @@ def main():
         results = {}
         for kernel in ("kernel.elf", "installed-kernel.elf"):
             path = ROOT / "build" / arch / kernel
-            assert path.stat().st_size <= 1024 ** 3, (arch, kernel, "exceeds native kernel extent")
+            # Match the loader's bounded 1.5 GiB reservation; smaller historical
+            # kernels keep their existing ObjectStore offsets.
+            assert path.stat().st_size <= 1536 * 1024 ** 2, (arch, kernel, "exceeds native kernel extent")
             with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
                 for name, binary in assets.items():
                     assert data.find(binary) >= 0, (arch, kernel, name)
