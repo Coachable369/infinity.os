@@ -8,7 +8,11 @@ use ui::{ai_widget as widget, geometry::{Point,Rect},system_layout::{SystemLayou
 // ------------------=
 pub fn verify() {
     verify_input();verify_menu();
-    for (width,height) in [(1024,768),(1920,1080),(2560,1600)] { verify_pixels(width,height); }
+    widget::prompt_viewport(b"",0,0,1);
+    let mut previous_start=0;
+    for (width,height) in [(1024,768),(1920,1080),(2560,1600)] {
+        previous_start=verify_pixels(width,height,previous_start);
+    }
     widget::publish_menu(Default::default());
 }
 
@@ -88,9 +92,9 @@ fn verify_menu() {
 
 // ------------------------=
 // FUNC: verify_pixels
-// DESC: Renders production controls and asserts long input and caret pixels never escape the input field.
+// DESC: Renders production controls across retained scroll, caret and density transitions and checks exact clipped caret pixels.
 // ------------------=
-fn verify_pixels(width:usize,height:usize) {
+fn verify_pixels(width:usize,height:usize,mut previous_start:usize)->usize {
     use std::io::Write;
     let layout=SystemLayout::new(width,height);let scale=layout.scale();let g=layout.ai_chat_geometry(false);
     let mut pixels=vec![0x201207u32;width*height];
@@ -100,15 +104,21 @@ fn verify_pixels(width:usize,height:usize) {
     let accent=(70,195,240);
     display.app_card(g.panel,(6,21,35),(47,91,118),scale);
     let before=pixels.clone();
-    display.ai_widget_composer(g.composer,text,text.len(),Some((true,text.len())),scale,accent);
-    let view=widget::text_viewport(text,text.len(),g.composer.width as usize-24*scale,scale);
-    assert!(view.start>0);
-    assert_eq!(widget::text_width(&text[view.start..view.end],scale),display.app_text_width(&text[view.start..view.end],false,scale));
-    let caret_x=g.composer.x as usize+12*scale+view.caret_x;
-    let caret_y=g.composer.y as usize+(g.composer.height as usize-20*scale)/2;
     let caret_pixel=accent.0 as u32 | ((accent.1 as u32)<<8) | ((accent.2 as u32)<<16);
-    assert_eq!(pixels[caret_y*width+caret_x],caret_pixel);
-    assert!(g.composer.contains(Point{x:caret_x as i32,y:caret_y as i32}));
+    for cursor in [text.len(),text.len()-5,0,text.len()] {
+        // Resizing or clicking within the prompt keeps its existing scroll
+        // origin. A freshly right-aligned viewport is not the live contract.
+        let view=widget::retained_viewport(text,cursor,g.composer.width as usize-24*scale,scale,previous_start);
+        display.ai_widget_composer(g.composer,text,cursor,Some((true,cursor)),scale,accent);
+        assert_eq!(widget::text_width(&text[view.start..view.end],scale),display.app_text_width(&text[view.start..view.end],false,scale));
+        let caret_x=g.composer.x as usize+12*scale+view.caret_x;
+        let caret_y=g.composer.y as usize+(g.composer.height as usize-20*scale)/2;
+        assert_eq!(pixels[caret_y*width+caret_x],caret_pixel);
+        assert!(g.composer.contains(Point{x:caret_x as i32,y:caret_y as i32}));
+        assert_eq!(widget::caret_at(text,view,view.caret_x as i32,scale),cursor);
+        previous_start=view.start;
+    }
+    assert!(previous_start>0);
     let mut changed=0;
     for y in 0..height {for x in 0..width {
         if pixels[y*width+x]!=before[y*width+x] {
@@ -125,4 +135,5 @@ fn verify_pixels(width:usize,height:usize) {
     let mut file=std::fs::File::create(format!("builds/validation/ai-widget/controls-{width}x{height}.ppm")).unwrap();
     write!(file,"P6\n{width} {height}\n255\n").unwrap();
     for pixel in pixels {file.write_all(&[pixel as u8,(pixel>>8)as u8,(pixel>>16)as u8]).unwrap();}
+    previous_start
 }
