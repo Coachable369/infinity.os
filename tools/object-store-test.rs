@@ -22,14 +22,14 @@ use storage::{
 };
 
 #[derive(Clone)]
-struct MemoryDisk(Rc<RefCell<Vec<[u8; 512]>>>);
+struct MemoryDisk(Rc<RefCell<Vec<[u8; 512]>>>, Rc<Cell<Option<u64>>>);
 impl MemoryDisk {
     // ------------------------=
     // FUNC: new
     // DESC: Creates and initializes a new instance.
     // ------------------=
     fn new(sectors: usize) -> Self {
-        Self(Rc::new(RefCell::new(vec![[0; 512]; sectors])))
+        Self(Rc::new(RefCell::new(vec![[0; 512]; sectors])), Rc::new(Cell::new(None)))
     }
     // ------------------------=
     // FUNC: flip
@@ -69,6 +69,7 @@ impl BlockDevice for MemoryDisk {
             return false;
         };
         *out = *s;
+        self.1.set(Some(lba));
         true
     }
     // ------------------------=
@@ -508,16 +509,12 @@ fn main() {
             b"verified bytes",
         )
         .unwrap();
-    // Bootstrap contents precede this object: kernel, recovery, runtime,
-    // service registry, capability policy, local model, AI bootstrap, voice
-    // framework, agent policy, organization schema, identity state, and native
-    // network state, the four-block editable AI mapping, and declarative
-    // shell-profile state. The constant counts allocation blocks.
-    content_disk.flip(
-        (STORE_RELATIVE_LBA + 80 + storage::object::BOOTSTRAP_CONTENT_OBJECTS * 8) as usize,
-        0,
-    );
     let mut out = [0u8; 4096];
+    assert_eq!(content_store.read(content_id, None, &mut out), Ok(14));
+    assert_eq!(&out[..14], b"verified bytes");
+    // Corrupt the observed content sector, independent of bootstrap allocation.
+    let content_lba = content_disk.1.get().expect("content read reached the device");
+    content_disk.flip(content_lba as usize, 0);
     assert_eq!(
         content_store.read(content_id, None, &mut out),
         Err(ObjectError::CorruptContent)
@@ -711,7 +708,7 @@ fn namespace_expansion() {
     }
     let baseline=disk.0.borrow().clone();
     for cut in 0..=40 {
-        let backing=MemoryDisk(Rc::new(RefCell::new(baseline.clone())));
+        let backing=MemoryDisk(Rc::new(RefCell::new(baseline.clone())),Rc::new(Cell::new(None)));
         let failing=FailingDisk::new(backing.clone());
         let mut store=ObjectStore::mount(failing.clone(),0).unwrap();
         assert_eq!((0..44).filter(|i|store.namespace_entry(*i).is_some()).count(),32);

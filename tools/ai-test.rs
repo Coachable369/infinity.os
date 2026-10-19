@@ -364,8 +364,17 @@ fn voice_and_agents() {
     assert_eq!(voice.push_pcm(session, owner, &[1000; 320], 44100, 2, &capabilities), Err(AiError::InvalidRequest));
     for _ in 0..3 { voice.push_pcm(session, owner, &[1000; 320], 16000, 2, &capabilities).unwrap(); }
     for _ in 0..20 { voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities).unwrap(); }
+    // A natural 400-ms hesitation must not submit a truncated instruction.
+    assert_eq!(voice.state(), VoiceState::Listening);
+    assert_eq!(voice.speech_segment(session, owner).unwrap(), None);
+    for _ in 0..19 { voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities).unwrap(); }
+    assert_eq!(voice.state(), VoiceState::Listening);
+    assert_eq!(voice.speech_segment(session, owner).unwrap(), None);
+    assert_eq!(voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities).unwrap(),
+        runtime::ai::voice_vad::VadState::Complete);
     assert_eq!(voice.state(), VoiceState::Recognizing);
-    assert_eq!(voice.speech_segment(session, owner).unwrap().unwrap().end, 2560);
+    assert_eq!(voice.speech_segment(session, owner).unwrap(),
+        Some(runtime::ai::voice_vad::Segment { start: 0, end: 13_760 }));
     assert_eq!(voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
     assert!(voice.refresh_authority(2, &capabilities));
     capabilities.revoke(microphone).unwrap();
