@@ -9,6 +9,8 @@ import sys
 from reference import MODEL_SHA256
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+from kernel_layout import validate as validate_kernel_layout
 
 
 # ------------------------=
@@ -26,14 +28,13 @@ def verify(path):
     loads = [struct.unpack_from("<II6Q", image, phoff + i * phsize) for i in range(phcount)]
     loads = [entry for entry in loads if entry[0] == 1]
     if machine == 62:
+        validate_kernel_layout(image[:65536])
         # PC firmware reserves the low-memory PCI aperture. The native arena
         # must be a separate zero-fill segment, never an extent across it.
         arenas = [p for p in loads if p[3] == 0x100000000]
         assert len(arenas) == 1
         assert arenas[0][1] == 6 and arenas[0][5] == 0
         assert arenas[0][6] == 1536 * 1024 * 1024
-        assert all(p[3] == p[4] and
-                   (p[3] + p[6] <= 0xC0000000 or p == arenas[0]) for p in loads)
     sections = [struct.unpack_from("<II4QII2Q", image, shoff + i * shsize) for i in range(shcount)]
     names = sections[names_index]
     names = image[names[4]:names[4] + names[5]]
