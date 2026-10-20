@@ -107,6 +107,16 @@ impl DisplayDevice {
     // ------------------=
     fn active_accent_rgb(&self)->u32 { 0x38bdf8 }
     // ------------------------=
+    // FUNC: active_accent_surface
+    // DESC: Resolves fixture tints through the production semantic skin implementation used by application painters.
+    // ------------------=
+    fn active_accent_surface(&self,surface:ui::skin::AccentSurface)->(u8,u8,u8) {
+        let mut skins=ui::skin::SkinRegistry::new();
+        skins.set_primary(self.active_primary_rgb(),ui::skin::AppearanceScope::Session).unwrap();
+        skins.set_accent(self.active_accent_rgb(),ui::skin::AppearanceScope::Session).unwrap();
+        skins.accent_surface(surface).channels()
+    }
+    // ------------------------=
     // FUNC: set_render_clip
     // DESC: Supplies the production editor's caret clipping boundary in the framebuffer fixture.
     // ------------------=
