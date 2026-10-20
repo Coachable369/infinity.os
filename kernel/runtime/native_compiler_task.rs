@@ -223,12 +223,10 @@ impl Task {
                 }
                 0x1202 => mappings.unmap(tables, memory, a[0], a[1]).map_or(-22, |_| 0),
                 0x1200 => {
-                    let value = match a[0] {
-                        0 => super::system_clock::SYSTEM.utc_nanoseconds(now),
-                        1 => Some(now),
-                        _ => return -22,
+                    let value = match super::system_clock::SYSTEM.native_nanoseconds(a[0], now) {
+                        Ok(value) => value,
+                        Err(error) => return error,
                     };
-                    let Some(value) = value else { return -38; };
                     copy_to_user(tables, a[1], &value.to_le_bytes()).map_or(-14, |_| 0)
                 },
                 0x1209 => {

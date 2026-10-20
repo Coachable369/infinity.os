@@ -3,6 +3,11 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 pub static SYSTEM: SystemClock = SystemClock::new();
 
+// Newlib's clockid_t ABI, forwarded unchanged by sdk/compiler/isolated.c.
+// These are not Linux clock IDs; the native probe checks the actual C headers.
+pub const NATIVE_CLOCK_REALTIME: u64 = 1;
+pub const NATIVE_CLOCK_MONOTONIC: u64 = 4;
+
 pub struct SystemClock { settings: AtomicU64, sequence: AtomicU64, hardware: AtomicU64, monotonic: AtomicU64 }
 
 impl SystemClock {
@@ -51,6 +56,17 @@ impl SystemClock {
             return self.settings().utc(hardware)?.checked_mul(1_000_000_000)?.checked_add(now - monotonic);
         }
         None
+    }
+    // ------------------------=
+    // FUNC: native_nanoseconds
+    // DESC: Adapts the shared Newlib clock ABI without confusing UTC epoch time with monotonic uptime.
+    // ------------------=
+    pub fn native_nanoseconds(&self, clock: u64, now: u64) -> Result<u64, i64> {
+        match clock {
+            NATIVE_CLOCK_REALTIME => self.utc_nanoseconds(now).ok_or(-38),
+            NATIVE_CLOCK_MONOTONIC => Ok(now),
+            _ => Err(-22),
+        }
     }
 }
 

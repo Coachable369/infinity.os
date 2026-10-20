@@ -256,6 +256,7 @@ def main():
         c_flags += ["-isystem", str(newlib_config), "-isystem", str(newlib)]
     subprocess.run(c_flags + ["-c", "tools/native-process-probe/user.c", "-o", str(work / "user.o")], check=True)
     subprocess.run(c_flags + ["-c", "sdk/compiler/isolated.c", "-o", str(work / "isolated.o")], check=True)
+    subprocess.run(c_flags + ["-c", "tools/native-process-probe/clock-contract.c", "-o", str(work / "clock-contract.o")], check=True)
     subprocess.run([linker, "-static", "-pie", "--strip-all", "--no-dynamic-linker",
         "--build-id=none", "-z", "max-page-size=4096", "-T", "sdk/c/application.ld",
         str(work / "user.o"), str(work / "isolated.o"), "-o", str(work / "user.elf")], check=True)
@@ -317,7 +318,7 @@ def main():
         (["--features", "python-pip-probe"] if args.python_pip else []), env=env, check=True)
     subprocess.run([linker, "-nostdlib", "-static", "-T",
         "tools/native-process-probe/arm.ld" if arm else "linker/x86_64.ld", "-o", str(work / "probe.elf"),
-        str(work / "cargo" / target / "release/libinfinity_native_process_probe.a")] +
+        str(work / "cargo" / target / "release/libinfinity_native_process_probe.a"), str(work / "clock-contract.o")] +
         (["-e", "infinity_kernel_entry"] if args.firmware else []), check=True)
     if args.virtualbox:
         print(work / "probe.elf")

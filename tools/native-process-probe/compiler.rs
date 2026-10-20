@@ -3,6 +3,7 @@ use super::{native_memory::*, native_c_image::Image, cpu::{self, Tables, Control
 #[path = "pip.rs"] mod pip;
 const COMPILE: bool = option_env!("INFINITY_COMPILER_SOURCE").is_some();
 const PYTHON: bool = option_env!("INFINITY_PYTHON_PROBE").is_some();
+const PYTHON_CLOCK_PROBE: bool = option_env!("INFINITY_NATIVE_CLOCK_PROBE").is_some();
 const PYTHON_EXTENSION: bool = option_env!("INFINITY_PYTHON_EXTENSION_PROBE").is_some();
 const PYTHON_VALIDATION: bool = option_env!("INFINITY_PYTHON_VALIDATION_PROBE").is_some();
 const PYTHON_INVALID: bool = option_env!("INFINITY_PYTHON_INVALID_PROBE").is_some();
@@ -16,6 +17,26 @@ const LINK: bool = option_env!("INFINITY_LINK_INPUT").is_some();
 static LINK_INPUT: &[u8] = include_bytes!(env!("INFINITY_LINK_INPUT_BYTES"));
 static LINK_SCRIPT: &[u8] = include_bytes!("../../sdk/c/application.ld");
 static CRT: &[u8] = include_bytes!(env!("INFINITY_APPLICATION_CRT"));
+
+unsafe extern "C" { static INFINITY_PROBE_CLOCK_IDS: [u64; 2]; }
+
+// ------------------------=
+// FUNC: clock_contract
+// DESC: Executes clock selection with real C-header IDs, verifying corrections affect UTC but never monotonic time.
+// ------------------=
+unsafe fn clock_contract() {
+    use super::system_clock::{Settings, SystemClock};
+    let [realtime, monotonic] = INFINITY_PROBE_CLOCK_IDS;
+    let clock = SystemClock::new();
+    assert_eq!(clock.native_nanoseconds(realtime, 500), Err(-38));
+    assert_eq!(clock.native_nanoseconds(monotonic, 500), Ok(500));
+    clock.observe(1_800_000_000, 100);
+    assert_eq!(clock.native_nanoseconds(realtime, 500), Ok(1_800_000_000_000_000_400));
+    assert!(clock.configure(Settings { offset_minutes: -360, correction_seconds: 60 }));
+    assert_eq!(clock.native_nanoseconds(realtime, 500), Ok(1_800_000_060_000_000_400));
+    assert_eq!(clock.native_nanoseconds(monotonic, 500), Ok(500));
+    assert_eq!(clock.native_nanoseconds(u64::MAX, 500), Err(-22));
+}
 
 // ------------------------=
 // FUNC: execute_linked
@@ -54,6 +75,7 @@ unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: Kernel
 // DESC: Exercises the production bounded compiler task against real user-mode Clang and LLD, not a fixture-specific syscall loop.
 // ------------------=
 pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller: Controller) -> ! {
+    clock_contract();
     // A declared test clock fixture, never an installed-kernel fallback date.
     super::system_clock::SYSTEM.observe(1_800_000_000, cpu::clock_ns().unwrap_or(0));
     #[cfg(feature = "python-pip-probe")]
@@ -72,7 +94,7 @@ pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller
     let source: &[u8] = if option_env!("INFINITY_COMPILER_INVALID_SOURCE").is_some() {
         b"int main(void) { return ; this is not C; }\n"
     } else if INTERACTIVE {include_bytes!("../native-c-probe/interactive.c")} else { SOURCE };
-    let inputs = [super::native_job_files::File { path: b"/script.py", bytes: if PYTHON_INVALID { b"if True\n    pass\n" } else if PYTHON_EXTENSION { EXTENSION_SOURCE } else { PYTHON_SOURCE } },
+    let inputs = [super::native_job_files::File { path: b"/script.py", bytes: if PYTHON_CLOCK_PROBE { include_bytes!("clock.py") } else if PYTHON_INVALID { b"if True\n    pass\n" } else if PYTHON_EXTENSION { EXTENSION_SOURCE } else { PYTHON_SOURCE } },
         super::native_job_files::File { path: b"/infinity_native_test.so", bytes: EXTENSION },
         super::native_job_files::File { path: b"/input.o", bytes: LINK_INPUT },
         super::native_job_files::File { path: b"/app.ld", bytes: LINK_SCRIPT },
