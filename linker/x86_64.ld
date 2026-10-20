@@ -6,6 +6,7 @@ PHDRS
     rodata PT_LOAD FLAGS(4);
     data PT_LOAD FLAGS(6);
     speech PT_LOAD FLAGS(6);
+    browser PT_LOAD FLAGS(6);
     stack PT_GNU_STACK FLAGS(6);
 }
 
@@ -21,6 +22,10 @@ SECTIONS
     .got : ALIGN(0x1000) { *(.got .got.*) } :data
     .data : ALIGN(0x1000) { *(.data .data.* .ldata .ldata.*) } :data
     .bss : ALIGN(0x1000) { *(.bss .bss.* .lbss .lbss.*) *(COMMON) } :data
+    ASSERT(. < 0x80000000, "x86 ordinary kernel data exceeds relative-addressing range")
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) { *(.speech_heap) } :speech
+    .browser_heap 0x160000000 (NOLOAD) : ALIGN(0x1000) { *(.browser_heap) } :browser
+    ASSERT(SIZEOF(.browser_heap) == 0 || SIZEOF(.browser_heap) == 0x20000000,
+           "x86 browser arena must retain its complete 512 MiB allocation")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) }
 }

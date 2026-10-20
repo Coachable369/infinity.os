@@ -12,7 +12,28 @@ const HEAP_BYTES:usize=512*1024*1024;
 // It occupies loader-owned BSS, not installer payload bytes or the framebuffer.
 #[repr(C,align(4096))]
 struct Heap([u8;HEAP_BYTES]);
+#[cfg_attr(target_arch = "x86_64", link_section = ".browser_heap")]
 static mut HEAP:Heap=Heap([0;HEAP_BYTES]);
+// ------------------------=
+// FUNC: heap_address
+// DESC: Resolves the loader-owned arena without a 32-bit displacement on x86; other targets retain native addressing.
+// ------------------=
+fn heap_address() -> *mut u8 {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let address: usize;
+        core::arch::asm!(
+            "movabs {address}, offset {arena}",
+            address = out(reg) address,
+            arena = sym HEAP,
+            options(nomem, nostack, preserves_flags)
+        );
+        address as *mut u8
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    { core::ptr::addr_of_mut!(HEAP).cast() }
+}
+
 static STATE:AtomicU32=AtomicU32::new(0);
 static mut DISPATCH:infinity_browser_core::startup::Dispatch=infinity_browser_core::startup::Dispatch::new();
 static FAILURE:AtomicU32=AtomicU32::new(0);
@@ -135,7 +156,7 @@ pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->Result<(),inf
     let seed=RANDOM_SEEDS.derive(&info.firmware_entropy,&owner.0).ok_or(Error::Seed)?;
     RNG=Some(ChaCha20Rng::from_seed(seed));
     UTC=seconds;EPOCH_NS=super::ai::qwen::workers::clock_ns();
-    HOST.heap=core::ptr::addr_of_mut!(HEAP.0).cast();
+    HOST.heap=heap_address();
     OWNER[0].store(u64::from_le_bytes(owner.0[..8].try_into().unwrap()),Ordering::Release);
     OWNER[1].store(u64::from_le_bytes(owner.0[8..].try_into().unwrap()),Ordering::Release);
     STATE.store(1,Ordering::Release);

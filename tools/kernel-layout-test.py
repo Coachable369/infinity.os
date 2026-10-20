@@ -8,10 +8,10 @@ from kernel_layout import validate
 # FUNC: image
 # DESC: Constructs an ELF program table with supplied physical load ranges.
 # ------------------=
-def image(ranges):
+def image(ranges, machine=183):
     data = bytearray(64 + 56 * len(ranges))
     data[:6] = b"\x7fELF\x02\x01"
-    struct.pack_into("<H", data, 18, 183)
+    struct.pack_into("<H", data, 18, machine)
     struct.pack_into("<Q", data, 32, 64)
     struct.pack_into("<HH", data, 54, 56, len(ranges))
     for index, (start, size) in enumerate(ranges):
@@ -21,6 +21,26 @@ def image(ranges):
 
 
 class LayoutTests(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_x86_high_arenas
+    # DESC: Preserves complete speech and browser arenas while keeping ordinary globals within relative reach.
+    # ------------------=
+    def test_x86_high_arenas(self):
+        ranges = [(0x4000000, 0x70000000), (0x100000000, 0x60000000),
+                  (0x160000000, 0x20000000)]
+        self.assertEqual(validate(image(ranges, 62)),
+                         [(start, start + size) for start, size in ranges])
+        for invalid in ([(0x4000000, 0x90000000)],
+                        [(0x160000000, 0x20001000)],
+                        [(0x4000000, 8192), (0x4001000, 4096)]):
+            with self.assertRaises(ValueError):
+                validate(image(invalid, 62))
+        for field, value in ((68, 7), (96, 4096)):
+            header = image([(0x160000000, 0x20000000)], 62)
+            struct.pack_into("<I", header, field, value)
+            with self.assertRaises(ValueError):
+                validate(header)
+
     # ------------------------=
     # FUNC: test_old_arm_layout_rejected
     # DESC: Reproduces the installed kernel extent crossing the PCI aperture despite ample total RAM.
