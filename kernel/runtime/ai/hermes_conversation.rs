@@ -128,16 +128,6 @@ pub fn infer_interest(document:&super::Document,input:&[u8])->Option<&'static[u8
     }None
 }
 // ------------------------=
-// FUNC: contextual_inquiry
-// DESC: Asks only at a relevant conversational boundary, never during an unrelated work request.
-// ------------------=
-pub fn contextual_inquiry(document:&super::Document,input:&[u8],turn:u64,entropy:u64)->Option<&'static[u8]>{
-    let question=inquiry(document,turn,entropy)?;
-    if relevant(b"favorite_color",input)&&question==b"What is your favorite color?"{return Some(question);}
-    if relevant(b"preferences",input)&&question==b"Is there a preference you would like me to remember?"{return Some(question);}
-    None
-}
-// ------------------------=
 // FUNC: color
 // DESC: Converts supported named and hexadecimal color preferences into native theme RGB values.
 // ------------------=
@@ -152,18 +142,4 @@ pub fn color(value:&[u8])->Option<u32>{
     if value.len()!=6{return None;}
     let mut rgb=0;for b in value{rgb=rgb*16+match b{b'0'..=b'9'=>(b-b'0')as u32,b'a'..=b'f'=>(b-b'a'+10)as u32,b'A'..=b'F'=>(b-b'A'+10)as u32,_=>return None};}
     Some(rgb.max(1))
-}
-// ------------------------=
-// FUNC: inquiry
-// DESC: Rate-limits occasional opt-out-aware questions to conversation turns and only asks about missing low-risk details.
-// ------------------=
-pub fn inquiry(document:&super::Document,turn:u64,entropy:u64)->Option<&'static[u8]>{
-    if !document.enabled(b"inquiries_enabled")||!document.enabled(b"learning_enabled")||turn<5||turn%7!=entropy%7{return None;}
-    let candidates=[(b"favorite_color".as_slice(),b"What is your favorite color?".as_slice()),
-        (b"preferences",b"Is there a preference you would like me to remember?"),
-        (b"personality_style",b"Would you prefer concise or detailed replies?")];
-    let mut value=[0;1024];
-    for offset in 0..candidates.len(){let (key,question)=candidates[(entropy as usize%3+offset)%3];
-        if document.get(key,&mut value)==Ok(0){return Some(question);}
-    }None
 }

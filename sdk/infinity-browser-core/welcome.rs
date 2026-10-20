@@ -17,7 +17,26 @@ impl Layout {
     // FUNC: height
     // DESC: Gives the full scrollable page extent in physical pixels.
     // ------------------=
-    pub fn height(&self)->u32 {if self.narrow {800*self.scale}else{508*self.scale}}
+    pub fn height(&self)->u32 {if self.narrow {740*self.scale}else{(self.actions_y()+256)*self.scale}}
+    // ------------------------=
+    // FUNC: headline_size
+    // DESC: Keeps a compact authored headline until its copy column has room for the larger atlas.
+    // ------------------=
+    pub fn headline_size(&self)->u32 {if self.area.width/self.scale>=1000 {42}else{28}}
+    // ------------------------=
+    // FUNC: actions_y
+    // DESC: Positions controls from actual headline line height rather than a fixed oversized vertical gap.
+    // ------------------=
+    fn actions_y(&self)->u32 {if self.headline_size()==42 {220}else{188}}
+    // ------------------------=
+    // FUNC: copy
+    // DESC: Shares brand, headline baselines and supporting-copy geometry with production and visual verification.
+    // ------------------=
+    pub fn copy(&self,index:usize)->(Viewport,usize) {
+        let w=self.area.width/self.scale;let size=self.headline_size();
+        let (y,font)=match index {0=>(28,14),1=>(64,size),2=>(64+size*5/4,size),_=>(self.actions_y()-36,14)};
+        (self.rect(32,y,if self.narrow {w-64}else{w*3/5-48},font+6),font as usize)
+    }
     // ------------------------=
     // FUNC: rect
     // DESC: Maps authored logical coordinates into the shared content plane.
@@ -29,14 +48,14 @@ impl Layout {
     // FUNC: button
     // DESC: Returns two distinct keyboard-accessible native action targets.
     // ------------------=
-    pub fn button(&self,index:usize)->Viewport {self.rect(32+index as u32*180,252,164,36)}
+    pub fn button(&self,index:usize)->Viewport {self.rect(32+index as u32*180,self.actions_y(),164,36)}
     // ------------------------=
     // FUNC: hero
     // DESC: Keeps the complete transparent hero separate from text and controls.
     // ------------------=
     pub fn hero(&self)->Viewport {
         let w=self.area.width/self.scale;
-        if self.narrow {self.rect(32,308,w-64,166)}else{let x=w*3/5;self.rect(x,24,w-x-24,264)}
+        if self.narrow {self.rect(32,248,w-64,166)}else{let x=w*3/5;self.rect(x,24,w-x-24,self.actions_y()+12)}
     }
     // ------------------------=
     // FUNC: card
@@ -44,9 +63,14 @@ impl Layout {
     // ------------------=
     pub fn card(&self,index:usize)->Viewport {
         let w=self.area.width/self.scale;
-        if self.narrow {self.rect(32,490+index as u32*86,w-64,76)}
-        else {let width=(w-96)/3;self.rect(32+index as u32*(width+16),316,width,136)}
+        if self.narrow {self.rect(32,430+index as u32*86,w-64,76)}
+        else {let width=(w-96)/3;self.rect(32+index as u32*(width+16),self.actions_y()+64,width,136)}
     }
+    // ------------------------=
+    // FUNC: footer
+    // DESC: Keeps the final supporting note below the responsive card column.
+    // ------------------=
+    pub fn footer(&self)->Viewport {self.rect(32,if self.narrow {704}else{self.actions_y()+224},self.area.width/self.scale-64,20)}
 }
 #[cfg(test)]
 mod tests {

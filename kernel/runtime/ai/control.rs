@@ -3,7 +3,7 @@
 mod editor_compile_intent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Command { TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher, AiInstructionMapping,
+pub enum Command { Clock(super::clock::Request), TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher, AiInstructionMapping,
     Focus(App), Close(App), CloseActive, SettingsSection(u8), Context(ContextRequest),
     Spatial, Holographic, WorldShift, LaunchEntry(usize), Menu(usize), Shell(ShellAction) }
 
@@ -140,6 +140,9 @@ impl Command {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let bytes = bytes.trim_ascii();
+        if let Some(request) = bytes.strip_prefix(b"OS_CLOCK:") {
+            return super::clock::Request::protocol(request).map(Self::Clock);
+        }
         if bytes == b"OS_CLOSE:active" {
             return Some(Self::CloseActive);
         }
@@ -243,6 +246,7 @@ impl Command {
     // DESC: Resolves unambiguous launch requests even while model weights are loading; other phrasing uses inference.
     // ------------------=
     pub fn explicit(input: &[u8]) -> Option<Self> {
+        if let Some(request) = super::clock::Request::parse(input) { return Some(Self::Clock(request)); }
         for (name,action) in [(b"tile window left".as_slice(),ShellAction::SnapLeft),(b"tile window right",ShellAction::SnapRight),
             (b"center window",ShellAction::Center),(b"next window",ShellAction::NextWindow),(b"grow window",ShellAction::Grow),
             (b"shrink window",ShellAction::Shrink),(b"toggle focus lens",ShellAction::FocusLens),(b"peek through",ShellAction::Peek),
@@ -312,6 +316,7 @@ impl Command {
             return b"The OS could not complete that action. The app may not be open, or a dialog needs attention.";
         }
         match self {
+            Self::Clock(_) => b"The system clock request completed through the native clock service.",
             Self::TextEditor => b"Opened Text Editor.",
             Self::FileNavigator => b"Opened File Navigator.",
             Self::Browser => b"Opened Infinity Browser.",
@@ -345,7 +350,7 @@ impl Command {
 pub fn protocol_output(bytes: &[u8]) -> bool {
     let bytes = bytes.trim_ascii();
     [b"OS_OPEN:".as_slice(), b"OS_FOCUS:", b"OS_CLOSE:", b"OS_CONTEXT:", b"OS_SETTINGS:",
-        b"OS_SURFACE:",b"OS_LAUNCH:",b"OS_MENU:",b"OS_SHELL:"].iter()
+        b"OS_SURFACE:",b"OS_LAUNCH:",b"OS_MENU:",b"OS_SHELL:",b"OS_CLOCK:"].iter()
         .any(|prefix| prefix.starts_with(bytes) || bytes.starts_with(prefix))
 }
 

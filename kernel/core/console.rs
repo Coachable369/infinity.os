@@ -13,6 +13,8 @@ mod desktop_widgets_controller;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[path = "app_shortcuts_controller.rs"]
 mod app_shortcuts_controller;
+#[path = "console_clock.rs"]
+mod console_clock;
 use crate::intent::{
     ConsoleMode, IntentContext, IntentRuntime, KnownOperationPolicy, OperationPolicy,
     ResolutionSource, SystemOperation,
@@ -547,6 +549,7 @@ struct ConsoleRuntime {
     home_note_previous_location: usize,
     home_clipboard_note: bool,
     desktop_clock: DateTimeConfiguration,
+    clock_receipt: Option<crate::runtime::ai::clock::Receipt>,
     desktop_app: DesktopAppKind,
     command_window_suspended: bool,
     app_window_x: i32,
@@ -593,6 +596,7 @@ impl ConsoleRuntime {
     // DESC: Creates and initializes a new instance.
     // ------------------=
     fn new(system: SystemSnapshot) -> Self {
+        console_clock::load_settings();
         let installer_date_time = firmware_date_time(system.firmware_runtime_services);
         let installer_choice = time_zone_index(installer_date_time.utc_offset_minutes);
         Self {
@@ -724,6 +728,7 @@ impl ConsoleRuntime {
             home_note_previous_location: 0,
             home_clipboard_note: false,
             desktop_clock: installer_date_time,
+            clock_receipt: None,
             desktop_app: DesktopAppKind::None,
             command_window_suspended: false,
             app_window_x: 190,
@@ -2598,6 +2603,7 @@ impl ConsoleRuntime {
     // DESC: Enters the minimal authenticated graphical shell.
     // ------------------=
     fn enter_desktop(&mut self) {
+        console_clock::load_settings();
         crate::output_text(b"[desktop] enter begin\n");
         self.reset_app_assistant_session();
         self.cancel_node_pairing_input();
@@ -2757,6 +2763,7 @@ impl ConsoleRuntime {
         use crate::runtime::ai::control::Command;
         if self.editor_dialog != EditorDialog::None || self.settings_editing { return Some(false); }
         match command {
+            Command::Clock(request) => return Some(self.dispatch_clock(request)),
             Command::Shell(action) => {
                 use crate::runtime::ai::control::ShellAction as S;
                 use crate::drivers::input::desktop_shortcuts::DesktopAction as D;
@@ -7271,10 +7278,8 @@ impl ConsoleRuntime {
             // the 16/9 term keeps physical X/Y travel isotropic.
             let fixed_y = delta_y as i32 * gain_numerator * 16 + self.pointer_y_remainder;
             self.pointer_y_remainder = fixed_y % 36;
-            // USB polling coalesces a short burst of HID reports before this
-            // point. Clamping the coalesced result discarded most of a fast
-            // gesture, so the guest cursor fell farther behind the host the
-            // faster the mouse moved. Preserve the complete reported travel;
+            // Each HID report reaches acceleration separately. Preserve its
+            // complete reported travel instead of clamping fast gestures;
             // the final screen-coordinate clamp below still keeps the cursor
             // safely inside the framebuffer.
             (fixed_x / 4, fixed_y / 36)
@@ -9550,6 +9555,7 @@ impl ConsoleRuntime {
         if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
+        if self.clock_command(&command[..length]) {self.reset_input();return;}
         #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if compiler_commands::command(self,&command[..length]) {self.reset_input();return;}
         #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -13974,9 +13980,10 @@ pub fn poll_native_ai() {
                     ai.chat.publish_native_completion(b"Please choose Save, Discard, or Cancel in the editor. The app is still open.", true);
                 }
             });
+            if matches!(command, crate::runtime::ai::control::Command::Clock(_)) { runtime.publish_clock_receipt(origin); }
             if let Some(crate::runtime::ai::kit::RequestOrigin::Application(id)) = origin {
                 // Context actions already publish their detailed result through their original panel.
-                if !matches!(command, crate::runtime::ai::control::Command::Context(_)) {
+                if !matches!(command, crate::runtime::ai::control::Command::Context(_) | crate::runtime::ai::control::Command::Clock(_)) {
                     let mut panel = crate::ui::app_assistant::read(id);
                     panel.reply(command.result(success == Some(true)));
                     crate::ui::app_assistant::write(id, panel);
@@ -14012,16 +14019,33 @@ static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate
 
 // ------------------------=
 // FUNC: input_batch
-// DESC: Drains bounded keyboard actions without rendering between scancodes, then presents the resulting state once.
+// DESC: Dispatches bounded device actions in order and presents their final cursor or scene once before background services.
 // ------------------=
 pub fn input_batch(action: impl FnOnce()) {
     let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
     action();
-    if unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) } {
-        unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
-            runtime.redraw(); diagnostics::publish(runtime);
-        } }
+    match unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) } {
+        crate::ui::input_batch::Presentation::Scene => {
+            unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
+                runtime.redraw(); diagnostics::publish(runtime);
+            } }
+        }
+        crate::ui::input_batch::Presentation::Cursor { x, y } => {
+            crate::bootstrap::system_ui_cursor(x, y);
+            unsafe { if let Some(runtime) = (&*(&raw const RUNTIME)).as_ref() {
+                diagnostics::publish_pointer(runtime);
+            } }
+        }
+        crate::ui::input_batch::Presentation::None => {}
     }
+}
+
+// ------------------------=
+// FUNC: input_cursor_presentation
+// DESC: Shares the device-drain presentation gate with the cursor fast path without delaying input state or button edges.
+// ------------------=
+pub fn input_cursor_presentation(x: i32, y: i32) -> bool {
+    unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request_cursor(x, y) }
 }
 
 // ------------------------=
@@ -14088,7 +14112,7 @@ pub fn pointer_buttons(delta_x: i16, delta_y: i16, buttons: u8) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer(delta_x, delta_y, buttons);
-            diagnostics::publish_pointer(runtime);
+            if !(&*(&raw const INPUT_PRESENTATION)).active() { diagnostics::publish_pointer(runtime); }
         }
     }
 }
@@ -14124,7 +14148,7 @@ pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer_absolute(x, y, buttons);
-            diagnostics::publish_pointer(runtime);
+            if !(&*(&raw const INPUT_PRESENTATION)).active() { diagnostics::publish_pointer(runtime); }
         }
     }
 }
@@ -14371,36 +14395,8 @@ fn write_minutes_label(output: &mut [u8; 48], minutes: u8) -> usize {
 // ------------------=
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn firmware_date_time(firmware_runtime_services: u64) -> DateTimeConfiguration {
-    if firmware_runtime_services == 0 {
-        return DateTimeConfiguration::utc_default();
-    }
-    let services = firmware_runtime_services as usize as *const EfiRuntimeServices;
-    let mut time = EfiTime::zero();
-    let status = unsafe { ((*services).get_time)(&mut time, core::ptr::null_mut()) };
-    if status != 0 {
-        return DateTimeConfiguration::utc_default();
-    }
-    let firmware_offset = if (-14 * 60..=14 * 60).contains(&time.time_zone) {
-        time.time_zone
-    } else {
-        0
-    };
-    let zone = TIME_ZONES[time_zone_index(firmware_offset)];
-    let configuration = DateTimeConfiguration {
-        year: time.year,
-        month: time.month,
-        day: time.day,
-        hour: time.hour,
-        minute: time.minute,
-        second: time.second,
-        time_zone_id: zone.id,
-        utc_offset_minutes: zone.offset_minutes,
-    };
-    if configuration.is_valid() {
-        configuration
-    } else {
-        DateTimeConfiguration::utc_default()
-    }
+    console_clock::local_configuration(firmware_runtime_services)
+        .filter(DateTimeConfiguration::is_valid).unwrap_or_else(DateTimeConfiguration::utc_default)
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -14409,10 +14405,7 @@ fn firmware_date_time(firmware_runtime_services: u64) -> DateTimeConfiguration {
 // DESC: Reads certificate-validation time from firmware and fails closed instead of using installer fallback dates.
 // ------------------=
 pub(crate) fn certificate_time(services: u64) -> Option<u64> {
-    if services == 0 { return None; }
-    let mut time = EfiTime::zero();
-    if unsafe { ((*(services as *const EfiRuntimeServices)).get_time)(&mut time, core::ptr::null_mut()) } != 0 { return None; }
-    crate::http_transport::clock::unix_seconds(time.year,time.month,time.day,time.hour,time.minute,time.second,time.time_zone)
+    crate::runtime::ai::clock::SYSTEM.settings().utc(console_clock::hardware_utc(services)?)
 }
 
 // ------------------------=

@@ -54,6 +54,8 @@ unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: Kernel
 // DESC: Exercises the production bounded compiler task against real user-mode Clang and LLD, not a fixture-specific syscall loop.
 // ------------------=
 pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller: Controller) -> ! {
+    // A declared test clock fixture, never an installed-kernel fallback date.
+    super::system_clock::SYSTEM.observe(1_800_000_000, cpu::clock_ns().unwrap_or(0));
     #[cfg(feature = "python-pip-probe")]
     pip::run(memory, kernel, controller);
     let initial = memory.available_pages();

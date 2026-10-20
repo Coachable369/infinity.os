@@ -1,4 +1,5 @@
 pub mod ai;
+pub use ai::clock as system_clock;
 #[cfg(feature="native-browser")]
 pub mod browser;
 pub mod audio;

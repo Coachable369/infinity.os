@@ -72,6 +72,19 @@ impl<'a> RuntimeBitmap<'a> {
     }
 
     // ------------------------=
+    // FUNC: parse_authored_bgra
+    // DESC: Preserves explicitly authored 32-bit BGRA alpha, including native kit assets with legacy BI_RGB headers.
+    // ------------------=
+    pub fn parse_authored_bgra(data: &'a [u8]) -> Option<Self> {
+        let mut bitmap = Self::parse(data)?;
+        if bitmap.bytes_per_pixel != 4 {
+            return None;
+        }
+        bitmap.uses_alpha = true;
+        Some(bitmap)
+    }
+
+    // ------------------------=
     // FUNC: width
     // DESC: Returns the validated source width in pixels.
     // ------------------=

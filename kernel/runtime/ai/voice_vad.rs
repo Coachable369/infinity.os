@@ -134,7 +134,7 @@ impl Detector {
     }
     // ------------------------=
     // FUNC: drain_limit
-    // DESC: Discards an overlong utterance until a real end pause without storing or submitting a truncated command.
+    // DESC: Discards an overlong utterance until a pause below the new-turn gate, without retaining or submitting its truncated tail.
     // ------------------=
     fn drain_limit(&mut self, pcm: &[i16]) -> usize {
         let mut consumed = 0;
@@ -144,7 +144,12 @@ impl Detector {
             let value = i64::from(sample);
             self.energy += (value * value) as u64;
             if self.frame_samples == FRAME {
-                let voiced = self.energy >= u64::from(self.continuation_threshold.max(1)).pow(2) * FRAME as u64;
+                // This utterance has already been rejected and erased. The
+                // quieter continuation gate exists to preserve its soft words,
+                // not to hold the next-turn gate shut on ordinary room noise.
+                // Require the full endpoint pause below the calibrated onset
+                // gate before allowing a fresh, separately wake-authorized turn.
+                let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
                 self.consecutive = if voiced { self.consecutive + 1 } else { 0 };
                 self.limit_silence = if self.consecutive >= ONSET_FRAMES { 0 } else { self.limit_silence + FRAME };
                 self.frame_samples = 0; self.energy = 0;
@@ -467,6 +472,38 @@ mod tests {
         value.clear(300);
         value.push(&[1000; FRAME * 5]); value.push(&[0; END_SILENCE]);
         assert_eq!(value.state(), VadState::Complete);
+    }
+
+    // ------------------------=
+    // FUNC: rejected_turn_rearms_at_onset_floor_without_executing_its_tail
+    // DESC: Bounds retry to the measured 800-ms pause when room noise lies between continuation and onset gates; new speech still requires a fresh segment.
+    // ------------------=
+    #[test]
+    fn rejected_turn_rearms_at_onset_floor_without_executing_its_tail() {
+        for chunk in [1, 17, 320, 701, 4096] {
+            let mut value = Utterance::new(310);
+            value.clear_with_continuation(310, 232);
+            value.push(&[1200; MAX_SAMPLES]);
+            assert_eq!(value.state(), VadState::Limit);
+            let mut consumed = 0;
+            for pcm in [260; END_SILENCE - 1].chunks(chunk) {
+                consumed += value.push(pcm);
+                assert_eq!(value.state(), VadState::Limit);
+                assert!(value.speech().is_none());
+            }
+            consumed += value.push(&[260]);
+            assert_eq!(consumed, END_SILENCE);
+            assert_eq!(consumed as u64 * 1_000_000_000 / RATE as u64, 800_000_000);
+            assert_eq!(value.state(), VadState::NoSpeech);
+            assert!(value.speech().is_none());
+            assert!(value.pcm.iter().all(|&sample| sample == 0));
+            value.clear_with_continuation(310, 232);
+            value.push(&[260; RATE]);
+            assert_eq!(value.state(), VadState::Waiting);
+            value.push(&[1200; FRAME * ONSET_FRAMES]);
+            value.push(&[260; END_SILENCE]);
+            assert_eq!(value.state(), VadState::Complete);
+        }
     }
 
     // ------------------------=

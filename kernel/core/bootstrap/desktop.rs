@@ -9,6 +9,9 @@ mod minimized_shelf;
 mod desktop_widget_menu;
 #[path = "glass.rs"]
 mod glass;
+#[path = "../../ui/dock_material.rs"]
+mod dock_material;
+static mut DOCK_BACKDROP: dock_material::Backdrop = dock_material::Backdrop::new();
 
 static mut THINKING_ANIMATION: crate::ui::thinking::ThinkingAnimation =
     crate::ui::thinking::ThinkingAnimation::new();
@@ -4450,10 +4453,21 @@ impl super::DisplayDevice {
         editor_dialog_input: &[u8],
         editor_dialog_focus: usize,
     ) {
+        let incoming_clip=self.render_clip;
+        if matches!(screen,2|3|4|7|8|9|10|11) {
+            if let Some(clip)=incoming_clip {
+                let dock=crate::ui::system_layout::SystemLayout::new(self.width,self.height).desktop_foreground_geometry().dock;
+                let (left,top,right,bottom)=dock_material::expand_damage(
+                    (dock.x.max(0)as usize,dock.y.max(0)as usize,dock.width as usize,dock.height as usize),
+                    (clip.left,clip.top,clip.right,clip.bottom));
+                self.render_clip=Some(super::PresentRegion{left,top,right,bottom});
+            }
+        }
         self.mark_dirty_rect(0, 0, self.width, self.height);
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if screen == 7 && super::launcher_backdrop::restore(self) {
             self.launcher_reveal(input, focus);
+            self.render_clip=incoming_clip;
             return;
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -4561,7 +4575,7 @@ impl super::DisplayDevice {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if matches!(screen,2|4|8|9|10|11) { crate::ui::desktop_effects::layer(None); self.minimized_app_shelf(); self.desktop_widget_menu(scale); }
-        if screen==4 {return;}
+        if screen==4 {self.render_clip=incoming_clip;return;}
         if matches!(screen, 1 | 5 | 6) {
             let panel_top = if matches!(screen, 5 | 6) {
                 top_bar + self.height * 11 / 100
@@ -5085,6 +5099,7 @@ impl super::DisplayDevice {
                 self.settings_color_picker(settings_window, scale, false);
             }
         }
+        self.render_clip=incoming_clip;
     }
 
     // ------------------------=
@@ -7876,7 +7891,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: launcher_dock_icon
-    // DESC: Draws the dedicated Infinity launcher control and its live open-state indicator.
+    // DESC: Reuses the quiet launcher plate with an outer glow, never a pressed fill or shifted icon.
     // ------------------=
     pub(super) fn launcher_dock_icon(
         &mut self,
@@ -7885,43 +7900,15 @@ impl super::DisplayDevice {
         size: usize,
         active: bool,
     ) {
-        let radius = (size / 5).max(7);
-        self.fill_rounded_rect_alpha(left + 3, top + 5, size, size, radius, 0, 3, 10, 185);
-        self.fill_rounded_rect_alpha(
-            left,
-            top,
-            size,
-            size,
-            radius,
-            if active { 7 } else { 4 },
-            if active { 64 } else { 28 },
-            if active { 103 } else { 52 },
-            244,
-        );
-        self.outline_rounded_rect(
-            left,
-            top,
-            size,
-            size,
-            radius,
-            if active { 115 } else { 55 },
-            if active { 217 } else { 137 },
-            if active { 255 } else { 184 },
-        );
-        self.top_bar_infinity_icon(left + size / 2, top + size / 2, size * 3 / 4);
-        if active {
-            self.fill_rounded_rect_alpha(
-                left + size / 2 - 5,
-                top + size + 5,
-                10,
-                3,
-                2,
-                126,
-                222,
-                255,
-                255,
-            );
+        let accent=self.active_accent_rgb();
+        let glow=(size/46).max(1)*5;
+        for y in -(glow as i32)..(size+glow) as i32 {
+            for x in -(glow as i32)..(size+glow) as i32 {
+                let (r,g,b,a)=dock_material::launcher_pixel(size,x,y,accent,active);
+                if a!=0 {self.blend_color(left as i32+x,top as i32+y,r,g,b,a);}
+            }
         }
+        self.top_bar_infinity_icon(left + size / 2, top + size / 2, size * 3 / 4);
     }
 
     // ------------------------=
@@ -10149,53 +10136,24 @@ impl super::DisplayDevice {
         let dock_height = geometry.dock.height as usize;
         let dock_left = geometry.dock.x.max(0) as usize;
         let dock_top = geometry.dock.y.max(0) as usize;
-        self.fill_rounded_rect_alpha(
-            dock_left.saturating_sub(10 * scale),
-            dock_top + 9 * scale,
-            dock_width.saturating_add(20 * scale),
-            dock_height + 8 * scale,
-            22 * scale,
-            0,
-            2,
-            10,
-            128,
-        );
-        self.fill_rounded_rect_alpha(
-            dock_left.saturating_sub(4 * scale),
-            dock_top + 4 * scale,
-            dock_width.saturating_add(8 * scale),
-            dock_height + 3 * scale,
-            18 * scale,
-            16,
-            23,
-            65,
-            72,
-        );
-        self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
-        let (dock_r, dock_g, dock_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Dock);
-        let dock_alpha = self.active_background_alpha(104);
-        self.fill_rounded_rect_alpha(
-            dock_left + 2 * scale,
-            dock_top + 2 * scale,
-            dock_width.saturating_sub(4 * scale),
-            dock_height.saturating_sub(4 * scale),
-            14 * scale,
-            dock_r,
-            dock_g,
-            dock_b,
-            dock_alpha,
-        );
-        self.fill_rect_alpha(
-            dock_left + 18 * scale,
-            dock_top + 3 * scale,
-            dock_width.saturating_sub(36 * scale),
-            1,
-            164,
-            224,
-            252,
-            105,
-        );
+        if let Some(region)=self.clipped_render_region(dock_left,dock_top,dock_width,dock_height) {
+            let (opacity,blur)=self.active_background_effects();
+            let mut material=dock_material::Material{primary:self.active_primary_rgb(),accent:self.active_accent_rgb(),
+                opacity,blur,scale,bgr:self.format!=0};
+            match self.skin_visual_mode() {
+                1=>{material.primary=0xf8fbff;material.accent=0x7a91a6;},
+                2=>{material.primary=0x080808;material.accent=0xffffff;material.opacity=100;material.blur=0;},
+                _=>{},
+            }
+            // The dock is painted over the restored desktop, before application windows.
+            // system_ui_frame expands intersecting damage before desktop restoration,
+            // so the complete blur source is clean and stable across partial repaints.
+            unsafe {(&mut *(&raw mut DOCK_BACKDROP)).paint(
+                core::slice::from_raw_parts_mut(self.buffer,self.stride*self.height),self.stride,
+                (dock_left,dock_top,dock_width,dock_height),
+                (region.left,region.top,region.right,region.bottom),material);}
+            self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);
+        }
         let entries = &crate::ui::app_launcher::DESKTOP_DOCK_ENTRIES;
         let icon_gap = dock_width / entries.len();
         let stack = crate::ui::desktop_stack::current();
@@ -10208,8 +10166,8 @@ impl super::DisplayDevice {
             let size = 46 * scale;
             let x = dock_left + icon_gap / 2 + index * icon_gap;
             let is_hovered = hovered == Some(index);
-            let icon_top = dock_top + (if is_hovered { 7 } else { 10 }) * scale;
-            if is_hovered {
+            let icon_top = dock_top + (if is_hovered && index!=0 { 7 } else { 10 }) * scale;
+            if is_hovered && index!=0 {
                 self.fill_rounded_rect_alpha(
                     x.saturating_sub(5 * scale),
                     icon_top.saturating_sub(4 * scale),
@@ -10240,7 +10198,7 @@ impl super::DisplayDevice {
                 widget_state.visible & 2 != 0,
             );
             if index == 0 {
-                self.launcher_dock_icon(x, icon_top, size, launcher_open);
+                self.launcher_dock_icon(x, icon_top, size, launcher_open || is_hovered);
             } else {
                 self.desktop_app_icon(
                     x,
@@ -11521,6 +11479,7 @@ pub fn system_ui_present(
 // DESC: Presents only saved and new cursor pixels; no application hashes, painting, or service calls.
 // ------------------=
 pub fn system_ui_cursor(x: i32, y: i32) {
+    if !crate::console::input_cursor_presentation(x, y) { return; }
     unsafe {
         if let Some(console) = (*(&raw mut CONSOLE)).as_mut() {
             console.display.frame_started_ns = crate::ui::performance::monotonic_ns();

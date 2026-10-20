@@ -103,6 +103,7 @@ pub enum CapabilityFamily {
     Menu,
     Shell,
     Context,
+    Clock,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,7 +168,7 @@ impl CapabilityDirectory {
 // DESC: Classifies an authoritative protocol target into its stable typed AIKit family.
 // ------------------=
 fn capability_family(target: &[u8]) -> Option<CapabilityFamily> {
-    let families: [(&[u8], CapabilityFamily); 9] = [
+    let families: [(&[u8], CapabilityFamily); 10] = [
         (b"OS_OPEN:", CapabilityFamily::Open),
         (b"OS_LAUNCH:", CapabilityFamily::Launch),
         (b"OS_FOCUS:", CapabilityFamily::Focus),
@@ -177,6 +178,7 @@ fn capability_family(target: &[u8]) -> Option<CapabilityFamily> {
         (b"OS_MENU:", CapabilityFamily::Menu),
         (b"OS_SHELL:", CapabilityFamily::Shell),
         (b"OS_CONTEXT:", CapabilityFamily::Context),
+        (b"OS_CLOCK:", CapabilityFamily::Clock),
     ];
     families.iter().find(|(prefix, _)| target.starts_with(prefix)).map(|(_, family)| *family)
 }
@@ -346,6 +348,11 @@ impl ExecutionBroker {
         if let Err(denial) = PolicyEngine::authorize(context) {
             self.record(request, AuditOutcome::Denied(denial));
             return Err(denial);
+        }
+        if request.origin == RequestOrigin::Model
+            && matches!(request.command, control::Command::Clock(super::clock::Request::SetTime { .. } | super::clock::Request::SetZone(_))) {
+            self.record(request, AuditOutcome::Denied(PolicyDenial::PermissionDenied));
+            return Err(PolicyDenial::PermissionDenied);
         }
         self.active = Some(request);
         self.record(request, AuditOutcome::Authorized);

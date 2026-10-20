@@ -288,58 +288,31 @@ pub fn initialize() -> InputStatus {
 // ------------------=
 pub fn run() -> ! {
     crate::ui::input_capture::install(capture_pending);
-    let mut mouse_packet = [0u8; 4];
-    let mut mouse_index = 0usize;
-    let mouse_device_id = unsafe { MOUSE_DEVICE_ID };
-    let mouse_packet_size = if mouse_device_id == 3 || mouse_device_id == 4 {
-        4
-    } else {
-        3
-    };
+    let mut mouse = pointer::Ps2PacketStream::new(unsafe { MOUSE_DEVICE_ID });
     let mut shift = false;
     let mut extended = false;
     let mut control = false;
     let mut command = 0u8;
     loop {
-        crate::drivers::network::poll();
-        let status = pending_status();
-        if status & 1 == 0 {
-            crate::bootstrap::animation_tick();
-            crate::console::poll_native_ai();
-            core::hint::spin_loop();
-            continue;
-        }
-        let value = read_pending();
-        if status & 0x20 != 0 {
-            if mouse_index == 0 && value & 0x08 == 0 {
-                continue;
-            }
-            mouse_packet[mouse_index] = value;
-            mouse_index += 1;
-            if mouse_index == mouse_packet_size {
-                if let Some(event) =
-                    pointer::decode_ps2_packet(&mouse_packet[..mouse_packet_size], mouse_device_id)
-                {
-                    dispatch_pointer(event);
-                }
-                mouse_index = 0;
-            }
-        } else {
-            crate::console::input_batch(|| {
-                dispatch_keyboard(value, &mut shift, &mut control, &mut command, &mut extended);
-                // Bounded drain preserves every make/break event. Do not consume
-                // mouse bytes here: pointer presses retain immediate presentation.
-                for _ in 1..64 {
-                    let next = pending_status();
-                    if next & 1 == 0 || next & 0x20 != 0 { break; }
-                    dispatch_keyboard(read_pending(), &mut shift, &mut control, &mut command, &mut extended);
+        crate::console::input_batch(|| {
+            crate::ui::input_batch::drain(128, || {
+                let status = pending_status();
+                (status & 1 != 0).then(|| (status, read_pending()))
+            }, |(status, value)| {
+                if status & 0x20 != 0 {
+                    if let Some(event) = mouse.push(value) { dispatch_pointer(event); }
+                } else {
+                    dispatch_keyboard(value, &mut shift, &mut control, &mut command, &mut extended);
                 }
             });
-        }
-        // Service queued controller bytes before spending time on the
-        // high-resolution bootstrap effects pass.
+        });
+        // A complete packet is dispatched before service work instead of one
+        // byte per animation/network/inference iteration. The finite drain
+        // preserves fairness under sustained controller traffic.
+        crate::drivers::network::poll();
         crate::bootstrap::animation_tick();
         crate::console::poll_native_ai();
+        core::hint::spin_loop();
     }
 }
 

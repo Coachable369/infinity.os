@@ -2,7 +2,7 @@
   "schema": "infinityos.ai-instruction-map",
   "version": 1,
   "description": "Complete editable directory of implemented InfinityOS AI controls, including controls not used by the current default UI flow. Targets are typed OS protocols; missing or unknown capabilities are rejected.",
-  "directory": {"status":"complete","targetCount":100,"includes":["operating-system controls","application controls","launcher-only destinations"]},
+  "directory": {"status":"complete","targetCount":103,"includes":["operating-system controls","application controls","launcher-only destinations","native system clock"]},
   "actions": [
     {"id":"os.app.open.textEditor","scope":"os","target":"OS_OPEN:text_editor","aliases":["open text editor","launch text editor","start code editor"]},
     {"id":"os.app.open.fileNavigator","scope":"os","target":"OS_OPEN:file_navigator","aliases":["open file navigator","open file manager","show my files"]},
@@ -108,6 +108,9 @@
     {"id":"app.spatial.previousItem","scope":"application","target":"OS_CONTEXT:previous item","aliases":["previous item","select previous item"]},
     {"id":"app.spatial.openSelected","scope":"application","target":"OS_CONTEXT:open selected","aliases":["open selected","activate selected item"]},
     {"id":"app.spatial.addIdea","scope":"application","target":"OS_CONTEXT:add idea","aliases":["add idea","create idea"]},
-    {"id":"app.spatial.newCategory","scope":"application","target":"OS_CONTEXT:new category","aliases":["new category","create category"]}
+    {"id":"app.spatial.newCategory","scope":"application","target":"OS_CONTEXT:new category","aliases":["new category","create category"]},
+    {"id":"os.clock.read","scope":"os","target":"OS_CLOCK:read","aliases":["what time is it","what is the current time","tell me the time"]},
+    {"id":"os.clock.set","scope":"os","target":"OS_CLOCK:set:{argument}","aliases":["set time to {argument}","set the time to {argument}","change the time to {argument}"]},
+    {"id":"os.clock.timeZone","scope":"os","target":"OS_CLOCK:zone:{argument}","aliases":["set time zone to {argument}","change the time zone to {argument}","set timezone to {argument}"]}
   ]
 }

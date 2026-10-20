@@ -5,6 +5,7 @@ pub mod application_decision;
 pub mod agent;
 pub mod broker;
 pub mod chat;
+pub mod clock;
 pub mod control;
 pub mod generation;
 pub mod intelligence;
@@ -148,8 +149,7 @@ pub struct AiRuntime {
     chat_owner: [u8; 16],
     hermes_session: [u8; 16],
     hermes_memory: Option<hermes_profile::Document>,
-    memory_turn:u64,
-    memory_last_inquiry:u64,
+    memory_inquiries:hermes_profile::inquiries::Inquiries,
     requests: RequestApi,
     execution: ExecutionBroker,
     intelligence: intelligence::Service,
@@ -192,7 +192,7 @@ impl AiRuntime {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
-        if hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None{
+        if clock::Request::parse(input).is_none() && hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None{
             return Ok(RequestRoute::Inference(InferenceMode::Conversation));
         }
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
@@ -656,7 +656,7 @@ impl AiRuntime {
         if self.chat_owner != owner {
             self.hermes_memory = None;
             self.hermes_session = [0;16];
-            self.memory_turn=0;self.memory_last_inquiry=0;
+            self.memory_inquiries=hermes_profile::inquiries::Inquiries::new();
             self.stop_application_agent();
             self.cancel_app_turn();
             self.execution.cancel();
@@ -688,6 +688,7 @@ impl AiRuntime {
     // ------------------=
     pub fn load_hermes_memory(&mut self,session:[u8;16],document:Option<hermes_profile::Document>) {
         let changed=self.hermes_memory.as_ref().map(|d|d.bytes())!=document.as_ref().map(|d|d.bytes());
+        if self.hermes_session!=session {self.memory_inquiries.cancel();}
         self.hermes_session=session;
         self.hermes_memory=document;
         if changed {
@@ -748,6 +749,7 @@ impl AiRuntime {
     pub fn personal_memory_reply(&mut self, input: &[u8], reply: &mut [u8; 8192])
         -> Option<hermes_memory_request::Receipt>
     {
+        if clock::Request::parse(input).is_some() {return None;}
         if !self.chat.enabled() || self.execution.busy() || self.app_owner.is_some()
             || self.qwen.as_ref().is_some_and(|service| service.busy()) {
             return None;
@@ -767,6 +769,7 @@ impl AiRuntime {
     // DESC: Cancels active native generation while preserving its partial response.
     // ------------------=
     pub fn cancel_chat(&mut self) -> bool {
+        self.memory_inquiries.cancel();
         let mut editor = crate::ui::app_assistant::read(2);
         let editor_active = matches!(editor.generation, crate::ui::app_assistant::GenerationStatus::Queued | crate::ui::app_assistant::GenerationStatus::Running)
             || editor.generation == crate::ui::app_assistant::GenerationStatus::Complete
@@ -862,7 +865,22 @@ impl AiRuntime {
         };
         {
             let mut reply = [0; 8192];
-            if let Some(receipt) = self.personal_memory_reply(&input[..length], &mut reply) {
+            let answer=if route==RequestRoute::Inference(InferenceMode::Conversation) {
+                self.memory_inquiries.answer(self.hermes_memory.as_ref(),&input[..length])
+            } else {
+                // A follow-up never intercepts an already admitted OS action or plan.
+                self.memory_inquiries.cancel();
+                None
+            };
+            let mut teaching=[0u8;256];
+            let request=if let Some((key,value))=answer {
+                teaching[..9].copy_from_slice(b"remember ");
+                teaching[9..9+key.len()].copy_from_slice(key);
+                teaching[9+key.len()]=b'=';
+                teaching[10+key.len()..10+key.len()+value.len()].copy_from_slice(value);
+                &teaching[..10+key.len()+value.len()]
+            } else {&input[..length]};
+            if let Some(receipt) = self.personal_memory_reply(request, &mut reply) {
                 self.chat.begin_native_turn();
                 self.chat.update_native_response(&reply[..receipt.length]);
                 // Failed writes are factual spoken receipts too, not inference failures.
@@ -921,7 +939,6 @@ impl AiRuntime {
         }
         let input = self.chat.input();
         let mut augmented=[0u8;8192];
-        self.memory_turn=self.memory_turn.saturating_add(1);
         let augmented_len=if let Some(profile)=self.hermes_memory.as_ref(){
             #[cfg(target_os="none")]
             let context=intelligence::personal_memory_context(profile,input,&mut augmented[..1536]);
@@ -929,14 +946,7 @@ impl AiRuntime {
             let context=profile.selected_context(input,&mut augmented[..1536]);
             let Ok(mut n)=context else{return false;};
             augmented[n..n+input.len()].copy_from_slice(input);n+=input.len();
-            if self.memory_turn.saturating_sub(self.memory_last_inquiry)>=7{
-                if let Some(question)=hermes_profile::conversation::contextual_inquiry(profile,input,self.memory_turn,submitted_ns.unwrap_or(self.memory_turn.rotate_left(7))){
-                    let hint=b"\nAfter answering, optionally ask this brief question once: ";
-                    augmented[n..n+hint.len()].copy_from_slice(hint);n+=hint.len();
-                    augmented[n..n+question.len()].copy_from_slice(question);n+=question.len();
-                    self.memory_last_inquiry=self.memory_turn;
-                }
-            }n
+            n
         }else{0};
         let input = if augmented_len > 0 { &augmented[..augmented_len] } else { input };
         let submitted = if route == RequestRoute::Inference(InferenceMode::Conversation) {
@@ -952,6 +962,8 @@ impl AiRuntime {
             };
             return false;
         }
+        self.memory_inquiries.begin(self.hermes_memory.as_ref(), self.chat.input(),
+            route==RequestRoute::Inference(InferenceMode::Conversation));
         self.chat.generation_state = chat::GenerationState::Running;
         self.qwen_metrics
             .begin(submitted_ns, service.reused_tokens, service.prefill_tokens);
@@ -1100,6 +1112,9 @@ impl AiRuntime {
         }
         let started = crate::ui::performance::monotonic_ns();
         let changed = self.poll_qwen_inner();
+        if self.chat.generation_state != chat::GenerationState::Running {
+            self.finish_memory_inquiry();
+        }
         if self.qwen.as_ref().is_some_and(|service| !service.busy()) {
             self.qwen_metrics
                 .finish(crate::ui::performance::monotonic_ns());
@@ -1108,6 +1123,24 @@ impl AiRuntime {
             self.qwen_metrics.max_pump_ns = self.qwen_metrics.max_pump_ns.max(b.saturating_sub(a));
         }
         changed
+    }
+    // ------------------------=
+    // FUNC: finish_memory_inquiry
+    // DESC: Adds one consent-aware follow-up to a completed conversational reply without another inference pass.
+    // ------------------=
+    fn finish_memory_inquiry(&mut self) {
+        let mut reply=[0u8;chat::CHAT_TEXT_CAPACITY];
+        let Some(message)=self.chat.message(self.chat.message_count().saturating_sub(1)) else{return;};
+        let n=message.text().len();
+        let complete=self.chat.generation_state==chat::GenerationState::Complete
+            && message.role==chat::ChatRole::Assistant && n>0 && n+160<reply.len()
+            && !self.execution.busy();
+        reply[..n].copy_from_slice(message.text());
+        if let Some(question)=self.memory_inquiries.complete(self.hermes_memory.as_ref(),complete) {
+            reply[n..n+2].copy_from_slice(b"\n\n");
+            reply[n+2..n+2+question.text().len()].copy_from_slice(question.text());
+            self.chat.update_native_response(&reply[..n+2+question.text().len()]);
+        }
     }
     // ------------------------=
     // FUNC: record_first_visible_response
@@ -1207,8 +1240,7 @@ impl AiRuntime {
             chat_owner: [0; 16],
             hermes_session: [0;16],
             hermes_memory: None,
-            memory_turn:0,
-            memory_last_inquiry:0,
+            memory_inquiries:hermes_profile::inquiries::Inquiries::new(),
             requests: RequestApi::new(),
             execution: ExecutionBroker::new(),
             intelligence: intelligence::Service::new(),
@@ -1757,4 +1789,57 @@ pub fn initialize_global() -> bool {
             .initialize_with_model_refs(refs[0], refs[1], refs[2])
             .is_ok()
     })
+}
+
+#[cfg(all(test,not(target_os="none")))]
+mod inquiry_tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: completed_conversation_publishes_one_answerable_followup
+    // DESC: Exercises actual chat publication and pending-answer ownership without model-generated success claims.
+    // ------------------=
+    #[test]
+    fn completed_conversation_publishes_one_answerable_followup() {
+        let mut ai=Box::new(AiRuntime::new());
+        let owner=[0x7a;16];
+        ai.bind_chat_owner(owner);
+        ai.load_hermes_memory([0x7b;16],Some(hermes_profile::Document::new(owner,b"Alex",b"Infinity").unwrap()));
+        for turn in 0..3 {
+            ai.memory_inquiries.begin(ai.hermes_memory.as_ref(),b"hello",true);
+            ai.chat.begin_native_turn();
+            ai.chat.update_native_response(b"Hello.");
+            ai.chat.generation_state=chat::GenerationState::Complete;
+            ai.finish_memory_inquiry();
+            let length=ai.chat.message(ai.chat.message_count()-1).unwrap().text().len();
+            assert_eq!(length>6,turn==2);
+            ai.finish_memory_inquiry();
+            assert_eq!(ai.chat.message(ai.chat.message_count()-1).unwrap().text().len(),length);
+        }
+        assert_eq!(ai.memory_inquiries.answer(ai.hermes_memory.as_ref(),b"concise"),
+            Some((b"communication_style".as_slice(),b"concise".as_slice())));
+        ai.bind_chat_owner([0x7c;16]);
+        assert_eq!(ai.memory_inquiries.answer(ai.hermes_memory.as_ref(),b"detailed"),None);
+    }
+    // ------------------------=
+    // FUNC: pending_personal_question_never_consumes_an_os_action
+    // DESC: Exercises routed controls while an open-ended interest answer is pending, preserving command execution and expiring answer ownership.
+    // ------------------=
+    #[test]
+    fn pending_personal_question_never_consumes_an_os_action() {
+        let mut ai=Box::new(AiRuntime::new());
+        let owner=[0x7d;16];
+        ai.bind_chat_owner(owner);
+        let profile=hermes_profile::Document::new(owner,b"Alex",b"Infinity").unwrap()
+            .updated(owner,b"communication_style",b"concise").unwrap();
+        ai.load_hermes_memory([0x7e;16],Some(profile));
+        for _ in 0..3 {ai.memory_inquiries.begin(ai.hermes_memory.as_ref(),b"hello",true);}
+        assert_eq!(ai.memory_inquiries.complete(ai.hermes_memory.as_ref(),true),
+            Some(hermes_profile::inquiries::Question::Interests));
+        for byte in b"Close browser" {assert!(ai.chat.push_input(*byte));}
+        assert!(ai.submit_chat());
+        assert_eq!(ai.take_control(owner,true),Some(control::Command::Close(control::App::Browser)));
+        assert_eq!(ai.memory_inquiries.answer(ai.hermes_memory.as_ref(),b"hiking"),None);
+        let mut value=[0;128];
+        assert_eq!(ai.hermes_memory.as_ref().unwrap().get(b"interests",&mut value),Ok(0));
+    }
 }

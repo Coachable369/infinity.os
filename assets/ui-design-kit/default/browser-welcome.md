@@ -31,3 +31,9 @@ stars or new decorations. Actual alpha transparency around the sculpture and
 soft reflection, smooth antialiased clean edges.”
 
 Source generation: exec-e4acbd53-1645-4352-a5c4-1926bf339b7f.png.
+
+The native derivative is explicitly authored BGRA despite its legacy BI_RGB
+header. Compose it with `RuntimeBitmap::parse_authored_bgra` and premultiplied
+filtered sampling; generic BI_RGB decoding deliberately treats the fourth byte
+as reserved. Native screen and visual proof must use the same alpha contract so
+transparent padding never becomes a black matte or exposes hidden RGB noise.

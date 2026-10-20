@@ -36,6 +36,26 @@ All animations honor reduced motion. No idle animation loops. Controls must work
 through both keyboard and pointer where applicable. Shared ARM64/x86 code and
 fresh-installed parity are required; compilation alone does not close acceptance.
 
+## Dock glass and launcher state correction — October 20, 2026
+
+Reuse the existing icon family, navy theme, soft cyan rim and reference above.
+The dock is one frosted backdrop, not two opaque stacked panels. Sample the actual
+composited pixels beneath the dock into a bounded low-resolution grid before any
+shadow or foreground drawing. Apply separable blur, bilinear reconstruction,
+then a single translucent primary tint and a faint top-to-bottom white sheen.
+Use rounded anti-aliased masking so pixels outside the dock stay untouched.
+Refresh only with desktop damage; do not introduce a timer or full-screen blur.
+Damage intersecting the dock expands to its full bounds before restoring the
+desktop, so blur kernels never sample old icon ink or create clipped-update seams.
+The saved background-opacity preference remains authoritative; 100% is opaque.
+
+Launcher closed/open states have identical icon content, geometry and interior
+fill. Open or hovered adds only a soft accent-colored outer rim glow. Do not
+darken/brighten the interior, shift the icon, or add a pressed underline. Other
+dock items retain their established hover and running state affordances.
+Verify changed backdrop colors survive the tint, high-frequency detail softens,
+rounded corners are unchanged, and open/closed interior pixels are identical.
+
 ## State
 
 Design reference complete. Focus Lens and Peek Through have shared native

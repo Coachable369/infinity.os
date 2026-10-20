@@ -269,7 +269,13 @@ build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-brow
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z sdk/infinity-browser-core/lib.rs -o $@
 
-active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib
+.PHONY: desktop-browser-polish-test
+desktop-browser-polish-test: build/behavior-tests/libinfinity_browser_core.rlib
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -C opt-level=2 -Awarnings --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib tools/desktop-browser-polish-test.rs -o build/behavior-tests/desktop-browser-polish-test
+	@build/behavior-tests/desktop-browser-polish-test
+
+active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib desktop-browser-polish-test
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 -C opt-level=z -Awarnings tools/memory-throughput-test.rs -o build/behavior-tests/memory-throughput-test
 	@build/behavior-tests/memory-throughput-test
@@ -611,6 +617,14 @@ voice-vad-test:
 	rustc --edition=2021 --test kernel/runtime/ai/voice_vad.rs -o build/tools/voice-vad-private-test
 	build/tools/voice-vad-private-test
 
+.PHONY: system-clock-test
+system-clock-test:
+	@mkdir -p build/tests
+	rustc --edition=2021 --test tools/system-clock-test.rs -o build/tests/system-clock-test
+	build/tests/system-clock-test
+	rustc --edition=2021 -O tools/object-store-test.rs -o build/tests/object-store-test
+	build/tests/object-store-test --clock-only
+
 .PHONY: hermes-memory-test
 hermes-memory-test:
 	@mkdir -p build/tests
@@ -621,7 +635,7 @@ hermes-memory-test:
 	rustc --edition=2021 -O tools/object-store-test.rs -o build/tests/object-store-test
 	build/tests/object-store-test --hermes-memory-only
 
-ai-test: hermes-memory-test
+ai-test: hermes-memory-test system-clock-test
 	@tools/ai-test.sh
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test causal_attention
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test native_attention_softmax_preserves_bits

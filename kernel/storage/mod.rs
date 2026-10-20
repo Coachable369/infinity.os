@@ -475,6 +475,42 @@ pub fn installed_date_time_configuration() -> Option<DateTimeConfiguration> {
 }
 
 // ------------------------=
+// FUNC: installed_clock_settings
+// DESC: Loads the same persisted system clock projection on live and freshly installed boot paths.
+// ------------------=
+pub fn installed_clock_settings() -> Option<crate::runtime::ai::clock::Settings> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| {
+            let configuration = store.date_time_configuration().ok_or(object::ObjectError::NotFound)?;
+            let correction_seconds = store.clock_correction().ok_or(object::ObjectError::InvalidObject)?;
+            Ok(crate::runtime::ai::clock::Settings { offset_minutes: configuration.utc_offset_minutes, correction_seconds })
+        }).ok()
+    }
+    #[cfg(target_arch = "x86")]
+    { None }
+}
+
+// ------------------------=
+// FUNC: update_system_clock
+// DESC: Rechecks the initiating active Settings capability before committing a durable system-wide clock change.
+// ------------------=
+pub fn update_system_clock(owner: [u8; 16], session: [u8; 16], configuration: DateTimeConfiguration,
+    correction_seconds: i64) -> bool {
+    use crate::runtime::identity::{SessionState, SESSION_SETTINGS_UPDATE_ALLOWED};
+    let authorized = crate::runtime::with_runtime(|runtime| {
+        (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| runtime.identity.session_nth(i)).any(|active|
+            active.id.0 == session && active.user.0 == owner && active.state == SessionState::Active
+                && active.capabilities & SESSION_SETTINGS_UPDATE_ALLOWED != 0)
+    }).unwrap_or(false);
+    if !authorized { return false; }
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.update_clock_configuration(configuration, correction_seconds)).is_ok() }
+    #[cfg(target_arch = "x86")]
+    { let _ = (configuration, correction_seconds); false }
+}
+
+// ------------------------=
 // FUNC: object_query_nth
 // DESC: Returns one member of a typed native Object.Query result without rendering text.
 // ------------------=

@@ -18,6 +18,7 @@ pub struct Timeline {
     pub sequence: u64,
     present: u64,
     timestamps: [u64; 7],
+    microphone_ready_ns: Option<u64>,
 }
 
 impl Timeline {
@@ -26,7 +27,7 @@ impl Timeline {
     // DESC: Creates an inactive timeline without treating absent events as completed stages.
     // ------------------=
     pub const fn new() -> Self {
-        Self { sequence: 0, present: 0, timestamps: [0; 7] }
+        Self { sequence: 0, present: 0, timestamps: [0; 7], microphone_ready_ns: None }
     }
 
     // ------------------------=
@@ -37,6 +38,7 @@ impl Timeline {
         self.sequence = self.sequence.wrapping_add(1).max(1);
         self.present = 0;
         self.timestamps.fill(0);
+        self.microphone_ready_ns = None;
         self.observe(Milestone::Endpoint, endpoint_ns);
     }
 
@@ -70,6 +72,28 @@ impl Timeline {
         let mask = (1 << start as usize) | (1 << end as usize);
         if self.present & mask != mask { return None; }
         self.timestamps[end as usize].checked_sub(self.timestamps[start as usize])
+    }
+
+    // ------------------------=
+    // FUNC: microphone_ready
+    // DESC: Records only a completed post-playback capture handoff, never a pending discard or a clock reversal.
+    // ------------------=
+    pub fn microphone_ready(&mut self, now: u64) -> bool {
+        if self.microphone_ready_ns.is_some()
+            || !self.at(Milestone::Drained).is_some_and(|drained| now >= drained)
+        {
+            return false;
+        }
+        self.microphone_ready_ns = Some(now);
+        true
+    }
+
+    // ------------------------=
+    // FUNC: rearm_delay_ns
+    // DESC: Measures actual output-drain to microphone-ready latency separately from recognition and wake-word accuracy.
+    // ------------------=
+    pub fn rearm_delay_ns(&self) -> Option<u64> {
+        self.microphone_ready_ns?.checked_sub(self.at(Milestone::Drained)?)
     }
 
     // ------------------------=
@@ -148,5 +172,29 @@ mod tests {
         timing.observe(Milestone::FirstAudio, 90);
         assert_eq!(timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio), None);
         assert!(!timing.complete());
+    }
+
+    // ------------------------=
+    // FUNC: rearm_requires_completed_capture_handoff
+    // DESC: Keeps an unavailable microphone distinct from immediate readiness and clears the prior turn's receipt.
+    // ------------------=
+    #[test]
+    fn rearm_requires_completed_capture_handoff() {
+        let mut timing = Timeline::new();
+        timing.begin(100);
+        assert!(!timing.microphone_ready(110));
+        assert_eq!(timing.rearm_delay_ns(), None);
+        timing.observe(Milestone::Drained, 200);
+        assert!(!timing.microphone_ready(199));
+        assert_eq!(timing.rearm_delay_ns(), None);
+        assert!(timing.microphone_ready(205));
+        assert_eq!(timing.rearm_delay_ns(), Some(5));
+        assert!(!timing.microphone_ready(500));
+        assert_eq!(timing.rearm_delay_ns(), Some(5));
+        timing.begin(600);
+        assert_eq!(timing.rearm_delay_ns(), None);
+        timing.observe(Milestone::Drained, 700);
+        assert!(timing.microphone_ready(700));
+        assert_eq!(timing.rearm_delay_ns(), Some(0));
     }
 }

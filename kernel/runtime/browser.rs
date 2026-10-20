@@ -67,8 +67,6 @@ static DOWNLOADS:Mailbox<Download,1>=Mailbox::new();
 pub struct Download {pub generation:u64,pub name:[u8;63],pub name_length:usize,pub media_type:[u8;127],
     pub type_length:usize,pub bytes:[u8;16384],pub length:usize}
 static mut RNG:Option<ChaCha20Rng>=None;
-static mut UTC:u64=0;
-static mut EPOCH_NS:u64=0;
 #[derive(Clone,Copy)]
 pub struct Event {pub kind:u32,pub value:u32,pub length:usize,pub text:[u8;2048]}
 static mut HOST:abi::Host=abi::Host {version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,
@@ -150,12 +148,11 @@ pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->Result<(),inf
     }
     let info=BOOT.load(Ordering::Acquire).as_ref().ok_or(Error::Boot)?;
     if super::ai::qwen::workers::online()==0 {return Err(Error::Worker);}
-    let seconds=startup::prerequisites(info.firmware_entropy_valid==1,
+    let _seconds=startup::prerequisites(info.firmware_entropy_valid==1,
         crate::console::certificate_time(info.firmware_runtime_services))?;
     if !crate::drivers::browser_network::configure(owner,caps) {return Err(Error::Network);}
     let seed=RANDOM_SEEDS.derive(&info.firmware_entropy,&owner.0).ok_or(Error::Seed)?;
     RNG=Some(ChaCha20Rng::from_seed(seed));
-    UTC=seconds;EPOCH_NS=super::ai::qwen::workers::clock_ns();
     HOST.heap=heap_address();
     OWNER[0].store(u64::from_le_bytes(owner.0[..8].try_into().unwrap()),Ordering::Release);
     OWNER[1].store(u64::from_le_bytes(owner.0[8..].try_into().unwrap()),Ordering::Release);
@@ -592,9 +589,11 @@ unsafe extern "C" fn monotonic(_: *mut c_void)->u64 {super::ai::qwen::workers::c
 // FUNC: utc
 // DESC: Advances verified BSP wall time using the monotonic counter without AP firmware calls.
 // ------------------=
-unsafe extern "C" fn utc(_: *mut c_void,seconds:*mut u64,nanos:*mut u32)->u32 {
-    let elapsed=monotonic(core::ptr::null_mut()).saturating_sub(EPOCH_NS);
-    seconds.write(UTC+elapsed/1_000_000_000);nanos.write((elapsed%1_000_000_000) as u32);1
+unsafe extern "C" fn utc(_: *mut c_void, seconds: *mut u64, nanos: *mut u32) -> u32 {
+    let Some(value) = super::ai::clock::SYSTEM.utc_nanoseconds(monotonic(core::ptr::null_mut())) else { return 0; };
+    seconds.write(value / 1_000_000_000);
+    nanos.write((value % 1_000_000_000) as u32);
+    1
 }
 // ------------------------=
 // FUNC: entropy

@@ -2,6 +2,10 @@
 
 #[path = "../kernel/drivers/input/pointer.rs"]
 mod pointer;
+#[path = "../kernel/ui/input_batch.rs"]
+mod input_batch;
+#[path = "../kernel/drivers/input/buffer.rs"]
+mod buffer;
 
 use pointer::{
     decode_ps2_packet, decode_usb_absolute_pointer, decode_usb_boot_mouse, PointerButtonArbiter,
@@ -9,6 +13,57 @@ use pointer::{
     FEATURE_ABSOLUTE, FEATURE_BUTTONS_EXTENDED, FEATURE_RELATIVE, TRANSPORT_PS2,
     TRANSPORT_USB_HID_ABSOLUTE, TRANSPORT_USB_HID_RELATIVE,
 };
+
+// ------------------------=
+// FUNC: ps2_bounded_drain_preserves_packet_order
+// DESC: Exercises production byte assembly and FIFO drains across partial packets, keyboard interleaving, click edges, and scene/cursor flushes.
+// ------------------=
+fn ps2_bounded_drain_preserves_packet_order() {
+    use input_batch::{Presentation, PresentationBatch};
+    for device in [0, 3, 4] {
+        let mut queue = buffer::Buffer::new();
+        // A stray mouse byte cannot consume the keyboard byte following it.
+        assert!(queue.push(buffer::Byte { status: 0x21, value: 0 }));
+        for (status, value) in [(0x21, 0x09), (1, 0x1e), (0x21, 3), (0x21, 0)] {
+            assert!(queue.push(buffer::Byte { status, value }));
+        }
+        if device != 0 { assert!(queue.push(buffer::Byte { status: 0x21, value: 0 })); }
+        for value in [0x08, 2, 0] {
+            assert!(queue.push(buffer::Byte { status: 0x21, value }));
+        }
+        if device != 0 { assert!(queue.push(buffer::Byte { status: 0x21, value: 1 })); }
+        let mut mouse = pointer::Ps2PacketStream::new(device);
+        let mut gate = PresentationBatch::new();
+        let mut ordered = Vec::new();
+        let mut edges = Vec::new();
+        let mut x = 0;
+        let owner = gate.enter();
+        // First drain ends before any mouse packet is complete.
+        assert_eq!(input_batch::drain(4, || queue.pop(), |byte| {
+            if byte.status & 0x20 == 0 { ordered.push((0, byte.value as i32)); }
+            else { assert_eq!(mouse.push(byte.value), None); }
+        }), 4);
+        assert_eq!(ordered, [(0, 0x1e)]);
+        assert_eq!(gate.leave(owner), Presentation::None);
+        let owner = gate.enter();
+        let count = input_batch::drain(128, || queue.pop(), |byte| {
+            let Some(event) = mouse.push(byte.value) else { return; };
+            x += event.delta_x as i32;
+            ordered.push((1, x));
+            edges.push((x, event.buttons, event.wheel_y));
+            assert!(!gate.request_cursor(x, 0));
+            if event.wheel_y != 0 { assert!(!gate.request()); }
+        });
+        assert_eq!(count, if device == 0 { 4 } else { 6 });
+        assert_eq!(ordered, [(0, 0x1e), (1, 3), (1, 5)]);
+        assert_eq!(edges, [(3, BUTTON_LEFT, 0), (5, 0, if device == 0 { 0 } else { 1 })]);
+        assert_eq!(gate.leave(owner), if device == 0 { Presentation::Cursor { x: 5, y: 0 } } else { Presentation::Scene });
+        assert_eq!(queue.pop(), None);
+        // Both press and release are visible to actions before service work,
+        // even though a burst presents only its final cursor/scene once.
+        assert_eq!(edges.last().unwrap().1, 0);
+    }
+}
 
 // ------------------------=
 // FUNC: tablet_edges_survive_burst
@@ -253,6 +308,7 @@ fn discovery_metadata() {
 // DESC: Runs the host-side pointer protocol and discovery regression suite.
 // ------------------=
 fn main() {
+    ps2_bounded_drain_preserves_packet_order();
     tablet_edges_survive_burst();
     ps2_protocols();
     usb_hid_protocols();

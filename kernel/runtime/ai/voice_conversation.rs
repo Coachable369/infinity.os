@@ -496,6 +496,11 @@ unsafe fn reset_listening_state() {
     RECOGNITION_WAKE_AUTHORIZED = false;
     FOLLOWUP_ONSET_UNTIL = 0;
     STATE = State::Listening;
+    if (&*(&raw const NOISE_FLOOR)).ready()
+        && (&mut *(&raw mut TURN_TIMING)).microphone_ready(super::qwen::workers::clock_ns())
+    {
+        trace(b"microphone ready after reply");
+    }
 }
 
 // ------------------------=

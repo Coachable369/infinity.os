@@ -16,6 +16,8 @@ mod pool_stream;
 mod metadata_mutation;
 #[path = "object_python_packages.rs"]
 mod python_packages;
+#[path = "object_clock.rs"]
+mod clock_configuration;
 pub use python_packages::PythonPackageRevision;
 
 #[path = "../runtime/ai/generation.rs"]
@@ -930,7 +932,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         }
         let mut content = [0u8; 32];
         content[..8].copy_from_slice(b"INFTIME1");
-        content[8..10].copy_from_slice(&1u16.to_le_bytes());
+        content[8..10].copy_from_slice(&2u16.to_le_bytes());
         content[10..12].copy_from_slice(&32u16.to_le_bytes());
         content[12..14].copy_from_slice(&configuration.year.to_le_bytes());
         content[14] = configuration.month;
@@ -960,7 +962,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         let length = self.read(object, None, &mut content).ok()?;
         if length != content.len()
             || &content[..8] != b"INFTIME1"
-            || u16::from_le_bytes(content[8..10].try_into().ok()?) != 1
+            || !matches!(u16::from_le_bytes(content[8..10].try_into().ok()?), 1 | 2)
             || u16::from_le_bytes(content[10..12].try_into().ok()?) as usize != content.len()
         {
             return None;

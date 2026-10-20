@@ -178,6 +178,36 @@ pub struct PointerEvent {
     pub wheel_y: i8,
 }
 
+pub struct Ps2PacketStream {
+    bytes: [u8; 4],
+    length: usize,
+    device_id: u8,
+}
+
+impl Ps2PacketStream {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Starts a negotiated PS/2 stream whose partial packets survive input drain boundaries.
+    // ------------------=
+    pub const fn new(device_id: u8) -> Self {
+        Self { bytes: [0; 4], length: 0, device_id }
+    }
+
+    // ------------------------=
+    // FUNC: push
+    // DESC: Accepts one mouse byte, rejects unsynchronized prefixes, and emits each complete packet once.
+    // ------------------=
+    pub fn push(&mut self, value: u8) -> Option<PointerEvent> {
+        if self.length == 0 && value & 0x08 == 0 { return None; }
+        self.bytes[self.length] = value;
+        self.length += 1;
+        let size = if matches!(self.device_id, 3 | 4) { 4 } else { 3 };
+        if self.length != size { return None; }
+        self.length = 0;
+        decode_ps2_packet(&self.bytes[..size], self.device_id)
+    }
+}
+
 impl PointerEvent {
     // ------------------------=
     // FUNC: left_button

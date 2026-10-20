@@ -3,6 +3,23 @@ const SIDE:usize=64;
 const ATLAS:&[u8;16*SIDE*SIDE*4]=include_bytes!("../../assets/ui-design-kit/default/browser-glyphs-v1.rgba");
 
 // ------------------------=
+// FUNC: logical_size
+// DESC: Separates semantic icon ink sizes from larger pointer targets for balanced browser chrome.
+// ------------------=
+pub const fn logical_size(glyph:usize)->usize {
+    match glyph {7..=10=>16,_=>20}
+}
+
+// ------------------------=
+// FUNC: bounds
+// DESC: Centers the authored optical footprint in an existing hit target without changing interactions.
+// ------------------=
+pub fn bounds(x:i32,y:i32,width:u32,height:u32,glyph:usize,scale:usize)->(i32,i32,usize) {
+    let size=(logical_size(glyph)*scale.max(1)).min(width as usize).min(height as usize);
+    (x+(width as i32-size as i32)/2,y+(height as i32-size as i32)/2,size)
+}
+
+// ------------------------=
 // FUNC: pixel
 // DESC: Alpha-weighted area sampling preserves small glyph edges without decoding or allocating during paint.
 // ------------------=

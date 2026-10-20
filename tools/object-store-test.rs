@@ -407,6 +407,46 @@ impl BlockDevice for FailingDisk {
         true
     }
 }
+// ------------------------=
+// FUNC: clock_persistence
+// DESC: Verifies fresh-install format, legacy compatibility, atomic failure preservation and restart-safe clock updates.
+// ------------------=
+fn clock_persistence() {
+    let sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    let disk = CountingDisk { inner: MemoryDisk::new(sectors), writes: Rc::new(Cell::new(0)),
+        flushes: Rc::new(Cell::new(0)), reject_writes: Rc::new(Cell::new(false)) };
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x29; 16]).unwrap();
+    let mut config = DateTimeConfiguration { year: 2026, month: 10, day: 20, hour: 15, minute: 30,
+        second: 0, time_zone_id: 6, utc_offset_minutes: 0 };
+    let id = store.install_date_time_configuration(config).unwrap();
+    let mut bytes = [0; 32];
+    assert_eq!(store.read(id, None, &mut bytes).unwrap(), 32);
+    assert_eq!(u16::from_le_bytes([bytes[8], bytes[9]]), 2);
+    assert_eq!(store.clock_correction(), Some(0));
+    config.utc_offset_minutes = -360; config.time_zone_id = 3; config.hour = 9;
+    store.update_clock_configuration(config, 120).unwrap();
+    let state = (store.generation(), disk.writes.get(), disk.flushes.get());
+    store.update_clock_configuration(config, 120).unwrap();
+    assert_eq!((store.generation(), disk.writes.get(), disk.flushes.get()), state);
+    disk.reject_writes.set(true);
+    assert!(store.update_clock_configuration(config, 300).is_err());
+    disk.reject_writes.set(false);
+    drop(store);
+    let mut reopened = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert_eq!(reopened.date_time_configuration(), Some(config));
+    assert_eq!(reopened.clock_correction(), Some(120));
+    // An actual v1 binary record is upgraded without interpreting its reserved tail.
+    reopened.read(id, None, &mut bytes).unwrap(); bytes[8..10].copy_from_slice(&1u16.to_le_bytes());
+    bytes[24..].fill(0xaa); reopened.write(id, &bytes).unwrap();
+    assert_eq!(reopened.clock_correction(), Some(0));
+    reopened.update_clock_configuration(config, -60).unwrap(); drop(reopened);
+    let mut reopened = ObjectStore::mount(disk, 0).unwrap();
+    assert_eq!(reopened.clock_correction(), Some(-60));
+    config.utc_offset_minutes = 900;
+    assert_eq!(reopened.update_clock_configuration(config, 0), Err(ObjectError::InvalidObject));
+    assert_eq!(reopened.clock_correction(), Some(-60));
+}
+
 struct Deny;
 impl ObjectCapabilityPolicy for Deny {
     fn authorize(&self, _: ObjectOperation, _: Option<ObjectRef>) -> bool {
@@ -419,6 +459,7 @@ impl ObjectCapabilityPolicy for Deny {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--clock-only"){clock_persistence();return;}
     if std::env::args().any(|arg|arg=="--hermes-memory-only"){hermes_persistence();return;}
     if std::env::args().any(|arg|arg=="--namespace-expansion-only") {
         namespace_expansion();return;
@@ -429,6 +470,7 @@ fn main() {
         return;
     }
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    clock_persistence();
     hermes_persistence();
     namespace_expansion();
     download_transaction(test_sectors);

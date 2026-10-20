@@ -69,7 +69,8 @@ fn correction_inspection_and_forgetting(){
     assert!(profile::conversation::relevant(b"address",b"where do I live near me"));
     assert_eq!(profile::conversation::color(b"green"),Some(0x35b878));
     let d=d.updated([1;16],b"inquiries_enabled",b"false").unwrap();
-    for turn in 0..100{assert_eq!(profile::conversation::inquiry(&d,turn,turn),None);}
+    let mut inquiries=profile::inquiries::Inquiries::new();
+    for _ in 0..100{inquiries.begin(Some(&d),b"hello",true);assert_eq!(inquiries.complete(Some(&d),true),None);}
 }
 
 #[path="../kernel/storage/user_home.rs"]
@@ -91,7 +92,7 @@ fn display_home(){
 // ------------------=
 #[test]
 fn relationship_memory(){
-    use profile::conversation::{action,Action,infer_interest,contextual_inquiry};
+    use profile::conversation::{action,Action,infer_interest};
     assert_eq!(action(b"I now enjoy hiking",true),Action::Set(b"interests",b"hiking"));
     assert_eq!(action(b"I prefer replies that are concise",true),Action::Set(b"communication_style",b"concise"));
     assert_eq!(action(b"My recurring project is InfinityOS",true),Action::Set(b"recurring_projects",b"InfinityOS"));
@@ -104,8 +105,66 @@ fn relationship_memory(){
     assert_eq!(infer_interest(&explicit,b"recommend a hiking trail"),None);
     let disabled=d.updated([1;16],b"inference_enabled",b"false").unwrap();
     assert_eq!(infer_interest(&disabled,b"recommend a hiking trail"),None);
-    for turn in 0..100{assert_eq!(contextual_inquiry(&d,b"fix this compilation error",turn,turn),None);}
-    assert!( (7..100).any(|turn|contextual_inquiry(&d,b"suggest a desktop color",turn,turn).is_some()));
+    let mut inquiries=profile::inquiries::Inquiries::new();
+    for _ in 0..100{inquiries.begin(Some(&d),b"fix this compilation error",false);assert_eq!(inquiries.complete(Some(&d),true),None);}
+    for _ in 0..2{inquiries.begin(Some(&d),b"suggest a desktop color",true);assert_eq!(inquiries.complete(Some(&d),true),None);}
+    inquiries.begin(Some(&d),b"suggest a desktop color",true);
+    assert_eq!(inquiries.complete(Some(&d),true),Some(profile::inquiries::Question::Color));
+}
+// ------------------------=
+// FUNC: conversational_followups_are_bounded_and_answerable
+// DESC: Checks deterministic questions, cooldown, short-answer ownership, correction, opt-out and sensitive-field exclusion.
+// ------------------=
+#[test]
+fn conversational_followups_are_bounded_and_answerable(){
+    use profile::inquiries::{Inquiries,Question};
+    let owner=[1;16];
+    let d=Document::new(owner,b"User",b"Infinity").unwrap();
+    let mut state=Inquiries::new();
+    for _ in 0..2 {state.begin(Some(&d),b"hello",true);assert_eq!(state.complete(Some(&d),true),None);}
+    state.begin(Some(&d),b"hello",true);
+    assert_eq!(state.complete(Some(&d),true),Some(Question::Communication));
+    assert_eq!(state.complete(Some(&d),true),None);
+    let (key,value)=state.answer(Some(&d),b"Concise.").unwrap();
+    assert_eq!((key,value),(b"communication_style".as_slice(),b"Concise".as_slice()));
+    let d=d.updated(owner,key,value).unwrap();
+    assert_eq!(state.answer(Some(&d),b"detailed"),None);
+    for _ in 0..5 {state.begin(Some(&d),b"hello",true);assert_eq!(state.complete(Some(&d),true),None);}
+    state.begin(Some(&d),b"thanks",true);
+    assert_eq!(state.complete(Some(&d),true),Some(Question::Interests));
+    assert_eq!(state.answer(Some(&d),b"open the browser"),None);
+    assert_eq!(state.answer(Some(&d),b"hiking"),None);
+    for _ in 0..5 {state.begin(Some(&d),b"hi",true);assert_eq!(state.complete(Some(&d),true),None);}
+    state.begin(Some(&d),b"recommend a color",true);
+    assert_eq!(state.complete(Some(&d),true),Some(Question::Color));
+    assert_eq!(state.answer(Some(&d),b"grey"),Some((b"favorite_color".as_slice(),b"grey".as_slice())));
+    let disabled=d.updated(owner,b"inquiries_enabled",b"false").unwrap();
+    for _ in 0..100 {state.begin(Some(&disabled),b"hi",true);assert_eq!(state.complete(Some(&disabled),true),None);}
+    assert_eq!(state.answer(Some(&disabled),b"blue"),None);
+}
+// ------------------------=
+// FUNC: failed_cancelled_or_unrelated_turns_do_not_probe
+// DESC: Preserves consent and operational routing across failure, cancellation, topic changes and account-local reset.
+// ------------------=
+#[test]
+fn failed_cancelled_or_unrelated_turns_do_not_probe(){
+    use profile::inquiries::{Inquiries,Question};
+    let d=Document::new([1;16],b"User",b"Infinity").unwrap();
+    let mut state=Inquiries::new();
+    for _ in 0..20 {state.begin(Some(&d),b"create an app",false);assert_eq!(state.complete(Some(&d),true),None);}
+    for _ in 0..3 {state.begin(Some(&d),b"hi",true);assert_eq!(state.complete(Some(&d),false),None);}
+    state.begin(Some(&d),b"thanks",true);state.cancel();
+    assert_eq!(state.complete(Some(&d),true),None);
+    state.begin(Some(&d),b"hi",true);
+    assert_eq!(state.complete(Some(&d),true),Some(Question::Communication));
+    assert_eq!(state.answer(Some(&d),b"skip"),None);
+    state=Inquiries::new();
+    assert_eq!(state.answer(Some(&d),b"concise"),None);
+    let known=d.updated([1;16],b"communication_style",b"concise").unwrap()
+        .updated([1;16],b"interests",b"hiking").unwrap()
+        .updated([1;16],b"favorite_color",b"grey").unwrap()
+        .updated([1;16],b"preferences",b"quiet").unwrap();
+    for _ in 0..30 {state.begin(Some(&known),b"hello",true);assert_eq!(state.complete(Some(&known),true),None);}
 }
 // ------------------------=
 // FUNC: spoken_color_and_timezone

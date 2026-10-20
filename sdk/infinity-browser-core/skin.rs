@@ -27,6 +27,33 @@ pub const APP_ICON: &str = "infinity-browser-icon-v1-source.png";
 pub const NAVIGATION_ATLAS: &str = "infinity-browser-navigation-v1-source.png";
 
 // ------------------------=
+// FUNC: surface_pixel
+// DESC: Rasterizes one smooth rounded gradient surface instead of stacking a visibly striped half-height plate.
+// ------------------=
+pub fn surface_pixel(w:u32,h:u32,x:u32,y:u32,radius:u32,surface:Surface)->(u8,u8,u8,u8) {
+    if w==0 || h==0 || x>=w || y>=h {return (0,0,0,0);}
+    let radius=radius.min(w/2).min(h/2) as i64*4;
+    let mut outer=0u32;let mut inner=0u32;
+    for sy in [1i64,3,5,7] {for sx in [1i64,3,5,7] {
+        let px=x as i64*8+sx;let py=y as i64*8+sy;let r=radius*2;
+        let cx=px.clamp(r,w as i64*8-r);let cy=py.clamp(r,h as i64*8-r);
+        let distance=(px-cx).pow(2)+(py-cy).pow(2);
+        if distance<=r*r {outer+=1;}
+        if px>=8 && px<(w as i64-1)*8 && py>=8 && py<(h as i64-1)*8
+            && distance<=(r-8).max(0).pow(2) {inner+=1;}
+    }}
+    if outer==0 {return (0,0,0,0);}
+    let mut color=[0u8;3];
+    for c in 0..3 {
+        let a=(surface.top>>(16-c*8))&255;let b=(surface.bottom>>(16-c*8))&255;
+        let gradient=(a*(h-1-y)+b*y)/h.saturating_sub(1).max(1);
+        let edge=(surface.border>>(16-c*8))&255;
+        color[c]=((gradient*inner+edge*(outer-inner))/outer)as u8;
+    }
+    (color[0],color[1],color[2],(outer*255/16)as u8)
+}
+
+// ------------------------=
 // FUNC: pill_pixel
 // DESC: Rasterizes a theme-tinted address pill with antialiased outer and inner edges.
 // ------------------=

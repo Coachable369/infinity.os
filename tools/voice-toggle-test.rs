@@ -662,12 +662,22 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::speak_visible_reply(owner,1);
     conversation::poll(); assert_eq!(conversation::state().0,State::Thinking);
     let before=PHRASES.lock().unwrap().len();
+    let spans=SPANS.lock().unwrap().len();
     VISIBLE.store(4,Ordering::SeqCst);
-    conversation::poll(); assert_eq!(conversation::state().0,State::Thinking);
-    assert_eq!(PHRASES.lock().unwrap().len(),before);
+    conversation::poll(); assert_eq!(conversation::state().0,State::Speaking);
+    // A complete opening sentence can begin immediately; continuation stays
+    // ordered behind its playback instead of synthesizing the greeting twice.
+    assert_eq!(PHRASES.lock().unwrap().len(),before+1);
+    assert_eq!(PHRASES.lock().unwrap()[before],&SHORT_RESPONSE[..3]);
+    assert_eq!(SPANS.lock().unwrap()[spans],(0,3,false));
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before+1);
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
-    conversation::poll(); assert_eq!(PHRASES.lock().unwrap().len(),before+1);
-    assert_eq!(PHRASES.lock().unwrap()[before],SHORT_RESPONSE);
+    conversation::poll(); assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(PHRASES.lock().unwrap().len(),before+2);
+    assert_eq!(PHRASES.lock().unwrap()[before+1],&SHORT_RESPONSE[4..]);
+    assert_eq!(SPANS.lock().unwrap()[spans+1],(4,SHORT_RESPONSE.len(),true));
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
 
@@ -775,6 +785,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     wake_gate_tests(owner);
     repeated_reply_wake_tests(owner);
     next_turn_capture_boundary_tests(owner);
+    post_reply_noisy_pause_rearm_tests(owner);
     wake_handoff_tests(owner);
     wake_boundary_capture_tests(owner);
     transcript_handoff_tests(owner);
@@ -1143,6 +1154,48 @@ fn next_turn_capture_boundary_tests(owner: runtime::execution::SecurityIdentity)
 }
 
 // ------------------------=
+// FUNC: post_reply_noisy_pause_rearm_tests
+// DESC: Exercises post-speech readiness and bounded rejection recovery through the real controller without accepting stale PCM or granting implicit wake authority.
+// ------------------=
+fn post_reply_noisy_pause_rearm_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    assert!(conversation::start(owner));
+    recognize_voice(b"Infinity begin a response");
+    let captures = CAPTURES.load(Ordering::SeqCst);
+    complete_voice_reply();
+    let turns = TURNS.load(Ordering::SeqCst);
+    let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
+    for _ in 0..voice_vad::MAX_SAMPLES / voice_vad::FRAME {
+        MICROPHONE.lock().unwrap().extend([1200; voice_vad::FRAME]);
+        NOW.fetch_add(20_000_000, Ordering::SeqCst);
+        conversation::poll();
+    }
+    assert!(conversation::waiting_for_pause());
+    assert!(!conversation::wake_armed());
+    let pause_started = NOW.load(Ordering::SeqCst);
+    for frame in 0..voice_vad::END_SILENCE / voice_vad::FRAME {
+        // Above the quiet-word continuation gate, below the onset threshold.
+        MICROPHONE.lock().unwrap().extend([220; voice_vad::FRAME]);
+        NOW.fetch_add(20_000_000, Ordering::SeqCst);
+        conversation::poll();
+        assert_eq!(conversation::waiting_for_pause(), frame + 1 < voice_vad::END_SILENCE / voice_vad::FRAME);
+        assert_eq!(conversation::state().0, State::Listening);
+    }
+    assert_eq!(NOW.load(Ordering::SeqCst) - pause_started, 800_000_000);
+    assert_eq!(TURNS.load(Ordering::SeqCst), turns);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(), requests);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+    recognize_voice(b"ambient speech without a wake word");
+    assert_eq!(TURNS.load(Ordering::SeqCst), turns);
+    recognize_voice(b"Infinity accept this new command");
+    assert_eq!(TURNS.load(Ordering::SeqCst), turns + 1);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(), requests + 2);
+    complete_voice_reply();
+    conversation::stop(owner);
+    conversation::poll();
+}
+
+// ------------------------=
 // FUNC: repeated_reply_wake_tests
 // DESC: Repeats short and progressive multi-span replies, checking fresh wake admission and a stable capture lease after each drain.
 // ------------------=
@@ -1335,10 +1388,12 @@ fn turn_timing_tests(owner: runtime::execution::SecurityIdentity) {
     assert!(drained.complete());
     assert_eq!(drained.elapsed(Milestone::SpeechQueued,Milestone::FirstAudio),Some(200_000_000));
     assert_eq!(drained.elapsed(Milestone::FirstAudio,Milestone::Drained),Some(300_000_000));
+    assert_eq!(drained.rearm_delay_ns(),Some(0));
     assert_eq!(conversation::state().0,State::Listening);
     recognize_voice(b"Infinity, another measured response");
     assert!(conversation::timing_snapshot().sequence>drained.sequence);
     assert_eq!(conversation::timing_snapshot().at(Milestone::FirstAudio),None);
+    assert_eq!(conversation::timing_snapshot().rearm_delay_ns(),None);
     conversation::stop(owner);conversation::poll();
 }
 

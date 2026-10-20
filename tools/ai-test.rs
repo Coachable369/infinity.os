@@ -805,6 +805,7 @@ fn main() {
         memory_native();
         return;
     }
+    clock_request_ingress_contract();
     memory_request_ingress_contract();
     shared_request_ingress_contract();
     instruction_mapping_contract();
@@ -851,6 +852,44 @@ fn memory_app_inspection_contract(ai: &mut AiRuntime) {
 }
 
 // ------------------------=
+// FUNC: clock_request_ingress_contract
+// DESC: Proves typed, recognized-voice and app clock requests bypass inference/memory and remain subject to native execution authority.
+// ------------------=
+fn clock_request_ingress_contract() {
+    use runtime::ai::{clock::Request, control::Command, hermes_profile::Document};
+    let owner = [0x71; 16];
+    for voice in [false, true] {
+        for (input, expected) in [(b"What time is it?".as_slice(), Request::Read),
+            (b"Set time zone to CST", Request::SetZone(-360)),
+            (b"Set the time to 3:30 PM", Request::SetTime { hour: 15, minute: 30, second: 0 })] {
+            let mut ai = Box::new(AiRuntime::new());
+            ai.bind_chat_owner(owner);
+            ai.load_hermes_memory([0x72; 16], Some(Document::new(owner, b"Alex", b"Infinity").unwrap()));
+            assert_eq!(ai.personal_memory_reply(input, &mut [0; 8192]), None);
+            for byte in input { assert!(ai.chat.push_input(*byte)); }
+            assert!(if voice { ai.submit_voice_chat() } else { ai.submit_chat() });
+            assert!(ai.control_pending());
+            assert_eq!(ai.pending_control_origin(), Some(if voice { RequestOrigin::Voice } else { RequestOrigin::DesktopChat }));
+            assert_eq!(ai.acceptance_native_context(), None);
+            assert_eq!(ai.qwen_tokens, 0);
+            assert_eq!(ai.take_control(owner, true), Some(Command::Clock(expected)));
+            assert_eq!(ai.take_control(owner, true), None);
+            ai.finish_control(Command::Clock(expected), true);
+        }
+    }
+    let mut ai = Box::new(AiRuntime::new()); ai.bind_chat_owner(owner);
+    assert_eq!(ai.route_application_request(2, b"Set my time zone to CST"),
+        Ok(RequestRoute::Control(Command::Clock(Request::SetZone(-360)))));
+    assert_eq!(ai.take_control([0x73; 16], true), None);
+    assert!(!ai.control_pending());
+    let mut broker = ExecutionBroker::new();
+    broker.stage(ExecutionRequest { command: Command::Clock(Request::SetZone(-360)), owner,
+        origin: RequestOrigin::Model, correlation_id: 12 }).unwrap();
+    assert_eq!(broker.take(PolicyContext { requester: owner, owner, chat_enabled: true, desktop_allowed: true }),
+        Err(PolicyDenial::PermissionDenied));
+}
+
+// ------------------------=
 // FUNC: memory_request_ingress_contract
 // DESC: Verifies typed and recognized-voice memory requests complete without a model, reset prior timing, and reject disabled or busy admission without simulating host persistence.
 // ------------------=
@@ -858,7 +897,7 @@ fn memory_request_ingress_contract() {
     use runtime::ai::{hermes_memory_request::Outcome, hermes_profile::Document};
     let owner = [0x65; 16];
     for voice in [false, true] {
-        for input in [b"My Favorite color is grey".as_slice(), b"Set time zone to CST"] {
+        for input in [b"My Favorite color is grey".as_slice(), b"Remember my time zone is CST"] {
             let mut ai = Box::new(AiRuntime::new());
             ai.bind_chat_owner(owner);
             ai.load_hermes_memory([0x66; 16], Some(Document::new(owner, b"Alex", b"Infinity").unwrap()));
@@ -1182,7 +1221,7 @@ fn aikit_contract() {
     use runtime::ai::{control::Command, mapping};
     assert_eq!(CapabilityDirectory::count(), mapping::CAPABILITY_TARGETS.len());
     assert_eq!(CapabilityDirectory::descriptor(0).unwrap().family, CapabilityFamily::Open);
-    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Context);
+    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Clock);
     assert!(CapabilityDirectory::descriptor(CapabilityDirectory::count()).is_none());
     assert!(CapabilityDirectory::contains(mapping::CAPABILITY_TARGETS[0]));
 
@@ -1224,7 +1263,7 @@ fn aikit_contract() {
 fn instruction_mapping_contract() {
     use runtime::ai::{control::{Command,ContextRequest},mapping};
     assert!(mapping::validate(mapping::DEFAULT).is_ok());
-    assert_eq!(mapping::CAPABILITY_TARGETS.len(),100);
+    assert_eq!(mapping::CAPABILITY_TARGETS.len(),103);
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"show my files").unwrap(),Some(Command::FileNavigator));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"edit ai instructions").unwrap(),Some(Command::AiInstructionMapping));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"open documents").unwrap(),Some(Command::LaunchEntry(1)));

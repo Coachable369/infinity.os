@@ -114,13 +114,15 @@ impl CapabilityRegistry for InstalledCapabilities {
     fn describe(&self, id: CapabilityId) -> Option<CapabilityDescriptor> {
         let descriptor = match id {
             CapabilityId::AiAction(index) => {
-                super::kit::CapabilityDirectory::descriptor(index as usize)?;
+                let discovered = super::kit::CapabilityDirectory::descriptor(index as usize)?;
+                let clock_mutation = discovered.family == super::kit::CapabilityFamily::Clock
+                    && discovered.target != b"OS_CLOCK:read";
                 CapabilityDescriptor {
                     id,
                     input: Contract::Text,
                     output: Contract::ExecutionReceipt,
                     required_permission: 1,
-                    risk: Risk::Reversible,
+                    risk: if clock_mutation { Risk::Sensitive } else { Risk::Reversible },
                     reversible: true,
                     dependency: None,
                     availability: Availability::Ready,

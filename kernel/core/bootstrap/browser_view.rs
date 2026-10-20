@@ -80,10 +80,10 @@ impl DisplayDevice {
             let tab=offset(tab);let close=offset(close);let entry=&view.tabs[index];
             self.browser_tab(tab,view.welcome_open || entry.id==view.active_tab,entry.id==view.hovered_tab);
             if tab.width>=112*scale as u32 {
-                self.browser_glyph(Viewport{x:tab.x+12*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
+                self.browser_glyph(Viewport{x:tab.x+20*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
             }
-            self.browser_label(Viewport{x:tab.x+36*scale as i32,y:tab.y+11*scale as i32,
-                width:tab.width.saturating_sub(84*scale as u32),height:20*scale as u32},
+            self.browser_label(Viewport{x:tab.x+44*scale as i32,y:tab.y+10*scale as i32,
+                width:tab.width.saturating_sub(92*scale as u32),height:20*scale as u32},
                 if view.welcome_open {b"Welcome"}else if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
             if view.hovered_tab==entry.id && view.hovered_close {
                 let (r,g,b)=rgb(self.active_accent_rgb());
@@ -330,23 +330,31 @@ impl DisplayDevice {
         let Some(clip)=self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,content.width as usize,content.height as usize) else {return;};
         self.render_clip=Some(clip);
         let l=infinity_browser_core::welcome::Layout::new(content,scale as u32,scroll);
-        let width=l.area.width/scale as u32;
-        let copy_width=if l.narrow {width-64}else{width*3/5-48};
-        let headline=if width>=1000 {42}else{28};
-        for (y,text,color,size) in [(40,b"InfinityOS" as &[u8],(183,199,237),14),
-            (88,b"A more human",(241,245,255),headline),
-            (142,b"browsing experience.",(223,232,255),headline),
-            (210,b"Explore. Create. Stay in flow.",(160,181,220),14)] {
-            let r=l.rect(32,y,copy_width,48);
+        for (index,(text,color)) in [(b"InfinityOS" as &[u8],(183,199,237)),
+            (b"A more human",(241,245,255)),(b"browsing experience.",(223,232,255)),
+            (b"Explore. Create. Stay in flow.",(160,181,220))].into_iter().enumerate() {
+            let (r,size)=l.copy(index);
             if r.y>=content.y && r.y+r.height as i32<=content.y+content.height as i32 {self.browser_label_color(r,text,size*scale,false,color);}
         }
         let hero=l.hero();
-        let bitmap=infinity_browser_core::welcome::HERO;
-        let sw=u32::from_le_bytes(bitmap[18..22].try_into().unwrap()) as usize;
-        let sh=i32::from_le_bytes(bitmap[22..26].try_into().unwrap()).unsigned_abs() as usize;
-        let w=(hero.height as usize*sw/sh).min(hero.width as usize);let h=w*sh/sw;
-        let y=hero.y+(hero.height as i32-h as i32)/2;
-        if y>=0 {self.paint_bitmap_alpha_fit_rect(bitmap,hero.x as usize+(hero.width as usize-w)/2,y as usize,w,h);}
+        if let Some(bitmap)=crate::ui::bitmap::RuntimeBitmap::parse_authored_bgra(infinity_browser_core::welcome::HERO) {
+            if let Some(placement)=bitmap.placement(hero.width as usize,hero.height as usize,[0;4],false) {
+                let left=hero.x+placement.destination_left as i32;
+                let top=hero.y+placement.destination_top as i32;
+                // Sample only visible artwork, with the same premultiplied coverage
+                // used by the reusable bitmap renderer and the pixel proof.
+                let x0=(clip.left as i32-left).max(0) as usize;
+                let y0=(clip.top as i32-top).max(0) as usize;
+                let x1=(clip.right as i32-left).max(0) as usize;
+                let y1=(clip.bottom as i32-top).max(0) as usize;
+                for y in y0..y1.min(placement.destination_height) {
+                    for x in x0..x1.min(placement.destination_width) {
+                        let [r,g,b,a]=bitmap.filtered_rgba(placement,x,y);
+                        if a!=0 {self.blend_color_unchecked((left+x as i32) as usize,(top+y as i32) as usize,r,g,b,a);}
+                    }
+                }
+            }
+        }
         for index in 0..2 {
             let r=l.button(index);if r.y<content.y || r.y+r.height as i32>content.y+content.height as i32 {continue;}
             self.browser_surface(r,skin::button(index==0,if index==focus {skin::Interaction::Hovered}else{skin::Interaction::Normal}));
@@ -366,7 +374,7 @@ impl DisplayDevice {
             let icon=Viewport{x:r.x+20*scale as i32,y:r.y+18*scale as i32,width:24*scale as u32,height:24*scale as u32};
             self.browser_glyph(icon,if index==0 {15}else if index==1 {16}else{10},true,scale);
         }
-        let r=l.rect(32,if l.narrow {764}else{476},width-64,20);
+        let r=l.footer();
         if r.y>=content.y && r.y+r.height as i32<=content.y+content.height as i32 {
             self.browser_label_color(r,b"Infinity AI is one click away on the side of your window.",14*scale,false,(164,172,182));
         }
@@ -399,9 +407,7 @@ impl DisplayDevice {
     // DESC: Paints the generated reusable browser glyph family with clipped alpha and no paint-time allocation.
     // ------------------=
     fn browser_glyph(&mut self,r:Viewport,glyph:usize,enabled:bool,scale:usize) {
-        let size=(24*scale).min(r.width as usize).min(r.height as usize);
-        let left=r.x+(r.width as i32-size as i32)/2;
-        let top=r.y+(r.height as i32-size as i32)/2;
+        let (left,top,size)=glyph_artwork::bounds(r.x,r.y,r.width,r.height,glyph,scale);
         for y in 0..size {for x in 0..size {
             let (red,green,blue,alpha)=glyph_artwork::pixel(glyph,size,x,y,enabled);
             let px=left+x as i32;let py=top+y as i32;
@@ -415,12 +421,11 @@ impl DisplayDevice {
     // DESC: Paints the shared gradient and soft border recipe at exact chrome geometry.
     // ------------------=
     fn browser_surface(&mut self,r:Viewport,surface:skin::Surface) {
-        let (red,green,blue)=rgb(surface.bottom);
-        self.fill_rounded_rect_alpha(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10,red,green,blue,255);
-        let (red,green,blue)=rgb(surface.top);
-        self.fill_rounded_rect_alpha(r.x as usize+1,r.y as usize+1,r.width as usize-2,r.height as usize/2,8,red,green,blue,180);
-        let (red,green,blue)=rgb(surface.border);
-        self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10,red,green,blue);
+        let scale=(r.height/36).max(1);
+        for y in 0..r.height {for x in 0..r.width {
+            let (red,green,blue,alpha)=skin::surface_pixel(r.width,r.height,x,y,10*scale,surface);
+            if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
+        }}
     }
     // ------------------------=
     // FUNC: browser_download_button

@@ -346,7 +346,18 @@ pub fn initialize(info: &BootInfo) -> InputStatus {
 // ------------------=
 pub fn run() -> ! {
     loop {
+        crate::console::input_batch(poll_devices);
         crate::drivers::network::poll();
+        crate::bootstrap::animation_tick();
+        crate::console::poll_native_ai();
+    }
+}
+
+// ------------------------=
+// FUNC: poll_devices
+// DESC: Drains bounded firmware and HID queues before slower background services; dispatches edges before coalesced presentation.
+// ------------------=
+fn poll_devices() {
         let input = unsafe { INPUT };
         let input_ex = unsafe { INPUT_EX };
         let direct_keyboard = unsafe { USE_DIRECT_USB_KEYBOARD }
@@ -354,6 +365,7 @@ pub fn run() -> ! {
                 .map(|pointers| pointers.usb_keyboard_count != 0)
                 .unwrap_or(false);
         if !direct_keyboard && (!input_ex.is_null() || !input.is_null()) {
+            for _ in 0..32 {
             let mut data = KeyData {
                 key: InputKey { scan_code: 0, unicode_character: 0 },
                 shift_state: 0,
@@ -372,6 +384,9 @@ pub fn run() -> ! {
                 if let Some(key) = console_key {
                     crate::console::input(key);
                 }
+            } else {
+                break;
+            }
             }
         }
         let pointers = unsafe { POINTERS };
@@ -383,14 +398,14 @@ pub fn run() -> ! {
             for &pointer in pointers
                 .absolute
                 .iter()
-                .take(pointers.absolute_count as usize)
+                .take((pointers.absolute_count as usize).min(MAX_POINTER_PROTOCOLS))
             {
                 poll_absolute(pointer);
             }
             for &pointer in pointers
                 .relative
                 .iter()
-                .take(pointers.relative_count as usize)
+                .take((pointers.relative_count as usize).min(MAX_POINTER_PROTOCOLS))
             {
                 poll_relative(pointer);
             }
@@ -448,13 +463,6 @@ pub fn run() -> ! {
                 poll_relative(unsafe { POINTER });
             }
         }
-        // Input always wins the current loop iteration. The bootstrap particle
-        // pass can be comparatively expensive under an emulated ARM GPU; doing
-        // it first let HID reports queue behind visual effects and made only
-        // the animated startup screen feel delayed.
-        crate::bootstrap::animation_tick();
-        crate::console::poll_native_ai();
-    }
 }
 
 // ------------------------=
@@ -526,20 +534,22 @@ fn poll_async_usb_mouse(pointers: &mut FirmwarePointers) {
 
 // ------------------------=
 // FUNC: poll_absolute
-// DESC: Implements the poll absolute operation.
+// DESC: Drains up to sixteen queued absolute samples in order while the shared presentation gate keeps only the final visual position.
 // ------------------=
 fn poll_absolute(absolute_pointer: *mut AbsolutePointer) {
     if absolute_pointer.is_null() {
         return;
     }
     pump_event(unsafe { (*absolute_pointer).wait_for_input });
-    let mut state = AbsolutePointerState {
+    crate::ui::input_batch::drain(16, || {
+        let mut state = AbsolutePointerState {
         current_x: 0,
         current_y: 0,
         current_z: 0,
         active_buttons: 0,
-    };
-    if unsafe { ((*absolute_pointer).get_state)(absolute_pointer, &mut state) } == 0 {
+        };
+        (unsafe { ((*absolute_pointer).get_state)(absolute_pointer, &mut state) } == 0).then_some(state)
+    }, |state| {
         let mode = unsafe { (*absolute_pointer).mode.as_ref() };
         if let Some(mode) = mode {
             unsafe {
@@ -561,26 +571,28 @@ fn poll_absolute(absolute_pointer: *mut AbsolutePointer) {
                 wheel_y: 0,
             });
         }
-    }
+    });
 }
 
 // ------------------------=
 // FUNC: poll_relative
-// DESC: Implements the poll relative operation.
+// DESC: Dispatches bounded relative firmware samples separately so acceleration and button edges retain packet semantics.
 // ------------------=
 fn poll_relative(pointer: *mut SimplePointer) {
     if pointer.is_null() {
         return;
     }
     pump_event(unsafe { (*pointer).wait_for_input });
-    let mut state = PointerState {
+    crate::ui::input_batch::drain(16, || {
+        let mut state = PointerState {
         relative_x: 0,
         relative_y: 0,
         relative_z: 0,
         left_button: 0,
         right_button: 0,
-    };
-    if unsafe { ((*pointer).get_state)(pointer, &mut state) } == 0 {
+        };
+        (unsafe { ((*pointer).get_state)(pointer, &mut state) } == 0).then_some(state)
+    }, |state| {
         unsafe {
             RELATIVE_UPDATED_THIS_POLL = true;
         }
@@ -593,7 +605,7 @@ fn poll_relative(pointer: *mut SimplePointer) {
             wheel_x: 0,
             wheel_y: pointer_delta(state.relative_z).clamp(i8::MIN as i16, i8::MAX as i16) as i8,
         });
-    }
+    });
 }
 
 // ------------------------=
@@ -609,21 +621,15 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
         return;
     }
     let transfer: SyncInterruptTransfer = unsafe { core::mem::transmute(address) };
-    let mut total_x = 0i32;
-    let mut total_y = 0i32;
-    let mut total_wheel_x = 0i16;
-    let mut total_wheel_y = 0i16;
     let mut received = false;
     let mut buttons = unsafe { USB_MOUSE_BUTTONS[index] };
-    let mut latest_absolute = None;
     let mut absolute_batch =
         pointer::AbsolutePointerBatch::new(synchronous_usb_buttons(index, buttons));
     let mut absolute_changed = false;
 
-    // Relative reports are accumulated in a short burst. Absolute devices are
-    // allowed a larger drain budget because only their newest coordinate is
-    // useful; presenting each queued tablet report separately made the cursor
-    // replay old positions behind the host pointer on the animated boot menu.
+    // Dispatch relative deltas individually: summing them before acceleration
+    // changes pointer speed with queue depth. Presentation is coalesced by the
+    // outer device drain, not by changing the user's event stream.
     let report_budget = if absolute { 16 } else { 4 };
     for _ in 0..report_budget {
         let mut report = [0u8; 8];
@@ -681,43 +687,19 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
         let Some(mut event) = pointer::decode_usb_boot_mouse(&report[..length]) else {
             continue;
         };
-        raw_relative_buttons(index, event.buttons);
-        total_x += event.delta_x as i32;
-        total_y += event.delta_y as i32;
-        total_wheel_x += event.wheel_x as i16;
-        total_wheel_y += event.wheel_y as i16;
-        if event.buttons != buttons {
-            let firmware_motion = unsafe {
-                (USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL) || RELATIVE_UPDATED_THIS_POLL
-            };
-            event.delta_x = if firmware_motion {
-                0
-            } else {
-                total_x.clamp(i16::MIN as i32, i16::MAX as i32) as i16
-            };
-            event.delta_y = if firmware_motion {
-                0
-            } else {
-                total_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16
-            };
-            event.wheel_x = total_wheel_x.clamp(i8::MIN as i16, i8::MAX as i16) as i8;
-            event.wheel_y = total_wheel_y.clamp(i8::MIN as i16, i8::MAX as i16) as i8;
-            let source_buttons = event.buttons;
-            event.buttons = raw_relative_buttons(index, source_buttons);
-            dispatch_pointer(event);
-            total_x = 0;
-            total_y = 0;
-            total_wheel_x = 0;
-            total_wheel_y = 0;
-            buttons = source_buttons;
-            unsafe {
-                USB_MOUSE_BUTTONS[index] = buttons;
-            }
+        buttons = event.buttons;
+        unsafe { USB_MOUSE_BUTTONS[index] = buttons; }
+        event.buttons = raw_relative_buttons(index, buttons);
+        if unsafe {
+            (USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL) || RELATIVE_UPDATED_THIS_POLL
+        } {
+            event.delta_x = 0;
+            event.delta_y = 0;
         }
+        dispatch_pointer(event);
     }
     if received {
-        latest_absolute = absolute_batch.finish();
-        if let Some(event) = latest_absolute {
+        if let Some(event) = absolute_batch.finish() {
             if absolute_changed {
                 // VirtualBox exposes one physical tablet through both the
                 // UEFI Absolute Pointer protocol and raw USB HID. When the
@@ -736,19 +718,6 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
                     dispatch_pointer_absolute(event);
                 }
             }
-        } else if !absolute
-            && !unsafe {
-                (USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL) || RELATIVE_UPDATED_THIS_POLL
-            }
-            && (total_x != 0 || total_y != 0 || total_wheel_x != 0 || total_wheel_y != 0)
-        {
-            dispatch_pointer(PointerEvent {
-                delta_x: total_x.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                delta_y: total_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                buttons: synchronous_usb_buttons(index, buttons),
-                wheel_x: total_wheel_x.clamp(i8::MIN as i16, i8::MAX as i16) as i8,
-                wheel_y: total_wheel_y.clamp(i8::MIN as i16, i8::MAX as i16) as i8,
-            });
         }
     }
 }

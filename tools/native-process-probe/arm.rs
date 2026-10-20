@@ -13,6 +13,7 @@
 #[path = "../../kernel/runtime/native_arguments.rs"] mod native_arguments;
 #[path = "../../kernel/runtime/native_extensions.rs"] mod native_extensions;
 #[path = "../../kernel/runtime/native_compiler_task.rs"] mod native_compiler_task;
+#[path = "../../kernel/runtime/ai/clock.rs"] mod system_clock;
 #[path = "../../kernel/runtime/native_app_task.rs"] mod native_app_task;
 use cpu as native_cpu;
 #[path = "../../kernel/runtime/native_task_arm.rs"] mod task;

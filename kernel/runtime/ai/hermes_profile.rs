@@ -1,6 +1,8 @@
 //! Versioned, allocation-free JSON identity memory. Unknown fields survive edits.
 #[path="hermes_conversation.rs"]
 pub mod conversation;
+#[path="hermes_inquiries.rs"]
+pub mod inquiries;
 use conversation::relevant as super_relevant;
 pub const FILE_NAME: &[u8] = b"hermes-memory1.json";
 pub const MAX_BYTES: usize = 8192;

@@ -8,7 +8,7 @@ pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappin
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 256;
-pub const CAPABILITY_TARGETS: [&[u8]; 100] = [
+pub const CAPABILITY_TARGETS: [&[u8]; 103] = [
     b"OS_OPEN:text_editor", b"OS_OPEN:file_navigator", b"OS_OPEN:browser", b"OS_OPEN:settings",
     b"OS_OPEN:terminal", b"OS_OPEN:task_manager", b"OS_OPEN:launcher", b"OS_OPEN:ai_instruction_mappings",
     b"OS_LAUNCH:documents", b"OS_LAUNCH:projects", b"OS_LAUNCH:media", b"OS_LAUNCH:recycle_bin",
@@ -36,6 +36,9 @@ pub const CAPABILITY_TARGETS: [&[u8]; 100] = [
     b"OS_CONTEXT:next icon set", b"OS_CONTEXT:next model", b"OS_CONTEXT:search apps {argument}",
     b"OS_CONTEXT:next item", b"OS_CONTEXT:previous item", b"OS_CONTEXT:open selected",
     b"OS_CONTEXT:add idea", b"OS_CONTEXT:new category",
+    b"OS_CLOCK:read",
+    b"OS_CLOCK:set:{argument}",
+    b"OS_CLOCK:zone:{argument}",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
