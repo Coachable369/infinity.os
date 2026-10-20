@@ -13,6 +13,7 @@ pub struct Arena<'a> {
     peak: usize,
     failed_request: usize,
     heads: [usize; ORDERS],
+    free_orders: Option<NonNull<u8>>,
     _owner: PhantomData<&'a mut [u8]>,
 }
 
@@ -26,12 +27,22 @@ impl<'a> Arena<'a> {
         let start = bytes.as_mut_ptr() as usize;
         let minimum = 1usize << MIN_ORDER;
         let end = start.checked_add(bytes.len())? & !(minimum - 1);
-        let aligned = start.checked_add(minimum - 1)? & !(minimum - 1);
+        let mut aligned = start.checked_add(minimum - 1)? & !(minimum - 1);
+        // Large browser heaps need constant-time buddy membership checks. Keep
+        // one byte per minimum block inside the grant, never in host memory.
+        // Small arenas retain the metadata-free path and exact tiny capacities.
+        let free_orders = if end.checked_sub(aligned)? > 65536 {
+            let count = (end - aligned) / minimum;
+            let tags = NonNull::new(bytes.as_mut_ptr().wrapping_add(aligned - start))?;
+            unsafe { tags.as_ptr().write_bytes(0, count); }
+            aligned = aligned.checked_add(count)?.checked_add(minimum - 1)? & !(minimum - 1);
+            Some(tags)
+        } else { None };
         let capacity = end.checked_sub(aligned)?;
         if capacity < minimum { return None; }
         let base = NonNull::new(bytes.as_mut_ptr().wrapping_add(aligned - start))?;
         let mut arena = Self { base, capacity, allocated: 0, peak: 0, failed_request: 0,
-            heads: [EMPTY; ORDERS], _owner: PhantomData };
+            heads: [EMPTY; ORDERS], free_orders, _owner: PhantomData };
         let mut offset = 0;
         while offset < capacity {
             let address = aligned + offset;
@@ -132,12 +143,39 @@ impl<'a> Arena<'a> {
         unsafe { self.base.as_ptr().add(offset).cast::<usize>().write(next); }
     }
     // ------------------------=
+    // FUNC: previous
+    // DESC: Reads the backward link from an indexed free block only.
+    // ------------------=
+    fn previous(&self, offset: usize) -> usize {
+        unsafe { self.base.as_ptr().add(offset).cast::<usize>().add(1).read() }
+    }
+    // ------------------------=
+    // FUNC: link_previous
+    // DESC: Maintains constant-time unlink metadata within the minimum sixteen-byte free block.
+    // ------------------=
+    fn link_previous(&mut self, offset: usize, previous: usize) {
+        unsafe { self.base.as_ptr().add(offset).cast::<usize>().add(1).write(previous); }
+    }
+    // ------------------------=
+    // FUNC: mark_free
+    // DESC: Records size-class membership without trusting bytes belonging to live allocations.
+    // ------------------=
+    fn mark_free(&mut self, offset: usize, order: Option<usize>) {
+        if let Some(tags) = self.free_orders {
+            unsafe { tags.as_ptr().add(offset >> MIN_ORDER).write(order.map_or(0, |value| (value + 1) as u8)); }
+        }
+    }
+    // ------------------------=
     // FUNC: push
     // DESC: Adds one owned free block to its size class without allocating metadata.
     // ------------------=
     fn push(&mut self, order: usize, offset: usize) {
-        self.link(offset, self.heads[order]);
+        let head = self.heads[order];
+        self.link(offset, head);
+        self.link_previous(offset, EMPTY);
+        if head != EMPTY { self.link_previous(head, offset); }
         self.heads[order] = offset;
+        self.mark_free(offset, Some(order));
     }
     // ------------------------=
     // FUNC: pop
@@ -146,21 +184,38 @@ impl<'a> Arena<'a> {
     fn pop(&mut self, order: usize) -> Option<usize> {
         let offset = self.heads[order];
         if offset == EMPTY { return None; }
-        self.heads[order] = self.next(offset);
+        self.unlink(order, offset, EMPTY);
         Some(offset)
+    }
+    // ------------------------=
+    // FUNC: unlink
+    // DESC: Removes a known member without scanning unrelated free blocks.
+    // ------------------=
+    fn unlink(&mut self, order: usize, offset: usize, previous: usize) {
+        let next = self.next(offset);
+        if previous == EMPTY { self.heads[order] = next; }
+        else { self.link(previous, next); }
+        if next != EMPTY { self.link_previous(next, previous); }
+        self.mark_free(offset, None);
     }
     // ------------------------=
     // FUNC: remove
     // DESC: Removes an exact free buddy while preserving the rest of the size-class chain.
     // ------------------=
     fn remove(&mut self, order: usize, wanted: usize) -> bool {
+        if let Some(tags) = self.free_orders {
+            if unsafe { tags.as_ptr().add(wanted >> MIN_ORDER).read() } != (order + 1) as u8 {
+                return false;
+            }
+            self.unlink(order, wanted, self.previous(wanted));
+            return true;
+        }
         let mut current = self.heads[order];
         let mut previous = EMPTY;
         while current != EMPTY {
             let next = self.next(current);
             if current == wanted {
-                if previous == EMPTY { self.heads[order] = next; }
-                else { self.link(previous, next); }
+                self.unlink(order, current, previous);
                 return true;
             }
             previous = current;
@@ -172,9 +227,47 @@ impl<'a> Arena<'a> {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     #[repr(align(4096))]
     struct Memory([u8; 4096]);
+    // ------------------------=
+    // FUNC: indexed_heap_reclaims_fragmented_live_payloads
+    // DESC: Exercises indexed unlink under large fragmentation, overwritten payloads, and complete reuse.
+    // ------------------=
+    #[test]
+    fn indexed_heap_reclaims_fragmented_live_payloads() {
+        let mut memory = std::vec![0xa5u8; 2 * 1024 * 1024 + 32];
+        let mut arena = Arena::new(&mut memory[16..2 * 1024 * 1024 + 16]).unwrap();
+        assert!(arena.free_orders.is_some());
+        let layout = Layout::from_size_align(16, 16).unwrap();
+        let mut blocks = std::vec::Vec::new();
+        while let Some(pointer) = arena.allocate(layout) {
+            unsafe { pointer.as_ptr().write_bytes(0xff, 16); }
+            blocks.push(pointer);
+        }
+        let count = blocks.len();
+        assert!(count > 100_000);
+        assert_eq!(arena.allocated(), count * 16);
+        // Leave a long free chain with all buddies live; then merge it in the
+        // opposite order. Live bytes deliberately resemble invalid pointers.
+        for index in (0..count).step_by(2) {
+            unsafe { arena.release(blocks[index], layout); }
+        }
+        for index in (1..count).step_by(2).rev() {
+            unsafe {
+                assert!(core::slice::from_raw_parts(blocks[index].as_ptr(), 16).iter().all(|b| *b == 0xff));
+                arena.release(blocks[index], layout);
+            }
+        }
+        assert_eq!(arena.allocated(), 0);
+        let mut recovered = 0;
+        while arena.allocate(layout).is_some() { recovered += 1; }
+        assert_eq!(recovered, count);
+        drop(arena);
+        assert!(memory[..16].iter().all(|byte| *byte == 0xa5));
+        assert!(memory[2 * 1024 * 1024 + 16..].iter().all(|byte| *byte == 0xa5));
+    }
     // ------------------------=
     // FUNC: exhaustion_reclamation_and_alignment
     // DESC: Writes all allocations, verifies separation, then frees in scrambled order and recovers the entire arena.

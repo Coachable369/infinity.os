@@ -137,9 +137,19 @@ pub fn verify(engine: &servo::Servo) -> bool {
     // the bounded observation window instead of accepting the first load event.
     let observed=Rc::new(Cell::new(0));
     let mut next_assertion=Instant::now();
+    let mut longest_spin=0u64;
+    let mut longest_network=0u64;
+    let mut longest_paint=0u64;
     while Instant::now()<deadline {
-        engine.spin_event_loop();resources.pump();
+        let start=super::super::monotonic();
+        engine.spin_event_loop();
+        let network_start=super::super::monotonic();
+        longest_spin=longest_spin.max(network_start.saturating_sub(start));
+        resources.pump();
+        let paint_start=super::super::monotonic();
+        longest_network=longest_network.max(paint_start.saturating_sub(network_start));
         if repaint.replace(false) {view.paint();}
+        longest_paint=longest_paint.max(super::super::monotonic().saturating_sub(paint_start));
         if observed.get()==1 && loaded.get()!=0 {break;}
         if observed.get()!=3 && Instant::now()>=next_assertion {
             observed.set(3);
@@ -151,6 +161,9 @@ pub fn verify(engine: &servo::Servo) -> bool {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
+    super::super::record(2,70,longest_spin);
+    super::super::record(2,71,longest_network);
+    super::super::record(2,72,longest_paint);
     super::super::record(2,30,HTTP_STATUS.load(Ordering::Relaxed) as u64);
     super::super::record(2,31,BODY_BYTES.load(Ordering::Relaxed) as u64);
     super::super::record(2,32,loaded.get() as u64);

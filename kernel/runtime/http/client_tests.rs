@@ -6,6 +6,66 @@ use core::{
 use rand_core::SeedableRng;
 use std::rc::Rc;
 
+struct BurstLink {
+    received: usize,
+}
+impl Link for BurstLink {
+    // ------------------------=
+    // FUNC: now
+    // DESC: Supplies a fixed in-deadline time for the queue pressure regression.
+    // ------------------=
+    fn now(&self) -> Instant { Instant::from_millis(1) }
+    // ------------------------=
+    // FUNC: allowed
+    // DESC: Authorizes this isolated test endpoint.
+    // ------------------=
+    fn allowed(&mut self, _: [u8; 4], _: u16) -> bool { true }
+    // ------------------------=
+    // FUNC: receive
+    // DESC: Supplies distinguishable frames so the test can detect packet loss or reordering.
+    // ------------------=
+    fn receive(&mut self, frame: &mut [u8; 1514]) -> Option<usize> {
+        frame[..14].fill(self.received as u8);
+        self.received += 1;
+        Some(14)
+    }
+    // ------------------------=
+    // FUNC: transmit
+    // DESC: Models a blocked NIC output queue.
+    // ------------------=
+    fn transmit(&mut self, _: &[u8]) -> bool { false }
+    // ------------------------=
+    // FUNC: register_waker
+    // DESC: Leaves scheduling under the deterministic test's control.
+    // ------------------=
+    fn register_waker(&mut self, _: &Waker) {}
+}
+
+#[test]
+// ------------------------=
+// FUNC: receive_backpressure_preserves_upstream_packets
+// DESC: Verifies repeated pumps never consume upstream frames without capacity and preserve FIFO bytes.
+// ------------------=
+fn receive_backpressure_preserves_upstream_packets() {
+    use smoltcp::phy::{Device, RxToken};
+    let mut link = BurstLink { received: 0 };
+    let mut queue = EthernetQueue::new();
+    for _ in 0..8 {
+        exchange(&mut link, &mut queue, [10, 0, 0, 2], 443, Instant::from_millis(100)).unwrap();
+    }
+    assert_eq!(link.received, 4);
+    for expected in 0..4u8 {
+        let (rx, _) = Device::receive(&mut queue, Instant::from_millis(1)).unwrap();
+        rx.consume(|bytes| assert_eq!(bytes, &[expected; 14]));
+    }
+    exchange(&mut link, &mut queue, [10, 0, 0, 2], 443, Instant::from_millis(100)).unwrap();
+    assert_eq!(link.received, 8);
+    for expected in 4..8u8 {
+        let (rx, _) = Device::receive(&mut queue, Instant::from_millis(1)).unwrap();
+        rx.consume(|bytes| assert_eq!(bytes, &[expected; 14]));
+    }
+}
+
 #[derive(Default)]
 struct Observations {
     time: Cell<i64>,

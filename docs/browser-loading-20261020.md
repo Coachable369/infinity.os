@@ -66,3 +66,38 @@ or same-origin exceptions were introduced.
 The external-site probe currently links its network dependency with Cargo's
 development profile and runs under QEMU TCG. Its elapsed times must not be
 reported as installed-system performance measurements.
+
+## Continued investigation: transport pressure and allocator stalls
+
+- Fixed a confirmed receive-queue bug: the client previously consumed upstream
+  packets even when `EthernetQueue` had no room, silently discarding them.
+  It now checks capacity before consuming. A behavioral burst test verifies
+  retention and exact FIFO payloads across repeated blocked pumps.
+- HTTP suite: **44 tests passed**, including the new regression.
+  Manifest: `builds/manifests/20261020T071234341135Z-23572.json`.
+- Yahoo still failed the stricter complete-document/decoded-image condition
+  after this fix. Evidence: `builds/evidence/yahoo-backpressure/`;
+  manifest `builds/manifests/20261020T071340426937Z-24918.json`.
+  Required JavaScript still disconnected/timed out; this is not a complete fix.
+- Added structured maximum work timings to the external-page probe.
+  `builds/evidence/yahoo-work-profile/` recorded engine 33.146 ms,
+  network 1192.817 ms, paint 41.219 ms. These measurements exclude other
+  cooperative tasks run while sleeping and are **not installed performance**.
+  Manifest: `builds/manifests/20261020T072013059302Z-29642.json`.
+- Repeated QMP CPU samples during the stall resolved to native arena
+  `remove`/`next` free-list traversal. The large-heap allocator now uses indexed
+  free-order membership plus doubly linked free lists instead of linear buddy
+  searches. Metadata stays inside the granted heap and consumes about 6.25%
+  of large grants. Small grants retain their original capacity.
+  This is a **candidate stall fix, not yet remeasured**.
+- Added a >100,000-block fragmentation/reclamation/guard-byte regression and
+  made runtime-primitives tests a prerequisite of both browser component builds.
+  The allocator regression and native-page retest remain pending: another
+  task's `./build-kit full` acquired the shared build lock as
+  `20261020T072349579720Z-29748`.
+- A hardware-accelerated disposable probe failed before browser initialization;
+  no compatibility claim is based on that attempt.
+
+Do not label the current ISOs as containing a verified complete-page fix.
+Next gate: runtime-primitives tests, same Yahoo retest, additional independent
+sites, then installed-system verification and release parity/checksums.

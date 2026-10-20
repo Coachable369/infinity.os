@@ -88,6 +88,9 @@ fn exchange(
     }
     let mut frame = [0; 1514];
     for _ in 0..4 {
+        if !queue.can_ingest() {
+            break;
+        }
         let Some(length) = link.receive(&mut frame) else {
             break;
         };

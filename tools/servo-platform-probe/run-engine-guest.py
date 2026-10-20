@@ -115,6 +115,10 @@ def main():
     report["load_completed"] = [9,2,32,1] in records if options.network_probe else None
     report["requested_url"] = environment.get("INFINITY_BROWSER_PROBE_URL", "https://www.google.com/") if options.network_probe else None
     report["network_only"] = options.network_only
+    report["longest_work_ms"] = {
+        name: next((row[3] / 1_000_000 for row in records if row[:3] == [9,2,code]), None)
+        for name, code in (("engine",70), ("network",71), ("paint",72))
+    } if options.network_probe else None
     report["load_timeout_seconds"] = options.load_timeout_seconds if options.network_probe else None
     if options.evidence_dir:
         options.evidence_dir.mkdir(parents=True, exist_ok=True)

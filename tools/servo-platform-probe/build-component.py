@@ -19,6 +19,9 @@ def main():
     parser.add_argument("--arch",choices=("aarch64","x86_64"),required=True)
     options=parser.parse_args()
     root=Path(__file__).resolve().parents[2]
+    # Validate the native allocator before linking either installed architecture.
+    subprocess.run(["cargo","test","--manifest-path",
+                    str(root/"sdk/servo-runtime-primitives/Cargo.toml")],check=True,cwd=root)
     source=root/"build/servo-port-audit"
     if not source.exists():
         source.mkdir(parents=True)

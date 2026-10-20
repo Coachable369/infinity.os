@@ -60,6 +60,13 @@ impl EthernetQueue {
         }
     }
     // ------------------------=
+    // FUNC: can_ingest
+    // DESC: Reports receive capacity before the owner consumes a packet from its upstream queue.
+    // ------------------=
+    pub fn can_ingest(&self) -> bool {
+        self.rx.count < DEPTH
+    }
+    // ------------------------=
     // FUNC: ingest
     // DESC: Copies a frame only if there is capacity; malformed lengths and overflow never overwrite queued data.
     // ------------------=
