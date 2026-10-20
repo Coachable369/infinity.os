@@ -153,8 +153,19 @@ impl ApplicationHandler {
         let type_match = self.content_mask & (1u8 << ((content_type as u8).saturating_sub(1))) != 0;
         let extension = normalized_extension(extension).unwrap_or(&[]);
         let extension_match = !extension.is_empty()
-            && self.extensions.iter().any(|candidate| candidate.bytes().eq_ignore_ascii_case(extension));
-        type_match || extension_match
+            && self
+                .extensions
+                .iter()
+                .any(|candidate| candidate.bytes().eq_ignore_ascii_case(extension));
+        // Imported documents can have Binary metadata. Restrict the fallback
+        // to document extensions; the editor still validates the actual bytes.
+        let editable_document = self.launch == LaunchAdapter::TextEditor
+            && matches!(content_type, ContentKind::Binary | ContentKind::Metadata)
+            && [b"json".as_slice(), b"jsonl", b"txt", b"md", b"csv", b"xml",
+                b"yaml", b"yml", b"toml", b"ini", b"log", b"c", b"h", b"rs",
+                b"js", b"css", b"html", b"py", b"sh"]
+                .iter().any(|suffix| extension.eq_ignore_ascii_case(suffix));
+        type_match || extension_match || editable_document
     }
 
     // ------------------------=

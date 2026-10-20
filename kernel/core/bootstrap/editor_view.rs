@@ -62,7 +62,9 @@ impl super::DisplayDevice {
         let w = g.window;
         let x = w.x.max(0) as usize;
         let y = w.y.max(0) as usize;
-        self.app_card(w, (11, 18, 32), (33, 105, 139), s);
+        self.app_card(w,
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Header),
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline), s);
         self.fill_rect(x + s, y + 46 * s, w.width as usize - 2 * s, s, 33, 58, 85);
         self.app_symbol(
             Rect {
@@ -120,9 +122,7 @@ impl super::DisplayDevice {
         }
         if g.menu_bar.width > 700 * s as u32 {
             for (index, symbol, label) in [
-                (0usize, b'+', b"New" as &[u8]),
-                (1usize, b'o', b"Open"),
-                (2usize, b's', b"Save"),
+                (2usize, b's', b"Save" as &[u8]),
             ] {
                 let r = g.toolbar_action(index);
                 self.app_symbol(
@@ -219,7 +219,8 @@ impl super::DisplayDevice {
             s,
         );
         if view.field != Field::None {
-            self.app_card(g.field, (15, 27, 46), (34, 157, 187), s);
+            self.app_card(g.field, (16, 27, 58),
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Focus), s);
             let label = match view.field {
                 Field::Find => b"Find / Enter: next match".as_slice(),
                 Field::ReplaceFind => b"Find / Tab: replacement",

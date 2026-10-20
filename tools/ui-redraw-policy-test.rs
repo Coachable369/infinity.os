@@ -53,6 +53,8 @@ fn visible_clock_updates_are_damage_limited() {
     assert!(desktop_clock_requires_bounded_redraw(4, true));
     assert!(!clock_change_requires_structural_redraw(10, true));
     assert!(desktop_clock_requires_bounded_redraw(10, true));
+    assert!(!clock_change_requires_structural_redraw(11, true));
+    assert!(desktop_clock_requires_bounded_redraw(11, true));
     assert!(clock_change_requires_structural_redraw(5, true));
 }
 

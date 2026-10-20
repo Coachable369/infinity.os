@@ -18,6 +18,15 @@ reuse its existing geometry, artwork, typography and interaction states.
 All surfaces and focus/selection states use the same palette; desktop theme
 settings cannot silently recolor first-run or login controls.
 
+Native application integration: the default editor's interior, selection, and
+syntax palette use navy/blue/silver, not violet selection or teal accents.
+Explicit alternate editor schemes remain selectable. Application menus reuse
+the existing compact Inter rows with #101B3A panels, #1A2E63 selection and
+#86C7FF edges. The minimized-app rail reuses the glass-panel recipe with a
+silver #C2DBF5 edge. Command Window reuses the rounded field/card and clipped
+Inter label components; partial repaints must use the same #090F26 body color
+as initial paint. No new raster assets are required for these components.
+
 Typography is Inter regular (400) and semibold (600), not the host system face.
 Native configuration and authentication bind FontKit family 1 explicitly for
 glyphs, advances and kerning; Studio registers the same existing

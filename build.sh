@@ -6,7 +6,43 @@ output_dir="$project_root/builds"
 temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
+if [ "${1:-}" = "--help" ]; then
+    echo "Usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests] [--target all|aarch64|x86_64]"
+    echo "Without arguments, a terminal prompts for build type, architecture, and tests."
+    echo "--skip-tests retains kernel/asset packaging, parity and checksum checks."
+    exit 0
+fi
 if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
+    # Interactive choices belong outside the kit lock. Automation never waits
+    # for stdin, and all execution still enters through the build authority.
+    if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
+        printf 'Build: 1) incremental  2) clean release  3) tests only [1]: '
+        read -r choice
+        case "$choice" in
+            3) exec "$project_root/build-kit" tests ;;
+            2) profile=full ;;
+            1|'') profile=incremental ;;
+            *) echo "Invalid build choice" >&2; exit 2 ;;
+        esac
+        printf 'Architecture: 1) both  2) ARM64  3) x86_64 [1]: '
+        read -r architecture
+        case "$architecture" in
+            1|'') target=all ;; 2) target=aarch64 ;; 3) target=x86_64 ;;
+            *) echo "Invalid architecture" >&2; exit 2 ;;
+        esac
+        printf 'Regression tests: 1) full  2) skip (retain packaging/integrity checks) [1]: '
+        read -r tests
+        case "$tests" in
+            1|'') exec "$project_root/build-kit" "$profile" --target "$target" ;;
+            2) exec "$project_root/build-kit" "$profile" --skip-tests --target "$target" ;;
+            *) echo "Invalid test choice" >&2; exit 2 ;;
+        esac
+    fi
+    case "${1:-}" in
+        --full) shift; exec "$project_root/build-kit" full "$@" ;;
+        --incremental) shift; exec "$project_root/build-kit" incremental "$@" ;;
+        --tests-only) shift; exec "$project_root/build-kit" tests "$@" ;;
+    esac
     exec "$project_root/build-kit" incremental "$@"
 fi
 test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
@@ -14,17 +50,34 @@ test "${TMPDIR:-}" = "$temporary_dir"
 
 target=all
 package_only=false
+skip_tests=false
 machine=native
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --package-only) package_only=true; shift ;;
+        --skip-tests) skip_tests=true; shift ;;
         --target) [ "$#" -ge 2 ] || exit 2; target=$2; shift 2 ;;
         --machine) [ "$#" -ge 2 ] || exit 2; machine=$2; shift 2 ;;
-        *) echo "usage: ./build.sh [--package-only] [--target aarch64|x86_64|all] [--machine native|qemu]" >&2; exit 2 ;;
+        *) echo "usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests|--package-only] [--target aarch64|x86_64|all] [--machine native|qemu]" >&2; exit 2 ;;
     esac
 done
 case "$target" in aarch64|x86_64|all) ;; *) echo "unsupported build target: $target" >&2; exit 2 ;; esac
 case "$machine" in native|qemu) ;; *) echo "unsupported machine: $machine" >&2; exit 2 ;; esac
+if [ "$machine" = qemu ] && [ "$target" != aarch64 ]; then
+    echo "QEMU model media requires --target aarch64" >&2
+    exit 2
+fi
+if [ "$skip_tests" = true ]; then
+    # Re-enter only the script under the existing kit lock, not the lock owner.
+    # Package mode refreshes the installed kernel/assets and retains parity and
+    # checksum gates; it does not advertise regression-suite acceptance.
+    case "$target" in
+        all)
+            sh "$project_root/build.sh" --package-only --target aarch64
+            exec sh "$project_root/build.sh" --package-only --target x86_64 ;;
+        *) exec sh "$project_root/build.sh" --package-only --target "$target" --machine "$machine" ;;
+    esac
+fi
 if [ "$machine" = qemu ] && { [ "$target" != aarch64 ] || [ "$package_only" != true ]; }; then
     echo "QEMU model media requires --package-only --target aarch64 --machine qemu" >&2
     exit 2

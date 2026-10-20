@@ -183,6 +183,13 @@ fn main() {
         }
     }
     let mut stack = ui::desktop_stack::Stack::new();
+    ui::desktop_stack::publish([true; 5], 0, 0);
+    assert!(ui::desktop_stack::take_visibility_damage());
+    assert!(!ui::desktop_stack::take_visibility_damage());
+    ui::desktop_stack::publish([true; 5], 2, 0);
+    assert!(!ui::desktop_stack::take_visibility_damage());
+    ui::desktop_stack::publish([true, true, false, true, true], 0, 0);
+    assert!(ui::desktop_stack::take_visibility_damage());
     let bounds = [Rect {
         x: 0,
         y: 0,

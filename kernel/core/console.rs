@@ -1201,7 +1201,6 @@ impl ConsoleRuntime {
         editor_view.path_len = self.editor_document_path_length.min(editor_view.path.len());
         editor_view.path[..editor_view.path_len].copy_from_slice(&self.editor_document_path[..editor_view.path_len]);
         crate::ui::editor_tools::publish(editor_view);
-        crate::ui::app_features::publish(&self.editor_document,self.assistant_owner(),SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
         crate::ui::object_picker::publish(self.editor_picker);
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {
             let (e,c,t)=self.desktop_app_windows();
@@ -1216,6 +1215,9 @@ impl ConsoleRuntime {
             crate::ui::ai_widget::publish_menu(Default::default());
         }
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
+        // Inspection hashes the entire editor buffer. Publish once after the
+        // input drain, not once per pointer packet in a coalesced burst.
+        crate::ui::app_features::publish(&self.editor_document,self.assistant_owner(),SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
         crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
         self.publish_text_input_presentation();
         if matches!(
@@ -4061,7 +4063,7 @@ impl ConsoleRuntime {
             self.editor_picker.set_location(entry.bytes()); self.refresh_editor_open_list(); return;
         }
         let readable=crate::storage::object_inspect_path(entry.bytes()).is_ok_and(|(metadata,_)|
-            metadata.kind==crate::storage::object::ObjectType::Text
+            metadata.content_type != crate::storage::object::ContentType::Namespace
                 && metadata.logical_size as usize<=crate::ui::text_editor::DOCUMENT_CAPACITY);
         if !readable {self.editor_picker.error=3;return;}
         let mut content=[0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];

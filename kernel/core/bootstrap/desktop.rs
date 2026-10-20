@@ -3324,9 +3324,9 @@ impl super::DisplayDevice {
                     if crate::ui::native_uikit::presentation().active {
                         b"NATIVE C  /  INFINITY UI KIT"
                     } else { b"INFINITY CONSOLE  /  LOCAL SESSION" },
-                    103,
-                    193,
-                    235,
+                    190,
+                    190,
+                    190,
                     1,
                 );
             }
@@ -3377,9 +3377,9 @@ impl super::DisplayDevice {
                 content_top + scale,
                 content_width.saturating_sub(2 * scale),
                 content_height.saturating_sub(2 * scale),
-                1,
-                10,
-                20,
+                9,
+                15,
+                38,
             );
         } else {
             self.fill_rounded_rect_alpha(
@@ -3388,10 +3388,10 @@ impl super::DisplayDevice {
                 content_width,
                 content_height,
                 10 * scale,
-                1,
-                10,
-                20,
-                246,
+                9,
+                15,
+                38,
+                255,
             );
             self.outline_rounded_rect(
                 content_left,
@@ -3399,41 +3399,40 @@ impl super::DisplayDevice {
                 content_width,
                 content_height,
                 10 * scale,
-                22,
-                83,
-                116,
+                74,
+                99,
+                143,
             );
         }
         let line_height = 24 * scale;
         if screen != 10 {
             for row in 0..output_count.min(6) {
-                self.ui_text(
-                    content_left + 18 * scale,
-                    content_top + 18 * scale + row * line_height,
+                self.app_label(
+                    crate::ui::geometry::Rect {
+                        x: (content_left + 18 * scale) as i32,
+                        y: (content_top + 18 * scale + row * line_height) as i32,
+                        width: content_width.saturating_sub(36 * scale) as u32,
+                        height: line_height as u32,
+                    },
                     &output_lines[row][..output_lengths[row].min(96)],
-                    183,
-                    218,
-                    235,
-                    1,
+                    (235, 240, 248),
+                    false,
+                    scale,
                 );
             }
             let prompt_y = content_top + content_height.saturating_sub(42 * scale);
-            self.fill_rect_alpha(
-                content_left + 10 * scale,
-                prompt_y.saturating_sub(8 * scale),
-                content_width.saturating_sub(20 * scale),
-                34 * scale,
-                5,
-                28,
-                45,
-                245,
-            );
+            self.app_card(crate::ui::geometry::Rect {
+                x: (content_left + 10 * scale) as i32,
+                y: prompt_y.saturating_sub(8 * scale) as i32,
+                width: content_width.saturating_sub(20 * scale) as u32,
+                height: (34 * scale) as u32,
+            }, (16, 27, 58), (134, 199, 255), scale);
             self.ui_text_strong(
                 content_left + 18 * scale,
                 prompt_y,
                 b"inf >",
-                93,
-                218,
+                134,
+                199,
                 255,
                 1,
             );
@@ -10615,7 +10614,8 @@ pub fn system_ui_present(
             let font_changed=crate::ui::font_library::take_damage();
             if font_changed {super::retained_windows::invalidate();}
             let wallpaper_changed=crate::ui::user_wallpaper::take_damage(console.display.width,console.display.height).is_some();
-            let structural_change_without_window = font_changed || wallpaper_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
+            let visibility_changed = crate::ui::desktop_stack::take_visibility_damage();
+            let structural_change_without_window = visibility_changed || font_changed || wallpaper_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
                 && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
                     || (!desktop_layer_focus_changed
                         && crate::ui::redraw::focus_change_requires_structural_redraw(

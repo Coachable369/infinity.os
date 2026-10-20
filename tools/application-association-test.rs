@@ -14,6 +14,15 @@ fn main() {
     assert_eq!(registry.compatible_count(ContentKind::Utf8Text, b"txt"), 1);
     assert_eq!(registry.compatible_count(ContentKind::Namespace, b""), 1);
     assert!(registry.resolve(ContentKind::Binary, b"bin").is_err());
+    for extension in [b"json".as_slice(), b"JSON", b"toml", b"c", b"md"] {
+        let handler = registry.resolve(ContentKind::Binary, extension).unwrap();
+        assert_eq!(handler.launch, LaunchAdapter::TextEditor);
+        assert!(registry.stage_open(handler, b"/home/default/test.json",
+            ContentKind::Binary, extension).is_ok());
+        assert!(registry.take_open_request(handler.identity.bytes()).is_some());
+    }
+    assert!(registry.resolve(ContentKind::Namespace, b"json").unwrap().launch
+        != LaunchAdapter::TextEditor);
 
     let mut custom = ApplicationHandler::new(
         b"app.example.markdown-studio", b"Markdown Studio", LaunchAdapter::InstalledApplication(0xb001),

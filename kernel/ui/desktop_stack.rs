@@ -60,14 +60,24 @@ impl Stack {
     }
 }
 static mut STATE: Stack = Stack::new();
+static mut VISIBILITY_DIRTY: bool = false;
 // ------------------------=
 // FUNC: publish
 // DESC: Updates UI-thread ordering without allocating or repainting on pointer motion.
 // ------------------=
 pub fn publish<const N:usize>(visible: [bool; N], active: usize, section: usize) {
     unsafe {
+        let previous = (*(&raw const STATE)).visible;
         (&mut *(&raw mut STATE)).sync(visible, active, section);
+        VISIBILITY_DIRTY |= previous != (*(&raw const STATE)).visible;
     }
+}
+// ------------------------=
+// FUNC: take_visibility_damage
+// DESC: Invalidates composition once when a window opens, closes or minimizes, including background windows.
+// ------------------=
+pub fn take_visibility_damage() -> bool {
+    unsafe { core::mem::replace(&mut *(&raw mut VISIBILITY_DIRTY), false) }
 }
 // ------------------------=
 // FUNC: current

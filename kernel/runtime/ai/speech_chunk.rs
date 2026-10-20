@@ -32,7 +32,9 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
     // Unpunctuated streams still dispatch by 160 available bytes, so buffering
     // cannot wait for an entire long response. This is a text bound, not a
     // promise about model generation or synthesis wall-clock latency.
-    const MIN_SENTENCE: usize = 24;
+    // A complete short opening sentence is speakable now; do not hold it
+    // behind the following sentence merely to reach a character quota.
+    let min_sentence = if initial { 1 } else { 24 };
     let min_clause = if initial { 40 } else { 80 };
     let scan_limit = bytes.len().min(PROVIDER_LIMIT);
     if complete && bytes.len() <= PROVIDER_LIMIT {
@@ -52,7 +54,7 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
             clause_end = i + 1;
         }
     }
-    if sentence_end >= MIN_SENTENCE {
+    if sentence_end >= min_sentence {
         return sentence_end;
     }
     if clause_end >= min_clause {
@@ -79,6 +81,17 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
 
 #[cfg(test)]
 mod tests {
+    // ------------------------=
+    // FUNC: short_opening_sentence_starts_without_waiting_for_followup
+    // DESC: Releases a complete greeting but never an unfinished word or abbreviation.
+    // ------------------=
+    #[test]
+    fn short_opening_sentence_starts_without_waiting_for_followup() {
+        assert_eq!(super::next(b"Hello! I", false, true), 6);
+        assert_eq!(super::next(b"Hello", false, true), 0);
+        assert_eq!(super::next(b"Dr. Smith", false, true), 0);
+        assert_eq!(super::next(b"Hello! I", false, false), 0);
+    }
     // ------------------------=
     // FUNC: cumulative_text_has_no_repeated_or_partial_sentence
     // DESC: Verifies stream buffering, final flushing, length bounds and exact once-only consumption.
@@ -151,15 +164,17 @@ mod tests {
 
     // ------------------------=
     // FUNC: short_sentences_share_one_synthesis_request
-    // DESC: Prevents a greeting and short followup sentence from incurring separate synthesis jobs.
+    // DESC: Coalesces already completed replies but starts a streamed greeting without waiting for the next sentence.
     // ------------------=
     #[test]
     fn short_sentences_share_one_synthesis_request() {
         let text = b"Hello! How can I help you today?";
-        for available in 1..25 {
+        for available in 1..7 {
             assert_eq!(super::next(&text[..available], false, true), 0);
         }
-        assert_eq!(super::next(&text[..28], false, true), 0);
+        for available in 7..29 {
+            assert_eq!(super::next(&text[..available], false, true), 6);
+        }
         assert_eq!(super::next(text, true, true), text.len());
         let followup = b"Yes. It is ready. You can use it now.";
         assert_eq!(super::next(followup, true, false), followup.len());

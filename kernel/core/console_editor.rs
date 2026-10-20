@@ -191,15 +191,11 @@ impl ConsoleRuntime {
         }
         if g.menu_bar.width > 700 * g.scale as u32 {
             for (index, command) in [
-                crate::ui::editor_chrome::Command::New,
-                crate::ui::editor_chrome::Command::Open,
-                crate::ui::editor_chrome::Command::Save,
+                (2, crate::ui::editor_chrome::Command::Save),
             ]
-            .iter()
-            .enumerate()
             {
                 if g.toolbar_action(index).contains(p) {
-                    self.editor_command(*command);
+                    self.editor_command(command);
                     return true;
                 }
             }

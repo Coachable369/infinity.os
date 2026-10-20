@@ -2,7 +2,7 @@
 use crate::ui::geometry::Rect;
 pub(super) const TEXT: (u8, u8, u8) = (255, 255, 255);
 pub(super) const MUTED: (u8, u8, u8) = (159, 176, 200);
-pub(super) const CYAN: (u8, u8, u8) = (34, 211, 238);
+pub(super) const CYAN: (u8, u8, u8) = (134, 199, 255);
 pub(super) const FONT: &[u8] = include_bytes!("../../../assets/fonts/InfinityUI-Regular-16.atlas");
 pub(super) const MEDIUM: &[u8] =
     include_bytes!("../../../assets/fonts/InfinityUI-Semibold-16.atlas");
@@ -70,14 +70,18 @@ impl super::DisplayDevice {
     // DESC: Draws the shared smoked-navy application dropdown surface and restrained cyan border.
     // ------------------=
     pub(super) fn app_dropdown_panel(&mut self, panel: Rect, scale: usize) {
-        self.app_card(panel, (8, 22, 38), (49, 114, 151), scale);
+        self.app_card(panel,
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline), scale);
     }
     // ------------------------=
     // FUNC: app_dropdown_row
     // DESC: Draws a compact selected application-menu row using the reusable cyan glass focus state.
     // ------------------=
     pub(super) fn app_dropdown_row(&mut self, row: Rect, selected: bool, scale: usize) {
-        if selected { self.app_card(row, (16, 58, 82), (34, 145, 183), scale); }
+        if selected { self.app_card(row,
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection),
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Focus), scale); }
     }
     // ------------------------=
     // FUNC: app_text_width
