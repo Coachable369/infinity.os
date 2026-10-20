@@ -887,6 +887,67 @@ impl Service {
     }
 
     // ------------------------=
+    // FUNC: mark_runtime_failure
+    // DESC: Invalidates software launch and downstream completion after an exact native runtime failure; never restarts work or grants repair/launch authority.
+    // ------------------=
+    pub fn mark_runtime_failure(
+        &mut self,
+        goal_id: u64,
+        owner: [u8; 16],
+    ) -> Result<(), ServiceError> {
+        let index = self.plan_index(goal_id, owner)?;
+        let plan = self.plans[index].as_mut().unwrap();
+        if !matches!(plan.state, PlanState::Executing | PlanState::Completed | PlanState::Failed) {
+            return Err(ServiceError::InvalidPlan);
+        }
+        let devkit = plan.tasks.iter().flatten()
+            .find(|task| task.capability == CapabilityId::DevKit)
+            .map(|task| task.id).ok_or(ServiceError::InvalidPlan)?;
+        let launch_index = plan.tasks[..plan.task_count as usize].iter()
+            .position(|task| task.as_ref().is_some_and(|task|
+                task.capability == CapabilityId::UiServices && task.depends_on(devkit)))
+            .ok_or(ServiceError::InvalidPlan)?;
+        if plan.state == PlanState::Failed
+            && plan.tasks[launch_index].as_ref().unwrap().state == TaskState::Failed {
+            return Ok(());
+        }
+        let revision = plan.revision.checked_add(1).ok_or(ServiceError::InvalidPlan)?;
+        let launch_id = plan.tasks[launch_index].as_ref().unwrap().id;
+        let mut affected = [false; MAX_TASKS];
+        affected[launch_index] = true;
+        for _ in 0..plan.task_count {
+            for candidate in 0..plan.task_count as usize {
+                if affected[candidate] { continue; }
+                let task = plan.tasks[candidate].as_ref().unwrap();
+                if (0..plan.task_count as usize).any(|dependency|
+                    affected[dependency] && task.depends_on(plan.tasks[dependency].as_ref().unwrap().id)) {
+                    affected[candidate] = true;
+                }
+            }
+        }
+        for (task_index, task) in plan.tasks.iter_mut().enumerate() {
+            let Some(task) = task else { continue; };
+            if affected[task_index] {
+                task.state = if task_index == launch_index { TaskState::Failed } else { TaskState::Blocked };
+                task.evidence = [0; 16];
+                task.execution_token = 0;
+            } else if task.state == TaskState::Running {
+                // A lifecycle callback may arrive before the plan consumes an
+                // earlier receipt. Do not leave a terminal plan with live leases
+                // or invent a successful observation for that stage.
+                task.state = TaskState::Blocked;
+                task.execution_token = 0;
+                task.evidence = [0; 16];
+            }
+        }
+        plan.state = PlanState::Failed;
+        plan.revision = revision;
+        self.emit(goal_id, Some(launch_id), EventKind::Failed);
+        self.emit(goal_id, None, EventKind::Failed);
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: inspect
     // DESC: Returns an immutable owner-scoped plan for UI, console, or service projection.
     // ------------------=

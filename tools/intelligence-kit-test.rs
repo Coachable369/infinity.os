@@ -239,6 +239,117 @@ fn software_receipts() {
 }
 
 // ------------------------=
+// FUNC: software_runtime_failure_receipts
+// DESC: Accepts post-launch failure only from the exact saved-source/context lease and never mistakes published controls for functional proof.
+// ------------------=
+fn software_runtime_failure_receipts() {
+    use runtime::ai::intelligence::software::{Event, Execution, RuntimeFailure};
+    let owner = [7; 16];
+    let mut execution = Execution::new(5, owner);
+    assert!(execution.record(5, owner, Event::SourceSaved { object: [3; 16], revision: 4 }));
+    assert!(execution.record(5, owner, Event::Compiled { artifact: [9; 16] }));
+    let failure = Event::RuntimeFailed { source: [3; 16], revision: 4, context: 2, code: 3 };
+    let before_launch = execution;
+    assert!(!execution.record(5, owner, failure));
+    assert_eq!(execution, before_launch);
+    assert!(execution.record(5, owner, Event::Launched { context: 2 }));
+    assert!(execution.record(5, owner, Event::InteractionReady { context: 2, revision: 1 }));
+    assert!(execution.begin(103, CapabilityId::ApplicationInteraction));
+    assert!(matches!(execution.observe(103), Observation::Succeeded(_)));
+    assert_eq!(execution.applied_actions, 0);
+    assert_eq!(execution.runtime_failure(), None);
+    let launched = execution;
+    for (goal, claimant, event) in [
+        (6, owner, failure),
+        (5, [8; 16], failure),
+        (5, owner, Event::RuntimeFailed { source: [4; 16], revision: 4, context: 2, code: 3 }),
+        (5, owner, Event::RuntimeFailed { source: [3; 16], revision: 5, context: 2, code: 3 }),
+        (5, owner, Event::RuntimeFailed { source: [3; 16], revision: 4, context: 1, code: 3 }),
+        (5, owner, Event::RuntimeFailed { source: [3; 16], revision: 4, context: 0, code: 3 }),
+    ] {
+        assert!(!execution.record(goal, claimant, event));
+        assert_eq!(execution, launched);
+    }
+    assert!(execution.record(5, owner, failure));
+    assert_eq!(execution.runtime_failure(), Some(RuntimeFailure {
+        source: [3; 16], revision: 4, context: 2, code: 3,
+    }));
+    assert!(!execution.interaction_active);
+    assert_eq!(execution.source, launched.source);
+    assert_eq!(execution.artifact, launched.artifact);
+    assert_eq!(execution.context, launched.context);
+    assert!(!execution.record(5, owner, Event::InteractionApplied { context: 2, revision: 2, token: 12 }));
+    assert!(execution.begin(104, CapabilityId::UiServices));
+    assert_eq!(execution.observe(104), Observation::Failed(3));
+    assert!(execution.begin(105, CapabilityId::DevKit));
+    assert_eq!(execution.observe(105), Observation::Failed(3));
+    let mut normalized = launched;
+    assert!(normalized.record(5, owner, Event::RuntimeFailed {
+        source: [3; 16], revision: 4, context: 2, code: 0,
+    }));
+    assert_eq!(normalized.runtime_failure().unwrap().code, 1);
+}
+
+// ------------------------=
+// FUNC: software_runtime_failure_plan
+// DESC: Invalidates launch-dependent success without replaying a goal, losing true compilation history, or resetting its authorization and retry limits.
+// ------------------=
+fn software_runtime_failure_plan() {
+    use runtime::ai::intelligence::ServiceError;
+    let owner = [7; 16];
+    let registry = InstalledCapabilities;
+    for objective in [
+        b"create a graphical calendar app".as_slice(),
+        b"create a board game and play me".as_slice(),
+    ] {
+        let mut service = Service::new();
+        let id = service.propose(owner, RequestOrigin::Text, objective, &registry, 0, limits()).unwrap();
+        service.begin(id, owner, &registry).unwrap();
+        let mut executor = HarnessExecutor::new();
+        assert_eq!(finish(&mut service, id, owner, &registry, &mut executor), PlanState::Completed);
+        let completed = *service.inspect(id, owner).unwrap();
+        assert_eq!(service.mark_runtime_failure(id, [8; 16]), Err(ServiceError::NotFound));
+        assert_eq!(*service.inspect(id, owner).unwrap(), completed);
+        service.mark_runtime_failure(id, owner).unwrap();
+        let failed = *service.inspect(id, owner).unwrap();
+        assert_eq!(failed.state, PlanState::Failed);
+        assert_eq!(failed.goal, completed.goal);
+        assert_eq!(failed.limits, completed.limits);
+        assert_eq!(failed.replans, completed.replans);
+        assert_eq!(failed.revision, completed.revision + 1);
+        assert_eq!(failed.tasks[0], completed.tasks[0]);
+        for index in 1..failed.task_count as usize {
+            let task = failed.tasks[index].unwrap();
+            assert_eq!(task.state, if index == 1 { TaskState::Failed } else { TaskState::Blocked });
+            assert_eq!(task.evidence, [0; 16]);
+            assert_eq!(task.execution_token, 0);
+            assert_eq!(task.attempts, completed.tasks[index].unwrap().attempts);
+        }
+        let starts = executor.starts;
+        let events = service.event_count();
+        service.mark_runtime_failure(id, owner).unwrap();
+        assert_eq!(*service.inspect(id, owner).unwrap(), failed);
+        assert_eq!(service.event_count(), events);
+        assert_eq!(service.poll(id, owner, &registry, &mut executor, 100).unwrap().state, PlanState::Failed);
+        assert_eq!(executor.starts, starts);
+        assert_eq!(service.begin(id, owner, &registry), Err(ServiceError::Busy));
+    }
+    let mut service = Service::new();
+    let id = service.propose(owner, RequestOrigin::Text, b"create a graphical notes app", &registry, 0, limits()).unwrap();
+    let proposed = *service.inspect(id, owner).unwrap();
+    assert_eq!(service.mark_runtime_failure(id, owner), Err(ServiceError::InvalidPlan));
+    assert_eq!(*service.inspect(id, owner).unwrap(), proposed);
+    service.begin(id, owner, &registry).unwrap();
+    let mut executor = HarnessExecutor::new();
+    service.poll(id, owner, &registry, &mut executor, 1).unwrap();
+    assert_eq!(service.inspect(id, owner).unwrap().tasks[0].unwrap().state, TaskState::Running);
+    // A native failure can race the plan's consumption of earlier receipts.
+    service.mark_runtime_failure(id, owner).unwrap();
+    assert!(service.inspect(id, owner).unwrap().tasks.iter().flatten()
+        .all(|task| task.state != TaskState::Running && task.execution_token == 0));
+}
+
+// ------------------------=
 // FUNC: native_software_plan
 // DESC: Exercises the real shared voice/text router and native plan executor with actual typed lifecycle receipts for differing app goals.
 // ------------------=
@@ -295,6 +406,65 @@ fn native_software_plan() {
     for byte in b"open browser" {assert!(ai.chat.push_input(*byte));}
     assert!(ai.submit_voice_chat());
     assert_eq!(ai.take_control(owner,true),Some(runtime::ai::control::Command::Browser));
+}
+
+// ------------------------=
+// FUNC: runtime_failure_releases_waiting_chat
+// DESC: Retires only the failed active goal's waiting chat state and preserves a newer voice command after an older completed goal fails.
+// ------------------=
+fn runtime_failure_releases_waiting_chat() {
+    use runtime::ai::{chat::GenerationState, control::Command, intelligence::software::Event};
+    let owner=[7;16];
+    for newer_command in [false,true] {
+        let mut ai=runtime::ai::AiRuntime::new();ai.bind_chat_owner(owner);
+        for byte in b"create a graphical notes app" {assert!(ai.chat.push_input(*byte));}
+        assert!(ai.submit_voice_chat());assert!(ai.poll_qwen());
+        let command=ai.take_control(owner,true).unwrap();
+        ai.finish_control(command,true);ai.poll_qwen();
+        assert!(ai.record_software_event(1,owner,Event::SourceSaved{object:[2;16],revision:12}));
+        assert!(ai.record_software_event(1,owner,Event::Compiled{artifact:[3;16]}));
+        ai.poll_qwen();
+        assert!(ai.record_software_event(1,owner,Event::Launched{context:99}));
+        if newer_command {
+            ai.poll_qwen();
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Completed);
+            for byte in b"open browser" {assert!(ai.chat.push_input(*byte));}
+            assert!(ai.submit_voice_chat());
+            assert_eq!(ai.chat.generation_state,GenerationState::Running);
+        } else {
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Executing);
+            // Exercise the waiting state used by asynchronous voice ingress.
+            ai.chat.generation_state=GenerationState::Running;
+        }
+        let turn=ai.chat.turn_id();
+        let chat_state=ai.chat.state_hash();
+        assert!(!ai.record_software_event(1,owner,Event::RuntimeFailed {
+            source:[2;16],revision:11,context:99,code:3,
+        }));
+        assert_eq!(ai.chat.state_hash(),chat_state);
+        assert!(ai.record_software_event(1,owner,Event::RuntimeFailed {
+            source:[2;16],revision:12,context:99,code:3,
+        }));
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Failed);
+        assert_eq!(ai.software_execution_id(),None);
+        assert_eq!(ai.app_turn_owner(),None);
+        assert_eq!(ai.chat.turn_id(),turn);
+        if newer_command {
+            assert_eq!(ai.chat.generation_state,GenerationState::Running);
+            assert_eq!(ai.chat.state_hash(),chat_state);
+        } else {
+            assert_eq!(ai.chat.generation_state,GenerationState::Failed);
+            assert!(!ai.control_pending());
+            assert!(!ai.poll_qwen());
+            assert_eq!(ai.chat.generation_state,GenerationState::Failed);
+            for byte in b"open browser" {assert!(ai.chat.push_input(*byte));}
+            assert!(ai.submit_voice_chat());
+        }
+        assert_eq!(ai.take_control(owner,true),Some(Command::Browser));
+        ai.finish_control(Command::Browser,true);
+        assert_eq!(ai.chat.generation_state,GenerationState::Complete);
+        assert!(!ai.control_pending());
+    }
 }
 
 // ------------------------=
@@ -420,7 +590,10 @@ fn completed_source_edit_fence() {
 fn main() {
     language_and_update_plans();
     software_receipts();
+    software_runtime_failure_receipts();
+    software_runtime_failure_plan();
     native_software_plan();
+    runtime_failure_releases_waiting_chat();
     interrupt_software_plan();
     queued_goal_fencing();
     completed_source_edit_fence();

@@ -1454,7 +1454,28 @@ impl AiRuntime {
     // ------------------=
     pub fn record_software_event(&mut self,goal:u64,owner:[u8;16],event:intelligence::software::Event)->bool{
         let accepted=self.software_execution.as_mut().is_some_and(|execution|execution.record(goal,owner,event));
-        if accepted {self.intelligence_checkpoint_pending=true;}
+        if accepted {
+            if matches!(event,intelligence::software::Event::RuntimeFailed{..}) {
+                let _=self.intelligence.mark_runtime_failure(goal,owner);
+                self.stop_application_agent();
+                // The failed app is already retired by its owning lifecycle.
+                // Do not cancel a newer inference request or reopen the plan.
+                if self.intelligence_goal==Some(goal) {
+                    self.intelligence_goal=None;
+                    self.intelligence_execution=None;
+                    self.intelligence_result=None;
+                    if self.chat_owner==owner && self.app_owner.is_none()
+                        && !self.qwen.as_ref().is_some_and(|service|service.busy()) {
+                        // Retiring the active plan must also retire its waiting
+                        // chat state; voice ingress blocks while it is Running.
+                        // A separate model turn retains its own response/state.
+                        self.chat.update_native_response(b"The generated application failed at runtime. Its saved source and diagnostics are preserved. Any admitted repair only validates the source; the application will not restart automatically.");
+                        self.chat.generation_state=chat::GenerationState::Failed;
+                    }
+                }
+            }
+            self.intelligence_checkpoint_pending=true;
+        }
         accepted
     }
 

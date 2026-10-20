@@ -11,7 +11,16 @@ pub enum Event {
     InteractionReady { context: u64, revision: u64 },
     InteractionApplied { context: u64, revision: u64, token: u64 },
     InteractionStopped { context: u64 },
+    RuntimeFailed { source: [u8; 16], revision: u64, context: u64, code: u16 },
     Failed { code: u16 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RuntimeFailure {
+    pub source: [u8; 16],
+    pub revision: u64,
+    pub context: u64,
+    pub code: u16,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +36,7 @@ pub struct Execution {
     pub applied_actions: u32,
     pub last_action: u64,
     failure: Option<u16>,
+    runtime_failure: Option<RuntimeFailure>,
     active: Option<(u64, CapabilityId)>,
 }
 
@@ -38,7 +48,7 @@ impl Execution {
     pub const fn new(goal: u64, owner: [u8; 16]) -> Self {
         Self { goal, owner, source: [0; 16], source_revision: 0, artifact: [0; 16],
             context: 0, interaction_revision: 0, interaction_active: false,
-            applied_actions: 0, last_action: 0, failure: None, active: None }
+            applied_actions: 0, last_action: 0, failure: None, runtime_failure: None, active: None }
     }
 
     // ------------------------=
@@ -94,6 +104,15 @@ impl Execution {
             Event::InteractionStopped { context } if self.context != 0 && self.context == context => {
                 self.interaction_active = false;
             }
+            Event::RuntimeFailed { source, revision, context, code }
+                if source != [0; 16] && source == self.source
+                    && revision > 0 && revision == self.source_revision
+                    && context != 0 && context == self.context => {
+                let code = code.max(1);
+                self.runtime_failure = Some(RuntimeFailure { source, revision, context, code });
+                self.failure = Some(code);
+                self.interaction_active = false;
+            }
             Event::Failed { code } => self.failure = Some(code.max(1)),
             _ => return false,
         }
@@ -101,8 +120,16 @@ impl Execution {
     }
 
     // ------------------------=
+    // FUNC: runtime_failure
+    // DESC: Exposes exact native runtime-failure provenance without treating launch or published controls as functional verification.
+    // ------------------=
+    pub const fn runtime_failure(&self) -> Option<RuntimeFailure> {
+        self.runtime_failure
+    }
+
+    // ------------------------=
     // FUNC: observe
-    // DESC: Completes tasks only with persisted artifacts, a real process instance, or a granted published interaction contract.
+    // DESC: Verifies individual artifact, launch or contract-publication stages, never whole-application functionality; native failure overrides those receipts.
     // ------------------=
     pub fn observe(&mut self, token: u64) -> Observation {
         let Some((active, capability)) = self.active else { return Observation::Running; };
