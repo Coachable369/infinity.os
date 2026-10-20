@@ -2676,6 +2676,21 @@ impl ConsoleRuntime {
     // ------------------=
     fn sync_ai_chat_preferences(&mut self) {
         crate::runtime::ai::with_ai_runtime(|runtime| runtime.bind_chat_owner(self.current_user.0));
+        let seed=crate::runtime::with_runtime(|runtime|{
+            let name=runtime.identity.user(self.current_user)?.display_name;
+            let wake=runtime.identity.voice_profile(self.current_user)?.wake_word;
+            Some((name,wake))
+        }).flatten();
+        let document=seed.and_then(|(name,wake)|crate::storage::hermes_memory(
+            self.current_user.0,self.current_session.0,name.as_bytes(),wake.phrase(),None).ok());
+        if let Some(doc)=document.as_ref(){
+            let mut wake=[0;16];
+            if let Ok(n)=doc.get(b"wake_word",&mut wake){
+                let value=if &wake[..n]==b"Computer"{crate::runtime::identity::WakeWord::Computer}else{crate::runtime::identity::WakeWord::Infinity};
+                crate::runtime::with_runtime(|runtime|{let _=runtime.identity.update_wake_word(self.current_user,self.current_user,value);});
+            }
+        }
+        crate::runtime::ai::with_ai_runtime(|runtime|runtime.load_hermes_memory(self.current_session.0,document));
         let mut intelligence=[0u8;crate::runtime::ai::intelligence::MAX_STATE_BYTES];
         if let Ok(length)=crate::storage::intelligence_state_load(self.current_user.0,self.current_session.0,&mut intelligence) {
             let _=crate::runtime::ai::with_ai_runtime(|runtime|runtime.restore_intelligence(&intelligence[..length],self.current_user.0,&crate::runtime::ai::intelligence::InstalledCapabilities));
@@ -2974,15 +2989,9 @@ impl ConsoleRuntime {
     // ------------------=
     fn cycle_voice_wake_word(&mut self) {
         let user = self.current_user;
-        let updated = crate::runtime::with_runtime(|runtime| {
-            let current = runtime.identity.voice_profile(user)?;
-            runtime
-                .identity
-                .update_wake_word(user, user, current.wake_word.next())
-                .ok()
-        })
-        .flatten()
-        .is_some();
+        let next=crate::runtime::with_runtime(|runtime|runtime.identity.voice_profile(user).map(|p|p.wake_word.next())).flatten();
+        let updated=next.is_some_and(|wake|crate::runtime::ai::with_ai_runtime(|runtime|
+            runtime.save_hermes_field(b"wake_word",wake.phrase())));
         if updated {
             let _ = crate::runtime::persist_identity_state();
             self.redraw();
@@ -11319,10 +11328,10 @@ impl ConsoleRuntime {
                     } else {
                         return Err(IdentityError::InvalidInput);
                     };
-                    crate::runtime::with_runtime(|runtime| {
-                        runtime.identity.update_wake_word(actor, actor, wake_word)
-                    })
-                    .unwrap_or(Err(IdentityError::InvalidState))?;
+                    if !crate::runtime::ai::with_ai_runtime(|runtime|
+                        runtime.save_hermes_field(b"wake_word",wake_word.phrase())){
+                        return Err(IdentityError::InvalidState);
+                    }
                 }
                 if crate::runtime::persist_identity_state() {
                     Ok(())

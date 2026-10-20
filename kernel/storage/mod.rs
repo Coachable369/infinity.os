@@ -851,6 +851,35 @@ pub(crate) fn font_preferences(owner:[u8;16], session:[u8;16], save:Option<crate
 }
 
 // ------------------------=
+// FUNC: hermes_memory
+// DESC: Loads, seeds, or edits the exact owner-bound JSON object transactionally; corrupt files are never replaced.
+// ------------------=
+pub(crate) fn hermes_memory(owner:[u8;16],session:[u8;16],name:&[u8],wake:&[u8],edit:Option<(&[u8],&[u8])>)
+    ->Result<crate::runtime::ai::hermes_profile::Document,object::ObjectError>{
+    use crate::runtime::ai::hermes_profile::{Document,MAX_BYTES,PATH};
+    let _=browser_favorites_path(owner,session)?;
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|{
+        let id=match store.resolve(PATH){Ok(id)=>Some(id),
+            Err(object::ObjectError::NotFound|object::ObjectError::NamespaceNotFound)=>None,Err(e)=>return Err(e)};
+        let value=if let Some(id)=id{
+            let mut bytes=[0;MAX_BYTES];
+            let n=store.read_hermes_memory(id,object::ObjectId(owner),&mut bytes)?;
+            Document::parse(&bytes[..n],owner).map_err(|_|object::ObjectError::CorruptContent)?
+        }else{Document::new(owner,name,wake).map_err(|_|object::ObjectError::CorruptContent)?};
+        let next=if let Some((key,value_bytes))=edit{
+            value.updated(owner,key,value_bytes).map_err(|_|object::ObjectError::CorruptContent)?
+        }else{value};
+        if let Some(id)=id{if edit.is_some(){store.replace_state(id,next.bytes())?;}}
+        else{store.create_owned_attached(b"@hermes-memory",object::ObjectType::Metadata,
+            object::Space::System,next.bytes(),PATH,object::ObjectId(owner))?;}
+        Ok(next)
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=(name,wake,edit);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: wallpaper_preference
 // DESC: Persists an authenticated owner's image reference; source ownership is rechecked on every login.
 // ------------------=

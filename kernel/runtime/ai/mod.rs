@@ -12,6 +12,7 @@ pub mod intent;
 pub mod kit;
 pub mod mapping;
 pub mod memory;
+pub mod hermes_profile;
 pub mod model;
 pub mod provider;
 pub mod qwen;
@@ -144,6 +145,8 @@ pub struct AiRuntime {
     app_progress_ns: Option<u64>,
     app_progress_tokens: usize,
     chat_owner: [u8; 16],
+    hermes_session: [u8; 16],
+    hermes_memory: Option<hermes_profile::Document>,
     requests: RequestApi,
     execution: ExecutionBroker,
     intelligence: intelligence::Service,
@@ -187,6 +190,9 @@ impl AiRuntime {
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
+        if hermes_profile::edit_command(input).is_some(){
+            return Ok(RequestRoute::Inference(InferenceMode::Conversation));
+        }
         let software_goal=crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
         if let (RequestRoute::Control(command), false) = (route, software_goal) {
             self.execution
@@ -628,6 +634,8 @@ impl AiRuntime {
     // ------------------=
     pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
         if self.chat_owner != owner {
+            self.hermes_memory = None;
+            self.hermes_session = [0;16];
             self.stop_application_agent();
             self.cancel_app_turn();
             self.execution.cancel();
@@ -653,6 +661,40 @@ impl AiRuntime {
             self.chat_owner = owner;
         }
     }
+    // ------------------------=
+    // FUNC: load_hermes_memory
+    // DESC: Publishes authenticated profile state and invalidates cached native prompts on changes.
+    // ------------------=
+    pub fn load_hermes_memory(&mut self,session:[u8;16],document:Option<hermes_profile::Document>) {
+        let changed=self.hermes_memory.as_ref().map(|d|d.bytes())!=document.as_ref().map(|d|d.bytes());
+        self.hermes_session=session;
+        self.hermes_memory=document;
+        if changed {
+            if let Some(service)=self.qwen.as_mut(){service.clear_conversation();}
+            if let Some(service)=self.other_native.as_mut(){service.clear_conversation();}
+        }
+    }
+
+    // ------------------------=
+    // FUNC: save_hermes_field
+    // DESC: Acknowledges taught preferences only after an authenticated durable commit.
+    // ------------------=
+    #[cfg(target_os="none")]
+    pub fn save_hermes_field(&mut self,key:&[u8],value:&[u8])->bool {
+        if self.qwen.as_ref().is_some_and(|s|s.busy()) || self.app_owner.is_some(){return false;}
+        let Ok(document)=crate::storage::hermes_memory(self.chat_owner,self.hermes_session,b"",b"Infinity",Some((key,value))) else{return false;};
+        if key==b"wake_word" {
+            let wake=if value==b"Computer"{crate::runtime::identity::WakeWord::Computer}else{crate::runtime::identity::WakeWord::Infinity};
+            crate::runtime::with_runtime(|runtime|{
+                let owner=crate::runtime::identity::StableId(self.chat_owner);
+                let _=runtime.identity.update_wake_word(owner,owner,wake);
+            });
+            let _=crate::runtime::persist_identity_state();
+        }
+        self.load_hermes_memory(self.hermes_session,Some(document));
+        true
+    }
+
     // ------------------------=
     // FUNC: cancel_chat
     // DESC: Cancels active native generation while preserving its partial response.
@@ -749,6 +791,18 @@ impl AiRuntime {
         let Ok(route) = self.route_request(&input[..length], origin) else {
             return false;
         };
+        #[cfg(target_os="none")]
+        if let Some((key,value))=hermes_profile::edit_command(&input[..length]) {
+            let saved=self.save_hermes_field(key,value);
+            self.chat.begin_native_turn();
+            self.chat.update_native_response(if saved {
+                b"Saved to /System/hermes-memory1.json."
+            }else{
+                b"Memory was not saved. Check the field, value, active owner, and storage. Existing memory has been preserved."
+            });
+            self.chat.generation_state=chat::GenerationState::Complete;
+            return true;
+        }
         if matches!(route, RequestRoute::Control(_)) {
             self.chat.begin_native_turn();
             self.chat.generation_state = chat::GenerationState::Running;
@@ -790,8 +844,20 @@ impl AiRuntime {
         }
         let submitted_ns = crate::ui::performance::monotonic_ns();
         let input = self.chat.input();
-        let submitted = if route == RequestRoute::Inference(InferenceMode::Conversation) { service.submit(input) }
-            else { service.submit_desktop(input, control::INSTRUCTIONS) };
+        let mut prefix=[0u8;4096];
+        let prefix_len=if let Some(profile)=self.hermes_memory.as_ref(){
+            let n=control::INSTRUCTIONS.len();
+            if n>prefix.len(){return false;}
+            prefix[..n].copy_from_slice(control::INSTRUCTIONS);
+            match profile.context(&mut prefix[n..]){Ok(size)=>n+size,Err(_)=>return false}
+        }else{0};
+        let submitted = if prefix_len>0 {
+            service.submit_desktop(input,&prefix[..prefix_len])
+        }else if route == RequestRoute::Inference(InferenceMode::Conversation) {
+            service.submit(input)
+        } else {
+            service.submit_desktop(input, control::INSTRUCTIONS)
+        };
         if let Err(error) = submitted {
             self.chat.generation_state = if error == qwen::gguf::Error::Overflow {
                 chat::GenerationState::ContextFull
@@ -1053,6 +1119,8 @@ impl AiRuntime {
             app_progress_ns: None,
             app_progress_tokens: 0,
             chat_owner: [0; 16],
+            hermes_session: [0;16],
+            hermes_memory: None,
             requests: RequestApi::new(),
             execution: ExecutionBroker::new(),
             intelligence: intelligence::Service::new(),

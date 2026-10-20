@@ -1480,7 +1480,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     fn allow_public_spatial_access(&self,id:ObjectId)->Result<(),ObjectError> {
         let record=&self.state.objects[self.object_index(id)?];
-        if record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences"|b"@python-packages") {
+        if record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@hermes-memory"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences"|b"@python-packages") {
             Err(ObjectError::Unauthorized)
         }else{Ok(())}
     }
@@ -1502,6 +1502,19 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub(crate) fn read_wallpaper_preference(&mut self,id:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
         let record=&self.state.objects[self.object_index(id)?];
         if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@wallpaper"{return Err(ObjectError::Unauthorized);}
+        self.read_internal(id,None,out)
+    }
+
+    // ------------------------=
+    // FUNC: read_hermes_memory
+    // DESC: Reads the owner-bound private Hermes document after session authorization.
+    // ------------------=
+    pub(crate) fn read_hermes_memory(&mut self,id:ObjectId,owner:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
+        let record=&self.state.objects[self.object_index(id)?];
+        if record.space!=Space::System as u8 || record.owner!=owner
+            || &record.name[..record.name_len as usize]!=b"@hermes-memory" {
+            return Err(ObjectError::Unauthorized);
+        }
         self.read_internal(id,None,out)
     }
 

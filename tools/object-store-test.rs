@@ -6,6 +6,34 @@ mod favorites;
 #[path="../kernel/runtime/font_preferences.rs"]
 mod font_preferences;
 
+#[path="../kernel/runtime/ai/hermes_profile.rs"]
+mod hermes_profile;
+
+// ------------------------=
+// FUNC: hermes_persistence
+// DESC: Exercises private JSON ownership, durable replacement and disk-only reload using native object storage.
+// ------------------=
+fn hermes_persistence(){
+    let sectors=STORE_RELATIVE_LBA as usize+32_768;
+    let disk=MemoryDisk::new(sectors);
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[9;16]).unwrap();
+    let owner=storage::object::ObjectId([1;16]);
+    let document=hermes_profile::Document::new(owner.0,b"Alex",b"Infinity").unwrap();
+    let id=store.create_owned_attached(b"@hermes-memory",ObjectType::Metadata,Space::System,
+        document.bytes(),hermes_profile::PATH,owner).unwrap();
+    let mut out=[0;hermes_profile::MAX_BYTES];
+    assert_eq!(store.read(id,None,&mut out),Err(ObjectError::Unauthorized));
+    assert_eq!(store.read_hermes_memory(id,storage::object::ObjectId([2;16]),&mut out),Err(ObjectError::Unauthorized));
+    let updated=document.updated(owner.0,b"preferences",b"Use metric units").unwrap();
+    store.replace_state(id,updated.bytes()).unwrap();
+    drop(store);
+    let mut installed=ObjectStore::mount(disk,0).unwrap();
+    assert_eq!(installed.resolve(hermes_profile::PATH).unwrap(),id);
+    let n=installed.read_hermes_memory(id,owner,&mut out).unwrap();
+    assert_eq!(&out[..n],updated.bytes());
+    assert!(hermes_profile::Document::parse(&out[..n],owner.0).is_ok());
+}
+
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -281,6 +309,7 @@ impl ObjectCapabilityPolicy for Deny {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--hermes-memory-only"){hermes_persistence();return;}
     if std::env::args().any(|arg|arg=="--namespace-expansion-only") {
         namespace_expansion();return;
     }

@@ -50,6 +50,10 @@ clean = false
 command = ["make", "test"]
 clean = false
 
+[profiles.hermes-memory-tests]
+command = ["sh", "-c", "mkdir -p build/tests && rustc --edition=2021 --test tools/hermes-memory-test.rs -o build/tests/hermes-memory-test && build/tests/hermes-memory-test && rustc --edition=2021 -O tools/object-store-test.rs -o build/tests/object-store-test && build/tests/object-store-test --hermes-memory-only"]
+clean = false
+
 [profiles.file-preview-tests]
 command = ["cargo", "test", "--manifest-path", "tools/file-preview-harness/Cargo.toml"]
 clean = false
