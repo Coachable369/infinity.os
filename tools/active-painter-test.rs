@@ -110,6 +110,7 @@ impl DisplayDevice {
     // FUNC: active_accent_surface
     // DESC: Resolves fixture tints through the production semantic skin implementation used by application painters.
     // ------------------=
+    #[cfg(not(test))]
     fn active_accent_surface(&self,surface:ui::skin::AccentSurface)->(u8,u8,u8) {
         let mut skins=ui::skin::SkinRegistry::new();
         skins.set_primary(self.active_primary_rgb(),ui::skin::AppearanceScope::Session).unwrap();

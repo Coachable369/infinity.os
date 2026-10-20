@@ -259,7 +259,7 @@ impl DisplayDevice {
     // FUNC: active_accent_surface
     // DESC: Uses the real default skin registry for semantic glass colors.
     // ------------------=
-    fn active_accent_surface(&self, surface: crate::ui::skin::AccentSurface) -> (u8, u8, u8) {
+    pub(super) fn active_accent_surface(&self, surface: crate::ui::skin::AccentSurface) -> (u8, u8, u8) {
         crate::ui::skin::SkinRegistry::new()
             .accent_surface(surface)
             .channels()
@@ -309,7 +309,10 @@ fn empty_shelf_has_no_icon() {
     let state = State::new();
     let rail = Geometry::new(width, height, state).rail;
     let (x, y, w, h) = (rail.x as usize, rail.y as usize, rail.width as usize, rail.height as usize);
-    display.glass_panel(x, y, w, h, true);
+    // Empty means no icon ink over the shelf's actual Eclipse glass recipe,
+    // not a different strong/default-palette panel used by older chrome.
+    display.glass_panel_with_palette(x, y, w, h, false,
+        (16, 27, 58), (194, 219, 245));
     let glass = pixels.clone();
     pixels.fill(0x102336u32);
     shelf::publish(state);
@@ -319,6 +322,12 @@ fn empty_shelf_has_no_icon() {
         let start = row * width + x + w / 2 - size / 2;
         assert_eq!(&pixels[start..start + size], &glass[start..start + size]);
     }
+    // Positive control: the same exact comparison must detect real icon ink.
+    display.launcher_icon(x + w / 2, y + h / 2 - 20, 26, size);
+    assert!((y + h / 2 - 20 - size / 2..y + h / 2 - 20 + size / 2).any(|row| {
+        let start = row * width + x + w / 2 - size / 2;
+        pixels[start..start + size] != glass[start..start + size]
+    }));
 }
 
 #[test]
