@@ -383,10 +383,139 @@ fn panels() {
         .is_none());
 }
 // ------------------------=
+// FUNC: runtime_repair_requires_current_source_and_never_replays
+// DESC: Exercises shared retry limits, stale-source rejection, atomic preservation and validation-only authority after real runtime feedback.
+// ------------------=
+fn runtime_repair_requires_current_source_and_never_replays() {
+    use ai::{Panel, GenerationStatus as S};
+    let request=b"Create a Python application and launch it";
+    let source=b"print(int('oops'))\n";
+    let mut panel=Panel::new();
+    panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+    panel.generation=S::Complete;panel.document_revision=17;panel.workflow_goal=Some(42);
+    panel.source_language=ai::editor_compile_intent::SourceLanguage::Python;
+    assert!(panel.permits_generated_launch());
+    let before=panel;
+    assert!(!panel.queue_runtime_repair(request,17,17,b"ValueError"));assert!(panel==before);
+    panel.source_binding=Some(([3;16],5));let before=panel;
+    assert!(!panel.queue_runtime_repair(request,17,18,b"ValueError"));assert!(panel==before);
+    assert!(!panel.queue_runtime_repair(b"other request",17,17,b"ValueError"));assert!(panel==before);
+    assert!(!panel.queue_runtime_repair(request,17,17,b""));assert!(panel==before);
+    assert!(panel.queue_runtime_repair(request,17,17,b"ValueError: invalid literal at line 1"));
+    assert_eq!(panel.workflow_goal,None);assert_eq!(panel.repair_attempts,1);
+    assert_eq!(panel.source_binding,Some(([3;16],5)));assert!(panel.runtime_repair);
+    assert!(!panel.permits_generated_launch());assert!(panel.preserves_existing_source());
+    let mut document=TextDocument::new();assert!(document.open(source));
+    assert!(!panel.apply_existing_source(&mut document,17,None));assert_eq!(document.bytes(),source);
+    panel.generation=S::Complete;
+    assert!(panel.queue_compiler_repair(request,17,17,b"SyntaxError"));
+    assert!(!panel.permits_generated_launch());assert_eq!(panel.repair_attempts,2);
+    panel.generation=S::Complete;let exhausted=panel;
+    assert!(!panel.queue_runtime_repair(request,17,17,b"TypeError"));assert!(panel==exhausted);
+    panel.cancel_delivery();assert!(!panel.queue_runtime_repair(request,17,17,b"ValueError"));
+    assert_eq!(document.bytes(),source);
+}
+
+// ------------------------=
+// FUNC: runtime_repair_rejects_unchanged_source
+// DESC: Checks real editor no-op rejection, original-diagnostic retention, remaining retry bounds, cancellation and successful atomic replacement without relaunch authority.
+// ------------------=
+fn runtime_repair_rejects_unchanged_source() {
+    use ai::{Panel, GenerationStatus as S};
+    // ------------------------=
+    // FUNC: completed
+    // DESC: Supplies one completed source proposal without executing or altering candidate bytes.
+    // ------------------=
+    fn completed(panel: &mut Panel, source: &[u8]) {
+        panel.argument[..source.len()].copy_from_slice(source);
+        panel.argument_len = source.len();
+        panel.pending = Action::ReplaceCompile;
+        panel.generation = S::Complete;
+    }
+    for (request, original, changed) in [
+        (b"Create a Python application".as_slice(),
+            b"print(int('bad'))\n".as_slice(), b"print(4)\n".as_slice()),
+        (b"Create a C application".as_slice(),
+            b"int main(void) { return *(int *)0; }\n".as_slice(), b"int main(void) { return 4; }\n".as_slice()),
+    ] {
+        let diagnostics = [7u8,31,85,112,4];
+        let mut base = Panel::new();
+        base.request[..request.len()].copy_from_slice(request); base.request_len = request.len();
+        base.generation = S::Complete; base.document_revision = 11;
+        base.source_binding = Some(([7;16],3)); base.workflow_goal = Some(23);
+        assert!(base.queue_runtime_repair(request,11,11,&diagnostics));
+        assert_eq!(base.repair_attempts,1); assert!(!base.runtime_repair_noop);
+        for candidate in [original.to_vec(), original.trim_ascii_end().to_vec(),
+            [original.trim_ascii_end(), b"\r\n \t\n"].concat()] {
+            let mut panel = base;
+            let mut document = TextDocument::new(); assert!(document.open(original));
+            document.set_cursor(3);
+            let cursor = document.cursor(); let selection = document.selection();
+            completed(&mut panel,&candidate);
+            let stale = panel;
+            assert!(!panel.apply_existing_source(&mut document,12,None));
+            assert!(panel==stale);
+            assert!(!panel.apply_existing_source(&mut document,11,None));
+            assert_eq!(panel.generation,S::Queued);
+            assert_eq!(panel.repair_attempts,2);
+            assert!(panel.runtime_repair_noop && panel.runtime_repair);
+            assert_eq!(panel.source_binding,Some(([7;16],3)));
+            assert_eq!(panel.workflow_goal,None);
+            assert_eq!(&panel.repair_diagnostics[..panel.repair_diagnostics_len],&diagnostics);
+            assert_eq!(panel.argument_len,0); assert_eq!(panel.pending,Action::None);
+            assert!(!panel.apply_generated_compile_requested() && !panel.permits_generated_launch());
+            assert_eq!(document.bytes(),original);
+            assert_eq!(document.cursor(),cursor); assert_eq!(document.selection(),selection);
+            assert!(document.is_saved()); assert!(!document.undo());
+            let queued = panel;
+            assert!(!panel.apply_existing_source(&mut document,11,None)); assert!(panel==queued);
+            assert!(!panel.queue_compiler_repair(request,11,11,&diagnostics));
+            let mut prompt = [0u8;16384];
+            assert!(panel.compiler_repair_prompt(document.bytes(),&mut prompt).is_some());
+
+            let mut cancelled = panel;
+            cancelled.cancel_delivery();
+            assert!(!cancelled.stream_model_output(2,b"REPLACE_COMPILE\nprint(4)\nEND_ACTION").progressed);
+            assert!(!cancelled.apply_existing_source(&mut document,11,None));
+            assert_eq!(cancelled.generation,S::Cancelled);
+            assert_eq!(cancelled.repair_attempts,2);
+            assert_eq!(document.bytes(),original);
+
+            completed(&mut panel,&candidate);
+            assert!(!panel.apply_existing_source(&mut document,11,None));
+            assert_eq!(panel.generation,S::Failed);
+            assert_eq!(panel.repair_attempts,2);
+            assert_eq!(panel.pending,Action::None); assert_eq!(panel.argument_len,0);
+            assert_eq!(&panel.repair_diagnostics[..panel.repair_diagnostics_len],&diagnostics);
+            assert!(!panel.apply_generated_compile_requested() && !panel.permits_generated_launch());
+            assert_eq!(document.bytes(),original); assert!(document.is_saved());
+            let exhausted = panel;
+            assert!(!panel.apply_existing_source(&mut document,11,None)); assert!(panel==exhausted);
+            assert!(!panel.queue_runtime_repair(request,11,11,&diagnostics));
+
+            let mut corrected = queued;
+            completed(&mut corrected,changed);
+            assert!(corrected.apply_existing_source(&mut document,11,None));
+            assert_eq!(document.bytes(),changed); assert_eq!(corrected.repair_attempts,2);
+            assert!(!corrected.permits_generated_launch());
+            assert!(document.undo()); assert_eq!(document.bytes(),original);
+        }
+        let mut unbound = base; unbound.source_binding = None;
+        let mut document = TextDocument::new(); assert!(document.open(original));
+        completed(&mut unbound,original);
+        assert!(!unbound.apply_existing_source(&mut document,11,None));
+        assert_eq!(unbound.generation,S::Failed); assert_eq!(unbound.repair_attempts,1);
+        assert_eq!(document.bytes(),original);
+    }
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    runtime_repair_requires_current_source_and_never_replays();
+    runtime_repair_rejects_unchanged_source();
     source_frame_tests::run();
     python_and_existing_source_workflows();
     raw_python_generation_frames();

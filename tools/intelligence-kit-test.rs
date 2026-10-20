@@ -438,14 +438,28 @@ fn runtime_failure_releases_waiting_chat() {
         }
         let turn=ai.chat.turn_id();
         let chat_state=ai.chat.state_hash();
+        assert_eq!(ai.take_intelligence_checkpoint_request(),Some(1));
+        assert_eq!(ai.take_intelligence_checkpoint_request(),None);
         assert!(!ai.record_software_event(1,owner,Event::RuntimeFailed {
             source:[2;16],revision:11,context:99,code:3,
         }));
         assert_eq!(ai.chat.state_hash(),chat_state);
+        assert_eq!(ai.take_intelligence_checkpoint_request(),None);
         assert!(ai.record_software_event(1,owner,Event::RuntimeFailed {
             source:[2;16],revision:12,context:99,code:3,
         }));
         assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Failed);
+        let checkpoint_goal=ai.take_intelligence_checkpoint_request().unwrap();
+        assert_eq!(checkpoint_goal,1);
+        assert_eq!(ai.take_intelligence_checkpoint_request(),None);
+        let mut checkpoint=[0;runtime::ai::intelligence::MAX_STATE_BYTES];
+        let length=ai.checkpoint_intelligence(checkpoint_goal,owner,&mut checkpoint).unwrap();
+        assert!(length>80);
+        assert_eq!(u64::from_le_bytes(checkpoint[8..16].try_into().unwrap()),1);
+        assert_eq!(&checkpoint[16..32],&owner);
+        assert_eq!(checkpoint[33],PlanState::Failed as u8);
+        assert_eq!(u16::from_le_bytes(checkpoint[36..38].try_into().unwrap()),
+            ai.intelligence_plan(1,owner).unwrap().revision);
         assert_eq!(ai.software_execution_id(),None);
         assert_eq!(ai.app_turn_owner(),None);
         assert_eq!(ai.chat.turn_id(),turn);
@@ -464,6 +478,136 @@ fn runtime_failure_releases_waiting_chat() {
         ai.finish_control(Command::Browser,true);
         assert_eq!(ai.chat.generation_state,GenerationState::Complete);
         assert!(!ai.control_pending());
+    }
+}
+
+// ------------------------=
+// FUNC: delayed_runtime_failure_keeps_exact_checkpoint
+// DESC: Persists an older app failure after a new complex goal is proposed without changing that goal, chat turn or subsequent native dispatch.
+// ------------------=
+fn delayed_runtime_failure_keeps_exact_checkpoint() {
+    use runtime::ai::{control::Command,intelligence::software::Event};
+    let owner=[7;16];
+    let mut ai=runtime::ai::AiRuntime::new();ai.bind_chat_owner(owner);
+    for byte in b"create a graphical notes app" {assert!(ai.chat.push_input(*byte));}
+    assert!(ai.submit_voice_chat());assert!(ai.poll_qwen());
+    let first=ai.take_control(owner,true).unwrap();
+    ai.finish_control(first,true);ai.poll_qwen();
+    assert!(ai.record_software_event(1,owner,Event::SourceSaved{object:[2;16],revision:12}));
+    assert!(ai.record_software_event(1,owner,Event::Compiled{artifact:[3;16]}));
+    ai.poll_qwen();
+    assert!(ai.record_software_event(1,owner,Event::Launched{context:99}));
+    ai.poll_qwen();
+    assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Completed);
+    assert_eq!(ai.take_intelligence_checkpoint_request(),Some(1));
+    assert_eq!(ai.take_intelligence_checkpoint_request(),None);
+    for byte in b"create a graphical calendar app" {assert!(ai.chat.push_input(*byte));}
+    assert!(ai.submit_voice_chat());
+    let proposed=*ai.intelligence_plan(2,owner).unwrap();
+    let chat=ai.chat.state_hash();
+    let turn=ai.chat.turn_id();
+    assert_eq!(ai.software_execution(owner).unwrap().goal,1);
+    assert_eq!(ai.app_turn_owner(),None);
+    assert!(ai.record_software_event(1,owner,Event::RuntimeFailed {
+        source:[2;16],revision:12,context:99,code:3,
+    }));
+    assert_eq!(*ai.intelligence_plan(2,owner).unwrap(),proposed);
+    assert_eq!(ai.chat.state_hash(),chat);
+    assert_eq!(ai.chat.turn_id(),turn);
+    assert_eq!(ai.app_turn_owner(),None);
+    let failed=ai.take_intelligence_checkpoint_request().unwrap();
+    assert_eq!(failed,1);
+    let mut checkpoint=[0;runtime::ai::intelligence::MAX_STATE_BYTES];
+    let length=ai.checkpoint_intelligence(failed,owner,&mut checkpoint).unwrap();
+    assert!(length>80);
+    assert_eq!(u64::from_le_bytes(checkpoint[8..16].try_into().unwrap()),1);
+    assert_eq!(&checkpoint[16..32],&owner);
+    assert_eq!(checkpoint[33],PlanState::Failed as u8);
+    assert_eq!(ai.take_intelligence_checkpoint_request(),Some(2));
+    assert_eq!(ai.take_intelligence_checkpoint_request(),None);
+    assert_eq!(*ai.intelligence_plan(2,owner).unwrap(),proposed);
+    assert!(ai.poll_qwen());
+    assert_eq!(ai.software_goal_for_request(b"create a graphical calendar app"),Some(2));
+    let second=ai.take_control(owner,true).unwrap();
+    assert!(matches!(second,Command::Context(_)));
+    ai.finish_control(second,true);ai.poll_qwen();
+    assert_eq!(ai.intelligence_plan(2,owner).unwrap().tasks[0].unwrap().state,TaskState::Running);
+    assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Failed);
+}
+
+// ------------------------=
+// FUNC: generated_cancellation_preserves_newer_work
+// DESC: Cancels exact native preparation or launched provenance, retaining newer simple/complex requests and refusing stale receipts.
+// ------------------=
+fn generated_cancellation_preserves_newer_work() {
+    use runtime::ai::{chat::GenerationState,control::Command,intelligence::software::Event};
+    let owner=[7;16];
+    for next in 0..4 {
+        let context=if next==3 {0}else{99};
+        let newer_request=next==1 || next==2;
+        let mut ai=runtime::ai::AiRuntime::new();ai.bind_chat_owner(owner);
+        for byte in b"create a graphical notes app" {assert!(ai.chat.push_input(*byte));}
+        assert!(ai.submit_voice_chat());assert!(ai.poll_qwen());
+        let command=ai.take_control(owner,true).unwrap();
+        ai.finish_control(command,true);ai.poll_qwen();
+        assert!(ai.record_software_event(1,owner,Event::SourceSaved{object:[2;16],revision:12}));
+        assert!(ai.record_software_event(1,owner,Event::Compiled{artifact:[3;16]}));
+        ai.poll_qwen();
+        if context!=0 {assert!(ai.record_software_event(1,owner,Event::Launched{context}));}
+        if newer_request {
+            ai.poll_qwen();
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Completed);
+        } else {
+            assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Executing);
+            ai.chat.generation_state=GenerationState::Running;
+        }
+        assert_eq!(ai.take_intelligence_checkpoint_request(),Some(1));
+        assert_eq!(ai.take_intelligence_checkpoint_request(),None);
+        if newer_request {
+            let request=if next==1 {b"open browser".as_slice()}else{b"create a graphical calendar app".as_slice()};
+            for byte in request {assert!(ai.chat.push_input(*byte));}
+            assert!(ai.submit_voice_chat());
+        }
+        let old=*ai.intelligence_plan(1,owner).unwrap();
+        let newer=ai.intelligence_plan(2,owner).copied();
+        let chat=ai.chat.state_hash();let turn=ai.chat.turn_id();
+        for (goal,user,source,revision,context) in [
+            (2,owner,[2;16],12,context),(1,[9;16],[2;16],12,context),
+            (1,owner,[4;16],12,context),(1,owner,[2;16],11,context),
+            (1,owner,[2;16],12,if context==0 {99}else{0}),(1,owner,[2;16],12,100),
+        ] {
+            assert!(!ai.cancel_generated_execution(goal,user,source,revision,context));
+            assert_eq!(*ai.intelligence_plan(1,owner).unwrap(),old);
+            assert_eq!(ai.chat.state_hash(),chat);
+        }
+        assert!(ai.cancel_generated_execution(1,owner,[2;16],12,context));
+        assert_eq!(ai.intelligence_plan(1,owner).unwrap().state,PlanState::Cancelled);
+        assert!(!ai.cancel_generated_execution(1,owner,[2;16],12,context));
+        assert!(!ai.record_software_event(1,owner,Event::RuntimeFailed{
+            source:[2;16],revision:12,context,code:3}));
+        assert_eq!(ai.take_intelligence_checkpoint_request(),Some(1));
+        let mut checkpoint=[0;runtime::ai::intelligence::MAX_STATE_BYTES];
+        assert!(ai.checkpoint_intelligence(1,owner,&mut checkpoint).unwrap()>80);
+        assert_eq!(checkpoint[33],PlanState::Cancelled as u8);
+        assert_eq!(ai.chat.turn_id(),turn);
+        if !newer_request {
+            assert_eq!(ai.chat.generation_state,GenerationState::Cancelled);
+            assert!(!ai.control_pending());assert!(!ai.poll_qwen());
+            for byte in b"open browser" {assert!(ai.chat.push_input(*byte));}
+            assert!(ai.submit_voice_chat());
+        } else {
+            assert_eq!(ai.chat.state_hash(),chat);
+            assert_eq!(ai.intelligence_plan(2,owner).copied(),newer);
+        }
+        if next!=2 {
+            assert_eq!(ai.take_control(owner,true),Some(Command::Browser));
+            ai.finish_control(Command::Browser,true);
+            assert_eq!(ai.chat.generation_state,GenerationState::Complete);
+        } else {
+            assert!(ai.poll_qwen());
+            assert_eq!(ai.software_goal_for_request(b"create a graphical calendar app"),Some(2));
+            assert!(matches!(ai.take_control(owner,true),Some(Command::Context(_))));
+        }
     }
 }
 
@@ -594,6 +738,8 @@ fn main() {
     software_runtime_failure_plan();
     native_software_plan();
     runtime_failure_releases_waiting_chat();
+    delayed_runtime_failure_keeps_exact_checkpoint();
+    generated_cancellation_preserves_newer_work();
     interrupt_software_plan();
     queued_goal_fencing();
     completed_source_edit_fence();

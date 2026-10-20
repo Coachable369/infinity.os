@@ -48,6 +48,14 @@ pub enum Failure {
 
 impl Failure {
     // ------------------------=
+    // FUNC: observed_failure
+    // DESC: Separates terminal lifecycle failure from source-repair eligibility; normal exit and explicit cancellation are not failures.
+    // ------------------=
+    pub const fn observed_failure(self) -> bool {
+        !matches!(self, Self::Exit(0) | Self::Cancelled)
+    }
+
+    // ------------------------=
     // FUNC: repairable
     // DESC: Distinguishes observed program failures from normal exit, STOP and execution infrastructure/resource failures.
     // ------------------=
@@ -224,7 +232,11 @@ mod tests {
             Failure::Budget, Failure::Platform, Failure::Release] {
             assert!(!snapshot.can_repair(current, failure));
             assert_eq!(snapshot.diagnostics(failure, &mut diagnostics), 0);
+            assert_eq!(failure.observed_failure(),
+                !matches!(failure, Failure::Exit(0) | Failure::Cancelled));
         }
+        assert!(Failure::Exit(1).observed_failure());
+        assert!(Failure::Fault(1, 2, 3).observed_failure());
         snapshot.binding.context = 0;
         assert!(!snapshot.can_repair(current, Failure::Exit(1)));
     }

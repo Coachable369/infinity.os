@@ -153,6 +153,7 @@ pub struct AiRuntime {
     software_execution: Option<intelligence::software::Execution>,
     intelligence_summary: Option<intelligence::PlanSummary>,
     intelligence_checkpoint_pending: bool,
+    runtime_failure_checkpoints: [Option<u64>; intelligence::MAX_GOALS],
     instruction_mapping: mapping::ConfiguredMap,
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
@@ -637,6 +638,7 @@ impl AiRuntime {
             self.software_execution = None;
             self.intelligence_summary = None;
             self.intelligence_checkpoint_pending = false;
+            self.runtime_failure_checkpoints = [None; intelligence::MAX_GOALS];
             if let Some(service) = self.qwen.as_mut() {
                 service.clear_conversation();
             }
@@ -1060,6 +1062,7 @@ impl AiRuntime {
             software_execution: None,
             intelligence_summary: None,
             intelligence_checkpoint_pending: false,
+            runtime_failure_checkpoints: [None; intelligence::MAX_GOALS],
             instruction_mapping: mapping::ConfiguredMap::new(),
             qwen_tokens: 0,
             qwen_decode_ns: 0,
@@ -1416,7 +1419,14 @@ impl AiRuntime {
     // DESC: Coalesces native ObjectStore writes to factual plan state transitions.
     // ------------------=
     pub fn take_intelligence_checkpoint_request(&mut self)->Option<u64>{
-        if !self.intelligence_checkpoint_pending{return None;}self.intelligence_checkpoint_pending=false;self.intelligence_summary.map(|summary|summary.goal_id).or(self.intelligence_goal)
+        let current=self.intelligence_summary.map(|summary|summary.goal_id).or(self.intelligence_goal);
+        if let Some(slot)=self.runtime_failure_checkpoints.iter_mut().find(|slot|slot.is_some()) {
+            let failed=slot.take();
+            if current==failed {self.intelligence_checkpoint_pending=false;}
+            return failed;
+        }
+        if !self.intelligence_checkpoint_pending{return None;}
+        self.intelligence_checkpoint_pending=false;current
     }
 
     // ------------------------=
@@ -1449,6 +1459,48 @@ impl AiRuntime {
     }
 
     // ------------------------=
+    // FUNC: cancel_generated_execution
+    // DESC: Cancels only the exact observed generated process goal through existing native cancellation, preserving newer work and granting no repair authority.
+    // ------------------=
+    pub fn cancel_generated_execution(&mut self, goal:u64, owner:[u8;16],
+        source:[u8;16], revision:u64, context:u64)->bool {
+        if source==[0;16] || revision==0
+            || !self.software_execution.as_ref().is_some_and(|execution|
+                execution.goal==goal && execution.owner==owner && execution.source==source
+                    && execution.source_revision==revision && execution.context==context)
+            || !self.intelligence.inspect(goal,owner).is_some_and(|plan|
+                if context==0 {plan.state==intelligence::PlanState::Executing}
+                else {matches!(plan.state,intelligence::PlanState::Executing
+                    | intelligence::PlanState::Completed | intelligence::PlanState::Interrupted)}) { return false; }
+        let mut executor=NativePlanExecutor {
+            broker:&mut self.execution,active:&mut self.intelligence_execution,
+            result:&mut self.intelligence_result,software:&mut self.software_execution,
+            origin:RequestOrigin::DesktopChat,
+        };
+        if self.intelligence.cancel(goal,owner,&mut executor).is_err(){return false;}
+        if let Some(execution)=self.software_execution.as_mut(){
+            execution.record(goal,owner,intelligence::software::Event::Failed{code:2});
+        }
+        if !self.runtime_failure_checkpoints.contains(&Some(goal)) {
+            if let Some(slot)=self.runtime_failure_checkpoints.iter_mut().find(|slot|slot.is_none()){
+                *slot=Some(goal);
+            }
+        }
+        if self.intelligence_goal==Some(goal) {
+            self.intelligence_goal=None;
+            self.intelligence_execution=None;
+            self.intelligence_result=None;
+            if self.chat_owner==owner && self.app_owner.is_none()
+                && !self.qwen.as_ref().is_some_and(|service|service.busy()) {
+                self.chat.update_native_response(b"The generated application was cancelled. Its saved source remains available; no repair or restart was requested.");
+                self.chat.generation_state=chat::GenerationState::Cancelled;
+            }
+        }
+        self.intelligence_checkpoint_pending=true;
+        true
+    }
+
+    // ------------------------=
     // FUNC: record_software_event
     // DESC: Records actual owner-bound storage, compiler, process, and interaction receipts without accepting generated claims.
     // ------------------=
@@ -1456,7 +1508,14 @@ impl AiRuntime {
         let accepted=self.software_execution.as_mut().is_some_and(|execution|execution.record(goal,owner,event));
         if accepted {
             if matches!(event,intelligence::software::Event::RuntimeFailed{..}) {
-                let _=self.intelligence.mark_runtime_failure(goal,owner);
+                if self.intelligence.mark_runtime_failure(goal,owner).is_ok()
+                    && !self.runtime_failure_checkpoints.contains(&Some(goal)) {
+                    // At most MAX_GOALS plans exist, so every distinct failed
+                    // plan fits without displacing a newer goal's checkpoint.
+                    if let Some(slot)=self.runtime_failure_checkpoints.iter_mut().find(|slot|slot.is_none()) {
+                        *slot=Some(goal);
+                    }
+                }
                 self.stop_application_agent();
                 // The failed app is already retired by its owning lifecycle.
                 // Do not cancel a newer inference request or reopen the plan.

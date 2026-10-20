@@ -45,4 +45,13 @@ impl Stream {
         self.flushes += 1;
         true
     }
+    // ------------------------=
+    // FUNC: replaced
+    // DESC: Records one fully accepted atomic existing-source transaction, not a streamed partial append.
+    // ------------------=
+    pub fn replaced(&mut self, length: usize, now: Option<u64>) {
+        self.delivered = length;
+        self.last_flush = now;
+        self.flushes += 1;
+    }
 }
