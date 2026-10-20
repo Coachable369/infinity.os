@@ -123,12 +123,11 @@ from pip._internal.cli.main import main
 from pip._internal.models.wheel import Wheel
 from pip._internal.utils.compatibility_tags import get_supported
 assert pip.__version__ == "26.2.1"
-try:
-    mmap.mmap(-1, 4096)
-except OSError as error:
-    assert error.errno == errno.ENOTSUP
-else:
-    raise AssertionError("Unsupported file mapping claimed success")
+with mmap.mmap(-1, 4096) as region:
+    assert region[:] == bytes(4096)
+    region[:4] = b"test"
+    assert region[:4] == b"test"
+assert region.closed
 parser = expat.ParserCreate()
 assert parser.Parse(b"<packages><package name='sample'/></packages>", True) == 1
 assert parser.ErrorCode == 0
