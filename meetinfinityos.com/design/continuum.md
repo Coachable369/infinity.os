@@ -52,3 +52,13 @@ Capture actual desktop and mobile frames. Check no overflow or text/art overlap.
 Prove canvas pixels change at rest and after scrolling, geometry has real depth,
 electrical pulse position advances, and pause/reduced-motion stop the animation.
 Check original logo derivative pixels, all image loads and console errors.
+
+## Whitepaper Reading Page
+
+Reuse the existing wordmark, navigation, thin rules, cyan focus state and Inter
+roles. No new illustration or icon family is needed. The document is an unframed
+editorial layout: a 56px title, 28px subtitle, 16px/1.85 reading text limited to
+68 characters, and a 220px sticky contents column. On mobile, contents precede
+the article and the title steps to 40px. Use an active cyan navigation underline.
+Print uses black text on white and removes site navigation. Content is a public
+design-direction overview, not a performance claim or release specification.

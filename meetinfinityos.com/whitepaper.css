@@ -1,0 +1,64 @@
+.paper-heading, .paper-layout { max-width: 1320px; margin-inline: auto; padding-inline: var(--gutter); }
+.paper-heading { padding-top: 150px; padding-bottom: 48px; }
+.paper-label { display: flex; justify-content: space-between; gap: 24px; align-items: center; color: var(--cyan); }
+.paper-label time { color: var(--muted); font-size: 12px; }
+.paper-heading h1 { margin-top: 36px; font-size: 56px; font-weight: 500; }
+.paper-heading h1 span { font-weight: 300; color: var(--ice); }
+.paper-subtitle { font-size: 28px; font-weight: 350; margin-top: 20px; line-height: 1.4; }
+.paper-deck { color: var(--muted); max-width: 560px; margin-top: 16px; font-size: 16px; }
+.paper-meta { display: flex; flex-wrap: wrap; gap: 12px 28px; padding-top: 28px; margin-top: 32px; border-top: 1px solid var(--line); color: #a6b2c2; font: 10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.paper-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 64px; padding-bottom: 96px; }
+.paper-contents { align-self: start; position: sticky; top: 110px; padding-top: 8px; }
+.paper-contents .eyebrow { color: var(--muted); margin-bottom: 18px; }
+.paper-contents a { display: flex; gap: 14px; align-items: baseline; min-height: 44px; padding-block: 10px; font-size: 12px; line-height: 1.7; color: #b8c3d2; border-bottom: 1px solid #ffffff10; }
+.paper-contents a:hover { color: var(--cyan); }
+.paper-contents a span { font: 10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; color: #6d8aa9; }
+.paper-body { max-width: 68ch; min-width: 0; font-size: 16px; line-height: 1.85; color: #bac3cf; }
+.paper-body p + p { margin-top: 20px; }
+.paper-abstract { padding: 0 0 36px; }
+.paper-abstract .eyebrow { color: var(--cyan); margin-bottom: 20px; }
+.paper-abstract > p:nth-child(2) { color: var(--paper); font-size: 19px; line-height: 1.7; }
+.paper-body section { border-top: 1px solid var(--line); padding-block: 40px; }
+.paper-number { color: #849ab5; font: 10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.paper-body h2 { font-size: 28px; line-height: 1.3; font-weight: 450; color: var(--paper); margin: 16px 0 24px; }
+.paper-body blockquote { margin: 32px 0 0; padding-left: 24px; border-left: 2px solid var(--cyan); font-size: 22px; line-height: 1.5; color: var(--ice); font-weight: 350; }
+.paper-end { border-top: 1px solid var(--line); padding-top: 28px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 24px; align-items: center; }
+.paper-end > a { font-size: 12px; color: var(--cyan); min-height: 44px; display: inline-flex; align-items: center; }
+.paper-end > a:last-child { color: var(--muted); }
+@media(max-width:1000px) {
+  .paper-layout { grid-template-columns: 190px minmax(0,1fr); gap: 40px; }
+}
+@media(max-width:760px) {
+  .paper-heading { padding-top: 112px; padding-bottom: 32px; }
+  .paper-heading h1 { font-size: 40px; line-height: 1.15; margin-top: 28px; }
+  .paper-heading h1 span { display: block; }
+  .paper-subtitle { font-size: 23px; }
+  .paper-deck { font-size: 14px; }
+  .paper-meta { gap: 8px 20px; font-size: 9px; }
+  .paper-layout { grid-template-columns: 1fr; gap: 40px; padding-bottom: 64px; }
+  .paper-contents { position: static; padding: 0; }
+  .paper-body { font-size: 15px; }
+  .paper-abstract > p:nth-child(2) { font-size: 18px; }
+  .paper-body h2 { font-size: 25px; }
+  .paper-body blockquote { font-size: 20px; }
+  .no-js .paper-heading { padding-top: 36px; }
+}
+@media print {
+  @page { margin: 18mm; }
+  html { scroll-behavior: auto; }
+  body { background: white; color: black; font-size: 11pt; }
+  .site-header, .skip-link, .paper-contents, .paper-end, footer { display: none; }
+  .paper-heading, .paper-layout { max-width: none; padding: 0; }
+  .paper-heading { margin-bottom: 28px; }
+  .paper-heading h1 { font-size: 32pt; }
+  .paper-heading h1 span { display: inline; }
+  .paper-subtitle { font-size: 18pt; }
+  .paper-layout { display: block; }
+  .paper-body { max-width: none; font-size: 11pt; line-height: 1.65; }
+  .whitepaper-page main * { color: black; border-color: #999; }
+  .paper-body section { padding-block: 24px; }
+  .paper-body h2 { font-size: 18pt; break-after: avoid; }
+  .paper-number { break-after: avoid; }
+  .paper-body p { orphans: 3; widows: 3; }
+  .paper-body blockquote { break-inside: avoid; font-size: 15pt; }
+}

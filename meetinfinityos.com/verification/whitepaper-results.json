@@ -1,0 +1,42 @@
+{
+  "desktop": {
+    "contentsResolve": true,
+    "current": "/whitepaper.html",
+    "imagesLoaded": true,
+    "path": "/whitepaper.html",
+    "scrollWidth": 1425,
+    "sections": 6,
+    "width": 1440
+  },
+  "mobile": {
+    "articleWidth": 327,
+    "menuClosed": true,
+    "scrollWidth": 375,
+    "width": 390
+  },
+  "compact": {
+    "scrollWidth": 305,
+    "titleBox": 257,
+    "titleWidth": 257,
+    "width": 320
+  },
+  "escape": {
+    "expanded": "false",
+    "focused": true
+  },
+  "homeHeader": {
+    "brandRight": 169.03125,
+    "controlsLeft": 193,
+    "controlsRight": 289,
+    "ready": true,
+    "width": 320
+  },
+  "sectionNavigation": {
+    "hash": "#intelligence",
+    "headerBottom": 68,
+    "height": 568,
+    "scroll": 2733.5,
+    "top": 80.015625
+  },
+  "consoleErrors": 0
+}

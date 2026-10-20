@@ -4,6 +4,7 @@ const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { runInNewContext } = require("node:vm");
 const application = readFileSync(join(__dirname, "../app.js"), "utf8");
+const navigation = readFileSync(join(__dirname, "../navigation.js"), "utf8");
 
 // ------------------------=
 // FUNC: element
@@ -60,6 +61,11 @@ function element() {
     // ------------------=
     addEventListener(key, handler) { listeners.set(key, handler); },
     // ------------------------=
+    // FUNC: focus
+    // DESC: Observes keyboard focus restoration after menu dismissal.
+    // ------------------=
+    focus() { this.focused = true; },
+    // ------------------------=
     // FUNC: querySelector
     // DESC: Supplies a stable descendant for the motion icon.
     // ------------------=
@@ -81,7 +87,7 @@ function element() {
 // FUNC: fixture
 // DESC: Runs the unchanged production application against controllable media and storage interfaces.
 // ------------------=
-function fixture({ reduced = false, saved = null, denied = false } = {}) {
+function fixture({ reduced = false, saved = null, denied = false, navigationOnly = false } = {}) {
   const document = element();
   document.documentElement = element();
   document.documentElement.classList.add("no-js");
@@ -122,7 +128,8 @@ function fixture({ reduced = false, saved = null, denied = false } = {}) {
   // DESC: Exposes a controllable operating-system reduced-motion preference.
   // ------------------=
   window.matchMedia = function matchMedia() { return media; };
-  runInNewContext(application, { document, window, localStorage: storage, Image: element,
+  runInNewContext(navigation, { document });
+  if (!navigationOnly) runInNewContext(application, { document, window, localStorage: storage, Image: element,
     ResizeObserver: Observer, IntersectionObserver: Observer });
   return { document, media, button: document.querySelector(".motion-control"), storage };
 }
@@ -172,3 +179,50 @@ function restrictedStorage() {
   assert.equal(value.button.getAttribute("aria-pressed"), "true");
 }
 test("restricted storage preserves working controls", restrictedStorage);
+
+// ------------------------=
+// FUNC: menuKeyboardTransitions
+// DESC: Verifies shared navigation opens, dismisses and restores focus without a WebGL application.
+// ------------------=
+function menuKeyboardTransitions() {
+  for (const navigationOnly of [true, false]) {
+    const { document } = fixture({ navigationOnly });
+    const menu = document.querySelector(".menu-control");
+    const nav = document.querySelector("#main-nav");
+    menu.listeners.get("click")();
+    assert.equal(nav.classList.contains("open"), true);
+    assert.equal(menu.getAttribute("aria-expanded"), "true");
+    document.listeners.get("keydown")({ key: "ArrowDown" });
+    assert.equal(nav.classList.contains("open"), true);
+    document.listeners.get("keydown")({ key: "Escape" });
+    assert.equal(nav.classList.contains("open"), false);
+    assert.equal(menu.getAttribute("aria-expanded"), "false");
+    assert.equal(menu.focused, true);
+  }
+}
+test("navigation works independently and alongside the homepage with Escape focus restoration", menuKeyboardTransitions);
+
+// ------------------------=
+// FUNC: menuLinkTransitions
+// DESC: Verifies navigation closes on a selected destination but not on empty menu space.
+// ------------------=
+function menuLinkTransitions() {
+  const { document } = fixture({ navigationOnly: true });
+  const menu = document.querySelector(".menu-control");
+  const nav = document.querySelector("#main-nav");
+  menu.listeners.get("click")();
+  // ------------------------=
+  // FUNC: closest
+  // DESC: Models a click that does not belong to a navigation link.
+  // ------------------=
+  nav.listeners.get("click")({ target: { closest() { return null; } } });
+  assert.equal(nav.classList.contains("open"), true);
+  // ------------------------=
+  // FUNC: closest
+  // DESC: Models clicking a descendant of a destination link.
+  // ------------------=
+  nav.listeners.get("click")({ target: { closest() { return {}; } } });
+  assert.equal(nav.classList.contains("open"), false);
+  assert.equal(menu.getAttribute("aria-expanded"), "false");
+}
+test("navigation closes only when a destination is selected", menuLinkTransitions);

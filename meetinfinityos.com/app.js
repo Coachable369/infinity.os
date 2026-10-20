@@ -176,38 +176,6 @@
   window.addEventListener("scroll", queueScroll, { passive: true });
   window.addEventListener("resize", queueScroll, { passive: true });
 
-  const menu = document.querySelector(".menu-control");
-  const nav = document.querySelector("#main-nav");
-  // ------------------------=
-  // FUNC: setMenu
-  // DESC: Keeps mobile navigation and accessible state synchronized.
-  // ------------------=
-  function setMenu(open) {
-    nav.classList.toggle("open", open);
-    menu.setAttribute("aria-expanded", String(open));
-    menu.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
-    menu.title = menu.getAttribute("aria-label");
-    menu.querySelector("use").setAttribute("href", open ? "#close" : "#menu");
-  }
-  // ------------------------=
-  // FUNC: toggleMenu
-  // DESC: Toggles the mobile navigation panel.
-  // ------------------=
-  function toggleMenu() { setMenu(menu.getAttribute("aria-expanded") !== "true"); }
-  // ------------------------=
-  // FUNC: menuNavigation
-  // DESC: Closes mobile navigation after selecting an anchor.
-  // ------------------=
-  function menuNavigation(event) { if (event.target.closest("a")) setMenu(false); }
-  // ------------------------=
-  // FUNC: dismissMenu
-  // DESC: Closes navigation on Escape and returns keyboard focus.
-  // ------------------=
-  function dismissMenu(event) { if (event.key === "Escape" && nav.classList.contains("open")) { setMenu(false); menu.focus(); } }
-  menu.addEventListener("click", toggleMenu);
-  nav.addEventListener("click", menuNavigation);
-  document.addEventListener("keydown", dismissMenu);
-
   const tabs = [...document.querySelectorAll(".feature-tab")];
   const panel = document.querySelector("#feature-panel");
   const modes = {

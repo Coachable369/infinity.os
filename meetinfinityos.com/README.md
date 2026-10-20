@@ -29,13 +29,22 @@ Inter is self-hosted. No external runtime CDN requests are made.
 
 ## Verification
 
-Run `npm test` (no installation needed). Six tests exercise production motion
+Run `npm test` (no installation needed). Eight tests exercise production motion
 state, preference persistence, restricted storage, source-artifact provenance,
-mesh depth and UV mapping, contour area, scroll pose and electrical routes.
+mesh depth and UV mapping, contour area, scroll pose, electrical routes, and
+shared navigation including keyboard dismissal and focus restoration.
 
 `verification/browser-results.json` records actual browser state and pixel checks.
 Desktop and mobile screenshots are visual evidence, not textual test oracles.
 Interactive preview content is explicitly illustrative; it is not a live OS session.
+
+## Whitepaper
+
+The shared top navigation links to `whitepaper.html`. It presents a public
+design-direction overview with linked contents, responsive reading typography,
+and a print stylesheet. It reuses the existing kit and emblem, works without
+WebGL, and remains readable with JavaScript disabled. `navigation.js` owns the
+same mobile-menu behavior on both pages; it does not load the homepage scene.
 
 ## Deployment
 
