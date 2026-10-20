@@ -132,9 +132,23 @@ pub fn verify(engine: &servo::Servo) -> bool {
         .url(option_env!("INFINITY_BROWSER_PROBE_URL").unwrap_or("https://www.google.com/").parse().unwrap()).build();
     let timeout=option_env!("INFINITY_BROWSER_LOAD_TIMEOUT").and_then(|value|value.parse::<u64>().ok()).unwrap_or(60).clamp(30,180);
     view.show();let deadline=Instant::now()+Duration::from_secs(timeout);
-    while loaded.get()==0 && Instant::now()<deadline {
+    // A completed first document may immediately navigate again (consent and
+    // challenge pages do this). Sample the requested DOM condition throughout
+    // the bounded observation window instead of accepting the first load event.
+    let observed=Rc::new(Cell::new(0));
+    let mut next_assertion=Instant::now();
+    while Instant::now()<deadline {
         engine.spin_event_loop();resources.pump();
         if repaint.replace(false) {view.paint();}
+        if observed.get()==1 && loaded.get()!=0 {break;}
+        if observed.get()!=3 && Instant::now()>=next_assertion {
+            observed.set(3);
+            let result=observed.clone();
+            view.evaluate_javascript(option_env!("INFINITY_BROWSER_PROBE_ASSERT").unwrap_or("location.protocol==='https:' && location.hostname==='www.google.com' && Array.from(document.images).some(i=>i.complete && i.naturalWidth>100)"),move |value| {
+                result.set(if matches!(value,Ok(servo::JSValue::Boolean(true))) {1}else{2});
+            });
+            next_assertion=Instant::now()+Duration::from_millis(500);
+        }
         std::thread::sleep(Duration::from_millis(1));
     }
     super::super::record(2,30,HTTP_STATUS.load(Ordering::Relaxed) as u64);

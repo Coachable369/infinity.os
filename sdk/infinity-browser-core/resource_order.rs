@@ -1,6 +1,6 @@
 //! Stable priority policy for the bounded, serialized native transport queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Priority { Document, Critical, Font, Other }
+pub enum Priority { Document, Stylesheet, Critical, Font, Other }
 
 // ------------------------=
 // FUNC: classify
@@ -8,7 +8,13 @@ pub enum Priority { Document, Critical, Font, Other }
 // ------------------=
 pub fn classify(document:bool,destination:&str)->Priority {
     if document {return Priority::Document;}
-    match destination {"style"|"script"|""=>Priority::Critical,"font"=>Priority::Font,_=>Priority::Other}
+    match destination {
+        "document"|"iframe"|"frame"=>Priority::Document,
+        "style"=>Priority::Stylesheet,
+        "script"|""=>Priority::Critical,
+        "font"=>Priority::Font,
+        _=>Priority::Other,
+    }
 }
 
 // ------------------------=
@@ -53,7 +59,7 @@ mod tests {
             let at=insertion_index(queue.iter().map(|&(active,p,_)|(active,p)),priority);
             queue.insert(at,(false,priority,id));
         }
-        assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,3,4,6,2,1]);
+        assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,4,6,3,2,1]);
         assert_eq!(insertion_index(core::iter::empty(),Priority::Document),0);
         assert_eq!(classify(false,""),Priority::Critical);
         assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Critical),Some(6));
@@ -62,5 +68,22 @@ mod tests {
         assert!(retry_pre_header("GET",1));
         assert!(!retry_pre_header("GET",2));
         assert!(!retry_pre_header("POST",0));
+    }
+
+    // ------------------------=
+    // FUNC: embedded_documents_and_styles_bypass_script_backlog
+    // DESC: Keeps challenge frames and render-blocking CSS ahead of queued application scripts without preempting live work.
+    // ------------------=
+    #[test]
+    fn embedded_documents_and_styles_bypass_script_backlog() {
+        let mut queue=std::vec![(true,Priority::Critical,0)];
+        for id in 1..30 {queue.push((false,classify(false,"script"),id));}
+        for (id,destination) in [(30,"style"),(31,"iframe")] {
+            let priority=classify(false,destination);
+            let at=insertion_index(queue.iter().map(|&(active,p,_)|(active,p)),priority);
+            queue.insert(at,(false,priority,id));
+        }
+        assert_eq!(queue.iter().take(3).map(|x|x.2).collect::<std::vec::Vec<_>>(),[0,31,30]);
+        assert_eq!(queue.len(),32);
     }
 }

@@ -152,9 +152,23 @@ impl<P: Provider> Resources<P> {
     }
     // ------------------------=
     // FUNC: pump
-    // DESC: Polls each queued request once and reports response progress without blocking the engine or desktop event loop.
+    // DESC: Drains ready transport events within a bounded owner-thread budget instead of sleeping between every TLS chunk.
     // ------------------=
     pub fn pump(&self) -> bool {
+        let deadline=(self.clock)().saturating_add(2_000_000);
+        let mut progressed=false;
+        for _ in 0..8 {
+            if !self.pump_once() {break;}
+            progressed=true;
+            if (self.clock)()>=deadline {break;}
+        }
+        progressed
+    }
+    // ------------------------=
+    // FUNC: pump_once
+    // DESC: Advances one transport event; pending I/O yields immediately and retains cancellation and queue bounds.
+    // ------------------=
+    fn pump_once(&self) -> bool {
         let mut state = self.state.borrow_mut();
         let now = (self.clock)();
         let mut progressed = false;

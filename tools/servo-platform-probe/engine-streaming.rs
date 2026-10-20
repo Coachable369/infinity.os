@@ -42,6 +42,7 @@ impl resources::Provider for Provider {
 // DESC: Requires visible document pixels before EOF, then later pixels and completion through the production session.
 // ------------------=
 pub fn verify(engine:&Servo)->bool {
+    if !verify_ready_budget(engine) {return false;}
     let finish=Rc::new(Cell::new(false));let cancelled=Rc::new(Cell::new(0));
     let observed=Rc::new(Cell::new(0));
     let Ok(session)=session::Session::new(engine,Provider{stage:0,finish:finish.clone(),cancelled:cancelled.clone(),observed:observed.clone()},
@@ -79,6 +80,60 @@ pub fn verify(engine:&Servo)->bool {
     let passed=late && session.complete() && cancelled.get()==1;
     let passed=passed && verify_gzip(engine);
     super::super::record(2,41,if passed {2}else{0});passed
+}
+
+struct ReadyProvider { events:Rc<Cell<u32>>, released:Rc<Cell<u32>> }
+impl resources::Provider for ReadyProvider {
+    // ------------------------=
+    // FUNC: begin
+    // DESC: Admits only the deterministic transport-budget fixture.
+    // ------------------=
+    fn begin(&mut self,url:&str)->Result<u64,()> {if url=="https://budget.test/" {Ok(1)}else{Err(())}}
+    // ------------------------=
+    // FUNC: poll_stream
+    // DESC: Supplies immediately available chunks to verify bounded batching without a network timing oracle.
+    // ------------------=
+    fn poll_stream(&mut self,_:u64)->Result<Option<resources::Event>,()> {
+        let n=self.events.get();self.events.set(n+1);
+        Ok(Some(match n {
+            0=>resources::Event::Head(200,std::vec![("Content-Type".into(),"text/html".into())]),
+            1..=32=>resources::Event::Data(b" ".to_vec()),
+            _=>resources::Event::Done,
+        }))
+    }
+    // ------------------------=
+    // FUNC: cancel
+    // DESC: Tracks exact release of the fixture transaction.
+    // ------------------=
+    fn cancel(&mut self,_:u64) {self.released.set(self.released.get()+1);}
+}
+// ------------------------=
+// FUNC: frozen_clock
+// DESC: Makes the event-count budget independently testable from CPU speed.
+// ------------------=
+fn frozen_clock()->u64 {0}
+// ------------------------=
+// FUNC: verify_ready_budget
+// DESC: Verifies ready events batch, pending work yields at eight events, and completion releases once.
+// ------------------=
+fn verify_ready_budget(engine:&Servo)->bool {
+    let events=Rc::new(Cell::new(0));let released=Rc::new(Cell::new(0));
+    let resources=Rc::new(resources::Resources::new(ReadyProvider{events:events.clone(),released:released.clone()},frozen_clock));
+    engine.set_delegate(resources.clone());
+    let Ok(context)=servo::SoftwareRenderingContext::new((32,32).into()) else{return false;};
+    let view=servo::WebViewBuilder::new(engine,Rc::new(context))
+        .delegate(Rc::new(super::ResourceDelegate{resources:resources.clone(),repaint:Rc::new(Cell::new(false)),loaded:Rc::new(Cell::new(0))}))
+        .url("https://budget.test/".parse().unwrap()).build();
+    view.show();
+    let deadline=Instant::now()+Duration::from_secs(5);
+    while events.get()==0 && Instant::now()<deadline {
+        engine.spin_event_loop();resources.pump();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let bounded=events.get()==8 && released.get()==0;
+    for _ in 0..8 {resources.pump();}
+    let passed=bounded && events.get()==34 && released.get()==1;
+    resources.close();drop(view);super::drain_close(engine);passed
 }
 
 struct CompressedProvider { stage:u8, body:std::vec::Vec<u8>, streamed:bool }
