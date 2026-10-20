@@ -9,6 +9,8 @@ mod install_identity;
 pub mod layout;
 pub mod payload;
 pub mod object;
+mod hermes_memory_store;
+use crate::runtime::ai::hermes_profile;
 pub(crate) mod fabric;
 pub(crate) mod fabric_pool_metadata;
 pub(crate) mod fabric_pool_metadata_service;
@@ -856,41 +858,12 @@ pub(crate) fn font_preferences(owner:[u8;16], session:[u8;16], save:Option<crate
 // ------------------=
 pub(crate) fn hermes_memory(owner:[u8;16],session:[u8;16],name:&[u8],wake:&[u8],edit:Option<(&[u8],&[u8])>)
     ->Result<crate::runtime::ai::hermes_profile::Document,object::ObjectError>{
-    use crate::runtime::ai::hermes_profile::{Document,MAX_BYTES,FILE_NAME};
     let _=browser_favorites_path(owner,session)?;
     let identity_name=crate::runtime::with_runtime(|runtime|runtime.identity.user(crate::runtime::identity::StableId(owner)).map(|u|u.display_name))
         .flatten().ok_or(object::ObjectError::Unauthorized)?;
     let name=if name.is_empty(){identity_name.as_bytes()}else{name};
     #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
-    {with_store(|store|{
-        let home=store.ensure_user_home(object::ObjectId(owner),name)?;
-        let path=home.child(FILE_NAME).ok_or(object::ObjectError::InvalidObject)?;
-        store.migrate_hermes_home(object::ObjectId(owner),path.as_bytes())?;
-        let id=match store.resolve(path.as_bytes()){Ok(id)=>Some(id),
-            Err(object::ObjectError::NotFound|object::ObjectError::NamespaceNotFound)=>None,Err(e)=>return Err(e)};
-        let value=if let Some(id)=id{
-            let mut bytes=[0;MAX_BYTES];
-            let n=store.read_hermes_memory(id,object::ObjectId(owner),&mut bytes)?;
-            Document::parse(&bytes[..n],owner).map_err(|_|object::ObjectError::CorruptContent)?
-        }else{Document::new(owner,name,wake).map_err(|_|object::ObjectError::CorruptContent)?};
-        let mut next=if let Some((key,value_bytes))=edit{
-            value.updated(owner,key,value_bytes).map_err(|_|object::ObjectError::CorruptContent)?
-        }else{value};
-        if let Some((key,value_bytes))=edit{
-            if matches!(key,b"interests"|b"dislikes"){
-                let opposite=if key==b"interests"{b"dislikes".as_slice()}else{b"interests".as_slice()};
-                let mut previous=[0;1024];
-                if next.get(opposite,&mut previous).is_ok_and(|n|previous[..n].eq_ignore_ascii_case(value_bytes)){
-                    next=next.updated(owner,opposite,b"").map_err(|_|object::ObjectError::CorruptContent)?;
-                }
-                next=next.updated(owner,b"inferred_interests",b"").map_err(|_|object::ObjectError::CorruptContent)?;
-            }
-        }
-        if let Some(id)=id{if edit.is_some(){store.replace_state(id,next.bytes())?;}}
-        else{store.create_owned_attached(b"@hermes-memory",object::ObjectType::Metadata,
-            object::Space::Personal,next.bytes(),path.as_bytes(),object::ObjectId(owner))?;}
-        Ok(next)
-    })}
+    {with_store(|store|hermes_memory_store::load_or_edit(store,owner,name,wake,edit))}
     #[cfg(target_arch="x86")]
     {let _=(name,wake,edit);Err(object::ObjectError::SpaceUnavailable)}
 }

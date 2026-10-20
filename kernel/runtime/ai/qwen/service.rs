@@ -354,6 +354,14 @@ impl Service {
         &self.output[..self.output_count]
     }
     // ------------------------=
+    // FUNC: acceptance_context
+    // DESC: Exposes immutable token history and its desktop-context bit to host restoration tests; no guest introspection interface is compiled.
+    // ------------------=
+    #[cfg(not(target_os = "none"))]
+    pub fn acceptance_context(&self) -> (&[u32], bool) {
+        (&self.prompt[..self.prompt_count], self.desktop_context)
+    }
+    // ------------------------=
     // FUNC: progress_tokens
     // DESC: Reports monotonic token work within this request, including prompt prefill before visible output exists.
     // ------------------=

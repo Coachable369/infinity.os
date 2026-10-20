@@ -8,6 +8,8 @@ mod font_preferences;
 
 #[path="../kernel/runtime/ai/hermes_profile.rs"]
 mod hermes_profile;
+#[path="../kernel/storage/hermes_memory_store.rs"]
+mod hermes_memory_store;
 
 // ------------------------=
 // FUNC: hermes_persistence
@@ -15,7 +17,12 @@ mod hermes_profile;
 // ------------------=
 fn hermes_persistence(){
     let sectors=STORE_RELATIVE_LBA as usize+32_768;
-    let disk=MemoryDisk::new(sectors);
+    let disk=CountingDisk{
+        inner:MemoryDisk::new(sectors),
+        writes:Rc::new(Cell::new(0)),
+        flushes:Rc::new(Cell::new(0)),
+        reject_writes:Rc::new(Cell::new(false)),
+    };
     let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[9;16]).unwrap();
     let owner=storage::object::ObjectId([1;16]);
     let document=hermes_profile::Document::new(owner.0,b"Alex",b"Infinity").unwrap();
@@ -37,8 +44,62 @@ fn hermes_persistence(){
     assert_eq!(store.attach(b"/home/memory-alias",id),Err(ObjectError::Unauthorized));
     assert_eq!(store.read_hermes_memory(id,storage::object::ObjectId([2;16]),&mut out),Err(ObjectError::Unauthorized));
     assert_eq!(store.read_hermes_memory(second_id,owner,&mut out),Err(ObjectError::Unauthorized));
-    let updated=document.updated(owner.0,b"preferences",b"Use metric units").unwrap();
+    let generation=store.generation();
+    let version=store.current_version(id).unwrap();
+    let flushes=disk.flushes.get();
+    let mut updated=hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",
+        Some((b"preferences",b"Use metric units"))).unwrap();
+    assert_eq!(store.generation(),generation+1);
+    assert_eq!(store.current_version(id).unwrap(),version+1);
+    assert_eq!(disk.flushes.get(),flushes+2);
+    let state=(store.generation(),store.current_version(id).unwrap(),disk.writes.get(),disk.flushes.get());
+    for _ in 0..3{
+        let repeated=hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",
+            Some((b"preferences",b"Use metric units"))).unwrap();
+        assert_eq!(repeated.bytes(),updated.bytes());
+        assert_eq!((store.generation(),store.current_version(id).unwrap(),disk.writes.get(),disk.flushes.get()),state);
+    }
+    for input in [b"My Favorite color is grey".as_slice(),b"Set time zone to CST"]{
+        let hermes_profile::conversation::Action::Set(key,value)=hermes_profile::conversation::action(input,true)else{panic!("expected typed memory edit");};
+        updated=hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",Some((key,value))).unwrap();
+        let mut actual=[0;1024];
+        let n=updated.get(key,&mut actual).unwrap();
+        assert_eq!(&actual[..n],value);
+    }
+    let inconsistent=updated.updated(owner.0,b"interests",b"Hiking").unwrap()
+        .updated(owner.0,b"dislikes",b"hiking").unwrap()
+        .updated(owner.0,b"inferred_interests",b"Possibly gardening").unwrap();
+    store.replace_state(id,inconsistent.bytes()).unwrap();
+    let generation=store.generation();
+    updated=hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",Some((b"interests",b"Hiking"))).unwrap();
+    assert_eq!(updated.get(b"dislikes",&mut out),Ok(0));
+    assert_eq!(updated.get(b"inferred_interests",&mut out),Ok(0));
+    assert_eq!(store.generation(),generation+1);
+    let state=(store.generation(),store.current_version(id).unwrap(),disk.writes.get(),disk.flushes.get());
+    hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",Some((b"interests",b"Hiking"))).unwrap();
+    assert_eq!((store.generation(),store.current_version(id).unwrap(),disk.writes.get(),disk.flushes.get()),state);
+    // A failing changed write preserves the prior document, while an identical edit needs no writable disk.
+    disk.reject_writes.set(true);
+    hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",Some((b"interests",b"Hiking"))).unwrap();
+    assert!(hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",Some((b"interests",b"Painting"))).is_err());
+    disk.reject_writes.set(false);
+    assert_eq!(store.generation(),state.0);
+    let n=store.read_hermes_memory(id,owner,&mut out).unwrap();
+    assert_eq!(&out[..n],updated.bytes());
+    // Semantic corruption and a foreign owner inside JSON are rejected before any idempotence decision.
+    for corrupt in [b"{".as_slice(),second_doc.bytes()]{
+        store.replace_state(id,corrupt).unwrap();
+        let state=(store.generation(),store.current_version(id).unwrap(),disk.writes.get(),disk.flushes.get());
+        assert_eq!(hermes_memory_store::load_or_edit(&mut store,owner.0,b"Alex Smith",b"Infinity",
+            Some((b"interests",b"Hiking"))).err(),Some(ObjectError::CorruptContent));
+        assert_eq!((store.generation(),store.current_version(id).unwrap(),disk.writes.get(),disk.flushes.get()),state);
+    }
     store.replace_state(id,updated.bytes()).unwrap();
+    let state=(store.generation(),disk.writes.get(),disk.flushes.get());
+    assert_eq!(hermes_memory_store::load_or_edit(&mut store,[0;16],b"Alex Smith",b"Infinity",None).err(),Some(ObjectError::Unauthorized));
+    assert_eq!((store.generation(),disk.writes.get(),disk.flushes.get()),state);
+    let unchanged=hermes_memory_store::load_or_edit(&mut store,[2;16],b"Other User",b"Infinity",None).unwrap();
+    assert_eq!(unchanged.bytes(),second_doc.bytes());
     drop(store);
     let mut installed=ObjectStore::mount(disk,0).unwrap();
     assert_eq!(installed.resolve(path.as_bytes()).unwrap(),id);
@@ -64,6 +125,42 @@ use storage::{
 
 #[derive(Clone)]
 struct MemoryDisk(Rc<RefCell<Vec<[u8; 512]>>>, Rc<Cell<Option<u64>>>);
+
+#[derive(Clone)]
+struct CountingDisk {
+    inner:MemoryDisk,
+    writes:Rc<Cell<usize>>,
+    flushes:Rc<Cell<usize>>,
+    reject_writes:Rc<Cell<bool>>,
+}
+impl BlockDevice for CountingDisk {
+    // ------------------------=
+    // FUNC: block_count
+    // DESC: Exposes the underlying test disk geometry.
+    // ------------------=
+    fn block_count(&self)->u64{self.inner.block_count()}
+    // ------------------------=
+    // FUNC: read_sector
+    // DESC: Reads persistent sectors without altering write or flush counts.
+    // ------------------=
+    fn read_sector(&mut self,lba:u64,out:&mut[u8;512])->bool{self.inner.read_sector(lba,out)}
+    // ------------------------=
+    // FUNC: write_sector
+    // DESC: Counts attempted writes and supports deterministic persistence failure.
+    // ------------------=
+    fn write_sector(&mut self,lba:u64,input:&[u8;512])->bool{
+        self.writes.set(self.writes.get()+1);
+        !self.reject_writes.get()&&self.inner.write_sector(lba,input)
+    }
+    // ------------------------=
+    // FUNC: flush
+    // DESC: Counts durable boundaries exercised by the shared memory transaction.
+    // ------------------=
+    fn flush(&mut self)->bool{
+        self.flushes.set(self.flushes.get()+1);
+        self.inner.flush()
+    }
+}
 
 #[derive(Clone)]
 struct SparseDisk {
@@ -332,6 +429,7 @@ fn main() {
         return;
     }
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    hermes_persistence();
     namespace_expansion();
     download_transaction(test_sectors);
     private_spatial_checkpoint(test_sectors);

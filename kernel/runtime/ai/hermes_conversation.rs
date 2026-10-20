@@ -17,6 +17,7 @@ pub fn field(name:&[u8])->Option<&'static[u8]>{
         (b"name".as_slice(),b"user_name".as_slice()),(b"address",b"address"),(b"time",b"time"),
         (b"timezone",b"timezone"),(b"time zone",b"timezone"),(b"timrzone",b"timezone"),
         (b"favorite color",b"favorite_color"),(b"favourite colour",b"favorite_color"),
+        (b"favorite colour",b"favorite_color"),(b"favourite color",b"favorite_color"),
         (b"birth date",b"birth_date"),(b"birthday",b"birth_date"),
         (b"preferences",b"preferences"),(b"instructions",b"user_instructions"),
         (b"personality",b"personality_style"),(b"attitude",b"attitude"),(b"emergency contact",b"emergency_contact"),
@@ -49,7 +50,7 @@ pub fn action(input:&[u8],learn:bool)->Action<'_>{
     for head in [b"forget my ".as_slice(),b"delete my ",b"forget "]{
         if let Some(label)=prefix(input,head){return field(label).map(Action::Forget).unwrap_or(Action::None);}
     }
-    for head in [b"change my ".as_slice(),b"update my ",b"set my "]{
+    for head in [b"change my ".as_slice(),b"update my ",b"set my ",b"change ",b"update ",b"set "]{
         if let Some(rest)=prefix(input,head){
             if let Some(at)=rest.windows(4).position(|w|w.eq_ignore_ascii_case(b" to ")){
                 if let Some(key)=field(&rest[..at]){return Action::Set(key,rest[at+4..].trim_ascii());}
@@ -120,7 +121,10 @@ pub fn infer_interest(document:&super::Document,input:&[u8])->Option<&'static[u8
     if document.get(b"interests",&mut value)!=Ok(0){return None;}
     for (phrase,topic) in [(b"recommend a hiking".as_slice(),b"Possibly hiking".as_slice()),
         (b"suggest a photography",b"Possibly photography"),(b"recommend a gardening",b"Possibly gardening")]{
-        if prefix(input,phrase).is_some(){return Some(topic);}
+        if prefix(input,phrase).is_some(){
+            if document.get(b"inferred_interests",&mut value).is_ok_and(|n|value[..n].eq_ignore_ascii_case(topic)){return None;}
+            return Some(topic);
+        }
     }None
 }
 // ------------------------=
@@ -140,7 +144,8 @@ pub fn contextual_inquiry(document:&super::Document,input:&[u8],turn:u64,entropy
 pub fn color(value:&[u8])->Option<u32>{
     for (name,rgb) in [(b"blue".as_slice(),0x3e6fff),(b"red",0xe65050),(b"green",0x35b878),
         (b"purple",0x9966ee),(b"pink",0xe76fa9),(b"orange",0xe89b42),(b"yellow",0xe6c84e),
-        (b"cyan",0x22d3ee),(b"white",0xffffff),(b"black",0x101010)]{
+        (b"cyan",0x22d3ee),(b"white",0xffffff),(b"black",0x101010),
+        (b"grey",0x808080),(b"gray",0x808080)]{
         if value.eq_ignore_ascii_case(name){return Some(rgb);}
     }
     let value=value.strip_prefix(b"#")?;

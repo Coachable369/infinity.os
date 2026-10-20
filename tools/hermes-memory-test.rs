@@ -97,12 +97,42 @@ fn relationship_memory(){
     assert_eq!(action(b"My recurring project is InfinityOS",true),Action::Set(b"recurring_projects",b"InfinityOS"));
     let d=Document::new([1;16],b"User",b"Infinity").unwrap();
     assert_eq!(infer_interest(&d,b"recommend a hiking trail"),Some(b"Possibly hiking".as_slice()));
+    let inferred=d.updated([1;16],b"inferred_interests",b"Possibly hiking").unwrap();
+    assert_eq!(infer_interest(&inferred,b"recommend a hiking route"),None);
+    assert_eq!(infer_interest(&inferred,b"suggest a photography trip"),Some(b"Possibly photography".as_slice()));
     let explicit=d.updated([1;16],b"interests",b"painting").unwrap();
     assert_eq!(infer_interest(&explicit,b"recommend a hiking trail"),None);
     let disabled=d.updated([1;16],b"inference_enabled",b"false").unwrap();
     assert_eq!(infer_interest(&disabled,b"recommend a hiking trail"),None);
     for turn in 0..100{assert_eq!(contextual_inquiry(&d,b"fix this compilation error",turn,turn),None);}
     assert!( (7..100).any(|turn|contextual_inquiry(&d,b"suggest a desktop color",turn,turn).is_some()));
+}
+// ------------------------=
+// FUNC: spoken_color_and_timezone
+// DESC: Accepts supported spoken field spellings, preserves opt-outs, and resolves grey to a native accent.
+// ------------------=
+#[test]
+fn spoken_color_and_timezone(){
+    use profile::conversation::{action,Action,color};
+    for input in [
+        b"My Favorite color is grey".as_slice(),
+        b"My favourite colour is grey.",
+        b"My favorite colour is grey",
+        b"My favourite color is grey",
+    ]{
+        assert_eq!(action(input,true),Action::Set(b"favorite_color",b"grey"));
+        assert_eq!(action(input,false),Action::None);
+    }
+    for input in [b"Set time zone to CST".as_slice(),b"set timezone to CST",b"set my time zone to CST"]{
+        assert_eq!(action(input,false),Action::Set(b"timezone",b"CST"));
+    }
+    assert_eq!(action(b"Remember my favourite color is grey",false),Action::Set(b"favorite_color",b"grey"));
+    assert_eq!(action(b"Set favorite colour to gray",false),Action::Set(b"favorite_color",b"gray"));
+    assert_eq!(color(b"grey"),Some(0x808080));
+    assert_eq!(color(b"GRAY"),Some(0x808080));
+    assert_eq!(action(b"Is my favorite color grey?",true),Action::None);
+    assert_eq!(action(b"My favorite color is grey if I change my mind",true),Action::None);
+    assert_eq!(action(b"set unknown setting to CST",true),Action::None);
 }
 // ------------------------=
 // FUNC: extension_preservation

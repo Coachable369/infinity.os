@@ -801,6 +801,11 @@ fn desktop_chat() {
 // DESC: Runs the Milestone 6 host acceptance suite.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg| arg == "--memory-native") {
+        memory_native();
+        return;
+    }
+    memory_request_ingress_contract();
     shared_request_ingress_contract();
     instruction_mapping_contract();
     aikit_contract();
@@ -815,6 +820,261 @@ fn main() {
     services_and_events();
     desktop_chat();
     println!("PASS Milestone 6 native AI host acceptance");
+}
+
+// ------------------------=
+// FUNC: memory_app_inspection_contract
+// DESC: Verifies raw app inspection returns a typed receipt without model work, borrowing a cache, changing history, or staging actions.
+// ------------------=
+fn memory_app_inspection_contract(ai: &mut AiRuntime) {
+    use runtime::ai::hermes_memory_request::Outcome;
+    let history = ai.chat.state_hash();
+    let tokens = ai.qwen_tokens;
+    let progress = ai.acceptance_native_progress();
+    let context = ai.acceptance_native_context().map(|(tokens, desktop)| (tokens.to_vec(), desktop));
+    let output = ai.acceptance_native_output().to_vec();
+    let lease = ai.acceptance_app_lease_state();
+    assert_eq!(ai.app_turn_owner(), None);
+    assert_eq!(ai.route_application_request(2, b"What do you remember about me?"),
+        Ok(RequestRoute::Inference(InferenceMode::Conversation)));
+    let receipt = ai.personal_memory_reply(b"What do you remember about me?", &mut [0; 8192]).unwrap();
+    assert_eq!(receipt.outcome, Outcome::Inspected);
+    assert!(receipt.length > 0 && receipt.length <= 8192);
+    assert_eq!(ai.chat.state_hash(), history);
+    assert_eq!(ai.qwen_tokens, tokens);
+    assert_eq!(ai.acceptance_native_progress(), progress);
+    assert_eq!(ai.acceptance_native_context().map(|(tokens, desktop)| (tokens.to_vec(), desktop)), context);
+    assert_eq!(ai.acceptance_native_output(), output);
+    assert_eq!(ai.acceptance_app_lease_state(), lease);
+    assert_eq!(ai.app_turn_owner(), None);
+    assert!(!ai.control_pending());
+}
+
+// ------------------------=
+// FUNC: memory_request_ingress_contract
+// DESC: Verifies typed and recognized-voice memory requests complete without a model, reset prior timing, and reject disabled or busy admission without simulating host persistence.
+// ------------------=
+fn memory_request_ingress_contract() {
+    use runtime::ai::{hermes_memory_request::Outcome, hermes_profile::Document};
+    let owner = [0x65; 16];
+    for voice in [false, true] {
+        for input in [b"My Favorite color is grey".as_slice(), b"Set time zone to CST"] {
+            let mut ai = Box::new(AiRuntime::new());
+            ai.bind_chat_owner(owner);
+            ai.load_hermes_memory([0x66; 16], Some(Document::new(owner, b"Alex", b"Infinity").unwrap()));
+            // Host mode never acknowledges a simulated durable write.
+            let receipt = ai.personal_memory_reply(input, &mut [0; 8192]).unwrap();
+            assert_eq!(receipt.outcome, Outcome::Failed);
+            assert!(receipt.length > 0 && receipt.length <= 8192);
+            ai.qwen_tokens = 17;
+            ai.qwen_decode_ns = 19;
+            ai.qwen_metrics.load_ns = 23;
+            ai.qwen_metrics.begin(Some(100), 11, 13);
+            ai.qwen_metrics.slice(Some(110), Some(120), true);
+            ai.qwen_metrics.visible(Some(130));
+            ai.qwen_metrics.finish(Some(150));
+            for byte in input { assert!(ai.chat.push_input(*byte)); }
+            assert!(if voice { ai.submit_voice_chat() } else { ai.submit_chat() });
+            assert_eq!(ai.chat.generation_state, GenerationState::Complete);
+            assert_eq!(ai.chat.message_count(), 2);
+            assert_eq!(ai.chat.message(1).unwrap().role, ChatRole::Assistant);
+            assert!(!ai.chat.message(1).unwrap().text().is_empty());
+            assert_eq!((ai.qwen_tokens, ai.qwen_decode_ns), (0, 0));
+            assert_eq!(ai.qwen_metrics.load_ns, 23);
+            assert_eq!((ai.qwen_metrics.reused_tokens, ai.qwen_metrics.prefill_tokens), (0, 0));
+            assert_eq!((ai.qwen_metrics.first_token_ns, ai.qwen_metrics.first_visible_response_ns,
+                ai.qwen_metrics.total_response_ns, ai.qwen_metrics.prefill_work_ns,
+                ai.qwen_metrics.decode_work_ns, ai.qwen_metrics.max_slice_ns,
+                ai.qwen_metrics.max_pump_ns), (0, 0, 0, 0, 0, 0, 0));
+            assert_eq!(ai.acceptance_native_context(), None);
+            assert_eq!(ai.acceptance_app_lease_state(), (None, None, false, false));
+            assert!(!ai.control_pending());
+            assert!(!ai.poll_qwen());
+        }
+    }
+    let mut ai = Box::new(AiRuntime::new());
+    ai.bind_chat_owner(owner);
+    ai.load_hermes_memory([0x66; 16], Some(Document::new(owner, b"Alex", b"Infinity").unwrap()));
+    memory_app_inspection_contract(&mut ai);
+    ai.chat.set_enabled(false);
+    assert_eq!(ai.personal_memory_reply(b"Show my memory", &mut [0; 8192]), None);
+    assert!(ai.route_application_request(2, b"Show my memory").is_err());
+    ai.chat.set_enabled(true);
+    for byte in b"Open settings" { assert!(ai.chat.push_input(*byte)); }
+    assert!(ai.submit_chat());
+    assert!(ai.control_pending());
+    let history = ai.chat.state_hash();
+    assert_eq!(ai.personal_memory_reply(b"Set time zone to CST", &mut [0; 8192]), None);
+    assert_eq!(ai.chat.state_hash(), history);
+    assert!(ai.control_pending());
+}
+
+// ------------------------=
+// FUNC: memory_native_cache_contract
+// DESC: Checks inspection, busy rejection, forgotten facts, and owner isolation against the loaded cache without generating additional tokens.
+// ------------------=
+fn memory_native_cache_contract(ai: &mut AiRuntime, owner: [u8; 16], session: [u8; 16],
+    profile: &runtime::ai::hermes_profile::Document) {
+    memory_app_inspection_contract(ai);
+    assert!(!ai.acceptance_native_context().unwrap().0.is_empty());
+    ai.load_hermes_memory(session, Some(profile.updated(owner, b"user_name", b"").unwrap()));
+    assert_eq!(ai.acceptance_native_context(), Some((&[][..], false)));
+    assert!(ai.acceptance_native_output().is_empty());
+    for byte in b"Hi" { assert!(ai.chat.push_input(*byte)); }
+    assert!(ai.submit_chat());
+    assert_eq!(ai.qwen_metrics.reused_tokens, 0);
+    assert_eq!(ai.qwen_tokens, 0);
+    assert_eq!(ai.personal_memory_reply(b"Show my memory", &mut [0; 8192]), None);
+    assert!(ai.cancel_chat());
+    let other = [0x67; 16];
+    ai.bind_chat_owner(other);
+    assert_eq!(ai.acceptance_native_context(), Some((&[][..], false)));
+    assert!(ai.acceptance_native_output().is_empty());
+    assert_eq!(ai.chat.message_count(), 0);
+    let receipt = ai.personal_memory_reply(b"Show my memory", &mut [0; 8192]).unwrap();
+    assert_eq!(receipt.outcome, runtime::ai::hermes_memory_request::Outcome::Failed);
+    ai.load_hermes_memory([0x68; 16], Some(runtime::ai::hermes_profile::Document::new(
+        other, b"Blair", b"Infinity").unwrap()));
+    for byte in b"Hi" { assert!(ai.chat.push_input(*byte)); }
+    assert!(ai.submit_voice_chat());
+    assert_eq!(ai.qwen_metrics.reused_tokens, 0);
+    assert_eq!(ai.qwen_tokens, 0);
+    assert!(ai.cancel_chat());
+    ui::app_assistant::write(2, ui::app_assistant::Panel::new());
+    assert!(ai.submit_app_turn(2, b"Hi").is_ok());
+    let lease = ai.acceptance_app_lease_state();
+    assert_eq!(ai.personal_memory_reply(b"Show my memory", &mut [0; 8192]), None);
+    assert_eq!(ai.acceptance_app_lease_state(), lease);
+    ai.cancel_app_turn();
+}
+
+// ------------------------=
+// FUNC: memory_native_turn
+// DESC: Measures authenticated transcript admission through real model completion and preserves explicit incomplete boundaries, generated bytes, and cache counters.
+// ------------------=
+fn memory_native_turn(ai: &mut AiRuntime, case: &str, prompt: &[u8], voice: bool,
+    workers: usize, assert_routing: bool) -> (String, bool) {
+    assert!(ai.chat.input().is_empty());
+    for byte in prompt { assert!(ai.chat.push_input(*byte)); }
+    let started = Instant::now();
+    let admitted = if voice { ai.submit_voice_chat() } else { ai.submit_chat() };
+    let admission_ns = started.elapsed().as_nanos();
+    assert!(admitted, "Personal-memory benchmark request was rejected");
+    let (context, desktop_context) = ai.acceptance_native_context().unwrap();
+    let prompt_tokens = context.len();
+    let reused = ai.qwen_metrics.reused_tokens;
+    let prefill = ai.qwen_metrics.prefill_tokens;
+    if assert_routing {
+        assert!(!desktop_context, "Personal conversation must not activate desktop tool context");
+        assert!(prefill < 160, "A default profile greeting must not prefill the OS tool catalog");
+    }
+    if case == "warm_same_profile" {
+        assert!(reused > 0, "Reloading identical memory must preserve the completed KV prefix");
+    } else {
+        assert_eq!(reused, 0, "New or changed personal memory must not reuse stale KV history");
+    }
+    let mut first_token_ns = None;
+    let mut token_times_ns = Vec::new();
+    let mut observed_tokens = 0;
+    while ai.chat.generation_state == GenerationState::Running
+        && ai.qwen_tokens < 48 && started.elapsed().as_secs() < 240 {
+        ai.poll_qwen();
+        if ai.qwen_tokens > observed_tokens {
+            assert_eq!(ai.qwen_tokens, observed_tokens + 1);
+            observed_tokens = ai.qwen_tokens;
+            let elapsed = started.elapsed().as_nanos();
+            first_token_ns.get_or_insert(elapsed);
+            token_times_ns.push(elapsed);
+        }
+    }
+    let observed_ns = started.elapsed().as_nanos();
+    let complete = ai.chat.generation_state == GenerationState::Complete;
+    let boundary = if complete { "complete" }
+        else if ai.qwen_tokens >= 48 { "token_limit" }
+        else if started.elapsed().as_secs() >= 240 { "deadline" }
+        else { "generation_failure" };
+    if complete {
+        assert!(observed_tokens > 0 && !ai.acceptance_native_output().is_empty());
+    }
+    let receipt = format!(
+        "{{\"case\":\"{case}\",\"origin\":\"{}\",\"workers\":{workers},\"prompt_bytes\":{:?},\"prompt_tokens\":{prompt_tokens},\"prefill_tokens\":{prefill},\"reused_tokens\":{reused},\"desktop_context\":{desktop_context},\"admission_ns\":{admission_ns},\"first_token_ns\":{},\"complete_ns\":{},\"observed_ns\":{observed_ns},\"complete\":{complete},\"boundary\":\"{boundary}\",\"tokens\":{},\"token_times_ns\":{:?},\"output_bytes\":{:?}}}",
+        if voice { "recognized_voice_transcript" } else { "typed_text" },
+        prompt, first_token_ns.map_or("null".into(), |value| value.to_string()),
+        if complete { observed_ns.to_string() } else { "null".into() },
+        ai.qwen_tokens, token_times_ns, ai.acceptance_native_output());
+    if ai.chat.generation_state == GenerationState::Running { ai.cancel_chat(); }
+    (receipt, complete)
+}
+
+// ------------------------=
+// FUNC: memory_native
+// DESC: Runs pinned Hermes through production personal-memory chat ingress with cold, warm, and changed-profile turns, excluding model load, microphone recognition, disk persistence, and audio.
+// ------------------=
+fn memory_native() {
+    use std::io::Write;
+    let report = std::env::var_os("HERMES_MEMORY_REPORT").map(std::path::PathBuf::from);
+    if let Some(path) = report.as_ref() {
+        let root = std::env::current_dir().unwrap().canonicalize().unwrap();
+        let parent = path.parent().unwrap().canonicalize().unwrap();
+        assert!(parent.starts_with(root.join("build")) || parent.starts_with(root.join("builds")),
+            "Benchmark receipts must remain under repository build directories");
+        assert!(!path.exists(), "Choose a new receipt path");
+    }
+    let prompt = std::env::var("HERMES_MEMORY_PROMPT").unwrap_or_else(|_| "Hi".into());
+    assert!(!prompt.is_empty() && prompt.len() <= CHAT_INPUT_CAPACITY);
+    let workers = std::env::var("HERMES_MEMORY_WORKERS").ok()
+        .map(|value| value.parse::<usize>().unwrap()).unwrap_or(0);
+    assert!(workers <= 16);
+    let assert_routing = std::env::args().any(|arg| arg == "--assert-memory-routing");
+    let owner = [0x63; 16];
+    let session = [0x64; 16];
+    let profile = runtime::ai::hermes_profile::Document::new(owner, b"Alex", b"Infinity").unwrap();
+    let mut ai = Box::new(AiRuntime::new());
+    ai.bind_chat_owner(owner);
+    ai.load_hermes_memory(session, Some(profile.clone()));
+    let weights = Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf")
+        .unwrap().into_boxed_slice());
+    let arena = Box::leak(vec![0u128; 1280 * 1024 * 1024 / 16].into_boxed_slice());
+    let arena = unsafe {
+        std::slice::from_raw_parts_mut(arena.as_mut_ptr().cast::<u8>(), arena.len() * 16)
+    };
+    assert!(ai.load_hermes(weights, arena));
+    let threads: Vec<_> = (0..workers).map(|index| std::thread::spawn(move || unsafe {
+        runtime::ai::qwen::workers::run_host_worker(index)
+    })).collect();
+    let ready = Instant::now();
+    while runtime::ai::qwen::workers::online() != workers {
+        assert!(ready.elapsed().as_secs() < 10);
+        std::thread::yield_now();
+    }
+    let mut receipts = Vec::new();
+    let mut all_complete = true;
+    for (case, voice) in [("cold_profile", false), ("warm_same_profile", true),
+        ("changed_profile", true)] {
+        if case == "warm_same_profile" {
+            ai.load_hermes_memory(session, Some(profile.clone()));
+        } else if case == "changed_profile" {
+            ai.load_hermes_memory(session, Some(profile.updated(owner, b"user_name", b"Sam").unwrap()));
+        }
+        let (receipt, complete) = memory_native_turn(&mut ai, case, prompt.as_bytes(),
+            voice, workers, assert_routing);
+        println!("{receipt}");
+        receipts.push(receipt);
+        all_complete &= complete;
+    }
+    unsafe { runtime::ai::qwen::workers::stop_host_workers(); }
+    for thread in threads { thread.join().unwrap(); }
+    let receipt = format!(
+        "{{\"schema\":1,\"boundary\":\"native host transcript submission to text generation; excludes model load, speech recognition, durable memory storage, audio and installed presentation\",\"model\":\"Hermes-3-Llama-3.2-3B.Q4_K_M\",\"maximum_tokens\":48,\"deadline_seconds\":240,\"all_complete\":{all_complete},\"routing_asserted\":{assert_routing},\"turns\":[{}]}}\n",
+        receipts.join(","));
+    if let Some(path) = report {
+        std::fs::OpenOptions::new().write(true).create_new(true).open(path).unwrap()
+            .write_all(receipt.as_bytes()).unwrap();
+    } else {
+        println!("{receipt}");
+    }
+    assert!(all_complete, "Incomplete benchmark receipts were retained; do not compare them as complete responses");
+    if assert_routing { memory_native_cache_contract(&mut ai, owner, session, &profile); }
 }
 
 // ------------------------=

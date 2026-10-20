@@ -13,6 +13,7 @@ pub mod kit;
 pub mod mapping;
 pub mod memory;
 pub mod hermes_profile;
+pub mod hermes_memory_request;
 pub mod model;
 pub mod provider;
 pub mod qwen;
@@ -191,10 +192,10 @@ impl AiRuntime {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
-        let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
         if hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None{
             return Ok(RequestRoute::Inference(InferenceMode::Conversation));
         }
+        let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
         let software_goal=crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
         if let (RequestRoute::Control(command), false) = (route, software_goal) {
             self.execution
@@ -287,6 +288,23 @@ impl AiRuntime {
     #[cfg(not(target_os = "none"))]
     pub fn acceptance_native_progress(&self) -> usize {
         self.qwen.as_ref().map_or(0, |service| service.progress_tokens())
+    }
+    // ------------------------=
+    // FUNC: acceptance_app_lease_state
+    // DESC: Returns typed host-only goal, original-clock, saved-context and model-busy state for continuation and cancellation assertions.
+    // ------------------=
+    #[cfg(not(target_os = "none"))]
+    pub fn acceptance_app_lease_state(&self) -> (Option<u64>, Option<u64>, bool, bool) {
+        (self.app_workflow_goal, self.app_started_ns, self.app_saved.is_some(),
+            self.qwen.as_ref().is_some_and(|service| service.busy()))
+    }
+    // ------------------------=
+    // FUNC: acceptance_native_context
+    // DESC: Allows host tests to compare exact restored conversation tokens without exposing guest model memory or adding execution authority.
+    // ------------------=
+    #[cfg(not(target_os = "none"))]
+    pub fn acceptance_native_context(&self) -> Option<(&[u32], bool)> {
+        self.qwen.as_ref().map(|service| service.acceptance_context())
     }
 
     // ------------------------=
@@ -686,26 +704,62 @@ impl AiRuntime {
     pub fn save_hermes_field(&mut self,key:&[u8],value:&[u8])->bool {
         if self.qwen.as_ref().is_some_and(|s|s.busy()) || self.app_owner.is_some(){return false;}
         let Ok(document)=crate::storage::hermes_memory(self.chat_owner,self.hermes_session,b"",b"Infinity",Some((key,value))) else{return false;};
-        if key==b"wake_word" {
-            let wake=if value==b"Computer"{crate::runtime::identity::WakeWord::Computer}else{crate::runtime::identity::WakeWord::Infinity};
-            crate::runtime::with_runtime(|runtime|{
-                let owner=crate::runtime::identity::StableId(self.chat_owner);
-                let _=runtime.identity.update_wake_word(owner,owner,wake);
-            });
-            let _=crate::runtime::persist_identity_state();
-        }
-        if key==b"favorite_color"{
-            if let Some(rgb)=hermes_profile::conversation::color(value){
-                crate::runtime::with_runtime(|runtime|{
-                    let owner=crate::runtime::identity::StableId(self.chat_owner);
-                    let _=runtime.identity.update_user_accent(owner,owner,rgb);
-                    let _=runtime.ui.skins.set_accent(rgb,crate::ui::skin::AppearanceScope::User);
-                });
-                let _=crate::runtime::persist_identity_state();
+        let accent = (key == b"favorite_color").then(||hermes_profile::conversation::color(value)).flatten();
+        let wake = if value == b"Computer" { crate::runtime::identity::WakeWord::Computer }
+            else { crate::runtime::identity::WakeWord::Infinity };
+        let before = crate::runtime::with_runtime(|runtime| {
+            let owner = crate::runtime::identity::StableId(self.chat_owner);
+            let change_wake = key == b"wake_word"
+                && runtime.identity.voice_profile(owner).is_some_and(|profile| profile.wake_word != wake);
+            let change_accent = accent.is_some_and(|rgb|
+                runtime.identity.user_profile(owner).is_some_and(|profile| profile.accent_rgb != rgb));
+            if !change_wake && !change_accent { return None; }
+            let before = runtime.identity.encode();
+            if change_wake { let _ = runtime.identity.update_wake_word(owner, owner, wake); }
+            if let Some(rgb) = accent.filter(|_|change_accent) {
+                let _ = runtime.identity.update_user_accent(owner, owner, rgb);
             }
+            Some(before)
+        }).flatten();
+        if let Some(before) = before {
+            if !crate::runtime::persist_identity_state() {
+                // Keep a repeated request retryable after a failed identity checkpoint.
+                if let Ok(identity) = crate::runtime::identity::IdentitySystem::decode(&before) {
+                    crate::runtime::with_runtime(|runtime| runtime.identity = identity);
+                }
+            }
+        }
+        if let Some(rgb) = accent {
+            crate::runtime::with_runtime(|runtime| {
+                let owner = crate::runtime::identity::StableId(self.chat_owner);
+                if runtime.identity.user_profile(owner).is_some_and(|profile|profile.accent_rgb == rgb) {
+                    let _ = runtime.ui.skins.set_accent(rgb, crate::ui::skin::AppearanceScope::User);
+                }
+            });
         }
         self.load_hermes_memory(self.hermes_session,Some(document));
         true
+    }
+
+    // ------------------------=
+    // FUNC: personal_memory_reply
+    // DESC: Handles only raw authorized user input and returns a durable memory receipt without starting inference or touching chat history.
+    // ------------------=
+    pub fn personal_memory_reply(&mut self, input: &[u8], reply: &mut [u8; 8192])
+        -> Option<hermes_memory_request::Receipt>
+    {
+        if !self.chat.enabled() || self.execution.busy() || self.app_owner.is_some()
+            || self.qwen.as_ref().is_some_and(|service| service.busy()) {
+            return None;
+        }
+        let profile = self.hermes_memory.clone();
+        hermes_memory_request::respond(input, profile.as_ref(), |key, value| {
+            #[cfg(target_os = "none")]
+            { self.save_hermes_field(key, value) }
+            // Host inspection is supported, but never simulate a durable OS commit.
+            #[cfg(not(target_os = "none"))]
+            { let _ = (key, value); false }
+        }, reply)
     }
 
     // ------------------------=
@@ -800,45 +854,31 @@ impl AiRuntime {
         if length > input.len() {
             return false;
         }
+        // Include routing, memory reads/commits and prompt construction in text latency.
+        let submitted_ns = crate::ui::performance::monotonic_ns();
         input[..length].copy_from_slice(self.chat.input());
         let Ok(route) = self.route_request(&input[..length], origin) else {
             return false;
         };
+        {
+            let mut reply = [0; 8192];
+            if let Some(receipt) = self.personal_memory_reply(&input[..length], &mut reply) {
+                self.chat.begin_native_turn();
+                self.chat.update_native_response(&reply[..receipt.length]);
+                // Failed writes are factual spoken receipts too, not inference failures.
+                self.chat.generation_state = chat::GenerationState::Complete;
+                self.qwen_tokens = 0;
+                self.qwen_decode_ns = 0;
+                self.qwen_first_token_ns = None;
+                self.qwen_metrics.begin(submitted_ns, 0, 0);
+                self.qwen_metrics.finish(crate::ui::performance::monotonic_ns());
+                return true;
+            }
+        }
         #[cfg(target_os="none")]
         {
-            use hermes_profile::conversation::{action,Action};
-            let learned=self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled"));
-            let action=action(&input[..length],learned);
-            if action==Action::Inspect{
-                let mut reply=[0;8192];
-                let count=self.hermes_memory.as_ref().and_then(|d|d.inspect(&mut reply).ok());
-                self.chat.begin_native_turn();
-                self.chat.update_native_response(count.map(|n|&reply[..n]).unwrap_or(b"No personal memory is loaded for this account."));
-                self.chat.generation_state=chat::GenerationState::Complete;return true;
-            }
-            let edit=match action{
-                Action::Set(key,value)=>Some((key,value)),
-                Action::Forget(key)=>Some((key,match key{b"wake_word"=>b"Infinity".as_slice(),b"assistant_name"=>b"Hermes",b"learning_enabled"|b"inquiries_enabled"|b"inference_enabled"=>b"false",_=>b""})),
-                _=>None
-            };
-            if let Some((key,value))=edit{
-            let saved=self.save_hermes_field(key,value);
-            let explicit=matches!(action,Action::Forget(_)) || input[..length].get(..8).is_some_and(|v|v.eq_ignore_ascii_case(b"remember"))
-                || matches!(key,b"learning_enabled"|b"inquiries_enabled"|b"inference_enabled");
-            if !saved||explicit{
-            self.chat.begin_native_turn();
-            self.chat.update_native_response(if saved {
-                b"Updated your personal memory in your home folder."
-            }else{
-                b"Memory was not saved. Check the field, value, active owner, and storage. Existing memory has been preserved."
-            });
-            self.chat.generation_state=chat::GenerationState::Complete;
-            return true;
-            }}
-            if action==Action::None{
-                let inference=self.hermes_memory.as_ref().and_then(|d|hermes_profile::conversation::infer_interest(d,&input[..length]));
-                if let Some(value)=inference{let _=self.save_hermes_field(b"inferred_interests",value);}
-            }
+            let inference=self.hermes_memory.as_ref().and_then(|d|hermes_profile::conversation::infer_interest(d,&input[..length]));
+            if let Some(value)=inference{let _=self.save_hermes_field(b"inferred_interests",value);}
         }
         if matches!(route, RequestRoute::Control(_)) {
             self.chat.begin_native_turn();
@@ -879,7 +919,6 @@ impl AiRuntime {
         if !self.chat.enabled() || service.busy() {
             return false;
         }
-        let submitted_ns = crate::ui::performance::monotonic_ns();
         let input = self.chat.input();
         let mut augmented=[0u8;8192];
         self.memory_turn=self.memory_turn.saturating_add(1);
@@ -899,9 +938,8 @@ impl AiRuntime {
                 }
             }n
         }else{0};
-        let submitted = if augmented_len>0 {
-            service.submit_desktop(&augmented[..augmented_len],control::INSTRUCTIONS)
-        }else if route == RequestRoute::Inference(InferenceMode::Conversation) {
+        let input = if augmented_len > 0 { &augmented[..augmented_len] } else { input };
+        let submitted = if route == RequestRoute::Inference(InferenceMode::Conversation) {
             service.submit(input)
         } else {
             service.submit_desktop(input, control::INSTRUCTIONS)

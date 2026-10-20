@@ -509,6 +509,16 @@ impl ConsoleRuntime {
             Ok(crate::runtime::ai::kit::RequestRoute::Inference(_)) => {},
             Err(message) => {panel.reply(message);assistant::write(id,panel);return;}
         }
+        let mut memory_reply = [0; 8192];
+        if let Some(receipt) = crate::runtime::ai::with_ai_runtime(|ai|
+            ai.personal_memory_reply(&panel.input[..panel.length], &mut memory_reply)) {
+            panel.length = 0;
+            panel.caret = 0;
+            panel.generation = assistant::GenerationStatus::Complete;
+            panel.reply(&memory_reply[..receipt.length]);
+            assistant::write(id, panel);
+            return;
+        }
         if panel.propose_contextual(id) {
             panel.length = 0;
             panel.caret = 0;

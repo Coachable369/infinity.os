@@ -611,7 +611,17 @@ voice-vad-test:
 	rustc --edition=2021 --test kernel/runtime/ai/voice_vad.rs -o build/tools/voice-vad-private-test
 	build/tools/voice-vad-private-test
 
-ai-test:
+.PHONY: hermes-memory-test
+hermes-memory-test:
+	@mkdir -p build/tests
+	rustc --edition=2021 --test tools/hermes-memory-test.rs -o build/tests/hermes-memory-test
+	build/tests/hermes-memory-test
+	rustc --edition=2021 --test tools/hermes-memory-request-test.rs -o build/tests/hermes-memory-request-test
+	build/tests/hermes-memory-request-test
+	rustc --edition=2021 -O tools/object-store-test.rs -o build/tests/object-store-test
+	build/tests/object-store-test --hermes-memory-only
+
+ai-test: hermes-memory-test
 	@tools/ai-test.sh
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test causal_attention
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test native_attention_softmax_preserves_bits

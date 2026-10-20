@@ -118,3 +118,56 @@ peak measurements. Native desktop keyboard commands worked; host-driven mouse
 automation did not reliably move the guest pointer, so no pointer-latency claim
 is made. The original `infinityos-4` disk was not attached to the QA VM or
 modified; its session was saved while the isolated test ran.
+
+## Personal-memory latency — 2026-10-20
+
+Loading a profile incorrectly sent ordinary conversation through the desktop
+tool prompt. Correcting a fact legitimately invalidated cached history, making
+that unnecessary tool prefill recur. Conversation now keeps its original route;
+only relevant personal fields are added, with tentative interests explicitly
+marked as hypotheses. Forgetting, corrections and owner changes still clear
+cached history.
+
+Direct memory edits return a native receipt after persistence, without another
+model turn. This includes `My Favorite color is grey` and `Set time zone to CST`,
+from desktop/voice ingress or an app panel's raw user input. CST is saved as a
+personal timezone preference; this does not change the OS clock. Repeated
+normalized values do not rewrite the memory object. Matching identity accents
+and wake words also avoid redundant identity checkpoints.
+
+Two paired runs used the same pinned Hermes Q4_K_M artifact, `Hi` prompt,
+default profile, no helper workers and the production `AiRuntime` ingress.
+All six replies per variant completed, with identical response bytes and token
+counts. Mean latency:
+
+| Case | First token before → after | Complete reply before → after |
+|---|---:|---:|
+| Cold profile, typed | 50.144 → 4.355 s | 51.604 → 5.520 s |
+| Same profile, voice transcript | 8.710 → 4.764 s | 10.226 → 5.974 s |
+| Changed profile, voice transcript | 50.145 → 4.374 s | 51.603 → 5.535 s |
+
+Cold prefill fell from 458 to 46 tokens. This is a native **host** measurement
+from recognized transcript submission to text generation, not microphone,
+speech recognition, guest disk, presentation or speaker latency. Runtime timing
+now starts before memory persistence, so installed measurements include that
+cost. Immediate memory receipts clear stale inference counters.
+
+Reproduction (all commands use the build kit):
+
+```sh
+./build-kit hermes-memory-tests
+./build-kit run env CARGO_TARGET_DIR=build/behavior-harness cargo build \
+  --release --manifest-path tools/behavior-harness/Cargo.toml --bin ai-test
+./build-kit run env HERMES_MEMORY_REPORT=build/memory-candidate.json \
+  build/behavior-harness/release/ai-test --memory-native --assert-memory-routing
+```
+
+Use a new report path each time. Preserve the pre-change executable to compare
+against the candidate, omitting `--assert-memory-routing` for the baseline.
+JSON receipts include admission, first-token and completion times, cache/token
+counters, output bytes and explicit incomplete boundaries. Behavioral checks
+cover typed/voice/app ingress, actual ObjectStore write/flush/version counts,
+reload, owner isolation, failure preservation and cache clearing after forget.
+The focused run manifest is
+`builds/manifests/20261020T143647345604Z-52804.json`; paired receipts are in
+`builds/validation/hermes-memory-latency/`.
