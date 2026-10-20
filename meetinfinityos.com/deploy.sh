@@ -19,7 +19,7 @@ mkdir -p "$1/backups" "$1/public_html/assets" "$1/staging-$2"
 tar -czf "$1/backups/website-$2.tar.gz" -C "$1" public_html
 REMOTE
 
-COPYFILE_DISABLE=1 tar -czf - -C "$SITE_DIR" index.html whitepaper.html styles.css whitepaper.css navigation.js app.js art.js \
+COPYFILE_DISABLE=1 tar -czf - -C "$SITE_DIR" index.html whitepaper.html invest.html styles.css whitepaper.css navigation.js app.js art.js \
   emblem-geometry.js scene-math.mjs assets/emblem-outline.json \
   assets/brand.webp assets/infinity-emblem.webp assets/infinity-detail.webp \
   assets/Inter-Variable.ttf assets/vendor/three.module.min.js \
@@ -34,6 +34,7 @@ mv "$1/staging-$2/assets/vendor/"* "$1/public_html/assets/vendor/"
 rmdir "$1/staging-$2/assets/vendor"
 mv "$1/staging-$2/assets/"* "$1/public_html/assets/"
 mv "$1/staging-$2/"*.css "$1/staging-$2/"*.js "$1/staging-$2/"*.mjs "$1/public_html/"
+mv "$1/staging-$2/invest.html" "$1/public_html/invest.html"
 mv "$1/staging-$2/whitepaper.html" "$1/public_html/whitepaper.html"
 mv "$1/staging-$2/index.html" "$1/public_html/index.html"
 rmdir "$1/staging-$2/assets" "$1/staging-$2"
@@ -44,4 +45,5 @@ systemctl is-active httpd
 curl --fail --silent --output /dev/null --write-out 'HTTPS apex: %{http_code}\n' https://meetinfinityos.com/
 curl --fail --silent --output /dev/null --write-out 'HTTPS www: %{http_code}\n' https://www.meetinfinityos.com/
 curl --fail --silent --output /dev/null --write-out 'HTTPS whitepaper: %{http_code}\n' https://meetinfinityos.com/whitepaper.html
+curl --fail --silent --output /dev/null --write-out 'HTTPS investors: %{http_code}\n' https://meetinfinityos.com/invest.html
 REMOTE

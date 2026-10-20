@@ -44,7 +44,15 @@ The shared top navigation links to `whitepaper.html`. It presents a public
 design-direction overview with linked contents, responsive reading typography,
 and a print stylesheet. It reuses the existing kit and emblem, works without
 WebGL, and remains readable with JavaScript disabled. `navigation.js` owns the
-same mobile-menu behavior on both pages; it does not load the homepage scene.
+same mobile-menu behavior across the site; it does not load the homepage scene.
+
+## Investors
+
+`invest.html` is linked from the top menu on all three pages. It reuses the
+reading-page stylesheet, shared navigation, and original emblem, with a public
+product overview and working links to the whitepaper and product experience.
+It does not collect investment commitments, publish financial terms, or invent
+a contact address. Deployment includes this page in the runtime allowlist.
 
 ## Deployment
 

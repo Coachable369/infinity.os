@@ -62,3 +62,13 @@ editorial layout: a 56px title, 28px subtitle, 16px/1.85 reading text limited to
 the article and the title steps to 40px. Use an active cyan navigation underline.
 Print uses black text on white and removes site navigation. Content is a public
 design-direction overview, not a performance claim or release specification.
+
+## Investor Overview
+
+Reuse the reading-page layout, existing emblem, contents links and shared menu
+without introducing new artwork or component styles. Preserve its typography,
+spacing, active cyan navigation state and mobile behavior. The five-item header
+must fit at desktop and switch to the existing mobile menu at narrower widths.
+Present public product direction and development status, with real links to the
+whitepaper and product preview. Do not invent financials, traction, funding
+terms, contact details, or an investment submission flow.

@@ -1,0 +1,43 @@
+{
+  "desktop": {
+    "active": "/invest.html",
+    "contentsResolve": true,
+    "imagesLoaded": true,
+    "navItems": 5,
+    "path": "/invest.html",
+    "scrollWidth": 1425,
+    "width": 1440
+  },
+  "mobile": {
+    "menuClosed": true,
+    "path": "/invest.html",
+    "scrollWidth": 375,
+    "width": 390
+  },
+  "compact": {
+    "scrollWidth": 305,
+    "titleBox": 257,
+    "titleWidth": 257,
+    "width": 320
+  },
+  "homeHeader": {
+    "brandRight": 262.8359375,
+    "controlsLeft": 902,
+    "controlsRight": 946,
+    "navHeight": 43.1953125,
+    "navLeft": 340.0546875,
+    "navRight": 824.78125,
+    "sceneReady": true,
+    "width": 1001
+  },
+  "keyboardDismissal": true,
+  "whitepaperRoundTrip": true,
+  "sectionNavigation": {
+    "hash": "#status",
+    "headerBottom": 68,
+    "height": 568,
+    "scroll": 2584.5,
+    "top": 79.828125
+  },
+  "consoleErrors": 0
+}
