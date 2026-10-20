@@ -6,6 +6,8 @@ mod bootstrap;
 mod crash;
 mod desktop;
 mod access_style;
+mod access_scale;
+mod access_panel;
 mod access_view;
 mod ai_widget_view;
 mod file_preview_view;
@@ -38,6 +40,7 @@ use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
 pub use self::access_style::animate as access_animation_tick;
+pub use self::access_style::leave_scene as access_animation_leave;
 pub use self::crash::show_fatal_crash;
 pub use self::desktop::{system_ui_authentication_success, system_ui_authentication_opacity, system_ui_cursor, system_ui_editor_blink,
     system_ui_present, thinking_animation_tick};

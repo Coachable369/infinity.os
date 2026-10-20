@@ -42,6 +42,8 @@ with #86C7FF by 20/255 at the top, tapering to zero at the bottom. Focus uses an
 inward five-pixel rim and #FFFFFF edge, eased out over 140ms at a bounded 16ms
 paint cadence. Pressed primaries darken toward the elevated token. Reduced
 motion settles immediately. Controls have no idle shimmer or geometry animation.
+Input-panel entrance and selected-panel edge breathing are specified separately
+in [Access panel motion](access-panel-motion.md); they do not alter control geometry.
 The sign-in background alone reuses `infinity-auth-success-ripple-v1.bmp` for a
 quiet 3.2-second expanding water ring beneath the stationary orb (maximum opacity
 64/255). Its elapsed-time loop restores only the water rectangle, subtracting the

@@ -3,6 +3,34 @@ use super::{access_style as palette, DisplayDevice};
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: access_panel_glow
+    // DESC: Adds a clipped inward edge light without affecting panel content or surrounding wallpaper.
+    // ------------------=
+    pub(super) fn access_panel_glow(&mut self, left: usize, top: usize, width: usize, height: usize) {
+        let Some(region)=self.clipped_render_region(left,top,width,height) else { return; };
+        let strength=palette::panel_motion().glow as usize;
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
+                let col=x-left;
+                let row=y-top;
+                let outer=palette::rounded_coverage(col,row,width,height,18);
+                let distance=col.min(row).min(width-1-col).min(height-1-row);
+                if distance>=18 { continue; }
+                let mut coverage=0usize;
+                for inset in 1..=6 {
+                    let inner=if col>=inset && row>=inset {
+                        palette::rounded_coverage(col-inset,row-inset,width.saturating_sub(2*inset),
+                            height.saturating_sub(2*inset),18-inset)
+                    } else { 0 };
+                    coverage+=outer.saturating_sub(inner) as usize;
+                }
+                let alpha=(coverage*strength/255/6) as u8;
+                if alpha>0 { self.blend_color_unchecked(x,y,palette::BORDER.0,palette::BORDER.1,palette::BORDER.2,alpha); }
+            }
+        }
+        self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);
+    }
+    // ------------------------=
     // FUNC: access_surface
     // DESC: Paints a palette-controlled glass surface with antialiased edges and a stable focus rim.
     // ------------------=

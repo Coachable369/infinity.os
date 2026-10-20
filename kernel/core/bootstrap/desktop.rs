@@ -917,10 +917,10 @@ impl super::DisplayDevice {
         let card_y = sy(123);
         let card_w = sw(521);
         let card_h = sw(754);
-        self.access_panel(card_x, card_y, card_w, card_h);
         if paint_header {
             self.access_wordmark(sx(900), sy(92), sw(570), sw(92));
         }
+        self.access_panel(card_x, card_y, card_w, card_h);
         self.top_bar_infinity_icon(card_x + card_w / 2, card_y + sw(91), sw(156));
         self.access_label((card_x + sw(28), card_y + sw(148), card_w - sw(56), sw(49)),
             if locked { b"Welcome Back" } else { b"Welcome to InfinityOS" },
@@ -1024,6 +1024,8 @@ impl super::DisplayDevice {
                 if focus == index + 4 { access::TEXT } else { access::SECONDARY }, true, false);
         }
 
+        if focus < 7 { self.access_panel_glow(card_x,card_y,card_w,card_h); }
+        self.access_panel_entrance((card_x,card_y,card_w,card_h),false);
         let tray_x = sx(529);
         let tray_y = sy(914);
         let tray_w = sw(478);
@@ -2368,6 +2370,27 @@ impl super::DisplayDevice {
         focus: usize,
         validation_error: bool,
     ) {
+        let card=crate::ui::installer_layout::configuration_template_rect(step,
+            crate::ui::installer_template::InstallerTemplateRole::Console,self.width,self.height);
+        self.onboarding_frame_content(step,input,masked,focus,validation_error);
+        if let Some(card)=card {
+            self.access_panel_glow(card.left,card.top,card.width,card.height);
+            self.access_panel_entrance((card.left,card.top,card.width,card.height),true);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: onboarding_frame_content
+    // DESC: Paints authored configuration content within the presentation-only entrance aperture.
+    // ------------------=
+    fn onboarding_frame_content(
+        &mut self,
+        step: usize,
+        input: &[u8],
+        masked: bool,
+        focus: usize,
+        validation_error: bool,
+    ) {
         if self.configuration_template_screen(step) {
             self.configuration_template_live_content(step, input, masked, focus, validation_error);
             return;
@@ -2949,9 +2972,8 @@ impl super::DisplayDevice {
         if let Some(card)=crate::ui::installer_layout::configuration_template_rect(step,
             crate::ui::installer_template::InstallerTemplateRole::Console,self.width,self.height) {
             self.intersect_render_clip(card.left,card.top,card.width,card.height);
-        }
-        if self.configuration_template_screen(step) {
-            self.configuration_template_live_content(step, input, masked, focus, validation_error);
+            self.paint_first_boot_background();
+            self.onboarding_frame(step,input,masked,focus,validation_error);
             self.render_clip=previous_clip;
             return;
         }
@@ -10323,6 +10345,11 @@ impl super::DisplayDevice {
         input: &[u8],
         masked: bool,
     ) {
+        if access::panel_motion().extent < 1024 {
+            if matches!(screen,5|6) { self.authentication_focus_controls(screen==6,step,input,1); }
+            else if screen==1 { self.onboarding_focus_controls(step,input,masked,1,false); }
+            return;
+        }
         if matches!(screen, 5 | 6) {
             let fit = (self.width.saturating_mul(1000) / 1536)
                 .min(self.height.saturating_mul(1000) / 1024)

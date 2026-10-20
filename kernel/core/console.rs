@@ -1190,6 +1190,8 @@ impl ConsoleRuntime {
             let key=(self.mode as u32)*65536+(self.system_step as u32)*256+self.system_focus as u32;
             crate::bootstrap::access_animation_tick(key,time.unwrap_or(0)/1_000_000,
                 self.pointer_pressed,self.spatial.state.reduced_motion || time.is_none());
+        } else {
+            crate::bootstrap::access_animation_leave();
         }
         self.publish_minimized_shelf();
         let mut editor_view = self.editor_tools;

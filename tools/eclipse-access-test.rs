@@ -3,6 +3,8 @@
 
 #[path = "../kernel/core/bootstrap/access_style.rs"]
 mod access_style;
+#[path = "../kernel/core/bootstrap/access_scale.rs"]
+mod access_scale;
 #[path = "../kernel/core/bootstrap/access_view.rs"]
 mod access_view;
 #[path = "../kernel/ui/bitmap.rs"]
@@ -14,6 +16,118 @@ mod skin;
 pub const INFINITY_UI_ABI_VERSION: u16 = 1;
 mod bootstrap {
     pub const SPLASH_BMP: &[u8] = include_bytes!("../assets/boot/infinity-eclipse-header-v1.bmp");
+}
+
+// ------------------------=
+// FUNC: panel_entrance_and_reduced_motion
+// DESC: Verifies centered monotonic entrance, scene scoping, late ticks and motion suppression.
+// ------------------=
+#[test]
+fn panel_entrance_and_reduced_motion() {
+    let mut motion=access_style::PanelMotion::new();
+    assert!(motion.advance(3,1000,false));
+    assert_eq!(motion.rectangle((20,30,400,600)),(220,330,0,0));
+    let mut last=0;
+    for elapsed in (0..=360).step_by(16) {
+        motion.advance(3,1000+elapsed,false);
+        assert!(motion.extent>=last);
+        let (x,y,w,h)=motion.rectangle((20,30,400,600));
+        assert!(x>=20 && y>=30 && x+w<=420 && y+h<=630);
+        assert!((2*x+w).abs_diff(440)<=1);
+        assert!((2*y+h).abs_diff(660)<=1);
+        last=motion.extent;
+    }
+    motion.advance(3,1360,false);
+    assert_eq!(motion.rectangle((20,30,400,600)),(20,30,400,600));
+    motion.advance(3,10000,false);
+    assert_eq!(motion.extent,1024);
+    assert_eq!(motion.started_ms,1000);
+    motion.advance(4,10000,false);
+    assert_eq!(motion.extent,0);
+    motion.advance(4,10016,true);
+    assert_eq!((motion.extent,motion.glow),(1024,24));
+    assert!(!motion.advance(4,12000,true));
+}
+
+// ------------------------=
+// FUNC: panel_glow_preserves_content_and_parent_clip
+// DESC: Checks production glow pixels leave the content and wallpaper untouched.
+// ------------------=
+#[test]
+fn panel_glow_preserves_content_and_parent_clip() {
+    access_style::animate(0x100,0,false,true);
+    let mut display=DisplayDevice::new(200,160);
+    display.access_panel(20,20,160,120);
+    let before=display.pixels.clone();
+    display.clip=Some(Region{left:20,top:20,right:180,bottom:80});
+    display.access_panel_glow(20,20,160,120);
+    assert_ne!(display.pixels[20*200+100],before[20*200+100]);
+    assert_eq!(display.pixels[60*200+100],before[60*200+100]);
+    for y in 80..160 { assert_eq!(&display.pixels[y*200..(y+1)*200],&before[y*200..(y+1)*200]); }
+    for y in 0..160 { assert_eq!(&display.pixels[y*200..y*200+20],&before[y*200..y*200+20]); }
+}
+
+// ------------------------=
+// FUNC: panel_focus_does_not_restart_entrance
+// DESC: Exercises the actual shared animation state across focus changes and desktop reentry.
+// ------------------=
+#[test]
+fn panel_focus_does_not_restart_entrance() {
+    access_style::leave_scene();
+    access_style::animate(0x30000,0,false,false);
+    access_style::animate(0x30001,400,true,false);
+    assert_eq!(access_style::panel_motion().extent,1024);
+    assert_eq!(access_style::panel_motion().started_ms,0);
+    access_style::leave_scene();
+    access_style::animate(0x30001,500,false,false);
+    assert_eq!(access_style::panel_motion().extent,0);
+    access_style::animate(0x30001,500,false,true);
+}
+
+// ------------------------=
+// FUNC: panel_motion_render_frames
+// DESC: Produces a framebuffer contact sheet of production panel surfaces and clipped entrance states.
+// ------------------=
+#[test]
+fn panel_motion_render_frames() {
+    let mut display=DisplayDevice::new(1000,240);
+    let mut motion=access_style::PanelMotion::new();
+    motion.advance(1,0,false);
+    access_style::animate(0x100,0,false,true);
+    for (index,time) in [0,64,128,240,360].into_iter().enumerate() {
+        motion.advance(1,time,false);
+        let (x,y,w,h)=motion.rectangle((index*200+10,10,180,220));
+        display.access_panel(index*200+10,10,180,220);
+        display.access_surface(index*200+26,80,148,36,8,access_style::BACKGROUND,access_style::BORDER,255,false);
+        display.access_surface(index*200+26,132,148,36,8,access_style::PRIMARY,access_style::BORDER,255,false);
+        display.access_panel_glow(index*200+10,10,180,220);
+        let mut source=Vec::new();
+        for row in 10..230 { for col in index*200+10..index*200+190 {
+            source.push(u32::from_le_bytes(display.pixels[row*1000+col]));
+            display.pixels[row*1000+col]=[9,15,38,0];
+        }}
+        for row in 0..h { for col in 0..w {
+            display.pixels[(y+row)*1000+x+col]=access_scale::sample(&source,180,220,col,row,w,h).to_le_bytes();
+        }}
+    }
+    let mut image=b"P6\n1000 240\n255\n".to_vec();
+    for pixel in display.pixels { image.extend_from_slice(&pixel[..3]); }
+    std::fs::write("build/behavior-tests/access-panel-motion.ppm",image).unwrap();
+}
+
+// ------------------------=
+// FUNC: panel_filter_preserves_channels_and_endpoints
+// DESC: Verifies true scaled panel pixels and degenerate dimensions without prose or source-text oracles.
+// ------------------=
+#[test]
+fn panel_filter_preserves_channels_and_endpoints() {
+    let source=[0xff000000,0xff0000ff,0xff00ff00,0xffff0000];
+    for y in 0..2 { for x in 0..2 {
+        assert_eq!(access_scale::sample(&source,2,2,x,y,2,2),source[y*2+x]);
+    }}
+    assert_eq!(access_scale::sample(&source,2,2,0,0,1,1),0xff404040);
+    assert_eq!(access_scale::sample(&[],0,0,0,0,0,0),0);
+    assert_eq!(access_scale::sample(&source[..1],2,2,0,0,2,2),0);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
