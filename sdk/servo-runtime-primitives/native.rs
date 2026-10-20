@@ -19,6 +19,7 @@ const EMPTY: Record = Record { id: 0, pointer: ptr::null_mut(), size: 0, entry: 
 pub struct Runtime {
     executor: Executor<LIMIT>, arena: Arena<'static>, hooks: Hooks, cpu: u64,
     records: [Record; LIMIT], root_error: i32, root_c_error: i32, root_wait: usize, root_woken: bool,
+    allocation_checks: u32, allocation_slice_start: u64,
 }
 static ACTIVE: AtomicPtr<Runtime> = AtomicPtr::new(ptr::null_mut());
 impl Runtime {
@@ -27,8 +28,10 @@ impl Runtime {
     // DESC: Builds a runtime using only granted memory and explicit native service callbacks.
     // ------------------=
     pub fn new(bytes: &'static mut [u8], hooks: Hooks) -> Option<Self> {
+        let allocation_slice_start = (hooks.monotonic)();
         Some(Self { executor: Executor::new(), arena: Arena::new(bytes)?, cpu: (hooks.cpu)(), hooks,
-            records: [EMPTY; LIMIT], root_error: 0, root_c_error: 0, root_wait: 0, root_woken: false })
+            records: [EMPTY; LIMIT], root_error: 0, root_c_error: 0, root_wait: 0, root_woken: false,
+            allocation_checks: 0, allocation_slice_start })
     }
     // ------------------------=
     // FUNC: install
@@ -97,6 +100,21 @@ unsafe fn drive(p: *mut Runtime) {
     reap(p);
 }
 // ------------------------=
+// FUNC: allocation_safepoint
+// DESC: Yields allocation-heavy engine workers after a millisecond, outside all allocator borrows; root service work never reenters itself.
+// ------------------=
+unsafe fn allocation_safepoint(p: *mut Runtime) {
+    (*p).allocation_checks += 1;
+    if (*p).allocation_checks < 64 { return; }
+    (*p).allocation_checks = 0;
+    let now = ((*p).hooks.monotonic)();
+    if now.saturating_sub((*p).allocation_slice_start) < 1_000_000 { return; }
+    (*p).allocation_slice_start = now;
+    if (*p).executor.current_id().is_some() {
+        (*p).executor.yield_now().expect("allocation worker yield");
+    }
+}
+// ------------------------=
 // FUNC: entry
 // DESC: Calls the exact closure transferred by successful native thread creation.
 // ------------------=
@@ -118,6 +136,7 @@ pub unsafe extern "C" fn infinity_std_allocate(size: usize, align: usize) -> *mu
     let result = base.as_ptr().add(offset);
     result.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().write_unaligned(
         AllocationHeader { base: base.as_ptr(), layout, payload });
+    allocation_safepoint(p);
     result
 }
 #[derive(Clone, Copy)]
@@ -132,6 +151,7 @@ pub unsafe extern "C" fn infinity_std_deallocate(pointer: *mut u8, size: usize, 
     let header = pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned();
     assert_eq!(header.payload, Layout::from_size_align(size, align).expect("layout"));
     (*p).arena.release(NonNull::new(header.base).expect("allocation"), header.layout);
+    allocation_safepoint(p);
 }
 
 // ------------------------=

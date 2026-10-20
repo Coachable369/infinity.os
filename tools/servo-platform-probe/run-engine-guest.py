@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--url", help="Public HTTPS destination for the native network probe")
     parser.add_argument("--assert-script", help="JavaScript boolean over real page state; required with --url")
     parser.add_argument("--network-only", action="store_true", help="Retest only site compatibility after engine fixtures have passed")
-    parser.add_argument("--load-timeout-seconds", type=int, default=60, choices=range(30,181), metavar="30..180", help="Bounded page-load budget for slow emulated external networking")
+    parser.add_argument("--load-timeout-seconds", type=int, default=60, choices=range(30,601), metavar="30..600", help="Bounded observation budget for slow emulation; does not change transport deadlines")
     parser.add_argument("--evidence-dir", type=Path, help="Retain this run's structured receipt and screenshot inside the repository")
     options = parser.parse_args()
     if options.evidence_dir:
@@ -117,7 +117,7 @@ def main():
     report["network_only"] = options.network_only
     report["longest_work_ms"] = {
         name: next((row[3] / 1_000_000 for row in records if row[:3] == [9,2,code]), None)
-        for name, code in (("engine",70), ("network",71), ("paint",72))
+        for name, code in (("engine",70), ("network",71), ("paint",72), ("network_gap",73))
     } if options.network_probe else None
     report["load_timeout_seconds"] = options.load_timeout_seconds if options.network_probe else None
     if options.evidence_dir:

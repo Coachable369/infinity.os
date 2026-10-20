@@ -151,11 +151,28 @@ fn authenticated_post_preserves_binary_body_and_native_length() {
     authenticated_exchange(Some(8192),true,"POST",&[0,13,10,255,128,65]);
 }
 
+#[test]
+// ------------------------=
+// FUNC: browser_headers_allow_authenticated_eof_framed_response
+// DESC: Verifies a browser request receives every byte when response framing depends on TLS closure.
+// ------------------=
+fn browser_headers_allow_authenticated_eof_framed_response() {
+    authenticated_exchange_mode(Some(8192), false, "GET", &[], true);
+}
+
 // ------------------------=
 // FUNC: authenticated_exchange
 // DESC: Checks header retention, insufficient capacity, and legacy body-only behavior against real TLS records.
 // ------------------=
 fn authenticated_exchange(header_capacity: Option<usize>, streaming: bool,method:&'static str,payload:&'static[u8]) {
+    authenticated_exchange_mode(header_capacity, streaming, method, payload, false);
+}
+
+// ------------------------=
+// FUNC: authenticated_exchange_mode
+// DESC: Exercises chunked and close-delimited bodies against an independent authenticated TLS server.
+// ------------------=
+fn authenticated_exchange_mode(header_capacity: Option<usize>, streaming: bool,method:&'static str,payload:&'static[u8],eof:bool) {
     let (root, leaf, key) = certificates();
     let provider = rustls::crypto::ring::default_provider();
     let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
@@ -189,6 +206,7 @@ fn authenticated_exchange(header_capacity: Option<usize>, streaming: bool,method
             let mut parsed=httparse::Request::new(&mut fields);
             if let httparse::Status::Complete(head)=parsed.parse(&request[..count]).unwrap() {
                 assert_eq!(parsed.method,Some(method));
+                assert_eq!(parsed.headers.iter().find(|h|h.name.eq_ignore_ascii_case("connection")).unwrap().value,b"close");
                 assert_eq!(parsed.headers.iter().find(|h|h.name.eq_ignore_ascii_case("cookie")).unwrap().value,b"sid=123");
                 if !payload.is_empty() {
                     let length=parsed.headers.iter().find(|h|h.name.eq_ignore_ascii_case("content-length")).unwrap().value;
@@ -199,7 +217,11 @@ fn authenticated_exchange(header_capacity: Option<usize>, streaming: bool,method
                 break;
             }
         }
-        if streaming {
+        if eof {
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nConnection: close\r\n\r\nhello world").unwrap();
+            stream.flush().unwrap();
+            stream.conn.send_close_notify();
+        } else if streaming {
             stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n").unwrap();
             stream.flush().unwrap();
             assert_eq!(prefix_rx.recv_timeout(Duration::from_secs(5)).unwrap(), b"hello");

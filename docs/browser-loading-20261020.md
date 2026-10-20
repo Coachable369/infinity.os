@@ -89,7 +89,9 @@ reported as installed-system performance measurements.
   free-order membership plus doubly linked free lists instead of linear buddy
   searches. Metadata stays inside the granted heap and consumes about 6.25%
   of large grants. Small grants retain their original capacity.
-  This is a **candidate stall fix, not yet remeasured**.
+  The allocator regression subsequently passed (8 runtime-primitives tests,
+  manifest `20261020T142414295578Z-47935.json`), but the same Yahoo acceptance
+  still failed. It is not a complete-page fix.
 - Added a >100,000-block fragmentation/reclamation/guard-byte regression and
   made runtime-primitives tests a prerequisite of both browser component builds.
   The allocator regression and native-page retest remain pending: another
@@ -101,3 +103,45 @@ reported as installed-system performance measurements.
 Do not label the current ISOs as containing a verified complete-page fix.
 Next gate: runtime-primitives tests, same Yahoo retest, additional independent
 sites, then installed-system verification and release parity/checksums.
+
+## Critical-resource follow-up
+
+- Indexed-allocator Yahoo retest:
+  `builds/evidence/yahoo-indexed-allocator/`,
+  manifest `20261020T142514631788Z-48276.json`. Required JavaScript still
+  disconnected/timed out; the document remained interactive rather than complete.
+- The one-shot HTTP client incorrectly advertised keep-alive whenever browser
+  headers were supplied. It now requests connection closure consistently.
+  The separate persistent TLS channel is unchanged.
+- HTTP suite before the additional EOF-body regression: 44 passed, manifest
+  `20261020T143116909748Z-49719.json`. The independent TLS server checks the
+  parsed connection field; this is protocol behavior, not a source-text oracle.
+- Closure retest: `builds/evidence/yahoo-connection-close/`, manifest
+  `20261020T143318420502Z-52351.json`. **Still failed** complete-page acceptance.
+  New interval telemetry measured **21,513.78 ms between resource pumps**,
+  versus maximum engine-call 114.566 ms, network-call 1,302.649 ms, and
+  paint-call 2,633.386 ms. Individual-call timings had missed cooperative
+  scheduling delays. These are disposable TCG probe measurements, not installed
+  desktop timing.
+- Added an allocation-boundary scheduling safepoint, checking elapsed time every
+  64 allocate/free operations and yielding a worker after observing 1 ms.
+  No allocator borrow survives its yield; root service work does not reenter.
+  This is cooperative fairness, not preemption for allocation-free CPU loops.
+- HTTP suite: **45 passed**, including authenticated EOF framing. Native std
+  probes passed on **AArch64 and x86_64**, including the allocation-heavy worker
+  fairness regression, TLS destruction, synchronization and allocation checks.
+  Combined manifest: `20261020T144522673002Z-79325.json`. Its final exit is failure
+  because the subsequent Yahoo acceptance remained incomplete.
+- Same 180-second Yahoo observation:
+  `builds/evidence/yahoo-allocation-safepoint/`. Maximum network-service gap fell
+  from **21,513.78 ms to 3,002.827 ms** (86.0% lower). The previously failing CSS
+  and JavaScript resource completed; additional script transfers proceeded.
+  The document still had not completed loading, and the decoded-image gate
+  remained false. This is measured starvation improvement, **not a general
+  browsing acceptance pass**.
+- The probe can now observe up to 600 seconds without changing production
+  transport deadlines. Extended Yahoo observation and independent Wikipedia
+  verification could not start: another full build owns the shared lock as
+  `20261020T145014529831Z-80550`. An attempted release build was also blocked.
+
+No installed-system or updated-ISO acceptance is claimed for this follow-up.

@@ -121,6 +121,7 @@ pub fn run() {
     super::dns_probe::run();
     abi_limits();
     allocation_roundtrip();
+    allocation_fairness();
     c_tls_roundtrip();
     c_sync_roundtrip();
     extern "C" { fn infinity_c_thread_test() -> i32; }
@@ -164,6 +165,37 @@ pub fn run() {
     let (_guard, outcome) = pair.1.wait_timeout(locked, Duration::from_millis(1)).unwrap();
     assert!(outcome.timed_out());
     assert_eq!(thread::available_parallelism().unwrap().get(), 1);
+}
+// ------------------------=
+// FUNC: allocation_fairness
+// DESC: Proves an allocation-heavy native worker cannot starve a second runnable worker until its loop finishes.
+// ------------------=
+fn allocation_fairness() {
+    use std::sync::atomic::AtomicBool;
+    let started = Arc::new(AtomicBool::new(false));
+    let serviced = Arc::new(AtomicBool::new(false));
+    let start = started.clone();
+    let observed = serviced.clone();
+    let busy = thread::Builder::new().stack_size(65536).spawn(move || {
+        start.store(true, Ordering::SeqCst);
+        let until = std::time::Instant::now() + Duration::from_millis(200);
+        while std::time::Instant::now() < until && !observed.load(Ordering::SeqCst) {
+            unsafe {
+                use infinity_servo_runtime_primitives::native::*;
+                let allocation = infinity_std_allocate(256, 16);
+                assert!(!allocation.is_null());
+                allocation.write_bytes(0x71, 256);
+                infinity_std_deallocate(allocation, 256, 16);
+            }
+        }
+        observed.load(Ordering::SeqCst)
+    }).unwrap();
+    let service = thread::Builder::new().stack_size(65536).spawn(move || {
+        while !started.load(Ordering::SeqCst) { thread::yield_now(); }
+        serviced.store(true, Ordering::SeqCst);
+    }).unwrap();
+    assert!(busy.join().unwrap());
+    service.join().unwrap();
 }
 // ------------------------=
 // FUNC: c_tls_roundtrip

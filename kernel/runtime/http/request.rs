@@ -93,7 +93,9 @@ pub fn head(host:&str,path:&str,method:&str,headers:&[u8],body_length:usize,outp
         path.as_bytes(),
         b" HTTP/1.1\r\nHost: ",
         host.as_bytes(),
-        if headers.is_empty() { b"\r\nConnection: close\r\n".as_slice() } else { b"\r\nConnection: keep-alive\r\n" },
+        // This API owns one exchange, not a connection pool. Browser headers
+        // must not switch it to persistence: EOF-framed responses need closure.
+        b"\r\nConnection: close\r\n".as_slice(),
         if headers.split(|b|*b==b'\n').any(|line|line.get(..16).is_some_and(|name|name.eq_ignore_ascii_case(b"accept-encoding:"))) {b"".as_slice()}else{b"Accept-Encoding: identity\r\n"},
         if headers.is_empty() { b"User-Agent: InfinityOS/0.1\r\n" } else { b"" },
         headers,
@@ -150,7 +152,7 @@ mod tests {
         let mut request=httparse::Request::new(&mut fields);
         assert_eq!(request.parse(&bytes[..size]).unwrap(),httparse::Status::Complete(size));
         assert_eq!(request.method,Some("GET"));assert_eq!(request.path,Some("/search?q=hello"));
-        for (name,value) in [("Host",b"example.test".as_slice()),("Cookie",b"sid=123; pref=blue"),("Accept-Encoding",b"identity"),("User-Agent",b"Servo"),("Connection",b"keep-alive")] {
+        for (name,value) in [("Host",b"example.test".as_slice()),("Cookie",b"sid=123; pref=blue"),("Accept-Encoding",b"identity"),("User-Agent",b"Servo"),("Connection",b"close")] {
             assert_eq!(request.headers.iter().filter(|h|h.name.eq_ignore_ascii_case(name)).map(|h|h.value).collect::<std::vec::Vec<_>>(),std::vec![value]);
         }
     }

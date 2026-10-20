@@ -130,7 +130,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
     let view=servo::WebViewBuilder::new(engine,context.clone())
         .delegate(Rc::new(ResourceDelegate {resources:resources.clone(),repaint:repaint.clone(),loaded:loaded.clone()}))
         .url(option_env!("INFINITY_BROWSER_PROBE_URL").unwrap_or("https://www.google.com/").parse().unwrap()).build();
-    let timeout=option_env!("INFINITY_BROWSER_LOAD_TIMEOUT").and_then(|value|value.parse::<u64>().ok()).unwrap_or(60).clamp(30,180);
+    let timeout=option_env!("INFINITY_BROWSER_LOAD_TIMEOUT").and_then(|value|value.parse::<u64>().ok()).unwrap_or(60).clamp(30,600);
     view.show();let deadline=Instant::now()+Duration::from_secs(timeout);
     // A completed first document may immediately navigate again (consent and
     // challenge pages do this). Sample the requested DOM condition throughout
@@ -140,10 +140,14 @@ pub fn verify(engine: &servo::Servo) -> bool {
     let mut longest_spin=0u64;
     let mut longest_network=0u64;
     let mut longest_paint=0u64;
+    let mut previous_network=super::super::monotonic();
+    let mut longest_network_gap=0u64;
     while Instant::now()<deadline {
         let start=super::super::monotonic();
         engine.spin_event_loop();
         let network_start=super::super::monotonic();
+        longest_network_gap=longest_network_gap.max(network_start.saturating_sub(previous_network));
+        previous_network=network_start;
         longest_spin=longest_spin.max(network_start.saturating_sub(start));
         resources.pump();
         let paint_start=super::super::monotonic();
@@ -164,6 +168,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
     super::super::record(2,70,longest_spin);
     super::super::record(2,71,longest_network);
     super::super::record(2,72,longest_paint);
+    super::super::record(2,73,longest_network_gap);
     super::super::record(2,30,HTTP_STATUS.load(Ordering::Relaxed) as u64);
     super::super::record(2,31,BODY_BYTES.load(Ordering::Relaxed) as u64);
     super::super::record(2,32,loaded.get() as u64);
