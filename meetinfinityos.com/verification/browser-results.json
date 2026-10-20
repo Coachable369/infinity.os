@@ -1,0 +1,111 @@
+{
+  "desktop": {
+    "buffer": [
+      1425,
+      900
+    ],
+    "canvas": {
+      "contours": "3",
+      "engine": "three.js r180",
+      "frames": "2201",
+      "paths": "28",
+      "progress": "0.0138",
+      "pulse": "36.697",
+      "renderer": "three-webgl",
+      "rotation": "-0.0813,-0.3448,-0.0578",
+      "source": "b07e2b2ce0f98cd9f68c2f829307f2b822fb8883f210802f6552ca96cbb08159",
+      "triangles": "9070",
+      "vertices": "4536"
+    },
+    "height": 900,
+    "scrollWidth": 1425,
+    "width": 1440
+  },
+  "motion": {
+    "framesAdvanced": 1190,
+    "emblemChangedPixels": 94605,
+    "circuitChangedPixels": 3330
+  },
+  "scroll": {
+    "canvas": {
+      "bottom": 900,
+      "height": 900,
+      "left": 0,
+      "right": 1425,
+      "top": 0,
+      "width": 1425,
+      "x": 0,
+      "y": 0
+    },
+    "progress": 0.4328,
+    "rotation": [
+      -0.0575,
+      3.1705,
+      -0.0102
+    ],
+    "y": 754
+  },
+  "tabs": {
+    "focus": "tab-explore",
+    "mode": "explore",
+    "visibleScenes": [
+      "explore"
+    ]
+  },
+  "mobile": {
+    "height": 844,
+    "renderer": "three-webgl",
+    "scrollWidth": 375,
+    "width": 390
+  },
+  "menu": {
+    "expanded": "false",
+    "focus": true
+  },
+  "mobileVision": {
+    "canvas": {
+      "contours": "3",
+      "engine": "three.js r180",
+      "frames": "1342",
+      "paths": "28",
+      "progress": "0.3839",
+      "pulse": "22.382",
+      "renderer": "three-webgl",
+      "rotation": "-0.0656,2.7803,-0.0348",
+      "source": "b07e2b2ce0f98cd9f68c2f829307f2b822fb8883f210802f6552ca96cbb08159",
+      "triangles": "9070",
+      "vertices": "4536"
+    },
+    "copyTop": 443.796875,
+    "scrollWidth": 375,
+    "width": 390
+  },
+  "pause": {
+    "framesAdvanced": 0,
+    "identicalPixels": true
+  },
+  "faq": {
+    "open": true
+  },
+  "offscreen": {
+    "framesAdvanced": 0
+  },
+  "small": {
+    "height": 568,
+    "heroBottom": 524,
+    "renderer": "three-webgl",
+    "scrollWidth": 305,
+    "title": {
+      "bottom": 165.671875,
+      "height": 50.875,
+      "left": 24,
+      "right": 281,
+      "top": 114.796875,
+      "width": 257,
+      "x": 24,
+      "y": 114.796875
+    },
+    "width": 320
+  },
+  "errors": []
+}

@@ -1,5 +1,8 @@
 # Infinity UI Design Kit — Default
 
+Public website work uses the [Continuum extension](continuum-web.md), anchored
+to `assets/boot/infinity-emblem-v2.bmp` as the authoritative symbol reference.
+
 First-run setup and login use the approved [Eclipse Access kit](eclipse-access-v1.md).
 Its reference board, generated wallpaper and mask glyph family, exact palette,
 antialiased surfaces and 140ms focus/pressed states are the pre-session contract.
