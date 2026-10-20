@@ -27,7 +27,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub(super) fn allow_package_namespace_mutation(&self, id: ObjectId) -> Result<(), ObjectError> {
         let object = &self.state.objects[self.object_index(id)?];
-        if object.space == Space::System as u8 && &object.name[..object.name_len as usize] == b"@python-packages" {
+        if &object.name[..object.name_len as usize] == b"@hermes-memory" || object.space == Space::System as u8 && &object.name[..object.name_len as usize] == b"@python-packages" {
             Err(ObjectError::Unauthorized)
         } else { Ok(()) }
     }

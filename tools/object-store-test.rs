@@ -19,16 +19,29 @@ fn hermes_persistence(){
     let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[9;16]).unwrap();
     let owner=storage::object::ObjectId([1;16]);
     let document=hermes_profile::Document::new(owner.0,b"Alex",b"Infinity").unwrap();
+    let home=store.ensure_user_home(owner,b"Alex Smith").unwrap();
+    assert_eq!(home.as_bytes(),b"/home/Alex.Smith");
+    let path=home.child(hermes_profile::FILE_NAME).unwrap();
     let id=store.create_owned_attached(b"@hermes-memory",ObjectType::Metadata,Space::System,
-        document.bytes(),hermes_profile::PATH,owner).unwrap();
+        document.bytes(),b"/System/hermes-memory1.json",owner).unwrap();
+    store.migrate_hermes_home(owner,path.as_bytes()).unwrap();
+    assert!(store.resolve(b"/System/hermes-memory1.json").is_err());
+    assert_eq!(store.ensure_user_home(storage::object::ObjectId([2;16]),b"Alex Smith"),Err(ObjectError::NameConflict));
+    let second=store.ensure_user_home(storage::object::ObjectId([2;16]),b"Other User").unwrap();
+    let second_path=second.child(hermes_profile::FILE_NAME).unwrap();
+    let second_doc=hermes_profile::Document::new([2;16],b"Other",b"Infinity").unwrap();
+    let second_id=store.create_owned_attached(b"@hermes-memory",ObjectType::Metadata,Space::Personal,
+        second_doc.bytes(),second_path.as_bytes(),storage::object::ObjectId([2;16])).unwrap();
     let mut out=[0;hermes_profile::MAX_BYTES];
     assert_eq!(store.read(id,None,&mut out),Err(ObjectError::Unauthorized));
+    assert_eq!(store.attach(b"/home/memory-alias",id),Err(ObjectError::Unauthorized));
     assert_eq!(store.read_hermes_memory(id,storage::object::ObjectId([2;16]),&mut out),Err(ObjectError::Unauthorized));
+    assert_eq!(store.read_hermes_memory(second_id,owner,&mut out),Err(ObjectError::Unauthorized));
     let updated=document.updated(owner.0,b"preferences",b"Use metric units").unwrap();
     store.replace_state(id,updated.bytes()).unwrap();
     drop(store);
     let mut installed=ObjectStore::mount(disk,0).unwrap();
-    assert_eq!(installed.resolve(hermes_profile::PATH).unwrap(),id);
+    assert_eq!(installed.resolve(path.as_bytes()).unwrap(),id);
     let n=installed.read_hermes_memory(id,owner,&mut out).unwrap();
     assert_eq!(&out[..n],updated.bytes());
     assert!(hermes_profile::Document::parse(&out[..n],owner.0).is_ok());

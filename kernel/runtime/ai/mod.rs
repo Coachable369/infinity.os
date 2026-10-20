@@ -147,6 +147,8 @@ pub struct AiRuntime {
     chat_owner: [u8; 16],
     hermes_session: [u8; 16],
     hermes_memory: Option<hermes_profile::Document>,
+    memory_turn:u64,
+    memory_last_inquiry:u64,
     requests: RequestApi,
     execution: ExecutionBroker,
     intelligence: intelligence::Service,
@@ -190,7 +192,7 @@ impl AiRuntime {
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
-        if hermes_profile::edit_command(input).is_some(){
+        if hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None{
             return Ok(RequestRoute::Inference(InferenceMode::Conversation));
         }
         let software_goal=crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
@@ -636,6 +638,7 @@ impl AiRuntime {
         if self.chat_owner != owner {
             self.hermes_memory = None;
             self.hermes_session = [0;16];
+            self.memory_turn=0;self.memory_last_inquiry=0;
             self.stop_application_agent();
             self.cancel_app_turn();
             self.execution.cancel();
@@ -690,6 +693,16 @@ impl AiRuntime {
                 let _=runtime.identity.update_wake_word(owner,owner,wake);
             });
             let _=crate::runtime::persist_identity_state();
+        }
+        if key==b"favorite_color"{
+            if let Some(rgb)=hermes_profile::conversation::color(value){
+                crate::runtime::with_runtime(|runtime|{
+                    let owner=crate::runtime::identity::StableId(self.chat_owner);
+                    let _=runtime.identity.update_user_accent(owner,owner,rgb);
+                    let _=runtime.ui.skins.set_accent(rgb,crate::ui::skin::AppearanceScope::User);
+                });
+                let _=crate::runtime::persist_identity_state();
+            }
         }
         self.load_hermes_memory(self.hermes_session,Some(document));
         true
@@ -792,16 +805,40 @@ impl AiRuntime {
             return false;
         };
         #[cfg(target_os="none")]
-        if let Some((key,value))=hermes_profile::edit_command(&input[..length]) {
+        {
+            use hermes_profile::conversation::{action,Action};
+            let learned=self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled"));
+            let action=action(&input[..length],learned);
+            if action==Action::Inspect{
+                let mut reply=[0;8192];
+                let count=self.hermes_memory.as_ref().and_then(|d|d.inspect(&mut reply).ok());
+                self.chat.begin_native_turn();
+                self.chat.update_native_response(count.map(|n|&reply[..n]).unwrap_or(b"No personal memory is loaded for this account."));
+                self.chat.generation_state=chat::GenerationState::Complete;return true;
+            }
+            let edit=match action{
+                Action::Set(key,value)=>Some((key,value)),
+                Action::Forget(key)=>Some((key,match key{b"wake_word"=>b"Infinity".as_slice(),b"assistant_name"=>b"Hermes",b"learning_enabled"|b"inquiries_enabled"|b"inference_enabled"=>b"false",_=>b""})),
+                _=>None
+            };
+            if let Some((key,value))=edit{
             let saved=self.save_hermes_field(key,value);
+            let explicit=matches!(action,Action::Forget(_)) || input[..length].get(..8).is_some_and(|v|v.eq_ignore_ascii_case(b"remember"))
+                || matches!(key,b"learning_enabled"|b"inquiries_enabled"|b"inference_enabled");
+            if !saved||explicit{
             self.chat.begin_native_turn();
             self.chat.update_native_response(if saved {
-                b"Saved to /System/hermes-memory1.json."
+                b"Updated your personal memory in your home folder."
             }else{
                 b"Memory was not saved. Check the field, value, active owner, and storage. Existing memory has been preserved."
             });
             self.chat.generation_state=chat::GenerationState::Complete;
             return true;
+            }}
+            if action==Action::None{
+                let inference=self.hermes_memory.as_ref().and_then(|d|hermes_profile::conversation::infer_interest(d,&input[..length]));
+                if let Some(value)=inference{let _=self.save_hermes_field(b"inferred_interests",value);}
+            }
         }
         if matches!(route, RequestRoute::Control(_)) {
             self.chat.begin_native_turn();
@@ -844,15 +881,26 @@ impl AiRuntime {
         }
         let submitted_ns = crate::ui::performance::monotonic_ns();
         let input = self.chat.input();
-        let mut prefix=[0u8;4096];
-        let prefix_len=if let Some(profile)=self.hermes_memory.as_ref(){
-            let n=control::INSTRUCTIONS.len();
-            if n>prefix.len(){return false;}
-            prefix[..n].copy_from_slice(control::INSTRUCTIONS);
-            match profile.context(&mut prefix[n..]){Ok(size)=>n+size,Err(_)=>return false}
+        let mut augmented=[0u8;8192];
+        self.memory_turn=self.memory_turn.saturating_add(1);
+        let augmented_len=if let Some(profile)=self.hermes_memory.as_ref(){
+            #[cfg(target_os="none")]
+            let context=intelligence::personal_memory_context(profile,input,&mut augmented[..1536]);
+            #[cfg(not(target_os="none"))]
+            let context=profile.selected_context(input,&mut augmented[..1536]);
+            let Ok(mut n)=context else{return false;};
+            augmented[n..n+input.len()].copy_from_slice(input);n+=input.len();
+            if self.memory_turn.saturating_sub(self.memory_last_inquiry)>=7{
+                if let Some(question)=hermes_profile::conversation::contextual_inquiry(profile,input,self.memory_turn,submitted_ns.unwrap_or(self.memory_turn.rotate_left(7))){
+                    let hint=b"\nAfter answering, optionally ask this brief question once: ";
+                    augmented[n..n+hint.len()].copy_from_slice(hint);n+=hint.len();
+                    augmented[n..n+question.len()].copy_from_slice(question);n+=question.len();
+                    self.memory_last_inquiry=self.memory_turn;
+                }
+            }n
         }else{0};
-        let submitted = if prefix_len>0 {
-            service.submit_desktop(input,&prefix[..prefix_len])
+        let submitted = if augmented_len>0 {
+            service.submit_desktop(&augmented[..augmented_len],control::INSTRUCTIONS)
         }else if route == RequestRoute::Inference(InferenceMode::Conversation) {
             service.submit(input)
         } else {
@@ -1121,6 +1169,8 @@ impl AiRuntime {
             chat_owner: [0; 16],
             hermes_session: [0;16],
             hermes_memory: None,
+            memory_turn:0,
+            memory_last_inquiry:0,
             requests: RequestApi::new(),
             execution: ExecutionBroker::new(),
             intelligence: intelligence::Service::new(),

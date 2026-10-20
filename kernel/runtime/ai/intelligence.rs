@@ -8,6 +8,14 @@
 #[path = "software_execution.rs"]
 pub mod software;
 
+// ------------------------=
+// FUNC: personal_memory_context
+// DESC: Retrieves only task-relevant private facts for the existing native Hermes processor.
+// ------------------=
+#[cfg(target_os="none")]
+pub fn personal_memory_context(document:&super::hermes_profile::Document,input:&[u8],out:&mut[u8])
+    ->Result<usize,super::hermes_profile::Error>{document.selected_context(input,out)}
+
 pub const API_VERSION: u16 = 1;
 pub const STATE_SCHEMA_VERSION: u16 = 1;
 pub const MAX_GOALS: usize = 4;

@@ -3166,6 +3166,14 @@ impl ConsoleRuntime {
     // DESC: Launches a new independently functional File Navigator layer at the requested namespace.
     // ------------------=
     fn open_file_navigator_window(&mut self, path: &[u8]) -> Option<u16> {
+        let named_home=crate::storage::provision_user_home(self.current_user.0).ok();
+        let owned_path=named_home.and_then(|home|{
+            if path==b"/home/default"{Some(home)}
+            else{None}
+        });
+        let path=owned_path.as_ref().map(|p|p.as_bytes()).unwrap_or(path);
+        let downloads=infinity_browser_core::download::owner_directory(self.current_user.0);
+        let path=if path==b"/home/default/downloads"{downloads.as_slice()}else{path};
         self.checkpoint_active_file_navigator();
         let launched = crate::runtime::with_runtime(|runtime| {
             let handle = runtime
@@ -6049,6 +6057,7 @@ impl ConsoleRuntime {
             };
             self.current_user = user.id;
         }
+        if !self.current_user.is_zero() && crate::storage::provision_user_home(self.current_user.0).is_err(){return false;}
         if !self.current_user.is_zero() && self.onboarding_secret_length >= 8 {
             let credential = crate::runtime::with_runtime(|runtime| {
                 if runtime.identity.has_active_credential(self.current_user) {
@@ -11077,6 +11086,7 @@ impl ConsoleRuntime {
                     .unwrap_or(Err(IdentityError::InvalidState))?;
                     self.output
                         .write_number(b"user created: user:", user.id.short());
+                    crate::storage::provision_user_home(user.id.0).map_err(|_|IdentityError::InvalidState)?;
                     if crate::runtime::persist_identity_state() {
                         Ok(())
                     } else {

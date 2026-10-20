@@ -1,6 +1,7 @@
 //! InfinityOS native object store. All encodings are explicit little-endian;
 //! no Rust layout is ever written to persistent media.
 
+#[path="user_home.rs"] pub mod user_home;
 use super::organization;
 use super::{BlockDevice, DateTimeConfiguration};
 #[path = "object_extents.rs"]
@@ -1480,7 +1481,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     fn allow_public_spatial_access(&self,id:ObjectId)->Result<(),ObjectError> {
         let record=&self.state.objects[self.object_index(id)?];
-        if record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@hermes-memory"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences"|b"@python-packages") {
+        if &record.name[..record.name_len as usize]==b"@hermes-memory" || record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@hermes-memory"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences"|b"@python-packages") {
             Err(ObjectError::Unauthorized)
         }else{Ok(())}
     }
@@ -1511,11 +1512,75 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub(crate) fn read_hermes_memory(&mut self,id:ObjectId,owner:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
         let record=&self.state.objects[self.object_index(id)?];
-        if record.space!=Space::System as u8 || record.owner!=owner
+        if record.owner!=owner
             || &record.name[..record.name_len as usize]!=b"@hermes-memory" {
             return Err(ObjectError::Unauthorized);
         }
         self.read_internal(id,None,out)
+    }
+
+    // ------------------------=
+    // FUNC: ensure_user_home
+    // DESC: Creates display-name directories once; existing homes follow immutable identity through display-name edits.
+    // ------------------=
+    pub fn ensure_user_home(&mut self,owner:ObjectId,name:&[u8])->Result<user_home::Path,ObjectError>{
+        if owner.0==[0;16]{return Err(ObjectError::Unauthorized);}
+        let mut existing=None;
+        for entry in self.state.entries.iter().filter(|e|e.used){
+            let path=entry.path();
+            if path.starts_with(b"/home/")&&!path[6..].contains(&b'/')
+                && !(path.len()==38&&path[6..].iter().all(u8::is_ascii_hexdigit))
+                && self.state.objects[self.object_index(entry.target)?].owner==owner
+                && self.state.objects[self.object_index(entry.target)?].kind==ObjectType::NamespaceNode as u8{
+                let mut result=user_home::Path{bytes:[0;96],len:path.len()};
+                result.bytes[..path.len()].copy_from_slice(path);existing=Some(result);break;
+            }
+        }
+        let home=existing.or_else(||user_home::Path::new(name))
+            .ok_or(ObjectError::InvalidObject)?;
+        if self.state.entries.iter().any(|e|e.used&&e.path()==home.as_bytes()
+            && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner!=owner)){return Err(ObjectError::NameConflict);}
+        let complete=[b"".as_slice(),b"documents",b"downloads"].iter().all(|child|{
+            let path=if child.is_empty(){Some(home)}else{home.child(child)};
+            path.is_some_and(|path|self.state.entries.iter().any(|e|e.used&&e.path()==path.as_bytes()
+                && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner==owner
+                    && self.state.objects[i].kind==ObjectType::NamespaceNode as u8)))
+        });
+        if complete{return Ok(home);}
+        let before=self.begin()?;
+        let result=(||{
+            for child in [b"".as_slice(),b"documents",b"downloads"]{
+                let path=if child.is_empty(){home}else{home.child(child).ok_or(ObjectError::InvalidObject)?};
+                if let Some(entry)=self.state.entries.iter().find(|e|e.used&&e.path()==path.as_bytes()){
+                    let record=&self.state.objects[self.object_index(entry.target)?];
+                    if record.owner!=owner||record.kind!=ObjectType::NamespaceNode as u8{return Err(ObjectError::Unauthorized);}
+                    continue;
+                }
+                let label=if child.is_empty(){b"@user-home".as_slice()}else{child};
+                let id=self.create_record(label,ObjectType::NamespaceNode,Space::Personal)?;
+                let index=self.object_index(id)?;self.state.objects[index].owner=owner;
+                self.attach_record(path.as_bytes(),id)?;
+            }Ok(home)
+        })();self.finish(before,result)
+    }
+
+    // ------------------------=
+    // FUNC: migrate_hermes_home
+    // DESC: Atomically moves only the matching owner's old system memory, retaining its ObjectId and versions.
+    // ------------------=
+    pub fn migrate_hermes_home(&mut self,owner:ObjectId,path:&[u8])->Result<(),ObjectError>{
+        let old=b"/System/hermes-memory1.json";
+        let Some(slot)=self.state.entries.iter().position(|e|e.used&&e.path()==old)else{return Ok(());};
+        let id=self.state.entries[slot].target;let index=self.object_index(id)?;
+        if self.state.objects[index].owner!=owner{return Ok(());}
+        if self.state.entries.iter().any(|e|e.used&&e.path()==path){return Err(ObjectError::NameConflict);}
+        if &self.state.objects[index].name[..self.state.objects[index].name_len as usize]!=b"@hermes-memory"{return Err(ObjectError::Unauthorized);}
+        let before=self.begin()?;
+        let result=(||{
+            self.state.entries[slot].used=false;
+            self.state.objects[index].space=Space::Personal as u8;
+            self.attach_record(path,id)
+        })();self.finish(before,result)
     }
 
     // ------------------------=
