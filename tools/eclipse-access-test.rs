@@ -7,12 +7,19 @@ mod access_style;
 mod access_scale;
 #[path = "../kernel/core/bootstrap/access_view.rs"]
 mod access_view;
+#[path = "../kernel/core/bootstrap/panel_view.rs"]
+mod panel_view;
+#[path = "../kernel/ui/panel_recipe.rs"]
+mod panel_recipe;
 #[path = "../kernel/ui/bitmap.rs"]
 mod bitmap;
 #[path = "../kernel/ui/geometry.rs"]
 mod geometry;
 #[path = "../kernel/ui/skin.rs"]
 mod skin;
+mod ui {
+    pub(crate) use crate::{geometry, panel_recipe, skin};
+}
 pub const INFINITY_UI_ABI_VERSION: u16 = 1;
 mod bootstrap {
     pub const SPLASH_BMP: &[u8] = include_bytes!("../assets/boot/infinity-eclipse-header-v1.bmp");
@@ -61,7 +68,7 @@ fn panel_glow_preserves_content_and_parent_clip() {
     let before=display.pixels.clone();
     display.clip=Some(Region{left:20,top:20,right:180,bottom:80});
     display.access_panel_glow(20,20,160,120);
-    assert_ne!(display.pixels[20*200+100],before[20*200+100]);
+    assert!((20..22).any(|y|(20..180).any(|x|display.pixels[y*200+x]!=before[y*200+x])));
     assert_eq!(display.pixels[60*200+100],before[60*200+100]);
     for y in 80..160 { assert_eq!(&display.pixels[y*200..(y+1)*200],&before[y*200..(y+1)*200]); }
     for y in 0..160 { assert_eq!(&display.pixels[y*200..y*200+20],&before[y*200..y*200+20]); }
@@ -163,7 +170,18 @@ fn neutral_access_and_matching_desktop_palette() {
     for (i,focused) in [false,true].into_iter().enumerate() {
         display.access_surface(12,12+i*60,296,44,10,access_style::SURFACE,access_style::BORDER,255,focused);
     }
-    assert_eq!(&display.pixels[72*320+160][..3],&[255,255,255]);
+    let mut changed=0;
+    let mut normal_light=0;let mut focused_light=0;
+    for y in 0..44 { for x in 0..296 {
+        if x.min(y).min(295-x).min(43-y)>=2 {continue;}
+        let normal=display.pixels[(12+y)*320+12+x];
+        let focused=display.pixels[(72+y)*320+12+x];
+        let light=|pixel:[u8;4]|pixel[..3].iter().map(|v|u32::from(*v)).sum::<u32>();
+        normal_light+=light(normal);focused_light+=light(focused);
+        changed+=usize::from(normal!=focused);
+    } }
+    assert!(changed>0);
+    assert!(focused_light>normal_light);
     let mut image=format!("P6\n320 140\n255\n").into_bytes();
     for pixel in display.pixels {image.extend_from_slice(&pixel[..3]);}
     std::fs::write("build/behavior-tests/eclipse-white-focus.ppm",image).unwrap();
@@ -185,6 +203,20 @@ impl DisplayDevice {
     fn new(width: usize, height: usize) -> Self {
         Self { width, height, pixels: vec![[9, 15, 38, 0]; width * height], clip: None,
             damage: Vec::new(), wordmark: None, labels: Vec::new() }
+    }
+    // ------------------------=
+    // FUNC: ui_scale
+    // DESC: Mirrors the production framebuffer scale seam while using the actual shared panel painter and asset sampler.
+    // ------------------=
+    fn ui_scale(&self) -> usize {
+        if self.width >= 2560 && self.height >= 1440 { 2 } else { 1 }
+    }
+    // ------------------------=
+    // FUNC: active_accent_surface
+    // DESC: Supplies the native default skin through its semantic API without introducing an alternate panel recipe.
+    // ------------------=
+    fn active_accent_surface(&self, surface: skin::AccentSurface) -> access_style::Rgb {
+        skin::SkinRegistry::new().accent_surface(surface).channels()
     }
     // ------------------------=
     // FUNC: clipped_render_region
@@ -283,10 +315,11 @@ fn rounded_coverage_has_smooth_symmetric_transparent_edges() {
 
 // ------------------------=
 // FUNC: surfaces_preserve_coverage_focus_geometry_and_damage_clips
-// DESC: Compares full and clipped production pixels and verifies focus changes color without changing painted bounds.
+// DESC: Compares full and clipped production pixels and verifies authored focus lighting changes no hit or damage bounds.
 // ------------------=
 #[test]
 fn surfaces_preserve_coverage_focus_geometry_and_damage_clips() {
+    access_style::animate(123,0,false,true);
     assert_eq!(access_style::focus_amount(),255);
     let clip = Region { left: 19, top: 13, right: 62, bottom: 39 };
     for fill in [access_style::SURFACE,access_style::PRIMARY] {
@@ -295,11 +328,10 @@ fn surfaces_preserve_coverage_focus_geometry_and_damage_clips() {
         for (display,focus) in [(&mut unfocused,false),(&mut focused,true)] {
             display.access_surface(5,6,66,42,10,fill,access_style::BORDER,230,focus);
             assert_eq!(display.damage,vec![Region{left:5,top:6,right:71,bottom:48}]);
-            for y in 0..42 { for x in 0..66 {
-                assert_eq!(display.pixels[(y+6)*80+x+5],display.pixels[(y+6)*80+(65-x)+5]);
-                assert_eq!(display.pixels[(y+6)*80+x+5][3],display.pixels[(41-y+6)*80+x+5][3]);
+            assert!(display.pixels.iter().any(|pixel|pixel[3]>0 && pixel[3]<230));
+            for y in 0..60 { for x in 0..80 {
+                if x<5 || x>=71 || y<6 || y>=48 { assert_eq!(display.pixels[y*80+x],[9,15,38,0]); }
             } }
-            assert_eq!(display.pixels[6*80+5],[9,15,38,0]);
             let mut clipped = DisplayDevice::new(80,60); clipped.clip=Some(clip);
             clipped.access_surface(5,6,66,42,10,fill,access_style::BORDER,230,focus);
             assert_eq!(clipped.damage,vec![clip]);
@@ -311,7 +343,11 @@ fn surfaces_preserve_coverage_focus_geometry_and_damage_clips() {
             } }
         }
         assert!(unfocused.pixels.iter().zip(&focused.pixels).any(|(a,b)|a!=b));
-        for (a,b) in unfocused.pixels.iter().zip(&focused.pixels) { assert_eq!(a[3],b[3]); }
+        assert_eq!(unfocused.damage,focused.damage);
+        // Authored glow changes edge coverage, not the interior's background
+        // opacity or any pixel outside the shared control rectangle.
+        let center=(6+21)*80+5+33;
+        assert_eq!(unfocused.pixels[center][3],focused.pixels[center][3]);
     }
     let mut edge=DisplayDevice::new(80,60);
     edge.access_panel(72,52,60,40);
@@ -324,19 +360,34 @@ fn surfaces_preserve_coverage_focus_geometry_and_damage_clips() {
 
 // ------------------------=
 // FUNC: authored_fill_and_border_alpha_remain_independent
-// DESC: Checks zero, partial and opaque authored coverage, focus invariance and compatibility of existing native controls.
+// DESC: Checks independent zero/partial/opaque fill and edge layers against source-over alpha, including authored focus glow.
 // ------------------=
 #[test]
 fn authored_fill_and_border_alpha_remain_independent() {
+    access_style::animate(123,0,false,true);
     for focused in [false,true] {
+        let mut opaque=DisplayDevice::new(80,60);
+        opaque.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+            access_style::BORDER,255,255,focused);
+        assert!(opaque.pixels.iter().any(|pixel|pixel[3]>0));
+        let mut fill_only=DisplayDevice::new(80,60);
+        fill_only.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+            access_style::BORDER,255,0,focused);
+        let mut edge_only=DisplayDevice::new(80,60);
+        edge_only.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+            access_style::BORDER,0,255,focused);
         for fill_alpha in [0u8,64,127,255] {
             for border_alpha in [0u8,64,127,255] {
                 let mut display=DisplayDevice::new(80,60);
                 display.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
                     access_style::BORDER,fill_alpha,border_alpha,focused);
-                assert_eq!(display.pixels[6*80+38][3],border_alpha);
-                assert_eq!(display.pixels[27*80+38][3],fill_alpha);
-                assert_eq!(display.pixels[6*80+5],[9,15,38,0]);
+                for y in 0..42 { for x in 0..66 {
+                    let index=(y+6)*80+x+5;
+                    let fill=u32::from(fill_only.pixels[index][3])*u32::from(fill_alpha)/255;
+                    let edge=u32::from(edge_only.pixels[index][3])*u32::from(border_alpha)/255;
+                    let expected=(edge*255+fill*(255-edge)+127)/255;
+                    assert_eq!(u32::from(display.pixels[index][3]),expected);
+                } }
                 if fill_alpha==0 && border_alpha==0 {
                     assert!(display.damage.is_empty());
                     assert!(display.pixels.iter().all(|pixel|*pixel==[9,15,38,0]));

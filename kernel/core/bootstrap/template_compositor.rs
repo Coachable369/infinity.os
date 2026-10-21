@@ -117,6 +117,7 @@ impl DisplayDevice {
         let Some(count) = template.element_count(screen) else {
             return false;
         };
+        let mut progress_index=0usize;
         for index in 0..count {
             let Some(element) = template.layer_at(screen, index) else {
                 return false;
@@ -161,7 +162,10 @@ impl DisplayDevice {
                 if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
                     && matches!(element.kind, 1 | 4 | 5)
                 {
-                    self.access_template_control(element, navigation);
+                    let completed=element.role==InstallerTemplateRole::ProgressSegment as u8
+                        && progress_index<screen.saturating_sub(1) as usize;
+                    if element.role==InstallerTemplateRole::ProgressSegment as u8 {progress_index+=1;}
+                    self.access_template_control(element, navigation, completed);
                 } else if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
                     && element.kind == 3
                 {
@@ -204,7 +208,7 @@ impl DisplayDevice {
     // DESC: Renders saved configuration controls with the approved Access gradient, focus easing and subpixel edges.
     // ------------------=
     fn access_template_control(&mut self, element: InstallerTemplateElement<'_>,
-        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>) {
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, completed:bool) {
         use super::access_style as palette;
         let rect=scale_template_rect(element.frame,self.width,self.height);
         let focused=navigation.is_some_and(|(focus,_,_)|
@@ -218,8 +222,10 @@ impl DisplayDevice {
         let radius=(element.corner_radius as usize*self.height/1000).max(1);
         if element.role==InstallerTemplateRole::ProgressSegment as u8 {
             let size=rect.height.min(rect.width);
-            self.access_surface_alpha(rect.left,rect.top,size,size,size/2,fill,border,
+            let left=rect.left+(rect.width-size)/2;
+            self.access_surface_alpha(left,rect.top,size,size,size/2,fill,border,
                 opacity,border_opacity,false);
+            if completed {self.access_glyph(left+size/2,rect.top+size/2,15,size*3/4,false);}
             return;
         }
         self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,radius,fill,border,
@@ -338,45 +344,12 @@ impl DisplayDevice {
             || element.role == InstallerTemplateRole::TimeField as u8
             || element.role == InstallerTemplateRole::TimeZoneSelector as u8
             || element.role == InstallerTemplateRole::OffsetBadge as u8;
-        self.fill_rounded_rect_alpha(
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            radius,
-            element.fill[0],
-            element.fill[1],
-            element.fill[2],
-            fill_alpha,
-        );
-        let lift = if is_control { (7, 21, 28) } else { (6, 14, 21) };
-        self.fill_rounded_rect_alpha(
-            rect.left.saturating_add(2),
-            rect.top.saturating_add(2),
-            rect.width.saturating_sub(4),
-            rect.height / 2,
-            radius.saturating_sub(2),
-            element.fill[0].saturating_add(lift.0),
-            element.fill[1].saturating_add(lift.1),
-            element.fill[2].saturating_add(lift.2),
-            if focused { 132 } else { 84 },
-        );
-        let border = if focused {
-            [156, 232, 255]
-        } else {
-            [element.border[0], element.border[1], element.border[2]]
-        };
-        self.outline_rounded_rect_alpha(
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            radius,
-            border[0],
-            border[1],
-            border[2],
-            border_alpha,
-        );
+        self.precision_surface(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
+            width:rect.width as u32,height:rect.height as u32},
+            if is_control {crate::ui::panel_recipe::Surface::Field}else{crate::ui::panel_recipe::Surface::Panel},
+            crate::ui::panel_recipe::Material{fill:(element.fill[0],element.fill[1],element.fill[2]),
+                edge:(element.border[0],element.border[1],element.border[2]),opacity:fill_alpha,
+                edge_opacity:border_alpha,focus:if focused {255}else{0},pressed:false,scale:self.ui_scale()});
         if is_control && !element.text.is_empty() {
             let font_px = (element.font_size as usize * self.height / 1000).max(6);
             let text_height = (font_px * 7 / 6).max(1);
@@ -463,14 +436,13 @@ impl DisplayDevice {
         fill: [u8; 4],
         border: [u8; 4],
         opacity: u8,
-        corner_radius: u8,
+        _corner_radius: u8,
         percent: usize,
         label: &[u8],
     ) {
         let previous_clip = self.render_clip;
         self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
         let alpha = |value: u8| (value as u16 * opacity as u16 / 100) as u8;
-        let radius = (corner_radius as usize * self.height / 1000).max(1);
         let inset = (18 * self.height / 1000).max(1).min(rect.width / 4);
         let pixels = (18 * self.height / 1000).max(1);
         let gap = 14 * self.height / 1000;
@@ -480,10 +452,11 @@ impl DisplayDevice {
         let top = rect.top + rect.height.saturating_sub(group_height) / 2;
         let track_top = top + line_height + gap;
         let track_width = rect.width.saturating_sub(inset * 2);
-        self.fill_rounded_rect_alpha(rect.left, rect.top, rect.width, rect.height, radius,
-            18, 29, 42, alpha(240));
-        self.outline_rounded_rect_alpha(rect.left, rect.top, rect.width, rect.height, radius,
-            border[0], border[1], border[2], alpha(border[3]));
+        use crate::ui::{geometry::Rect, panel_recipe::{Material,Surface}};
+        let material=Material{fill:(18,29,42),edge:(border[0],border[1],border[2]),
+            opacity:alpha(240),edge_opacity:alpha(border[3]),focus:0,pressed:false,scale:self.ui_scale()};
+        self.precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
+            width:rect.width as u32,height:rect.height as u32},Surface::Panel,material);
         let mut percent_text = [b'0'; 4];
         let value = percent.min(100);
         let digits = if value == 100 {
@@ -507,13 +480,11 @@ impl DisplayDevice {
         self.template_text(rect.left + inset, top, label, 241, 245, 250, alpha(255), pixels, true);
         self.render_clip = previous_clip;
         self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
-        let track_radius = (5 * self.height / 1000).max(1);
-        self.fill_rounded_rect_alpha(rect.left + inset, track_top, track_width, track_height, track_radius,
-            2, 7, 15, alpha(199));
-        self.fill_rounded_rect_alpha(rect.left + inset, track_top, track_width * value / 100, track_height, track_radius,
-            fill[0], fill[1], fill[2], alpha(fill[3]));
-        self.outline_rounded_rect_alpha(rect.left + inset, track_top, track_width, track_height, track_radius,
-            border[0], border[1], border[2], alpha(border[3]));
+        let track=Rect{x:(rect.left+inset) as i32,y:track_top as i32,
+            width:track_width as u32,height:track_height as u32};
+        self.precision_surface(track,Surface::Field,Material{fill:(2,7,15),opacity:alpha(199),..material});
+        self.precision_surface(Rect{width:(track_width*value/100) as u32,..track},Surface::Primary,
+            Material{fill:(fill[0],fill[1],fill[2]),opacity:alpha(fill[3]),..material});
         self.render_clip = previous_clip;
     }
 
@@ -567,71 +538,17 @@ impl DisplayDevice {
         });
         let depressed = pointer.is_some_and(|(_, _, is_pressed)| is_pressed) && hovered;
         let opacity = element.opacity as u16;
-        let radius = (element.corner_radius as usize * self.height / 1000).max(1);
         let primary = element.role == InstallerTemplateRole::PrimaryButton as u8;
-        let lift = if primary {
-            if focused || hovered {
-                (30, 82, 104)
-            } else {
-                (17, 57, 75)
-            }
-        } else if focused || hovered {
-            (24, 55, 75)
-        } else {
-            (12, 25, 36)
-        };
-        let darken = if depressed { (3, 8, 11) } else { (0, 0, 0) };
-        let base = [
-            element.fill[0].saturating_sub(darken.0),
-            element.fill[1].saturating_sub(darken.1),
-            element.fill[2].saturating_sub(darken.2),
-        ];
-        self.fill_rounded_rect_alpha(
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            radius,
-            base[0],
-            base[1],
-            base[2],
-            (element.fill[3] as u16 * opacity / 100) as u8,
-        );
-        self.fill_rounded_rect_alpha(
-            rect.left.saturating_add(2),
-            rect.top.saturating_add(2),
-            rect.width.saturating_sub(4),
-            rect.height / 2,
-            radius.saturating_sub(2),
-            base[0].saturating_add(lift.0),
-            base[1].saturating_add(lift.1),
-            base[2].saturating_add(lift.2),
-            (if focused {
-                148
-            } else if hovered {
-                118
-            } else {
-                82
-            } * opacity / 100) as u8,
-        );
-        let border = if focused {
-            [156, 232, 255]
-        } else if hovered {
-            [32, 191, 255]
-        } else {
-            [element.border[0], element.border[1], element.border[2]]
-        };
-        self.outline_rounded_rect_alpha(
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            radius,
-            border[0],
-            border[1],
-            border[2],
-            (element.border[3] as u16 * opacity / 100) as u8,
-        );
+        use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
+        self.precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
+            width:rect.width as u32,height:rect.height as u32},
+            if primary {Surface::Primary}else{Surface::Field},Material{
+                fill:(element.fill[0],element.fill[1],element.fill[2]),
+                edge:(element.border[0],element.border[1],element.border[2]),
+                opacity:(element.fill[3] as u16*opacity/100) as u8,
+                edge_opacity:(element.border[3] as u16*opacity/100) as u8,
+                focus:if focused||hovered {super::access_style::focus_amount()}else{0},
+                pressed:depressed,scale:self.ui_scale()});
         let font_px = (element.font_size as usize * self.height / 1000).max(6);
         let text_width = self.template_text_width(element.text, font_px, true);
         let text_height = (font_px * 7 / 6).max(1);

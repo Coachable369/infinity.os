@@ -609,15 +609,10 @@ impl super::DisplayDevice {
             );
             let glyph = (*byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
             for row in 0..glyph_height {
-                let source_row = font_size
-                    .source_index(row)
-                    .min(INSTALLER_FONT_CELL_HEIGHT - 1);
                 for column in 0..glyph_width {
-                    let source_column = font_size
-                        .source_index(column)
-                        .min(INSTALLER_FONT_CELL_WIDTH - 1);
-                    let atlas_alpha =
-                        atlas[source_row * INSTALLER_FONT_CELL_WIDTH * 95 + glyph + source_column];
+                    let atlas_alpha = crate::ui::glyph_filter::coverage(atlas,
+                        INSTALLER_FONT_CELL_WIDTH * 95, glyph, INSTALLER_FONT_CELL_WIDTH,
+                        INSTALLER_FONT_CELL_HEIGHT, glyph_width, glyph_height, column, row);
                     let alpha = (atlas_alpha as u16 * opacity as u16 / 255) as u8;
                     if alpha != 0 {
                         self.blend_color(

@@ -10,6 +10,8 @@ mod font_preferences;
 mod hermes_profile;
 #[path="../kernel/storage/hermes_memory_store.rs"]
 mod hermes_memory_store;
+#[path="../kernel/storage/editor_objects.rs"]
+mod editor_objects;
 
 // ------------------------=
 // FUNC: hermes_persistence
@@ -44,6 +46,53 @@ fn hermes_persistence(){
     assert_eq!(store.attach(b"/home/memory-alias",id),Err(ObjectError::Unauthorized));
     assert_eq!(store.read_hermes_memory(id,storage::object::ObjectId([2;16]),&mut out),Err(ObjectError::Unauthorized));
     assert_eq!(store.read_hermes_memory(second_id,owner,&mut out),Err(ObjectError::Unauthorized));
+    // The native editor is an owner-authorized adapter, not a generic checkpoint bypass.
+    let (length, revision) = editor_objects::load(&mut store, owner, path.as_bytes(), &mut out).unwrap();
+    assert_eq!(&out[..length], document.bytes());
+    assert_eq!(revision, Some((id, store.current_version(id).unwrap())));
+    assert_eq!(editor_objects::load(&mut store, owner, second_path.as_bytes(), &mut out), Err(ObjectError::Unauthorized));
+    assert_eq!(editor_objects::load(&mut store, storage::object::ObjectId([0;16]), path.as_bytes(), &mut out), Err(ObjectError::Unauthorized));
+    let editor_update = document.updated(owner.0, b"favorite_color", b"grey").unwrap();
+    let revision = editor_objects::save(&mut store, owner, path.as_bytes(), editor_update.bytes(), revision).unwrap();
+    let n = store.read_hermes_memory(id, owner, &mut out).unwrap();
+    assert_eq!(&out[..n], editor_update.bytes());
+    let unchanged = (store.generation(), disk.writes.get(), disk.flushes.get());
+    for invalid in [b"{".as_slice(), second_doc.bytes()] {
+        assert_eq!(editor_objects::save(&mut store, owner, path.as_bytes(), invalid, revision), Err(ObjectError::CorruptContent));
+        assert_eq!((store.generation(), disk.writes.get(), disk.flushes.get()), unchanged);
+    }
+    assert_eq!(editor_objects::save(&mut store, storage::object::ObjectId([2;16]), path.as_bytes(), second_doc.bytes(), revision), Err(ObjectError::Unauthorized));
+    // A voice update arriving while the editor is open cannot be erased by a stale save.
+    let live_update = editor_update.updated(owner.0, b"preferences", b"Metric units").unwrap();
+    store.replace_state(id, live_update.bytes()).unwrap();
+    assert_eq!(editor_objects::save(&mut store, owner, path.as_bytes(), editor_update.bytes(), revision), Err(ObjectError::InvalidVersion));
+    let (_, revision) = editor_objects::load(&mut store, owner, path.as_bytes(), &mut out).unwrap();
+    disk.reject_writes.set(true);
+    assert!(editor_objects::save(&mut store, owner, path.as_bytes(), editor_update.bytes(), revision).is_err());
+    disk.reject_writes.set(false);
+    let n = store.read_hermes_memory(id, owner, &mut out).unwrap();
+    assert_eq!(&out[..n], live_update.bytes());
+    // UTF-8 profile facts are losslessly editable through JSON escapes in the ASCII editor.
+    let unicode = live_update.updated(owner.0, b"preferences", "Café 🌍".as_bytes()).unwrap();
+    store.replace_state(id, unicode.bytes()).unwrap();
+    let (n, revision) = editor_objects::load(&mut store, owner, path.as_bytes(), &mut out).unwrap();
+    assert!(out[..n].is_ascii());
+    let editor_copy = hermes_profile::Document::parse(&out[..n], owner.0).unwrap();
+    let mut fact = [0; 128];
+    let n = editor_copy.get(b"preferences", &mut fact).unwrap();
+    assert_eq!(&fact[..n], "Café 🌍".as_bytes());
+    editor_objects::save(&mut store, owner, path.as_bytes(), editor_copy.bytes(), revision).unwrap();
+    let private = store.create_attached(b"@spatial-state", ObjectType::Metadata, Space::System, b"secret", b"/system/editor-test-private").unwrap();
+    assert_eq!(editor_objects::load(&mut store, owner, b"/system/editor-test-private", &mut out), Err(ObjectError::Unauthorized));
+    assert_eq!(editor_objects::save(&mut store, owner, b"/system/editor-test-private", b"edited", None), Err(ObjectError::Unauthorized));
+    assert_eq!(store.read(private, None, &mut out), Err(ObjectError::Unauthorized));
+    let ordinary = store.create_owned_attached(b"settings.json", ObjectType::Text, Space::Personal, b"{}", b"/home/Alex.Smith/settings.json", owner).unwrap();
+    let (n, ordinary_revision) = editor_objects::load(&mut store, owner, b"/home/Alex.Smith/settings.json", &mut out).unwrap();
+    assert_eq!((&out[..n], ordinary_revision), (b"{}".as_slice(), None));
+    editor_objects::save(&mut store, owner, b"/home/Alex.Smith/settings.json", b"{\"enabled\":true}", None).unwrap();
+    let n = store.read(ordinary, None, &mut out).unwrap();
+    assert_eq!(&out[..n], b"{\"enabled\":true}");
+    assert_eq!(store.read(id,None,&mut out),Err(ObjectError::Unauthorized));
     let generation=store.generation();
     let version=store.current_version(id).unwrap();
     let flushes=disk.flushes.get();

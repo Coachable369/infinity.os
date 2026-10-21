@@ -10,6 +10,8 @@ pub mod layout;
 pub mod payload;
 pub mod object;
 mod hermes_memory_store;
+pub(crate) mod editor_objects;
+mod interactive_device;
 use crate::runtime::ai::hermes_profile;
 pub(crate) mod fabric;
 pub(crate) mod fabric_pool_metadata;
@@ -274,22 +276,32 @@ impl StorageManager {
     where
         F: FnMut(u8, &[u8]),
     {
+        Self::provision_interactive(plan, progress, &mut || {})
+    }
+
+    // ------------------------=
+    // FUNC: provision_interactive
+    // DESC: Preserves exact destructive-plan checks and native writes while yielding bounded input-only work between disk operations.
+    // ------------------=
+    pub fn provision_interactive<F: FnMut(u8, &[u8]), H: FnMut()>(
+        plan: &StorageProvisioningPlan, progress: &mut F, heartbeat: &mut H,
+    ) -> Result<(), StorageError> {
         #[cfg(all(target_arch = "x86_64", feature = "installer"))]
         {
             let mut device = ata::AtaDevice::open().ok_or(StorageError::NoDevice)?;
-            format::provision(&mut device, plan, progress)
+            format::provision(&mut interactive_device::InteractiveDevice { device: &mut device, service: heartbeat, sectors: 0 }, plan, progress)
         }
         #[cfg(all(target_arch = "aarch64", feature = "installer"))]
         {
             let mut device = uefi::UefiBlockDevice::open().ok_or(StorageError::NoDevice)?;
-            format::provision(&mut device, plan, progress)
+            format::provision(&mut interactive_device::InteractiveDevice { device: &mut device, service: heartbeat, sectors: 0 }, plan, progress)
         }
         #[cfg(not(any(
             all(target_arch = "x86_64", feature = "installer"),
             all(target_arch = "aarch64", feature = "installer")
         )))]
         {
-            let _ = (plan, progress);
+            let _ = (plan, progress, heartbeat);
             Err(StorageError::NoDevice)
         }
     }
@@ -750,6 +762,35 @@ pub fn object_read_path(
         let _ = (path, version, out);
         Err(object::ObjectError::SpaceUnavailable)
     }
+}
+
+// ------------------------=
+// FUNC: editor_read_path
+// DESC: Revalidates the active identity/session before opening ordinary text or owner-private JSON in the native editor.
+// ------------------=
+pub(crate) fn editor_read_path(owner: [u8; 16], session: [u8; 16], path: &[u8], out: &mut [u8])
+    -> Result<(usize, editor_objects::MemoryRevision), object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    { with_store(|store| editor_objects::load(store, object::ObjectId(owner), path, out)) }
+    #[cfg(target_arch="x86")]
+    { let _ = (path, out); Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: editor_write_path
+// DESC: Saves editor text with live session authorization, mapping validation, and owner/version checks for private memory.
+// ------------------=
+pub(crate) fn editor_write_path(owner: [u8; 16], session: [u8; 16], path: &[u8], content: &[u8],
+    expected: editor_objects::MemoryRevision) -> Result<editor_objects::MemoryRevision, object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    if path == crate::runtime::ai::mapping::PATH && crate::runtime::ai::mapping::validate(content).is_err() {
+        return Err(object::ObjectError::CorruptContent);
+    }
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    { with_store(|store| editor_objects::save(store, object::ObjectId(owner), path, content, expected)) }
+    #[cfg(target_arch="x86")]
+    { let _ = (path, content, expected); Err(object::ObjectError::SpaceUnavailable) }
 }
 
 // ------------------------=

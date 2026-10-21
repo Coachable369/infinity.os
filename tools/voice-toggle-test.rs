@@ -787,6 +787,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     next_turn_capture_boundary_tests(owner);
     post_reply_noisy_pause_rearm_tests(owner);
     wake_handoff_tests(owner);
+    recognition_backpressure_preserves_next_wake_tests(owner);
     wake_boundary_capture_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
@@ -1765,6 +1766,84 @@ fn wake_handoff_tests(owner: runtime::execution::SecurityIdentity) {
     }
     conversation::stop(owner);BUSY.store(false,Ordering::SeqCst);conversation::poll();
     HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+}
+
+// ------------------------=
+// FUNC: recognition_backpressure_preserves_next_wake_tests
+// DESC: Keeps exact next-wake PCM behind a completed retained segment during delayed ASR, while erasing queued private audio on context change or revocation.
+// ------------------=
+fn recognition_backpressure_preserves_next_wake_tests(owner: runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    HOLD_RECOGNITION.store(true, Ordering::SeqCst);
+    TURNS.store(0, Ordering::SeqCst);
+    PROMPTS.lock().unwrap().clear();
+    RECOGNITION_REQUESTS.lock().unwrap().clear();
+    assert!(conversation::start(owner));
+    let captures = CAPTURES.load(Ordering::SeqCst);
+    begin_delayed_recognition(1100);
+    let mut retained = vec![1400; 1920];
+    retained.extend_from_slice(&[0; voice_vad::END_SILENCE]);
+    let mut addressed = vec![120; 3200];
+    addressed.extend(microphone_phrase(2800));
+    MICROPHONE.lock().unwrap().extend(&retained);
+    MICROPHONE.lock().unwrap().extend(&addressed);
+    for _ in 0..8 { conversation::poll(); }
+    let pending = MICROPHONE.lock().unwrap().len();
+    assert!(pending > 0 && pending < addressed.len());
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(), 1);
+    // A slow decoder does not consume a third phrase behind its completed
+    // second phrase. No wall-clock pause or second capture stream is added.
+    NOW.fetch_add(650_000_000, Ordering::SeqCst);
+    for _ in 0..32 { conversation::poll(); }
+    assert_eq!(MICROPHONE.lock().unwrap().len(), pending);
+    finish_recognition(b"ambient conversation");
+    conversation::poll();
+    assert_eq!(&*RECOGNIZED.lock().unwrap(), &retained);
+    drain_microphone();
+    finish_recognition(b"another unaddressed sound");
+    conversation::poll();
+    assert_eq!(&*RECOGNIZED.lock().unwrap(), &addressed);
+    finish_recognition(b"Infinity preserve this next wake command");
+    assert_eq!(conversation::state().0, State::Thinking);
+    assert_eq!(TURNS.load(Ordering::SeqCst), 1);
+    assert_eq!(PROMPTS.lock().unwrap().len(), 1);
+    complete_voice_reply();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+
+    for revoke in [false, true] {
+        begin_delayed_recognition(1100);
+        MICROPHONE.lock().unwrap().extend(&retained);
+        MICROPHONE.lock().unwrap().extend(&addressed);
+        for _ in 0..8 { conversation::poll(); }
+        assert!(!MICROPHONE.lock().unwrap().is_empty());
+        if revoke {
+            ACTIVE.store(false, Ordering::SeqCst);
+            conversation::poll();
+            assert!(MICROPHONE.lock().unwrap().is_empty());
+            BUSY.store(false, Ordering::SeqCst);
+            conversation::poll();
+            assert_eq!(conversation::state().0, State::Off);
+            ACTIVE.store(true, Ordering::SeqCst);
+        } else {
+            // A busy driver cannot allow old-context FIFO audio through while
+            // the atomic discard waits; readiness of the ASR result is not a
+            // substitute for clearing that capture boundary.
+            DISCARD_BUSY.store(true, Ordering::SeqCst);
+            SELECTED_MODEL.store(9, Ordering::SeqCst);
+            finish_recognition(b"Infinity stale model command");
+            let pending = MICROPHONE.lock().unwrap().len();
+            for _ in 0..4 { conversation::poll(); }
+            assert_eq!(MICROPHONE.lock().unwrap().len(), pending);
+            DISCARD_BUSY.store(false, Ordering::SeqCst);
+            conversation::poll();
+            assert!(MICROPHONE.lock().unwrap().is_empty());
+            assert_eq!(conversation::state().0, State::Listening);
+            SELECTED_MODEL.store(0, Ordering::SeqCst);
+        }
+        assert_eq!(TURNS.load(Ordering::SeqCst), 1);
+    }
+    HOLD_RECOGNITION.store(false, Ordering::SeqCst);
+    READY.store(false, Ordering::SeqCst);
 }
 
 // ------------------------=

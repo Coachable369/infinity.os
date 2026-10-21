@@ -67,8 +67,11 @@ impl DisplayDevice {
         }
         let left=window.x.max(0) as usize;let top=window.y.max(0) as usize;
         let [r,g,b]=infinity_browser_core::tab_style::toolbar_color(self.active_primary_rgb());
-        self.fill_rounded_rect_alpha(left,top,window.width as usize,window.height as usize,8*scale,r/2,g/2,b/2,255);
-        self.outline_rounded_rect(left,top,window.width as usize,window.height as usize,8*scale,r+20,g+20,b+20);
+        // Outer geometry belongs to the desktop compositor. Client chrome must
+        // not leave a second rounded outline beneath its rectangular frame.
+        self.window_substrate(window,crate::ui::panel_recipe::Material {
+            fill:(r/2,g/2,b/2),edge:(r/2,g/2,b/2),opacity:255,
+            edge_opacity:0,focus:0,pressed:false,scale },0);
         let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
         self.fill_rect(left+1,top+48*scale,window.width as usize-2,layout.content.y as usize-48*scale,r,g,b);
         self.fill_rect(left+1,top+80*scale,window.width as usize-2,scale,r+14,g+14,b+14);

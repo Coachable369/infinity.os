@@ -1,5 +1,13 @@
 # Infinity UI Design Kit — Default
 
+## Authoritative OS panel standard: Eclipse Precision
+
+The user-approved `eclipse-precision-v1-reference.png` is the normative visual
+target for all OS panels and application window chrome. See
+`eclipse-precision-v1.md`. This shared surface contract takes precedence over
+older kit-specific panel and outer-frame geometry. Applications own their
+content, not their outer corners, edge artwork, focus treatment or rendering.
+
 Public website work uses the [Continuum extension](continuum-web.md), anchored
 to `assets/boot/infinity-emblem-v2.bmp` as the authoritative symbol reference.
 

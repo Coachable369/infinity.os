@@ -75,6 +75,7 @@ static mut REOPEN_FAILURE: u8 = 0;
 static mut CAPTURE_FRAME_SEEN: bool = false;
 static mut CAPTURE_EMPTY_SINCE: u64 = 0;
 static mut CAPTURE_EMPTY_REPORTED: bool = false;
+static mut CAPTURE_BOUNDARY_PENDING: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 static mut TURN_TIMING: timing::Timeline = timing::Timeline::new();
 static mut TURN_TIMING_ACTIVE: bool = false;
@@ -478,6 +479,7 @@ pub fn synchronized_reply_length(turn: u64, full_length: usize) -> usize {
 // DESC: Clears private turn buffers while preserving the already-authorized microphone DMA stream.
 // ------------------=
 unsafe fn reset_listening_state() {
+    CAPTURE_BOUNDARY_PENDING = false;
     clear_captured_turn();
     (&mut *(&raw mut RESAMPLER)).clear();
     (&mut *(&raw mut RAW)).fill(0);
@@ -1073,6 +1075,30 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     if now>=RENEW_AT {
         if !renew_capture_authority(now) { return false; }
     }
+    if CAPTURE_BOUNDARY_PENDING {
+        match crate::drivers::audio::discard_capture_pending(OWNER) {
+            Some(true) => {
+                CAPTURE_BOUNDARY_PENDING = false;
+                (&mut *(&raw mut RESAMPLER)).clear();
+            }
+            Some(false) => return false,
+            None => {}
+        }
+        // A contended adapter must not let old-context FIFO samples become a
+        // fresh command. Retry the atomic boundary before accepting any PCM.
+        return true;
+    }
+    // Recognition may finish after the retained following utterance has already
+    // ended. Reading here used to erase every later microphone frame, including
+    // a fresh wake word. Leave those samples in the existing bounded, authorized
+    // capture FIFO until the retained segment is submitted. DMA polling and
+    // lease checks continue; device overrun and revocation still fail closed.
+    if STATE == State::Recognizing
+        && RECOGNITION_CONTEXT_VALID
+        && (&*(&raw const UTTERANCE)).state() == VadState::Complete
+    {
+        return true;
+    }
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
     if count==0 {
         if !CAPTURE_EMPTY_REPORTED && now.saturating_sub(CAPTURE_EMPTY_SINCE)>=1_000_000_000 {
@@ -1122,8 +1148,8 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         return true;
     }
     LEVEL=(&*(&raw const MONO))[..n].iter().map(|x|x.unsigned_abs()).max().unwrap_or(0);
-    // Keep exactly the first following utterance during ASR. Audio after that
-    // bounded segment is deliberately drained, never queued as another turn.
+    // Keep one following utterance during ASR. Once it completes, backpressure
+    // leaves further samples in the already bounded native capture FIFO.
     let accept = STATE != State::Recognizing || (RECOGNITION_CONTEXT_VALID
         && (UTTERANCE_STARTED_AT != 0 || now < FOLLOWUP_ONSET_UNTIL));
     if STATE == State::Recognizing && UTTERANCE_STARTED_AT == 0
@@ -1143,7 +1169,9 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     }
     // VAD can finish part way through a driver chunk. Preserve that suffix
     // before clearing MONO so the next command's onset is not silently lost.
-    if STATE == State::Listening && vad == VadState::Complete && consumed < n {
+    if matches!(STATE, State::Listening | State::Recognizing)
+        && vad == VadState::Complete && consumed < n
+    {
         HANDOFF_LENGTH = n - consumed;
         (&mut *(&raw mut HANDOFF_PCM))[..HANDOFF_LENGTH]
             .copy_from_slice(&(&*(&raw const MONO))[consumed..n]);
@@ -1196,6 +1224,7 @@ pub fn poll() -> bool {
                     || ai.chat.generation_state == GenerationState::Running)) {
             RECOGNITION_CONTEXT_VALID = false;
             RECOGNITION_WAKE_AUTHORIZED = false;
+            CAPTURE_BOUNDARY_PENDING = true;
             clear_wake_command();
             clear_captured_turn();
             trace(b"recognition context changed; pending audio erased");

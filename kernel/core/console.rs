@@ -15,6 +15,13 @@ mod desktop_widgets_controller;
 mod app_shortcuts_controller;
 #[path = "console_clock.rs"]
 mod console_clock;
+#[path = "console_memory_editor.rs"]
+mod console_memory_editor;
+#[path = "installer_work.rs"]
+mod installer_work;
+#[path = "console_installation.rs"]
+mod console_installation;
+pub use console_installation::poll as poll_installer_work;
 use crate::intent::{
     ConsoleMode, IntentContext, IntentRuntime, KnownOperationPolicy, OperationPolicy,
     ResolutionSource, SystemOperation,
@@ -468,6 +475,7 @@ struct ConsoleRuntime {
     continuous_motion_frames: crate::ui::platform::MotionFrameCoalescer,
     presenting_fast_motion_frame: bool,
     installer_step: InstallerStep,
+    installer_work: installer_work::Work,
     installer_return_step: InstallerStep,
     storage_device: Option<StorageDevice>,
     storage_plan: Option<StorageProvisioningPlan>,
@@ -570,6 +578,7 @@ struct ConsoleRuntime {
     assistant_session: crate::runtime::identity::StableId,
     editor_document_path: [u8; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
     editor_document_path_length: usize,
+    editor_memory_revision: crate::storage::editor_objects::MemoryRevision,
     editor_document_name: [u8; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
     editor_document_name_length: usize,
     editor_dialog: EditorDialog,
@@ -629,6 +638,7 @@ impl ConsoleRuntime {
             continuous_motion_frames: crate::ui::platform::MotionFrameCoalescer::new(),
             presenting_fast_motion_frame: false,
             installer_step: InstallerStep::Welcome,
+            installer_work: installer_work::Work::Idle,
             installer_return_step: InstallerStep::Welcome,
             storage_device: None,
             storage_plan: None,
@@ -749,6 +759,7 @@ impl ConsoleRuntime {
             assistant_session: crate::runtime::identity::StableId::zero(),
             editor_document_path: [0; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
             editor_document_path_length: 0,
+            editor_memory_revision: None,
             editor_document_name: [0; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
             editor_document_name_length: 0,
             editor_dialog: EditorDialog::None,
@@ -2464,12 +2475,14 @@ impl ConsoleRuntime {
         }
         if !crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|m.logical_size as usize<=crate::ui::text_editor::DOCUMENT_CAPACITY){return false;}
         let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
-        let Ok((_, length)) = crate::storage::object_read_path(path, None, &mut content) else {
+        let Ok((length, revision)) = crate::storage::editor_read_path(
+            self.current_user.0, self.current_session.0, path, &mut content) else {
             return false;
         };
         if !self.editor_document.open(&content[..length]) {
             return false;
         }
+        self.editor_memory_revision = revision;
         let path_length = path.len().min(self.editor_document_path.len());
         self.editor_document_path[..path_length].copy_from_slice(&path[..path_length]);
         self.editor_document_path_length = path_length;
@@ -3944,19 +3957,27 @@ impl ConsoleRuntime {
             return false;
         }
         let content = self.editor_document.bytes();
-        let saved = crate::storage::object_write_path(
+        let result = crate::storage::editor_write_path(
+            self.current_user.0, self.current_session.0,
             &self.editor_document_path[..self.editor_document_path_length],
             content,
-        )
-        .is_ok();
-        if saved {
+            self.editor_memory_revision,
+        );
+        let saved = result.is_ok();
+        if let Ok(revision) = result {
+            self.editor_memory_revision = revision;
             self.editor_document.save();
             self.editor_tools.notice=if self.editor_document_path[..self.editor_document_path_length]
                 == *crate::runtime::ai::mapping::PATH {b"Saved AI instruction mappings to System Space."}
                 else {b"Saved to your Personal Space."};
             crate::output_text(b"[editor] document persisted\n");
+            if revision.is_some() { self.reload_editor_memory_profile(); }
         } else {
-            self.editor_tools.notice=b"Save failed. Your modified document remains in memory.";
+            self.editor_tools.notice = match result.err() {
+                Some(crate::storage::object::ObjectError::InvalidVersion) => b"Memory changed since opening. Save a copy, reopen, then apply your edits.",
+                Some(crate::storage::object::ObjectError::CorruptContent) => b"Invalid JSON or protected owner/schema fields changed. Your edits are retained.",
+                _ => b"Save failed. Your modified document remains in memory.",
+            };
             crate::output_text(b"[editor] save failed\n");
         }
         saved
@@ -4074,8 +4095,10 @@ impl ConsoleRuntime {
                 && metadata.logical_size as usize<=crate::ui::text_editor::DOCUMENT_CAPACITY);
         if !readable {self.editor_picker.error=3;return;}
         let mut content=[0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
-        if let Ok((_, length))=crate::storage::object_read_path(entry.bytes(),None,&mut content) {
+        if let Ok((length, revision))=crate::storage::editor_read_path(
+            self.current_user.0,self.current_session.0,entry.bytes(),&mut content) {
             if self.editor_document.open(&content[..length]) {
+                self.editor_memory_revision=revision;
                 self.editor_document_path[..entry.len].copy_from_slice(entry.bytes());
                 self.editor_document_path_length=entry.len;
                 let name=crate::runtime::object_navigation::namespace_basename(entry.bytes());
@@ -6708,31 +6731,7 @@ impl ConsoleRuntime {
                     runtime.installer_record(crate::runtime::EVENT_INSTALLER_PLAN_CONFIRMED, 0);
                 });
                 self.installer_step = InstallerStep::Provisioning;
-                self.render_installer();
-                self.redraw();
-                crate::bootstrap::installer_progress_update(0, b"PREPARING INSTALLATION");
-                let mut report_progress = |percent, label: &[u8]| {
-                    crate::bootstrap::installer_progress_update(percent, label);
-                };
-                let result = self
-                    .storage_plan
-                    .as_ref()
-                    .map(|plan| StorageManager::provision_with_progress(plan, &mut report_progress))
-                    .unwrap_or(Err(StorageError::NoDevice));
-                match result {
-                    Ok(()) => {
-                        self.installer_step = InstallerStep::Complete;
-                        crate::runtime::with_runtime(|runtime| {
-                            runtime.installer_record(crate::runtime::EVENT_INSTALLER_COMPLETED, 0);
-                            runtime.revoke_installer_authority();
-                        });
-                    }
-                    Err(error) => {
-                        self.installer_error = Some(error);
-                        report_storage_error(error);
-                        self.installer_step = InstallerStep::Failed;
-                    }
-                }
+                self.installer_work.confirm();
             }
             InstallerStep::Complete => {
                 let registered = self.storage_plan.as_ref().is_some_and(|plan| {
@@ -7903,6 +7902,14 @@ impl ConsoleRuntime {
     // ------------------=
     fn pointer_interaction(&mut self, buttons: u8) {
         let buttons = crate::ui::input_preferences::current().buttons(buttons);
+        if self.installer_work.busy() {
+            self.pointer_buttons = buttons;
+            self.pointer_pressed = buttons & crate::drivers::input::pointer::BUTTON_LEFT != 0;
+            if input_cursor_presentation(self.pointer_x, self.pointer_y) {
+                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            }
+            return;
+        }
         let desktop_polish_changed = matches!(
             self.mode,
             ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::AppLauncher
@@ -14086,6 +14093,7 @@ pub fn input(key: ConsoleKey) {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
+            if runtime.installer_work.busy() { return; }
             runtime.input(key);
             // Publish after input and its presentation, not only on the coarse
             // firmware clock. Debugger latency then observes completed input
@@ -14126,7 +14134,7 @@ pub fn pointer_scroll(vertical: i8) -> bool {
         let slot = &raw mut RUNTIME;
         (*slot)
             .as_mut()
-            .map(|runtime| runtime.pointer_scroll(vertical))
+            .map(|runtime| runtime.installer_work.busy() || runtime.pointer_scroll(vertical))
             .unwrap_or(false)
     }
 }

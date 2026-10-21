@@ -9,6 +9,7 @@ mod access_style;
 mod access_scale;
 mod access_panel;
 mod access_view;
+mod panel_view;
 mod ai_widget_view;
 mod file_preview_view;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

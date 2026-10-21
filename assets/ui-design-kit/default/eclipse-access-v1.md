@@ -2,7 +2,10 @@
 
 Reference: `eclipse-access-v1-reference.png` (built-in image generation, visual
 specification only). Reuse the authored header BMP, existing native Inter faces,
-the generated Eclipse glyph atlas, rounded controls and eight-pixel spacing.
+the generated Eclipse glyph atlas and eight-pixel spacing. The approved
+[Eclipse Precision surface contract](eclipse-precision-v1.md) owns panel,
+button, field and outer-window artwork; it supersedes the earlier rounded
+surface recipe without changing authored content or interaction bounds.
 The reference's example checkbox is illustrative, not a new authentication feature.
 The original user wordmark is retained byte-for-byte; the generated night-water
 wallpaper is `eclipse-access-wallpaper-v1.png` and its native BMP derivative.
@@ -23,9 +26,9 @@ syntax palette use navy/blue/silver, not violet selection or teal accents.
 Explicit alternate editor schemes remain selectable. Application menus reuse
 the existing compact Inter rows with #101B3A panels, #1A2E63 selection and
 #86C7FF edges. The minimized-app rail reuses the glass-panel recipe with a
-silver #C2DBF5 edge. Command Window reuses the rounded field/card and clipped
+silver #C2DBF5 edge. Command Window reuses the shared image-backed field/card and clipped
 Inter label components; partial repaints must use the same #090F26 body color
-as initial paint. No new raster assets are required for these components.
+as initial paint. These components consume the shared Precision atlas.
 
 Typography is Inter regular (400) and semibold (600), not the host system face.
 Native configuration and authentication bind FontKit family 1 explicitly for

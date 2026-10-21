@@ -12,6 +12,11 @@ for every UI task, without exceptions.
   element; record that gap and add the new reusable element to the kit.
 - Preserve the kit's documented geometry, transparency, styling, and interaction
   states when integrating its elements.
+- `assets/ui-design-kit/default/eclipse-precision-v1-reference.png` and its
+  companion specification are the approved OS panel standard. Use the shared
+  image-backed panel renderer and compositor-owned window frames; applications
+  must not invent alternate outer borders, corner treatments, or focus states.
+  Compare production-rendered pixels against this reference before acceptance.
 
 ## Shared architecture ports
 

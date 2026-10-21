@@ -7,28 +7,11 @@ impl DisplayDevice {
     // DESC: Adds a clipped inward edge light without affecting panel content or surrounding wallpaper.
     // ------------------=
     pub(super) fn access_panel_glow(&mut self, left: usize, top: usize, width: usize, height: usize) {
-        let Some(region)=self.clipped_render_region(left,top,width,height) else { return; };
-        let strength=palette::panel_motion().glow as usize;
-        for y in region.top..region.bottom {
-            for x in region.left..region.right {
-                let col=x-left;
-                let row=y-top;
-                let outer=palette::rounded_coverage(col,row,width,height,18);
-                let distance=col.min(row).min(width-1-col).min(height-1-row);
-                if distance>=18 { continue; }
-                let mut coverage=0usize;
-                for inset in 1..=6 {
-                    let inner=if col>=inset && row>=inset {
-                        palette::rounded_coverage(col-inset,row-inset,width.saturating_sub(2*inset),
-                            height.saturating_sub(2*inset),18-inset)
-                    } else { 0 };
-                    coverage+=outer.saturating_sub(inner) as usize;
-                }
-                let alpha=(coverage*strength/255/6) as u8;
-                if alpha>0 { self.blend_color_unchecked(x,y,palette::BORDER.0,palette::BORDER.1,palette::BORDER.2,alpha); }
-            }
-        }
-        self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);
+        self.precision_surface(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
+            width:width as u32,height:height as u32},crate::ui::panel_recipe::Surface::Panel,
+            crate::ui::panel_recipe::Material{fill:palette::SURFACE,edge:palette::BORDER,
+                opacity:0,edge_opacity:palette::panel_motion().glow,
+                focus:255,pressed:false,scale:self.ui_scale()});
     }
     // ------------------------=
     // FUNC: access_surface
@@ -48,37 +31,16 @@ impl DisplayDevice {
     pub(super) fn access_surface_alpha(&mut self, left: usize, top: usize, width: usize,
         height: usize, radius: usize, fill: palette::Rgb, border: palette::Rgb,
         opacity: u8, border_opacity: u8, focused: bool) {
-        if opacity == 0 && border_opacity == 0 { return; }
-        let Some(region) = self.clipped_render_region(left, top, width, height) else { return; };
-        let primary = fill == palette::PRIMARY;
-        let focus = if focused { palette::focus_amount() } else { 0 };
-        for y in region.top..region.bottom {
-            let row = y - top;
-            let lift = ((height.saturating_sub(row) * 20) / height.max(1)) as u8;
-            let mut color = if primary {
-                let t = (row * 255 / height.max(1)) as u8;
-                palette::mix((49, 174, 255), (22, 62, 220), t)
-            } else { palette::mix(fill, palette::BORDER, lift) };
-            if primary && focused && palette::pressed() { color = palette::mix(color, palette::ELEVATED, 56); }
-            for x in region.left..region.right {
-                let col = x - left;
-                let outer = palette::rounded_coverage(col, row, width, height, radius);
-                let inner = if col > 0 && row > 0 {
-                    palette::rounded_coverage(col-1, row-1, width.saturating_sub(2),
-                        height.saturating_sub(2), radius.saturating_sub(1))
-                } else { 0 };
-                let edge = outer.saturating_sub(inner);
-                let edge_color = palette::mix(border, palette::FOCUS, focus);
-                let distance = col.min(row).min(width-1-col).min(height-1-row);
-                let glow = if distance < 5 { (5-distance) as u16 * focus as u16 / 20 } else { 0 } as u8;
-                let shaded = palette::mix(color, palette::BORDER, glow);
-                self.blend_color_unchecked(x, y, shaded.0, shaded.1, shaded.2,
-                    (inner as u16 * opacity as u16 / 255) as u8);
-                self.blend_color_unchecked(x, y, edge_color.0, edge_color.1, edge_color.2,
-                    (edge as u16 * border_opacity as u16 / 255) as u8);
-            }
-        }
-        self.mark_dirty_rect(region.left, region.top, region.right-region.left, region.bottom-region.top);
+        use crate::ui::panel_recipe::{Surface,Material};
+        let primary=fill==palette::PRIMARY;
+        let circular=width==height && radius>=width/2;
+        let kind=if circular {if primary {Surface::Current}else{Surface::Inactive}}
+            else if primary {Surface::Primary}
+            else if height>width/2 {Surface::Panel}else{Surface::Field};
+        self.precision_surface(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
+            width:width as u32,height:height as u32},kind,Material{fill,edge:border,opacity,
+                edge_opacity:border_opacity,focus:if focused {palette::focus_amount()}else{0},
+                pressed:focused && palette::pressed(),scale:self.ui_scale()});
     }
 
     // ------------------------=
@@ -96,8 +58,10 @@ impl DisplayDevice {
     // DESC: Uses the same pre-session palette for login cards, utility trays and fallback setup panels.
     // ------------------=
     pub(super) fn access_panel(&mut self, left: usize, top: usize, width: usize, height: usize) {
-        self.access_surface(left, top, width, height, 18, palette::SURFACE,
-            palette::MUTED_BORDER, 240, false);
+        self.precision_surface(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
+            width:width as u32,height:height as u32},crate::ui::panel_recipe::Surface::Panel,
+            crate::ui::panel_recipe::Material{fill:palette::SURFACE,edge:palette::BORDER,
+                opacity:240,edge_opacity:255,focus:0,pressed:false,scale:self.ui_scale()});
     }
 
     // ------------------------=
@@ -118,8 +82,17 @@ impl DisplayDevice {
     // DESC: Samples the generated Eclipse glyph mask with area-filtered alpha and the shared silver/violet tokens.
     // ------------------=
     pub(super) fn access_icon(&mut self, cx: usize, cy: usize, kind: usize, size: usize, active: bool) {
-        const ATLAS: &[u8; 16*64*64*4] = include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba");
         let Some(&glyph) = [0usize,4,2,3,14,4,14,7,9,9,0,11,13,14,5,8].get(kind.wrapping_sub(1)) else { return; };
+        self.access_glyph(cx,cy,glyph,size,active);
+    }
+
+    // ------------------------=
+    // FUNC: access_glyph
+    // DESC: Reuses the authored monochrome family for semantic controls and completed progress markers.
+    // ------------------=
+    pub(super) fn access_glyph(&mut self,cx:usize,cy:usize,glyph:usize,size:usize,active:bool) {
+        const ATLAS: &[u8; 16*64*64*4] = include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba");
+        if glyph>=16 {return;}
         if size == 0 { return; }
         let left = cx.saturating_sub(size/2); let top = cy.saturating_sub(size/2);
         let Some(region) = self.clipped_render_region(left, top, size, size) else { return; };

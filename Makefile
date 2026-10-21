@@ -104,6 +104,7 @@ CRASH_ASSETS := $(shell find assets/crash -type f)
 APPLICATION_ASSETS := $(shell find assets/apps -type f)
 DESIGN_KIT_ASSETS := $(shell find assets/ui-design-kit/default -type f)
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp
+DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-precision-v1.rgba
 KERNEL_SOURCES += $(DESIGN_KIT_ASSETS)
 KERNEL_SOURCES += $(wildcard sdk/infinity-enterprise-core/*.rs) sdk/infinity-enterprise-core/Cargo.toml
 
@@ -259,6 +260,9 @@ performance-test:
 		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
 
 .PHONY: active-painter-test
+assets/ui-design-kit/default/eclipse-precision-v1.rgba: assets/ui-design-kit/default/eclipse-precision-v1-source.png assets/ui-design-kit/default/eclipse-precision-v1-reference.png tools/build-precision-artwork.py
+	python3 tools/build-precision-artwork.py
+
 assets/ui-design-kit/default/browser-welcome-hero-v1.bmp: assets/ui-design-kit/default/browser-welcome-hero-v1.png tools/build-browser-welcome-artwork.py
 	python3 tools/build-browser-welcome-artwork.py
 
@@ -275,7 +279,13 @@ desktop-browser-polish-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@rustc --edition=2021 -C opt-level=2 -Awarnings --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib tools/desktop-browser-polish-test.rs -o build/behavior-tests/desktop-browser-polish-test
 	@build/behavior-tests/desktop-browser-polish-test
 
-active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib desktop-browser-polish-test
+.PHONY: precision-panel-test
+precision-panel-test: assets/ui-design-kit/default/eclipse-precision-v1.rgba
+	@mkdir -p builds/validation/eclipse-precision
+	rustc --edition=2021 -O tools/precision-panel-test.rs -o builds/validation/eclipse-precision/precision-panel-test
+	builds/validation/eclipse-precision/precision-panel-test
+
+active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib desktop-browser-polish-test precision-panel-test
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 -C opt-level=z -Awarnings tools/memory-throughput-test.rs -o build/behavior-tests/memory-throughput-test
 	@build/behavior-tests/memory-throughput-test

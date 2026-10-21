@@ -193,52 +193,35 @@ impl super::DisplayDevice {
         border: (u8, u8, u8),
         s: usize,
     ) {
-        self.fill_rounded_rect_alpha(
-            r.x.max(0) as usize,
-            r.y.max(0) as usize,
-            r.width as usize,
-            r.height as usize,
-            8 * s,
-            color.0,
-            color.1,
-            color.2,
-            255,
-        );
-        let radius = (8 * s).min(r.width as usize / 2).min(r.height as usize / 2);
-        let light_height = (72 * s).min(r.height as usize);
-        for row in 1..light_height {
-            let edge_row = row.min((r.height as usize).saturating_sub(row + 1));
-            let inset = if edge_row < radius {
-                let dy = radius - edge_row;
-                let mut dx = radius;
-                while dx * dx + dy * dy > radius * radius {
-                    dx -= 1;
-                }
-                radius - dx
-            } else {
-                1
-            };
-            let strength = (light_height - row) * 12 / light_height.max(1);
-            self.fill_rect(
-                r.x.max(0) as usize + inset,
-                r.y.max(0) as usize + row,
-                (r.width as usize).saturating_sub(inset * 2),
-                1,
-                color.0.saturating_add((strength / 3) as u8),
-                color.1.saturating_add((strength * 2 / 3) as u8),
-                color.2.saturating_add(strength as u8),
-            );
+        self.app_card_alpha(r, color, border, 255, s);
+    }
+    // ------------------------=
+    // FUNC: app_card_alpha
+    // DESC: Uses the approved panel artwork with caller-owned background transparency and an independently opaque edge.
+    // ------------------=
+    pub(super) fn app_card_alpha(&mut self, r: Rect, color: (u8, u8, u8),
+        border: (u8, u8, u8), opacity: u8, s: usize) {
+        self.precision_surface(r,crate::ui::panel_recipe::Surface::Panel,
+            crate::ui::panel_recipe::Material{fill:color,edge:border,opacity,
+                edge_opacity:255,focus:0,pressed:false,scale:s});
+    }
+    // ------------------------=
+    // FUNC: window_substrate
+    // DESC: Paints only the signed window background; the compositor exclusively owns its active or inactive frame.
+    // ------------------=
+    pub(super) fn window_substrate(&mut self, rect: Rect,
+        mut material: crate::ui::panel_recipe::Material, blur: u8) {
+        if blur >= 2 && !self.fast_motion_frame {
+            let left = rect.x.max(0) as usize;
+            let top = rect.y.max(0) as usize;
+            let right = rect.right().max(0).min(self.width as i32) as usize;
+            let bottom = rect.bottom().max(0).min(self.height as i32) as usize;
+            if right > left && bottom > top {
+                self.blur_framebuffer_region(left, top, right - left, bottom - top, blur as usize);
+            }
         }
-        self.outline_rounded_rect(
-            r.x.max(0) as usize,
-            r.y.max(0) as usize,
-            r.width as usize,
-            r.height as usize,
-            8 * s,
-            border.0,
-            border.1,
-            border.2,
-        );
+        material.edge_opacity = 0;
+        self.precision_surface(rect, crate::ui::panel_recipe::Surface::Panel, material);
     }
     // ------------------------=
     // FUNC: app_symbol

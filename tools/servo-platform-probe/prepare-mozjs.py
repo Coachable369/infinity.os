@@ -37,6 +37,24 @@ def main():
     text = text.replace('if [[ $(JSSRC)/configure -nt config.status ]] ; then',
                         'if [[ $(JSSRC)/configure -nt config.status || ! -f Makefile ]] ; then', 1)
     path.write_text(text)
+    path = directory / "mozjs/mfbt/Assertions.h"
+    text = path.read_text()
+    marker = '#elif __wasi__\n\n#  define MOZ_REALLY_CRASH(line) __builtin_trap()'
+    if text.count(marker) != 1:
+        raise SystemExit("Unexpected SpiderMonkey fatal-crash selector")
+    text = text.replace(marker, '''#elif defined(__INFINITYOS__)
+
+// Native abort is linked to the browser supervisor's fatal callback. A Unix
+// deliberate null write traps firmware first and leaves the UI waiting forever.
+// Preserve fail-closed termination; never resume an unsafe JavaScript runtime.
+#  ifdef __cplusplus
+#    define MOZ_REALLY_CRASH(line) ::abort()
+#  else
+#    define MOZ_REALLY_CRASH(line) abort()
+#  endif
+
+''' + marker, 1)
+    path.write_text(text)
     # Self-hosted JavaScript uses the C preprocessor, but is not C++. The
     # native forced C header contains typedefs/extern blocks that must never
     # become JavaScript source. Keep every actual C/C++ compilation unchanged.

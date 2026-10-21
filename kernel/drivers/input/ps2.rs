@@ -293,8 +293,7 @@ pub fn run() -> ! {
     let mut extended = false;
     let mut control = false;
     let mut command = 0u8;
-    loop {
-        crate::console::input_batch(|| {
+    let mut poll_devices = || {
             crate::ui::input_batch::drain(128, || {
                 let status = pending_status();
                 (status & 1 != 0).then(|| (status, read_pending()))
@@ -305,7 +304,10 @@ pub fn run() -> ! {
                     dispatch_keyboard(value, &mut shift, &mut control, &mut command, &mut extended);
                 }
             });
-        });
+    };
+    loop {
+        crate::console::input_batch(&mut poll_devices);
+        crate::console::poll_installer_work(|| crate::console::input_batch(&mut poll_devices));
         // A complete packet is dispatched before service work instead of one
         // byte per animation/network/inference iteration. The finite drain
         // preserves fairness under sustained controller traffic.

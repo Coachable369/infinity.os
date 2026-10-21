@@ -4,12 +4,15 @@ set -euo pipefail
 script_dir="${0:A:h}"
 repo_dir="${script_dir:h:h}"
 source "$repo_dir/tools/require-build-kit.sh"
+swift_paths=(--cache-path "$repo_dir/build/cache/swiftpm"
+    --config-path "$repo_dir/build/cache/swiftpm-config"
+    --security-path "$repo_dir/build/cache/swiftpm-security")
 app_dir="$repo_dir/builds/InfinityOS Installer Studio.app"
 contents_dir="$app_dir/Contents"
-binary_dir="$(swift build --package-path "$script_dir" -c release --show-bin-path)"
+binary_dir="$(swift build "${swift_paths[@]}" --package-path "$script_dir" -c release --show-bin-path)"
 
-swift test --package-path "$script_dir"
-swift build --package-path "$script_dir" -c release
+swift test "${swift_paths[@]}" --package-path "$script_dir"
+swift build "${swift_paths[@]}" --package-path "$script_dir" -c release
 
 rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"

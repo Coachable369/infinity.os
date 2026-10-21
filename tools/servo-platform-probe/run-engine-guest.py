@@ -94,23 +94,25 @@ def main():
     if options.network_probe:
         passed = passed and network_passed
     diagnostics={str(kind):b"".join(struct.pack("<Q",r[3]) for r in records if r[:3]==[9,4,kind]).rstrip(b"\0").decode(errors="replace") for kind in (6,7)}
-    dimensions=next((r[3] for r in records if r[:3]==[9,2,36]),None)
+    pixel_kind, dimension_kind = (10,60) if any(r[:3]==[9,2,60] for r in records) else ((8,59) if any(r[:3]==[9,2,59] for r in records) else (5,36))
+    dimensions=next((r[3] for r in records if r[:3]==[9,2,dimension_kind]),None)
     screenshot=None
     if dimensions is not None:
         width,height=dimensions>>32,dimensions&0xffffffff
-        rgba=b"".join(struct.pack("<Q",r[3]) for r in records if r[1]==5)
+        rgba=b"".join(struct.pack("<Q",r[3]) for r in records if r[1]==pixel_kind)
         if len(rgba)==width*height*4:
             from PIL import Image
             screenshot=output/"browser-page.png"
             Image.frombytes("RGBA",(width,height),rgba).save(screenshot)
     metadata_only=any(environment.get(key)=="1" for key in ("INFINITY_BROWSER_COOKIE_ONLY","INFINITY_BROWSER_REQUEST_ONLY"))
-    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1] not in (4,5)],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed and not metadata_only,"cookie_flow_verified":[9,2,38,1] in records,"screenshot":str(screenshot) if screenshot else None}
+    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1] not in (4,5,8,10)],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed and not metadata_only,"cookie_flow_verified":[9,2,38,1] in records,"screenshot":str(screenshot) if screenshot else None}
     report["software_raster_verified"] = raster_passed
     report["progressive_rendering_verified"] = all([9,2,41,step] in records for step in (1,2))
     report["request_body_redirects_verified"] = [9,2,46,31] in records
     report["network_failure_recovery_verified"] = all([9,2,52,step] in records for step in (1,2,3))
     report["renderer_failure_recovery_verified"] = [9,2,53,1] in records
     report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,9))
+    report["opaque_iframe_checkbox_click_zoom_scroll_verified"] = [9,2,40,11] in records
     report["external_https_verified"] = network_passed
     report["load_completed"] = [9,2,32,1] in records if options.network_probe else None
     report["requested_url"] = environment.get("INFINITY_BROWSER_PROBE_URL", "https://www.google.com/") if options.network_probe else None

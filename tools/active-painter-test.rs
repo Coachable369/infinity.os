@@ -10,6 +10,7 @@ mod primitives;
 #[path = "../kernel/core/bootstrap/personalization_view.rs"]
 mod personalization_view;
 #[path="../kernel/core/bootstrap/app_style.rs"] mod app_style;
+#[path="../kernel/core/bootstrap/panel_view.rs"] mod panel_view;
 #[path="../kernel/core/bootstrap/ai_widget_view.rs"] mod ai_widget_view;
 #[path="ai-widget-tests.rs"] mod ai_widget_tests;
 #[path="../kernel/core/bootstrap/assistant_view.rs"] mod assistant_view;
@@ -325,6 +326,8 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
+    if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}
     if std::env::args().any(|arg|arg=="--ai-widget-only") {
         ai_widget_tests::verify();return;
     }
@@ -340,6 +343,8 @@ fn main() {
     if std::env::args().any(|arg|arg=="--window-controls-only") {
         window_controls_test();window_control_states_proof();return;
     }
+    window_substrate_pixels();
+    precision_surface_benchmark();
     editor_scheme_pixels();
     ai_widget_tests::verify();
     editor_typography_pixels();
@@ -411,6 +416,137 @@ fn main() {
         }
     }
 }
+
+// ------------------------=
+// FUNC: precision_surface_benchmark
+// DESC: Measures production substrate/frame and focused-rim painting separately from retained translation on the host framebuffer.
+// ------------------=
+fn precision_surface_benchmark() {
+    use ui::{geometry::Rect,panel_recipe::{Material,Surface}};
+    let mut pixels=vec![0x261009u32;1600*1000];
+    let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width:1600,height:1000,stride:1600,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let base=Material{fill:(16,27,58),edge:(134,199,255),opacity:224,
+        edge_opacity:255,focus:0,pressed:false,scale:1};
+    for mode in 0..3 {
+        let mut times=[0u128;20];
+        for (index,time) in times.iter_mut().enumerate() {
+            let start=Instant::now();
+            if mode==0 {
+                let rect=Rect{x:20,y:20,width:1280,height:900};
+                d.window_substrate(rect,base,0);d.precision_window_frame(rect,true,1);
+            }else{
+                d.precision_surface(Rect{x:20,y:20,width:432,height:74},Surface::Panel,
+                    Material{focus:if mode==1 {255}else{(index*255/19) as u8},opacity:0,..base});
+            }
+            *time=start.elapsed().as_nanos();
+        }
+        times.sort_unstable();
+        println!("{{\"fixture\":\"precision_surface\",\"mode\":{mode},\"samples\":20,\"average_ns\":{},\"p95_ns\":{},\"host_only\":true}}",
+            times.iter().sum::<u128>()/20,times[18]);
+    }
+}
+
+// ------------------------=
+// FUNC: window_substrate_expected
+// DESC: Independently computes source-over pixels in both firmware channel formats and retained-alpha mode.
+// ------------------=
+fn window_substrate_expected(base:u32, rgba:(u8,u8,u8,u8), format:u32, retained:bool)->u32 {
+    let (r,g,b,a)=rgba;
+    if a==0 {return base;}
+    let mut out=0u32;
+    for (shift,channel) in if format==0 {[(0,r),(8,g),(16,b)]}else{[(16,r),(8,g),(0,b)]} {
+        out|=((((base>>shift)&255)*(255-u32::from(a))+u32::from(channel)*u32::from(a))/255)<<shift;
+    }
+    if retained {out|=(u32::from(a)+(base>>24)*(255-u32::from(a))/255)<<24;}
+    out
+}
+
+// ------------------------=
+// FUNC: window_substrate_pixels
+// DESC: Verifies real window substrates never paint a competing border, preserve alpha, clip signed bounds, and leave activation to the shared frame.
+// ------------------=
+fn window_substrate_pixels() {
+    use ui::{geometry::{Rect,Point},panel_recipe::{self,Material,Surface}};
+    for scale in 1..=4 {
+        let (width,height)=(96*scale,72*scale);
+        for format in [0,1] {for retained in [false,true] {
+            let card=Rect{x:(8*scale) as i32,y:(8*scale) as i32,
+                width:(72*scale) as u32,height:(52*scale) as u32};
+            let base=0x142245|if retained {0x4c000000}else{0};
+            let mut hidden=vec![base;width*height];let mut filled=hidden.clone();
+            let mut card_display=DisplayDevice{buffer:hidden.as_mut_ptr(),width,height,stride:width,format,
+                render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:retained};
+            card_display.app_card_alpha(card,(18,31,55),(134,199,255),0,scale);
+            card_display.buffer=filled.as_mut_ptr();
+            card_display.app_card_alpha(card,(18,31,55),(134,199,255),255,scale);
+            let mut covered_border=0;
+            for dy in 0..card.height as usize {for dx in 0..card.width as usize {
+                if dx.min(dy).min(card.width as usize-1-dx).min(card.height as usize-1-dy)<2*scale {
+                    let at=(card.y as usize+dy)*width+card.x as usize+dx;
+                    assert_eq!(hidden[at],filled[at]);covered_border+=usize::from(hidden[at]!=base);
+                }
+            }}
+            assert!(covered_border>0);
+            let card_center=(card.y as usize+card.height as usize/2)*width+card.x as usize+card.width as usize/2;
+            assert_eq!(hidden[card_center],base);assert_ne!(filled[card_center],base);
+            for (rx,ry) in [(-7,8),(14,-9),(12,6)] {
+                let rect=Rect{x:rx*scale as i32,y:ry*scale as i32,
+                    width:(78*scale) as u32,height:(56*scale) as u32};
+                let clip=Region{left:9*scale,top:7*scale,right:80*scale,bottom:63*scale};
+                for opacity in [0,117,255] {
+                    let material=Material{fill:(18,31,55),edge:(134,199,255),opacity,
+                        edge_opacity:255,focus:0,pressed:false,scale};
+                    let original:Vec<u32>=(0..width*height).map(|i|
+                        (if (i%width/(7*scale)+i/width/(5*scale))%2==0 {0x142245}else{0x071127})
+                        |if retained {0x4c000000}else{0}).collect();
+                    let mut pixels=original.clone();
+                    let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format,
+                        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:retained};
+                    d.window_substrate(rect,material,0);
+                    for y in 0..height {for x in 0..width {
+                        let at=y*width+x;
+                        let inside=rect.contains(Point{x:x as i32,y:y as i32});
+                        let rgba=if inside {panel_recipe::pixel(Surface::Panel,rect.width as usize,
+                            rect.height as usize,(x as i32-rect.x) as usize,(y as i32-rect.y) as usize,
+                            Material{edge_opacity:0,..material})}else{(0,0,0,0)};
+                        assert_eq!(pixels[at],window_substrate_expected(original[at],rgba,format,retained));
+                        if inside {
+                            let (dx,dy)=((x as i32-rect.x) as usize,(y as i32-rect.y) as usize);
+                            if dx.min(dy).min(rect.width as usize-1-dx).min(rect.height as usize-1-dy)<2*scale {
+                                assert_eq!(pixels[at],original[at]);
+                            }
+                        }
+                    }}
+                    if opacity==0 {assert_eq!(pixels,original);assert_eq!(d.submissions,0);}
+                    let mut partial=original.clone();
+                    d.buffer=partial.as_mut_ptr();d.render_clip=Some(clip);
+                    d.window_substrate(rect,material,0);
+                    for y in 0..height {for x in 0..width {
+                        let at=y*width+x;
+                        assert_eq!(partial[at],if x>=clip.left&&x<clip.right&&y>=clip.top&&y<clip.bottom {
+                            pixels[at]
+                        }else{original[at]});
+                    }}
+                    let mut active=pixels.clone();let mut inactive=pixels.clone();
+                    d.render_clip=None;d.buffer=active.as_mut_ptr();d.precision_window_frame(rect,true,scale);
+                    d.buffer=inactive.as_mut_ptr();d.precision_window_frame(rect,false,scale);
+                    assert_ne!(active,inactive);
+                    let center=((rect.y+rect.height as i32/2) as usize)*width
+                        +(rect.x+rect.width as i32/2) as usize;
+                    assert_eq!(active[center],pixels[center]);assert_eq!(inactive[center],pixels[center]);
+                }
+            }
+        }}
+    }
+}
+
+#[test]
+// ------------------------=
+// FUNC: window_substrate_pixel_regression
+// DESC: Makes the shared substrate alpha, clipping and single-owner frame contract available to the unit harness.
+// ------------------=
+fn window_substrate_pixel_regression() { window_substrate_pixels(); }
 
 // ------------------------=
 // FUNC: editor_streaming_benchmark

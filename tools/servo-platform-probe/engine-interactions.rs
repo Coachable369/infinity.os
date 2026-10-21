@@ -70,6 +70,75 @@ fn selection_pixels(engine:&Servo,view:&WebView,repaint:&Cell<bool>)->bool {
 }
 
 // ------------------------=
+// FUNC: iframe_checkbox
+// DESC: Requires trusted clicks inside an opaque-origin frame to toggle once, including parent scroll and non-unit zoom.
+// ------------------=
+fn iframe_checkbox(engine:&Servo,view:&WebView,repaint:&Cell<bool>,input:&Cell<u8>)->bool {
+    if !javascript_true(engine,view,repaint,r#"
+        document.body.style.cssText='margin:0;height:1400px;background:#123456';
+        document.body.innerHTML='';
+        window.frameReady=false;window.frameClicks=0;window.frameChecked=false;window.frameTrusted=false;
+        const widget=document.createElement('iframe');
+        widget.sandbox='allow-scripts';
+        widget.style.cssText='position:absolute;left:96px;top:160px;width:260px;height:180px;border:4px solid #567890;transform:translate(12px,8px)';
+        window.addEventListener('message',event=>{
+            if(event.source!==widget.contentWindow)return;
+            if(event.data.ready===true)window.frameReady=true;
+            if(typeof event.data.checked==='boolean'){
+                window.frameClicks++;window.frameChecked=event.data.checked;window.frameTrusted=event.data.trusted;
+            }
+        });
+        // The engine UA constrains native checkbox maxima to 14px. Explicitly
+        // size this authored control and suppress its decorative checkmark so
+        // the center pixel independently verifies the checked fill color.
+        widget.srcdoc=`<style>body{margin:0;background:#234567}input{position:absolute;left:24px;top:32px;width:28px;height:28px;max-width:none;max-height:none;margin:0;appearance:none;background:#183048;border:0}input::before{content:none}input:checked{background:#00ff00}</style><input type=checkbox><script>const c=document.querySelector('input');c.onchange=e=>parent.postMessage({checked:c.checked,trusted:e.isTrusted},'*');parent.postMessage({ready:true},'*');</script>`;
+        document.body.appendChild(widget);true
+    "#){return false;}
+    let deadline=Instant::now()+Duration::from_secs(10);
+    while !javascript_true(engine,view,repaint,"window.frameReady===true") {
+        if Instant::now()>=deadline{return false;}
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    for (zoom,x,y,count,checked,color) in [
+        (1.0,150.0,218.0,1,true,[0,255,0,255]),
+        (1.25,187.5,122.5,2,false,[24,48,72,255]),
+    ] {
+        view.set_page_zoom(zoom);
+        if zoom>1.0 && !javascript_true(engine,view,repaint,"scrollTo(0,120);scrollY===120"){return false;}
+        let ready=Rc::new(Cell::new(0));let result=ready.clone();
+        view.take_screenshot(None,move |image|result.set(if image.is_ok(){1}else{2}));
+        if !spin_until(engine,view,repaint,&ready) || !click(engine,view,repaint,input,x,y){return false;}
+        let expected=std::format!("window.frameClicks==={count} && window.frameChecked==={checked} && window.frameTrusted===true");
+        let deadline=Instant::now()+Duration::from_secs(2);
+        let accepted=loop {
+            if javascript_true(engine,view,repaint,&expected){break true;}
+            if Instant::now()>=deadline{break false;}
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let observed=Rc::new(Cell::new(0));let result=observed.clone();
+        view.evaluate_javascript("window.frameClicks*4+(window.frameChecked?2:0)+(window.frameTrusted?1:0)",move |value| {
+            if let Ok(servo::JSValue::Number(value))=value{super::super::record(2,57,value as u64);}
+            result.set(1);
+        });
+        if !spin_until(engine,view,repaint,&observed){return false;}
+        let painted=Rc::new(Cell::new(0));let result=painted.clone();
+        view.take_screenshot(None,move |image| {
+            let Ok(image)=image else{result.set(2);return;};
+            super::super::record(2,58+count,((image.width() as u64)<<32)|image.height() as u64);
+            for (index,chunk) in image.as_raw().chunks(8).enumerate() {
+                let mut bytes=[0;8];bytes[..chunk.len()].copy_from_slice(chunk);
+                super::super::record(if count==1{8}else{10},index as u64,u64::from_le_bytes(bytes));
+            }
+            result.set(if image.get_pixel(x as u32,y as u32).0==color{1}else{2});
+        });
+        let pixels=spin_until(engine,view,repaint,&painted);
+        if !accepted || !pixels{return false;}
+    }
+    view.set_page_zoom(1.0);
+    super::super::record(2,40,11);true
+}
+
+// ------------------------=
 // FUNC: verify
 // DESC: Checks selection, editing, zoom layout and tab isolation using native engine DOM state.
 // ------------------=
@@ -84,6 +153,9 @@ pub fn verify(engine:&Servo)->bool {
     view.show();view.set_focused(true);
     system_clipboard::with_shared(|c|c.session([1;16],true));
     if !spin_until(engine,&view,&repaint,&loaded){return false;}
+    if option_env!("INFINITY_BROWSER_IFRAME_ONLY")==Some("1") {
+        return iframe_checkbox(engine,&view,&repaint,&input);
+    }
     let check=|script:&str|javascript_true(engine,&view,&repaint,script);
     if !check(r#"document.body.style.cssText='margin:0;font:20px monospace';
         document.head.innerHTML='<style>::selection{background:rgb(5,100,200);color:white}</style>';
@@ -157,6 +229,7 @@ pub fn verify(engine:&Servo)->bool {
     if !check("Math.abs(devicePixelRatio-1.5)<0.01 && innerWidth===320"){return false;}
     view.set_page_zoom(1.0);
     if !check("devicePixelRatio===1 && innerWidth===480"){return false;}
+    if !iframe_checkbox(engine,&view,&repaint,&input){return false;}
     drop(view);drain_close(engine);
     let provider=||FixtureProvider{starts:Rc::new(Cell::new(0)),cancels:Rc::new(Cell::new(0)),serial:0};
     let Ok(first)=session::Session::new(engine,provider(),super::super::monotonic,128,128) else{return false;};

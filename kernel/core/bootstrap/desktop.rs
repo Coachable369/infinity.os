@@ -171,9 +171,8 @@ impl super::DisplayDevice {
     pub(super) fn clipboard_overlay(&mut self) {
         let menu=crate::console::clipboard_menu::current();if !menu.open {return;}
         let s=menu.scale;let x=menu.rect.x.max(0) as usize;let y=menu.rect.y.max(0) as usize;
-        let w=menu.rect.width as usize;let h=menu.rect.height as usize;
-        self.fill_rounded_rect_alpha(x,y,w,h,8*s,5,18,31,250);
-        self.outline_rounded_rect(x,y,w,h,8*s,73,180,229);
+        let w=menu.rect.width as usize;
+        self.app_card_alpha(menu.rect,(5,18,31),(73,180,229),250,s);
         if !menu.viewer {
             for (row,label) in crate::console::clipboard_menu::LABELS.iter().enumerate() {
                 let top=y+(6+row*30)*s;
@@ -193,9 +192,9 @@ impl super::DisplayDevice {
             let index=menu.row/3*3+slot;
             let Some(entry)=menu.entries.get(index).filter(|e|e.id!=0) else {continue;};
             let top=y+(100+slot*64)*s;
-            self.fill_rounded_rect_alpha(x+16*s,top,184*s,56*s,8*s,12,37,54,245);
-            self.outline_rounded_rect(x+16*s,top,184*s,56*s,8*s,
-                if index==menu.row {54}else{39},if index==menu.row {204}else{71},if index==menu.row {237}else{89});
+            self.app_card_alpha(crate::ui::geometry::Rect{x:(x+16*s) as i32,y:top as i32,
+                width:(184*s) as u32,height:(56*s) as u32},(12,37,54),
+                if index==menu.row {(54,204,237)}else{(39,71,89)},245,s);
             let mut label=entry.bytes;for c in &mut label {if c.is_ascii_control(){*c=b' ';}}
             self.app_label(crate::ui::geometry::Rect{x:(x+26*s) as i32,y:(top+6*s) as i32,width:(164*s) as u32,height:(24*s) as u32},&label[..entry.length],(223,237,245),false,s);
             self.app_text(x+26*s,top+30*s,b"Text  /  this session",(147,182,200),false,s);
@@ -1528,72 +1527,12 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         let backdrop_alpha = self.active_background_alpha(176);
         let rail_alpha = self.active_background_alpha(238);
-        let highlight_alpha = self.active_background_alpha(88);
         let hover = crate::ui::desktop_polish::current();
         self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, backdrop_alpha);
-        self.fill_rounded_rect_alpha(
-            rail_inset,
-            rail_inset,
-            rail_width,
-            rail_height,
-            7 * scale,
-            top_r,
-            top_g,
-            top_b,
-            rail_alpha,
-        );
-        self.fill_rounded_rect_alpha(
-            rail_inset,
-            rail_inset,
-            rail_width,
-            rail_height / 2,
-            7 * scale,
-            18,
-            39,
-            59,
-            highlight_alpha,
-        );
-        self.fill_rounded_rect_alpha(
-            self.width / 3,
-            rail_inset,
-            self.width / 2,
-            rail_height,
-            7 * scale,
-            selection_r,
-            selection_g,
-            selection_b,
-            42,
-        );
-        self.outline_rounded_rect(
-            rail_inset,
-            rail_inset,
-            rail_width,
-            rail_height,
-            7 * scale,
-            outline_r,
-            outline_g,
-            outline_b,
-        );
-        self.fill_rect_alpha(
-            9 * scale,
-            height.saturating_sub(2 * scale),
-            self.width.saturating_sub(18 * scale),
-            1,
-            outline_r,
-            outline_g,
-            outline_b,
-            150,
-        );
-        self.fill_rect_alpha(
-            12 * scale,
-            3 * scale,
-            self.width.saturating_sub(24 * scale),
-            1,
-            179,
-            223,
-            247,
-            74,
-        );
+        self.app_card_alpha(crate::ui::geometry::Rect {
+            x:rail_inset as i32,y:rail_inset as i32,
+            width:rail_width as u32,height:rail_height as u32,
+        },(top_r,top_g,top_b),(outline_r,outline_g,outline_b),rail_alpha,scale);
 
         let brand_width = (280 * scale).min(self.width / 3);
         let brand_active = active_menu == Some(0)
@@ -1960,17 +1899,6 @@ impl super::DisplayDevice {
         let (selection_r, selection_g, selection_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         self.glass_panel(menu_x, menu_y, menu_w, menu_h, true);
-        self.fill_rounded_rect_alpha(
-            menu_x + 2 * scale,
-            menu_y + 2 * scale,
-            menu_w.saturating_sub(4 * scale),
-            20 * scale,
-            10 * scale,
-            18,
-            35,
-            50,
-            118,
-        );
         for (index, item) in items.iter().enumerate() {
             let row_y = menu_y + (11 + index * 34) * scale;
             if focus == index {
@@ -2185,16 +2113,10 @@ impl super::DisplayDevice {
             let x = left + index * (segment_width + gap);
             let diameter = 24.min(segment_width);
             let center_x = x + segment_width / 2;
-            if index < 6 {
-                self.fill_rect_alpha(center_x + diameter / 2, top + diameter / 2,
-                    segment_width + gap - diameter, 1,
-                    access::MUTED_BORDER.0, access::MUTED_BORDER.1, access::MUTED_BORDER.2, 255);
-            }
             self.access_surface(center_x - diameter / 2, top, diameter, diameter,
                 diameter / 2, if index <= visual_step { access::PRIMARY } else { access::BACKGROUND },
                 if index <= visual_step { access::BORDER } else { access::MUTED_BORDER }, 255, false);
-            self.access_label((center_x - diameter / 2, top, diameter, diameter),
-                &[b'1' + index as u8], 13, access::TEXT, true, true);
+            if index<visual_step {self.access_glyph(center_x,top+diameter/2,15,diameter*3/4,false);}
         }
     }
 
@@ -3159,7 +3081,7 @@ impl super::DisplayDevice {
                 10,
                 120,
             );
-            self.glass_panel(left, top, width, height, true);
+            self.glass_window_substrate(geometry.window, true);
             self.fill_rect_alpha(
                 left,
                 top,
@@ -3226,11 +3148,6 @@ impl super::DisplayDevice {
                     index,
                     maximized,
                 );
-            }
-            if !maximized {
-                let outline =
-                    self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-                self.window_resize_affordances(left, top, width, height, scale, outline);
             }
             self.fill_rect_alpha(
                 toolbar_left,
@@ -3494,112 +3411,6 @@ impl super::DisplayDevice {
         }
     }
 
-    // ------------------------=
-    // FUNC: window_resize_affordances
-    // DESC: Draws bright edge bars and corner brackets for every supported window resize direction.
-    // ------------------=
-    fn window_resize_affordances(
-        &mut self,
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-        scale: usize,
-        outline: (u8, u8, u8),
-    ) {
-        let scale = scale.max(1);
-        let (red, green, blue) = outline;
-        let thickness = 3 * scale;
-        let edge_length = (44 * scale).min(height.saturating_sub(24 * scale));
-        let corner_length = (15 * scale).min(width / 4).min(height / 4);
-        let right = left.saturating_add(width);
-        let bottom = top.saturating_add(height);
-        let side_top = top.saturating_add(height.saturating_sub(edge_length) / 2);
-        let bottom_left = left.saturating_add(width.saturating_sub(edge_length) / 2);
-        self.fill_rounded_rect_alpha(
-            left.saturating_add(scale),
-            side_top,
-            thickness,
-            edge_length,
-            thickness / 2,
-            red,
-            green,
-            blue,
-            238,
-        );
-        self.fill_rounded_rect_alpha(
-            right.saturating_sub(thickness + scale),
-            side_top,
-            thickness,
-            edge_length,
-            thickness / 2,
-            red,
-            green,
-            blue,
-            238,
-        );
-        self.fill_rounded_rect_alpha(
-            bottom_left,
-            bottom.saturating_sub(thickness + scale),
-            edge_length,
-            thickness,
-            thickness / 2,
-            red,
-            green,
-            blue,
-            238,
-        );
-        for x in [
-            left.saturating_add(scale),
-            right.saturating_sub(corner_length + scale),
-        ] {
-            self.fill_rect_alpha(
-                x,
-                top + scale,
-                corner_length,
-                thickness,
-                red,
-                green,
-                blue,
-                225,
-            );
-            self.fill_rect_alpha(
-                x,
-                bottom.saturating_sub(thickness + scale),
-                corner_length,
-                thickness,
-                red,
-                green,
-                blue,
-                225,
-            );
-        }
-        for y in [
-            top.saturating_add(scale),
-            bottom.saturating_sub(corner_length + scale),
-        ] {
-            self.fill_rect_alpha(
-                left + scale,
-                y,
-                thickness,
-                corner_length,
-                red,
-                green,
-                blue,
-                225,
-            );
-            self.fill_rect_alpha(
-                right.saturating_sub(thickness + scale),
-                y,
-                thickness,
-                corner_length,
-                red,
-                green,
-                blue,
-                225,
-            );
-        }
-    }
 
     // ------------------------=
     // FUNC: status_menu_panel
@@ -3792,8 +3603,7 @@ impl super::DisplayDevice {
         let height = geometry.content.height as usize;
         let (accent_r, accent_g, accent_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-        self.fill_rounded_rect_alpha(left, top, width, height, 11 * scale, 1, 9, 19, 246);
-        self.outline_rounded_rect(left, top, width, height, 11 * scale, 55, 133, 178);
+        self.app_card_alpha(geometry.content,(1,9,19),(55,133,178),246,scale);
 
         let (count, running, total_ticks, total_memory, total_memory_limit, total_disk) =
             crate::runtime::with_runtime(|runtime| {
@@ -3861,27 +3671,9 @@ impl super::DisplayDevice {
         ];
         for (index, (label, value, percent, role)) in cards.iter().enumerate() {
             let card_left = left + 12 * scale + index * (card_width + gap);
-            self.fill_rounded_rect_alpha(
-                card_left,
-                card_top,
-                card_width,
-                card_height,
-                10 * scale,
-                5,
-                23,
-                39,
-                236,
-            );
-            self.outline_rounded_rect(
-                card_left,
-                card_top,
-                card_width,
-                card_height,
-                10 * scale,
-                accent_r / 2,
-                accent_g / 2,
-                accent_b / 2,
-            );
+            self.app_card_alpha(crate::ui::geometry::Rect {
+                x:card_left as i32,y:card_top as i32,width:card_width as u32,height:card_height as u32,
+            },(5,23,39),(accent_r/2,accent_g/2,accent_b/2),236,scale);
             let _ = self.themed_icon(
                 card_left + 24 * scale,
                 card_top + 25 * scale,
@@ -4341,27 +4133,7 @@ impl super::DisplayDevice {
         );
         let x = g.sheet.x.max(0) as usize;
         let y = g.sheet.y.max(0) as usize;
-        self.fill_rounded_rect_alpha(
-            x,
-            y,
-            g.sheet.width as usize,
-            g.sheet.height as usize,
-            12 * scale,
-            15,
-            27,
-            46,
-            252,
-        );
-        self.outline_rounded_rect(
-            x,
-            y,
-            g.sheet.width as usize,
-            g.sheet.height as usize,
-            12 * scale,
-            34,
-            211,
-            238,
-        );
+        self.app_card_alpha(g.sheet,(15,27,46),(34,211,238),252,scale);
         self.ui_text_strong(
             x + 26 * scale,
             y + 24 * scale,
@@ -4568,8 +4340,9 @@ impl super::DisplayDevice {
                     else {let state=match id {1=>command_window,2=>editor_window,5=>crate::console::browser_window(),_=>task_manager_window};
                         layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
                     if crate::ui::desktop_effects::opacity()==255 && id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(if id==5 {0}else{id},rect,scale);}
-                    if crate::ui::desktop_effects::opacity()==255 && id==stack.active {self.outline_rounded_rect_signed(rect.x,rect.y,
-                        rect.width as usize,rect.height as usize,10*scale,105,199,245);}
+                    if crate::ui::desktop_effects::opacity()==255 && id!=0 {
+                        self.precision_window_frame(rect,id==stack.active,scale);
+                    }
                 }
             }
         }
@@ -5191,7 +4964,7 @@ impl super::DisplayDevice {
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Content,
         );
-        self.glass_panel(left, top, width, height, true);
+        self.glass_window_substrate(geometry.window, true);
         self.fill_rect_alpha(
             left,
             top,
@@ -5268,10 +5041,8 @@ impl super::DisplayDevice {
             let (x, y, w, h) = (row.x.max(0) as usize, row.y.max(0) as usize,
                 row.width as usize, row.height as usize);
             if index == focus {
-                self.fill_rounded_rect_alpha(x, y, w, h, 10 * scale,
-                    selection_r, selection_g, selection_b, 235);
-                self.outline_rounded_rect(x, y, w, h, 10 * scale, outline_r, outline_g, outline_b);
-                self.settings_card_sheen(x, y, w, h, scale);
+                self.app_card_alpha(row,(selection_r,selection_g,selection_b),
+                    (outline_r,outline_g,outline_b),235,scale);
             }
             let icon_size = (28 * scale).min(h.saturating_sub(8));
             let _ = self.themed_icon(x + 28 * scale, y + h / 2,
@@ -5287,14 +5058,10 @@ impl super::DisplayDevice {
         let content_x = geometry.content.x.max(0) as usize;
         let content_y = geometry.content.y.max(0) as usize;
         if let Some(element) = authored_content {
-            self.fill_rounded_rect_alpha(
-                content_x,
-                content_y,
-                geometry.content.width as usize,
-                geometry.content.height as usize,
-                element.corner_radius as usize * scale,
-                element.fill[0], element.fill[1], element.fill[2], panel_alpha(element.fill[3]),
-            );
+            self.precision_surface(geometry.content,crate::ui::panel_recipe::Surface::Panel,
+                crate::ui::panel_recipe::Material { fill:(element.fill[0],element.fill[1],element.fill[2]),
+                    edge:(element.border[0],element.border[1],element.border[2]),
+                    opacity:panel_alpha(element.fill[3]),edge_opacity:0,focus:0,pressed:false,scale });
         }
         if let Some(template) = settings_template {
             if let Some(count) = template.element_count(focus.saturating_add(1) as u8) {
@@ -5609,16 +5376,9 @@ impl super::DisplayDevice {
                 self.fill_rect_alpha(hero_left + column, hero_top, 1, hero_height,
                     2, 12, 28, alpha as u8);
             }
-            self.outline_rounded_rect(
-                hero_left,
-                hero_top,
-                hero_width,
-                hero_height,
-                14 * scale,
-                117,
-                218,
-                255,
-            );
+            self.precision_surface(hero,crate::ui::panel_recipe::Surface::Panel,
+                crate::ui::panel_recipe::Material { fill:(2,12,28),edge:(117,218,255),
+                    opacity:0,edge_opacity:255,focus:0,pressed:false,scale });
             self.ui_text_strong(
                 hero_left + 24 * scale,
                 hero_top + 30 * scale,
@@ -5684,29 +5444,14 @@ impl super::DisplayDevice {
                 let summary_top = row.summary.y.max(0) as usize;
                 let summary_width = row.summary.width as usize;
                 let expanded = settings_window.expanded_row == Some(index);
-                self.fill_rounded_rect_alpha(
-                    summary_left,
-                    summary_top,
-                    summary_width,
-                    row.summary.height as usize,
-                    authored_row.map(|element| element.corner_radius as usize * scale).unwrap_or(10 * scale),
-                    authored_row.map(|element| element.fill[0]).unwrap_or(primary_r / 2),
-                    authored_row.map(|element| element.fill[1]).unwrap_or(primary_g.saturating_mul(3) / 4),
-                    authored_row.map(|element| element.fill[2]).unwrap_or(primary_b.saturating_mul(3) / 4),
-                    authored_row.map(|element| panel_alpha(element.fill[3])).unwrap_or(panel_alpha(218)),
-                );
-                self.outline_rounded_rect(
-                    summary_left,
-                    summary_top,
-                    summary_width,
-                    row.summary.height as usize,
-                    10 * scale,
-                    authored_row.map(|element| element.border[0]).unwrap_or(if expanded { outline_r } else { outline_r / 2 }),
-                    authored_row.map(|element| element.border[1]).unwrap_or(if expanded { outline_g } else { outline_g / 2 }),
-                    authored_row.map(|element| element.border[2]).unwrap_or(if expanded { outline_b } else { outline_b / 2 }),
-                );
-                self.settings_card_sheen(summary_left, summary_top, summary_width,
-                    row.summary.height as usize, scale);
+                self.app_card_alpha(row.summary,
+                    (authored_row.map(|element| element.fill[0]).unwrap_or(primary_r / 2),
+                     authored_row.map(|element| element.fill[1]).unwrap_or(primary_g.saturating_mul(3) / 4),
+                     authored_row.map(|element| element.fill[2]).unwrap_or(primary_b.saturating_mul(3) / 4)),
+                    (authored_row.map(|element| element.border[0]).unwrap_or(if expanded { outline_r } else { outline_r / 2 }),
+                     authored_row.map(|element| element.border[1]).unwrap_or(if expanded { outline_g } else { outline_g / 2 }),
+                     authored_row.map(|element| element.border[2]).unwrap_or(if expanded { outline_b } else { outline_b / 2 })),
+                    authored_row.map(|element| panel_alpha(element.fill[3])).unwrap_or(panel_alpha(218)),scale);
                 let card = crate::ui::settings_cards::content(row.summary, scale);
                 self.fill_rounded_rect_alpha(card.icon.x.max(0) as usize,
                     card.icon.y.max(0) as usize, card.icon.width as usize,
@@ -5817,27 +5562,9 @@ impl super::DisplayDevice {
                 let detail_top = row.detail.y.max(0) as usize;
                 let detail_width = row.detail.width as usize;
                 let detail_height = row.detail.height as usize;
-                self.fill_rounded_rect_alpha(
-                    detail_left,
-                    detail_top,
-                    detail_width,
-                    detail_height,
-                    9 * scale,
-                    primary_r / 2,
-                    primary_g.saturating_mul(2) / 3,
-                    primary_b.saturating_mul(2) / 3,
-                    panel_alpha(232),
-                );
-                self.outline_rounded_rect(
-                    detail_left,
-                    detail_top,
-                    detail_width,
-                    detail_height,
-                    9 * scale,
-                    outline_r / 2,
-                    outline_g / 2,
-                    outline_b / 2,
-                );
+                self.app_card_alpha(row.detail,
+                    (primary_r/2,primary_g.saturating_mul(2)/3,primary_b.saturating_mul(2)/3),
+                    (outline_r/2,outline_g/2,outline_b/2),panel_alpha(232),scale);
                 if focus == 8 {
                     let gutter = crate::ui::system_layout::UI_GUTTER * scale;
                     let available=detail_width.saturating_sub(gutter*2);
@@ -6057,16 +5784,6 @@ impl super::DisplayDevice {
                 235,
             );
         }
-        if !settings_window.maximized {
-            self.window_resize_affordances(
-                left,
-                top,
-                width,
-                height,
-                scale,
-                (outline_r, outline_g, outline_b),
-            );
-        }
     }
 
     // ------------------------=
@@ -6153,27 +5870,12 @@ impl super::DisplayDevice {
             (geometry.sidebar, crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard),
         ] {
             let authored = crate::ui::settings_template::element(7, role);
-            self.fill_rounded_rect_alpha(
-                card.x.max(0) as usize,
-                card.y.max(0) as usize,
-                card.width as usize,
-                card.height as usize,
-                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(12 * scale),
-                authored.map(|value| value.fill[0]).unwrap_or(4),
-                authored.map(|value| value.fill[1]).unwrap_or(18),
-                authored.map(|value| value.fill[2]).unwrap_or(31),
-                authored.map(|value| value.fill[3]).unwrap_or(224),
-            );
-            self.outline_rounded_rect(
-                card.x.max(0) as usize,
-                card.y.max(0) as usize,
-                card.width as usize,
-                card.height as usize,
-                12 * scale,
-                outline_r / 2,
-                outline_g / 2,
-                outline_b / 2,
-            );
+            self.app_card_alpha(card,
+                (authored.map(|value| value.fill[0]).unwrap_or(4),
+                 authored.map(|value| value.fill[1]).unwrap_or(18),
+                 authored.map(|value| value.fill[2]).unwrap_or(31)),
+                (outline_r/2,outline_g/2,outline_b/2),
+                authored.map(|value| value.fill[3]).unwrap_or(224),scale);
         }
         let page = settings_window.expanded_row.unwrap_or(0).min(4);
         let selected = crate::runtime::with_runtime(|runtime| {
@@ -6553,27 +6255,14 @@ impl super::DisplayDevice {
         ];
         for (card, role) in cards {
             let authored = crate::ui::settings_template::element(6, role);
-            self.fill_rounded_rect_alpha(
-                card.x.max(0) as usize,
-                card.y.max(0) as usize,
-                card.width as usize,
-                card.height as usize,
-                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(12 * scale),
-                authored.map(|value| value.fill[0]).unwrap_or(4),
-                authored.map(|value| value.fill[1]).unwrap_or(18),
-                authored.map(|value| value.fill[2]).unwrap_or(31),
-                authored.map(|value| value.fill[3]).unwrap_or(220),
-            );
-            self.outline_rounded_rect(
-                card.x.max(0) as usize,
-                card.y.max(0) as usize,
-                card.width as usize,
-                card.height as usize,
-                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(12 * scale),
-                authored.map(|value| value.border[0]).unwrap_or(outline_r / 2),
-                authored.map(|value| value.border[1]).unwrap_or(outline_g / 2),
-                authored.map(|value| value.border[2]).unwrap_or(outline_b / 2),
-            );
+            self.app_card_alpha(card,
+                (authored.map(|value| value.fill[0]).unwrap_or(4),
+                 authored.map(|value| value.fill[1]).unwrap_or(18),
+                 authored.map(|value| value.fill[2]).unwrap_or(31)),
+                (authored.map(|value| value.border[0]).unwrap_or(outline_r/2),
+                 authored.map(|value| value.border[1]).unwrap_or(outline_g/2),
+                 authored.map(|value| value.border[2]).unwrap_or(outline_b/2)),
+                authored.map(|value| value.fill[3]).unwrap_or(220),scale);
         }
 
         let page = settings_window.expanded_row.unwrap_or(0).min(6);
@@ -7117,17 +6806,6 @@ impl super::DisplayDevice {
                 3,
             );
             line_top += lines * (UI_FONT_CELL_HEIGHT + 4) * self.ui_scale() + 8 * scale;
-        }
-        if !settings_window.maximized {
-            let window = layout.settings_window_geometry(settings_window).window;
-            self.window_resize_affordances(
-                window.x.max(0) as usize,
-                window.y.max(0) as usize,
-                window.width as usize,
-                window.height as usize,
-                scale,
-                (outline_r, outline_g, outline_b),
-            );
         }
     }
 
@@ -8045,17 +7723,6 @@ impl super::DisplayDevice {
             132,
         );
         self.glass_panel(panel_left, panel_top, panel_width, panel_height, true);
-        self.fill_rounded_rect_alpha(
-            panel_left + 2 * scale,
-            panel_top + 2 * scale,
-            panel_width.saturating_sub(4 * scale),
-            panel_height / 3,
-            22 * scale,
-            14,
-            40,
-            68,
-            74,
-        );
         let close_left = geometry.close.x.max(0) as usize;
         let close_top = geometry.close.y.max(0) as usize;
         let close_size = geometry.close.width as usize;
@@ -8527,10 +8194,9 @@ impl super::DisplayDevice {
                     home_location, None, Some(navigator.state));
             });
             if crate::ui::desktop_effects::opacity()==255 {self.window_assistant(5+index,crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},scale);}
-            if crate::ui::desktop_effects::opacity()==255 && !navigator.maximized {
-                let outline =
-                    self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-                self.window_resize_affordances(left, top, width, height, scale, outline);
+            if crate::ui::desktop_effects::opacity()==255 {
+                self.precision_window_frame(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
+                    width:width as u32,height:height as u32},false,scale);
             }
         }
         if window_visible {
@@ -8562,6 +8228,10 @@ impl super::DisplayDevice {
                 )
             });
             if crate::ui::desktop_effects::opacity()==255 {self.window_assistant(5+active_navigator.unwrap_or(0),crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,width:bounds.2 as u32,height:bounds.3 as u32},scale);}
+            if crate::ui::desktop_effects::opacity()==255 {
+                self.precision_window_frame(crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,
+                    width:bounds.2 as u32,height:bounds.3 as u32},crate::ui::desktop_stack::current().active==0,scale);
+            }
         }
     }
 
@@ -8598,13 +8268,10 @@ impl super::DisplayDevice {
             crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .home_window_geometry_sized(window_x, window_y, window_width, window_height, false)
         };
-        self.glass_panel(
-            browser_left,
-            browser_top,
-            browser_width,
-            browser_height,
-            false,
-        );
+        self.glass_window_substrate(crate::ui::geometry::Rect {
+            x: browser_left as i32, y: browser_top as i32,
+            width: browser_width as u32, height: browser_height as u32,
+        }, false);
         let (header_r, header_g, header_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
         let (selection_r, selection_g, selection_b) =
@@ -8670,17 +8337,6 @@ impl super::DisplayDevice {
                 control.width as usize,
                 index,
                 window_maximized,
-            );
-        }
-        if !window_maximized {
-            let outline = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-            self.window_resize_affordances(
-                browser_left,
-                browser_top,
-                browser_width,
-                browser_height,
-                scale,
-                outline,
             );
         }
         let tool_top = browser_top + title_h;
@@ -9423,8 +9079,7 @@ impl super::DisplayDevice {
             let top = dialog_rect.y.max(0) as usize;
             let width = dialog_rect.width as usize;
             let height = dialog_rect.height as usize;
-            self.fill_rounded_rect_alpha(left, top, width, height, 14 * scale, 4, 17, 30, 252);
-            self.outline_rounded_rect(left, top, width, height, 14 * scale, 76, 188, 235);
+            self.app_card_alpha(dialog_rect,(4,17,30),(76,188,235),252,scale);
             let (title, detail): (&[u8], &[u8]) = match dialog {
                 crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash => (
                     b"Empty Trash?",

@@ -11,8 +11,7 @@ impl super::DisplayDevice {
         let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
         let (r,g,b)=((primary>>16) as u8,(primary>>8) as u8,primary as u8);
         let (ar,ag,ab)=((accent>>16) as u8,(accent>>8) as u8,accent as u8);
-        self.fill_rounded_rect_alpha(x,y,w,h,8*s,r/2,g/2,b/2,255);
-        self.outline_rounded_rect(x,y,w,h,8*s,ar,ag,ab);
+        self.app_card(v.rect,(r/2,g/2,b/2),(ar,ag,ab),s);
         if v.menu {self.app_text(x+16*s,y+8*s,b"Preview",(222,235,245),false,s);
             if crate::ui::user_wallpaper::image_path(&v.path[..v.path_len]){self.app_text(x+16*s,y+40*s,b"Set as desktop wallpaper...",(222,235,245),false,s);}return;}
         let mut title=v.rect;title.x+=20*s as i32;title.y+=16*s as i32;title.width=title.width.saturating_sub(80*s as u32);title.height=24*s as u32;

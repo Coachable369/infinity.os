@@ -62,9 +62,10 @@ impl super::DisplayDevice {
         let w = g.window;
         let x = w.x.max(0) as usize;
         let y = w.y.max(0) as usize;
-        self.app_card(w,
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Header),
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline), s);
+        self.window_substrate(w, crate::ui::panel_recipe::Material {
+            fill: self.active_accent_surface(crate::ui::skin::AccentSurface::Header),
+            edge: self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline),
+            opacity: 255, edge_opacity: 0, focus: 0, pressed: false, scale: s }, 0);
         self.fill_rect(x + s, y + 46 * s, w.width as usize - 2 * s, s, 33, 58, 85);
         self.app_symbol(
             Rect {

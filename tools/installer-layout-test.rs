@@ -1,5 +1,7 @@
 #[path = "../kernel/ui/bitmap.rs"]
 mod bitmap;
+#[path="installer-work-test.rs"]
+mod installer_work_test;
 
 #[path = "../kernel/ui/installer_template.rs"]
 mod installer_template;
@@ -12,18 +14,41 @@ use installer_layout::{
     configuration_template_step_for_input_variable, installer_confirmation_button_frame,
     installer_confirmation_target, installer_wizard_layout, InstallerConfirmationTarget,
 };
-use installer_template::InstallerTemplateVariable;
+use installer_template::{InstallerTemplate, InstallerTemplateRole as Role, InstallerTemplateVariable};
 
 // ------------------------=
 // FUNC: main
-// DESC: Verifies every installer state shares one centered, contained gold-standard frame.
+// DESC: Verifies authored screens retain their exact Studio geometry and the compiled fallback remains centered and contained.
 // ------------------=
 fn main() {
+    installer_work_test::run();
     for (display_width, display_height) in [(1024usize, 768usize), (2048, 1238), (2560, 1600)] {
-        let reference = installer_wizard_layout(2, display_width, display_height);
-        for screen in 1..=11 {
+        let template = InstallerTemplate::parse(installer_layout::INSTALLER_TEMPLATE_BYTES).unwrap();
+        for screen in 1..=template.screen_count() as u8 {
             let layout = installer_wizard_layout(screen, display_width, display_height);
-            assert_eq!(layout, reference, "screen {screen} changed installer geometry");
+            for (role, actual) in [
+                (Role::Masthead, layout.masthead), (Role::Console, layout.panel),
+                (Role::Content, layout.content), (Role::BackButton, layout.back_button),
+                (Role::PrimaryButton, layout.primary_button), (Role::Footer, layout.footer_rail),
+            ] {
+                let frame = template.element(screen, role).unwrap().frame;
+                assert_eq!(actual.left, display_width * usize::from(frame.x) / 1000);
+                assert_eq!(actual.top, display_height * usize::from(frame.y) / 1000);
+                if usize::from(frame.x) * 2 + usize::from(frame.width) == 1000 {
+                    assert_eq!(actual.left * 2 + actual.width, display_width);
+                } else {
+                    assert_eq!(actual.right(), display_width * usize::from(frame.x + frame.width) / 1000);
+                }
+                assert_eq!(actual.bottom(), display_height * usize::from(frame.y + frame.height) / 1000);
+                assert!(actual.right() <= display_width && actual.bottom() <= display_height);
+                assert!(actual.width > 0 && actual.height > 0);
+            }
+        }
+        // User-authored frames need not be symmetric or identical across screens.
+        // Those invariants belong to the compiled safety fallback, not Studio's editable input.
+        for screen in [0, 254, 255] {
+            let layout = installer_wizard_layout(screen, display_width, display_height);
+            assert_eq!(layout, installer_wizard_layout(255, display_width, display_height));
             assert_eq!(layout.masthead.left * 2 + layout.masthead.width, display_width);
             assert_eq!(layout.panel.left * 2 + layout.panel.width, display_width);
             assert!(layout.masthead.bottom() <= layout.panel.top);
@@ -78,5 +103,5 @@ fn main() {
     }
     assert_eq!(configuration_template_input_rect(0, 1760, 992), None);
     assert_eq!(configuration_template_input_rect(5, 1760, 992), None);
-    println!("PASS installer layout: all wizard states share one symmetric frame");
+    println!("PASS installer layout: authored geometry, safe fallback, and one-shot interactive provisioning");
 }

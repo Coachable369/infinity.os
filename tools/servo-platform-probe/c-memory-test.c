@@ -12,9 +12,22 @@ extern _READ_WRITE_RETURN_TYPE _read(int,void *,size_t);
 extern _READ_WRITE_RETURN_TYPE _write(int,const void *,size_t);
 // ------------------------=
 // FUNC: infinity_c_memory_test
-// DESC: Exercises real zeroed backing, split release, holes, protection denial and reclaim cycles.
+// DESC: Exercises concurrent mappings, real zeroed backing, split release, holes, protection denial and reclaim cycles.
 // ------------------=
 int infinity_c_memory_test(void) {
+    unsigned char *concurrent[128];
+    for (unsigned i=0;i<128;++i) {
+        concurrent[i]=mmap(0,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+        if (concurrent[i]==MAP_FAILED || (uintptr_t)concurrent[i]%4096) return 15;
+        if (concurrent[i][0] || concurrent[i][4095]) return 16;
+        concurrent[i][0]=(unsigned char)i; concurrent[i][4095]=(unsigned char)(255-i);
+    }
+    for (unsigned i=0;i<128;i+=2) {
+        if (concurrent[i][0]!=i || concurrent[i][4095]!=255-i || munmap(concurrent[i],4096)) return 17;
+    }
+    for (unsigned i=1;i<128;i+=2) {
+        if (concurrent[i][0]!=i || concurrent[i][4095]!=255-i || munmap(concurrent[i],4096)) return 18;
+    }
     for (unsigned cycle=0;cycle<70;++cycle) {
         unsigned char *p=mmap(0,12288,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
         if (p==MAP_FAILED || (uintptr_t)p%4096) return 1;
