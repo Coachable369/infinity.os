@@ -1,4 +1,4 @@
-"""Reject any published InfinityOS ISO that omits the complete native model bundle."""
+"""Reject incomplete native bundles or stale live/installed Precision artwork in an ISO."""
 
 from __future__ import annotations
 
@@ -22,6 +22,42 @@ MEDIA = {
     "InfinityOS-x86_64.iso": ("x86_64", "virtualbox"),
     "InfinityOS-aarch64-qemu-models.bootmedia": ("aarch64", "qemu"),
 }
+PRECISION_ATLAS = ROOT / "assets/ui-design-kit/default/eclipse-precision-v1.rgba"
+INSTALLED_DESIGN_KIT = "::/EFI/InfinityOS/InfinityUI/DesignKit/Default/"
+
+
+class BinaryMatchSink(HeaderSink):
+    # ------------------------=
+    # FUNC: __init__
+    # DESC: Retains a bounded ELF prefix and at most one artwork-sized boundary window, never the kernel image.
+    # ------------------=
+    def __init__(self, expected: bytes):
+        super().__init__()
+        if not expected:
+            raise ValueError("empty binary artwork is not a valid parity target")
+        self.expected = expected
+        self.tail = b""
+        self.matched = False
+
+    # ------------------------=
+    # FUNC: write
+    # DESC: Matches exact binary artwork across read blocks and payload shards, releasing the window after a match.
+    # ------------------=
+    def write(self, data):
+        super().write(data)
+        if not self.matched:
+            window = self.tail + data
+            self.matched = self.expected in window
+            self.tail = b"" if self.matched or len(self.expected) == 1 else window[-(len(self.expected) - 1):]
+        return len(data)
+
+    # ------------------------=
+    # FUNC: require_match
+    # DESC: Rejects a missing or byte-modified atlas without interpreting source code or diagnostic prose.
+    # ------------------=
+    def require_match(self):
+        if not self.matched:
+            raise RuntimeError("kernel does not contain the exact current Precision atlas")
 
 
 # ------------------------=
@@ -155,8 +191,49 @@ def verify_boot_loader(iso: Path, live_esp: Path, installed_esp: Path, work: Pat
 
 
 # ------------------------=
+# FUNC: verify_precision_artwork
+# DESC: Checks current artwork in both final-media kernels and the freshly installed ESP, excluding the removed source sheet.
+# ------------------=
+def verify_precision_artwork(live_esp: Path, installed_esp: Path,
+                             architecture: str, platform: str) -> None:
+    atlas = PRECISION_ATLAS.read_bytes()
+    for installed in (False, True):
+        sink = BinaryMatchSink(atlas)
+        part = 0
+        previous_length = CHUNK_BYTES
+        while True:
+            member = (f"::/EFI/INFINITY/PAYLOAD/P1-{part:03}.BIN" if installed
+                      else "::/EFI/INFINITY/KERNEL.ELF")
+            present, length, _ = stream_member(live_esp, member, sink)
+            if not present:
+                if part == 0 or length:
+                    raise RuntimeError(f"missing or unreadable kernel artifact: {member}")
+                break
+            if not length or (installed and (length > CHUNK_BYTES or previous_length != CHUNK_BYTES)):
+                raise RuntimeError(f"invalid kernel artifact extent: {member}")
+            previous_length = length
+            part += 1
+            if not installed:
+                break
+        validate_kernel_layout(sink.header, platform)
+        if struct.unpack_from("<H", sink.header, 18)[0] != {"aarch64": 183, "x86_64": 62}[architecture]:
+            raise RuntimeError("kernel architecture does not match the selected media target")
+        sink.require_match()
+    present, length, digest = stream_member(
+        installed_esp, INSTALLED_DESIGN_KIT + PRECISION_ATLAS.name, HeaderSink())
+    if not present or length != len(atlas) or digest != hashlib.sha256(atlas).hexdigest():
+        raise RuntimeError("installed design kit does not contain the exact current Precision atlas")
+    deprecated = subprocess.run(
+        ["mtype", "-i", str(installed_esp), INSTALLED_DESIGN_KIT + "eclipse-precision-v1-source.png"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    if deprecated.returncode == 0:
+        raise RuntimeError("installed design kit still contains the removed Precision source sheet")
+
+
+# ------------------------=
 # FUNC: verify_iso
-# DESC: Proves that a published ISO embeds both verified models in its fresh-install System Generation.
+# DESC: Proves that final media embeds verified models and exact live/installed Precision artwork.
 # ------------------=
 def verify_iso(iso: Path) -> None:
     architecture, platform = media_target(iso)
@@ -175,18 +252,11 @@ def verify_iso(iso: Path) -> None:
             stderr=subprocess.DEVNULL,
         )
         reassemble_installed_esp(live_esp, installed_esp)
-        for member in ("::/EFI/INFINITY/KERNEL.ELF", "::/EFI/INFINITY/PAYLOAD/P1-000.BIN"):
-            sink = HeaderSink()
-            present, length, _ = stream_member(live_esp, member, sink)
-            if not present or not length:
-                raise RuntimeError(f"missing kernel artifact: {member}")
-            validate_kernel_layout(sink.header, platform)
-            if struct.unpack_from("<H", sink.header, 18)[0] != {"aarch64": 183, "x86_64": 62}[architecture]:
-                raise RuntimeError("kernel architecture does not match the selected media target")
+        verify_precision_artwork(live_esp, installed_esp, architecture, platform)
         verify_boot_loader(iso, live_esp, installed_esp, work)
         for model in MODELS:
             verify_model(installed_esp, *model)
-    print(f"PASS: complete native model bundle verified in {iso}")
+    print(f"PASS: complete native model bundle and live/installed Precision artwork verified in {iso}")
 
 
 # ------------------------=
