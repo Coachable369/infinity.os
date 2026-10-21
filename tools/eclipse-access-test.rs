@@ -76,6 +76,27 @@ fn panel_glow_preserves_content_and_parent_clip() {
 }
 
 // ------------------------=
+// FUNC: frost_uses_fixture_framebuffer_and_clip
+// DESC: Proves production raw frost writes reach the asserted byte pixels through aligned stable storage without changing exterior pixels.
+// ------------------=
+#[test]
+fn frost_uses_fixture_framebuffer_and_clip() {
+    let mut display=DisplayDevice::new(80,60);
+    assert_eq!((display.buffer as usize)%core::mem::align_of::<u32>(),0);
+    let before=display.pixels.clone();
+    let clip=Region{left:12,top:14,right:55,bottom:42};
+    display.clip=Some(clip);
+    display.access_frost_panel(8,8,64,44,access_style::SURFACE,access_style::BORDER,235,255);
+    assert_eq!(display.buffer,display.pixels.0.as_mut_ptr());
+    assert_ne!(display.pixels[25*80+30],before[25*80+30]);
+    for y in 0..60 {for x in 0..80 {
+        if x<clip.left || x>=clip.right || y<clip.top || y>=clip.bottom {
+            assert_eq!(display.pixels[y*80+x],before[y*80+x]);
+        }
+    }}
+}
+
+// ------------------------=
 // FUNC: panel_focus_does_not_restart_entrance
 // DESC: Exercises the actual shared animation state across focus changes and desktop reentry.
 // ------------------=
@@ -187,10 +208,59 @@ fn neutral_access_and_matching_desktop_palette() {
     for pixel in display.pixels {image.extend_from_slice(&pixel[..3]);}
     std::fs::write("build/behavior-tests/eclipse-white-focus.ppm",image).unwrap();
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FramebufferPixels(Box<[u32]>);
+
+impl core::ops::Deref for FramebufferPixels {
+    type Target = [[u8; 4]];
+    // ------------------------=
+    // FUNC: deref
+    // DESC: Exposes existing byte-oriented pixel assertions over aligned native framebuffer storage.
+    // ------------------=
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::slice::from_raw_parts(self.0.as_ptr().cast::<[u8;4]>(),self.0.len()) }
+    }
+}
+
+impl core::ops::DerefMut for FramebufferPixels {
+    // ------------------------=
+    // FUNC: deref_mut
+    // DESC: Shares mutable RGBA bytes with the exact allocation used by production raw framebuffer painters.
+    // ------------------=
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { core::slice::from_raw_parts_mut(self.0.as_mut_ptr().cast::<[u8;4]>(),self.0.len()) }
+    }
+}
+
+impl IntoIterator for FramebufferPixels {
+    type Item = [u8;4];
+    type IntoIter = core::iter::Map<std::vec::IntoIter<u32>,fn(u32)->[u8;4]>;
+    // ------------------------=
+    // FUNC: into_iter
+    // DESC: Preserves existing image export loops without changing the underlying aligned framebuffer allocation.
+    // ------------------=
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_vec().into_iter().map(u32::to_le_bytes)
+    }
+}
+
+impl<'a> IntoIterator for &'a FramebufferPixels {
+    type Item = &'a [u8;4];
+    type IntoIter = core::slice::Iter<'a,[u8;4]>;
+    // ------------------------=
+    // FUNC: into_iter
+    // DESC: Preserves borrowed pixel comparisons against the native framebuffer bytes.
+    // ------------------=
+    fn into_iter(self) -> Self::IntoIter { self.iter() }
+}
+
 struct DisplayDevice {
     width: usize,
     height: usize,
-    pixels: Vec<[u8; 4]>,
+    stride: usize,
+    format: u32,
+    buffer: *mut u32,
+    pixels: FramebufferPixels,
     clip: Option<Region>,
     damage: Vec<Region>,
     wordmark: Option<Wordmark>,
@@ -202,7 +272,9 @@ impl DisplayDevice {
     // DESC: Creates bounded host framebuffer transport for the unchanged production surface and glyph painters.
     // ------------------=
     fn new(width: usize, height: usize) -> Self {
-        Self { width, height, pixels: vec![[9, 15, 38, 0]; width * height], clip: None,
+        let mut pixels=FramebufferPixels(vec![u32::from_le_bytes([9,15,38,0]);width*height].into_boxed_slice());
+        let buffer=pixels.0.as_mut_ptr();
+        Self { width, height, stride:width, format:0, buffer, pixels, clip: None,
             damage: Vec::new(), wordmark: None, labels: Vec::new() }
     }
     // ------------------------=
