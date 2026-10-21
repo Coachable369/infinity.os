@@ -23,6 +23,35 @@ static TEMPLATE: ValidatedTemplate = ValidatedTemplate {
 };
 
 // ------------------------=
+// FUNC: element_identity
+// DESC: Resolves a stable layer ID and its source-order role ordinal from validated cached elements without repeatedly parsing the document.
+// ------------------=
+pub fn element_identity(
+    section: usize,
+    id: [u8; 16],
+) -> Option<(InstallerTemplateElement<'static>, usize)> {
+    let template = template()?;
+    if section >= 11 { return None; }
+    let count = unsafe { (*TEMPLATE.counts.get())[section] };
+    let at = |index: u16| {
+        if index < 128 {
+            unsafe { (*TEMPLATE.elements.get())[section][index as usize] }
+        } else {
+            template.element_at(section as u8 + 1, index)
+        }
+    };
+    for index in 0..count {
+        let element = at(index)?;
+        if element.id == id {
+            let ordinal = (0..index).filter(|previous| at(*previous)
+                .is_some_and(|candidate| candidate.role == element.role)).count();
+            return Some((element, ordinal));
+        }
+    }
+    None
+}
+
+// ------------------------=
 // FUNC: template
 // DESC: Validates the compiled Settings document once; invalid documents remain rejected without repeated work in input and paint paths.
 // ------------------=

@@ -1,6 +1,11 @@
 //! Executes the exact native retained-surface cache with a small software framebuffer.
 #[path="../kernel/ui/motion.rs"] pub mod motion;
 #[path="../kernel/ui/desktop_effects.rs"] pub mod desktop_effects;
+#[path="../kernel/ui/geometry.rs"] pub mod geometry;
+#[path="../kernel/ui/panel_recipe.rs"] pub mod panel_recipe;
+#[path="../kernel/ui/skin.rs"] pub mod skin;
+const INFINITY_UI_ABI_VERSION:u16=1;
+static CACHE_TEST_LOCK:std::sync::Mutex<()>=std::sync::Mutex::new(());
 #[derive(Clone, Copy)]
 pub struct PresentRegion {
     left: usize,
@@ -19,7 +24,7 @@ struct DisplayDevice {
     render_clip: Option<PresentRegion>,
 }
 mod ui {
-    pub use crate::desktop_effects;
+    pub use crate::{desktop_effects,geometry,panel_recipe,skin};
     pub mod app_launcher {pub use crate::motion;}
     pub mod input_capture {
         // ------------------------=
@@ -30,6 +35,38 @@ mod ui {
     }
 }
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: active_accent_surface
+    // DESC: Resolves the fixture's frame palette through the actual native skin registry.
+    // ------------------=
+    fn active_accent_surface(&self,surface:skin::AccentSurface)->(u8,u8,u8) {
+        skin::SkinRegistry::new().accent_surface(surface).channels()
+    }
+    // ------------------------=
+    // FUNC: blend_color_unchecked
+    // DESC: Supplies a checked framebuffer transport for the unchanged production frame sampler and source-over composition.
+    // ------------------=
+    fn blend_color_unchecked(&mut self,x:usize,y:usize,r:u8,g:u8,b:u8,a:u8) {
+        assert!(x<self.width && y<self.height);
+        let at=unsafe{self.buffer.add(y*self.stride+x)};
+        let before=unsafe{*at};let alpha=u32::from(a);
+        let mix=|shift:u32,value:u8| ((((before>>shift)&255)*(255-alpha)+u32::from(value)*alpha)/255)<<shift;
+        let coverage=if self.recording_surface {(alpha+(before>>24)*(255-alpha)/255)<<24}else{0};
+        unsafe{*at=mix(16,r)|mix(8,g)|mix(0,b)|coverage;}
+    }
+    // ------------------------=
+    // FUNC: intersect_render_clip
+    // DESC: Applies the same half-open clipped intersection used by native retained application painting.
+    // ------------------=
+    fn intersect_render_clip(&mut self,left:usize,top:usize,width:usize,height:usize) {
+        let requested=PresentRegion{left:left.min(self.width),top:top.min(self.height),
+            right:left.saturating_add(width).min(self.width),bottom:top.saturating_add(height).min(self.height)};
+        self.render_clip=Some(match self.render_clip {
+            Some(current)=>PresentRegion{left:current.left.max(requested.left),top:current.top.max(requested.top),
+                right:current.right.min(requested.right),bottom:current.bottom.min(requested.bottom)},
+            None=>requested,
+        });
+    }
     // ------------------------=
     // FUNC: ui_scale
     // DESC: Selects native one-pixel density for deterministic pixel assertions.
@@ -91,6 +128,8 @@ impl DisplayDevice {
 }
 #[path = "../kernel/core/bootstrap/retained_windows.rs"]
 mod retained;
+#[path = "../kernel/core/bootstrap/panel_view.rs"]
+mod panel_view;
 #[test]
 // ------------------------=
 // FUNC: carousel_surface_preserves_alpha_and_clip
@@ -151,6 +190,7 @@ fn paint(d: &mut DisplayDevice, color: u32) {
 // DESC: Verifies independent navigator pixels, translation reuse, invalidation, and preview damage isolation.
 // ------------------=
 fn independent_live_surfaces_reuse_contents_and_clip_previews() {
+    let _guard=CACHE_TEST_LOCK.lock().unwrap();
     let mut pixels = vec![0u32; 240 * 160];
     let mut d = DisplayDevice {
         buffer: pixels.as_mut_ptr(),
@@ -209,4 +249,54 @@ fn independent_live_surfaces_reuse_contents_and_clip_previews() {
     assert_eq!(pixels[40 * 240 + 40], 0x0000ff00);
     d.spatial_preview(7, (20, 20, 60, 50));
     assert_eq!(pixels[40 * 240 + 40], 0x000000ff);
+}
+
+#[test]
+// ------------------------=
+// FUNC: application_frame_survives_cached_focus_clip_and_peek
+// DESC: Verifies retained applications use actual native frame pixels, update focus without repainting content, obey damage clipping, and fade chrome with the surface.
+// ------------------=
+fn application_frame_survives_cached_focus_clip_and_peek() {
+    let _guard=CACHE_TEST_LOCK.lock().unwrap();
+    let (w,h)=(240,160);let background=0x00112233;let content=0xff173b29;
+    let bounds=(24,24,96,64);
+    let rect=geometry::Rect{x:24,y:24,width:96,height:64};
+    let clip=PresentRegion{left:24,top:24,right:80,bottom:70};
+    let mut pixels=vec![background;w*h];
+    let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width:w,height:h,stride:w,
+        recording_surface:false,fast_motion_frame:false,render_clip:None};
+    retained::invalidate();desktop_effects::reset();
+    let reference=|active| {
+        let mut frame=vec![background;w*h];
+        let mut target=DisplayDevice{buffer:frame.as_mut_ptr(),width:w,height:h,stride:w,
+            recording_surface:false,fast_motion_frame:false,
+            render_clip:Some(PresentRegion{left:24,top:24,right:120,bottom:88})};
+        paint(&mut target,content&0xffffff);
+        target.render_clip=None;
+        target.precision_window_frame(rect,active,1);
+        frame
+    };
+    let active=reference(true);let inactive=reference(false);
+    assert_ne!(active,inactive);
+    assert_eq!(active[50*w+60],content&0xffffff);
+    assert!(active.iter().zip(&inactive).filter(|(a,b)|a!=b).count()>20);
+    d.retained_application_window(8,bounds,true,|target|paint(target,content));
+    assert_eq!(pixels,active);
+    pixels.fill(background);
+    d.retained_application_window(8,bounds,false,|_|panic!("focus rerendered application content"));
+    assert_eq!(pixels,inactive);
+    pixels.fill(background);d.render_clip=Some(clip);
+    d.retained_application_window(8,bounds,true,|_|panic!("damage rerendered application content"));
+    for y in 0..h {for x in 0..w {assert_eq!(pixels[y*w+x],
+        if x>=clip.left&&x<clip.right&&y>=clip.top&&y<clip.bottom{active[y*w+x]}else{background});}}
+    d.render_clip=None;pixels.fill(background);
+    desktop_effects::mutate(|effects|effects.peek(0,0,true));
+    desktop_effects::advance(0,Some(0),true);desktop_effects::layer(Some(0));
+    d.retained_application_window(8,bounds,true,|_|panic!("peek rerendered application content"));
+    assert!(pixels.iter().all(|pixel|*pixel==background));
+    desktop_effects::mutate(|effects|{effects.dismiss_peek();});
+    desktop_effects::advance(1,Some(0),true);desktop_effects::layer(Some(0));
+    d.retained_application_window(8,bounds,true,|_|panic!("restore rerendered application content"));
+    assert_eq!(pixels,active);
+    desktop_effects::reset();
 }

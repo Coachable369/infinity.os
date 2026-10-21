@@ -265,6 +265,33 @@ fn sidebar_spacing() {
 }
 
 // ------------------------=
+// FUNC: expected_authored_row_child
+// DESC: Independently projects saved child bounds relative to their authored row, retaining separately rounded positions and extents.
+// ------------------=
+fn expected_authored_row_child(
+    console: ui::installer_template::InstallerTemplateRect,
+    anchor: ui::installer_template::InstallerTemplateRect,
+    child: ui::installer_template::InstallerTemplateRect,
+    window: ui::geometry::Rect,
+    live_row: ui::geometry::Rect,
+) -> ui::geometry::Rect {
+    let x = |value: u16| {
+        i64::from(value.saturating_sub(console.x)) * i64::from(window.width)
+            / i64::from(console.width)
+    };
+    let y = |value: u16| {
+        i64::from(value.saturating_sub(console.y)) * i64::from(window.height)
+            / i64::from(console.height)
+    };
+    ui::geometry::Rect {
+        x: live_row.x + (x(child.x) - x(anchor.x)) as i32,
+        y: live_row.y + (y(child.y) - y(anchor.y)) as i32,
+        width: (u64::from(child.width) * u64::from(window.width) / u64::from(console.width)) as u32,
+        height: (u64::from(child.height) * u64::from(window.height) / u64::from(console.height)) as u32,
+    }
+}
+
+// ------------------------=
 // FUNC: verify_authored_row_flow
 // DESC: Exercises saved-template rows through expansion, scrolling, resize, and disclosure hit testing.
 // ------------------=
@@ -275,6 +302,10 @@ fn verify_authored_row_flow() {
     for section in 0..11 {
         let mut layers: Vec<_> = (0..original.element_count(section + 1).unwrap())
             .map(|index| original.element_at(section + 1, index).unwrap()).collect();
+        for (index, element) in layers.iter().enumerate() {
+            let ordinal = layers[..index].iter().filter(|previous| previous.role == element.role).count();
+            assert_eq!(ui::settings_template::element_identity(section as usize, element.id), Some((*element, ordinal)));
+        }
         layers.sort_by_key(|element| (element.z_index, element.id));
         for (index, element) in layers.iter().enumerate() {
             assert_eq!(ui::settings_template::layer_at(section as usize, index as u16), Some(*element));
@@ -291,9 +322,13 @@ fn verify_authored_row_flow() {
             assert_eq!(ui::settings_template::role_at(section as usize, role, expected.len()), None);
         }
     }
+    assert!(ui::settings_template::element_identity(11, [0; 16]).is_none());
+    assert!(ui::settings_template::element_identity(usize::MAX, [0; 16]).is_none());
+    assert!(ui::settings_template::element_identity(0, [0; 16]).is_none());
     for (width, height) in [(1024, 768), (1366, 768), (1920, 1080), (2048, 2048), (2560, 1440)] {
         let layout = SystemLayout::new(width, height);
         for section in [0, 1, 2, 3, 4, 5, 8, 9, 10] {
+            let console = ui::settings_template::element(section, Role::Console).unwrap().frame;
             let count = if matches!(section, 1 | 8 | 10) { 8 } else if section == 3 { 7 } else { 5 };
             let collapsed = SettingsWindowState { x: 80, y: 100, width: 850, height: 760,
                 maximized: false, expanded_row: None, scroll_offset: 0, control_focus: 0, row_count: count };
@@ -322,16 +357,42 @@ fn verify_authored_row_flow() {
                     for index in 0..count {
                         let row = layout.settings_row_geometry_for_section(state, index, section).summary;
                         let base_row = layout.settings_row_geometry_for_section(collapsed, index, section).summary;
+                        let authored_row = ui::settings_template::role_at(section, Role::Metadata, index).unwrap().frame;
                         for role in [Role::SettingsRowLabel, Role::SettingsRowValue, Role::SettingsDisclosure] {
                             let child = layout.settings_row_element_geometry(state, section, index, role).unwrap();
                             let base_child = layout.settings_row_element_geometry(collapsed, section, index, role).unwrap();
+                            let authored_child = ui::settings_template::role_at(section, role, index).unwrap();
+                            let expected = expected_authored_row_child(console, authored_row, authored_child.frame, window.window, row);
+                            assert_eq!(child, expected);
+                            assert_eq!(layout.settings_element_geometry(state, section, authored_child.id), Some(expected));
                             assert_eq!(child.y - row.y, base_child.y - base_row.y);
                             assert_eq!(child.x - row.x, base_child.x - base_row.x);
-                            assert_eq!(row.intersection(child), child);
+                            // Contained source bounds can exceed a separately floored row endpoint
+                            // by one pixel. Larger overflow is valid only when actually authored.
+                            let source = authored_child.frame;
+                            let source_inside = source.x >= authored_row.x && source.y >= authored_row.y
+                                && u32::from(source.x) + u32::from(source.width) <= u32::from(authored_row.x) + u32::from(authored_row.width)
+                                && u32::from(source.y) + u32::from(source.height) <= u32::from(authored_row.y) + u32::from(authored_row.height);
+                            if source_inside {
+                                assert!(child.x >= row.x && child.y >= row.y);
+                                assert!(child.right() <= row.right() + 1 && child.bottom() <= row.bottom() + 1);
+                            } else if role == Role::SettingsDisclosure && child.bottom() > row.bottom() + 1 {
+                                // The saved disclosure extends two authored units below its row.
+                                // Preserve that intentional placement instead of clipping to the row.
+                                assert!(u32::from(source.y) + u32::from(source.height)
+                                    > u32::from(authored_row.y) + u32::from(authored_row.height));
+                                assert_ne!(row.intersection(child), expected);
+                            }
                             if role == Role::SettingsDisclosure && window.viewport.intersection(child) == child {
                                 let x = (child.x + child.width as i32 / 2) * 1000 / width as i32;
                                 let y = (child.y + child.height as i32 / 2) * 1000 / height as i32;
                                 assert_eq!(layout.settings_target_for_section(x, y, state, section), Some(SettingsTarget::ContentRow(index)));
+                            } else if role == Role::SettingsDisclosure && !window.viewport.intersects(expected) {
+                                let x = (expected.x + expected.width as i32 / 2) * 1000 / width as i32;
+                                let y = (expected.y + expected.height as i32 / 2) * 1000 / height as i32;
+                                if !window.viewport.contains(layout.point(x, y)) {
+                                    assert!(!matches!(layout.settings_target_for_section(x, y, state, section), Some(SettingsTarget::ContentRow(_))));
+                                }
                             }
                         }
                     }

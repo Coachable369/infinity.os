@@ -249,13 +249,6 @@ fn widget_chooser_partial_pixels_match_full_composition() {
 
 impl DisplayDevice {
     // ------------------------=
-    // FUNC: skin_visual_mode
-    // DESC: Supplies the default dark skin to the production glass recipe.
-    // ------------------=
-    fn skin_visual_mode(&self) -> u8 {
-        0
-    }
-    // ------------------------=
     // FUNC: active_accent_surface
     // DESC: Uses the real default skin registry for semantic glass colors.
     // ------------------=

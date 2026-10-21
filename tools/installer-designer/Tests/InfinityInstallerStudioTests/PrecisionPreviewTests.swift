@@ -175,7 +175,7 @@ final class PrecisionPreviewTests: XCTestCase {
         let fixture = try Data(contentsOf: root.appending(path: "build/behavior-tests/studio-precision.stylefrost"))
         XCTAssertEqual(Array(fixture.prefix(8)), Array("ISTFRO01".utf8))
         let count = (0..<4).reduce(0) { $0 | Int(fixture[8 + $1]) << ($1 * 8) }
-        XCTAssertEqual(count, 108)
+        XCTAssertEqual(count, UIKitSurfaceMaterial.allCases.count * 3 * 3 * 2 * 2)
         let atlas = try atlas()
         var offset = 12
         for scene in 0..<count {

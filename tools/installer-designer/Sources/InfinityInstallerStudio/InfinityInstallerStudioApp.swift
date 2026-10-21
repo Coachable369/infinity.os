@@ -52,11 +52,12 @@ struct InfinityInstallerStudioApp: App {
                     at: destination.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                try RuntimeTemplateCodec.encode(
+                let compiled = try RuntimeTemplateCodec.encode(
                     document,
                     assetRoot: source.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent(),
                     collection: collection
-                ).write(to: destination, options: .atomic)
+                )
+                try ContentAwareAtomicWriter.write(compiled, to: destination)
                 print("Compiled \(source.path) to \(destination.path)")
                 Darwin.exit(0)
             } catch {

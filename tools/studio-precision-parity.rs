@@ -4,7 +4,7 @@
 mod ui { pub use crate::panel_recipe; }
 #[path = "../kernel/ui/dock_material.rs"] mod dock_material;
 use panel_recipe::{Material, Surface};
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 
 // ------------------------=
 // FUNC: main
@@ -128,7 +128,8 @@ fn write_frost(path: &std::path::Path) -> std::io::Result<()> {
 fn write_frost_styles(path: &std::path::Path) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
     file.write_all(b"ISTFRO01")?;
-    file.write_all(&108u32.to_le_bytes())?;
+    file.write_all(&0u32.to_le_bytes())?;
+    let mut count = 0u32;
     let (width,height)=(131usize,71usize);
     for material_kind in 0..=2 {for corners in 0..=2 {for radius in [0u8,12,40] {for scale in [1usize,2] {for tint in [false,true] {
         let fill=(16u8,27u8,58u8);let border=(134u8,199u8,255u8);
@@ -147,6 +148,9 @@ fn write_frost_styles(path: &std::path::Path) -> std::io::Result<()> {
         file.write_all(&[material_kind,corners,radius,if tint{3}else{0}])?;
         file.write_all(&style.fill.unwrap_or(0).to_le_bytes())?;file.write_all(&style.border.unwrap_or(0).to_le_bytes())?;
         for p in pixels {file.write_all(&[(p>>16)as u8,(p>>8)as u8,p as u8,(p>>24)as u8])?;}
+        count += 1;
     }}}}}
+    file.seek(SeekFrom::Start(8))?;
+    file.write_all(&count.to_le_bytes())?;
     Ok(())
 }
