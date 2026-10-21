@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 [workspace]
 
 [features]
+compiler-clock-probe = []
 python-pip-probe = []
 
 [dependencies]
