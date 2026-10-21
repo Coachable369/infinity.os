@@ -2,6 +2,8 @@
 #[path="../kernel/ui/dock_material.rs"] mod dock;
 #[path="../kernel/ui/browser_glyphs.rs"] mod glyphs;
 #[path="../kernel/ui/bitmap.rs"] mod bitmap;
+#[path="../kernel/ui/panel_recipe.rs"] pub mod panel_recipe;
+mod ui {pub use super::panel_recipe;}
 use infinity_browser_core::{layout::Layout,skin,tab_style,welcome,Viewport};
 use std::io::Write;
 
@@ -10,7 +12,7 @@ use std::io::Write;
 // DESC: Verifies production pixel behavior and emits reviewable browser and dock component images.
 // ------------------=
 fn main() {
-    dock_behavior();glyph_geometry();welcome_geometry();button_pixels();artwork_alpha();
+    dock_behavior();dock_panel_coverage();glyph_geometry();welcome_geometry();button_pixels();artwork_alpha();
     dock_proof();browser_proof(800,620);browser_proof(1200,720);
     println!("Desktop/browser production material, geometry and pixel acceptance passed");
 }
@@ -30,7 +32,14 @@ fn dock_behavior() {
     let mut glass=Box::new(dock::Backdrop::new());
     let mut a=vec![0x102030;w*h];let mut b=vec![0x8090a0;w*h];
     glass.paint(&mut a,w,bounds,clip,material());glass.paint(&mut b,w,bounds,clip,material());
-    assert_ne!(a[60*w+160],b[60*w+160]);assert_eq!(a[0],0x102030);assert_eq!(a[8*w+8],0x102030);
+    assert_ne!(a[60*w+160],b[60*w+160]);
+    // The approved image rim can cover its corner pixel. Pixels outside the
+    // panel must remain untouched; exact authored rim coverage is checked below.
+    for y in 0..h {for x in 0..w {
+        if x<bounds.0 || x>=bounds.0+bounds.2 || y<bounds.1 || y>=bounds.1+bounds.3 {
+            assert_eq!(a[y*w+x],0x102030);
+        }
+    }}
     let mut sharp=(0..w*h).map(|at|if (at%w+at/w)%2==0 {0xffffff}else{0}).collect::<Vec<_>>();
     let mut blurred=sharp.clone();let mut no_blur=material();no_blur.blur=0;
     glass.paint(&mut sharp,w,bounds,clip,no_blur);glass.paint(&mut blurred,w,bounds,clip,material());
@@ -75,6 +84,43 @@ fn dock_behavior() {
         timings.push(start.elapsed().as_micros());
     }
     timings.sort_unstable();println!("Frosted 1592x152 backdrop host median: {} us, fixed scratch: {} bytes",timings[timings.len()/2],std::mem::size_of::<dock::Backdrop>());
+}
+
+// ------------------------=
+// FUNC: dock_panel_coverage
+// DESC: Verifies authored Panel coverage and independently visible borders at zero/full opacity across native scales and channel layouts.
+// ------------------=
+fn dock_panel_coverage() {
+    let mut glass=Box::new(dock::Backdrop::new());
+    for scale in 1..=4 {for bgr in [false,true] {for opacity in [0,100] {
+        let (width,height)=(80*scale,40*scale);let stride=width+8;let source=0x7f203040;
+        let mut actual=vec![source;stride*(height+8)];
+        let material=dock::Material{primary:0x234567,accent:0x86c7ff,opacity,blur:4,scale,bgr};
+        glass.paint(&mut actual,stride,(4,4,width,height),(0,0,stride,height+8),material);
+        let panel=panel_recipe::Material{fill:(16,27,58),edge:(134,199,255),opacity:255,
+            edge_opacity:0,focus:0,pressed:false,scale};
+        let packed=if bgr {0x234567}else{0x674523};
+        let mut fractional=0;let mut edge_pixels=0;
+        for y in 0..height {for x in 0..width {
+            let coverage=panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,x,y,panel).3;
+            let edge=panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,x,y,
+                panel_recipe::Material{opacity:0,edge_opacity:255,..panel});
+            let mut expected=source;
+            for lane in 0..3 {
+                let old=(source>>(lane*8))&255;
+                let fill=if opacity==0 {old}else{(packed>>(lane*8))&255};
+                let body=(old*(255-u32::from(coverage))+fill*u32::from(coverage))/255;
+                let rgb=[edge.2,edge.1,edge.0];let value=u32::from(rgb[if bgr {lane}else{2-lane}]);
+                let result=(body*(255-u32::from(edge.3))+value*u32::from(edge.3))/255;
+                expected=(expected&!(255<<(lane*8)))|(result<<(lane*8));
+            }
+            assert_eq!(actual[(y+4)*stride+x+4],expected);
+            fractional+=usize::from(coverage>0&&coverage<255||edge.3>0&&edge.3<255);
+            edge_pixels+=usize::from(edge.3>0);
+        }}
+        assert!(fractional>0&&edge_pixels>0);
+        assert_eq!(actual[0],source);
+    }}}
 }
 
 // ------------------------=

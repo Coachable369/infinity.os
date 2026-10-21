@@ -3291,38 +3291,11 @@ impl super::DisplayDevice {
                 task_menu_open,
                 scale,
             );
-        } else if content_only {
-            self.fill_rect(
-                content_left + scale,
-                content_top + scale,
-                content_width.saturating_sub(2 * scale),
-                content_height.saturating_sub(2 * scale),
-                9,
-                15,
-                38,
-            );
         } else {
-            self.fill_rounded_rect_alpha(
-                content_left,
-                content_top,
-                content_width,
-                content_height,
-                10 * scale,
-                9,
-                15,
-                38,
-                255,
-            );
-            self.outline_rounded_rect(
-                content_left,
-                content_top,
-                content_width,
-                content_height,
-                10 * scale,
-                74,
-                99,
-                143,
-            );
+            self.app_card(crate::ui::geometry::Rect {
+                x:content_left as i32,y:content_top as i32,
+                width:content_width as u32,height:content_height as u32,
+            },(9,15,38),(74,99,143),scale);
         }
         let line_height = 24 * scale;
         if screen != 10 {
@@ -9485,14 +9458,10 @@ impl super::DisplayDevice {
                 .saturating_add(geometry.composer.height as i32)
                 .max(0) as usize;
             let loading_height = loading_bottom.saturating_sub(loading_top);
-            self.fill_rounded_rect_alpha(
-                loading_left, loading_top, loading_width, loading_height, 10 * scale,
-                2, 12, 22, 244,
-            );
-            self.outline_rounded_rect(
-                loading_left, loading_top, loading_width, loading_height, 10 * scale,
-                accent_r / 2, accent_g / 2, accent_b / 2,
-            );
+            self.app_card_alpha(crate::ui::geometry::Rect {
+                x:loading_left as i32,y:loading_top as i32,
+                width:loading_width as u32,height:loading_height as u32,
+            },(2,12,22),(accent_r/2,accent_g/2,accent_b/2),244,scale);
             let center_x = loading_left + loading_width / 2;
             let center_y = loading_top + loading_height / 2 - 30 * scale;
             let points = [
@@ -9884,27 +9853,9 @@ impl super::DisplayDevice {
                 .saturating_sub(label_width / 2)
                 .clamp(8 * scale, self.width.saturating_sub(label_width + 8 * scale));
             let top = dock_top.saturating_sub(35 * scale);
-            self.fill_rounded_rect_alpha(
-                left,
-                top,
-                label_width,
-                28 * scale,
-                8 * scale,
-                3,
-                20,
-                35,
-                238,
-            );
-            self.outline_rounded_rect(
-                left,
-                top,
-                label_width,
-                28 * scale,
-                8 * scale,
-                75,
-                170,
-                216,
-            );
+            self.app_card_alpha(crate::ui::geometry::Rect {
+                x:left as i32,y:top as i32,width:label_width as u32,height:(28*scale) as u32,
+            },(3,20,35),(75,170,216),238,scale);
             self.ui_text_centered_strong(
                 left,
                 label_width,

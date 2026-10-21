@@ -1,4 +1,5 @@
 //! Bounded, allocation-free frosted dock material over the current desktop pixels.
+use crate::ui::panel_recipe;
 const COLUMNS: usize = 256;
 const ROWS: usize = 64;
 const CELLS: usize = COLUMNS * ROWS;
@@ -71,16 +72,28 @@ impl Backdrop {
             }}
         }
         let primary=encode(material.primary,material.bgr);
-        let accent=encode(material.accent,material.bgr);
-        let radius=14*material.scale.max(1);
+        let panel=panel_recipe::Material {
+            fill:(16,27,58),edge:((material.accent>>16)as u8,(material.accent>>8)as u8,material.accent as u8),
+            opacity:255,edge_opacity:0,focus:0,pressed:false,scale:material.scale,
+        };
+        let rim=panel_recipe::rim_width(panel_recipe::Surface::Panel,material.scale);
         let opacity=u32::from(material.opacity.min(100));
         // Material-specific optical density: leave enough backdrop to perceive frost,
         // while preserving exact transparent/opaque endpoints of the preference slider.
         let tint=(u64::from(opacity).pow(4)*255/100_000_000)as u32;
         for y in y0..y1 {for x in x0..x1 {
             let dx=x-left;let dy=y-top;
-            let coverage=rounded_coverage(dx,dy,width,height,radius);
-            if coverage==0 {continue;}
+            let on_rim=dx.min(dy).min(width-1-dx).min(height-1-dy)<rim;
+            // Only the bounded authored rim needs atlas sampling; interior frost
+            // keeps the existing fixed-grid blur and optical-density fast path.
+            let coverage=if on_rim {
+                panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,dx,dy,panel).3
+            }else{255};
+            let edge=if on_rim {
+                panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,dx,dy,
+                    panel_recipe::Material{opacity:0,edge_opacity:255,..panel})
+            }else{(0,0,0,0)};
+            if coverage==0 && edge.3==0 {continue;}
             let original=pixels[y*stride+x];
             let backdrop=if material.blur>0 && material.opacity>0 && material.opacity<100 {
                 self.sample(columns,rows,(x-x0)*256/step,(y-y0)*256/step)
@@ -88,10 +101,9 @@ impl Backdrop {
             let mut color=mix(backdrop,primary,tint);
             let sheen=if opacity==0 || opacity==100 {0}else{(20usize.saturating_sub(dy*16/height)) as u32};
             color=mix(color,0x00ffffff,sheen);
-            let inner=if dx>0 && dy>0 {rounded_coverage(dx-1,dy-1,width.saturating_sub(2),height.saturating_sub(2),radius.saturating_sub(1))}else{0};
-            let edge=coverage.saturating_sub(inner);
-            color=mix(color,mix(accent,0x00ffffff,110),u32::from(edge)*150/255);
-            pixels[y*stride+x]=(original&0xff000000)|mix(original,color,u32::from(coverage));
+            color=mix(original,color,u32::from(coverage));
+            let edge_rgb=encode((u32::from(edge.0)<<16)|(u32::from(edge.1)<<8)|u32::from(edge.2),material.bgr);
+            pixels[y*stride+x]=(original&0xff000000)|mix(color,edge_rgb,u32::from(edge.3));
         }}
     }
 
