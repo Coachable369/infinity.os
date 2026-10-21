@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 6;
+const FORMAT_VERSION: u16 = 7;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -123,6 +123,8 @@ pub struct InstallerTemplateElement<'a> {
     pub border: [u8; 4],
     pub opacity: u8,
     pub corner_radius: u8,
+    pub surface_material: u8,
+    pub corner_style: u8,
     pub font_size: u16,
     pub name: &'a [u8],
     pub text: &'a [u8],
@@ -177,7 +179,8 @@ impl<'a> InstallerTemplate<'a> {
         if reader.take(4)? != MAGIC {
             return Err(InstallerTemplateError::InvalidHeader);
         }
-        if reader.u16()? != FORMAT_VERSION {
+        let version = reader.u16()?;
+        if version != FORMAT_VERSION && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -303,26 +306,45 @@ impl<'a> InstallerTemplate<'a> {
             }
             let invalid_installer = requires_navigation
                 && (back_count != 1 || primary_count != 1 || console_count == 0);
-            let expected_settings_rows = [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
-                [screen.saturating_sub(1) as usize];
+            let expected_settings_rows =
+                [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize];
             let invalid_settings = !requires_navigation
-                && (console_count != 1 || content_count != 1 || title_count == 0
-                    || body_count == 0 || section_count != 1 || row_count != expected_settings_rows
-                    || settings_navigation_count != 11 || settings_icon_count != 11
-                    || settings_label_count != 11 || settings_artwork_count > 1
-                    || (screen == 7 && (settings_tab_count != 7 || settings_summary_count != 1
-                        || settings_main_count != 1 || settings_sidebar_count != 1))
-                    || (screen == 8 && (settings_tab_count != 5 || settings_summary_count != 1
-                        || settings_main_count != 1 || settings_sidebar_count != 1))
-                    || (![7, 8].contains(&screen) && (settings_tab_count != 0
-                        || settings_summary_count != 0 || settings_main_count != 0
-                        || settings_sidebar_count != 0)));
-            let invalid_settings_rows = !requires_navigation && ![7, 8].contains(&screen)
+                && (console_count != 1
+                    || content_count != 1
+                    || title_count == 0
+                    || body_count == 0
+                    || section_count != 1
+                    || row_count != expected_settings_rows
+                    || settings_navigation_count != 11
+                    || settings_icon_count != 11
+                    || settings_label_count != 11
+                    || settings_artwork_count > 1
+                    || (screen == 7
+                        && (settings_tab_count != 7
+                            || settings_summary_count != 1
+                            || settings_main_count != 1
+                            || settings_sidebar_count != 1))
+                    || (screen == 8
+                        && (settings_tab_count != 5
+                            || settings_summary_count != 1
+                            || settings_main_count != 1
+                            || settings_sidebar_count != 1))
+                    || (![7, 8].contains(&screen)
+                        && (settings_tab_count != 0
+                            || settings_summary_count != 0
+                            || settings_main_count != 0
+                            || settings_sidebar_count != 0)));
+            let invalid_settings_rows = !requires_navigation
+                && ![7, 8].contains(&screen)
                 && (settings_row_label_count != row_count
                     || settings_row_value_count != row_count
                     || settings_disclosure_count != row_count);
-            if invalid_installer || invalid_settings || invalid_settings_rows
-                || input_count > 1 || details_count > 1 {
+            if invalid_installer
+                || invalid_settings
+                || invalid_settings_rows
+                || input_count > 1
+                || details_count > 1
+            {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
         }
@@ -500,15 +522,27 @@ impl<'a> InstallerTemplate<'a> {
         target_screen: u8,
         target_layer: u16,
     ) -> Option<InstallerTemplateElement<'a>> {
-        let count = self.element_count(target_screen)?;
+        let mut reader=Reader::new(self.data);
+        reader.take(8).ok()?;
+        let mut found=None;
+        for _ in 0..self.screen_count {
+            let screen=reader.u8().ok()?;
+            reader.short_string().ok()?;
+            let count=reader.u16().ok()?;
+            if screen==target_screen {found=Some((reader,count));break;}
+            for _ in 0..count {reader.element().ok()?;}
+        }
+        let (start,count)=found?;
         if target_layer >= count {
             return None;
         }
-        for candidate_index in 0..count {
-            let candidate = self.element_at(target_screen, candidate_index)?;
+        let mut candidates=start;
+        for _ in 0..count {
+            let candidate = candidates.element().ok()?;
             let mut earlier = 0u16;
-            for comparison_index in 0..count {
-                let comparison = self.element_at(target_screen, comparison_index)?;
+            let mut comparisons=start;
+            for _ in 0..count {
+                let comparison = comparisons.element().ok()?;
                 if comparison.z_index < candidate.z_index
                     || (comparison.z_index == candidate.z_index && comparison.id < candidate.id)
                 {
@@ -523,9 +557,11 @@ impl<'a> InstallerTemplate<'a> {
     }
 }
 
+#[derive(Clone,Copy)]
 struct Reader<'a> {
     data: &'a [u8],
     offset: usize,
+    version: u16,
 }
 
 impl<'a> Reader<'a> {
@@ -534,7 +570,8 @@ impl<'a> Reader<'a> {
     // DESC: Creates a bounded cursor over immutable runtime template bytes.
     // ------------------=
     const fn new(data: &'a [u8]) -> Self {
-        Self { data, offset: 0 }
+        let version = if data.len() >= 6 { u16::from_le_bytes([data[4],data[5]]) } else { 0 };
+        Self { data, offset: 0, version }
     }
 
     // ------------------------=
@@ -668,7 +705,8 @@ impl<'a> Reader<'a> {
             || (role == InstallerTemplateRole::Input as u8
                 && flags & 2 == 0
                 && input_variable == InstallerTemplateVariable::None as u8)
-            || flags & !3 != 0
+            || (self.version == 6 && flags & !3 != 0)
+            || flags & !63 != 0 || (flags >> 2) & 3 > 2 || (flags >> 4) & 3 > 2
         {
             return Err(InstallerTemplateError::InvalidElement);
         }
@@ -721,6 +759,8 @@ impl<'a> Reader<'a> {
             border,
             opacity,
             corner_radius,
+            surface_material: (flags >> 2) & 3,
+            corner_style: (flags >> 4) & 3,
             font_size,
             name,
             text,

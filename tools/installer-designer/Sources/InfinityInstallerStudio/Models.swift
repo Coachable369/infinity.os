@@ -348,6 +348,25 @@ struct StudioElement: Identifiable, Codable, Hashable {
     var zIndex: Int
     var locked: Bool
     var hidden: Bool
+    var surfaceMaterial: UIKitSurfaceMaterial = .authored
+    var surfaceCorners: UIKitCornerStyle = .authored
+    var fillToken: UIKitColorRole? = nil
+    var borderToken: UIKitColorRole? = nil
+
+    // ------------------------=
+    // FUNC: resolvingThemeColors
+    // DESC: Resolves explicit semantic bindings to the exact RGBA bytes consumed by the native template painter.
+    // ------------------=
+    func resolvingThemeColors(_ colors: [UInt32]) -> StudioElement {
+        var resolved = self
+        if let token = fillToken, colors.indices.contains(token.rawValue) {
+            resolved.fill = studioColor(colors[token.rawValue])
+        }
+        if let token = borderToken, colors.indices.contains(token.rawValue) {
+            resolved.border = studioColor(colors[token.rawValue])
+        }
+        return resolved
+    }
 
     // ------------------------=
     // FUNC: make
@@ -460,7 +479,7 @@ struct ImageCrop: Codable, Hashable {
 extension StudioElement {
     private enum CodingKeys: String, CodingKey {
         case id, codeIdentifier, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
-        case fontSize, opacity, cornerRadius, zIndex, locked, hidden
+        case fontSize, opacity, cornerRadius, zIndex, locked, hidden, surfaceMaterial, surfaceCorners, fillToken, borderToken
     }
 
     // ------------------------=
@@ -488,6 +507,10 @@ extension StudioElement {
         zIndex = try values.decode(Int.self, forKey: .zIndex)
         locked = try values.decode(Bool.self, forKey: .locked)
         hidden = try values.decode(Bool.self, forKey: .hidden)
+        surfaceMaterial = try values.decodeIfPresent(UIKitSurfaceMaterial.self, forKey: .surfaceMaterial) ?? .authored
+        surfaceCorners = try values.decodeIfPresent(UIKitCornerStyle.self, forKey: .surfaceCorners) ?? .authored
+        fillToken = try values.decodeIfPresent(UIKitColorRole.self, forKey: .fillToken)
+        borderToken = try values.decodeIfPresent(UIKitColorRole.self, forKey: .borderToken)
     }
 }
 
@@ -495,6 +518,24 @@ struct InstallerScreenTemplate: Identifiable, Codable, Hashable {
     var id: Int
     var title: String
     var elements: [StudioElement]
+}
+
+extension InstallerStudioDocument {
+    // ------------------------=
+    // FUNC: runtimeProjection
+    // DESC: Produces the literal native template contract while retaining semantic bindings only in the editable source document.
+    // ------------------=
+    func runtimeProjection(theme: UIKitDocument) -> InstallerStudioDocument {
+        var result = self
+        for screen in result.screens.indices {
+            result.screens[screen].elements = result.screens[screen].elements.map { element in
+                var resolved = element.resolvingThemeColors(theme.colors)
+                resolved.fillToken = nil; resolved.borderToken = nil
+                return resolved
+            }
+        }
+        return result
+    }
 }
 
 struct InstallerStudioDocument: Codable, Hashable {
@@ -820,29 +861,83 @@ struct InstallerStudioDocument: Codable, Hashable {
             var labelElement = StudioElement.make(
                 name: "\(label) Label", kind: .text, role: .settingsRowLabel,
                 codeIdentifier: "settingsRow.\(row + 1).label",
-                frame: CanvasRect(x: 386, y: 343 + row * 64, width: 220, height: 24),
+                frame: Self.settingsCardTextFrame(row: element.frame, role: .settingsRowLabel),
                 text: label, zIndex: 5
             )
-            labelElement.fontSize = 15
+            labelElement.fontSize = 24
             elements.append(labelElement)
             var valueElement = StudioElement.make(
                 name: "\(label) Value", kind: .text, role: .settingsRowValue,
                 codeIdentifier: "settingsRow.\(row + 1).value",
-                frame: CanvasRect(x: 620, y: 343 + row * 64, width: 210, height: 24),
+                frame: Self.settingsCardTextFrame(row: element.frame, role: .settingsRowValue),
                 text: values.indices.contains(row) ? values[row] : "", zIndex: 5
             )
-            valueElement.fontSize = 15
+            valueElement.fontSize = 24
             elements.append(valueElement)
             var disclosure = StudioElement.make(
                 name: "\(label) Disclosure", kind: .text, role: .settingsDisclosure,
                 codeIdentifier: "settingsRow.\(row + 1).disclosure",
-                frame: CanvasRect(x: 840, y: 343 + row * 64, width: 20, height: 24),
+                frame: Self.settingsCardTextFrame(row: element.frame, role: .settingsDisclosure),
                 text: ">", zIndex: 5
             )
             disclosure.fontSize = 17
             disclosure.fill = StudioColor(red: 109, green: 220, blue: 255, alpha: 255)
             elements.append(disclosure)
         }
+    }
+
+    // ------------------------=
+    // FUNC: settingsCardTextFrame
+    // DESC: Mirrors settings_cards::content at the native 1000-point reference viewport while retaining each authored row's width.
+    // ------------------=
+    static func settingsCardTextFrame(row: CanvasRect, role: StudioElementRole) -> CanvasRect {
+        let height = max(row.height, 72)
+        let available = max(0, row.width - 104)
+        let valueWidth = available * 38 / 100
+        let labelWidth = max(0, available - valueWidth - 12)
+        if role == .settingsDisclosure {
+            return CanvasRect(x: row.x + row.width - 30, y: row.y + height / 2 - 16, width: 20, height: 32)
+        }
+        if role == .settingsRowValue {
+            return CanvasRect(x: row.x + 68 + labelWidth + 12, y: row.y + (height - 28) / 2,
+                width: valueWidth, height: 28)
+        }
+        return CanvasRect(x: row.x + 68, y: row.y + (height - 56) / 2, width: labelWidth, height: 28)
+    }
+
+    // ------------------------=
+    // FUNC: migratedForSettingsCardReadability
+    // DESC: Upgrades only exact legacy text geometry and font signatures, retaining custom frames, styling, identity and content.
+    // ------------------=
+    func migratedForSettingsCardReadability() -> InstallerStudioDocument {
+        var result = self
+        for screen in result.screens.indices where ![7, 8].contains(result.screens[screen].id) {
+            let rows = result.screens[screen].elements.filter { $0.role == .metadata }
+            for role in [StudioElementRole.settingsRowLabel, .settingsRowValue, .settingsDisclosure] {
+                let children = result.screens[screen].elements.indices.filter { result.screens[screen].elements[$0].role == role }
+                for (row, index) in zip(rows, children) {
+                    let oldFrame: CanvasRect
+                    let oldFont: Int
+                    switch role {
+                    case .settingsRowLabel:
+                        oldFrame = CanvasRect(x: row.frame.x + 16, y: row.frame.y + 13, width: 220, height: 24)
+                        oldFont = 15
+                    case .settingsRowValue:
+                        oldFrame = CanvasRect(x: row.frame.x + 250, y: row.frame.y + 13, width: 210, height: 24)
+                        oldFont = 15
+                    default:
+                        oldFrame = CanvasRect(x: row.frame.x + 470, y: row.frame.y + 13, width: 20, height: 24)
+                        oldFont = 17
+                    }
+                    let element = result.screens[screen].elements[index]
+                    let frame = Self.settingsCardTextFrame(row: row.frame, role: role)
+                    guard element.frame == oldFrame, element.fontSize == oldFont, frame == frame.clamped() else { continue }
+                    result.screens[screen].elements[index].frame = frame
+                    if role != .settingsDisclosure { result.screens[screen].elements[index].fontSize = 24 }
+                }
+            }
+        }
+        return result
     }
 
     // ------------------------=

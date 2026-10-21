@@ -34,6 +34,14 @@ clean = false
 command = ["sh", "build.sh", "--package-only", "--target", "x86_64"]
 clean = false
 
+[profiles.update-iso]
+command = ["python3", "tools/update-ui-iso.py"]
+clean = false
+
+[profiles.update-iso-tests]
+command = ["python3", "tools/update-ui-iso-test.py"]
+clean = false
+
 [profiles.x86_64]
 command = ["sh", "build.sh", "--target", "x86_64"]
 clean = false
@@ -115,7 +123,7 @@ command = ["cargo", "test", "--manifest-path", "sdk/infinity-enterprise-core/Car
 clean = false
 
 [profiles.studio]
-command = ["sh", "tools/installer-designer/build.sh"]
+command = ["zsh", "tools/installer-designer/build.sh"]
 clean = false
 
 [profiles.desktop-effects-tests]

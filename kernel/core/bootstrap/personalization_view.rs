@@ -16,9 +16,16 @@ impl DisplayDevice {
     // DESC: Renders native tint sliders and the exact runtime cursor art using shared clipped hit geometry.
     // ------------------=
     pub(super) fn settings_personalization_panel(&mut self, detail: Rect, scale: usize, pointer: bool) {
+        self.settings_personalization_panel_from_state(detail,scale,pointer,input_preferences::current(),
+            crate::ui::spatial::backdrop_tint(),crate::ui::personalization::save_status());
+    }
+    // ------------------------=
+    // FUNC: settings_personalization_panel_from_state
+    // DESC: Paints native personalization controls from an explicit snapshot without reading service state.
+    // ------------------=
+    pub(super) fn settings_personalization_panel_from_state(&mut self, detail:Rect,scale:usize,pointer:bool,
+        prefs:input_preferences::Preferences,tint:[u8;4],status:u8) {
         let controls=Layout::new(detail,scale,pointer);
-        let prefs=input_preferences::current();
-        let tint=crate::ui::spatial::backdrop_tint();
         let labels: [&[u8];4]=if pointer {[b"Pointer speed",b"Cursor size",b"",b""]} else {[b"Veil red",b"Veil green",b"Veil blue",b"Veil strength"]};
         for i in 0..if pointer {2}else{4} {
             let r=controls.sliders[i];
@@ -67,7 +74,6 @@ impl DisplayDevice {
         let last=controls.choices[if pointer {9}else{4}];
         let y=last.bottom()+12*scale as i32;
         if y>=0 {
-            let status=crate::ui::personalization::save_status();
             let text:&[u8]=match status {1=>b"Release to save",2=>b"Saved for this user",3=>b"Save failed; changes restored",_=>b"Changes save automatically"};
             self.personalization_label(detail.x.max(0) as usize+16*scale,y as usize,detail.width.saturating_sub(32*scale as u32) as usize,text,if status==3 {240}else{135},if status==3 {140}else{172},if status==3 {125}else{194});
         }

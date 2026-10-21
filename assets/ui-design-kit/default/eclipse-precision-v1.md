@@ -69,3 +69,31 @@ configuration pages at 1280x800 and 1920x1080, including review-button states.
 It tests compiled-template button hue, dark secondary contrast, backdrop
 transmission, blur and alpha endpoints. Screenshots still need human review;
 host rendering is not installed-VM acceptance.
+
+## Editable native surface styles
+
+Studio's UIKit document stores six optional recipes in this order: compositor
+frame, window background, panel/dialog, primary button, secondary button, field.
+Each recipe selects Authored, Glass, or Matte, and Authored, Square, or Rounded
+corners with a 0–40 logical-pixel radius. Optional ARGB fill and border overrides
+are independent. Glass retains the approved atlas lighting and frosted backdrop
+where that component has one. Matte retains the image-backed coverage and edge
+art, reduces fill reflections, and disables backdrop blur and sheen.
+
+The OS-owned frame and window substrate remain rectangular; their only permitted
+corner choices are Authored and Square. Panel/dialog, button and field shapes are
+independently configurable. Explicit rounded styles clip with 4×4 subpixel
+coverage while sampling the approved image-backed edge light along the curve.
+They do not synthesize a competing drawn border. Unedited authored components
+retain exactly their existing pixels.
+
+`uikit-styles.bin` uses magic `IUISTY01`, little-endian version 1 and count 6,
+followed by six 12-byte records: material, corners, radius, flags, fill ARGB,
+border ARGB. Flags 1 and 2 enable the respective optional colors. Invalid records
+fall back atomically to the approved authored recipes.
+
+IUIT version 7 stores element material in flag bits 2–3 and corner style in bits
+4–5; the existing radius byte is reused. Version 6 remains readable. Saved element
+colors take precedence over global color overrides, while unset material and
+corner choices inherit the shared UIKit recipe. This applies to the live
+installer, fresh-install configuration wizard and Settings surfaces.

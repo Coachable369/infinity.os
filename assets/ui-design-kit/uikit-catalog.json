@@ -1,0 +1,1245 @@
+{
+  "version": 1,
+  "elements": [
+    {
+      "id": "precision.frame.inactive.fill",
+      "label": "frame inactive fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 0,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.frame.active.fill",
+      "label": "frame active fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 262144,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.panel.normal.fill",
+      "label": "panel normal fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 524288,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.panel.focused.fill",
+      "label": "panel focused fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 786432,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.primary.normal.fill",
+      "label": "primary normal fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 1048576,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.primary.hover.fill",
+      "label": "primary hover fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 1310720,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.primary.pressed.fill",
+      "label": "primary pressed fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 1572864,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.field.normal.fill",
+      "label": "field normal fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 1835008,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.field.focused.fill",
+      "label": "field focused fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 2097152,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.progress.current.fill",
+      "label": "progress current fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 2359296,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.progress.inactive.fill",
+      "label": "progress inactive fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 2621440,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.secondary.normal.fill",
+      "label": "secondary normal fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 2883584,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.secondary.hover.fill",
+      "label": "secondary hover fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 3145728,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.secondary.pressed.fill",
+      "label": "secondary pressed fill",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 3407872,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.frame.inactive.edge",
+      "label": "frame inactive edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 3670016,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.frame.active.edge",
+      "label": "frame active edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 3932160,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.panel.normal.edge",
+      "label": "panel normal edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 4194304,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.panel.focused.edge",
+      "label": "panel focused edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 4456448,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.primary.normal.edge",
+      "label": "primary normal edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 4718592,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.primary.hover.edge",
+      "label": "primary hover edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 4980736,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.primary.pressed.edge",
+      "label": "primary pressed edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 5242880,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.field.normal.edge",
+      "label": "field normal edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 5505024,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.field.focused.edge",
+      "label": "field focused edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 5767168,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.progress.current.edge",
+      "label": "progress current edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 6029312,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.progress.inactive.edge",
+      "label": "progress inactive edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 6291456,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.secondary.normal.edge",
+      "label": "secondary normal edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 6553600,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.secondary.hover.edge",
+      "label": "secondary hover edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 6815744,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "precision.secondary.pressed.edge",
+      "label": "secondary pressed edge",
+      "group": "Panels & Controls",
+      "target": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+      "offset": 7077888,
+      "width": 256,
+      "height": 256,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.0",
+      "label": "Access glyph 1",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 0,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.1",
+      "label": "Access glyph 2",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 16384,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.2",
+      "label": "Access glyph 3",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 32768,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.3",
+      "label": "Access glyph 4",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 49152,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.4",
+      "label": "Access glyph 5",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 65536,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.5",
+      "label": "Access glyph 6",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 81920,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.6",
+      "label": "Access glyph 7",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 98304,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.7",
+      "label": "Access glyph 8",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 114688,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.8",
+      "label": "Access glyph 9",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 131072,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.9",
+      "label": "Access glyph 10",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 147456,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.10",
+      "label": "Access glyph 11",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 163840,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.11",
+      "label": "Access glyph 12",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 180224,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.12",
+      "label": "Access glyph 13",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 196608,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.13",
+      "label": "Access glyph 14",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 212992,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.14",
+      "label": "Access glyph 15",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 229376,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "access.glyph.15",
+      "label": "Access glyph 16",
+      "group": "Configuration Glyphs",
+      "target": "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba",
+      "offset": 245760,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.0",
+      "label": "Browser glyph 1",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 0,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.1",
+      "label": "Browser glyph 2",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 16384,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.2",
+      "label": "Browser glyph 3",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 32768,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.3",
+      "label": "Browser glyph 4",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 49152,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.4",
+      "label": "Browser glyph 5",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 65536,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.5",
+      "label": "Browser glyph 6",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 81920,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.6",
+      "label": "Browser glyph 7",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 98304,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.7",
+      "label": "Browser glyph 8",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 114688,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.8",
+      "label": "Browser glyph 9",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 131072,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.9",
+      "label": "Browser glyph 10",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 147456,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.10",
+      "label": "Browser glyph 11",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 163840,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.11",
+      "label": "Browser glyph 12",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 180224,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.12",
+      "label": "Browser glyph 13",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 196608,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.13",
+      "label": "Browser glyph 14",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 212992,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.14",
+      "label": "Browser glyph 15",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 229376,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "browser.glyph.15",
+      "label": "Browser glyph 16",
+      "group": "Browser Glyphs",
+      "target": "assets/ui-design-kit/default/browser-glyphs-v1.rgba",
+      "offset": 245760,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "window.control.normal",
+      "label": "Window control normal",
+      "group": "Window Chrome",
+      "target": "assets/ui-design-kit/default/window-controls-v1.rgba",
+      "offset": 0,
+      "width": 96,
+      "height": 96,
+      "format": "rgba"
+    },
+    {
+      "id": "window.control.hover",
+      "label": "Window control hover",
+      "group": "Window Chrome",
+      "target": "assets/ui-design-kit/default/window-controls-v1.rgba",
+      "offset": 36864,
+      "width": 96,
+      "height": 96,
+      "format": "rgba"
+    },
+    {
+      "id": "window.control.pressed",
+      "label": "Window control pressed",
+      "group": "Window Chrome",
+      "target": "assets/ui-design-kit/default/window-controls-v1.rgba",
+      "offset": 73728,
+      "width": 96,
+      "height": 96,
+      "format": "rgba"
+    },
+    {
+      "id": "assistant.tab",
+      "label": "AI side tab",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/ai-window-tab-v1.rgba",
+      "offset": 0,
+      "width": 112,
+      "height": 416,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.0",
+      "label": "Wait animation frame 1",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 0,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.1",
+      "label": "Wait animation frame 2",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 16384,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.2",
+      "label": "Wait animation frame 3",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 32768,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.3",
+      "label": "Wait animation frame 4",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 49152,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.4",
+      "label": "Wait animation frame 5",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 65536,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.5",
+      "label": "Wait animation frame 6",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 81920,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.6",
+      "label": "Wait animation frame 7",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 98304,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.7",
+      "label": "Wait animation frame 8",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 114688,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.8",
+      "label": "Wait animation frame 9",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 131072,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.9",
+      "label": "Wait animation frame 10",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 147456,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.10",
+      "label": "Wait animation frame 11",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 163840,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.11",
+      "label": "Wait animation frame 12",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 180224,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.12",
+      "label": "Wait animation frame 13",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 196608,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.13",
+      "label": "Wait animation frame 14",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 212992,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.14",
+      "label": "Wait animation frame 15",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 229376,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.15",
+      "label": "Wait animation frame 16",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 245760,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.16",
+      "label": "Wait animation frame 17",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 262144,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.17",
+      "label": "Wait animation frame 18",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 278528,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.18",
+      "label": "Wait animation frame 19",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 294912,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.19",
+      "label": "Wait animation frame 20",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 311296,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.20",
+      "label": "Wait animation frame 21",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 327680,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.21",
+      "label": "Wait animation frame 22",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 344064,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.22",
+      "label": "Wait animation frame 23",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 360448,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.23",
+      "label": "Wait animation frame 24",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 376832,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.24",
+      "label": "Wait animation frame 25",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 393216,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.25",
+      "label": "Wait animation frame 26",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 409600,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.26",
+      "label": "Wait animation frame 27",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 425984,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.27",
+      "label": "Wait animation frame 28",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 442368,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.28",
+      "label": "Wait animation frame 29",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 458752,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.29",
+      "label": "Wait animation frame 30",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 475136,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.30",
+      "label": "Wait animation frame 31",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 491520,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.31",
+      "label": "Wait animation frame 32",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 507904,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.32",
+      "label": "Wait animation frame 33",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 524288,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.33",
+      "label": "Wait animation frame 34",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 540672,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.34",
+      "label": "Wait animation frame 35",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 557056,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.35",
+      "label": "Wait animation frame 36",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 573440,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.36",
+      "label": "Wait animation frame 37",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 589824,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.37",
+      "label": "Wait animation frame 38",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 606208,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.38",
+      "label": "Wait animation frame 39",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 622592,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.39",
+      "label": "Wait animation frame 40",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 638976,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.40",
+      "label": "Wait animation frame 41",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 655360,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.41",
+      "label": "Wait animation frame 42",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 671744,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.42",
+      "label": "Wait animation frame 43",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 688128,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.43",
+      "label": "Wait animation frame 44",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 704512,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.44",
+      "label": "Wait animation frame 45",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 720896,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.45",
+      "label": "Wait animation frame 46",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 737280,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.46",
+      "label": "Wait animation frame 47",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 753664,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.47",
+      "label": "Wait animation frame 48",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 770048,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.48",
+      "label": "Wait animation frame 49",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 786432,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.49",
+      "label": "Wait animation frame 50",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 802816,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.50",
+      "label": "Wait animation frame 51",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 819200,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.51",
+      "label": "Wait animation frame 52",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 835584,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.52",
+      "label": "Wait animation frame 53",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 851968,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.53",
+      "label": "Wait animation frame 54",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 868352,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.54",
+      "label": "Wait animation frame 55",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 884736,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.55",
+      "label": "Wait animation frame 56",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 901120,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.56",
+      "label": "Wait animation frame 57",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 917504,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.57",
+      "label": "Wait animation frame 58",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 933888,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.58",
+      "label": "Wait animation frame 59",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 950272,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    },
+    {
+      "id": "cursor.wait.59",
+      "label": "Wait animation frame 60",
+      "group": "AI & Motion",
+      "target": "assets/ui-design-kit/default/wait-orbit-v2.rgba",
+      "offset": 966656,
+      "width": 64,
+      "height": 64,
+      "format": "rgba"
+    }
+  ]
+}

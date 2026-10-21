@@ -1,8 +1,26 @@
 #!/usr/bin/env python3
 """Prune only provably valueless InfinityOS logs within declared boundaries."""
 from pathlib import Path
+import os
+import stat
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+# ------------------------=
+# FUNC: active_stream_files
+# DESC: Protects redirected build streams even before the first byte has been written.
+# ------------------=
+def active_stream_files():
+    identities = set()
+    for descriptor in (0, 1, 2):
+        try:
+            metadata = os.fstat(descriptor)
+            if stat.S_ISREG(metadata.st_mode):
+                identities.add((metadata.st_dev, metadata.st_ino))
+        except OSError:
+            pass
+    return identities
 
 
 # ------------------------=
@@ -27,18 +45,25 @@ def candidates(root=PROJECT_ROOT, policy=None):
     root = validate_root(root)
     policy = policy or {}
     found = []
+    active = active_stream_files()
     releases = root / "builds"
     if policy.get("remove_empty_release_logs", False) and releases.exists():
         if releases.is_symlink():
             raise ValueError(f"Refusing symlinked releases directory: {releases}")
         for path in releases.rglob("*.log"):
-            if path.is_file() and not path.is_symlink() and path.stat().st_size == 0:
+            if not path.is_file() or path.is_symlink():
+                continue
+            metadata = path.stat()
+            if metadata.st_size == 0 and (metadata.st_dev, metadata.st_ino) not in active:
                 found.append((path, "empty-release-log"))
     for pattern in policy.get("root_crash_globs", ()):
         if "/" in pattern or "\\" in pattern or pattern in ("*", ".*"):
             raise ValueError(f"Unsafe root crash pattern: {pattern}")
         for path in root.glob(pattern):
-            if path.parent == root and path.is_file() and not path.is_symlink():
+            if path.parent != root or not path.is_file() or path.is_symlink():
+                continue
+            metadata = path.stat()
+            if (metadata.st_dev, metadata.st_ino) not in active:
                 found.append((path, "compiler-crash-dump"))
     return sorted(set(found), key=lambda entry: entry[0].as_posix())
 
@@ -52,6 +77,8 @@ def prune(root=PROJECT_ROOT, policy=None):
     removed = []
     for path, reason in candidates(root, policy):
         size = path.stat().st_size
+        if reason == "empty-release-log" and size != 0:
+            continue
         path.unlink()
         removed.append({
             "bytes": size,

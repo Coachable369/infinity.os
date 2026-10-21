@@ -104,16 +104,8 @@ enum InfinityUIKit {
         }
 
         // ------------------------=
-        // FUNC: matches
-        // DESC: Selects only authored Eclipse surface colors, irrespective of their independently editable opacity.
-        // ------------------=
-        static func matches(_ fill: StudioColor) -> Bool {
-            [background, surface, elevated, primary].contains { $0.sameRGB(as: fill) }
-        }
-
-        // ------------------------=
         // FUNC: progressDiameter
-        // DESC: Uses the runtime's left-aligned circular progress footprint without stretching a wide authored layer.
+        // DESC: Uses the runtime's circular progress footprint without stretching a wide authored layer.
         // ------------------=
         static func progressDiameter(_ size: CGSize) -> CGFloat {
             max(0, min(size.width, size.height))
@@ -123,9 +115,10 @@ enum InfinityUIKit {
         // FUNC: glyph
         // DESC: Loads the exact native 64px RGBA cell so configuration previews reuse the installed glyph coverage and colors.
         // ------------------=
-        static func glyph(_ index: Int, projectRoot: URL?) -> NSImage? {
-            guard (0..<16).contains(index), let projectRoot,
-                  let atlas = try? Data(contentsOf: projectRoot.appending(path: "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba")),
+        static func glyph(_ index: Int, projectRoot: URL?, atlasData: Data? = nil) -> NSImage? {
+            let source = projectRoot?.appending(path: "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba")
+            guard (0..<16).contains(index),
+                  let atlas = atlasData ?? source.flatMap({ try? Data(contentsOf: $0) }),
                   atlas.count == 16 * 64 * 64 * 4
             else { return nil }
             let cellSize = 64 * 64 * 4
@@ -154,86 +147,29 @@ enum InfinityUIKitInteractionState: Equatable {
     case pressed
 }
 
-struct InfinityUIKitVisualRecipe: Equatable {
-    let fillTop: StudioColor
-    let fillBottom: StudioColor
-    let border: StudioColor
-    let text: StudioColor
-    let highlightOpacity: Double
-    let glowOpacity: Double
-    let borderWidth: CGFloat
-    let eclipseAccess: Bool
-}
-
 extension InfinityUIKit {
     // ------------------------=
-    // FUNC: visualRecipe
-    // DESC: Resolves the shared UIKit glass, border, text, and glow recipe for a semantic canvas control state.
+    // FUNC: precisionKind
+    // DESC: Resolves saved template roles to the same semantic atlas surfaces used by the native compositor.
     // ------------------=
-    static func visualRecipe(
-        role: StudioElementRole,
-        state: InfinityUIKitInteractionState,
-        authoredFill: StudioColor,
-        authoredBorder: StudioColor,
-        configuration: Bool = false
-    ) -> InfinityUIKitVisualRecipe {
-        if configuration && EclipseAccess.matches(authoredFill) {
-            return eclipseRecipe(state: state, fill: authoredFill, border: authoredBorder)
+    static func precisionKind(role: StudioElementRole, kind: StudioElementKind = .panel,
+                              configuration: Bool = false, current: Bool = true) -> PrecisionSurfaceKind {
+        if configuration && role == .progressSegment { return current ? .current : .inactive }
+        if kind == .button { return role == .primaryButton ? .primary : .secondary }
+        if role == .input || (!configuration && [.dateField, .timeField, .timeZoneSelector, .offsetBadge].contains(role)) {
+            return .field
         }
-        let active = state == .hover || state == .focused
-        let pressed = state == .pressed
-        let isPrimary = role == .primaryButton
-        let isAction = isPrimary || role == .backButton
-        let isField = [.input, .dateField, .timeField, .timeZoneSelector].contains(role)
-        let isBadge = role == .offsetBadge
-
-        let lift: (Int, Int, Int) = if isPrimary {
-            active ? (30, 82, 104) : (17, 57, 75)
-        } else if isAction {
-            active ? (24, 55, 75) : (12, 25, 36)
-        } else if isField || isBadge {
-            active ? (14, 38, 52) : (7, 21, 28)
-        } else {
-            active ? (12, 27, 38) : (6, 14, 21)
-        }
-        let bottom = pressed ? authoredFill.adjusting(red: -3, green: -8, blue: -11) : authoredFill
-        let border = if state == .focused {
-            Palette.accentBright
-        } else if state == .hover {
-            Palette.accent
-        } else {
-            authoredBorder
-        }
-        return InfinityUIKitVisualRecipe(
-            fillTop: bottom.adjusting(red: lift.0, green: lift.1, blue: lift.2),
-            fillBottom: bottom,
-            border: border,
-            text: isBadge ? Palette.accentBright : Palette.textPrimary,
-            highlightOpacity: pressed ? 0.22 : (active ? 0.58 : 0.34),
-            glowOpacity: state == .focused ? 0.72 : (state == .hover ? 0.38 : (isPrimary ? 0.16 : 0)),
-            borderWidth: state == .focused ? 1.5 : 1,
-            eclipseAccess: false
-        )
+        return .panel
     }
 
     // ------------------------=
-    // FUNC: eclipseRecipe
-    // DESC: Mirrors native access_surface endpoints, pressed mixing and inward-only focus treatment without recoloring other collections.
+    // FUNC: precisionMaterial
+    // DESC: Preserves authored color and alpha while selecting native focus and pressure states, without procedural recoloring.
     // ------------------=
-    private static func eclipseRecipe(state: InfinityUIKitInteractionState, fill: StudioColor,
-                                      border: StudioColor) -> InfinityUIKitVisualRecipe {
-        let primary = fill.sameRGB(as: EclipseAccess.primary)
-        let active = state != .idle && (fill.alpha != 0 || border.alpha != 0)
-        var top = primary ? StudioColor(red: 49, green: 174, blue: 255, alpha: fill.alpha)
-            : fill.mixed(with: EclipseAccess.border, amount: 20)
-        var bottom = primary ? StudioColor(red: 22, green: 62, blue: 220, alpha: fill.alpha) : fill
-        if primary && state == .pressed {
-            top = top.mixed(with: EclipseAccess.elevated, amount: 56)
-            bottom = bottom.mixed(with: EclipseAccess.elevated, amount: 56)
-        }
-        return InfinityUIKitVisualRecipe(fillTop: top, fillBottom: bottom,
-            border: active ? EclipseAccess.focus : border, text: EclipseAccess.text,
-            highlightOpacity: 0, glowOpacity: active ? 1 : 0, borderWidth: 1, eclipseAccess: true)
+    static func precisionMaterial(state: InfinityUIKitInteractionState, fill: StudioColor,
+                                  border: StudioColor, scale: Int = 1) -> PrecisionMaterial {
+        PrecisionMaterial(fill: fill, edge: border, focus: state == .idle ? 0 : 255,
+                          pressed: state == .pressed, scale: scale)
     }
 }
 
@@ -254,68 +190,6 @@ extension StudioColor {
         red == other.red && green == other.green && blue == other.blue
     }
 
-    // ------------------------=
-    // FUNC: mixed
-    // DESC: Matches the native integer palette interpolation while retaining the authored surface opacity.
-    // ------------------=
-    func mixed(with other: StudioColor, amount: UInt8) -> StudioColor {
-        let t = Int(amount)
-        return StudioColor(red: UInt8((Int(red) * (255 - t) + Int(other.red) * t) / 255),
-            green: UInt8((Int(green) * (255 - t) + Int(other.green) * t) / 255),
-            blue: UInt8((Int(blue) * (255 - t) + Int(other.blue) * t) / 255), alpha: alpha)
-    }
-
-    // ------------------------=
-    // FUNC: adjusting
-    // DESC: Applies clamped byte-channel offsets used by both default and interactive glass control states.
-    // ------------------=
-    func adjusting(red: Int, green: Int, blue: Int) -> StudioColor {
-        StudioColor(
-            red: UInt8((Int(self.red) + red).clamped(to: 0...255)),
-            green: UInt8((Int(self.green) + green).clamped(to: 0...255)),
-            blue: UInt8((Int(self.blue) + blue).clamped(to: 0...255)),
-            alpha: alpha
-        )
-    }
-}
-
-struct EclipseAccessSurface: View {
-    let recipe: InfinityUIKitVisualRecipe
-    let radius: CGFloat
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: radius)
-            .fill(LinearGradient(colors: [recipe.fillTop.color, recipe.fillBottom.color],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay {
-                EclipseAccessFocusGlow(amount: recipe.glowOpacity * Double(recipe.fillTop.alpha) / 255)
-                    .clipShape(RoundedRectangle(cornerRadius: radius))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius).strokeBorder(recipe.border.color, lineWidth: 1)
-            }
-    }
-}
-
-private struct EclipseAccessFocusGlow: View, Animatable {
-    nonisolated var amount: Double
-
-    nonisolated var animatableData: Double {
-        get { amount }
-        set { amount = newValue }
-    }
-
-    var body: some View {
-        Canvas { context, size in
-            // Native focus light is confined to the first five inward pixels.
-            for distance in 1..<5 where size.width > CGFloat(distance * 2) && size.height > CGFloat(distance * 2) {
-                let inset = CGFloat(distance) + 0.5
-                let rect = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
-                context.stroke(Path(rect), with: .color(InfinityUIKit.EclipseAccess.border.color
-                    .opacity(Double(5 - distance) / 20 * amount)), lineWidth: 1)
-            }
-        }
-    }
 }
 
 struct InfinityStudioButtonStyle: ButtonStyle {

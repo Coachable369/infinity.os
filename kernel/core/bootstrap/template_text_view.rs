@@ -9,7 +9,7 @@ impl DisplayDevice {
     // FUNC: template_text_width
     // DESC: Measures template text at its authored pixel size using the packaged installer face.
     // ------------------=
-    pub(super) fn template_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
+    pub(crate) fn template_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
         self.template_text_width_face(text, pixels, semibold, None)
     }
 
@@ -53,7 +53,7 @@ impl DisplayDevice {
     // FUNC: template_text
     // DESC: Alpha-rasterizes template text at an arbitrary authored size.
     // ------------------=
-    pub(super) fn template_text(
+    pub(crate) fn template_text(
         &mut self,
         x: usize,
         y: usize,

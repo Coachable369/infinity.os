@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import unittest
 
 SPEC = importlib.util.spec_from_file_location(
@@ -67,6 +69,28 @@ class LogRetentionTests(unittest.TestCase):
     def test_unsafe_pattern_is_rejected(self):
         with self.assertRaises(ValueError):
             log_retention.candidates(self.root, {"root_crash_globs": ["*"]})
+
+    # ------------------------=
+    # FUNC: test_empty_redirected_output_remains_a_durable_log
+    # DESC: Runs real cleanup with an initially empty stdout file and verifies subsequent build output remains readable.
+    # ------------------=
+    def test_empty_redirected_output_remains_a_durable_log(self):
+        active = self.root / "builds/run/active.log"
+        stale = self.root / "builds/run/stale.log"
+        active.parent.mkdir(parents=True)
+        stale.write_bytes(b"")
+        program = (
+            "import importlib.util, pathlib, sys; "
+            "spec=importlib.util.spec_from_file_location('retention',sys.argv[1]); "
+            "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+            "module.prune(pathlib.Path(sys.argv[2]),{'remove_empty_release_logs':True}); "
+            "sys.stdout.buffer.write(bytes(range(16)))"
+        )
+        with active.open("wb") as output:
+            subprocess.run([sys.executable, "-c", program, str(Path(__file__).with_name("log-retention.py")),
+                            str(self.root)], stdout=output, stderr=subprocess.PIPE, check=True)
+        self.assertEqual(active.read_bytes(), bytes(range(16)))
+        self.assertFalse(stale.exists())
 
 
 if __name__ == "__main__":

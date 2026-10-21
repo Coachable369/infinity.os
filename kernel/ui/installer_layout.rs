@@ -9,6 +9,78 @@ pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/installer-screens.iuit");
 
 // ------------------------=
+// FUNC: installer_navigation_target
+// DESC: Uses authored button rectangles and visibility for every installer Back and Continue interaction.
+// ------------------=
+pub fn installer_navigation_target(screen:u8,x:i32,y:i32)->Option<usize> {
+    installer_navigation_target_in(&InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES).ok()?,screen,x,y)
+}
+
+// ------------------------=
+// FUNC: installer_navigation_target_in
+// DESC: Shares saved and unsaved navigation hit testing, rejecting hidden or transparent controls.
+// ------------------=
+pub fn installer_navigation_target_in(template:&InstallerTemplate<'_>,screen:u8,x:i32,y:i32)->Option<usize> {
+    for (role,focus) in [(InstallerTemplateRole::BackButton,0),(InstallerTemplateRole::PrimaryButton,1)] {
+        let Some(element)=template.element(screen,role) else{continue;};
+        if !element.hidden && element.opacity>0 && scale_template_rect(element.frame,1000,1000).contains_point(x,y) {
+            return Some(focus);
+        }
+    }
+    None
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallerDateTimeTarget {
+    Field { focus:usize, part:Option<usize>, adjustment:i8 },
+    Map { longitude:i16 },
+}
+
+// ------------------------=
+// FUNC: installer_date_time_target
+// DESC: Resolves live date/time clicks from the same authored rectangles used to paint them.
+// ------------------=
+pub fn installer_date_time_target(x:i32,y:i32,width:usize,height:usize)->Option<InstallerDateTimeTarget> {
+    installer_date_time_target_at_extent(&InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES).ok()?,x,y,width,height)
+}
+
+// ------------------------=
+// FUNC: installer_date_time_target_in
+// DESC: Maps an authored field's adjustment zones, date components and map longitude without fixed screen coordinates.
+// ------------------=
+pub fn installer_date_time_target_in(template:&InstallerTemplate<'_>,x:i32,y:i32)->Option<InstallerDateTimeTarget> {
+    installer_date_time_target_at_extent(template,x,y,1000,1000)
+}
+
+// ------------------------=
+// FUNC: installer_date_time_target_at_extent
+// DESC: Preserves map longitude after authored cropping and aspect-fill at the actual framebuffer size.
+// ------------------=
+fn installer_date_time_target_at_extent(template:&InstallerTemplate<'_>,x:i32,y:i32,width:usize,height:usize)->Option<InstallerDateTimeTarget> {
+    for (role,focus) in [(InstallerTemplateRole::DateField,2),(InstallerTemplateRole::TimeField,3),
+        (InstallerTemplateRole::TimeZoneSelector,4),(InstallerTemplateRole::TimeZoneMap,0)] {
+        let Some(element)=template.element(5,role) else {continue;};
+        let r=element.frame;
+        if element.hidden || element.opacity==0 || r.width==0 || r.height==0 || x<i32::from(r.x)
+            || y<i32::from(r.y) || x>=i32::from(r.x)+i32::from(r.width) || y>=i32::from(r.y)+i32::from(r.height) {continue;}
+        let local=(x-i32::from(r.x))*1000/i32::from(r.width);
+        if focus==0 {
+            let longitude=template.asset(element.image_asset).and_then(super::bitmap::RuntimeBitmap::parse)
+                .and_then(|bitmap|bitmap.placement(usize::from(r.width)*width/1000,usize::from(r.height)*height/1000,element.crop,true)
+                    .map(|p|((p.source_left+p.source_width*local as usize/1000)*360/bitmap.width())as i32-180))
+                .unwrap_or(local*360/1000-180);
+            return Some(InstallerDateTimeTarget::Map{longitude:longitude as i16});
+        }
+        let adjustment=if local<120 {-1}else if local>=880 {1}else{0};
+        let part=if adjustment!=0 || focus==4 {None}else if focus==2 {
+            Some(if local<440 {0}else if local<660 {1}else{2})
+        }else{Some(if local<500 {3}else{4})};
+        return Some(InstallerDateTimeTarget::Field{focus,part,adjustment});
+    }
+    None
+}
+
+// ------------------------=
 // FUNC: configuration_network_row_rect
 // DESC: Derives each network choice from the saved content panel for painting and hit testing.
 // ------------------=
@@ -17,10 +89,20 @@ pub fn configuration_network_row_rect(
     width: usize,
     height: usize,
 ) -> Option<InstallerRect> {
+    let template = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).ok()?;
+    configuration_network_row_rect_in(&template, index, width, height)
+}
+
+// ------------------------=
+// FUNC: configuration_network_row_rect_in
+// DESC: Uses the same native network geometry for saved runtime templates and unsaved Studio drafts.
+// ------------------=
+pub fn configuration_network_row_rect_in(
+    template: &InstallerTemplate<'_>, index: usize, width: usize, height: usize,
+) -> Option<InstallerRect> {
     if index >= 3 {
         return None;
     }
-    let template = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).ok()?;
     let content = template.element(7, InstallerTemplateRole::Content)?;
     if content.hidden {
         return None;

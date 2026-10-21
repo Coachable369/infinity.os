@@ -37,7 +37,13 @@ enum TemplateValidator {
         }
         let collection = explicitCollection
             ?? ScreenCollection.runtimeCollection(screenCount: document.screens.count)
+        if collection == .systemSettings && document.screens.count != ScreenCollection.systemSettings.requiredScreenCount {
+            throw TemplateValidationIssue.invalidDocument("System Settings requires its eleven native sections")
+        }
         for screen in document.screens {
+            guard screen.elements.count <= Int(UInt16.max) else {
+                throw TemplateValidationIssue.invalidScreen(screen.id, "Element count exceeds the native format limit")
+            }
             guard !screen.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   screen.title.utf8.count <= 63
             else {
@@ -133,6 +139,11 @@ enum TemplateValidator {
                 guard element.frame == element.frame.clamped() else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Element lies outside the artboard")
                 }
+                guard (0...100).contains(element.opacity), (6...256).contains(element.fontSize),
+                      (0...255).contains(element.cornerRadius),
+                      (Int(Int16.min)...Int(Int16.max)).contains(element.zIndex) else {
+                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Element appearance exceeds native limits")
+                }
                 guard element.name.utf8.count <= 63,
                       element.text.utf8.count <= 512,
                       element.imageAsset.utf8.count <= 127
@@ -148,8 +159,14 @@ enum TemplateValidator {
 }
 
 enum RuntimeTemplateCodec {
+    struct Package {
+        let document: InstallerStudioDocument
+        let assets: [String: Data]
+    }
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 6
+    static let version: UInt16 = 7
+    static let maximumAssetCount = 128
+    static let maximumTemplateBytes = 512 * 1024 * 1024
 
     // ------------------------=
     // FUNC: encode
@@ -158,9 +175,18 @@ enum RuntimeTemplateCodec {
     static func encode(
         _ document: InstallerStudioDocument,
         assetRoot: URL? = nil,
-        collection: ScreenCollection? = nil
+        collection: ScreenCollection? = nil,
+        theme: UIKitDocument? = nil
     ) throws -> Data {
         try TemplateValidator.validate(document, for: collection)
+        let palette: UIKitDocument
+        if let theme { palette = theme }
+        else if let root = assetRoot,
+                FileManager.default.fileExists(atPath: root.appending(path: "assets/ui-design-kit/uikit.infinityui").path) {
+            palette = try JSONDecoder().decode(UIKitDocument.self,
+                from: Data(contentsOf: root.appending(path: "assets/ui-design-kit/uikit.infinityui")))
+        } else { palette = UIKitDocument() }
+        try palette.validate()
         var output = Data()
         output.append(magic)
         output.appendLittleEndian(version)
@@ -169,7 +195,8 @@ enum RuntimeTemplateCodec {
             output.append(UInt8(screen.id))
             output.appendLengthPrefixed(screen.title, length: .u8, limit: 63)
             output.appendLittleEndian(UInt16(screen.elements.count))
-            for element in screen.elements {
+            for authored in screen.elements {
+                let element = authored.resolvingThemeColors(palette.colors)
                 output.append(contentsOf: element.id.bytes)
                 output.appendLengthPrefixed(element.codeIdentifier, length: .u8, limit: 127)
                 output.append(element.kind.rawValue)
@@ -178,6 +205,8 @@ enum RuntimeTemplateCodec {
                 var flags: UInt8 = 0
                 if element.locked { flags |= 1 }
                 if element.hidden { flags |= 2 }
+                flags |= UInt8(element.surfaceMaterial.rawValue) << 2
+                flags |= UInt8(element.surfaceCorners.rawValue) << 4
                 output.append(flags)
                 output.appendLittleEndian(Int16(element.zIndex.clamped(to: -32_768...32_767)))
                 output.appendLittleEndian(UInt16(element.frame.x))
@@ -198,6 +227,9 @@ enum RuntimeTemplateCodec {
                     UInt8(element.crop.left), UInt8(element.crop.top),
                     UInt8(element.crop.right), UInt8(element.crop.bottom),
                 ])
+                guard output.count <= maximumTemplateBytes - 2 else {
+                    throw TemplateValidationIssue.invalidDocument("Runtime template exceeds the native byte budget")
+                }
             }
         }
         let assetNames = Array(Set(document.screens.flatMap { screen in
@@ -205,10 +237,19 @@ enum RuntimeTemplateCodec {
                 element.kind == .image && !element.imageAsset.isEmpty ? element.imageAsset : nil
             }
         })).sorted()
+        guard assetNames.filter({ !isBuiltInImage($0) }).count <= maximumAssetCount else {
+            throw TemplateValidationIssue.invalidDocument("Template exceeds the native limit of 128 embedded images")
+        }
         var packagedAssets: [(String, Data)] = []
+        var packagedSize = output.count + 2
         if let assetRoot {
             for name in assetNames where !isBuiltInImage(name) {
                 if let bitmap = try runtimeBitmap(named: name, root: assetRoot) {
+                    let recordSize = name.utf8.count + 5 + bitmap.count
+                    guard recordSize <= maximumTemplateBytes - packagedSize else {
+                        throw TemplateValidationIssue.invalidDocument("Runtime template exceeds the native byte budget")
+                    }
+                    packagedSize += recordSize
                     packagedAssets.append((name, bitmap))
                 }
             }
@@ -224,24 +265,21 @@ enum RuntimeTemplateCodec {
 
     // ------------------------=
     // FUNC: runtimeBitmap
-    // DESC: Resolves an editor image and converts it to the kernel's deterministic 24-bit BMP payload.
+    // DESC: Resolves only repository-owned artwork and shares the preview's exact native bitmap and alpha contract.
     // ------------------=
     private static func runtimeBitmap(named name: String, root: URL) throws -> Data? {
-        let candidates = [root.appending(path: name), root.appending(path: "assets/boot/\(name)")]
+        guard !name.hasPrefix("/"), !name.split(separator: "/").contains("..") else {
+            throw TemplateValidationIssue.invalidDocument("Image assets must remain inside the project")
+        }
+        let paths = name.hasPrefix("assets/") ? [name] : ["assets/boot/\(name)"]
+        let candidates = try paths.map { try UIKitAssetCatalog.resolvedURL($0, root: root) }
         guard let source = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
             if isBuiltInImage(name) {
                 return nil
             }
             throw TemplateValidationIssue.invalidDocument("Image asset cannot be packaged: \(name)")
         }
-        guard let image = NSImage(contentsOf: source),
-              let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let data = bitmap.representation(using: .bmp, properties: [:])
-        else {
-            throw TemplateValidationIssue.invalidDocument("Image asset cannot be packaged: \(name)")
-        }
-        return data
+        return try NativeBitmapEncoder.read(source)
     }
 
     // ------------------------=
@@ -249,13 +287,14 @@ enum RuntimeTemplateCodec {
     // DESC: Identifies artwork already compiled once into both installer and installed kernels.
     // ------------------=
     private static func isBuiltInImage(_ name: String) -> Bool {
-        name.hasSuffix("infinity-installer-masthead-v2.png")
-            || name.hasSuffix("infinity-installer-masthead-v1.png")
-            || name.hasSuffix("infinity-onboarding-wallpaper-v1.png")
-            || name.hasSuffix("eclipse-access-wallpaper-v1.png")
-            || name.hasSuffix("infinity-eclipse-header-v1.bmp")
-            || name.hasSuffix("infinity-time-zone-map-v1.png")
-            || name.hasSuffix("infinity-installer-progress-hero-v1.png")
+        let boot = ["infinity-installer-masthead-v2.png", "infinity-installer-masthead-v1.png",
+                    "infinity-eclipse-header-v1.bmp", "infinity-time-zone-map-v1.png",
+                    "infinity-installer-progress-hero-v1.png"]
+        return boot.contains(name) || boot.contains(where: { name == "assets/boot/" + $0 })
+            || name == "infinity-onboarding-wallpaper-v1.png"
+            || name == "assets/desktop/infinity-onboarding-wallpaper-v1.png"
+            || name == "eclipse-access-wallpaper-v1.png"
+            || name == "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png"
     }
 
     // ------------------------=
@@ -266,14 +305,32 @@ enum RuntimeTemplateCodec {
         _ data: Data,
         collection: ScreenCollection? = nil
     ) throws -> InstallerStudioDocument {
+        // A layout-only round trip deliberately has no assetRoot at encoding.
+        // Importing a portable runtime file uses strict decodePackage instead.
+        try decodePackage(data, collection: collection, requireEmbeddedAssets: false).document
+    }
+
+    // ------------------------=
+    // FUNC: decodePackage
+    // DESC: Retains validated embedded image payloads so importing an exported runtime template never loses its artwork.
+    // ------------------=
+    static func decodePackage(_ data: Data, collection: ScreenCollection? = nil,
+                              requireEmbeddedAssets: Bool = true) throws -> Package {
+        guard data.count <= maximumTemplateBytes else {
+            throw TemplateValidationIssue.invalidDocument("Runtime template exceeds the import byte limit")
+        }
         var reader = DataReader(data: data)
         guard try reader.readData(count: 4) == magic else {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
-        guard try reader.readUInt16() == version else {
+        let sourceVersion = try reader.readUInt16()
+        guard sourceVersion == version || sourceVersion == 6 else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
+        guard (InstallerStudioDocument.minimumScreenCount...InstallerStudioDocument.maximumScreenCount).contains(screenCount) else {
+            throw TemplateValidationIssue.invalidDocument("Runtime screen count exceeds native limits")
+        }
         var screens: [InstallerScreenTemplate] = []
         for _ in 0..<screenCount {
             let screenID = Int(try reader.readUInt8())
@@ -290,6 +347,12 @@ enum RuntimeTemplateCodec {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Unknown element kind or role")
                 }
                 let flags = try reader.readUInt8()
+                guard flags & 0xc0 == 0,
+                      let surfaceMaterial = UIKitSurfaceMaterial(rawValue: Int((flags >> 2) & 3)),
+                      let surfaceCorners = UIKitCornerStyle(rawValue: Int((flags >> 4) & 3)),
+                      sourceVersion != 6 || flags & 0xfc == 0 else {
+                    throw TemplateValidationIssue.invalidScreen(screenID, "Invalid surface style flags")
+                }
                 let zIndex = Int(try reader.readInt16())
                 let frame = CanvasRect(
                     x: Int(try reader.readUInt16()),
@@ -327,7 +390,9 @@ enum RuntimeTemplateCodec {
                     cornerRadius: cornerRadius,
                     zIndex: zIndex,
                     locked: flags & 1 != 0,
-                    hidden: flags & 2 != 0
+                    hidden: flags & 2 != 0,
+                    surfaceMaterial: surfaceMaterial,
+                    surfaceCorners: surfaceCorners
                 ))
             }
             screens.append(InstallerScreenTemplate(
@@ -337,10 +402,23 @@ enum RuntimeTemplateCodec {
             ))
         }
         let assetCount = Int(try reader.readUInt16())
+        guard assetCount <= maximumAssetCount else {
+            throw TemplateValidationIssue.invalidDocument("Template exceeds the native limit of 128 embedded images")
+        }
+        var assets: [String: Data] = [:]
         for _ in 0..<assetCount {
-            _ = try reader.readString(length: .u8, limit: 127)
+            let name = try reader.readString(length: .u8, limit: 127)
             let byteCount = Int(try reader.readUInt32())
-            _ = try reader.readData(count: byteCount)
+            guard !name.isEmpty, !name.hasPrefix("/"), !name.contains("\\"), !name.contains("\0"),
+                  !name.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0.isEmpty || $0 == ".." || $0 == "." }),
+                  assets[name] == nil, byteCount <= 128 * 1024 * 1024 else {
+                throw TemplateValidationIssue.invalidDocument("Invalid or duplicate runtime image payload")
+            }
+            let bytes = try reader.readData(count: byteCount)
+            guard NativeBitmapEncoder.supportedBitmap(bytes) else {
+                throw TemplateValidationIssue.invalidDocument("Runtime image is not a supported native bitmap")
+            }
+            assets[name] = bytes
         }
         guard reader.isAtEnd else {
             throw TemplateValidationIssue.invalidDocument("Trailing runtime-template bytes")
@@ -352,7 +430,17 @@ enum RuntimeTemplateCodec {
             screens: screens
         )
         try TemplateValidator.validate(document, for: collection)
-        return document
+        if requireEmbeddedAssets {
+            let required = Set(screens.flatMap(\.elements).compactMap { element -> String? in
+                guard element.kind == .image, !element.imageAsset.isEmpty,
+                      !isBuiltInImage(element.imageAsset) else { return nil }
+                return element.imageAsset
+            })
+            guard required == Set(assets.keys) else {
+                throw TemplateValidationIssue.invalidDocument("Runtime artwork must contain exactly the referenced custom images")
+            }
+        }
+        return Package(document: document, assets: assets)
     }
 }
 

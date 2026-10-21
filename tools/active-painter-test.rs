@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+#[cfg(studio_native_preview)]
+#[path="studio-native-render.rs"] mod studio_native_render;
 #[path = "../kernel/runtime/font_faces.rs"] pub mod font_faces;
 #[path = "../kernel/runtime/font_preferences.rs"] pub mod font_preferences;
 #[path = "../kernel/runtime/font.rs"] pub mod font;
@@ -27,12 +29,39 @@ mod personalization_view;
 #[path="../kernel/core/bootstrap/assistant_view.rs"] mod assistant_view;
 #[path="../kernel/core/bootstrap/editor_view.rs"] mod editor_view;
 #[path="configuration-wizard-render.rs"] mod configuration_wizard_render;
+#[path="../kernel/core/bootstrap/desktop_controls.rs"] mod desktop_controls;
+#[path="../kernel/core/bootstrap/settings_view.rs"] mod settings_view;
+#[path="../kernel/core/bootstrap/settings_dashboard_view.rs"] mod settings_dashboard_view;
+#[path="settings-native-render-tests.rs"] mod settings_native_render_tests;
+// The exact same packaged semantic atlases used by the OS, not a host icon substitute.
+mod desktop {
+    pub const NODE_TRUST_TOPOLOGY_BMP:&[u8]=include_bytes!("../assets/mesh/infinity-node-trust-topology-v1.bmp");
+    pub const CRYSTAL_BLUE_GLASS_BASE_BMP:&[u8]=include_bytes!("../assets/icons/runtime/crystal-blue-glass-base.bmp");
+    pub const CRYSTAL_BLUE_GLASS_ACTIONS_BMP:&[u8]=include_bytes!("../assets/icons/runtime/crystal-blue-glass-actions.bmp");
+    pub const LUMINOUS_OBSIDIAN_BASE_BMP:&[u8]=include_bytes!("../assets/icons/runtime/luminous-obsidian-base.bmp");
+    pub const LUMINOUS_OBSIDIAN_ACTIONS_BMP:&[u8]=include_bytes!("../assets/icons/runtime/luminous-obsidian-actions.bmp");
+    pub const FROSTED_QUARTZ_BASE_BMP:&[u8]=include_bytes!("../assets/icons/runtime/frosted-quartz-base.bmp");
+    pub const FROSTED_QUARTZ_ACTIONS_BMP:&[u8]=include_bytes!("../assets/icons/runtime/frosted-quartz-actions.bmp");
+    pub const AURORA_HARMONY_BASE_BMP:&[u8]=include_bytes!("../assets/icons/runtime/aurora-harmony-base.bmp");
+    pub const AURORA_HARMONY_ACTIONS_BMP:&[u8]=include_bytes!("../assets/icons/runtime/aurora-harmony-actions.bmp");
+}
 #[cfg(baseline)]
 #[path = "../build/primitives-before.rs"]
 mod primitives;
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
 use std::time::Instant;
+
+// ------------------------=
+// FUNC: main
+// DESC: Runs the isolated native Studio framebuffer renderer without executing behavioral test workloads.
+// ------------------=
+#[cfg(studio_native_preview)]
+fn main() {
+    if let Err(error)=studio_native_render::run() {
+        eprintln!("{error}");std::process::exit(1);
+    }
+}
 #[cfg(test)]
 #[path = "minimized-shelf-render-tests.rs"]
 mod minimized_shelf_fixture;
@@ -109,6 +138,11 @@ mod retained_windows;
 #[path = "../kernel/core/bootstrap/window_chrome.rs"]
 mod window_chrome;
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: skin_visual_mode
+    // DESC: Supplies the explicit default-dark fixture state to the unchanged native substrate painter.
+    // ------------------=
+    fn skin_visual_mode(&self)->u8 {0}
     // ------------------------=
     // FUNC: active_primary_rgb
     // DESC: Supplies the deterministic default primary tint for production chrome pixel tests.
@@ -330,7 +364,9 @@ fn spatial_stage_blurs_to_screen_edges() {
 // FUNC: main
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
+#[cfg(not(studio_native_preview))]
 fn main() {
+    if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}
     if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
     if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}
@@ -351,6 +387,7 @@ fn main() {
         window_controls_test();window_control_states_proof();return;
     }
     configuration_wizard_render::verify();
+    settings_native_render_tests::verify();
     window_substrate_pixels();
     universal_window_frame_pixels();
     precision_surface_benchmark();

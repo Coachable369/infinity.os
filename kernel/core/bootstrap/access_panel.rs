@@ -26,8 +26,11 @@ impl DisplayDevice {
             }
             let previous=self.render_clip;
             self.intersect_render_clip(left,top,width,height);
-            if configuration { self.paint_first_boot_background(); }
-            else { self.paint_authentication_background_rect(left,top,width,height); }
+            #[cfg(studio_native_preview)]
+            self.paint_bitmap_cover_rect(crate::studio_native_render::background(),0,0,self.width,self.height);
+            #[cfg(not(studio_native_preview))]
+            {if configuration { self.paint_first_boot_background(); }
+            else { self.paint_authentication_background_rect(left,top,width,height); }}
             let (x,y,w,h)=motion.rectangle(rect);
             for row in 0..h {
                 for col in 0..w {

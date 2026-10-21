@@ -1,8 +1,120 @@
-# InfinityOS Installer Studio
+# Infinity Studio
 
-A native macOS visual editor for all eleven InfinityOS installation screens and all eight post-install OS configuration screens. Its two expandable screen collections share the zoomable snapping artboard, top-navigation Marquee Select with PowerPoint-style enclosure and uniform group dragging, layer ordering, eight-handle resizing while the selection tool is active, image import, editable copy, undo/redo, validation, and atomic JSON/runtime-template saving. Disabling Marquee clears the selection and all canvas handles. Navigation buttons are visible but immutable.
+The collapsible left navigation contains **UIKit**, **Configuration Wizard**,
+**Installation Wizard**, and **System Settings**. Switching sections retains
+pending edits. **Save Section** (Command-S) saves the active section; **Save All
+Sections** (Shift-Command-S) validates and saves UIKit plus every screen collection.
+The status bar tracks unsaved changes across sections. Closing or quitting offers
+Save All, Discard Changes or Cancel; a failed save keeps the draft open. Studio
+also stays open while an ISO update is running so its publication cannot be
+silently abandoned.
+Unreadable or invalid source files are protected from being overwritten by a
+factory fallback. Import a validated replacement for the affected screen collection,
+or repair the source and reopen Studio; errors identify the protected file.
 
-Run `./run.sh`. Save writes:
+UIKit exposes the shared native component states, glyphs, icons, wallpapers and
+other repository raster artwork in a searchable visual library. Select an item
+to inspect its actual pixels and runtime identity, then upload a replacement.
+Images retain alpha and are normalized to the native element's dimensions.
+Each native atlas cell is separately replaceable. Colors & Theme edits all
+thirteen semantic default-skin colors with a live Precision surface preview,
+color pickers and exact RGB/ARGB entry. Reset and undo/redo are scoped to UIKit.
+
+**Surface Styles** configures window borders/backgrounds, panels and dialogs,
+primary buttons, secondary buttons and input fields independently. Choose the
+approved artwork, glass or matte material; keep the approved corners or choose
+square/rounded geometry and a radius. Optional fill and border/rim colors belong
+to that component family, including alpha. Reset restores the approved artwork.
+Outer application windows retain the approved rectangular OS-owned frame;
+rounded geometry is available for dialogs, panels, buttons and fields.
+The live preview includes normal, focused and pressed states. In a wizard or
+Settings screen, select a layer and use **Appearance → Surface / Corners** for
+an individual override. Explicit layer colors take precedence over global tints.
+Unlock protected layers before editing; required actions cannot be deleted.
+
+**Themes** saves named combinations of colors, materials, geometry and artwork.
+Eclipse Precision, Frosted Glass and Matte are protected presets. Save the current
+draft as a new theme, duplicate a saved theme, update or rename a custom theme,
+and import/export a self-contained `.infinitytheme` JSON bundle. Uploaded PNGs
+are embedded with SHA-256 identities and validated native dimensions. Applying a
+theme is one undoable draft operation; it never implicitly publishes an ISO or
+overwrites screen layouts. Removed custom themes move to
+`assets/ui-design-kit/themes/.trash` for recovery. All project exports remain
+inside the repository.
+
+Screen layers can select **Fill source** and **Rim source** from the semantic
+palette. A theme binding resolves to exact native RGBA bytes at compilation and
+in the native preview. Selecting **Custom color** restores the layer's retained
+custom value; no color-matching heuristic changes existing designs. Save All
+Sections when changing both the theme and bound screen layers.
+
+**Export Section Templates** writes a new folder containing the current editable
+JSON and native IUIT output without saving or changing the active draft. Custom
+images are embedded in the native export. Importing IUIT restores those pixels
+under content-addressed project asset names before changing the canvas. Editable
+JSON retains semantic theme bindings; IUIT contains their resolved runtime colors.
+Save All prepares and verifies every source/runtime output before publication;
+an I/O failure rolls back already-published files. It does not claim power-loss
+atomicity across multiple filesystem entries. Recovery paths are reported if the
+filesystem itself prevents rollback.
+
+## Native preview contract
+
+Installer and configuration canvases are framebuffers produced by the OS's
+production painters, fonts, image decoders and surface code. Unsaved templates,
+palettes, artwork and styles are passed to the same native renderer used for
+verification. Canvas controls offer multiple viewport sizes and normal, focused,
+pressed and transition samples. Pending, failed and timed-out frames are labeled;
+an older request cannot overwrite a newer edit. Dynamic service values in Studio
+are explicitly simulated; Studio never erases a disk, changes a clock or contacts
+OS services to render a preview.
+
+This is not yet a universal application-layout editor. Several specialized
+Settings panes and imperative application layouts still have native-owned
+geometry. Shared surface recipes and artwork apply to those consumers, but that
+does not make every internal control canvas-editable. Unsupported scenes must be
+labeled as template-layer previews, not represented as full runtime parity.
+
+Current editing coverage:
+
+| Surface | Native pixel preview | Authoring boundary |
+| --- | --- | --- |
+| Installer and configuration templates | Production renderer, including live-value simulations | Authored layer geometry, copy, images, palette bindings and surface styles; the erase confirmation's internal layout remains OS-owned |
+| General, account, AI, privacy, devices and information Settings | Production renderer with simulated values and expanded controls | Template layers and supported row fields; semantic control order remains OS-owned |
+| Network and Nodes Settings | Production dashboard renderer and available subpages | Copy and appearance; responsive dashboard control geometry remains OS-owned |
+| Themes and Pool Settings | Template-layer preview only | No claim of complete native scene parity |
+| Other applications and desktop widgets | Shared UIKit component preview, not a complete application canvas | Shared component recipes/artwork, not application-internal layout authoring |
+
+The remaining universal-editor work is to move the OS-owned internal layouts into
+typed authorable scene contracts and expose those same contracts to Studio. A
+theme's shared styling coverage must not be mistaken for complete layout-editing
+coverage.
+
+Customizations are saved in `assets/ui-design-kit/uikit.infinityui`, with imported
+assets under `assets/ui-design-kit/overrides/`. The build validates and applies
+them before packing the live and installed kernels. Use **Save & Update ISO**
+(disc button or File menu) to save all sections and update a selected existing
+ARM64 or x86-64 ISO. This reuses model, browser and toolchain payloads and rebuilds
+only the UI-dependent kernels; it does not run the full OS build. A staged image
+must pass payload and checksum verification before replacing the selected ISO.
+This does not change a running or already installed VM. A changed original asset is reported as a
+conflict instead of silently overwriting new work. The shared surface previews
+sample the same Precision artwork and nine-slice contract as the OS.
+
+The equivalent command after saving is:
+
+```sh
+./build-kit update-iso --target aarch64 --iso builds/InfinityOS-aarch64.iso
+```
+
+The update runs asynchronously in Studio with progress and expandable output.
+If the required cached native components are unavailable or do not match the
+chosen image, it stops with an explanation rather than claiming a successful
+update. All temporary files and update manifests remain in the project.
+
+A native macOS visual editor for all eleven InfinityOS installation screens, all eight post-install configuration screens, and System Settings. The screen collections share the zoomable snapping artboard, top-navigation Marquee Select with enclosure and uniform group dragging, layer ordering, eight-handle resizing, image import, editable copy, undo/redo, validation, and JSON/runtime-template saving. Disabling Marquee clears selection and canvas handles. Unlock a layer to edit its appearance and geometry; required runtime roles remain protected from removal.
+
+Build with `./build-kit studio`, then open `builds/InfinityOS Installer Studio.app`. Saving a wizard section writes:
 
 - `assets/boot/installer-screens.infinityui` — human-readable source template.
 - `assets/boot/installer-screens.iuit` — validated binary consumed by the installer.

@@ -2,34 +2,57 @@ import SwiftUI
 
 struct StudioRootView: View {
     @ObservedObject var store: TemplateStore
+    @ObservedObject private var kit: UIKitStore
+
+    // ------------------------=
+    // FUNC: init
+    // DESC: Observes each workspace independently while retaining their edits across navigation.
+    // ------------------=
+    init(store: TemplateStore) {
+        self.store = store
+        kit = store.uiKit
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            StudioToolbar(store: store)
+            StudioToolbar(store: store, kit: kit)
             Divider()
+            if store.showISOUpdate {
+                ISOUpdatePanel(store: store, updater: store.isoUpdater)
+                Divider()
+            }
             HSplitView {
-                ScreenSidebar(store: store)
+                ScreenSidebar(store: store, kit: kit)
                     .frame(minWidth: 220, idealWidth: 248, maxWidth: 290)
-                InstallerCanvas(store: store)
-                    .frame(minWidth: 560)
-                ElementInspector(store: store)
-                    .frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
+                if store.editingUIKit {
+                    UIKitWorkspace(store: kit).frame(minWidth: 560)
+                    UIKitInspector(store: kit).frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
+                } else {
+                    InstallerCanvas(store: store).frame(minWidth: 560)
+                    ElementInspector(store: store).frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
+                }
             }
             Divider()
             StudioStatusBar(store: store)
         }
         .background(InfinityUIKit.Palette.nativeCanvas)
+        .background(StudioWindowCloseGuard(store: store).frame(width: 0, height: 0))
         .tint(InfinityUIKit.Palette.nativeAccent)
         .alert("Template Validation", isPresented: .constant(!store.validationIssues.isEmpty)) {
             Button("OK") { store.validationIssues = [] }
         } message: {
             Text(store.validationIssues.joined(separator: "\n"))
         }
+        .alert("UIKit", isPresented: Binding(get: { !kit.validationIssues.isEmpty },
+            set: { if !$0 { kit.validationIssues = [] } })) {
+            Button("OK") { kit.validationIssues = [] }
+        } message: { Text(kit.validationIssues.joined(separator: "\n")) }
     }
 }
 
 private struct StudioToolbar: View {
     @ObservedObject var store: TemplateStore
+    @ObservedObject var kit: UIKitStore
 
     var body: some View {
         HStack(spacing: 10) {
@@ -44,10 +67,12 @@ private struct StudioToolbar: View {
                     .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text("Installer Studio").font(.headline)
-                Text("InfinityOS UI Templates").font(.caption).foregroundStyle(.secondary)
+                Text("Infinity Studio").font(.headline)
+                Text(store.editingUIKit ? "Shared OS UIKit" : "\(store.selectedCollection.title)")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Divider().frame(height: 28).padding(.horizontal, 4)
+            if !store.editingUIKit {
             Button(action: store.toggleMarqueeSelection) {
                 Label(
                     store.marqueeSelectionEnabled ? "Marquee On" : "Marquee Select",
@@ -62,11 +87,22 @@ private struct StudioToolbar: View {
             .accessibilityLabel("Marquee Selection")
             .accessibilityValue(store.marqueeSelectionEnabled ? "On" : "Off")
             .help("Select enclosed objects and move them as a group (Shift-Command-M)")
+            }
             Button(action: store.undo) { Label("Undo", systemImage: "arrow.uturn.backward") }
                 .disabled(!store.canUndo)
             Button(action: store.redo) { Label("Redo", systemImage: "arrow.uturn.forward") }
                 .disabled(!store.canRedo)
             Divider().frame(height: 28)
+            if store.editingUIKit {
+                Button(action: kit.chooseReplacementImage) {
+                    Label("Upload Artwork…", systemImage: "photo.badge.plus")
+                }
+                .disabled(kit.selectedAsset == nil)
+                Button(action: kit.resetSelectedAsset) {
+                    Label("Reset Artwork", systemImage: "arrow.counterclockwise")
+                }
+                .disabled(kit.selectedAsset == nil)
+            } else {
             Menu {
                 Button("Panel") { store.addElement(kind: .panel) }
                 Button("Text") { store.addElement(kind: .text) }
@@ -98,14 +134,26 @@ private struct StudioToolbar: View {
                 Text("50").tag(50)
             }
             .frame(width: 86)
+            }
             Spacer()
             Button(action: { _ = store.validate() }) {
                 Label("Validate", systemImage: "checkmark.shield")
             }
             Button(action: store.save) {
-                Label("Save", systemImage: "square.and.arrow.down")
+                Label("Save Section", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
+            Menu {
+                Button("Save All Sections") { store.saveAll() }
+                Divider()
+                Button("Save & Update ISO…") { store.showISOUpdate = true }
+            } label: { Image(systemName: "chevron.down") }
+            .help("Save all sections or update an existing ISO")
+            Button { store.showISOUpdate.toggle() } label: {
+                Image(systemName: "opticaldisc")
+            }
+            .help("Save & Update ISO")
+            .accessibilityLabel("Save & Update ISO")
         }
         .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
         .controlSize(.regular)
@@ -126,25 +174,41 @@ private struct StudioToolbar: View {
 
 private struct ScreenSidebar: View {
     @ObservedObject var store: TemplateStore
-    @State private var installationExpanded = true
-    @State private var configurationExpanded = true
-    @State private var settingsExpanded = true
+    @ObservedObject var kit: UIKitStore
+    @AppStorage("studio.sidebar.uikit") private var uikitExpanded = false
+    @AppStorage("studio.sidebar.installation") private var installationExpanded = true
+    @AppStorage("studio.sidebar.configuration") private var configurationExpanded = true
+    @AppStorage("studio.sidebar.settings") private var settingsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             List {
-                DisclosureGroup(isExpanded: $installationExpanded) {
-                    screenRows(for: .installation, screens: store.document.screens)
+                DisclosureGroup(isExpanded: $uikitExpanded) {
+                    kitCategory("Themes", icon: "paintbrush.pointed")
+                    kitCategory("Colors & Theme", icon: "paintpalette")
+                    kitCategory("Surface Styles", icon: "square.on.square")
+                    ForEach(kit.categories, id: \.self) { category in
+                        kitCategory(category, icon: "square.grid.2x2")
+                    }
                 } label: {
-                    collectionHeader(.installation)
+                    Label("UIKIT", systemImage: "square.stack.3d.up")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(store.editingUIKit ? InfinityUIKit.Palette.nativeAccent : .secondary)
+                        .contentShape(Rectangle())
+                        .onTapGesture { store.selectUIKit() }
                 }
-                .id(ScreenCollection.installation)
                 DisclosureGroup(isExpanded: $configurationExpanded) {
                     screenRows(for: .configuration, screens: store.configurationDocument.screens)
                 } label: {
                     collectionHeader(.configuration)
                 }
                 .id(ScreenCollection.configuration)
+                DisclosureGroup(isExpanded: $installationExpanded) {
+                    screenRows(for: .installation, screens: store.document.screens)
+                } label: {
+                    collectionHeader(.installation)
+                }
+                .id(ScreenCollection.installation)
                 DisclosureGroup(isExpanded: $settingsExpanded) {
                     screenRows(for: .systemSettings, screens: store.settingsDocument.screens)
                 } label: {
@@ -153,8 +217,9 @@ private struct ScreenSidebar: View {
                 .id(ScreenCollection.systemSettings)
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             Divider()
-            if store.selectedScreen != nil {
+            if !store.editingUIKit && store.selectedScreen != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SCREEN NAME")
                         .font(.caption2.weight(.semibold))
@@ -195,14 +260,33 @@ private struct ScreenSidebar: View {
                 .padding(InfinityUIKit.Metrics.gutter)
             }
             Divider()
-            Button(role: .destructive, action: store.resetScreen) {
+            if !store.editingUIKit { Button(role: .destructive, action: store.resetScreen) {
                 Label("Reset Current Screen", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(InfinityStudioButtonStyle(emphasis: .quiet))
             .foregroundStyle(.red)
             .padding(InfinityUIKit.Metrics.gutter)
+            }
         }
         .background(InfinityUIKit.Palette.nativePanel)
+    }
+
+    // ------------------------=
+    // FUNC: kitCategory
+    // DESC: Selects a browsable UIKit family without changing either wizard document.
+    // ------------------=
+    private func kitCategory(_ category: String, icon: String) -> some View {
+        let selected = store.editingUIKit && kit.selectedCategory == category
+        return Button { store.selectUIKit(category: category) } label: {
+            Label(category, systemImage: icon)
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(selected ? InfinityUIKit.Palette.nativeAccent.opacity(0.13) : Color.clear)
+        .accessibilityIdentifier("studio.uikit.category.\(category)")
     }
 
     // ------------------------=
@@ -214,10 +298,11 @@ private struct ScreenSidebar: View {
             Image(systemName: collection == .installation
                 ? "shippingbox"
                 : collection == .configuration ? "person.crop.rectangle.stack" : "gearshape.2")
-                .foregroundStyle(store.selectedCollection == collection
+                .foregroundStyle(!store.editingUIKit && store.selectedCollection == collection
                     ? InfinityUIKit.Palette.nativeAccent
                     : InfinityUIKit.Palette.nativeTextSecondary)
-            Text(collection.title.uppercased())
+            Text(collection == .installation ? "INSTALLATION WIZARD" :
+                collection == .configuration ? "CONFIGURATION WIZARD" : "SYSTEM SETTINGS")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(store.selectedCollection == collection ? .primary : .secondary)
             Spacer()
@@ -242,7 +327,7 @@ private struct ScreenSidebar: View {
         screens: [InstallerScreenTemplate]
     ) -> some View {
         ForEach(screens) { screen in
-            let selected = collection == store.selectedCollection && screen.id == store.selectedScreenID
+            let selected = !store.editingUIKit && collection == store.selectedCollection && screen.id == store.selectedScreenID
             Button(action: { store.selectScreenCollection(collection, screen: screen.id) }) {
                 HStack(spacing: 10) {
                     Text(String(format: "%02d", screen.id))
@@ -280,7 +365,11 @@ private struct StudioStatusBar: View {
             Circle()
                 .fill(store.validationIssues.isEmpty ? Color.green : Color.orange)
                 .frame(width: 7, height: 7)
-            Text(store.status).lineLimit(1)
+            Text(store.editingUIKit ? store.uiKit.status : store.status).lineLimit(1)
+            if store.hasUnsavedChanges {
+                Text("Unsaved changes").foregroundStyle(.orange).fixedSize()
+            }
+            if !store.editingUIKit {
             if store.selectedElementIDs.count > 1 {
                 Divider().frame(height: 14)
                 Text("\(store.selectedElementIDs.count) elements")
@@ -317,6 +406,10 @@ private struct StudioStatusBar: View {
                 .help("Zoom In")
             }
             .buttonStyle(InfinityStudioButtonStyle(emphasis: .quiet))
+            } else {
+                Spacer()
+                Text("\(store.uiKit.assets.count) OS assets · Save & Update ISO to publish")
+            }
         }
         .font(.caption)
         .foregroundStyle(.secondary)

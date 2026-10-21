@@ -297,116 +297,6 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: installer_confirmation_popup
-    // DESC: Draws the modal destructive-action warning and its two explicit choices.
-    // ------------------=
-    pub(super) fn installer_confirmation_popup(
-        &mut self,
-        focus: usize,
-        cursor_x: i32,
-        cursor_y: i32,
-        pressed: bool,
-    ) {
-        let scale = self.ui_scale();
-        let left = self.width * 25 / 100;
-        let top = self.height * 34 / 100;
-        let width = self.width * 50 / 100;
-        let height = self.height * 32 / 100;
-        // Repaint from an opaque glass base on every state change. This keeps
-        // alpha highlights deterministic instead of accumulating luminance
-        // when the pointer crosses a control boundary.
-        use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
-        let bounds=Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32};
-        let material=Material{fill:super::access_style::SURFACE,edge:super::access_style::BORDER,
-            opacity:255,edge_opacity:255,focus:255,pressed:false,scale};
-        self.precision_surface(bounds,Surface::WindowFill,Material{edge_opacity:0,..material});
-        self.precision_surface(Rect{x:(left+24*scale) as i32,y:(top+25*scale) as i32,
-            width:(42*scale) as u32,height:(42*scale) as u32},Surface::Panel,
-            Material{fill:(91,43,39),edge:(255,118,145),focus:0,..material});
-        self.access_glyph(left+45*scale,top+46*scale,8,23*scale,false);
-        self.ui_text_strong(
-            left + 82 * scale,
-            top + 26 * scale,
-            b"Erase this disk?",
-            250,
-            247,
-            244,
-            1,
-        );
-        self.ui_text(
-            left + 82 * scale,
-            top + 50 * scale,
-            b"This action permanently removes all existing data.",
-            188,
-            203,
-            216,
-            1,
-        );
-        self.ui_text(
-            left + 24 * scale,
-            top + 88 * scale,
-            b"InfinityOS will create a new Infinity Pool on the selected disk.",
-            221,
-            231,
-            239,
-            1,
-        );
-        self.ui_text_strong(
-            left + 24 * scale,
-            top + 116 * scale,
-            b"This cannot be undone.",
-            246,
-            158,
-            139,
-            1,
-        );
-        let cancel_frame = crate::ui::installer_layout::installer_confirmation_button_frame(
-            crate::ui::installer_layout::InstallerConfirmationTarget::Cancel,
-        );
-        self.installer_button(
-            cancel_frame.left,
-            cancel_frame.top,
-            cancel_frame.width,
-            cancel_frame.height,
-            b"CANCEL",
-            b"Keep the disk unchanged",
-            false,
-            focus == 0,
-            cursor_x,
-            cursor_y,
-            pressed,
-        );
-        let install_frame = crate::ui::installer_layout::installer_confirmation_button_frame(
-            crate::ui::installer_layout::InstallerConfirmationTarget::Install,
-        );
-        self.installer_button(
-            install_frame.left,
-            install_frame.top,
-            install_frame.width,
-            install_frame.height,
-            b"ERASE & INSTALL",
-            b"Begin installation",
-            true,
-            focus == 1,
-            cursor_x,
-            cursor_y,
-            pressed,
-        );
-        let hint = b"Tab / arrows: choose     Enter: confirm     Esc: cancel";
-        self.ui_text_centered(
-            left,
-            width,
-            top + height.saturating_sub(18 * scale),
-            hint,
-            137,
-            159,
-            179,
-            1,
-        );
-        self.precision_surface(bounds,Surface::Frame,Material{opacity:0,..material});
-    }
-
-    // ------------------------=
     // FUNC: installer_activation_art
     // DESC: Draws the reference progress hero or compact completion activation artwork.
     // ------------------=
@@ -509,6 +399,9 @@ impl super::DisplayDevice {
             element.map(|value| value.border).unwrap_or([53, 165, 220, 255]),
             element.map(|value| value.opacity).unwrap_or(100),
             element.map(|value| value.corner_radius).unwrap_or(15),
+            element.map(|value| value.surface_material).unwrap_or(0),
+            element.map(|value| value.corner_style).unwrap_or(0),
+            element.map(|value| value.font_size).unwrap_or(18),
             percent,
             label,
         );
@@ -621,10 +514,13 @@ impl super::DisplayDevice {
         cursor_y: i32,
         pressed: bool,
     ) {
-        // Date/time owns live form controls and a selectable map. The authored
-        // template supplies shared geometry/copy, but it must not short-circuit
-        // the functional renderer for this step.
-        if !matches!(screen, 5 | 7) {
+        // Live date/time values use the same authored fields as Studio; input
+        // hit testing is derived from those same roles in installer_layout.
+        if screen==5 && self.template_scene_data_with_date_time(
+            crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,screen,
+            Some((focus,true,Some((cursor_x,cursor_y,pressed)))),true,false,None,None,false,false,
+            Some((date_time,date_time_part))) {return;}
+        if screen!=5 {
             let (details, length) = crate::ui::installer_template::installer_live_details(
                 lines, lengths, line_count, prompt, command,
             );
@@ -2638,120 +2534,6 @@ impl super::DisplayDevice {
     }
 
 
-    // ------------------------=
-    // FUNC: installer_button
-    // DESC: Draws one normalized installer button with hover and keyboard focus styling.
-    // ------------------=
-    pub(super) fn installer_button(
-        &mut self,
-        nx: usize,
-        ny: usize,
-        nw: usize,
-        nh: usize,
-        title: &[u8],
-        subtitle: &[u8],
-        primary: bool,
-        focused: bool,
-        cursor_x: i32,
-        cursor_y: i32,
-        pressed: bool,
-    ) {
-        self.installer_button_rect(
-            crate::ui::installer_layout::InstallerRect {
-                left: self.width * nx / 1000,
-                top: self.height * ny / 1000,
-                width: self.width * nw / 1000,
-                height: self.height * nh / 1000,
-            },
-            title,
-            subtitle,
-            primary,
-            focused,
-            cursor_x,
-            cursor_y,
-            pressed,
-        );
-    }
-
-    // ------------------------=
-    // FUNC: installer_button_rect
-    // DESC: Draws an installer button at a shared pixel-space layout rectangle.
-    // ------------------=
-    pub(super) fn installer_button_rect(
-        &mut self,
-        rect: crate::ui::installer_layout::InstallerRect,
-        title: &[u8],
-        subtitle: &[u8],
-        primary: bool,
-        focused: bool,
-        cursor_x: i32,
-        cursor_y: i32,
-        pressed: bool,
-    ) {
-        let left = rect.left;
-        let top = rect.top;
-        let width = rect.width;
-        let height = rect.height;
-        let pointer_x = cursor_x * self.width as i32 / 1000;
-        let pointer_y = cursor_y * self.height as i32 / 1000;
-        let hovered = pointer_x >= left as i32
-            && pointer_x <= rect.right() as i32
-            && pointer_y >= top as i32
-            && pointer_y <= rect.bottom() as i32;
-        let depressed = hovered && pressed;
-        use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
-        self.precision_surface(Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},
-            if primary {Surface::Primary}else{Surface::Secondary},
-            Material{fill:if primary {super::access_style::PRIMARY}else{super::access_style::SURFACE},
-                edge:super::access_style::BORDER,opacity:255,edge_opacity:255,
-                focus:if focused||hovered {255}else{0},pressed:depressed,scale:self.ui_scale()});
-        let scale = self.ui_scale();
-        let press_offset = if depressed { 2 * scale } else { 0 };
-        let block_height = INSTALLER_FONT_CELL_HEIGHT * 2 + 4;
-        let title_y = top + height.saturating_sub(block_height) / 2 + press_offset;
-        let subtitle_y = title_y + INSTALLER_FONT_CELL_HEIGHT + 4;
-        let title_width = self.installer_text_width(title, true);
-        let subtitle_width = self.installer_text_width(subtitle, false);
-        let title_x = left + width.saturating_sub(title_width) / 2;
-        let subtitle_x = left + width.saturating_sub(subtitle_width) / 2;
-        self.installer_text_strong(title_x, title_y, title, 244, 248, 255);
-        self.installer_text(subtitle_x, subtitle_y, subtitle, 83, 187, 230);
-        if focused || hovered {
-            let arrow_x = if left + width / 2 < self.width / 2 {
-                (left + 26 * scale) as i32
-            } else {
-                (left + width.saturating_sub(24 * scale)) as i32
-            };
-            let arrow_y = (top + height / 2 + press_offset) as i32;
-            self.line(
-                arrow_x - 8 * scale as i32,
-                arrow_y,
-                arrow_x,
-                arrow_y,
-                106,
-                207,
-                255,
-            );
-            self.line(
-                arrow_x - 4 * scale as i32,
-                arrow_y - 4 * scale as i32,
-                arrow_x,
-                arrow_y,
-                106,
-                207,
-                255,
-            );
-            self.line(
-                arrow_x - 4 * scale as i32,
-                arrow_y + 4 * scale as i32,
-                arrow_x,
-                arrow_y,
-                106,
-                207,
-                255,
-            );
-        }
-    }
 }
 
 // Read-only debugger progress; no installer authority or input channel.

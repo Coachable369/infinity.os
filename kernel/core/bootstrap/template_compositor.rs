@@ -16,7 +16,51 @@ use crate::ui::installer_template::{
     InstallerTemplateRole,
 };
 
+#[derive(Clone, Copy)]
+pub(super) struct ConfigurationViewState<'a> {
+    pub input: &'a [u8],
+    pub masked: bool,
+    pub validation_error: bool,
+    pub network: Option<super::onboarding_network_view::NetworkViewState<'a>>,
+}
+
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: access_template_panel_glow
+    // DESC: Applies the native breathing rim with the authored panel's same geometry, colors and corner coverage.
+    // ------------------=
+    pub(super) fn access_template_panel_glow(&mut self,element:InstallerTemplateElement<'_>) {
+        if element.hidden || element.opacity==0 {return;}
+        use crate::ui::panel_recipe::{self,Surface,Material};
+        let rect=scale_template_rect(element.frame,self.width,self.height);
+        let edge_opacity=(u32::from(element.border[3])*u32::from(element.opacity)
+            *u32::from(super::access_style::panel_motion().glow)/100/255)as u8;
+        self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
+            width:rect.width as u32,height:rect.height as u32},Surface::Panel,
+            Material{fill:(element.fill[0],element.fill[1],element.fill[2]),
+                edge:(element.border[0],element.border[1],element.border[2]),opacity:0,edge_opacity,
+                focus:255,pressed:false,scale:self.ui_scale()},
+            panel_recipe::template_style(Surface::Panel,element.surface_material,element.corner_style,element.corner_radius));
+    }
+    // ------------------------=
+    // FUNC: settings_template_surface
+    // DESC: Applies saved surface colors, alpha, material and geometry to live Settings controls without changing their service-owned contents.
+    // ------------------=
+    pub(crate) fn settings_template_surface(&mut self, rect:crate::ui::geometry::Rect,
+        element:Option<InstallerTemplateElement<'_>>, fallback:crate::ui::panel_recipe::Material) {
+        use crate::ui::panel_recipe::{self,Surface};
+        let mut material=fallback;
+        let mut style=panel_recipe::surface_style(Surface::Panel);
+        if let Some(element)=element {
+            if element.hidden {return;}
+            material.fill=(element.fill[0],element.fill[1],element.fill[2]);
+            material.edge=(element.border[0],element.border[1],element.border[2]);
+            material.opacity=(u16::from(element.fill[3])*u16::from(element.opacity)/100) as u8;
+            material.edge_opacity=(u16::from(element.border[3])*u16::from(element.opacity)/100) as u8;
+            style=panel_recipe::template_style(Surface::Panel,element.surface_material,element.corner_style,element.corner_radius);
+        }
+        self.precision_surface_styled(rect,Surface::Panel,material,style);
+    }
     // ------------------------=
     // FUNC: installer_template_screen
     // DESC: Paints every visible installer layer in the editor's deterministic stacking order.
@@ -42,19 +86,13 @@ impl DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: configuration_template_screen
-    // DESC: Paints every visible first-boot configuration layer exactly from its saved template.
+    // FUNC: configuration_template_scene_data
+    // DESC: Composes live first-boot values at their authored layer positions, including native input, network content and navigation.
     // ------------------=
-    pub(super) fn configuration_template_screen(&mut self, step: usize) -> bool {
-        self.template_screen(
-            CONFIGURATION_TEMPLATE_BYTES,
-            step.saturating_add(1) as u8,
-            None,
-            true,
-            true,
-            None,
-            None,
-        )
+    pub(super) fn configuration_template_scene_data(&mut self, bytes:&[u8], step:usize,
+        focus:usize, state:ConfigurationViewState<'_>) -> bool {
+        self.template_scene_data_with_state(bytes,step.saturating_add(1)as u8,
+            Some((focus,true,None)),true,false,None,None,true,false,None,Some(state))
     }
 
     // ------------------------=
@@ -82,22 +120,6 @@ impl DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: configuration_template_navigation
-    // DESC: Repaints authored first-boot actions with their current keyboard or pointer focus.
-    // ------------------=
-    pub(super) fn configuration_template_navigation(&mut self, step: usize, focus: usize) -> bool {
-        self.template_screen(
-            CONFIGURATION_TEMPLATE_BYTES,
-            step.saturating_add(1) as u8,
-            Some((focus, true, None)),
-            false,
-            false,
-            None,
-            None,
-        )
-    }
-
-    // ------------------------=
     // FUNC: template_screen
     // DESC: Resolves and paints either a complete template scene or only its interactive navigation layers.
     // ------------------=
@@ -111,7 +133,44 @@ impl DisplayDevice {
         live_details: Option<&[u8]>,
         progress: Option<(usize, &[u8])>,
     ) -> bool {
-        let Ok(template) = InstallerTemplate::parse(bytes) else {
+        self.template_scene_data(bytes,screen,navigation,full_scene,skip_live_input,live_details,progress,
+            bytes.as_ptr()==CONFIGURATION_TEMPLATE_BYTES.as_ptr(),false)
+    }
+
+    // ------------------------=
+    // FUNC: template_scene_data
+    // DESC: Shares the production scene, native glyph and image composition path with validated unsaved Studio documents.
+    // ------------------=
+    pub(super) fn template_scene_data(&mut self,bytes:&[u8],screen:u8,
+        navigation:Option<(usize,bool,Option<(i32,i32,bool)>)>,full_scene:bool,skip_live_input:bool,
+        live_details:Option<&[u8]>,progress:Option<(usize,&[u8])>,configuration:bool,settings:bool)->bool {
+        self.template_scene_data_with_date_time(bytes,screen,navigation,full_scene,skip_live_input,
+            live_details,progress,configuration,settings,None)
+    }
+
+    // ------------------------=
+    // FUNC: template_scene_data_with_date_time
+    // DESC: Substitutes actual installer date/time state at each authored layer position while retaining the shared production compositor.
+    // ------------------=
+    pub(super) fn template_scene_data_with_date_time(&mut self,bytes:&[u8],screen:u8,
+        navigation:Option<(usize,bool,Option<(i32,i32,bool)>)>,full_scene:bool,skip_live_input:bool,
+        live_details:Option<&[u8]>,progress:Option<(usize,&[u8])>,configuration:bool,settings:bool,
+        date_time:Option<(crate::storage::DateTimeConfiguration,usize)>)->bool {
+        self.template_scene_data_with_state(bytes,screen,navigation,full_scene,skip_live_input,
+            live_details,progress,configuration,settings,date_time,None)
+    }
+
+    // ------------------------=
+    // FUNC: template_scene_data_with_state
+    // DESC: Uses one deterministic layer walk for authored and service-owned pixels so later layers always retain their stacking order.
+    // ------------------=
+    fn template_scene_data_with_state(&mut self,bytes:&[u8],screen:u8,
+        navigation:Option<(usize,bool,Option<(i32,i32,bool)>)>,full_scene:bool,skip_live_input:bool,
+        live_details:Option<&[u8]>,progress:Option<(usize,&[u8])>,configuration:bool,settings:bool,
+        date_time:Option<(crate::storage::DateTimeConfiguration,usize)>,
+        configuration_state:Option<ConfigurationViewState<'_>>)->bool {
+        let parsed=if settings {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)};
+        let Ok(template) = parsed else {
             return false;
         };
         let Some(count) = template.element_count(screen) else {
@@ -134,17 +193,28 @@ impl DisplayDevice {
             let is_navigation = element.role == InstallerTemplateRole::BackButton as u8
                 || element.role == InstallerTemplateRole::PrimaryButton as u8
                 || element.role == InstallerTemplateRole::Footer as u8;
-            // Configuration live content paints these once with the actual
-            // navigation focus; avoid accumulating their translucent edges.
-            if full_scene && bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
-                && is_navigation { continue; }
             if full_scene || is_navigation {
+                if let Some(state)=configuration_state {
+                    if element.role==InstallerTemplateRole::Input as u8 {
+                        let rect=scale_template_rect(element.frame,self.width,self.height);
+                        self.onboarding_input_field_with_element(Some(element),rect.left,rect.top,rect.width,rect.height,
+                            state.input,state.masked,navigation.is_some_and(|(focus,_,_)|focus==1),element.text);
+                        if state.validation_error {
+                            let color=super::access_style::semantic_color(11);
+                            self.access_label((rect.left,rect.bottom().saturating_add(8*self.ui_scale().max(1)),
+                                rect.width,24*self.ui_scale().max(1)),
+                                if state.masked {b"Use at least eight characters."}else{b"This field is required before continuing."},
+                                14*self.ui_scale().max(1),color,false,false);
+                        }
+                        continue;
+                    }
+                }
                 if element.kind == 6 {
                     let (percent, label) = progress.unwrap_or((0, element.text));
                     self.template_progress_control(
                         scale_template_rect(element.frame, self.width, self.height),
                         element.fill, element.border, element.opacity, element.corner_radius,
-                        percent, label,
+                        element.surface_material, element.corner_style, element.font_size, percent, label,
                     );
                     continue;
                 }
@@ -159,18 +229,31 @@ impl DisplayDevice {
                 } else {
                     None
                 };
-                if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
+                if let Some((value,part))=date_time {
+                    if self.installer_date_time_element(element,image,navigation,value,part) {continue;}
+                }
+                if configuration
                     && matches!(element.kind, 1 | 4 | 5)
                 {
                     let progress=(progress_index,screen.saturating_sub(1) as usize);
                     if element.role==InstallerTemplateRole::ProgressSegment as u8 {progress_index+=1;}
                     self.access_template_control(element, navigation, progress);
-                } else if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
+                } else if configuration
                     && element.kind == 3
                 {
                     self.configuration_template_text_layer(element);
                 } else {
                     self.template_element(element, image, navigation);
+                }
+                if element.role==InstallerTemplateRole::Content as u8 {
+                    if let Some(state)=configuration_state {
+                        if let Some(network)=state.network {
+                            let frames=core::array::from_fn(|index|
+                                crate::ui::installer_layout::configuration_network_row_rect_in(&template,index,self.width,self.height));
+                            self.onboarding_network_rows_from_state((0,0,0),frames,
+                                navigation.map(|(focus,_,_)|focus).unwrap_or(0),state.validation_error,network);
+                        }
+                    }
                 }
             }
         }
@@ -213,30 +296,41 @@ impl DisplayDevice {
         let rect=scale_template_rect(element.frame,self.width,self.height);
         let focused=navigation.is_some_and(|(focus,_,_)|
             (element.role==InstallerTemplateRole::BackButton as u8 && focus==0)
-            || (element.role==InstallerTemplateRole::PrimaryButton as u8 && focus==1));
+            || (element.role==InstallerTemplateRole::PrimaryButton as u8 && focus==1)
+            || (element.role==InstallerTemplateRole::Input as u8 && focus==1));
         let fill=(element.fill[0],element.fill[1],element.fill[2]);
         let border=(element.border[0],element.border[1],element.border[2]);
         let opacity=(element.fill[3] as u16*element.opacity as u16/100) as u8;
         let border_opacity=(element.border[3] as u16*element.opacity as u16/100) as u8;
         let text_opacity=(255u16*element.opacity as u16/100) as u8;
         if element.role==InstallerTemplateRole::ProgressSegment as u8 {
-            let size=rect.height.min(rect.width);
-            let left=rect.left+(rect.width-size)/2;
             let current=progress.0<=progress.1;
-            self.access_surface_alpha(left,rect.top,size,size,
-                if current {Surface::Current}else{Surface::Inactive},fill,border,
-                opacity,border_opacity,false);
-            if progress.0<progress.1 {self.access_glyph(left+size/2,rect.top+size/2,15,size*3/4,false);}
+            let kind=if current {Surface::Current}else{Surface::Inactive};
+            let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
+            // Authored circular artwork is aspect-fit; explicit geometry consumes
+            // the complete saved box instead of forcing a square silhouette.
+            let (left,width,height)=if style.corners==0 {
+                let size=rect.height.min(rect.width);
+                (rect.left+(rect.width-size)/2,size,size)
+            }else{(rect.left,rect.width,rect.height)};
+            self.precision_surface_styled(crate::ui::geometry::Rect{x:left as i32,y:rect.top as i32,
+                width:width as u32,height:height as u32},kind,crate::ui::panel_recipe::Material{
+                    fill,edge:border,opacity,edge_opacity:border_opacity,focus:0,pressed:false,scale:self.ui_scale()},style);
+            if progress.0<progress.1 {self.access_glyph(left+width/2,rect.top+height/2,15,width.min(height)*3/4,false);}
             return;
         }
         let kind=if element.kind==5 {
             if element.role==InstallerTemplateRole::PrimaryButton as u8 {Surface::Primary}else{Surface::Secondary}
         } else if element.role==InstallerTemplateRole::Input as u8 {Surface::Field}else{Surface::Panel};
+        let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
         if element.role==InstallerTemplateRole::Console as u8 {
-            self.access_frost_panel(rect.left,rect.top,rect.width,rect.height,fill,border,opacity,border_opacity);
+            self.access_frost_panel_styled(rect.left,rect.top,rect.width,rect.height,fill,border,opacity,border_opacity,style);
         } else {
-            self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,kind,fill,border,
-                opacity,border_opacity,focused);
+            self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
+                width:rect.width as u32,height:rect.height as u32},kind,crate::ui::panel_recipe::Material{
+                    fill,edge:border,opacity,edge_opacity:border_opacity,
+                    focus:if focused {palette::focus_amount()}else{0},
+                    pressed:focused && palette::pressed(),scale:self.ui_scale()},style);
         }
         if element.kind==5 {
             let font=(element.font_size as usize*self.height/1000).max(6);
@@ -273,7 +367,7 @@ impl DisplayDevice {
     // FUNC: template_element_in_rect
     // DESC: Paints an authored layer inside an explicitly mapped runtime rectangle.
     // ------------------=
-    pub(super) fn template_element_in_rect(
+    pub(crate) fn template_element_in_rect(
         &mut self,
         element: InstallerTemplateElement<'_>,
         image: Option<&[u8]>,
@@ -309,6 +403,9 @@ impl DisplayDevice {
                 element.border,
                 element.opacity,
                 element.corner_radius,
+                element.surface_material,
+                element.corner_style,
+                element.font_size,
                 42,
                 element.text,
             ),
@@ -330,6 +427,16 @@ impl DisplayDevice {
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>,
     ) {
         if element.role == InstallerTemplateRole::ProgressSegment as u8 {
+            if element.surface_material!=0 || element.corner_style!=0 {
+                let kind=crate::ui::panel_recipe::Surface::Panel;
+                self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
+                    width:rect.width as u32,height:rect.height as u32},kind,crate::ui::panel_recipe::Material{
+                        fill:(element.fill[0],element.fill[1],element.fill[2]),
+                        edge:(element.border[0],element.border[1],element.border[2]),
+                        opacity:fill_alpha,edge_opacity:border_alpha,focus:0,pressed:false,scale:self.ui_scale()},
+                    crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius));
+                return;
+            }
             let bar_height = (4 * self.height / 1000).max(2).min(rect.height);
             self.fill_rounded_rect_alpha(
                 rect.left,
@@ -346,24 +453,29 @@ impl DisplayDevice {
         }
         let focused = navigation.is_some_and(|(focus, _, _)| {
             element.role == InstallerTemplateRole::Input as u8 && focus >= 2
+                || element.role == InstallerTemplateRole::DateField as u8 && focus==2
+                || element.role == InstallerTemplateRole::TimeField as u8 && focus==3
+                || element.role == InstallerTemplateRole::TimeZoneSelector as u8 && focus==4
         });
         let is_control = element.role == InstallerTemplateRole::Input as u8
             || element.role == InstallerTemplateRole::DateField as u8
             || element.role == InstallerTemplateRole::TimeField as u8
             || element.role == InstallerTemplateRole::TimeZoneSelector as u8
             || element.role == InstallerTemplateRole::OffsetBadge as u8;
+        let kind=if is_control {crate::ui::panel_recipe::Surface::Field}else{crate::ui::panel_recipe::Surface::Panel};
+        let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
         if element.role==InstallerTemplateRole::Console as u8 {
-            self.access_frost_panel(rect.left,rect.top,rect.width,rect.height,
+            self.access_frost_panel_styled(rect.left,rect.top,rect.width,rect.height,
                 (element.fill[0],element.fill[1],element.fill[2]),
-                (element.border[0],element.border[1],element.border[2]),fill_alpha,border_alpha);
+                (element.border[0],element.border[1],element.border[2]),fill_alpha,border_alpha,style);
             return;
         }
-        self.precision_surface(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
+        self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
             width:rect.width as u32,height:rect.height as u32},
-            if is_control {crate::ui::panel_recipe::Surface::Field}else{crate::ui::panel_recipe::Surface::Panel},
+            kind,
             crate::ui::panel_recipe::Material{fill:(element.fill[0],element.fill[1],element.fill[2]),
                 edge:(element.border[0],element.border[1],element.border[2]),opacity:fill_alpha,
-                edge_opacity:border_alpha,focus:if focused {255}else{0},pressed:false,scale:self.ui_scale()});
+                edge_opacity:border_alpha,focus:if focused {255}else{0},pressed:false,scale:self.ui_scale()},style);
         if is_control && !element.text.is_empty() {
             let font_px = (element.font_size as usize * self.height / 1000).max(6);
             let text_height = (font_px * 7 / 6).max(1);
@@ -408,6 +520,8 @@ impl DisplayDevice {
     ) {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
+            #[cfg(studio_native_preview)]
+            let packaged=crate::studio_native_render::asset_override(name).or(packaged);
             let bitmap = if let Some(bitmap) = packaged {
                 bitmap
             } else if name.ends_with(b"infinity-installer-masthead-v2.png") {
@@ -420,6 +534,8 @@ impl DisplayDevice {
                 ONBOARDING_BMP
             } else if name.ends_with(b"infinity-eclipse-header-v1.bmp") {
                 super::bootstrap::SPLASH_BMP
+            } else if name.ends_with(b"infinity-time-zone-map-v1.png") {
+                super::installer::DATE_TIME_WORLD_BMP
             } else if name.ends_with(b"infinity-installer-progress-hero-v1.png") {
                 INSTALLER_PROGRESS_HERO_BMP
             } else {
@@ -450,7 +566,10 @@ impl DisplayDevice {
         fill: [u8; 4],
         border: [u8; 4],
         opacity: u8,
-        _corner_radius: u8,
+        corner_radius: u8,
+        surface_material: u8,
+        corner_style: u8,
+        font_size: u16,
         percent: usize,
         label: &[u8],
     ) {
@@ -458,7 +577,7 @@ impl DisplayDevice {
         self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
         let alpha = |value: u8| (value as u16 * opacity as u16 / 100) as u8;
         let inset = (18 * self.height / 1000).max(1).min(rect.width / 4);
-        let pixels = (18 * self.height / 1000).max(1);
+        let pixels = (usize::from(font_size) * self.height / 1000).max(6);
         let gap = 14 * self.height / 1000;
         let track_height = (16 * self.height / 1000).max(1);
         let line_height = pixels * 28 / 24;
@@ -467,10 +586,11 @@ impl DisplayDevice {
         let track_top = top + line_height + gap;
         let track_width = rect.width.saturating_sub(inset * 2);
         use crate::ui::{geometry::Rect, panel_recipe::{Material,Surface}};
-        let material=Material{fill:super::access_style::SURFACE,edge:super::access_style::BORDER,
+        let material=Material{fill:super::access_style::SURFACE,edge:(border[0],border[1],border[2]),
             opacity:alpha(240),edge_opacity:alpha(border[3]),focus:0,pressed:false,scale:self.ui_scale()};
-        self.precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
-            width:rect.width as u32,height:rect.height as u32},Surface::Panel,material);
+        self.precision_surface_styled(Rect{x:rect.left as i32,y:rect.top as i32,
+            width:rect.width as u32,height:rect.height as u32},Surface::Panel,material,
+            crate::ui::panel_recipe::template_style(Surface::Panel,surface_material,corner_style,corner_radius));
         let mut percent_text = [b'0'; 4];
         let value = percent.min(100);
         let digits = if value == 100 {
@@ -496,9 +616,12 @@ impl DisplayDevice {
         self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
         let track=Rect{x:(rect.left+inset) as i32,y:track_top as i32,
             width:track_width as u32,height:track_height as u32};
-        self.precision_surface(track,Surface::Field,Material{fill:super::access_style::BACKGROUND,opacity:alpha(199),..material});
-        self.precision_surface(Rect{width:(track_width*value/100) as u32,..track},Surface::Primary,
-            Material{fill:super::access_style::PRIMARY,opacity:alpha(fill[3]),..material});
+        self.precision_surface_styled(track,Surface::Field,
+            Material{fill:super::access_style::BACKGROUND,opacity:alpha(199),..material},
+            crate::ui::panel_recipe::template_style(Surface::Field,surface_material,corner_style,corner_radius));
+        self.precision_surface_styled(Rect{width:(track_width*value/100) as u32,..track},Surface::Primary,
+            Material{fill:(fill[0],fill[1],fill[2]),opacity:alpha(fill[3]),..material},
+            crate::ui::panel_recipe::template_style(Surface::Primary,surface_material,corner_style,corner_radius));
         self.render_clip = previous_clip;
     }
 
@@ -554,15 +677,17 @@ impl DisplayDevice {
         let opacity = element.opacity as u16;
         let primary = element.role == InstallerTemplateRole::PrimaryButton as u8;
         use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
-        self.precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
+        let kind=if primary {Surface::Primary}else{Surface::Secondary};
+        let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
+        self.precision_surface_styled(Rect{x:rect.left as i32,y:rect.top as i32,
             width:rect.width as u32,height:rect.height as u32},
-            if primary {Surface::Primary}else{Surface::Secondary},Material{
+            kind,Material{
                 fill:(element.fill[0],element.fill[1],element.fill[2]),
                 edge:(element.border[0],element.border[1],element.border[2]),
                 opacity:(element.fill[3] as u16*opacity/100) as u8,
                 edge_opacity:(element.border[3] as u16*opacity/100) as u8,
                 focus:if focused||hovered {super::access_style::focus_amount()}else{0},
-                pressed:depressed,scale:self.ui_scale()});
+                pressed:depressed,scale:self.ui_scale()},style);
         let font_px = (element.font_size as usize * self.height / 1000).max(6);
         let text_width = self.template_text_width(element.text, font_px, true);
         let text_height = (font_px * 7 / 6).max(1);

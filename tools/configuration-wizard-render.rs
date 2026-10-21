@@ -8,10 +8,16 @@ use crate::ui::{geometry::Rect, installer_layout::{CONFIGURATION_TEMPLATE_BYTES,
 #[path="../kernel/core/bootstrap/access_style.rs"] mod access_style;
 #[path="../kernel/core/bootstrap/access_view.rs"] mod access_view;
 #[path="../kernel/core/bootstrap/access_input_view.rs"] mod access_input_view;
+#[cfg(studio_native_preview)]
+#[path="../kernel/core/bootstrap/access_scale.rs"] mod access_scale;
+#[cfg(studio_native_preview)]
+#[path="../kernel/core/bootstrap/access_panel.rs"] mod access_panel;
+#[path="../kernel/core/bootstrap/onboarding_network_view.rs"] mod onboarding_network_view;
 #[path="../kernel/core/bootstrap/template_font.rs"] mod template_font;
 #[path="../kernel/core/bootstrap/template_text_view.rs"] mod template_text_view;
 #[path="../kernel/core/bootstrap/template_compositor.rs"] mod template_compositor;
 #[path="../kernel/core/bootstrap/installer_datetime_view.rs"] mod installer_datetime_view;
+#[path="../kernel/core/bootstrap/installer_confirmation_view.rs"] mod installer_confirmation_view;
 
 mod bootstrap {
     pub const SPLASH_BMP: &[u8] = include_bytes!("../assets/boot/infinity-eclipse-header-v1.bmp");
@@ -34,6 +40,152 @@ mod installer {
 fn display(pixels: &mut [u32], width: usize, height: usize) -> DisplayDevice {
     DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,
         fast_motion_frame:false,submissions:0,recording_surface:false}
+}
+
+#[derive(Clone,Copy)]
+pub(crate) struct DraftServiceState {
+    pub simulated:bool,pub confirmation:bool,pub percent:u8,pub zone:u8,pub date_focus:u8,pub date_part:u8,
+    pub expanded:Option<usize>,pub scroll:usize,pub control:usize,
+}
+impl Default for DraftServiceState {
+    // ------------------------=
+    // FUNC: default
+    // DESC: Defines explicitly simulated service values; preview rendering never reads or changes clock, identity or installation services.
+    // ------------------=
+    fn default()->Self {Self{simulated:false,confirmation:false,percent:42,zone:3,date_focus:2,date_part:0,
+        expanded:None,scroll:0,control:0}}
+}
+
+// ------------------------=
+// FUNC: dashboard_fixture
+// DESC: Supplies visibly simulated immutable dashboard values without creating network or node services in the renderer.
+// ------------------=
+pub(crate) fn dashboard_fixture(section:usize)->Option<crate::settings_dashboard_view::DashboardSnapshot> {
+    use crate::settings_dashboard_view::*;
+    match section {
+        6=>Some(DashboardSnapshot::Network(NetworkDashboardSnapshot{
+            status:NetworkStatusSnapshot{active_profile:1,link_only:false,interfaces:1,addresses:1,routes:1,policies:2},
+            active_connections:3,setup:NetworkSetupSnapshot{selected:SetupMode::Automatic,wired_available:true,wireless_available:false},
+            interface:Some(NetworkInterfaceSnapshot{enabled:true,link:LinkState::Up,hardware_address:true,maximum_frame_size:1500}),
+            static_address:Some(AddressSnapshot{address:Some([192,0,2,10]),prefix_length:24}),
+            default_route:Some(RouteSnapshot{next_hop:Some([192,0,2,1]),metric:100,is_static:true}),
+            resolver_enabled:true,resolver_primary:Some([192,0,2,53]),resolver_secondary:None,default_policy:PolicyAction::Ask})),
+        7=>Some(DashboardSnapshot::Nodes(NodeDashboardSnapshot{identity_ready:true,counts:[3,2,1,1,2,1,2,4],selected:true,
+            verification:Some(NodeVerificationSnapshot{code:123456,fingerprint:[0x5a;32],remaining:90,state:VerificationState::Local}),
+            policy_offset:0,policy:Some([0;12])})),
+        _=>None,
+    }
+}
+
+// ------------------------=
+// FUNC: settings_preview_window
+// DESC: Derives a simulated native Settings window from the draft console and its authored row count.
+// ------------------=
+#[cfg(studio_native_preview)]
+fn settings_preview_window(template:&InstallerTemplate<'_>,screen:u8,state:DraftServiceState)->Result<crate::ui::system_layout::SettingsWindowState,String> {
+    let console=template.element(screen,Role::Console).ok_or("Settings preview requires a Console role")?;
+    let rows=template.element_count(screen).unwrap_or(0);
+    let row_count=(0..rows).filter(|index|template.element_at(screen,*index)
+        .is_some_and(|element|element.role==Role::SettingsRowLabel as u8)).count();
+    Ok(crate::ui::system_layout::SettingsWindowState{x:i32::from(console.frame.x),y:i32::from(console.frame.y),
+        width:i32::from(console.frame.width),height:i32::from(console.frame.height),maximized:false,
+        expanded_row:state.expanded,scroll_offset:state.scroll,control_focus:state.control,row_count})
+}
+
+// ------------------------=
+// FUNC: draft_geometry
+// DESC: Exports production-computed Settings layer bounds so Studio selections cannot drift from remapped native controls.
+// ------------------=
+#[cfg(studio_native_preview)]
+pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usize,state:DraftServiceState)->Result<String,String> {
+    if kind!=2 || !state.simulated || !(crate::settings_view::supports_basic_section(usize::from(screen-1)) || matches!(screen,7|8)) {
+        return Ok("[]".into());
+    }
+    let template=InstallerTemplate::parse_settings(bytes).map_err(|_|"Invalid Settings template")?;
+    let window=settings_preview_window(&template,screen,state)?;
+    let layout=crate::ui::system_layout::SystemLayout::new(width,height);
+    let mut result=String::from("[");
+    for index in 0..template.element_count(screen).unwrap_or(0) {
+        let element=template.element_at(screen,index).ok_or("Invalid Settings layer")?;
+        let Some(r)=layout.settings_element_geometry(window,usize::from(screen-1),element.id) else{continue;};
+        if result.len()>1 {result.push(',');}
+        let id=element.id.iter().enumerate().map(|(index,byte)|format!("{}{:02x}",
+            if [4,6,8,10].contains(&index){"-"}else{""},byte)).collect::<String>();
+        result.push_str(&format!("{{\"id\":\"{id}\",\"x\":{},\"y\":{},\"width\":{},\"height\":{}}}",r.x,r.y,r.width,r.height));
+    }
+    result.push(']');Ok(result)
+}
+
+// ------------------------=
+// FUNC: render_draft
+// DESC: Produces an unsaved editor frame through the same production template, image, native font and surface painters used at boot.
+// ------------------=
+#[cfg(studio_native_preview)]
+pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usize,
+    background:&[u8],focus:usize,pressed:bool,phase:Option<u64>,state:DraftServiceState)->Result<Vec<u8>,String> {
+    let template=if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
+        .map_err(|error|format!("Invalid native template: {error:?}"))?;
+    if template.element_count(screen).is_none() {return Err("Unknown template screen".into());}
+    let motion_key=(u32::from(screen)<<8)|focus as u32;
+    access_style::animate(motion_key,0,pressed,phase.is_none());
+    access_style::animate(motion_key,phase.unwrap_or(1000),pressed,phase.is_none());
+    let mut pixels=vec![0u32;width*height];
+    let mut target=display(&mut pixels,width,height);
+    target.paint_bitmap_cover_rect(background,0,0,width,height);
+    let pointer=template.element(screen,Role::PrimaryButton)
+        .map(|element|(i32::from(element.frame.x)+1,i32::from(element.frame.y)+1,pressed));
+    let navigation=Some((focus,true,if pressed {pointer}else{None}));
+    let live_details=template.element(screen,Role::LiveDetails).map(|element|element.text);
+    let offsets=[0,-480,-420,-360,-300,-240,0,60,330,480,540,600];
+    let date_time=if kind==0 && screen==5 && state.simulated {
+        Some((crate::storage::DateTimeConfiguration{year:2026,month:10,day:21,hour:14,minute:30,second:0,
+            time_zone_id:u16::from(state.zone),utc_offset_minutes:offsets[usize::from(state.zone)]},usize::from(state.date_part)))
+    }else{None};
+    let navigation=if date_time.is_some() {Some((usize::from(state.date_focus),true,None))}else{navigation};
+    let mut settings_rendered=false;
+    if kind==2 && state.simulated && crate::settings_view::supports_basic_section(usize::from(screen-1)) {
+        let window=settings_preview_window(&template,screen,state)?;
+        settings_rendered=target.render_basic_settings_view(usize::from(screen-1),b"Preview machine",window,target.ui_scale(),
+            crate::settings_view::BasicSettingsSnapshot{chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
+                voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,
+                preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:15,timeout_maximum:120});
+        let geometry=crate::ui::system_layout::SystemLayout::new(width,height)
+            .settings_window_geometry_for_section(window,usize::from(screen-1));
+        target.precision_window_frame(geometry.window,true,target.ui_scale());
+    }
+    if kind==2 && state.simulated {
+        if let Some(snapshot)=dashboard_fixture(usize::from(screen-1)) {
+            let window=settings_preview_window(&template,screen,state)?;
+            settings_rendered=target.render_dashboard_settings_view(usize::from(screen-1),b"Preview",window,target.ui_scale(),snapshot);
+            let geometry=crate::ui::system_layout::SystemLayout::new(width,height)
+                .settings_window_geometry_for_section(window,usize::from(screen-1));
+            target.precision_window_frame(geometry.window,true,target.ui_scale());
+        }
+    }
+    if kind==1 {
+        let network=if screen==7 {Some(onboarding_network_view::NetworkViewState{selected:0,connected:true,
+            wired_detail:b"Connected link detected",wireless_detail:b"No wireless adapter detected"})}else{None};
+        if !target.configuration_template_scene_data(bytes,usize::from(screen-1),focus,
+            template_compositor::ConfigurationViewState{input:b"",masked:false,validation_error:false,network}) {
+            return Err("Native configuration composition rejected the scene".into());
+        }
+    } else if !settings_rendered && !target.template_scene_data_with_date_time(bytes,screen,navigation,true,false,live_details,
+        if state.simulated {Some((usize::from(state.percent),b"Simulated installation progress"))}else{None},kind==1,kind==2,date_time) {
+        return Err("Native template composition rejected the scene".into());
+    }
+    if kind==0 && screen==7 && state.simulated && state.confirmation {
+        target.installer_confirmation_popup(focus,if pressed {700}else{-1},if pressed {568}else{-1},pressed);
+    }
+    if kind==1 {
+        if let Some(card)=template.element(screen,Role::Console).filter(|element|!element.hidden && element.opacity>0) {
+            target.access_template_panel_glow(card);
+            let frame=scale_template_rect(card.frame,width,height);
+            target.access_panel_entrance((frame.left,frame.top,frame.width,frame.height),true);
+        }
+    }
+    let mut rgba=Vec::with_capacity(width*height*4);
+    for pixel in pixels {rgba.extend_from_slice(&[(pixel&255)as u8,((pixel>>8)&255)as u8,((pixel>>16)&255)as u8,255]);}
+    Ok(rgba)
 }
 
 // ------------------------=
@@ -63,6 +215,86 @@ fn role_pixels() -> usize {
         }
     }
     comparisons
+}
+
+// ------------------------=
+// FUNC: authored_progress_pixels
+// DESC: Proves saved font, fill, rim, opacity and bounds affect real installation progress pixels rather than an unrelated preview control.
+// ------------------=
+fn authored_progress_pixels() {
+    let template=InstallerTemplate::parse(crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES).unwrap();
+    let mut element=template.element(8,Role::ProgressBar).unwrap();
+    element.frame=crate::ui::installer_template::InstallerTemplateRect{x:100,y:100,width:800,height:300};
+    element.font_size=18;element.fill=[62,111,255,255];element.border=[134,199,255,255];
+    element.opacity=100;element.corner_style=1;element.surface_material=1;element.text=b"Preparing installation";
+    let (width,height)=(640,500);
+    let rect=scale_template_rect(element.frame,width,height);
+    let render=|element| {
+        let mut pixels=vec![0x251407;width*height];
+        display(&mut pixels,width,height).template_element_in_rect(element,None,None,rect);
+        pixels
+    };
+    let original=render(element);
+    let mut large=element;large.font_size=48;
+    let larger=render(large);
+    let white_pixels=|pixels:&[u32]|pixels.iter().filter(|pixel|
+        (**pixel&255)>220 && ((**pixel>>8)&255)>220 && ((**pixel>>16)&255)>220).count();
+    assert!(white_pixels(&larger)>white_pixels(&original)+20);
+    let mut colored=element;colored.fill=[229,48,65,255];
+    let recolored=render(colored);
+    let lower_changes=(rect.top+rect.height/2..rect.bottom()).flat_map(|y|
+        (rect.left..rect.right()).map(move|x|y*width+x))
+        .filter(|at|original[*at]!=recolored[*at]).count();
+    assert!(lower_changes>20);
+    let mut rim=element;rim.border=[238,180,37,255];
+    let reoutlined=render(rim);
+    let rim_changes=(rect.top..rect.bottom()).flat_map(|y|
+        (rect.left..rect.right()).filter(move|x|*x<rect.left+8||*x>=rect.right()-8||y<rect.top+8||y>=rect.bottom()-8)
+            .map(move|x|y*width+x)).filter(|at|original[*at]!=reoutlined[*at]).count();
+    assert!(rim_changes>20);
+    let mut transparent=element;transparent.opacity=0;
+    assert!(render(transparent).iter().all(|pixel|*pixel==0x251407));
+    for (at,pixel) in recolored.iter().enumerate() {
+        let (x,y)=(at%width,at/width);
+        if x<rect.left||x>=rect.right()||y<rect.top||y>=rect.bottom() {assert_eq!(*pixel,0x251407);}
+    }
+    write_ppm("builds/validation/eclipse-precision/wizard/progress-authored-style.ppm",&larger,width,height);
+}
+
+// ------------------------=
+// FUNC: authored_progress_marker_pixels
+// DESC: Verifies marker style edits reach shared native pixels, preserve authored circles and honor rectangular override bounds without exterior damage.
+// ------------------=
+fn authored_progress_marker_pixels() {
+    let template=InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).unwrap();
+    let mut element=template.element(5,Role::ProgressSegment).unwrap();
+    element.frame=crate::ui::installer_template::InstallerTemplateRect{x:100,y:100,width:500,height:200};
+    element.fill=[62,111,255,219];element.border=[134,199,255,231];element.opacity=87;
+    let (w,h)=(400,300);let rect=scale_template_rect(element.frame,w,h);
+    for current in [false,true] {
+        let mut renders=Vec::new();
+        for (material,corners,radius) in [(0,0,0),(2,0,0),(1,1,0),(1,2,4),(2,2,28)] {
+            element.surface_material=material;element.corner_style=corners;element.corner_radius=radius;
+            let kind=if current{Surface::Current}else{Surface::Inactive};
+            let mut actual=vec![0x251407;w*h];let mut expected=actual.clone();
+            display(&mut actual,w,h).access_template_control(element,None,if current{(0,0)}else{(1,0)});
+            let size=rect.width.min(rect.height);
+            let frame=if corners==0 {Rect{x:(rect.left+(rect.width-size)/2)as i32,y:rect.top as i32,width:size as u32,height:size as u32}}
+                else{Rect{x:rect.left as i32,y:rect.top as i32,width:rect.width as u32,height:rect.height as u32}};
+            display(&mut expected,w,h).precision_surface_styled(frame,kind,Material{fill:(62,111,255),edge:(134,199,255),
+                opacity:(219u16*87/100)as u8,edge_opacity:(231u16*87/100)as u8,focus:0,pressed:false,scale:1},
+                crate::ui::panel_recipe::template_style(kind,material,corners,radius));
+            assert_eq!(actual,expected);
+            for (at,pixel) in actual.iter().enumerate() {
+                let (x,y)=(at%w,at/w);
+                if x<rect.left||x>=rect.right()||y<rect.top||y>=rect.bottom(){assert_eq!(*pixel,0x251407);}
+            }
+            renders.push(actual);
+        }
+        for pair in renders.windows(2) {assert_ne!(pair[0],pair[1]);}
+        assert_eq!(renders[0][(rect.top+rect.height/2)*w+rect.left+8],0x251407);
+        assert_ne!(renders[2][(rect.top+rect.height/2)*w+rect.left+8],0x251407);
+    }
 }
 
 // ------------------------=
@@ -146,20 +378,18 @@ fn partial_scene_pixels() {
         let clip=Region{left:r.left,top:r.top,right:r.left+r.width,bottom:r.top+r.height};
         let mut expected=vec![0;w*h];
         let mut target=display(&mut expected,w,h);
-        assert!(target.configuration_template_screen(step));
-        target.onboarding_input_field(step,r.left,r.top,r.width,r.height,b"Updated account",step==4,true,input.text);
-        assert!(target.configuration_template_navigation(step,1));
+        assert!(target.configuration_template_scene_data(CONFIGURATION_TEMPLATE_BYTES,step,1,
+            template_compositor::ConfigurationViewState{input:b"Updated account",masked:step==4,validation_error:false,network:None}));
         let mut actual=vec![0;w*h];
         let mut target=display(&mut actual,w,h);
-        assert!(target.configuration_template_screen(step));
-        target.onboarding_input_field(step,r.left,r.top,r.width,r.height,b"Old account",step==4,true,input.text);
-        assert!(target.configuration_template_navigation(step,1));
+        assert!(target.configuration_template_scene_data(CONFIGURATION_TEMPLATE_BYTES,step,1,
+            template_compositor::ConfigurationViewState{input:b"Old account",masked:step==4,validation_error:false,network:None}));
         let card=scale_template_rect(template.element(step as u8+1,Role::Console).unwrap().frame,w,h);
         actual[(card.top+8)*w+card.left+8]=0x00ff21;
         let before=actual.clone();
         let mut target=display(&mut actual,w,h);target.render_clip=Some(clip);
-        assert!(target.configuration_template_screen(step));
-        target.onboarding_input_field(step,r.left,r.top,r.width,r.height,b"Updated account",step==4,true,input.text);
+        assert!(target.configuration_template_scene_data(CONFIGURATION_TEMPLATE_BYTES,step,1,
+            template_compositor::ConfigurationViewState{input:b"Updated account",masked:step==4,validation_error:false,network:None}));
         assert_partial_pixels(&actual,&expected,&before,w,clip);
     }
     let template=InstallerTemplate::parse(crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES).unwrap();
@@ -181,6 +411,105 @@ fn partial_scene_pixels() {
     target.paint_bitmap_cover_rect(wallpaper,0,0,w,h);
     assert!(target.installer_template_progress_screen(73,b"Verifying installation"));
     assert_partial_pixels(&actual,&expected,&before,w,clip);
+}
+
+// ------------------------=
+// FUNC: ordered_live_layer_pixels
+// DESC: Proves authored layers above live input and navigation stay above them, including damage-clipped input updates.
+// ------------------=
+fn ordered_live_layer_pixels() {
+    let (w,h)=(1280,800);
+    let template=InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).unwrap();
+    let cover=template.element(2,Role::Content).unwrap();
+    for role in [Role::Input,Role::PrimaryButton] {
+        let field=template.element(2,role).unwrap();
+        let mut bytes=CONFIGURATION_TEMPLATE_BYTES.to_vec();
+        let start=bytes.windows(16).position(|id|id==cover.id).unwrap();
+        let kind=start+17+usize::from(bytes[start+16]);
+        bytes[kind+3]=(bytes[kind+3]&1)|(2<<2)|(1<<4);
+        bytes[kind+4..kind+6].copy_from_slice(&32767i16.to_le_bytes());
+        for (index,value) in [field.frame.x,field.frame.y,field.frame.width,field.frame.height].iter().enumerate() {
+            bytes[kind+6+index*2..kind+8+index*2].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[kind+14..kind+18].copy_from_slice(&[230,17,85,255]);
+        bytes[kind+18..kind+22].fill(0);bytes[kind+22]=100;bytes[kind+23]=0;
+        InstallerTemplate::parse(&bytes).unwrap();
+        let r=scale_template_rect(field.frame,w,h);
+        let clip=Region{left:r.left,top:r.top,right:r.left+r.width,bottom:r.top+r.height};
+        let mut first=vec![0;w*h];let mut second=first.clone();
+        for (pixels,input,focus) in [(&mut first,b"First".as_slice(),0),(&mut second,b"Updated name".as_slice(),1)] {
+            assert!(display(pixels,w,h).configuration_template_scene_data(&bytes,1,focus,
+                template_compositor::ConfigurationViewState{input,masked:false,validation_error:false,network:None}));
+        }
+        for y in r.top+4..r.bottom()-4 {for x in r.left+4..r.right()-4 {
+            assert_eq!(first[y*w+x],second[y*w+x],"Later authored layer must occlude live control");
+        }}
+        let before=first.clone();
+        let mut target=display(&mut first,w,h);target.render_clip=Some(clip);
+        assert!(target.configuration_template_scene_data(&bytes,1,1,
+            template_compositor::ConfigurationViewState{input:b"Updated name",masked:false,validation_error:false,network:None}));
+        assert_partial_pixels(&first,&second,&before,w,clip);
+        bytes[kind+3]|=2;
+        let mut exposed=vec![0;w*h];
+        assert!(display(&mut exposed,w,h).configuration_template_scene_data(&bytes,1,1,
+            template_compositor::ConfigurationViewState{input:b"Updated name",masked:false,validation_error:false,network:None}));
+        assert!((r.top+4..r.bottom()-4).any(|y|(r.left+4..r.right()-4).any(|x|exposed[y*w+x]!=second[y*w+x])));
+    }
+}
+
+// ------------------------=
+// FUNC: input_opacity_pixels
+// DESC: Verifies native input text and caret respect authored opacity and hidden state independently of transparent field surfaces.
+// ------------------=
+fn input_opacity_pixels() {
+    let template=InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).unwrap();
+    let mut element=template.element(2,Role::Input).unwrap();
+    element.fill[3]=0;element.border[3]=0;
+    let (w,h)=(640,480);let r=scale_template_rect(element.frame,w,h);
+    crate::ui::text_input::set_presentation(true,true,2,1,false);
+    let mut samples=Vec::new();
+    for opacity in [100,50,0] {
+        element.opacity=opacity;let mut pixels=vec![0;w*h];
+        display(&mut pixels,w,h).onboarding_input_field_with_element(Some(element),r.left,r.top,r.width,r.height,
+            b"Alpha",false,true,b"");
+        samples.push(pixels);
+    }
+    assert!(samples[0].iter().any(|pixel|*pixel!=0));
+    assert_ne!(samples[0],samples[1]);
+    assert!(samples[2].iter().all(|pixel|*pixel==0));
+    for (full,half) in samples[0].iter().zip(&samples[1]) {
+        for shift in [0,8,16] {assert!(((half>>shift)&255)<=((full>>shift)&255));}
+    }
+    element.opacity=100;element.hidden=true;
+    let mut hidden=vec![0;w*h];
+    display(&mut hidden,w,h).onboarding_input_field_with_element(Some(element),r.left,r.top,r.width,r.height,
+        b"Alpha",false,true,b"");
+    assert!(hidden.iter().all(|pixel|*pixel==0));
+    crate::ui::text_input::set_presentation(false,false,0,1,false);
+}
+
+// ------------------------=
+// FUNC: network_state_pixels
+// DESC: Verifies real network selection state changes pixels only inside shared authored choice bounds.
+// ------------------=
+fn network_state_pixels() {
+    let (w,h)=(1280,800);
+    let template=InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).unwrap();
+    let frames=core::array::from_fn(|index|crate::ui::installer_layout::configuration_network_row_rect_in(&template,index,w,h));
+    let mut before=vec![0;w*h];let mut after=before.clone();
+    for (pixels,selected) in [(&mut before,0),(&mut after,2)] {
+        display(pixels,w,h).onboarding_network_rows_from_state((0,0,0),frames,0,false,
+            onboarding_network_view::NetworkViewState{selected,connected:true,
+                wired_detail:b"Connected link detected",wireless_detail:b"No wireless adapter detected"});
+    }
+    assert_ne!(before,after);
+    for (at,(first,second)) in before.iter().zip(&after).enumerate() {
+        let (x,y)=(at%w,at/w);
+        if !frames.iter().flatten().any(|r|x>=r.left&&x<r.right()&&y>=r.top&&y<r.bottom()) {
+            assert_eq!(first,second);
+            assert_eq!(*first,0);
+        }
+    }
 }
 
 // ------------------------=
@@ -222,13 +551,10 @@ fn installer_scenes(output:&str) {
             let mut pixels=vec![0;w*h];let mut target=display(&mut pixels,w,h);
             target.paint_bitmap_cover_rect(include_bytes!("../assets/boot/infinity-installer-background-v2.bmp"),0,0,w,h);
             if screen==5 {
-                let layout=crate::ui::installer_layout::installer_wizard_layout(5,w,h);
-                let m=layout.masthead;
-                target.paint_bitmap_fit_rect(installer::INSTALLER_MASTHEAD_BMP,m.left,m.top,m.width,m.height);
-                let r=layout.panel;
-                target.installer_date_time_panel(r.left,r.top,r.width,r.height,
+                assert!(target.template_scene_data_with_date_time(
+                    crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,5,Some((2,true,None)),true,false,None,None,false,false,Some((
                     crate::storage::DateTimeConfiguration{year:2026,month:10,day:21,hour:11,minute:25,second:0,
-                        time_zone_id:3,utc_offset_minutes:-360},1,2,125,500,false);
+                        time_zone_id:3,utc_offset_minutes:-360},1))));
             }
             else if screen==8 {assert!(target.installer_template_progress_screen(73,b"Verifying installation"));}
             else {assert!(target.installer_template_screen_with_details(screen,
@@ -253,6 +579,37 @@ fn write_ppm(path:&str,pixels:&[u32],width:usize,height:usize) {
 }
 
 // ------------------------=
+// FUNC: confirmation_text_pixels
+// DESC: Checks scaled title/subtitle and footer glyph damage remains inside native control bounds at every Studio viewport.
+// ------------------=
+fn confirmation_text_pixels() {
+    for (w,h) in [(1280,800),(1600,1000),(1920,1080),(2560,1440)] {
+        for target in [crate::ui::installer_layout::InstallerConfirmationTarget::Cancel,
+            crate::ui::installer_layout::InstallerConfirmationTarget::Install] {
+            let frame=crate::ui::installer_layout::installer_confirmation_button_frame(target);
+            let rect=crate::ui::installer_layout::InstallerRect{left:w*frame.left/1000,top:h*frame.top/1000,
+                width:w*frame.width/1000,height:h*frame.height/1000};
+            let mut empty=vec![0x00182739;w*h];let mut text=empty.clone();
+            display(&mut empty,w,h).installer_button_rect(rect,b"",b"",false,false,-1,-1,false);
+            display(&mut text,w,h).installer_button_rect(rect,b"ERASE & INSTALL",b"Keep the disk unchanged",false,false,-1,-1,false);
+            let inset=(8*h/1000).max(2);let mut count=0;
+            for y in 0..h {for x in 0..w {if text[y*w+x]!=empty[y*w+x] {
+                assert!(x>=rect.left+inset && x<rect.right()-inset && y>=rect.top+inset && y<rect.bottom()-inset);count+=1;
+            }}}
+            assert!(count>100);
+        }
+        let mut footer=vec![0x00182739;w*h];
+        display(&mut footer,w,h).installer_confirmation_footer(b"Tab / arrows: choose     Enter: confirm     Esc: cancel");
+        let margin=(12*h/1000).max(4);let bottom=h*34/100+h*32/100;
+        let mut count=0;
+        for y in 0..h {for x in 0..w {if footer[y*w+x]!=0x00182739 {
+            assert!(x>=w/4+margin && x<w*3/4-margin && y<bottom-margin && y>bottom-h/20);count+=1;
+        }}}
+        assert!(count>100);
+    }
+}
+
+// ------------------------=
 // FUNC: verify
 // DESC: Renders authored first-boot scenes with actual compositor, bitmap sampling, Inter, image-backed controls and semantic state assertions.
 // ------------------=
@@ -260,27 +617,30 @@ pub(super) fn verify() {
     let output="builds/validation/eclipse-precision/wizard";
     std::fs::create_dir_all(output).unwrap();
     let comparisons=role_pixels();
+    authored_progress_pixels();
+    authored_progress_marker_pixels();
     frost_pixels();
     retained_frost_pixels();
     partial_scene_pixels();
+    ordered_live_layer_pixels();
+    input_opacity_pixels();
+    confirmation_text_pixels();
+    network_state_pixels();
     authored_button_pixels(CONFIGURATION_TEMPLATE_BYTES,8);
     installer_scenes(output);
     let template=InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).unwrap();
     let mut screen_pixels=0;
     for (width,height) in [(1280,800),(1920,1080)] {
-        for step in [0usize,1,2,3,4,5,7] {
+        for step in 0usize..8 {
             access_style::animate(((step as u32+1)<<8)|1,1000,false,true);
             let mut pixels=vec![0; width*height];
             let mut target=display(&mut pixels,width,height);
-            assert!(target.configuration_template_screen(step));
-            if let Some(input)=template.element(step as u8+1,Role::Input).filter(|e|!e.hidden) {
-                let r=scale_template_rect(input.frame,width,height);
-                target.onboarding_input_field(step,r.left,r.top,r.width,r.height,b"",step==4,false,input.text);
-            }
-            assert!(target.configuration_template_navigation(step,1));
+            let network=if step==6 {Some(onboarding_network_view::NetworkViewState{selected:0,connected:true,
+                wired_detail:b"Connected link detected",wireless_detail:b"No wireless adapter detected"})}else{None};
+            assert!(target.configuration_template_scene_data(CONFIGURATION_TEMPLATE_BYTES,step,1,
+                template_compositor::ConfigurationViewState{input:b"",masked:step==4,validation_error:false,network}));
             if let Some(card)=template.element(step as u8+1,Role::Console) {
-                let r=scale_template_rect(card.frame,width,height);
-                target.access_panel_glow(r.left,r.top,r.width,r.height);
+                target.access_template_panel_glow(card);
             }
             assert!(pixels.iter().filter(|p|**p!=0).count()>width*height*9/10);
             write_ppm(&format!("{output}/step-{step}-{width}x{height}.ppm"),&pixels,width,height);
@@ -288,5 +648,5 @@ pub(super) fn verify() {
         }
     }
     std::fs::write(format!("{output}/evidence.json"),format!(
-        "{{\"semantic_control_pixel_comparisons\":{comparisons},\"configuration_scene_pixels\":{screen_pixels},\"configuration_scenes\":14,\"installer_template_scenes\":26,\"native_compositor\":true,\"native_fonts\":true,\"installed_verified\":false,\"dynamic_network_scene_verified\":false}}\n")).unwrap();
+        "{{\"semantic_control_pixel_comparisons\":{comparisons},\"configuration_scene_pixels\":{screen_pixels},\"configuration_scenes\":16,\"installer_template_scenes\":26,\"native_compositor\":true,\"native_fonts\":true,\"installed_verified\":false,\"dynamic_network_scene_verified\":true}}\n")).unwrap();
 }

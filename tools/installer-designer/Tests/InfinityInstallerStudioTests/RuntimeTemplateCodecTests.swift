@@ -4,6 +4,143 @@ import SwiftUI
 
 final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------------=
+    // FUNC: testOversizedElementAndScreenCountsThrowBeforeEncodingOrAllocation
+    // DESC: Rejects unrepresentable JSON element collections and malformed runtime screen counts without integer traps.
+    // ------------------=
+    func testOversizedElementAndScreenCountsThrowBeforeEncodingOrAllocation() throws {
+        var document = InstallerStudioDocument.factoryDefault()
+        let element = document.screens[0].elements[0]
+        document.screens[0].elements = Array(repeating: element, count: Int(UInt16.max) + 1)
+        XCTAssertThrowsError(try TemplateValidator.validate(document))
+        XCTAssertThrowsError(try RuntimeTemplateCodec.encode(document))
+        var bytes = try RuntimeTemplateCodec.encode(.factoryDefault())
+        bytes[6] = 33; bytes[7] = 0
+        XCTAssertThrowsError(try RuntimeTemplateCodec.decodePackage(bytes))
+        var settings = InstallerStudioDocument.factorySystemSettings()
+        settings.screens.removeLast()
+        XCTAssertThrowsError(try TemplateValidator.validate(settings, for: .systemSettings))
+        for field in ["opacity", "fontSize", "cornerRadius", "zIndex"] {
+            var invalid = InstallerStudioDocument.factoryDefault()
+            switch field {
+            case "opacity": invalid.screens[0].elements[0].opacity = 101
+            case "fontSize": invalid.screens[0].elements[0].fontSize = 257
+            case "cornerRadius": invalid.screens[0].elements[0].cornerRadius = -1
+            default: invalid.screens[0].elements[0].zIndex = 65_536
+            }
+            XCTAssertThrowsError(try RuntimeTemplateCodec.encode(invalid))
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testPortableRuntimeImportRequiresCompleteArtworkButPreservesBuiltIns
+    // DESC: Separates layout-only round trips from portable import and rejects missing or unused embedded images.
+    // ------------------=
+    func testPortableRuntimeImportRequiresCompleteArtworkButPreservesBuiltIns() throws {
+        let original = InstallerStudioDocument.factoryDefault()
+        XCTAssertEqual(try RuntimeTemplateCodec.decodePackage(RuntimeTemplateCodec.encode(original)).document, original)
+        var document = original
+        document.screens[0].elements.append(.make(name: "Custom", kind: .image,
+            frame: CanvasRect(x: 10, y: 10, width: 40, height: 40), imageAsset: "installer-assets/custom.bmp"))
+        let layout = try RuntimeTemplateCodec.encode(document)
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(layout), document)
+        XCTAssertThrowsError(try RuntimeTemplateCodec.decodePackage(layout))
+    }
+
+    // ------------------------=
+    // FUNC: testEmbeddedArtworkLimitMatchesNativeParser
+    // DESC: Saves and decodes 128 real tiny bitmaps, then rejects a 129th native asset in both encoder and decoder.
+    // ------------------=
+    func testEmbeddedArtworkLimitMatchesNativeParser() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "build/tmp/codec-bounds-\(UUID().uuidString)")
+        let directory = root.appending(path: "assets/boot/installer-assets")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 4, bitsPerPixel: 32))
+        image.setColor(.cyan, atX: 0, y: 0)
+        let bitmap = try NativeBitmapEncoder.encode(XCTUnwrap(image.cgImage))
+        var document = InstallerStudioDocument.factoryDefault()
+        for index in 0..<128 {
+            let name = "cell-\(index).bmp"
+            try bitmap.write(to: directory.appending(path: name))
+            document.screens[0].elements.append(.make(name: "Cell \(index)", kind: .image,
+                frame: CanvasRect(x: 10, y: 10, width: 40, height: 40), imageAsset: "installer-assets/\(name)"))
+        }
+        let layout = try RuntimeTemplateCodec.encode(document)
+        let packaged = try RuntimeTemplateCodec.encode(document, assetRoot: root)
+        XCTAssertEqual(try RuntimeTemplateCodec.decodePackage(packaged).assets.count, 128)
+        var oversized = packaged
+        oversized[layout.count - 2] = 129
+        let name = Array("installer-assets/extra.bmp".utf8)
+        oversized.append(UInt8(name.count)); oversized.append(contentsOf: name)
+        for shift in stride(from: 0, to: 32, by: 8) { oversized.append(UInt8(truncatingIfNeeded: bitmap.count >> shift)) }
+        oversized.append(bitmap)
+        XCTAssertThrowsError(try RuntimeTemplateCodec.decodePackage(oversized, requireEmbeddedAssets: false))
+        document.screens[0].elements.append(.make(name: "Extra", kind: .image,
+            frame: CanvasRect(x: 10, y: 10, width: 40, height: 40), imageAsset: "installer-assets/extra.bmp"))
+        XCTAssertThrowsError(try RuntimeTemplateCodec.encode(document, assetRoot: root))
+        // A valid bitmap payload that no layer uses must not create imported disk files.
+        var unused = try RuntimeTemplateCodec.encode(.factoryDefault())
+        unused[unused.count - 2] = 1
+        unused.append(UInt8(name.count)); unused.append(contentsOf: name)
+        for shift in stride(from: 0, to: 32, by: 8) { unused.append(UInt8(truncatingIfNeeded: bitmap.count >> shift)) }
+        unused.append(bitmap)
+        XCTAssertThrowsError(try RuntimeTemplateCodec.decodePackage(unused))
+    }
+
+    // ------------------------=
+    // FUNC: testSemanticThemeBindingsCompileLiteralNativeColorsWithoutChangingCustomValues
+    // DESC: Verifies explicit theme references survive JSON editing and resolve identically for preview and native payload bytes.
+    // ------------------=
+    func testSemanticThemeBindingsCompileLiteralNativeColorsWithoutChangingCustomValues() throws {
+        var document = InstallerStudioDocument.factoryDefault()
+        let custom = document.screens[0].elements[0].fill
+        document.screens[0].elements[0].fillToken = .accent
+        document.screens[0].elements[0].borderToken = .border
+        var theme = UIKitDocument()
+        theme.colors[UIKitColorRole.accent.rawValue] = 0x80446688
+        theme.colors[UIKitColorRole.border.rawValue] = 0x00ff3311
+        let source = try JSONDecoder().decode(InstallerStudioDocument.self, from: JSONEncoder().encode(document))
+        XCTAssertEqual(source, document)
+        let bytes = try RuntimeTemplateCodec.encode(document, theme: theme)
+        let decoded = try RuntimeTemplateCodec.decode(bytes)
+        XCTAssertEqual(decoded, document.runtimeProjection(theme: theme))
+        XCTAssertEqual(decoded.screens[0].elements[0].fill, StudioColor(red: 68, green: 102, blue: 136, alpha: 128))
+        XCTAssertEqual(decoded.screens[0].elements[0].border.alpha, 0)
+        XCTAssertEqual(document.screens[0].elements[0].fill, custom)
+        XCTAssertEqual(decoded.screens[0].elements[1], document.screens[0].elements[1])
+        document.screens[0].elements[0].fillToken = nil
+        XCTAssertEqual(document.runtimeProjection(theme: theme).screens[0].elements[0].fill, custom)
+        var invalid = theme
+        invalid.colors.removeLast()
+        XCTAssertThrowsError(try RuntimeTemplateCodec.encode(document, theme: invalid))
+    }
+
+    // ------------------------=
+    // FUNC: testPerElementSurfaceStylesRoundTripAndLegacyMigration
+    // DESC: Preserves distinct materials and corner styles per layer while keeping version-six documents readable.
+    // ------------------=
+    func testPerElementSurfaceStylesRoundTripAndLegacyMigration() throws {
+        var document = InstallerStudioDocument.factoryDefault()
+        document.screens[0].elements[0].surfaceMaterial = .matte
+        document.screens[0].elements[0].surfaceCorners = .square
+        document.screens[0].elements[1].surfaceMaterial = .glass
+        document.screens[0].elements[1].surfaceCorners = .rounded
+        document.screens[0].elements[1].cornerRadius = 22
+        let encoded = try RuntimeTemplateCodec.encode(document)
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(encoded), document)
+        let saved = try JSONEncoder().encode(document)
+        XCTAssertEqual(try JSONDecoder().decode(InstallerStudioDocument.self, from: saved), document)
+        let defaults = InstallerStudioDocument.factoryDefault()
+        var legacy = try RuntimeTemplateCodec.encode(defaults)
+        legacy[4] = 6; legacy[5] = 0
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(legacy), defaults)
+    }
+
+    // ------------------------=
     // FUNC: testEveryElementHasUniqueEditableCodeIdentityAndReadOnlyUUID
     // DESC: Proves application binding IDs are meaningful, editable even on locked layers, and independent from UUID identity.
     // ------------------=
@@ -257,6 +394,39 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let packaged = try RuntimeTemplateCodec.encode(store.document, assetRoot: root)
         XCTAssertGreaterThan(packaged.count, unpackaged.count + 54)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(packaged), store.document)
+    }
+
+    // ------------------------=
+    // FUNC: testJPEGAndTIFFImportArePackagedAndInvalidFilesLeaveDocumentUnchanged
+    // DESC: Exercises additional real raster decoders and verifies rejected image data never creates a canvas layer.
+    // ------------------=
+    @MainActor func testJPEGAndTIFFImportArePackagedAndInvalidFilesLeaveDocumentUnchanged() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "infinity-raster-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 6,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 32, bitsPerPixel: 32))
+        for y in 0..<6 { for x in 0..<8 { bitmap.setColor(.cyan, atX: x, y: y) } }
+        let store = TemplateStore()
+        store.document = .factoryDefault(); store.projectRoot = root
+        for (suffix, format) in [("jpg", NSBitmapImageRep.FileType.jpeg), ("tiff", .tiff)] {
+            let source = root.appending(path: "source.\(suffix)")
+            try XCTUnwrap(bitmap.representation(using: format, properties: [:])).write(to: source)
+            let count = store.document.screens[0].elements.count
+            let id = try store.importImageAsset(from: source)
+            XCTAssertEqual(store.document.screens[0].elements.count, count + 1)
+            XCTAssertEqual(store.selectedElement?.id, id)
+            let identifiers = store.document.screens[0].elements.map(\.codeIdentifier)
+            XCTAssertEqual(Set(identifiers).count, identifiers.count)
+            let encoded = try RuntimeTemplateCodec.encode(store.document, assetRoot: root)
+            XCTAssertEqual(try RuntimeTemplateCodec.decode(encoded), store.document)
+        }
+        let before = store.document
+        let invalid = root.appending(path: "invalid.png")
+        try Data([0, 1, 2, 3]).write(to: invalid)
+        XCTAssertThrowsError(try store.importImageAsset(from: invalid))
+        XCTAssertEqual(store.document, before)
     }
 
     // ------------------------=
@@ -589,7 +759,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         XCTAssertTrue(store.selectedElementIDs.isEmpty)
         XCTAssertNil(store.selectedElementID)
         XCTAssertNil(store.inlineEditorElementID)
-        XCTAssertEqual(store.status, "Marquee Select disabled")
+        XCTAssertFalse(store.marqueeSelectionEnabled)
     }
 
     // ------------------------=
@@ -603,7 +773,6 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.activateCanvasElement(body.id)
         XCTAssertEqual(store.selectedElementID, body.id)
         XCTAssertNil(store.inlineEditorElementID)
-        XCTAssertEqual(store.status, "Selected for editing in the inspector")
 
         let primary = store.selectedScreen!.elements.first { $0.role == .primaryButton }!
         store.activateCanvasElement(primary.id)
@@ -708,7 +877,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: root.appending(path: "assets/boot/configuration-screens.iuit").path
         ))
-        XCTAssertEqual(store.status, "Saved System Settings source and OS runtime")
+        XCTAssertTrue(store.validationIssues.isEmpty)
     }
 
     // ------------------------=
@@ -774,7 +943,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
             XCTAssertEqual(card.frame, InfinityUIKit.Metrics.configurationCard)
             XCTAssertEqual(card.fill, InfinityUIKit.EclipseAccess.surface.withAlpha(235))
-            XCTAssertEqual(card.border, InfinityUIKit.EclipseAccess.mutedBorder)
+            XCTAssertEqual(card.border, InfinityUIKit.EclipseAccess.border)
             XCTAssertEqual(card.cornerRadius, 16)
             XCTAssertEqual(content.frame, InfinityUIKit.Metrics.configurationContent)
             XCTAssertEqual(content.fill, InfinityUIKit.EclipseAccess.surface.withAlpha(0))
@@ -784,8 +953,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             XCTAssertEqual(primary.frame.height, 47)
             XCTAssertEqual(primary.fill, InfinityUIKit.EclipseAccess.primary)
             XCTAssertEqual(primary.border, InfinityUIKit.EclipseAccess.border)
-            XCTAssertEqual(back.fill, InfinityUIKit.EclipseAccess.surface.withAlpha(245))
-            XCTAssertEqual(back.border, InfinityUIKit.EclipseAccess.mutedBorder)
+            XCTAssertEqual(back.fill, InfinityUIKit.EclipseAccess.background.withAlpha(245))
+            XCTAssertEqual(back.border, InfinityUIKit.EclipseAccess.border)
         }
 
         let welcome = configuration.screens[0]
@@ -805,7 +974,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             let input = try XCTUnwrap(screen.elements.first { $0.role == .input })
             XCTAssertEqual(input.frame, InfinityUIKit.Metrics.configurationInput)
             XCTAssertEqual(input.fill, InfinityUIKit.EclipseAccess.background.withAlpha(245))
-            XCTAssertEqual(input.border, InfinityUIKit.EclipseAccess.mutedBorder)
+            XCTAssertEqual(input.border, InfinityUIKit.EclipseAccess.border)
             XCTAssertEqual(input.cornerRadius, 10)
         }
     }
@@ -1011,39 +1180,23 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
     // ------------------------=
     // FUNC: testUIKitVisualRecipeExpressesControlStateHierarchy
-    // DESC: Exercises default, hover, focus, and pressed recipes as structured visual state transitions.
+    // DESC: Exercises default, hover, focus, and pressed native material transitions without duplicating approximate color recipes.
     // ------------------=
     func testUIKitVisualRecipeExpressesControlStateHierarchy() {
-        let idle = InfinityUIKit.visualRecipe(
-            role: .primaryButton,
-            state: .idle,
-            authoredFill: InfinityUIKit.Palette.primaryAction,
-            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
-        )
-        let hover = InfinityUIKit.visualRecipe(
-            role: .primaryButton,
-            state: .hover,
-            authoredFill: InfinityUIKit.Palette.primaryAction,
-            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
-        )
-        let focused = InfinityUIKit.visualRecipe(
-            role: .primaryButton,
-            state: .focused,
-            authoredFill: InfinityUIKit.Palette.primaryAction,
-            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
-        )
-        let pressed = InfinityUIKit.visualRecipe(
-            role: .primaryButton,
-            state: .pressed,
-            authoredFill: InfinityUIKit.Palette.primaryAction,
-            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
-        )
-
-        XCTAssertGreaterThan(hover.glowOpacity, idle.glowOpacity)
-        XCTAssertGreaterThan(focused.glowOpacity, hover.glowOpacity)
-        XCTAssertGreaterThan(focused.borderWidth, idle.borderWidth)
-        XCTAssertGreaterThan(hover.fillTop.blue, idle.fillTop.blue)
-        XCTAssertLessThan(pressed.fillBottom.blue, idle.fillBottom.blue)
-        XCTAssertEqual(focused.border, InfinityUIKit.Palette.accentBright)
+        let idle = InfinityUIKit.precisionMaterial(state: .idle, fill: InfinityUIKit.Palette.primaryAction,
+            border: InfinityUIKit.Palette.primaryActionBorder)
+        let hover = InfinityUIKit.precisionMaterial(state: .hover, fill: InfinityUIKit.Palette.primaryAction,
+            border: InfinityUIKit.Palette.primaryActionBorder)
+        let focused = InfinityUIKit.precisionMaterial(state: .focused, fill: InfinityUIKit.Palette.primaryAction,
+            border: InfinityUIKit.Palette.primaryActionBorder)
+        let pressed = InfinityUIKit.precisionMaterial(state: .pressed, fill: InfinityUIKit.Palette.primaryAction,
+            border: InfinityUIKit.Palette.primaryActionBorder)
+        XCTAssertEqual(idle.focus, 0)
+        XCTAssertEqual(hover.focus, 255)
+        XCTAssertEqual(focused.focus, 255)
+        XCTAssertFalse(idle.pressed)
+        XCTAssertTrue(pressed.pressed)
+        XCTAssertEqual(focused.fill, idle.fill)
+        XCTAssertEqual(focused.edge, idle.edge)
     }
 }

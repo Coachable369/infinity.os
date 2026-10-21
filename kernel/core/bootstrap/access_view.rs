@@ -12,6 +12,17 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn access_frost_panel(&mut self, left:usize, top:usize, width:usize,
         height:usize, fill:palette::Rgb, border:palette::Rgb, opacity:u8, edge_opacity:u8) {
+        self.access_frost_panel_styled(left,top,width,height,fill,border,opacity,edge_opacity,
+            crate::ui::panel_recipe::surface_style(Surface::Panel));
+    }
+
+    // ------------------------=
+    // FUNC: access_frost_panel_styled
+    // DESC: Uses the shared panel material for saved wizard overrides without losing retained backdrop clipping.
+    // ------------------=
+    pub(super) fn access_frost_panel_styled(&mut self, left:usize, top:usize, width:usize,
+        height:usize, fill:palette::Rgb, border:palette::Rgb, opacity:u8, edge_opacity:u8,
+        style:crate::ui::panel_recipe::SurfaceStyle) {
         let Some(region)=self.clipped_render_region(left,top,width,height) else{return;};
         let pack=|c:palette::Rgb| (u32::from(c.0)<<16)|(u32::from(c.1)<<8)|u32::from(c.2);
         let material=drawer_material::Material{primary:pack(fill),accent:pack(border),
@@ -20,10 +31,10 @@ impl DisplayDevice {
         // Full scenes seed clean parent samples after restoring the wallpaper.
         // Field/caret/progress damage reuses that grid and never samples controls
         // or changes the blur kernel just because the output clip is smaller.
-        unsafe {(&mut *(&raw mut ACCESS_BACKDROP)).paint_retained_with_edge_opacity(
+        unsafe {(&mut *(&raw mut ACCESS_BACKDROP)).paint_retained_styled_with_edge_opacity(
             core::slice::from_raw_parts_mut(self.buffer,self.stride*self.height),self.stride,
             (left,top,width,height),(region.left,region.top,region.right,region.bottom),material,edge_opacity,
-            (left,top,left.saturating_add(width).min(self.width),top.saturating_add(height).min(self.height)));}
+            (left,top,left.saturating_add(width).min(self.width),top.saturating_add(height).min(self.height)),style);}
         self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);
     }
     // ------------------------=
@@ -111,6 +122,10 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn access_glyph(&mut self,cx:usize,cy:usize,glyph:usize,size:usize,active:bool) {
         const ATLAS: &[u8; 16*64*64*4] = include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba");
+        #[cfg(studio_native_preview)]
+        let atlas=crate::studio_native_render::asset_override(b"eclipse-access-glyphs-v1.rgba").unwrap_or(ATLAS);
+        #[cfg(not(studio_native_preview))]
+        let atlas=ATLAS;
         if glyph>=16 {return;}
         if size == 0 { return; }
         let left = cx.saturating_sub(size/2); let top = cy.saturating_sub(size/2);
@@ -121,7 +136,7 @@ impl DisplayDevice {
             let x1=(((x-left+1)*64/size).max(x0+1)).min(64);
             let y1=(((y-top+1)*64/size).max(y0+1)).min(64);
             let mut alpha=0u32;
-            for sy in y0..y1 { for sx in x0..x1 { alpha+=ATLAS[(glyph*64*64+sy*64+sx)*4+3] as u32; } }
+            for sy in y0..y1 { for sx in x0..x1 { alpha+=atlas[(glyph*64*64+sy*64+sx)*4+3] as u32; } }
             self.blend_color_unchecked(x,y,color.0,color.1,color.2,(alpha/((x1-x0)*(y1-y0)) as u32) as u8);
         } }
         self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);

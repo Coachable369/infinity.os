@@ -6869,9 +6869,8 @@ impl ConsoleRuntime {
     // FUNC: select_installer_time_zone_from_map
     // DESC: Resolves a map longitude to the closest supported typed time zone.
     // ------------------=
-    fn select_installer_time_zone_from_map(&mut self, normalized_x: i32) {
-        let bounded_x = normalized_x.clamp(505, 895);
-        let longitude = -180 + (bounded_x - 505) * 360 / 390;
+    fn select_installer_time_zone_from_map(&mut self, longitude: i32) {
+        let longitude=longitude.clamp(-180,180);
         let mut selected = 0usize;
         let mut distance = i32::MAX;
         for (index, zone) in TIME_ZONES.iter().enumerate() {
@@ -8025,57 +8024,23 @@ impl ConsoleRuntime {
                 self.enter_console();
             }
         } else if self.mode == ConsoleMode::Installer {
-            if self.installer_step == InstallerStep::DateTime
-                && (100..=475).contains(&self.pointer_x)
-            {
-                let field = if (465..=535).contains(&self.pointer_y) {
-                    Some(2)
-                } else if (555..=625).contains(&self.pointer_y) {
-                    Some(3)
-                } else if (645..=715).contains(&self.pointer_y) {
-                    Some(4)
-                } else {
-                    None
-                };
-                if clicked {
-                    if let Some(field) = field {
-                        self.installer_focus = field;
-                        if field == 2 && (170..=405).contains(&self.pointer_x) {
-                            self.installer_date_time_part = if self.pointer_x < 248 {
-                                0
-                            } else if self.pointer_x < 326 {
-                                1
-                            } else {
-                                2
-                            };
-                        } else if field == 3 && (170..=405).contains(&self.pointer_x) {
-                            self.installer_date_time_part =
-                                if self.pointer_x < 288 { 3 } else { 4 };
+            if self.installer_step==InstallerStep::DateTime && clicked {
+                use crate::ui::installer_layout::{installer_date_time_target,InstallerDateTimeTarget};
+                match installer_date_time_target(self.pointer_x,self.pointer_y,self.system.framebuffer_width,self.system.framebuffer_height) {
+                    Some(InstallerDateTimeTarget::Field{focus,part,adjustment})=>{
+                        self.installer_focus=focus;
+                        if let Some(part)=part {self.installer_date_time_part=part;}
+                        if adjustment!=0 {
+                            if focus==4 {self.adjust_installer_time_zone(adjustment<0);}
+                            else {self.adjust_installer_date_time(adjustment<0);}
                         }
-                        if self.pointer_x <= 155 {
-                            if field == 4 {
-                                self.adjust_installer_time_zone(true);
-                            } else {
-                                self.adjust_installer_date_time(true);
-                            }
-                        } else if self.pointer_x >= 420 {
-                            if field == 4 {
-                                self.adjust_installer_time_zone(false);
-                            } else {
-                                self.adjust_installer_date_time(false);
-                            }
-                        }
-                    }
+                    },
+                    Some(InstallerDateTimeTarget::Map{longitude})=>{
+                        self.installer_focus=4;
+                        self.select_installer_time_zone_from_map(i32::from(longitude));
+                    },
+                    None=>{},
                 }
-            }
-            if self.installer_step == InstallerStep::DateTime
-                && clicked
-                && (500..=900).contains(&self.pointer_x)
-                && (405..=770).contains(&self.pointer_y)
-            {
-                self.installer_focus = 4;
-                self.select_installer_time_zone_from_map(self.pointer_x);
-                crate::output_text(b"[installer] time-zone selected from map\n");
             }
             let popup = self.installer_step == InstallerStep::Confirm;
             let confirmation_target = if popup {
@@ -8086,29 +8051,21 @@ impl ConsoleRuntime {
             } else {
                 None
             };
-            let welcome = self.installer_step == InstallerStep::Welcome;
-            let hierarchy = self.installer_step == InstallerStep::Hierarchy;
+            let navigation_target=crate::ui::installer_layout::installer_navigation_target(
+                self.installer_screen(),self.pointer_x,self.pointer_y);
             let over_back = self.installer_has_back()
                 && if popup {
                     confirmation_target
                         == Some(crate::ui::installer_layout::InstallerConfirmationTarget::Cancel)
-                } else if welcome {
-                    (145..=470).contains(&self.pointer_x) && (810..=865).contains(&self.pointer_y)
-                } else if hierarchy {
-                    (135..=485).contains(&self.pointer_x) && (820..=875).contains(&self.pointer_y)
                 } else {
-                    (190..=490).contains(&self.pointer_x) && (830..=885).contains(&self.pointer_y)
+                    navigation_target==Some(0)
                 };
             let over_primary = self.installer_has_primary()
                 && if popup {
                     confirmation_target
                         == Some(crate::ui::installer_layout::InstallerConfirmationTarget::Install)
-                } else if welcome {
-                    (480..=830).contains(&self.pointer_x) && (810..=865).contains(&self.pointer_y)
-                } else if hierarchy {
-                    (510..=860).contains(&self.pointer_x) && (820..=875).contains(&self.pointer_y)
                 } else {
-                    (510..=810).contains(&self.pointer_x) && (830..=885).contains(&self.pointer_y)
+                    navigation_target==Some(1)
                 };
             if over_back {
                 self.installer_focus = 0;

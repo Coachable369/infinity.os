@@ -105,6 +105,24 @@ APPLICATION_ASSETS := $(shell find assets/apps -type f)
 DESIGN_KIT_ASSETS := $(shell find assets/ui-design-kit/default -type f)
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-precision-v1.rgba
+UIKIT_RUNTIME_ASSETS := assets/ui-design-kit/default/uikit-tokens.bin \
+	assets/ui-design-kit/default/uikit-styles.bin \
+	assets/ui-design-kit/default/eclipse-precision-v1.rgba \
+	assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba \
+	assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp \
+	assets/ui-design-kit/default/browser-glyphs-v1.rgba \
+	assets/ui-design-kit/default/window-controls-v1.rgba \
+	assets/ui-design-kit/default/ai-window-tab-v1.rgba \
+	assets/ui-design-kit/default/wait-orbit-v2.rgba \
+	assets/ui-design-kit/default/browser-welcome-hero-v1.bmp
+UIKIT_SOURCES := assets/ui-design-kit/uikit.infinityui assets/ui-design-kit/uikit-catalog.json \
+	assets/ui-design-kit/uikit-baselines.json $(wildcard assets/ui-design-kit/default/*.png) \
+	$(shell find assets/ui-design-kit/overrides -type f 2>/dev/null) \
+	tools/compile-uikit.py tools/build-precision-artwork.py tools/build-access-artwork.py \
+	tools/build-browser-glyphs.py tools/build-window-controls.py tools/build-assistant-artwork.py \
+	tools/build-wait-artwork.py tools/build-browser-welcome-artwork.py
+DESIGN_KIT_ASSETS += $(UIKIT_RUNTIME_ASSETS)
+DESIGN_KIT_ASSETS += assets/ui-design-kit/uikit.infinityui assets/ui-design-kit/uikit-catalog.json
 KERNEL_SOURCES += $(DESIGN_KIT_ASSETS)
 KERNEL_SOURCES += $(wildcard sdk/infinity-enterprise-core/*.rs) sdk/infinity-enterprise-core/Cargo.toml
 
@@ -260,18 +278,30 @@ performance-test:
 		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
 
 .PHONY: active-painter-test
-assets/ui-design-kit/default/eclipse-precision-v1.rgba: assets/ui-design-kit/default/eclipse-precision-v1-reference.png assets/ui-design-kit/default/eclipse-access-v1-reference.png tools/build-precision-artwork.py
-	python3 tools/build-precision-artwork.py
+$(BUILD)/uikit-runtime.stamp: $(UIKIT_SOURCES) $(ICON_THEME_SOURCES) tools/build-launcher-icon-atlases.py tools/build-cursor-assets.swift
+	python3 tools/compile-uikit.py --stamp $(BUILD)/uikit-runtime.stamp
 
-assets/ui-design-kit/default/browser-welcome-hero-v1.bmp: assets/ui-design-kit/default/browser-welcome-hero-v1.png tools/build-browser-welcome-artwork.py
-	python3 tools/build-browser-welcome-artwork.py
+$(UIKIT_RUNTIME_ASSETS): $(BUILD)/uikit-runtime.stamp
+	@test -s $@
 
-assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp: assets/ui-design-kit/default/eclipse-access-glyphs-v1.png assets/ui-design-kit/default/eclipse-access-wallpaper-v1.png tools/build-access-artwork.py
-	python3 tools/build-access-artwork.py
+.PHONY: uikit-runtime uikit-document-test
+uikit-runtime: $(UIKIT_RUNTIME_ASSETS)
+
+uikit-document-test: $(UIKIT_RUNTIME_ASSETS)
+	@mkdir -p build/behavior-tests
+	python3 tools/uikit-document-test.py
+	rustc --edition=2021 -Awarnings tools/uikit-tokens-test.rs -o build/behavior-tests/uikit-tokens-test
+	build/behavior-tests/uikit-tokens-test
+	rustc --edition=2021 -Awarnings tools/uikit-style-test.rs -o build/behavior-tests/uikit-style-test
+	build/behavior-tests/uikit-style-test
 
 build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-browser-core/*.rs) assets/ui-design-kit/default/browser-welcome-hero-v1.bmp
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z sdk/infinity-browser-core/lib.rs -o $@
+
+.PHONY: studio-native-renderer
+studio-native-renderer: build/behavior-tests/libinfinity_browser_core.rlib
+	@rustc --edition=2021 -O -Awarnings --cfg studio_native_preview --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib tools/active-painter-test.rs -o build/behavior-tests/infinity-studio-native-renderer
 
 .PHONY: desktop-browser-polish-test
 desktop-browser-polish-test: build/behavior-tests/libinfinity_browser_core.rlib
@@ -347,8 +377,8 @@ check-tools:
 	@test -f "$(OVMF_CODE)" || { echo "ERROR: OVMF firmware not found (install qemu)"; exit 1; }
 	@test -f "$(AAVMF_CODE)" || { echo "ERROR: AArch64 UEFI firmware not found (install qemu)"; exit 1; }
 
-$(ICON_RUNTIME_ASSETS): $(ICON_THEME_SOURCES)
-	@tools/build-icon-themes.sh
+$(ICON_RUNTIME_ASSETS): $(BUILD)/uikit-runtime.stamp
+	@test -s $@
 
 NATIVE_C_TOOLCHAIN_SOURCES := tools/build-native-c-toolchain.sh $(shell find sdk/compiler -type f)
 NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/extension.c tools/native-python/library.c $(shell find sdk/python sdk/compiler -type f)
@@ -688,7 +718,7 @@ desktop-system-test: milestone-7-test
 ui-install-parity-test: x86 x86_64 aarch64
 	@tools/ui-install-parity-test.sh
 
-input-regression-test:
+input-regression-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@sh tools/clipboard-cursor-test.sh
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --test tools/window-controls-test.rs -o build/behavior-tests/window-controls-test
@@ -703,7 +733,7 @@ input-regression-test:
 	@build/behavior-tests/spatial-timing-test
 	@rustc --edition=2021 --test kernel/core/bootstrap/spatial_surface.rs -o build/behavior-tests/spatial-surface-test
 	@build/behavior-tests/spatial-surface-test
-	@rustc --edition=2021 -A warnings --test tools/active-painter-test.rs -o build/behavior-tests/active-painter-unit-test
+	@rustc --edition=2021 -A warnings --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib --test tools/active-painter-test.rs -o build/behavior-tests/active-painter-unit-test
 	@build/behavior-tests/active-painter-unit-test
 	@rustc --edition=2021 --test tools/soft-stroke-test.rs -o build/behavior-tests/soft-stroke-test
 	@build/behavior-tests/soft-stroke-test

@@ -109,35 +109,26 @@ final class EclipseAccessTests: XCTestCase {
     }
 
     // ------------------------=
-    // FUNC: testAuthoredRecipeIsScopedAndMatchesNativeEndpoints
-    // DESC: Verifies exact native palette arithmetic, pressure and focus states while preserving unrelated canvas recipes.
+    // FUNC: testAuthoredMaterialMatchesNativeSemantics
+    // DESC: Verifies that template controls preserve authored alpha and map to the shared native atlas for every collection.
     // ------------------=
-    func testAuthoredRecipeIsScopedAndMatchesNativeEndpoints() {
+    func testAuthoredMaterialMatchesNativeSemantics() {
         let palette = InfinityUIKit.EclipseAccess.self
-        let idle = InfinityUIKit.visualRecipe(role: .primaryButton, state: .idle,
-            authoredFill: palette.primary, authoredBorder: palette.border, configuration: true)
-        XCTAssertTrue(idle.eclipseAccess)
-        XCTAssertEqual(idle.fillTop, StudioColor(red: 49, green: 174, blue: 255, alpha: 255))
-        XCTAssertEqual(idle.fillBottom, StudioColor(red: 22, green: 62, blue: 220, alpha: 255))
-        let focus = InfinityUIKit.visualRecipe(role: .primaryButton, state: .focused,
-            authoredFill: palette.primary, authoredBorder: palette.border, configuration: true)
-        XCTAssertEqual(focus.fillTop, idle.fillTop)
-        XCTAssertEqual(focus.border, palette.focus)
-        XCTAssertEqual(focus.borderWidth, 1)
-        XCTAssertEqual(focus.highlightOpacity, 0)
-        let pressed = InfinityUIKit.visualRecipe(role: .primaryButton, state: .pressed,
-            authoredFill: palette.primary, authoredBorder: palette.border, configuration: true)
-        XCTAssertEqual(pressed.fillTop, idle.fillTop.mixed(with: palette.elevated, amount: 56))
-        XCTAssertEqual(pressed.fillBottom, idle.fillBottom.mixed(with: palette.elevated, amount: 56))
-        let panel = InfinityUIKit.visualRecipe(role: .console, state: .idle,
-            authoredFill: palette.surface.withAlpha(235), authoredBorder: palette.mutedBorder, configuration: true)
-        XCTAssertEqual(panel.fillTop, StudioColor(red: 25, green: 40, blue: 73, alpha: 235))
-        XCTAssertEqual(panel.fillBottom, palette.surface.withAlpha(235))
-        XCTAssertFalse(InfinityUIKit.visualRecipe(role: .primaryButton, state: .focused,
-            authoredFill: palette.primary, authoredBorder: palette.border).eclipseAccess)
-        XCTAssertFalse(InfinityUIKit.visualRecipe(role: .primaryButton, state: .focused,
-            authoredFill: InfinityUIKit.Palette.primaryAction, authoredBorder: InfinityUIKit.Palette.border,
-            configuration: true).eclipseAccess)
+        let idle = InfinityUIKit.precisionMaterial(state: .idle, fill: palette.primary.withAlpha(117), border: palette.border)
+        XCTAssertEqual(idle.fill, palette.primary.withAlpha(117))
+        XCTAssertEqual(idle.opacity, 117)
+        XCTAssertEqual(idle.edgeOpacity, 255)
+        XCTAssertEqual(idle.focus, 0)
+        let focus = InfinityUIKit.precisionMaterial(state: .focused, fill: palette.primary, border: palette.border)
+        XCTAssertEqual(focus.focus, 255)
+        XCTAssertEqual(focus.edge, palette.border)
+        let pressed = InfinityUIKit.precisionMaterial(state: .pressed, fill: palette.primary, border: palette.border)
+        XCTAssertTrue(pressed.pressed)
+        for configuration in [false, true] {
+            XCTAssertEqual(InfinityUIKit.precisionKind(role: .primaryButton, kind: .button, configuration: configuration), .primary)
+            XCTAssertEqual(InfinityUIKit.precisionKind(role: .backButton, kind: .button, configuration: configuration), .secondary)
+            XCTAssertEqual(InfinityUIKit.precisionKind(role: .input, configuration: configuration), .field)
+        }
     }
 
     // ------------------------=
@@ -145,10 +136,11 @@ final class EclipseAccessTests: XCTestCase {
     // DESC: Ensures selecting an invisible semantic content bound cannot introduce a focus border or fill.
     // ------------------=
     @MainActor func testTransparentRuntimeContentRemainsInvisibleWhenSelected() throws {
-        let recipe = InfinityUIKit.visualRecipe(role: .content, state: .focused,
-            authoredFill: InfinityUIKit.EclipseAccess.surface.withAlpha(0),
-            authoredBorder: InfinityUIKit.EclipseAccess.mutedBorder.withAlpha(0), configuration: true)
-        let image = try XCTUnwrap(ImageRenderer(content: EclipseAccessSurface(recipe: recipe, radius: 10)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let material = InfinityUIKit.precisionMaterial(state: .focused,
+            fill: InfinityUIKit.EclipseAccess.surface.withAlpha(0), border: InfinityUIKit.EclipseAccess.mutedBorder.withAlpha(0))
+        let image = try XCTUnwrap(ImageRenderer(content: PrecisionSurface(kind: .panel, material: material, projectRoot: root)
             .frame(width: 100, height: 50)).cgImage)
         let bitmap = NSBitmapImageRep(cgImage: image)
         for point in [(0, 25), (2, 25), (50, 25)] {
@@ -172,9 +164,9 @@ final class EclipseAccessTests: XCTestCase {
             canvasScale: CGSize(width: 1, height: 1)).frame(width: 80, height: 40)).cgImage)
         let bitmap = NSBitmapImageRep(cgImage: image)
         XCTAssertEqual(InfinityUIKit.EclipseAccess.progressDiameter(CGSize(width: 80, height: 40)), 40)
-        XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 20, y: 20)).alphaComponent, 0.95)
+        XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 40, y: 20)).alphaComponent, 0.95)
         XCTAssertLessThan(try XCTUnwrap(bitmap.colorAt(x: 0, y: 0)).alphaComponent, 0.05)
-        XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 60, y: 20)).alphaComponent, 0)
+        XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 70, y: 20)).alphaComponent, 0)
     }
 
     // ------------------------=

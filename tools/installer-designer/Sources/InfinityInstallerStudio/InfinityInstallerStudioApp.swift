@@ -4,6 +4,7 @@ import Darwin
 @main
 struct InfinityInstallerStudioApp: App {
     @StateObject private var store = TemplateStore()
+    @NSApplicationDelegateAdaptor(StudioApplicationDelegate.self) private var applicationDelegate
 
     // ------------------------=
     // FUNC: init
@@ -35,6 +36,9 @@ struct InfinityInstallerStudioApp: App {
                 )
                 if source.lastPathComponent == "installer-screens.infinityui" {
                     document = document.migratedForInstallerRuntimeParity()
+                }
+                if source.lastPathComponent == "settings-screens.infinityui" {
+                    document = document.migratedForSettingsCardReadability()
                 }
                 let collection: ScreenCollection = if source.lastPathComponent == "configuration-screens.infinityui" {
                     .configuration
@@ -101,8 +105,9 @@ struct InfinityInstallerStudioApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("InfinityOS Installer Studio") {
+        WindowGroup("Infinity Studio") {
             StudioRootView(store: store)
+                .onAppear { applicationDelegate.store = store }
                 .frame(minWidth: 1040, minHeight: 640)
                 .preferredColorScheme(.dark)
         }
@@ -111,9 +116,17 @@ struct InfinityInstallerStudioApp: App {
         .defaultSize(width: 1480, height: 900)
         .commands {
             CommandGroup(replacing: .saveItem) {
-                Button("Save Templates") { store.save() }
+                Button("Save Section") { store.save() }
                     .keyboardShortcut("s", modifiers: .command)
-                Button("Import Templates…") { store.importDocument() }
+                Button("Save All Sections") { store.saveAll() }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                Button("Save & Update ISO…") { store.showISOUpdate = true }
+                Button("Export Section Templates…") { store.chooseTemplateExport() }
+                    .disabled(store.editingUIKit)
+                Button(store.editingUIKit ? "Import Artwork…" : "Import Templates…") {
+                    if store.editingUIKit { store.uiKit.chooseReplacementImage() }
+                    else { store.importDocument() }
+                }
                     .keyboardShortcut("o", modifiers: .command)
             }
             CommandGroup(replacing: .undoRedo) {
@@ -127,14 +140,17 @@ struct InfinityInstallerStudioApp: App {
             CommandGroup(after: .pasteboard) {
                 Button("Duplicate Element") { store.duplicateSelected() }
                     .keyboardShortcut("d", modifiers: .command)
+                    .disabled(store.editingUIKit)
                 Button("Delete Element") { store.deleteSelected() }
                     .keyboardShortcut(.delete, modifiers: [])
+                    .disabled(store.editingUIKit)
             }
             CommandMenu("Canvas") {
                 Button(store.marqueeSelectionEnabled ? "Disable Marquee Select" : "Enable Marquee Select") {
                     store.toggleMarqueeSelection()
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
+                .disabled(store.editingUIKit)
                 Divider()
                 Button("Zoom In") { store.zoomIn() }
                     .keyboardShortcut("+", modifiers: .command)
@@ -145,10 +161,10 @@ struct InfinityInstallerStudioApp: App {
                 Divider()
                 Button("Add Screen") { store.addScreen() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
-                    .disabled(!store.canAddScreen)
+                    .disabled(store.editingUIKit || !store.canAddScreen)
                 Button("Duplicate Screen") { store.duplicateScreen() }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
-                    .disabled(!store.canAddScreen)
+                    .disabled(store.editingUIKit || !store.canAddScreen)
             }
         }
     }

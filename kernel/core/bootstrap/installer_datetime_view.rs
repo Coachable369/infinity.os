@@ -4,6 +4,78 @@ use super::DisplayDevice;
 use super::installer::DATE_TIME_WORLD_BMP;
 
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: installer_date_time_element
+    // DESC: Paints live clock fields and map selection in authored template bounds, shared by runtime and unsaved native previews.
+    // ------------------=
+    pub(super) fn installer_date_time_element(&mut self,
+        element:crate::ui::installer_template::InstallerTemplateElement<'_>,image:Option<&[u8]>,
+        navigation:Option<(usize,bool,Option<(i32,i32,bool)>)>,
+        value:crate::storage::DateTimeConfiguration,active_part:usize)->bool {
+        use crate::ui::{installer_template::InstallerTemplateRole as Role,installer_layout::scale_template_rect};
+        let role=element.role;
+        if ![Role::DateField,Role::TimeField,Role::TimeZoneSelector,Role::OffsetBadge,Role::TimeZoneMap]
+            .iter().any(|candidate|*candidate as u8==role) {return false;}
+        let rect=scale_template_rect(element.frame,self.width,self.height);
+        if role==Role::TimeZoneMap as u8 {
+            #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+            let image=image.or_else(||element.image_asset.ends_with(b"infinity-time-zone-map-v1.png").then_some(DATE_TIME_WORLD_BMP));
+            self.template_element_in_rect(element,image,navigation,rect);
+            let (longitude,latitude)=Self::installer_time_zone_map_coordinates(value.time_zone_id);
+            let mut mx=rect.left as i32+(i32::from(longitude)+180)*rect.width as i32/360;
+            let mut my=rect.top as i32+(90-i32::from(latitude))*rect.height as i32/180;
+            if let Some(bitmap)=image.and_then(crate::ui::bitmap::RuntimeBitmap::parse) {
+                if let Some(p)=bitmap.placement(rect.width,rect.height,element.crop,true) {
+                    let sx=(i32::from(longitude)+180)*bitmap.width()as i32/360;
+                    let sy=(90-i32::from(latitude))*bitmap.height()as i32/180;
+                    if sx<p.source_left as i32 || sy<p.source_top as i32 || sx>=(p.source_left+p.source_width)as i32
+                        || sy>=(p.source_top+p.source_height)as i32 {return true;}
+                    mx=rect.left as i32+(sx-p.source_left as i32)*rect.width as i32/p.source_width.max(1)as i32;
+                    my=rect.top as i32+(sy-p.source_top as i32)*rect.height as i32/p.source_height.max(1)as i32;
+                }
+            }
+            let size=(rect.height/50).max(2) as i32;
+            self.star_orb(mx,my,size,245,true);
+            return true;
+        }
+        let mut date=*b"0000-00-00";
+        for index in 0..4 {date[index]=b'0'+((value.year/10u16.pow(3-index as u32))%10)as u8;}
+        Self::installer_two_digits(&mut date,5,value.month);Self::installer_two_digits(&mut date,8,value.day);
+        let mut time=*b"00:00";
+        Self::installer_two_digits(&mut time,0,value.hour);Self::installer_two_digits(&mut time,3,value.minute);
+        let mut offset=*b"UTC+00:00";offset[3]=if value.utc_offset_minutes<0 {b'-'}else{b'+'};
+        let minutes=value.utc_offset_minutes.unsigned_abs();
+        Self::installer_two_digits(&mut offset,4,(minutes/60)as u8);
+        Self::installer_two_digits(&mut offset,7,(minutes%60)as u8);
+        let (text,field):(&[u8],usize)=if role==Role::DateField as u8 {(&date,2)}
+            else if role==Role::TimeField as u8 {(&time,3)}
+            else if role==Role::TimeZoneSelector as u8 {(Self::installer_time_zone_label(value.time_zone_id),4)}
+            else {(&offset,0)};
+        self.template_element_in_rect(crate::ui::installer_template::InstallerTemplateElement{text:b"",..element},image,navigation,rect);
+        let font=(usize::from(element.font_size)*self.height/1000).max(6);
+        let inset=if field==0 {8*self.ui_scale()}else{rect.width*14/100};
+        let y=rect.top+rect.height.saturating_sub(font*7/6)/2;
+        let previous=self.render_clip;
+        self.intersect_render_clip(rect.left,rect.top,rect.width,rect.height);
+        let colors=crate::ui::skin::kit_tokens::runtime_colors();
+        let color=colors[4];
+        let rgb=((color>>16)as u8,(color>>8)as u8,color as u8);
+        let text_alpha=(u16::from(element.opacity)*255/100)as u8;
+        self.template_text(rect.left+inset,y,text,rgb.0,rgb.1,rgb.2,text_alpha,font,false);
+        if field>0 {
+            self.template_text(rect.left+rect.width*4/100,y,b"-",rgb.0,rgb.1,rgb.2,text_alpha,font,false);
+            self.template_text(rect.left+rect.width*90/100,y,b"+",rgb.0,rgb.1,rgb.2,text_alpha,font,false);
+        }
+        if navigation.is_some_and(|(focus,_,_)|focus==field) && (field==2||field==3) {
+            let (start,count)=if field==2 {match active_part.min(2) {0=>(0,4),1=>(5,2),_=>(8,2)}}
+                else if active_part==4 {(3,2)}else{(0,2)};
+            let x=self.template_text_width(&text[..start],font,false);
+            let w=self.template_text_width(&text[start..start+count],font,false);
+            self.fill_rect_alpha(rect.left+inset+x,y+font*7/6,w,(self.height/500).max(1),element.border[0],element.border[1],element.border[2],text_alpha);
+        }
+        self.render_clip=previous;
+        true
+    }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: installer_date_time_panel

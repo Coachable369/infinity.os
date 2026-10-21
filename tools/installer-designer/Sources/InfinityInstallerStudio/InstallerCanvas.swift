@@ -5,17 +5,23 @@ struct InstallerCanvas: View {
     @ObservedObject var store: TemplateStore
     @State private var marqueeDisplayRect: CGRect?
     @State private var canvasDragMode: CanvasDragMode?
+    @StateObject private var nativePreview = NativePreviewService()
+    private var simulatedSettings: Bool {
+        store.selectedCollection == .systemSettings && store.nativePreviewSimulation.enabled
+            && [1,3,4,5,6,7,8,10,11].contains(store.selectedScreenID)
+    }
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 ScrollView([.horizontal, .vertical]) {
                     let fit = max(0.24, min(
-                        (proxy.size.width - 80) / 1600,
-                        (proxy.size.height - 80) / 1000
+                        (proxy.size.width - 80) / CGFloat(store.canvasViewport.width),
+                        (proxy.size.height - 80) / CGFloat(store.canvasViewport.height)
                     ))
                     let unitScale = fit * store.zoom
-                    let canvasScale = CGSize(width: unitScale * 1.6, height: unitScale)
+                    let canvasScale = CGSize(width: unitScale * CGFloat(store.canvasViewport.width) / 1000,
+                        height: unitScale * CGFloat(store.canvasViewport.height) / 1000)
                     ZStack(alignment: .topLeading) {
                         artboardBackground(scale: canvasScale)
                             .contentShape(Rectangle())
@@ -25,20 +31,17 @@ struct InstallerCanvas: View {
                         if store.showGrid {
                             SnapGrid(gridSize: store.gridSize, scale: canvasScale)
                         }
+                        if simulatedSettings {
+                            nativeSelectionOverlays(scale: unitScale)
+                        } else {
                         ForEach((store.selectedScreen?.elements ?? []).sorted(by: layerOrder)) { element in
                             if !element.hidden {
-                                CanvasElementView(element: element, store: store, canvasScale: canvasScale)
+                                CanvasElementView(element: element, store: store, canvasScale: canvasScale, interactionOnly: true)
                                     .zIndex(Double(element.zIndex))
                             }
                         }
-                        if store.selectedCollection == .configuration,
-                           store.selectedScreenID == 7,
-                           let content = store.selectedScreen?.elements.first(where: { $0.role == .content && !$0.hidden })
-                        {
-                            ConfigurationNetworkPreview(canvasScale: canvasScale, content: content.frame, projectRoot: store.projectRoot)
-                                .zIndex(7_500)
                         }
-                        if store.marqueeSelectionEnabled {
+                        if store.marqueeSelectionEnabled && !simulatedSettings {
                             Rectangle()
                                 .fill(Color.clear)
                                 .contentShape(Rectangle())
@@ -60,8 +63,9 @@ struct InstallerCanvas: View {
                                 .allowsHitTesting(false)
                                 .zIndex(40_000)
                         }
-                        selectionHandleOverlay(canvasScale: canvasScale)
-                            .zIndex(41_000)
+                        if !simulatedSettings {
+                            selectionHandleOverlay(canvasScale: canvasScale).zIndex(41_000)
+                        }
                     }
                     .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
                     .coordinateSpace(name: CanvasInteractionMetrics.coordinateSpaceName)
@@ -79,29 +83,157 @@ struct InstallerCanvas: View {
                         endPoint: .bottom
                     )
                 )
+                .overlay(alignment: .topLeading) { nativePreviewStatus.padding(12) }
+            }
+        }
+        .onAppear { nativePreview.schedule(store) }
+        .onReceive(store.objectWillChange) { nativePreview.schedule(store) }
+        .onDisappear { nativePreview.cancel() }
+    }
+
+    // ------------------------=
+    // FUNC: nativeSelectionOverlays
+    // DESC: Maps native Settings selection, dragging and resizing back to authored coordinates without duplicating OS paint code.
+    // ------------------=
+    @ViewBuilder private func nativeSelectionOverlays(scale: CGFloat) -> some View {
+        if let frame = nativePreview.frame {
+            let console = store.selectedScreen?.elements.first { $0.role == .console }
+            let window = frame.bounds.first { $0.id == console?.id }
+            ForEach(frame.bounds) { bounds in
+                if let element = store.selectedScreen?.elements.first(where: { $0.id == bounds.id }), !element.hidden {
+                    let editingScale = NativeCanvasMapping.editingScale(element: element, console: console?.frame,
+                        window: window, viewport: store.canvasViewport, scale: scale)
+                    let displayed = CGRect(x: CGFloat(bounds.x) * scale, y: CGFloat(bounds.y) * scale,
+                        width: CGFloat(bounds.width) * scale, height: CGFloat(bounds.height) * scale)
+                    let fixedGeometry = !store.geometryIsEditable(element)
+                    CanvasElementView(element: element, store: store, canvasScale: editingScale, interactionOnly: true,
+                        displayFrame: displayed, fixedNativeGeometry: fixedGeometry)
+                        .zIndex(Double(element.zIndex))
+                    if store.resizeHandlesVisible && store.selectedElementID == element.id && !element.locked && !fixedGeometry {
+                        ZStack {
+                            ForEach(ResizeHandle.allCases) { handle in
+                                ResizeHandleView(handle: handle, elementID: element.id, elementFrame: element.frame,
+                                    store: store, canvasScale: editingScale, displaySize: displayed.size)
+                            }
+                        }.frame(width: displayed.width, height: displayed.height)
+                            .position(x: displayed.midX, y: displayed.midY).zIndex(41_000)
+                    }
+                }
             }
         }
     }
 
     // ------------------------=
     // FUNC: artboardBackground
-    // DESC: Builds the InfinityOS installation-preview background at the current canvas scale.
+    // DESC: Displays one complete production-rendered framebuffer, without host-font or approximate scene overlays.
     // ------------------=
     @ViewBuilder
     private func artboardBackground(scale: CGSize) -> some View {
         ZStack {
-            InfinityUIKit.Palette.nativeCanvas
-            RadialGradient(
-                colors: [InfinityUIKit.Palette.nativeAccent.opacity(0.18), Color.clear],
-                center: .top,
-                startRadius: 10,
-                endRadius: 520 * scale.height
-            )
-            LinearGradient(
-                colors: [Color.clear, Color.blue.opacity(0.08), Color.black.opacity(0.5)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            Color.black
+            if let image = nativePreview.image {
+                Image(decorative: image, scale: 1)
+                    .resizable().interpolation(.high)
+            }
+        }.frame(width: 1000 * scale.width, height: 1000 * scale.height)
+    }
+
+    @ViewBuilder private var nativePreviewStatus: some View {
+        VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
+            switch nativePreview.phase {
+            case .idle, .rendering:
+                ProgressView().controlSize(.small)
+                Text(nativePreview.image == nil ? "Rendering native OS preview…" : "Updating native OS preview…")
+            case .ready:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text(simulatedSettings ? "Native Settings preview" : store.selectedCollection == .systemSettings ? "Native template preview" : "Native OS preview")
+            case .failed:
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Preview is not current").fontWeight(.semibold)
+                    Text(nativePreview.errorMessage ?? "Rendering failed").lineLimit(3)
+                }
+                Button("Retry") { nativePreview.schedule(store) }
+            }
+            if nativePreview.phase != .failed {
+                Picker("Viewport", selection: $store.canvasViewport) {
+                    ForEach(NativePreviewViewport.allCases) { viewport in Text(viewport.rawValue).tag(viewport) }
+                }.labelsHidden().frame(width: 142)
+                Picker("Control state", selection: $store.nativePreviewState) {
+                    ForEach(NativePreviewControlState.allCases) { state in Text(state.rawValue).tag(state) }
+                }.labelsHidden().frame(width: 100)
+            }
+        }
+        if store.selectedCollection != .configuration {
+            HStack(spacing: 8) {
+                Toggle("Simulated service values", isOn: $store.nativePreviewSimulation.enabled)
+                    .toggleStyle(.checkbox)
+                if store.nativePreviewSimulation.enabled {
+                    Text("Preview only — no system changes").foregroundStyle(.secondary)
+                }
+            }
+            if store.nativePreviewSimulation.enabled {
+                simulationControls
+            }
+        }
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .frame(maxWidth: 560, alignment: .leading)
+    }
+
+    @ViewBuilder private var simulationControls: some View {
+        if store.selectedCollection == .installation {
+            switch store.selectedScreenID {
+            case 5:
+                HStack(spacing: 8) {
+                    Picker("Time zone", selection: $store.nativePreviewSimulation.timeZone) {
+                        ForEach(Array(["UTC", "Pacific", "Mountain", "Central", "Eastern", "Atlantic", "GMT", "Europe", "India", "Singapore", "Japan", "Australia"].enumerated()), id: \.offset) { index, name in
+                            Text(name).tag(index)
+                        }
+                    }.frame(width: 170)
+                    Picker("Field", selection: $store.nativePreviewSimulation.dateFocus) {
+                        Text("Date").tag(2); Text("Time").tag(3); Text("Zone").tag(4)
+                    }.frame(width: 110)
+                    if store.nativePreviewSimulation.dateFocus != 4 {
+                        Picker("Part", selection: Binding(get: {
+                            store.nativePreviewSimulation.resolved(collection: .installation, screen: 5, rows: 0).datePart
+                        }, set: { store.nativePreviewSimulation.datePart = $0 })) {
+                            if store.nativePreviewSimulation.dateFocus == 2 {
+                                Text("Year").tag(0); Text("Month").tag(1); Text("Day").tag(2)
+                            } else { Text("Hour").tag(3); Text("Minute").tag(4) }
+                        }.frame(width: 110)
+                    }
+                }
+            case 7:
+                Toggle("Show erase confirmation", isOn: $store.nativePreviewSimulation.confirmation)
+            case 8:
+                Stepper("Installation progress: \(store.nativePreviewSimulation.progress)%", value: $store.nativePreviewSimulation.progress, in: 0...100, step: 5)
+            default:
+                Text("Authored layers; this screen has no simulated service controls.").foregroundStyle(.secondary)
+            }
+        } else if store.selectedCollection == .systemSettings {
+            VStack(alignment: .leading, spacing: 5) {
+                if [1,3,4,5,6,7,8,10,11].contains(store.selectedScreenID) {
+                  HStack(spacing: 10) {
+                    let rows = store.selectedScreen?.elements.filter { $0.role == .settingsRowLabel }.count ?? 0
+                    let resolved = store.nativePreviewSimulation.resolved(collection: .systemSettings, screen: store.selectedScreenID, rows: rows)
+                    Stepper([7,8].contains(store.selectedScreenID) ? "Page \(resolved.expandedRow + 1)" : resolved.expandedRow < 0 ? "Rows collapsed" : "Expanded row \(resolved.expandedRow + 1)",
+                        value: Binding(get: { resolved.expandedRow }, set: { store.nativePreviewSimulation.expandedRow = $0 }),
+                        in: NativePreviewSimulation.settingsRange(screen: store.selectedScreenID, rows: rows))
+                    Stepper("Scroll \(store.nativePreviewSimulation.scroll) px", value: $store.nativePreviewSimulation.scroll, in: 0...10000, step: 40)
+                  }
+                }
+                if ![1,3,4,5,6,7,8,10,11].contains(store.selectedScreenID) {
+                    Text("Template layers only: this section requires live OS services.").foregroundStyle(.orange)
+                } else if [7,8].contains(store.selectedScreenID) {
+                    Text("Dashboard cards use OS-responsive bounds. Shared surfaces and artwork remain editable.").foregroundStyle(.secondary)
+                } else {
+                    Text("Native layout editing. Row height and spacing follow the OS minimums.").foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -298,25 +430,42 @@ struct CanvasElementView: View {
     let element: StudioElement
     @ObservedObject var store: TemplateStore
     let canvasScale: CGSize
+    var renderingBackdrop = false
+    var interactionOnly = false
+    var displayFrame: CGRect? = nil
+    var fixedNativeGeometry = false
 
-    var isSelected: Bool { store.selectedElementIDs.contains(element.id) }
+    private var renderedFrame: CGRect {
+        displayFrame ?? CGRect(x: CGFloat(element.frame.x) * canvasScale.width, y: CGFloat(element.frame.y) * canvasScale.height,
+            width: CGFloat(element.frame.width) * canvasScale.width, height: CGFloat(element.frame.height) * canvasScale.height)
+    }
+
+    var isSelected: Bool { !renderingBackdrop && store.selectedElementIDs.contains(element.id) }
+    private var atlasData: Data? { store.uiKit.previewAtlas(target: "assets/ui-design-kit/default/eclipse-precision-v1.rgba") }
+    private var progressIndex: Int {
+        let layers = (store.selectedScreen?.elements ?? []).filter { !$0.hidden && $0.opacity != 0 && $0.role == .progressSegment }
+            .sorted { $0.zIndex == $1.zIndex ? $0.id.uuidString < $1.id.uuidString : $0.zIndex < $1.zIndex }
+        return layers.firstIndex { $0.id == element.id } ?? 0
+    }
 
     var body: some View {
         ZStack {
-            elementBody
+            Group {
+                if interactionOnly { Color.clear } else { elementBody }
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(Double(element.opacity) / 100)
+                .opacity(element.role == .console ? 1 : Double(element.opacity) / 100)
                 .contentShape(Rectangle())
                 .highPriorityGesture(elementInteractionGesture)
-            selectionOverlay
+            if !renderingBackdrop { selectionOverlay }
         }
         .frame(
-            width: CGFloat(element.frame.width) * canvasScale.width,
-            height: CGFloat(element.frame.height) * canvasScale.height
+            width: renderedFrame.width,
+            height: renderedFrame.height
         )
             .position(
-                x: CGFloat(element.frame.x) * canvasScale.width + CGFloat(element.frame.width) * canvasScale.width / 2,
-                y: CGFloat(element.frame.y) * canvasScale.height + CGFloat(element.frame.height) * canvasScale.height / 2
+                x: renderedFrame.midX,
+                y: renderedFrame.midY
             )
     }
 
@@ -329,7 +478,13 @@ struct CanvasElementView: View {
                 canvasScale: canvasScale,
                 focused: isSelected,
                 configuration: store.selectedCollection == .configuration,
-                projectRoot: store.projectRoot
+                projectRoot: store.projectRoot,
+                atlasData: atlasData,
+                surfaceStyle: .template(for: element, configuration: store.selectedCollection == .configuration, styles: store.uiKit.document.styles),
+                glyphData: store.uiKit.previewAtlas(target: "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba"),
+                progressIndex: progressIndex,
+                progressStep: max(0, store.selectedScreenID - 1),
+                frostImage: element.role == .console ? { CanvasFrostPreview.image(for: element, store: store) } : nil
             )
         case .console:
             CanvasPanelPreview(
@@ -337,21 +492,18 @@ struct CanvasElementView: View {
                 canvasScale: canvasScale,
                 focused: isSelected,
                 configuration: store.selectedCollection == .configuration,
-                projectRoot: store.projectRoot
+                projectRoot: store.projectRoot,
+                atlasData: atlasData,
+                surfaceStyle: .template(for: element, configuration: store.selectedCollection == .configuration, styles: store.uiKit.document.styles),
+                glyphData: store.uiKit.previewAtlas(target: "assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba"),
+                progressIndex: progressIndex,
+                progressStep: max(0, store.selectedScreenID - 1),
+                frostImage: { CanvasFrostPreview.image(for: element, store: store) }
             )
         case .text:
             Text(element.text)
-                .font(store.selectedCollection == .configuration
-                    ? InfinityUIKit.EclipseAccess.font(size: max(8, CGFloat(element.fontSize) * canvasScale.height),
-                        semibold: element.role == .title, projectRoot: store.projectRoot)
-                    : .system(
-                    size: max(8, CGFloat(element.fontSize) * canvasScale.height),
-                    weight: element.role == .title ? .medium : .regular,
-                    design: .rounded
-                ))
-                .tracking(store.selectedCollection != .configuration && (element.role == .title || element.role == .sectionLabel)
-                    ? max(0.8, CGFloat(element.fontSize) * canvasScale.height * 0.12)
-                    : 0)
+                .font(InfinityUIKit.EclipseAccess.font(size: max(6, CGFloat(element.fontSize) * canvasScale.height),
+                    semibold: element.role == .title, projectRoot: store.projectRoot))
                 .foregroundStyle(element.fill.color)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .multilineTextAlignment(.leading)
@@ -376,10 +528,13 @@ struct CanvasElementView: View {
                 canvasScale: canvasScale,
                 focused: isSelected,
                 configuration: store.selectedCollection == .configuration,
-                projectRoot: store.projectRoot
+                projectRoot: store.projectRoot,
+                atlasData: atlasData,
+                surfaceStyle: .template(for: element, configuration: store.selectedCollection == .configuration, styles: store.uiKit.document.styles)
             )
         case .progressBar:
-            CanvasProgressBarPreview(element: element, canvasScale: canvasScale)
+            CanvasProgressBarPreview(element: element, canvasScale: canvasScale, projectRoot: store.projectRoot, atlasData: atlasData,
+                styles: store.uiKit.document.styles)
         }
     }
 
@@ -439,7 +594,7 @@ struct CanvasElementView: View {
     private var elementInteractionGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
             .onChanged { value in
-                guard !element.locked else { return }
+                guard !element.locked && !fixedNativeGeometry else { return }
                 let distance = max(abs(value.translation.width), abs(value.translation.height))
                 guard distance >= CanvasInteractionMetrics.dragThreshold else { return }
                 store.beginGesture(elementID: element.id)
@@ -461,6 +616,9 @@ struct CanvasElementView: View {
     // ------------------=
     private func resolveImage() -> NSImage? {
         guard !element.imageAsset.isEmpty else { return nil }
+        if let asset = store.uiKit.assets.first(where: { $0.format != "rgba"
+            && ($0.target == element.imageAsset || $0.target == "assets/boot/\(element.imageAsset)") }),
+           let preview = store.uiKit.previewImage(for: asset) { return preview }
         if element.imageAsset.hasPrefix("/") {
             return NSImage(contentsOfFile: element.imageAsset)
         }
@@ -511,29 +669,28 @@ extension ImageCrop {
 struct CanvasProgressBarPreview: View {
     let element: StudioElement
     let canvasScale: CGSize
+    let projectRoot: URL?
+    var atlasData: Data? = nil
+    var styles: [UIKitSurfaceStyle] = UIKitSurfaceStyle.defaults
 
     var body: some View {
         VStack(spacing: 14 * canvasScale.height) {
             HStack {
                 Text(element.text)
-                    .font(.system(size: max(1, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                    .font(InfinityUIKit.EclipseAccess.font(size: max(1, 18 * canvasScale.height), semibold: true, projectRoot: projectRoot))
                     .lineLimit(1)
                 Spacer()
                 Text("42%")
-                    .font(.system(size: max(1, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                    .font(InfinityUIKit.EclipseAccess.font(size: max(1, 18 * canvasScale.height), semibold: true, projectRoot: projectRoot))
                     .foregroundStyle(element.fill.color)
             }
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: max(2, 5 * canvasScale.height))
-                        .fill(InfinityUIKit.Palette.nativeCanvas.opacity(0.78))
-                    RoundedRectangle(cornerRadius: max(2, 5 * canvasScale.height))
-                        .fill(element.fill.color)
+                    PrecisionSurface(kind: .field, material: PrecisionMaterial(fill: InfinityUIKit.EclipseAccess.background,
+                        edge: element.border, opacity: 199, style: .resolved(for: .field, styles: styles)), projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
+                    PrecisionSurface(kind: .primary, material: PrecisionMaterial(fill: InfinityUIKit.EclipseAccess.primary,
+                        edge: element.border, opacity: element.fill.alpha, style: .resolved(for: .primary, styles: styles)), projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
                         .frame(width: geometry.size.width * 0.42)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: max(2, 5 * canvasScale.height))
-                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
                 }
             }
             .frame(height: max(1, 16 * canvasScale.height))
@@ -541,13 +698,9 @@ struct CanvasProgressBarPreview: View {
         .foregroundStyle(InfinityUIKit.Palette.nativeTextPrimary)
         .padding(18 * canvasScale.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            InfinityUIKit.Palette.nativePanelRaised,
-            in: RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
+        .background {
+            PrecisionSurface(kind: .panel, material: PrecisionMaterial(fill: InfinityUIKit.EclipseAccess.surface,
+                edge: element.border, opacity: 240, style: .resolved(for: .panel, styles: styles)), projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
         }
         .clipped()
     }
@@ -559,20 +712,22 @@ private struct CanvasPanelPreview: View {
     let focused: Bool
     let configuration: Bool
     let projectRoot: URL?
+    var atlasData: Data? = nil
+    var surfaceStyle: UIKitSurfaceStyle = .authored
+    var glyphData: Data? = nil
+    var progressIndex = 0
+    var progressStep = 0
+    var frostImage: (() -> CGImage?)? = nil
     @State private var hovered = false
 
     private var interactionState: InfinityUIKitInteractionState {
         focused ? .focused : (hovered ? .hover : .idle)
     }
 
-    private var recipe: InfinityUIKitVisualRecipe {
-        InfinityUIKit.visualRecipe(
-            role: element.role,
-            state: interactionState,
-            authoredFill: element.fill,
-            authoredBorder: element.border,
-            configuration: configuration
-        )
+    private var material: PrecisionMaterial {
+        var material = InfinityUIKit.precisionMaterial(state: interactionState, fill: element.fill, border: element.border)
+        material.style = surfaceStyle
+        return material
     }
 
     private var isField: Bool {
@@ -589,48 +744,35 @@ private struct CanvasPanelPreview: View {
     }
 
     var body: some View {
-        let radius = CGFloat(element.cornerRadius) * canvasScale.height
-        if recipe.eclipseAccess {
-            if element.role == .progressSegment {
-                GeometryReader { geometry in
-                    let diameter = InfinityUIKit.EclipseAccess.progressDiameter(geometry.size)
-                    EclipseAccessSurface(recipe: InfinityUIKit.visualRecipe(role: element.role, state: .idle,
-                        authoredFill: element.fill, authoredBorder: element.border, configuration: true), radius: diameter / 2)
-                        .frame(width: diameter, height: diameter)
-                }
-            } else {
-                EclipseAccessSurface(recipe: recipe, radius: radius)
-                    .overlay(alignment: .leading) { fieldContent }
-                    .onHover { hovered = $0 }
-                    .animation(InfinityUIKit.EclipseAccess.focusAnimation, value: interactionState)
+        if element.role == .console, let image = frostImage?() {
+            Image(decorative: image, scale: 1).resizable().interpolation(.high)
+        } else if configuration && element.role == .progressSegment {
+            GeometryReader { geometry in
+                let diameter = InfinityUIKit.EclipseAccess.progressDiameter(geometry.size)
+                PrecisionSurface(kind: progressIndex <= progressStep ? .current : .inactive,
+                    material: PrecisionMaterial(fill: element.fill, edge: element.border),
+                    projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
+                    .overlay {
+                        if progressIndex < progressStep,
+                           let glyph = InfinityUIKit.EclipseAccess.glyph(15, projectRoot: projectRoot, atlasData: glyphData) {
+                            Image(nsImage: glyph).resizable().scaledToFit()
+                                .frame(width: diameter * 0.75, height: diameter * 0.75)
+                        }
+                    }
+                    .frame(width: diameter, height: diameter)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
         } else if element.role == .progressSegment {
-            RoundedRectangle(cornerRadius: radius)
+            RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
                 .fill(element.fill.color)
                 .frame(height: max(2, 4 * canvasScale.height))
         } else {
-            RoundedRectangle(cornerRadius: radius)
-                .fill(LinearGradient(
-                    colors: [recipe.fillTop.color, recipe.fillBottom.color],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .overlay(alignment: .top) {
-                    RoundedRectangle(cornerRadius: radius)
-                        .stroke(Color.white.opacity(recipe.highlightOpacity * 0.28), lineWidth: max(0.6, canvasScale.height))
-                        .padding(max(1, canvasScale.height))
-                        .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: radius)
-                        .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
-                }
+            PrecisionSurface(kind: InfinityUIKit.precisionKind(role: element.role, kind: element.kind, configuration: configuration),
+                material: material, projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
                 .overlay(alignment: .leading) { fieldContent }
-                .shadow(
-                    color: InfinityUIKit.Palette.nativeAccent.opacity(recipe.glowOpacity),
-                    radius: 10 * canvasScale.height
-                )
+                .contentShape(Rectangle())
                 .onHover { hovered = $0 }
+                .animation(InfinityUIKit.EclipseAccess.focusAnimation, value: interactionState)
         }
     }
 
@@ -642,19 +784,16 @@ private struct CanvasPanelPreview: View {
         ].contains(element.role)), !element.text.isEmpty {
             HStack(spacing: 8 * canvasScale.height) {
                 Text(element.text)
-                    .font(recipe.eclipseAccess
-                        ? InfinityUIKit.EclipseAccess.font(size: max(8, CGFloat(element.fontSize) * canvasScale.height), projectRoot: projectRoot)
-                        : .system(size: max(8, CGFloat(element.fontSize) * canvasScale.height), weight: .regular, design: .rounded))
-                    .tracking(element.role == .offsetBadge ? max(0.5, canvasScale.height) : 0)
+                    .font(InfinityUIKit.EclipseAccess.font(size: max(6, CGFloat(element.fontSize) * canvasScale.height), projectRoot: projectRoot))
                     .foregroundStyle(element.role == .input
-                        ? (recipe.eclipseAccess ? InfinityUIKit.EclipseAccess.secondary.color : InfinityUIKit.Palette.placeholder.color)
-                        : recipe.text.color)
+                        ? (configuration ? InfinityUIKit.EclipseAccess.secondary.color : InfinityUIKit.Palette.placeholder.color)
+                        : InfinityUIKit.EclipseAccess.text.color)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let trailingIcon {
                     Image(systemName: trailingIcon)
                         .font(.system(size: max(8, 15 * canvasScale.height), weight: .light))
-                        .foregroundStyle(recipe.eclipseAccess ? InfinityUIKit.EclipseAccess.border.color : InfinityUIKit.Palette.nativeAccentBright)
+                        .foregroundStyle(configuration ? InfinityUIKit.EclipseAccess.border.color : InfinityUIKit.Palette.nativeAccentBright)
                 }
             }
             .padding(.horizontal, max(7, 16 * canvasScale.height))
@@ -668,67 +807,34 @@ private struct CanvasButtonPreview: View {
     let focused: Bool
     let configuration: Bool
     let projectRoot: URL?
+    var atlasData: Data? = nil
+    var surfaceStyle: UIKitSurfaceStyle = .authored
     @State private var hovered = false
 
     private var interactionState: InfinityUIKitInteractionState {
         focused ? .focused : (hovered ? .hover : .idle)
     }
 
-    private var recipe: InfinityUIKitVisualRecipe {
-        InfinityUIKit.visualRecipe(
-            role: element.role,
-            state: interactionState,
-            authoredFill: element.fill,
-            authoredBorder: element.border,
-            configuration: configuration
-        )
+    private var material: PrecisionMaterial {
+        var material = InfinityUIKit.precisionMaterial(state: interactionState, fill: element.fill, border: element.border)
+        material.style = surfaceStyle
+        return material
     }
 
     var body: some View {
-        let radius = CGFloat(element.cornerRadius) * canvasScale.height
-        if recipe.eclipseAccess {
-            EclipseAccessSurface(recipe: recipe, radius: radius)
-                .overlay { buttonLabel }
-                .onHover { hovered = $0 }
-                .animation(InfinityUIKit.EclipseAccess.focusAnimation, value: interactionState)
-        } else {
-        RoundedRectangle(cornerRadius: radius)
-            .fill(LinearGradient(
-                colors: [recipe.fillTop.color, recipe.fillBottom.color],
-                startPoint: .top,
-                endPoint: .bottom
-            ))
-            .overlay(alignment: .top) {
-                RoundedRectangle(cornerRadius: radius)
-                    .fill(LinearGradient(
-                        colors: [Color.white.opacity(recipe.highlightOpacity * 0.20), .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ))
-                    .frame(maxHeight: .infinity)
-                    .padding(max(1, canvasScale.height))
-                    .mask(Rectangle().frame(maxHeight: .infinity, alignment: .top))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius)
-                    .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
-            }
+        PrecisionSurface(kind: InfinityUIKit.precisionKind(role: element.role, kind: .button, configuration: configuration),
+            material: material,
+            projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
             .overlay { buttonLabel }
-            .shadow(
-                color: InfinityUIKit.Palette.nativeAccent.opacity(recipe.glowOpacity),
-                radius: 11 * canvasScale.height
-            )
+            .contentShape(Rectangle())
             .onHover { hovered = $0 }
-        }
+            .animation(InfinityUIKit.EclipseAccess.focusAnimation, value: interactionState)
     }
 
     private var buttonLabel: some View {
         Text(element.text)
-            .font(recipe.eclipseAccess
-                ? InfinityUIKit.EclipseAccess.font(size: max(8, CGFloat(element.fontSize) * canvasScale.height), semibold: true, projectRoot: projectRoot)
-                : .system(size: max(8, CGFloat(element.fontSize) * canvasScale.height), weight: .medium, design: .rounded))
-            .tracking(recipe.eclipseAccess ? 0 : max(0.7, CGFloat(element.fontSize) * canvasScale.height * 0.10))
-            .foregroundStyle(recipe.text.color)
+            .font(InfinityUIKit.EclipseAccess.font(size: max(6, CGFloat(element.fontSize) * canvasScale.height), semibold: true, projectRoot: projectRoot))
+            .foregroundStyle(InfinityUIKit.EclipseAccess.text.color)
             .lineLimit(1)
             .padding(.horizontal, max(8, 14 * canvasScale.height))
     }
@@ -765,6 +871,9 @@ struct ConfigurationNetworkPreview: View {
     let canvasScale: CGSize
     let content: CanvasRect
     let projectRoot: URL?
+    var atlasData: Data? = nil
+    var glyphData: Data? = nil
+    var styles: [UIKitSurfaceStyle] = UIKitSurfaceStyle.defaults
     private let labels = ["Wired network", "Wi-Fi", "Continue offline"]
     private let details = ["Wired adapter detected", "No wireless adapter detected", "Set up networking later in Settings"]
     private let icons = [5, 0, 8]
@@ -773,29 +882,32 @@ struct ConfigurationNetworkPreview: View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
                 let frame = ConfigurationNetworkLayout.row(in: content, index: index)
-                let recipe = InfinityUIKit.visualRecipe(role: .content, state: .idle,
-                    authoredFill: index == 0 ? InfinityUIKit.EclipseAccess.elevated : InfinityUIKit.EclipseAccess.background,
-                    authoredBorder: index == 0 ? InfinityUIKit.EclipseAccess.border : InfinityUIKit.EclipseAccess.mutedBorder,
-                    configuration: true)
-                EclipseAccessSurface(recipe: recipe, radius: CGFloat(10) * canvasScale.height)
+                PrecisionSurface(kind: .panel, material: PrecisionMaterial(
+                    fill: index == 0 ? InfinityUIKit.EclipseAccess.elevated : InfinityUIKit.EclipseAccess.background,
+                    edge: index == 0 ? InfinityUIKit.EclipseAccess.border : InfinityUIKit.EclipseAccess.mutedBorder,
+                    style: .resolved(for: .panel, styles: styles)),
+                    projectRoot: projectRoot, logicalScale: canvasScale.height, atlasData: atlasData)
                     .overlay(alignment: .leading) {
                         HStack(spacing: CGFloat(10) * canvasScale.height) {
-                            if let icon = InfinityUIKit.EclipseAccess.glyph(icons[index], projectRoot: projectRoot) {
+                            if let icon = InfinityUIKit.EclipseAccess.glyph(icons[index], projectRoot: projectRoot, atlasData: glyphData) {
                                 Image(nsImage: icon).resizable().scaledToFit()
-                                    .frame(width: 20 * canvasScale.height, height: 20 * canvasScale.height)
+                                    .frame(width: 24 * canvasScale.height, height: 24 * canvasScale.height)
                             }
                             VStack(alignment: .leading, spacing: 5 * canvasScale.height) {
-                                Text(label).font(InfinityUIKit.EclipseAccess.font(size: max(6, 14 * canvasScale.height), semibold: true, projectRoot: projectRoot))
-                                Text(details[index]).font(InfinityUIKit.EclipseAccess.font(size: max(6, 14 * canvasScale.height), projectRoot: projectRoot))
+                                HStack {
+                                    Text(label).font(InfinityUIKit.EclipseAccess.font(size: max(6, 20 * canvasScale.height), semibold: true, projectRoot: projectRoot))
+                                    Spacer(minLength: 0)
+                                    if index == 0 {
+                                        Text("SELECTED")
+                                            .font(InfinityUIKit.EclipseAccess.font(size: max(6, 16 * canvasScale.height), projectRoot: projectRoot))
+                                            .foregroundStyle(InfinityUIKit.EclipseAccess.border.color)
+                                    }
+                                }
+                                Text(details[index]).font(InfinityUIKit.EclipseAccess.font(size: max(6, 18 * canvasScale.height), projectRoot: projectRoot))
+                                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                                     .foregroundStyle(InfinityUIKit.EclipseAccess.secondary.color)
                             }
                             .foregroundStyle(InfinityUIKit.EclipseAccess.text.color)
-                            Spacer(minLength: 0)
-                            if index == 0 {
-                                Text("SELECTED")
-                                    .font(InfinityUIKit.EclipseAccess.font(size: max(6, 14 * canvasScale.height), projectRoot: projectRoot))
-                                    .foregroundStyle(InfinityUIKit.EclipseAccess.border.color)
-                            }
                         }
                         .padding(.horizontal, CGFloat(12) * canvasScale.height)
                     }
@@ -821,6 +933,7 @@ private struct ResizeHandleView: View {
     let elementFrame: CanvasRect
     @ObservedObject var store: TemplateStore
     let canvasScale: CGSize
+    var displaySize: CGSize? = nil
 
     var body: some View {
         ZStack {
@@ -854,8 +967,8 @@ private struct ResizeHandleView: View {
     }
 
     private var handlePosition: CGPoint {
-        let width = CGFloat(elementFrame.width) * canvasScale.width
-        let height = CGFloat(elementFrame.height) * canvasScale.height
+        let width = displaySize?.width ?? CGFloat(elementFrame.width) * canvasScale.width
+        let height = displaySize?.height ?? CGFloat(elementFrame.height) * canvasScale.height
         let insetX = min(CanvasInteractionMetrics.resizeHandleVisualSize / 2, width / 2)
         let insetY = min(CanvasInteractionMetrics.resizeHandleVisualSize / 2, height / 2)
         return switch handle {

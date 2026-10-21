@@ -1,4 +1,6 @@
 import AppKit
+import Combine
+import CryptoKit
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -36,7 +38,7 @@ enum ConsoleLayoutPreset: String, CaseIterable, Identifiable {
     }
 }
 
-private struct ProjectSnapshot {
+private struct ProjectSnapshot: Equatable {
     var installation: InstallerStudioDocument
     var configuration: InstallerStudioDocument
     var systemSettings: InstallerStudioDocument
@@ -46,6 +48,10 @@ private struct ProjectSnapshot {
 final class TemplateStore: ObservableObject {
     static let minimumZoom = 0.25
     static let maximumZoom = 3.0
+    let uiKit: UIKitStore
+    let isoUpdater: ISOUpdateService
+    @Published var showISOUpdate = false
+    @Published var editingUIKit = false
     @Published var document: InstallerStudioDocument
     @Published var configurationDocument: InstallerStudioDocument
     @Published var settingsDocument: InstallerStudioDocument
@@ -71,12 +77,23 @@ final class TemplateStore: ObservableObject {
     @Published var zoom = 1.0
     @Published var status = "Ready"
     @Published var validationIssues: [String] = []
+    private var sourceLoadIssues: [ScreenCollection: String] = [:]
     @Published var projectRoot: URL?
+    @Published var canvasViewport: NativePreviewViewport = .studio
+    @Published var nativePreviewState: NativePreviewControlState = .normal
+    @Published var nativePreviewSimulation = NativePreviewSimulation()
 
     private var undoStack: [ProjectSnapshot] = []
     private var redoStack: [ProjectSnapshot] = []
     private var gestureBaseline: ProjectSnapshot?
     private var gestureFrames: [UUID: CanvasRect] = [:]
+    private var kitObservation: AnyCancellable?
+    private var savedProject: ProjectSnapshot?
+
+    var hasUnsavedChanges: Bool {
+        uiKit.isDirty || savedProject != ProjectSnapshot(installation: document,
+            configuration: configurationDocument, systemSettings: settingsDocument)
+    }
 
     var activeScreens: [InstallerScreenTemplate] {
         switch selectedCollection {
@@ -126,8 +143,8 @@ final class TemplateStore: ObservableObject {
         }.count > 1
     }
 
-    var canUndo: Bool { !undoStack.isEmpty }
-    var canRedo: Bool { !redoStack.isEmpty }
+    var canUndo: Bool { editingUIKit ? uiKit.canUndo : !undoStack.isEmpty }
+    var canRedo: Bool { editingUIKit ? uiKit.canRedo : !redoStack.isEmpty }
     var canAddScreen: Bool { activeScreens.count < InstallerStudioDocument.maximumScreenCount }
     var canRemoveScreen: Bool { activeScreens.count > InstallerStudioDocument.minimumScreenCount }
     var resizeHandlesVisible: Bool {
@@ -147,8 +164,10 @@ final class TemplateStore: ObservableObject {
     // FUNC: init
     // DESC: Loads the repository template when available or creates the complete factory document.
     // ------------------=
-    init() {
-        let root = Self.findProjectRoot()
+    init(projectRoot suppliedRoot: URL? = nil) {
+        let root = suppliedRoot ?? Self.findProjectRoot()
+        uiKit = UIKitStore(projectRoot: root)
+        isoUpdater = ISOUpdateService(projectRoot: root)
         projectRoot = root
         let configuration = root.flatMap { root in
             try? Data(contentsOf: root.appending(path: "assets/boot/configuration-screens.infinityui"))
@@ -168,7 +187,7 @@ final class TemplateStore: ObservableObject {
         }
         settingsDocument = if let settings,
                               (try? TemplateValidator.validate(settings, for: .systemSettings)) != nil {
-            settings
+            settings.migratedForSettingsCardReadability()
         } else {
             .factorySystemSettings()
         }
@@ -188,6 +207,34 @@ final class TemplateStore: ObservableObject {
         } else {
             document = .factoryDefault()
         }
+        kitObservation = uiKit.objectWillChange.sink { [weak self] in
+            self?.objectWillChange.send()
+        }
+        savedProject = ProjectSnapshot(installation: document, configuration: configurationDocument,
+            systemSettings: settingsDocument)
+        if let root {
+            for collection in ScreenCollection.allCases {
+                let name = switch collection {
+                case .installation: "installer-screens"
+                case .configuration: "configuration-screens"
+                case .systemSettings: "settings-screens"
+                }
+                let url = root.appending(path: "assets/boot/\(name).infinityui")
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                do {
+                    var loaded = try JSONDecoder().decode(InstallerStudioDocument.self, from: Data(contentsOf: url))
+                    if collection == .installation { loaded = loaded.migratedForInstallerRuntimeParity() }
+                    if collection == .systemSettings { loaded = loaded.migratedForSettingsCardReadability() }
+                    try TemplateValidator.validate(loaded, for: collection)
+                } catch {
+                    sourceLoadIssues[collection] = "\(name).infinityui could not be loaded. Import a valid replacement or repair the source and reopen Studio. The original file is protected: \(error.localizedDescription)"
+                }
+            }
+            if !sourceLoadIssues.isEmpty {
+                validationIssues = sourceLoadIssues.values.sorted()
+                status = "Source loading failed; saving is protected"
+            }
+        }
     }
 
     // ------------------------=
@@ -195,8 +242,20 @@ final class TemplateStore: ObservableObject {
     // DESC: Activates one sidebar screen collection and selects its requested screen.
     // ------------------=
     func selectScreenCollection(_ collection: ScreenCollection, screen id: Int = 1) {
+        editingUIKit = false
         selectedCollection = collection
         selectScreen(id)
+    }
+
+    // ------------------------=
+    // FUNC: selectUIKit
+    // DESC: Opens the shared OS kit without discarding pending template edits or their selections.
+    // ------------------=
+    func selectUIKit(category: String = "All Elements") {
+        editingUIKit = true
+        inlineEditorElementID = nil
+        uiKit.selectedCategory = category
+        status = "UIKit · \(category)"
     }
 
     // ------------------------=
@@ -612,11 +671,17 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     @discardableResult
     func importImageAsset(from source: URL, replacingSelected: Bool = false) throws -> UUID {
-        guard ["png", "bmp"].contains(source.pathExtension.lowercased()),
-              let image = NSImage(contentsOf: source), image.size.width > 0, image.size.height > 0
+        guard ["png", "bmp", "jpg", "jpeg", "tif", "tiff"].contains(source.pathExtension.lowercased()),
+              let dimensions = UIKitAssetCatalog.dimensions(source),
+              dimensions.0 > 0, dimensions.1 > 0,
+              dimensions.0 <= 8192, dimensions.1 <= 8192,
+              dimensions.0 * dimensions.1 <= 16_777_216,
+              let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= 64 * 1024 * 1024
         else {
-            throw TemplateValidationIssue.invalidDocument("Choose a valid PNG or BMP image")
+            throw TemplateValidationIssue.invalidDocument("Choose a PNG, BMP, JPEG or TIFF image up to 16 megapixels and 64 MiB")
         }
+        _ = try NativeBitmapEncoder.read(source)
         guard let screen = selectedScreenIndex else {
             throw TemplateValidationIssue.invalidDocument("Select an installation screen first")
         }
@@ -640,14 +705,14 @@ final class TemplateStore: ObservableObject {
             return location.element.id
         }
         let area = editableContentFrame(in: screen)
-        let aspect = image.size.width / image.size.height
+        let aspect = CGFloat(dimensions.0) / CGFloat(dimensions.1)
         var width = min(460, max(160, area.width - 40))
         var height = Int((CGFloat(width) / aspect).rounded())
         if height > area.height - 40 {
             height = max(100, area.height - 40)
             width = Int((CGFloat(height) * aspect).rounded())
         }
-        let element = StudioElement.make(
+        var element = StudioElement.make(
             name: destination.deletingPathExtension().lastPathComponent,
             kind: .image,
             role: .image,
@@ -660,6 +725,7 @@ final class TemplateStore: ObservableObject {
             imageAsset: relativePath,
             zIndex: nextZIndex(in: screen)
         )
+        element.codeIdentifier = uniqueCodeIdentifier(element.codeIdentifier, in: screen)
         activeDocument.screens[screen].elements.append(element)
         selectedElementID = element.id
         inlineEditorElementID = nil
@@ -795,10 +861,24 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: geometryIsEditable
+    // DESC: Rejects geometry controls for native responsive dashboard regions whose bounds are owned by the OS layout contract.
+    // ------------------=
+    func geometryIsEditable(_ element: StudioElement) -> Bool {
+        !(selectedCollection == .systemSettings && [7,8].contains(selectedScreenID)
+            && [.metadata,.settingsTab,.settingsSummaryCard,.settingsMainCard,.settingsSidebarCard,.settingsArtwork].contains(element.role))
+    }
+
+    var canReorderSelectedLayer: Bool {
+        selectedCollection != .systemSettings && selectedElement?.locked == false
+    }
+
+    // ------------------------=
     // FUNC: moveLayer
     // DESC: Moves an editable element forward or backward in deterministic z-order.
     // ------------------=
     func moveLayer(_ delta: Int) {
+        guard canReorderSelectedLayer else { status = "Settings semantic layer ordering is owned by the OS"; return }
         updateSelected(delta > 0 ? "Brought Forward" : "Sent Backward") {
             $0.zIndex = ($0.zIndex + delta).clamped(to: 0...32_767)
         }
@@ -818,7 +898,7 @@ final class TemplateStore: ObservableObject {
         }
         inlineEditorElementID = nil
         guard gestureBaseline == nil, let screen = selectedScreen else { return }
-        let movable = screen.elements.filter { selectedElementIDs.contains($0.id) && !$0.locked }
+        let movable = screen.elements.filter { selectedElementIDs.contains($0.id) && !$0.locked && geometryIsEditable($0) }
         guard !movable.isEmpty else { return }
         gestureBaseline = projectSnapshot()
         gestureFrames = Dictionary(uniqueKeysWithValues: movable.map { ($0.id, $0.frame) })
@@ -904,7 +984,7 @@ final class TemplateStore: ObservableObject {
         guard let screen = selectedScreenIndex else { return }
         let distance = byGrid ? gridSize : 1
         let selectedFrames = Dictionary(uniqueKeysWithValues: activeDocument.screens[screen].elements.compactMap {
-            selectedElementIDs.contains($0.id) && !$0.locked ? ($0.id, $0.frame) : nil
+            selectedElementIDs.contains($0.id) && !$0.locked && geometryIsEditable($0) ? ($0.id, $0.frame) : nil
         })
         guard !selectedFrames.isEmpty else {
             status = "Unlock an element to move it"
@@ -958,6 +1038,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Restores the previous complete template document.
     // ------------------=
     func undo() {
+        if editingUIKit { uiKit.undo(); return }
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(projectSnapshot())
         document = previous.installation
@@ -973,6 +1054,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Restores the next complete template document.
     // ------------------=
     func redo() {
+        if editingUIKit { uiKit.redo(); return }
         guard let next = redoStack.popLast() else { return }
         undoStack.append(projectSnapshot())
         document = next.installation
@@ -998,12 +1080,18 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     @discardableResult
     func validate() -> Bool {
+        guard sourceLoadIssues.isEmpty else {
+            validationIssues = sourceLoadIssues.values.sorted()
+            status = "Resolve source loading errors before saving all sections"
+            return false
+        }
         do {
+            try uiKit.validate()
             try TemplateValidator.validate(document, for: .installation)
             try TemplateValidator.validate(configurationDocument, for: .configuration)
             try TemplateValidator.validate(settingsDocument, for: .systemSettings)
             validationIssues = []
-            status = "Validated installation, first-boot configuration, and \(settingsDocument.screens.count) Settings sections"
+            status = "Validated UIKit and all wizard/settings sections"
             return true
         } catch {
             validationIssues = [String(describing: error)]
@@ -1014,10 +1102,18 @@ final class TemplateStore: ObservableObject {
 
     // ------------------------=
     // FUNC: save
-    // DESC: Atomically saves the active editor collection and its exact runtime binary into the selected InfinityOS project.
+    // DESC: Saves the active source/runtime pair with rollback if either file cannot be published.
     // ------------------=
     func save() {
+        if editingUIKit {
+            saveUIKit()
+            return
+        }
+        if let issue = sourceLoadIssues[selectedCollection] {
+            validationIssues = [issue]; status = "Original source protected"; return
+        }
         do {
+            try uiKit.validate()
             try TemplateValidator.validate(activeDocument, for: selectedCollection)
         } catch {
             validationIssues = [String(describing: error)]
@@ -1029,37 +1125,108 @@ final class TemplateStore: ObservableObject {
             return
         }
         do {
-            let assetDirectory = root.appending(path: "assets/boot", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: assetDirectory, withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            let source = activeDocument
-            let editable = try encoder.encode(source)
-            let runtime = try RuntimeTemplateCodec.encode(
-                source, assetRoot: root, collection: selectedCollection
-            )
-            guard try RuntimeTemplateCodec.decode(runtime, collection: selectedCollection) == source else {
-                throw TemplateValidationIssue.invalidDocument(
-                    "Generated \(selectedCollection.title) runtime artifact failed round-trip verification"
-                )
-            }
-            let baseName = switch selectedCollection {
-            case .installation: "installer-screens"
-            case .configuration: "configuration-screens"
-            case .systemSettings: "settings-screens"
-            }
-            try editable.write(
-                to: assetDirectory.appending(path: "\(baseName).infinityui"), options: .atomic
-            )
-            try runtime.write(
-                to: assetDirectory.appending(path: "\(baseName).iuit"), options: .atomic
-            )
+            try StudioFileTransaction.commit(prepareSave(activeDocument, collection: selectedCollection, root: root), root: root)
             projectRoot = root
+            switch selectedCollection {
+            case .installation: savedProject?.installation = document
+            case .configuration: savedProject?.configuration = configurationDocument
+            case .systemSettings: savedProject?.systemSettings = settingsDocument
+            }
             validationIssues = []
             status = "Saved \(selectedCollection.title) source and OS runtime"
         } catch {
             validationIssues = [error.localizedDescription]
             status = "Save failed"
+        }
+    }
+
+    // ------------------------=
+    // FUNC: prepareSave
+    // DESC: Compiles and round-trips a collection without publishing any files or changing canvas selection.
+    // ------------------=
+    private func prepareSave(_ source: InstallerStudioDocument, collection: ScreenCollection, root: URL) throws -> [StudioFileWrite] {
+        try TemplateValidator.validate(source, for: collection)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let runtime = try RuntimeTemplateCodec.encode(source, assetRoot: root, collection: collection, theme: uiKit.document)
+        guard try RuntimeTemplateCodec.decode(runtime, collection: collection) == source.runtimeProjection(theme: uiKit.document) else {
+            throw TemplateValidationIssue.invalidDocument("Generated \(collection.title) runtime artifact failed round-trip verification")
+        }
+        let baseName = switch collection {
+        case .installation: "installer-screens"
+        case .configuration: "configuration-screens"
+        case .systemSettings: "settings-screens"
+        }
+        let directory = root.appending(path: "assets/boot")
+        return [StudioFileWrite(url: directory.appending(path: "\(baseName).infinityui"), data: try encoder.encode(source)),
+                StudioFileWrite(url: directory.appending(path: "\(baseName).iuit"), data: runtime)]
+    }
+
+    // ------------------------=
+    // FUNC: saveUIKit
+    // DESC: Persists the shared UIKit source and reports validation failures through the common Studio alert.
+    // ------------------=
+    private func saveUIKit() {
+        do {
+            try uiKit.save()
+            validationIssues = []
+            status = uiKit.status
+        } catch {
+            validationIssues = [error.localizedDescription]
+            status = "UIKit save failed"
+        }
+    }
+
+    // ------------------------=
+    // FUNC: saveAll
+    // DESC: Prepares every collection and UIKit before a rollback-capable save without changing the active editing context.
+    // ------------------=
+    @discardableResult func saveAll() -> Bool {
+        guard validate() else { return false }
+        guard let root = projectRoot else {
+            validationIssues = ["Choose an InfinityOS project before saving all sections"]
+            return false
+        }
+        do {
+            var writes: [StudioFileWrite] = []
+            for (section, source) in [(ScreenCollection.installation, document), (.configuration, configurationDocument), (.systemSettings, settingsDocument)] {
+                writes += try prepareSave(source, collection: section, root: root)
+            }
+            writes += try uiKit.prepareSave()
+            try StudioFileTransaction.commit(writes, root: root)
+            uiKit.didSave()
+            savedProject = ProjectSnapshot(installation: document, configuration: configurationDocument,
+                systemSettings: settingsDocument)
+            validationIssues = []
+            status = "Saved UIKit and all wizard/settings sections"
+            return true
+        } catch {
+            validationIssues = [error.localizedDescription]
+            status = "Save failed; review recovery details"
+            return false
+        }
+    }
+
+    // ------------------------=
+    // FUNC: saveAndUpdateISO
+    // DESC: Saves validated edits before asynchronously updating an explicitly selected installer ISO.
+    // ------------------=
+    func saveAndUpdateISO() async {
+        guard !isoUpdater.isRunning, isoUpdater.selectedISO != nil, projectRoot != nil else { return }
+        guard saveAll() else { return }
+        await isoUpdater.start()
+    }
+
+    // ------------------------=
+    // FUNC: resolveClose
+    // DESC: Keeps drafts open on cancellation or failed saving and never abandons an active ISO publication.
+    // ------------------=
+    func resolveClose(_ choice: StudioCloseChoice) -> Bool {
+        guard !isoUpdater.isRunning else { return false }
+        switch choice {
+        case .cancel: return false
+        case .discard: return true
+        case .save: return saveAll()
         }
     }
 
@@ -1075,26 +1242,97 @@ final class TemplateStore: ObservableObject {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let data = try Data(contentsOf: url)
-            var imported = if url.pathExtension.lowercased() == "iuit" {
-                try RuntimeTemplateCodec.decode(data, collection: selectedCollection)
-            } else {
-                try JSONDecoder().decode(InstallerStudioDocument.self, from: data)
-            }
-            if selectedCollection == .installation {
-                imported = imported.migratedForInstallerRuntimeParity()
-            }
-            try TemplateValidator.validate(imported, for: selectedCollection)
-            recordUndo()
-            activeDocument = imported
-            selectedScreenID = 1
-            selectedElementID = nil
-            inlineEditorElementID = nil
-            status = "Imported \(url.lastPathComponent)"
+            try importDocument(from: url)
         } catch {
             validationIssues = [String(describing: error)]
             status = "Import failed"
         }
+    }
+
+    // ------------------------=
+    // FUNC: importDocument
+    // DESC: Imports a validated source document or restores embedded runtime artwork before changing the active draft.
+    // ------------------=
+    func importDocument(from url: URL) throws {
+        guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= 512 * 1024 * 1024 else {
+            throw TemplateValidationIssue.invalidDocument("Template exceeds the import byte limit")
+        }
+        let data = try Data(contentsOf: url)
+        var imported: InstallerStudioDocument
+        var writes: [StudioFileWrite] = []
+        if url.pathExtension.lowercased() == "iuit" {
+            let package = try RuntimeTemplateCodec.decodePackage(data, collection: selectedCollection)
+            imported = package.document
+            if !package.assets.isEmpty {
+                guard let root = projectRoot else { throw UIKitIssue.invalid("Open a project before importing embedded artwork") }
+                var paths: [String: String] = [:]
+                var staged = Set<String>()
+                for (name, bytes) in package.assets {
+                    let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                    let relative = "installer-assets/imported-\(hash).bmp"
+                    let destination = try UIKitAssetCatalog.resolvedURL("assets/boot/" + relative, root: root)
+                    paths[name] = relative
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        guard try Data(contentsOf: destination) == bytes else { throw UIKitIssue.invalid("Imported artwork identity conflicts with an existing file") }
+                    } else if staged.insert(relative).inserted {
+                        writes.append(StudioFileWrite(url: destination, data: bytes))
+                    }
+                }
+                for screen in imported.screens.indices {
+                    for element in imported.screens[screen].elements.indices {
+                        if let path = paths[imported.screens[screen].elements[element].imageAsset] {
+                            imported.screens[screen].elements[element].imageAsset = path
+                        }
+                    }
+                }
+            }
+        } else {
+            imported = try JSONDecoder().decode(InstallerStudioDocument.self, from: data)
+        }
+        if selectedCollection == .installation { imported = imported.migratedForInstallerRuntimeParity() }
+        if selectedCollection == .systemSettings { imported = imported.migratedForSettingsCardReadability() }
+        try TemplateValidator.validate(imported, for: selectedCollection)
+        if let root = projectRoot { try StudioFileTransaction.commit(writes, root: root) }
+        recordUndo()
+        activeDocument = imported
+        sourceLoadIssues.removeValue(forKey: selectedCollection)
+        selectedScreenID = 1; selectedElementID = nil; inlineEditorElementID = nil
+        validationIssues = []
+        status = "Imported \(url.lastPathComponent)"
+    }
+
+    // ------------------------=
+    // FUNC: exportDocument
+    // DESC: Exports an editable source and exact native template into a new repository-local folder without saving or mutating the draft.
+    // ------------------=
+    @discardableResult func exportDocument(to parent: URL) throws -> URL {
+        guard let root = projectRoot else { throw UIKitIssue.invalid("Open a project before exporting") }
+        let folder = parent.appending(path: "\(selectedCollection.rawValue)-\(UUID().uuidString)")
+        let writes = try prepareSave(activeDocument, collection: selectedCollection, root: root).map {
+            StudioFileWrite(url: folder.appending(path: $0.url.lastPathComponent), data: $0.data)
+        }
+        try StudioFileTransaction.commit(writes, root: root)
+        return folder
+    }
+
+    // ------------------------=
+    // FUNC: chooseTemplateExport
+    // DESC: Selects a managed export folder while keeping runtime images embedded and original source files unchanged.
+    // ------------------=
+    func chooseTemplateExport() {
+        guard let root = projectRoot else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false; panel.canChooseDirectories = true
+        panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
+        panel.directoryURL = root.appending(path: "builds")
+        panel.message = "Choose a folder inside the project. A new folder will contain the editable source and native template with embedded custom artwork."
+        panel.prompt = "Export"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        do {
+            let exported = try exportDocument(to: folder)
+            validationIssues = []; status = "Exported templates to \(exported.path)"
+        } catch { validationIssues = [error.localizedDescription]; status = "Export failed" }
     }
 
     // ------------------------=
@@ -1119,11 +1357,11 @@ final class TemplateStore: ObservableObject {
 
     // ------------------------=
     // FUNC: chooseImage
-    // DESC: Presents the native file picker and routes a selected PNG or bitmap into the project.
+    // DESC: Presents the native raster picker and routes validated artwork into the repository-managed asset directory.
     // ------------------=
     private func chooseImage(replacingSelected: Bool) {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = ["png", "bmp"].compactMap {
+        panel.allowedContentTypes = ["png", "bmp", "jpeg", "tiff"].compactMap {
             UTType(filenameExtension: $0, conformingTo: .image)
         }
         panel.allowsMultipleSelection = false

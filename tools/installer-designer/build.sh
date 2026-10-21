@@ -11,12 +11,18 @@ app_dir="$repo_dir/builds/InfinityOS Installer Studio.app"
 contents_dir="$app_dir/Contents"
 binary_dir="$(swift build "${swift_paths[@]}" --package-path "$script_dir" -c release --show-bin-path)"
 
+mkdir -p "$repo_dir/build/behavior-tests"
+make -C "$repo_dir" studio-native-renderer
+rustc --edition=2021 -O "$repo_dir/tools/studio-precision-parity.rs" -o "$repo_dir/build/behavior-tests/studio-precision-parity"
+"$repo_dir/build/behavior-tests/studio-precision-parity" "$repo_dir/build/behavior-tests/studio-precision.parity"
+python3 "$repo_dir/tools/studio-image-parity.py"
 swift test "${swift_paths[@]}" --package-path "$script_dir"
 swift build "${swift_paths[@]}" --package-path "$script_dir" -c release
 
 rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$binary_dir/InfinityInstallerStudio" "$contents_dir/MacOS/InfinityInstallerStudio"
+cp "$repo_dir/build/behavior-tests/infinity-studio-native-renderer" "$contents_dir/MacOS/InfinityStudioNativeRenderer"
 cp "$script_dir/Info.plist" "$contents_dir/Info.plist"
 
 resource_bundle="$binary_dir/InfinityInstallerStudio_InfinityInstallerStudio.bundle"

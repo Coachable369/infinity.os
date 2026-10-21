@@ -29,7 +29,12 @@ static TEMPLATE: ValidatedTemplate = ValidatedTemplate {
 pub fn template() -> Option<InstallerTemplate<'static>> {
     if TEMPLATE.state.load(Ordering::Acquire) != 2 {
         if TEMPLATE.state.compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire).is_ok() {
-            let value = InstallerTemplate::parse_settings(super::installer_layout::SETTINGS_TEMPLATE_BYTES).ok();
+            #[cfg(studio_native_preview)]
+            let bytes=crate::studio_native_render::settings_template_bytes()
+                .unwrap_or(super::installer_layout::SETTINGS_TEMPLATE_BYTES);
+            #[cfg(not(studio_native_preview))]
+            let bytes=super::installer_layout::SETTINGS_TEMPLATE_BYTES;
+            let value = InstallerTemplate::parse_settings(bytes).ok();
             unsafe { *TEMPLATE.value.get() = value; }
             if let Some(template) = value {
                 for section in 0..11 {

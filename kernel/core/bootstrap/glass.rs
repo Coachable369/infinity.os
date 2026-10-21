@@ -185,25 +185,6 @@ impl DisplayDevice {
         );
     }
 
-    // ------------------------=
-    // FUNC: glass_window_substrate
-    // DESC: Retains the current glass tint, blur and background opacity without adding a competing outer window border.
-    // ------------------=
-    pub(in super::super) fn glass_window_substrate(&mut self,
-        rect: crate::ui::geometry::Rect, strong: bool) {
-        use crate::ui::skin::AccentSurface;
-        let (opacity, blur) = self.active_background_effects();
-        let (fill, edge) = match self.skin_visual_mode() {
-            1 => ((248, 251, 255), (122, 145, 166)),
-            2 => ((8, 8, 8), (255, 255, 255)),
-            _ => (self.active_accent_surface(AccentSurface::Widget),
-                self.active_accent_surface(AccentSurface::WindowOutline)),
-        };
-        self.window_substrate(rect, crate::ui::panel_recipe::Material { fill, edge,
-            opacity: ((if strong { 240u16 } else { 220 }) * opacity as u16 / 100) as u8,
-            edge_opacity: 0, focus: if strong { 80 } else { 0 }, pressed: false,
-            scale: self.ui_scale() }, if opacity < 100 { blur } else { 0 });
-    }
 
     // ------------------------=
     // FUNC: glass_panel
@@ -247,7 +228,8 @@ impl DisplayDevice {
         outline: (u8, u8, u8),
     ) {
         let (opacity, blur) = self.active_background_effects();
-        if blur >= 2 && opacity < 100 && !self.fast_motion_frame {
+        if blur >= 2 && opacity < 100 && !self.fast_motion_frame
+            && crate::ui::panel_recipe::surface_style(crate::ui::panel_recipe::Surface::Panel).material!=2 {
             self.blur_framebuffer_region(left, top, width, height, blur as usize);
         }
         let (fill,edge)=match self.skin_visual_mode() {

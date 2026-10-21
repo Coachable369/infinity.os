@@ -9,8 +9,10 @@ final class InstallerEndScreenTests: XCTestCase {
     // ------------------=
     @MainActor func testProgressSurfaceFillsAuthoredBounds() throws {
         let element = try XCTUnwrap(InstallerStudioDocument.factoryDefault().screens[7].elements.first { $0.kind == .progressBar })
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         for size in [CGSize(width: 780, height: 190), CGSize(width: 500, height: 100)] {
-            let view = CanvasProgressBarPreview(element: element, canvasScale: CGSize(width: 1, height: 1))
+            let view = CanvasProgressBarPreview(element: element, canvasScale: CGSize(width: 1, height: 1), projectRoot: root)
                 .frame(width: size.width, height: size.height)
             let image = try XCTUnwrap(ImageRenderer(content: view).cgImage)
             let bitmap = NSBitmapImageRep(cgImage: image)

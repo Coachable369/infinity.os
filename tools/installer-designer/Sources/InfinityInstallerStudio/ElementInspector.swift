@@ -10,8 +10,10 @@ struct ElementInspector: View {
                 Spacer()
                 Button(action: { store.moveLayer(-1) }) { Image(systemName: "square.2.layers.3d.bottom.filled") }
                     .help("Send Backward")
+                    .disabled(!store.canReorderSelectedLayer)
                 Button(action: { store.moveLayer(1) }) { Image(systemName: "square.2.layers.3d.top.filled") }
                     .help("Bring Forward")
+                    .disabled(!store.canReorderSelectedLayer)
             }
             .buttonStyle(.plain)
             .padding(InfinityUIKit.Metrics.controlGap)
@@ -56,7 +58,7 @@ struct ElementInspector: View {
                         if element.role == .input {
                             variableSection(element)
                         }
-                        if element.kind == .text || element.kind == .button || element.kind == .progressBar {
+                        if element.kind == .text || element.kind == .button || element.kind == .progressBar || element.role == .input {
                             textSection(element)
                         }
                         if element.kind == .image {
@@ -153,6 +155,7 @@ struct ElementInspector: View {
     // ------------------=
     private func geometrySection(_ element: StudioElement) -> some View {
         GroupBox("Geometry — normalized") {
+            VStack(alignment: .leading, spacing: 8) {
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
                 GridRow {
                     Text("X")
@@ -168,7 +171,12 @@ struct ElementInspector: View {
                 }
             }
             .textFieldStyle(.roundedBorder)
-            .disabled(element.locked)
+            .disabled(element.locked || !store.geometryIsEditable(element))
+            if !store.geometryIsEditable(element) {
+                Text("OS-responsive layout — these bounds adapt to the native window. Shared surface styles remain editable.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            }
         }
     }
 
@@ -283,18 +291,42 @@ struct ElementInspector: View {
     private func appearanceSection(_ element: StudioElement) -> some View {
         GroupBox("Appearance") {
             VStack(spacing: 9) {
+                if element.kind == .panel || element.kind == .console || element.kind == .button || element.kind == .progressBar {
+                    Picker("Surface", selection: Binding(
+                        get: { store.selectedElement?.surfaceMaterial ?? element.surfaceMaterial },
+                        set: { value in store.updateSelected { $0.surfaceMaterial = value } })) {
+                        Text("Use UIKit style").tag(UIKitSurfaceMaterial.authored)
+                        Text("Glass").tag(UIKitSurfaceMaterial.glass)
+                        Text("Matte").tag(UIKitSurfaceMaterial.matte)
+                    }
+                    Picker("Corners", selection: Binding(
+                        get: { store.selectedElement?.surfaceCorners ?? element.surfaceCorners },
+                        set: { value in store.updateSelected { $0.surfaceCorners = value } })) {
+                        Text("Use UIKit style").tag(UIKitCornerStyle.authored)
+                        Text("Square").tag(UIKitCornerStyle.square)
+                        Text("Rounded").tag(UIKitCornerStyle.rounded)
+                    }
+                }
+                tokenPicker("Fill source", keyPath: \.fillToken, fallback: element.fillToken)
                 ColorPicker("Fill / Text", selection: colorBinding(\.fill, fallback: element.fill), supportsOpacity: true)
+                    .disabled(element.fillToken != nil)
+                tokenPicker("Rim source", keyPath: \.borderToken, fallback: element.borderToken)
                 ColorPicker("Border", selection: colorBinding(\.border, fallback: element.border), supportsOpacity: true)
-                HStack {
-                    Text("Opacity")
-                    Slider(value: doubleBinding(\.opacity, fallback: element.opacity), in: 10...100, step: 1)
-                    Text("\(element.opacity)%").monospacedDigit().frame(width: 38)
+                    .disabled(element.borderToken != nil)
+                if element.fillToken != nil || element.borderToken != nil {
+                    Text("Theme-bound colors follow UIKit's palette. Custom colors remain stored when you switch back.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
+                    Text("Opacity")
+                    Slider(value: doubleBinding(\.opacity, fallback: element.opacity), in: 0...100, step: 1)
+                    Text("\(element.opacity)%").monospacedDigit().frame(width: 38)
+                }
+                if element.surfaceCorners == .rounded && element.kind != .text && element.kind != .image { HStack {
                     Text("Radius")
                     Slider(value: doubleBinding(\.cornerRadius, fallback: element.cornerRadius), in: 0...40, step: 1)
                     Text("\(element.cornerRadius)").monospacedDigit().frame(width: 28)
-                }
+                } }
                 Toggle("Hidden", isOn: boolBinding(\.hidden, fallback: element.hidden))
             }
             .disabled(element.locked)
@@ -415,6 +447,22 @@ struct ElementInspector: View {
     }
 
     // ------------------------=
+    // FUNC: tokenPicker
+    // DESC: Binds one screen color explicitly to a semantic theme role without guessing or overwriting its custom value.
+    // ------------------=
+    private func tokenPicker(_ title: String, keyPath: WritableKeyPath<StudioElement, UIKitColorRole?>,
+                             fallback: UIKitColorRole?) -> some View {
+        Picker(title, selection: Binding<UIKitColorRole?>(
+            get: { store.selectedElement.map { $0[keyPath: keyPath] } ?? fallback },
+            set: { value in store.updateSelected("Theme color binding changed") { $0[keyPath: keyPath] = value } })) {
+            Text("Custom color").tag(Optional<UIKitColorRole>.none)
+            ForEach(UIKitColorRole.allCases) { role in
+                Text("Theme · \(role.title)").tag(Optional(role))
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: colorBinding
     // DESC: Creates an undoable native ColorPicker binding into a runtime color token.
     // ------------------=
@@ -423,7 +471,7 @@ struct ElementInspector: View {
         fallback: StudioColor
     ) -> Binding<Color> {
         Binding(
-            get: { (store.selectedElement?[keyPath: keyPath] ?? fallback).color },
+            get: { (store.selectedElement?.resolvingThemeColors(store.uiKit.document.colors)[keyPath: keyPath] ?? fallback).color },
             set: { value in store.updateSelected { $0[keyPath: keyPath] = StudioColor(value) } }
         )
     }

@@ -65,7 +65,18 @@ impl Backdrop {
     pub fn paint_with_edge_opacity(&mut self, pixels: &mut [u32], stride: usize,
         bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
         material: Material, edge_opacity: u8) {
-        self.paint_sampled(pixels,stride,bounds,clip,material,edge_opacity,None);
+        self.paint_styled_with_edge_opacity(pixels,stride,bounds,clip,material,edge_opacity,
+            panel_recipe::surface_style(panel_recipe::Surface::Panel));
+    }
+
+    // ------------------------=
+    // FUNC: paint_styled_with_edge_opacity
+    // DESC: Exposes authored material and geometry for exact Studio and native panel rendering.
+    // ------------------=
+    pub fn paint_styled_with_edge_opacity(&mut self, pixels: &mut [u32], stride: usize,
+        bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
+        material: Material, edge_opacity: u8, style: panel_recipe::SurfaceStyle) {
+        self.paint_sampled(pixels,stride,bounds,clip,material,edge_opacity,None,style);
     }
 
     // ------------------------=
@@ -75,7 +86,18 @@ impl Backdrop {
     pub fn paint_retained_with_edge_opacity(&mut self, pixels: &mut [u32], stride: usize,
         bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
         material: Material, edge_opacity: u8, source: (usize,usize,usize,usize)) {
-        self.paint_sampled(pixels,stride,bounds,clip,material,edge_opacity,Some(source));
+        self.paint_retained_styled_with_edge_opacity(pixels,stride,bounds,clip,material,edge_opacity,source,
+            panel_recipe::surface_style(panel_recipe::Surface::Panel));
+    }
+
+    // ------------------------=
+    // FUNC: paint_retained_styled_with_edge_opacity
+    // DESC: Preserves clean backdrop reuse when individual wizard panels override the shared style.
+    // ------------------=
+    pub fn paint_retained_styled_with_edge_opacity(&mut self, pixels: &mut [u32], stride: usize,
+        bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
+        material: Material, edge_opacity: u8, source: (usize,usize,usize,usize), style: panel_recipe::SurfaceStyle) {
+        self.paint_sampled(pixels,stride,bounds,clip,material,edge_opacity,Some(source),style);
     }
 
     // ------------------------=
@@ -84,7 +106,8 @@ impl Backdrop {
     // ------------------=
     fn paint_sampled(&mut self, pixels: &mut [u32], stride: usize,
         bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
-        material: Material, edge_opacity: u8, retained_source: Option<(usize,usize,usize,usize)>) {
+        mut material: Material, mut edge_opacity: u8, retained_source: Option<(usize,usize,usize,usize)>,
+        mut style: panel_recipe::SurfaceStyle) {
         let (left,top,width,height)=bounds;
         if stride==0 || width==0 || height==0 { return; }
         let x0=left.max(clip.0).min(stride);
@@ -92,6 +115,31 @@ impl Backdrop {
         let x1=left.saturating_add(width).min(clip.2).min(stride);
         let y1=top.saturating_add(height).min(clip.3).min(pixels.len()/stride);
         if x0>=x1 || y0>=y1 { return; }
+        if let Some(fill)=style.fill {
+            material.primary=fill&0xffffff;
+            material.opacity=(u16::from(material.opacity)*((fill>>24) as u16)/255) as u8;
+        }
+        if let Some(border)=style.border {
+            material.accent=border&0xffffff;
+            edge_opacity=(u16::from(edge_opacity)*((border>>24) as u16)/255) as u8;
+        }
+        style.fill=None;style.border=None;
+        if style.material==2 {
+            self.retained=None;
+            let recipe=panel_recipe::Material {
+                fill:((material.primary>>16)as u8,(material.primary>>8)as u8,material.primary as u8),
+                edge:((material.accent>>16)as u8,(material.accent>>8)as u8,material.accent as u8),
+                opacity:(u16::from(material.opacity.min(100))*255/100)as u8,edge_opacity,
+                focus:0,pressed:false,scale:material.scale,
+            };
+            for y in y0..y1 {for x in x0..x1 {
+                let pixel=panel_recipe::pixel_styled(panel_recipe::Surface::Panel,width,height,x-left,y-top,recipe,style);
+                let rgb=encode((u32::from(pixel.0)<<16)|(u32::from(pixel.1)<<8)|u32::from(pixel.2),material.bgr);
+                let original=pixels[y*stride+x];
+                pixels[y*stride+x]=(original&0xff000000)|mix(original,rgb,u32::from(pixel.3));
+            }}
+            return;
+        }
         let mut source=(x0,y0,x1,y1);
         let mut reuse=false;
         if let Some(requested)=retained_source {
@@ -147,7 +195,8 @@ impl Backdrop {
             fill:(16,27,58),edge:((material.accent>>16)as u8,(material.accent>>8)as u8,material.accent as u8),
             opacity:255,edge_opacity:0,focus:0,pressed:false,scale:material.scale,
         };
-        let rim=panel_recipe::rim_width(panel_recipe::Surface::Panel,material.scale);
+        let rim=panel_recipe::rim_width(panel_recipe::Surface::Panel,material.scale)
+            .max(if style.corners==2 {usize::from(style.radius)*material.scale.max(1)}else{0});
         let opacity=u32::from(material.opacity.min(100));
         // Material-specific optical density: leave enough backdrop to perceive frost,
         // while preserving exact transparent/opaque endpoints of the preference slider.
@@ -158,11 +207,11 @@ impl Backdrop {
             // Only the bounded authored rim needs atlas sampling; interior frost
             // keeps the existing fixed-grid blur and optical-density fast path.
             let coverage=if on_rim {
-                panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,dx,dy,panel).3
+                panel_recipe::pixel_styled(panel_recipe::Surface::Panel,width,height,dx,dy,panel,style).3
             }else{255};
             let edge=if on_rim {
-                panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,dx,dy,
-                    panel_recipe::Material{opacity:0,edge_opacity,..panel})
+                panel_recipe::pixel_styled(panel_recipe::Surface::Panel,width,height,dx,dy,
+                    panel_recipe::Material{opacity:0,edge_opacity,..panel},style)
             }else{(0,0,0,0)};
             if coverage==0 && edge.3==0 {continue;}
             let original=pixels[y*stride+x];

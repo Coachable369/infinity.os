@@ -2448,14 +2448,9 @@ impl SystemLayout {
         index: usize,
         role: crate::ui::installer_template::InstallerTemplateRole,
     ) -> Option<Rect> {
-        let row = self.settings_row_geometry_for_section(state, index, section).summary;
-        let card = super::settings_cards::content(row, self.scale);
-        if role == crate::ui::installer_template::InstallerTemplateRole::SettingsRowLabel {
-            return Some(card.label);
-        }
-        if role == crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue {
-            return Some(card.value);
-        }
+        let row = self
+            .settings_row_geometry_for_section(state, index, section)
+            .summary;
         let mut child = self.authored_settings_rect(state, section, role, index)?;
         let anchor = self.authored_settings_rect(
             state,
@@ -2463,16 +2458,8 @@ impl SystemLayout {
             crate::ui::installer_template::InstallerTemplateRole::Metadata,
             index,
         )?;
-        let row = self
-            .settings_row_geometry_for_section(state, index, section)
-            .summary;
         child.x += row.x - anchor.x;
-        child.y = row.y + (row.height.saturating_sub(28) / 2) as i32;
-        child.height = 28;
-        if role == crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure {
-            child.height = (32 * self.scale) as u32;
-            child.y = row.y + (row.height.saturating_sub(child.height) / 2) as i32;
-        }
+        child.y += row.y - anchor.y;
         Some(child)
     }
 
@@ -2780,6 +2767,50 @@ impl SystemLayout {
         let mut sidebar = sidebar;
         let scroll = (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
         for tab in tabs.iter_mut() {
+    // ------------------------=
+    // FUNC: settings_element_geometry
+    // DESC: Exposes actual native layer bounds for Studio selection overlays, including enforced row minimums, scrolling and authored semantic child offsets.
+    // ------------------=
+    pub fn settings_element_geometry(self,state:SettingsWindowState,section:usize,id:[u8;16])->Option<Rect> {
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        let template=crate::ui::settings_template::template()?;
+        let screen=u8::try_from(section).ok()?.checked_add(1)?;
+        let count=template.element_count(screen)?;
+        let mut found=None;
+        for index in 0..count {let element=template.element_at(screen,index)?;if element.id==id{found=Some((index,element));break;}}
+        let (index,element)=found?;
+        let ordinal=(0..index).filter(|i|template.element_at(screen,*i).is_some_and(|e|e.role==element.role)).count();
+        let window=self.settings_window_geometry_for_section(state,section);
+        if element.role==Role::Console as u8{return Some(window.window);}
+        if element.role==Role::Masthead as u8{return Some(window.title);}
+        if element.role==Role::SectionLabel as u8{return Some(window.navigation);}
+        if element.role==Role::Content as u8{return Some(window.content);}
+        if matches!(section,SETTINGS_NETWORK_SECTION|SETTINGS_NODE_SECTION) {
+            let dashboard=if section==SETTINGS_NETWORK_SECTION {self.network_settings_geometry(state)}else{self.node_settings_geometry(state)};
+            if element.role==Role::SettingsTab as u8{return dashboard.tabs.get(ordinal).copied();}
+            if element.role==Role::SettingsSummaryCard as u8{return Some(dashboard.summary);}
+            if element.role==Role::SettingsMainCard as u8{return Some(dashboard.main);}
+            if matches!(element.role,24|29){return Some(dashboard.sidebar);}
+            if element.role==Role::Metadata as u8{return dashboard.controls.get(ordinal).copied();}
+        }
+        if element.role==Role::Metadata as u8{return Some(self.settings_row_geometry_for_section(state,ordinal,section).summary);}
+        for role in [Role::SettingsRowLabel,Role::SettingsRowValue,Role::SettingsDisclosure] {
+            if element.role==role as u8{return self.settings_row_element_geometry(state,section,ordinal,role);}
+        }
+        if matches!(element.role,22|23|25) {
+            let row=self.settings_section_geometry_for_section(state,ordinal,section);
+            if element.role==Role::SettingsNavigationItem as u8{return Some(row);}
+            return self.authored_settings_rect(state,section,if element.role==23{Role::SettingsNavigationIcon}else{Role::SettingsNavigationLabel},ordinal);
+        }
+        if !matches!(element.role,0|4|5|6|24){return None;}
+        let console=crate::ui::settings_template::element(section,Role::Console)?;
+        let outer=window.window;
+        Some(Rect{x:outer.x+(element.frame.x.saturating_sub(console.frame.x)as u32*outer.width/console.frame.width.max(1)as u32)as i32,
+            y:outer.y+(element.frame.y.saturating_sub(console.frame.y)as u32*outer.height/console.frame.height.max(1)as u32)as i32,
+            width:element.frame.width as u32*outer.width/console.frame.width.max(1)as u32,
+            height:element.frame.height as u32*outer.height/console.frame.height.max(1)as u32})
+    }
+
             tab.y = tab.y.saturating_sub(scroll);
         }
         summary.y = summary.y.saturating_sub(scroll);

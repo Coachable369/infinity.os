@@ -11,6 +11,16 @@ pub const TEXT: Rgb = (255, 255, 255);
 pub const SECONDARY: Rgb = (190, 190, 190);
 pub const ERROR: Rgb = (255, 118, 145);
 
+// ------------------------=
+// FUNC: semantic_color
+// DESC: Supplies Studio-authored native palette colors to dynamic configuration content not represented by static text layers.
+// ------------------=
+pub fn semantic_color(index:usize)->Rgb {
+    let colors=crate::ui::skin::kit_tokens::runtime_colors();
+    let color=colors[index.min(colors.len()-1)];
+    (((color>>16)&255)as u8,((color>>8)&255)as u8,(color&255)as u8)
+}
+
 #[derive(Clone, Copy)]
 pub struct FocusMotion { pub key: u32, pub started_ms: u64, pub amount: u8, pub pressed: bool }
 impl FocusMotion {

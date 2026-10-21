@@ -2,13 +2,16 @@
 
 use super::geometry::{Insets, Scale};
 
+#[path = "kit_tokens.rs"]
+pub mod kit_tokens;
+
 pub const SKIN_PACKAGE_VERSION: u16 = 1;
 pub const MAX_SKINS: usize = 4;
 pub const DEFAULT_BACKGROUND_OPACITY: u8 = 88;
 pub const DEFAULT_BACKGROUND_BLUR: u8 = 4;
 pub const SKIN_ID_BYTES: usize = 32;
 pub const SKIN_HEADER_BYTES: usize = 64;
-pub const DEFAULT_PRIMARY_RGB: u32 = 0x101b3a;
+pub const DEFAULT_PRIMARY_RGB: u32 = kit_tokens::primary_rgb();
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -585,6 +588,7 @@ fn header_checksum(bytes: &[u8]) -> u32 {
 // DESC: Defines the screenshot-accurate official InfinityOS dark visual system.
 // ------------------=
 pub const fn default_dark_skin() -> SkinPackage {
+    let authored = kit_tokens::colors();
     SkinPackage {
         id: SkinId::from_bytes(b"infinity.default.dark"),
         parent: None,
@@ -594,19 +598,11 @@ pub const fn default_dark_skin() -> SkinPackage {
         trusted: true,
         tokens: SkinTokens {
             colors: [
-                Color(0xff090f26),
-                Color(0xe6101b3a),
-                Color(0xf01a2e63),
-                Color(0xff86c7ff),
-                Color(0xffffffff),
-                Color(0xffbebebe),
-                Color(0xff3e6fff),
-                Color(0xff86c7ff),
-                Color(0xffffffff),
-                Color(0xff50d890),
-                Color(0xffffc857),
-                Color(0xffff6170),
-                Color(0x99000000),
+                Color(authored[0]), Color(authored[1]), Color(authored[2]),
+                Color(authored[3]), Color(authored[4]), Color(authored[5]),
+                Color(authored[6]), Color(authored[7]), Color(authored[8]),
+                Color(authored[9]), Color(authored[10]), Color(authored[11]),
+                Color(authored[12]),
             ],
             spacing: [4, 8, 12, 16, 20, 24, 32, 48],
             corner_radius: [4, 10, 16, 24],

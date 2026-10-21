@@ -1,0 +1,362 @@
+import AppKit
+import XCTest
+@testable import InfinityInstallerStudio
+
+private actor ControlledNativeRenderer: NativePreviewRunning {
+    private var requests: [Int: CheckedContinuation<NativePreviewFrame, any Error>] = [:]
+    private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    // ------------------------=
+    // FUNC: render
+    // DESC: Defers typed frames until the test explicitly releases them, including intentionally out-of-order completions.
+    // ------------------=
+    func render(_ snapshot: NativePreviewSnapshot) async throws -> NativePreviewFrame {
+        try await withCheckedThrowingContinuation { continuation in
+            requests[snapshot.screen] = continuation
+            waiters.removeValue(forKey: snapshot.screen)?.resume()
+        }
+    }
+
+    // ------------------------=
+    // FUNC: wait
+    // DESC: Waits deterministically for a render invocation without timer-based polling.
+    // ------------------=
+    func wait(for screen: Int) async {
+        if requests[screen] != nil { return }
+        await withCheckedContinuation { waiters[screen] = $0 }
+    }
+
+    // ------------------------=
+    // FUNC: finish
+    // DESC: Supplies either valid or malformed renderer bytes through the same asynchronous interface.
+    // ------------------=
+    func finish(_ screen: Int, value: UInt8, malformed: Bool = false) {
+        requests.removeValue(forKey: screen)?.resume(returning: NativePreviewFrame(
+            pixels: Data(repeating: value, count: malformed ? 4 : 320 * 240 * 4), width: 320, height: 240))
+    }
+}
+
+final class NativePreviewTests: XCTestCase {
+    // ------------------------=
+    // FUNC: testSimulationControlRangesMatchNativeSections
+    // DESC: Rejects nonexistent dashboard pages and resolves the date component to the active live field.
+    // ------------------=
+    func testSimulationControlRangesMatchNativeSections() {
+        XCTAssertEqual(NativePreviewSimulation.settingsRange(screen: 7, rows: 0), 0...6)
+        XCTAssertEqual(NativePreviewSimulation.settingsRange(screen: 8, rows: 0), 0...4)
+        XCTAssertEqual(NativePreviewSimulation.settingsRange(screen: 4, rows: 7), -1...6)
+        var value = NativePreviewSimulation(); value.expandedRow = 7
+        XCTAssertEqual(value.resolved(collection: .systemSettings, screen: 8, rows: 0).expandedRow, 4)
+        value.dateFocus = 3; value.datePart = 0
+        XCTAssertEqual(value.resolved(collection: .installation, screen: 5, rows: 0).datePart, 3)
+        value.dateFocus = 2; value.datePart = 4
+        XCTAssertEqual(value.resolved(collection: .installation, screen: 5, rows: 0).datePart, 2)
+    }
+    private var root: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    // ------------------------=
+    // FUNC: snapshot
+    // DESC: Creates a bounded immutable request for renderer lifecycle tests independent of source fixtures.
+    // ------------------=
+    private func snapshot(screen: Int) -> NativePreviewSnapshot {
+        NativePreviewSnapshot(projectRoot: root, template: Data(), kind: "installer", screen: screen,
+            width: 320, height: 240, atlas: Data(), glyphs: Data(), styles: Data(), background: Data(), assets: [])
+    }
+
+    // ------------------------=
+    // FUNC: testNewestNativeFrameOwnsCanvas
+    // DESC: Verifies an older asynchronous completion cannot overwrite a newer edit's verified framebuffer.
+    // ------------------=
+    @MainActor func testNewestNativeFrameOwnsCanvas() async {
+        let runner = ControlledNativeRenderer()
+        let subject = NativePreviewService(runner: runner)
+        let first = Task { await subject.update(snapshot(screen: 1)) }
+        await runner.wait(for: 1)
+        let second = Task { await subject.update(snapshot(screen: 2)) }
+        await runner.wait(for: 2)
+        await runner.finish(2, value: 222)
+        await second.value
+        XCTAssertEqual(subject.phase, .ready)
+        XCTAssertEqual(subject.frame?.pixels.first, 222)
+        await runner.finish(1, value: 111)
+        await first.value
+        XCTAssertEqual(subject.frame?.pixels.first, 222)
+        XCTAssertEqual(subject.phase, .ready)
+    }
+
+    // ------------------------=
+    // FUNC: testMalformedAndCancelledFramesNeverBecomeCurrent
+    // DESC: Retains the last verified pixels with an explicit failure state and rejects a cancelled request's late completion.
+    // ------------------=
+    @MainActor func testMalformedAndCancelledFramesNeverBecomeCurrent() async {
+        let runner = ControlledNativeRenderer()
+        let subject = NativePreviewService(runner: runner)
+        let valid = Task { await subject.update(snapshot(screen: 1)) }
+        await runner.wait(for: 1); await runner.finish(1, value: 90); await valid.value
+        let invalid = Task { await subject.update(snapshot(screen: 2)) }
+        await runner.wait(for: 2); await runner.finish(2, value: 12, malformed: true); await invalid.value
+        XCTAssertEqual(subject.phase, .failed)
+        XCTAssertNotNil(subject.errorMessage)
+        XCTAssertEqual(subject.frame?.pixels.first, 90)
+        let cancelled = Task { await subject.update(snapshot(screen: 3)) }
+        await runner.wait(for: 3); subject.cancel(); await runner.finish(3, value: 1); await cancelled.value
+        XCTAssertEqual(subject.phase, .idle)
+        XCTAssertEqual(subject.frame?.pixels.first, 90)
+    }
+
+    // ------------------------=
+    // FUNC: testNativeBitmapPreservesOrientationAndTransparency
+    // DESC: Checks actual encoded V4 pixels and alpha rather than relying on a host screenshot's appearance.
+    // ------------------=
+    @MainActor func testNativeBitmapPreservesOrientationAndTransparency() throws {
+        let bytes = Data([255,0,0,255, 0,255,0,255, 0,0,255,255, 0,0,0,0])
+        let provider = try XCTUnwrap(CGDataProvider(data: bytes as CFData))
+        let image = try XCTUnwrap(CGImage(width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: 8, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let bmp = try NativePreviewSnapshot.bitmap(NSImage(cgImage: image, size: NSSize(width: 2, height: 2)))
+        XCTAssertEqual(bmp.count, 138)
+        XCTAssertEqual(Array(bmp[122..<130]), [0,0,255,255, 0,255,0,255])
+        XCTAssertEqual(Array(bmp[130..<138]), [255,0,0,255, 0,0,0,0])
+        XCTAssertEqual(Array(bmp[22..<26]), [254,255,255,255])
+        XCTAssertTrue(NativeBitmapEncoder.supportedBitmap(bmp))
+    }
+
+    // ------------------------=
+    // FUNC: testUploadedPNGPixelsMatchUIKitPackaging
+    // DESC: Compares native preview bytes against the actual Python packaging encoder over low-alpha colors and top-down image rows.
+    // ------------------=
+    @MainActor func testUploadedPNGPixelsMatchUIKitPackaging() throws {
+        let directory = root.appending(path: "build/behavior-tests")
+        let expected = try Data(contentsOf: directory.appending(path: "studio-native-upload.bmp"))
+        let actual = try NativeBitmapEncoder.read(directory.appending(path: "studio-native-upload.png"))
+        XCTAssertEqual(actual, expected)
+        let png = try Data(contentsOf: directory.appending(path: "studio-native-upload.png"))
+        let rgba = try UIKitStore(projectRoot: nil).rawRGBA(png, width: 10, height: 10)
+        XCTAssertEqual(rgba, try Data(contentsOf: directory.appending(path: "studio-native-upload.rgba")))
+    }
+
+    // ------------------------=
+    // FUNC: testNativeBitmapPackagingParityAndPathConfinement
+    // DESC: Verifies runtime packaging preserves exact native bitmap bytes and refuses traversal or symlink image sources.
+    // ------------------=
+    func testNativeBitmapPackagingParityAndPathConfinement() throws {
+        let directory = root.appending(path: "build/tmp/native-bitmap-test-\(UUID().uuidString)")
+        let assets = directory.appending(path: "assets/boot")
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = root.appending(path: "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp")
+        let bytes = try Data(contentsOf: original)
+        XCTAssertTrue(NativeBitmapEncoder.supportedBitmap(bytes))
+        let image = assets.appending(path: "fixture.bmp")
+        try bytes.write(to: image)
+        XCTAssertEqual(try NativeBitmapEncoder.read(image), bytes)
+        var document = InstallerStudioDocument.factoryDefault()
+        let index = try XCTUnwrap(document.screens[0].elements.firstIndex { $0.kind == .image })
+        document.screens[0].elements[index].imageAsset = "fixture.bmp"
+        let encoded = try RuntimeTemplateCodec.encode(document, assetRoot: directory)
+        XCTAssertNotNil(encoded.range(of: bytes))
+        for path in ["../../fixture.bmp", original.path] {
+            document.screens[0].elements[index].imageAsset = path
+            XCTAssertThrowsError(try RuntimeTemplateCodec.encode(document, assetRoot: directory))
+        }
+        let link = assets.appending(path: "outside.bmp")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: original)
+        document.screens[0].elements[index].imageAsset = "outside.bmp"
+        XCTAssertThrowsError(try RuntimeTemplateCodec.encode(document, assetRoot: directory))
+    }
+
+    // ------------------------=
+    // FUNC: testRendererTimeoutLeavesEditingServiceUsable
+    // DESC: Exercises termination of an owned stalled helper and verifies cancellation returns its editing service to an idle state.
+    // ------------------=
+    @MainActor func testRendererTimeoutLeavesEditingServiceUsable() async throws {
+        let directory = root.appending(path: "build/tmp/native-timeout-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appending(path: "stalled-renderer")
+        try Data("#!/bin/sh\nexec /bin/sleep 30\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let service = NativePreviewService(runner: NativePreviewRunner(executableOverride: executable, timeout: .milliseconds(250)))
+        let start = ContinuousClock.now
+        await service.update(snapshot(screen: 1))
+        XCTAssertEqual(service.phase, .failed)
+        XCTAssertNil(service.frame)
+        XCTAssertNotNil(service.errorMessage)
+        XCTAssertLessThan(start.duration(to: .now), .seconds(3))
+        service.cancel()
+        XCTAssertEqual(service.phase, .idle)
+    }
+
+    // ------------------------=
+    // FUNC: testProductionRendererUsesUnsavedTextAndStyles
+    // DESC: Exercises all native scene kinds and verifies unsaved text and material edits change pixels without changing saved source documents.
+    // ------------------=
+    @MainActor func testProductionRendererUsesUnsavedTextAndStyles() async throws {
+        let store = TemplateStore()
+        store.nativePreviewSimulation.enabled = false
+        store.projectRoot = root
+        let savedURL = root.appending(path: "assets/boot/configuration-screens.infinityui")
+        let saved = try Data(contentsOf: savedURL)
+        let runner = NativePreviewRunner()
+        for collection in ScreenCollection.allCases {
+            store.selectScreenCollection(collection, screen: 1)
+            let snapshot = try NativePreviewSnapshot.capture(store)
+            let first = try await runner.render(snapshot)
+            XCTAssertEqual(first.width, 1600)
+            XCTAssertEqual(first.height, 1000)
+            XCTAssertEqual(first.pixels.count, 6_400_000)
+            let element = try XCTUnwrap(store.selectedScreen?.elements.first { $0.kind == .text && !$0.hidden && !$0.locked && !$0.text.isEmpty })
+            store.selectElement(element.id)
+            store.updateSelected("Native preview text edit") { $0.text = "Native production text preview" }
+            let edited = try NativePreviewSnapshot.capture(store)
+            XCTAssertNotEqual(edited.template, snapshot.template)
+            let second = try await runner.render(edited)
+            XCTAssertNotEqual(second.pixels, first.pixels)
+            try saveProof(first, name: "native-\(snapshot.kind)-baseline")
+            try saveProof(second, name: "native-\(snapshot.kind)-unsaved-text")
+        }
+        store.selectScreenCollection(.configuration, screen: 1)
+        let baseline = try await runner.render(NativePreviewSnapshot.capture(store))
+        store.uiKit.setSurfaceStyle(2, style: UIKitSurfaceStyle(material: .matte, corners: .rounded, radius: 24))
+        let styled = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(styled.pixels, baseline.pixels)
+        try saveProof(styled, name: "native-configuration-unsaved-material")
+        store.nativePreviewState = .focused
+        let focused = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(focused.pixels, styled.pixels)
+        store.nativePreviewState = .pressed
+        let pressed = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(pressed.pixels, focused.pixels)
+        store.canvasViewport = .fullHD
+        let wide = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertEqual(wide.width, 1920)
+        XCTAssertEqual(wide.height, 1080)
+        try saveProof(wide, name: "native-configuration-fullhd-pressed")
+        XCTAssertEqual(try Data(contentsOf: savedURL), saved)
+    }
+
+    // ------------------------=
+    // FUNC: testNativeServiceStatesAreBoundedAndVisiblyRendered
+    // DESC: Exercises native clock-field substitutions, destructive dialog and progress pixels without invoking any real system service.
+    // ------------------=
+    @MainActor func testNativeServiceStatesAreBoundedAndVisiblyRendered() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.nativePreviewSimulation.enabled = false
+        let runner = NativePreviewRunner()
+        store.selectScreenCollection(.installation, screen: 5)
+        let authored = try await runner.render(NativePreviewSnapshot.capture(store))
+        store.nativePreviewSimulation.enabled = true
+        let clock = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(clock.pixels, authored.pixels)
+        store.nativePreviewSimulation.timeZone = 10
+        let japan = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(japan.pixels, clock.pixels)
+        try saveProof(japan, name: "native-installer-live-date-time")
+        let map = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .timeZoneMap })
+        store.selectElement(map.id); store.updateSelected("Map transparency proof") { $0.opacity = 0 }
+        let noMap = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertGreaterThan(zip(japan.pixels, noMap.pixels).filter { $0 != $1 }.count, 10_000)
+        store.updateSelected("Restore map proof") { $0.opacity = 100 }
+        store.selectScreenCollection(.installation, screen: 7)
+        let review = try await runner.render(NativePreviewSnapshot.capture(store))
+        store.nativePreviewSimulation.confirmation = true
+        let confirmation = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(review.pixels, confirmation.pixels)
+        try saveProof(confirmation, name: "native-installer-erase-confirmation")
+        store.selectScreenCollection(.installation, screen: 8)
+        store.nativePreviewSimulation.progress = 10
+        let progress = try await runner.render(NativePreviewSnapshot.capture(store))
+        store.nativePreviewSimulation.progress = 73
+        let later = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(progress.pixels, later.pixels)
+        try saveProof(later, name: "native-installer-progress")
+        var invalid = store.nativePreviewSimulation; invalid.progress = 101
+        XCTAssertThrowsError(try invalid.arguments())
+        invalid.progress = 0; invalid.timeZone = 12
+        XCTAssertThrowsError(try invalid.arguments())
+        store.selectScreenCollection(.systemSettings, screen: 1)
+        let general = try await runner.render(NativePreviewSnapshot.capture(store))
+        try saveProof(general, name: "native-settings-simulated-general")
+        store.selectScreenCollection(.systemSettings, screen: 4)
+        let settings = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertFalse(settings.bounds.isEmpty)
+        let ids = Set(store.selectedScreen?.elements.map(\.id) ?? [])
+        XCTAssertTrue(settings.bounds.allSatisfy { ids.contains($0.id) })
+        store.nativePreviewSimulation.expandedRow = 2
+        store.nativePreviewSimulation.scroll = 40
+        let expanded = try await runner.render(NativePreviewSnapshot.capture(store))
+        XCTAssertNotEqual(settings.pixels, expanded.pixels)
+        XCTAssertNotEqual(settings.bounds, expanded.bounds)
+        try saveProof(expanded, name: "native-settings-simulated-expanded")
+        let service = NativePreviewService(runner: runner)
+        await service.update(try NativePreviewSnapshot.capture(store))
+        XCTAssertEqual(service.frame?.bounds, expanded.bounds)
+        for screen in [7,8] {
+            store.selectScreenCollection(.systemSettings, screen: screen)
+            store.nativePreviewSimulation.expandedRow = 0
+            store.nativePreviewSimulation.scroll = 0
+            let dashboard = try await runner.render(NativePreviewSnapshot.capture(store))
+            XCTAssertFalse(dashboard.bounds.isEmpty)
+            store.nativePreviewSimulation.expandedRow = 1
+            let page = try await runner.render(NativePreviewSnapshot.capture(store))
+            XCTAssertNotEqual(page.pixels, dashboard.pixels)
+            try saveProof(dashboard, name: screen == 7 ? "native-settings-network" : "native-settings-nodes")
+            if screen == 8 {
+                store.nativePreviewSimulation.expandedRow = 0
+                let artwork = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .settingsArtwork })
+                store.selectElement(artwork.id); store.updateSelected("Hide topology proof") { $0.hidden = true }
+                let hidden = try await runner.render(NativePreviewSnapshot.capture(store))
+                XCTAssertGreaterThan(zip(hidden.pixels, dashboard.pixels).filter { $0 != $1 }.count, 10_000)
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testNativeSettingsGestureTransformUpdatesAuthoredGeometry
+    // DESC: Verifies native framebuffer drag and resize distances update the source template through the exact inverse console transform.
+    // ------------------=
+    @MainActor func testNativeSettingsGestureTransformUpdatesAuthoredGeometry() throws {
+        let store = TemplateStore(); store.selectScreenCollection(.systemSettings, screen: 1)
+        store.snapEnabled = false
+        let element = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .settingsRowLabel })
+        let console = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .console })
+        let window = NativePreviewBounds(id: console.id, x: 40, y: 70, width: console.frame.width * 2, height: console.frame.height * 2)
+        let scale = NativeCanvasMapping.editingScale(element: element, console: console.frame, window: window, viewport: .studio, scale: 0.5)
+        XCTAssertEqual(scale, CGSize(width: 1, height: 1))
+        store.selectElement(element.id); store.beginGesture(elementID: element.id)
+        store.moveSelected(translation: CGSize(width: 13, height: 9), canvasScale: scale); store.endGesture()
+        let moved = try XCTUnwrap(store.selectedElement)
+        XCTAssertEqual(moved.frame.x, element.frame.x + 13); XCTAssertEqual(moved.frame.y, element.frame.y + 9)
+        store.beginGesture(elementID: element.id)
+        store.resizeSelected(handle: .bottomRight, translation: CGSize(width: 18, height: 7), canvasScale: scale); store.endGesture()
+        XCTAssertEqual(store.selectedElement?.frame.width, moved.frame.width + 18)
+        XCTAssertEqual(store.selectedElement?.frame.height, moved.frame.height + 7)
+        store.selectScreenCollection(.systemSettings, screen: 7)
+        let card = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .settingsMainCard })
+        XCTAssertFalse(store.geometryIsEditable(card))
+        store.selectElement(card.id)
+        XCTAssertFalse(store.canReorderSelectedLayer)
+        store.beginGesture(); store.moveSelected(translation: CGSize(width: 20, height: 20), canvasScale: CGSize(width: 1, height: 1)); store.endGesture()
+        store.nudgeSelected(dx: 1, dy: 1, byGrid: false); store.moveLayer(1)
+        XCTAssertEqual(store.selectedElement?.frame, card.frame)
+        XCTAssertEqual(store.selectedElement?.zIndex, card.zIndex)
+    }
+
+    // ------------------------=
+    // FUNC: saveProof
+    // DESC: Exports the exact native framebuffer for visual acceptance when the build kit requests proof artifacts.
+    // ------------------=
+    @MainActor private func saveProof(_ frame: NativePreviewFrame, name: String) throws {
+        guard let directory = ProcessInfo.processInfo.environment["INFINITY_STUDIO_PRECISION_PROOFS"] else { return }
+        let image = try XCTUnwrap(frame.image())
+        let png = try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        let destination = URL(fileURLWithPath: directory)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try png.write(to: destination.appending(path: name + ".png"), options: .atomic)
+    }
+}
