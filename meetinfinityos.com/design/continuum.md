@@ -72,3 +72,20 @@ must fit at desktop and switch to the existing mobile menu at narrower widths.
 Present public product direction and development status, with real links to the
 whitepaper and product preview. Do not invent financials, traction, funding
 terms, contact details, or an investment submission flow.
+
+## Publication Library
+
+The existing kit has no publication listing. Extend the reading-page system with
+an unframed two-column list, thin horizontal separators, 20px publication titles,
+muted 13px summaries and a compact cyan publication status. Use one column below
+760px. Reuse the existing Inter roles and actual emblem; no fictional cover art.
+The four explicitly requested placeholders show numbered titles and forthcoming
+status, never links to missing files, fake dates, page counts or download buttons.
+Keep the existing public overview below the list with a working reading link.
+Future published entries must include a real PDF, version/date, file size and
+accessible download link before replacing the forthcoming status.
+
+The expanded investor narrative distinguishes an investment thesis, possible
+commercial paths and proposed diligence milestones from demonstrated outcomes.
+Keep the contents navigation, readable measure and section rhythm. Use sourced
+category context, not invented market sizes, traction, returns or funding terms.

@@ -1,42 +1,33 @@
 {
+  "checkedAt": "2026-10-21T04:11:47.772Z",
+  "url": "http://127.0.0.1:4178/whitepaper.html",
   "desktop": {
-    "contentsResolve": true,
-    "current": "/whitepaper.html",
-    "imagesLoaded": true,
-    "path": "/whitepaper.html",
+    "columns": "572px 572px",
+    "entries": 4,
+    "errors": 0,
+    "images": true,
+    "missingAnchors": 0,
     "scrollWidth": 1425,
-    "sections": 6,
+    "unavailableLinks": 0,
     "width": 1440
   },
   "mobile": {
-    "articleWidth": 327,
-    "menuClosed": true,
+    "columns": "327px",
+    "overflow": 0,
     "scrollWidth": 375,
     "width": 390
   },
-  "compact": {
+  "narrow": {
+    "overflow": 0,
     "scrollWidth": 305,
-    "titleBox": 257,
-    "titleWidth": 257,
     "width": 320
   },
-  "escape": {
-    "expanded": "false",
-    "focused": true
+  "overviewJump": {
+    "focus": "paper",
+    "hash": "#paper",
+    "top": 89.859375
   },
-  "homeHeader": {
-    "brandRight": 169.03125,
-    "controlsLeft": 193,
-    "controlsRight": 289,
-    "ready": true,
-    "width": 320
-  },
-  "sectionNavigation": {
-    "hash": "#intelligence",
-    "headerBottom": 68,
-    "height": 568,
-    "scroll": 2733.5,
-    "top": 80.015625
-  },
-  "consoleErrors": 0
+  "mobileMenuOpenCloseEscapeFocus": true,
+  "publicationState": "four forthcoming placeholders; no download controls or PDFs",
+  "consoleErrors": []
 }

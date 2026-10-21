@@ -1,43 +1,30 @@
 {
+  "checkedAt": "2026-10-21T04:11:47.774Z",
+  "url": "http://127.0.0.1:4178/invest.html",
   "desktop": {
-    "active": "/invest.html",
-    "contentsResolve": true,
-    "imagesLoaded": true,
-    "navItems": 5,
-    "path": "/invest.html",
+    "images": true,
+    "missingAnchors": 0,
+    "overflow": 0,
     "scrollWidth": 1425,
+    "sections": 8,
     "width": 1440
   },
   "mobile": {
-    "menuClosed": true,
-    "path": "/invest.html",
+    "missingAnchors": 0,
+    "overflow": 0,
     "scrollWidth": 375,
+    "sections": 8,
     "width": 390
   },
-  "compact": {
+  "narrow": {
+    "overflow": 0,
     "scrollWidth": 305,
-    "titleBox": 257,
-    "titleWidth": 257,
     "width": 320
   },
-  "homeHeader": {
-    "brandRight": 262.8359375,
-    "controlsLeft": 902,
-    "controlsRight": 946,
-    "navHeight": 43.1953125,
-    "navLeft": 340.0546875,
-    "navRight": 824.78125,
-    "sceneReady": true,
-    "width": 1001
+  "milestoneJump": {
+    "hash": "#milestones",
+    "top": 80.1484375
   },
-  "keyboardDismissal": true,
-  "whitepaperRoundTrip": true,
-  "sectionNavigation": {
-    "hash": "#status",
-    "headerBottom": 68,
-    "height": 568,
-    "scroll": 2584.5,
-    "top": 79.828125
-  },
-  "consoleErrors": 0
+  "mobileNavigationFromLibrary": true,
+  "consoleErrors": []
 }

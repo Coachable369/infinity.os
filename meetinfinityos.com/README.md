@@ -29,7 +29,8 @@ Inter is self-hosted. No external runtime CDN requests are made.
 
 ## Verification
 
-Run `npm test` (no installation needed). Eight tests exercise production motion
+Run `./build-kit run npm --prefix meetinfinityos.com test` from the repository
+root (no installation needed). Eight tests exercise production motion
 state, preference persistence, restricted storage, source-artifact provenance,
 mesh depth and UV mapping, contour area, scroll pose, electrical routes, and
 shared navigation including keyboard dismissal and focus restoration.
@@ -38,19 +39,30 @@ shared navigation including keyboard dismissal and focus restoration.
 Desktop and mobile screenshots are visual evidence, not textual test oracles.
 Interactive preview content is explicitly illustrative; it is not a live OS session.
 
-## Whitepaper
+## Whitepapers
 
-The shared top navigation links to `whitepaper.html`. It presents a public
-design-direction overview with linked contents, responsive reading typography,
-and a print stylesheet. It reuses the existing kit and emblem, works without
+The shared top navigation links to `whitepaper.html`. Its public knowledge
+library has four explicitly requested forthcoming placeholders. No PDF files,
+download links, dates, sizes, or titles have been invented. The existing public
+design-direction overview remains below it with linked contents, responsive
+reading typography, and a print stylesheet. It reuses the kit, works without
 WebGL, and remains readable with JavaScript disabled. `navigation.js` owns the
 same mobile-menu behavior across the site; it does not load the homepage scene.
+
+When a paper is ready, add the approved public PDF under `publications/`, replace
+one `.publication-entry` with its real title, summary, version/date, page count,
+file size and a named `<a download>` link. Add the exact PDF path to `deploy.sh`'s
+allowlist and staging/publish steps; no private or draft documents belong there.
+Verify the downloaded file and its `application/pdf` response before publishing.
 
 ## Investors
 
 `invest.html` is linked from the top menu on all three pages. It reuses the
-reading-page stylesheet, shared navigation, and original emblem, with a public
-product overview and working links to the whitepaper and product experience.
+reading-page stylesheet, shared navigation, and original emblem. Its investment
+thesis covers workflow value, category context, commercial hypotheses, proposed
+diligence milestones, competitive risks and development status. Official Apple
+and Microsoft references support category context, not InfinityOS traction.
+Working links connect the library and product experience.
 It does not collect investment commitments, publish financial terms, or invent
 a contact address. Deployment includes this page in the runtime allowlist.
 
@@ -65,9 +77,9 @@ No DNS, Apache-vhost, TLS, database, or OS-image change is needed.
 backup, publishes the HTML last, and checks both HTTPS hostnames. Credentials
 are read from the existing deployment environment and are never stored here.
 
-This standalone website is not an installed InfinityOS component. The user
-explicitly exempted website work from the native build kit on 2026-10-20;
-the running native build and its lock must remain untouched.
+This standalone website is not an installed InfinityOS component and requires
+no ISO rebuild. Run bounded verification through the repository build kit;
+never disturb a running native build or its lock.
 
 ## Reproducing The Contours
 
