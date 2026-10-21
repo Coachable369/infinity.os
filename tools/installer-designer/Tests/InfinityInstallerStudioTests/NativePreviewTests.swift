@@ -38,6 +38,35 @@ private actor ControlledNativeRenderer: NativePreviewRunning {
 
 final class NativePreviewTests: XCTestCase {
     // ------------------------=
+    // FUNC: testAddedWizardScreensRenderThroughNativePipeline
+    // DESC: Adds screens through Studio's public editing operations and verifies native frame production beyond the Settings-only eleven-screen limit.
+    // ------------------=
+    @MainActor func testAddedWizardScreensRenderThroughNativePipeline() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.document = .factoryDefault()
+        store.configurationDocument = .factoryConfiguration()
+        store.nativePreviewSimulation.enabled = false
+        let runner = NativePreviewRunner()
+        for collection in [ScreenCollection.installation, .configuration] {
+            store.selectScreenCollection(collection, screen: 1)
+            for targetCount in [12, 32] {
+                while store.activeScreens.count < targetCount {
+                    store.selectScreenCollection(collection, screen: store.activeScreens.count)
+                    store.addScreen()
+                }
+                XCTAssertEqual(store.activeScreens.count, targetCount)
+                XCTAssertEqual(store.selectedScreenID, targetCount)
+                let snapshot = try NativePreviewSnapshot.capture(store)
+                let frame = try await runner.render(snapshot)
+                XCTAssertEqual(frame.pixels.count, frame.width * frame.height * 4)
+                XCTAssertGreaterThan(Set(frame.pixels).count, 16)
+                try saveProof(frame, name: "native-\(snapshot.kind)-added-screen-\(targetCount)")
+            }
+            XCTAssertFalse(store.canAddScreen)
+        }
+    }
+
+    // ------------------------=
     // FUNC: testSimulationControlRangesMatchNativeSections
     // DESC: Rejects nonexistent dashboard pages and resolves the date component to the active live field.
     // ------------------=

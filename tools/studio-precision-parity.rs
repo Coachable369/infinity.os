@@ -59,7 +59,7 @@ fn write_styles(path: &std::path::Path) -> std::io::Result<()> {
     let surfaces = [Surface::Frame, Surface::WindowFill, Surface::Panel, Surface::Primary,
         Surface::Secondary, Surface::Field, Surface::Current, Surface::Inactive];
     for (kind, surface) in surfaces.into_iter().enumerate() {
-        for material_kind in 0..=2 { for corners in 0..=2 { for radius in [0u8, 4, 18, 40] {
+        for material_kind in 0..=3 { for corners in 0..=2 { for radius in [0u8, 4, 18, 40] {
             for scale in [1usize, 2] { for (focus, pressed) in [(0u8,false),(93,false),(255,true)] {
                 for (width, height) in [(1usize,1usize),(37,21),(173,94)] { for tint in [false,true] {
                     let fill=if kind==3 {(62,111,255)}else{(16,27,58)};
@@ -131,7 +131,7 @@ fn write_frost_styles(path: &std::path::Path) -> std::io::Result<()> {
     file.write_all(&0u32.to_le_bytes())?;
     let mut count = 0u32;
     let (width,height)=(131usize,71usize);
-    for material_kind in 0..=2 {for corners in 0..=2 {for radius in [0u8,12,40] {for scale in [1usize,2] {for tint in [false,true] {
+    for material_kind in 0..=3 {for corners in 0..=2 {for radius in [0u8,12,40] {for scale in [1usize,2] {for tint in [false,true] {
         let fill=(16u8,27u8,58u8);let border=(134u8,199u8,255u8);
         let opacity=230u8;let edge=197u8;
         let mut pixels=Vec::new();

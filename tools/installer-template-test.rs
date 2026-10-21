@@ -88,11 +88,52 @@ fn first_identifier_byte_offset(data: &[u8]) -> usize {
 }
 
 // ------------------------=
+// FUNC: template_with_screen_count
+// DESC: Builds a bounded wizard fixture from a real authored screen while preserving its native elements and image table.
+// ------------------=
+fn template_with_screen_count(data: &[u8], count: u16) -> Vec<u8> {
+    let mut cursor = 8;
+    let mut first_end = cursor;
+    for index in 0..u16::from_le_bytes([data[6], data[7]]) {
+        cursor += 1;
+        cursor += 1 + data[cursor] as usize;
+        let elements = little_u16(data, &mut cursor);
+        for _ in 0..elements {
+            skip_element(data, &mut cursor);
+        }
+        if index == 0 { first_end = cursor; }
+    }
+    let mut result = data[..8].to_vec();
+    result[6..8].copy_from_slice(&count.to_le_bytes());
+    for screen in 1..=count {
+        result.push(screen as u8);
+        result.extend_from_slice(&data[9..first_end]);
+    }
+    result.extend_from_slice(&data[cursor..]);
+    result
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Exercises authored runtime structure, geometry consumption, data bindings, and action-integrity rejection.
 // ------------------=
 fn main() {
     use installer_layout::InstallerDateTimeTarget as DateTarget;
+    for source in [FACTORY_TEMPLATE, CONFIGURATION_TEMPLATE] {
+        for count in [1, 11, 12, 32] {
+            let bytes = template_with_screen_count(source, count);
+            let parsed = InstallerTemplate::parse(&bytes).unwrap();
+            assert_eq!(parsed.screen_count(), count);
+            let last = parsed.element(count as u8, InstallerTemplateRole::PrimaryButton).unwrap();
+            let first = parsed.element(1, InstallerTemplateRole::PrimaryButton).unwrap();
+            assert_eq!(last.frame, first.frame);
+            assert_eq!(last.fill, first.fill);
+            assert!(InstallerTemplate::parse_settings(&bytes).is_err());
+        }
+        for count in [0, 33] {
+            assert!(InstallerTemplate::parse(&template_with_screen_count(source, count)).is_err());
+        }
+    }
     let template=InstallerTemplate::parse(FACTORY_TEMPLATE).unwrap();
     for (role,focus) in [(InstallerTemplateRole::DateField,2),(InstallerTemplateRole::TimeField,3),
         (InstallerTemplateRole::TimeZoneSelector,4)] {
@@ -151,7 +192,7 @@ fn main() {
     let primary = first_primary_kind_offset(FACTORY_TEMPLATE);
     let mut styled = FACTORY_TEMPLATE.to_vec();
     styled[4..6].copy_from_slice(&7u16.to_le_bytes());
-    for material in 0..3 {
+    for material in 0..4 {
         for corners in 0..3 {
             styled[primary+3] = (styled[primary+3]&3) | material<<2 | corners<<4;
             let parsed = InstallerTemplate::parse(&styled).unwrap();
@@ -160,7 +201,7 @@ fn main() {
             assert_eq!(button.corner_style,corners);
         }
     }
-    styled[primary+3] = 3<<2;
+    styled[primary+3] = 1<<6;
     assert!(InstallerTemplate::parse(&styled).is_err());
     styled[primary+3] = 3<<4;
     assert!(InstallerTemplate::parse(&styled).is_err());

@@ -287,13 +287,18 @@ $(UIKIT_RUNTIME_ASSETS): $(BUILD)/uikit-runtime.stamp
 .PHONY: uikit-runtime uikit-document-test
 uikit-runtime: $(UIKIT_RUNTIME_ASSETS)
 
-uikit-document-test: $(UIKIT_RUNTIME_ASSETS)
+uikit-document-test: $(UIKIT_RUNTIME_ASSETS) build/behavior-tests/ui-payload-validator
 	@mkdir -p build/behavior-tests
 	python3 tools/uikit-document-test.py
+	python3 tools/ui-payload-parity-test.py
 	rustc --edition=2021 -Awarnings tools/uikit-tokens-test.rs -o build/behavior-tests/uikit-tokens-test
 	build/behavior-tests/uikit-tokens-test
 	rustc --edition=2021 -Awarnings tools/uikit-style-test.rs -o build/behavior-tests/uikit-style-test
 	build/behavior-tests/uikit-style-test
+
+build/behavior-tests/ui-payload-validator: tools/ui-payload-validator.rs kernel/ui/bitmap.rs kernel/ui/installer_template.rs kernel/ui/kit_tokens.rs kernel/ui/panel_recipe.rs assets/ui-design-kit/default/eclipse-precision-v1.rgba assets/ui-design-kit/default/uikit-tokens.bin assets/ui-design-kit/default/uikit-styles.bin
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -Awarnings -O tools/ui-payload-validator.rs -o $@
 
 build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-browser-core/*.rs) assets/ui-design-kit/default/browser-welcome-hero-v1.bmp
 	@mkdir -p build/behavior-tests
@@ -471,6 +476,7 @@ $(BUILD)/x86_64/BOOTX64.EFI: $(BUILD)/x86_64/loader.obj $(BUILD)/x86_64/handoff.
 	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:x64 /base:0x2000000 /out:$@ $(filter %.obj,$^)
 
 $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
+	python3 tools/iso-staging.py reset-ui $(BUILD)/installed-fat
 	rm -rf $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash
 	@mkdir -p $(BUILD)/installed-fat/EFI/BOOT $(BUILD)/installed-fat/EFI/InfinityOS/Fonts $(BUILD)/installed-fat/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat/EFI/InfinityOS/Applications $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Installer $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Mesh
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/installed-fat/EFI/BOOT/BOOTX64.EFI
@@ -872,6 +878,7 @@ $(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp l
 	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BROWSER_ARM)
 
 $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
+	python3 tools/iso-staging.py reset-ui $(BUILD)/installed-fat-aarch64
 	rm -rf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash
 	@mkdir -p $(BUILD)/installed-fat-aarch64/EFI/BOOT $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Applications $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Installer $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Mesh
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/installed-fat-aarch64/EFI/BOOT/BOOTAA64.EFI

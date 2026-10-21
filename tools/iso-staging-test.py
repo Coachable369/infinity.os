@@ -13,6 +13,75 @@ spec.loader.exec_module(staging)
 
 class StagingTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_ui_reset_is_exact_and_preserves_other_artifacts
+    # DESC: Exercises both managed roots while proving only the two replaceable UI trees are removed.
+    # ------------------=
+    def test_ui_reset_is_exact_and_preserves_other_artifacts(self):
+        temporary_root = staging.ROOT / 'build/tmp'
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as temporary:
+            root = Path(temporary)
+            with patch.object(staging, 'ROOT', root):
+                for name in ('installed-fat', 'installed-fat-aarch64'):
+                    tree = root / 'build' / name
+                    ui = tree / 'EFI/InfinityOS/InfinityUI'
+                    for folder in ('Installer/nested', 'DesignKit/Default'):
+                        asset = ui / folder / 'obsolete.bin'
+                        asset.parent.mkdir(parents=True)
+                        asset.write_bytes(b'obsolete')
+                    retained = ui / 'Icons/current.bin'
+                    retained.parent.mkdir()
+                    retained.write_bytes(b'keep')
+                    model = tree / 'EFI/INFINITY/PAYLOAD/P4-000.BIN'
+                    model.parent.mkdir(parents=True)
+                    model.write_bytes(b'model')
+                    staging.reset_ui_stage(tree)
+                    self.assertFalse((ui / 'Installer').exists())
+                    self.assertFalse((ui / 'DesignKit').exists())
+                    self.assertEqual(retained.read_bytes(), b'keep')
+                    self.assertEqual(model.read_bytes(), b'model')
+                    staging.reset_ui_stage(tree)
+                for invalid in (root, root / 'build', root / 'build/installed-fat/..',
+                                root / 'build/installed-fat/EFI', root / 'outside'):
+                    with self.assertRaises(ValueError):
+                        staging.reset_ui_stage(invalid)
+
+    # ------------------------=
+    # FUNC: test_ui_reset_rejects_symlinks_before_deleting_any_target
+    # DESC: Rejects redirected ancestors and nested links while leaving all managed and external bytes unchanged.
+    # ------------------=
+    def test_ui_reset_rejects_symlinks_before_deleting_any_target(self):
+        temporary_root = staging.ROOT / 'build/tmp'
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary_root) as temporary:
+            root = Path(temporary)
+            external = root / 'outside'
+            external.mkdir()
+            protected = external / 'keep.bin'
+            protected.write_bytes(b'outside')
+            tree = root / 'build/installed-fat'
+            ui = tree / 'EFI/InfinityOS/InfinityUI'
+            installer = ui / 'Installer/keep.bin'
+            installer.parent.mkdir(parents=True)
+            installer.write_bytes(b'installed')
+            kit = ui / 'DesignKit/Default'
+            kit.mkdir(parents=True)
+            link = kit / 'redirect'
+            link.symlink_to(external, target_is_directory=True)
+            with patch.object(staging, 'ROOT', root):
+                with self.assertRaises(ValueError):
+                    staging.reset_ui_stage(tree)
+                self.assertEqual(installer.read_bytes(), b'installed')
+                self.assertEqual(protected.read_bytes(), b'outside')
+                link.unlink()
+                redirected = root / 'build/installed-fat-aarch64'
+                redirected.symlink_to(tree, target_is_directory=True)
+                with self.assertRaises(ValueError):
+                    staging.reset_ui_stage(redirected)
+                self.assertEqual(installer.read_bytes(), b'installed')
+                self.assertEqual(protected.read_bytes(), b'outside')
+
+    # ------------------------=
     # FUNC: test_real_fat_roundtrip
     # DESC: Verifies bytes survive consumption, sizing and nested FAT-directory creation.
     # ------------------=

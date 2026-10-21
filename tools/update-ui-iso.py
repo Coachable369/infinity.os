@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
-import mmap
 import os
 from pathlib import Path
 import re
@@ -238,12 +237,7 @@ def require_efi_application(binary, target):
 # DESC: Proves compiled screen styles and saved element data are embedded byte-for-byte in the kernel that will consume them.
 # ------------------=
 def verify_embedded_ui(kernel, templates):
-    with kernel.open("rb") as source, mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ) as binary:
-        for template in templates:
-            cancellation_point()
-            payload = template.read_bytes()
-            if len(payload) < 8 or (payload[:4] != b"IUIT" and payload[:8] != b"IUISTY01") or binary.find(payload) < 0:
-                raise RuntimeError(f"Kernel does not contain current screen data: {template}")
+    load_tool("ui-payload-parity").verify_embedded_ui(kernel, templates, cancellation_point)
 
 
 # ------------------------=
@@ -517,13 +511,19 @@ def update_iso(iso, target):
             bundle.verify_model(installed, *model)
         verify_initial_inputs(authored, sources)
         event("progress", phase="Compiling saved UIKit and screen documents", progress=0.17)
-        run(["make", "uikit-runtime", "installer-template-runtime"])
+        run(["make", "uikit-runtime", "installer-template-runtime", "build/behavior-tests/ui-payload-validator"])
         verify_initial_inputs(authored, sources)
         inputs = source_snapshot()
         event("progress", phase="Incrementally compiling the installed UI kernel", progress=0.25)
         frozen = [argument for path in cached for argument in ("-o", path.relative_to(ROOT))]
         # Cache policy is explicit: native browser, Python, compiler and speech objects
         # cannot trigger a heavy dependency rebuild from this narrow entrypoint.
+        installed_esp = ROOT / f"build/{target}/installed-esp.img"
+        if installed_esp.is_symlink() or (installed_esp.exists() and not installed_esp.is_file()):
+            raise RuntimeError("Disposable installed ESP must be a regular build artifact")
+        # Asset deletion need not advance any remaining input timestamp. Rebuild
+        # only this disposable image so the shared recipe resets managed trees.
+        installed_esp.unlink(missing_ok=True)
         run(["make", *frozen, f"build/{target}/{boot}", f"build/{target}/installed-kernel.elf", f"build/{target}/installed-esp.img"])
         require_efi_application(boot_file.read_bytes(), target)
         installed_kernel = ROOT / f"build/{target}/installed-kernel.elf"
@@ -560,9 +560,9 @@ def update_iso(iso, target):
         with live_kernel.open("rb") as source:
             require_architecture(source.read(65536), target)
         templates = [ROOT / f"assets/boot/{name}-screens.iuit" for name in ("installer", "configuration", "settings")]
-        styles = ROOT / "assets/ui-design-kit/default/uikit-styles.bin"
-        verify_embedded_ui(live_kernel, [*templates, styles])
-        verify_embedded_ui(installed_kernel, [*templates[1:], styles])
+        styles = [ROOT / f"assets/ui-design-kit/default/uikit-{name}.bin" for name in ("tokens", "styles")]
+        verify_embedded_ui(live_kernel, [*templates, *styles])
+        verify_embedded_ui(installed_kernel, [*templates[1:], *styles])
         for name, member in members:
             if SHARD.fullmatch(name):
                 run(["mdel", "-i", live, member])

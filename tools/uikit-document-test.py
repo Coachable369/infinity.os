@@ -75,7 +75,11 @@ class UIKitDocumentTests(unittest.TestCase):
         styles[2] = dict(material=2, corners=2, radius=24, fill=0x80123456, border=0xffabcdef)
         data = COMPILER.style_bytes(dict(styles=styles))
         self.assertEqual(struct.unpack("<4B2I", data[36:48]), (2, 2, 24, 3, 0x80123456, 0xffabcdef))
-        for patch in [dict(material=3), dict(corners=3), dict(radius=41), dict(fill=-1), dict(border=True)]:
+        flat = styles.copy()
+        flat[2] = dict(styles[2], material=3)
+        data = COMPILER.style_bytes(dict(styles=flat))
+        self.assertEqual(struct.unpack("<4B2I", data[36:48]), (3, 2, 24, 3, 0x80123456, 0xffabcdef))
+        for patch in [dict(material=4), dict(corners=3), dict(radius=41), dict(fill=-1), dict(border=True)]:
             invalid = styles.copy()
             invalid[2] = dict(styles[2], **patch)
             with self.assertRaises(ValueError):

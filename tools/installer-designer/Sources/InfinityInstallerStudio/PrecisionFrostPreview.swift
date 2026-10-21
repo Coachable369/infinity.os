@@ -111,7 +111,7 @@ enum PrecisionFrostRenderer {
             let p = index * 4
             pixels[index] = UInt32(background[p]) << 16 | UInt32(background[p + 1]) << 8 | UInt32(background[p + 2])
         }
-        if material.style.material == .matte {
+        if material.style.material == .matte || material.style.material == .flat {
             material.opacity = UInt8(opacity * 255 / 100)
             material.focus = 0; material.pressed = false
             var result = background

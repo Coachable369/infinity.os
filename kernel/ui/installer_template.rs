@@ -306,8 +306,11 @@ impl<'a> InstallerTemplate<'a> {
             }
             let invalid_installer = requires_navigation
                 && (back_count != 1 || primary_count != 1 || console_count == 0);
-            let expected_settings_rows =
-                [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize];
+            let expected_settings_rows = if requires_navigation {
+                0
+            } else {
+                [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize]
+            };
             let invalid_settings = !requires_navigation
                 && (console_count != 1
                     || content_count != 1
@@ -706,7 +709,7 @@ impl<'a> Reader<'a> {
                 && flags & 2 == 0
                 && input_variable == InstallerTemplateVariable::None as u8)
             || (self.version == 6 && flags & !3 != 0)
-            || flags & !63 != 0 || (flags >> 2) & 3 > 2 || (flags >> 4) & 3 > 2
+            || flags & !63 != 0 || (flags >> 4) & 3 > 2
         {
             return Err(InstallerTemplateError::InvalidElement);
         }

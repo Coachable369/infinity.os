@@ -19,6 +19,14 @@ spec.loader.exec_module(updater)
 
 class UpdateISOTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: setUpClass
+    # DESC: Builds the real payload decoder through this test's active build-kit context.
+    # ------------------=
+    @classmethod
+    def setUpClass(cls):
+        updater.run(["make", "build/behavior-tests/ui-payload-validator"])
+
+    # ------------------------=
     # FUNC: setUp
     # DESC: Allocates isolated test artifacts strictly under the repository build directory.
     # ------------------=
@@ -330,7 +338,7 @@ class UpdateISOTests(unittest.TestCase):
     # ------------------=
     def test_compiled_screen_parity_covers_style_payload_bytes(self):
         template = self.work / "configuration-screens.iuit"
-        payload = b"IUIT" + struct.pack("<HH", 7, 1) + bytes(range(256))
+        payload = (ROOT / "assets/boot/configuration-screens.iuit").read_bytes()
         template.write_bytes(payload)
         kernel = self.work / "kernel.elf"
         kernel.write_bytes(bytes(128) + payload + bytes(128))
@@ -341,10 +349,10 @@ class UpdateISOTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             updater.verify_embedded_ui(kernel, [template])
         styles = self.work / "uikit-styles.bin"
-        styles.write_bytes(b"IUISTY01" + bytes(76))
+        styles.write_bytes(b"IUISTY01" + struct.pack("<HH", 1, 6) + bytes(72))
         kernel.write_bytes(kernel.read_bytes() + styles.read_bytes())
         updater.verify_embedded_ui(kernel, [styles])
-        styles.write_bytes(b"IUISTY01" + bytes(75) + b"\x01")
+        styles.write_bytes(b"IUISTY01" + struct.pack("<HH", 1, 6) + bytes(71) + b"\x01")
         with self.assertRaises(RuntimeError):
             updater.verify_embedded_ui(kernel, [styles])
 
@@ -386,10 +394,10 @@ class UpdateISOTests(unittest.TestCase):
 
     # ------------------------=
     # FUNC: test_fat_overlay_preserves_models_and_verifies_ui
-    # DESC: Exercises real mtools merge semantics and exact asset parity while retaining a native model object.
+    # DESC: Resets obsolete nested managed artwork and replaces real FAT UI bytes while retaining a native model object.
     # ------------------=
     def test_fat_overlay_preserves_models_and_verifies_ui(self):
-        for tool in ("mformat", "mmd", "mcopy", "mtype", "mdir"):
+        for tool in ("mformat", "mmd", "mcopy", "mtype", "mdir", "mdeltree"):
             self.assertIsNotNone(shutil.which(tool))
         image = self.work / "efi.img"
         with image.open("wb") as output:
@@ -401,16 +409,37 @@ class UpdateISOTests(unittest.TestCase):
         model.write_bytes(bytes(range(256)) * 17)
         subprocess.run(["mcopy", "-i", str(image), str(model), "::/EFI/INFINITY/PAYLOAD/P4-000.BIN"], check=True)
         before = updater.stream_member(image, "::/EFI/INFINITY/PAYLOAD/P4-000.BIN")
-        source = self.work / "new/EFI/InfinityOS/InfinityUI/tokens.bin"
+        staging = updater.load_tool("iso-staging")
+        tree = self.work / "build/installed-fat-aarch64"
+        ui = tree / "EFI/InfinityOS/InfinityUI"
+        obsolete = ["Installer/installer-assets/nested/obsolete.png", "DesignKit/Default/obsolete.rgba"]
+        for relative in obsolete:
+            source = ui / relative
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_bytes(b"obsolete artwork")
+        subprocess.run(["mcopy", "-o", "-s", "-i", str(image), str(tree / "EFI"), "::/"], check=True)
+        with mock.patch.object(staging, "ROOT", self.work):
+            staging.reset_ui_stage(tree)
+        source = ui / "DesignKit/Default/uikit-tokens.bin"
         source.parent.mkdir(parents=True)
         source.write_bytes(b"IUIKIT01" + bytes(range(56)))
-        subprocess.run(["mcopy", "-o", "-s", "-i", str(image), str(self.work / "new/EFI"), "::/"], check=True)
-        updater.verify_file_map(image, [(source, "::/EFI/InfinityOS/InfinityUI/tokens.bin")])
+        template = ui / "Installer/configuration-screens.iuit"
+        template.parent.mkdir(parents=True)
+        template.write_bytes(b"IUIT" + struct.pack("<HH", 7, 1) + bytes(range(64)))
+        subprocess.run(["mdeltree", "-i", str(image), "::/EFI/InfinityOS/InfinityUI"], check=True)
+        subprocess.run(["mcopy", "-o", "-s", "-i", str(image), str(tree / "EFI"), "::/"], check=True)
+        files = [(path, "::/" + path.relative_to(tree).as_posix()) for path in tree.rglob("*") if path.is_file()]
+        updater.verify_file_map(image, files)
+        for relative in obsolete:
+            self.assertFalse((ui / relative).exists())
+            result = subprocess.run(["mtype", "-i", str(image), "::/EFI/InfinityOS/InfinityUI/" + relative],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.assertNotEqual(result.returncode, 0)
         self.assertEqual(updater.stream_member(image, "::/EFI/INFINITY/PAYLOAD/P4-000.BIN"), before)
         self.assertEqual(len(updater.payload_members(image)), 1)
         source.write_bytes(b"changed source")
         with self.assertRaises(RuntimeError):
-            updater.verify_file_map(image, [(source, "::/EFI/InfinityOS/InfinityUI/tokens.bin")])
+            updater.verify_file_map(image, files)
 
     # ------------------------=
     # FUNC: test_real_el_torito_catalog_targets_updated_fat

@@ -40,7 +40,7 @@ pub const fn decode_styles(bytes: &[u8]) -> Option<[SurfaceStyle; STYLE_COUNT]> 
     i = 0;
     while i < STYLE_COUNT {
         let at = 12 + i * 12;
-        if bytes[at] > 2 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0
+        if bytes[at] > 3 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0
             || (i < 2 && bytes[at+1] == 2) { return None; }
         let fill = u32::from_le_bytes([bytes[at+4], bytes[at+5], bytes[at+6], bytes[at+7]]);
         let border = u32::from_le_bytes([bytes[at+8], bytes[at+9], bytes[at+10], bytes[at+11]]);
@@ -313,7 +313,7 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
         m.edge=((color>>16) as u8,(color>>8) as u8,color as u8);
         m.edge_opacity=(u16::from(m.edge_opacity)*((color>>24) as u16)/255) as u8;
     }
-    if style.material!=2 && style.corners==0 { return pixel_authored(kind,width,height,x,y,m); }
+    if style.material<2 && style.corners==0 { return pixel_authored(kind,width,height,x,y,m); }
     if matches!(kind,Surface::Current|Surface::Inactive) {
         if style.corners==0 {return pixel_authored_material(kind,width,height,x,y,m,true);}
         // Explicit silhouettes reuse the approved filled/quiet surface edges;
@@ -350,6 +350,7 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
         let flatten=|value:u8,base:u8| (i16::from(base)+(i16::from(value)-i16::from(base))/5).clamp(0,255) as u8;
         fill=(flatten(fill.0,base.0),flatten(fill.1,base.1),flatten(fill.2,base.2),fill.3);
     }
+    if style.material==3 { fill=(base.0,base.1,base.2,fill.3); }
     let background=if kind==Surface::Frame { (0,0,0,0) } else { themed(fill,base,m.fill,m.opacity) };
     let edge=if kind==Surface::WindowFill || m.edge_opacity==0 {(0,0,0,0)}else {
         let raw=if rounded {

@@ -138,6 +138,7 @@ python3 tools/iso-kernel-freshness.py \
     "$installer_output.partial" \
     "${payload_build}/current-live-kernel.elf" \
     "$installed_kernel"
+python3 tools/ui-payload-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
 python3 tools/full-bundle-iso-test.py "$installer_output.partial"
 python3 tools/audio-install-parity.py "$installer_output.partial" "$arch" "$installed_kernel"
 mv "$installer_output.partial" "$installer_output"

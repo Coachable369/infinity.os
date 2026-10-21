@@ -264,7 +264,7 @@ struct PrecisionAtlas {
             m.edge = studioColor(border)
             m.edgeOpacity = UInt8(Int(m.edgeOpacity) * Int(m.edge.alpha) / 255)
         }
-        if style.material != .matte && style.corners == .authored {
+        if (style.material == .authored || style.material == .glass) && style.corners == .authored {
             return authoredPixel(kind, width: width, height: height, x: x, y: y, material: m)
         }
         if kind == .current || kind == .inactive {
@@ -307,6 +307,9 @@ struct PrecisionAtlas {
             fill.red = (base.0 + (fill.red - base.0) / 5).clamped(to: 0...255)
             fill.green = (base.1 + (fill.green - base.1) / 5).clamped(to: 0...255)
             fill.blue = (base.2 + (fill.blue - base.2) / 5).clamped(to: 0...255)
+        }
+        if style.material == .flat {
+            fill.red = base.0; fill.green = base.1; fill.blue = base.2
         }
         let background = kind == .frame ? .clear : Self.themed(fill, base: base, target: m.fill, opacity: m.opacity)
         var edge = PrecisionPixel.clear

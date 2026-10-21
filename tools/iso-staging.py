@@ -5,6 +5,35 @@ import shutil
 import subprocess
 
 MIB = 1024 * 1024
+ROOT = Path(__file__).resolve().parents[1]
+
+# ------------------------=
+# FUNC: reset_ui_stage
+# DESC: Removes only validated managed UI subtrees from either disposable installed-ESP staging tree before repopulation.
+# ------------------=
+def reset_ui_stage(tree):
+    tree = Path(tree)
+    if not tree.is_absolute():
+        tree = ROOT / tree
+    allowed = (ROOT / 'build/installed-fat', ROOT / 'build/installed-fat-aarch64')
+    if tree not in allowed:
+        raise ValueError('UI reset requires an exact managed installed-ESP staging path')
+    targets = [tree / 'EFI/InfinityOS/InfinityUI' / name for name in ('Installer', 'DesignKit')]
+    # Validate every target before removing any. Resolving a symlink first would
+    # lose the evidence that a managed path was redirected outside its ownership.
+    for target in targets:
+        current = ROOT
+        for component in target.relative_to(ROOT).parts:
+            current = current / component
+            if current.is_symlink() or (current.exists() and not current.is_dir()):
+                raise ValueError('UI staging ancestors must be real directories')
+        if target.exists():
+            for path in target.rglob('*'):
+                if path.is_symlink() or not (path.is_dir() or path.is_file()):
+                    raise ValueError('UI staging must not contain symlinks or special files')
+    for target in targets:
+        if target.exists():
+            shutil.rmtree(target)
 
 # ------------------------=
 # FUNC: image_size
@@ -61,11 +90,11 @@ def consume(tree, image):
 
 # ------------------------=
 # FUNC: main
-# DESC: Exposes image sizing, phase-specific free-space checks and consumptive FAT copies.
+# DESC: Exposes image sizing, bounded UI staging reset, free-space checks and consumptive FAT copies.
 # ------------------=
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['size', 'allocate', 'consume', 'check'])
+    parser.add_argument('action', choices=['size', 'allocate', 'consume', 'check', 'reset-ui'])
     parser.add_argument('path', type=Path)
     parser.add_argument('value', nargs='?')
     args = parser.parse_args()
@@ -75,6 +104,8 @@ def main():
         print(allocate(args.path, Path(args.value)))
     elif args.action == 'consume':
         consume(args.path, Path(args.value))
+    elif args.action == 'reset-ui':
+        reset_ui_stage(args.path)
     else:
         require_space(args.path, int(args.value))
 

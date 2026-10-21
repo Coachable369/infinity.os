@@ -124,7 +124,7 @@ impl Backdrop {
             edge_opacity=(u16::from(edge_opacity)*((border>>24) as u16)/255) as u8;
         }
         style.fill=None;style.border=None;
-        if style.material==2 {
+        if style.material>=2 {
             self.retained=None;
             let recipe=panel_recipe::Material {
                 fill:((material.primary>>16)as u8,(material.primary>>8)as u8,material.primary as u8),

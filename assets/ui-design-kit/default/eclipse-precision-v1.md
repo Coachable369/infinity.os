@@ -74,11 +74,14 @@ host rendering is not installed-VM acceptance.
 
 Studio's UIKit document stores six optional recipes in this order: compositor
 frame, window background, panel/dialog, primary button, secondary button, field.
-Each recipe selects Authored, Glass, or Matte, and Authored, Square, or Rounded
+Each recipe selects Authored, Glass, Matte, or Flat, and Authored, Square, or Rounded
 corners with a 0–40 logical-pixel radius. Optional ARGB fill and border overrides
 are independent. Glass retains the approved atlas lighting and frosted backdrop
 where that component has one. Matte retains the image-backed coverage and edge
-art, reduces fill reflections, and disables backdrop blur and sheen.
+art, reduces fill reflections, and disables backdrop blur and sheen. Flat uses
+the base fill without reflected fill lighting or backdrop blur, retaining the
+approved atlas coverage, edge lighting, and interaction states. Material values
+are Authored=0, Glass=1, Matte=2, Flat=3 in both native and Studio records.
 
 The OS-owned frame and window substrate remain rectangular; their only permitted
 corner choices are Authored and Square. Panel/dialog, button and field shapes are

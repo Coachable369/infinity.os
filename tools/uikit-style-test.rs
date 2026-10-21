@@ -24,7 +24,9 @@ fn main() {
     bytes[slot+8..slot+12].copy_from_slice(&0xffabcdefu32.to_le_bytes());
     let decoded=panel_recipe::decode_styles(&bytes).unwrap();
     assert_eq!(decoded[2],SurfaceStyle{material:2,corners:2,radius:24,fill:Some(0x80112233),border:Some(0xffabcdef)});
-    for (at,value) in [(0,0),(8,2),(10,5),(12+1,2),(slot,3),(slot+1,3),(slot+2,41),(slot+3,4)] {
+    bytes[slot]=3;
+    assert_eq!(panel_recipe::decode_styles(&bytes).unwrap()[2].material,3);
+    for (at,value) in [(0,0),(8,2),(10,5),(12+1,2),(slot,4),(slot+1,3),(slot+2,41),(slot+3,4)] {
         let mut invalid=bytes;invalid[at]=value;
         assert!(panel_recipe::decode_styles(&invalid).is_none());
     }

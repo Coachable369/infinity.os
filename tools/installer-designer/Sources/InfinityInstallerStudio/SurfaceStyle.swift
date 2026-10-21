@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 enum UIKitSurfaceMaterial: Int, Codable, CaseIterable, Identifiable, Hashable {
-    case authored = 0, glass = 1, matte = 2
+    case authored = 0, glass = 1, matte = 2, flat = 3
     var id: Int { rawValue }
     var title: String {
-        switch self { case .authored: "Kit default"; case .glass: "Glass"; case .matte: "Matte" }
+        switch self { case .authored: "Kit default"; case .glass: "Glass"; case .matte: "Matte"; case .flat: "Flat" }
     }
 }
 
