@@ -1,8 +1,31 @@
 //! Reusable Eclipse Access controls; no authentication state or service calls in paint.
 use super::{access_style as palette, DisplayDevice};
 use crate::ui::panel_recipe::Surface;
+#[path = "../../ui/dock_material.rs"]
+mod drawer_material;
+static mut ACCESS_BACKDROP: drawer_material::Backdrop = drawer_material::Backdrop::new();
 
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: access_frost_panel
+    // DESC: Paints an outer access panel over its restored wallpaper with the same bounded blur, navy tint and sheen as the desktop drawer.
+    // ------------------=
+    pub(super) fn access_frost_panel(&mut self, left:usize, top:usize, width:usize,
+        height:usize, fill:palette::Rgb, border:palette::Rgb, opacity:u8, edge_opacity:u8) {
+        let Some(region)=self.clipped_render_region(left,top,width,height) else{return;};
+        let pack=|c:palette::Rgb| (u32::from(c.0)<<16)|(u32::from(c.1)<<8)|u32::from(c.2);
+        let material=drawer_material::Material{primary:pack(fill),accent:pack(border),
+            opacity:((u16::from(opacity)*100+127)/255) as u8,blur:12,
+            scale:self.ui_scale(),bgr:self.format!=0};
+        // Full scenes seed clean parent samples after restoring the wallpaper.
+        // Field/caret/progress damage reuses that grid and never samples controls
+        // or changes the blur kernel just because the output clip is smaller.
+        unsafe {(&mut *(&raw mut ACCESS_BACKDROP)).paint_retained_with_edge_opacity(
+            core::slice::from_raw_parts_mut(self.buffer,self.stride*self.height),self.stride,
+            (left,top,width,height),(region.left,region.top,region.right,region.bottom),material,edge_opacity,
+            (left,top,left.saturating_add(width).min(self.width),top.saturating_add(height).min(self.height)));}
+        self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);
+    }
     // ------------------------=
     // FUNC: access_panel_glow
     // DESC: Adds a clipped inward edge light without affecting panel content or surrounding wallpaper.

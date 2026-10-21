@@ -25,21 +25,21 @@ enum InfinityUIKit {
     }
 
     enum Palette {
-        static let canvas = StudioColor(red: 2, green: 7, blue: 15, alpha: 255)
-        static let panel = StudioColor(red: 10, green: 18, blue: 29, alpha: 230)
-        static let panelRaised = StudioColor(red: 18, green: 29, blue: 42, alpha: 240)
-        static let border = StudioColor(red: 51, green: 71, blue: 91, alpha: 255)
+        static let canvas = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
+        static let panel = StudioColor(red: 16, green: 27, blue: 58, alpha: 230)
+        static let panelRaised = StudioColor(red: 16, green: 27, blue: 58, alpha: 240)
+        static let border = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
         static let textPrimary = StudioColor(red: 241, green: 245, blue: 250, alpha: 255)
         static let textSecondary = StudioColor(red: 174, green: 184, blue: 198, alpha: 255)
         static let accent = StudioColor(red: 32, green: 191, blue: 255, alpha: 255)
         static let accentBright = StudioColor(red: 156, green: 232, blue: 255, alpha: 255)
         static let focus = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)
-        static let primaryAction = StudioColor(red: 8, green: 54, blue: 84, alpha: 255)
-        static let primaryActionBorder = StudioColor(red: 40, green: 181, blue: 231, alpha: 255)
-        static let secondaryAction = StudioColor(red: 5, green: 15, blue: 27, alpha: 255)
-        static let secondaryActionBorder = StudioColor(red: 42, green: 69, blue: 91, alpha: 255)
-        static let field = StudioColor(red: 2, green: 10, blue: 20, alpha: 255)
-        static let fieldBorder = StudioColor(red: 40, green: 72, blue: 95, alpha: 255)
+        static let primaryAction = StudioColor(red: 62, green: 111, blue: 255, alpha: 255)
+        static let primaryActionBorder = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
+        static let secondaryAction = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
+        static let secondaryActionBorder = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
+        static let field = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
+        static let fieldBorder = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
         static let placeholder = StudioColor(red: 119, green: 133, blue: 149, alpha: 255)
 
         static let nativeCanvas = canvas.color

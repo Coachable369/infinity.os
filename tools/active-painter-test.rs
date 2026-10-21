@@ -3,10 +3,21 @@
 #[path = "../kernel/runtime/font_preferences.rs"] pub mod font_preferences;
 #[path = "../kernel/runtime/font.rs"] pub mod font;
 mod runtime { pub use super::{font_faces,font_preferences,font}; }
+// Transport-only fixture: the production date/time painter reads these values;
+// this harness neither simulates nor claims to verify storage/clock behavior.
+mod storage {
+    #[derive(Clone,Copy)]
+    pub struct DateTimeConfiguration {
+        pub year:u16,pub month:u8,pub day:u8,pub hour:u8,pub minute:u8,pub second:u8,
+        pub time_zone_id:u16,pub utc_offset_minutes:i16,
+    }
+}
 #[path = "../kernel/core/bootstrap/font_library_view.rs"] mod font_library_view;
 #[cfg(not(baseline))]
 #[path = "../kernel/core/bootstrap/primitives.rs"]
 mod primitives;
+use primitives::FontSize;
+#[path="../kernel/core/bootstrap/installer_text_view.rs"] mod installer_text_view;
 #[path = "../kernel/core/bootstrap/personalization_view.rs"]
 mod personalization_view;
 #[path="../kernel/core/bootstrap/app_style.rs"] mod app_style;
@@ -194,13 +205,6 @@ impl DisplayDevice {
     // ------------------=
     fn mark_dirty_rect(&mut self, _: usize, _: usize, _: usize, _: usize) {
         self.submissions += 1;
-    }
-    // ------------------------=
-    // FUNC: installer_text
-    // DESC: Rejects installer-only typography, which is outside this primitive fixture.
-    // ------------------=
-    fn installer_text(&mut self, _: usize, _: usize, _: &[u8], _: u8, _: u8, _: u8) {
-        panic!("installer typography not in fixture");
     }
 }
 

@@ -1,5 +1,6 @@
 """Extract the approved board's native corner, lighting and interaction pixels."""
 import os
+from statistics import median
 from pathlib import Path
 from PIL import Image
 
@@ -78,6 +79,36 @@ def reference_layers(reference, box, cap, blank_x, frame=False):
     return nine_slice(fill, cap), nine_slice(edge, cap)
 
 # ------------------------=
+# FUNC: reflective_primary
+# DESC: Transfers only the approved Access glass lighting into Precision blue, retaining Precision geometry and edge pixels without cyan hue shifts.
+# ------------------=
+def reflective_primary(layers, access, box):
+    fill, edge = layers
+    reflection, _ = reference_layers(access, box, 8, 14)
+    samples = [reflection.getpixel((SIZE // 2, y)) for y in range(8, SIZE - 8)]
+    luminance = [(r * 54 + g * 183 + b * 19) // 256 for r, g, b, _ in samples]
+    midpoint = sum(luminance) // len(luminance)
+    # A reference-board edge contains low-amplitude raster texture. Stretching
+    # those few pixels to a 700px action bar exaggerates them into broken lines.
+    # Retain native corners; use the authored median light across each straight
+    # horizontal strip so a long edge remains optically continuous.
+    for y in [*range(8), *range(SIZE - 8, SIZE)]:
+        strip = [edge.getpixel((x, y)) for x in range(8, SIZE - 8)]
+        color = tuple(int(median(p[c] for p in strip)) for c in range(4))
+        for x in range(8, SIZE - 8):
+            edge.putpixel((x, y), color)
+    for y in range(SIZE):
+        light = luminance[max(0, min(len(luminance) - 1, y - 8))]
+        delta = (light - midpoint) * 2 // 3
+        for x in range(SIZE):
+            r, g, b, a = fill.getpixel((x, y))
+            fill.putpixel((x, y), (*(max(0, min(255, c + delta)) for c in (r, g, b)), a))
+            r, g, b, a = edge.getpixel((x, y))
+            if a:
+                edge.putpixel((x, y), (*(max(0, min(255, c + delta)) for c in (r, g, b)), a))
+    return fill, edge
+
+# ------------------------=
 # FUNC: main
 # DESC: Packs reference-derived normal/focused/pressed surfaces plus the existing clean dot artwork into independent fill and edge atlases.
 # ------------------=
@@ -101,10 +132,10 @@ def main():
         ((33, 707, 455, 750), 8, 394, False),
     ]
     layers = [reference_layers(reference, *recipe) for recipe in recipes]
-    # Precision owns geometry; the approved Access board owns the reflective
-    # button finish. Reusing its highlight preserves glass, not flat blue paint.
+    # Preserve the glass lighting, but never the Access board's cyan color cast
+    # or luminous bevel: the requested Precision board owns those properties.
     for index, box in enumerate([(46, 608, 220, 652), (45, 664, 221, 709), (46, 719, 221, 764)]):
-        layers[4 + index] = reference_layers(access, box, 8, 14)
+        layers[4 + index] = reflective_primary(layers[4 + index], access, box)
     for box in [(597, 687, 633, 723), (507, 687, 543, 723)]:
         art = reference.crop(box).convert("RGBA")
         for y in range(art.height):

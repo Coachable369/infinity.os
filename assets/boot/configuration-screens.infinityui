@@ -85,9 +85,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -254,9 +254,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -1261,9 +1261,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -1430,9 +1430,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -2125,9 +2125,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -2294,9 +2294,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -2911,9 +2911,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -3080,9 +3080,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -3697,9 +3697,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -3866,9 +3866,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -4483,9 +4483,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -4652,9 +4652,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -5737,9 +5737,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -5906,9 +5906,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {
@@ -6523,9 +6523,9 @@
         {
           "border" : {
             "alpha" : 0,
-            "blue" : 140,
-            "green" : 88,
-            "red" : 67
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
           },
           "cornerRadius" : 16,
           "crop" : {
@@ -6692,9 +6692,9 @@
           },
           "fill" : {
             "alpha" : 245,
-            "blue" : 58,
-            "green" : 27,
-            "red" : 16
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
           },
           "fontSize" : 20,
           "frame" : {

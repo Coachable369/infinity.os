@@ -232,8 +232,12 @@ impl DisplayDevice {
         let kind=if element.kind==5 {
             if element.role==InstallerTemplateRole::PrimaryButton as u8 {Surface::Primary}else{Surface::Secondary}
         } else if element.role==InstallerTemplateRole::Input as u8 {Surface::Field}else{Surface::Panel};
-        self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,kind,fill,border,
-            opacity,border_opacity,focused);
+        if element.role==InstallerTemplateRole::Console as u8 {
+            self.access_frost_panel(rect.left,rect.top,rect.width,rect.height,fill,border,opacity,border_opacity);
+        } else {
+            self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,kind,fill,border,
+                opacity,border_opacity,focused);
+        }
         if element.kind==5 {
             let font=(element.font_size as usize*self.height/1000).max(6);
             let width=self.access_text_width(element.text,font,true);
@@ -348,6 +352,12 @@ impl DisplayDevice {
             || element.role == InstallerTemplateRole::TimeField as u8
             || element.role == InstallerTemplateRole::TimeZoneSelector as u8
             || element.role == InstallerTemplateRole::OffsetBadge as u8;
+        if element.role==InstallerTemplateRole::Console as u8 {
+            self.access_frost_panel(rect.left,rect.top,rect.width,rect.height,
+                (element.fill[0],element.fill[1],element.fill[2]),
+                (element.border[0],element.border[1],element.border[2]),fill_alpha,border_alpha);
+            return;
+        }
         self.precision_surface(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
             width:rect.width as u32,height:rect.height as u32},
             if is_control {crate::ui::panel_recipe::Surface::Field}else{crate::ui::panel_recipe::Surface::Panel},
@@ -457,7 +467,7 @@ impl DisplayDevice {
         let track_top = top + line_height + gap;
         let track_width = rect.width.saturating_sub(inset * 2);
         use crate::ui::{geometry::Rect, panel_recipe::{Material,Surface}};
-        let material=Material{fill:(18,29,42),edge:(border[0],border[1],border[2]),
+        let material=Material{fill:super::access_style::SURFACE,edge:super::access_style::BORDER,
             opacity:alpha(240),edge_opacity:alpha(border[3]),focus:0,pressed:false,scale:self.ui_scale()};
         self.precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
             width:rect.width as u32,height:rect.height as u32},Surface::Panel,material);
@@ -486,9 +496,9 @@ impl DisplayDevice {
         self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
         let track=Rect{x:(rect.left+inset) as i32,y:track_top as i32,
             width:track_width as u32,height:track_height as u32};
-        self.precision_surface(track,Surface::Field,Material{fill:(2,7,15),opacity:alpha(199),..material});
+        self.precision_surface(track,Surface::Field,Material{fill:super::access_style::BACKGROUND,opacity:alpha(199),..material});
         self.precision_surface(Rect{width:(track_width*value/100) as u32,..track},Surface::Primary,
-            Material{fill:(fill[0],fill[1],fill[2]),opacity:alpha(fill[3]),..material});
+            Material{fill:super::access_style::PRIMARY,opacity:alpha(fill[3]),..material});
         self.render_clip = previous_clip;
     }
 

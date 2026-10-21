@@ -17,6 +17,19 @@ pub fn expand_damage(bounds:(usize,usize,usize,usize),clip:(usize,usize,usize,us
 pub struct Backdrop {
     sampled: [u32; CELLS],
     scratch: [u32; CELLS],
+    retained: Option<SampleKey>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct SampleKey {
+    buffer: usize,
+    pixels: usize,
+    stride: usize,
+    bounds: (usize,usize,usize,usize),
+    source: (usize,usize,usize,usize),
+    blur: u8,
+    scale: usize,
+    bgr: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -34,7 +47,7 @@ impl Backdrop {
     // FUNC: new
     // DESC: Reserves one fixed small-grid workspace rather than allocating a desktop-sized blur surface.
     // ------------------=
-    pub const fn new() -> Self { Self { sampled: [0; CELLS], scratch: [0; CELLS] } }
+    pub const fn new() -> Self { Self { sampled: [0; CELLS], scratch: [0; CELLS], retained: None } }
 
     // ------------------------=
     // FUNC: paint
@@ -42,6 +55,36 @@ impl Backdrop {
     // ------------------=
     pub fn paint(&mut self, pixels: &mut [u32], stride: usize, bounds: (usize,usize,usize,usize),
         clip: (usize,usize,usize,usize), material: Material) {
+        self.paint_with_edge_opacity(pixels,stride,bounds,clip,material,255);
+    }
+
+    // ------------------------=
+    // FUNC: paint_with_edge_opacity
+    // DESC: Reuses drawer frost for authored panels while preserving their independent border alpha.
+    // ------------------=
+    pub fn paint_with_edge_opacity(&mut self, pixels: &mut [u32], stride: usize,
+        bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
+        material: Material, edge_opacity: u8) {
+        self.paint_sampled(pixels,stride,bounds,clip,material,edge_opacity,None);
+    }
+
+    // ------------------------=
+    // FUNC: paint_retained_with_edge_opacity
+    // DESC: Refreshes clean full-panel blur samples on full paints and reuses them for clipped control updates without sampling existing foreground ink.
+    // ------------------=
+    pub fn paint_retained_with_edge_opacity(&mut self, pixels: &mut [u32], stride: usize,
+        bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
+        material: Material, edge_opacity: u8, source: (usize,usize,usize,usize)) {
+        self.paint_sampled(pixels,stride,bounds,clip,material,edge_opacity,Some(source));
+    }
+
+    // ------------------------=
+    // FUNC: paint_sampled
+    // DESC: Separates the stable backdrop sampling rectangle from the output damage clip while preserving ordinary dock repaint behavior.
+    // ------------------=
+    fn paint_sampled(&mut self, pixels: &mut [u32], stride: usize,
+        bounds: (usize,usize,usize,usize), clip: (usize,usize,usize,usize),
+        material: Material, edge_opacity: u8, retained_source: Option<(usize,usize,usize,usize)>) {
         let (left,top,width,height)=bounds;
         if stride==0 || width==0 || height==0 { return; }
         let x0=left.max(clip.0).min(stride);
@@ -49,14 +92,39 @@ impl Backdrop {
         let x1=left.saturating_add(width).min(clip.2).min(stride);
         let y1=top.saturating_add(height).min(clip.3).min(pixels.len()/stride);
         if x0>=x1 || y0>=y1 { return; }
-        let step=4usize.max((x1-x0).div_ceil(COLUMNS)).max((y1-y0).div_ceil(ROWS));
-        let columns=(x1-x0).div_ceil(step);let rows=(y1-y0).div_ceil(step);
+        let mut source=(x0,y0,x1,y1);
+        let mut reuse=false;
+        if let Some(requested)=retained_source {
+            let full=(requested.0.max(left).min(stride),requested.1.max(top).min(pixels.len()/stride),
+                requested.2.min(left.saturating_add(width)).min(stride),
+                requested.3.min(top.saturating_add(height)).min(pixels.len()/stride));
+            let key=SampleKey{buffer:pixels.as_ptr() as usize,pixels:pixels.len(),stride,bounds,
+                source:full,blur:material.blur,scale:material.scale,bgr:material.bgr};
+            let refresh=full.0<full.2 && full.1<full.3
+                && x0<=full.0 && y0<=full.1 && x1>=full.2 && y1>=full.3;
+            let covers_output=full.0<=x0 && full.1<=y0 && full.2>=x1 && full.3>=y1;
+            if covers_output && (refresh || self.retained==Some(key)) {
+                source=full;
+                reuse=!refresh;
+                self.retained=Some(key);
+            } else {
+                // A partial first paint has no clean parent sample yet. Keep
+                // the bounded legacy behavior until a full scene seeds it.
+                self.retained=None;
+            }
+        } else {
+            self.retained=None;
+        }
+        let (sx0,sy0,sx1,sy1)=source;
+        let step=4usize.max((sx1-sx0).div_ceil(COLUMNS)).max((sy1-sy0).div_ceil(ROWS));
+        let columns=(sx1-sx0).div_ceil(step);let rows=(sy1-sy0).div_ceil(step);
         if material.blur>0 && material.opacity>0 && material.opacity<100 {
+          if !reuse {
             for gy in 0..rows {for gx in 0..columns {
                 let mut channels=[0u32;3];let mut count=0;
                 // Average actual pixels, not four corner taps which alias stars/lines into blocks.
-                for y in y0+gy*step..(y0+(gy+1)*step).min(y1) {
-                    for x in x0+gx*step..(x0+(gx+1)*step).min(x1) {
+                for y in sy0+gy*step..(sy0+(gy+1)*step).min(sy1) {
+                    for x in sx0+gx*step..(sx0+(gx+1)*step).min(sx1) {
                         let p=pixels[y*stride+x];count+=1;
                         for c in 0..3 {channels[c]+=(p>>(8*c))&255;}
                     }
@@ -70,6 +138,9 @@ impl Backdrop {
             for y in 0..rows {for x in 0..columns {
                 self.sampled[y*COLUMNS+x]=average(&self.scratch,columns,rows,x,y,radius,true);
             }}
+          }
+        } else {
+            self.retained=None;
         }
         let primary=encode(material.primary,material.bgr);
         let panel=panel_recipe::Material {
@@ -91,12 +162,12 @@ impl Backdrop {
             }else{255};
             let edge=if on_rim {
                 panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,dx,dy,
-                    panel_recipe::Material{opacity:0,edge_opacity:255,..panel})
+                    panel_recipe::Material{opacity:0,edge_opacity,..panel})
             }else{(0,0,0,0)};
             if coverage==0 && edge.3==0 {continue;}
             let original=pixels[y*stride+x];
             let backdrop=if material.blur>0 && material.opacity>0 && material.opacity<100 {
-                self.sample(columns,rows,(x-x0)*256/step,(y-y0)*256/step)
+                self.sample(columns,rows,(x-sx0)*256/step,(y-sy0)*256/step)
             }else {original};
             let mut color=mix(backdrop,primary,tint);
             let sheen=if opacity==0 || opacity==100 {0}else{(20usize.saturating_sub(dy*16/height)) as u32};

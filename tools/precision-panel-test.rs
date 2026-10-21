@@ -203,11 +203,22 @@ fn reference_state_contract() {
         let a=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,primary);
         let b=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,Material{pressed:true,..primary});
         assert_ne!(a,b);
-        // Actual Access reference highlight survives the atlas and all native
-        // scales. A uniform matte fill must fail this observable pixel check.
-        let top=panel_recipe::pixel(Surface::Primary,174*scale,44*scale,87*scale,10*scale,primary);
-        let bottom=panel_recipe::pixel(Surface::Primary,174*scale,44*scale,87*scale,33*scale,primary);
-        assert!(i16::from(top.1)-i16::from(bottom.1)>35,"glass highlight lost");
+        // Actual Precision state colors stay electric blue, not the cyan
+        // Access artwork or legacy teal recoloring that broke the installer.
+        assert!(a.2>a.1.saturating_add(70));
+        let top=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,10*scale,primary);
+        let bottom=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,39*scale,primary);
+        assert!(i16::from(top.1)-i16::from(bottom.1)>20,"reflective lighting lost");
+        for y in 2..7 {
+            let light=Material{opacity:0,..primary};
+            let expected=panel_recipe::pixel(Surface::Primary,700*scale,51*scale,32*scale,y*scale,light);
+            for x in 33..668 {
+                assert_eq!(panel_recipe::pixel(Surface::Primary,700*scale,51*scale,x*scale,y*scale,light),expected,
+                    "wide button edge must not stretch reference texture into streaks");
+            }
+        }
+        assert!(u16::from(b.0)+u16::from(b.1)+u16::from(b.2)<
+            (u16::from(a.0)+u16::from(a.1)+u16::from(a.2))*2/3);
         // Rectangular window substrate must fill corners; the separate OS
         // frame owns antialiasing and cannot reveal a legacy rounded underlay.
         for (x,y) in [(0,0),(w-1,0),(0,h-1),(w-1,h-1)] {

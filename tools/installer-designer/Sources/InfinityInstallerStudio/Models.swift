@@ -374,8 +374,10 @@ struct StudioElement: Identifiable, Codable, Hashable {
             frame: frame,
             text: text,
             imageAsset: imageAsset,
-            fill: kind == .text ? .text : .panel,
-            border: .cyan,
+            fill: kind == .text ? .text : (kind == .button
+                ? (role == .primaryButton ? InfinityUIKit.Palette.primaryAction : InfinityUIKit.Palette.secondaryAction)
+                : InfinityUIKit.Palette.panel),
+            border: InfinityUIKit.Palette.border,
             fontSize: kind == .text ? 24 : 19,
             opacity: 100,
             cornerRadius: kind == .console ? 16 : 10,
@@ -1025,7 +1027,7 @@ struct InstallerStudioDocument: Codable, Hashable {
         case 4: .password
         default: .none
         }
-        elements[6].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(245)
+        elements[6].fill = InfinityUIKit.EclipseAccess.background.withAlpha(245)
         elements[6].border = InfinityUIKit.EclipseAccess.border
         elements[7].fill = InfinityUIKit.EclipseAccess.primary
         elements[7].border = InfinityUIKit.EclipseAccess.border

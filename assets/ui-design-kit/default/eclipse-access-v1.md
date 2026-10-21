@@ -48,11 +48,12 @@ premultiplied-alpha filtering; transparent RGB must not create dark fringes.
 Rendering and hit geometry do not change on focus. Mask passwords, retain all
 existing security/capability checks and preserve the success animation.
 
-Primary buttons interpolate from #31AEFF at the top to #163EDC at the bottom;
-the palette's #3E6FFF remains their semantic base. Other surfaces mix their base
-with #86C7FF by 20/255 at the top, tapering to zero at the bottom. Focus uses an
-inward five-pixel rim and #FFFFFF edge, eased out over 140ms at a bounded 16ms
-paint cadence. Pressed primaries darken toward the elevated token. Reduced
+Primary buttons use the Precision board's electric-blue states and edge pixels;
+this board contributes only its neutral reflective lighting, never its old cyan
+hue or overbright bevel. Outer panels share the drawer's backdrop blur, one navy
+tint and faint sheen. Focus interpolates the image-backed state, eased out over
+140ms at a bounded 16ms paint cadence. Pressed primaries use the authored dark
+Precision state. Reduced
 motion settles immediately. Controls have no idle shimmer or geometry animation.
 Input-panel entrance and selected-panel edge breathing are specified separately
 in [Access panel motion](access-panel-motion.md); they do not alter control geometry.

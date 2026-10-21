@@ -414,56 +414,6 @@ impl super::DisplayDevice {
         self.glow_color(x, y, radius, 255, 255, 255, intensity);
     }
 
-    // ------------------------=
-    // FUNC: glow_color
-    // DESC: Draws a soft colored radial glow with distance-based opacity.
-    // ------------------=
-    pub(super) fn glow_color(
-        &mut self,
-        x: i32,
-        y: i32,
-        radius: i32,
-        red: u8,
-        green: u8,
-        blue: u8,
-        intensity: u8,
-    ) {
-        for oy in -radius..=radius {
-            for ox in -radius..=radius {
-                let distance = ox * ox + oy * oy;
-                if distance <= radius * radius {
-                    let alpha = ((radius * radius - distance) as u32 * intensity as u32
-                        / (radius * radius).max(1) as u32) as u8;
-                    self.blend_color(x + ox, y + oy, red, green, blue, alpha);
-                }
-            }
-        }
-    }
-
-    // ------------------------=
-    // FUNC: star_orb
-    // DESC: Draws a star-like orbiting particle and optional bright trail head.
-    // ------------------=
-    pub(super) fn star_orb(&mut self, x: i32, y: i32, radius: i32, intensity: u8, head: bool) {
-        self.glow_color(x, y, radius * 2, 108, 176, 255, intensity / 3);
-        self.glow_color(x, y, radius, 220, 238, 255, intensity);
-        self.glow_color(x, y, (radius / 3).max(1), 255, 255, 255, 255);
-        if head {
-            for distance in 1..=radius * 3 {
-                let alpha = (180i32.saturating_sub(distance * 150 / (radius * 3).max(1))) as u8;
-                self.blend_white(x + distance, y, alpha);
-                self.blend_white(x - distance, y, alpha);
-                self.blend_white(x, y + distance, alpha);
-                self.blend_white(x, y - distance, alpha);
-                if distance <= radius * 2 {
-                    self.blend_color(x + distance, y + distance, 176, 216, 255, alpha / 2);
-                    self.blend_color(x - distance, y - distance, 176, 216, 255, alpha / 2);
-                    self.blend_color(x + distance, y - distance, 176, 216, 255, alpha / 2);
-                    self.blend_color(x - distance, y + distance, 176, 216, 255, alpha / 2);
-                }
-            }
-        }
-    }
 
     // ------------------------=
     // FUNC: progress
