@@ -2,11 +2,11 @@
 pub type Rgba = (u8, u8, u8, u8);
 pub type Rgb = (u8, u8, u8);
 const SIZE: usize = 256;
-const CELLS: usize = 11;
+const CELLS: usize = 14;
 const ART: &[u8; 2 * CELLS * SIZE * SIZE * 4] = include_bytes!("../../assets/ui-design-kit/default/eclipse-precision-v1.rgba");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Surface { Frame, Panel, Primary, Field, Current, Inactive }
+pub enum Surface { Frame, WindowFill, Panel, Primary, Secondary, Field, Current, Inactive }
 
 #[derive(Clone, Copy)]
 pub struct Material {
@@ -25,7 +25,7 @@ pub struct Material {
 // ------------------=
 pub fn rim_width(kind: Surface, scale: usize) -> usize {
     (match kind { Surface::Frame => 18, Surface::Panel => 12,
-        Surface::Primary | Surface::Field => 8, _ => 0 }) * scale.max(1)
+        Surface::Primary | Surface::Secondary | Surface::Field => 8, _ => 0 }) * scale.max(1)
 }
 
 // ------------------------=
@@ -121,20 +121,28 @@ pub fn pixel(kind:Surface,width:usize,height:usize,x:usize,y:usize,m:Material)->
     let distance=x.min(y).min(width-1-x).min(height-1-y);
     if kind==Surface::Frame && distance>=rim {return (0,0,0,0);}
     let (normal,focused)=match kind {
-        Surface::Frame=>(0,1),Surface::Panel=>(2,3),
+        Surface::Frame=>(0,1),Surface::Panel|Surface::WindowFill=>(2,3),
         Surface::Primary=>if m.pressed {(6,6)}else{(4,5)},
+        Surface::Secondary=>if m.pressed {(13,13)}else{(11,12)},
         Surface::Field=>(7,8),Surface::Current=>(9,9),Surface::Inactive=>(10,10),
     };
     let (fx,fy)=if circular {(x*255*256/width,y*255*256/height)}
-        else {(axis(x,width,rim/scale,scale),axis(y,height,rim/scale,scale))};
+        else {let cut=if kind==Surface::WindowFill {12}else{rim/scale};
+            (axis(x,width,cut,scale),axis(y,height,cut,scale))};
     let state=|layer:usize| {
         if normal==focused || m.focus==0 {texture(normal+layer*CELLS,fx,fy)}
         else if m.focus==255 {texture(focused+layer*CELLS,fx,fy)}
         else {transition(texture(normal+layer*CELLS,fx,fy),texture(focused+layer*CELLS,fx,fy),m.focus)}
     };
     let base=if matches!(kind,Surface::Primary|Surface::Current) {(62,111,255)}else{(16,27,58)};
-    let background=if m.opacity!=0 && kind!=Surface::Frame && (circular || distance>=2*scale) {
+    let background=if m.opacity!=0 && kind!=Surface::Frame && (kind==Surface::WindowFill || circular || distance>=2*scale) {
+        // WindowFill is an OS rectangular substrate, not a rounded panel mask.
+        // Sample interior fill at its boundary; the compositor owns every edge.
+        if kind==Surface::WindowFill {
+            themed(texture(2,fx.clamp(12*256,243*256),fy.clamp(12*256,243*256)),base,m.fill,m.opacity)
+        } else {
         themed(state(0),base,m.fill,m.opacity)
+        }
     }else{(0,0,0,0)};
     let edge=if m.edge_opacity!=0 && !circular && distance<rim {
         themed(state(1),(134,199,255),m.edge,m.edge_opacity)

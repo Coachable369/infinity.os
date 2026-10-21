@@ -221,7 +221,7 @@ impl super::DisplayDevice {
             }
         }
         material.edge_opacity = 0;
-        self.precision_surface(rect, crate::ui::panel_recipe::Surface::Panel, material);
+        self.precision_surface(rect, crate::ui::panel_recipe::Surface::WindowFill, material);
     }
     // ------------------------=
     // FUNC: app_symbol
@@ -302,20 +302,24 @@ impl super::DisplayDevice {
         }
     }
     // ------------------------=
+    // FUNC: app_button_surface
+    // DESC: Uses the shared glossy button artwork for every native action without borrowing field or panel geometry.
+    // ------------------=
+    pub(super) fn app_button_surface(&mut self, r: Rect, primary: bool, focus: u8, pressed: bool, scale: usize) {
+        use crate::ui::{panel_recipe::{Material,Surface},skin::AccentSurface};
+        let accent=self.active_accent_rgb();
+        let fill=if primary {((accent>>16) as u8,(accent>>8) as u8,accent as u8)}
+            else {self.active_accent_surface(AccentSurface::Widget)};
+        self.precision_surface(r,if primary {Surface::Primary}else{Surface::Secondary},
+            Material{fill,edge:self.active_accent_surface(AccentSurface::WindowOutline),
+                opacity:255,edge_opacity:255,focus,pressed,scale});
+    }
+    // ------------------------=
     // FUNC: app_button
     // DESC: Centers an enabled action in a consistently padded 32 px kit button.
     // ------------------=
     pub(super) fn app_button(&mut self, r: Rect, label: &[u8], primary: bool, s: usize) {
-        self.app_card(
-            r,
-            if primary { CYAN } else { (15, 27, 46) },
-            if primary {
-                (81, 225, 249)
-            } else {
-                (33, 58, 85)
-            },
-            s,
-        );
+        self.app_button_surface(r,primary,0,false,s);
         let w = self.app_text_width(label, true, s);
         let x = r.x + (r.width as usize).saturating_sub(w) as i32 / 2;
         self.app_label(
@@ -325,7 +329,7 @@ impl super::DisplayDevice {
                 ..r
             },
             label,
-            if primary { (5, 25, 40) } else { TEXT },
+            TEXT,
             true,
             s,
         );

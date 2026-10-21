@@ -15,6 +15,7 @@ mod personalization_view;
 #[path="ai-widget-tests.rs"] mod ai_widget_tests;
 #[path="../kernel/core/bootstrap/assistant_view.rs"] mod assistant_view;
 #[path="../kernel/core/bootstrap/editor_view.rs"] mod editor_view;
+#[path="configuration-wizard-render.rs"] mod configuration_wizard_render;
 #[cfg(baseline)]
 #[path = "../build/primitives-before.rs"]
 mod primitives;
@@ -326,8 +327,10 @@ fn spatial_stage_blurs_to_screen_edges() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}
     if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
     if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}
+    if std::env::args().any(|arg|arg=="--universal-frames-only") {universal_window_frame_pixels();return;}
     if std::env::args().any(|arg|arg=="--ai-widget-only") {
         ai_widget_tests::verify();return;
     }
@@ -343,7 +346,9 @@ fn main() {
     if std::env::args().any(|arg|arg=="--window-controls-only") {
         window_controls_test();window_control_states_proof();return;
     }
+    configuration_wizard_render::verify();
     window_substrate_pixels();
+    universal_window_frame_pixels();
     precision_surface_benchmark();
     editor_scheme_pixels();
     ai_widget_tests::verify();
@@ -507,16 +512,11 @@ fn window_substrate_pixels() {
                     for y in 0..height {for x in 0..width {
                         let at=y*width+x;
                         let inside=rect.contains(Point{x:x as i32,y:y as i32});
-                        let rgba=if inside {panel_recipe::pixel(Surface::Panel,rect.width as usize,
+                        let rgba=if inside {panel_recipe::pixel(Surface::WindowFill,rect.width as usize,
                             rect.height as usize,(x as i32-rect.x) as usize,(y as i32-rect.y) as usize,
                             Material{edge_opacity:0,..material})}else{(0,0,0,0)};
                         assert_eq!(pixels[at],window_substrate_expected(original[at],rgba,format,retained));
-                        if inside {
-                            let (dx,dy)=((x as i32-rect.x) as usize,(y as i32-rect.y) as usize);
-                            if dx.min(dy).min(rect.width as usize-1-dx).min(rect.height as usize-1-dy)<2*scale {
-                                assert_eq!(pixels[at],original[at]);
-                            }
-                        }
+                        if inside && opacity!=0 { assert_ne!(rgba.3,0,"window fill must have no rounded corner holes"); }
                     }}
                     if opacity==0 {assert_eq!(pixels,original);assert_eq!(d.submissions,0);}
                     let mut partial=original.clone();
@@ -547,6 +547,101 @@ fn window_substrate_pixels() {
 // DESC: Makes the shared substrate alpha, clipping and single-owner frame contract available to the unit harness.
 // ------------------=
 fn window_substrate_pixel_regression() { window_substrate_pixels(); }
+
+// ------------------------=
+// FUNC: universal_window_frame_pixels
+// DESC: Exercises the production presentation wrapper for every app cache, clipped content updates, activation, translation and uncached fallback.
+// ------------------=
+fn universal_window_frame_pixels() {
+    use ui::geometry::Rect;
+    ui::desktop_effects::reset();
+    let (width,height)=(320,220);
+    let bounds=(40,40,160,120);
+    let rect=Rect{x:bounds.0,y:bounds.1,width:bounds.2 as u32,height:bounds.3 as u32};
+    for slot in [0,1,2,3,4,6,7,8,9,10,11,12,usize::MAX] {
+        for active in [false,true] {
+            retained_windows::invalidate();
+            let mut pixels=vec![0x302010u32;width*height];
+            let mut reference=pixels.clone();
+            let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,
+                format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+            let mut expected=display;expected.buffer=reference.as_mut_ptr();
+            expected.fill_rect(40,40,160,120,11,21,39);
+            expected.precision_window_frame(rect,active,display.ui_scale());
+            display.retained_application_window(slot,bounds,active,|target|target.fill_rect(0,0,width,height,11,21,39));
+            assert_eq!(pixels,reference);
+            if slot==usize::MAX {continue;}
+            // Content-only cache updates used to cover the externally drawn frame.
+            let damaged=Region{left:40,top:40,right:76,bottom:75};
+            retained_windows::invalidate_region(slot,damaged);
+            pixels.fill(0x302010);
+            display.retained_application_window(slot,bounds,active,|target|target.fill_rect(40,40,160,120,11,21,39));
+            assert_eq!(pixels,reference);
+            pixels.fill(0x302010);
+            display.retained_application_window(slot,bounds,!active,|_|panic!("focus must not repaint application content"));
+            reference.fill(0x302010);expected.fill_rect(40,40,160,120,11,21,39);
+            expected.precision_window_frame(rect,!active,display.ui_scale());
+            assert_eq!(pixels,reference);
+            pixels.fill(0x302010);
+            display.render_clip=Some(damaged);
+            display.retained_application_window(slot,bounds,!active,|_|panic!("clipping must reuse the retained application"));
+            for y in 0..height {for x in 0..width {
+                assert_eq!(pixels[y*width+x],if x>=damaged.left&&x<damaged.right&&y>=damaged.top&&y<damaged.bottom {reference[y*width+x]}else{0x302010});
+            }}
+            display.render_clip=None;pixels.fill(0x302010);reference.fill(0x302010);
+            let moved=Rect{x:80,y:60,..rect};
+            display.retained_application_window(slot,(80,60,160,120),active,|_|panic!("translation must reuse application pixels"));
+            expected.fill_rect(80,60,160,120,11,21,39);expected.precision_window_frame(moved,active,display.ui_scale());
+            assert_eq!(pixels,reference);
+        }
+    }
+    retained_windows::invalidate();
+    let mut pixels=vec![0x302010u32;width*height];
+    let mut reference=pixels.clone();
+    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut expected=display;expected.buffer=reference.as_mut_ptr();
+    for left in [20i32,0,-1,-20,-100,-200,20] {
+        pixels.fill(0x302010);reference.fill(0x302010);
+        display.retained_application_window(2,(left,40,160,120),true,
+            |target|target.fill_rect(left.max(0) as usize,40,160,120,11,21,39));
+        let right=(left+160).max(0) as usize;
+        expected.fill_rect(left.max(0) as usize,40,right.saturating_sub(left.max(0) as usize),120,11,21,39);
+        expected.precision_window_frame(Rect{x:left,..rect},true,display.ui_scale());
+        assert_eq!(pixels,reference);
+    }
+    pixels.fill(0x302010);reference.fill(0x302010);
+    let mut paints=0;
+    universal_window_fallback_entry(&mut display,&mut paints);
+    expected.fill_rect(40,40,160,120,11,21,39);
+    expected.precision_window_frame(rect,true,display.ui_scale());
+    assert_eq!(paints,1);
+    assert_eq!(pixels,reference);
+    assert!(!retained_windows::application_paint_active(false));
+    assert!(retained_windows::application_paint_active(true));
+    retained_windows::invalidate();
+}
+
+// ------------------------=
+// FUNC: universal_window_fallback_entry
+// DESC: Reenters the same production cache gate used by applications and forces cache refusal without allocating an oversized framebuffer.
+// ------------------=
+fn universal_window_fallback_entry(display:&mut DisplayDevice,paints:&mut usize) {
+    if !retained_windows::application_paint_active(display.recording_surface) {
+        display.retained_application_window(usize::MAX,(40,40,160,120),true,
+            |target|universal_window_fallback_entry(target,paints));
+        return;
+    }
+    *paints+=1;
+    display.fill_rect(40,40,160,120,11,21,39);
+}
+
+#[test]
+// ------------------------=
+// FUNC: universal_window_frame_regression
+// DESC: Ensures cached and uncached application paths cannot lose their OS-owned corner artwork on update.
+// ------------------=
+fn universal_window_frame_regression() { universal_window_frame_pixels(); }
 
 // ------------------------=
 // FUNC: editor_streaming_benchmark
@@ -728,7 +823,10 @@ fn editor_scheme_pixels(){
         preferences::publish(Preferences{scheme,font:0,size:2});editor_tools::publish(view);
         let mut pixels=vec![0x20120bu32;width*height];
         let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
-        d.editor_window(window,code,0,true,false,1);
+        retained_windows::invalidate();
+        d.retained_application_window(2,(window.window.x,window.window.y,
+            window.window.width as usize,window.window.height as usize),true,
+            |target|target.editor_window(window,code,0,true,false,1));
         let g=ui::editor_chrome::Layout::new(window.window,1,false,editor_tools::Field::None);
         let top=&pixels[(window.window.y as usize+5)*width..(window.window.y as usize+40)*width];
         if let Some(ref old)=title{assert_eq!(top,old)}else{title=Some(top.to_vec())}

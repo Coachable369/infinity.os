@@ -84,9 +84,10 @@ def reference_layers(reference, box, cap, blank_x, frame=False):
 def main():
     assert os.environ.get("INFINITY_BUILD_KIT_ACTIVE"), "Use ./build-kit run"
     kit = Path(__file__).resolve().parents[1] / "assets/ui-design-kit/default"
-    source = Image.open(kit / "eclipse-precision-v1-source.png").convert("RGBA")
     reference = Image.open(kit / "eclipse-precision-v1-reference.png").convert("RGB")
-    assert source.size == reference.size == (1536, 1024)
+    access = Image.open(kit / "eclipse-access-v1-reference.png").convert("RGB")
+    assert reference.size == (1536, 1024)
+    assert access.size == (1672, 941)
     # Cell order is the private, versioned native contract in panel_recipe.rs.
     recipes = [
         ((767, 266, 1368, 317), 18, 300, True),
@@ -100,8 +101,12 @@ def main():
         ((33, 707, 455, 750), 8, 394, False),
     ]
     layers = [reference_layers(reference, *recipe) for recipe in recipes]
-    for box in [(748, 687, 919, 859), (1190, 688, 1358, 857)]:
-        art = source.crop(box)
+    # Precision owns geometry; the approved Access board owns the reflective
+    # button finish. Reusing its highlight preserves glass, not flat blue paint.
+    for index, box in enumerate([(46, 608, 220, 652), (45, 664, 221, 709), (46, 719, 221, 764)]):
+        layers[4 + index] = reference_layers(access, box, 8, 14)
+    for box in [(597, 687, 633, 723), (507, 687, 543, 723)]:
+        art = reference.crop(box).convert("RGBA")
         for y in range(art.height):
             for x in range(art.width):
                 dx = (x + .5) / art.width * 2 - 1
@@ -109,6 +114,8 @@ def main():
                 if dx * dx + dy * dy > 1:
                     art.putpixel((x, y), (0, 0, 0, 0))
         layers.append((art.resize((SIZE, SIZE), Image.Resampling.LANCZOS), Image.new("RGBA", (SIZE, SIZE))))
+    for box in [(1161, 569, 1265, 620), (1278, 569, 1384, 620), (1397, 569, 1504, 620)]:
+        layers.append(reference_layers(reference, box, 8, 14))
     packed = b"".join(cell[layer].tobytes() for layer in range(2) for cell in layers)
     (kit / "eclipse-precision-v1.rgba").write_bytes(packed)
 

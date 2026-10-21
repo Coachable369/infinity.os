@@ -7,7 +7,10 @@ content/layout ownership, never ownership of their outer frame geometry.
 - Windows: straight rectangular edges; integrated bold L corners; bright active
   and subdued inactive frames. No rounded outer frame beneath square brackets.
 - Panels: midnight navy glass, restrained icy-silver edge, optically softened
-  corners. Primary controls use electric blue; fields use navy inset surfaces.
+  corners. Primary controls retain the reflective electric-blue glass finish
+  in `eclipse-access-v1-reference.png`; adopting Precision geometry must never
+  replace it with a matte fill. Secondary actions use their own dark glass
+  normal/hover/pressed artwork, not the inset text-field surface.
 - Tokens: background #090F26, surface #101B3A, elevated #1A2E63, primary #3E6FFF,
   border #86C7FF, text #FFFFFF. Desktop theme overrides tint these same assets.
 - States: normal, focused/hovered, pressed, inactive and error. Existing 140 ms
@@ -21,20 +24,21 @@ content/layout ownership, never ownership of their outer frame geometry.
 ## Assets and integration
 
 Gap in the earlier kit: no image-backed shared rectangular frame/panel family.
-The reference and blank component source were generated with the built-in image
-generator. Prompt: flat Eclipse Precision production controls, transparent canvas,
-rectangular frame with L corners, navy panel/field, electric-blue button, current
-and inactive progress dots; exact tokens above; no text, chrome bevels or scenery.
+The reference was generated with the built-in image generator. Reuse the approved
+Precision board for frames, panels, fields, secondary controls and hollow/current
+progress markers, and the approved Access board for glossy primary states. The
+unused blank component sheet is removed; it must not supply alternate progress
+geometry or be included in new installer payloads.
 The approved reference supplies native-resolution 18px frame corners with 4px L
-strokes, panel normal/focus states, primary normal/hover/pressed states, and field
+strokes, panel normal/focus states, secondary normal/hover/pressed states, and field
 normal/focus states. Border and inward-glow strips are preserved directly; blank
-inner-edge samples replace example labels with the authored surface gradient. Only
-the clean progress dots still use the component sheet. Sheet gutters are not
-runtime artwork.
+inner-edge samples replace example labels with the authored surface gradient.
+Progress markers use the reference's current blue fill and inactive hollow ring.
+Sheet gutters are not runtime artwork.
 
 `./build-kit run python3 tools/build-precision-artwork.py` deterministically crops
 and packs the native RGBA atlas. `kernel/ui/panel_recipe.rs` owns sampling,
-nine-slice geometry, theme tint, alpha and states. The atlas has eleven state
+nine-slice geometry, theme tint, alpha and states. The atlas has fourteen state
 cells in two layers: independently translucent fill and authored edge/glow.
 Corners are packed at native resolution rather than downsampling a whole window.
 Focus interpolates those premultiplied state pixels; the bounded inward light

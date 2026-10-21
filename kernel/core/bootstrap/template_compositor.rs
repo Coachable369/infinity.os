@@ -162,10 +162,9 @@ impl DisplayDevice {
                 if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
                     && matches!(element.kind, 1 | 4 | 5)
                 {
-                    let completed=element.role==InstallerTemplateRole::ProgressSegment as u8
-                        && progress_index<screen.saturating_sub(1) as usize;
+                    let progress=(progress_index,screen.saturating_sub(1) as usize);
                     if element.role==InstallerTemplateRole::ProgressSegment as u8 {progress_index+=1;}
-                    self.access_template_control(element, navigation, completed);
+                    self.access_template_control(element, navigation, progress);
                 } else if bytes.as_ptr() == CONFIGURATION_TEMPLATE_BYTES.as_ptr()
                     && element.kind == 3
                 {
@@ -207,9 +206,10 @@ impl DisplayDevice {
     // FUNC: access_template_control
     // DESC: Renders saved configuration controls with the approved Access gradient, focus easing and subpixel edges.
     // ------------------=
-    fn access_template_control(&mut self, element: InstallerTemplateElement<'_>,
-        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, completed:bool) {
+    pub(super) fn access_template_control(&mut self, element: InstallerTemplateElement<'_>,
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, progress:(usize,usize)) {
         use super::access_style as palette;
+        use crate::ui::panel_recipe::Surface;
         let rect=scale_template_rect(element.frame,self.width,self.height);
         let focused=navigation.is_some_and(|(focus,_,_)|
             (element.role==InstallerTemplateRole::BackButton as u8 && focus==0)
@@ -219,16 +219,20 @@ impl DisplayDevice {
         let opacity=(element.fill[3] as u16*element.opacity as u16/100) as u8;
         let border_opacity=(element.border[3] as u16*element.opacity as u16/100) as u8;
         let text_opacity=(255u16*element.opacity as u16/100) as u8;
-        let radius=(element.corner_radius as usize*self.height/1000).max(1);
         if element.role==InstallerTemplateRole::ProgressSegment as u8 {
             let size=rect.height.min(rect.width);
             let left=rect.left+(rect.width-size)/2;
-            self.access_surface_alpha(left,rect.top,size,size,size/2,fill,border,
+            let current=progress.0<=progress.1;
+            self.access_surface_alpha(left,rect.top,size,size,
+                if current {Surface::Current}else{Surface::Inactive},fill,border,
                 opacity,border_opacity,false);
-            if completed {self.access_glyph(left+size/2,rect.top+size/2,15,size*3/4,false);}
+            if progress.0<progress.1 {self.access_glyph(left+size/2,rect.top+size/2,15,size*3/4,false);}
             return;
         }
-        self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,radius,fill,border,
+        let kind=if element.kind==5 {
+            if element.role==InstallerTemplateRole::PrimaryButton as u8 {Surface::Primary}else{Surface::Secondary}
+        } else if element.role==InstallerTemplateRole::Input as u8 {Surface::Field}else{Surface::Panel};
+        self.access_surface_alpha(rect.left,rect.top,rect.width,rect.height,kind,fill,border,
             opacity,border_opacity,focused);
         if element.kind==5 {
             let font=(element.font_size as usize*self.height/1000).max(6);
@@ -542,7 +546,7 @@ impl DisplayDevice {
         use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
         self.precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
             width:rect.width as u32,height:rect.height as u32},
-            if primary {Surface::Primary}else{Surface::Field},Material{
+            if primary {Surface::Primary}else{Surface::Secondary},Material{
                 fill:(element.fill[0],element.fill[1],element.fill[2]),
                 edge:(element.border[0],element.border[1],element.border[2]),
                 opacity:(element.fill[3] as u16*opacity/100) as u8,

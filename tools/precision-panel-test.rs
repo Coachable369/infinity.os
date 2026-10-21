@@ -104,7 +104,7 @@ fn material(scale: usize) -> Material {
 fn sampler_contract() -> usize {
     let mut covered = 0;
     for scale in 1..=4 {
-        for kind in [Surface::Frame, Surface::Panel, Surface::Primary, Surface::Field, Surface::Current, Surface::Inactive] {
+        for kind in [Surface::Frame, Surface::Panel, Surface::Primary, Surface::Secondary, Surface::Field, Surface::Current, Surface::Inactive] {
             let circle = matches!(kind, Surface::Current | Surface::Inactive);
             let (width, height) = if circle { (28 * scale, 28 * scale) } else { (112 * scale, 64 * scale) };
             let m = material(scale);
@@ -144,7 +144,7 @@ fn sampler_contract() -> usize {
                 assert_eq!(panel_recipe::pixel(kind, w, h, x, y, m).3, 0);
             }
             let center = panel_recipe::pixel(kind, width, height, width / 2, height / 2, m);
-            if kind==Surface::Primary {
+            if matches!(kind,Surface::Primary|Surface::Secondary) {
                 let pressed = panel_recipe::pixel(kind, width, height, width / 2, height / 2,
                     Material { pressed: true, ..m });
                 assert_eq!(center.3, pressed.3);
@@ -157,9 +157,17 @@ fn sampler_contract() -> usize {
 
 // ------------------------=
 // FUNC: reference_state_contract
-// DESC: Checks approved-board pixel witnesses, native frame stroke thickness, bounded focus bloom and the authored dark pressed primary state.
+// DESC: Checks approved-board pixel witnesses, frame stroke thickness, bounded focus bloom and reflective button state separation.
 // ------------------=
 fn reference_state_contract() {
+    let mut skin=skin::SkinRegistry::new();
+    for persisted_default in [false,true] {
+        if persisted_default {skin.set_accent(0x3e6fff,skin::AppearanceScope::User).unwrap();}
+        assert_eq!(skin.accent_surface(skin::AccentSurface::WindowOutline).rgb24(),0x86c7ff);
+        assert_eq!(skin.accent_surface(skin::AccentSurface::Focus).rgb24(),0xffffff);
+    }
+    skin.set_accent(0xeb9845,skin::AppearanceScope::User).unwrap();
+    assert_ne!(skin.accent_surface(skin::AccentSurface::WindowOutline).rgb24(),0x86c7ff);
     let exact=Material{opacity:255,..material(1)};
     for (kind,w,h,focus,x,y,expected) in [
         (Surface::Frame,702,412,255,1,1,(177,233,252)),
@@ -194,7 +202,17 @@ fn reference_state_contract() {
         let primary=Material{fill:(62,111,255),scale,..exact};
         let a=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,primary);
         let b=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,Material{pressed:true,..primary});
-        assert!(u16::from(b.0)+u16::from(b.1)+u16::from(b.2)<(u16::from(a.0)+u16::from(a.1)+u16::from(a.2))*2/3);
+        assert_ne!(a,b);
+        // Actual Access reference highlight survives the atlas and all native
+        // scales. A uniform matte fill must fail this observable pixel check.
+        let top=panel_recipe::pixel(Surface::Primary,174*scale,44*scale,87*scale,10*scale,primary);
+        let bottom=panel_recipe::pixel(Surface::Primary,174*scale,44*scale,87*scale,33*scale,primary);
+        assert!(i16::from(top.1)-i16::from(bottom.1)>35,"glass highlight lost");
+        // Rectangular window substrate must fill corners; the separate OS
+        // frame owns antialiasing and cannot reveal a legacy rounded underlay.
+        for (x,y) in [(0,0),(w-1,0),(0,h-1),(w-1,h-1)] {
+            assert_eq!(panel_recipe::pixel(Surface::WindowFill,w,h,x,y,primary).3,255);
+        }
     }
 }
 
@@ -209,7 +227,7 @@ fn adapter_contract() -> usize {
         for (rx, ry) in [(-23, -17), (-90, 15), (77, 63), (160, 120), (-200, -200), (12, 8)] {
             let rect = Rect { x: rx * scale as i32, y: ry * scale as i32,
                 width: (112 * scale) as u32, height: (64 * scale) as u32 };
-            for kind in [Surface::Frame, Surface::Panel, Surface::Primary, Surface::Field] {
+            for kind in [Surface::Frame, Surface::WindowFill, Surface::Panel, Surface::Primary, Surface::Secondary, Surface::Field] {
                 for clipped in [false, true] {
                     let mut display = DisplayDevice::new(width, height);
                     for (i, pixel) in display.pixels.iter_mut().enumerate() {
@@ -347,7 +365,7 @@ fn label(display: &mut DisplayDevice, mut x: usize, y: usize, text: &[u8], size:
 // DESC: Emits production panel and frame pixels with native Inter labels for human hierarchy, contrast, edge-softness and state review.
 // ------------------=
 fn render_overview(output: &std::path::Path) {
-    let mut d = DisplayDevice::new(1440, 1060);
+    let mut d = DisplayDevice::new(1440, 1180);
     let white = (240, 247, 255);
     let muted = (179, 195, 221);
     label(&mut d, 36, 24, b"InfinityOS  |  Eclipse Precision", 30, true, white);
@@ -362,9 +380,9 @@ fn render_overview(output: &std::path::Path) {
         label(&mut d, x + 24, 231, b"Independent outline / background opacity", 16, false, muted);
     }
     let states = [(0u8, false, b"Normal" as &[u8]), (255, false, b"Focused"), (255, true, b"Pressed")];
-    for (row, kind) in [Surface::Panel, Surface::Primary, Surface::Field].into_iter().enumerate() {
+    for (row, kind) in [Surface::Panel, Surface::Primary, Surface::Secondary, Surface::Field].into_iter().enumerate() {
         let y = 420 + row * 120;
-        label(&mut d, 36, y - 28, [b"GLASS PANELS" as &[u8], b"PRIMARY BUTTONS", b"TEXT FIELDS"][row], 14, true, muted);
+        label(&mut d, 36, y - 28, [b"GLASS PANELS" as &[u8], b"PRIMARY BUTTONS", b"SECONDARY BUTTONS", b"TEXT FIELDS"][row], 14, true, muted);
         for (column, &(focus, pressed, name)) in states.iter().enumerate() {
             let x = 36 + column * 468;
             let fill = if kind == Surface::Primary { (62, 111, 255) } else { (16, 27, 58) };
@@ -373,24 +391,24 @@ fn render_overview(output: &std::path::Path) {
             label(&mut d, x + 20, y + 24, name, 18, true, white);
         }
     }
-    label(&mut d, 36, 780, b"SCALE 1 / 2 / 3 / 4", 14, true, muted);
+    label(&mut d, 36, 900, b"SCALE 1 / 2 / 3 / 4", 14, true, muted);
     for scale in 1..=4 {
         let x = 36 + (scale - 1) * 174;
-        d.precision_surface(Rect { x: x as i32, y: 818, width: (28 * scale) as u32, height: (28 * scale) as u32 },
+        d.precision_surface(Rect { x: x as i32, y: 938, width: (28 * scale) as u32, height: (28 * scale) as u32 },
             Surface::Current, Material { fill: (62, 111, 255), ..material(scale) });
-        d.precision_surface(Rect { x: x as i32, y: 950, width: (20 * scale) as u32, height: (20 * scale) as u32 },
+        d.precision_surface(Rect { x: x as i32, y: 1070, width: (20 * scale) as u32, height: (20 * scale) as u32 },
             Surface::Inactive, material(scale));
     }
-    label(&mut d, 760, 780, b"THEME / LOW SURFACE OPACITY", 14, true, muted);
+    label(&mut d, 760, 900, b"THEME / LOW SURFACE OPACITY", 14, true, muted);
     let alternate = Material { fill: (79, 33, 67), edge: (255, 188, 101), opacity: 112,
         focus: 180, ..material(1) };
-    let r = Rect { x: 760, y: 818, width: 644, height: 212 };
+    let r = Rect { x: 760, y: 938, width: 644, height: 212 };
     d.precision_surface(r, Surface::Panel, Material{edge_opacity:0,..alternate});
     d.precision_surface(r, Surface::Frame, alternate);
-    label(&mut d, 784, 842, b"Theme-aware; crisp independent borders", 18, true, white);
-    label(&mut d, 784, 882, b"Inter at 14px", 14, false, muted);
-    label(&mut d, 784, 910, b"Inter at 19px", 19, false, muted);
-    label(&mut d, 784, 946, b"Inter at 24px", 24, false, white);
+    label(&mut d, 784, 962, b"Theme-aware; crisp independent borders", 18, true, white);
+    label(&mut d, 784, 1002, b"Inter at 14px", 14, false, muted);
+    label(&mut d, 784, 1030, b"Inter at 19px", 19, false, muted);
+    label(&mut d, 784, 1066, b"Inter at 24px", 24, false, white);
     let mut file = std::fs::File::create(output).unwrap();
     write!(file, "P6\n{} {}\n255\n", d.width, d.height).unwrap();
     for p in d.pixels { file.write_all(&[(p >> 16) as u8, (p >> 8) as u8, p as u8]).unwrap(); }

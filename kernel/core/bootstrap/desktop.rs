@@ -2,6 +2,7 @@
 
 use super::*;
 use super::access_style as access;
+use crate::ui::panel_recipe::Surface as AccessSurface;
 use super::installer::{INSTALLER_FONT_CELL_HEIGHT, INSTALLER_FONT_NATIVE_SIZE_PX};
 #[path = "minimized_shelf.rs"]
 mod minimized_shelf;
@@ -144,25 +145,6 @@ pub(super) const AURORA_HARMONY_LAUNCHER_BMP: &[u8] =
     include_bytes!("../../../assets/icons/runtime/aurora-harmony-launcher-256.bmp");
 
 impl super::DisplayDevice {
-    // ------------------------=
-    // FUNC: access_label
-    // DESC: Fits antialiased pre-session typography to its responsive control without changing hit geometry.
-    // ------------------=
-    pub(super) fn access_label(&mut self, bounds: (usize, usize, usize, usize), text: &[u8],
-        pixels: usize, color: access::Rgb, centered: bool, strong: bool) {
-        let (left, top, width, height) = bounds;
-        let mut pixels = pixels.max(8).min(height * 6 / 7).max(1);
-        while pixels > 8 && self.access_text_width(text, pixels, strong) > width {
-            pixels -= 1;
-        }
-        let text_width = self.access_text_width(text, pixels, strong);
-        let previous = self.render_clip;
-        self.intersect_render_clip(left, top, width, height);
-        self.access_text(left + if centered { width.saturating_sub(text_width) / 2 } else { 0 },
-            top + height.saturating_sub(pixels * 7 / 6) / 2, text,
-            color.0, color.1, color.2, 255, pixels, strong);
-        self.render_clip = previous;
-    }
 
     // ------------------------=
     // FUNC: clipboard_overlay
@@ -938,8 +920,8 @@ impl super::DisplayDevice {
             user_y,
             inner_w,
             sw(86),
-            sw(13),
-            access::BACKGROUND, access::MUTED_BORDER, 255, focus == 0,
+            AccessSurface::Panel,
+            access::BACKGROUND, access::BORDER, 255, focus == 0,
         );
         self.access_icon(inner_x + sw(45), user_y + sw(43), 2, sw(50), focus == 0);
         let user = crate::runtime::with_runtime(|runtime| runtime.identity.user_nth(selected_user))
@@ -966,7 +948,7 @@ impl super::DisplayDevice {
             sign_y,
             inner_w,
             sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
-            sw(13),
+            AccessSurface::Primary,
             access::PRIMARY, access::BORDER, 255, focus == 2,
         );
         self.access_label((inner_x + sw(40), sign_y, inner_w - sw(80),
@@ -1001,8 +983,8 @@ impl super::DisplayDevice {
             key_y,
             inner_w,
             sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
-            sw(13),
-            access::ELEVATED, access::MUTED_BORDER, 255, focus == 3,
+            AccessSurface::Secondary,
+            access::ELEVATED, access::BORDER, 255, focus == 3,
         );
         self.access_label((inner_x + sw(28), key_y, inner_w - sw(72),
             sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT)),
@@ -1097,8 +1079,8 @@ impl super::DisplayDevice {
         input: &[u8],
         focused: bool,
     ) {
-        self.access_surface(x, y, width, height, height / 4, access::BACKGROUND,
-            access::MUTED_BORDER, 255, focused);
+        self.access_surface(x, y, width, height, AccessSurface::Field, access::BACKGROUND,
+            access::BORDER, 255, focused);
         self.access_icon(x + height / 2, y + height / 2, 5, height / 3, focused);
         let previous_clip = self.render_clip;
         self.intersect_render_clip(x + height, y + 2,
@@ -2114,15 +2096,16 @@ impl super::DisplayDevice {
             let diameter = 24.min(segment_width);
             let center_x = x + segment_width / 2;
             self.access_surface(center_x - diameter / 2, top, diameter, diameter,
-                diameter / 2, if index <= visual_step { access::PRIMARY } else { access::BACKGROUND },
-                if index <= visual_step { access::BORDER } else { access::MUTED_BORDER }, 255, false);
+                if index <= visual_step {AccessSurface::Current}else{AccessSurface::Inactive},
+                if index <= visual_step { access::PRIMARY } else { access::BACKGROUND },
+                access::BORDER, 255, false);
             if index<visual_step {self.access_glyph(center_x,top+diameter/2,15,diameter*3/4,false);}
         }
     }
 
     // ------------------------=
     // FUNC: polished_button
-    // DESC: Draws a shared primary or secondary rounded action with visible focus hierarchy.
+    // DESC: Draws the OS glass button artwork with shared focus lighting and unchanged action geometry.
     // ------------------=
     pub(super) fn polished_button(
         &mut self,
@@ -2134,46 +2117,8 @@ impl super::DisplayDevice {
         primary: bool,
         focused: bool,
     ) {
-        let radius = (height / 4).clamp(8, 14);
-        if primary {
-            // The base is intentionally opaque. Onboarding hover updates repaint
-            // only this bounded control, so alpha accumulation must not alter the
-            // button each time the pointer crosses its hit target.
-            self.fill_rounded_rect_alpha(left, top, width, height, radius, 8, 54, 84, 255);
-            self.fill_rounded_rect_alpha(
-                left + 2,
-                top + 2,
-                width.saturating_sub(4),
-                height / 2,
-                radius.saturating_sub(2),
-                25,
-                111,
-                159,
-                if focused { 116 } else { 72 },
-            );
-            self.outline_rounded_rect(
-                left,
-                top,
-                width,
-                height,
-                radius,
-                if focused { 151 } else { 40 },
-                if focused { 229 } else { 181 },
-                if focused { 255 } else { 231 },
-            );
-        } else {
-            self.fill_rounded_rect_alpha(left, top, width, height, radius, 5, 15, 27, 255);
-            self.outline_rounded_rect(
-                left,
-                top,
-                width,
-                height,
-                radius,
-                if focused { 105 } else { 42 },
-                if focused { 197 } else { 69 },
-                if focused { 236 } else { 91 },
-            );
-        }
+        self.app_button_surface(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
+            width:width as u32,height:height as u32},primary,if focused {255}else{0},false,self.ui_scale());
         self.ui_text_centered_strong(left, width,
             top + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             label, 242, 248, 252, 1);
@@ -2202,9 +2147,8 @@ impl super::DisplayDevice {
         role: usize,
     ) {
         let scale = self.ui_scale().max(1);
-        let radius = (8 * scale).min(height / 2);
-        self.fill_rounded_rect_alpha(left, top, width, height, radius, 7, 27, 45, 218);
-        self.outline_rounded_rect(left, top, width, height, radius, 35, 76, 102);
+        self.app_button_surface(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
+            width:width as u32,height:height as u32},false,0,false,scale);
         let icon_center_x = left + 16 * scale;
         let icon_center_y = top + height / 2;
         let _ = self.themed_icon(icon_center_x, icon_center_y, role, 20 * scale);
@@ -2219,69 +2163,6 @@ impl super::DisplayDevice {
         );
     }
 
-    // ------------------------=
-    // FUNC: onboarding_input_field
-    // DESC: Draws one polished first-boot text field with placeholder, focus, and secure masking.
-    // ------------------=
-    pub(super) fn onboarding_input_field(
-        &mut self,
-        step: usize,
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-        input: &[u8],
-        masked: bool,
-        focused: bool,
-        placeholder: &[u8],
-    ) {
-        let radius = (height / 4).clamp(8, 14);
-        // Focus changes can repaint this field independently of the glass card.
-        // Use an opaque base so repeated bounded updates remain color-stable.
-        self.access_surface(left, top, width, height, radius, access::BACKGROUND,
-            access::MUTED_BORDER, 255, focused);
-        let mut shown = [0u8; 64];
-        let shown_len = input.len().min(shown.len());
-        if masked {
-            shown[..shown_len].fill(b'*');
-        } else {
-            shown[..shown_len].copy_from_slice(&input[..shown_len]);
-        }
-        let display = if shown_len == 0 {
-            placeholder
-        } else {
-            &shown[..shown_len]
-        };
-        let color = if shown_len == 0 {
-            access::SECONDARY
-        } else {
-            access::TEXT
-        };
-        let pixels = crate::ui::installer_template::InstallerTemplate::parse(
-            crate::ui::installer_layout::CONFIGURATION_TEMPLATE_BYTES).ok()
-            .and_then(|template| template.element(step.saturating_add(1) as u8,
-                crate::ui::installer_template::InstallerTemplateRole::Input))
-            .map(|element| (element.font_size as usize * self.height / 1000).max(6))
-            .unwrap_or((18 * self.height / 1000).max(6));
-        let text_height = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels)
-            .scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
-        let inset = (crate::ui::system_layout::UI_GUTTER * self.height / 1000).max(4);
-        let text_left = left.saturating_add(inset);
-        let text_top = top + height.saturating_sub(text_height) / 2;
-        let previous_clip = self.render_clip;
-        self.intersect_render_clip(left + inset, top + 2,
-            width.saturating_sub(inset * 2), height.saturating_sub(4));
-        self.access_text(text_left, text_top, display, color.0, color.1, color.2,
-            255, pixels, false);
-        if focused {
-            if let Some((true, index)) = crate::ui::text_input::caret(1) {
-                let caret_x = text_left + self.access_text_width(&shown[..index.min(shown_len)], pixels, false);
-                self.fill_rect(caret_x, text_top, self.ui_scale().max(1), text_height,
-                    access::FOCUS.0, access::FOCUS.1, access::FOCUS.2);
-            }
-        }
-        self.render_clip = previous_clip;
-    }
 
     // ------------------------=
     // FUNC: onboarding_frame
@@ -2431,8 +2312,8 @@ impl super::DisplayDevice {
             ];
             for (index, (heading, detail, icon)) in items.iter().enumerate() {
                 let row_top = body_top + index * 68 * scale;
-                self.access_surface(inner_left,row_top,inner_width,54*scale,12*scale,
-                    access::BACKGROUND,access::MUTED_BORDER,240,false);
+                self.access_surface(inner_left,row_top,inner_width,54*scale,AccessSurface::Panel,
+                    access::BACKGROUND,access::BORDER,240,false);
                 self.access_icon(
                     inner_left + 24 * scale,
                     row_top + 27 * scale,
@@ -2509,8 +2390,8 @@ impl super::DisplayDevice {
             ];
             for (index, (label, value, icon)) in privacy_rows.iter().enumerate() {
                 let row_top = body_top + index * 54 * scale;
-                self.access_surface(inner_left,row_top,inner_width,44*scale,10*scale,
-                    access::BACKGROUND,access::MUTED_BORDER,240,false);
+                self.access_surface(inner_left,row_top,inner_width,44*scale,AccessSurface::Panel,
+                    access::BACKGROUND,access::BORDER,240,false);
                 self.access_icon(
                     inner_left + 22 * scale,
                     row_top + 22 * scale,
@@ -2534,8 +2415,8 @@ impl super::DisplayDevice {
                 validation_error,
             );
         } else {
-            self.access_surface(inner_left,body_top,inner_width,150*scale,14*scale,
-                access::BACKGROUND,access::MUTED_BORDER,240,false);
+            self.access_surface(inner_left,body_top,inner_width,150*scale,AccessSurface::Panel,
+                access::BACKGROUND,access::BORDER,240,false);
             self.top_bar_infinity_icon(
                 inner_left + inner_width / 2,
                 body_top + 48 * scale,
@@ -2685,7 +2566,6 @@ impl super::DisplayDevice {
                     value * scale
                 }
             };
-            let radius = unit(10);
             let inset = unit(12);
             let icon_size = unit(20);
             let label_left = left + unit(42);
@@ -2705,9 +2585,9 @@ impl super::DisplayDevice {
                             })
                             .unwrap_or(2));
             let is_focused = focus == index + 2;
-            self.access_surface(left,row_top,width,row_height,radius,
+            self.access_surface(left,row_top,width,row_height,AccessSurface::Panel,
                 if is_selected { access::ELEVATED } else { access::BACKGROUND },
-                if is_selected { access::BORDER } else { access::MUTED_BORDER },255,is_focused);
+                access::BORDER,255,is_focused);
             self.access_icon(
                 left + inset + icon_size / 2,
                 row_top + row_height / 2,
@@ -2995,7 +2875,7 @@ impl super::DisplayDevice {
         app_menu: usize,
     ) {
         let task_menu_open = app_menu == 10;
-        if !self.recording_surface {
+        if !super::retained_windows::application_paint_active(self.recording_surface) {
             let rect = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .desktop_app_window_geometry(
                     window_x,
@@ -3005,7 +2885,7 @@ impl super::DisplayDevice {
                     maximized,
                 )
                 .window;
-            self.retained_window_at(
+            self.retained_application_window(
                 (screen.saturating_sub(8) + 1) as usize,
                 (
                     rect.x,
@@ -3013,6 +2893,7 @@ impl super::DisplayDevice {
                     rect.width as usize,
                     rect.height as usize,
                 ),
+                crate::ui::desktop_stack::current().active == (screen.saturating_sub(8) + 1) as usize,
                 |target| {
                     target.desktop_native_app_window(
                         screen,
@@ -3353,7 +3234,8 @@ impl super::DisplayDevice {
         if !presentation.active{return;}
         let left=content.x.max(0) as usize;let top=content.y.max(0) as usize;
         let width=content.width as usize;let height=content.height as usize;
-        self.fill_rounded_rect_alpha(left,top,width,height,10*scale,2,11,24,250);
+        self.app_card(content,self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline),scale);
         let usable_width=width;let usable_height=height;
         for element in presentation.elements.iter().flatten() {
             let x=left+(element.x as usize).saturating_mul(usable_width)/presentation.width as usize;
@@ -3366,16 +3248,19 @@ impl super::DisplayDevice {
                     self.ui_text_elided_strong(x,y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2,w,label,220,237,248);
                 }
                 crate::ui::native_uikit::ElementKind::Display=>{
-                    self.fill_rounded_rect_alpha(x,y,w,h,9*scale,6,24,43,246);
-                    self.outline_rounded_rect(x,y,w,h,9*scale,39,111,151);
+                    self.precision_surface(crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32},
+                        crate::ui::panel_recipe::Surface::Field,crate::ui::panel_recipe::Material{
+                            fill:self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
+                            edge:self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline),
+                            opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
                     let text_width=self.ui_text_width(label,1);
                     self.ui_text_elided_strong(x+w.saturating_sub(text_width+16*scale),
                         y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2,w.saturating_sub(24*scale),
                         label,235,247,253);
                 }
                 crate::ui::native_uikit::ElementKind::Button=>{
-                    self.fill_rounded_rect_alpha(x,y,w,h,9*scale,8,38,65,246);
-                    self.outline_rounded_rect(x,y,w,h,9*scale,44,145,193);
+                    self.app_button_surface(crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32},
+                        false,0,false,scale);
                     let text_width=self.ui_text_width(label,1);
                     self.ui_text_strong(x+w.saturating_sub(text_width)/2,
                         y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2,label,225,242,251,1);
@@ -4029,7 +3914,7 @@ impl super::DisplayDevice {
         let g=crate::ui::object_picker::geometry(content,scale,!open_picker);
         let _=(output_lines,output_lengths,output_count,focus);
         let x=g.sheet.x.max(0) as usize; let y=g.sheet.y.max(0) as usize;
-        self.glass_panel(x,y,g.sheet.width as usize,g.sheet.height as usize,true);
+        self.glass_window_substrate(g.sheet,true);
         self.ui_text_strong(x+24*scale,y+18*scale,if open_picker {b"Open from Infinity Pool"} else {b"Save As - Infinity Pool"},234,244,250,1);
         let clip=self.render_clip;
         for (field,rect,value,label) in [
@@ -4073,6 +3958,7 @@ impl super::DisplayDevice {
         self.ui_text(x+24*scale,g.cancel.y.saturating_sub((32*scale) as i32).max(0) as usize,error,
             if picker.error>0 {255}else{150},if picker.error>0 {120}else{185},if picker.error>0 {120}else{207},1);
         self.render_clip=clip;
+        self.precision_window_frame(g.sheet,true,scale);
     }
 
     // ------------------------=
@@ -4106,7 +3992,7 @@ impl super::DisplayDevice {
         );
         let x = g.sheet.x.max(0) as usize;
         let y = g.sheet.y.max(0) as usize;
-        self.app_card_alpha(g.sheet,(15,27,46),(34,211,238),252,scale);
+        self.glass_window_substrate(g.sheet,true);
         self.ui_text_strong(
             x + 26 * scale,
             y + 24 * scale,
@@ -4149,6 +4035,7 @@ impl super::DisplayDevice {
                 focus == index,
             );
         }
+        self.precision_window_frame(g.sheet,true,scale);
         self.render_clip = clip;
     }
 
@@ -4313,9 +4200,6 @@ impl super::DisplayDevice {
                     else {let state=match id {1=>command_window,2=>editor_window,5=>crate::console::browser_window(),_=>task_manager_window};
                         layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
                     if crate::ui::desktop_effects::opacity()==255 && id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(if id==5 {0}else{id},rect,scale);}
-                    if crate::ui::desktop_effects::opacity()==255 && id!=0 {
-                        self.precision_window_frame(rect,id==stack.active,scale);
-                    }
                 }
             }
         }
@@ -4876,18 +4760,19 @@ impl super::DisplayDevice {
         scale: usize,
     ) {
         let caller_clip = self.render_clip;
-        if !self.recording_surface {
+        if !super::retained_windows::application_paint_active(self.recording_surface) {
             let rect = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .settings_window_geometry(settings_window)
                 .window;
-            self.retained_window(
+            self.retained_application_window(
                 4,
                 (
-                    rect.x.max(0) as usize,
-                    rect.y.max(0) as usize,
+                    rect.x,
+                    rect.y,
                     rect.width as usize,
                     rect.height as usize,
                 ),
+                crate::ui::desktop_stack::current().active == 4,
                 |target| target.render_settings_window(focus, input, settings_window, scale),
             );
             return;
@@ -8161,16 +8046,12 @@ impl super::DisplayDevice {
                         navigator.height,
                         navigator.maximized,
                     );
-            self.retained_window(6 + index, (left, top, width, height), |target| {
+            self.retained_application_window(6 + index, (left as i32, top as i32, width, height), false, |target| {
                 target.paint_navigator_window(scale, navigator.x, navigator.y,
                     navigator.width, navigator.height, navigator.maximized,
                     home_location, None, Some(navigator.state));
             });
             if crate::ui::desktop_effects::opacity()==255 {self.window_assistant(5+index,crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},scale);}
-            if crate::ui::desktop_effects::opacity()==255 {
-                self.precision_window_frame(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
-                    width:width as u32,height:height as u32},false,scale);
-            }
         }
         if window_visible {
             crate::ui::desktop_effects::layer(Some(0));
@@ -8187,7 +8068,9 @@ impl super::DisplayDevice {
                     window_maximized,
                 );
             let navigator_state = crate::runtime::with_runtime(|r| r.file_navigator).flatten();
-            self.retained_window(active_navigator.map(|i| 6 + i).unwrap_or(0), bounds, |target| {
+            self.retained_application_window(active_navigator.map(|i| 6 + i).unwrap_or(0),
+                (bounds.0 as i32,bounds.1 as i32,bounds.2,bounds.3),
+                crate::ui::desktop_stack::current().active==0, |target| {
                 target.paint_navigator_window(
                     scale,
                     window_x,
@@ -8201,10 +8084,6 @@ impl super::DisplayDevice {
                 )
             });
             if crate::ui::desktop_effects::opacity()==255 {self.window_assistant(5+active_navigator.unwrap_or(0),crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,width:bounds.2 as u32,height:bounds.3 as u32},scale);}
-            if crate::ui::desktop_effects::opacity()==255 {
-                self.precision_window_frame(crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,
-                    width:bounds.2 as u32,height:bounds.3 as u32},crate::ui::desktop_stack::current().active==0,scale);
-            }
         }
     }
 
@@ -9052,7 +8931,7 @@ impl super::DisplayDevice {
             let top = dialog_rect.y.max(0) as usize;
             let width = dialog_rect.width as usize;
             let height = dialog_rect.height as usize;
-            self.app_card_alpha(dialog_rect,(4,17,30),(76,188,235),252,scale);
+            self.glass_window_substrate(dialog_rect,true);
             let (title, detail): (&[u8], &[u8]) = match dialog {
                 crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash => (
                     b"Empty Trash?",
@@ -9156,62 +9035,15 @@ impl super::DisplayDevice {
                             half + 6 * scale
                         };
                     let button_width = half.saturating_sub(26 * scale);
-                    self.fill_rounded_rect_alpha(
-                        button_left,
-                        button_top,
-                        button_width,
-                        38 * scale,
-                        8 * scale,
-                        if index == 1 { selection_r } else { 10 },
-                        if index == 1 { selection_g } else { 31 },
-                        if index == 1 { selection_b } else { 48 },
-                        235,
-                    );
-                    self.outline_rounded_rect(
-                        button_left,
-                        button_top,
-                        button_width,
-                        38 * scale,
-                        8 * scale,
-                        76,
-                        165,
-                        207,
-                    );
-                    self.ui_text_centered(
-                        button_left,
-                        button_width,
-                        button_top + 10 * scale,
-                        label,
-                        226,
-                        236,
-                        243,
-                        1,
-                    );
+                    self.app_button(crate::ui::geometry::Rect{x:button_left as i32,y:button_top as i32,
+                        width:button_width as u32,height:(38*scale) as u32},label,index==1,scale);
                 }
             } else {
                 let button_left = left + width / 2 - 74 * scale;
-                self.fill_rounded_rect_alpha(
-                    button_left,
-                    button_top,
-                    148 * scale,
-                    38 * scale,
-                    8 * scale,
-                    selection_r,
-                    selection_g,
-                    selection_b,
-                    225,
-                );
-                self.ui_text_centered(
-                    button_left,
-                    148 * scale,
-                    button_top + 10 * scale,
-                    b"Close",
-                    230,
-                    239,
-                    245,
-                    1,
-                );
+                self.app_button(crate::ui::geometry::Rect{x:button_left as i32,y:button_top as i32,
+                    width:(148*scale) as u32,height:(38*scale) as u32},b"Close",false,scale);
             }
+            self.precision_window_frame(dialog_rect,true,scale);
         }
     }
 

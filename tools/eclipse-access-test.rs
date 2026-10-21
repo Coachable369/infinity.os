@@ -11,6 +11,7 @@ mod access_view;
 mod panel_view;
 #[path = "../kernel/ui/panel_recipe.rs"]
 mod panel_recipe;
+use panel_recipe::Surface;
 #[path = "../kernel/ui/bitmap.rs"]
 mod bitmap;
 #[path = "../kernel/ui/geometry.rs"]
@@ -105,8 +106,8 @@ fn panel_motion_render_frames() {
         motion.advance(1,time,false);
         let (x,y,w,h)=motion.rectangle((index*200+10,10,180,220));
         display.access_panel(index*200+10,10,180,220);
-        display.access_surface(index*200+26,80,148,36,8,access_style::BACKGROUND,access_style::BORDER,255,false);
-        display.access_surface(index*200+26,132,148,36,8,access_style::PRIMARY,access_style::BORDER,255,false);
+        display.access_surface(index*200+26,80,148,36,Surface::Field,access_style::BACKGROUND,access_style::BORDER,255,false);
+        display.access_surface(index*200+26,132,148,36,Surface::Primary,access_style::PRIMARY,access_style::BORDER,255,false);
         display.access_panel_glow(index*200+10,10,180,220);
         let mut source=Vec::new();
         for row in 10..230 { for col in index*200+10..index*200+190 {
@@ -168,7 +169,7 @@ fn neutral_access_and_matching_desktop_palette() {
     access_style::animate(123,0,false,true);
     let mut display=DisplayDevice::new(320,140);
     for (i,focused) in [false,true].into_iter().enumerate() {
-        display.access_surface(12,12+i*60,296,44,10,access_style::SURFACE,access_style::BORDER,255,focused);
+        display.access_surface(12,12+i*60,296,44,Surface::Panel,access_style::SURFACE,access_style::BORDER,255,focused);
     }
     let mut changed=0;
     let mut normal_light=0;let mut focused_light=0;
@@ -326,14 +327,14 @@ fn surfaces_preserve_coverage_focus_geometry_and_damage_clips() {
         let mut unfocused = DisplayDevice::new(80,60);
         let mut focused = DisplayDevice::new(80,60);
         for (display,focus) in [(&mut unfocused,false),(&mut focused,true)] {
-            display.access_surface(5,6,66,42,10,fill,access_style::BORDER,230,focus);
+            display.access_surface(5,6,66,42,if fill==access_style::PRIMARY {Surface::Primary}else{Surface::Panel},fill,access_style::BORDER,230,focus);
             assert_eq!(display.damage,vec![Region{left:5,top:6,right:71,bottom:48}]);
             assert!(display.pixels.iter().any(|pixel|pixel[3]>0 && pixel[3]<230));
             for y in 0..60 { for x in 0..80 {
                 if x<5 || x>=71 || y<6 || y>=48 { assert_eq!(display.pixels[y*80+x],[9,15,38,0]); }
             } }
             let mut clipped = DisplayDevice::new(80,60); clipped.clip=Some(clip);
-            clipped.access_surface(5,6,66,42,10,fill,access_style::BORDER,230,focus);
+            clipped.access_surface(5,6,66,42,if fill==access_style::PRIMARY {Surface::Primary}else{Surface::Panel},fill,access_style::BORDER,230,focus);
             assert_eq!(clipped.damage,vec![clip]);
             for y in 0..60 { for x in 0..80 {
                 let expected = if x>=clip.left && x<clip.right && y>=clip.top && y<clip.bottom {
@@ -367,19 +368,19 @@ fn authored_fill_and_border_alpha_remain_independent() {
     access_style::animate(123,0,false,true);
     for focused in [false,true] {
         let mut opaque=DisplayDevice::new(80,60);
-        opaque.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+        opaque.access_surface_alpha(5,6,66,42,Surface::Panel,access_style::SURFACE,
             access_style::BORDER,255,255,focused);
         assert!(opaque.pixels.iter().any(|pixel|pixel[3]>0));
         let mut fill_only=DisplayDevice::new(80,60);
-        fill_only.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+        fill_only.access_surface_alpha(5,6,66,42,Surface::Panel,access_style::SURFACE,
             access_style::BORDER,255,0,focused);
         let mut edge_only=DisplayDevice::new(80,60);
-        edge_only.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+        edge_only.access_surface_alpha(5,6,66,42,Surface::Panel,access_style::SURFACE,
             access_style::BORDER,0,255,focused);
         for fill_alpha in [0u8,64,127,255] {
             for border_alpha in [0u8,64,127,255] {
                 let mut display=DisplayDevice::new(80,60);
-                display.access_surface_alpha(5,6,66,42,10,access_style::SURFACE,
+                display.access_surface_alpha(5,6,66,42,Surface::Panel,access_style::SURFACE,
                     access_style::BORDER,fill_alpha,border_alpha,focused);
                 for y in 0..42 { for x in 0..66 {
                     let index=(y+6)*80+x+5;
@@ -394,7 +395,7 @@ fn authored_fill_and_border_alpha_remain_independent() {
                 }
                 if border_alpha==255 {
                     let mut native=DisplayDevice::new(80,60);
-                    native.access_surface(5,6,66,42,10,access_style::SURFACE,
+                    native.access_surface(5,6,66,42,Surface::Panel,access_style::SURFACE,
                         access_style::BORDER,fill_alpha,focused);
                     assert_eq!(display.pixels,native.pixels);
                 }
@@ -417,9 +418,9 @@ fn buttons_keep_surface_hit_geometry_and_forward_label_contract() {
             let bytes=[0x41,0x32,0x3f];
             button.access_button(10,10,120,height,&bytes,primary,focused);
             let mut surface=DisplayDevice::new(160,120);surface.clip=Some(clip);
-            surface.access_surface(10,10,120,height,(height/4).min(14),
+            surface.access_surface(10,10,120,height,if primary {Surface::Primary}else{Surface::Secondary},
                 if primary {access_style::PRIMARY} else {access_style::BACKGROUND},
-                if primary {access_style::BORDER} else {access_style::MUTED_BORDER},255,focused);
+                access_style::BORDER,255,focused);
             assert_eq!(button.pixels,surface.pixels);
             assert_eq!(button.damage,surface.damage);
             let (r,g,b)=access_style::TEXT;

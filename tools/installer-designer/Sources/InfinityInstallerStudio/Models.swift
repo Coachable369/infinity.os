@@ -1006,7 +1006,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             ),
         ]
         elements[1].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(235)
-        elements[1].border = InfinityUIKit.EclipseAccess.mutedBorder
+        elements[1].border = InfinityUIKit.EclipseAccess.border
         elements[1].cornerRadius = 16
         elements[2].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(0)
         elements[2].border = InfinityUIKit.EclipseAccess.mutedBorder.withAlpha(0)
@@ -1016,7 +1016,7 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[4].fill = InfinityUIKit.EclipseAccess.secondary
         elements[4].fontSize = 17
         elements[5].fill = InfinityUIKit.EclipseAccess.background.withAlpha(245)
-        elements[5].border = InfinityUIKit.EclipseAccess.mutedBorder
+        elements[5].border = InfinityUIKit.EclipseAccess.border
         elements[5].cornerRadius = 10
         elements[5].inputVariable = switch step {
         case 1: .machineNodeName
@@ -1026,7 +1026,7 @@ struct InstallerStudioDocument: Codable, Hashable {
         default: .none
         }
         elements[6].fill = InfinityUIKit.EclipseAccess.surface.withAlpha(245)
-        elements[6].border = InfinityUIKit.EclipseAccess.mutedBorder
+        elements[6].border = InfinityUIKit.EclipseAccess.border
         elements[7].fill = InfinityUIKit.EclipseAccess.primary
         elements[7].border = InfinityUIKit.EclipseAccess.border
         elements[8].fill = InfinityUIKit.EclipseAccess.secondary
@@ -1046,7 +1046,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             segment.fill = progressIndex <= step
                 ? InfinityUIKit.EclipseAccess.primary
                 : InfinityUIKit.EclipseAccess.elevated
-            segment.border = progressIndex <= step ? InfinityUIKit.EclipseAccess.border : InfinityUIKit.EclipseAccess.mutedBorder
+            segment.border = InfinityUIKit.EclipseAccess.border
             segment.cornerRadius = 10
             elements.append(segment)
         }
@@ -1124,7 +1124,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             frame: CanvasRect(x: 72, y: top, width: 276, height: 54), zIndex: 6
         )
         panel.fill = InfinityUIKit.EclipseAccess.elevated.withAlpha(240)
-        panel.border = InfinityUIKit.EclipseAccess.mutedBorder
+        panel.border = InfinityUIKit.EclipseAccess.border
         panel.cornerRadius = 10
         var headingElement = StudioElement.make(
             name: "\(prefix) Heading \(index + 1)", kind: .text,
@@ -1159,7 +1159,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             frame: CanvasRect(x: 72, y: top, width: 276, height: 44), zIndex: 6
         )
         panel.fill = InfinityUIKit.EclipseAccess.elevated.withAlpha(240)
-        panel.border = InfinityUIKit.EclipseAccess.mutedBorder
+        panel.border = InfinityUIKit.EclipseAccess.border
         panel.cornerRadius = 10
         var labelElement = StudioElement.make(
             name: "Setting Label \(index + 1)", kind: .text,

@@ -260,7 +260,7 @@ performance-test:
 		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
 
 .PHONY: active-painter-test
-assets/ui-design-kit/default/eclipse-precision-v1.rgba: assets/ui-design-kit/default/eclipse-precision-v1-source.png assets/ui-design-kit/default/eclipse-precision-v1-reference.png tools/build-precision-artwork.py
+assets/ui-design-kit/default/eclipse-precision-v1.rgba: assets/ui-design-kit/default/eclipse-precision-v1-reference.png assets/ui-design-kit/default/eclipse-access-v1-reference.png tools/build-precision-artwork.py
 	python3 tools/build-precision-artwork.py
 
 assets/ui-design-kit/default/browser-welcome-hero-v1.bmp: assets/ui-design-kit/default/browser-welcome-hero-v1.png tools/build-browser-welcome-artwork.py

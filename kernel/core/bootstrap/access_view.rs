@@ -1,5 +1,6 @@
 //! Reusable Eclipse Access controls; no authentication state or service calls in paint.
 use super::{access_style as palette, DisplayDevice};
+use crate::ui::panel_recipe::Surface;
 
 impl DisplayDevice {
     // ------------------------=
@@ -18,9 +19,9 @@ impl DisplayDevice {
     // DESC: Paints a palette-controlled glass surface with antialiased edges and a stable focus rim.
     // ------------------=
     pub(super) fn access_surface(&mut self, left: usize, top: usize, width: usize,
-        height: usize, radius: usize, fill: palette::Rgb, border: palette::Rgb,
+        height: usize, kind: Surface, fill: palette::Rgb, border: palette::Rgb,
         opacity: u8, focused: bool) {
-        self.access_surface_alpha(left, top, width, height, radius, fill, border,
+        self.access_surface_alpha(left, top, width, height, kind, fill, border,
             opacity, 255, focused);
     }
 
@@ -29,14 +30,9 @@ impl DisplayDevice {
     // DESC: Preserves independent authored fill and border opacity while retaining the shared antialiased access recipe.
     // ------------------=
     pub(super) fn access_surface_alpha(&mut self, left: usize, top: usize, width: usize,
-        height: usize, radius: usize, fill: palette::Rgb, border: palette::Rgb,
+        height: usize, kind: Surface, fill: palette::Rgb, border: palette::Rgb,
         opacity: u8, border_opacity: u8, focused: bool) {
-        use crate::ui::panel_recipe::{Surface,Material};
-        let primary=fill==palette::PRIMARY;
-        let circular=width==height && radius>=width/2;
-        let kind=if circular {if primary {Surface::Current}else{Surface::Inactive}}
-            else if primary {Surface::Primary}
-            else if height>width/2 {Surface::Panel}else{Surface::Field};
+        use crate::ui::panel_recipe::Material;
         self.precision_surface(crate::ui::geometry::Rect{x:left as i32,y:top as i32,
             width:width as u32,height:height as u32},kind,Material{fill,edge:border,opacity,
                 edge_opacity:border_opacity,focus:if focused {palette::focus_amount()}else{0},
@@ -69,9 +65,9 @@ impl DisplayDevice {
     // DESC: Applies the same recipe to fallback setup actions without changing their native hit rectangles.
     // ------------------=
     pub(super) fn access_button(&mut self,left:usize,top:usize,width:usize,height:usize,label:&[u8],primary:bool,focused:bool) {
-        self.access_surface(left,top,width,height,(height/4).min(14),
+        self.access_surface(left,top,width,height,if primary {Surface::Primary}else{Surface::Secondary},
             if primary { palette::PRIMARY } else { palette::BACKGROUND },
-            if primary { palette::BORDER } else { palette::MUTED_BORDER },255,focused);
+            palette::BORDER,255,focused);
         let padding = (height / 3).min(width / 4);
         self.access_label((left + padding, top, width.saturating_sub(padding * 2), height),
             label, (height * 5 / 12).max(8), palette::TEXT, true, true);

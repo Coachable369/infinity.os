@@ -1,7 +1,6 @@
 //! Installer artwork, typography, storage screens, cards, controls, and composition.
 
 use super::*;
-use super::template_font::face as template_face;
 
 pub(super) const INSTALLER_FONT_NATIVE_SIZE_PX: usize = 24;
 pub(super) const INSTALLER_FONT_SIZE_PX: usize = 24;
@@ -507,217 +506,6 @@ impl super::DisplayDevice {
         }
     }
 
-    // ------------------------=
-    // FUNC: template_text_width
-    // DESC: Measures template text at its authored pixel size using the packaged installer face.
-    // ------------------=
-    pub(super) fn template_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
-        self.template_text_width_face(text, pixels, semibold, None)
-    }
-
-    // ------------------------=
-    // FUNC: access_text_width
-    // DESC: Measures Eclipse text with the immutable Inter family regardless of the signed-in desktop font preference.
-    // ------------------=
-    pub(super) fn access_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
-        self.template_text_width_face(text, pixels, semibold, Some(1))
-    }
-
-    // ------------------------=
-    // FUNC: template_text_width_face
-    // DESC: Uses one explicitly selected native face for advance and kerning while retaining legacy Roboto when no family is requested.
-    // ------------------=
-    fn template_text_width_face(&self, text: &[u8], pixels: usize, semibold: bool, family: Option<u8>) -> usize {
-        let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let (_, metrics, kerning) = template_face(family, semibold);
-        let mut width = 0usize;
-        let mut previous = None;
-        for byte in text {
-            if *byte == b'\n' {
-                break;
-            }
-            if !(32..=126).contains(byte) {
-                previous = None;
-                continue;
-            }
-            width = Self::font_position_advance(
-                width,
-                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
-            );
-            width =
-                width.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
-            previous = Some(*byte);
-        }
-        width
-    }
-
-    // ------------------------=
-    // FUNC: template_text
-    // DESC: Alpha-rasterizes template text at an arbitrary authored size.
-    // ------------------=
-    pub(super) fn template_text(
-        &mut self,
-        x: usize,
-        y: usize,
-        text: &[u8],
-        red: u8,
-        green: u8,
-        blue: u8,
-        opacity: u8,
-        pixels: usize,
-        semibold: bool,
-    ) {
-        self.template_text_face(x, y, text, red, green, blue, opacity, pixels, semibold, None);
-    }
-
-    // ------------------------=
-    // FUNC: access_text
-    // DESC: Paints Eclipse labels using the same explicit Inter face that supplies their measurement and wrapping.
-    // ------------------=
-    pub(super) fn access_text(&mut self, x: usize, y: usize, text: &[u8], red: u8, green: u8,
-        blue: u8, opacity: u8, pixels: usize, semibold: bool) {
-        self.template_text_face(x, y, text, red, green, blue, opacity, pixels, semibold, Some(1));
-    }
-
-    // ------------------------=
-    // FUNC: template_text_face
-    // DESC: Rasterizes an explicit native family or the unchanged legacy installer face with matching glyph metrics.
-    // ------------------=
-    fn template_text_face(&mut self, mut x: usize, mut y: usize, text: &[u8], red: u8,
-        green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool, family: Option<u8>) {
-        let line_start = x;
-        let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let (atlas, metrics, kerning) = template_face(family, semibold);
-        let glyph_width = font_size.scale_usize(INSTALLER_FONT_CELL_WIDTH).max(1);
-        let glyph_height = font_size.scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
-        let line_advance = glyph_height.saturating_add(font_size.scale_usize(4));
-        let mut previous = None;
-        for byte in text {
-            if *byte == b'\n' {
-                x = line_start;
-                y = y.saturating_add(line_advance);
-                previous = None;
-                continue;
-            }
-            if !(32..=126).contains(byte) {
-                previous = None;
-                continue;
-            }
-            x = Self::font_position_advance(
-                x,
-                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
-            );
-            let glyph = (*byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
-            for row in 0..glyph_height {
-                for column in 0..glyph_width {
-                    let atlas_alpha = crate::ui::glyph_filter::coverage(atlas,
-                        INSTALLER_FONT_CELL_WIDTH * 95, glyph, INSTALLER_FONT_CELL_WIDTH,
-                        INSTALLER_FONT_CELL_HEIGHT, glyph_width, glyph_height, column, row);
-                    let alpha = (atlas_alpha as u16 * opacity as u16 / 255) as u8;
-                    if alpha != 0 {
-                        self.blend_color(
-                            (x + column) as i32,
-                            (y + row) as i32,
-                            red,
-                            green,
-                            blue,
-                            alpha,
-                        );
-                    }
-                }
-            }
-            x = x.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
-            previous = Some(*byte);
-        }
-    }
-
-    // ------------------------=
-    // FUNC: template_text_wrapped
-    // DESC: Wraps authored template copy to its frame while preserving explicit line breaks.
-    // ------------------=
-    pub(super) fn template_text_wrapped(
-        &mut self,
-        x: usize,
-        y: usize,
-        max_width: usize,
-        text: &[u8],
-        red: u8,
-        green: u8,
-        blue: u8,
-        opacity: u8,
-        pixels: usize,
-        semibold: bool,
-    ) {
-        self.template_text_wrapped_face(x, y, max_width, text, red, green, blue, opacity, pixels, semibold, None);
-    }
-
-    // ------------------------=
-    // FUNC: access_text_wrapped
-    // DESC: Wraps Eclipse copy with Inter advances without changing legacy installer typography.
-    // ------------------=
-    pub(super) fn access_text_wrapped(&mut self, x: usize, y: usize, max_width: usize,
-        text: &[u8], red: u8, green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool) {
-        self.template_text_wrapped_face(x, y, max_width, text, red, green, blue, opacity, pixels, semibold, Some(1));
-    }
-
-    // ------------------------=
-    // FUNC: template_text_wrapped_face
-    // DESC: Keeps paragraph wrapping and final rasterization on the same explicit font selection.
-    // ------------------=
-    fn template_text_wrapped_face(&mut self, x: usize, y: usize, max_width: usize,
-        text: &[u8], red: u8, green: u8, blue: u8, opacity: u8, pixels: usize,
-        semibold: bool, family: Option<u8>) {
-        let mut start = 0usize;
-        let mut line = 0usize;
-        let line_advance = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1))
-            .scale_usize(INSTALLER_FONT_CELL_HEIGHT + 4);
-        while start < text.len() {
-            while start < text.len() && text[start] == b' ' {
-                start += 1;
-            }
-            if start >= text.len() {
-                break;
-            }
-            let explicit_end = text[start..]
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map(|value| start + value);
-            let paragraph_end = explicit_end.unwrap_or(text.len());
-            let mut end = start + 1;
-            let mut last_space = None;
-            while end <= paragraph_end {
-                if end < paragraph_end && text[end] == b' ' {
-                    last_space = Some(end);
-                }
-                if self.template_text_width_face(&text[start..end], pixels, semibold, family) > max_width {
-                    end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
-                    break;
-                }
-                if end == paragraph_end {
-                    break;
-                }
-                end += 1;
-            }
-            self.template_text_face(
-                x,
-                y + line * line_advance,
-                &text[start..end],
-                red,
-                green,
-                blue,
-                opacity,
-                pixels,
-                semibold,
-                family,
-            );
-            line += 1;
-            start = if end == paragraph_end && explicit_end.is_some() {
-                end + 1
-            } else {
-                end
-            };
-        }
-    }
 
     // ------------------------=
     // FUNC: installer_text_wrapped
@@ -1052,6 +840,7 @@ impl super::DisplayDevice {
                 layout.back_button,
                 back,
                 back_subtitle,
+                false,
                 focus == 0,
                 cursor_x,
                 cursor_y,
@@ -1063,6 +852,7 @@ impl super::DisplayDevice {
                 layout.primary_button,
                 primary,
                 subtitle,
+                true,
                 focus == 1,
                 cursor_x,
                 cursor_y,
@@ -1111,46 +901,18 @@ impl super::DisplayDevice {
         let top = self.height * 34 / 100;
         let width = self.width * 50 / 100;
         let height = self.height * 32 / 100;
-        let radius = 16 * scale;
         // Repaint from an opaque glass base on every state change. This keeps
         // alpha highlights deterministic instead of accumulating luminance
         // when the pointer crosses a control boundary.
-        self.fill_rounded_rect_alpha(
-            left + 9 * scale,
-            top + 11 * scale,
-            width,
-            height,
-            radius,
-            0,
-            3,
-            9,
-            170,
-        );
-        self.fill_rounded_rect_alpha(left, top, width, height, radius, 4, 14, 27, 255);
-        self.fill_rounded_rect_alpha(
-            left + 2 * scale,
-            top + 2 * scale,
-            width.saturating_sub(4 * scale),
-            height / 3,
-            radius.saturating_sub(2 * scale),
-            20,
-            44,
-            66,
-            88,
-        );
-        self.outline_rounded_rect(left, top, width, height, radius, 69, 122, 156);
-        self.fill_rounded_rect_alpha(
-            left + 24 * scale,
-            top + 25 * scale,
-            42 * scale,
-            42 * scale,
-            12 * scale,
-            91,
-            43,
-            39,
-            255,
-        );
-        self.authentication_icon(left + 45 * scale, top + 46 * scale, 8, 23 * scale, true);
+        use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
+        let bounds=Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32};
+        let material=Material{fill:super::access_style::SURFACE,edge:super::access_style::BORDER,
+            opacity:255,edge_opacity:255,focus:255,pressed:false,scale};
+        self.precision_surface(bounds,Surface::WindowFill,Material{edge_opacity:0,..material});
+        self.precision_surface(Rect{x:(left+24*scale) as i32,y:(top+25*scale) as i32,
+            width:(42*scale) as u32,height:(42*scale) as u32},Surface::Panel,
+            Material{fill:(91,43,39),edge:(255,118,145),focus:0,..material});
+        self.access_glyph(left+45*scale,top+46*scale,8,23*scale,false);
         self.ui_text_strong(
             left + 82 * scale,
             top + 26 * scale,
@@ -1197,6 +959,7 @@ impl super::DisplayDevice {
             cancel_frame.height,
             b"CANCEL",
             b"Keep the disk unchanged",
+            false,
             focus == 0,
             cursor_x,
             cursor_y,
@@ -1212,6 +975,7 @@ impl super::DisplayDevice {
             install_frame.height,
             b"ERASE & INSTALL",
             b"Begin installation",
+            true,
             focus == 1,
             cursor_x,
             cursor_y,
@@ -1228,6 +992,7 @@ impl super::DisplayDevice {
             179,
             1,
         );
+        self.precision_surface(bounds,Surface::Frame,Material{opacity:0,..material});
     }
 
     // ------------------------=
@@ -3868,6 +3633,7 @@ impl super::DisplayDevice {
         nh: usize,
         title: &[u8],
         subtitle: &[u8],
+        primary: bool,
         focused: bool,
         cursor_x: i32,
         cursor_y: i32,
@@ -3882,6 +3648,7 @@ impl super::DisplayDevice {
             },
             title,
             subtitle,
+            primary,
             focused,
             cursor_x,
             cursor_y,
@@ -3898,6 +3665,7 @@ impl super::DisplayDevice {
         rect: crate::ui::installer_layout::InstallerRect,
         title: &[u8],
         subtitle: &[u8],
+        primary: bool,
         focused: bool,
         cursor_x: i32,
         cursor_y: i32,
@@ -3914,37 +3682,12 @@ impl super::DisplayDevice {
             && pointer_y >= top as i32
             && pointer_y <= rect.bottom() as i32;
         let depressed = hovered && pressed;
-        let (r, g, b) = if hovered && pressed {
-            (48, 67, 91)
-        } else if focused || hovered {
-            (25, 42, 63)
-        } else {
-            (14, 20, 30)
-        };
-        let radius = (height / 7).clamp(7, 13);
-        self.fill_rounded_rect_alpha(left, top, width, height, radius, r, g, b, 255);
-        self.fill_rounded_rect_alpha(
-            left + 2,
-            top + 2,
-            width.saturating_sub(4),
-            height / 2,
-            radius.saturating_sub(2),
-            55,
-            92,
-            125,
-            if focused || hovered { 78 } else { 28 },
-        );
-        let (or, og, ob) = if focused {
-            (210, 234, 255)
-        } else if hovered {
-            (150, 205, 255)
-        } else {
-            (76, 94, 120)
-        };
-        self.outline_rounded_rect(left, top, width, height, radius, or, og, ob);
-        if focused {
-            self.fill_rect(left, top, self.ui_scale() * 4, height, 235, 246, 255);
-        }
+        use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
+        self.precision_surface(Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},
+            if primary {Surface::Primary}else{Surface::Secondary},
+            Material{fill:if primary {super::access_style::PRIMARY}else{super::access_style::SURFACE},
+                edge:super::access_style::BORDER,opacity:255,edge_opacity:255,
+                focus:if focused||hovered {255}else{0},pressed:depressed,scale:self.ui_scale()});
         let scale = self.ui_scale();
         let press_offset = if depressed { 2 * scale } else { 0 };
         let block_height = INSTALLER_FONT_CELL_HEIGHT * 2 + 4;

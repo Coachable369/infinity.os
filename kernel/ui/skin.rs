@@ -400,12 +400,15 @@ impl SkinRegistry {
         let primary = self
             .primary_override
             .unwrap_or(Color::rgb(DEFAULT_PRIMARY_RGB));
+        let authored_accent = accent == self.active().tokens.color(ColorRole::Accent);
         match surface {
+            AccentSurface::WindowOutline if authored_accent => self.active().tokens.color(ColorRole::Border),
             AccentSurface::WindowOutline => mix_color(accent, Color::rgb(0x00ef_f8ff), 112),
             AccentSurface::Header => mix_color(primary, Color::rgb(0x0002_0c18), 56),
             AccentSurface::TopBar => mix_color(primary, Color::rgb(0x0002_0c18), 104),
             AccentSurface::Dock => mix_color(primary, Color::rgb(0x0002_0c18), 72),
             AccentSurface::Widget => primary,
+            AccentSurface::Focus if authored_accent => self.active().tokens.color(ColorRole::Focus),
             AccentSurface::Focus => mix_color(accent, Color::rgb(0x00ff_ffff), 88),
             AccentSurface::Selection => mix_color(accent, Color::rgb(0x0008_2138), 208),
         }

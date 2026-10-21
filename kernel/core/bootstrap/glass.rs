@@ -10,24 +10,8 @@ impl DisplayDevice {
         label: &[u8], primary: bool,
     ) {
         if width < 32 || height < 16 || self.clipped_render_region(x.saturating_sub(5),y.saturating_sub(5),width+10,height+10).is_none() { return; }
-        let radius = (height/2).min(18);
-        if primary {
-            for spread in (1..=5).rev() {
-                self.outline_rounded_rect(x.saturating_sub(spread),y.saturating_sub(spread),
-                    width+spread*2,height+spread*2,radius+spread,0,30+(5-spread) as u8*14,55+(5-spread) as u8*22);
-            }
-        }
-        for row in 0..height {
-            let dy = if row<radius {radius-row} else if row>=height-radius {row-(height-radius-1)} else {0};
-            let mut inset = 0;
-            while inset<radius && (radius-inset)*(radius-inset)+dy*dy>radius*radius {inset+=1;}
-            let t = row*255/height;
-            let (r,g,b) = if primary {(3, (199-t*75/255) as u8, (250-t*22/255) as u8)}
-                else {((20-t*12/255) as u8,(42-t*23/255) as u8,(65-t*31/255) as u8)};
-            self.fill_rect(x+inset,y+row,width.saturating_sub(inset*2),1,r,g,b);
-        }
-        let edge = if primary {(102,231,255)} else {(78,111,142)};
-        self.outline_rounded_rect(x,y,width,height,radius,edge.0,edge.1,edge.2);
+        self.app_button_surface(crate::ui::geometry::Rect{x:x as i32,y:y as i32,
+            width:width as u32,height:height as u32},primary,0,false,self.ui_scale());
         self.ui_text_centered_strong(x,width,y+height.saturating_sub(UI_FONT_CELL_HEIGHT)/2,label,236,248,255,1);
     }
 

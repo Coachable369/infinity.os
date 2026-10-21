@@ -8,8 +8,10 @@ owns their pixels, typography, input routing, window chrome, and active theme.
 
 - Use standard native window chrome and the existing resizable edge affordances.
 - Default logical canvas: 480 × 420 units; supported range: 320–960 × 240–720.
-- Surface: smoked navy glass from the active theme, with the standard soft cyan
-  outline and 10-unit corner radius.
+- Surface: the shared Eclipse Precision rectangular window substrate, integrated
+  bold L corners, and active/inactive frame. The desktop compositor owns the
+  outer pixels for native C, Python/Tk, and built-in apps on every repaint.
+  Applications cannot select a separate outer radius, outline, or frame state.
 - Toolbar caption: `NATIVE C / INFINITY UI KIT` in the compact UI role.
 - Content follows the 8-unit spacing rhythm. A calculator uses 20-unit outer
   margins, a 72-unit display, and 56-unit buttons separated by 12 units.

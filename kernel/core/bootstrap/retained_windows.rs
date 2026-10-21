@@ -5,6 +5,33 @@ const PIXELS: usize = 2560 * 1600;
 const SCRATCH_PIXELS: usize = 3840 * 2160;
 // Six ordinary shell slots plus one persistent surface per navigator instance.
 const SLOTS: usize = 13;
+static mut DIRECT_PAINT: bool = false;
+
+struct DirectPaint { previous: bool }
+impl DirectPaint {
+    // ------------------------=
+    // FUNC: enter
+    // DESC: Marks the serialized UI painter as uncached without changing framebuffer alpha semantics.
+    // ------------------=
+    fn enter() -> Self {
+        unsafe { Self { previous: core::mem::replace(&mut *(&raw mut DIRECT_PAINT),true) } }
+    }
+}
+impl Drop for DirectPaint {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Restores nested direct-paint state on normal return and host-test panic unwinding.
+    // ------------------=
+    fn drop(&mut self) { unsafe { DIRECT_PAINT=self.previous; } }
+}
+
+// ------------------------=
+// FUNC: application_paint_active
+// DESC: Prevents application cache-entry recursion when large surfaces must paint directly instead of recording retained pixels.
+// ------------------=
+pub(super) fn application_paint_active(recording: bool) -> bool {
+    recording || unsafe { DIRECT_PAINT }
+}
 
 // ------------------------=
 // FUNC: invalidate_revision
@@ -107,6 +134,36 @@ pub(super) fn over(source: u32, destination: u32) -> u32 {
 }
 
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: retained_application_window
+    // DESC: Presents an application surface and reapplies OS-owned chrome on every full, cached, clipped and fallback repaint.
+    // ------------------=
+    pub(super) fn retained_application_window(
+        &mut self,
+        slot: usize,
+        bounds: (i32, i32, usize, usize),
+        active: bool,
+        paint: impl FnOnce(&mut Self),
+    ) {
+        self.retained_window_at(slot, bounds, |target| {
+            let previous=target.render_clip;
+            // A retained surface is painted at a recoverable nonnegative source
+            // origin; signed translation/cropping is applied during composition.
+            let x=if target.recording_surface {bounds.0.max(0)}else{bounds.0};
+            let y=if target.recording_surface {bounds.1.max(0)}else{bounds.1};
+            let right=(i64::from(x)+bounds.2 as i64).clamp(0,target.width as i64) as usize;
+            let bottom=(i64::from(y)+bounds.3 as i64).clamp(0,target.height as i64) as usize;
+            let left=x.max(0) as usize;let top=y.max(0) as usize;
+            target.intersect_render_clip(left,top,right.saturating_sub(left),bottom.saturating_sub(top));
+            paint(target);
+            target.render_clip=previous;
+        });
+        self.precision_window_frame_opacity(
+            crate::ui::geometry::Rect { x: bounds.0, y: bounds.1,
+                width: bounds.2 as u32, height: bounds.3 as u32 },
+            active, self.ui_scale(), crate::ui::desktop_effects::opacity());
+    }
+
     // ------------------------=
     // FUNC: spatial_surface
     // DESC: Bilinearly scales a premultiplied retained surface into a clipped destination without application paint work.
@@ -223,6 +280,7 @@ impl DisplayDevice {
         let crop_y=signed_bounds.1.saturating_neg().max(0) as usize;
         let bounds=(signed_bounds.0.max(0) as usize,signed_bounds.1.max(0) as usize,signed_bounds.2,signed_bounds.3);
         if self.recording_surface || slot >= SLOTS || self.stride * self.height > SCRATCH_PIXELS {
+            let _direct=DirectPaint::enter();
             paint(self);
             return;
         }
@@ -241,6 +299,7 @@ impl DisplayDevice {
             return;
         }
         if width.saturating_mul(height) > PIXELS {
+            let _direct=DirectPaint::enter();
             paint(self);
             return;
         }

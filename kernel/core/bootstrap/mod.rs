@@ -9,6 +9,7 @@ mod access_style;
 mod access_scale;
 mod access_panel;
 mod access_view;
+mod access_input_view;
 mod panel_view;
 mod ai_widget_view;
 mod file_preview_view;
@@ -35,6 +36,7 @@ mod font_library_view;
 mod retained_windows;
 mod template_compositor;
 mod template_font;
+mod template_text_view;
 mod window_chrome;
 
 use self::primitives::*;

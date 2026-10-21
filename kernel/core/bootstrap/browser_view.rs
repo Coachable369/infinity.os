@@ -51,7 +51,7 @@ impl DisplayDevice {
         let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
         let tab_count=if view.welcome_open {1}else{view.tab_count};
         let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(tab_count).with_favorites(view.settings.favorites)) else {return;};
-        if !self.recording_surface {
+        if !super::retained_windows::application_paint_active(self.recording_surface) {
             unsafe {
                 if REVISION!=Some(view.revision) && infinity_browser_core::damage::chrome_only(PAGE_KEY,view.page_key()) {
                     super::retained_windows::invalidate_region(12,super::PresentRegion {
@@ -61,8 +61,10 @@ impl DisplayDevice {
                 } else {super::retained_windows::invalidate_revision(12,&mut *(&raw mut REVISION),Some(view.revision));}
                 PAGE_KEY=Some(view.page_key());
             }
-            self.retained_window(12,(window.x.max(0) as usize,window.y.max(0) as usize,
-                window.width as usize,window.height as usize),|display|display.browser_window(state));
+            self.retained_application_window(12,(window.x,window.y,
+                window.width as usize,window.height as usize),
+                crate::ui::desktop_stack::current().active==5,|display|display.browser_window(
+                    DesktopAppWindowState{x:state.x.max(0),..state}));
             return;
         }
         let left=window.x.max(0) as usize;let top=window.y.max(0) as usize;

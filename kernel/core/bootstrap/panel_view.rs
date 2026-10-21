@@ -16,7 +16,7 @@ impl DisplayDevice {
         let Some(clip)=self.clipped_render_region(left,top,right-left,bottom-top) else{return;};
         let width=rect.width as usize; let height=rect.height as usize;
         let rim=if kind==Surface::Frame {panel_recipe::rim_width(kind,material.scale)}
-            else if material.opacity==0 && matches!(kind,Surface::Panel|Surface::Field|Surface::Primary) {panel_recipe::rim_width(kind,material.scale)}
+            else if material.opacity==0 && matches!(kind,Surface::Panel|Surface::Field|Surface::Primary|Surface::Secondary) {panel_recipe::rim_width(kind,material.scale)}
             else {height.max(width)};
         for y in clip.top..clip.bottom {
             let row=(y as i32-rect.y) as usize;
@@ -39,10 +39,18 @@ impl DisplayDevice {
     // DESC: Enforces the same rectangular image-backed corners on every OS-owned application window after client composition.
     // ------------------=
     pub(super) fn precision_window_frame(&mut self,rect:Rect,active:bool,scale:usize) {
+        self.precision_window_frame_opacity(rect,active,scale,255);
+    }
+
+    // ------------------------=
+    // FUNC: precision_window_frame_opacity
+    // DESC: Composites the same frame during transient desktop fades without changing its shape or app-independent ownership.
+    // ------------------=
+    pub(super) fn precision_window_frame_opacity(&mut self,rect:Rect,active:bool,scale:usize,opacity:u8) {
         use crate::ui::skin::AccentSurface;
         let fill=self.active_accent_surface(AccentSurface::Widget);
         let edge=self.active_accent_surface(AccentSurface::WindowOutline);
         self.precision_surface(rect,Surface::Frame,Material{fill,edge,opacity:0,
-            edge_opacity:255,focus:if active {255}else{0},pressed:false,scale});
+            edge_opacity:opacity,focus:if active {255}else{0},pressed:false,scale});
     }
 }
