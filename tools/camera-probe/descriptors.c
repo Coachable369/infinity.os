@@ -4,6 +4,8 @@
 #undef efi_main
 #include "uvc_transport.h"
 static uint8_t camera_probe_reply[26];
+/* Diagnostic counters contain no frame content or host pointers. */
+static uint64_t camera_transfers[8];
 
 // ------------------------=
 // FUNC: camera_control
@@ -26,6 +28,17 @@ static int camera_bulk(void *context, uint8_t *data, size_t *length, unsigned ti
     typedef EFI_STATUS (EFIAPI *Bulk)(EFI_USB_IO_PROTOCOL *,uint8_t,void *,size_t *,size_t,uint32_t *);
     uint32_t result=0;
     EFI_STATUS status=((Bulk)usb->bulk_transfer)(usb,0x82,data,length,timeout,&result);
+    ++camera_transfers[0];
+    camera_transfers[1]=status;
+    camera_transfers[2]=result;
+    camera_transfers[3]=*length;
+    if(status==EFI_SUCCESS && !result) {
+        ++camera_transfers[4];
+        camera_transfers[5]+=*length;
+    } else if(status==0x8000000000000012ULL) {
+        ++camera_transfers[6];
+        camera_transfers[7]+=*length;
+    }
     if(status==0x8000000000000012ULL) return 1;
     return status!=EFI_SUCCESS || result ? -1 : 0;
 }
@@ -156,6 +169,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
                 uint64_t report[6]={stream.state,stream.length,camera_milliseconds()-start,longest,calls,stream.payload_limit};
                 save_bytes(image,system,(CHAR16 *)L"\\capture.bin",report,sizeof(report));
                 save_bytes(image,system,(CHAR16 *)L"\\probe.bin",camera_probe_reply,sizeof(camera_probe_reply));
+                save_bytes(image,system,(CHAR16 *)L"\\usb.bin",camera_transfers,sizeof(camera_transfers));
                 if(stream.state==UVC_FRAME) save_bytes(image,system,(CHAR16 *)L"\\frame.jpg",frame,stream.length);
                 uvc_cancel(&stream);
                 system->boot_services->free_pool(handles);

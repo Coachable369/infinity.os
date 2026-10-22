@@ -1,12 +1,15 @@
 """Package the bounded firmware descriptor probe using the existing GPT builder."""
 import importlib.util
+import os
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("timer_disk", root / "tools/arm-capture-timer-probe/run.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-module.OUT = root / "build/camera-probe/gpt"
+module.OUT = Path(os.environ.get("INFINITY_CAMERA_OUTPUT", root / "builds/validation/camera/gpt")).resolve()
+if not module.OUT.is_relative_to(root / "builds/validation/camera"):
+    raise ValueError("Camera evidence must stay inside builds/validation/camera")
 module.OUT.mkdir(parents=True, exist_ok=True)
 # The reused disk builder copies a kernel companion. This diagnostic never
 # executes it: the EFI application reads descriptors and returns to firmware.

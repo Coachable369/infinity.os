@@ -1,6 +1,7 @@
 """Inspect actual guest descriptor artifacts; never supplies capture or recognition."""
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 
@@ -62,7 +63,7 @@ def inspect(device, config):
 # DESC: Checks actual descriptor structure and malformed inputs, then writes a machine-readable evidence report.
 # ------------------=
 def main():
-    root = Path(__file__).resolve().parents[2] / "build/camera-probe"
+    root = Path(sys.argv[1]) if len(sys.argv)>1 else Path(__file__).resolve().parents[2] / "builds/validation/camera/gpt"
     device = (root / "device.bin").read_bytes()
     config = (root / "config.bin").read_bytes()
     result = inspect(device, config)

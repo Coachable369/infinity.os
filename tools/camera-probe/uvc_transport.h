@@ -18,7 +18,7 @@ typedef struct {
     UvcState state;
     size_t length, payload_limit;
     uint64_t deadline_ms;
-    uint8_t fid, synchronized;
+    uint8_t fid, synchronized, discarding;
 } UvcStream;
 
 // ------------------------=
@@ -33,7 +33,7 @@ static uint32_t uvc_u32(const uint8_t *p) {
 // DESC: Invalidates queued frame data immediately; no further USB calls are issued.
 // ------------------=
 static void uvc_cancel(UvcStream *s) {
-    s->length=0; s->synchronized=0; s->state=UVC_CANCELLED;
+    s->length=0; s->synchronized=0; s->discarding=0; s->state=UVC_CANCELLED;
 }
 // ------------------------=
 // FUNC: uvc_start
@@ -65,13 +65,23 @@ static UvcState uvc_step(UvcStream *s, UvcIo io, uint64_t now_ms, int cancelled,
     if(now_ms>=s->deadline_ms) {s->length=0; return s->state=UVC_TIMEOUT;}
     size_t n=s->payload_limit;
     int result=io.bulk(io.context,payload,&n,10);
-    if(result==1) return s->state;
+    if(result==1) {
+        /* A timed-out USB request may already have consumed bytes. Even if the
+         * firmware reports zero bytes, do not splice a damaged frame together.
+         * Retain FID solely to discard the rest of that frame until it changes. */
+        s->length=0;
+        s->discarding=s->synchronized;
+        return s->state;
+    }
     if(result) {s->length=0; return s->state=UVC_DISCONNECTED;}
     if(n<2 || n>s->payload_limit || payload[0]<2 || payload[0]>n || (payload[1]&0x40)) {
         s->length=0; return s->state=UVC_PROTOCOL_ERROR;
     }
     uint8_t fid=payload[1]&1;
-    if(!s->synchronized || fid!=s->fid) { s->length=0; s->fid=fid; s->synchronized=1; }
+    if(!s->synchronized || fid!=s->fid) {
+        s->length=0; s->fid=fid; s->synchronized=1; s->discarding=0;
+    }
+    if(s->discarding) return s->state;
     size_t bytes=n-payload[0];
     if(bytes>UVC_FRAME_LIMIT-s->length) {s->length=0; return s->state=UVC_PROTOCOL_ERROR;}
     for(size_t i=0;i<bytes;++i) frame[s->length+i]=payload[payload[0]+i];

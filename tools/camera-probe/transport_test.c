@@ -47,5 +47,13 @@ int main(void) {
     assert(uvc_step(&s,io,20,0,payload,frame)==UVC_PROTOCOL_ERROR && s.length==0);
     assert(uvc_start(&s,io,0)==UVC_RUNNING); flags=0; s.length=UVC_FRAME_LIMIT;s.synchronized=1;
     assert(uvc_step(&s,io,0,0,payload,frame)==UVC_PROTOCOL_ERROR && s.length==0);
+    assert(uvc_start(&s,io,0)==UVC_RUNNING); flags=0;
+    assert(uvc_step(&s,io,0,0,payload,frame)==UVC_RUNNING && s.length==4);
+    bulk_result=1;
+    assert(uvc_step(&s,io,10,0,payload,frame)==UVC_RUNNING && s.length==0);
+    bulk_result=0; flags=2;
+    assert(uvc_step(&s,io,20,0,payload,frame)==UVC_RUNNING && s.length==0);
+    flags=3;
+    assert(uvc_step(&s,io,30,0,payload,frame)==UVC_FRAME && s.length==4);
     return 0;
 }
