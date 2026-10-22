@@ -125,6 +125,8 @@ mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
 # Preserve the exact current live kernel before the consumptive staging copy
 # transfers and removes the live tree.
 cp "${payload_build}/live/EFI/INFINITY/KERNEL.ELF" "${payload_build}/current-live-kernel.elf"
+python3 tools/native-compiler-parity-test.py --arch "$arch" \
+    --live-kernel "${payload_build}/current-live-kernel.elf" --installed-kernel "$installed_kernel"
 python3 tools/iso-staging.py consume "${payload_build}/live" "${payload_build}/iso/efi.img"
 # The ISO's EFI image now owns the live payload. Release this private mktemp
 # duplicate before allocating the final ISO alongside the previous release,

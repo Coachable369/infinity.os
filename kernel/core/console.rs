@@ -11684,12 +11684,14 @@ impl ConsoleRuntime {
     // DESC: Implements the execute runtime command operation.
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if command==b"camera build" {
             let started=compiler_commands::camera_build(self).is_ok();
             self.output.write_line(if started {b"Building isolated capture client. After compilation: camera allow, then run the reported executable."}
                 else {b"Cannot start camera client compilation: authenticate and ensure the compiler is idle and available."});
             return true;
         }
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if command==b"camera allow" || command==b"camera stop" {
             let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
             if command==b"camera stop" {crate::drivers::camera::cancel(owner);self.output.write_line(b"Camera permission revoked; transport shutdown requested.");}

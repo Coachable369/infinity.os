@@ -74,8 +74,9 @@ The full release build at revision 9c1bb7ab failed in the unrelated existing
 configuration-wizard painter check (`tools/configuration-wizard-render.rs:561`,
 PrimaryButton pixel validation). Manifest:
 `builds/manifests/20261022T201830765060Z-61051.json`.
-Do not represent the existing ISOs as updated camera releases. Per user direction,
-that unrelated UI failure is outside the current camera work.
+Per user direction, that unrelated UI failure is outside the current camera work.
+Subsequent incremental, tests-skipped camera ISOs succeeded as recorded below.
+They are not full-release or facial-authentication acceptance evidence.
 
 ## Installed integration first pass
 
@@ -96,7 +97,7 @@ the sensor is powered down; that still requires installed observation.
 No untrusted user address reaches firmware. Reads copy a maximum 4096 bytes
 through checked application page tables. One frame slot, bounded scratch and
 three reconnect attempts prevent unbounded queues. Buffers total approximately
-3.58 MiB plus 64 KiB packet scratch, allocated statically.
+3.52 MiB plus 64 KiB packet scratch, allocated statically.
 
 Manual installed entrypoints, after installing updated media:
 1. `camera build` compiles bundled `sdk/c/examples/camera_capture.c` through the
@@ -111,3 +112,50 @@ The header and client source are embedded in both live/installed kernels and
 included in the compiler artifact parity assertion. x86_64 compiles the shared
 code but returns unavailable; a native x86 USB backend remains missing.
 No automated end-to-end runs were performed during this implementation pass.
+
+Compile-only evidence (not installed-runtime acceptance):
+- ARM64 kernel: `builds/manifests/20261022T215934957002Z-50226.json`.
+- x86_64 kernel: `builds/manifests/20261022T220108605456Z-50320.json`.
+- ARM firmware adapter: `builds/manifests/20261022T215747044188Z-49900.json`.
+- Isolated C client, both targets: `builds/manifests/20261022T215707699444Z-49843.json`.
+
+Implementation commit: `d8501ecb`. Subsequent ISO packaging includes final source
+and reports its own build manifest. Packaging is not evidence of real installed
+camera capture, disconnect recovery, sensor shutdown or desktop frame times.
+
+Manual acceptance remains outstanding:
+- Install, detach ISO, reboot, then build/run the client from the installed OS.
+- Run without `camera allow`: permission must be denied, not implicitly granted.
+- Grant and run: obtain a nonempty sequence-consistent JPEG result; this client
+  reports bytes/checksum, not a decoded preview or a face match.
+- Press Ctrl+C, lock, close the owning Command Window, or let the five-second deadline
+  expire: delivery must stop. Observe the physical camera indicator separately.
+- Disconnect during capture, reconnect, and try a fresh grant. Record failures;
+  do not interpret Faulted or a zero-byte result as successful recovery.
+- Drag a window and type while capturing; record visible stalls and frame times.
+- Reboot again and confirm ordinary password login still works. Facial login,
+  enrollment and recognition must not be advertised as enabled.
+
+## Updated manual-test media
+
+Incremental ARM-first, both-target packaging completed using
+`./build-kit incremental --skip-tests --target all`.
+Manifest: `builds/manifests/20261022T221248697082Z-54665.json`.
+This is not a full release build. Broad regression and installed runtime testing
+were deferred as requested.
+
+| ISO | SHA-256 |
+| --- | --- |
+| `builds/InfinityOS-aarch64.iso` | `d2ff85204bfb89b46a03322283d29176f2e97a8b6013b4077062c0c27f65c2b3` |
+| `builds/InfinityOS-x86_64.iso` | `eb0034650356d63ea36e3cc1f666ef7a8243175f79cee469aaa463b99cd4d53a` |
+
+Both packaging runs verified checksums and live/installed kernel payload parity.
+Camera SDK and capture source bytes were checked against the actual ARM ISO live
+kernel and its installed kernel (manifest
+`builds/manifests/20261022T223338826446Z-61733.json`). The x86 packaging run checked
+the exact live and installed input kernels before ISO staging. Artifact records
+are in `builds/validation/native-apps/compiler-parity-{aarch64,x86_64}.json`.
+These are packaging assertions, not behavioral camera proof.
+
+Optional-feature compile guards added after packaging do not change the default
+native-compiler-enabled ISO behavior. No VM was reinstalled or updated by this run.
