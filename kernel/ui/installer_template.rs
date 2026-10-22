@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 9;
+const FORMAT_VERSION: u16 = 10;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -48,6 +48,7 @@ pub enum InstallerTemplateRole {
     SettingsDetailSurface = 36,
     SettingsSliderTrack = 37,
     SettingsSliderThumb = 38,
+    SceneBackground = 39,
 }
 
 // ------------------------=
@@ -132,6 +133,7 @@ pub const fn settings_action_for_row(section: usize, row: usize) -> Option<Setti
 // ------------------=
 pub const fn template_image_uses_aspect_fill(role: u8) -> bool {
     role == InstallerTemplateRole::Masthead as u8
+        || role == InstallerTemplateRole::SceneBackground as u8
         || role == InstallerTemplateRole::TimeZoneMap as u8
 }
 
@@ -231,6 +233,7 @@ pub enum InstallerTemplateError {
 #[derive(Clone, Copy)]
 pub struct InstallerTemplate<'a> {
     data: &'a [u8],
+    pub version: u16,
     screen_count: u16,
     asset_count: u16,
 }
@@ -265,7 +268,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::InvalidHeader);
         }
         let version = reader.u16()?;
-        if version != FORMAT_VERSION && version != 8 && version != 7 && version != 6 {
+        if version != FORMAT_VERSION && version != 9 && version != 8 && version != 7 && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -408,7 +411,7 @@ impl<'a> InstallerTemplate<'a> {
                     || section_count != 1
                     || row_count != expected_settings_rows
                     || settings_navigation_count != 11
-                    || settings_icon_count != 11
+                    || (if version >= 10 { settings_icon_count > 11 } else { settings_icon_count != 11 })
                     || settings_label_count != 11
                     || settings_artwork_count > 1
                     || (screen == 7
@@ -472,6 +475,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::TrailingData);
         }
         Ok(Self {
+            version,
             data,
             screen_count,
             asset_count,
@@ -781,7 +785,8 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::SettingsSliderThumb as u8
+            || role > InstallerTemplateRole::SceneBackground as u8
+            || (role == InstallerTemplateRole::SceneBackground as u8 && (kind != 2 || self.version < 10))
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)

@@ -78,6 +78,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case settingsDetailSurface = 36
     case settingsSliderTrack = 37
     case settingsSliderThumb = 38
+    case sceneBackground = 39
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -121,6 +122,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .settingsDetailSurface: "Settings Detail Surface"
         case .settingsSliderTrack: "Settings Slider Track"
         case .settingsSliderThumb: "Settings Slider Thumb"
+        case .sceneBackground: "Scene Background"
         }
     }
 
@@ -129,7 +131,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     // DESC: Matches runtime image fitting so wallpaper and maps fill while ordinary artwork stays wholly visible.
     // ------------------=
     var imageUsesAspectFill: Bool {
-        self == .masthead || self == .timeZoneMap
+        self == .masthead || self == .timeZoneMap || self == .sceneBackground
     }
 
     // ------------------------=
@@ -338,7 +340,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         if self == .systemSettings {
             if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID).count }
             if SettingsChildContract.roles.contains(role) { return SettingsChildContract.rows(role: role, screenID: screenID).count }
-            if [.settingsNavigationItem, .settingsNavigationIcon, .settingsNavigationLabel]
+            if [.settingsNavigationItem, .settingsNavigationLabel]
                 .contains(role) { return 11 }
             let rowCounts = [5, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
             let rowCount = rowCounts[screenID.clamped(to: 1...11) - 1]
@@ -353,7 +355,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
             return [.masthead, .console, .content, .title, .body, .sectionLabel]
                 .contains(role) ? 1 : 0
         }
-        if [.masthead, .console, .content, .title, .body, .backButton, .primaryButton, .footer]
+        if [.console, .content, .title, .body, .backButton, .primaryButton, .footer]
             .contains(role)
         {
             return 1
@@ -362,10 +364,10 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         case .installation where [3, 4, 6, 10].contains(screenID):
             return role == .liveDetails ? 1 : 0
         case .installation where screenID == 5:
-            return [.dateField, .timeField, .timeZoneSelector, .offsetBadge, .timeZoneMap]
+            return [.dateField, .timeField, .timeZoneSelector, .offsetBadge]
                 .contains(role) ? 1 : 0
         case .installation where screenID == 8:
-            return [.progressBar, .progressHero].contains(role) ? 1 : 0
+            return role == .progressBar ? 1 : 0
         case .configuration:
             if role == .input { return 1 }
             if role == .progressSegment { return 8 }
@@ -381,6 +383,9 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
+        if role == .sceneBackground { return self == .installation ? 1 : 0 }
+        if role == .settingsNavigationIcon { return self == .systemSettings ? 11 : 0 }
+        if [.masthead, .progressHero, .timeZoneMap].contains(role) { return 1 }
         if role.isSettingsChild {
             return self == .systemSettings ? SettingsChildContract.rows(role: role, screenID: screenID).count : 0
         }
@@ -688,6 +693,9 @@ struct InstallerStudioDocument: Codable, Hashable {
     var canvasWidth: Int
     var canvasHeight: Int
     var screens: [InstallerScreenTemplate]
+    // A persisted migration marker prevents a deliberately deleted background
+    // from being silently restored the next time the document is opened.
+    var explicitInstallerBackground: Bool? = nil
 
     // ------------------------=
     // FUNC: factoryDefault
@@ -743,6 +751,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             canvasHeight: 1000,
             screens: screens
         )
+        .withEditableInstallerBackground()
     }
 
     // ------------------------=
@@ -1636,7 +1645,7 @@ struct InstallerStudioDocument: Codable, Hashable {
     // DESC: Adds missing runtime details and progress layers without replacing existing authored geometry or hidden states.
     // ------------------=
     func migratedForInstallerRuntimeParity() -> InstallerStudioDocument {
-        var result = self
+        var result = withEditableInstallerBackground()
         for index in result.screens.indices {
             if !result.screens[index].elements.contains(where: { $0.role == .liveDetails }),
                let details = Self.liveDetailsElement(screenID: result.screens[index].id) {
@@ -1647,7 +1656,7 @@ struct InstallerStudioDocument: Codable, Hashable {
               let factoryScreen = Self.factoryDefault().screens.first(where: { $0.id == 8 })
         else { return result }
         let missingProgress = !result.screens[screenIndex].elements.contains { $0.role == .progressBar }
-        let missingHero = !result.screens[screenIndex].elements.contains { $0.role == .progressHero }
+        let missingHero = explicitInstallerBackground != true && !result.screens[screenIndex].elements.contains { $0.role == .progressHero }
         guard missingProgress || missingHero else { return result }
         for index in result.screens[screenIndex].elements.indices {
             switch result.screens[screenIndex].elements[index].role {
@@ -1663,10 +1672,37 @@ struct InstallerStudioDocument: Codable, Hashable {
             }
         }
         for role in [StudioElementRole.progressHero, .progressBar]
-            where !result.screens[screenIndex].elements.contains(where: { $0.role == role }) {
+            where (role != .progressHero || missingHero) && !result.screens[screenIndex].elements.contains(where: { $0.role == role }) {
             if let required = factoryScreen.elements.first(where: { $0.role == role }) {
                 result.screens[screenIndex].elements.append(required)
             }
+        }
+        return result
+    }
+
+    // ------------------------=
+    // FUNC: withEditableInstallerBackground
+    // DESC: Exposes the previously implicit wallpaper once without overwriting authored layers or resurrecting deleted backgrounds.
+    // ------------------=
+    func withEditableInstallerBackground() -> InstallerStudioDocument {
+        guard explicitInstallerBackground != true else { return self }
+        var result = self
+        result.explicitInstallerBackground = true
+        for index in result.screens.indices {
+            guard !result.screens[index].elements.contains(where: { $0.role == .sceneBackground }) else { continue }
+            var background = StudioElement.make(name: "Installer Background (includes logo)", kind: .image,
+                role: .sceneBackground, frame: .artboard,
+                imageAsset: "assets/boot/infinity-installer-background-v2.png", zIndex: Int(Int16.min))
+            var slot = 101
+            while result.screens[index].elements.contains(where: { $0.id == Self.factoryElementID(screen: result.screens[index].id, element: slot) }) { slot += 1 }
+            background.id = Self.factoryElementID(screen: result.screens[index].id, element: slot)
+            var identifier = "installerBackground"
+            var suffix = 1
+            while result.screens[index].elements.contains(where: { $0.codeIdentifier == identifier }) {
+                identifier = "installerBackground.\(suffix)"; suffix += 1
+            }
+            background.codeIdentifier = identifier
+            result.screens[index].elements.insert(background, at: 0)
         }
         return result
     }

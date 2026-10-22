@@ -176,6 +176,12 @@ impl DisplayDevice {
         let Some(count) = template.element_count(screen) else {
             return false;
         };
+        // V10 installer scenes own all background pixels, including when their
+        // editable background image is hidden or removed. Never reveal a second
+        // implicit brand image underneath transparent authored layers.
+        if full_scene && !configuration && !settings && template.version >= 10 {
+            self.fill_rect(0, 0, self.width, self.height, 0, 0, 0);
+        }
         let mut progress_index=0usize;
         for index in 0..count {
             let Some(element) = template.layer_at(screen, index) else {
@@ -529,6 +535,11 @@ impl DisplayDevice {
             let packaged=crate::studio_native_render::asset_override(name).or(packaged);
             let bitmap = if let Some(bitmap) = packaged {
                 bitmap
+            } else if name.ends_with(b"infinity-installer-background-v2.png") {
+                #[cfg(any(feature = "installer", studio_native_preview))]
+                { include_bytes!("../../../assets/boot/infinity-installer-background-v2.bmp") }
+                #[cfg(not(any(feature = "installer", studio_native_preview)))]
+                { &[] }
             } else if name.ends_with(b"infinity-installer-masthead-v2.png") {
                 INSTALLER_MASTHEAD_BMP
             } else if name.ends_with(b"infinity-installer-masthead-v1.png") {

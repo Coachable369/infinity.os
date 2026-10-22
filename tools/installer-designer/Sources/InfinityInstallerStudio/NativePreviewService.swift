@@ -137,7 +137,11 @@ struct NativePreviewSnapshot: Equatable, Sendable {
             replacementSources[replacement.target] = replacement.source
         }
         for target in replacementSources.keys.sorted() {
-            assets.append(NativePreviewAsset(names: [target],
+            var names = [target]
+            if store.selectedCollection == .installation && (target == backgroundPath || target == masterPath) {
+                names = [backgroundPath, masterPath]
+            }
+            assets.append(NativePreviewAsset(names: names,
                 bytes: try NativePreviewBitmapCache.read(UIKitAssetCatalog.resolvedURL(replacementSources[target]!, root: root))))
         }
         return Self(projectRoot: root, template: try RuntimeTemplateCodec.encode(document, assetRoot: root, collection: store.selectedCollection, theme: store.uiKit.document),

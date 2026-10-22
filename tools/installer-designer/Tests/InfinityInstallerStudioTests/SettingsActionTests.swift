@@ -89,7 +89,7 @@ final class SettingsActionTests: XCTestCase {
         document.screens[3].elements[action].captionColor = StudioColor(red: 231, green: 173, blue: 120, alpha: 142)
         document.screens[3].elements[action].frame = CanvasRect(x: 400, y: 500, width: 480, height: 350)
         let bytes = try RuntimeTemplateCodec.encode(document, collection: .systemSettings)
-        XCTAssertEqual(Array(bytes[4...5]), [9, 0])
+        XCTAssertEqual(Array(bytes[4...5]), [10, 0])
         XCTAssertEqual(try RuntimeTemplateCodec.decode(bytes, collection: .systemSettings), document)
         XCTAssertEqual(try JSONDecoder().decode(InstallerStudioDocument.self, from: JSONEncoder().encode(document)), document)
         let defaults = InstallerStudioDocument.factorySystemSettings()

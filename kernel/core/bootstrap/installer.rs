@@ -165,10 +165,9 @@ impl super::DisplayDevice {
         // A step transition is infrequent; restore the complete scene so the
         // invariant frame and masthead never inherit pixels from another step.
         self.paint_installer_background();
-        if matches!(screen, 8 | 9)
-            && crate::ui::installer_template::InstallerTemplate::parse(
+        if crate::ui::installer_template::InstallerTemplate::parse(
                 crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,
-            ).is_ok()
+            ).is_ok_and(|template| template.element_count(screen).is_some())
         {
             return;
         }

@@ -22,6 +22,9 @@ struct CanvasRuntimeBackdrop: View {
     // DESC: Includes unsaved UIKit replacements for the runtime background while leaving authored template layers unchanged.
     // ------------------=
     static func image(store: TemplateStore) -> NSImage? {
+        if store.selectedCollection == .installation && store.document.explicitInstallerBackground == true {
+            return nil
+        }
         let path = assetPath(for: store.selectedCollection)
         if let asset = store.uiKit.assets.first(where: { $0.target == path }),
            let image = store.uiKit.previewImage(for: asset) { return image }

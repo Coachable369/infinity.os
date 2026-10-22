@@ -39,6 +39,17 @@ Settings screen, select a layer and use **Appearance → Surface / Corners** for
 an individual override. Explicit layer colors take precedence over global tints.
 Unlock protected layers before editing; required actions cannot be deleted.
 
+Decorative images are optional: installer/configuration mastheads, installer
+backgrounds, progress illustrations, timezone maps, and Settings navigation icons
+can be removed after unlocking them. Functional navigation remains protected.
+Installer scenes use IUIT v10 and expose the previously implicit wallpaper as
+**Installer Background (includes logo)**. This image contains baked-in artwork;
+replace the image to change that artwork, or delete the layer to remove it.
+Deleted backgrounds and illustrations stay deleted after save/reopen. The native
+renderer no longer paints a second hidden masthead behind authored scenes.
+Older kernels require an updated kernel before accepting v10 templates; use the
+Studio ISO injection workflow rather than copying the template alone.
+
 **Themes** saves named combinations of colors, materials, geometry and artwork.
 Eclipse Precision, Frosted Glass and Matte are protected presets. Save the current
 draft as a new theme, duplicate a saved theme, update or rename a custom theme,

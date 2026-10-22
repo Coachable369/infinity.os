@@ -134,7 +134,9 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         XCTAssertEqual(try RuntimeTemplateCodec.decode(encoded), document)
         let saved = try JSONEncoder().encode(document)
         XCTAssertEqual(try JSONDecoder().decode(InstallerStudioDocument.self, from: saved), document)
-        let defaults = InstallerStudioDocument.factoryDefault()
+        var defaults = InstallerStudioDocument.factoryDefault()
+        defaults.explicitInstallerBackground = nil
+        for index in defaults.screens.indices { defaults.screens[index].elements.removeAll { $0.role == .sceneBackground } }
         let legacy = try SettingsActionFixtures.legacyBytes(defaults, version: 6)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(legacy), defaults)
     }
@@ -324,6 +326,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------=
     func testLegacyInstallingScreenMigratesWithoutReplacingOtherScreens() {
         var document = InstallerStudioDocument.factoryDefault()
+        document.explicitInstallerBackground = nil
         document.screens[0].elements[1].frame.x = 73
         document.screens[7].elements.removeAll { $0.role == .progressBar || $0.role == .progressHero }
         if let content = document.screens[7].elements.firstIndex(where: { $0.role == .content }) {
@@ -1105,6 +1108,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     @MainActor
     func testScreenLifecyclePreservesOrderAndProtectedControls() throws {
         let store = TemplateStore()
+        store.document = .factoryDefault()
         store.selectScreen(3)
         store.addScreen()
         XCTAssertEqual(store.document.screens.count, 12)

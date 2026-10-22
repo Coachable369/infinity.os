@@ -59,7 +59,7 @@ enum TemplateValidator {
             }
             for role in StudioElementRole.allCases {
                 let required = collection?.requiredRoleCount(role, screenID: screen.id)
-                    ?? ([StudioElementRole.masthead, .console, .content, .title, .body,
+                    ?? ([StudioElementRole.console, .content, .title, .body,
                          .backButton, .primaryButton, .footer].contains(role) ? 1 : 0)
                 let count = screen.elements.filter { $0.role == role }.count
                 guard count >= required else {
@@ -80,6 +80,9 @@ enum TemplateValidator {
                         "Required \(role.title) structure is duplicated"
                     )
                 }
+            }
+            if screen.elements.contains(where: { $0.role == .sceneBackground && $0.kind != .image }) {
+                throw TemplateValidationIssue.invalidScreen(screen.id, "Scene background must be an image")
             }
             if collection != .systemSettings {
                 guard back.count == 1, primary.count == 1 else {
@@ -196,7 +199,7 @@ enum RuntimeTemplateCodec {
         let assets: [String: Data]
     }
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 9
+    static let version: UInt16 = 10
     static let maximumAssetCount = 128
     static let maximumTemplateBytes = 512 * 1024 * 1024
 
@@ -323,7 +326,7 @@ enum RuntimeTemplateCodec {
     // DESC: Identifies artwork already compiled once into both installer and installed kernels.
     // ------------------=
     private static func isBuiltInImage(_ name: String) -> Bool {
-        let boot = ["infinity-installer-masthead-v2.png", "infinity-installer-masthead-v1.png",
+        let boot = ["infinity-installer-background-v2.png", "infinity-installer-masthead-v2.png", "infinity-installer-masthead-v1.png",
                     "infinity-eclipse-header-v1.bmp", "infinity-time-zone-map-v1.png",
                     "infinity-installer-progress-hero-v1.png"]
         return boot.contains(name) || boot.contains(where: { name == "assets/boot/" + $0 })
@@ -360,7 +363,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard [6, 7, 8, version].contains(sourceVersion) else {
+        guard [6, 7, 8, 9, version].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -384,6 +387,9 @@ enum RuntimeTemplateCodec {
                 }
                 guard sourceVersion >= 9 || !SettingsChildContract.roles.contains(role) else {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Settings descriptions and slider layers require native template version 9")
+                }
+                guard role != .sceneBackground || (sourceVersion >= 10 && kind == .image) else {
+                    throw TemplateValidationIssue.invalidScreen(screenID, "Scene backgrounds require a v10 image layer")
                 }
                 let flags = try reader.readUInt8()
                 guard flags & 0xc0 == 0,
@@ -485,6 +491,12 @@ enum RuntimeTemplateCodec {
             canvasHeight: 1000,
             screens: screens
         )
+        let decodedCollection = collection ?? (screens.contains(where: { $0.elements.contains(where: { $0.role == .settingsNavigationItem }) })
+            ? .systemSettings : screens.contains(where: { $0.elements.contains(where: { $0.role == .input }) })
+                ? .configuration : .installation)
+        if sourceVersion >= 10 && decodedCollection == .installation {
+            document.explicitInstallerBackground = true
+        }
         if sourceVersion < 9 && collection == .systemSettings {
             document = document.migratedForSettingsActions()
         }

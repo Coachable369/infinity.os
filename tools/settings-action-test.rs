@@ -60,7 +60,7 @@ fn word(bytes: &[u8], cursor: &mut usize) -> usize {
 // DESC: Locates serialized fields in the actual compiled Settings document for isolated authoring mutations.
 // ------------------=
 fn records(bytes: &[u8]) -> Vec<Record> {
-    assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 9);
+    assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 10);
     let mut cursor = 6;
     let screens = word(bytes, &mut cursor);
     let mut result = Vec::new();
