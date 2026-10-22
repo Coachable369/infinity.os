@@ -8,6 +8,16 @@ static uint8_t camera_probe_reply[26];
 static uint64_t camera_transfers[8];
 
 // ------------------------=
+// FUNC: camera_shutdown
+// DESC: Issues the bulk-UVC endpoint halt-clear shutdown request with a finite timeout; acknowledgement is not sensor-off proof.
+// ------------------=
+static EFI_STATUS camera_shutdown(EFI_USB_IO_PROTOCOL *usb, uint32_t *result) {
+    EFI_USB_DEVICE_REQUEST request={0x02,1,0,0x82,0};
+    *result=0;
+    return usb->control_transfer(usb,&request,2,10,NULL,0,result);
+}
+
+// ------------------------=
 // FUNC: camera_control
 // DESC: Sends only bounded UVC streaming control requests to interface one.
 // ------------------=
@@ -172,6 +182,13 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
                 save_bytes(image,system,(CHAR16 *)L"\\usb.bin",camera_transfers,sizeof(camera_transfers));
                 if(stream.state==UVC_FRAME) save_bytes(image,system,(CHAR16 *)L"\\frame.jpg",frame,stream.length);
                 uvc_cancel(&stream);
+                uint32_t stop_result=0;
+                uint64_t stop_begin=camera_milliseconds();
+                EFI_STATUS stop_status=camera_shutdown(usb,&stop_result);
+                uint64_t stop_report[3]={stop_status,stop_result,camera_milliseconds()-stop_begin};
+                save_bytes(image,system,(CHAR16 *)L"\\shutdown.bin",stop_report,sizeof(stop_report));
+                for(size_t i=0;i<sizeof(frame);++i) ((volatile uint8_t *)frame)[i]=0;
+                for(size_t i=0;i<sizeof(payload);++i) ((volatile uint8_t *)payload)[i]=0;
                 system->boot_services->free_pool(handles);
                 serial_write("CAMERA_DESCRIPTOR_PROBE_COMPLETE\n");
                 return EFI_SUCCESS;

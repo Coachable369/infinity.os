@@ -81,7 +81,7 @@ def main():
     if evidence["errors"]:
         raise RuntimeError(evidence["errors"])
     command("VBoxManage", "clonemedium", "disk", out / "probe.vdi", out / "evidence.raw", "--format", "RAW")
-    for name in ("device.bin", "config.bin", "capture.bin", "probe.bin", "usb.bin"):
+    for name in ("device.bin", "config.bin", "capture.bin", "probe.bin", "usb.bin", "shutdown.bin"):
         command("mcopy", "-i", str(out / "evidence.raw") + "@@1048576", "::/" + name, out / name)
     command("python3", "tools/camera-probe/inspect.py", out)
     result = command("python3", "tools/camera-probe/capture_report.py", out / "capture.bin")
