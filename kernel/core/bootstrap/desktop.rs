@@ -4483,7 +4483,7 @@ impl super::DisplayDevice {
                         4,
                     );
                 } else {
-                    self.paint_settings_basic_detail(focus,index,row.detail,scale,basic_state);
+                    self.paint_settings_basic_detail(focus,index,row.detail,scale,basic_state,settings_window);
                 }
             }
         }
