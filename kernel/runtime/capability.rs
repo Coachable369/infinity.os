@@ -84,6 +84,7 @@ pub enum CapabilityType {
     ComputeInspect,
     ComputeCancel,
     AcceleratorUse,
+    CameraCapture,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

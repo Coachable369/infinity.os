@@ -31,6 +31,10 @@ name = "audio-test"
 path = "../audio-test.rs"
 
 [[bin]]
+name = "camera-service-test"
+path = "../camera-service-test.rs"
+
+[[bin]]
 name = "hermes-native-test"
 path = "../hermes-native-test.rs"
 

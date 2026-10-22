@@ -3,6 +3,7 @@ pub use ai::clock as system_clock;
 #[cfg(feature="native-browser")]
 pub mod browser;
 pub mod audio;
+pub mod camera;
 pub mod capability;
 pub mod compute;
 pub mod compute_operator;
