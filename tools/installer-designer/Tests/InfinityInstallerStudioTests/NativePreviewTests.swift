@@ -38,6 +38,80 @@ private actor ControlledNativeRenderer: NativePreviewRunning {
 
 final class NativePreviewTests: XCTestCase {
     // ------------------------=
+    // FUNC: testConfigurationButtonCaptionColorAndAlphaStayIndependentFromSurface
+    // DESC: Verifies configuration caption RGB and alpha through native glyph pixels while preserving the button surface and all pixels outside its authored bounds.
+    // ------------------=
+    @MainActor func testConfigurationButtonCaptionColorAndAlphaStayIndependentFromSurface() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.configurationDocument = .factoryConfiguration()
+        store.selectScreenCollection(.configuration, screen: 1)
+        store.nativePreviewSimulation.enabled = false
+        store.nativePreviewState = .normal
+        let index = try XCTUnwrap(store.configurationDocument.screens[0].elements.firstIndex { $0.role == .primaryButton })
+        store.configurationDocument.screens[0].elements[index].text = "CAPTION"
+        store.configurationDocument.screens[0].elements[index].captionColor = .white
+        let element = store.configurationDocument.screens[0].elements[index]
+        XCTAssertFalse(element.hidden)
+        XCTAssertGreaterThan(element.opacity, 0)
+        let runner = NativePreviewRunner()
+        let white = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        store.configurationDocument.screens[0].elements[index].captionColor = StudioColor(red: 255, green: 0, blue: 0, alpha: 255)
+        let red = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        let whitePixels = [UInt8](white.pixels), redPixels = [UInt8](red.pixels)
+        let left = element.frame.x * white.width / 1000, top = element.frame.y * white.height / 1000
+        let right = left + element.frame.width * white.width / 1000
+        let bottom = top + element.frame.height * white.height / 1000
+        var changedPixels = 0, escapedPixels = 0, invalidChannels = 0
+        for offset in stride(from: 0, to: whitePixels.count, by: 4) {
+            guard whitePixels[offset..<(offset + 4)] != redPixels[offset..<(offset + 4)] else { continue }
+            changedPixels += 1
+            let pixel = offset / 4, x = pixel % white.width, y = pixel / white.width
+            if x < left || x >= right || y < top || y >= bottom { escapedPixels += 1 }
+            if redPixels[offset] != whitePixels[offset]
+                || redPixels[offset + 1] > whitePixels[offset + 1]
+                || redPixels[offset + 2] > whitePixels[offset + 2]
+                || redPixels[offset + 3] != whitePixels[offset + 3] { invalidChannels += 1 }
+        }
+        XCTAssertGreaterThan(changedPixels, 20)
+        XCTAssertEqual(escapedPixels, 0)
+        XCTAssertEqual(invalidChannels, 0)
+        store.configurationDocument.screens[0].elements[index].captionColor = StudioColor(red: 255, green: 0, blue: 0, alpha: 0)
+        let transparent = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        store.configurationDocument.screens[0].elements[index].captionColor = .white
+        store.configurationDocument.screens[0].elements[index].text = ""
+        let empty = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertEqual(transparent.pixels, empty.pixels)
+        XCTAssertNotEqual(white.pixels, transparent.pixels)
+        try saveProof(red, name: "native-configuration-caption-red")
+    }
+
+    // ------------------------=
+    // FUNC: testUnsimulatedSettingsDoesNotPaintDetailActionsInGlobalCanvas
+    // DESC: Confirms detail-local Settings actions never leak into the generic authoring canvas when native row simulation is disabled.
+    // ------------------=
+    @MainActor func testUnsimulatedSettingsDoesNotPaintDetailActionsInGlobalCanvas() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 4)
+        store.nativePreviewSimulation.enabled = false
+        let actions = try XCTUnwrap(store.selectedScreen).elements.filter { $0.role == .settingsRowAction }
+        XCTAssertFalse(actions.isEmpty)
+        XCTAssertTrue(actions.allSatisfy { !$0.hidden && $0.opacity > 0 })
+        let runner = NativePreviewRunner()
+        let snapshot = try NativePreviewSnapshot.capture(store, width: 1280, height: 800)
+        XCTAssertFalse(snapshot.simulation.enabled)
+        let baseline = try await runner.render(snapshot)
+        for screen in store.settingsDocument.screens.indices {
+            for element in store.settingsDocument.screens[screen].elements.indices
+                where store.settingsDocument.screens[screen].elements[element].role == .settingsRowAction {
+                store.settingsDocument.screens[screen].elements[element].hidden = true
+            }
+        }
+        let hidden = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertEqual(baseline.pixels, hidden.pixels)
+    }
+
+    // ------------------------=
     // FUNC: testNativeActionSelectionRevealsLastExpandedAIRow
     // DESC: Uses production scroll metadata to reveal the final AI action at two real viewport sizes without replaying native layout mathematics in Studio.
     // ------------------=

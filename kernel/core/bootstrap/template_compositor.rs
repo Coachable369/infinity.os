@@ -184,6 +184,11 @@ impl DisplayDevice {
             if element.hidden || element.opacity == 0 {
                 continue;
             }
+            // Detail-local children are painted only by the expanded Settings row.
+            // A template-only view has no parent detail geometry to resolve them.
+            if settings && element.role == InstallerTemplateRole::SettingsRowAction as u8 {
+                continue;
+            }
             if full_scene
                 && skip_live_input
                 && element.role == InstallerTemplateRole::Input as u8
@@ -302,7 +307,7 @@ impl DisplayDevice {
         let border=(element.border[0],element.border[1],element.border[2]);
         let opacity=(element.fill[3] as u16*element.opacity as u16/100) as u8;
         let border_opacity=(element.border[3] as u16*element.opacity as u16/100) as u8;
-        let text_opacity=(255u16*element.opacity as u16/100) as u8;
+        let text_opacity=(u16::from(element.caption_color[3])*u16::from(element.opacity)/100) as u8;
         if element.role==InstallerTemplateRole::ProgressSegment as u8 {
             let current=progress.0<=progress.1;
             let kind=if current {Surface::Current}else{Surface::Inactive};
@@ -339,7 +344,7 @@ impl DisplayDevice {
             self.intersect_render_clip(rect.left,rect.top,rect.width,rect.height);
             self.access_text(rect.left+rect.width.saturating_sub(width)/2,
                 rect.top+rect.height.saturating_sub(font*7/6)/2,
-                element.text,palette::TEXT.0,palette::TEXT.1,palette::TEXT.2,text_opacity,font,true);
+                element.text,element.caption_color[0],element.caption_color[1],element.caption_color[2],text_opacity,font,true);
             self.render_clip=previous;
         }
     }
