@@ -7,6 +7,13 @@ source "$repo_dir/tools/require-build-kit.sh"
 swift_paths=(--cache-path "$repo_dir/build/cache/swiftpm"
     --config-path "$repo_dir/build/cache/swiftpm-config"
     --security-path "$repo_dir/build/cache/swiftpm-security")
+if (( $# > 1 )) || [[ "${1:-}" != "" && "${1:-}" != --clean ]]; then
+    echo "Usage: build-kit studio | build-kit studio-clean" >&2
+    exit 2
+fi
+if [[ "${1:-}" == --clean ]]; then
+    swift package "${swift_paths[@]}" --package-path "$script_dir" clean
+fi
 app_dir="$repo_dir/builds/InfinityOS Installer Studio.app"
 contents_dir="$app_dir/Contents"
 binary_dir="$(swift build "${swift_paths[@]}" --package-path "$script_dir" -c release --show-bin-path)"

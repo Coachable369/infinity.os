@@ -126,6 +126,10 @@ clean = false
 command = ["zsh", "tools/installer-designer/build.sh"]
 clean = false
 
+[profiles.studio-clean]
+command = ["zsh", "tools/installer-designer/build.sh", "--clean"]
+clean = false
+
 [profiles.desktop-effects-tests]
 command = ["sh", "-c", "rustc --edition=2021 --test tools/desktop-effects-test.rs -o build/desktop-effects-test && build/desktop-effects-test && rustc --edition=2021 --test tools/desktop-polish-test.rs -o build/desktop-polish-test && build/desktop-polish-test --test-threads=1 && rustc --edition=2021 --test tools/spatial-retained-test.rs -o build/spatial-retained-test && build/spatial-retained-test --test-threads=1"]
 clean = false

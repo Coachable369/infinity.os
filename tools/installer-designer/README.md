@@ -1,5 +1,12 @@
 # Infinity Studio
 
+From any working directory, run `/opt/codebase/infinity.os/run-infinitystudio.sh`
+to clean Studio's Swift build products, rebuild and verify the app through the
+serialized build kit, then open it. Existing ISOs, models and OS build caches
+are preserved. Use `--no-launch` to build without opening the app. Build failures
+stop the launcher, so it never opens an older app after a failed build. Close any
+already-running Studio instance first to ensure macOS opens the newly built app.
+
 The collapsible left navigation contains **UIKit**, **Configuration Wizard**,
 **Installation Wizard**, and **System Settings**. Switching sections retains
 pending edits. **Save Section** (Command-S) saves the active section; **Save All
