@@ -311,7 +311,12 @@ impl DisplayDevice {
         self.fill_rounded_rect_alpha(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,4,20,34,alpha(150));
         self.outline_rounded_rect(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,35,64,84);
         let _=self.themed_icon((card.icon.x+card.icon.width as i32/2).max(0)as usize,(card.icon.y+card.icon.height as i32/2).max(0)as usize,crate::ui::icon_theme::settings_section_icon(focus),(28*scale).min(card.icon.width as usize));
-        self.ui_text_elided_strong(card.description.x.max(0)as usize,card.description.y.max(0)as usize,card.description.width as usize,crate::ui::settings_cards::description(focus,index),141,174,198);
+        let native_description=crate::ui::settings_cards::description(focus,index);
+        if let Some(description)=layout.settings_row_child_geometry(settings_window,focus,index,Role::SettingsSummaryDescription,0,1) {
+            self.paint_settings_child_description(description,native_description,(141,174,198));
+        } else {
+            self.ui_text_elided_strong(card.description.x.max(0)as usize,card.description.y.max(0)as usize,card.description.width as usize,native_description,141,174,198);
+        }
         let label=if focus==1&&index==6{label}else{authored_label.map(|e|e.text).filter(|text|!text.is_empty()).unwrap_or(label)};
         let label_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowLabel).unwrap_or(card.label);
         let value_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowValue).unwrap_or(card.value);
@@ -333,61 +338,41 @@ impl DisplayDevice {
         row
     }
     // ------------------------=
+    // FUNC: paint_settings_child_description
+    // DESC: Paints a native or literal authored description with its exact row-local bounds, typography, alpha and viewport clip.
+    // ------------------=
+    pub(super) fn paint_settings_child_description(&mut self,child:crate::ui::system_layout::SettingsChildGeometry,native:&[u8],fallback:(u8,u8,u8)) {
+        if !child.visible {return;}
+        let old=self.render_clip;
+        let clip=child.clip.intersection(crate::ui::geometry::Rect{x:0,y:0,width:self.width as u32,height:self.height as u32});
+        self.intersect_render_clip(clip.x.max(0)as usize,clip.y.max(0)as usize,clip.width as usize,clip.height as usize);
+        let text=if child.element.caption_mode==1{child.element.text}else{native};
+        self.paint_settings_bound_text(Some(child.element),child.bounds,text,fallback,false,false);
+        self.render_clip=old;
+    }
+    // ------------------------=
+    // FUNC: paint_settings_detail_description
+    // DESC: Uses the editable native detail caption when present and retains earlier System Generation fallback text otherwise.
+    // ------------------=
+    pub(super) fn paint_settings_detail_description(&mut self,focus:usize,index:usize,detail:crate::ui::geometry::Rect,scale:usize,state:SettingsWindowState) {
+        let native=crate::ui::settings_template::settings_detail_description(focus,index);
+        let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+        if let Some(child)=layout.settings_row_child_geometry(state,focus,index,crate::ui::installer_template::InstallerTemplateRole::SettingsDetailDescription,0,1) {
+            self.paint_settings_child_description(child,native,(167,188,203));
+        }else{
+            self.ui_text_elided_strong(detail.x.max(0)as usize+crate::ui::system_layout::UI_GUTTER*scale,
+                detail.y.max(0)as usize+crate::ui::system_layout::UI_GUTTER*scale,
+                (detail.width as usize).saturating_sub(crate::ui::system_layout::UI_GUTTER*2*scale),native,167,188,203);
+        }
+    }
+    // ------------------------=
     // FUNC: paint_settings_basic_detail
     // DESC: Paints disclosure explanations and trusted action controls from observed state.
     // ------------------=
     pub(super) fn paint_settings_basic_detail(&mut self,focus:usize,index:usize,detail:crate::ui::geometry::Rect,scale:usize,snapshot:BasicSettingsSnapshot<'_>,state:SettingsWindowState) {
         let BasicSettingsSnapshot{chat_enabled,voice_enabled,speech_enabled,..}=snapshot;
         let detail_left=detail.x.max(0)as usize;let detail_top=detail.y.max(0)as usize;let detail_width=detail.width as usize;let detail_height=detail.height as usize;
-                    let description: &[u8] = match (focus, index) {
-                        (0, 0) => b"Rename this machine through the durable identity service.",
-                        (0, 1) => b"The installed interface language is English (US).",
-                        (0, 2) => b"Regional formatting follows the installed US locale.",
-                        (0, 3) => b"This is the active installed System Generation.",
-                        (0, 4) => b"Updates are delivered as a complete System Generation.",
-                        (1, 0) => b"Switch between installed, verified InfinityUI skins.",
-                        (1, 6) => b"Automatic scale follows the active display density.",
-                        (1, 7) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
-                        (3, 0) => {
-                            b"Choose whether the local provider is strictly required or preferred."
-                        }
-                        (3, 1) => b"Show or hide your local desktop AI chat widget.",
-                        (3, 2) => b"Choose the next installed local model without restarting.",
-                        (2, 0) => b"The authenticated user owns this desktop session.",
-                        (2, 1) => b"Password credentials are managed by the trusted identity flow.",
-                        (2, 2) => b"This session is authenticated; locking preserves your workspace.",
-                        (2, 3) => b"Personal Space isolates this user's objects and preferences.",
-                        (2, 4) => b"The user profile persists with the installed system.",
-                        (3, 3) => b"Remote processing is disabled; local inference stays on this device.",
-                        (3, 4) => b"Microphone access follows the current user permission.",
-                        (3, 5) => b"Choose the phrase that opens an eight-second command window.",
-                        (3, 6) => b"Model operations remain subject to capability enforcement.",
-                        (4, 0) => b"Applications receive no implicit authority over your data.",
-                        (4, 1) => b"Microphone access is explicitly granted or restricted here.",
-                        (4, 2) => b"Remote AI access requires explicit capability authorization.",
-                        (4, 3) => {
-                            b"Lock this user's session after the selected period without input."
-                        }
-                        (4, 4) => b"Sensitive decisions use the trusted system interface.",
-                        (5, 0) => b"The active display is used by the native desktop compositor.",
-                        (5, 1) => b"Open Input to adjust keyboard repeat delay and rate.",
-                        (5, 3 | 4) => b"This audio path is unavailable; no device control is exposed.",
-                        (9, 0) => b"InfinityOS development System Generation.",
-                        (9, 1) => b"The desktop and services execute in the native OS runtime.",
-                        (9, 2) => b"Startup uses the installed boot contract and generation checks.",
-                        (9, 3) => b"Identity records use the version 1 durable format.",
-                        (9, 4) => b"Select an installed icon family in Themes & Skins.",
-                        _ => b"This value is read from the active System Generation.",
-                    };
-                    self.ui_text_elided_strong(
-                        detail_left + crate::ui::system_layout::UI_GUTTER * scale,
-                        detail_top + crate::ui::system_layout::UI_GUTTER * scale,
-                        detail_width.saturating_sub(crate::ui::system_layout::UI_GUTTER * 2 * scale),
-                        description,
-                        167,
-                        188,
-                        203,
-                    );
+                    self.paint_settings_detail_description(focus,index,detail,scale,state);
                     let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
                     if let Some(action)=layout.settings_action_geometry(state,focus,index) {
                         if !action.visible { return; }
@@ -482,6 +467,21 @@ impl DisplayDevice {
         section: usize,
     ) {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        if let (Some(track),Some(thumb))=(
+            layout.settings_row_child_geometry(settings_window,section,index,Role::SettingsSliderTrack,value,maximum),
+            layout.settings_row_child_geometry(settings_window,section,index,Role::SettingsSliderThumb,value,maximum)) {
+            for child in [track,thumb] {
+                if !child.visible {continue;}
+                let old=self.render_clip;
+                let clip=child.clip.intersection(crate::ui::geometry::Rect{x:0,y:0,width:self.width as u32,height:self.height as u32});
+                self.intersect_render_clip(clip.x.max(0)as usize,clip.y.max(0)as usize,clip.width as usize,clip.height as usize);
+                self.settings_template_surface(child.bounds,Some(child.element),crate::ui::panel_recipe::Material{
+                    fill:(0,0,0),edge:(0,0,0),opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
+                self.render_clip=old;
+            }
+            return;
+        }
         let geometry = layout.settings_effect_slider_geometry_for_section(
             settings_window,
             index,
@@ -557,9 +557,25 @@ impl DisplayDevice {
             let row=self.paint_settings_row_summary(focus,index,label,value,state,scale,chrome);
             if state.expanded_row==Some(index)&&row.detail.intersects(g.viewport){
                 let(r,g,b)=chrome.primary;let(er,eg,eb)=chrome.outline;
-                self.app_card_alpha(row.detail,(r/2,g.saturating_mul(2)/3,b.saturating_mul(2)/3),(er/2,eg/2,eb/2),(232u16*u16::from(chrome.opacity)/100)as u8,scale);
-                if focus==5&&index==2{self.settings_personalization_panel_from_state(row.detail,scale,true,snapshot.preferences,crate::ui::spatial::backdrop_tint(),crate::ui::personalization::save_status());}
-                else if focus==4&&index==3{self.settings_slider(state,scale,index,snapshot.timeout_minutes.saturating_sub(1),snapshot.timeout_maximum.saturating_sub(1),4);}
+                let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+                if let Some(surface)=layout.settings_row_child_geometry(state,focus,index,crate::ui::installer_template::InstallerTemplateRole::SettingsDetailSurface,0,1) {
+                    if surface.visible {
+                        let old=self.render_clip;
+                        let clip=surface.clip.intersection(crate::ui::geometry::Rect{x:0,y:0,width:self.width as u32,height:self.height as u32});
+                        self.intersect_render_clip(clip.x.max(0)as usize,clip.y.max(0)as usize,clip.width as usize,clip.height as usize);
+                        let mut element=surface.element;element.fill[3]=(u16::from(element.fill[3])*u16::from(chrome.opacity)/100)as u8;
+                        self.settings_template_surface(surface.bounds,Some(element),crate::ui::panel_recipe::Material{fill:(r/2,g.saturating_mul(2)/3,b.saturating_mul(2)/3),edge:(er/2,eg/2,eb/2),opacity:232,edge_opacity:255,focus:0,pressed:false,scale});
+                        self.render_clip=old;
+                    }
+                }else{self.app_card_alpha(row.detail,(r/2,g.saturating_mul(2)/3,b.saturating_mul(2)/3),(er/2,eg/2,eb/2),(232u16*u16::from(chrome.opacity)/100)as u8,scale);}
+                if focus==5&&index==2{
+                    self.settings_personalization_panel_from_state(row.detail,scale,true,snapshot.preferences,crate::ui::spatial::backdrop_tint(),crate::ui::personalization::save_status());
+                    if crate::ui::settings_template::row_child(focus,index,crate::ui::installer_template::InstallerTemplateRole::SettingsDetailDescription).is_some(){self.paint_settings_detail_description(focus,index,row.detail,scale,state);}
+                }
+                else if focus==4&&index==3{
+                    if crate::ui::settings_template::row_child(focus,index,crate::ui::installer_template::InstallerTemplateRole::SettingsDetailDescription).is_some(){self.paint_settings_detail_description(focus,index,row.detail,scale,state);}
+                    self.settings_slider(state,scale,index,snapshot.timeout_minutes.saturating_sub(1),snapshot.timeout_maximum.saturating_sub(1),4);
+                }
                 else{self.paint_settings_basic_detail(focus,index,row.detail,scale,snapshot,state);}
             }
         }

@@ -1,6 +1,7 @@
 """Behavioral acceptance for bounded ISO publication and FAT asset replacement."""
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import struct
@@ -191,6 +192,38 @@ class UpdateISOTests(unittest.TestCase):
         self.assertFalse(manifest.exists())
 
     # ------------------------=
+    # FUNC: test_iso_commit_failure_restores_existing_receipt_and_release_metadata
+    # DESC: Rejects the final ISO rename after all metadata has advanced and restores the previous publication as a unit.
+    # ------------------=
+    def test_iso_commit_failure_restores_existing_receipt_and_release_metadata(self):
+        original, candidate = self.work / "original.iso", self.work / "candidate.iso"
+        original.write_bytes(b"previous installer")
+        candidate.write_bytes(b"new installer")
+        sidecar, index, manifest = original.with_suffix(".iso.sha256"), self.work / "SHA256SUMS", self.work / "result.json"
+        sidecar.write_bytes(b"previous checksum")
+        index.write_bytes(b"previous index")
+        manifest.write_bytes(b"previous receipt")
+        replace = updater.os.replace
+        # ------------------------=
+        # FUNC: fail_iso_commit
+        # DESC: Injects a filesystem error only at the final media replacement, leaving rollback operations available.
+        # ------------------=
+        def fail_iso_commit(source, target):
+            if Path(target) == original:
+                raise OSError()
+            return replace(source, target)
+        with mock.patch.object(updater.os, "replace", side_effect=fail_iso_commit):
+            with self.assertRaises(OSError):
+                updater.atomic_publish(candidate, original, updater.digest(original), lambda _: None,
+                                       (manifest, {"compiled_ui_payloads": {"settings": {"format_version": 9}}}))
+        self.assertEqual(original.read_bytes(), b"previous installer")
+        self.assertEqual(candidate.read_bytes(), b"new installer")
+        self.assertEqual(sidecar.read_bytes(), b"previous checksum")
+        self.assertEqual(index.read_bytes(), b"previous index")
+        self.assertEqual(manifest.read_bytes(), b"previous receipt")
+        self.assertIsNone(updater.PUBLISHED_RESULT)
+
+    # ------------------------=
     # FUNC: test_shard_discontinuities_and_architecture_are_rejected
     # DESC: Exercises structural streamed-payload and ELF machine validation without prose matching.
     # ------------------=
@@ -357,6 +390,64 @@ class UpdateISOTests(unittest.TestCase):
             updater.verify_embedded_ui(kernel, [styles])
 
     # ------------------------=
+    # FUNC: test_settings_receipt_records_native_validated_live_and_installed_payloads
+    # DESC: Publishes exact current Settings and UIKit identities after proving both consuming kernels contain their native-valid bytes.
+    # ------------------=
+    def test_settings_receipt_records_native_validated_live_and_installed_payloads(self):
+        paths = [ROOT / "assets/boot/settings-screens.iuit",
+                 ROOT / "assets/ui-design-kit/default/uikit-tokens.bin",
+                 ROOT / "assets/ui-design-kit/default/uikit-styles.bin"]
+        live, installed = self.work / "live.elf", self.work / "installed.elf"
+        payloads = [path.read_bytes() for path in paths]
+        live.write_bytes(bytes(128) + b"".join(payloads) + bytes(128))
+        installed.write_bytes(bytes(256) + b"".join(payloads) + bytes(256))
+        updater.verify_embedded_ui(live, paths)
+        updater.verify_embedded_ui(installed, paths)
+        records = updater.compiled_ui_inventory(paths)
+        for path, payload in zip(paths, payloads):
+            record = records[path.relative_to(ROOT).as_posix()]
+            self.assertEqual(record["bytes"], len(payload))
+            self.assertEqual(record["sha256"], hashlib.sha256(payload).hexdigest())
+            version, count = struct.unpack_from("<HH", payload, 4 if path.suffix == ".iuit" else 8)
+            self.assertEqual(record["format_version"], version)
+            self.assertEqual(record["screens" if path.suffix == ".iuit" else "entries"], count)
+        original, candidate, manifest = self.work / "original.iso", self.work / "candidate.iso", self.work / "result.json"
+        original.write_bytes(b"original")
+        candidate.write_bytes(b"updated media")
+        result = {"compiled_ui_payloads": records,
+                  "kernels": {"live": updater.artifact_receipt(live), "installed": updater.artifact_receipt(installed)}}
+        checksum = updater.atomic_publish(candidate, original, updater.digest(original), lambda _: None, (manifest, result))
+        published = json.loads(manifest.read_bytes())
+        self.assertEqual(published, result)
+        self.assertEqual(published["sha256"], checksum)
+        self.assertEqual(published["kernels"]["installed"]["sha256"], updater.digest(installed))
+        self.assertEqual(updater.PUBLISHED_RESULT, published)
+        stale = self.work / "stale.elf"
+        stale.write_bytes(bytes(128) + b"".join(payloads[1:]))
+        with self.assertRaises(RuntimeError):
+            updater.verify_embedded_ui(stale, paths)
+
+    # ------------------------=
+    # FUNC: test_receipt_rejects_artifact_mutation_during_hashing
+    # DESC: Prevents a receipt from combining a previous binary header with bytes saved concurrently by Studio.
+    # ------------------=
+    def test_receipt_rejects_artifact_mutation_during_hashing(self):
+        path = self.work / "settings-screens.iuit"
+        path.write_bytes(b"IUIT" + struct.pack("<HH", 9, 11) + bytes(64))
+        digest = updater.digest
+        # ------------------------=
+        # FUNC: mutate_during_receipt
+        # DESC: Changes the file after its hash was computed to exercise stat-identity protection.
+        # ------------------=
+        def mutate_during_receipt(source):
+            result = digest(source)
+            source.write_bytes(source.read_bytes() + b"changed")
+            return result
+        with mock.patch.object(updater, "digest", side_effect=mutate_during_receipt):
+            with self.assertRaises(RuntimeError):
+                updater.compiled_ui_inventory([path])
+
+    # ------------------------=
     # FUNC: test_cancel_stops_owned_child_group_and_preserves_iso
     # DESC: Requests cancellation while a real child is running and proves both child cleanup and non-publication.
     # ------------------=
@@ -401,14 +492,16 @@ class UpdateISOTests(unittest.TestCase):
             self.assertIsNotNone(shutil.which(tool))
         image = self.work / "efi.img"
         with image.open("wb") as output:
-            output.truncate(16 * 1024 * 1024)
+            output.truncate(64 * 1024 * 1024)
         subprocess.run(["mformat", "-i", str(image), "::"], check=True)
         for directory in ("EFI", "EFI/INFINITY", "EFI/INFINITY/PAYLOAD", "EFI/InfinityOS", "EFI/InfinityOS/InfinityUI"):
             subprocess.run(["mmd", "-i", str(image), "::/" + directory], check=True)
         model = self.work / "model.bin"
         model.write_bytes(bytes(range(256)) * 17)
         subprocess.run(["mcopy", "-i", str(image), str(model), "::/EFI/INFINITY/PAYLOAD/P4-000.BIN"], check=True)
-        before = updater.stream_member(image, "::/EFI/INFINITY/PAYLOAD/P4-000.BIN")
+        before = updater.payload_inventory(image)
+        self.assertEqual(before, {"::/EFI/INFINITY/PAYLOAD/P4-000.BIN":
+                                 {"bytes": model.stat().st_size, "sha256": updater.digest(model)}})
         staging = updater.load_tool("iso-staging")
         tree = self.work / "build/installed-fat-aarch64"
         ui = tree / "EFI/InfinityOS/InfinityUI"
@@ -422,10 +515,10 @@ class UpdateISOTests(unittest.TestCase):
             staging.reset_ui_stage(tree)
         source = ui / "DesignKit/Default/uikit-tokens.bin"
         source.parent.mkdir(parents=True)
-        source.write_bytes(b"IUIKIT01" + bytes(range(56)))
-        template = ui / "Installer/configuration-screens.iuit"
+        shutil.copyfile(ROOT / "assets/ui-design-kit/default/uikit-tokens.bin", source)
+        template = ui / "Installer/settings-screens.iuit"
         template.parent.mkdir(parents=True)
-        template.write_bytes(b"IUIT" + struct.pack("<HH", 7, 1) + bytes(range(64)))
+        shutil.copyfile(ROOT / "assets/boot/settings-screens.iuit", template)
         subprocess.run(["mdeltree", "-i", str(image), "::/EFI/InfinityOS/InfinityUI"], check=True)
         subprocess.run(["mcopy", "-o", "-s", "-i", str(image), str(tree / "EFI"), "::/"], check=True)
         files = [(path, "::/" + path.relative_to(tree).as_posix()) for path in tree.rglob("*") if path.is_file()]
@@ -435,8 +528,11 @@ class UpdateISOTests(unittest.TestCase):
             result = subprocess.run(["mtype", "-i", str(image), "::/EFI/InfinityOS/InfinityUI/" + relative],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(updater.stream_member(image, "::/EFI/INFINITY/PAYLOAD/P4-000.BIN"), before)
+        self.assertEqual(updater.payload_inventory(image), before)
         self.assertEqual(len(updater.payload_members(image)), 1)
+        model.write_bytes(b"changed model")
+        subprocess.run(["mcopy", "-o", "-i", str(image), str(model), "::/EFI/INFINITY/PAYLOAD/P4-000.BIN"], check=True)
+        self.assertNotEqual(updater.payload_inventory(image), before)
         source.write_bytes(b"changed source")
         with self.assertRaises(RuntimeError):
             updater.verify_file_map(image, files)

@@ -32,7 +32,8 @@ enum SettingsActionFixtures {
                 cursor += 4
                 var record = Array(bytes[recordStart..<cursor])
                 if version == 6 { record[flagsOffset] &= 3 }
-                if role != StudioElementRole.settingsRowAction.rawValue { records.append(record) }
+                if version >= 8 { record += bytes[cursor..<(cursor + 21)] }
+                if role < (version >= 8 ? 34 : 33) { records.append(record) }
                 cursor += 21
             }
             output += [UInt8(truncatingIfNeeded: records.count), UInt8(truncatingIfNeeded: records.count >> 8)]
@@ -75,10 +76,10 @@ final class SettingsActionTests: XCTestCase {
     }
 
     // ------------------------=
-    // FUNC: testV8RoundTripAndRealV6V7Migration
+    // FUNC: testV9RoundTripAndRealV6V7V8Migration
     // DESC: Retains parent identities, captions and styles in JSON and native bytes while reading valid older templates without v8 record extensions.
     // ------------------=
-    func testV8RoundTripAndRealV6V7Migration() throws {
+    func testV9RoundTripAndRealV6V7V8Migration() throws {
         var document = InstallerStudioDocument.factorySystemSettings()
         let action = try XCTUnwrap(document.screens[3].elements.firstIndex { $0.role == .settingsRowAction })
         document.screens[3].elements[action].actionCaptionMode = .literal
@@ -88,11 +89,11 @@ final class SettingsActionTests: XCTestCase {
         document.screens[3].elements[action].captionColor = StudioColor(red: 231, green: 173, blue: 120, alpha: 142)
         document.screens[3].elements[action].frame = CanvasRect(x: 400, y: 500, width: 480, height: 350)
         let bytes = try RuntimeTemplateCodec.encode(document, collection: .systemSettings)
-        XCTAssertEqual(Array(bytes[4...5]), [8, 0])
+        XCTAssertEqual(Array(bytes[4...5]), [9, 0])
         XCTAssertEqual(try RuntimeTemplateCodec.decode(bytes, collection: .systemSettings), document)
         XCTAssertEqual(try JSONDecoder().decode(InstallerStudioDocument.self, from: JSONEncoder().encode(document)), document)
         let defaults = InstallerStudioDocument.factorySystemSettings()
-        for version in [UInt8(6), UInt8(7)] {
+        for version in [UInt8(6), UInt8(7), UInt8(8)] {
             let legacy = try SettingsActionFixtures.legacyBytes(defaults, version: version, collection: .systemSettings)
             XCTAssertEqual(try RuntimeTemplateCodec.decode(legacy, collection: .systemSettings), defaults)
         }

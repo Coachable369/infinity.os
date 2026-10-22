@@ -73,6 +73,11 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case settingsRowValue = 31
     case settingsDisclosure = 32
     case settingsRowAction = 33
+    case settingsSummaryDescription = 34
+    case settingsDetailDescription = 35
+    case settingsDetailSurface = 36
+    case settingsSliderTrack = 37
+    case settingsSliderThumb = 38
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -111,6 +116,11 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .settingsRowValue: "Settings Row Value"
         case .settingsDisclosure: "Settings Disclosure"
         case .settingsRowAction: "Settings Row Action"
+        case .settingsSummaryDescription: "Settings Summary Description"
+        case .settingsDetailDescription: "Settings Detail Description"
+        case .settingsDetailSurface: "Settings Detail Surface"
+        case .settingsSliderTrack: "Settings Slider Track"
+        case .settingsSliderThumb: "Settings Slider Thumb"
         }
     }
 
@@ -120,6 +130,19 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     // ------------------=
     var imageUsesAspectFill: Bool {
         self == .masthead || self == .timeZoneMap
+    }
+
+    // ------------------------=
+    // FUNC: isSettingsChild
+    // DESC: Identifies semantic elements whose normalized geometry belongs to a native Metadata parent.
+    // ------------------=
+    var isSettingsChild: Bool { (33...38).contains(rawValue) }
+    // ------------------------=
+    // FUNC: hasNativeCaption
+    // DESC: Limits state-derived text selection to native actions and description layers.
+    // ------------------=
+    var hasNativeCaption: Bool {
+        self == .settingsRowAction || self == .settingsSummaryDescription || self == .settingsDetailDescription
     }
 }
 
@@ -185,6 +208,45 @@ enum SettingsActionContract {
             copy.parentRowID = element.parentRowID.map { identities[$0] ?? $0 }
             return copy
         }
+    }
+}
+
+enum SettingsChildContract {
+    static let roles: [StudioElementRole] = [.settingsSummaryDescription, .settingsDetailDescription,
+        .settingsDetailSurface, .settingsSliderTrack, .settingsSliderThumb]
+
+    // ------------------------=
+    // FUNC: rows
+    // DESC: Restricts each parent-bound child to existing shared Settings rows and the trusted inactivity slider.
+    // ------------------=
+    static func rows(role: StudioElementRole, screenID: Int) -> [Int] {
+        if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID) }
+        if role == .settingsSliderTrack || role == .settingsSliderThumb { return screenID == 5 ? [3] : [] }
+        guard roles.contains(role), (1...11).contains(screenID) else { return [] }
+        return Array(0..<[5, 0, 5, 7, 5, 5, 0, 0, 0, 5, 8][screenID - 1])
+    }
+
+    // ------------------------=
+    // FUNC: kind
+    // DESC: Fixes native child kinds so appearance editing cannot replace a trusted slider or text contract with a different control.
+    // ------------------=
+    static func kind(_ role: StudioElementRole) -> StudioElementKind {
+        switch role {
+        case .settingsSummaryDescription, .settingsDetailDescription: .text
+        case .settingsRowAction: .button
+        default: .panel
+        }
+    }
+
+    // ------------------------=
+    // FUNC: childID
+    // DESC: Gives each migrated role a stable distinct identity derived from its unchanged Metadata parent.
+    // ------------------=
+    static func childID(parent: UUID, role: StudioElementRole) -> UUID {
+        var value = parent.uuid
+        value.0 ^= 0x43; value.1 ^= 0x48; value.2 ^= 0x4c; value.3 ^= 0x44
+        value.15 ^= role.rawValue
+        return UUID(uuid: value)
     }
 }
 
@@ -275,6 +337,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
         if self == .systemSettings {
             if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID).count }
+            if SettingsChildContract.roles.contains(role) { return SettingsChildContract.rows(role: role, screenID: screenID).count }
             if [.settingsNavigationItem, .settingsNavigationIcon, .settingsNavigationLabel]
                 .contains(role) { return 11 }
             let rowCounts = [5, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
@@ -318,8 +381,8 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
-        if role == .settingsRowAction {
-            return self == .systemSettings ? SettingsActionContract.rows(screenID: screenID).count : 0
+        if role.isSettingsChild {
+            return self == .systemSettings ? SettingsChildContract.rows(role: role, screenID: screenID).count : 0
         }
         if role == .liveDetails {
             if self == .systemSettings { return 1 }
@@ -1048,6 +1111,35 @@ struct InstallerStudioDocument: Codable, Hashable {
                     suffix += 1
                 }
                 result.screens[index].elements.append(action)
+            }
+        }
+        return result.migratedForSettingsChildren()
+    }
+
+    // ------------------------=
+    // FUNC: migratedForSettingsChildren
+    // DESC: Adds missing typed Settings descriptions and slider surfaces without changing authored children or their parent identities.
+    // ------------------=
+    func migratedForSettingsChildren() -> InstallerStudioDocument {
+        var result = self
+        for index in result.screens.indices {
+            let screen = result.screens[index]
+            let rows = screen.elements.filter { $0.role == .metadata }
+            for role in SettingsChildContract.roles {
+                for row in SettingsChildContract.rows(role: role, screenID: screen.id) where rows.indices.contains(row) {
+                    let parent = rows[row]
+                    guard !result.screens[index].elements.contains(where: {
+                        $0.role == role && $0.parentRowID == parent.id
+                    }) else { continue }
+                    var child = SettingsChildDefaults.element(role: role, screenID: screen.id, row: row, parent: parent.id)
+                    let identifiers = Set(result.screens[index].elements.map(\.codeIdentifier))
+                    let base = child.codeIdentifier
+                    var suffix = 2
+                    while identifiers.contains(child.codeIdentifier) {
+                        child.codeIdentifier = "\(base)\(suffix)"; suffix += 1
+                    }
+                    result.screens[index].elements.append(child)
+                }
             }
         }
         return result

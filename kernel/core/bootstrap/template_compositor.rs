@@ -186,7 +186,7 @@ impl DisplayDevice {
             }
             // Detail-local children are painted only by the expanded Settings row.
             // A template-only view has no parent detail geometry to resolve them.
-            if settings && element.role == InstallerTemplateRole::SettingsRowAction as u8 {
+            if settings && crate::ui::installer_template::settings_row_child_role(element.role) {
                 continue;
             }
             if full_scene

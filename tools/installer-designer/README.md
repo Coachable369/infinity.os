@@ -80,7 +80,7 @@ Current editing coverage:
 | Surface | Native pixel preview | Authoring boundary |
 | --- | --- | --- |
 | Installer and configuration templates | Production renderer, including live-value simulations | Authored layer geometry, copy, images, palette bindings and surface styles; the erase confirmation's internal layout remains OS-owned |
-| General, account, AI, privacy, devices and information Settings | Production renderer with simulated values and expanded controls | Template layers and supported row fields; eight General/AI/Privacy action buttons also support native-bound geometry, materials, borders and caption editing |
+| General, account, AI, privacy, devices, information and Input Settings | Production renderer with simulated values and expanded controls | Forty row descriptions and detail surfaces, eight General/AI/Privacy actions, and the inactivity-timeout slider support native-bound authoring; specialized pointer controls remain OS-owned |
 | Network and Nodes Settings | Production dashboard renderer and available subpages | Copy and appearance; responsive dashboard control geometry remains OS-owned |
 | Themes and Pool Settings | Template-layer preview only | No claim of complete native scene parity |
 | Other applications and desktop widgets | Shared UIKit component preview, not a complete application canvas | Shared component recipes/artwork, not application-internal layout authoring |
@@ -90,18 +90,28 @@ typed authorable scene contracts and expose those same contracts to Studio. A
 theme's shared styling coverage must not be mistaken for complete layout-editing
 coverage.
 
-Expanded Settings action buttons use IUIT v8 parent UUID bindings. Selecting an
-action opens its real parent row; its 0–1000 frame is relative to that expanded
-detail area, not the whole screen. Studio obtains the physical parent bounds
+Expanded Settings children use IUIT v9 parent UUID bindings. Selecting a
+child reveals its real parent row; its 0–1000 frame is relative to that row's
+summary or expanded detail area, not the whole screen. Studio obtains the physical parent bounds
 from the OS renderer for selection and drag/resize mapping. The OS uses that
 same resolver for drawing and pointer hit testing, including scroll clipping.
 Native captions follow service state; switch to a literal caption for custom
-copy. Button caption RGBA is independently editable. Legacy v6/v7 imports add
-the required action layers deterministically without replacing existing layers.
+copy. Button caption RGBA is independently editable. Summary and detail descriptions
+support authored text, font size, color and visibility; detail backgrounds reuse
+the same image-backed material and corner recipes as other panels. Legacy v6–v8 imports add
+the required child layers deterministically without replacing existing layers.
 Required bindings cannot be deleted, duplicated, or attached to unrelated rows.
 Hiding a button suppresses both its pixels and click target, but keeps its layer
-available in Studio. Detail descriptions, slider internals and other specialized
-controls remain outside this action-button authoring contract.
+available in Studio. The Devices pointer-detail description starts hidden to avoid
+covering its existing specialized controls, but remains selectable and editable.
+
+The Privacy inactivity-timeout slider has separate track and thumb layers. Both
+support appearance, visibility and sizing. The OS still owns its range, current
+value, permission checks and persistence. Thumb horizontal position is derived
+from that value: Studio explicitly disables X editing rather than saving a value
+the runtime would ignore. Track movement and thumb dimensions feed the same
+native paint and pointer resolver, including viewport clipping. Other specialized
+sliders, pointer controls and application-internal layouts are not yet authorable.
 
 Customizations are saved in `assets/ui-design-kit/uikit.infinityui`, with imported
 assets under `assets/ui-design-kit/overrides/`. The build validates and applies
@@ -113,6 +123,12 @@ must pass payload and checksum verification before replacing the selected ISO.
 This does not change a running or already installed VM. A changed original asset is reported as a
 conflict instead of silently overwriting new work. The shared surface previews
 sample the same Precision artwork and nine-slice contract as the OS.
+
+Each successful injection writes a receipt identifying the compiled UI payloads,
+their native format versions, both replacement kernels and preserved installed
+payload members by byte count and SHA-256. The updater verifies the staged ISO
+before atomically replacing the selected image. This is a UI update, not a
+replacement for a clean release build or installed-VM testing.
 
 The equivalent command after saving is:
 

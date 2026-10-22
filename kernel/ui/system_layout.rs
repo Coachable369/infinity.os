@@ -335,6 +335,26 @@ impl SettingsActionGeometry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsChildGeometry {
+    pub element: crate::ui::installer_template::InstallerTemplateElement<'static>,
+    pub parent_row_index: usize,
+    pub parent: Rect,
+    pub bounds: Rect,
+    pub clip: Rect,
+    pub visible: bool,
+}
+
+impl SettingsChildGeometry {
+    // ------------------------=
+    // FUNC: hit
+    // DESC: Restricts semantic child input to its visible clipped native bounds.
+    // ------------------=
+    pub fn hit(self, point: Point) -> bool {
+        self.visible && self.bounds.contains(point) && self.clip.contains(point)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NetworkSettingsGeometry {
     pub tabs: [Rect; 7],
     pub summary: Rect,
@@ -2515,6 +2535,46 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_row_child_geometry
+    // DESC: Resolves authored descriptions, detail surfaces and native-value-owned slider geometry for painting, input and exact Studio inverse transforms.
+    // ------------------=
+    pub fn settings_row_child_geometry(self, state: SettingsWindowState, section: usize,
+        index: usize, role: crate::ui::installer_template::InstallerTemplateRole,
+        value: u8, maximum: u8) -> Option<SettingsChildGeometry> {
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        if !(34..=38).contains(&(role as u8)) { return None; }
+        let element = crate::ui::settings_template::row_child(section, index, role)?;
+        let row = self.settings_row_geometry_for_section(state, index, section);
+        let viewport = self.settings_window_geometry_for_section(state, section).viewport;
+        let summary = role == Role::SettingsSummaryDescription;
+        let mut parent = if summary { row.summary } else { row.detail };
+        let mut track_visible = true;
+        if role == Role::SettingsSliderThumb {
+            let track = self.settings_row_child_geometry(state, section, index, Role::SettingsSliderTrack, value, maximum)?;
+            let thumb_width = u32::from(element.frame.width) * track.bounds.width / 1000;
+            parent.x = track.bounds.x + (track.bounds.width.saturating_sub(thumb_width)
+                * u32::from(value.min(maximum)) / u32::from(maximum.max(1))) as i32;
+            parent.width = track.bounds.width;
+            track_visible = track.visible;
+        }
+        let frame = element.frame;
+        let bounds = Rect {
+            x: parent.x + (u32::from(frame.x) * parent.width / 1000) as i32,
+            y: parent.y + (u32::from(frame.y) * parent.height / 1000) as i32,
+            width: u32::from(frame.width) * parent.width / 1000,
+            height: u32::from(frame.height) * parent.height / 1000,
+        };
+        let row_hidden = crate::ui::settings_template::role_at(section, Role::Metadata, index)
+            .is_some_and(|parent| parent.hidden || parent.opacity == 0);
+        let visible = (summary || state.expanded_row == Some(index))
+            && index < state.row_count.clamp(1, 8) && !row_hidden
+            && !element.hidden && element.opacity > 0 && track_visible
+            && bounds.width > 0 && bounds.height > 0;
+        Some(SettingsChildGeometry { element, parent_row_index: index, parent, bounds,
+            clip: (if summary { row.summary } else { row.detail }).intersection(viewport), visible })
+    }
+
+    // ------------------------=
     // FUNC: settings_row_element_geometry
     // DESC: Carries an authored row child with its summary through expansion and scrolling, preserving Studio offsets.
     // ------------------=
@@ -2767,6 +2827,14 @@ impl SystemLayout {
         if element.role == Role::SettingsRowAction as u8 {
             let (_, row) = crate::ui::settings_template::element_identity(section, element.parent_id)?;
             let resolved = self.settings_action_geometry(state, section, row)?;
+            return (resolved.parent.height > 0).then_some(resolved.bounds);
+        }
+        if (34..=38).contains(&element.role) {
+            let (_, row) = crate::ui::settings_template::element_identity(section, element.parent_id)?;
+            let role = match element.role { 34 => Role::SettingsSummaryDescription, 35 => Role::SettingsDetailDescription,
+                36 => Role::SettingsDetailSurface, 37 => Role::SettingsSliderTrack, _ => Role::SettingsSliderThumb };
+            // The native authoring snapshot starts at the same 15-minute timeout as its renderer.
+            let resolved = self.settings_row_child_geometry(state, section, row, role, 14, 119)?;
             return (resolved.parent.height > 0).then_some(resolved.bounds);
         }
         if element.role==Role::Console as u8{return Some(window.window);}
@@ -3169,6 +3237,12 @@ impl SystemLayout {
         maximum: u8,
         section: usize,
     ) -> SettingsSliderGeometry {
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        if let (Some(track), Some(thumb)) = (
+            self.settings_row_child_geometry(state, section, index, Role::SettingsSliderTrack, value, maximum),
+            self.settings_row_child_geometry(state, section, index, Role::SettingsSliderThumb, value, maximum)) {
+            return SettingsSliderGeometry { track: track.bounds, thumb: thumb.bounds };
+        }
         let row = self.settings_row_geometry_for_section(state, index, section);
         let track = rect(
             row.detail.x.max(0) as usize + 22 * self.scale,
@@ -3247,12 +3321,22 @@ impl SystemLayout {
         if state.expanded_row != Some(index) {
             return None;
         }
+        if index >= state.row_count.clamp(1, 8) || crate::ui::settings_template::role_at(section,
+            crate::ui::installer_template::InstallerTemplateRole::Metadata, index)
+            .is_some_and(|row| row.hidden || row.opacity == 0) { return None; }
         let point = self.point(normalized_x, normalized_y);
         let geometry = self.settings_effect_slider_geometry_for_section(
             state, index, 0, maximum, section,
         );
         let row = self.settings_row_geometry_for_section(state, index, section);
-        if !row.detail.contains(point)
+        let viewport = self.settings_window_geometry_for_section(state, section).viewport;
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        for role in [Role::SettingsSliderTrack, Role::SettingsSliderThumb] {
+            if self.settings_row_child_geometry(state, section, index, role, 0, maximum)
+                .is_some_and(|child| !child.visible) { return None; }
+        }
+        if !row.detail.contains(point) || !viewport.contains(point)
+            || point.x < geometry.track.x || point.x >= geometry.track.right()
             || point.y < geometry.thumb.y
             || point.y >= geometry.thumb.bottom()
         {
@@ -3317,12 +3401,12 @@ impl SystemLayout {
         let geometry = self.settings_effect_slider_geometry_for_section(
             state, index, 0, maximum, section,
         );
-        let half_thumb = 10 * self.scale;
+        let half_thumb = geometry.thumb.width / 2;
         let start = geometry.track.x + half_thumb as i32;
         let travel = geometry
             .track
             .width
-            .saturating_sub((half_thumb * 2) as u32)
+            .saturating_sub(geometry.thumb.width)
             .max(1);
         let offset = point.x.saturating_sub(start).clamp(0, travel as i32) as u32;
         ((offset.saturating_mul(maximum as u32) + travel / 2) / travel).min(maximum as u32) as u8

@@ -35,7 +35,7 @@ struct InstallerCanvas: View {
                             nativeSelectionOverlays(scale: unitScale)
                         } else {
                         ForEach((store.selectedScreen?.elements ?? []).sorted(by: layerOrder)) { element in
-                            if !element.hidden && element.role != .settingsRowAction {
+                            if !element.hidden && !element.role.isSettingsChild {
                                 CanvasElementView(element: element, store: store, canvasScale: canvasScale, interactionOnly: true)
                                     .zIndex(Double(element.zIndex))
                             }
@@ -107,7 +107,7 @@ struct InstallerCanvas: View {
                         width: CGFloat(bounds.width) * scale, height: CGFloat(bounds.height) * scale)
                     let fixedGeometry = !store.geometryIsEditable(element)
                         || editingScale.width <= 0 || editingScale.height <= 0
-                    let interactionClip = element.role == .settingsRowAction
+                    let interactionClip = element.role.isSettingsChild
                         ? NativeCanvasMapping.actionInteractionClip(bounds: bounds, scale: scale) : nil
                     CanvasElementView(element: element, store: store, canvasScale: editingScale, interactionOnly: true,
                         displayFrame: displayed, fixedNativeGeometry: fixedGeometry, interactionClip: interactionClip)

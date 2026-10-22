@@ -122,10 +122,15 @@ impl TestTemplate {
 
     // ------------------------=
     // FUNC: change_version
-    // DESC: Converts actual record widths and removes v8-only controls when constructing a legacy compatibility fixture.
+    // DESC: Converts record widths and removes newer controls when constructing a legacy compatibility fixture.
     // ------------------=
     fn change_version(&mut self, version: u16) {
         for screen in &mut self.screens {
+            if version < 9 {
+                screen.elements.retain(|element| {
+                    element[element_kind_offset(element) + 1] < 34
+                });
+            }
             if version < 8 {
                 screen.elements.retain(|element| {
                     element[element_kind_offset(element) + 1] != InstallerTemplateRole::SettingsRowAction as u8
@@ -145,6 +150,66 @@ impl TestTemplate {
             }
         }
         self.version = version;
+    }
+}
+
+// ------------------------=
+// FUNC: verify_settings_children_contract
+// DESC: Exercises v9 parent-bound row children and malformed variants through the production binary parser, including real v8 compatibility.
+// ------------------=
+fn verify_settings_children_contract() {
+    let valid = TestTemplate::read(SETTINGS_TEMPLATE);
+    assert_eq!(valid.version, 9);
+    let parsed = InstallerTemplate::parse_settings(SETTINGS_TEMPLATE).unwrap();
+    let mut counts = [0usize; 5];
+    for screen in &valid.screens {
+        for index in 0..parsed.element_count(screen.id).unwrap() {
+            let child = parsed.element_at(screen.id, index).unwrap();
+            if !(34..=38).contains(&child.role) { continue; }
+            counts[(child.role - 34) as usize] += 1;
+            let parent = (0..parsed.element_count(screen.id).unwrap())
+                .filter_map(|index| parsed.element_at(screen.id, index))
+                .find(|candidate| candidate.id == child.parent_id).unwrap();
+            assert_eq!(parent.role, InstallerTemplateRole::Metadata as u8);
+        }
+    }
+    assert_eq!(counts, [40, 40, 40, 1, 1]);
+    let legacy = template_at_version(SETTINGS_TEMPLATE, 8);
+    let old = InstallerTemplate::parse_settings(&legacy).unwrap();
+    assert_eq!(old.screen_count(), parsed.screen_count());
+    assert!(old.element(1, InstallerTemplateRole::SettingsRowAction).is_some());
+    for role in 34..=38 {
+        let section = if role >= 37 { 4 } else { 0 };
+        let index = valid.screens[section].elements.iter().position(|record| {
+            record[element_kind_offset(record) + 1] == role
+        }).unwrap();
+        for mutation in 0..7 {
+            let mut invalid = valid.clone();
+            let record = &mut invalid.screens[section].elements[index];
+            let parent = record.len() - ACTION_EXTENSION_BYTES;
+            let kind = element_kind_offset(record);
+            match mutation {
+                0 => record[parent..parent + 16].fill(0),
+                1 => record[parent..parent + 16].fill(0xcd),
+                2 => record[kind] = 5,
+                3 => { invalid.screens[section].elements.remove(index); }
+                4 => {
+                    let mut duplicate = record.clone();
+                    duplicate[0] ^= 0xf0;
+                    invalid.screens[section].elements.push(duplicate);
+                }
+                5 => invalid.version = 8,
+                6 => {
+                    let wrong = valid.screens[(section + 1) % valid.screens.len()].elements.iter()
+                        .find(|candidate| candidate[element_kind_offset(candidate) + 1]
+                            == InstallerTemplateRole::Metadata as u8).unwrap();
+                    record[parent..parent + 16].copy_from_slice(&wrong[..16]);
+                }
+                _ => unreachable!(),
+            }
+            assert!(InstallerTemplate::parse_settings(&invalid.encode()).is_err(),
+                "Unexpected accepted child role {role}, mutation {mutation}");
+        }
     }
 }
 
@@ -470,6 +535,7 @@ fn template_with_screen_count(data: &[u8], count: u16) -> Vec<u8> {
 fn main() {
     use installer_layout::InstallerDateTimeTarget as DateTarget;
     verify_settings_action_contract();
+    verify_settings_children_contract();
     for source in [FACTORY_TEMPLATE, CONFIGURATION_TEMPLATE] {
         for count in [1, 11, 12, 32] {
             let bytes = template_with_screen_count(source, count);

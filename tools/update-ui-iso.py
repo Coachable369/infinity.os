@@ -159,6 +159,18 @@ def payload_members(image):
 
 
 # ------------------------=
+# FUNC: payload_inventory
+# DESC: Captures exact installed payload identities so model preservation is both checked and recorded in the publication receipt.
+# ------------------=
+def payload_inventory(image):
+    result = {}
+    for _, member in payload_members(image):
+        size, sha = stream_member(image, member)
+        result[member] = {"bytes": size, "sha256": sha}
+    return result
+
+
+# ------------------------=
 # FUNC: validate_shard_names
 # DESC: Rejects missing or noncontiguous streamed install payloads before reconstructing an image.
 # ------------------=
@@ -330,6 +342,47 @@ def verify_initial_inputs(authored, sources):
 def file_identity(path):
     stat = path.stat()
     return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+# ------------------------=
+# FUNC: artifact_receipt
+# DESC: Records a nonempty artifact's byte identity while rejecting replacement or modification during hashing.
+# ------------------=
+def artifact_receipt(path):
+    before = file_identity(path)
+    if not path.is_file() or before[2] == 0:
+        raise RuntimeError(f"Cannot record an empty or non-file artifact: {path}")
+    sha = digest(path)
+    if file_identity(path) != before:
+        raise RuntimeError(f"Artifact changed while recording publication evidence: {path}")
+    return {"bytes": before[2], "sha256": sha}
+
+
+# ------------------------=
+# FUNC: compiled_ui_inventory
+# DESC: Records versioned header metadata for native-validated UI payloads without duplicating the native schema decoder.
+# ------------------=
+def compiled_ui_inventory(payloads):
+    result = {}
+    for path in payloads:
+        before = file_identity(path)
+        with path.open("rb") as source:
+            header = source.read(12)
+        if path.name in ("installer-screens.iuit", "configuration-screens.iuit", "settings-screens.iuit"):
+            magic, offset, count_key = b"IUIT", 4, "screens"
+        elif path.name in ("uikit-tokens.bin", "uikit-styles.bin"):
+            magic = b"IUIKIT01" if path.name == "uikit-tokens.bin" else b"IUISTY01"
+            offset, count_key = 8, "entries"
+        else:
+            raise RuntimeError(f"Unknown compiled UI artifact: {path}")
+        if len(header) < offset + 4 or not header.startswith(magic):
+            raise RuntimeError(f"Invalid compiled UI artifact header: {path}")
+        version, count = struct.unpack_from("<HH", header, offset)
+        record = artifact_receipt(path)
+        if file_identity(path) != before:
+            raise RuntimeError(f"UI payload changed while recording publication evidence: {path}")
+        result[path.relative_to(ROOT).as_posix()] = {**record, "format_version": version, count_key: count}
+    return result
 
 
 # ------------------------=
@@ -506,7 +559,7 @@ def update_iso(iso, target):
         members = payload_members(live)
         reassemble(live, validate_shard_names(members, 0), installed)
         validate_shard_names(members, 1)
-        model_before = {member: stream_member(installed, member) for _, member in payload_members(installed)}
+        model_before = payload_inventory(installed)
         for model in bundle.MODELS:
             bundle.verify_model(installed, *model)
         verify_initial_inputs(authored, sources)
@@ -540,7 +593,7 @@ def update_iso(iso, target):
         verify_file_map(installed, [(boot_file, f"::/EFI/BOOT/{boot}"),
                                    (boot_file, "::/EFI/InfinityOS/infinity.efi")])
         saved_assets = {source: digest(source) for source, _ in files}
-        model_after = {member: stream_member(installed, member) for _, member in payload_members(installed)}
+        model_after = payload_inventory(installed)
         if model_before != model_after:
             raise RuntimeError("Model payload changed during the UI-only update")
         event("progress", phase="Updating verified fresh-install payload", progress=0.43)
@@ -563,6 +616,9 @@ def update_iso(iso, target):
         styles = [ROOT / f"assets/ui-design-kit/default/uikit-{name}.bin" for name in ("tokens", "styles")]
         verify_embedded_ui(live_kernel, [*templates, *styles])
         verify_embedded_ui(installed_kernel, [*templates[1:], *styles])
+        compiled_ui = compiled_ui_inventory([*templates, *styles])
+        kernel_files = {path: file_identity(path) for path in (live_kernel, installed_kernel)}
+        kernels = {"live": artifact_receipt(live_kernel), "installed": artifact_receipt(installed_kernel)}
         for name, member in members:
             if SHARD.fullmatch(name):
                 run(["mdel", "-i", live, member])
@@ -597,6 +653,9 @@ def update_iso(iso, target):
         result = {"status": "passed", "iso": str(iso), "target": target,
                   "manifest": str(manifest), "base_sha256": original, "mode": "incremental-ui-repack",
                   "native_dependencies_preserved": {str(path.relative_to(ROOT)): sha for path, sha in protected.items()},
+                  "compiled_ui_payloads": compiled_ui,
+                  "kernels": kernels,
+                  "preserved_install_payloads": model_before,
                   "checks": ["binary-architecture", "efi-loader-architecture", "bootloader-copy-parity", "uefi-boot-catalog", "live-kernel-freshness", "installed-kernel-freshness", "compiled-screen-parity", "saved-ui-asset-parity", "native-model-hashes", "audio-install-parity", "original-iso-conflict-check"]}
         # ------------------------=
         # FUNC: verify_precommit_inputs
@@ -605,6 +664,8 @@ def update_iso(iso, target):
         def verify_precommit_inputs():
             verify_unchanged(protected)
             verify_unchanged(saved_assets)
+            if any(file_identity(path) != identity for path, identity in kernel_files.items()):
+                raise RuntimeError("A verified kernel changed before publication; the existing ISO is unchanged")
             if inputs != source_snapshot():
                 raise RuntimeError("Saved UI or build inputs changed during final verification; the existing ISO is unchanged")
         atomic_publish(candidate, iso, original, lambda _: None, (manifest, result), verify_precommit_inputs)

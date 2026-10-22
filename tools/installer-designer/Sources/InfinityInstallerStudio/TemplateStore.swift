@@ -285,7 +285,7 @@ final class TemplateStore: ObservableObject {
         selectedElementIDs = id.map { [$0] } ?? []
         selectedElementID = id
         if selectedCollection == .systemSettings, let element = selectedElement,
-           element.role == .settingsRowAction, let parent = element.parentRowID,
+           element.role.isSettingsChild, let parent = element.parentRowID,
            let row = selectedScreen?.elements.filter({ $0.role == .metadata }).firstIndex(where: { $0.id == parent }) {
             nativePreviewSimulation.enabled = true
             nativePreviewSimulation.expandedRow = row
@@ -302,7 +302,7 @@ final class TemplateStore: ObservableObject {
         guard !editingUIKit, selectedCollection == .systemSettings, selectedScreenID == screen,
               nativePreviewSimulation.enabled, nativePreviewSimulation.expandedRow == expandedRow,
               let pending = pendingNativeSelectionReveal, pending == selectedElementID,
-              let element = selectedElement, element.role == .settingsRowAction,
+              let element = selectedElement, element.role.isSettingsChild,
               let parent = element.parentRowID,
               selectedScreen?.elements.filter({ $0.role == .metadata }).firstIndex(where: { $0.id == parent }) == expandedRow,
               let geometry = bounds.first(where: { $0.id == pending }), geometry.isBounded,
@@ -595,7 +595,7 @@ final class TemplateStore: ObservableObject {
         let removesRequiredRole = originalRequired > 0 && originalCount <= originalRequired
             && (candidate.role != location.element.role
                 || (!location.element.hidden && candidate.hidden
-                    && ![StudioElementRole.liveDetails, .settingsRowAction].contains(candidate.role)))
+                    && candidate.role != .liveDetails && !candidate.role.isSettingsChild))
         let exceedsCandidateMaximum = candidate.role != location.element.role
             && candidateMaximum.map { candidateCount >= $0 } == true
         if removesRequiredRole {
@@ -628,12 +628,20 @@ final class TemplateStore: ObservableObject {
     // DESC: Exchanges existing action parents atomically so every required native action remains represented exactly once.
     // ------------------=
     func reparentSelectedAction(_ parent: UUID) {
+        reparentSelectedSettingsChild(parent)
+    }
+
+    // ------------------------=
+    // FUNC: reparentSelectedSettingsChild
+    // DESC: Exchanges same-role parent bindings atomically, retaining every required native child and validating its destination.
+    // ------------------=
+    func reparentSelectedSettingsChild(_ parent: UUID) {
         guard let location = selectedLocation(), !location.element.locked,
-              location.element.role == .settingsRowAction, let oldParent = location.element.parentRowID,
+              location.element.role.isSettingsChild, let oldParent = location.element.parentRowID,
               parent != oldParent else { return }
         var screen = activeDocument.screens[location.screen]
-        if let other = screen.elements.firstIndex(where: { $0.role == .settingsRowAction && $0.parentRowID == parent }) {
-            guard !screen.elements[other].locked else { status = "Unlock the other action before exchanging parents"; return }
+        if let other = screen.elements.firstIndex(where: { $0.role == location.element.role && $0.parentRowID == parent }) {
+            guard !screen.elements[other].locked else { status = "Unlock the other child before exchanging parents"; return }
             screen.elements[other].parentRowID = oldParent
         }
         screen.elements[location.elementIndex].parentRowID = parent
@@ -642,7 +650,7 @@ final class TemplateStore: ObservableObject {
         recordUndo()
         activeDocument.screens[location.screen] = screen
         selectElement(location.element.id)
-        status = "Action parent bindings exchanged"
+        status = "Settings parent bindings exchanged"
     }
 
     // ------------------------=
@@ -1017,7 +1025,8 @@ final class TemplateStore: ObservableObject {
             if [.topLeft, .top, .topRight].contains(handle) { top = bottom - 20 } else { bottom = top + 20 }
         }
         activeDocument.screens[location.screen].elements[location.elementIndex].frame =
-            CanvasRect(x: left, y: top, width: right - left, height: bottom - top).clamped()
+            CanvasRect(x: location.element.role == .settingsSliderThumb ? 0 : left,
+                y: top, width: right - left, height: bottom - top).clamped()
     }
 
     // ------------------------=
@@ -1549,7 +1558,7 @@ final class TemplateStore: ObservableObject {
         for index in activeDocument.screens[screen].elements.indices {
             let id = activeDocument.screens[screen].elements[index].id
             guard var frame = origins[id] else { continue }
-            frame.x += dx
+            if activeDocument.screens[screen].elements[index].role != .settingsSliderThumb { frame.x += dx }
             frame.y += dy
             activeDocument.screens[screen].elements[index].frame = frame
         }

@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 8;
+const FORMAT_VERSION: u16 = 9;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -43,6 +43,36 @@ pub enum InstallerTemplateRole {
     SettingsRowValue = 31,
     SettingsDisclosure = 32,
     SettingsRowAction = 33,
+    SettingsSummaryDescription = 34,
+    SettingsDetailDescription = 35,
+    SettingsDetailSurface = 36,
+    SettingsSliderTrack = 37,
+    SettingsSliderThumb = 38,
+}
+
+// ------------------------=
+// FUNC: settings_row_child_role
+// DESC: Identifies elements whose normalized coordinates belong to a native Settings row rather than the global artboard.
+// ------------------=
+pub const fn settings_row_child_role(role: u8) -> bool {
+    role >= InstallerTemplateRole::SettingsRowAction as u8
+        && role <= InstallerTemplateRole::SettingsSliderThumb as u8
+}
+
+// ------------------------=
+// FUNC: settings_basic_row_count
+// DESC: Returns the trusted row count for sections sharing the native basic Settings painter.
+// ------------------=
+pub const fn settings_basic_row_count(section: usize) -> usize {
+    match section { 0 | 2 | 4 | 5 | 9 => 5, 3 => 7, 10 => 8, _ => 0 }
+}
+
+// ------------------------=
+// FUNC: settings_timeout_slider_row
+// DESC: Identifies the existing Privacy inactivity timeout binding without deriving authority from authored text.
+// ------------------=
+pub const fn settings_timeout_slider_row(section: usize, row: usize) -> bool {
+    section == 4 && row == 3
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -235,7 +265,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::InvalidHeader);
         }
         let version = reader.u16()?;
-        if version != FORMAT_VERSION && version != 7 && version != 6 {
+        if version != FORMAT_VERSION && version != 8 && version != 7 && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -290,7 +320,7 @@ impl<'a> InstallerTemplate<'a> {
                 if !element_is_bounded(element.frame) {
                     return Err(InstallerTemplateError::InvalidElement);
                 }
-                if requires_navigation && element.role == InstallerTemplateRole::SettingsRowAction as u8 {
+                if requires_navigation && settings_row_child_role(element.role) {
                     return Err(InstallerTemplateError::InvalidElement);
                 }
                 if element.role == InstallerTemplateRole::Console as u8 {
@@ -411,6 +441,9 @@ impl<'a> InstallerTemplate<'a> {
             }
             if !requires_navigation && version >= 8 {
                 validate_settings_actions(elements_start, count, screen as usize - 1)?;
+            }
+            if !requires_navigation && version >= 9 {
+                validate_settings_row_children(elements_start, count, screen as usize - 1)?;
             }
         }
         let expected_screens = if screen_count == MAX_SCREEN_COUNT {
@@ -748,7 +781,7 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::SettingsRowAction as u8
+            || role > InstallerTemplateRole::SettingsSliderThumb as u8
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
@@ -766,6 +799,8 @@ impl<'a> Reader<'a> {
             || (role == InstallerTemplateRole::SettingsRowValue as u8 && kind != 3)
             || (role == InstallerTemplateRole::SettingsDisclosure as u8 && kind != 3)
             || (role == InstallerTemplateRole::SettingsRowAction as u8 && (kind != 5 || self.version < 8))
+            || (matches!(role, 34 | 35) && (kind != 3 || self.version < 9))
+            || (matches!(role, 36..=38) && (kind != 1 || self.version < 9))
             || (role != InstallerTemplateRole::Input as u8
                 && input_variable != InstallerTemplateVariable::None as u8)
             || (role == InstallerTemplateRole::Input as u8
@@ -808,9 +843,10 @@ impl<'a> Reader<'a> {
             [255; 4]
         };
         if caption_mode > 1
-            || (role == InstallerTemplateRole::SettingsRowAction as u8 && parent_id == [0; 16])
-            || (role != InstallerTemplateRole::SettingsRowAction as u8
-                && (parent_id != [0; 16] || caption_mode != 0))
+            || (settings_row_child_role(role) && parent_id == [0; 16])
+            || (!settings_row_child_role(role) && parent_id != [0; 16])
+            || (!matches!(role, 33..=35) && caption_mode != 0)
+            || (role == InstallerTemplateRole::SettingsSliderThumb as u8 && frame.x != 0)
             || (kind != 5 && caption_color != [255; 4])
         {
             return Err(InstallerTemplateError::InvalidElement);
@@ -908,6 +944,46 @@ fn validate_settings_actions(
         }
     }
     if bound_rows != required_rows {
+        return Err(InstallerTemplateError::InvalidElement);
+    }
+    Ok(())
+}
+
+// ------------------------=
+// FUNC: validate_settings_row_children
+// DESC: Requires each basic row's description and detail layers plus the single trusted timeout slider, rejecting duplicate or foreign parent bindings.
+// ------------------=
+fn validate_settings_row_children(start: Reader<'_>, count: u16, section: usize) -> Result<(), InstallerTemplateError> {
+    let mut children = start;
+    let mut bound = [0u16; 5];
+    for _ in 0..count {
+        let child = children.element()?;
+        if !(34..=38).contains(&child.role) { continue; }
+        let mut peers = start;
+        let mut row = 0usize;
+        let mut parent_row = None;
+        let mut matches = 0u16;
+        for _ in 0..count {
+            let candidate = peers.element()?;
+            if candidate.id == child.parent_id {
+                matches = matches.saturating_add(1);
+                if candidate.role == InstallerTemplateRole::Metadata as u8 { parent_row = Some(row); }
+            }
+            if candidate.role == InstallerTemplateRole::Metadata as u8 { row += 1; }
+        }
+        let row = parent_row.ok_or(InstallerTemplateError::InvalidElement)?;
+        if matches != 1 || row >= settings_basic_row_count(section)
+            || (child.role >= 37 && !settings_timeout_slider_row(section, row)) {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
+        let bit = 1u16 << row;
+        let entry = &mut bound[(child.role - 34) as usize];
+        if *entry & bit != 0 { return Err(InstallerTemplateError::InvalidElement); }
+        *entry |= bit;
+    }
+    let expected = (1u16 << settings_basic_row_count(section)) - 1;
+    let slider = if section == 4 { 1u16 << 3 } else { 0 };
+    if bound != [expected, expected, expected, slider, slider] {
         return Err(InstallerTemplateError::InvalidElement);
     }
     Ok(())

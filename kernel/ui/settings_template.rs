@@ -56,12 +56,64 @@ pub fn element_identity(
 // DESC: Finds the validated action child by its parent row identity, never by editable text or sparse action order.
 // ------------------=
 pub fn row_action(section: usize, row: usize) -> Option<InstallerTemplateElement<'static>> {
+    row_child(section, row, InstallerTemplateRole::SettingsRowAction)
+}
+
+// ------------------------=
+// FUNC: row_child
+// DESC: Resolves a semantic child by its trusted Metadata parent identity regardless of source or paint ordering.
+// ------------------=
+pub fn row_child(section: usize, row: usize, role: InstallerTemplateRole) -> Option<InstallerTemplateElement<'static>> {
     let parent = role_at(section, InstallerTemplateRole::Metadata, row)?;
     for ordinal in 0..8 {
-        let action = role_at(section, InstallerTemplateRole::SettingsRowAction, ordinal)?;
-        if action.parent_id == parent.id { return Some(action); }
+        let child = role_at(section, role, ordinal)?;
+        if child.parent_id == parent.id { return Some(child); }
     }
     None
+}
+
+// ------------------------=
+// FUNC: settings_detail_description
+// DESC: Supplies trusted native explanatory captions while literal mode can author different presentation without changing the associated action.
+// ------------------=
+pub fn settings_detail_description(section: usize, row: usize) -> &'static [u8] {
+    match (section, row) {
+        (0, 0) => b"Rename this machine through the durable identity service.",
+        (0, 1) => b"The installed interface language is English (US).",
+        (0, 2) => b"Regional formatting follows the installed US locale.",
+        (0, 3) => b"This is the active installed System Generation.",
+        (0, 4) => b"Updates are delivered as a complete System Generation.",
+        (1, 0) => b"Switch between installed, verified InfinityUI skins.",
+        (1, 6) => b"Automatic scale follows the active display density.",
+        (1, 7) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
+        (2, 0) => b"The authenticated user owns this desktop session.",
+        (2, 1) => b"Password credentials are managed by the trusted identity flow.",
+        (2, 2) => b"This session is authenticated; locking preserves your workspace.",
+        (2, 3) => b"Personal Space isolates this user's objects and preferences.",
+        (2, 4) => b"The user profile persists with the installed system.",
+        (3, 0) => b"Choose whether the local provider is strictly required or preferred.",
+        (3, 1) => b"Show or hide your local desktop AI chat widget.",
+        (3, 2) => b"Choose the next installed local model without restarting.",
+        (3, 3) => b"Remote processing is disabled; local inference stays on this device.",
+        (3, 4) => b"Microphone access follows the current user permission.",
+        (3, 5) => b"Choose the phrase that opens an eight-second command window.",
+        (3, 6) => b"Model operations remain subject to capability enforcement.",
+        (4, 0) => b"Applications receive no implicit authority over your data.",
+        (4, 1) => b"Microphone access is explicitly granted or restricted here.",
+        (4, 2) => b"Remote AI access requires explicit capability authorization.",
+        (4, 3) => b"Lock this user's session after the selected period without input.",
+        (4, 4) => b"Sensitive decisions use the trusted system interface.",
+        (5, 0) => b"The active display is used by the native desktop compositor.",
+        (5, 1) => b"Open Input to adjust keyboard repeat delay and rate.",
+        (5, 3 | 4) => b"This audio path is unavailable; no device control is exposed.",
+        (9, 0) => b"InfinityOS development System Generation.",
+        (9, 1) => b"The desktop and services execute in the native OS runtime.",
+        (9, 2) => b"Startup uses the installed boot contract and generation checks.",
+        (9, 3) => b"Identity records use the version 1 durable format.",
+        (9, 4) => b"Select an installed icon family in Themes & Skins.",
+        (10, _) => super::settings_cards::description(section, row),
+        _ => b"This value is read from the active System Generation.",
+    }
 }
 
 // ------------------------=

@@ -57,10 +57,10 @@ fn word(bytes: &[u8], cursor: &mut usize) -> usize {
 
 // ------------------------=
 // FUNC: records
-// DESC: Locates serialized fields in the actual compiled version-eight Settings document for isolated authoring mutations.
+// DESC: Locates serialized fields in the actual compiled Settings document for isolated authoring mutations.
 // ------------------=
 fn records(bytes: &[u8]) -> Vec<Record> {
-    assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 8);
+    assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 9);
     let mut cursor = 6;
     let screens = word(bytes, &mut cursor);
     let mut result = Vec::new();
@@ -338,15 +338,117 @@ fn verify_presentation(layout: SystemLayout) {
 }
 
 // ------------------------=
+// FUNC: set_frame
+// DESC: Mutates normalized geometry in a binary child fixture without replacing its typed identity or parent binding.
+// ------------------=
+fn set_frame(bytes: &mut [u8], record: Record, frame: [u16; 4]) {
+    for (index, coordinate) in frame.into_iter().enumerate() {
+        bytes[record.frame + index * 2..record.frame + index * 2 + 2]
+            .copy_from_slice(&coordinate.to_le_bytes());
+    }
+}
+
+// ------------------------=
+// FUNC: verify_children
+// DESC: Exercises moved row children and slider endpoints through native geometry and clipped pointer dispatch at two desktop sizes.
+// ------------------=
+fn verify_children(case: &str) {
+    let mut bytes = ui::installer_layout::SETTINGS_TEMPLATE_BYTES.to_vec();
+    let entries = records(&bytes);
+    let track = *entries.iter().find(|r| r.section == 4 && r.role == 37).unwrap();
+    let thumb = *entries.iter().find(|r| r.section == 4 && r.role == 38).unwrap();
+    let parent = *entries.iter().filter(|r| r.section == 4 && r.role == Role::Metadata as u8).nth(3).unwrap();
+    let moved = case == "child-moved";
+    if moved {
+        set_frame(&mut bytes, track, [430, 700, 500, 70]);
+        set_frame(&mut bytes, thumb, [0, 620, 140, 260]);
+    }
+    match case {
+        "child-baseline" | "child-moved" => {},
+        "child-track-hidden" => bytes[track.flags] |= 2,
+        "child-thumb-hidden" => bytes[thumb.flags] |= 2,
+        "child-parent-hidden" => bytes[parent.flags] |= 2,
+        "child-track-transparent" => bytes[track.opacity] = 0,
+        "child-thumb-transparent" => bytes[thumb.opacity] = 0,
+        "child-parent-transparent" => bytes[parent.opacity] = 0,
+        _ => panic!("Unknown child fixture"),
+    }
+    InstallerTemplate::parse_settings(&bytes).unwrap();
+    FIXTURE.set(bytes).unwrap();
+    let parsed = InstallerTemplate::parse_settings(FIXTURE.get().unwrap()).unwrap();
+    let track_element = parsed.element(5, Role::SettingsSliderTrack).unwrap();
+    let thumb_element = parsed.element(5, Role::SettingsSliderThumb).unwrap();
+    let disabled = !matches!(case, "child-baseline" | "child-moved");
+    for (width, height) in [(1280, 800), (1920, 1080)] {
+        let layout = SystemLayout::new(width, height);
+        let mut state = state(4, 3);
+        state.scroll_offset = layout.settings_reveal_scroll(state, 4);
+        let detail = layout.settings_row_geometry_for_section(state, 3, 4).detail;
+        let viewport = layout.settings_window_geometry_for_section(state, 4).viewport;
+        let maximum = 59;
+        for value in [0, 30, maximum] {
+            let geometry = layout.settings_effect_slider_geometry_for_section(state, 3, value, maximum, 4);
+            assert_eq!(geometry.track, expected_bounds(detail, track_element.frame));
+            let thumb_width = geometry.track.width * u32::from(thumb_element.frame.width) / 1000;
+            assert_eq!(geometry.thumb.width, thumb_width);
+            assert_eq!(geometry.thumb.x, geometry.track.x +
+                (geometry.track.width.saturating_sub(thumb_width) * u32::from(value) / u32::from(maximum)) as i32);
+            assert_eq!(geometry.thumb.y, detail.y + (detail.height * u32::from(thumb_element.frame.y) / 1000) as i32);
+            let point = center(geometry.thumb);
+            let nx = point.x * 1000 / width as i32;
+            let ny = point.y * 1000 / height as i32;
+            let target = layout.settings_slider_target_for_section(nx, ny, state, 3, maximum, 4);
+            if disabled || !detail.intersection(viewport).contains(layout.point(nx, ny)) {
+                assert_eq!(target, None);
+            } else {
+                // Normalized desktop pointer rounding is at most two physical pixels.
+                assert!(target.is_some_and(|actual| actual.abs_diff(value) <= 1));
+            }
+        }
+        assert_eq!(layout.settings_slider_drag_value_for_section(-1000, state, 3, maximum, 4), 0);
+        assert_eq!(layout.settings_slider_drag_value_for_section(2000, state, 3, maximum, 4), maximum);
+        let collapsed = SettingsWindowState { expanded_row: None, ..state };
+        assert_eq!(layout.settings_slider_target_for_section(500, 500, collapsed, 3, maximum, 4), None);
+        let zero = layout.settings_effect_slider_geometry_for_section(state, 3, 0, maximum, 4);
+        for point in [Point { x: zero.track.x - 5, y: center(zero.thumb).y },
+            Point { x: zero.track.right() + 5, y: center(zero.thumb).y },
+            Point { x: center(zero.track).x, y: viewport.y - 5 }] {
+            assert_eq!(layout.settings_slider_target_for_section(point.x * 1000 / width as i32,
+                point.y * 1000 / height as i32, state, 3, maximum, 4), None);
+        }
+        let sections = [(0, 5), (2, 5), (3, 7), (4, 5), (5, 5), (9, 5), (10, 8)];
+        for (section, row_count) in sections {
+            for row in 0..row_count {
+                let mut state = SettingsWindowState { row_count, ..self::state(section, row) };
+                state.scroll_offset = layout.settings_reveal_scroll(state, section);
+                let rows: Vec<_> = entries.iter().filter(|r| r.section == section && r.role == Role::Metadata as u8).collect();
+                for role in [34, 35, 36] {
+                    let child = (0..parsed.element_count(section as u8 + 1).unwrap())
+                        .filter_map(|index| parsed.element_at(section as u8 + 1, index))
+                        .find(|element| element.role == role && element.parent_id == rows[row].id).unwrap();
+                    let geometry = layout.settings_row_geometry_for_section(state, row, section);
+                    let parent = if role == 34 { geometry.summary } else { geometry.detail };
+                    assert_eq!(layout.settings_element_geometry(state, section, child.id), Some(expected_bounds(parent, child.frame)));
+                    let closed = SettingsWindowState { expanded_row: None, ..state };
+                    if role != 34 { assert_eq!(layout.settings_element_geometry(closed, section, child.id), None); }
+                }
+            }
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Runs each immutable authored fixture in a separate process so native template caching remains identical to production.
 // ------------------=
 fn main() {
     if let Some(case) = std::env::args().nth(1) {
-        verify_case(&case);
+        if case.starts_with("child-") { verify_children(&case); } else { verify_case(&case); }
         return;
     }
-    for case in ["baseline", "moved", "resized", "hidden", "transparent", "parent-hidden", "parent-transparent", "literal-caption", "caption-transparent"] {
+    for case in ["baseline", "moved", "resized", "hidden", "transparent", "parent-hidden", "parent-transparent", "literal-caption", "caption-transparent",
+        "child-baseline", "child-moved", "child-track-hidden", "child-thumb-hidden", "child-parent-hidden",
+        "child-track-transparent", "child-thumb-transparent", "child-parent-transparent"] {
         let status = std::process::Command::new(std::env::current_exe().unwrap()).arg(case).status().unwrap();
         assert!(status.success(), "Settings action fixture failed: {case}");
     }

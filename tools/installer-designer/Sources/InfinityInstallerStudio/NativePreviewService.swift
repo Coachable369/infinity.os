@@ -235,7 +235,7 @@ enum NativeCanvasMapping {
     // ------------------=
     static func editingScale(element: StudioElement, console: CanvasRect?, window: NativePreviewBounds?,
         viewport: NativePreviewViewport, scale: CGFloat, bounds: NativePreviewBounds? = nil) -> CGSize {
-        if element.role == .settingsRowAction {
+        if element.role.isSettingsChild {
             guard let parent = bounds?.parentBounds, parent.width > 0, parent.height > 0 else { return .zero }
             return CGSize(width: CGFloat(parent.width) * scale / 1000,
                           height: CGFloat(parent.height) * scale / 1000)

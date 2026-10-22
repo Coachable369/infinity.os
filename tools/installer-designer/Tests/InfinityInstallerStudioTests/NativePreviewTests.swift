@@ -38,6 +38,104 @@ private actor ControlledNativeRenderer: NativePreviewRunning {
 
 final class NativePreviewTests: XCTestCase {
     // ------------------------=
+    // FUNC: testSettingsChildPixelsFollowAuthoredGeometryAndVisibility
+    // DESC: Compares actual production frames for row descriptions and detail surfaces at two viewport sizes, including hidden/transparent parity.
+    // ------------------=
+    @MainActor func testSettingsChildPixelsFollowAuthoredGeometryAndVisibility() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 1)
+        let runner = NativePreviewRunner()
+        for role in [StudioElementRole.settingsSummaryDescription, .settingsDetailDescription, .settingsDetailSurface] {
+            let child = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == role })
+            store.selectElement(child.id)
+            store.nativePreviewSimulation.expandedRow = 0
+            store.nativePreviewSimulation.scroll = 0
+            for (width, height) in [(1280, 800), (1920, 1080)] {
+                let baseline = try await runner.render(NativePreviewSnapshot.capture(store, width: width, height: height))
+                let before = try XCTUnwrap(baseline.bounds.first { $0.id == child.id })
+                store.updateSelected {
+                    $0.frame = role == .settingsDetailSurface
+                        ? CanvasRect(x: 80, y: 80, width: 840, height: 820)
+                        : CanvasRect(x: 160, y: 420, width: 400, height: 300)
+                    $0.fill = StudioColor(red: 190, green: 105, blue: 240, alpha: 230)
+                    if role == .settingsDetailSurface {
+                        $0.surfaceMaterial = .matte; $0.surfaceCorners = .rounded; $0.cornerRadius = 12
+                    } else {
+                        $0.text = "Editable native description"; $0.fontSize = 20
+                    }
+                }
+                let edited = try XCTUnwrap(store.selectedElement)
+                let changed = try await runner.render(NativePreviewSnapshot.capture(store, width: width, height: height))
+                let bounds = try XCTUnwrap(changed.bounds.first { $0.id == child.id })
+                let parent = try XCTUnwrap(bounds.parentBounds)
+                XCTAssertEqual(bounds.x, parent.x + edited.frame.x * parent.width / 1000)
+                XCTAssertEqual(bounds.y, parent.y + edited.frame.y * parent.height / 1000)
+                XCTAssertEqual(bounds.width, edited.frame.width * parent.width / 1000)
+                XCTAssertEqual(bounds.height, edited.frame.height * parent.height / 1000)
+                XCTAssertNotEqual(baseline.pixels, changed.pixels)
+                let allowed = CGRect(x: before.x, y: before.y, width: before.width, height: before.height)
+                    .union(CGRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height))
+                let first = [UInt8](baseline.pixels), second = [UInt8](changed.pixels)
+                var escaped = 0
+                for offset in stride(from: 0, to: first.count, by: 4)
+                    where first[offset..<(offset + 4)] != second[offset..<(offset + 4)] {
+                    let pixel = offset / 4
+                    if !allowed.contains(CGPoint(x: pixel % width, y: pixel / width)) { escaped += 1 }
+                }
+                XCTAssertEqual(escaped, 0)
+                store.updateSelected { $0.hidden = true }
+                let hidden = try await runner.render(NativePreviewSnapshot.capture(store, width: width, height: height))
+                store.updateSelected { $0.hidden = false; $0.opacity = 0 }
+                let transparent = try await runner.render(NativePreviewSnapshot.capture(store, width: width, height: height))
+                XCTAssertEqual(hidden.pixels, transparent.pixels)
+                XCTAssertNotEqual(hidden.pixels, changed.pixels)
+                if width == 1280 { try saveProof(changed, name: "native-settings-child-\(role.rawValue)") }
+                store.updateSelected { $0 = child }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testSettingsTimeoutSliderUsesNativeSizingAndThemePixels
+    // DESC: Verifies track and thumb can be independently styled and resized while their preview geometry remains owned by the real timeout value binding.
+    // ------------------=
+    @MainActor func testSettingsTimeoutSliderUsesNativeSizingAndThemePixels() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 5)
+        let thumb = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .settingsSliderThumb })
+        let track = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .settingsSliderTrack })
+        store.selectElement(thumb.id)
+        XCTAssertEqual(store.nativePreviewSimulation.expandedRow, 3)
+        let runner = NativePreviewRunner()
+        let baseline = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        store.selectElement(track.id)
+        store.updateSelected {
+            $0.frame = CanvasRect(x: 400, y: 600, width: 520, height: 100)
+            $0.fill = StudioColor(red: 40, green: 100, blue: 220, alpha: 210)
+            $0.surfaceMaterial = .glass
+        }
+        store.selectElement(thumb.id)
+        store.updateSelected {
+            $0.frame = CanvasRect(x: 0, y: 530, width: 100, height: 250)
+            $0.fill = StudioColor(red: 195, green: 130, blue: 240, alpha: 255)
+            $0.surfaceCorners = .rounded; $0.cornerRadius = 12
+        }
+        let changed = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        let resolved = try XCTUnwrap(changed.bounds.first { $0.id == thumb.id })
+        let parent = try XCTUnwrap(resolved.parentBounds)
+        XCTAssertEqual(resolved.x, parent.x)
+        XCTAssertEqual(resolved.width, parent.width / 10)
+        XCTAssertEqual(resolved.y, parent.y + parent.height * 530 / 1000)
+        XCTAssertNotEqual(baseline.pixels, changed.pixels)
+        let snapshot = try NativePreviewSnapshot.capture(store, width: 1280, height: 800)
+        let saved = try RuntimeTemplateCodec.decode(snapshot.template, collection: .systemSettings)
+        XCTAssertEqual(saved.screens[4].elements.first { $0.id == thumb.id }?.frame.x, 0)
+        try saveProof(changed, name: "native-settings-timeout-authored")
+    }
+
+    // ------------------------=
     // FUNC: testConfigurationButtonCaptionColorAndAlphaStayIndependentFromSurface
     // DESC: Verifies configuration caption RGB and alpha through native glyph pixels while preserving the button surface and all pixels outside its authored bounds.
     // ------------------=

@@ -168,21 +168,23 @@ enum TemplateValidator {
     // ------------------=
     static func validateSettingsActions(_ screen: InstallerScreenTemplate, collection: ScreenCollection?) throws {
         let rows = screen.elements.filter { $0.role == .metadata }
-        var boundParents = Set<UUID>()
+        var boundParents: [StudioElementRole: Set<UUID>] = [:]
         for element in screen.elements {
-            guard element.role == .settingsRowAction else {
+            guard element.role.isSettingsChild else {
                 guard element.parentRowID == nil, element.actionCaptionMode == .native else {
-                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Only Settings actions may bind a parent or caption mode")
+                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Only Settings children may bind a parent or caption mode")
                 }
                 continue
             }
-            guard collection == .systemSettings, element.kind == .button, let parent = element.parentRowID,
+            guard collection == .systemSettings, element.kind == SettingsChildContract.kind(element.role), let parent = element.parentRowID,
                   parent != UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
                   let row = rows.firstIndex(where: { $0.id == parent }),
                   screen.elements.filter({ $0.id == parent }).count == 1,
-                  SettingsActionContract.rows(screenID: screen.id).contains(row),
-                  boundParents.insert(parent).inserted else {
-                throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Action requires one unique permitted Metadata parent on the same Settings screen")
+                  SettingsChildContract.rows(role: element.role, screenID: screen.id).contains(row),
+                  boundParents[element.role, default: []].insert(parent).inserted,
+                  element.role.hasNativeCaption || element.actionCaptionMode == .native,
+                  element.role != .settingsSliderThumb || element.frame.x == 0 else {
+                throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Child requires one unique permitted Metadata parent, the correct kind and valid native-owned fields")
             }
         }
     }
@@ -194,7 +196,7 @@ enum RuntimeTemplateCodec {
         let assets: [String: Data]
     }
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 8
+    static let version: UInt16 = 9
     static let maximumAssetCount = 128
     static let maximumTemplateBytes = 512 * 1024 * 1024
 
@@ -358,7 +360,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard [6, 7, version].contains(sourceVersion) else {
+        guard [6, 7, 8, version].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -379,6 +381,9 @@ enum RuntimeTemplateCodec {
                       let inputVariable = StudioInputVariable(runtimeCode: try reader.readUInt8())
                 else {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Unknown element kind or role")
+                }
+                guard sourceVersion >= 9 || !SettingsChildContract.roles.contains(role) else {
+                    throw TemplateValidationIssue.invalidScreen(screenID, "Settings descriptions and slider layers require native template version 9")
                 }
                 let flags = try reader.readUInt8()
                 guard flags & 0xc0 == 0,
@@ -480,7 +485,7 @@ enum RuntimeTemplateCodec {
             canvasHeight: 1000,
             screens: screens
         )
-        if sourceVersion < 8 && collection == .systemSettings {
+        if sourceVersion < 9 && collection == .systemSettings {
             document = document.migratedForSettingsActions()
         }
         try TemplateValidator.validate(document, for: collection)

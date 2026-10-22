@@ -112,16 +112,23 @@ pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:us
         let id=element.id.iter().enumerate().map(|(index,byte)|format!("{}{:02x}",
             if [4,6,8,10].contains(&index){"-"}else{""},byte)).collect::<String>();
         result.push_str(&format!("{{\"id\":\"{id}\",\"x\":{},\"y\":{},\"width\":{},\"height\":{}",r.x,r.y,r.width,r.height));
-        if element.role==Role::SettingsRowAction as u8 {
+        if crate::ui::installer_template::settings_row_child_role(element.role) {
             if let Some((_,row))=crate::ui::settings_template::element_identity(usize::from(screen-1),element.parent_id) {
-                if let Some(action)=layout.settings_action_geometry(window,usize::from(screen-1),row) {
-                    let parent=action.parent;
+                let section=usize::from(screen-1);
+                let parent=if element.role==Role::SettingsRowAction as u8 {
+                    layout.settings_action_geometry(window,section,row).map(|action|action.parent)
+                }else{
+                    let role=match element.role{34=>Role::SettingsSummaryDescription,35=>Role::SettingsDetailDescription,
+                        36=>Role::SettingsDetailSurface,37=>Role::SettingsSliderTrack,_=>Role::SettingsSliderThumb};
+                    layout.settings_row_child_geometry(window,section,row,role,14,119).map(|child|child.parent)
+                };
+                if let Some(parent)=parent {
                     result.push_str(&format!(",\"parentBounds\":{{\"x\":{},\"y\":{},\"width\":{},\"height\":{}}}",parent.x,parent.y,parent.width,parent.height));
-                    let geometry=layout.settings_window_geometry_for_section(window,usize::from(screen-1));
+                    let geometry=layout.settings_window_geometry_for_section(window,section);
                     let viewport=geometry.viewport;
                     result.push_str(&format!(",\"viewportBounds\":{{\"x\":{},\"y\":{},\"width\":{},\"height\":{}}},\"revealScroll\":{},\"maximumScroll\":{}",
                         viewport.x,viewport.y,viewport.width,viewport.height,
-                        layout.settings_reveal_scroll(window,usize::from(screen-1)),geometry.maximum_scroll));
+                        layout.settings_reveal_scroll(window,section),geometry.maximum_scroll));
                 }
             }
         }
@@ -164,7 +171,8 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             .filter(|action|action.visible&&action.clip.intersects(action.bounds)&&focus==1)
             .map(|action|crate::ui::app_launcher::window_controls::Highlight{rect:action.bounds,pressed});
         crate::ui::app_launcher::window_controls::publish(interaction);
-        settings_rendered=target.render_basic_settings_view(usize::from(screen-1),b"Preview machine",window,target.ui_scale(),
+        let preview_value:&[u8]=if screen==5{b"15 minutes"}else{b"Preview machine"};
+        settings_rendered=target.render_basic_settings_view(usize::from(screen-1),preview_value,window,target.ui_scale(),
             crate::settings_view::BasicSettingsSnapshot{chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
                 voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,
                 preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:15,timeout_maximum:120});
