@@ -2,9 +2,23 @@ import SwiftUI
 
 struct ElementInspector: View {
     @ObservedObject var store: TemplateStore
+    @State private var layerSearch = ""
+
+    // ------------------------=
+    // FUNC: listedElements
+    // DESC: Keeps scene artwork discoverable without excluding locked or hidden authored layers.
+    // ------------------=
+    static func listedElements(_ elements: [StudioElement], scene: Bool, search: String) -> [StudioElement] {
+        elements.filter {
+            let isScene = $0.role == .sceneBackground || $0.role == .masthead
+            return isScene == scene && (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)
+                || $0.codeIdentifier.localizedCaseInsensitiveContains(search) || $0.imageAsset.localizedCaseInsensitiveContains(search))
+        }.sorted { $0.zIndex == $1.zIndex ? $0.id.uuidString < $1.id.uuidString : $0.zIndex > $1.zIndex }
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VSplitView {
+          VStack(spacing: 0) {
             HStack {
                 Text("LAYERS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
@@ -17,7 +31,12 @@ struct ElementInspector: View {
             }
             .buttonStyle(.plain)
             .padding(InfinityUIKit.Metrics.controlGap)
-            List((store.selectedScreen?.elements ?? []).sorted { $0.zIndex > $1.zIndex }) { element in
+            TextField("Find layer or image…", text: $layerSearch)
+                .textFieldStyle(.roundedBorder).padding(.horizontal, 12).padding(.bottom, 8)
+            List {
+              ForEach([true, false], id: \.self) { scene in
+                Section(scene ? "Scene & Header" : "Content") {
+                  ForEach(Self.listedElements(store.selectedScreen?.elements ?? [], scene: scene, search: layerSearch)) { element in
                 HStack(spacing: 8) {
                     Button(action: { store.selectElement(element.id) }) {
                         HStack(spacing: 8) {
@@ -45,10 +64,14 @@ struct ElementInspector: View {
                 .listRowBackground(store.selectedElementIDs.contains(element.id)
                     ? InfinityUIKit.Palette.nativeAccent.opacity(0.12)
                     : Color.clear)
+                  }
+                }
+              }
             }
             .listStyle(.inset)
-            .frame(minHeight: 190, idealHeight: 240)
-            Divider()
+            .frame(minHeight: 190)
+          }.frame(minHeight: 250, idealHeight: 340)
+          Group {
             if let element = store.selectedElement {
                 ScrollView {
                     VStack(alignment: .leading, spacing: InfinityUIKit.Metrics.controlGap) {
@@ -79,6 +102,7 @@ struct ElementInspector: View {
                     description: Text("Select a layer or an object on the canvas.")
                 )
             }
+          }.frame(minHeight: 190)
         }
         .background(InfinityUIKit.Palette.nativePanel)
         .tint(InfinityUIKit.Palette.nativeAccent)

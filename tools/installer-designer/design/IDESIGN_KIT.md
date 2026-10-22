@@ -48,6 +48,20 @@ remain editable; switching sections must not reset them to a factory template.
 
 ## Editable surface recipes
 
+### Quiet editing chrome and discoverable artwork
+
+Keep scene backgrounds and mastheads first in a **Scene & Header** layer group;
+list other authored elements under **Content**, including hidden and locked layers.
+Search by layer name, identifier or image asset. The layer list and property
+inspector share a draggable vertical split so neither hides the other's controls.
+Selecting a locked layer reveals its properties and explicit unlock action.
+
+Reuse existing Studio controls: keep Marquee, Add and Save Section prominent,
+use compact Undo/Redo icons, and collect grid, snapping and console layouts in
+Canvas. Put validation and publishing in the Save menu. Preview options and
+simulation diagnostics are collapsed by default; rendering failures remain
+visible and offer details. No new artwork or alternate surface recipe is needed.
+
 The kit lacked saved material/geometry choices. Surface Styles adds six shared
 recipes: window frame, window background, panel/dialog, primary action, secondary
 action and field. Reuse the approved atlas for reflections, edge lighting and

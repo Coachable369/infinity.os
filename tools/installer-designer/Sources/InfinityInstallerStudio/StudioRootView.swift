@@ -89,8 +89,10 @@ private struct StudioToolbar: View {
             .help("Select enclosed objects and move them as a group (Shift-Command-M)")
             }
             Button(action: store.undo) { Label("Undo", systemImage: "arrow.uturn.backward") }
+                .labelStyle(.iconOnly).help("Undo")
                 .disabled(!store.canUndo)
             Button(action: store.redo) { Label("Redo", systemImage: "arrow.uturn.forward") }
+                .labelStyle(.iconOnly).help("Redo")
                 .disabled(!store.canRedo)
             Divider().frame(height: 28)
             if store.editingUIKit {
@@ -116,44 +118,34 @@ private struct StudioToolbar: View {
                 Label("Add", systemImage: "plus")
             }
             Menu {
-                ForEach(ConsoleLayoutPreset.allCases) { preset in
-                    Button(preset.title) { store.applyConsoleLayout(preset) }
+                Menu("Console Layout") {
+                    ForEach(ConsoleLayoutPreset.allCases) { preset in
+                        Button(preset.title) { store.applyConsoleLayout(preset) }
+                    }
                 }
-            } label: {
-                Label("Layouts", systemImage: "rectangle.3.group")
-            }
-            .help("Insert an editable layout inside the console area")
             Toggle(isOn: $store.showGrid) { Label("Grid", systemImage: "grid") }
-                .toggleStyle(.button)
             Toggle(isOn: $store.snapEnabled) { Label("Snap", systemImage: "magnet") }
-                .toggleStyle(.button)
             Picker("Grid", selection: $store.gridSize) {
                 Text("5").tag(5)
                 Text("10").tag(10)
                 Text("20").tag(20)
                 Text("50").tag(50)
             }
-            .frame(width: 86)
+            } label: { Label("Canvas", systemImage: "slider.horizontal.3") }
+            .help("Grid, snapping and console layouts")
             }
             Spacer()
-            Button(action: { _ = store.validate() }) {
-                Label("Validate", systemImage: "checkmark.shield")
-            }
             Button(action: store.save) {
                 Label("Save Section", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
             Menu {
+                Button("Validate Section") { _ = store.validate() }
                 Button("Save All Sections") { store.saveAll() }
                 Divider()
                 Button("Save & Update ISO…") { store.showISOUpdate = true }
             } label: { Image(systemName: "chevron.down") }
             .help("Save all sections or update an existing ISO")
-            Button { store.showISOUpdate.toggle() } label: {
-                Image(systemName: "opticaldisc")
-            }
-            .help("Save & Update ISO")
-            .accessibilityLabel("Save & Update ISO")
         }
         .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
         .controlSize(.regular)

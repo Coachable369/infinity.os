@@ -5,6 +5,7 @@ struct InstallerCanvas: View {
     @ObservedObject var store: TemplateStore
     @State private var marqueeDisplayRect: CGRect?
     @State private var canvasDragMode: CanvasDragMode?
+    @State private var previewOptionsExpanded = false
     @StateObject private var nativePreview = NativePreviewService()
     private var simulatedSettings: Bool {
         store.selectedCollection == .systemSettings && store.nativePreviewSimulation.enabled
@@ -144,6 +145,7 @@ struct InstallerCanvas: View {
 
     @ViewBuilder private var nativePreviewStatus: some View {
         VStack(alignment: .leading, spacing: 6) {
+        DisclosureGroup("Preview", isExpanded: $previewOptionsExpanded) {
         HStack(spacing: 8) {
             switch nativePreview.phase {
             case .idle, .rendering:
@@ -188,10 +190,16 @@ struct InstallerCanvas: View {
             }
         }
         }
+        if nativePreview.phase == .failed && !previewOptionsExpanded {
+            Label("Preview needs attention", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+            Button("Show details") { previewOptionsExpanded = true }
+        }
+        }
         .font(.system(size: 11))
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .frame(maxWidth: 560, alignment: .leading)
+        .frame(maxWidth: previewOptionsExpanded ? 560 : 210, alignment: .leading)
     }
 
     @ViewBuilder private var simulationControls: some View {
