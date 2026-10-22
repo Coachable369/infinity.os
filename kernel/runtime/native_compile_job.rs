@@ -136,6 +136,7 @@ unsafe fn advance(owner:SecurityIdentity,authorized:bool,now:u64)->bool {
         File{path:b"/sdk/ctype.h",bytes:super::native_compiler_task::CTYPE},
         File{path:b"/sdk/assert.h",bytes:super::native_compiler_task::ASSERT},
         File{path:b"/sdk/infinity/console.h",bytes:super::native_compiler_task::CONSOLE},
+        File{path:b"/sdk/infinity/camera.h",bytes:super::native_compiler_task::CAMERA},
         File{path:b"/sdk/infinity/syscall.h",bytes:super::native_compiler_task::SYSCALL},
         File{path:b"/sdk/infinity/uikit.h",bytes:super::native_compiler_task::UIKIT},
         File{path:b"/sdk/infinity/interaction.h",bytes:super::native_compiler_task::INTERACTION},

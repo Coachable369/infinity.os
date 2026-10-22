@@ -15,9 +15,10 @@ for architecture in x86_64 aarch64; do
         "$architecture_flags" -Wall -Wextra -Werror -Os -Isdk/c/include \
         -c "sdk/c/$library.c" -o "build/native-c/$library-$architecture.o"
     done
-    for example in hello io; do
+    for example in hello io camera_capture; do
     source_path=sdk/c/examples/hello.c
     if test "$example" = io; then source_path=tools/native-c-probe/io-app.c; fi
+    if test "$example" = camera_capture; then source_path=sdk/c/examples/camera_capture.c; fi
     "$clang_path" --target="$architecture-none-elf" -std=c17 -ffreestanding -fno-builtin \
         -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fPIE -fvisibility=hidden \
         "$architecture_flags" -Wall -Wextra -Werror -Os -Isdk/c/include \

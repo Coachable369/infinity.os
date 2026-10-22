@@ -6,6 +6,7 @@ pub mod network;
 mod network_dhcp;
 pub(crate) mod hda;
 pub mod audio;
+pub mod camera;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) mod https;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

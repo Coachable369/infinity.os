@@ -18,7 +18,7 @@ Host JPEG decoding validates the artifact only. Capture executes in the guest;
 no host camera API or host inference produced the frame. These timings are not
 desktop latency measurements or a continuous-stream throughput claim.
 
-## Service boundary implemented, not yet wired into installed dispatch
+## Service boundary
 
 `kernel/runtime/camera.rs` adds an explicit CameraCapture capability, a bounded
 lease, one 1,228,800-byte frame slot, sequence-tagged reads of at most 4,096 bytes,
@@ -38,7 +38,7 @@ Passing synthetic transport state-machine manifest:
 `builds/manifests/20261022T201614414387Z-60329.json`.
 Synthetic transport tests are not real disconnect/cancellation evidence.
 
-## Remaining acceptance gate
+## Original acceptance gate (integration update below)
 
 1. Native USB controller transport and bounded scheduling. ARM firmware capture
    is diagnostic only; x86 exits boot services and cannot use that backend.
@@ -67,10 +67,8 @@ requires shutdown. Eight unsuccessful shutdown visits latch Faulted, which does
 not permit reuse. Faulted is not a claim that the physical camera stopped.
 
 These lifecycle tests use an explicitly scripted backend; they do not substitute
-for real capture, hardware shutdown, or installed-process proof. No production
-USB backend implements the new Driver contract yet, and no installed application
-invokes this dispatcher. The production backend must own DMA buffers, never
-retain the supplied scratch slice, and acknowledge actual endpoint quiescence.
+for real capture, hardware shutdown, or installed-process proof. Those tests
+preceded the installed adapter described below.
 
 The full release build at revision 9c1bb7ab failed in the unrelated existing
 configuration-wizard painter check (`tools/configuration-wizard-render.rs:561`,
@@ -78,3 +76,38 @@ PrimaryButton pixel validation). Manifest:
 `builds/manifests/20261022T201830765060Z-61051.json`.
 Do not represent the existing ISOs as updated camera releases. Per user direction,
 that unrelated UI failure is outside the current camera work.
+
+## Installed integration first pass
+
+`boot/common/uefi_camera.h` exposes a kernel-private, fixed-operation ARM adapter
+for the 80ee:0030 camera. Discovery advances one candidate per visit, bounded to
+64 handles. Probe/commit fixes 640×480 MJPEG at five fps. Each control/bulk call
+requests a 10 ms timeout. Re-resolving the protocol detects removed handles.
+Old firmware handoffs remain valid; the appended function pointer is read only
+when the version magic is present.
+
+`camera_uvc.rs` provides shared bounded negotiation/deframing. Partial/error
+frames are discarded until a new FID. `drivers/camera.rs` connects it to the
+typed transport and isolated native-app dispatch. Locking a session, expiry,
+revocation and process exit revoke delivery and schedule shutdown. Failed stop
+acknowledgement latches Faulted. Synchronous transfer quiescence does not prove
+the sensor is powered down; that still requires installed observation.
+
+No untrusted user address reaches firmware. Reads copy a maximum 4096 bytes
+through checked application page tables. One frame slot, bounded scratch and
+three reconnect attempts prevent unbounded queues. Buffers total approximately
+3.58 MiB plus 64 KiB packet scratch, allocated statically.
+
+Manual installed entrypoints, after installing updated media:
+1. `camera build` compiles bundled `sdk/c/examples/camera_capture.c` through the
+   native isolated compiler and publishes an ordinary executable object.
+2. `camera allow` grants the authenticated session a 30-second launch lease.
+3. Run the reported executable; it captures for at most five seconds and checks
+   sequence-consistent JPEG chunks in isolated memory, reporting length/checksum.
+4. `camera stop` revokes permission. Repeat with disconnect, reconnect, lock,
+   cancellation and unrelated desktop interaction. Inspect actual camera LED.
+
+The header and client source are embedded in both live/installed kernels and
+included in the compiler artifact parity assertion. x86_64 compiles the shared
+code but returns unavailable; a native x86 USB backend remains missing.
+No automated end-to-end runs were performed during this implementation pass.

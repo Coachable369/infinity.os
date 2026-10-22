@@ -20,6 +20,7 @@ pub static ERRNO:&[u8]=include_bytes!("../../sdk/c/include/errno.h");
 pub static CTYPE:&[u8]=include_bytes!("../../sdk/c/include/ctype.h");
 pub static ASSERT:&[u8]=include_bytes!("../../sdk/c/include/assert.h");
 pub static CONSOLE:&[u8]=include_bytes!("../../sdk/c/include/infinity/console.h");
+pub static CAMERA:&[u8]=include_bytes!("../../sdk/c/include/infinity/camera.h");
 pub static SYSCALL:&[u8]=include_bytes!("../../sdk/c/include/infinity/syscall.h");
 pub static UIKIT:&[u8]=include_bytes!("../../sdk/c/include/infinity/uikit.h");
 pub static INTERACTION: &[u8] = include_bytes!("../../sdk/c/include/infinity/interaction.h");

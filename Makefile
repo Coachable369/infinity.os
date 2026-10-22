@@ -76,6 +76,7 @@ KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -pr
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt) assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
 KERNEL_SOURCES += assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
 KERNEL_SOURCES += $(wildcard sdk/c/include/*.h sdk/c/include/infinity/*.h sdk/c/compiler-headers/*.h)
+KERNEL_SOURCES += sdk/c/examples/camera_capture.c
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
 	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
@@ -392,6 +393,7 @@ $(ICON_RUNTIME_ASSETS): $(BUILD)/uikit-runtime.stamp
 	@test -s $@
 
 NATIVE_C_TOOLCHAIN_SOURCES := tools/build-native-c-toolchain.sh $(shell find sdk/compiler -type f)
+$(BUILD)/aarch64/loader.obj $(BUILD)/x86_64/loader.obj: boot/common/uefi_camera.h
 NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/extension.c tools/native-python/library.c $(shell find sdk/python sdk/compiler -type f)
 
 builds/toolchains/aarch64/python.elf: $(NATIVE_PYTHON_SOURCES)

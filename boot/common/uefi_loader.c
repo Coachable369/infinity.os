@@ -136,6 +136,7 @@ typedef struct {
     uint32_t block_count;
     uint32_t reserved3;
     EFI_BLOCK_IO_PROTOCOL *blocks[INFINITY_POINTER_PROTOCOLS];
+    void *camera_exchange;
 } InfinityFirmwarePointers;
 
 typedef EFI_STATUS (EFIAPI *EFI_ALLOCATE_PAGES)(uint32_t, uint32_t, size_t, uint64_t *);
@@ -1221,6 +1222,7 @@ static EFI_STATUS EFIAPI usb_mouse_report(void *data, size_t length, void *conte
     return EFI_SUCCESS;
 }
 
+#include "uefi_camera.h"
 // ------------------------=
 // FUNC: gather_firmware_pointers
 // DESC: Reads gather firmware pointers from firmware or device state.
@@ -1231,6 +1233,9 @@ static InfinityFirmwarePointers *gather_firmware_pointers(EFI_SYSTEM_TABLE *syst
                                              (void **)&set) != EFI_SUCCESS) return NULL;
     memset(set, 0, sizeof(*set));
     set->check_event = system->boot_services->unused_07_15[5];
+    infinity_camera_system = system;
+    set->reserved3 = 0x43414d31u;
+    set->camera_exchange = (void *)infinity_camera_exchange;
 
     /* UEFI is permitted to connect only the boot path. Connect controllers
      * before locating input protocols: on VirtualBox ARM the xHCI controller

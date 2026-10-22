@@ -11684,6 +11684,25 @@ impl ConsoleRuntime {
     // DESC: Implements the execute runtime command operation.
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
+        if command==b"camera build" {
+            let started=compiler_commands::camera_build(self).is_ok();
+            self.output.write_line(if started {b"Building isolated capture client. After compilation: camera allow, then run the reported executable."}
+                else {b"Cannot start camera client compilation: authenticate and ensure the compiler is idle and available."});
+            return true;
+        }
+        if command==b"camera allow" || command==b"camera stop" {
+            let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            if command==b"camera stop" {crate::drivers::camera::cancel(owner);self.output.write_line(b"Camera permission revoked; transport shutdown requested.");}
+            else {
+                let active=crate::runtime::with_runtime(|runtime|(0..crate::runtime::identity::MAX_SESSIONS)
+                    .filter_map(|index|runtime.identity.session_nth(index))
+                    .any(|session|session.id==self.current_session && session.user==self.current_user
+                        && session.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false);
+                let granted=active && crate::drivers::camera::grant(owner);
+                self.output.write_line(if granted {b"Camera permission granted for 30 seconds; each capture is limited to five seconds."}else{b"Camera unavailable, busy, or session not authenticated."});
+            }
+            return true;
+        }
         if command == b"audio status" {
             self.output.write_line(if crate::drivers::audio::available() {
                 b"HDA output ready: native PCM S16 stereo."

@@ -4,6 +4,7 @@ pub use ai::clock as system_clock;
 pub mod browser;
 pub mod audio;
 pub mod camera;
+pub mod camera_uvc;
 pub mod capability;
 pub mod compute;
 pub mod compute_operator;

@@ -259,6 +259,13 @@ pub fn initialize(info: &BootInfo) -> InputStatus {
             POINTERS = info.firmware_pointer as usize as *mut FirmwarePointers;
         }
         if let Some(pointers) = unsafe { POINTERS.as_ref() } {
+            if pointers.reserved3==0x43414d31 {
+                // The magic asserts the appended field exists. Keep the base
+                // reference compatible with older firmware handoff allocations.
+                let exchange=unsafe {core::ptr::read_unaligned((POINTERS.cast::<u8>())
+                    .add(core::mem::size_of::<FirmwarePointers>()).cast::<usize>())};
+                unsafe {crate::drivers::camera::initialize(exchange);}
+            }
             // Keep both firmware and raw HID paths available. VirtualBox ARM
             // delivers through Simple/Absolute Pointer while QEMU's UEFI can
             // advertise a protocol yet deliver only through the boot endpoint.

@@ -86,7 +86,7 @@ fn transport_contract(jpeg:&[u8],tables:&mut impl runtime::native_memory::PageTa
         // FUNC: start
         // DESC: Records a scripted successful discovery, never accessing real hardware.
         // ------------------=
-        fn start(&mut self)->Result<bool,()> {self.c.borrow_mut().starts+=1;Ok(true)}
+        fn start(&mut self)->Result<Attach,()> {self.c.borrow_mut().starts+=1;Ok(Attach::Ready)}
         // ------------------------=
         // FUNC: poll
         // DESC: Supplies fixture bytes or a disconnect event for lifecycle testing only.

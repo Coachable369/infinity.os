@@ -9,9 +9,9 @@ compilation checks are allowed and full pipeline acceptance is deferred.
 
 ## Concrete findings
 
-1. `kernel/runtime/camera_transport.rs` implements typed service dispatch and
-   lifecycle bounds, but no installed USB backend or isolated capture executable
-   is wired to it. The successful JPEG is firmware-probe evidence only.
+1. Installed dispatch/backend/client are now connected in source; see
+   `CAMERA-TRANSPORT-STATUS.md`. The decoded JPEG remains firmware-probe evidence;
+   installed capture has not been exercised in this pass.
 2. `boot/common/uefi_loader.c` retains boot services on ARM64 but exits them on
    x86_64. Passing the diagnostic firmware USB pointer into an installed client
    is not an acceptable shared transport implementation.
@@ -23,9 +23,9 @@ compilation checks are allowed and full pipeline acceptance is deferred.
 4. The identified camera provides RGB MJPEG. No presentation-attack detection
    implementation or evaluated anti-spoofing evidence exists. Recognition scores
    alone must not grant login authority.
-5. No inference runtime/model has been adopted. InsightFace's public pretrained
-   models have non-commercial research restrictions; permissive library code
-   does not establish usable model redistribution rights.
+5. No inference runtime/model has been adopted. Pinned YuNet/SFace candidates,
+   published licenses and pre-login key design are recorded in
+   `FACIAL-LOGIN-NATIVE-AUDIT.md`.
 
 ## New camera diagnostic code
 

@@ -216,6 +216,15 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
 }}
 
 // ------------------------=
+// FUNC: camera_build
+// DESC: Compiles the bundled capture client inside the installed OS, using the normal isolated compiler and executable publication path.
+// ------------------=
+pub(super) fn camera_build(console:&ConsoleRuntime)->Result<(),StartError> {unsafe {
+    start_source(console,include_bytes!("../../sdk/c/examples/camera_capture.c"),
+        b"<camera-capture>",ReplyTarget::Console,false)
+}}
+
+// ------------------------=
 // FUNC: start_source
 // DESC: Starts one immutable source snapshot for an explicit UI or console owner without ambient filesystem access.
 // ------------------=
@@ -527,6 +536,7 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
 // DESC: Keeps compiler work off input dispatch, cancels lost ownership, and reports actual compiler output through the existing panel.
 // ------------------=
 pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
+    crate::drivers::camera::poll();
     poll_voice_progress(console);
     poll_app(console);
     if crate::runtime::ai::with_ai_runtime(|ai|ai.software_execution(console.current_user.0)
@@ -748,7 +758,9 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     let Some((owner,task))=(&mut *(&raw mut APP)).as_mut() else{return;};
     let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&console.assistant_owner_alive(1)&&!APP_CANCEL;
     if authorized && (&*(&raw const APP_INPUT)).waiting {return;}
-    let state=task.poll(crate::runtime::ai::qwen::workers::clock_ns(),authorized,|_,tables,op,args| {
+    if !authorized {crate::drivers::camera::cancel(*owner);}
+    let state=task.poll(crate::runtime::ai::qwen::workers::clock_ns(),authorized,|caller,tables,op,args| {
+        if (0x1260..=0x1262).contains(&op) {return crate::drivers::camera::dispatch(caller,tables,op,args);}
         if op==0x1003 {
             return (&mut *(&raw mut APP_INPUT)).read(args[1].min(1024) as usize,|bytes|
                 crate::runtime::native_memory::copy_to_user(tables,args[0],bytes).is_ok());
@@ -786,6 +798,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if state==State::Runnable{return;}
     let ui_was_active=crate::ui::native_uikit::presentation().active;
     let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;APP_SOURCE_PATH_LENGTH=0;
+    crate::drivers::camera::cancel(owner);
     crate::runtime::ai::application_host::detach();
     let released=task.release(crate::runtime::native_memory::memory_mut()).is_ok();
     crate::ui::native_uikit::close();APP_UI_REVISION=0;

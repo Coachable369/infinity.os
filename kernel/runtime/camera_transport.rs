@@ -8,15 +8,17 @@ use crate::runtime::{capability::CapabilityManager, execution::SecurityIdentity,
 pub enum Transfer { Pending, Frame(usize), Disconnected, Failed }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum State { Idle, Streaming, Reconnecting, Stopping, Faulted }
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Attach { Absent, Pending, Ready }
 pub trait Driver {
     // ------------------------=
     // FUNC: start
-    // DESC: Performs bounded discovery/start; false means no resources acquired, true means ready, error requires shutdown.
+    // DESC: Performs one bounded discovery or negotiation step; errors require shutdown before reuse.
     // ------------------=
-    fn start(&mut self) -> Result<bool,()>;
+    fn start(&mut self) -> Result<Attach,()>;
     // ------------------------=
     // FUNC: poll
-    // DESC: Advances a nonblocking transfer into owned scratch; never retains the supplied slice.
+    // DESC: Advances a time-bounded transfer into owned scratch; never retains the supplied slice.
     // ------------------=
     fn poll(&mut self, scratch: &mut [u8]) -> Transfer;
     // ------------------------=
@@ -27,7 +29,7 @@ pub trait Driver {
 }
 pub struct Transport<'a,D:Driver> {
     camera: Camera<'a>, driver:D, state:State, attempts:u8,
-    stop_attempts:u8, reconnect_after_stop:bool, next_ms:u64,
+    stop_attempts:u8, start_steps:u8, reconnect_after_stop:bool, next_ms:u64,
 }
 impl<'a,D:Driver> Transport<'a,D> {
     // ------------------------=
@@ -36,7 +38,7 @@ impl<'a,D:Driver> Transport<'a,D> {
     // ------------------=
     pub fn new(storage:&'a mut [u8],driver:D)->Result<Self,Error> {
         Ok(Self{camera:Camera::new(storage)?,driver,state:State::Idle,attempts:0,
-            stop_attempts:0,reconnect_after_stop:false,next_ms:0})
+            stop_attempts:0,start_steps:0,reconnect_after_stop:false,next_ms:0})
     }
     // ------------------------=
     // FUNC: state
@@ -65,7 +67,7 @@ impl<'a,D:Driver> Transport<'a,D> {
                 if args!=[0;6] {return Err(Error::Invalid);}
                 if self.state!=State::Idle {return Err(Error::Busy);}
                 self.camera.start(message,caller,caps,now_seconds)?;
-                self.attempts=0;self.next_ms=0;self.state=State::Reconnecting;Ok(0)
+                self.attempts=0;self.start_steps=0;self.next_ms=0;self.state=State::Reconnecting;Ok(0)
             }
             op if op==OperationId::CameraCaptureStop as u32 => {
                 if args!=[0;6] {return Err(Error::Invalid);}
@@ -102,11 +104,13 @@ impl<'a,D:Driver> Transport<'a,D> {
         match self.state {
             State::Reconnecting if now_ms>=self.next_ms => {
                 if self.attempts>=3 {self.cancel();return;}
-                self.attempts+=1;self.next_ms=now_ms.saturating_add(250);
+                self.start_steps+=1;
+                if self.start_steps>72 {self.cancel();return;}
                 match self.driver.start() {
-                    Ok(true)=>self.state=State::Streaming,
-                    Ok(false)=>{},
-                    Err(())=>{self.reconnect_after_stop=true;self.stop_attempts=0;self.state=State::Stopping;}
+                    Ok(Attach::Ready)=>{self.attempts+=1;self.start_steps=0;self.state=State::Streaming;},
+                    Ok(Attach::Pending)=>{},
+                    Ok(Attach::Absent)=>{self.attempts+=1;self.start_steps=0;self.next_ms=now_ms.saturating_add(250);},
+                    Err(())=>{self.attempts+=1;self.start_steps=0;self.reconnect_after_stop=true;self.stop_attempts=0;self.state=State::Stopping;}
                 }
             }
             State::Streaming => {
