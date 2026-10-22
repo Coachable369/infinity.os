@@ -1,7 +1,44 @@
-/* Read-only firmware USB descriptor probe. Not a capture driver or login path. */
+/* Firmware transport diagnostic. Not an isolated process or login path. */
 #define efi_main unused_production_entry
 #include "../../boot/common/uefi_loader.c"
 #undef efi_main
+#include "uvc_transport.h"
+static uint8_t camera_probe_reply[26];
+
+// ------------------------=
+// FUNC: camera_control
+// DESC: Sends only bounded UVC streaming control requests to interface one.
+// ------------------=
+static int camera_control(void *context, uint8_t operation, uint16_t selector, uint8_t *data, size_t length) {
+    EFI_USB_IO_PROTOCOL *usb=context;
+    EFI_USB_DEVICE_REQUEST request={operation&0x80?0xa1:0x21,operation,selector,1,(uint16_t)length};
+    uint32_t result=0;
+    EFI_STATUS status=usb->control_transfer(usb,&request,operation&0x80?0:1,100,data,length,&result);
+    if(operation==0x81 && length==26) for(size_t i=0;i<26;++i) camera_probe_reply[i]=data[i];
+    return status!=EFI_SUCCESS || result ? -1 : 0;
+}
+// ------------------------=
+// FUNC: camera_bulk
+// DESC: Performs one bounded firmware transfer on the discovered bulk IN endpoint.
+// ------------------=
+static int camera_bulk(void *context, uint8_t *data, size_t *length, unsigned timeout) {
+    EFI_USB_IO_PROTOCOL *usb=context;
+    typedef EFI_STATUS (EFIAPI *Bulk)(EFI_USB_IO_PROTOCOL *,uint8_t,void *,size_t *,size_t,uint32_t *);
+    uint32_t result=0;
+    EFI_STATUS status=((Bulk)usb->bulk_transfer)(usb,0x82,data,length,timeout,&result);
+    if(status==0x8000000000000012ULL) return 1;
+    return status!=EFI_SUCCESS || result ? -1 : 0;
+}
+// ------------------------=
+// FUNC: camera_milliseconds
+// DESC: Reads the guest architectural counter for deadlines without host timing.
+// ------------------=
+static uint64_t camera_milliseconds(void) {
+    uint64_t counter,frequency;
+    __asm__ volatile("mrs %0, cntvct_el0":"=r"(counter));
+    __asm__ volatile("mrs %0, cntfrq_el0":"=r"(frequency));
+    return counter/(frequency/1000);
+}
 
 // ------------------------=
 // FUNC: probe_serial
@@ -60,7 +97,7 @@ static void dump_bytes(const uint8_t *bytes, size_t length) {
 
 // ------------------------=
 // FUNC: efi_main
-// DESC: Polls firmware USB handles for one minute and reads actual device/configuration descriptors without starting a stream.
+// DESC: Reads actual descriptors and attempts a bounded real-frame capture on the disposable probe VM.
 // ------------------=
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     (void)image;
@@ -81,7 +118,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
                 EFI_USB_INTERFACE_DESCRIPTOR interface;
                 if(usb->get_interface_descriptor(usb,&interface)!=EFI_SUCCESS) continue;
                 if(attempt==0){serial_write("INTERFACE ");dump_bytes((const uint8_t *)&interface,sizeof(interface));}
-                if(interface.interface_class!=14) continue;
+                if(interface.interface_class!=14 || interface.interface_subclass!=2) continue;
                 static uint8_t device[18], config[4096]; uint32_t result=0;
                 EFI_USB_DEVICE_REQUEST request={0x80,6,0x100,0,18};
                 status=usb->control_transfer(usb,&request,0,1000,device,18,&result);
@@ -101,6 +138,26 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
                     system->boot_services->free_pool(handles);
                     return 0x8000000000000007ULL;
                 }
+                if(device[8]!=0xee || device[9]!=0x80 || device[10]!=0x30 || device[11]!=0 || !usb->bulk_transfer) {
+                    system->boot_services->free_pool(handles);
+                    return 0x8000000000000003ULL;
+                }
+                static uint8_t payload[UVC_PAYLOAD_LIMIT], frame[UVC_FRAME_LIMIT];
+                UvcIo io={usb,camera_control,camera_bulk}; UvcStream stream;
+                uint64_t start=camera_milliseconds(), longest=0, calls=0;
+                uvc_start(&stream,io,start);
+                while(stream.state==UVC_RUNNING && calls<10000) {
+                    uint64_t before=camera_milliseconds();
+                    uvc_step(&stream,io,before,0,payload,frame);
+                    uint64_t elapsed=camera_milliseconds()-before;
+                    if(elapsed>longest) longest=elapsed;
+                    ++calls;
+                }
+                uint64_t report[6]={stream.state,stream.length,camera_milliseconds()-start,longest,calls,stream.payload_limit};
+                save_bytes(image,system,(CHAR16 *)L"\\capture.bin",report,sizeof(report));
+                save_bytes(image,system,(CHAR16 *)L"\\probe.bin",camera_probe_reply,sizeof(camera_probe_reply));
+                if(stream.state==UVC_FRAME) save_bytes(image,system,(CHAR16 *)L"\\frame.jpg",frame,stream.length);
+                uvc_cancel(&stream);
                 system->boot_services->free_pool(handles);
                 serial_write("CAMERA_DESCRIPTOR_PROBE_COMPLETE\n");
                 return EFI_SUCCESS;
