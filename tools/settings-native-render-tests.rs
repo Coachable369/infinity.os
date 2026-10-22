@@ -61,6 +61,8 @@ pub(super) fn verify() {
         for unsupported in [1,6,7,8]{let(pixels,ok)=frame(width,height,unsupported,state,snapshot(),None);assert!(!ok);assert!(pixels.iter().all(|p|*p==0x00182739));}
     }
     authored_style_pixels();
+    authored_action_pixels();
+    action_scene_pixels();
     dashboard_frames();
     println!("Native Settings production painter proof: {frames} frames, state damage, clip parity, layer geometry and authored typography/material PASS");
 }
@@ -128,4 +130,155 @@ fn authored_style_pixels() {
     };
     let glass=render_surface(1,1);let matte=render_surface(2,1);let rounded=render_surface(1,2);
     assert!(damage(&glass,&matte,320).1>100);assert!(damage(&glass,&rounded,320).1>100);
+}
+
+// ------------------------=
+// FUNC: action_frame
+// DESC: Runs the production authored-button painter over known native pixels with an optional damage clip.
+// ------------------=
+fn action_frame(element:crate::ui::installer_template::InstallerTemplateElement<'_>,bounds:Rect,clip:Option<Region>)->Vec<u32> {
+    let mut pixels=vec![0x00182739;640*1000];
+    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width:640,height:1000,stride:640,format:0,
+        render_clip:clip,fast_motion_frame:false,submissions:0,recording_surface:false};
+    display.paint_template_button_state(element,bounds,true,false,false);
+    pixels
+}
+
+// ------------------------=
+// FUNC: authored_action_pixels
+// DESC: Checks actual button pixels for authored movement, resizing, materials, captions, hidden state, transparency and damage clipping without a second drawing implementation.
+// ------------------=
+fn authored_action_pixels() {
+    let mut element=crate::ui::settings_template::row_action(0,0).unwrap();
+    element.hidden=false;element.opacity=100;element.font_size=18;element.text=b"ACTION";
+    element.caption_color=[255,255,255,255];
+    element.fill=[12,31,66,225];element.border=[112,181,246,255];
+    element.surface_material=1;element.corner_style=2;element.corner_radius=12;
+    let bounds=Rect{x:64,y:64,width:280,height:64};
+    let empty=vec![0x00182739;640*1000];
+    let normal=action_frame(element,bounds,None);
+    let (painted,count)=damage(&empty,&normal,640);
+    assert!(count>100);
+    assert_eq!(painted.intersection(bounds),painted);
+
+    let moved_bounds=Rect{x:bounds.x+13,y:bounds.y+9,..bounds};
+    let moved=action_frame(element,moved_bounds,None);
+    let shifted=damage(&empty,&moved,640).0;
+    assert_eq!(shifted,Rect{x:painted.x+13,y:painted.y+9,..painted});
+    for y in 0..bounds.height as usize {for x in 0..bounds.width as usize {
+        assert_eq!(normal[(bounds.y as usize+y)*640+bounds.x as usize+x],
+            moved[(moved_bounds.y as usize+y)*640+moved_bounds.x as usize+x]);
+    }}
+    let resized_bounds=Rect{width:410,height:92,..bounds};
+    let resized=action_frame(element,resized_bounds,None);
+    let (resized_damage,resized_count)=damage(&empty,&resized,640);
+    assert!(resized_count>count);
+    assert_eq!(resized_damage.intersection(resized_bounds),resized_damage);
+
+    let mut matte=element;matte.surface_material=2;
+    assert!(damage(&normal,&action_frame(matte,bounds,None),640).1>100);
+    let mut flat=element;flat.surface_material=3;
+    assert!(damage(&normal,&action_frame(flat,bounds,None),640).1>100);
+    let mut square=element;square.corner_style=1;
+    assert!(damage(&normal,&action_frame(square,bounds,None),640).1>10);
+    let mut recolored=element;recolored.fill=[108,27,92,225];recolored.border=[245,176,71,255];
+    assert!(damage(&normal,&action_frame(recolored,bounds,None),640).1>100);
+    let mut caption=element;caption.text=b"MMMMMMMM";
+    let caption_frame=action_frame(caption,bounds,None);
+    let (caption_damage,caption_count)=damage(&normal,&caption_frame,640);
+    assert!(caption_count>10);
+    assert_eq!(caption_damage.intersection(bounds),caption_damage);
+    let mut caption_tint=element;caption_tint.caption_color=[255,96,48,255];
+    let (tint_damage,tint_count)=damage(&normal,&action_frame(caption_tint,bounds,None),640);
+    assert!(tint_count>10);
+    assert_eq!(tint_damage.intersection(bounds),tint_damage);
+    let mut caption_alpha=element;caption_alpha.caption_color[3]=0;
+    let no_caption=action_frame(caption_alpha,bounds,None);
+    let mut empty_caption=element;empty_caption.text=b"";
+    assert_eq!(no_caption,action_frame(empty_caption,bounds,None));
+    let mut larger=element;larger.font_size=26;
+    assert!(damage(&normal,&action_frame(larger,bounds,None),640).1>10);
+    let mut faded=element;faded.opacity=35;
+    assert!(damage(&normal,&action_frame(faded,bounds,None),640).1>100);
+    let mut hidden=element;hidden.hidden=true;
+    assert_eq!(action_frame(hidden,bounds,None),empty);
+    hidden.hidden=false;hidden.opacity=0;
+    assert_eq!(action_frame(hidden,bounds,None),empty);
+
+    let clip=Region{left:100,top:84,right:280,bottom:112};
+    let clipped=action_frame(element,bounds,Some(clip));
+    for y in 0..1000 {for x in 0..640 {
+        assert_eq!(clipped[y*640+x],if x>=clip.left&&x<clip.right&&y>=clip.top&&y<clip.bottom {
+            normal[y*640+x]
+        }else{empty[y*640+x]});
+    }}
+    let offscreen=Rect{x:-20,y:-16,width:140,height:60};
+    let offscreen_frame=action_frame(element,offscreen,None);
+    let (visible,visible_count)=damage(&empty,&offscreen_frame,640);
+    assert!(visible_count>10);
+    assert_eq!(visible.intersection(offscreen.intersection(Rect{x:0,y:0,width:640,height:1000})),visible);
+    let reference_bounds=Rect{x:32,y:32,..offscreen};
+    let reference=action_frame(element,reference_bounds,None);
+    for y in 0..offscreen.bottom()as usize {for x in 0..offscreen.right()as usize {
+        let reference_x=(x as i32-offscreen.x+reference_bounds.x)as usize;
+        let reference_y=(y as i32-offscreen.y+reference_bounds.y)as usize;
+        assert_eq!(offscreen_frame[y*640+x],reference[reference_y*640+reference_x]);
+    }}
+}
+
+// ------------------------=
+// FUNC: action_scene_pixels
+// DESC: Verifies live service-state caption changes reach the authored control in complete Settings frames and share its native hit geometry.
+// ------------------=
+fn action_scene_pixels() {
+    use crate::ui::system_layout::SettingsTarget;
+    use crate::ui::app_launcher::window_controls as controls;
+    controls::publish(None);let _=controls::take_damage();
+    for (width,height) in [(1280,800),(1920,1080)] {
+        let layout=SystemLayout::new(width,height);
+        let mut state=state(3);state.expanded_row=Some(1);
+        let maximum=layout.settings_window_geometry_for_section(state,3).maximum_scroll;
+        let mut witnessed=false;
+        for offset in [0,maximum] {
+            state.scroll_offset=offset;
+            let geometry=layout.settings_action_geometry(state,3,1).unwrap();
+            assert!(geometry.element.is_some());
+            let action=geometry.bounds.intersection(geometry.clip);
+            let row=layout.settings_row_geometry_for_section(state,1,3).summary;
+            let (before,ok)=frame(width,height,3,state,snapshot(),None);assert!(ok);
+            let mut changed=snapshot();changed.chat_enabled=false;
+            let (after,ok)=frame(width,height,3,state,changed,None);assert!(ok);
+            let mut action_damage=0usize;
+            for (index,(before,after)) in before.iter().zip(&after).enumerate() {
+                if before==after {continue;}
+                let point=Point{x:(index%width)as i32,y:(index/width)as i32};
+                assert!(row.contains(point)||action.contains(point));
+                if action.contains(point) {
+                    assert!(geometry.hit(point));
+                    action_damage+=1;
+                }
+            }
+            if action.height>=geometry.bounds.height&&action.width>=geometry.bounds.width {
+                assert!(action_damage>10);
+                witnessed=true;
+                let point=Point{x:action.x+action.width as i32/2,y:action.y+action.height as i32/2};
+                assert_eq!(layout.settings_target_for_section(point.x*1000/width as i32,
+                    point.y*1000/height as i32,state,3),Some(SettingsTarget::ExpandedAction));
+                controls::publish(Some(controls::Highlight{rect:geometry.bounds,pressed:false}));
+                let (hover,ok)=frame(width,height,3,state,snapshot(),None);assert!(ok);
+                let (hover_bounds,hover_count)=damage(&before,&hover,width);
+                assert!(hover_count>10);
+                assert_eq!(hover_bounds.intersection(action),hover_bounds);
+                controls::publish(Some(controls::Highlight{rect:geometry.bounds,pressed:true}));
+                let (pressed,ok)=frame(width,height,3,state,snapshot(),None);assert!(ok);
+                let (pressed_bounds,pressed_count)=damage(&hover,&pressed,width);
+                assert!(pressed_count>10);
+                assert_eq!(pressed_bounds.intersection(action),pressed_bounds);
+                controls::publish(None);let _=controls::take_damage();
+                let (released,ok)=frame(width,height,3,state,snapshot(),None);assert!(ok);
+                assert_eq!(released,before);
+            }
+        }
+        assert!(witnessed);
+    }
 }

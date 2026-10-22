@@ -38,6 +38,110 @@ private actor ControlledNativeRenderer: NativePreviewRunning {
 
 final class NativePreviewTests: XCTestCase {
     // ------------------------=
+    // FUNC: testNativeActionSelectionRevealsLastExpandedAIRow
+    // DESC: Uses production scroll metadata to reveal the final AI action at two real viewport sizes without replaying native layout mathematics in Studio.
+    // ------------------=
+    @MainActor func testNativeActionSelectionRevealsLastExpandedAIRow() async throws {
+        let store = TemplateStore(); store.projectRoot = root; store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 4)
+        let action = try XCTUnwrap(store.selectedScreen?.elements.last { $0.role == .settingsRowAction })
+        let runner = NativePreviewRunner()
+        for viewport in [NativePreviewViewport.compact, .fullHD] {
+            store.canvasViewport = viewport
+            store.nativePreviewSimulation.scroll = 10000
+            store.selectElement(action.id)
+            let before = try await runner.render(NativePreviewSnapshot.capture(store))
+            let geometry = try XCTUnwrap(before.bounds.first { $0.id == action.id })
+            let target = try XCTUnwrap(geometry.revealScroll)
+            XCTAssertGreaterThan(target, 0)
+            XCTAssertLessThanOrEqual(target, try XCTUnwrap(geometry.maximumScroll))
+            XCTAssertTrue(store.applyNativeSelectionReveal(before.bounds, screen: 4, expandedRow: 6))
+            XCTAssertEqual(store.nativePreviewSimulation.scroll, target)
+            let revealed = try await runner.render(NativePreviewSnapshot.capture(store))
+            let bounds = try XCTUnwrap(revealed.bounds.first { $0.id == action.id })
+            let viewportBounds = try XCTUnwrap(bounds.viewportBounds)
+            XCTAssertGreaterThanOrEqual(bounds.x, viewportBounds.x)
+            XCTAssertGreaterThanOrEqual(bounds.y, viewportBounds.y)
+            XCTAssertLessThanOrEqual(bounds.x + bounds.width, viewportBounds.x + viewportBounds.width)
+            XCTAssertLessThanOrEqual(bounds.y + bounds.height, viewportBounds.y + viewportBounds.height)
+            store.nativePreviewSimulation.scroll = 0
+            XCTAssertFalse(store.applyNativeSelectionReveal(revealed.bounds, screen: 4, expandedRow: 6))
+            XCTAssertEqual(store.nativePreviewSimulation.scroll, 0)
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testSettingsActionNativePixelsFollowUnsavedDetailGeometryAndStyle
+    // DESC: Exercises the production renderer with unsaved action frames and styles, validating exported detail-local geometry and collapsed visibility.
+    // ------------------=
+    @MainActor func testSettingsActionNativePixelsFollowUnsavedDetailGeometryAndStyle() async throws {
+        let store = TemplateStore(); store.projectRoot = root; store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 1)
+        let action = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .settingsRowAction })
+        store.selectElement(action.id)
+        let runner = NativePreviewRunner()
+        let first = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        let firstBounds = try XCTUnwrap(first.bounds.first { $0.id == action.id })
+        let parent = try XCTUnwrap(firstBounds.parentBounds)
+        XCTAssertEqual(firstBounds.x, parent.x + action.frame.x * parent.width / 1000)
+        XCTAssertEqual(firstBounds.y, parent.y + action.frame.y * parent.height / 1000)
+        XCTAssertEqual(firstBounds.width, action.frame.width * parent.width / 1000)
+        XCTAssertEqual(firstBounds.height, action.frame.height * parent.height / 1000)
+        var focusedSnapshot = try NativePreviewSnapshot.capture(store, width: 1280, height: 800)
+        focusedSnapshot.state = .focused
+        let focused = try await runner.render(focusedSnapshot)
+        focusedSnapshot.state = .pressed
+        let pressed = try await runner.render(focusedSnapshot)
+        XCTAssertGreaterThan(zip(first.pixels, focused.pixels).filter { $0 != $1 }.count, 100)
+        XCTAssertGreaterThan(zip(focused.pixels, pressed.pixels).filter { $0 != $1 }.count, 100)
+        XCTAssertEqual(focused.bounds, first.bounds)
+        XCTAssertEqual(pressed.bounds, first.bounds)
+        store.updateSelected("Move native action") {
+            $0.frame = CanvasRect(x: 480, y: 540, width: 460, height: 320)
+            $0.actionCaptionMode = .literal; $0.text = "Rename device"
+            $0.surfaceMaterial = .matte; $0.surfaceCorners = .rounded; $0.cornerRadius = 14
+            $0.fill = StudioColor(red: 42, green: 28, blue: 94, alpha: 230)
+            $0.border = StudioColor(red: 186, green: 144, blue: 255, alpha: 255)
+        }
+        let moved = try XCTUnwrap(store.selectedElement)
+        let changed = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        let bounds = try XCTUnwrap(changed.bounds.first { $0.id == action.id })
+        let changedParent = try XCTUnwrap(bounds.parentBounds)
+        XCTAssertEqual(bounds.x, changedParent.x + moved.frame.x * changedParent.width / 1000)
+        XCTAssertEqual(bounds.y, changedParent.y + moved.frame.y * changedParent.height / 1000)
+        XCTAssertEqual(bounds.width, moved.frame.width * changedParent.width / 1000)
+        XCTAssertEqual(bounds.height, moved.frame.height * changedParent.height / 1000)
+        XCTAssertGreaterThan(zip(first.pixels, changed.pixels).filter { $0 != $1 }.count, 500)
+        try saveProof(changed, name: "native-settings-action-unsaved-detail-style")
+        let wide = try await runner.render(NativePreviewSnapshot.capture(store, width: 1920, height: 1080))
+        let wideBounds = try XCTUnwrap(wide.bounds.first { $0.id == action.id })
+        let wideParent = try XCTUnwrap(wideBounds.parentBounds)
+        XCTAssertEqual(wideBounds.width, moved.frame.width * wideParent.width / 1000)
+        XCTAssertEqual(wideBounds.height, moved.frame.height * wideParent.height / 1000)
+        store.nativePreviewSimulation.expandedRow = -1
+        let collapsed = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertFalse(collapsed.bounds.contains { $0.id == action.id })
+        store.nativePreviewSimulation.expandedRow = 0
+        store.updateSelected { $0.hidden = true }
+        let hidden = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertEqual(hidden.bounds.first { $0.id == action.id }, bounds)
+        XCTAssertGreaterThan(zip(hidden.pixels, changed.pixels).filter { $0 != $1 }.count, 500)
+        store.updateSelected { $0.hidden = false; $0.opacity = 0 }
+        let transparent = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertEqual(transparent.pixels, hidden.pixels)
+        store.updateSelected {
+            $0.opacity = 100
+            $0.captionColor = StudioColor(red: 255, green: 80, blue: 35, alpha: 180)
+        }
+        let caption = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertEqual(caption.bounds.first { $0.id == action.id }, bounds)
+        let captionDifferences = zip(caption.pixels, changed.pixels).filter { $0 != $1 }.count
+        XCTAssertGreaterThan(captionDifferences, 30)
+        XCTAssertLessThan(captionDifferences, bounds.width * bounds.height * 4)
+        try saveProof(caption, name: "native-settings-action-caption-color")
+    }
+
+    // ------------------------=
     // FUNC: testAddedWizardScreensRenderThroughNativePipeline
     // DESC: Adds screens through Studio's public editing operations and verifies native frame production beyond the Settings-only eleven-screen limit.
     // ------------------=

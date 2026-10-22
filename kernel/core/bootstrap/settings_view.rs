@@ -336,7 +336,7 @@ impl DisplayDevice {
     // FUNC: paint_settings_basic_detail
     // DESC: Paints disclosure explanations and trusted action controls from observed state.
     // ------------------=
-    pub(super) fn paint_settings_basic_detail(&mut self,focus:usize,index:usize,detail:crate::ui::geometry::Rect,scale:usize,snapshot:BasicSettingsSnapshot<'_>) {
+    pub(super) fn paint_settings_basic_detail(&mut self,focus:usize,index:usize,detail:crate::ui::geometry::Rect,scale:usize,snapshot:BasicSettingsSnapshot<'_>,state:SettingsWindowState) {
         let BasicSettingsSnapshot{chat_enabled,voice_enabled,speech_enabled,..}=snapshot;
         let detail_left=detail.x.max(0)as usize;let detail_top=detail.y.max(0)as usize;let detail_width=detail.width as usize;let detail_height=detail.height as usize;
                     let description: &[u8] = match (focus, index) {
@@ -388,18 +388,23 @@ impl DisplayDevice {
                         188,
                         203,
                     );
-                    let action: Option<&[u8]> = match (focus, index) {
-                        (0, 0) => Some(b"EDIT NAME"),
-                        (1, 0) => Some(b"SWITCH SKIN"),
-                        (3, 0) => Some(b"CHANGE POLICY"),
-                        (3, 1) => Some(if chat_enabled { b"DISABLE CHAT" } else { b"ENABLE CHAT" }),
-                        (3, 2) => Some(b"NEXT MODEL"),
-                        (3, 6) => Some(if speech_enabled { b"MUTE REPLIES" } else { b"SPEAK REPLIES" }),
-                        (3, 4) | (4, 1) => Some(if voice_enabled { b"RESTRICT" } else { b"GRANT" }),
-                        (3, 5) => Some(b"NEXT WAKE WORD"),
-                        _ => None,
-                    };
-                    if let Some(action) = action {
+                    let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+                    if let Some(action)=layout.settings_action_geometry(state,focus,index) {
+                        if !action.visible { return; }
+                        let caption=action.action.caption(chat_enabled,voice_enabled,speech_enabled);
+                        let previous_clip=self.render_clip;
+                        let clip=action.clip.intersection(crate::ui::geometry::Rect{x:0,y:0,width:self.width as u32,height:self.height as u32});
+                        self.intersect_render_clip(clip.x.max(0)as usize,clip.y.max(0)as usize,clip.width as usize,clip.height as usize);
+                        if let Some(mut element)=action.element {
+                            if element.caption_mode==0 {element.text=caption;}
+                            let interaction=crate::ui::app_launcher::window_controls::state(action.bounds);
+                            self.paint_template_button_state(element,action.bounds,true,interaction!=0,interaction==2);
+                        } else {
+                            self.polished_button(action.bounds.x.max(0)as usize,action.bounds.y.max(0)as usize,
+                                action.bounds.width as usize,action.bounds.height as usize,caption,true,false);
+                        }
+                        self.render_clip=previous_clip;
+                    } else if (focus,index)==(1,0) {
                         self.polished_button(
                             detail_left + crate::ui::system_layout::UI_GUTTER * scale,
                             detail_top
@@ -413,7 +418,7 @@ impl DisplayDevice {
                                 ),
                             ),
                             crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT * scale,
-                            action,
+                            b"SWITCH SKIN",
                             true,
                             false,
                         );
@@ -555,7 +560,7 @@ impl DisplayDevice {
                 self.app_card_alpha(row.detail,(r/2,g.saturating_mul(2)/3,b.saturating_mul(2)/3),(er/2,eg/2,eb/2),(232u16*u16::from(chrome.opacity)/100)as u8,scale);
                 if focus==5&&index==2{self.settings_personalization_panel_from_state(row.detail,scale,true,snapshot.preferences,crate::ui::spatial::backdrop_tint(),crate::ui::personalization::save_status());}
                 else if focus==4&&index==3{self.settings_slider(state,scale,index,snapshot.timeout_minutes.saturating_sub(1),snapshot.timeout_maximum.saturating_sub(1),4);}
-                else{self.paint_settings_basic_detail(focus,index,row.detail,scale,snapshot);}
+                else{self.paint_settings_basic_detail(focus,index,row.detail,scale,snapshot,state);}
             }
         }
     }

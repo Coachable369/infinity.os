@@ -35,7 +35,7 @@ struct InstallerCanvas: View {
                             nativeSelectionOverlays(scale: unitScale)
                         } else {
                         ForEach((store.selectedScreen?.elements ?? []).sorted(by: layerOrder)) { element in
-                            if !element.hidden {
+                            if !element.hidden && element.role != .settingsRowAction {
                                 CanvasElementView(element: element, store: store, canvasScale: canvasScale, interactionOnly: true)
                                     .zIndex(Double(element.zIndex))
                             }
@@ -102,18 +102,22 @@ struct InstallerCanvas: View {
             ForEach(frame.bounds) { bounds in
                 if let element = store.selectedScreen?.elements.first(where: { $0.id == bounds.id }), !element.hidden {
                     let editingScale = NativeCanvasMapping.editingScale(element: element, console: console?.frame,
-                        window: window, viewport: store.canvasViewport, scale: scale)
+                        window: window, viewport: store.canvasViewport, scale: scale, bounds: bounds)
                     let displayed = CGRect(x: CGFloat(bounds.x) * scale, y: CGFloat(bounds.y) * scale,
                         width: CGFloat(bounds.width) * scale, height: CGFloat(bounds.height) * scale)
                     let fixedGeometry = !store.geometryIsEditable(element)
+                        || editingScale.width <= 0 || editingScale.height <= 0
+                    let interactionClip = element.role == .settingsRowAction
+                        ? NativeCanvasMapping.actionInteractionClip(bounds: bounds, scale: scale) : nil
                     CanvasElementView(element: element, store: store, canvasScale: editingScale, interactionOnly: true,
-                        displayFrame: displayed, fixedNativeGeometry: fixedGeometry)
+                        displayFrame: displayed, fixedNativeGeometry: fixedGeometry, interactionClip: interactionClip)
                         .zIndex(Double(element.zIndex))
                     if store.resizeHandlesVisible && store.selectedElementID == element.id && !element.locked && !fixedGeometry {
                         ZStack {
                             ForEach(ResizeHandle.allCases) { handle in
                                 ResizeHandleView(handle: handle, elementID: element.id, elementFrame: element.frame,
-                                    store: store, canvasScale: editingScale, displaySize: displayed.size)
+                                    store: store, canvasScale: editingScale, displaySize: displayed.size,
+                                    interactionClip: interactionClip, displayOrigin: displayed.origin)
                             }
                         }.frame(width: displayed.width, height: displayed.height)
                             .position(x: displayed.midX, y: displayed.midY).zIndex(41_000)
@@ -161,9 +165,15 @@ struct InstallerCanvas: View {
                     ForEach(NativePreviewViewport.allCases) { viewport in Text(viewport.rawValue).tag(viewport) }
                 }.labelsHidden().frame(width: 142)
                 Picker("Control state", selection: $store.nativePreviewState) {
-                    ForEach(NativePreviewControlState.allCases) { state in Text(state.rawValue).tag(state) }
+                    ForEach(NativePreviewControlState.allCases) { state in
+                        Text(state.rawValue).tag(state).disabled(!state.isSupported(in: store.selectedCollection))
+                    }
                 }.labelsHidden().frame(width: 100)
             }
+        }
+        if store.selectedCollection == .systemSettings {
+            Text("Transition preview unavailable: Settings has no native entrance animation.")
+                .foregroundStyle(.secondary)
         }
         if store.selectedCollection != .configuration {
             HStack(spacing: 8) {
@@ -434,6 +444,8 @@ struct CanvasElementView: View {
     var interactionOnly = false
     var displayFrame: CGRect? = nil
     var fixedNativeGeometry = false
+    var interactionClip: CGRect? = nil
+    @State private var acceptedInteraction: Bool?
 
     private var renderedFrame: CGRect {
         displayFrame ?? CGRect(x: CGFloat(element.frame.x) * canvasScale.width, y: CGFloat(element.frame.y) * canvasScale.height,
@@ -455,9 +467,12 @@ struct CanvasElementView: View {
             }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(element.role == .console ? 1 : Double(element.opacity) / 100)
-                .contentShape(Rectangle())
+                .contentShape(Path(interactionClip ?? CGRect(origin: .zero, size: renderedFrame.size)))
                 .highPriorityGesture(elementInteractionGesture)
-            if !renderingBackdrop { selectionOverlay }
+            if !renderingBackdrop {
+                if let interactionClip { selectionOverlay.mask(Path(interactionClip)) }
+                else { selectionOverlay }
+            }
         }
         .frame(
             width: renderedFrame.width,
@@ -594,6 +609,8 @@ struct CanvasElementView: View {
     private var elementInteractionGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
             .onChanged { value in
+                if acceptedInteraction == nil { acceptedInteraction = acceptsInteraction(at: value.startLocation) }
+                guard acceptedInteraction == true else { return }
                 guard !element.locked && !fixedNativeGeometry else { return }
                 let distance = max(abs(value.translation.width), abs(value.translation.height))
                 guard distance >= CanvasInteractionMetrics.dragThreshold else { return }
@@ -601,6 +618,8 @@ struct CanvasElementView: View {
                 store.moveSelected(translation: value.translation, canvasScale: canvasScale)
             }
             .onEnded { value in
+                defer { acceptedInteraction = nil }
+                guard acceptedInteraction ?? acceptsInteraction(at: value.startLocation) else { return }
                 let distance = max(abs(value.translation.width), abs(value.translation.height))
                 if distance < CanvasInteractionMetrics.dragThreshold {
                     store.activateCanvasElement(element.id)
@@ -608,6 +627,14 @@ struct CanvasElementView: View {
                     store.endGesture()
                 }
             }
+    }
+
+    // ------------------------=
+    // FUNC: acceptsInteraction
+    // DESC: Rejects pointer starts clipped by the native parent or viewport while retaining full artboard coordinates during a drag.
+    // ------------------=
+    private func acceptsInteraction(at point: CGPoint) -> Bool {
+        interactionClip?.contains(CGPoint(x: point.x - renderedFrame.minX, y: point.y - renderedFrame.minY)) ?? true
     }
 
     // ------------------------=
@@ -934,6 +961,9 @@ private struct ResizeHandleView: View {
     @ObservedObject var store: TemplateStore
     let canvasScale: CGSize
     var displaySize: CGSize? = nil
+    var interactionClip: CGRect? = nil
+    var displayOrigin: CGPoint? = nil
+    @State private var acceptedInteraction: Bool?
 
     var body: some View {
         ZStack {
@@ -952,18 +982,38 @@ private struct ResizeHandleView: View {
             width: CanvasInteractionMetrics.resizeHandleHitSize,
             height: CanvasInteractionMetrics.resizeHandleHitSize
         )
-        .contentShape(Rectangle())
+        .contentShape(Path(handleClip))
+        .mask(Path(handleClip))
         .position(handlePosition)
         .highPriorityGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
                 .onChanged { value in
+                    if acceptedInteraction == nil {
+                        if let interactionClip, let displayOrigin {
+                            acceptedInteraction = interactionClip.contains(CGPoint(x: value.startLocation.x - displayOrigin.x,
+                                                                                  y: value.startLocation.y - displayOrigin.y))
+                        } else { acceptedInteraction = true }
+                    }
+                    guard acceptedInteraction == true else { return }
                     store.beginGesture(elementID: elementID)
                     store.resizeSelected(handle: handle, translation: value.translation, canvasScale: canvasScale)
                 }
-                .onEnded { _ in store.endGesture() }
+                .onEnded { _ in
+                    if acceptedInteraction == true { store.endGesture() }
+                    acceptedInteraction = nil
+                }
         )
         .accessibilityLabel("Resize \(handle.accessibilityName)")
         .accessibilityHint("Drag to resize the selected element")
+    }
+
+    private var handleClip: CGRect {
+        let size = CanvasInteractionMetrics.resizeHandleHitSize
+        let full = CGRect(x: 0, y: 0, width: size, height: size)
+        guard let interactionClip else { return full }
+        let clipped = full.intersection(interactionClip.offsetBy(dx: size / 2 - handlePosition.x,
+                                                               dy: size / 2 - handlePosition.y))
+        return clipped.isNull ? .zero : clipped
     }
 
     private var handlePosition: CGPoint {

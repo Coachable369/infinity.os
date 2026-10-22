@@ -52,6 +52,19 @@ pub fn element_identity(
 }
 
 // ------------------------=
+// FUNC: row_action
+// DESC: Finds the validated action child by its parent row identity, never by editable text or sparse action order.
+// ------------------=
+pub fn row_action(section: usize, row: usize) -> Option<InstallerTemplateElement<'static>> {
+    let parent = role_at(section, InstallerTemplateRole::Metadata, row)?;
+    for ordinal in 0..8 {
+        let action = role_at(section, InstallerTemplateRole::SettingsRowAction, ordinal)?;
+        if action.parent_id == parent.id { return Some(action); }
+    }
+    None
+}
+
+// ------------------------=
 // FUNC: template
 // DESC: Validates the compiled Settings document once; invalid documents remain rejected without repeated work in input and paint paths.
 // ------------------=

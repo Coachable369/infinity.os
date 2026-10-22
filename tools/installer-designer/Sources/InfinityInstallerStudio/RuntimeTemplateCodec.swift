@@ -53,7 +53,8 @@ enum TemplateValidator {
             let primary = screen.elements.filter { $0.role == .primaryButton }
             let liveInputs = screen.elements.filter { $0.role == .input && !$0.hidden }
             let identifiers = screen.elements.map(\.codeIdentifier)
-            guard Set(identifiers).count == identifiers.count else {
+            guard Set(identifiers).count == identifiers.count,
+                  Set(screen.elements.map(\.id)).count == screen.elements.count else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Element IDs must be unique within a screen")
             }
             for role in StudioElementRole.allCases {
@@ -100,6 +101,7 @@ enum TemplateValidator {
                     }
                 }
             }
+            try validateSettingsActions(screen, collection: collection)
             guard screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
             }
@@ -107,6 +109,9 @@ enum TemplateValidator {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Only one live input field is supported per screen")
             }
             for element in screen.elements {
+                guard element.kind == .button || element.captionColor == .white else {
+                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Only buttons may override caption color")
+                }
                 guard element.hasValidCodeIdentifier else {
                     throw TemplateValidationIssue.invalidElement(
                         screen.id, element.id,
@@ -156,6 +161,31 @@ enum TemplateValidator {
             }
         }
     }
+
+    // ------------------------=
+    // FUNC: validateSettingsActions
+    // DESC: Rejects dangling, duplicate, foreign or unauthorized action parents before any native payload or document mutation is accepted.
+    // ------------------=
+    static func validateSettingsActions(_ screen: InstallerScreenTemplate, collection: ScreenCollection?) throws {
+        let rows = screen.elements.filter { $0.role == .metadata }
+        var boundParents = Set<UUID>()
+        for element in screen.elements {
+            guard element.role == .settingsRowAction else {
+                guard element.parentRowID == nil, element.actionCaptionMode == .native else {
+                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Only Settings actions may bind a parent or caption mode")
+                }
+                continue
+            }
+            guard collection == .systemSettings, element.kind == .button, let parent = element.parentRowID,
+                  parent != UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+                  let row = rows.firstIndex(where: { $0.id == parent }),
+                  screen.elements.filter({ $0.id == parent }).count == 1,
+                  SettingsActionContract.rows(screenID: screen.id).contains(row),
+                  boundParents.insert(parent).inserted else {
+                throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Action requires one unique permitted Metadata parent on the same Settings screen")
+            }
+        }
+    }
 }
 
 enum RuntimeTemplateCodec {
@@ -164,7 +194,7 @@ enum RuntimeTemplateCodec {
         let assets: [String: Data]
     }
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 7
+    static let version: UInt16 = 8
     static let maximumAssetCount = 128
     static let maximumTemplateBytes = 512 * 1024 * 1024
 
@@ -227,6 +257,10 @@ enum RuntimeTemplateCodec {
                     UInt8(element.crop.left), UInt8(element.crop.top),
                     UInt8(element.crop.right), UInt8(element.crop.bottom),
                 ])
+                output.append(contentsOf: element.parentRowID?.bytes ?? [UInt8](repeating: 0, count: 16))
+                output.append(element.actionCaptionMode.rawValue)
+                output.append(contentsOf: [element.captionColor.red, element.captionColor.green,
+                    element.captionColor.blue, element.captionColor.alpha])
                 guard output.count <= maximumTemplateBytes - 2 else {
                     throw TemplateValidationIssue.invalidDocument("Runtime template exceeds the native byte budget")
                 }
@@ -324,7 +358,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard sourceVersion == version || sourceVersion == 6 else {
+        guard [6, 7, version].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -372,6 +406,20 @@ enum RuntimeTemplateCodec {
                     left: Int(try reader.readUInt8()), top: Int(try reader.readUInt8()),
                     right: Int(try reader.readUInt8()), bottom: Int(try reader.readUInt8())
                 )
+                var parentRowID: UUID?
+                var captionMode = SettingsActionCaptionMode.native
+                var captionColor = StudioColor.white
+                if sourceVersion >= 8 {
+                    let parentBytes = try reader.readBytes(count: 16)
+                    if parentBytes.contains(where: { $0 != 0 }) { parentRowID = try UUID(bytes: parentBytes) }
+                    guard let mode = SettingsActionCaptionMode(rawValue: try reader.readUInt8()) else {
+                        throw TemplateValidationIssue.invalidScreen(screenID, "Unknown action caption mode")
+                    }
+                    captionMode = mode
+                    captionColor = try reader.readColor()
+                } else if role == .settingsRowAction {
+                    throw TemplateValidationIssue.invalidScreen(screenID, "Action children require native template version 8")
+                }
                 elements.append(StudioElement(
                     id: id,
                     codeIdentifier: codeIdentifier,
@@ -392,7 +440,10 @@ enum RuntimeTemplateCodec {
                     locked: flags & 1 != 0,
                     hidden: flags & 2 != 0,
                     surfaceMaterial: surfaceMaterial,
-                    surfaceCorners: surfaceCorners
+                    surfaceCorners: surfaceCorners,
+                    parentRowID: parentRowID,
+                    actionCaptionMode: captionMode,
+                    captionColor: captionColor
                 ))
             }
             screens.append(InstallerScreenTemplate(
@@ -423,12 +474,15 @@ enum RuntimeTemplateCodec {
         guard reader.isAtEnd else {
             throw TemplateValidationIssue.invalidDocument("Trailing runtime-template bytes")
         }
-        let document = InstallerStudioDocument(
+        var document = InstallerStudioDocument(
             version: InstallerStudioDocument.currentVersion,
             canvasWidth: 1000,
             canvasHeight: 1000,
             screens: screens
         )
+        if sourceVersion < 8 && collection == .systemSettings {
+            document = document.migratedForSettingsActions()
+        }
         try TemplateValidator.validate(document, for: collection)
         if requireEmbeddedAssets {
             let required = Set(screens.flatMap(\.elements).compactMap { element -> String? in

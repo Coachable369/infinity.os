@@ -82,6 +82,7 @@ final class TemplateStore: ObservableObject {
     @Published var canvasViewport: NativePreviewViewport = .studio
     @Published var nativePreviewState: NativePreviewControlState = .normal
     @Published var nativePreviewSimulation = NativePreviewSimulation()
+    private var pendingNativeSelectionReveal: UUID?
 
     private var undoStack: [ProjectSnapshot] = []
     private var redoStack: [ProjectSnapshot] = []
@@ -184,7 +185,7 @@ final class TemplateStore: ObservableObject {
             try? Data(contentsOf: root.appending(path: "assets/boot/settings-screens.infinityui"))
         }.flatMap { data in
             try? JSONDecoder().decode(InstallerStudioDocument.self, from: data)
-        }
+        }.map { $0.migratedForSettingsCardReadability() }
         settingsDocument = if let settings,
                               (try? TemplateValidator.validate(settings, for: .systemSettings)) != nil {
             settings.migratedForSettingsCardReadability()
@@ -244,6 +245,7 @@ final class TemplateStore: ObservableObject {
     func selectScreenCollection(_ collection: ScreenCollection, screen id: Int = 1) {
         editingUIKit = false
         selectedCollection = collection
+        if !nativePreviewState.isSupported(in: collection) { nativePreviewState = .normal }
         selectScreen(id)
     }
 
@@ -252,6 +254,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Opens the shared OS kit without discarding pending template edits or their selections.
     // ------------------=
     func selectUIKit(category: String = "All Elements") {
+        pendingNativeSelectionReveal = nil
         editingUIKit = true
         inlineEditorElementID = nil
         uiKit.selectedCategory = category
@@ -263,6 +266,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Selects one installer screen and clears an element selection that does not belong to it.
     // ------------------=
     func selectScreen(_ id: Int) {
+        pendingNativeSelectionReveal = nil
         selectedScreenID = id
         selectedElementID = nil
         inlineEditorElementID = nil
@@ -274,11 +278,41 @@ final class TemplateStore: ObservableObject {
     // DESC: Selects an editable or locked element for canvas and inspector feedback.
     // ------------------=
     func selectElement(_ id: UUID?) {
+        pendingNativeSelectionReveal = nil
         if selectedElementID != id {
             inlineEditorElementID = nil
         }
         selectedElementIDs = id.map { [$0] } ?? []
         selectedElementID = id
+        if selectedCollection == .systemSettings, let element = selectedElement,
+           element.role == .settingsRowAction, let parent = element.parentRowID,
+           let row = selectedScreen?.elements.filter({ $0.role == .metadata }).firstIndex(where: { $0.id == parent }) {
+            nativePreviewSimulation.enabled = true
+            nativePreviewSimulation.expandedRow = row
+            pendingNativeSelectionReveal = element.id
+        }
+    }
+
+    // ------------------------=
+    // FUNC: applyNativeSelectionReveal
+    // DESC: Reveals a newly selected Settings action once using the production layout's bounded scroll target, never estimating detail placement in Studio.
+    // ------------------=
+    @discardableResult func applyNativeSelectionReveal(_ bounds: [NativePreviewBounds], screen: Int,
+                                                       expandedRow: Int) -> Bool {
+        guard !editingUIKit, selectedCollection == .systemSettings, selectedScreenID == screen,
+              nativePreviewSimulation.enabled, nativePreviewSimulation.expandedRow == expandedRow,
+              let pending = pendingNativeSelectionReveal, pending == selectedElementID,
+              let element = selectedElement, element.role == .settingsRowAction,
+              let parent = element.parentRowID,
+              selectedScreen?.elements.filter({ $0.role == .metadata }).firstIndex(where: { $0.id == parent }) == expandedRow,
+              let geometry = bounds.first(where: { $0.id == pending }), geometry.isBounded,
+              let parentBounds = geometry.parentBounds, parentBounds.width > 0, parentBounds.height > 0,
+              let viewport = geometry.viewportBounds, viewport.width > 0, viewport.height > 0,
+              let target = geometry.revealScroll, geometry.maximumScroll != nil else { return false }
+        pendingNativeSelectionReveal = nil
+        guard nativePreviewSimulation.scroll != target else { return false }
+        nativePreviewSimulation.scroll = target
+        return true
     }
 
     // ------------------------=
@@ -560,7 +594,8 @@ final class TemplateStore: ObservableObject {
         let candidateMaximum = selectedCollection.maximumRoleCount(candidate.role, screenID: screenID)
         let removesRequiredRole = originalRequired > 0 && originalCount <= originalRequired
             && (candidate.role != location.element.role
-                || (!location.element.hidden && candidate.hidden && candidate.role != .liveDetails))
+                || (!location.element.hidden && candidate.hidden
+                    && ![StudioElementRole.liveDetails, .settingsRowAction].contains(candidate.role)))
         let exceedsCandidateMaximum = candidate.role != location.element.role
             && candidateMaximum.map { candidateCount >= $0 } == true
         if removesRequiredRole {
@@ -575,6 +610,10 @@ final class TemplateStore: ObservableObject {
             )
             return
         }
+        var changedScreen = activeDocument.screens[location.screen]
+        changedScreen.elements[location.elementIndex] = candidate
+        do { try TemplateValidator.validateSettingsActions(changedScreen, collection: selectedCollection) }
+        catch { refuseStructuralChange(String(describing: error)); return }
         recordUndo()
         activeDocument.screens[location.screen].elements[location.elementIndex] = candidate
         activeDocument.screens[location.screen].elements[location.elementIndex].frame =
@@ -582,6 +621,28 @@ final class TemplateStore: ObservableObject {
         activeDocument.screens[location.screen].elements[location.elementIndex].crop =
             activeDocument.screens[location.screen].elements[location.elementIndex].crop.clamped()
         status = label
+    }
+
+    // ------------------------=
+    // FUNC: reparentSelectedAction
+    // DESC: Exchanges existing action parents atomically so every required native action remains represented exactly once.
+    // ------------------=
+    func reparentSelectedAction(_ parent: UUID) {
+        guard let location = selectedLocation(), !location.element.locked,
+              location.element.role == .settingsRowAction, let oldParent = location.element.parentRowID,
+              parent != oldParent else { return }
+        var screen = activeDocument.screens[location.screen]
+        if let other = screen.elements.firstIndex(where: { $0.role == .settingsRowAction && $0.parentRowID == parent }) {
+            guard !screen.elements[other].locked else { status = "Unlock the other action before exchanging parents"; return }
+            screen.elements[other].parentRowID = oldParent
+        }
+        screen.elements[location.elementIndex].parentRowID = parent
+        do { try TemplateValidator.validateSettingsActions(screen, collection: selectedCollection) }
+        catch { refuseStructuralChange(String(describing: error)); return }
+        recordUndo()
+        activeDocument.screens[location.screen] = screen
+        selectElement(location.element.id)
+        status = "Action parent bindings exchanged"
     }
 
     // ------------------------=
@@ -936,7 +997,8 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func resizeSelected(handle: ResizeHandle, translation: CGSize, canvasScale: CGSize) {
         guard let location = selectedLocation(), !location.element.locked,
-              gestureFrames.count == 1, let origin = gestureFrames[location.element.id]
+              gestureFrames.count == 1, let origin = gestureFrames[location.element.id],
+              canvasScale.width > 0, canvasScale.height > 0
         else { return }
         let dx = Int((translation.width / canvasScale.width).rounded())
         let dy = Int((translation.height / canvasScale.height).rounded())
@@ -1498,11 +1560,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Copies a screen's element collection with fresh stable identities.
     // ------------------=
     private func clonedElements(_ elements: [StudioElement]) -> [StudioElement] {
-        elements.map { element in
-            var copy = element
-            copy.id = UUID()
-            return copy
-        }
+        SettingsActionContract.clonedElements(elements)
     }
 
     // ------------------------=

@@ -13,6 +13,7 @@ use installer_template::{InstallerTemplate, InstallerTemplateRole};
 const FACTORY_TEMPLATE: &[u8] = include_bytes!("../assets/boot/installer-screens.iuit");
 const CONFIGURATION_TEMPLATE: &[u8] = include_bytes!("../assets/boot/configuration-screens.iuit");
 const SETTINGS_TEMPLATE: &[u8] = include_bytes!("../assets/boot/settings-screens.iuit");
+const ACTION_EXTENSION_BYTES: usize = 21;
 
 // ------------------------=
 // FUNC: little_u16
@@ -50,7 +51,356 @@ fn skip_element(data: &[u8], offset: &mut usize) -> (u8, usize) {
     let image = data[*offset] as usize;
     *offset += 1 + image;
     *offset += 4;
+    if u16::from_le_bytes([data[4], data[5]]) >= 8 {
+        *offset += ACTION_EXTENSION_BYTES;
+    }
     (role, kind_offset)
+}
+
+#[derive(Clone)]
+struct TestScreen {
+    id: u8,
+    title: Vec<u8>,
+    elements: Vec<Vec<u8>>,
+}
+
+#[derive(Clone)]
+struct TestTemplate {
+    version: u16,
+    screens: Vec<TestScreen>,
+    assets: Vec<u8>,
+}
+
+impl TestTemplate {
+    // ------------------------=
+    // FUNC: read
+    // DESC: Splits a valid native artifact into independently mutable binary screen and element records for negative tests.
+    // ------------------=
+    fn read(data: &[u8]) -> Self {
+        let version = u16::from_le_bytes([data[4], data[5]]);
+        let mut cursor = 8;
+        let mut screens = Vec::new();
+        for _ in 0..u16::from_le_bytes([data[6], data[7]]) {
+            let id = data[cursor];
+            cursor += 1;
+            let title_length = data[cursor] as usize;
+            cursor += 1;
+            let title = data[cursor..cursor + title_length].to_vec();
+            cursor += title_length;
+            let count = little_u16(data, &mut cursor);
+            let mut elements = Vec::new();
+            for _ in 0..count {
+                let start = cursor;
+                skip_element(data, &mut cursor);
+                elements.push(data[start..cursor].to_vec());
+            }
+            screens.push(TestScreen { id, title, elements });
+        }
+        Self { version, screens, assets: data[cursor..].to_vec() }
+    }
+
+    // ------------------------=
+    // FUNC: encode
+    // DESC: Reassembles binary records without repairing any intentionally malformed element contract.
+    // ------------------=
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = b"IUIT".to_vec();
+        bytes.extend_from_slice(&self.version.to_le_bytes());
+        bytes.extend_from_slice(&(self.screens.len() as u16).to_le_bytes());
+        for screen in &self.screens {
+            bytes.push(screen.id);
+            bytes.push(screen.title.len() as u8);
+            bytes.extend_from_slice(&screen.title);
+            bytes.extend_from_slice(&(screen.elements.len() as u16).to_le_bytes());
+            for element in &screen.elements {
+                bytes.extend_from_slice(element);
+            }
+        }
+        bytes.extend_from_slice(&self.assets);
+        bytes
+    }
+
+    // ------------------------=
+    // FUNC: change_version
+    // DESC: Converts actual record widths and removes v8-only controls when constructing a legacy compatibility fixture.
+    // ------------------=
+    fn change_version(&mut self, version: u16) {
+        for screen in &mut self.screens {
+            if version < 8 {
+                screen.elements.retain(|element| {
+                    element[element_kind_offset(element) + 1] != InstallerTemplateRole::SettingsRowAction as u8
+                });
+            }
+            for element in &mut screen.elements {
+                if self.version >= 8 && version < 8 {
+                    element.truncate(element.len() - ACTION_EXTENSION_BYTES);
+                } else if self.version < 8 && version >= 8 {
+                    element.extend_from_slice(&[0; 17]);
+                    element.extend_from_slice(&[255; 4]);
+                }
+                if version == 6 {
+                    let flags = element_kind_offset(element) + 3;
+                    element[flags] &= 3;
+                }
+            }
+        }
+        self.version = version;
+    }
+}
+
+// ------------------------=
+// FUNC: element_kind_offset
+// DESC: Locates the fixed fields following an element UUID and variable-length binding identifier.
+// ------------------=
+fn element_kind_offset(element: &[u8]) -> usize {
+    17 + element[16] as usize
+}
+
+// ------------------------=
+// FUNC: template_at_version
+// DESC: Produces a structurally valid requested-version fixture from whichever version the repository currently packages.
+// ------------------=
+fn template_at_version(data: &[u8], version: u16) -> Vec<u8> {
+    let mut template = TestTemplate::read(data);
+    template.change_version(version);
+    template.encode()
+}
+
+// ------------------------=
+// FUNC: action_record
+// DESC: Constructs one v8 local-detail button with an explicit parent UUID and distinguishable authored visual properties.
+// ------------------=
+fn action_record(section: usize, row: usize, parent: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0; 16];
+    bytes[0] = 0xfe;
+    bytes[1] = section as u8;
+    bytes[2] = row as u8;
+    let identifier = format!("settings.section.{}.row.{}.action", section, row);
+    bytes.push(identifier.len() as u8);
+    bytes.extend_from_slice(identifier.as_bytes());
+    bytes.extend_from_slice(&[5, InstallerTemplateRole::SettingsRowAction as u8, 0, 1]);
+    bytes.extend_from_slice(&30i16.to_le_bytes());
+    for coordinate in [40u16, 700, 320, 180] {
+        bytes.extend_from_slice(&coordinate.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[12, 24, 36, 200, 144, 190, 255, 220]);
+    bytes.extend_from_slice(&[82, 9]);
+    bytes.extend_from_slice(&18u16.to_le_bytes());
+    bytes.push(6);
+    bytes.extend_from_slice(b"Action");
+    bytes.extend_from_slice(&17u16.to_le_bytes());
+    bytes.extend_from_slice(b"Configured action");
+    bytes.push(0);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(parent);
+    bytes.push(0);
+    bytes.extend_from_slice(&[201, 222, 243, 188]);
+    bytes
+}
+
+// ------------------------=
+// FUNC: settings_with_actions
+// DESC: Adds exactly the eight supported typed action bindings to real Settings records independently of checked-in format version.
+// ------------------=
+fn settings_with_actions() -> TestTemplate {
+    let mut template = TestTemplate::read(SETTINGS_TEMPLATE);
+    template.change_version(7);
+    template.change_version(8);
+    for screen in &mut template.screens {
+        let section = screen.id as usize - 1;
+        let parents: Vec<_> = screen.elements.iter().filter(|element| {
+            element[element_kind_offset(element) + 1] == InstallerTemplateRole::Metadata as u8
+        }).map(|element| element[..16].to_vec()).collect();
+        for (row, parent) in parents.iter().enumerate() {
+            if installer_template::settings_action_for_row(section, row).is_some() {
+                screen.elements.push(action_record(section, row, parent));
+            }
+        }
+    }
+    template
+}
+
+// ------------------------=
+// FUNC: first_action_index
+// DESC: Locates a generated action record in a selected binary screen fixture.
+// ------------------=
+fn first_action_index(screen: &TestScreen) -> usize {
+    screen.elements.iter().position(|element| {
+        element[element_kind_offset(element) + 1] == InstallerTemplateRole::SettingsRowAction as u8
+    }).unwrap()
+}
+
+// ------------------------=
+// FUNC: verify_settings_action_contract
+// DESC: Exercises native action identities, v6/v7 compatibility, v8 parent resolution and bounded malformed-payload rejection.
+// ------------------=
+fn verify_settings_action_contract() {
+    use installer_template::{settings_action_for_row, InstallerTemplateError, SettingsAction};
+    let expected = [
+        (0, 0, SettingsAction::RenameMachine),
+        (3, 0, SettingsAction::CyclePolicy),
+        (3, 1, SettingsAction::ToggleChat),
+        (3, 2, SettingsAction::CycleModel),
+        (3, 4, SettingsAction::ToggleMicrophone),
+        (3, 5, SettingsAction::CycleWakeWord),
+        (3, 6, SettingsAction::ToggleSpeech),
+        (4, 1, SettingsAction::ToggleMicrophone),
+    ];
+    for section in 0..12 {
+        for row in 0..10 {
+            let action = expected.iter().find(|entry| entry.0 == section && entry.1 == row).map(|entry| entry.2);
+            assert_eq!(settings_action_for_row(section, row), action);
+        }
+    }
+    assert_eq!(settings_action_for_row(usize::MAX, usize::MAX), None);
+    for (source, is_settings) in [(FACTORY_TEMPLATE, false), (CONFIGURATION_TEMPLATE, false), (SETTINGS_TEMPLATE, true)] {
+        for version in [6, 7] {
+            let bytes = template_at_version(source, version);
+            let parsed = if is_settings {
+                InstallerTemplate::parse_settings(&bytes).unwrap()
+            } else {
+                InstallerTemplate::parse(&bytes).unwrap()
+            };
+            for screen in 1..=parsed.screen_count() as u8 {
+                for index in 0..parsed.element_count(screen).unwrap() {
+                    let element = parsed.element_at(screen, index).unwrap();
+                    assert_eq!(element.parent_id, [0; 16]);
+                    assert_eq!(element.caption_mode, 0);
+                    assert_eq!(element.caption_color, [255; 4]);
+                    assert_ne!(element.role, InstallerTemplateRole::SettingsRowAction as u8);
+                }
+            }
+        }
+    }
+    let valid = settings_with_actions();
+    let bytes = valid.encode();
+    let parsed = InstallerTemplate::parse_settings(&bytes).unwrap();
+    let mut actions = 0;
+    for (section, row, expected_action) in expected {
+        let screen = section as u8 + 1;
+        let parent = (0..parsed.element_count(screen).unwrap()).filter_map(|index| parsed.element_at(screen, index))
+            .filter(|element| element.role == InstallerTemplateRole::Metadata as u8).nth(row).unwrap();
+        let action = (0..parsed.element_count(screen).unwrap()).filter_map(|index| parsed.element_at(screen, index))
+            .find(|element| element.role == InstallerTemplateRole::SettingsRowAction as u8 && element.parent_id == parent.id).unwrap();
+        assert_eq!(settings_action_for_row(section, row), Some(expected_action));
+        assert_eq!((action.kind, action.caption_mode, action.opacity, action.font_size), (5, 0, 82, 18));
+        assert_eq!((action.frame.x, action.frame.y, action.frame.width, action.frame.height), (40, 700, 320, 180));
+        assert_eq!(action.fill, [12, 24, 36, 200]);
+        assert_eq!(action.border, [144, 190, 255, 220]);
+        assert_eq!(action.caption_color, [201, 222, 243, 188]);
+        actions += 1;
+    }
+    assert_eq!(actions, 8);
+    let first = first_action_index(&valid.screens[0]);
+    let mut literal = valid.clone();
+    let action = &mut literal.screens[0].elements[first];
+    let mode = action.len() - 5;
+    action[mode] = 1;
+    let literal_bytes = literal.encode();
+    let literal_action = InstallerTemplate::parse_settings(&literal_bytes).unwrap()
+        .element(1, InstallerTemplateRole::SettingsRowAction).unwrap();
+    assert_eq!(literal_action.caption_mode, 1);
+    assert_eq!(literal_action.caption_color, [201, 222, 243, 188]);
+    assert_eq!(literal_action.text, parsed.element(1, InstallerTemplateRole::SettingsRowAction).unwrap().text);
+
+    for mutation in 0..14 {
+        let mut invalid = valid.clone();
+        let action_index = first_action_index(&invalid.screens[0]);
+        let action_length = invalid.screens[0].elements[action_index].len();
+        let parent_start = action_length - ACTION_EXTENSION_BYTES;
+        match mutation {
+            0 => invalid.screens[0].elements[action_index][parent_start..parent_start + 16].fill(0),
+            1 => invalid.screens[0].elements[action_index][parent_start..parent_start + 16].fill(0xa5),
+            2 => {
+                let wrong = invalid.screens[0].elements.iter().find(|element| {
+                    element[element_kind_offset(element) + 1] == InstallerTemplateRole::Content as u8
+                }).unwrap()[..16].to_vec();
+                invalid.screens[0].elements[action_index][parent_start..parent_start + 16].copy_from_slice(&wrong);
+            }
+            3 => {
+                let other = invalid.screens[1].elements.iter().find(|element| {
+                    element[element_kind_offset(element) + 1] == InstallerTemplateRole::Metadata as u8
+                }).unwrap()[..16].to_vec();
+                invalid.screens[0].elements[action_index][parent_start..parent_start + 16].copy_from_slice(&other);
+            }
+            4 => {
+                let duplicate = invalid.screens[0].elements[action_index].clone();
+                invalid.screens[0].elements.push(duplicate);
+            }
+            5 => { invalid.screens[0].elements.remove(action_index); }
+            6 => {
+                let unsupported = invalid.screens[0].elements.iter().filter(|element| {
+                    element[element_kind_offset(element) + 1] == InstallerTemplateRole::Metadata as u8
+                }).nth(1).unwrap()[..16].to_vec();
+                invalid.screens[0].elements[action_index][parent_start..parent_start + 16].copy_from_slice(&unsupported);
+            }
+            7 => invalid.screens[0].elements[action_index][action_length - 5] = 2,
+            8 => {
+                let kind = element_kind_offset(&invalid.screens[0].elements[action_index]);
+                invalid.screens[0].elements[action_index][kind] = 1;
+            }
+            9 => {
+                let parent = invalid.screens[0].elements[action_index][parent_start..parent_start + 16].to_vec();
+                let other = invalid.screens[0].elements.iter_mut().find(|element| {
+                    element[element_kind_offset(element) + 1] == InstallerTemplateRole::Content as u8
+                }).unwrap();
+                other[..16].copy_from_slice(&parent);
+            }
+            10 => {
+                let ordinary = &mut invalid.screens[0].elements[0];
+                let parent = ordinary.len() - ACTION_EXTENSION_BYTES;
+                ordinary[parent] = 1;
+            }
+            11 => {
+                let ordinary = &mut invalid.screens[0].elements[0];
+                let caption = ordinary.len() - 5;
+                ordinary[caption] = 1;
+            }
+            12 => {
+                let kind = element_kind_offset(&invalid.screens[0].elements[action_index]);
+                invalid.screens[0].elements[action_index][kind + 1] = 34;
+            }
+            13 => {
+                let ordinary = invalid.screens[0].elements.iter_mut().find(|element| {
+                    element[element_kind_offset(element)] != 5
+                }).unwrap();
+                let color = ordinary.len() - 4;
+                ordinary[color] = 1;
+            }
+            _ => unreachable!(),
+        }
+        assert!(matches!(InstallerTemplate::parse_settings(&invalid.encode()), Err(InstallerTemplateError::InvalidElement)), "mutation {}", mutation);
+    }
+    for source in [FACTORY_TEMPLATE, CONFIGURATION_TEMPLATE] {
+        let mut wizard = TestTemplate::read(&template_at_version(source, 8));
+        let primary = wizard.screens[0].elements.iter_mut().find(|element| {
+            element[element_kind_offset(element) + 1] == InstallerTemplateRole::PrimaryButton as u8
+        }).unwrap();
+        let color = primary.len() - 4;
+        primary[color..].copy_from_slice(&[90, 140, 210, 180]);
+        let colored = wizard.encode();
+        assert_eq!(InstallerTemplate::parse(&colored).unwrap()
+            .element(1, InstallerTemplateRole::PrimaryButton).unwrap().caption_color, [90, 140, 210, 180]);
+        wizard.screens[0].elements.push(valid.screens[0].elements[first].clone());
+        assert!(matches!(InstallerTemplate::parse(&wizard.encode()), Err(InstallerTemplateError::InvalidElement)));
+    }
+    let mut missing = valid.clone();
+    for screen in &mut missing.screens {
+        screen.elements.retain(|element| element[element_kind_offset(element) + 1] != InstallerTemplateRole::SettingsRowAction as u8);
+    }
+    assert!(matches!(InstallerTemplate::parse_settings(&missing.encode()), Err(InstallerTemplateError::InvalidElement)));
+    for version in [6, 7] {
+        let mut legacy = TestTemplate::read(&template_at_version(SETTINGS_TEMPLATE, version));
+        let mut action = valid.screens[0].elements[first].clone();
+        action.truncate(action.len() - ACTION_EXTENSION_BYTES);
+        legacy.screens[0].elements.push(action);
+        assert!(matches!(InstallerTemplate::parse_settings(&legacy.encode()), Err(InstallerTemplateError::InvalidElement)));
+    }
+    let mut truncated = valid.clone();
+    truncated.assets.clear();
+    let mut truncated_bytes = truncated.encode();
+    truncated_bytes.truncate(truncated_bytes.len() - 1);
+    assert!(matches!(InstallerTemplate::parse_settings(&truncated_bytes), Err(InstallerTemplateError::Truncated)));
 }
 
 // ------------------------=
@@ -119,6 +469,7 @@ fn template_with_screen_count(data: &[u8], count: u16) -> Vec<u8> {
 // ------------------=
 fn main() {
     use installer_layout::InstallerDateTimeTarget as DateTarget;
+    verify_settings_action_contract();
     for source in [FACTORY_TEMPLATE, CONFIGURATION_TEMPLATE] {
         for count in [1, 11, 12, 32] {
             let bytes = template_with_screen_count(source, count);
@@ -189,9 +540,8 @@ fn main() {
     for (index,element) in expected.iter().enumerate() {
         assert_eq!(unsorted.layer_at(1,index as u16).unwrap().id,element.id);
     }
-    let primary = first_primary_kind_offset(FACTORY_TEMPLATE);
-    let mut styled = FACTORY_TEMPLATE.to_vec();
-    styled[4..6].copy_from_slice(&7u16.to_le_bytes());
+    let mut styled = template_at_version(FACTORY_TEMPLATE, 7);
+    let primary = first_primary_kind_offset(&styled);
     for material in 0..4 {
         for corners in 0..3 {
             styled[primary+3] = (styled[primary+3]&3) | material<<2 | corners<<4;
@@ -205,19 +555,7 @@ fn main() {
     assert!(InstallerTemplate::parse(&styled).is_err());
     styled[primary+3] = 3<<4;
     assert!(InstallerTemplate::parse(&styled).is_err());
-    let mut legacy = FACTORY_TEMPLATE.to_vec();
-    legacy[4..6].copy_from_slice(&6u16.to_le_bytes());
-    let mut cursor = 8;
-    let screens = u16::from_le_bytes([legacy[6],legacy[7]]);
-    for _ in 0..screens {
-        cursor += 1;
-        cursor += 1 + legacy[cursor] as usize;
-        let count = little_u16(&legacy, &mut cursor);
-        for _ in 0..count {
-            let (_,kind) = skip_element(&legacy,&mut cursor);
-            legacy[kind+3] &= 3;
-        }
-    }
+    let mut legacy = template_at_version(FACTORY_TEMPLATE, 6);
     let parsed = InstallerTemplate::parse(&legacy).unwrap();
     assert_eq!(parsed.element(1,InstallerTemplateRole::PrimaryButton).unwrap().surface_material,0);
     legacy[primary+3] |= 1<<2;

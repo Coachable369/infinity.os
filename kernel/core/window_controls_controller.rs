@@ -1,4 +1,4 @@
-//! Topmost-owner hover routing for shared window chrome.
+//! Topmost-owner hover routing for shared window chrome and authored Settings controls.
 use super::*;
 use crate::ui::{geometry::{Point,Rect},app_launcher::window_controls as controls};
 #[no_mangle]
@@ -97,7 +97,7 @@ impl ConsoleRuntime {
     }
     // ------------------------=
     // FUNC: publish_window_controls
-    // DESC: Publishes only the uncovered window button under the pointer, respecting modal and drag capture.
+    // DESC: Publishes only an uncovered title control or authored Settings action, respecting modal and drag capture.
     // ------------------=
     pub(super) fn publish_window_controls(&self)->bool {
         if !matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) || self.spatial.open
@@ -129,7 +129,7 @@ impl ConsoleRuntime {
                 let Some(window)=target else {continue;};
                 (window,controls::bounds(window,(34*layout.scale()) as u32,layout.scale()))
             } else if id==4 {
-                let g=layout.settings_window_geometry(self.settings_window);
+                let g=layout.settings_window_geometry_for_section(self.settings_window,stack.settings_section);
                 (g.window,controls::bounds(g.window,g.title.height,layout.scale()))
             } else {
                 let g=app(match id {1=>command,2=>editor,5=>self.browser_window_state(),_=>tasks});
@@ -148,8 +148,15 @@ impl ConsoleRuntime {
                 (g.window,buttons)
             };
             if window.contains(point) {
-                return controls::publish(controls::hit(buttons,point).map(|index|
-                    controls::Highlight{rect:buttons[index],pressed:self.pointer_pressed}));
+                let highlight=controls::hit(buttons,point).map(|index|
+                    controls::Highlight{rect:buttons[index],pressed:self.pointer_pressed})
+                    .or_else(|| {
+                        if id!=4 {return None;}
+                        let row=self.settings_window.expanded_row?;
+                        let action=layout.settings_action_geometry(self.settings_window,stack.settings_section,row)?;
+                        action.hit(point).then_some(controls::Highlight{rect:action.bounds,pressed:self.pointer_pressed})
+                    });
+                return controls::publish(highlight);
             }
         }
         controls::publish(None)

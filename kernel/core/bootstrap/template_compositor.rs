@@ -674,39 +674,65 @@ impl DisplayDevice {
                 && y <= (element.frame.y + element.frame.height) as i32
         });
         let depressed = pointer.is_some_and(|(_, _, is_pressed)| is_pressed) && hovered;
-        let opacity = element.opacity as u16;
         let primary = element.role == InstallerTemplateRole::PrimaryButton as u8;
+        self.paint_template_button_state(element, crate::ui::geometry::Rect {
+            x: rect.left as i32, y: rect.top as i32,
+            width: rect.width as u32, height: rect.height as u32,
+        }, primary, focused || hovered, depressed);
+    }
+
+    // ------------------------=
+    // FUNC: paint_template_button_state
+    // DESC: Paints authored buttons through the same image-backed surface and native text renderer in screen and Settings contexts.
+    // ------------------=
+    pub(crate) fn paint_template_button_state(
+        &mut self, element: InstallerTemplateElement<'_>, rect: crate::ui::geometry::Rect,
+        primary: bool, focused: bool, depressed: bool,
+    ) {
+        if element.hidden || element.opacity == 0 || rect.width == 0 || rect.height == 0 { return; }
+        let previous_clip = self.render_clip;
+        let visible = rect.intersection(crate::ui::geometry::Rect {
+            x: 0, y: 0, width: self.width as u32, height: self.height as u32,
+        });
+        if visible.width == 0 || visible.height == 0 { return; }
+        self.intersect_render_clip(visible.x as usize, visible.y as usize, visible.width as usize, visible.height as usize);
+        let opacity = element.opacity as u16;
         use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
         let kind=if primary {Surface::Primary}else{Surface::Secondary};
         let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
-        self.precision_surface_styled(Rect{x:rect.left as i32,y:rect.top as i32,
-            width:rect.width as u32,height:rect.height as u32},
+        self.precision_surface_styled(Rect{..rect},
             kind,Material{
                 fill:(element.fill[0],element.fill[1],element.fill[2]),
                 edge:(element.border[0],element.border[1],element.border[2]),
                 opacity:(element.fill[3] as u16*opacity/100) as u8,
                 edge_opacity:(element.border[3] as u16*opacity/100) as u8,
-                focus:if focused||hovered {super::access_style::focus_amount()}else{0},
+                focus:if focused {
+                    if element.role==InstallerTemplateRole::SettingsRowAction as u8 {100}
+                    else {super::access_style::focus_amount()}
+                }else{0},
                 pressed:depressed,scale:self.ui_scale()},style);
         let font_px = (element.font_size as usize * self.height / 1000).max(6);
         let text_width = self.template_text_width(element.text, font_px, true);
         let text_height = (font_px * 7 / 6).max(1);
-        self.template_text(
-            rect.left + rect.width.saturating_sub(text_width) / 2,
-            rect.top
-                + rect.height.saturating_sub(text_height) / 2
+        let text_left = i64::from(rect.x) + (rect.width as usize).saturating_sub(text_width) as i64 / 2;
+        let text_top = i64::from(rect.y) + (rect.height as usize).saturating_sub(text_height) as i64 / 2
                 + if depressed {
-                    2 * self.ui_scale().max(1)
+                    (2 * self.ui_scale().max(1)) as i64
                 } else {
                     0
-                },
+                };
+        // The text renderer takes unsigned origins; crop the left/top glyph runs through its signed-origin adapter.
+        self.template_text_signed(
+            text_left as i32,
+            text_top as i32,
             element.text,
-            255,
-            255,
-            255,
-            (255u16 * opacity / 100) as u8,
+            element.caption_color[0],
+            element.caption_color[1],
+            element.caption_color[2],
+            (u16::from(element.caption_color[3]) * opacity / 100) as u8,
             font_px,
             true,
         );
+        self.render_clip = previous_clip;
     }
 }

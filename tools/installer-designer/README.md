@@ -80,7 +80,7 @@ Current editing coverage:
 | Surface | Native pixel preview | Authoring boundary |
 | --- | --- | --- |
 | Installer and configuration templates | Production renderer, including live-value simulations | Authored layer geometry, copy, images, palette bindings and surface styles; the erase confirmation's internal layout remains OS-owned |
-| General, account, AI, privacy, devices and information Settings | Production renderer with simulated values and expanded controls | Template layers and supported row fields; semantic control order remains OS-owned |
+| General, account, AI, privacy, devices and information Settings | Production renderer with simulated values and expanded controls | Template layers and supported row fields; eight General/AI/Privacy action buttons also support native-bound geometry, materials, borders and caption editing |
 | Network and Nodes Settings | Production dashboard renderer and available subpages | Copy and appearance; responsive dashboard control geometry remains OS-owned |
 | Themes and Pool Settings | Template-layer preview only | No claim of complete native scene parity |
 | Other applications and desktop widgets | Shared UIKit component preview, not a complete application canvas | Shared component recipes/artwork, not application-internal layout authoring |
@@ -89,6 +89,19 @@ The remaining universal-editor work is to move the OS-owned internal layouts int
 typed authorable scene contracts and expose those same contracts to Studio. A
 theme's shared styling coverage must not be mistaken for complete layout-editing
 coverage.
+
+Expanded Settings action buttons use IUIT v8 parent UUID bindings. Selecting an
+action opens its real parent row; its 0–1000 frame is relative to that expanded
+detail area, not the whole screen. Studio obtains the physical parent bounds
+from the OS renderer for selection and drag/resize mapping. The OS uses that
+same resolver for drawing and pointer hit testing, including scroll clipping.
+Native captions follow service state; switch to a literal caption for custom
+copy. Button caption RGBA is independently editable. Legacy v6/v7 imports add
+the required action layers deterministically without replacing existing layers.
+Required bindings cannot be deleted, duplicated, or attached to unrelated rows.
+Hiding a button suppresses both its pixels and click target, but keeps its layer
+available in Studio. Detail descriptions, slider internals and other specialized
+controls remain outside this action-button authoring contract.
 
 Customizations are saved in `assets/ui-design-kit/uikit.infinityui`, with imported
 assets under `assets/ui-design-kit/overrides/`. The build validates and applies

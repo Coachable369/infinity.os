@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 7;
+const FORMAT_VERSION: u16 = 8;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -42,6 +42,58 @@ pub enum InstallerTemplateRole {
     SettingsRowLabel = 30,
     SettingsRowValue = 31,
     SettingsDisclosure = 32,
+    SettingsRowAction = 33,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsAction {
+    RenameMachine,
+    CyclePolicy,
+    ToggleChat,
+    CycleModel,
+    ToggleMicrophone,
+    CycleWakeWord,
+    ToggleSpeech,
+}
+
+impl SettingsAction {
+    // ------------------------=
+    // FUNC: caption
+    // DESC: Returns the trusted native caption for a Settings action and its current service state.
+    // ------------------=
+    pub const fn caption(
+        self,
+        chat_enabled: bool,
+        voice_enabled: bool,
+        speech_enabled: bool,
+    ) -> &'static [u8] {
+        match self {
+            Self::RenameMachine => b"EDIT NAME",
+            Self::CyclePolicy => b"CHANGE POLICY",
+            Self::ToggleChat => if chat_enabled { b"DISABLE CHAT" } else { b"ENABLE CHAT" },
+            Self::CycleModel => b"NEXT MODEL",
+            Self::ToggleMicrophone => if voice_enabled { b"RESTRICT" } else { b"GRANT" },
+            Self::CycleWakeWord => b"NEXT WAKE WORD",
+            Self::ToggleSpeech => if speech_enabled { b"MUTE REPLIES" } else { b"SPEAK REPLIES" },
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: settings_action_for_row
+// DESC: Resolves only the OS-supported Settings row actions, using zero-based section and Metadata ordinals.
+// ------------------=
+pub const fn settings_action_for_row(section: usize, row: usize) -> Option<SettingsAction> {
+    match (section, row) {
+        (0, 0) => Some(SettingsAction::RenameMachine),
+        (3, 0) => Some(SettingsAction::CyclePolicy),
+        (3, 1) => Some(SettingsAction::ToggleChat),
+        (3, 2) => Some(SettingsAction::CycleModel),
+        (3, 4) | (4, 1) => Some(SettingsAction::ToggleMicrophone),
+        (3, 5) => Some(SettingsAction::CycleWakeWord),
+        (3, 6) => Some(SettingsAction::ToggleSpeech),
+        _ => None,
+    }
 }
 
 // ------------------------=
@@ -130,6 +182,9 @@ pub struct InstallerTemplateElement<'a> {
     pub text: &'a [u8],
     pub image_asset: &'a [u8],
     pub crop: [u8; 4],
+    pub parent_id: [u8; 16],
+    pub caption_mode: u8,
+    pub caption_color: [u8; 4],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -180,7 +235,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::InvalidHeader);
         }
         let version = reader.u16()?;
-        if version != FORMAT_VERSION && version != 6 {
+        if version != FORMAT_VERSION && version != 7 && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -208,6 +263,7 @@ impl<'a> InstallerTemplate<'a> {
                 return Err(InstallerTemplateError::InvalidScreenSet);
             }
             let count = reader.u16()?;
+            let elements_start = reader;
             let mut back_count = 0u8;
             let mut primary_count = 0u8;
             let mut console_count = 0u8;
@@ -232,6 +288,9 @@ impl<'a> InstallerTemplate<'a> {
             for _ in 0..count {
                 let element = reader.element()?;
                 if !element_is_bounded(element.frame) {
+                    return Err(InstallerTemplateError::InvalidElement);
+                }
+                if requires_navigation && element.role == InstallerTemplateRole::SettingsRowAction as u8 {
                     return Err(InstallerTemplateError::InvalidElement);
                 }
                 if element.role == InstallerTemplateRole::Console as u8 {
@@ -349,6 +408,9 @@ impl<'a> InstallerTemplate<'a> {
                 || details_count > 1
             {
                 return Err(InstallerTemplateError::InvalidNavigation);
+            }
+            if !requires_navigation && version >= 8 {
+                validate_settings_actions(elements_start, count, screen as usize - 1)?;
             }
         }
         let expected_screens = if screen_count == MAX_SCREEN_COUNT {
@@ -686,7 +748,7 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::SettingsDisclosure as u8
+            || role > InstallerTemplateRole::SettingsRowAction as u8
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
@@ -703,6 +765,7 @@ impl<'a> Reader<'a> {
             || (role == InstallerTemplateRole::SettingsRowLabel as u8 && kind != 3)
             || (role == InstallerTemplateRole::SettingsRowValue as u8 && kind != 3)
             || (role == InstallerTemplateRole::SettingsDisclosure as u8 && kind != 3)
+            || (role == InstallerTemplateRole::SettingsRowAction as u8 && (kind != 5 || self.version < 8))
             || (role != InstallerTemplateRole::Input as u8
                 && input_variable != InstallerTemplateVariable::None as u8)
             || (role == InstallerTemplateRole::Input as u8
@@ -732,6 +795,26 @@ impl<'a> Reader<'a> {
         let text = self.long_string()?;
         let image_asset = self.short_string()?;
         let crop = [self.u8()?, self.u8()?, self.u8()?, self.u8()?];
+        let mut parent_id = [0u8; 16];
+        let caption_mode = if self.version >= 8 {
+            parent_id.copy_from_slice(self.take(16)?);
+            self.u8()?
+        } else {
+            0
+        };
+        let caption_color = if self.version >= 8 {
+            self.color()?
+        } else {
+            [255; 4]
+        };
+        if caption_mode > 1
+            || (role == InstallerTemplateRole::SettingsRowAction as u8 && parent_id == [0; 16])
+            || (role != InstallerTemplateRole::SettingsRowAction as u8
+                && (parent_id != [0; 16] || caption_mode != 0))
+            || (kind != 5 && caption_color != [255; 4])
+        {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
         if !valid_code_identifier(code_identifier)
             || core::str::from_utf8(name).is_err()
             || core::str::from_utf8(text).is_err()
@@ -769,8 +852,65 @@ impl<'a> Reader<'a> {
             text,
             image_asset,
             crop,
+            parent_id,
+            caption_mode,
+            caption_color,
         })
     }
+}
+
+// ------------------------=
+// FUNC: validate_settings_actions
+// DESC: Requires one typed action for each supported row, bound to a unique same-screen Metadata UUID without allocation.
+// ------------------=
+fn validate_settings_actions(
+    start: Reader<'_>,
+    count: u16,
+    section: usize,
+) -> Result<(), InstallerTemplateError> {
+    let mut actions = start;
+    let mut bound_rows = 0u16;
+    for _ in 0..count {
+        let action = actions.element()?;
+        if action.role != InstallerTemplateRole::SettingsRowAction as u8 {
+            continue;
+        }
+        let mut peers = start;
+        let mut row = 0usize;
+        let mut parent_row = None;
+        let mut matches = 0u16;
+        for _ in 0..count {
+            let candidate = peers.element()?;
+            if candidate.id == action.parent_id {
+                matches = matches.saturating_add(1);
+                if candidate.role == InstallerTemplateRole::Metadata as u8 {
+                    parent_row = Some(row);
+                }
+            }
+            if candidate.role == InstallerTemplateRole::Metadata as u8 {
+                row += 1;
+            }
+        }
+        let row = parent_row.ok_or(InstallerTemplateError::InvalidElement)?;
+        if matches != 1 || settings_action_for_row(section, row).is_none() {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
+        let bit = 1u16 << row;
+        if bound_rows & bit != 0 {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
+        bound_rows |= bit;
+    }
+    let mut required_rows = 0u16;
+    for row in 0..8 {
+        if settings_action_for_row(section, row).is_some() {
+            required_rows |= 1u16 << row;
+        }
+    }
+    if bound_rows != required_rows {
+        return Err(InstallerTemplateError::InvalidElement);
+    }
+    Ok(())
 }
 
 // ------------------------=

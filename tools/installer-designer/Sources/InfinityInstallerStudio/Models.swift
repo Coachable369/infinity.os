@@ -72,6 +72,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case settingsRowLabel = 30
     case settingsRowValue = 31
     case settingsDisclosure = 32
+    case settingsRowAction = 33
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -109,6 +110,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .settingsRowLabel: "Settings Row Label"
         case .settingsRowValue: "Settings Row Value"
         case .settingsDisclosure: "Settings Disclosure"
+        case .settingsRowAction: "Settings Row Action"
         }
     }
 
@@ -118,6 +120,71 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     // ------------------=
     var imageUsesAspectFill: Bool {
         self == .masthead || self == .timeZoneMap
+    }
+}
+
+enum SettingsActionCaptionMode: UInt8, Codable, CaseIterable, Identifiable {
+    case native = 0
+    case literal = 1
+    var id: UInt8 { rawValue }
+    var title: String { self == .native ? "Native state-dependent caption" : "Authored caption" }
+}
+
+enum SettingsActionContract {
+    // ------------------------=
+    // FUNC: rows
+    // DESC: Lists the existing trusted row actions available in each one-based Settings screen.
+    // ------------------=
+    static func rows(screenID: Int) -> [Int] {
+        switch screenID {
+        case 1: [0]
+        case 4: [0, 1, 2, 4, 5, 6]
+        case 5: [1]
+        default: []
+        }
+    }
+
+    // ------------------------=
+    // FUNC: actionID
+    // DESC: Derives a reproducible child identity from its parent without changing the parent's identity.
+    // ------------------=
+    static func actionID(parent: UUID) -> UUID {
+        var value = parent.uuid
+        value.0 ^= 0x41; value.1 ^= 0x43; value.2 ^= 0x54; value.3 ^= 0x4e
+        value.15 ^= 0xa3
+        return UUID(uuid: value)
+    }
+
+    // ------------------------=
+    // FUNC: caption
+    // DESC: Supplies a readable saved fallback while native caption mode continues to reflect current OS state.
+    // ------------------=
+    static func caption(screenID: Int, row: Int) -> String {
+        switch (screenID, row) {
+        case (1, 0): "EDIT NAME"
+        case (4, 0): "CHANGE POLICY"
+        case (4, 1): "ENABLE CHAT"
+        case (4, 2): "NEXT MODEL"
+        case (4, 4), (5, 1): "GRANT"
+        case (4, 5): "NEXT WAKE WORD"
+        case (4, 6): "SPEAK REPLIES"
+        default: ""
+        }
+    }
+
+    // ------------------------=
+    // FUNC: clonedElements
+    // DESC: Refreshes a whole imported identity graph while retaining references to parents not included in the copied subset.
+    // ------------------=
+    static func clonedElements(_ elements: [StudioElement]) -> [StudioElement] {
+        var identities: [UUID: UUID] = [:]
+        for element in elements { identities[element.id] = UUID() }
+        return elements.map { element in
+            var copy = element
+            copy.id = identities[element.id]!
+            copy.parentRowID = element.parentRowID.map { identities[$0] ?? $0 }
+            return copy
+        }
     }
 }
 
@@ -207,6 +274,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
         if self == .systemSettings {
+            if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID).count }
             if [.settingsNavigationItem, .settingsNavigationIcon, .settingsNavigationLabel]
                 .contains(role) { return 11 }
             let rowCounts = [5, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
@@ -250,6 +318,9 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
+        if role == .settingsRowAction {
+            return self == .systemSettings ? SettingsActionContract.rows(screenID: screenID).count : 0
+        }
         if role == .liveDetails {
             if self == .systemSettings { return 1 }
             return self == .installation && [3, 4, 6, 10].contains(screenID) ? 1 : 0
@@ -294,6 +365,7 @@ struct StudioColor: Codable, Hashable {
     static let panel = StudioColor(red: 10, green: 18, blue: 29, alpha: 230)
     static let cyan = StudioColor(red: 32, green: 191, blue: 255, alpha: 255)
     static let text = StudioColor(red: 241, green: 245, blue: 250, alpha: 255)
+    static let white = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)
     static let button = StudioColor(red: 5, green: 15, blue: 27, alpha: 255)
 
     var color: Color {
@@ -352,6 +424,9 @@ struct StudioElement: Identifiable, Codable, Hashable {
     var surfaceCorners: UIKitCornerStyle = .authored
     var fillToken: UIKitColorRole? = nil
     var borderToken: UIKitColorRole? = nil
+    var parentRowID: UUID? = nil
+    var actionCaptionMode: SettingsActionCaptionMode = .native
+    var captionColor: StudioColor = .white
 
     // ------------------------=
     // FUNC: resolvingThemeColors
@@ -480,6 +555,7 @@ extension StudioElement {
     private enum CodingKeys: String, CodingKey {
         case id, codeIdentifier, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
         case fontSize, opacity, cornerRadius, zIndex, locked, hidden, surfaceMaterial, surfaceCorners, fillToken, borderToken
+        case parentRowID, actionCaptionMode, captionColor
     }
 
     // ------------------------=
@@ -511,6 +587,9 @@ extension StudioElement {
         surfaceCorners = try values.decodeIfPresent(UIKitCornerStyle.self, forKey: .surfaceCorners) ?? .authored
         fillToken = try values.decodeIfPresent(UIKitColorRole.self, forKey: .fillToken)
         borderToken = try values.decodeIfPresent(UIKitColorRole.self, forKey: .borderToken)
+        parentRowID = try values.decodeIfPresent(UUID.self, forKey: .parentRowID)
+        actionCaptionMode = try values.decodeIfPresent(SettingsActionCaptionMode.self, forKey: .actionCaptionMode) ?? .native
+        captionColor = try values.decodeIfPresent(StudioColor.self, forKey: .captionColor) ?? .white
     }
 }
 
@@ -717,7 +796,7 @@ struct InstallerStudioDocument: Codable, Hashable {
         }
         return InstallerStudioDocument(
             version: currentVersion, canvasWidth: 1000, canvasHeight: 1000, screens: screens
-        )
+        ).migratedForSettingsActions()
     }
 
     // ------------------------=
@@ -935,6 +1014,40 @@ struct InstallerStudioDocument: Codable, Hashable {
                     result.screens[screen].elements[index].frame = frame
                     if role != .settingsDisclosure { result.screens[screen].elements[index].fontSize = 24 }
                 }
+            }
+        }
+        return result.migratedForSettingsActions()
+    }
+
+    // ------------------------=
+    // FUNC: migratedForSettingsActions
+    // DESC: Adds only missing native action children with deterministic parent-linked identities and detail-local geometry.
+    // ------------------=
+    func migratedForSettingsActions() -> InstallerStudioDocument {
+        var result = self
+        for index in result.screens.indices {
+            let screen = result.screens[index]
+            let rows = screen.elements.filter { $0.role == .metadata }
+            for rowIndex in SettingsActionContract.rows(screenID: screen.id) where rows.indices.contains(rowIndex) {
+                let parent = rows[rowIndex]
+                guard !result.screens[index].elements.contains(where: {
+                    $0.role == .settingsRowAction && $0.parentRowID == parent.id
+                }) else { continue }
+                var action = StudioElement.make(name: "Row \(rowIndex + 1) Action", kind: .button,
+                    role: .settingsRowAction, codeIdentifier: "settingsRow.\(rowIndex + 1).action",
+                    frame: CanvasRect(x: 32, y: 520, width: 420, height: 360),
+                    text: SettingsActionContract.caption(screenID: screen.id, row: rowIndex), zIndex: 6)
+                action.id = SettingsActionContract.actionID(parent: parent.id)
+                action.parentRowID = parent.id
+                action.fill = InfinityUIKit.Palette.primaryAction
+                action.fontSize = 18
+                let identifiers = Set(result.screens[index].elements.map(\.codeIdentifier))
+                var suffix = 2
+                while identifiers.contains(action.codeIdentifier) {
+                    action.codeIdentifier = "settingsRow.\(rowIndex + 1).action\(suffix)"
+                    suffix += 1
+                }
+                result.screens[index].elements.append(action)
             }
         }
         return result

@@ -314,6 +314,27 @@ pub enum SettingsTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsActionGeometry {
+    pub action: crate::ui::installer_template::SettingsAction,
+    pub element: Option<crate::ui::installer_template::InstallerTemplateElement<'static>>,
+    pub parent_row_index: usize,
+    pub parent: Rect,
+    pub bounds: Rect,
+    pub clip: Rect,
+    pub visible: bool,
+}
+
+impl SettingsActionGeometry {
+    // ------------------------=
+    // FUNC: hit
+    // DESC: Admits only the visible portion of an expanded native action control.
+    // ------------------=
+    pub fn hit(self, point: Point) -> bool {
+        self.visible && self.bounds.contains(point) && self.clip.contains(point)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NetworkSettingsGeometry {
     pub tabs: [Rect; 7],
     pub summary: Rect,
@@ -2438,6 +2459,62 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_reveal_scroll
+    // DESC: Computes the native bounded scroll that reveals an expanded detail well for runtime interaction and Studio selection.
+    // ------------------=
+    pub fn settings_reveal_scroll(self, mut state: SettingsWindowState, section: usize) -> usize {
+        state.scroll_offset = 0;
+        let window = self.settings_window_geometry_for_section(state, section);
+        state.expanded_row.map(|row| {
+            (self.settings_row_geometry_for_section(state, row, section).detail.bottom()
+                .saturating_sub(window.viewport.bottom()).max(0) as usize)
+                .div_ceil(self.scale.max(1)).min(window.maximum_scroll)
+        }).unwrap_or(0)
+    }
+
+    // ------------------------=
+    // FUNC: settings_action_geometry
+    // DESC: Resolves an authored detail-local action once for painting, pointer hit testing and Studio geometry export.
+    // ------------------=
+    pub fn settings_action_geometry(
+        self,
+        state: SettingsWindowState,
+        section: usize,
+        index: usize,
+    ) -> Option<SettingsActionGeometry> {
+        let action = crate::ui::installer_template::settings_action_for_row(section, index)?;
+        let parent = self.settings_row_geometry_for_section(state, index, section).detail;
+        let viewport = self.settings_window_geometry_for_section(state, section).viewport;
+        let element = crate::ui::settings_template::row_action(section, index);
+        let bounds = if let Some(element) = element {
+            let frame = element.frame;
+            Rect {
+                x: parent.x + (u32::from(frame.x) * parent.width / 1000) as i32,
+                y: parent.y + (u32::from(frame.y) * parent.height / 1000) as i32,
+                width: u32::from(frame.width) * parent.width / 1000,
+                height: u32::from(frame.height) * parent.height / 1000,
+            }
+        } else {
+            // Version 6/7 generations retain their original geometry until Studio migrates them.
+            Rect {
+                x: parent.x + (UI_GUTTER * self.scale) as i32,
+                y: parent.bottom().saturating_sub(((UI_COMPACT_ACTION_HEIGHT + 10) * self.scale) as i32),
+                width: (240 * self.scale).min((parent.width as usize).saturating_sub(UI_GUTTER * 2 * self.scale)) as u32,
+                height: (UI_COMPACT_ACTION_HEIGHT * self.scale) as u32,
+            }
+        };
+        let row_hidden = crate::ui::settings_template::role_at(section,
+            crate::ui::installer_template::InstallerTemplateRole::Metadata, index)
+            .is_some_and(|parent| parent.hidden || parent.opacity == 0);
+        let visible = state.expanded_row == Some(index) && index < state.row_count.clamp(1, 8)
+            && !row_hidden && !element.is_some_and(|child| child.hidden || child.opacity == 0);
+        Some(SettingsActionGeometry {
+            action, element, parent_row_index: index, parent, bounds,
+            clip: parent.intersection(viewport), visible,
+        })
+    }
+
+    // ------------------------=
     // FUNC: settings_row_element_geometry
     // DESC: Carries an authored row child with its summary through expansion and scrolling, preserving Studio offsets.
     // ------------------=
@@ -2606,6 +2683,10 @@ impl SystemLayout {
                 return Some(SettingsTarget::ContentRow(index));
             }
             if state.expanded_row == Some(index) && row.detail.contains(point) {
+                if let Some(action) = self.settings_action_geometry(state, section, index) {
+                    if action.hit(point) { return Some(SettingsTarget::ExpandedAction); }
+                    continue;
+                }
                 let action = rect(
                     row.detail.x.max(0) as usize + UI_GUTTER * self.scale,
                     row.detail
@@ -2618,8 +2699,7 @@ impl SystemLayout {
                     UI_COMPACT_ACTION_HEIGHT * self.scale,
                 );
                 let has_action = section == usize::MAX
-                    || matches!((section, index),
-                        (0, 0) | (1, 0) | (3, 0..=2) | (8, 0..=7));
+                    || matches!((section, index), (1, 0) | (8, 0..=7));
                 if has_action && action.contains(point) {
                     return Some(SettingsTarget::ExpandedAction);
                 }
@@ -2684,6 +2764,11 @@ impl SystemLayout {
         use crate::ui::installer_template::InstallerTemplateRole as Role;
         let (element,ordinal)=crate::ui::settings_template::element_identity(section,id)?;
         let window=self.settings_window_geometry_for_section(state,section);
+        if element.role == Role::SettingsRowAction as u8 {
+            let (_, row) = crate::ui::settings_template::element_identity(section, element.parent_id)?;
+            let resolved = self.settings_action_geometry(state, section, row)?;
+            return (resolved.parent.height > 0).then_some(resolved.bounds);
+        }
         if element.role==Role::Console as u8{return Some(window.window);}
         if element.role==Role::Masthead as u8{return Some(window.title);}
         if element.role==Role::SectionLabel as u8{return Some(window.navigation);}
@@ -3288,6 +3373,9 @@ impl SystemLayout {
 // DESC: Returns the logical inline well height needed by each Settings row's real controls or explanation.
 // ------------------=
 const fn settings_detail_height(index: usize, section: usize) -> usize {
+    if crate::ui::installer_template::settings_action_for_row(section, index).is_some() {
+        return 128;
+    }
     if section == 1 && index == 6 { return 488; }
     if section == 5 && index == 2 { return 620; }
     if section == 1 && index == 7 { return 400; }

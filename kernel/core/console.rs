@@ -4500,22 +4500,8 @@ impl ConsoleRuntime {
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
-        let mut unscrolled = self.settings_window;
-        unscrolled.scroll_offset = 0;
-        let window = layout.settings_window_geometry_for_section(unscrolled, self.system_focus);
-        let desired_scroll = self
-            .settings_window
-            .expanded_row
-            .map(|expanded| {
-                (layout
-                    .settings_row_geometry_for_section(unscrolled, expanded, self.system_focus)
-                    .detail
-                    .bottom()
-                    .saturating_sub(window.viewport.bottom())
-                    .max(0) as usize)
-                    .div_ceil(layout.scale().max(1))
-            })
-            .unwrap_or(0);
+        let window = layout.settings_window_geometry_for_section(self.settings_window, self.system_focus);
+        let desired_scroll = layout.settings_reveal_scroll(self.settings_window, self.system_focus);
         let maximum_scroll = window.maximum_scroll;
         self.settings_scroll_target = desired_scroll.min(maximum_scroll);
         self.settings_window.scroll_offset = self.settings_window.scroll_offset.min(maximum_scroll);

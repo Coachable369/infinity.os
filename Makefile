@@ -308,6 +308,12 @@ build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-brow
 studio-native-renderer: build/behavior-tests/libinfinity_browser_core.rlib
 	@rustc --edition=2021 -O -Awarnings --cfg studio_native_preview --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib tools/active-painter-test.rs -o build/behavior-tests/infinity-studio-native-renderer
 
+.PHONY: settings-action-test
+settings-action-test: $(SETTINGS_TEMPLATE_RUNTIME)
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -Awarnings --cfg studio_native_preview tools/settings-action-test.rs -o build/behavior-tests/settings-action-test
+	@build/behavior-tests/settings-action-test
+
 .PHONY: desktop-browser-polish-test
 desktop-browser-polish-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@mkdir -p build/behavior-tests
@@ -358,7 +364,7 @@ $(SETTINGS_TEMPLATE_RUNTIME): force-installer-template-compile $(SETTINGS_TEMPLA
 
 installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME)
 
-installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME)
+installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) settings-action-test
 	@tools/installer-designer/verify-template-build.sh
 	@mkdir -p build/tools
 	@rustc --edition 2021 -A warnings -O tools/installer-template-test.rs -o build/tools/installer-template-test

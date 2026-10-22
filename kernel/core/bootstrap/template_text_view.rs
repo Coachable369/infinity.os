@@ -81,7 +81,25 @@ impl DisplayDevice {
     // FUNC: template_text_face
     // DESC: Rasterizes an explicit native family or the unchanged legacy installer face with matching glyph metrics.
     // ------------------=
-    fn template_text_face(&mut self, mut x: usize, mut y: usize, text: &[u8], red: u8,
+    fn template_text_face(&mut self, x: usize, y: usize, text: &[u8], red: u8,
+        green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool, family: Option<u8>) {
+        self.template_text_face_signed(x as i64, y as i64, text, red, green, blue, opacity, pixels, semibold, family);
+    }
+
+    // ------------------------=
+    // FUNC: template_text_signed
+    // DESC: Preserves glyph positions when authored controls are partially outside the display or scrolling viewport.
+    // ------------------=
+    pub(super) fn template_text_signed(&mut self, x: i32, y: i32, text: &[u8], red: u8,
+        green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool) {
+        self.template_text_face_signed(i64::from(x), i64::from(y), text, red, green, blue, opacity, pixels, semibold, None);
+    }
+
+    // ------------------------=
+    // FUNC: template_text_face_signed
+    // DESC: Rasterizes a native face with signed origins and compositor clipping, sharing glyph coverage and metrics with ordinary template text.
+    // ------------------=
+    fn template_text_face_signed(&mut self, mut x: i64, mut y: i64, text: &[u8], red: u8,
         green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool, family: Option<u8>) {
         let line_start = x;
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
@@ -93,7 +111,7 @@ impl DisplayDevice {
         for byte in text {
             if *byte == b'\n' {
                 x = line_start;
-                y = y.saturating_add(line_advance);
+                y = y.saturating_add(line_advance as i64);
                 previous = None;
                 continue;
             }
@@ -101,10 +119,7 @@ impl DisplayDevice {
                 previous = None;
                 continue;
             }
-            x = Self::font_position_advance(
-                x,
-                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
-            );
+            x = x.saturating_add(font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)) as i64);
             let glyph = (*byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
             for row in 0..glyph_height {
                 for column in 0..glyph_width {
@@ -114,8 +129,8 @@ impl DisplayDevice {
                     let alpha = (atlas_alpha as u16 * opacity as u16 / 255) as u8;
                     if alpha != 0 {
                         self.blend_color(
-                            (x + column) as i32,
-                            (y + row) as i32,
+                            (x + column as i64) as i32,
+                            (y + row as i64) as i32,
                             red,
                             green,
                             blue,
@@ -124,7 +139,7 @@ impl DisplayDevice {
                     }
                 }
             }
-            x = x.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            x = x.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize) as i64);
             previous = Some(*byte);
         }
     }

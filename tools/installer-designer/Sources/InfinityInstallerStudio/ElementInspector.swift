@@ -58,6 +58,9 @@ struct ElementInspector: View {
                         if element.role == .input {
                             variableSection(element)
                         }
+                        if element.role == .settingsRowAction {
+                            settingsActionSection(element)
+                        }
                         if element.kind == .text || element.kind == .button || element.kind == .progressBar || element.role == .input {
                             textSection(element)
                         }
@@ -154,7 +157,7 @@ struct ElementInspector: View {
     // DESC: Builds precise normalized position and size controls for an editable element.
     // ------------------=
     private func geometrySection(_ element: StudioElement) -> some View {
-        GroupBox("Geometry — normalized") {
+        GroupBox(element.role == .settingsRowAction ? "Geometry — expanded detail (0–1000)" : "Geometry — normalized") {
             VStack(alignment: .leading, spacing: 8) {
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
                 GridRow {
@@ -176,7 +179,42 @@ struct ElementInspector: View {
                 Text("OS-responsive layout — these bounds adapt to the native window. Shared surface styles remain editable.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if element.role == .settingsRowAction {
+                Text("Position and size are relative to the expanded parent detail. The native preview supplies the exact drag scale.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settingsActionSection
+    // DESC: Edits trusted action-parent and caption bindings without introducing arbitrary executable commands.
+    // ------------------=
+    private func settingsActionSection(_ element: StudioElement) -> some View {
+        GroupBox("Native Settings Action") {
+            VStack(alignment: .leading, spacing: 8) {
+                let rows = store.selectedScreen?.elements.filter { $0.role == .metadata } ?? []
+                Picker("Parent row", selection: Binding<UUID?>(
+                    get: { store.selectedElement?.parentRowID },
+                    set: { if let parent = $0 { store.reparentSelectedAction(parent) } })) {
+                    ForEach(SettingsActionContract.rows(screenID: store.selectedScreenID), id: \.self) { row in
+                        if rows.indices.contains(row) {
+                            Text("\(row + 1) · \(rows[row].name)").tag(Optional(rows[row].id))
+                        }
+                    }
+                }
+                Text("Changing parents exchanges the existing button bindings; all required actions remain available.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Caption", selection: Binding(
+                    get: { store.selectedElement?.actionCaptionMode ?? .native },
+                    set: { value in store.updateSelected("Caption mode updated") { $0.actionCaptionMode = value } })) {
+                    ForEach(SettingsActionCaptionMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+                Text("The parent selects an existing OS action. Styling never grants additional authority.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .disabled(element.locked)
         }
     }
 
@@ -222,6 +260,7 @@ struct ElementInspector: View {
                         .foregroundStyle(.secondary)
                 }
                 TextEditor(text: stringBinding(\.text))
+                    .disabled(element.role == .settingsRowAction && element.actionCaptionMode == .native)
                     .font(.body)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 92)
@@ -230,6 +269,13 @@ struct ElementInspector: View {
                         InfinityUIKit.Palette.nativePanelRaised,
                         in: RoundedRectangle(cornerRadius: InfinityUIKit.Metrics.controlRadius)
                     )
+                if element.role == .settingsRowAction && element.actionCaptionMode == .native {
+                    Text("The OS supplies the current action caption. Choose Authored caption to replace its text.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if element.kind == .button {
+                    ColorPicker("Caption color", selection: colorBinding(\.captionColor, fallback: element.captionColor), supportsOpacity: true)
+                }
                 HStack {
                     Text("Size")
                     Slider(value: doubleBinding(\.fontSize, fallback: element.fontSize), in: 8...72, step: 1)

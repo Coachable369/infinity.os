@@ -111,7 +111,21 @@ pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:us
         if result.len()>1 {result.push(',');}
         let id=element.id.iter().enumerate().map(|(index,byte)|format!("{}{:02x}",
             if [4,6,8,10].contains(&index){"-"}else{""},byte)).collect::<String>();
-        result.push_str(&format!("{{\"id\":\"{id}\",\"x\":{},\"y\":{},\"width\":{},\"height\":{}}}",r.x,r.y,r.width,r.height));
+        result.push_str(&format!("{{\"id\":\"{id}\",\"x\":{},\"y\":{},\"width\":{},\"height\":{}",r.x,r.y,r.width,r.height));
+        if element.role==Role::SettingsRowAction as u8 {
+            if let Some((_,row))=crate::ui::settings_template::element_identity(usize::from(screen-1),element.parent_id) {
+                if let Some(action)=layout.settings_action_geometry(window,usize::from(screen-1),row) {
+                    let parent=action.parent;
+                    result.push_str(&format!(",\"parentBounds\":{{\"x\":{},\"y\":{},\"width\":{},\"height\":{}}}",parent.x,parent.y,parent.width,parent.height));
+                    let geometry=layout.settings_window_geometry_for_section(window,usize::from(screen-1));
+                    let viewport=geometry.viewport;
+                    result.push_str(&format!(",\"viewportBounds\":{{\"x\":{},\"y\":{},\"width\":{},\"height\":{}}},\"revealScroll\":{},\"maximumScroll\":{}",
+                        viewport.x,viewport.y,viewport.width,viewport.height,
+                        layout.settings_reveal_scroll(window,usize::from(screen-1)),geometry.maximum_scroll));
+                }
+            }
+        }
+        result.push('}');
     }
     result.push(']');Ok(result)
 }
@@ -145,10 +159,16 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
     let mut settings_rendered=false;
     if kind==2 && state.simulated && crate::settings_view::supports_basic_section(usize::from(screen-1)) {
         let window=settings_preview_window(&template,screen,state)?;
+        let layout=crate::ui::system_layout::SystemLayout::new(width,height);
+        let interaction=window.expanded_row.and_then(|row|layout.settings_action_geometry(window,usize::from(screen-1),row))
+            .filter(|action|action.visible&&action.clip.intersects(action.bounds)&&focus==1)
+            .map(|action|crate::ui::app_launcher::window_controls::Highlight{rect:action.bounds,pressed});
+        crate::ui::app_launcher::window_controls::publish(interaction);
         settings_rendered=target.render_basic_settings_view(usize::from(screen-1),b"Preview machine",window,target.ui_scale(),
             crate::settings_view::BasicSettingsSnapshot{chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
                 voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,
                 preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:15,timeout_maximum:120});
+        crate::ui::app_launcher::window_controls::publish(None);
         let geometry=crate::ui::system_layout::SystemLayout::new(width,height)
             .settings_window_geometry_for_section(window,usize::from(screen-1));
         target.precision_window_frame(geometry.window,true,target.ui_scale());

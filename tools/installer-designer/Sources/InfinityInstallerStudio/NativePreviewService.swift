@@ -16,6 +16,14 @@ enum NativePreviewControlState: String, CaseIterable, Identifiable {
     var focus: Int { self == .normal ? 2 : 1 }
     var isPressed: Bool { self == .pressed }
     var milliseconds: Int { self == .transition ? 70 : 1000 }
+
+    // ------------------------=
+    // FUNC: isSupported
+    // DESC: Exposes only control states implemented by the selected production scene.
+    // ------------------=
+    func isSupported(in collection: ScreenCollection) -> Bool {
+        collection != .systemSettings || self != .transition
+    }
 }
 
 struct NativePreviewAsset: Equatable, Sendable {
@@ -103,6 +111,9 @@ struct NativePreviewSnapshot: Equatable, Sendable {
         guard let root = store.projectRoot, (320...3840).contains(width), (240...2160).contains(height) else {
             throw NativePreviewIssue.invalid("A project and bounded native viewport are required")
         }
+        guard store.nativePreviewState.isSupported(in: store.selectedCollection) else {
+            throw NativePreviewIssue.invalid("Settings has no native transition preview; choose Normal, Focused or Pressed.")
+        }
         let document: InstallerStudioDocument
         let kind: String
         switch store.selectedCollection {
@@ -167,21 +178,68 @@ struct NativePreviewSnapshot: Equatable, Sendable {
     }
 }
 
+struct NativePreviewRect: Decodable, Equatable, Sendable {
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+
+    var isBounded: Bool {
+        (-16384...16384).contains(x) && (-16384...16384).contains(y)
+            && (0...16384).contains(width) && (0...16384).contains(height)
+    }
+}
+
 struct NativePreviewBounds: Decodable, Equatable, Sendable, Identifiable {
     let id: UUID
     let x: Int
     let y: Int
     let width: Int
     let height: Int
+    var parentBounds: NativePreviewRect? = nil
+    var viewportBounds: NativePreviewRect? = nil
+    var revealScroll: Int? = nil
+    var maximumScroll: Int? = nil
+
+    var isBounded: Bool {
+        guard NativePreviewRect(x: x, y: y, width: width, height: height).isBounded,
+              parentBounds?.isBounded != false, viewportBounds?.isBounded != false else { return false }
+        switch (revealScroll, maximumScroll) {
+        case (nil, nil): return true
+        case let (reveal?, maximum?): return (0...10000).contains(maximum) && (0...maximum).contains(reveal)
+        default: return false
+        }
+    }
 }
 
 enum NativeCanvasMapping {
+    // ------------------------=
+    // FUNC: actionInteractionClip
+    // DESC: Intersects an action with its native detail and viewport, returning a local clip without changing the full authored drag geometry.
+    // ------------------=
+    static func actionInteractionClip(bounds: NativePreviewBounds, scale: CGFloat) -> CGRect {
+        guard bounds.isBounded, scale > 0, scale.isFinite,
+              let parent = bounds.parentBounds, let viewport = bounds.viewportBounds else { return .zero }
+        let left = max(bounds.x, max(parent.x, viewport.x))
+        let top = max(bounds.y, max(parent.y, viewport.y))
+        let right = min(bounds.x + bounds.width, min(parent.x + parent.width, viewport.x + viewport.width))
+        let bottom = min(bounds.y + bounds.height, min(parent.y + parent.height, viewport.y + viewport.height))
+        guard right > left, bottom > top else { return .zero }
+        return CGRect(x: CGFloat(left - bounds.x) * scale, y: CGFloat(top - bounds.y) * scale,
+            width: CGFloat(right - left) * scale, height: CGFloat(bottom - top) * scale)
+    }
+
     // ------------------------=
     // FUNC: editingScale
     // DESC: Inverts the production Settings console transform for authoring gestures, keeping outer-window movement in viewport coordinates.
     // ------------------=
     static func editingScale(element: StudioElement, console: CanvasRect?, window: NativePreviewBounds?,
-        viewport: NativePreviewViewport, scale: CGFloat) -> CGSize {
+        viewport: NativePreviewViewport, scale: CGFloat, bounds: NativePreviewBounds? = nil) -> CGSize {
+        if element.role == .settingsRowAction {
+            guard let parent = bounds?.parentBounds, parent.width > 0, parent.height > 0 else { return .zero }
+            return CGSize(width: CGFloat(parent.width) * scale / 1000,
+                          height: CGFloat(parent.height) * scale / 1000)
+        }
         guard element.role != .console, let console, let window, console.width > 0, console.height > 0 else {
             return CGSize(width: CGFloat(viewport.width) * scale / 1000, height: CGFloat(viewport.height) * scale / 1000)
         }
@@ -347,7 +405,7 @@ struct NativePreviewRunner: NativePreviewRunning {
                     guard geometry.count <= 512 * 1024 else { throw NativePreviewIssue.invalid("Native layer geometry exceeds bounds") }
                     frame.bounds = try JSONDecoder().decode([NativePreviewBounds].self, from: geometry)
                     guard frame.bounds.count <= 512, Set(frame.bounds.map(\.id)).count == frame.bounds.count,
-                        frame.bounds.allSatisfy({ abs($0.x) <= 16384 && abs($0.y) <= 16384 && (0...16384).contains($0.width) && (0...16384).contains($0.height) }) else {
+                        frame.bounds.allSatisfy(\.isBounded) else {
                         throw NativePreviewIssue.invalid("Native layer geometry is invalid")
                     }
                 }
@@ -389,8 +447,15 @@ enum NativePreviewPhase: Equatable { case idle, rendering, ready, failed }
                 try await Task.sleep(for: .milliseconds(140))
                 guard let self, let store else { return }
                 let snapshot = try NativePreviewSnapshot.capture(store)
-                if snapshot == self.completedSnapshot { self.phase = .ready; return }
-                await self.render(snapshot, generation: requestGeneration)
+                if snapshot == self.completedSnapshot {
+                    self.phase = .ready
+                } else {
+                    await self.render(snapshot, generation: requestGeneration)
+                }
+                guard requestGeneration == self.generation, self.phase == .ready,
+                      self.completedSnapshot == snapshot, let frame = self.frame else { return }
+                store.applyNativeSelectionReveal(frame.bounds, screen: snapshot.screen,
+                    expandedRow: snapshot.simulation.expandedRow)
             } catch is CancellationError {} catch {
                 guard let self, requestGeneration == self.generation else { return }
                 self.errorMessage = error.localizedDescription; self.phase = .failed

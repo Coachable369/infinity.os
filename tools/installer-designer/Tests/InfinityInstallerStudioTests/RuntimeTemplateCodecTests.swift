@@ -135,8 +135,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let saved = try JSONEncoder().encode(document)
         XCTAssertEqual(try JSONDecoder().decode(InstallerStudioDocument.self, from: saved), document)
         let defaults = InstallerStudioDocument.factoryDefault()
-        var legacy = try RuntimeTemplateCodec.encode(defaults)
-        legacy[4] = 6; legacy[5] = 0
+        let legacy = try SettingsActionFixtures.legacyBytes(defaults, version: 6)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(legacy), defaults)
     }
 
