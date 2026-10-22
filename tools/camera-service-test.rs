@@ -66,6 +66,82 @@ fn main() {
         assert_eq!(camera.authorized(&caps,2),Err(Error::Denied));
     }
     assert!(storage.iter().all(|byte|*byte==0));
+    transport_contract(&jpeg,&mut tables,address,owner);
     tables.release(&mut memory).unwrap(); memory.release(page).unwrap();
     unsafe {dealloc(arena,layout)};
+}
+
+// ------------------------=
+// FUNC: transport_contract
+// DESC: Tests lifecycle and authenticated dispatch with a scripted backend, not hardware capture evidence.
+// ------------------=
+fn transport_contract(jpeg:&[u8],tables:&mut impl runtime::native_memory::PageTable,address:u64,owner:runtime::execution::SecurityIdentity) {
+    use runtime::{camera::{*,transport::*},capability::*,iop::*,native_memory::copy_from_user};
+    use std::{rc::Rc,cell::RefCell};
+    #[derive(Default)]
+    struct Counters {starts:usize,stops:usize,polls:usize,disconnected:bool,stop_pending:bool}
+    struct Backend {c:Rc<RefCell<Counters>>,jpeg:Vec<u8>}
+    impl Driver for Backend {
+        // ------------------------=
+        // FUNC: start
+        // DESC: Records a scripted successful discovery, never accessing real hardware.
+        // ------------------=
+        fn start(&mut self)->Result<bool,()> {self.c.borrow_mut().starts+=1;Ok(true)}
+        // ------------------------=
+        // FUNC: poll
+        // DESC: Supplies fixture bytes or a disconnect event for lifecycle testing only.
+        // ------------------=
+        fn poll(&mut self,scratch:&mut [u8])->Transfer {
+            let mut c=self.c.borrow_mut();c.polls+=1;
+            if c.disconnected {Transfer::Disconnected} else {scratch[..self.jpeg.len()].copy_from_slice(&self.jpeg);Transfer::Frame(self.jpeg.len())}
+        }
+        // ------------------------=
+        // FUNC: stop
+        // DESC: Models acknowledged or stuck shutdown for retry-bound assertions.
+        // ------------------=
+        fn stop(&mut self)->Result<bool,()> {let mut c=self.c.borrow_mut();c.stops+=1;Ok(!c.stop_pending)}
+    }
+    let mut caps=CapabilityManager::new();
+    let cap=caps.grant(CapabilityType::CameraCapture,0,1,0,owner,owner,Some(10),0).unwrap();
+    let request=|op|IopMessage::request(op,1,owner,cap,5,0,&[]).unwrap();
+    let c=Rc::new(RefCell::new(Counters::default()));
+    let mut storage=vec![0;MAX_FRAME_BYTES];let mut scratch=vec![0;MAX_FRAME_BYTES];
+    let mut transport=Transport::new(&mut storage,Backend{c:c.clone(),jpeg:jpeg.to_vec()}).unwrap();
+    transport.dispatch(&request(OperationId::CameraCaptureStart),owner,&caps,0,[0;6],tables).unwrap();
+    transport.tick(&caps,0,0,&mut scratch);assert_eq!(transport.state(),State::Streaming);
+    transport.tick(&caps,0,1,&mut scratch);assert!(scratch.iter().all(|b|*b==0));
+    let read=request(OperationId::CameraFrameRead);
+    assert_eq!(transport.dispatch(&read,owner,&caps,0,[0,0,0,0,address,0],tables),Ok(16));
+    let mut meta=[0;16];copy_from_user(tables,address,&mut meta).unwrap();
+    assert_eq!(u64::from_le_bytes(meta[8..].try_into().unwrap()),jpeg.len() as u64);
+    let seq=u64::from_le_bytes(meta[..8].try_into().unwrap());
+    assert_eq!(transport.dispatch(&read,owner,&caps,0,[seq,0,address,4,0,0],tables),Ok(4));
+    let mut bytes=[0;4];copy_from_user(tables,address,&mut bytes).unwrap();assert_eq!(bytes,jpeg[..4]);
+    c.borrow_mut().disconnected=true;
+    transport.tick(&caps,0,2,&mut scratch);assert_eq!(transport.state(),State::Stopping);
+    assert_eq!(transport.dispatch(&read,owner,&caps,0,[0,0,0,0,address,0],tables),Err(Error::Unavailable));
+    transport.tick(&caps,0,3,&mut scratch);assert_eq!(c.borrow().stops,1);
+    transport.tick(&caps,0,252,&mut scratch);assert_eq!(c.borrow().starts,1);
+    transport.tick(&caps,0,253,&mut scratch);assert_eq!(c.borrow().starts,2);
+    caps.revoke(cap).unwrap();
+    transport.tick(&caps,0,254,&mut scratch);assert_eq!(transport.state(),State::Idle);
+    assert_eq!(c.borrow().polls,2);assert_eq!(c.borrow().stops,2);
+    drop(transport);
+    assert!(storage.iter().all(|b|*b==0));
+
+    let cap=caps.grant(CapabilityType::CameraCapture,0,1,0,owner,owner,Some(10),0).unwrap();
+    let start=IopMessage::request(OperationId::CameraCaptureStart,1,owner,cap,5,0,&[]).unwrap();
+    let c=Rc::new(RefCell::new(Counters{stop_pending:true,..Counters::default()}));
+    let mut transport=Transport::new(&mut storage,Backend{c:c.clone(),jpeg:jpeg.to_vec()}).unwrap();
+    transport.dispatch(&start,owner,&caps,0,[0;6],tables).unwrap();transport.tick(&caps,0,0,&mut scratch);
+    transport.cancel();
+    for i in 0..20 {transport.tick(&caps,0,i,&mut scratch);}
+    assert_eq!(transport.state(),State::Faulted);assert_eq!(c.borrow().stops,8);assert_eq!(c.borrow().polls,0);
+    assert_eq!(transport.dispatch(&start,owner,&caps,0,[0;6],tables),Err(Error::Busy));
+    drop(transport);
+    let c=Rc::new(RefCell::new(Counters{disconnected:true,..Counters::default()}));
+    let mut transport=Transport::new(&mut storage,Backend{c:c.clone(),jpeg:jpeg.to_vec()}).unwrap();
+    transport.dispatch(&start,owner,&caps,0,[0;6],tables).unwrap();
+    for i in 0..40 {transport.tick(&caps,0,i*250,&mut scratch);}
+    assert_eq!(c.borrow().starts,3);assert_eq!(transport.state(),State::Idle);
 }

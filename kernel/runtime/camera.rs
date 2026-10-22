@@ -6,6 +6,8 @@ use super::{capability::{CapabilityManager, CapabilityType}, execution::Security
 
 pub const MAX_FRAME_BYTES: usize = 1_228_800;
 pub const MAX_READ_BYTES: usize = 4096;
+#[path = "camera_transport.rs"]
+pub mod transport;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Invalid, Denied, Expired, Busy, Unavailable, Stale, Memory }
 #[derive(Clone, Copy)]
@@ -61,6 +63,17 @@ impl<'a> Camera<'a> {
             caps.validate(s.capability,s.owner,CapabilityType::CameraCapture,0,1,0,now).is_err() {Some(Error::Denied)} else {None};
         if let Some(error)=error {self.clear(); return Err(error);}
         Ok(())
+    }
+    // ------------------------=
+    // FUNC: metadata
+    // DESC: Returns frame sequence and size only to the authenticated lease owner with current authority.
+    // ------------------=
+    pub fn metadata(&mut self, caller: SecurityIdentity, capability: u64, caps: &CapabilityManager, now: u64) -> Result<(u64,usize),Error> {
+        let s=self.session.ok_or(Error::Unavailable)?;
+        if caller!=s.owner || capability!=s.capability {return Err(Error::Denied);}
+        self.authorized(caps,now)?;
+        if self.length==0 {return Err(Error::Unavailable);}
+        Ok((self.sequence,self.length))
     }
     // ------------------------=
     // FUNC: publish

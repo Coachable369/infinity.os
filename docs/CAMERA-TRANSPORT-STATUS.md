@@ -55,3 +55,26 @@ Do not start facial inference or claim facial login readiness until this gate
 passes. Password authentication is unchanged. No recognition dependencies or
 weights have been adopted. The inference/license spike and pre-login key
 protection design remain subsequent, separately reviewed work.
+
+## Dispatch/lifecycle follow-up
+
+`camera_transport.rs` now routes authenticated typed IOP start/read/stop requests,
+including sequence/length metadata copied into checked user memory. Each service
+visit makes at most one backend call. Disconnect invalidates frame delivery;
+reconnect waits for a shutdown acknowledgement and is limited to three start
+attempts, spaced by at least 250 ms. Cancellation/revocation clears delivery and
+requires shutdown. Eight unsuccessful shutdown visits latch Faulted, which does
+not permit reuse. Faulted is not a claim that the physical camera stopped.
+
+These lifecycle tests use an explicitly scripted backend; they do not substitute
+for real capture, hardware shutdown, or installed-process proof. No production
+USB backend implements the new Driver contract yet, and no installed application
+invokes this dispatcher. The production backend must own DMA buffers, never
+retain the supplied scratch slice, and acknowledge actual endpoint quiescence.
+
+The full release build at revision 9c1bb7ab failed in the unrelated existing
+configuration-wizard painter check (`tools/configuration-wizard-render.rs:561`,
+PrimaryButton pixel validation). Manifest:
+`builds/manifests/20261022T201830765060Z-61051.json`.
+Do not represent the existing ISOs as updated camera releases. Per user direction,
+that unrelated UI failure is outside the current camera work.
