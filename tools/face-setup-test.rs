@@ -4,6 +4,21 @@ mod face_setup;
 use face_setup::{Setup,Stage,Error,wire as p};
 
 // ------------------------=
+// FUNC: preparation_preview_is_not_an_enrollment
+// DESC: Allows an explicit start-camera preview without counting it as a photo or enabling authentication.
+// ------------------=
+#[test]
+fn preparation_preview_is_not_an_enrollment() {
+    let mut setup=Setup::new();setup.begin(1,2,[3;32],"Everyday",100).unwrap();
+    let id=setup.control().command_id;
+    for row in 0..120 {setup.write_preview(id,row*480,&[17;480],101).unwrap();}
+    assert!(setup.preview().is_some());assert_eq!(setup.stage(),Stage::Loading);
+    setup.accept(p::Report::new(id,p::READY,0,0,0),102).unwrap();
+    assert_eq!(setup.stage(),Stage::Photos(0));
+    setup.cancel();assert!(setup.preview().is_none());
+}
+
+// ------------------------=
 // FUNC: start
 // DESC: Creates a fresh typed workflow without a camera, credentials, or login authority.
 // ------------------=

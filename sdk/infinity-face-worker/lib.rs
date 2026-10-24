@@ -72,14 +72,14 @@ impl Arena {
     }
     // ------------------------=
     // FUNC: model
-    // DESC: Loads one bounded immutable packaged model through page-sized scoped copies, once per worker lifetime.
+    // DESC: Loads a pinned model through bounded 64 KiB copies, yielding between chunks, once per worker lifetime.
     // ------------------=
     unsafe fn model(&mut self,id:u64)->Result<&'static [u8],u32> {
         let length=call(p::MODEL_READ,[id,0,0,0,0,0]);
         if length<=64 || length>48*1024*1024 {return Err(103);}
         let data=self.bytes(length as usize)?;
-        for offset in (0..data.len()).step_by(4096) {
-            let n=(data.len()-offset).min(4096);
+        for offset in (0..data.len()).step_by(64*1024) {
+            let n=(data.len()-offset).min(64*1024);
             if call(p::MODEL_READ,[id,offset as u64,data.as_mut_ptr().add(offset) as u64,n as u64,0,0])!=n as i64 {return Err(103);}
             call(0x1001,[0;6]);
         }
@@ -152,11 +152,17 @@ fn preview(command:u64,rgb:&[u8])->Result<(),u32> {
 // ------------------=
 unsafe fn work()->Result<(),u32> {
     let mut arena=Arena {used:4096};
+    // Start means a real camera check, not minutes of silent model preparation.
+    let initial=control()?;
+    if initial.command!=p::BEGIN {return Err(108);}
+    let encoded=arena.bytes(1_228_800)?;let rgb=arena.bytes(640*480*3)?;let decode=arena.bytes(8*1024*1024)?;
+    let (length,_,_)=capture(initial.command_id,encoded)?;
+    jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
+    preview(initial.command_id,rgb)?;
     let detector=arena.model(1)?;let recognizer=arena.model(2)?;
     let engine=Recognizer::new(detector,recognizer).map_err(|_|106u32)?;
     let floats=arena.bytes(engine.arena_len().checked_mul(4).ok_or(102u32)?)?;
     let floats=core::slice::from_raw_parts_mut(floats.as_mut_ptr().cast::<f32>(),engine.arena_len());
-    let encoded=arena.bytes(1_228_800)?;let rgb=arena.bytes(640*480*3)?;let decode=arena.bytes(8*1024*1024)?;
     let scratch=arena.bytes(size_of::<Scratch>())?;scratch.fill(0);
     let scratch=&mut *scratch.as_mut_ptr().cast::<Scratch>();
     let mut enrollment:Option<Enrollment>=None;let mut seen=0;
@@ -219,4 +225,10 @@ unsafe fn work()->Result<(),u32> {
 // DESC: Starts the pinned user-mode verification worker; no host API table or kernel callback address is accepted.
 // ------------------=
 #[no_mangle]
-pub extern "C" fn infinity_app_entry(_:usize)->! {let result=unsafe {work()};exit(result.err().unwrap_or(0) as u64)}
+pub extern "C" fn infinity_app_entry(_:usize)->! {
+    let result=unsafe {work()};
+    if let Err(error)=result {
+        if let Ok(command)=control() {report(&command,p::FAILED,error,None);}
+    }
+    exit(result.err().unwrap_or(0) as u64)
+}

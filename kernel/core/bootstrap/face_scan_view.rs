@@ -7,10 +7,12 @@ static mut BASE:[u32;LIMIT*LIMIT]=[0;LIMIT*LIMIT];
 static mut BOUNDS:Option<Rect>=None;
 static mut LAST_MS:u64=0;
 static mut START_MS:Option<u64>=None;
+static mut INTENSITY:u16=255;
+static mut BASE_DIRTY:bool=false;
 
 // ------------------------=
 // FUNC: active
-// DESC: Animates only real in-flight capture/comparison commands, never idle or model loading.
+// DESC: Distinguishes the active capture sweep from the slower decorative idle mesh.
 // ------------------=
 fn active()->bool {
     crate::runtime::face_setup_host::view(|s| s.pending() && matches!(s.stage(),
@@ -33,6 +35,7 @@ impl DisplayDevice {
                 base[y*LIMIT+x]=self.framebuffer_pixel(r.x as usize+x,r.y as usize+y);
             }}
             BOUNDS=Some(r);
+            BASE_DIRTY=true;
         }
     }
 
@@ -47,6 +50,7 @@ impl DisplayDevice {
         let offset=u32::from_le_bytes([MASK[10],MASK[11],MASK[12],MASK[13]]) as usize;
         let a=MASK[offset+((479-sy)*480+sx)*4+3];
         if a<160{return;}
+        let alpha=unsafe {(u16::from(alpha)*INTENSITY/255) as u8};
         self.blend_color(r.x+x,r.y+y,74,190,255,alpha);
     }
 
@@ -100,16 +104,15 @@ impl DisplayDevice {
 
 // ------------------------=
 // FUNC: animate
-// DESC: Reuses the mask substrate at at most 30 Hz; stops on cancellation, failure, completion or page exit.
+// DESC: Reuses the cached mask at 15 Hz idle or 30 Hz capture; page exit stops animation and reduced motion is static.
 // ------------------=
 pub fn animate(visible:bool,reduced:bool)->bool {
     let now=crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000;
     unsafe {
         if !visible {START_MS=None;BOUNDS=None;return false;}
         let scanning=active();
-        if !scanning && START_MS.is_none(){return false;}
         let first=START_MS.is_none();
-        if scanning && !first && (reduced || now.saturating_sub(LAST_MS)<33) {return false;}
+        if !first && !BASE_DIRTY && (reduced || now.saturating_sub(LAST_MS)<if scanning {33}else{66}) {return false;}
         let Some(c)=(*(&raw mut CONSOLE)).as_mut() else{return false;};
         let Some(r)=BOUNDS.filter(|r|*r==Layout::new(c.display.width,c.display.height).mask) else{return false;};
         if first {START_MS=Some(now);}
@@ -121,9 +124,11 @@ pub fn animate(visible:bool,reduced:bool)->bool {
             core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
                 d.buffer.add((r.y as usize+y)*d.stride+r.x as usize),r.width as usize);
         }
-        if scanning {d.face_mask_scan(r,now.saturating_sub(START_MS.unwrap_or(now)),reduced);}
-        else {START_MS=None;}
+        let elapsed=now.saturating_sub(START_MS.unwrap_or(now));
+        INTENSITY=if scanning {255}else{100};
+        d.face_mask_scan(r,if scanning {elapsed}else{elapsed/4},reduced);
         LAST_MS=now;
+        BASE_DIRTY=false;
         d.mark_dirty_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
         d.render_clip=clip;
         c.save_and_draw_cursor(c.cursor_x,c.cursor_y);

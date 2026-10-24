@@ -14,7 +14,7 @@ impl DisplayDevice {
         crate::runtime::face_setup_host::view(|state| {
             let (guidance,action):(&[u8],&[u8])=match state.stage() {
                 Stage::Idle|Stage::Cancelled=>(b"Optional camera check. Name this face, then capture three clear views. Keep one person in the frame.",b"Start camera check"),
-                Stage::Loading=>(b"Preparing the private recognition worker. The camera stays off until you choose Capture.",b"Preparing..."),
+                Stage::Loading=>(b"Checking the camera, then preparing private recognition. The real preview appears below; enrollment photos are captured separately.",b"Preparing..."),
                 Stage::Photos(0)=>(b"Photo 1 of 3. Face the camera straight on. Use even lighting and keep your whole face visible.",b"Capture front view"),
                 Stage::Photos(1)=>(b"Photo 2 of 3. Turn your face slightly to your left. Keep your eyes visible and hold still.",b"Capture left view"),
                 Stage::Photos(_)=>(b"Photo 3 of 3. Turn slightly to your right. Avoid backlighting and motion blur.",b"Capture right view"),

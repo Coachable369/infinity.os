@@ -58,13 +58,13 @@ impl Dispatch<'_> {
     }
     // ------------------------=
     // FUNC: model
-    // DESC: Copies only the launcher's immutable pinned models, with overflow-safe page-sized reads and no caller-supplied paths.
+    // DESC: Copies only pinned models in overflow-safe chunks capped at 64 KiB with no caller-supplied paths.
     // ------------------=
     fn model(&self,tables:&mut impl PageTable,args:[u64;6])->i64 {
         if args[4]!=0 || args[5]!=0 {return -22;}
         let data=match args[0] {1=>self.detector,2=>self.recognizer,_=>return -2};
         if args[3]==0 {return if args[1]==0 && args[2]==0 {data.len() as i64}else{-22};}
-        if args[3]>4096 {return -22;}
+        if args[3]>64*1024 {return -22;}
         let Ok(offset)=usize::try_from(args[1]) else {return -22;};
         let Some(end)=offset.checked_add(args[3] as usize) else {return -22;};
         let Some(bytes)=data.get(offset..end) else {return -22;};

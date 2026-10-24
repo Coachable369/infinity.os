@@ -123,7 +123,7 @@ impl Setup {
     // ------------------=
     pub fn write_preview(&mut self, command:u64, offset:usize, bytes:&[u8], now:u64) -> Result<(),Error> {
         self.tick(now)?;
-        if !self.pending || command!=self.control.command_id || self.control.command!=wire::CAPTURE {return Err(Error::Stale);}
+        if !self.pending || command!=self.control.command_id || !matches!(self.control.command,wire::BEGIN|wire::CAPTURE) {return Err(Error::Stale);}
         if bytes.is_empty() || bytes.len()>4096 || offset!=self.preview_written
             || offset.checked_add(bytes.len()).is_none_or(|end|end>PREVIEW_BYTES) {return Err(Error::Invalid);}
         self.preview[offset..offset+bytes.len()].copy_from_slice(bytes);
