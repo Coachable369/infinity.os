@@ -87,3 +87,44 @@ fn command_timeout_cancels_and_wipes() {
     assert_eq!(setup.stage(),Stage::Failed(111));assert_eq!(setup.control().command,p::CANCEL);
     assert!(!setup.pending());assert!(setup.preview().is_none());
 }
+
+// ------------------------=
+// FUNC: live_frames_are_atomic_and_never_enroll
+// DESC: Streams repeated frames while idle, retains the previous complete frame during delivery, and counts only explicit captures.
+// ------------------=
+#[test]
+fn live_frames_are_atomic_and_never_enroll() {
+    let mut setup=start();let id=setup.control().command_id;
+    for n in 0..15 {setup.write_preview(id,n*3840,&[11;3840],102).unwrap();}
+    assert_eq!(setup.preview_revision(),1);
+    for n in 0..15 {
+        setup.write_preview(id,n*3840,&[22;3840],103).unwrap();
+        assert!(setup.preview().unwrap().iter().all(|&v|v==if n==14 {22}else{11}));
+    }
+    assert_eq!(setup.preview_revision(),2);
+    assert_eq!(setup.stage(),Stage::Photos(0));assert!(!setup.pending());
+    setup.write_preview(id,0,&[33;3840],104).unwrap();
+    setup.capture(105).unwrap();let capture=setup.control().command_id;
+    assert_eq!(setup.write_preview(id,3840,&[33;3840],106),Err(Error::Stale));
+    assert!(setup.preview().unwrap().iter().all(|&v|v==22));
+    for n in 0..15 {setup.write_preview(capture,n*3840,&[44;3840],107).unwrap();}
+    assert_eq!(setup.stage(),Stage::Photos(0));
+    setup.accept(p::Report::new(capture,p::READY,0,1,0),108).unwrap();
+    assert_eq!(setup.stage(),Stage::Photos(1));
+    setup.cancel();assert!(setup.preview().is_none());
+    assert_eq!(setup.write_preview(capture,0,&[55;3840],109),Err(Error::Stale));
+}
+
+// ------------------------=
+// FUNC: preview_failure_is_terminal_and_clears_pixels
+// DESC: Surfaces a disconnected idle preview without permitting stale or successful unsolicited enrollment reports.
+// ------------------=
+#[test]
+fn preview_failure_is_terminal_and_clears_pixels() {
+    let mut setup=start();let id=setup.control().command_id;
+    assert_eq!(setup.accept(p::Report::new(id,p::READY,0,1,0),102),Err(Error::Stale));
+    for n in 0..15 {setup.write_preview(id,n*3840,&[11;3840],103).unwrap();}
+    setup.accept(p::Report::new(id,p::FAILED,104,0,0),104).unwrap();
+    assert_eq!(setup.stage(),Stage::Failed(104));assert!(setup.preview().is_none());
+    assert_eq!(setup.write_preview(id,0,&[11;3840],105),Err(Error::Stale));
+}

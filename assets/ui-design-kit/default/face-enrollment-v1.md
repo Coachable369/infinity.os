@@ -10,10 +10,11 @@ the eye openings. It is an illustration, never a substitute for camera preview.
 ## Entry and authority
 
 Offer optional setup after password/account creation. Explain that the camera
-will capture three views and then perform a separate comparison. An explicit
-Start action authorizes capture; Skip leaves password configuration unchanged.
+will capture three views and then perform a separate comparison. Entering this
+optional page starts the password-authorized live preview. Only the Capture
+button records an enrollment photo; Skip leaves password configuration unchanged.
 Do not enable facial login as a side effect of setup or successful verification.
-Never start the camera merely by displaying this page.
+Leaving the page immediately revokes capture authority and clears preview pixels.
 
 ## Content and states
 
@@ -28,7 +29,11 @@ the existing navigation gutter, not overlapping the preview.
 2. Prepare: show actual camera/model readiness. Retry a recoverable device failure;
    unsupported camera or missing model must show the specific unavailable state.
    Never display a fake live preview or claim the decorative mesh is measured
-   facial landmarks. The mesh runs only during real pending capture/comparison.
+   facial landmarks. Entry checks a real camera frame before loading models;
+   after preparation, preview frames continue while awaiting Capture. Frames
+   publish atomically; partial or superseded frames never overwrite the display.
+   Preview frames are not enrollment photos. Bounded camera leases are reopened
+   during preview; Review and verification do not leave an idle stream open.
 3. Capture: front, slight left, slight right. Show 1/3, 2/3, 3/3 and one clear
    instruction at a time. Every capture must have one sufficiently large face.
    Explain low light, overexposure, blur, multiple faces and incorrect pose with

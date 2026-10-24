@@ -23,6 +23,8 @@ pub struct Setup {
     deadline: u64,
     command_deadline: u64,
     preview: [u8; PREVIEW_BYTES],
+    staging: [u8; PREVIEW_BYTES],
+    preview_revision: u64,
     preview_written: usize,
     preview_ready: bool,
 }
@@ -33,7 +35,7 @@ impl Setup {
     // ------------------=
     pub const fn new() -> Self {
         Self {control:wire::Control::empty(),stage:Stage::Idle,pending:false,started:0,
-            deadline:0,command_deadline:0,preview:[0;PREVIEW_BYTES],preview_written:0,preview_ready:false}
+            deadline:0,command_deadline:0,preview:[0;PREVIEW_BYTES],staging:[0;PREVIEW_BYTES],preview_revision:0,preview_written:0,preview_ready:false}
     }
     // ------------------------=
     // FUNC: begin
@@ -59,7 +61,7 @@ impl Setup {
         self.tick(now)?;
         if self.pending {return Err(Error::Busy);}
         if !matches!(self.stage,Stage::Photos(0..=2)) {return Err(Error::WrongStage);}
-        self.erase_preview();self.issue(wire::CAPTURE,now)
+        self.preview_written=0;self.issue(wire::CAPTURE,now)
     }
     // ------------------------=
     // FUNC: verify
@@ -87,7 +89,8 @@ impl Setup {
     // ------------------=
     pub fn accept(&mut self, report:wire::Report, now:u64) -> Result<(),Error> {
         self.tick(now)?;
-        if !self.pending || report.command_id!=self.control.command_id {return Err(Error::Stale);}
+        if report.command_id!=self.control.command_id {return Err(Error::Stale);}
+        if !self.pending && !(matches!(self.stage,Stage::Photos(_)) && report.phase==wire::FAILED) {return Err(Error::Stale);}
         if report.version!=wire::VERSION || report.reserved!=0 || report.photos>3 || report.comparisons>3 {return Err(Error::Protocol);}
         if report.phase==wire::FAILED {
             if report.error==0 {return Err(Error::Protocol);}
@@ -119,15 +122,21 @@ impl Setup {
     }
     // ------------------------=
     // FUNC: write_preview
-    // DESC: Accepts only sequential bounded RGB thumbnail chunks for the current capture; partial images are never displayed.
+    // DESC: Atomically publishes sequential RGB preview frames without counting them as enrollment photographs.
     // ------------------=
     pub fn write_preview(&mut self, command:u64, offset:usize, bytes:&[u8], now:u64) -> Result<(),Error> {
         self.tick(now)?;
-        if !self.pending || command!=self.control.command_id || !matches!(self.control.command,wire::BEGIN|wire::CAPTURE) {return Err(Error::Stale);}
+        if command!=self.control.command_id || !matches!(self.stage,Stage::Loading|Stage::Photos(_))
+            || !matches!(self.control.command,wire::BEGIN|wire::CAPTURE) {return Err(Error::Stale);}
         if bytes.is_empty() || bytes.len()>4096 || offset!=self.preview_written
             || offset.checked_add(bytes.len()).is_none_or(|end|end>PREVIEW_BYTES) {return Err(Error::Invalid);}
-        self.preview[offset..offset+bytes.len()].copy_from_slice(bytes);
-        self.preview_written+=bytes.len();self.preview_ready=self.preview_written==PREVIEW_BYTES;Ok(())
+        self.staging[offset..offset+bytes.len()].copy_from_slice(bytes);
+        self.preview_written+=bytes.len();
+        if self.preview_written==PREVIEW_BYTES {
+            self.preview.copy_from_slice(&self.staging);self.preview_ready=true;
+            self.preview_written=0;self.preview_revision=self.preview_revision.wrapping_add(1);
+        }
+        Ok(())
     }
     // ------------------------=
     // FUNC: tick
@@ -153,7 +162,7 @@ impl Setup {
     // DESC: Clears transient camera pixels without relying on an optimizable dead-store memset.
     // ------------------=
     fn erase_preview(&mut self) {
-        for byte in &mut self.preview {unsafe {core::ptr::write_volatile(byte,0);}}
+        for byte in self.preview.iter_mut().chain(self.staging.iter_mut()) {unsafe {core::ptr::write_volatile(byte,0);}}
         self.preview_written=0;self.preview_ready=false;
     }
     // ------------------------=
@@ -176,6 +185,11 @@ impl Setup {
     // DESC: Exposes only a complete real thumbnail, never uninitialized or partially copied pixels.
     // ------------------=
     pub fn preview(&self)->Option<&[u8]> {if self.preview_ready {Some(&self.preview)}else{None}}
+    // ------------------------=
+    // FUNC: preview_revision
+    // DESC: Signals every complete frame to the renderer even when preview availability remains unchanged.
+    // ------------------=
+    pub fn preview_revision(&self)->u64 {self.preview_revision}
 }
 impl Drop for Setup {
     // ------------------------=

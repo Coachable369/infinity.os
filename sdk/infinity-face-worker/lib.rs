@@ -93,14 +93,17 @@ impl Arena {
 fn binding(c:&p::Control)->Binding {Binding {account:c.account,worker:c.worker,lease:c.lease,model:c.model}}
 // ------------------------=
 // FUNC: capture
-// DESC: Copies one sequence-consistent real JPEG, then requests immediate stream shutdown before expensive model work.
+// DESC: Copies a pinned JPEG; preview retains a bounded stream while explicit photos always start a fresh stream.
 // ------------------=
-fn capture(command:u64,encoded:&mut [u8])->Result<(usize,u64,u64),u32> {
-    let begin=clock()?;let mut opened=false;
+fn capture(command:u64,encoded:&mut [u8],stream:&mut Option<u64>,live:bool)->Result<(usize,u64,u64),u32> {
+    let begin=clock()?;
+    if stream.is_some_and(|opened|!live || begin.saturating_sub(opened)>=8000) {
+        call(0x1262,[0;6]);*stream=None;
+    }
     let result=(|| {
-        loop {
+        while stream.is_none() {
             let status=call(0x1260,[0;6]);
-            if status==0 {opened=true;break;}
+            if status==0 {*stream=Some(clock()?);break;}
             if status!= -11 && status!= -16 {return Err(104);}
             if clock()?.saturating_sub(begin)>5000 || !visit(command) {return Err(105);}
         }
@@ -123,7 +126,7 @@ fn capture(command:u64,encoded:&mut [u8])->Result<(usize,u64,u64),u32> {
             if !stale {return Ok((length,meta[0],clock()?));}
         }
     })();
-    if opened {call(0x1262,[0;6]);}
+    if !live || result.is_err() {call(0x1262,[0;6]);*stream=None;}
     result
 }
 // ------------------------=
@@ -132,20 +135,21 @@ fn capture(command:u64,encoded:&mut [u8])->Result<(usize,u64,u64),u32> {
 // ------------------=
 fn preview(command:u64,rgb:&[u8])->Result<(),u32> {
     if rgb.len()!=640*480*3 {return Err(109);}
-    let mut row=[0u8;160*3];
+    let mut rows=[0u8;160*3*8];
     for y in 0..120 {
         for x in 0..160 {for channel in 0..3 {
             let mut sum=0u32;
             for dy in 0..4 {for dx in 0..4 {sum+=rgb[((y*4+dy)*640+x*4+dx)*3+channel] as u32;}}
-            row[x*3+channel]=(sum/16) as u8;
+            rows[(y%8)*480+x*3+channel]=(sum/16) as u8;
         }}
-        let result=call(p::PREVIEW_WRITE,[command,(y*row.len()) as u64,row.as_ptr() as u64,row.len() as u64,0,0]);
-        if result!=row.len() as i64 || !visit(command) {
-            for byte in &mut row {unsafe {core::ptr::write_volatile(byte,0);}}
+        if y%8!=7 {continue;}
+        let result=call(p::PREVIEW_WRITE,[command,((y-7)*480) as u64,rows.as_ptr() as u64,rows.len() as u64,0,0]);
+        if result!=rows.len() as i64 || !visit(command) {
+            for byte in &mut rows {unsafe {core::ptr::write_volatile(byte,0);}}
             return Err(105);
         }
     }
-    for byte in &mut row {unsafe {core::ptr::write_volatile(byte,0);}}
+    for byte in &mut rows {unsafe {core::ptr::write_volatile(byte,0);}}
     Ok(())
 }
 // ------------------------=
@@ -158,7 +162,8 @@ unsafe fn work()->Result<(),u32> {
     let initial=control()?;
     if initial.command!=p::BEGIN {return Err(108);}
     let encoded=arena.bytes(1_228_800)?;let rgb=arena.bytes(640*480*3)?;let decode=arena.bytes(8*1024*1024)?;
-    let (length,_,_)=capture(initial.command_id,encoded)?;
+    let mut stream=None;
+    let (length,_,_)=capture(initial.command_id,encoded,&mut stream,false)?;
     jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
     preview(initial.command_id,rgb)?;
     let detector=arena.model(1)?;let recognizer=arena.model(2)?;
@@ -167,7 +172,7 @@ unsafe fn work()->Result<(),u32> {
     let floats=core::slice::from_raw_parts_mut(floats.as_mut_ptr().cast::<f32>(),engine.arena_len());
     let scratch=arena.bytes(size_of::<Scratch>())?;scratch.fill(0);
     let scratch=&mut *scratch.as_mut_ptr().cast::<Scratch>();
-    let mut enrollment:Option<Enrollment>=None;let mut seen=0;
+    let mut enrollment:Option<Enrollment>=None;let mut seen=0;let mut preview_at=0;
     loop {
         let c=control()?;
         if c.command==p::CANCEL {if let Some(e)=enrollment.as_mut(){e.cancel();}call(0x1262,[0;6]);scratch.clear();report(&c,p::CANCELLED,0,None);return Ok(());}
@@ -177,7 +182,20 @@ unsafe fn work()->Result<(),u32> {
                 scratch.clear();return Ok(());
             }
         }
-        if c.command_id==seen || c.command_id==0 {call(0x1001,[0;6]);continue;}
+        if c.command_id==seen || c.command_id==0 {
+            if enrollment.as_ref().is_some_and(|e|matches!(e.state(),State::Photos(_))) && clock()?>=preview_at {
+                let result=capture(c.command_id,encoded,&mut stream,true).and_then(|(length,_,_)| {
+                    jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
+                    preview(c.command_id,rgb)
+                });
+                // Capture/Back may supersede a preview mid-copy. Never fail the
+                // new command or publish the old frame into its generation.
+                if control()?.command_id!=c.command_id {continue;}
+                if let Err(error)=result {report(&c,p::FAILED,error,None);return Ok(());}
+                preview_at=clock()?.saturating_add(100);
+            }
+            call(0x1001,[0;6]);continue;
+        }
         seen=c.command_id;
         if c.command==p::BEGIN {
             let name=core::str::from_utf8(&c.name[..c.name_len as usize]).map_err(|_|107u32)?;
@@ -196,7 +214,7 @@ unsafe fn work()->Result<(),u32> {
         let frames=if let State::Verifying(n)=e.state() {3u8.saturating_sub(n)}else{1};
         for _ in 0..frames {
             report(&c,p::PROCESSING,0,Some(e.state()));
-            let (length,sequence,captured)=match capture(c.command_id,encoded) {Ok(v)=>v,Err(error)=>{report(&c,p::FAILED,error,Some(e.state()));break;}};
+            let (length,sequence,captured)=match capture(c.command_id,encoded,&mut stream,false) {Ok(v)=>v,Err(error)=>{report(&c,p::FAILED,error,Some(e.state()));break;}};
             if jpeg::decode(&encoded[..length],rgb,decode).is_err() {report(&c,p::FAILED,109,Some(e.state()));break;}
             if c.command==p::CAPTURE {
                 if let Err(error)=preview(c.command_id,rgb) {report(&c,p::FAILED,error,Some(e.state()));break;}

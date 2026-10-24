@@ -15,6 +15,18 @@ static SFACE_LICENSE:&[u8]=include_bytes!("../../model-cache/face/licenses/SFace
 static JPEG_NOTICE:&[u8]=include_bytes!("../../build/face/native-deps/stb_image.h");
 static mut JOB:Job=Job::new();
 static mut GENERATION:u64=0;
+static mut PAGE_VISIBLE:bool=false;
+
+// ------------------------=
+// FUNC: sync_page
+// DESC: Starts the authorized preview once on page entry and revokes it immediately on page exit; failures require an explicit retry.
+// ------------------=
+pub fn sync_page(visible:bool,account:StableId,secret:&[u8],name:&str)->bool {unsafe {
+    let entered=visible && !PAGE_VISIBLE;
+    if !visible && PAGE_VISIBLE {cancel();}
+    PAGE_VISIBLE=visible;
+    entered && !start(account,secret,name)
+}}
 
 // ------------------------=
 // FUNC: available
@@ -65,8 +77,8 @@ pub fn cancel() {unsafe {(&mut *core::ptr::addr_of_mut!(JOB)).cancel();}}
 // ------------------=
 pub fn poll(on_setup_page:bool)->bool {unsafe {
     let job=&mut *core::ptr::addr_of_mut!(JOB);
-    let before=(job.setup.stage(),job.setup.pending(),job.setup.preview().is_some(),job.terminal());
+    let before=(job.setup.stage(),job.setup.pending(),job.setup.preview_revision(),job.setup.preview().is_some(),job.terminal());
     if !on_setup_page && !matches!(job.setup.stage(),Stage::Idle|Stage::Cancelled|Stage::Passed) {job.cancel();}
     if job.poll(on_setup_page,super::ai::qwen::workers::clock_ns(),super::native_memory::memory_mut()).is_err() {job.cancel();}
-    before!=(job.setup.stage(),job.setup.pending(),job.setup.preview().is_some(),job.terminal())
+    before!=(job.setup.stage(),job.setup.pending(),job.setup.preview_revision(),job.setup.preview().is_some(),job.terminal())
 }}

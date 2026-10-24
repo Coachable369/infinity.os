@@ -75,7 +75,8 @@ impl Job {
             if caller!=owner || !alive {return -13;}
             if (0x1260..=0x1262).contains(&op) {
                 let command=dispatch.setup.control();
-                if !dispatch.setup.pending() || !matches!(command.command,super::face_setup::wire::BEGIN|super::face_setup::wire::CAPTURE|super::face_setup::wire::VERIFY) {return -13;}
+                if !(dispatch.setup.pending() || matches!(dispatch.setup.stage(),Stage::Photos(_)))
+                    || !matches!(command.command,super::face_setup::wire::BEGIN|super::face_setup::wire::CAPTURE|super::face_setup::wire::VERIFY) {return -13;}
                 if op==0x1260 && !*open {
                     if !crate::drivers::camera::grant(owner) {return -11;}
                     *open=true;

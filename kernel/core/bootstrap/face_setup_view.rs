@@ -13,7 +13,7 @@ impl DisplayDevice {
         self.access_label(bounds(l.title),b"Check facial recognition",l.pixels*3/2,palette::TEXT,false,true);
         crate::runtime::face_setup_host::view(|state| {
             let (guidance,action):(&[u8],&[u8])=match state.stage() {
-                Stage::Idle|Stage::Cancelled=>(b"Optional camera check. Name this face, then capture three clear views. Keep one person in the frame.",b"Start camera check"),
+                Stage::Idle|Stage::Cancelled=>(b"The camera preview starts on this screen. Keep one person in the frame. Only Capture takes an enrollment photo.",b"Retry camera preview"),
                 Stage::Loading=>(b"Checking the camera, then preparing private recognition. The real preview appears below; enrollment photos are captured separately.",b"Preparing..."),
                 Stage::Photos(0)=>(b"Photo 1 of 3. Face the camera straight on. Use even lighting and keep your whole face visible.",b"Capture front view"),
                 Stage::Photos(1)=>(b"Photo 2 of 3. Turn your face slightly to your left. Keep your eyes visible and hold still.",b"Capture left view"),
@@ -34,7 +34,7 @@ impl DisplayDevice {
             }
             let r=l.preview;
             self.access_label((r.x as usize,r.y as usize-l.pixels-8,r.width as usize,l.pixels+4),
-                b"Camera capture",l.pixels*4/5,palette::SECONDARY,false,false);
+                if matches!(state.stage(),Stage::Loading|Stage::Photos(_)){b"Live camera preview"}else{b"Camera capture"},l.pixels*4/5,palette::SECONDARY,false,false);
             self.access_surface(r.x as usize,r.y as usize,r.width as usize,r.height as usize,
                 crate::ui::panel_recipe::Surface::Field,palette::BACKGROUND,palette::BORDER,255,false);
             if let Some(pixels)=state.preview() {
@@ -43,7 +43,7 @@ impl DisplayDevice {
                     self.pixel(r.x+x as i32,r.y+y as i32,pixels[index],pixels[index+1],pixels[index+2]);
                 }}
             } else {
-                self.access_label(bounds(r),if state.pending(){b"Processing"}else{b"No capture yet"},
+                self.access_label(bounds(r),if state.pending(){b"Starting camera..."}else{b"Camera unavailable"},
                     l.pixels*3/5,palette::SECONDARY,true,false);
             }
             self.face_mask_base(l.mask);

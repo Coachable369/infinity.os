@@ -13937,6 +13937,19 @@ pub fn reduced_motion() -> bool {
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
+        let visible=runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7;
+        if visible && runtime.command_length==0 {
+            runtime.command[..8].copy_from_slice(b"Everyday");runtime.command_length=8;
+        }
+        let name=core::str::from_utf8(&runtime.command[..runtime.command_length]).unwrap_or("Everyday");
+        if crate::runtime::face_setup_host::sync_page(visible,runtime.current_user,
+            &runtime.onboarding_secret[..runtime.onboarding_secret_length],name) {
+            runtime.onboarding_validation_error=true;runtime.redraw();
+        }
+        if crate::runtime::face_setup_host::poll(visible) {runtime.redraw();}
+    }}
     #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){python_commands::poll(runtime);}}
     #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -14050,10 +14063,6 @@ static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate
 // ------------------------=
 // FUNC: input_batch
 // DESC: Dispatches bounded device actions in order and presents their final cursor or scene once before background services.
-    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
-        if crate::runtime::face_setup_host::poll(runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7) {runtime.redraw();}
-    }}
 // ------------------=
 pub fn input_batch(action: impl FnOnce()) {
     let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
