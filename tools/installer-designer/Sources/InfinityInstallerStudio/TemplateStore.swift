@@ -5,6 +5,13 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum LayerOrderAction: String, CaseIterable {
+    case front = "Bring to Front"
+    case back = "Send to Back"
+    case forward = "Bring Forward"
+    case backward = "Send Backward"
+}
+
 enum ResizeHandle: CaseIterable, Identifiable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     var id: Self { self }
@@ -956,10 +963,55 @@ final class TemplateStore: ObservableObject {
     // DESC: Moves an editable element forward or backward in deterministic z-order.
     // ------------------=
     func moveLayer(_ delta: Int) {
-        guard canReorderSelectedLayer else { status = "Settings semantic layer ordering is owned by the OS"; return }
-        updateSelected(delta > 0 ? "Brought Forward" : "Sent Backward") {
-            $0.zIndex = ($0.zIndex + delta).clamped(to: 0...32_767)
+        guard let id = selectedElementID, delta != 0 else { return }
+        reorderLayer(id, action: delta > 0 ? .forward : .backward)
+    }
+
+    // ------------------------=
+    // FUNC: reorderedLayers
+    // DESC: Resolves positional stack moves, including tied and sparse z indices.
+    // ------------------=
+    private func reorderedLayers(_ id: UUID, action: LayerOrderAction) -> [StudioElement]? {
+        guard selectedCollection != .systemSettings, let screen = selectedScreen,
+              screen.elements.first(where: { $0.id == id })?.locked == false else { return nil }
+        var layers = screen.elements.sorted {
+            $0.zIndex == $1.zIndex ? $0.id.uuidString < $1.id.uuidString : $0.zIndex < $1.zIndex
         }
+        guard let source = layers.firstIndex(where: { $0.id == id }) else { return nil }
+        let destination: Int
+        switch action {
+        case .front: destination = layers.count - 1
+        case .back: destination = 0
+        case .forward: destination = min(source + 1, layers.count - 1)
+        case .backward: destination = max(source - 1, 0)
+        }
+        guard source != destination else { return nil }
+        layers.insert(layers.remove(at: source), at: destination)
+        return layers
+    }
+
+    // ------------------------=
+    // FUNC: canReorderLayer
+    // DESC: Disables locked, OS-owned and already-at-boundary actions.
+    // ------------------=
+    func canReorderLayer(_ id: UUID, action: LayerOrderAction) -> Bool {
+        reorderedLayers(id, action: action) != nil
+    }
+
+    // ------------------------=
+    // FUNC: reorderLayer
+    // DESC: Records one undoable stack move for the clicked element, preserving other relative order.
+    // ------------------=
+    func reorderLayer(_ id: UUID, action: LayerOrderAction) {
+        guard let layers = reorderedLayers(id, action: action), let screen = selectedScreenIndex else { return }
+        recordUndo()
+        let ranks = Dictionary(uniqueKeysWithValues: layers.enumerated().map { ($0.element.id, $0.offset) })
+        for index in activeDocument.screens[screen].elements.indices {
+            let elementID = activeDocument.screens[screen].elements[index].id
+            activeDocument.screens[screen].elements[index].zIndex = ranks[elementID]!
+        }
+        selectElement(id)
+        status = action.rawValue
     }
 
     // ------------------------=

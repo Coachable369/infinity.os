@@ -6,6 +6,7 @@ struct InstallerCanvas: View {
     @State private var marqueeDisplayRect: CGRect?
     @State private var canvasDragMode: CanvasDragMode?
     @State private var previewOptionsExpanded = false
+    @State private var hoveredLayerID: UUID?
     @StateObject private var nativePreview = NativePreviewService()
     private var simulatedSettings: Bool {
         store.selectedCollection == .systemSettings && store.nativePreviewSimulation.enabled
@@ -47,6 +48,18 @@ struct InstallerCanvas: View {
                                 .fill(Color.clear)
                                 .contentShape(Rectangle())
                                 .gesture(marqueeInteractionGesture(canvasScale: canvasScale))
+                                .onContinuousHover { phase in
+                                    if case .active(let point) = phase {
+                                        let location = normalizedPoint(from: point, canvasScale: canvasScale)
+                                        hoveredLayerID = store.selectedScreen?.elements.sorted(by: layerOrder).last {
+                                            !$0.hidden && CGRect(x: $0.frame.x, y: $0.frame.y,
+                                                width: $0.frame.width, height: $0.frame.height).contains(location)
+                                        }?.id
+                                    }
+                                }
+                                .contextMenu {
+                                    if let id = hoveredLayerID { CanvasLayerMenu(store: store, elementID: id) }
+                                }
                                 .zIndex(39_000)
                         }
                         if let marqueeDisplayRect {
@@ -450,6 +463,18 @@ private struct SnapGrid: View {
     }
 }
 
+private struct CanvasLayerMenu: View {
+    @ObservedObject var store: TemplateStore
+    let elementID: UUID
+
+    var body: some View {
+        ForEach(LayerOrderAction.allCases, id: \.self) { action in
+            Button(action.rawValue) { store.reorderLayer(elementID, action: action) }
+                .disabled(!store.canReorderLayer(elementID, action: action))
+        }
+    }
+}
+
 struct CanvasElementView: View {
     let element: StudioElement
     @ObservedObject var store: TemplateStore
@@ -483,6 +508,9 @@ struct CanvasElementView: View {
                 .opacity(element.role == .console ? 1 : Double(element.opacity) / 100)
                 .contentShape(Path(interactionClip ?? CGRect(origin: .zero, size: renderedFrame.size)))
                 .highPriorityGesture(elementInteractionGesture)
+                .contextMenu {
+                    if !renderingBackdrop { CanvasLayerMenu(store: store, elementID: element.id) }
+                }
             if !renderingBackdrop {
                 if let interactionClip { selectionOverlay.mask(Path(interactionClip)) }
                 else { selectionOverlay }
