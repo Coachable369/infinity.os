@@ -27,13 +27,15 @@ extern const size_t native_model_file_count;
 static struct { const struct model_file *file; size_t offset; } files[32];
 /* Keep the large arena after ordinary data on x86, so PC-relative references
  * to small objects remain within the native compiler's 2 GiB code model. */
-#if defined(__x86_64__)
 __attribute__((section(".speech_heap")))
-#endif
 static _Alignas(16) unsigned char heap[1536u*1024u*1024u];
 static size_t heap_used;
 static jmp_buf failure;
-static unsigned active;
+static unsigned active __attribute__((section(".speech_control")));
+static unsigned pristine_ready __attribute__((section(".speech_control")));
+static unsigned char pristine_data[4u*1024u*1024u] __attribute__((section(".speech_control")));
+extern unsigned char native_reset_data_start[], native_reset_data_end[];
+extern unsigned char native_reset_bss_start[], native_reset_bss_end[];
 static int poisoned;
 static int (*cancel_callback)(void *);
 static void *cancel_context;
@@ -346,6 +348,29 @@ extern int native_prepare_synthesis(void);
 extern int whisper_private_native_transcribe(const int16_t*,size_t,char*,size_t,size_t*);
 extern int whisper_private_native_prepare(void);
 // ------------------------=
+// FUNC: native_save_pristine
+// DESC: Snapshots relocated writable initializers before any private engine initialization under exclusive admission.
+// ------------------=
+static int native_save_pristine(void){
+    size_t n=(size_t)(native_reset_data_end-native_reset_data_start);
+    if(n>sizeof(pristine_data))return 0;
+    if(!pristine_ready){memcpy(pristine_data,native_reset_data_start,n);pristine_ready=1;}
+    return 1;
+}
+// ------------------------=
+// FUNC: native_recover
+// DESC: Recreates the private engine image only after the previous worker has released admission; never runs destructors on corrupted objects.
+// ------------------=
+int native_recover(void){
+    if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(!pristine_ready||heap_used>sizeof(heap)){native_engine_release(&active);return 7;}
+    memset(heap,0,heap_used);
+    memset(native_reset_bss_start,0,(size_t)(native_reset_bss_end-native_reset_bss_start));
+    memcpy(native_reset_data_start,pristine_data,(size_t)(native_reset_data_end-native_reset_data_start));
+    native_engine_release(&active);
+    return 0;
+}
+// ------------------------=
 // FUNC: native_synthesize
 // DESC: Contains one bounded synthesis job and quarantines fatal engine state without crossing the Rust ABI.
 // ------------------=
@@ -353,6 +378,7 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
     if(!frames)return 1;*frames=0;
     if(!text||!pcm||!length||length>160||!capacity||capacity>720000)return 1;
     if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(!native_save_pristine()){native_engine_release(&active);return 7;}
     if(poisoned){native_engine_release(&active);return 7;}
     memset(pcm,0,capacity*sizeof(*pcm));cancel_callback=cancel;cancel_context=context;
     int result;
@@ -375,6 +401,7 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
 int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
     if(!memory)return 1;*memory=0;
     if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(!native_save_pristine()){native_engine_release(&active);return 7;}
     if(poisoned){native_engine_release(&active);return 7;}
     *memory=heap_used;
     cancel_callback=cancel;cancel_context=context;
@@ -397,6 +424,7 @@ int native_recognize(const int16_t*pcm,size_t samples,char*text,size_t capacity,
     if(!length||!memory)return 1;*length=0;*memory=0;
     if(!pcm||!samples||samples>160000||!text||capacity<2)return 1;
     if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
+    if(!native_save_pristine()){native_engine_release(&active);return 7;}
     if(poisoned){native_engine_release(&active);return 7;}
     *memory=heap_used;
     size_t nonzero=0;for(size_t i=0;i<samples;i++)nonzero|=(uint16_t)pcm[i];

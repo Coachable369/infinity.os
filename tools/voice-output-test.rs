@@ -259,6 +259,14 @@ unsafe extern "C" fn infinity_kokoro_native_prepare_recognition(memory:*mut usiz
     result
 }
 // ------------------------=
+// FUNC: infinity_kokoro_native_recover
+// DESC: Simulates exclusive native image reset without accepting work while the provider is occupied.
+// ------------------=
+#[no_mangle]
+unsafe extern "C" fn infinity_kokoro_native_recover() -> i32 {
+    if NATIVE_BUSY.load(Ordering::Acquire) { 8 } else { 0 }
+}
+// ------------------------=
 // FUNC: infinity_kokoro_native_recognize
 // DESC: Checks that queued recognition preserves its original PCM across native-engine contention.
 // ------------------=
@@ -764,6 +772,23 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     }
     assert_eq!(PREPARE_CALLS.load(Ordering::SeqCst),calls);
     SYNTHESIS_RESULT.store(0,Ordering::SeqCst);
+
+    // Recovery is asynchronous, forgets the previous transcript, warms fresh
+    // contexts, and caps retries instead of looping forever on a bad provider.
+    assert!(voice_input::recover_engine());
+    assert!(!voice_input::prepared());
+    assert!(!voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert!(voice_input::take(owner,&mut [0;512]).is_err());
+    assert!(!voice_input::prepare());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert!(voice_input::prepared());
+    voice_input::native_engine_fault();
+    assert!(voice_input::recover_engine());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    voice_input::native_engine_fault();
+    assert!(!voice_input::recover_engine());
+    assert!(unsafe { (&*(&raw const TASK)).is_none() });
 
     // Recognition independently reports the same terminal fault, and repeated
     // prepare requests cannot restart its previously ready native context.

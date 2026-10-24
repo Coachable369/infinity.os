@@ -1,5 +1,27 @@
 # Kokoro shared native integration
 
+## Fault recovery
+
+Conversation recovery drains the failed job and stops its capture/playback before
+resetting the private speech image on a background worker. The reset restores
+pristine relocated writable initializers, zeros private BSS and committed heap,
+and then warms fresh Whisper/Kokoro contexts. Immutable packaged models and the
+LLM conversation remain intact. Stale prompts, recognition buffers and audio are
+discarded; completed OS actions are never replayed. Explicit mute and revoked
+session authority prevent automatic microphone reopening.
+
+Automatic reset is limited to two attempts per monotonic minute. Persistent
+failure stays visible rather than entering an infinite reset loop; the user can
+retry voice after the cooldown. Recovery never destroys an active native job or
+runs destructors against poisoned allocator state. Admission and pristine data
+live outside the reset regions.
+
+The `probe/latency.py --lifetime` native ARM test injects a fatal backend pointer,
+verifies quarantine and erased PCM, resets, warms up, and verifies that fresh
+synthesis exactly matches pre-fault PCM. Host voice-output and voice-toggle
+tests cover asynchronous reset, retry bounds, stale transcript rejection and
+manual-stop behavior. This does not replace installed-VM microphone testing.
+
 `reference.py` builds and runs an isolated **host CPU reference**. It is not
 linked into InfinityOS, not a host service used by the OS, and not installed
 acceptance. ARM64 and x86-64 live and installed kernels link the private native

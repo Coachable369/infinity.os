@@ -165,7 +165,7 @@ class UIPayloadParityTests(unittest.TestCase):
         with mock.patch.object(parity.subprocess, "run", side_effect=replace_earlier_source):
             with self.assertRaises(RuntimeError):
                 parity.verify_kernel_pair(self.live, self.installed, self.root)
-        self.assertEqual(decoded, [0] * 9)
+        self.assertEqual(decoded, [0] * (2 * len(self.payloads) - 1))
 
 
 if __name__ == "__main__":

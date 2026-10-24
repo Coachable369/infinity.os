@@ -8,6 +8,8 @@ mod voice_trace;
 
 static STATE: AtomicUsize = AtomicUsize::new(0);
 static ENGINE: AtomicUsize = AtomicUsize::new(0);
+static RECOVERY_WINDOW: AtomicU64 = AtomicU64::new(0);
+static RECOVERY_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 static PREPARE_DEADLINE: AtomicU64 = AtomicU64::new(0);
 const NATIVE_ENGINE_BUSY: i32 = 8;
 const WAITING_ENGINE: usize = 6;
@@ -56,6 +58,11 @@ pub struct InputStatus {
     pub heap_bytes: usize,
 }
 unsafe extern "C" {
+    // ------------------------=
+    // FUNC: infinity_kokoro_native_recover
+    // DESC: Reinitializes the exclusively owned private speech image after quarantine.
+    // ------------------=
+    fn infinity_kokoro_native_recover() -> i32;
     fn infinity_kokoro_native_recognize(
         pcm: *const i16,
         samples: usize,
@@ -115,7 +122,7 @@ pub fn prepare() -> bool {
         // A failed native context cannot be repaired by another scheduling
         // attempt. Keep the failure observable instead of restarting its
         // deadline and flooding APs with identical failed warmup jobs.
-        1 | 3 => false,
+        1 | 3 | 5 => false,
         _ => unsafe {
             if matches!(STATE.load(Ordering::Acquire), 1 | 2 | WAITING_ENGINE) { return false; }
             if engine != 4 {
@@ -152,7 +159,50 @@ pub fn prepare_failed() -> bool { ENGINE.load(Ordering::Acquire) == 3 }
 // FUNC: native_engine_fault
 // DESC: Latches a shared native provider fault from either speech worker without taking runtime locks.
 // ------------------=
-pub fn native_engine_fault() { ENGINE.store(3, Ordering::Release); }
+pub fn native_engine_fault() {
+    ENGINE.store(3, Ordering::Release);
+}
+
+// ------------------------=
+// FUNC: recovery_worker
+// DESC: Discards the quarantined native speech image off the UI thread before a fresh model warmup.
+// ------------------=
+unsafe fn recovery_worker() {
+    let result = infinity_kokoro_native_recover();
+    ENGINE.store(if result == 0 { 0 } else { 3 }, Ordering::Release);
+    trace(if result == 0 { b"speech engine reset complete" } else { b"speech engine reset failed" });
+}
+
+// ------------------------=
+// FUNC: recover_engine
+// DESC: Allows at most two asynchronous resets per minute after recognition has drained; clears stale transcripts and PCM without replaying actions.
+// ------------------=
+pub fn recover_engine() -> bool {
+    if ENGINE.load(Ordering::Acquire) != 3 { return true; }
+    if matches!(STATE.load(Ordering::Acquire), 1 | 2 | WAITING_ENGINE) { return false; }
+    let now = super::qwen::workers::clock_ns();
+    if now.saturating_sub(RECOVERY_WINDOW.load(Ordering::Acquire)) >= 60_000_000_000 {
+        RECOVERY_WINDOW.store(now, Ordering::Release);
+        RECOVERY_ATTEMPTS.store(0, Ordering::Release);
+    }
+    if RECOVERY_ATTEMPTS.load(Ordering::Acquire) >= 2 { return false; }
+    if ENGINE.compare_exchange(3, 5, Ordering::AcqRel, Ordering::Acquire).is_err() { return false; }
+    unsafe {
+        (&mut *(&raw mut PCM)).fill(0);
+        (&mut *(&raw mut TEXT)).fill(0);
+        SAMPLES = 0;
+        LENGTH = 0;
+        ERROR = 0;
+        CANCEL.store(false, Ordering::Release);
+        STATE.store(0, Ordering::Release);
+        if !super::qwen::workers::background(recovery_worker) {
+            ENGINE.store(3, Ordering::Release);
+            return false;
+        }
+    }
+    RECOVERY_ATTEMPTS.fetch_add(1, Ordering::AcqRel);
+    true
+}
 
 struct Whisper;
 impl SpeechRecognitionProvider for Whisper {

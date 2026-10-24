@@ -7,8 +7,8 @@ source "$repo_dir/tools/require-build-kit.sh"
 swift_paths=(--cache-path "$repo_dir/build/cache/swiftpm"
     --config-path "$repo_dir/build/cache/swiftpm-config"
     --security-path "$repo_dir/build/cache/swiftpm-security")
-if (( $# > 1 )) || [[ "${1:-}" != "" && "${1:-}" != --clean ]]; then
-    echo "Usage: build-kit studio | build-kit studio-clean" >&2
+if (( $# > 1 )) || [[ "${1:-}" != "" && "${1:-}" != --clean && "${1:-}" != --skip-tests ]]; then
+    echo "Usage: build-kit studio | build-kit studio-clean | build-kit studio-package" >&2
     exit 2
 fi
 if [[ "${1:-}" == --clean ]]; then
@@ -23,7 +23,9 @@ make -C "$repo_dir" studio-native-renderer
 rustc --edition=2021 -O "$repo_dir/tools/studio-precision-parity.rs" -o "$repo_dir/build/behavior-tests/studio-precision-parity"
 "$repo_dir/build/behavior-tests/studio-precision-parity" "$repo_dir/build/behavior-tests/studio-precision.parity"
 python3 "$repo_dir/tools/studio-image-parity.py"
-swift test "${swift_paths[@]}" --package-path "$script_dir"
+if [[ "${1:-}" != --skip-tests ]]; then
+    swift test "${swift_paths[@]}" --package-path "$script_dir"
+fi
 swift build "${swift_paths[@]}" --package-path "$script_dir" -c release
 
 rm -rf "$app_dir"

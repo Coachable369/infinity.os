@@ -92,7 +92,7 @@ def decode_lifetime(data):
         expected.append((turn, 11, 0))
         for index in range(6):
             expected.extend(((turn * 6 + index, 0, 0), (turn * 6 + index, 1, 0)))
-    expected.extend(((12, 12, 7), (13, 13, 7)))
+    expected.extend(((12, 12, 7), (13, 13, 7), (14, 14, 0), (15, 15, 0), (16, 16, 0)))
     if len(data) != len(expected) * 216:
         raise ValueError("Incomplete native lifetime transitions or architectural fault")
     rows = []
@@ -115,6 +115,8 @@ def decode_lifetime(data):
                 raise ValueError("Recognition did not publish a bounded transcript")
         rows.append(row)
     finished = [row for row in rows if row["kind"] == 1]
+    if (rows[-1]["frames"], rows[-1]["pcm_fnv64"]) != (finished[0]["frames"], finished[0]["pcm_fnv64"]):
+        raise ValueError("Recovered speech differs from pristine synthesis")
     recognized = [row for row in rows if row["kind"] == 11]
     if any(row["seconds"] <= 0 or row["pcm_fnv64"] != "0xa851ff9efa4ab835" for row in recognized):
         raise ValueError("Recorded recognition changed or omitted native timing")
@@ -128,7 +130,7 @@ def decode_lifetime(data):
         raise ValueError("Known native complete-PCM baseline changed")
     if any(row["memory"]["committed"] > finished[5]["memory"]["committed"] for row in finished[6:]):
         raise ValueError("Repeated native workload grew the bounded heap")
-    invalid, quarantined = rows[-2:]
+    invalid, quarantined = rows[27:29]
     if (invalid["frames"] != 0 or invalid["pcm_fnv64"] != "0x0"
             or invalid["memory"]["bad_pointer"] != 0xffffffff14000400
             or not invalid["diagnostics"][3] or quarantined["frames"] != 0
@@ -227,7 +229,7 @@ lto = true
     shutil.copyfile(elf, esp / "EFI/INFINITY/KERNEL.ELF")
     serial = output / "serial.bin"
     serial.unlink(missing_ok=True)
-    run("qemu-system-aarch64", "-machine", "virt", "-accel", "hvf", "-cpu", "host", "-m", "3G",
+    run("qemu-system-aarch64", "-machine", "virt", "-accel", "hvf", "-cpu", "host", "-m", "6G",
         "-smp", args.cpus, "-display", "none", "-serial", "file:" + str(serial), "-monitor", "none",
         "-bios", "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", "-device", "ramfb",
         "-drive", "if=none,id=esp,format=raw,file=fat:rw:" + str(esp), "-device", "virtio-blk-pci,drive=esp")

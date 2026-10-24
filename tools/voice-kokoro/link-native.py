@@ -100,7 +100,7 @@ def main():
     whisper = ROOT / "build/voice-whisper" / ARCH / "private-engine.o"
     if not whisper.is_file():
         raise RuntimeError("Missing native Whisper engine")
-    run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_recognize", "--undefined=native_prepare_recognition", "--undefined=native_diagnostics",
+    run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_recover", "--undefined=native_synthesize", "--undefined=native_recognize", "--undefined=native_prepare_recognition", "--undefined=native_diagnostics",
         "--undefined=native_profile_read", "--undefined=native_verify_im2col1d", "--undefined=native_memory_stats",
         "--undefined=native_verify_matrix_tiles", "--undefined=native_dot4",
         "-T", ROOT / "tools/voice-kokoro/private.ld",

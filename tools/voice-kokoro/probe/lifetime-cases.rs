@@ -1,5 +1,10 @@
 unsafe extern "C" {
     // ------------------------=
+    // FUNC: infinity_kokoro_native_recover
+    // DESC: Recreates the quarantined engine before verifying fresh real synthesis.
+    // ------------------=
+    fn infinity_kokoro_native_recover() -> i32;
+    // ------------------------=
     // FUNC: infinity_kokoro_native_diagnostics
     // DESC: Reads bounded native allocator and phase diagnostics without exposing user content.
     // ------------------=
@@ -153,4 +158,18 @@ unsafe extern "C" fn speech_cases(_: u64) {
     let quarantined = native_synthesize(b"Hello".as_ptr(), 5, (&raw mut PCM).cast(), 720000,
         &mut frames, 0, 0);
     report(13, 13, quarantined, frames, 0, 0);
+    let reset = infinity_kokoro_native_recover();
+    report(14, 14, reset, 0, 0, 0);
+    if reset != 0 { return; }
+    let prepared = infinity_kokoro_native_prepare_recognition(&mut memory, 0, 0);
+    report(15, 15, prepared, memory, 0, 0);
+    if prepared != 0 { return; }
+    let result = native_synthesize(b"Hi.".as_ptr(), 3, (&raw mut PCM).cast(), 720000, &mut frames, 0, 0);
+    let mut hash = 0xcbf29ce484222325u64;
+    if result == 0 && frames <= 720000 {
+        for byte in core::slice::from_raw_parts((&raw const PCM).cast::<u8>(), frames * 2) {
+            hash = (hash ^ *byte as u64).wrapping_mul(0x100000001b3);
+        }
+    }
+    report(16, 16, result, frames, 0, hash);
 }

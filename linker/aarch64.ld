@@ -24,7 +24,7 @@ SECTIONS
        VirtualBox reserves 0xe0000000..0xffffffff for devices, not RAM. */
     __low_bss = ALIGN(0x1000);
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) {
-        *private-native.o(.bss.heap)
+        *(.speech_heap)
     } :speech
     . = __low_bss;
     .bss : ALIGN(0x1000) { *(.bss .bss.*) *(COMMON) } :data

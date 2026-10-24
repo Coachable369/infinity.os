@@ -23,7 +23,7 @@ SECTIONS
     /* Same native arena layout as the canonical ARM image; only base differs. */
     __low_bss = ALIGN(0x1000);
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) {
-        *private-native.o(.bss.heap)
+        *(.speech_heap)
     } :speech
     . = __low_bss;
     .bss : ALIGN(0x1000) { *(.bss .bss.*) *(COMMON) } :data

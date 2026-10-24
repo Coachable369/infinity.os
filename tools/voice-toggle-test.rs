@@ -12,6 +12,7 @@ static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
 static PREPARE_FAILED: AtomicBool = AtomicBool::new(false);
+static RECOVERY_ALLOWED: AtomicBool = AtomicBool::new(false);
 static PREPARE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PLAYBACK_AVAILABLE: AtomicBool = AtomicBool::new(true);
@@ -379,6 +380,17 @@ mod voice_input {
     // DESC: Exposes the terminal recognizer warmup failure without retrying or advertising microphone readiness.
     // ------------------=
     pub fn prepare_failed()->bool{crate::PREPARE_FAILED.load(crate::Ordering::SeqCst)}
+    // ------------------------=
+    // FUNC: recover_engine
+    // DESC: Models bounded provider reset and separate warmup readiness for controller recovery tests.
+    // ------------------=
+    pub fn recover_engine()->bool{
+        if !prepare_failed(){return true;}
+        if !crate::RECOVERY_ALLOWED.load(crate::Ordering::SeqCst){return false;}
+        crate::PREPARE_FAILED.store(false,crate::Ordering::SeqCst);
+        crate::MODEL_READY.store(false,crate::Ordering::SeqCst);
+        true
+    }
     // ------------------------=
     // FUNC: invalidate
     // DESC: Leaves recognition lifecycle control with the fixture's test transitions.
@@ -1344,11 +1356,12 @@ fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentit
     RECOGNITION_ERROR.store(3,Ordering::SeqCst);
     conversation::poll();
     RECOGNITION_ERROR.store(0,Ordering::SeqCst);
-    assert_eq!(conversation::state().0,State::Failed);
-    assert!(!conversation::preparing());
+    assert_eq!(conversation::state().0,State::Stopping);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    assert!(conversation::preparing()); // Fresh capture recalibrates before accepting wake words.
     assert_eq!(conversation::autostart(owner,&mut deadline,100_000_000_000),None);
-    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
-    assert!(conversation::start(owner));
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
     conversation::stop(owner);conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
     let captures=CAPTURES.load(Ordering::SeqCst);
@@ -1966,4 +1979,24 @@ fn transcript_handoff_tests(owner: runtime::execution::SecurityIdentity) {
     assert!(!conversation::start(owner));assert_eq!(conversation::state().0,State::Failed);
     PREPARE_FAILED.store(false,Ordering::SeqCst);MODEL_READY.store(true,Ordering::SeqCst);
     assert!(conversation::start(owner));conversation::stop(owner);conversation::poll();
+
+    // A resettable native fault warms up before acquiring fresh capture; a
+    // user's stop during that warmup must suppress automatic microphone return.
+    RECOVERY_ALLOWED.store(true,Ordering::SeqCst);
+    MODEL_READY.store(false,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    PREPARE_FAILED.store(true,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Starting);
+    MODEL_READY.store(true,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    conversation::stop(owner);conversation::poll();
+    MODEL_READY.store(false,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    PREPARE_FAILED.store(true,Ordering::SeqCst);conversation::poll();
+    conversation::stop(owner);conversation::poll();
+    MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Off);
+    RECOVERY_ALLOWED.store(false,Ordering::SeqCst);
 }

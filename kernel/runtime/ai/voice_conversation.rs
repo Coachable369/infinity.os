@@ -614,6 +614,10 @@ pub fn start(owner: SecurityIdentity) -> bool {
         if !idle { return false; }
         // Warm speech on its existing background worker while the local model
         // and audio routes become ready. Never open capture during this work.
+        if voice_input::prepare_failed() && !voice_input::recover_engine() {
+            STATE = State::Failed;
+            return false;
+        }
         let speech_ready = voice_input::prepare();
         OWNER = owner;
         NOISE_FLOOR = voice_noise_floor::NoiseFloor::new();
@@ -740,10 +744,10 @@ fn stop_session(owner: SecurityIdentity,cancel_turn:bool,all_output:bool) -> boo
 }
 // ------------------------=
 // FUNC: recover_reply
-// DESC: Restores previously enabled listening after a failed turn, never after user mute, revoked authority, or a fatal speech engine error.
+// DESC: Drains a failed turn before bounded speech reset, preserving completed actions and respecting explicit mute and authority.
 // ------------------=
 unsafe fn recover_reply() {
-    let restart = CONTINUOUS && active_owner(OWNER) && !voice_input::prepare_failed();
+    let restart = CONTINUOUS && active_owner(OWNER);
     // A completed acknowledgment can belong to an asynchronously running
     // application goal. Recovering its audio must not revoke that goal.
     // A still-generating conversational reply does need cancellation so it
@@ -1268,9 +1272,11 @@ pub fn poll() -> bool {
         match STATE {
             State::Starting => {
                 if voice_input::prepare_failed() {
-                    stop(OWNER);
-                    STATE = State::Failed;
-                    trace(b"recognizer warmup failed");
+                    if !voice_input::recover_engine() {
+                        stop(OWNER);
+                        STATE = State::Failed;
+                        trace(b"speech recovery limit reached");
+                    }
                 } else if ready() {
                     if listen() { trace(b"conversation listening after warmup"); }
                     else { STATE = State::Failed; trace(b"capture failed after warmup"); }
@@ -1458,9 +1464,11 @@ pub fn poll() -> bool {
                     RECOGNIZE_CAP = 0;
                     // Empty/oversized hypotheses are failed utterances, not failed
                     // microphone devices. Discard them without cycling host DMA.
-                    // Cancellation, revoked authority, and decoder faults must
-                    // not silently obtain a fresh microphone lease.
-                    if status.state == voice_input::InputState::Failed && matches!(status.error, 5 | 6) {
+                    // Cancellation and revoked authority never obtain a fresh
+                    // lease. Provider failures use bounded engine recovery.
+                    if status.state == voice_input::InputState::Failed
+                        && matches!(status.error, 5 | 6)
+                    {
                         if status.error == 6 {
                             (&mut *(&raw mut TRANSCRIPT)).fill(0);
                             clear_wake_command();
@@ -1468,6 +1476,9 @@ pub fn poll() -> bool {
                         }
                         if !RECOGNITION_CONTEXT_VALID { clear_captured_turn(); }
                         resume_captured_turn();
+                    } else if status.state == voice_input::InputState::Failed
+                        && matches!(status.error, 3 | 4 | 7) {
+                        recover_reply();
                     } else {
                         stop(OWNER);
                         STATE = State::Failed;
@@ -1541,7 +1552,7 @@ pub fn poll() -> bool {
                     STATE = State::Off;
                     if RESTART_LISTENING {
                         RESTART_LISTENING = false;
-                        if !start(OWNER) {
+                        if !active_owner(OWNER) || !voice_input::recover_engine() || !start(OWNER) {
                             STATE = State::Failed;
                         }
                     }
