@@ -32,6 +32,6 @@ spec.loader.exec_module(compiler)
 assert (kit / "uikit-styles.bin").read_bytes() == compiler.style_bytes(document)
 for kernel in args.kernel:
     with kernel.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
-        for source in [*kit.glob("*.rgba"), kit / "browser-welcome-hero-v1.bmp", kit / "eclipse-access-wallpaper-v1.bmp", kit / "uikit-tokens.bin", kit / "uikit-styles.bin"]:
+        for source in [*kit.glob("*.rgba"), kit / "browser-welcome-hero-v1.bmp", kit / "eclipse-access-wallpaper-v1.bmp", kit / "face-mask-v1.bmp", kit / "uikit-tokens.bin", kit / "uikit-styles.bin"]:
             assert binary.find(source.read_bytes()) >= 0, (kernel, source.name)
 print("Selected installed design-kit payloads and kernel sprites match their source bytes")

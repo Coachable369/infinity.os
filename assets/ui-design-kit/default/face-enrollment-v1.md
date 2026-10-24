@@ -2,8 +2,10 @@
 
 Status: native source integration added; not yet compiled or production-rendered.
 Reuse Eclipse Access typography, spacing, glyphs, wallpaper and progress markers;
-reuse Eclipse Precision image-backed panels, fields and button states. No new
-illustration is needed. A generated face must never stand in for camera preview.
+reuse Eclipse Precision image-backed panels, fields and button states.
+Kit gap: no mask illustration existed. Added original `face-mask-v1.png`, generated
+with the built-in image generation tool, with true alpha outside the mask and in
+the eye openings. It is an illustration, never a substitute for camera preview.
 
 ## Entry and authority
 
@@ -16,15 +18,17 @@ Never start the camera merely by displaying this page.
 ## Content and states
 
 Use the current configuration content frame, eight-pixel rhythm and authored
-Inter sizes. Place a live, aspect-fitted 4:3 preview on the right, guidance and
-named enrollment field on the left. Keep Back/Skip and the primary action in
+Inter sizes. Place the medium-large mask on the right (maximum 480 square physical
+pixels). Place the real 4:3 capture thumbnail below the guidance/name on the left,
+explicitly labeled Camera capture. Keep Back/Skip and the primary action in
 the existing navigation gutter, not overlapping the preview.
 
 1. Explain and name: “Check facial recognition”; nonempty label, maximum 64 UTF-8
    bytes. Explain temporary capture and the fact that password login stays on.
 2. Prepare: show actual camera/model readiness. Retry a recoverable device failure;
    unsupported camera or missing model must show the specific unavailable state.
-   Never display a fake live preview, fake scan, or endless loading animation.
+   Never display a fake live preview or claim the decorative mesh is measured
+   facial landmarks. The mesh runs only during real pending capture/comparison.
 3. Capture: front, slight left, slight right. Show 1/3, 2/3, 3/3 and one clear
    instruction at a time. Every capture must have one sufficiently large face.
    Explain low light, overexposure, blur, multiple faces and incorrect pose with
@@ -42,9 +46,25 @@ the existing navigation gutter, not overlapping the preview.
 The close/cancel/Back actions revoke capture and discard temporary biometric
 buffers. Timeout, disconnect, permission loss and worker exit do the same.
 Keyboard focus order follows the visual order; Escape cancels capture. Native
-reduced-motion settings suppress decorative motion. Only real preview damage
-and changed status regions repaint. No permanent idle glow or scene-wide blur
-recomputation is introduced.
+reduced-motion settings suppress the traveling scan (static illumination only).
+The 187-node connector mesh follows the mask silhouette and excludes its eye
+holes. A blue-white band sweeps down and up every 3.2 seconds, lighting nearby
+connectors and nodes. Updates are time-based, capped at 30 Hz, and repaint only
+the cached mask rectangle; no scene-wide blur, allocation or image decoding.
+Idle, loading, review, failure, cancellation and completion do not animate.
+
+## Generated artwork prompt
+
+Original front-facing symmetrical blank human face mask; matte white porcelain
+and silver shading, sculpted nose, subtle closed lips, hollow almond eye openings.
+Orthographic, neutral, no neck/ears/pedestal. Soft cool blue edge illumination,
+bright on dark navy. Entire mask with padding. True alpha outside silhouette and
+eye openings. No background, text, watermark, checkerboard, dots or baked-in mesh.
+The supplied watermarked stock example was not edited or shipped.
+
+`tools/build-face-mask-artwork.py` packs a 480×480 BGRA BMP derivative through the
+build kit. Both targets embed it; the System Generation design-kit copy includes
+the master, derivative and specification. The PNG master remains unchanged.
 
 ## Completion gate
 

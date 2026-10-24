@@ -97,3 +97,19 @@ loss, cancellation, permission revocation and continued desktop responsiveness.
 Inspect production-rendered geometry against the kit. Protected persistence,
 reboot enrollment restoration, PAD/liveness qualification and login activation
 remain separate security gates—not hidden behind a successful comparison label.
+# Animated facial setup artwork
+
+The setup step now reserves the right column for the original transparent
+`assets/ui-design-kit/default/face-mask-v1.png` illustration. Actual camera
+captures remain separately labeled on the left. The native renderer overlays a
+187-node connected mesh with a 3.2-second moving scan band only during pending
+capture/verification. It restores a bounded cached mask rectangle at up to 30 Hz;
+reduced motion suppresses travel. No measured landmarks, liveness result or
+authentication result is inferred from this decorative animation.
+
+Source integration only: generation of the BMP runtime derivative, compilation,
+rendered/installed verification and new release ISOs remain pending. The build
+kit refused the asset packaging run because build
+`20261024T040336525080Z-7368` owns its lock. No lock was bypassed. The Makefile
+generates the derivative before kernel compilation and installed kit packaging;
+design-kit parity includes the embedded BMP bytes.

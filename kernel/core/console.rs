@@ -14198,6 +14198,10 @@ pub fn ui_animation_tick() -> bool {
         let Some(runtime) = (*slot).as_mut() else {
             return false;
         };
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if crate::bootstrap::face_scan_animation_tick(
+            runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7,
+            runtime.spatial.state.reduced_motion) {return true;}
         if runtime.authentication_success.active() {
             let now = crate::ui::performance::monotonic_ns();
             let elapsed_ms = now

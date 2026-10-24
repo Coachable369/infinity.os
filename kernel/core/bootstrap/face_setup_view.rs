@@ -4,7 +4,7 @@ use crate::{runtime::face_setup::{Stage,PREVIEW_WIDTH,PREVIEW_HEIGHT},ui::face_s
 impl DisplayDevice {
     // ------------------------=
     // FUNC: face_setup_frame
-    // DESC: Renders real camera thumbnails and typed setup progress; no decorative face or security-success simulation is shown.
+    // DESC: Separates real camera thumbnails from the illustrative mask and truthful typed setup progress.
     // ------------------=
     pub(super) fn face_setup_frame(&mut self,input:&[u8],focus:usize,error:bool) {
         let l=Layout::new(self.width,self.height);
@@ -33,6 +33,8 @@ impl DisplayDevice {
                     l.field.width as usize,l.field.height as usize,input,false,focus==2,b"Face name (for example: Everyday)");
             }
             let r=l.preview;
+            self.access_label((r.x as usize,r.y as usize-l.pixels-8,r.width as usize,l.pixels+4),
+                b"Camera capture",l.pixels*4/5,palette::SECONDARY,false,false);
             self.access_surface(r.x as usize,r.y as usize,r.width as usize,r.height as usize,
                 crate::ui::panel_recipe::Surface::Field,palette::BACKGROUND,palette::BORDER,255,false);
             if let Some(pixels)=state.preview() {
@@ -41,9 +43,10 @@ impl DisplayDevice {
                     self.pixel(r.x+x as i32,r.y+y as i32,pixels[index],pixels[index+1],pixels[index+2]);
                 }}
             } else {
-                self.access_label(bounds(r),if state.pending(){b"Capturing / processing"}else{b"Camera preview appears after capture"},
-                    l.pixels,palette::SECONDARY,true,false);
+                self.access_label(bounds(r),if state.pending(){b"Processing"}else{b"No capture yet"},
+                    l.pixels*3/5,palette::SECONDARY,true,false);
             }
+            self.face_mask_base(l.mask);
             let note:&[u8]=if error {b"Unable to start. A supported camera, valid account password and a face name are required."}
                 else if let Stage::Failed(code)=state.stage() {match code {
                     104=>b"Camera disconnected or could not deliver a complete frame. Check the VM camera attachment.",

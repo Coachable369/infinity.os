@@ -108,6 +108,10 @@ APPLICATION_ASSETS := $(shell find assets/apps -type f)
 DESIGN_KIT_ASSETS := $(shell find assets/ui-design-kit/default -type f)
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-precision-v1.rgba
+DESIGN_KIT_ASSETS += assets/ui-design-kit/default/face-mask-v1.bmp
+
+assets/ui-design-kit/default/face-mask-v1.bmp: assets/ui-design-kit/default/face-mask-v1.png tools/build-face-mask-artwork.py
+	python3 tools/build-face-mask-artwork.py
 UIKIT_RUNTIME_ASSETS := assets/ui-design-kit/default/uikit-tokens.bin \
 	assets/ui-design-kit/default/uikit-styles.bin \
 	assets/ui-design-kit/default/eclipse-precision-v1.rgba \
