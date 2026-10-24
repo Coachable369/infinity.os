@@ -125,10 +125,20 @@ pub fn dispatch(owner:SecurityIdentity,tables:&mut impl PageTable,operation:u64,
         SERVICE=Transport::new(&mut *core::ptr::addr_of_mut!(SLOT),driver).ok();
     }
     let op=match operation {0x1260=>OperationId::CameraCaptureStart,0x1261=>OperationId::CameraFrameRead,0x1262=>OperationId::CameraCaptureStop,_=>return -38};
-    let request_deadline=if operation==0x1260 {deadline.min(now.saturating_add(5))}else{deadline};
+    let request_deadline=if operation==0x1260 {deadline.min(now.saturating_add(crate::runtime::camera::MAX_CAPTURE_SECONDS))}else{deadline};
     let Ok(request)=IopMessage::request(op,1,owner,cap,request_deadline,0,&[]) else{return -22;};
     let Some(service)=(&mut *core::ptr::addr_of_mut!(SERVICE)).as_mut() else{return -19;};
     let result=crate::runtime::with_runtime(|runtime|service.dispatch(&request,owner,&runtime.capabilities,now,args,tables));
+    if let Some(Err(error))=result {
+        let diagnostic:&[u8]=match error {
+            Error::Memory=>b"[camera] delivery failed: private destination mapping\n",
+            Error::Expired=>b"[camera] delivery failed: capture deadline\n",
+            Error::Denied=>b"[camera] delivery failed: authority revoked\n",
+            Error::Invalid=>b"[camera] delivery failed: invalid request\n",
+            _=>b"",
+        };
+        if !diagnostic.is_empty(){crate::output_text(diagnostic);}
+    }
     if operation==0x1260 && matches!(result,Some(Ok(_))) {LEASE=Some((owner,cap,request_deadline));}
     match result {Some(Ok(count))=>count as i64,Some(Err(Error::Unavailable))=>-11,Some(Err(Error::Memory))=>-14,
         Some(Err(Error::Busy))=>-16,Some(Err(Error::Stale))=>-116,Some(Err(Error::Expired))=>-110,

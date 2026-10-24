@@ -109,12 +109,14 @@ fn capture(command:u64,encoded:&mut [u8])->Result<(usize,u64,u64),u32> {
             let mut meta=[0u64;2];
             let status=call(0x1261,[0,0,0,0,meta.as_mut_ptr() as u64,0]);
             if status== -11 {continue;}
+            if status==-110 {return Err(105);}
             if status<0 || meta[0]==0 || meta[1]<4 || meta[1]>encoded.len() as u64 {return Err(104);}
             let length=meta[1] as usize;let mut stale=false;
             for offset in (0..length).step_by(4096) {
                 let n=(length-offset).min(4096);
                 let status=call(0x1261,[meta[0],offset as u64,unsafe {encoded.as_mut_ptr().add(offset)} as u64,n as u64,0,0]);
                 if status== -116 {stale=true;break;}
+                if status==-110 {return Err(105);}
                 if status!=n as i64 {return Err(104);}
                 if !visit(command) {return Err(105);}
             }

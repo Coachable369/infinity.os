@@ -44,15 +44,22 @@ fn main() {
         assert_eq!(camera.read_to_user(&read,owner,&caps,0,sequence,0,address+4090,100,&mut tables),Err(Error::Memory));
         let mut before=[0;100]; copy_from_user(&tables,address,&mut before).unwrap(); assert_eq!(before,[0;100]);
         let mut copy=Vec::new();
+        assert_eq!(camera.metadata(owner,cap,&caps,0).unwrap(),(sequence,length));
         for offset in (0..jpeg.len()).step_by(MAX_READ_BYTES) {
+            // A new physical frame can arrive at every scheduler yield. The
+            // selected snapshot must remain stable until its last page lands.
+            let mut next=jpeg.clone();next[2]^=1;
+            assert_eq!(camera.publish(&next,&caps,0).unwrap(),(sequence,length));
             let count=(jpeg.len()-offset).min(MAX_READ_BYTES);
             assert_eq!(camera.read_to_user(&read,owner,&caps,0,sequence,offset,address,count,&mut tables),Ok(count));
             let mut chunk=vec![0;count]; copy_from_user(&tables,address,&mut chunk).unwrap(); copy.extend(chunk);
         }
         assert_eq!(copy,jpeg);
+        let (next_sequence,_)=camera.publish(&jpeg,&caps,0).unwrap();
+        assert!(next_sequence>sequence);
         let supervisor_address=address+8192;
         tables.map_range(&mut memory,supervisor_address,page.physical_address,4096,PagePermissions {user:false,..rw}).unwrap();
-        assert_eq!(camera.read_to_user(&read,owner,&caps,0,sequence,0,supervisor_address,1,&mut tables),Err(Error::Memory));
+        assert_eq!(camera.read_to_user(&read,owner,&caps,0,next_sequence,0,supervisor_address,1,&mut tables),Err(Error::Memory));
         camera.publish(&jpeg,&caps,1).unwrap();
         assert_eq!(camera.read_to_user(&read,owner,&caps,1,sequence,0,address,1,&mut tables),Err(Error::Stale));
         camera.stop(&request(OperationId::CameraCaptureStop,owner),owner).unwrap();
@@ -62,8 +69,16 @@ fn main() {
         assert_eq!(camera.authorized(&caps,5),Err(Error::Expired));
         camera.start(&request(OperationId::CameraCaptureStart,owner),owner,&caps,1).unwrap();
         camera.publish(&jpeg,&caps,1).unwrap();
+        camera.metadata(owner,cap,&caps,1).unwrap();
         caps.revoke(cap).unwrap();
         assert_eq!(camera.authorized(&caps,2),Err(Error::Denied));
+        assert_eq!(camera.metadata(owner,cap,&caps,2),Err(Error::Unavailable));
+        let extended=caps.grant(CapabilityType::CameraCapture,0,1,0,owner,owner,Some(30),0).unwrap();
+        let start=IopMessage::request(OperationId::CameraCaptureStart,1,owner,extended,15,0,&[]).unwrap();
+        camera.start(&start,owner,&caps,0).unwrap();
+        camera.publish(&jpeg,&caps,6).unwrap();
+        assert_eq!(camera.metadata(owner,extended,&caps,6).unwrap().1,jpeg.len());
+        assert_eq!(camera.authorized(&caps,15),Err(Error::Expired));
     }
     assert!(storage.iter().all(|byte|*byte==0));
     transport_contract(&jpeg,&mut tables,address,owner);

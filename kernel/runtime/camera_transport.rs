@@ -122,7 +122,7 @@ impl<'a,D:Driver> Transport<'a,D> {
                     }
                     Transfer::Disconnected=>{
                         // Drop stale bytes while preserving the lease only for bounded reconnect.
-                        self.camera.storage[..self.camera.length].fill(0);self.camera.length=0;
+                        self.camera.storage[..self.camera.length].fill(0);self.camera.length=0;self.camera.pinned=false;
                         self.reconnect_after_stop=true;self.stop_attempts=0;self.state=State::Stopping;
                     }
                     Transfer::Failed=>self.cancel(),

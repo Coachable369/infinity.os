@@ -6,6 +6,7 @@ use super::{capability::{CapabilityManager, CapabilityType}, execution::Security
 
 pub const MAX_FRAME_BYTES: usize = 1_228_800;
 pub const MAX_READ_BYTES: usize = 4096;
+pub const MAX_CAPTURE_SECONDS: u64 = 15;
 #[path = "camera_transport.rs"]
 pub mod transport;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +17,7 @@ pub struct Camera<'a> {
     storage: &'a mut [u8],
     length: usize,
     sequence: u64,
+    pinned: bool,
     session: Option<Session>,
 }
 impl<'a> Camera<'a> {
@@ -26,7 +28,7 @@ impl<'a> Camera<'a> {
     pub fn new(storage: &'a mut [u8]) -> Result<Self, Error> {
         if storage.len()!=MAX_FRAME_BYTES { return Err(Error::Invalid); }
         storage.fill(0);
-        Ok(Self { storage, length: 0, sequence: 0, session: None })
+        Ok(Self { storage, length: 0, sequence: 0, pinned: false, session: None })
     }
     // ------------------------=
     // FUNC: header
@@ -41,12 +43,12 @@ impl<'a> Camera<'a> {
     }
     // ------------------------=
     // FUNC: start
-    // DESC: Authorizes one explicit five-second capture lease; never replaces another active owner.
+// DESC: Authorizes a bounded capture lease covering startup and paged delivery; never replaces another active owner.
     // ------------------=
     pub fn start(&mut self, message: &IopMessage, caller: SecurityIdentity, caps: &CapabilityManager, now: u64) -> Result<(), Error> {
         Self::header(message,caller,OperationId::CameraCaptureStart)?;
         let h=&message.header;
-        if h.deadline<=now || h.deadline-now>5 { return Err(Error::Expired); }
+        if h.deadline<=now || h.deadline-now>MAX_CAPTURE_SECONDS { return Err(Error::Expired); }
         caps.validate(h.capability_ref,caller,CapabilityType::CameraCapture,0,1,0,now).map_err(|_|Error::Denied)?;
         if self.session.is_some() && self.authorized(caps,now).is_ok() { return Err(Error::Busy); }
         self.clear();
@@ -73,6 +75,7 @@ impl<'a> Camera<'a> {
         if caller!=s.owner || capability!=s.capability {return Err(Error::Denied);}
         self.authorized(caps,now)?;
         if self.length==0 {return Err(Error::Unavailable);}
+        self.pinned=true;
         Ok((self.sequence,self.length))
     }
     // ------------------------=
@@ -84,6 +87,9 @@ impl<'a> Camera<'a> {
         if bytes.len()<4 || bytes.len()>MAX_FRAME_BYTES || bytes[..2]!=[0xff,0xd8] || bytes[bytes.len()-2..]!=[0xff,0xd9] {
             self.clear(); return Err(Error::Invalid);
         }
+        // A reader yields between bounded user-page copies. Drop incoming
+        // frames until its final page is delivered, never replace its snapshot.
+        if self.pinned {return Ok((self.sequence,self.length));}
         let Some(next)=self.sequence.checked_add(1) else {self.clear(); return Err(Error::Stale);};
         self.storage[..self.length].fill(0);
         self.storage[..bytes.len()].copy_from_slice(bytes);
@@ -104,6 +110,7 @@ impl<'a> Camera<'a> {
         if sequence!=self.sequence || self.length==0 {return Err(Error::Stale);}
         if count==0 || count>MAX_READ_BYTES || offset>self.length || count>self.length-offset {return Err(Error::Invalid);}
         copy_to_user(tables,destination,&self.storage[offset..offset+count]).map_err(|_|Error::Memory)?;
+        if offset+count==self.length {self.pinned=false;}
         Ok(count)
     }
     // ------------------------=
@@ -120,7 +127,7 @@ impl<'a> Camera<'a> {
     // DESC: Erases buffered image bytes and invalidates the lease on cancellation, device loss or deadline.
     // ------------------=
     pub fn clear(&mut self) {
-        self.storage[..self.length].fill(0); self.length=0; self.session=None;
+        self.storage[..self.length].fill(0); self.length=0; self.pinned=false; self.session=None;
     }
 }
 impl Drop for Camera<'_> {
