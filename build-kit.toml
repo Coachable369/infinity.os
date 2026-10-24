@@ -58,6 +58,14 @@ clean = false
 command = ["make", "test"]
 clean = false
 
+[profiles.face-aarch64]
+command = ["sh", "tools/build-face-worker.sh", "aarch64"]
+clean = false
+
+[profiles.face-x86_64]
+command = ["sh", "tools/build-face-worker.sh", "x86_64"]
+clean = false
+
 [profiles.hermes-memory-tests]
 command = ["make", "hermes-memory-test"]
 clean = false

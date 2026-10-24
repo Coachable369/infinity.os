@@ -398,6 +398,13 @@ $(ICON_RUNTIME_ASSETS): $(BUILD)/uikit-runtime.stamp
 	@test -s $@
 
 NATIVE_C_TOOLCHAIN_SOURCES := tools/build-native-c-toolchain.sh $(shell find sdk/compiler -type f)
+NATIVE_FACE_SOURCES := $(wildcard sdk/infinity-face-core/*.rs sdk/infinity-face-core/*.c sdk/infinity-face-worker/*.rs sdk/infinity-face-worker/*.c) sdk/infinity-face-core/Cargo.toml sdk/infinity-face-worker/Cargo.toml tools/build-face-worker.sh tools/face-assets-fetch.py tools/face-model-pack.py tools/face-package-manifest.py
+$(BUILD)/face/aarch64/face-worker.elf: $(NATIVE_FACE_SOURCES)
+	CLANG="$(CLANG)" LLD="$(LD_LLD)" sh tools/build-face-worker.sh aarch64
+$(BUILD)/face/x86_64/face-worker.elf: $(NATIVE_FACE_SOURCES)
+	CLANG="$(CLANG)" LLD="$(LD_LLD)" sh tools/build-face-worker.sh x86_64
+$(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: $(BUILD)/face/aarch64/face-worker.elf
+$(BUILD)/x86_64/installed-kernel.o $(BUILD)/x86_64/kernel.o: $(BUILD)/face/x86_64/face-worker.elf
 $(BUILD)/aarch64/loader.obj $(BUILD)/x86_64/loader.obj: boot/common/uefi_camera.h
 NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/extension.c tools/native-python/library.c $(shell find sdk/python sdk/compiler -type f)
 

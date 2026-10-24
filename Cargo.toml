@@ -8,7 +8,8 @@ path = "kernel/core/main.rs"
 crate-type = ["staticlib"]
 
 [features]
-default = ["native-compiler", "native-python"]
+default = ["native-compiler", "native-python", "native-face"]
+native-face = ["native-compiler"]
 native-compiler = []
 native-python = ["native-compiler"]
 installer = []

@@ -26,6 +26,7 @@ pub mod editor_chrome;
 pub mod geometry;
 pub mod glyph_filter;
 pub mod file_preview;
+pub mod face_setup_layout;
 pub mod user_wallpaper;
 pub mod preview_png;
 pub mod icon_theme;

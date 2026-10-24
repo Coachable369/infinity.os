@@ -1758,6 +1758,10 @@ impl super::DisplayDevice {
             .min(self.height.saturating_sub(top_bar + 24));
         let fallback_card_left = self.width * 4 / 100;
         let fallback_card_top =
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if step==7 {self.face_setup_frame(input,focus,validation_error);return;}
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        let step=if step==8 {7}else{step};
             top_bar + self.height.saturating_sub(top_bar + fallback_card_height) / 2;
         let (card_left, card_top, card_width, card_height) = if let Some(card) =
             crate::ui::installer_layout::configuration_template_rect(
@@ -2195,6 +2199,10 @@ impl super::DisplayDevice {
             .filter(|value| !value.is_empty())
             .unwrap_or(placeholder);
             let authored_input =
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if step>=7 {
+            self.paint_first_boot_background();self.onboarding_frame(step,input,masked,focus,validation_error);return;
+        }
                 crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .onboarding_input_geometry(step);
             self.onboarding_input_field(

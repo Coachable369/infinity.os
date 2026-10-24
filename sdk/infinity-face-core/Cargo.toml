@@ -8,3 +8,6 @@ publish = false
 
 [lib]
 path = "lib.rs"
+
+[features]
+native-jpeg = []

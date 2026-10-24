@@ -1,6 +1,6 @@
 # Facial setup — verification before login activation
 
-Status: interaction specification; not a rendered or implemented wizard screen.
+Status: native source integration added; not yet compiled or production-rendered.
 Reuse Eclipse Access typography, spacing, glyphs, wallpaper and progress markers;
 reuse Eclipse Precision image-backed panels, fields and button states. No new
 illustration is needed. A generated face must never stand in for camera preview.

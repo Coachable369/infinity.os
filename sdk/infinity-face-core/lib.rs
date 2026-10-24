@@ -1,14 +1,22 @@
 #![no_std]
 //! Bounded enrollment/verification policy for an isolated recognition worker.
-//! This is NOT a detector, embedding model, liveness test, or authentication API.
+//! Includes fixed-model detection/embedding operators, but no liveness test or authentication API.
 //! Inputs must come from the native worker's decoded, detected and aligned frame.
 //! No result from this crate authorizes login or persists a biometric template.
+
+pub mod inference;
+pub mod vision;
+pub mod recognition;
+pub mod protocol;
+#[cfg(feature="native-jpeg")]
+pub mod jpeg;
 
 pub const DIMENSIONS: usize = 128;
 pub const PHOTO_COUNT: usize = 3;
 pub const CROP_SIDE: usize = 112;
 const TIMEOUT_MS: u64 = 120_000;
 const FRAME_SPACING_MS: u64 = 500;
+const MAX_INFERENCE_LATENCY_MS: u64 = 30_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pose { Front, Left, Right }
@@ -197,7 +205,7 @@ impl Enrollment {
         let expected = self.expected_pose().ok_or(Error::WrongState)?;
         if frame.binding != self.binding { return Err(Error::WrongCapture); }
         if frame.sequence == 0 || frame.sequence <= self.last_sequence || frame.captured_ms < self.start
-            || frame.captured_ms > now_ms || now_ms-frame.captured_ms > 1000 { return Err(Error::StaleFrame); }
+            || frame.captured_ms > now_ms || now_ms-frame.captured_ms > MAX_INFERENCE_LATENCY_MS { return Err(Error::StaleFrame); }
         self.last_sequence = frame.sequence;
         if self.last_capture.is_some_and(|last| frame.captured_ms < last.saturating_add(FRAME_SPACING_MS)) { return Err(Error::TooSoon); }
         if frame.face_count == 0 { return Err(Error::NoFace); }

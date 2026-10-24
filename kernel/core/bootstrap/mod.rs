@@ -14,6 +14,8 @@ mod access_panel;
 mod access_view;
 mod access_input_view;
 mod onboarding_network_view;
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+mod face_setup_view;
 mod panel_view;
 mod ai_widget_view;
 mod file_preview_view;

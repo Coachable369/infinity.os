@@ -9,16 +9,58 @@ static mut SCRATCH:[u8;MAX_FRAME_BYTES]=[0;MAX_FRAME_BYTES];
 static mut PACKET:[u8;65536]=[0;65536];
 static mut SERVICE:Option<Transport<'static,Uvc<'static>>>=None;
 static mut LEASE:Option<(SecurityIdentity,u64,u64)>=None;
+// Separate setup authorization is not a desktop session or an unlock token.
+static mut SETUP_AUTH:Option<(SecurityIdentity,crate::runtime::identity::StableId,u64)>=None;
+
+// ------------------------=
+// FUNC: available
+// DESC: Reports whether the native capture adapter exists without opening the camera or creating authority.
+// ------------------=
+pub fn available()->bool {unsafe {(*core::ptr::addr_of!(EXCHANGE)).is_some()}}
 
 // ------------------------=
 // FUNC: active
 // DESC: Checks the authenticated session on every privileged operation, including capture when the application is not running.
 // ------------------=
 fn active(owner:SecurityIdentity)->bool {
+    let setup=unsafe {*core::ptr::addr_of!(SETUP_AUTH)};
+    if let Some((held,account,deadline))=setup {
+        if held==owner {
+            let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000;
+            return now<deadline && crate::runtime::with_runtime(|runtime|
+                runtime.identity.onboarding_state()==crate::runtime::identity::OnboardingState::InProgress
+                && runtime.identity.user(account).is_some_and(|user|user.state==crate::runtime::identity::UserState::Active)
+            ).unwrap_or(false);
+        }
+    }
     crate::runtime::with_runtime(|runtime|(0..crate::runtime::identity::MAX_SESSIONS)
         .filter_map(|index|runtime.identity.session_nth(index))
         .any(|session|session.id.0==owner.0 && session.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false)
 }
+// ------------------------=
+// FUNC: authorize_setup
+// DESC: Verifies an existing password without creating a session and scopes camera authority to one short-lived setup worker.
+// ------------------=
+pub(crate) fn authorize_setup(owner:SecurityIdentity,account:crate::runtime::identity::StableId,secret:&[u8])->bool {unsafe {
+    if owner.0==[0;16] || (*core::ptr::addr_of!(SETUP_AUTH)).is_some()
+        || (*core::ptr::addr_of!(LEASE)).is_some() || (*core::ptr::addr_of!(EXCHANGE)).is_none() {return false;}
+    let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000;
+    let allowed=crate::runtime::with_runtime(|runtime|
+        runtime.identity.onboarding_state()==crate::runtime::identity::OnboardingState::InProgress
+        && runtime.identity.user(account).is_some_and(|user|user.state==crate::runtime::identity::UserState::Active)
+        && runtime.identity.authenticate(account,secret,now).is_ok()).unwrap_or(false);
+    if allowed {SETUP_AUTH=Some((owner,account,now.saturating_add(240_000)));}
+    allowed
+}}
+// ------------------------=
+// FUNC: revoke_setup
+// DESC: Removes setup authority and revokes capture on cancellation, completion, page exit, or worker failure.
+// ------------------=
+pub(crate) fn revoke_setup(owner:SecurityIdentity) {unsafe {
+    if (*core::ptr::addr_of!(SETUP_AUTH)).is_some_and(|(held,_,_)|held==owner) {
+        SETUP_AUTH=None;cancel(owner);
+    }
+}}
 // ------------------------=
 // FUNC: initialize
 // DESC: Installs a boot-provided privileged adapter only on targets retaining firmware services.
@@ -61,6 +103,7 @@ pub fn cancel(owner:SecurityIdentity) {unsafe {
 // ------------------=
 pub fn poll() {unsafe {
     let now=crate::runtime::ai::qwen::workers::clock_ns();
+    if let Some((owner,_,_))=*core::ptr::addr_of!(SETUP_AUTH) {if !active(owner) {revoke_setup(owner);}}
     if let Some((owner,_,deadline))=*core::ptr::addr_of!(LEASE) {if !active(owner) || now/1_000_000_000>=deadline {cancel(owner);}}
     if let Some(service)=(&mut *core::ptr::addr_of_mut!(SERVICE)).as_mut() {
         crate::runtime::with_runtime(|runtime|service.tick(&runtime.capabilities,now/1_000_000_000,now/1_000_000,&mut *core::ptr::addr_of_mut!(SCRATCH)));

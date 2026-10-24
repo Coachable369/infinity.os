@@ -5852,6 +5852,8 @@ impl ConsoleRuntime {
                     self.system_focus = 1;
                 }
                 return;
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if self.system_step==7 {self.input_face_setup(key);return;}
             }
         }
         if crate::ui::installer_layout::configuration_template_input_variable(self.system_step)
@@ -6026,6 +6028,49 @@ impl ConsoleRuntime {
                     .copy_from_slice(&self.command[..self.onboarding_secret_length]);
             }
             InstallerTemplateVariable::None => return false,
+    // ------------------------=
+    // FUNC: input_face_setup
+    // DESC: Handles optional explicit camera setup without creating sessions or changing password authentication.
+    // ------------------=
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    fn input_face_setup(&mut self,key:ConsoleKey) {
+        use crate::runtime::{face_setup::Stage,face_setup_host as face};
+        if let ConsoleKey::Tab(reverse)=key {
+            self.system_focus=if reverse {(self.system_focus+3)%4}else{(self.system_focus+1)%4};return;
+        }
+        if matches!(key,ConsoleKey::Escape) || (matches!(key,ConsoleKey::Enter) && self.system_focus==0) {
+            face::cancel();self.system_step=6;self.system_focus=1;self.reset_input();return;
+        }
+        if self.system_focus==2 {
+            if matches!(key,ConsoleKey::Enter) && face::view(|state|state.stage()==Stage::Review) {
+                face::cancel();self.system_focus=1;return;
+            }
+            let editable=face::view(|state|matches!(state.stage(),Stage::Idle|Stage::Cancelled|Stage::Failed(_)));
+            if editable && !matches!(key,ConsoleKey::Enter) {
+                if self.command_length<64 || !matches!(key,ConsoleKey::Character(_)) {self.edit_system_text(key);}
+                return;
+            }
+        }
+        if !matches!(key,ConsoleKey::Enter) {return;}
+        if self.system_focus==3 {
+            face::cancel();self.system_step=8;self.system_focus=1;self.reset_input();return;
+        }
+        let (stage,pending)=face::view(|state|(state.stage(),state.pending()));
+        if pending {return;}
+        self.onboarding_validation_error=false;
+        match stage {
+            Stage::Idle|Stage::Cancelled|Stage::Failed(_)=>{
+                let name=core::str::from_utf8(&self.command[..self.command_length]).unwrap_or("");
+                self.onboarding_validation_error=!face::start(self.current_user,
+                    &self.onboarding_secret[..self.onboarding_secret_length],name);
+            }
+            Stage::Photos(_)=>self.onboarding_validation_error=face::capture().is_err(),
+            Stage::Review=>self.onboarding_validation_error=face::verify().is_err(),
+            Stage::Passed=>{face::cancel();self.system_step=8;self.system_focus=1;self.reset_input();}
+            _=>(),
+        }
+    }
+
         }
         true
     }
@@ -8092,7 +8137,7 @@ impl ConsoleRuntime {
                     }
                 }
             } else if let Some(target) =
-                layout.onboarding_target(self.system_step, self.pointer_x, self.pointer_y)
+                layout.onboarding_target(self.system_step.min(7), self.pointer_x, self.pointer_y)
             {
                 match target {
                     OnboardingTarget::Back => self.system_focus = 0,
@@ -8185,6 +8230,20 @@ impl ConsoleRuntime {
                             let point = layout.point(self.pointer_x, self.pointer_y);
                             if maximum != 0 && scrollbar.track.contains(point) {
                                 let direction = if point.y < scrollbar.thumb.y { -1 } else { 1 };
+            #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            if self.mode==ConsoleMode::Onboarding && self.system_step==7 {
+                let previous_focus=self.system_focus;
+                let face=crate::ui::face_setup_layout::Layout::new(self.system.framebuffer_width as usize,self.system.framebuffer_height as usize);
+                let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,
+                    y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+                if let Some(target)=face.hit(point) {
+                    self.system_focus=target;
+                    let retake=target==2 && crate::runtime::face_setup_host::view(|state|state.stage()==crate::runtime::face_setup::Stage::Review);
+                    if clicked && (target!=2 || retake) {self.input_face_setup(ConsoleKey::Enter);}
+                }
+                if clicked || previous_focus!=self.system_focus {self.redraw();}
+                return;
+            }
                                 let distance = direction
                                     * (timeline.height as isize * 4 / 5).max(1);
                                 crate::runtime::ai::with_ai_runtime(|runtime| {
@@ -13991,6 +14050,10 @@ static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate
 // ------------------------=
 // FUNC: input_batch
 // DESC: Dispatches bounded device actions in order and presents their final cursor or scene once before background services.
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
+        if crate::runtime::face_setup_host::poll(runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7) {runtime.redraw();}
+    }}
 // ------------------=
 pub fn input_batch(action: impl FnOnce()) {
     let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
