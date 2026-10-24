@@ -142,7 +142,7 @@ final class SettingsChildTests: XCTestCase {
         document.screens[4].elements[index].cornerRadius = 12
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let directory = root.appending(path: "build/tmp/settings-child-\(UUID().uuidString)")
+        let directory = root.appending(path: "builds/.studio-work/tmp/settings-child-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appending(path: "children.infinityui")

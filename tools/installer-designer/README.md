@@ -2,10 +2,17 @@
 
 From any working directory, run `/opt/codebase/infinity.os/run-infinitystudio.sh`
 to clean Studio's Swift build products, rebuild and verify the app through the
-serialized build kit, then open it. Existing ISOs, models and OS build caches
+Studio-isolated build kit, then open it. Existing ISOs, models and OS build caches
 are preserved. Use `--no-launch` to build without opening the app. Build failures
 stop the launcher, so it never opens an older app after a failed build. Close any
 already-running Studio instance first to ensure macOS opens the newly built app.
+
+Studio profiles use `builds/.studio-work` for Swift products, native preview
+helpers, caches, fixtures and temporary files, with a separate
+`builds/.build-kit-studio.lock`. They can run while an ISO build owns the normal
+build lock; concurrent Studio builds still serialize. ISO cleanup does not
+remove Studio's workspace. Studio packaging does not rewrite runtime templates:
+Save exports them, and ISO builds compile their own templates independently.
 
 The collapsible left navigation contains **UIKit**, **Configuration Wizard**,
 **Installation Wizard**, and **System Settings**. Switching sections retains

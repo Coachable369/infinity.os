@@ -9,7 +9,11 @@ if [ -z "${INFINITY_PROJECT_ROOT:-}" ] || [ ! -f "$INFINITY_PROJECT_ROOT/build-k
     echo "ERROR: build-kit project context is missing or invalid" >&2
     exit 64
 fi
-if [ "${TMPDIR:-}" != "$INFINITY_PROJECT_ROOT/build/tmp" ]; then
+expected_tmp="$INFINITY_PROJECT_ROOT/build/tmp"
+if [ "${INFINITY_BUILD_DOMAIN:-iso}" = "studio" ]; then
+    expected_tmp="$INFINITY_PROJECT_ROOT/builds/.studio-work/tmp"
+fi
+if [ "${TMPDIR:-}" != "$expected_tmp" ]; then
     echo "ERROR: build temporary storage is not repository-local" >&2
     exit 64
 fi

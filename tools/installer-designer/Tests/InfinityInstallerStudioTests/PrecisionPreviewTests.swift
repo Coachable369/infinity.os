@@ -21,7 +21,7 @@ final class PrecisionPreviewTests: XCTestCase {
     // DESC: Compares every Swift sample to executable native-kernel evidence, including transparent bounds and intermediate focus states.
     // ------------------=
     func testNativeSamplerParity() throws {
-        let native = try Data(contentsOf: root.appending(path: "build/behavior-tests/studio-precision.parity"))
+        let native = try Data(contentsOf: root.appending(path: "builds/.studio-work/behavior-tests/studio-precision.parity"))
         XCTAssertGreaterThan(native.count, 12)
         XCTAssertEqual(Array(native.prefix(8)), [73, 80, 65, 82, 73, 84, 89, 49])
         let count = (0..<4).reduce(0) { $0 | (Int(native[8 + $1]) << ($1 * 8)) }
@@ -50,7 +50,7 @@ final class PrecisionPreviewTests: XCTestCase {
     // DESC: Compares selectable material and corner geometry to native executable pixels across scale, state, alpha and per-family color overrides.
     // ------------------=
     func testNativeSurfaceStyleParity() throws {
-        let native = try Data(contentsOf: root.appending(path: "build/behavior-tests/studio-precision.styles"))
+        let native = try Data(contentsOf: root.appending(path: "builds/.studio-work/behavior-tests/studio-precision.styles"))
         XCTAssertEqual(Array(native.prefix(8)), Array("ISTYLE01".utf8))
         let count = (0..<4).reduce(0) { $0 | Int(native[8 + $1]) << ($1 * 8) }
         XCTAssertEqual(native.count, 12 + count * 36)
@@ -135,7 +135,7 @@ final class PrecisionPreviewTests: XCTestCase {
     // DESC: Compares complete blur, navy tint, sheen, alpha endpoints and theme changes against native compositor output rather than a screenshot approximation.
     // ------------------=
     func testNativeFrostParity() throws {
-        let fixture = try Data(contentsOf: root.appending(path: "build/behavior-tests/studio-precision.frost"))
+        let fixture = try Data(contentsOf: root.appending(path: "builds/.studio-work/behavior-tests/studio-precision.frost"))
         XCTAssertEqual(Array(fixture.prefix(8)), [73, 70, 82, 79, 83, 84, 48, 49])
         let count = (0..<4).reduce(0) { $0 | Int(fixture[8 + $1]) << ($1 * 8) }
         XCTAssertEqual(count, 32)
@@ -172,7 +172,7 @@ final class PrecisionPreviewTests: XCTestCase {
     // DESC: Verifies complete custom glass and matte composites against native pixels, including rounded masks, tint alpha and unchanged background outside corners.
     // ------------------=
     func testNativeStyledFrostParity() throws {
-        let fixture = try Data(contentsOf: root.appending(path: "build/behavior-tests/studio-precision.stylefrost"))
+        let fixture = try Data(contentsOf: root.appending(path: "builds/.studio-work/behavior-tests/studio-precision.stylefrost"))
         XCTAssertEqual(Array(fixture.prefix(8)), Array("ISTFRO01".utf8))
         let count = (0..<4).reduce(0) { $0 | Int(fixture[8 + $1]) << ($1 * 8) }
         XCTAssertEqual(count, UIKitSurfaceMaterial.allCases.count * 3 * 3 * 2 * 2)

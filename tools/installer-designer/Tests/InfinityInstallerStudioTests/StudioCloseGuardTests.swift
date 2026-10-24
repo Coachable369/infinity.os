@@ -27,7 +27,7 @@ final class StudioCloseGuardTests: XCTestCase {
     private func workspace() throws -> URL {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let root = repository.appending(path: "build/tmp/studio-close-\(UUID().uuidString)")
+        let root = repository.appending(path: "builds/.studio-work/tmp/studio-close-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let documents = [InstallerStudioDocument.factoryBoot(), .factoryDefault(), .factoryConfiguration(), .factorySystemSettings()]

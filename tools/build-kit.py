@@ -87,8 +87,8 @@ def process_exists(pid):
 # FUNC: acquire_lock
 # DESC: Serializes builds and replaces only a demonstrably stale lock.
 # ------------------=
-def acquire_lock(root, layout, build_id):
-    lock = layout["releases"] / ".build-kit.lock"
+def acquire_lock(root, layout, build_id, domain="iso"):
+    lock = layout["releases"] / (".build-kit-studio.lock" if domain == "studio" else ".build-kit.lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
     if lock.exists():
         try:
@@ -197,8 +197,17 @@ def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
     layout = resolve_layout(root, config)
     command = command_for(config, selection, arguments)
     clean_requested = clean_before_run(config, selection)
+    domain = config["profiles"].get(selection, {}).get("domain", "iso")
+    if domain not in ("iso", "studio"):
+        raise ValueError("Unknown build isolation domain")
+    if domain == "studio":
+        if clean_requested:
+            raise ValueError("Studio cleanup must remain within its isolated workspace")
+        layout["scratch"] = root / "builds/.studio-work"
+        layout["temporary"] = layout["scratch"] / "tmp"
+        layout["logs"] = layout["scratch"] / "logs"
     build_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + f"-{os.getpid()}"
-    lock = acquire_lock(root, layout, build_id)
+    lock = acquire_lock(root, layout, build_id, domain)
     started = datetime.now(timezone.utc)
     removed = []
     pruned_logs = []
@@ -207,8 +216,10 @@ def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
     try:
         if clean_requested:
             removed = load_workspace_module(root).clean(root)
-        pruned_logs = load_log_retention_module(root).prune(root, config.get("log_retention", {}))
+        if domain == "iso":
+            pruned_logs = load_log_retention_module(root).prune(root, config.get("log_retention", {}))
         environment = build_environment(root, layout, build_id)
+        environment["INFINITY_BUILD_DOMAIN"] = domain
         returncode = subprocess.run(command, cwd=root, env=environment, check=False).returncode
     finally:
         finished = datetime.now(timezone.utc)
@@ -221,6 +232,7 @@ def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
             "finished_at": finished.isoformat(),
             "git_revision": git_revision(root),
             "profile": selection,
+            "domain": domain,
             "pruned_logs": len(pruned_logs),
             "removed_bytes": sum(entry["bytes"] for entry in removed),
             "result": "passed" if returncode == 0 else "failed",

@@ -10,7 +10,7 @@ final class StudioFileTransactionTests: XCTestCase {
     private func workspace() throws -> URL {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "build/tmp/studio-transaction-\(UUID().uuidString)")
+            .appending(path: "builds/.studio-work/tmp/studio-transaction-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root

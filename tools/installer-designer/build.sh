@@ -4,9 +4,11 @@ set -euo pipefail
 script_dir="${0:A:h}"
 repo_dir="${script_dir:h:h}"
 source "$repo_dir/tools/require-build-kit.sh"
-swift_paths=(--cache-path "$repo_dir/build/cache/swiftpm"
-    --config-path "$repo_dir/build/cache/swiftpm-config"
-    --security-path "$repo_dir/build/cache/swiftpm-security")
+studio_work="$repo_dir/builds/.studio-work"
+swift_paths=(--scratch-path "$studio_work/swift"
+    --cache-path "$studio_work/cache/swiftpm"
+    --config-path "$studio_work/cache/swiftpm-config"
+    --security-path "$studio_work/cache/swiftpm-security")
 if (( $# > 1 )) || [[ "${1:-}" != "" && "${1:-}" != --clean && "${1:-}" != --skip-tests ]]; then
     echo "Usage: build-kit studio | build-kit studio-clean | build-kit studio-package" >&2
     exit 2
@@ -18,10 +20,11 @@ app_dir="$repo_dir/builds/InfinityOS Installer Studio.app"
 contents_dir="$app_dir/Contents"
 binary_dir="$(swift build "${swift_paths[@]}" --package-path "$script_dir" -c release --show-bin-path)"
 
-mkdir -p "$repo_dir/build/behavior-tests"
-make -C "$repo_dir" studio-native-renderer
-rustc --edition=2021 -O "$repo_dir/tools/studio-precision-parity.rs" -o "$repo_dir/build/behavior-tests/studio-precision-parity"
-"$repo_dir/build/behavior-tests/studio-precision-parity" "$repo_dir/build/behavior-tests/studio-precision.parity"
+mkdir -p "$studio_work/behavior-tests"
+rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z "$repo_dir/sdk/infinity-browser-core/lib.rs" -o "$studio_work/behavior-tests/libinfinity_browser_core.rlib"
+rustc --edition=2021 -O -Awarnings --cfg studio_native_preview --extern infinity_browser_core="$studio_work/behavior-tests/libinfinity_browser_core.rlib" "$repo_dir/tools/active-painter-test.rs" -o "$studio_work/behavior-tests/infinity-studio-native-renderer"
+rustc --edition=2021 -O "$repo_dir/tools/studio-precision-parity.rs" -o "$studio_work/behavior-tests/studio-precision-parity"
+"$studio_work/behavior-tests/studio-precision-parity" "$studio_work/behavior-tests/studio-precision.parity"
 python3 "$repo_dir/tools/studio-image-parity.py"
 if [[ "${1:-}" != --skip-tests ]]; then
     swift test "${swift_paths[@]}" --package-path "$script_dir"
@@ -31,7 +34,7 @@ swift build "${swift_paths[@]}" --package-path "$script_dir" -c release
 rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$binary_dir/InfinityInstallerStudio" "$contents_dir/MacOS/InfinityInstallerStudio"
-cp "$repo_dir/build/behavior-tests/infinity-studio-native-renderer" "$contents_dir/MacOS/InfinityStudioNativeRenderer"
+cp "$studio_work/behavior-tests/infinity-studio-native-renderer" "$contents_dir/MacOS/InfinityStudioNativeRenderer"
 cp "$script_dir/Info.plist" "$contents_dir/Info.plist"
 
 resource_bundle="$binary_dir/InfinityInstallerStudio_InfinityInstallerStudio.bundle"
@@ -50,14 +53,5 @@ done
 iconutil -c icns "$iconset_dir" -o "$contents_dir/Resources/InstallerStudioIcon.icns"
 codesign --force --deep --sign - "$app_dir" >/dev/null
 
-"$script_dir/compile-template.sh"
-"$script_dir/compile-template.sh" \
-    "$repo_dir/assets/boot/configuration-screens.infinityui" \
-    "$repo_dir/assets/boot/configuration-screens.iuit"
-"$script_dir/compile-template.sh" \
-    "$repo_dir/assets/boot/settings-screens.infinityui" \
-    "$repo_dir/assets/boot/settings-screens.iuit"
-"$script_dir/compile-template.sh" \
-    "$repo_dir/assets/boot/boot-screens.infinityui" \
-    "$repo_dir/assets/boot/boot-screens.iuit"
+# ISO builds compile their own templates; building the editor never mutates them.
 echo "$app_dir"

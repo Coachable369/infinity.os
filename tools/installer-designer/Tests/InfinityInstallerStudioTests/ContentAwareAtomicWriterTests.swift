@@ -11,7 +11,7 @@ final class ContentAwareAtomicWriterTests: XCTestCase {
     private func workspace() throws -> URL {
         let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "build/tmp/content-aware-writer-\(UUID().uuidString)")
+            .appending(path: "builds/.studio-work/tmp/content-aware-writer-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return directory

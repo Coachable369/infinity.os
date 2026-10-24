@@ -123,14 +123,22 @@ command = ["cargo", "test", "--manifest-path", "sdk/infinity-enterprise-core/Car
 clean = false
 
 [profiles.studio]
+domain = "studio"
 command = ["zsh", "tools/installer-designer/build.sh"]
 clean = false
 
+[profiles.studio-build-kit-tests]
+domain = "studio"
+command = ["python3", "tools/build-kit-test.py"]
+clean = false
+
 [profiles.studio-clean]
+domain = "studio"
 command = ["zsh", "tools/installer-designer/build.sh", "--clean"]
 clean = false
 
 [profiles.studio-package]
+domain = "studio"
 command = ["zsh", "tools/installer-designer/build.sh", "--skip-tests"]
 clean = false
 

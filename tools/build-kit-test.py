@@ -20,7 +20,7 @@ class BuildKitTests(unittest.TestCase):
     # DESC: Creates an isolated project-shaped fixture beneath the managed repository build tree.
     # ------------------=
     def setUp(self):
-        self.root = build_kit.PROJECT_ROOT / "build/build-kit-test-project"
+        self.root = Path(os.environ.get("TMPDIR", str(build_kit.PROJECT_ROOT / "build/tmp"))) / "build-kit-test-project"
         self.root.mkdir(parents=True)
         (self.root / "Cargo.toml").write_text("[workspace]\n")
         (self.root / "Makefile").write_text("all:\n\t@true\n")
@@ -144,6 +144,35 @@ class BuildKitTests(unittest.TestCase):
             build_kit.execute("incremental_probe", [], self.root, self.config)
 
     # ------------------------=
+    # FUNC: test_studio_is_independent_of_iso_lock_and_cleanup
+    # DESC: Runs a Studio process under an active ISO lock and verifies isolated output survives ISO cleanup.
+    # ------------------=
+    def test_studio_is_independent_of_iso_lock_and_cleanup(self):
+        releases = self.root / "builds"
+        releases.mkdir()
+        iso_lock = releases / ".build-kit.lock"
+        iso_lock.write_text(json.dumps({"pid": os.getpid(), "build_id": "iso"}))
+        probe = "import os,pathlib; pathlib.Path(os.environ['TMPDIR'], 'proof').write_bytes(b'studio')"
+        with self.config.open("a") as stream:
+            stream.write("\n[profiles.studio_probe]\ndomain = 'studio'\ncommand = "
+                + json.dumps([sys.executable, "-c", probe]) + "\nclean = false\n")
+        self.assertEqual(build_kit.execute("studio_probe", [], self.root, self.config), 0)
+        proof = releases / ".studio-work/tmp/proof"
+        self.assertEqual(proof.read_bytes(), b"studio")
+        build_kit.load_workspace_module(self.root).clean(self.root)
+        self.assertEqual(proof.read_bytes(), b"studio")
+        self.assertTrue(iso_lock.exists())
+        studio_log = releases / ".studio-work/logs/pending.log"
+        studio_log.parent.mkdir(parents=True, exist_ok=True)
+        studio_log.touch()
+        build_kit.load_log_retention_module(self.root).prune(self.root, {"remove_empty_release_logs": True})
+        self.assertTrue(studio_log.exists())
+        studio_lock = releases / ".build-kit-studio.lock"
+        studio_lock.write_text(json.dumps({"pid": os.getpid(), "build_id": "studio"}))
+        with self.assertRaises(RuntimeError):
+            build_kit.execute("studio_probe", [], self.root, self.config)
+
+    # ------------------------=
     # FUNC: test_subordinate_builds_reject_unmanaged_execution
     # DESC: Verifies every dedicated build script fails before work without build-kit context.
     # ------------------=
@@ -182,6 +211,7 @@ class BuildKitTests(unittest.TestCase):
         environment = os.environ.copy()
         environment.update({
             "INFINITY_BUILD_KIT_ACTIVE": "1",
+            "INFINITY_BUILD_DOMAIN": "iso",
             "INFINITY_PROJECT_ROOT": str(build_kit.PROJECT_ROOT),
             "TMPDIR": str(build_kit.PROJECT_ROOT / "build/tmp"),
         })

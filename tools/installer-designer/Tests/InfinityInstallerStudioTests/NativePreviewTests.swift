@@ -436,7 +436,7 @@ final class NativePreviewTests: XCTestCase {
     // DESC: Compares native preview bytes against the actual Python packaging encoder over low-alpha colors and top-down image rows.
     // ------------------=
     @MainActor func testUploadedPNGPixelsMatchUIKitPackaging() throws {
-        let directory = root.appending(path: "build/behavior-tests")
+        let directory = root.appending(path: "builds/.studio-work/behavior-tests")
         let expected = try Data(contentsOf: directory.appending(path: "studio-native-upload.bmp"))
         let actual = try NativeBitmapEncoder.read(directory.appending(path: "studio-native-upload.png"))
         XCTAssertEqual(actual, expected)
@@ -450,7 +450,7 @@ final class NativePreviewTests: XCTestCase {
     // DESC: Verifies runtime packaging preserves exact native bitmap bytes and refuses traversal or symlink image sources.
     // ------------------=
     func testNativeBitmapPackagingParityAndPathConfinement() throws {
-        let directory = root.appending(path: "build/tmp/native-bitmap-test-\(UUID().uuidString)")
+        let directory = root.appending(path: "builds/.studio-work/tmp/native-bitmap-test-\(UUID().uuidString)")
         let assets = directory.appending(path: "assets/boot")
         try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -480,7 +480,7 @@ final class NativePreviewTests: XCTestCase {
     // DESC: Exercises termination of an owned stalled helper and verifies cancellation returns its editing service to an idle state.
     // ------------------=
     @MainActor func testRendererTimeoutLeavesEditingServiceUsable() async throws {
-        let directory = root.appending(path: "build/tmp/native-timeout-test-\(UUID().uuidString)")
+        let directory = root.appending(path: "builds/.studio-work/tmp/native-timeout-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let executable = directory.appending(path: "stalled-renderer")

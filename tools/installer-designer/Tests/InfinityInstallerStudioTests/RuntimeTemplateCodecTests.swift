@@ -53,7 +53,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     func testEmbeddedArtworkLimitMatchesNativeParser() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "build/tmp/codec-bounds-\(UUID().uuidString)")
+            .appending(path: "builds/.studio-work/tmp/codec-bounds-\(UUID().uuidString)")
         let directory = root.appending(path: "assets/boot/installer-assets")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

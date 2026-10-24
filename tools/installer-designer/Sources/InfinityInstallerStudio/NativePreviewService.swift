@@ -355,9 +355,9 @@ struct NativePreviewRunner: NativePreviewRunning {
             try Task.checkCancellation()
             return try await Task.detached(priority: .userInitiated) {
                 let root = snapshot.projectRoot.standardizedFileURL.resolvingSymlinksInPath()
-                let scratch = root.appending(path: "build/tmp/studio-native-preview-\(UUID().uuidString)")
+                let scratch = root.appending(path: "builds/.studio-work/tmp/studio-native-preview-\(UUID().uuidString)")
                     .standardizedFileURL.resolvingSymlinksInPath()
-                guard scratch.path.hasPrefix(root.path + "/build/tmp/") else {
+                guard scratch.path.hasPrefix(root.path + "/builds/.studio-work/tmp/") else {
                     throw NativePreviewIssue.invalid("Native preview scratch files must remain inside the project")
                 }
                 try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -381,7 +381,7 @@ struct NativePreviewRunner: NativePreviewRunning {
                     for name in asset.names { arguments += ["--asset", name + "=" + url.path] }
                 }
                 let candidates = [executableOverride, Bundle.main.executableURL?.deletingLastPathComponent().appending(path: "InfinityStudioNativeRenderer"),
-                    root.appending(path: "build/behavior-tests/infinity-studio-native-renderer"),
+                    root.appending(path: "builds/.studio-work/behavior-tests/infinity-studio-native-renderer"),
                     root.appending(path: "builds/InfinityOS Installer Studio.app/Contents/MacOS/InfinityStudioNativeRenderer")].compactMap { $0 }
                 guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
                     throw NativePreviewIssue.invalid("Native renderer is not installed. Build Infinity Studio through build-kit studio.")

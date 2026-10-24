@@ -51,6 +51,8 @@ def candidates(root=PROJECT_ROOT, policy=None):
         if releases.is_symlink():
             raise ValueError(f"Refusing symlinked releases directory: {releases}")
         for path in releases.rglob("*.log"):
+            if releases / ".studio-work" in path.parents:
+                continue
             if not path.is_file() or path.is_symlink():
                 continue
             metadata = path.stat()

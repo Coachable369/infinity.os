@@ -10,7 +10,7 @@ final class TemplateTransferTests: XCTestCase {
     private func workspace() throws -> URL {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "build/tmp/studio-transfer-\(UUID().uuidString)")
+            .appending(path: "builds/.studio-work/tmp/studio-transfer-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root

@@ -15,7 +15,7 @@ def main():
     spec = importlib.util.spec_from_file_location("uikit_compiler", root / "tools/compile-uikit.py")
     compiler = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(compiler)
-    destination = root / "build/behavior-tests"
+    destination = root / "builds/.studio-work/behavior-tests"
     destination.mkdir(parents=True, exist_ok=True)
     alphas = [0, 1, 2, 17, 64, 127, 128, 192, 254, 255]
     pixels = [(x * 37 % 256, (x * 61 + 7) % 256, (x * 97 + 23) % 256, alphas[x % 10]) for x in range(100)]

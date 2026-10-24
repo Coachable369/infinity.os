@@ -136,7 +136,7 @@ final class SettingsActionTests: XCTestCase {
         for screen in legacy.screens.indices { legacy.screens[screen].elements.removeAll { $0.role == .settingsRowAction } }
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let directory = root.appending(path: "build/tmp/settings-actions-\(UUID().uuidString)")
+        let directory = root.appending(path: "builds/.studio-work/tmp/settings-actions-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appending(path: "legacy.infinityui")
@@ -172,7 +172,7 @@ final class SettingsActionTests: XCTestCase {
         XCTAssertEqual(try RuntimeTemplateCodec.decode(native, collection: .systemSettings), clonedDocument)
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let directory = root.appending(path: "build/tmp/settings-action-graph-\(UUID().uuidString)")
+        let directory = root.appending(path: "builds/.studio-work/tmp/settings-action-graph-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appending(path: "graph.infinityui")
