@@ -135,9 +135,15 @@ struct PrecisionAtlas {
     // ------------------=
     private static func themed(_ pixel: PrecisionPixel, base: (Int, Int, Int), target: StudioColor, opacity: UInt8) -> PrecisionPixel {
         guard pixel.alpha != 0 && opacity != 0 else { return .clear }
-        return PrecisionPixel(red: min(255, max(0, pixel.red + Int(target.red) - base.0)),
-            green: min(255, max(0, pixel.green + Int(target.green) - base.1)),
-            blue: min(255, max(0, pixel.blue + Int(target.blue) - base.2)), alpha: pixel.alpha * Int(opacity) / 255)
+        let shift: (Int, Int, Int) -> Int = { value, reference, tint in
+            if tint < reference && value < reference {
+                return (value * tint + reference / 2) / reference
+            }
+            return min(255, max(0, value + tint - reference))
+        }
+        return PrecisionPixel(red: shift(pixel.red, base.0, Int(target.red)),
+            green: shift(pixel.green, base.1, Int(target.green)),
+            blue: shift(pixel.blue, base.2, Int(target.blue)), alpha: pixel.alpha * Int(opacity) / 255)
     }
 
     // ------------------------=

@@ -297,6 +297,7 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
 }
 
 enum ScreenCollection: String, CaseIterable, Identifiable {
+    case boot
     case installation
     case configuration
     case systemSettings
@@ -304,6 +305,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .boot: "Boot Loading Screens"
         case .installation: "Installation Screens"
         case .configuration: "OS Configuration Screens"
         case .systemSettings: "System Settings"
@@ -316,6 +318,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // ------------------=
     var requiredScreenCount: Int {
         switch self {
+        case .boot: 2
         case .installation: 11
         case .configuration: 8
         case .systemSettings: 11
@@ -337,6 +340,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if self == .boot { return role == .progressBar ? 1 : 0 }
         if self == .systemSettings {
             if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID).count }
             if SettingsChildContract.roles.contains(role) { return SettingsChildContract.rows(role: role, screenID: screenID).count }
@@ -383,7 +387,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
-        if role == .sceneBackground { return self == .installation ? 1 : 0 }
+        if role == .sceneBackground { return self == .installation || self == .boot ? 1 : 0 }
         if role == .settingsNavigationIcon { return self == .systemSettings ? 11 : 0 }
         if [.masthead, .progressHero, .timeZoneMap].contains(role) { return 1 }
         if role.isSettingsChild {
@@ -752,6 +756,34 @@ struct InstallerStudioDocument: Codable, Hashable {
             screens: screens
         )
         .withEditableInstallerBackground()
+    }
+
+    // ------------------------=
+    // FUNC: factoryBoot
+    // DESC: Defines independently authored live-ISO and installed loading scenes using the shared native layer contract.
+    // ------------------=
+    static func factoryBoot() -> InstallerStudioDocument {
+        let screens = (1...2).map { screen in
+            var elements: [StudioElement] = [
+                .make(name: "Boot Background", kind: .image, role: .sceneBackground,
+                    frame: CanvasRect(x: 0, y: 0, width: 1000, height: 1000),
+                    imageAsset: "assets/boot/infinity-eclipse-header-v1.bmp", zIndex: 0),
+                .make(name: "Revealing Infinity Emblem", kind: .image, role: .masthead,
+                    frame: CanvasRect(x: 240, y: screen == 1 ? 160 : 285, width: 520, height: 460),
+                    imageAsset: "assets/boot/infinity-emblem-v2.bmp", zIndex: 1),
+                .make(name: "Boot Progress", kind: .progressBar, role: .progressBar,
+                    frame: CanvasRect(x: 210, y: 820, width: 580, height: 90),
+                    text: "INFINITYOS READY", zIndex: 2)
+            ]
+            elements[2].fill = StudioColor(red: 164, green: 214, blue: 255, alpha: 255)
+            for index in elements.indices {
+                elements[index].id = factoryElementID(screen: screen, element: index + 1)
+                elements[index].locked = false
+            }
+            return InstallerScreenTemplate(id: screen,
+                title: screen == 1 ? "Pre-installation Boot" : "Installed OS Boot", elements: elements)
+        }
+        return InstallerStudioDocument(version: currentVersion, canvasWidth: 1000, canvasHeight: 1000, screens: screens)
     }
 
     // ------------------------=

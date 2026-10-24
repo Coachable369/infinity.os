@@ -171,7 +171,15 @@ fn transition(a:Rgba,b:Rgba,t:u8)->Rgba {
 fn themed(pixel:Rgba,base:Rgb,target:Rgb,opacity:u8)->Rgba {
     if pixel.3==0 || opacity==0 {return (0,0,0,0);}
     if base==target {return (pixel.0,pixel.1,pixel.2,(u16::from(pixel.3)*u16::from(opacity)/255) as u8);}
-    let shift=|value:u8,reference:u8,tint:u8| (i16::from(value)+i16::from(tint)-i16::from(reference)).clamp(0,255) as u8;
+    // Preserve the atlas's relative shadow depth when darkening a component;
+    // additive subtraction clips dark pressed-state samples to solid black.
+    let shift=|value:u8,reference:u8,tint:u8| {
+        if tint < reference && value < reference {
+            ((u16::from(value)*u16::from(tint)+u16::from(reference)/2)/u16::from(reference)) as u8
+        } else {
+            (i16::from(value)+i16::from(tint)-i16::from(reference)).clamp(0,255) as u8
+        }
+    };
     (shift(pixel.0,base.0,target.0),shift(pixel.1,base.1,target.1),shift(pixel.2,base.2,target.2),
         (u16::from(pixel.3)*u16::from(opacity)/255) as u8)
 }

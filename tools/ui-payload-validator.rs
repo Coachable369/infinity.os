@@ -19,6 +19,7 @@ use std::io::Read;
 // ------------------=
 fn valid_payload(kind: &str, bytes: &[u8]) -> bool {
     match kind {
+        "boot" => installer_template::InstallerTemplate::parse_boot(bytes).is_ok(),
         "template" => installer_template::InstallerTemplate::parse(bytes).is_ok(),
         "settings" => installer_template::InstallerTemplate::parse_settings(bytes).is_ok(),
         "tokens" => kit_tokens::decode(bytes).is_some(),
@@ -34,10 +35,10 @@ fn valid_payload(kind: &str, bytes: &[u8]) -> bool {
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
     let (Some(kind), Some(path), None) = (arguments.next(), arguments.next(), arguments.next()) else {
-        eprintln!("usage: ui-payload-validator <template|settings|tokens|styles> <file>");
+        eprintln!("usage: ui-payload-validator <boot|template|settings|tokens|styles> <file>");
         return ExitCode::from(2);
     };
-    let Some(kind) = kind.to_str().filter(|kind| matches!(*kind, "template" | "settings" | "tokens" | "styles")) else {
+    let Some(kind) = kind.to_str().filter(|kind| matches!(*kind, "boot" | "template" | "settings" | "tokens" | "styles")) else {
         eprintln!("Unsupported UI payload kind");
         return ExitCode::from(2);
     };

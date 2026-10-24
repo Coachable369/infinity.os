@@ -37,6 +37,9 @@ enum TemplateValidator {
         }
         let collection = explicitCollection
             ?? ScreenCollection.runtimeCollection(screenCount: document.screens.count)
+        if collection == .boot && document.screens.count != 2 {
+            throw TemplateValidationIssue.invalidDocument("Boot loading requires the ISO and installed scenes")
+        }
         if collection == .systemSettings && document.screens.count != ScreenCollection.systemSettings.requiredScreenCount {
             throw TemplateValidationIssue.invalidDocument("System Settings requires its eleven native sections")
         }
@@ -84,7 +87,7 @@ enum TemplateValidator {
             if screen.elements.contains(where: { $0.role == .sceneBackground && $0.kind != .image }) {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Scene background must be an image")
             }
-            if collection != .systemSettings {
+            if collection != .systemSettings && collection != .boot {
                 guard back.count == 1, primary.count == 1 else {
                     throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
                 }
@@ -105,7 +108,7 @@ enum TemplateValidator {
                 }
             }
             try validateSettingsActions(screen, collection: collection)
-            guard screen.elements.contains(where: { $0.role == .console }) else {
+            guard collection == .boot || screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
             }
             guard liveInputs.count <= 1 else {

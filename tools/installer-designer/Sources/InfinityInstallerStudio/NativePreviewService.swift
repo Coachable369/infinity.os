@@ -35,6 +35,7 @@ struct NativePreviewSimulation: Equatable, Sendable {
     var enabled = true
     var confirmation = false
     var progress = 42
+    var bootPhase = 2400
     var timeZone = 3
     var dateFocus = 2
     var datePart = 0
@@ -117,6 +118,7 @@ struct NativePreviewSnapshot: Equatable, Sendable {
         let document: InstallerStudioDocument
         let kind: String
         switch store.selectedCollection {
+        case .boot: document = store.bootDocument; kind = "boot"
         case .installation: document = store.document; kind = "installer"
         case .configuration: document = store.configurationDocument; kind = "configuration"
         case .systemSettings: document = store.settingsDocument; kind = "settings"
@@ -370,7 +372,7 @@ struct NativePreviewRunner: NativePreviewRunning {
                     "--screen", String(snapshot.screen), "--width", String(snapshot.width), "--height", String(snapshot.height),
                     "--output", output.path, "--background", background.path, "--atlas", atlas.path,
                     "--glyphs", glyphs.path, "--styles", styles.path, "--tokens", tokens.path,
-                    "--focus", String(snapshot.state.focus), "--phase-ms", String(snapshot.state.milliseconds)]
+                    "--focus", String(snapshot.state.focus), "--phase-ms", String(snapshot.kind == "boot" ? snapshot.simulation.bootPhase : snapshot.state.milliseconds)]
                 if snapshot.state.isPressed { arguments.append("--pressed") }
                 arguments += try snapshot.simulation.arguments()
                 for (index, asset) in snapshot.assets.enumerated() {

@@ -171,6 +171,7 @@ private struct ScreenSidebar: View {
     @AppStorage("studio.sidebar.installation") private var installationExpanded = true
     @AppStorage("studio.sidebar.configuration") private var configurationExpanded = true
     @AppStorage("studio.sidebar.settings") private var settingsExpanded = false
+    @AppStorage("studio.sidebar.boot") private var bootExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -189,6 +190,12 @@ private struct ScreenSidebar: View {
                         .contentShape(Rectangle())
                         .onTapGesture { store.selectUIKit() }
                 }
+                DisclosureGroup(isExpanded: $bootExpanded) {
+                    screenRows(for: .boot, screens: store.bootDocument.screens)
+                } label: {
+                    collectionHeader(.boot)
+                }
+                .id(ScreenCollection.boot)
                 DisclosureGroup(isExpanded: $configurationExpanded) {
                     screenRows(for: .configuration, screens: store.configurationDocument.screens)
                 } label: {

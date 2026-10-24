@@ -395,6 +395,7 @@ class UpdateISOTests(unittest.TestCase):
     # ------------------=
     def test_settings_receipt_records_native_validated_live_and_installed_payloads(self):
         paths = [ROOT / "assets/boot/settings-screens.iuit",
+                 ROOT / "assets/boot/boot-screens.iuit",
                  ROOT / "assets/ui-design-kit/default/uikit-tokens.bin",
                  ROOT / "assets/ui-design-kit/default/uikit-styles.bin"]
         live, installed = self.work / "live.elf", self.work / "installed.elf"

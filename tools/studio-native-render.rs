@@ -89,7 +89,7 @@ pub(crate) fn run()->Result<(),String> {
             "--template"=>template=Some(PathBuf::from(value)),
             "--output"=>output=Some(PathBuf::from(value)),
             "--background"=>background=Some(PathBuf::from(value)),
-            "--kind"=>kind=match value.as_str(){"installer"=>0,"configuration"=>1,"settings"=>2,_=>return Err("Unknown preview collection".into())},
+            "--kind"=>kind=match value.as_str(){"installer"=>0,"configuration"=>1,"settings"=>2,"boot"=>3,_=>return Err("Unknown preview collection".into())},
             "--screen"=>screen=value.parse().map_err(|_|"Invalid preview screen")?,
             "--width"=>width=value.parse().map_err(|_|"Invalid preview width")?,
             "--height"=>height=value.parse().map_err(|_|"Invalid preview height")?,

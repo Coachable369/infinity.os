@@ -2044,14 +2044,17 @@ impl super::DisplayDevice {
         };
         let draw_left = left.saturating_add(placement.destination_left);
         let draw_top = top.saturating_add(placement.destination_top);
-        for y in 0..placement
-            .destination_height
-            .min(self.height.saturating_sub(draw_top))
-        {
-            for x in 0..placement
-                .destination_width
-                .min(self.width.saturating_sub(draw_left))
-            {
+        // Clip before sampling, not only at the final pixel write. The boot
+        // reveal renders narrow columns and must remain linear in image area.
+        let clip = self.render_clip.unwrap_or(super::PresentRegion {
+            left: 0, top: 0, right: self.width, bottom: self.height,
+        });
+        let start_x = clip.left.saturating_sub(draw_left).min(placement.destination_width);
+        let start_y = clip.top.saturating_sub(draw_top).min(placement.destination_height);
+        let end_x = clip.right.min(self.width).saturating_sub(draw_left).min(placement.destination_width);
+        let end_y = clip.bottom.min(self.height).saturating_sub(draw_top).min(placement.destination_height);
+        for y in start_y..end_y {
+            for x in start_x..end_x {
                 let [red, green, blue, source_alpha] = bitmap.filtered_rgba(placement, x, y);
                 let alpha = (source_alpha as u16 * opacity as u16 / 255) as u8;
                 self.blend_color(

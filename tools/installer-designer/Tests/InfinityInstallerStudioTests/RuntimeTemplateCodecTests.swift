@@ -1038,7 +1038,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         for collection in ScreenCollection.allCases {
             store.selectScreenCollection(collection)
-            let required = store.selectedScreen!.elements.first { $0.role == .content }!
+            let requiredRole: StudioElementRole = collection == .boot ? .progressBar : .content
+            let required = store.selectedScreen!.elements.first { $0.role == requiredRole }!
             store.selectElement(required.id)
             let count = store.selectedScreen!.elements.count
 
@@ -1058,14 +1059,14 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
             store.validationIssues = []
             store.updateSelected("Reassign required role") { $0.role = .decoration }
-            XCTAssertEqual(store.selectedElement!.role, .content)
+            XCTAssertEqual(store.selectedElement!.role, requiredRole)
             XCTAssertFalse(store.validationIssues.isEmpty)
 
             store.validationIssues = []
             store.addElement(kind: .image)
             let optionalID = store.selectedElementID!
             XCTAssertFalse(store.selectedElementIsRequired)
-            store.updateSelected("Claim required role") { $0.role = .content }
+            store.updateSelected("Claim required role") { $0.role = requiredRole }
             XCTAssertEqual(store.selectedElement!.role, .image)
             XCTAssertFalse(store.validationIssues.isEmpty)
 

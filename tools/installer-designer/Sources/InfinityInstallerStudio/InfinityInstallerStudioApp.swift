@@ -40,7 +40,9 @@ struct InfinityInstallerStudioApp: App {
                 if source.lastPathComponent == "settings-screens.infinityui" {
                     document = document.migratedForSettingsCardReadability()
                 }
-                let collection: ScreenCollection = if source.lastPathComponent == "configuration-screens.infinityui" {
+                let collection: ScreenCollection = if source.lastPathComponent == "boot-screens.infinityui" {
+                    .boot
+                } else if source.lastPathComponent == "configuration-screens.infinityui" {
                     .configuration
                 } else if source.lastPathComponent == "settings-screens.infinityui" {
                     .systemSettings
@@ -62,6 +64,21 @@ struct InfinityInstallerStudioApp: App {
                 Darwin.exit(0)
             } catch {
                 fputs("Template compilation failed: \(error)\n", stderr)
+                Darwin.exit(1)
+            }
+        }
+        if arguments.count == 3, arguments[1] == "--export-boot-default" {
+            do {
+                let root = URL(fileURLWithPath: arguments[2], isDirectory: true)
+                let source = InstallerStudioDocument.factoryBoot()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                try ContentAwareAtomicWriter.write(encoder.encode(source), to: root.appending(path: "assets/boot/boot-screens.infinityui"))
+                try ContentAwareAtomicWriter.write(RuntimeTemplateCodec.encode(source, assetRoot: root, collection: .boot),
+                    to: root.appending(path: "assets/boot/boot-screens.iuit"))
+                Darwin.exit(0)
+            } catch {
+                fputs("Boot template export failed: \(error)\n", stderr)
                 Darwin.exit(1)
             }
         }

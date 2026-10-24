@@ -144,7 +144,7 @@ pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:us
 #[cfg(studio_native_preview)]
 pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usize,
     background:&[u8],focus:usize,pressed:bool,phase:Option<u64>,state:DraftServiceState)->Result<Vec<u8>,String> {
-    let template=if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
+    let template=if kind==3 {InstallerTemplate::parse_boot(bytes)}else if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
         .map_err(|error|format!("Invalid native template: {error:?}"))?;
     if template.element_count(screen).is_none() {return Err("Unknown template screen".into());}
     let motion_key=(u32::from(screen)<<8)|focus as u32;
@@ -190,7 +190,11 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             target.precision_window_frame(geometry.window,true,target.ui_scale());
         }
     }
-    if kind==1 {
+    if kind==3 {
+        if !target.boot_template_scene(bytes,screen,if state.simulated {usize::from(state.percent)}else{100},b"",phase.unwrap_or(2400) as usize) {
+            return Err("Native boot scene rejected the template".into());
+        }
+    } else if kind==1 {
         let network=if screen==7 {Some(onboarding_network_view::NetworkViewState{selected:0,connected:true,
             wired_detail:b"Connected link detected",wireless_detail:b"No wireless adapter detected"})}else{None};
         if !target.configuration_template_scene_data(bytes,usize::from(screen-1),focus,
@@ -638,10 +642,33 @@ fn confirmation_text_pixels() {
 }
 
 // ------------------------=
+// FUNC: boot_scene_clip_pixels
+// DESC: Proves clipped reveal frames match full production frames without painting outside the requested damage region.
+// ------------------=
+fn boot_scene_clip_pixels() {
+    let bytes=include_bytes!("../assets/boot/boot-screens.iuit");
+    for (w,h) in [(640,480),(1024,768)] {
+        for screen in 1..=2 {
+            let mut full=vec![0;w*h];
+            assert!(display(&mut full,w,h).boot_template_scene(bytes,screen,50,b"",1200));
+            let mut clipped=vec![0x123456;w*h];
+            let (left,top,right,bottom)=(w/3,h/5,w*2/3,h*4/5);
+            let mut target=display(&mut clipped,w,h);
+            target.set_render_clip(left,top,right-left,bottom-top);
+            assert!(target.boot_template_scene(bytes,screen,50,b"",1200));
+            for y in 0..h { for x in 0..w {
+                assert_eq!(clipped[y*w+x],if x>=left&&x<right&&y>=top&&y<bottom {full[y*w+x]}else{0x123456});
+            }}
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: verify
 // DESC: Renders authored first-boot scenes with actual compositor, bitmap sampling, Inter, image-backed controls and semantic state assertions.
 // ------------------=
 pub(super) fn verify() {
+    boot_scene_clip_pixels();
     let output="builds/validation/eclipse-precision/wizard";
     std::fs::create_dir_all(output).unwrap();
     let comparisons=role_pixels();

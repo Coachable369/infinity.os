@@ -14,4 +14,6 @@ trap 'rm -rf "$scratch_dir"' EXIT HUP INT TERM
 cmp "$runtime_template" "$scratch_dir/installer-screens.iuit"
 "$script_dir/compile-template.sh" "$configuration_source" "$scratch_dir/configuration-screens.iuit" >/dev/null
 cmp "$configuration_runtime" "$scratch_dir/configuration-screens.iuit"
+"$script_dir/compile-template.sh" "$repo_dir/assets/boot/boot-screens.infinityui" "$scratch_dir/boot-screens.iuit" >/dev/null
+cmp "$repo_dir/assets/boot/boot-screens.iuit" "$scratch_dir/boot-screens.iuit"
 echo "Saved installer and configuration templates are the exact ISO runtime inputs: PASS"

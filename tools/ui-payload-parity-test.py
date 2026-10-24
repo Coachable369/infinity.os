@@ -31,7 +31,7 @@ class UIPayloadParityTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="ui-payload-parity-", dir=scratch)
         self.root = Path(self.temporary.name)
         self.payloads = []
-        for name in ("installer", "configuration", "settings"):
+        for name in ("installer", "configuration", "settings", "boot"):
             path = self.root / f"assets/boot/{name}-screens.iuit"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((ROOT / f"assets/boot/{name}-screens.iuit").read_bytes())

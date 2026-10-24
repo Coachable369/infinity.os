@@ -7,6 +7,8 @@ use crate::boot_info::BootInfo;
 #[path = "reveal.rs"]
 mod reveal;
 
+pub(super) static BOOT_TEMPLATE: &[u8] = include_bytes!("../../../assets/boot/boot-screens.iuit");
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const SPLASH_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-eclipse-header-v1.bmp");
@@ -1381,7 +1383,6 @@ pub fn show_splash(info: &BootInfo) -> bool {
         return false;
     };
     display.mark_dirty_rect(0, 0, display.width, display.height);
-    display.paint_background();
     let stages: [(usize, &[u8]); 4] = [
         (25, b"GRAPHICS SURFACE READY"),
         (50, b"KEYBOARD DRIVER PROBE"),
@@ -1391,16 +1392,16 @@ pub fn show_splash(info: &BootInfo) -> bool {
     for (stage_index, (stage, label)) in stages.into_iter().enumerate() {
         for frame in 0..30 {
             let sequence = stage_index * 30 + frame;
-            display.emblem_reveal_band(sequence, 120);
-            display.progress(stage.saturating_sub(24) + frame * 24 / 30, label);
+            display.boot_template_scene(BOOT_TEMPLATE,if cfg!(feature="installer"){1}else{2},
+                stage.saturating_sub(24)+frame*24/30,label,(sequence+1)*20);
+            display.mark_dirty_rect(0,0,display.width,display.height);
             display.present_damage();
             wait_frame(20);
         }
     }
-    // Keep the completed bootstrap composition intact for the startup menu.
-    // The BBS panel owns its lower rectangle, while particle restoration above
-    // it now reads from the same boot artwork and full-size emblem geometry.
-    display.finish_emblem();
+    // Leave the authored final loading frame visible until the startup menu
+    // takes ownership of the display. The menu is a separate editable scene.
+    display.boot_template_scene(BOOT_TEMPLATE,if cfg!(feature="installer"){1}else{2},100,b"",2400);
     display.force_full_present();
     activate_console(display);
     true

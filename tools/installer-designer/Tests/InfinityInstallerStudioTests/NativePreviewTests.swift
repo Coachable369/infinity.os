@@ -515,7 +515,7 @@ final class NativePreviewTests: XCTestCase {
             XCTAssertEqual(first.width, 1600)
             XCTAssertEqual(first.height, 1000)
             XCTAssertEqual(first.pixels.count, 6_400_000)
-            let element = try XCTUnwrap(store.selectedScreen?.elements.first { $0.kind == .text && !$0.hidden && !$0.locked && !$0.text.isEmpty })
+            let element = try XCTUnwrap(store.selectedScreen?.elements.first { ($0.kind == .text || $0.kind == .progressBar) && !$0.hidden && !$0.locked && !$0.text.isEmpty })
             store.selectElement(element.id)
             store.updateSelected("Native preview text edit") { $0.text = "Native production text preview" }
             let edited = try NativePreviewSnapshot.capture(store)

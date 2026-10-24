@@ -244,7 +244,7 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Validates a complete bounded installer template before it can affect runtime UI.
     // ------------------=
     pub fn parse(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
-        Self::parse_profile(data, true)
+        Self::parse_profile(data, true, false)
     }
 
     // ------------------------=
@@ -252,7 +252,15 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Validates a System Settings design without imposing installer navigation controls.
     // ------------------=
     pub fn parse_settings(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
-        Self::parse_profile(data, false)
+        Self::parse_profile(data, false, false)
+    }
+
+    // ------------------------=
+    // FUNC: parse_boot
+    // DESC: Validates two independently authored loading scenes without installer navigation or Settings bindings.
+    // ------------------=
+    pub fn parse_boot(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
+        Self::parse_profile(data, false, true)
     }
 
     // ------------------------=
@@ -262,6 +270,7 @@ impl<'a> InstallerTemplate<'a> {
     fn parse_profile(
         data: &'a [u8],
         requires_navigation: bool,
+        boot: bool,
     ) -> Result<Self, InstallerTemplateError> {
         let mut reader = Reader::new(data);
         if reader.take(4)? != MAGIC {
@@ -275,7 +284,7 @@ impl<'a> InstallerTemplate<'a> {
         if screen_count == 0 || screen_count > MAX_SCREEN_COUNT {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
-        if !requires_navigation && screen_count != 11 {
+        if (boot && screen_count != 2) || (!boot && !requires_navigation && screen_count != 11) {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
 
@@ -299,6 +308,7 @@ impl<'a> InstallerTemplate<'a> {
             let elements_start = reader;
             let mut back_count = 0u8;
             let mut primary_count = 0u8;
+            let mut boot_progress_count = 0u8;
             let mut console_count = 0u8;
             let mut input_count = 0u8;
             let mut details_count = 0u8;
@@ -320,6 +330,9 @@ impl<'a> InstallerTemplate<'a> {
             let mut settings_disclosure_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
+                if boot && element.role == InstallerTemplateRole::ProgressBar as u8 && element.kind == 6 {
+                    boot_progress_count = boot_progress_count.saturating_add(1);
+                }
                 if !element_is_bounded(element.frame) {
                     return Err(InstallerTemplateError::InvalidElement);
                 }
@@ -398,12 +411,12 @@ impl<'a> InstallerTemplate<'a> {
             }
             let invalid_installer = requires_navigation
                 && (back_count != 1 || primary_count != 1 || console_count == 0);
-            let expected_settings_rows = if requires_navigation {
+            let expected_settings_rows = if requires_navigation || boot {
                 0
             } else {
                 [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize]
             };
-            let invalid_settings = !requires_navigation
+            let invalid_settings = !boot && !requires_navigation
                 && (console_count != 1
                     || content_count != 1
                     || title_count == 0
@@ -429,12 +442,13 @@ impl<'a> InstallerTemplate<'a> {
                             || settings_summary_count != 0
                             || settings_main_count != 0
                             || settings_sidebar_count != 0)));
-            let invalid_settings_rows = !requires_navigation
+            let invalid_settings_rows = !boot && !requires_navigation
                 && ![7, 8].contains(&screen)
                 && (settings_row_label_count != row_count
                     || settings_row_value_count != row_count
                     || settings_disclosure_count != row_count);
             if invalid_installer
+                || (boot && boot_progress_count != 1)
                 || invalid_settings
                 || invalid_settings_rows
                 || input_count > 1
@@ -442,10 +456,10 @@ impl<'a> InstallerTemplate<'a> {
             {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
-            if !requires_navigation && version >= 8 {
+            if !boot && !requires_navigation && version >= 8 {
                 validate_settings_actions(elements_start, count, screen as usize - 1)?;
             }
-            if !requires_navigation && version >= 9 {
+            if !boot && !requires_navigation && version >= 9 {
                 validate_settings_row_children(elements_start, count, screen as usize - 1)?;
             }
         }

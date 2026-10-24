@@ -203,7 +203,12 @@ struct InstallerCanvas: View {
     }
 
     @ViewBuilder private var simulationControls: some View {
-        if store.selectedCollection == .installation {
+        if store.selectedCollection == .boot {
+            VStack(alignment: .leading) {
+                Stepper("Boot progress: \(store.nativePreviewSimulation.progress)%", value: $store.nativePreviewSimulation.progress, in: 0...100, step: 5)
+                Stepper("Reveal time: \(store.nativePreviewSimulation.bootPhase) ms", value: $store.nativePreviewSimulation.bootPhase, in: 0...2400, step: 100)
+            }
+        } else if store.selectedCollection == .installation {
             switch store.selectedScreenID {
             case 5:
                 HStack(spacing: 8) {
@@ -273,6 +278,7 @@ struct InstallerCanvas: View {
             .onChanged { value in
                 guard store.marqueeSelectionEnabled else { return }
                 if canvasDragMode == nil {
+                    NSApp.keyWindow?.makeFirstResponder(nil)
                     let start = normalizedPoint(from: value.startLocation, canvasScale: canvasScale)
                     canvasDragMode = store.canMoveSelection(at: start) ? .moveSelection : .marquee
                     if canvasDragMode == .moveSelection {
@@ -630,6 +636,7 @@ struct CanvasElementView: View {
                 guard acceptedInteraction ?? acceptsInteraction(at: value.startLocation) else { return }
                 let distance = max(abs(value.translation.width), abs(value.translation.height))
                 if distance < CanvasInteractionMetrics.dragThreshold {
+                    NSApp.keyWindow?.makeFirstResponder(nil)
                     store.activateCanvasElement(element.id)
                 } else {
                     store.endGesture()

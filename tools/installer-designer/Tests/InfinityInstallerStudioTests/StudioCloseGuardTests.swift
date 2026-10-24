@@ -30,7 +30,7 @@ final class StudioCloseGuardTests: XCTestCase {
         let root = repository.appending(path: "build/tmp/studio-close-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let documents = [InstallerStudioDocument.factoryDefault(), .factoryConfiguration(), .factorySystemSettings()]
+        let documents = [InstallerStudioDocument.factoryBoot(), .factoryDefault(), .factoryConfiguration(), .factorySystemSettings()]
         let references = Set(documents.flatMap(\.screens).flatMap(\.elements).map(\.imageAsset))
         for path in references where path.hasPrefix("assets/") {
             let source = repository.appending(path: path), destination = root.appending(path: path)
@@ -49,6 +49,7 @@ final class StudioCloseGuardTests: XCTestCase {
         let store = TemplateStore(projectRoot: root)
         XCTAssertFalse(store.hasUnsavedChanges)
         store.document.screens[0].title = "Edited installation"
+        store.bootDocument.screens[0].title = "Edited ISO loading"
         store.configurationDocument.screens[0].title = "Edited configuration"
         store.uiKit.setColor(.accent, argb: 0xff325690)
         XCTAssertTrue(store.hasUnsavedChanges)
@@ -60,6 +61,7 @@ final class StudioCloseGuardTests: XCTestCase {
         guard store.resolveClose(.save) else { XCTFail(store.validationIssues.joined(separator: "; ")); return }
         XCTAssertFalse(store.hasUnsavedChanges)
         let reopened = TemplateStore(projectRoot: root)
+        XCTAssertEqual(reopened.bootDocument, store.bootDocument)
         XCTAssertEqual(reopened.document, store.document)
         XCTAssertEqual(reopened.configurationDocument, store.configurationDocument)
         XCTAssertEqual(reopened.settingsDocument, store.settingsDocument)

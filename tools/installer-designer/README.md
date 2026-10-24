@@ -159,7 +159,28 @@ If the required cached native components are unavailable or do not match the
 chosen image, it stops with an explanation rather than claiming a successful
 update. All temporary files and update manifests remain in the project.
 
-A native macOS visual editor for all eleven InfinityOS installation screens, all eight post-install configuration screens, and System Settings. The screen collections share the zoomable snapping artboard, top-navigation Marquee Select with enclosure and uniform group dragging, layer ordering, eight-handle resizing, image import, editable copy, undo/redo, validation, and JSON/runtime-template saving. Disabling Marquee clears selection and canvas handles. Unlock a layer to edit its appearance and geometry; required runtime roles remain protected from removal.
+A native macOS visual editor for both boot-loading screens, all eleven InfinityOS installation screens, all eight post-install configuration screens, and System Settings. The screen collections share the zoomable snapping artboard, top-navigation Marquee Select with enclosure and uniform group dragging, layer ordering, eight-handle resizing, image import, editable copy, undo/redo, validation, and JSON/runtime-template saving. Disabling Marquee clears selection and canvas handles. Unlock a layer to edit its appearance and geometry; required runtime roles remain protected from removal.
+
+### Boot Loading Screens
+
+Expand **Boot Loading Screens** in the sidebar and select **Pre-installation Boot**
+or **Installed OS Boot**. These are independent scenes. All visible artwork is an
+editable layer, including the background and revealing emblem; decorative images
+can be replaced, hidden or deleted. Use the inspector for geometry, opacity,
+layering, image fit/crop, text, colors and the shared surface styles. One progress
+control is retained per scene because the boot service updates it.
+
+The native preview invokes the same compositor as the kernel, not a SwiftUI
+approximation. Enable simulated service values to scrub progress and reveal time.
+The loading service supplies live status text; the saved progress caption appears
+on the completed frame. The emblem's center-out reveal lasts 2.4 seconds; its
+timing is currently OS-owned, while its image and geometry are authored.
+
+Save writes `assets/boot/boot-screens.infinityui` and its embedded-asset
+`boot-screens.iuit`. **Save & Update ISO…** includes this payload in both
+the live and installed kernels through the existing cached kernel rebuild and ISO
+update path. It does not alter an already-installed VM. Boot firmware screens and
+the subsequent installer menu remain separate from these loading scenes.
 
 Build with `./build-kit studio`, then open `builds/InfinityOS Installer Studio.app`. Saving a wizard section writes:
 

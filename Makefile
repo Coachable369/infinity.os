@@ -88,6 +88,7 @@ WALLPAPER_ASSETS := assets/desktop/infinity-default-dark-wallpaper-v2.png \
 	assets/desktop/infinity-onboarding-wallpaper-v1.png
 UI_ASSETS := $(shell find assets/skins -type f) $(WALLPAPER_ASSETS)
 INSTALLER_UI_ASSETS := assets/boot/infinity-installer-mesh-diagram-v1.png \
+	assets/boot/boot-screens.infinityui assets/boot/boot-screens.iuit \
 	assets/boot/installer-screens.infinityui assets/boot/installer-screens.iuit \
 	assets/boot/configuration-screens.infinityui assets/boot/configuration-screens.iuit \
 	assets/boot/settings-screens.infinityui assets/boot/settings-screens.iuit
@@ -99,6 +100,7 @@ CONFIGURATION_TEMPLATE_SOURCE := assets/boot/configuration-screens.infinityui
 CONFIGURATION_TEMPLATE_RUNTIME := assets/boot/configuration-screens.iuit
 SETTINGS_TEMPLATE_SOURCE := assets/boot/settings-screens.infinityui
 SETTINGS_TEMPLATE_RUNTIME := assets/boot/settings-screens.iuit
+KERNEL_SOURCES += assets/boot/boot-screens.infinityui assets/boot/boot-screens.iuit
 INSTALLER_DESIGNER_SOURCES := $(shell find tools/installer-designer/Sources -type f -name '*.swift') \
 	tools/installer-designer/Package.swift tools/installer-designer/compile-template.sh
 CRASH_ASSETS := $(shell find assets/crash -type f)
@@ -363,9 +365,12 @@ $(CONFIGURATION_TEMPLATE_RUNTIME): force-installer-template-compile $(CONFIGURAT
 $(SETTINGS_TEMPLATE_RUNTIME): force-installer-template-compile $(SETTINGS_TEMPLATE_SOURCE) $(INSTALLER_DESIGNER_SOURCES) $(INSTALLER_IMAGE_ASSETS)
 	@tools/installer-designer/compile-template.sh $(SETTINGS_TEMPLATE_SOURCE) $(SETTINGS_TEMPLATE_RUNTIME)
 
-installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME)
+assets/boot/boot-screens.iuit: force-installer-template-compile assets/boot/boot-screens.infinityui $(INSTALLER_DESIGNER_SOURCES) $(INSTALLER_IMAGE_ASSETS)
+	@tools/installer-designer/compile-template.sh assets/boot/boot-screens.infinityui assets/boot/boot-screens.iuit
 
-installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) settings-action-test
+installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) assets/boot/boot-screens.iuit
+
+installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) assets/boot/boot-screens.iuit settings-action-test
 	@tools/installer-designer/verify-template-build.sh
 	@mkdir -p build/tools
 	@rustc --edition 2021 -A warnings -O tools/installer-template-test.rs -o build/tools/installer-template-test

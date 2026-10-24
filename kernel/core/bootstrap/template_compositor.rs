@@ -1,5 +1,8 @@
 //! Runtime compositor for the exact layer model saved by Installer Studio.
 
+#[path = "reveal.rs"]
+mod boot_reveal;
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::desktop::ONBOARDING_BMP;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -372,6 +375,41 @@ impl DisplayDevice {
         }
         let rect = scale_template_rect(element.frame, self.width, self.height);
         self.template_element_in_rect(element, image, navigation, rect);
+    }
+
+    // ------------------------=
+    // FUNC: boot_template_scene
+    // DESC: Composes editable boot layers with the same reveal timing, artwork, typography and progress in Studio and both native boot paths.
+    // ------------------=
+    pub(crate) fn boot_template_scene(&mut self, bytes: &[u8], screen: u8, percent: usize,
+        label: &[u8], phase: usize) -> bool {
+        let Ok(template) = InstallerTemplate::parse_boot(bytes) else { return false; };
+        let Some(count) = template.element_count(screen) else { return false; };
+        self.fill_rect(0,0,self.width,self.height,0,0,0);
+        for index in 0..count {
+            let Some(element) = template.layer_at(screen,index) else { return false; };
+            if element.hidden || element.opacity == 0 { continue; }
+            let rect=scale_template_rect(element.frame,self.width,self.height);
+            if element.kind == 6 {
+                self.template_progress_control(rect,element.fill,element.border,element.opacity,
+                    element.corner_radius,element.surface_material,element.corner_style,element.font_size,
+                    percent,if label.is_empty(){element.text}else{label});
+            } else if element.role == InstallerTemplateRole::Masthead as u8 && element.kind == 2 && phase < 2400 {
+                let saved=self.render_clip;
+                for x in 0..rect.width {
+                    self.render_clip=saved;
+                    self.intersect_render_clip(rect.left+x,rect.top,1,rect.height);
+                    let alpha=i64::from(boot_reveal::opacity(x,rect.width,phase,2400));
+                    if alpha == 0 { continue; }
+                    self.template_element_in_rect(InstallerTemplateElement{opacity:(i64::from(element.opacity)*alpha/255) as u8,..element},
+                        template.asset(element.image_asset),None,rect);
+                }
+                self.render_clip=saved;
+            } else {
+                self.template_element_in_rect(element,template.asset(element.image_asset),None,rect);
+            }
+        }
+        true
     }
 
     // ------------------------=

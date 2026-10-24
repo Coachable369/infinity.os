@@ -368,7 +368,7 @@ def compiled_ui_inventory(payloads):
         before = file_identity(path)
         with path.open("rb") as source:
             header = source.read(12)
-        if path.name in ("installer-screens.iuit", "configuration-screens.iuit", "settings-screens.iuit"):
+        if path.name in ("boot-screens.iuit", "installer-screens.iuit", "configuration-screens.iuit", "settings-screens.iuit"):
             magic, offset, count_key = b"IUIT", 4, "screens"
         elif path.name in ("uikit-tokens.bin", "uikit-styles.bin"):
             magic = b"IUIKIT01" if path.name == "uikit-tokens.bin" else b"IUISTY01"
@@ -612,7 +612,7 @@ def update_iso(iso, target):
         run([sys.executable, "tools/design-kit-parity.py", "--arch", target, "--kernel", live_kernel, "--kernel", installed_kernel])
         with live_kernel.open("rb") as source:
             require_architecture(source.read(65536), target)
-        templates = [ROOT / f"assets/boot/{name}-screens.iuit" for name in ("installer", "configuration", "settings")]
+        templates = [ROOT / f"assets/boot/{name}-screens.iuit" for name in ("installer", "configuration", "settings", "boot")]
         styles = [ROOT / f"assets/ui-design-kit/default/uikit-{name}.bin" for name in ("tokens", "styles")]
         verify_embedded_ui(live_kernel, [*templates, *styles])
         verify_embedded_ui(installed_kernel, [*templates[1:], *styles])

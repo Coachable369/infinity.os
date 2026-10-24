@@ -39,6 +39,7 @@ enum ConsoleLayoutPreset: String, CaseIterable, Identifiable {
 }
 
 private struct ProjectSnapshot: Equatable {
+    var boot: InstallerStudioDocument
     var installation: InstallerStudioDocument
     var configuration: InstallerStudioDocument
     var systemSettings: InstallerStudioDocument
@@ -53,6 +54,7 @@ final class TemplateStore: ObservableObject {
     @Published var showISOUpdate = false
     @Published var editingUIKit = false
     @Published var document: InstallerStudioDocument
+    @Published var bootDocument: InstallerStudioDocument
     @Published var configurationDocument: InstallerStudioDocument
     @Published var settingsDocument: InstallerStudioDocument
     @Published var selectedCollection = ScreenCollection.installation
@@ -92,12 +94,13 @@ final class TemplateStore: ObservableObject {
     private var savedProject: ProjectSnapshot?
 
     var hasUnsavedChanges: Bool {
-        uiKit.isDirty || savedProject != ProjectSnapshot(installation: document,
+        uiKit.isDirty || savedProject != ProjectSnapshot(boot: bootDocument, installation: document,
             configuration: configurationDocument, systemSettings: settingsDocument)
     }
 
     var activeScreens: [InstallerScreenTemplate] {
         switch selectedCollection {
+        case .boot: bootDocument.screens
         case .installation: document.screens
         case .configuration: configurationDocument.screens
         case .systemSettings: settingsDocument.screens
@@ -107,6 +110,7 @@ final class TemplateStore: ObservableObject {
     private var activeDocument: InstallerStudioDocument {
         get {
             switch selectedCollection {
+            case .boot: bootDocument
             case .installation: document
             case .configuration: configurationDocument
             case .systemSettings: settingsDocument
@@ -114,6 +118,7 @@ final class TemplateStore: ObservableObject {
         }
         set {
             switch selectedCollection {
+            case .boot: bootDocument = newValue
             case .installation: document = newValue
             case .configuration: configurationDocument = newValue
             case .systemSettings: settingsDocument = newValue
@@ -146,8 +151,8 @@ final class TemplateStore: ObservableObject {
 
     var canUndo: Bool { editingUIKit ? uiKit.canUndo : !undoStack.isEmpty }
     var canRedo: Bool { editingUIKit ? uiKit.canRedo : !redoStack.isEmpty }
-    var canAddScreen: Bool { activeScreens.count < InstallerStudioDocument.maximumScreenCount }
-    var canRemoveScreen: Bool { activeScreens.count > InstallerStudioDocument.minimumScreenCount }
+    var canAddScreen: Bool { selectedCollection != .boot && activeScreens.count < InstallerStudioDocument.maximumScreenCount }
+    var canRemoveScreen: Bool { selectedCollection != .boot && activeScreens.count > InstallerStudioDocument.minimumScreenCount }
     var resizeHandlesVisible: Bool {
         marqueeSelectionEnabled && selectedElementIDs.count == 1 && selectedElement?.locked == false
     }
@@ -170,6 +175,8 @@ final class TemplateStore: ObservableObject {
         uiKit = UIKitStore(projectRoot: root)
         isoUpdater = ISOUpdateService(projectRoot: root)
         projectRoot = root
+        bootDocument = root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/boot-screens.infinityui")) }
+            .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryBoot()
         let configuration = root.flatMap { root in
             try? Data(contentsOf: root.appending(path: "assets/boot/configuration-screens.infinityui"))
         }.flatMap { data in
@@ -211,11 +218,12 @@ final class TemplateStore: ObservableObject {
         kitObservation = uiKit.objectWillChange.sink { [weak self] in
             self?.objectWillChange.send()
         }
-        savedProject = ProjectSnapshot(installation: document, configuration: configurationDocument,
+        savedProject = ProjectSnapshot(boot: bootDocument, installation: document, configuration: configurationDocument,
             systemSettings: settingsDocument)
         if let root {
             for collection in ScreenCollection.allCases {
                 let name = switch collection {
+                case .boot: "boot-screens"
                 case .installation: "installer-screens"
                 case .configuration: "configuration-screens"
                 case .systemSettings: "settings-screens"
@@ -443,6 +451,7 @@ final class TemplateStore: ObservableObject {
         case .installation: InstallerStudioDocument.factoryDefault()
         case .configuration: InstallerStudioDocument.factoryConfiguration()
         case .systemSettings: InstallerStudioDocument.factorySystemSettings()
+        case .boot: InstallerStudioDocument.factoryBoot()
         }
         var screen = selectedScreen ?? factory.screens[0]
         screen.title = "New Screen"
@@ -1036,6 +1045,7 @@ final class TemplateStore: ObservableObject {
     func endGesture() {
         if let baseline = gestureBaseline,
            baseline.installation != document
+            || baseline.boot != bootDocument
             || baseline.configuration != configurationDocument
             || baseline.systemSettings != settingsDocument
         {
@@ -1114,6 +1124,7 @@ final class TemplateStore: ObservableObject {
         redoStack.append(projectSnapshot())
         document = previous.installation
         configurationDocument = previous.configuration
+        bootDocument = previous.boot
         settingsDocument = previous.systemSettings
         selectedElementID = nil
         inlineEditorElementID = nil
@@ -1130,6 +1141,7 @@ final class TemplateStore: ObservableObject {
         undoStack.append(projectSnapshot())
         document = next.installation
         configurationDocument = next.configuration
+        bootDocument = next.boot
         settingsDocument = next.systemSettings
         selectedElementID = nil
         inlineEditorElementID = nil
@@ -1158,6 +1170,7 @@ final class TemplateStore: ObservableObject {
         }
         do {
             try uiKit.validate()
+            try TemplateValidator.validate(bootDocument, for: .boot)
             try TemplateValidator.validate(document, for: .installation)
             try TemplateValidator.validate(configurationDocument, for: .configuration)
             try TemplateValidator.validate(settingsDocument, for: .systemSettings)
@@ -1199,6 +1212,7 @@ final class TemplateStore: ObservableObject {
             try StudioFileTransaction.commit(prepareSave(activeDocument, collection: selectedCollection, root: root), root: root)
             projectRoot = root
             switch selectedCollection {
+            case .boot: savedProject?.boot = bootDocument
             case .installation: savedProject?.installation = document
             case .configuration: savedProject?.configuration = configurationDocument
             case .systemSettings: savedProject?.systemSettings = settingsDocument
@@ -1224,6 +1238,7 @@ final class TemplateStore: ObservableObject {
             throw TemplateValidationIssue.invalidDocument("Generated \(collection.title) runtime artifact failed round-trip verification")
         }
         let baseName = switch collection {
+        case .boot: "boot-screens"
         case .installation: "installer-screens"
         case .configuration: "configuration-screens"
         case .systemSettings: "settings-screens"
@@ -1260,13 +1275,13 @@ final class TemplateStore: ObservableObject {
         }
         do {
             var writes: [StudioFileWrite] = []
-            for (section, source) in [(ScreenCollection.installation, document), (.configuration, configurationDocument), (.systemSettings, settingsDocument)] {
+            for (section, source) in [(ScreenCollection.boot, bootDocument), (.installation, document), (.configuration, configurationDocument), (.systemSettings, settingsDocument)] {
                 writes += try prepareSave(source, collection: section, root: root)
             }
             writes += try uiKit.prepareSave()
             try StudioFileTransaction.commit(writes, root: root)
             uiKit.didSave()
-            savedProject = ProjectSnapshot(installation: document, configuration: configurationDocument,
+            savedProject = ProjectSnapshot(boot: bootDocument, installation: document, configuration: configurationDocument,
                 systemSettings: settingsDocument)
             validationIssues = []
             status = "Saved UIKit and all wizard/settings sections"
@@ -1415,6 +1430,7 @@ final class TemplateStore: ObservableObject {
         case .installation: InstallerStudioDocument.factoryDefault()
         case .configuration: InstallerStudioDocument.factoryConfiguration()
         case .systemSettings: InstallerStudioDocument.factorySystemSettings()
+        case .boot: InstallerStudioDocument.factoryBoot()
         }
         guard let index = selectedScreenIndex,
               let factory = factoryDocument.screens.first(where: { $0.id == selectedScreenID })
@@ -1645,6 +1661,7 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     private func projectSnapshot() -> ProjectSnapshot {
         ProjectSnapshot(
+            boot: bootDocument,
             installation: document,
             configuration: configurationDocument,
             systemSettings: settingsDocument
