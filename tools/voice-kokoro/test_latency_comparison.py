@@ -39,7 +39,7 @@ def lifetime_fixture():
         transitions.append((turn, 11, 0))
         for index in range(6):
             transitions.extend(((turn * 6 + index, 0, 0), (turn * 6 + index, 1, 0)))
-    transitions.extend(((12, 12, 7), (13, 13, 7)))
+    transitions.extend(((12, 12, 7), (13, 13, 7), (14, 14, 0), (15, 15, 0), (16, 16, 0)))
     result = bytearray()
     for case, kind, status in transitions:
         frames, ticks, pcm_hash = 0, 0, 0
@@ -53,6 +53,10 @@ def lifetime_fixture():
             index = case % 6
             frames = [18273, 43486, 90000, 30000, 95000, 40000][index]
             pcm_hash = [0x5838af8f1e7ca150, 0xbefdcb6522e7d813, 102, 103, 104, 105][index]
+            ticks = 1_000_000
+        elif kind == 16:
+            frames = 18273
+            pcm_hash = 0x5838af8f1e7ca150
             ticks = 1_000_000
         diagnostics = [3, 1_000_000_000, 0, 0] + [0] * 8
         memory = [1_000_000_000, 800_000_000, 200_000_000, 1_000_000, 16_777_216, 2_000_000, 0]
@@ -83,11 +87,11 @@ class LatencyComparisonTests(unittest.TestCase):
 
     # ------------------------=
     # FUNC: test_complete_mixed_engine_sequence
-    # DESC: Accepts the exact two-recognition twelve-synthesis lifetime and fatal quarantine transition chain.
+    # DESC: Accepts recognition, synthesis, quarantine, reset, warmup and recovered speech transitions.
     # ------------------=
     def test_complete_mixed_engine_sequence(self):
         rows = runner.decode_lifetime(lifetime_fixture())
-        self.assertEqual(len(rows), 29)
+        self.assertEqual(len(rows), 32)
         self.assertEqual(sum(row["kind"] == 11 for row in rows), 2)
         self.assertEqual(sum(row["kind"] == 1 for row in rows), 12)
 
@@ -108,7 +112,8 @@ class LatencyComparisonTests(unittest.TestCase):
     # ------------------=
     def test_rejects_pcm_heap_and_privacy_failures(self):
         for row, field, value in ((16, 19, 17), (1, 4, 0), (1, 5, 0), (1, 19, 17),
-                                  (3, 21, 800_000_001), (27, 19, 1), (28, 20, 999_999_999)):
+                                  (3, 21, 800_000_001), (27, 19, 1), (28, 20, 999_999_999),
+                                  (31, 19, 17)):
             data = lifetime_fixture()
             struct.pack_into("<Q", data, row * 216 + field * 8, value)
             with self.subTest(row=row, field=field), self.assertRaises(ValueError):
