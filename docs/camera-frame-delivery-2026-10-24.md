@@ -36,3 +36,17 @@ The full existing camera service/lifecycle harness passed via build-kit:
 These are service-boundary tests, not a new installed-camera capture. The exact
 cause of the user's failed attempt cannot be established from its generic 104
 status alone. Installed preview/capture verification remains required.
+
+## Release
+
+Clean release passed through `./build-kit full --skip-tests`, including kernel
+currentness, live/installed model and artwork parity, and checksum verification.
+Manifest: `builds/manifests/20261024T130606592353Z-29756.json`.
+Broad regressions were deferred; the focused camera harness above passed.
+
+| Installer | SHA-256 |
+| --- | --- |
+| `builds/InfinityOS-aarch64.iso` | `5a4df5d64a754d2215071c584539fdc8643e3f55fc9b727870ca9dc63097afe6` |
+| `builds/InfinityOS-x86_64.iso` | `95c0b29f85194d38e3e8de85e3d93b6f55b9a6902955ca62e359a4abdd9040c0` |
+
+Implementation commit: `942816ee` on mainline. The running VM was not modified.
