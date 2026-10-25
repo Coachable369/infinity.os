@@ -945,6 +945,84 @@ final class TemplateStore: ObservableObject {
         status = "Element duplicated"
     }
 
+    static let elementPasteboardType = NSPasteboard.PasteboardType("org.infinityos.studio.elements.v1")
+
+    // ------------------------=
+    // FUNC: copySelectedElements
+    // DESC: Copies the complete marquee selection in authored order without changing geometry or the document.
+    // ------------------=
+    func copySelectedElements(to pasteboard: NSPasteboard = .general) {
+        guard !editingUIKit, let screen = selectedScreen else { return }
+        let elements = screen.elements.filter { selectedElementIDs.contains($0.id) }
+        guard !elements.isEmpty, let data = try? JSONEncoder().encode(elements) else { return }
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: Self.elementPasteboardType)
+        status = "Copied \(elements.count) elements — paste preserves X/Y"
+    }
+
+    // ------------------------=
+    // FUNC: pasteElementsInPlace
+    // DESC: Atomically pastes fresh layer identities at exact authored coordinates; rejects runtime-role conflicts before mutation.
+    // ------------------=
+    func pasteElementsInPlace(from pasteboard: NSPasteboard = .general) {
+        guard !editingUIKit, let index = selectedScreenIndex,
+              let data = pasteboard.data(forType: Self.elementPasteboardType), data.count <= 4_194_304,
+              let elements = try? JSONDecoder().decode([StudioElement].self, from: data),
+              !elements.isEmpty, elements.count <= 256 else {
+            status = "Clipboard does not contain Studio elements"
+            return
+        }
+        let screen = activeDocument.screens[index]
+        var additions: [StudioElement] = []
+        var identifiers = Set(screen.elements.map(\.codeIdentifier))
+        var names = Set(screen.elements.map(\.name))
+        for var element in SettingsActionContract.clonedElements(elements) {
+            let count = (screen.elements + additions).filter { $0.role == element.role }.count
+            if let maximum = selectedCollection.maximumRoleCount(element.role, screenID: screen.id), count >= maximum {
+                if element.kind == .image && [.masthead, .sceneBackground, .progressHero].contains(element.role) {
+                    // A copied illustration is not a second runtime-owned header/background.
+                    // Keep its authored pixels and geometry as an ordinary image layer.
+                    element.role = .image
+                } else {
+                    status = "Cannot paste: \(element.role.title) conflicts with this screen's runtime structure"
+                    return
+                }
+            }
+            guard element.frame == element.frame.clamped() else {
+                status = "Cannot paste out-of-canvas coordinates without moving the selection"
+                return
+            }
+            var copy = element
+            var nameSuffix = 2
+            while names.contains(copy.name) {
+                copy.name = "\(element.name) \(nameSuffix)"
+                nameSuffix += 1
+            }
+            names.insert(copy.name)
+            var suffix = 1
+            while identifiers.contains(copy.codeIdentifier) {
+                copy.codeIdentifier = "\(element.codeIdentifier).copy\(suffix)"
+                suffix += 1
+            }
+            guard copy.hasValidCodeIdentifier else {
+                status = "Cannot paste: shorten the element's code identifier first"
+                return
+            }
+            identifiers.insert(copy.codeIdentifier)
+            additions.append(copy)
+        }
+        var candidate = screen
+        candidate.elements.append(contentsOf: additions)
+        do { try TemplateValidator.validateSettingsActions(candidate, collection: selectedCollection) }
+        catch { status = "Cannot paste: \(error)"; return }
+        recordUndo()
+        activeDocument.screens[index].elements.append(contentsOf: additions)
+        selectedElementIDs = Set(additions.map(\.id))
+        selectedElementID = additions.last?.id
+        inlineEditorElementID = nil
+        status = "Pasted \(additions.count) elements at original X/Y"
+    }
+
     // ------------------------=
     // FUNC: geometryIsEditable
     // DESC: Rejects geometry controls for native responsive dashboard regions whose bounds are owned by the OS layout contract.
@@ -965,6 +1043,41 @@ final class TemplateStore: ObservableObject {
     func moveLayer(_ delta: Int) {
         guard let id = selectedElementID, delta != 0 else { return }
         reorderLayer(id, action: delta > 0 ? .forward : .backward)
+    }
+
+    // ------------------------=
+    // FUNC: moveVisibleLayers
+    // DESC: Applies a Layers-list drag in front-to-back order, preserving filtered-out layers and one undo transaction.
+    // ------------------=
+    func moveVisibleLayers(_ source: IndexSet, to destination: Int, visible: [UUID]) {
+        guard selectedCollection != .systemSettings, let screen = selectedScreenIndex,
+              !source.isEmpty, source.allSatisfy({ visible.indices.contains($0) }),
+              (0...visible.count).contains(destination), Set(visible).count == visible.count else { return }
+        let current = activeDocument.screens[screen].elements.sorted {
+            $0.zIndex == $1.zIndex ? $0.id.uuidString > $1.id.uuidString : $0.zIndex > $1.zIndex
+        }
+        guard visible == current.filter({ visible.contains($0.id) }).map(\.id) else { return }
+        let moved = source.map { visible[$0] }
+        guard current.filter({ moved.contains($0.id) }).allSatisfy({ !$0.locked }) else { return }
+        var order = visible
+        order.move(fromOffsets: source, toOffset: destination)
+        guard order != visible, let first = order.firstIndex(where: { moved.contains($0) }) else { return }
+        let next = order.dropFirst(first + moved.count).first
+        let previous = order.prefix(first).last
+        var layers = current.filter { !moved.contains($0.id) }
+        let insertion: Int
+        if let next, let index = layers.firstIndex(where: { $0.id == next }) { insertion = index }
+        else if let previous, let index = layers.firstIndex(where: { $0.id == previous }) { insertion = index + 1 }
+        else { insertion = layers.count }
+        layers.insert(contentsOf: current.filter { moved.contains($0.id) }, at: insertion)
+        recordUndo()
+        let ranks = Dictionary(uniqueKeysWithValues: layers.reversed().enumerated().map { ($0.element.id, $0.offset) })
+        for index in activeDocument.screens[screen].elements.indices {
+            activeDocument.screens[screen].elements[index].zIndex = ranks[activeDocument.screens[screen].elements[index].id]!
+        }
+        selectedElementIDs = Set(moved)
+        selectedElementID = moved.first
+        status = "Layer order updated"
     }
 
     // ------------------------=

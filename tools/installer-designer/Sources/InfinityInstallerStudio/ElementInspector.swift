@@ -34,9 +34,7 @@ struct ElementInspector: View {
             TextField("Find layer or image…", text: $layerSearch)
                 .textFieldStyle(.roundedBorder).padding(.horizontal, 12).padding(.bottom, 8)
             List {
-              ForEach([true, false], id: \.self) { scene in
-                Section(scene ? "Scene & Header" : "Content") {
-                  ForEach(Self.listedElements(store.selectedScreen?.elements ?? [], scene: scene, search: layerSearch)) { element in
+                  ForEach(visibleLayers) { element in
                 HStack(spacing: 8) {
                     Button(action: { store.selectElement(element.id) }) {
                         HStack(spacing: 8) {
@@ -64,9 +62,11 @@ struct ElementInspector: View {
                 .listRowBackground(store.selectedElementIDs.contains(element.id)
                     ? InfinityUIKit.Palette.nativeAccent.opacity(0.12)
                     : Color.clear)
+                .moveDisabled(element.locked || store.selectedCollection == .systemSettings)
                   }
-                }
-              }
+                  .onMove { source, destination in
+                      store.moveVisibleLayers(source, to: destination, visible: visibleLayers.map(\.id))
+                  }
             }
             .listStyle(.inset)
             .frame(minHeight: 190)
@@ -106,6 +106,14 @@ struct ElementInspector: View {
         }
         .background(InfinityUIKit.Palette.nativePanel)
         .tint(InfinityUIKit.Palette.nativeAccent)
+    }
+
+    private var visibleLayers: [StudioElement] {
+        (store.selectedScreen?.elements ?? []).filter {
+            layerSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(layerSearch)
+                || $0.codeIdentifier.localizedCaseInsensitiveContains(layerSearch)
+                || $0.imageAsset.localizedCaseInsensitiveContains(layerSearch)
+        }.sorted { $0.zIndex == $1.zIndex ? $0.id.uuidString > $1.id.uuidString : $0.zIndex > $1.zIndex }
     }
 
     // ------------------------=
