@@ -143,6 +143,10 @@ impl TestTemplate {
                     element.extend_from_slice(&[0; 17]);
                     element.extend_from_slice(&[255; 4]);
                 }
+                if version < 11 {
+                    let flags = element_kind_offset(element) + 3;
+                    element[flags] &= 63;
+                }
                 if version == 6 {
                     let flags = element_kind_offset(element) + 3;
                     element[flags] &= 3;
@@ -159,7 +163,7 @@ impl TestTemplate {
 // ------------------=
 fn verify_settings_children_contract() {
     let valid = TestTemplate::read(SETTINGS_TEMPLATE);
-    assert_eq!(valid.version, 10);
+    assert_eq!(valid.version, 11);
     let parsed = InstallerTemplate::parse_settings(SETTINGS_TEMPLATE).unwrap();
     let mut counts = [0usize; 5];
     for screen in &valid.screens {
