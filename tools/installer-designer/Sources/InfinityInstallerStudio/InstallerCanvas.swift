@@ -600,7 +600,7 @@ struct CanvasElementView: View {
         if let image = resolveImage() {
             Image(nsImage: croppedImage(image) ?? image)
                 .resizable()
-                .aspectRatio(contentMode: element.role.imageUsesAspectFill ? .fill : .fit)
+                .aspectRatio(contentMode: element.imageUsesAspectFill ? .fill : .fit)
                 .clipped()
         } else {
             RoundedRectangle(cornerRadius: 8 * canvasScale.height)

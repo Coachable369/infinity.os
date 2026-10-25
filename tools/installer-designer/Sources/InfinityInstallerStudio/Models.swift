@@ -473,6 +473,10 @@ struct StudioColor: Codable, Hashable {
     }
 }
 
+enum StudioImageFit: Int, Codable, CaseIterable {
+    case legacy = 0, fit = 1, fill = 2
+}
+
 struct StudioElement: Identifiable, Codable, Hashable {
     var id: UUID
     var codeIdentifier: String
@@ -484,6 +488,8 @@ struct StudioElement: Identifiable, Codable, Hashable {
     var text: String
     var imageAsset: String
     var crop: ImageCrop = .none
+    var imageFit: StudioImageFit = .legacy
+    var imageUsesAspectFill: Bool { imageFit == .fill || (imageFit == .legacy && role.imageUsesAspectFill) }
     var fill: StudioColor
     var border: StudioColor
     var fontSize: Int
@@ -626,7 +632,7 @@ struct ImageCrop: Codable, Hashable {
 extension StudioElement {
     private enum CodingKeys: String, CodingKey {
         case id, codeIdentifier, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
-        case fontSize, opacity, cornerRadius, zIndex, locked, hidden, surfaceMaterial, surfaceCorners, fillToken, borderToken
+        case fontSize, opacity, cornerRadius, zIndex, locked, hidden, surfaceMaterial, surfaceCorners, fillToken, borderToken, imageFit
         case parentRowID, actionCaptionMode, captionColor
     }
 
@@ -657,6 +663,7 @@ extension StudioElement {
         hidden = try values.decode(Bool.self, forKey: .hidden)
         surfaceMaterial = try values.decodeIfPresent(UIKitSurfaceMaterial.self, forKey: .surfaceMaterial) ?? .authored
         surfaceCorners = try values.decodeIfPresent(UIKitCornerStyle.self, forKey: .surfaceCorners) ?? .authored
+        imageFit = try values.decodeIfPresent(StudioImageFit.self, forKey: .imageFit) ?? .legacy
         fillToken = try values.decodeIfPresent(UIKitColorRole.self, forKey: .fillToken)
         borderToken = try values.decodeIfPresent(UIKitColorRole.self, forKey: .borderToken)
         parentRowID = try values.decodeIfPresent(UUID.self, forKey: .parentRowID)

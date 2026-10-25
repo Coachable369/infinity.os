@@ -785,16 +785,19 @@ final class TemplateStore: ObservableObject {
         {
             activeDocument.screens[location.screen].elements[location.elementIndex].imageAsset = relativePath
             activeDocument.screens[location.screen].elements[location.elementIndex].crop = .none
+            activeDocument.screens[location.screen].elements[location.elementIndex].imageFit = .fit
             status = "Image replaced"
             projectRoot = root
             return location.element.id
         }
         let area = editableContentFrame(in: screen)
+        // X and Y are normalized separately; compensate for the actual widescreen viewport.
         let aspect = CGFloat(dimensions.0) / CGFloat(dimensions.1)
-        var width = min(460, max(160, area.width - 40))
+            * CGFloat(canvasViewport.height) / CGFloat(canvasViewport.width)
+        var width = 460
         var height = Int((CGFloat(width) / aspect).rounded())
-        if height > area.height - 40 {
-            height = max(100, area.height - 40)
+        if height > 600 {
+            height = 600
             width = Int((CGFloat(height) * aspect).rounded())
         }
         var element = StudioElement.make(
@@ -811,6 +814,7 @@ final class TemplateStore: ObservableObject {
             zIndex: nextZIndex(in: screen)
         )
         element.codeIdentifier = uniqueCodeIdentifier(element.codeIdentifier, in: screen)
+        element.imageFit = .fit
         activeDocument.screens[screen].elements.append(element)
         selectedElementID = element.id
         inlineEditorElementID = nil
@@ -982,6 +986,9 @@ final class TemplateStore: ObservableObject {
                 if element.kind == .image && [.masthead, .sceneBackground, .progressHero].contains(element.role) {
                     // A copied illustration is not a second runtime-owned header/background.
                     // Keep its authored pixels and geometry as an ordinary image layer.
+                    if element.imageFit == .legacy {
+                        element.imageFit = element.imageUsesAspectFill ? .fill : .fit
+                    }
                     element.role = .image
                 } else {
                     status = "Cannot paste: \(element.role.title) conflicts with this screen's runtime structure"

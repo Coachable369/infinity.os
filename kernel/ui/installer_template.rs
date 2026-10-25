@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 10;
+const FORMAT_VERSION: u16 = 11;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -214,6 +214,7 @@ pub struct InstallerTemplateElement<'a> {
     pub text: &'a [u8],
     pub image_asset: &'a [u8],
     pub crop: [u8; 4],
+    pub image_fit: u8,
     pub parent_id: [u8; 16],
     pub caption_mode: u8,
     pub caption_color: [u8; 4],
@@ -277,7 +278,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::InvalidHeader);
         }
         let version = reader.u16()?;
-        if version != FORMAT_VERSION && version != 9 && version != 8 && version != 7 && version != 6 {
+        if version != FORMAT_VERSION && version != 10 && version != 9 && version != 8 && version != 7 && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -826,7 +827,7 @@ impl<'a> Reader<'a> {
                 && flags & 2 == 0
                 && input_variable == InstallerTemplateVariable::None as u8)
             || (self.version == 6 && flags & !3 != 0)
-            || flags & !63 != 0 || (flags >> 4) & 3 > 2
+            || (self.version < 11 && flags & !63 != 0) || flags >> 6 > 2 || (flags >> 4) & 3 > 2
         {
             return Err(InstallerTemplateError::InvalidElement);
         }
@@ -907,6 +908,7 @@ impl<'a> Reader<'a> {
             text,
             image_asset,
             crop,
+            image_fit: flags >> 6,
             parent_id,
             caption_mode,
             caption_color,

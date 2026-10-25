@@ -202,7 +202,7 @@ enum RuntimeTemplateCodec {
         let assets: [String: Data]
     }
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 10
+    static let version: UInt16 = 11
     static let maximumAssetCount = 128
     static let maximumTemplateBytes = 512 * 1024 * 1024
 
@@ -245,6 +245,7 @@ enum RuntimeTemplateCodec {
                 if element.hidden { flags |= 2 }
                 flags |= UInt8(element.surfaceMaterial.rawValue) << 2
                 flags |= UInt8(element.surfaceCorners.rawValue) << 4
+                flags |= UInt8(element.imageFit.rawValue) << 6
                 output.append(flags)
                 output.appendLittleEndian(Int16(element.zIndex.clamped(to: -32_768...32_767)))
                 output.appendLittleEndian(UInt16(element.frame.x))
@@ -366,7 +367,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard [6, 7, 8, 9, version].contains(sourceVersion) else {
+        guard [6, 7, 8, 9, 10, version].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -395,7 +396,8 @@ enum RuntimeTemplateCodec {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Scene backgrounds require a v10 image layer")
                 }
                 let flags = try reader.readUInt8()
-                guard flags & 0xc0 == 0,
+                guard (sourceVersion >= 11 || flags & 0xc0 == 0),
+                      let imageFit = StudioImageFit(rawValue: Int(flags >> 6)),
                       let surfaceMaterial = UIKitSurfaceMaterial(rawValue: Int((flags >> 2) & 3)),
                       let surfaceCorners = UIKitCornerStyle(rawValue: Int((flags >> 4) & 3)),
                       sourceVersion != 6 || flags & 0xfc == 0 else {
@@ -445,6 +447,7 @@ enum RuntimeTemplateCodec {
                     text: text,
                     imageAsset: imageAsset,
                     crop: crop,
+                    imageFit: imageFit,
                     fill: fill,
                     border: border,
                     fontSize: fontSize,

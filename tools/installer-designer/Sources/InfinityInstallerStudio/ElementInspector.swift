@@ -341,6 +341,14 @@ struct ElementInspector: View {
                     .disabled(element.crop == .none)
                 }
                 Divider()
+                Picker("Image sizing", selection: Binding(
+                    get: { store.selectedElement?.imageFit ?? .legacy },
+                    set: { fit in store.updateSelected("Image sizing updated") { $0.imageFit = fit } }
+                )) {
+                    Text("Original role behavior").tag(StudioImageFit.legacy)
+                    Text("Fit — show whole image").tag(StudioImageFit.fit)
+                    Text("Fill — crop to frame").tag(StudioImageFit.fill)
+                }
                 cropSlider("Left", keyPath: \.left, value: element.crop.left)
                 cropSlider("Top", keyPath: \.top, value: element.crop.top)
                 cropSlider("Right", keyPath: \.right, value: element.crop.right)
@@ -381,6 +389,7 @@ struct ElementInspector: View {
                         Text("Use UIKit style").tag(UIKitSurfaceMaterial.authored)
                         Text("Glass").tag(UIKitSurfaceMaterial.glass)
                         Text("Matte").tag(UIKitSurfaceMaterial.matte)
+                        Text("Flat").tag(UIKitSurfaceMaterial.flat)
                     }
                     Picker("Corners", selection: Binding(
                         get: { store.selectedElement?.surfaceCorners ?? element.surfaceCorners },

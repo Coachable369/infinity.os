@@ -442,7 +442,11 @@ impl DisplayDevice {
                 rect,
                 element.crop,
                 (255u16 * element.opacity as u16 / 100) as u8,
-                template_image_uses_aspect_fill(element.role),
+                match element.image_fit {
+                    1 => false,
+                    2 => true,
+                    _ => template_image_uses_aspect_fill(element.role),
+                },
             ),
             3 => self.template_text_layer(element, rect),
             5 => self.template_button_layer(element, rect, navigation),
