@@ -41,6 +41,17 @@ static APP_GENERATING: AtomicBool = AtomicBool::new(false);
 static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
 static LONG_REPLY: AtomicBool = AtomicBool::new(false);
 const SHORT_RESPONSE: &[u8] = b"Hi. This is the next phrase of the response.";
+// These lifecycle fixtures submit conversational prompts, not side controls.
+mod control {
+    pub struct Command;
+    impl Command {
+        // ------------------------=
+        // FUNC: explicit
+        // DESC: Keeps side-control dispatch outside the conversational lifecycle fixture.
+        // ------------------=
+        pub fn explicit(_: &[u8]) -> Option<Self> { None }
+    }
+}
 const LONG_RESPONSE: &[u8] = b"This streamed response contains enough words to start a bounded synthesis request before the full answer has arrived while keeping each word in order and preserving the final part of the answer.";
 static SPANS: std::sync::Mutex<Vec<(usize,usize,bool)>> = std::sync::Mutex::new(Vec::new());
 static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
