@@ -190,6 +190,12 @@ private struct ScreenSidebar: View {
                         .contentShape(Rectangle())
                         .onTapGesture { store.selectUIKit() }
                 }
+                DisclosureGroup {
+                    screenRows(for: .login, screens: store.loginDocument.screens)
+                } label: {
+                    collectionHeader(.login)
+                }
+                .id(ScreenCollection.login)
                 DisclosureGroup(isExpanded: $bootExpanded) {
                     screenRows(for: .boot, screens: store.bootDocument.screens)
                 } label: {

@@ -29,6 +29,34 @@ pub(super) struct ConfigurationViewState<'a> {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: login_template_scene
+    // DESC: Shares authored authentication pixels between Studio and the OS while keeping credentials masked and identity native.
+    // ------------------=
+    pub(crate) fn login_template_scene(&mut self, bytes: &[u8], account: &[u8], input: &[u8], focus: usize) -> bool {
+        let Ok(template) = InstallerTemplate::parse_login(bytes) else { return false; };
+        let Some(count) = template.element_count(1) else { return false; };
+        for index in 0..count {
+            let Some(mut element) = template.layer_at(1, index) else { return false; };
+            if element.hidden || element.opacity == 0 { continue; }
+            let action = crate::ui::installer_template::login_action(&element);
+            if action == Some(0) { element.text = account; }
+            if action == Some(1) {
+                let rect = scale_template_rect(element.frame, self.width, self.height);
+                self.onboarding_input_field_with_element(Some(element), rect.left, rect.top, rect.width, rect.height,
+                    input, true, focus == 1, b"Password");
+            } else if element.kind == 3 {
+                self.configuration_template_text_layer(element);
+            } else if matches!(element.kind, 1 | 4 | 5) {
+                // Reuse the shared glass renderer and its native primary/secondary states.
+                self.access_template_control_with_focus(element, None, (0, 0), Some(action == Some(focus)));
+            } else {
+                self.template_element(element, template.asset(element.image_asset), None);
+            }
+        }
+        true
+    }
+
+    // ------------------------=
     // FUNC: access_template_panel_glow
     // DESC: Applies the native breathing rim with the authored panel's same geometry, colors and corner coverage.
     // ------------------=
@@ -305,13 +333,22 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn access_template_control(&mut self, element: InstallerTemplateElement<'_>,
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, progress:(usize,usize)) {
+        self.access_template_control_with_focus(element, navigation, progress, None);
+    }
+
+    // ------------------------=
+    // FUNC: access_template_control_with_focus
+    // DESC: Shares the native control painter while allowing authentication's typed action focus without changing button styles.
+    // ------------------=
+    fn access_template_control_with_focus(&mut self, element: InstallerTemplateElement<'_>,
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, progress:(usize,usize), focus_override: Option<bool>) {
         use super::access_style as palette;
         use crate::ui::panel_recipe::Surface;
         let rect=scale_template_rect(element.frame,self.width,self.height);
-        let focused=navigation.is_some_and(|(focus,_,_)|
+        let focused=focus_override.unwrap_or_else(|| navigation.is_some_and(|(focus,_,_)|
             (element.role==InstallerTemplateRole::BackButton as u8 && focus==0)
             || (element.role==InstallerTemplateRole::PrimaryButton as u8 && focus==1)
-            || (element.role==InstallerTemplateRole::Input as u8 && focus==1));
+            || (element.role==InstallerTemplateRole::Input as u8 && focus==1)));
         let fill=(element.fill[0],element.fill[1],element.fill[2]);
         let border=(element.border[0],element.border[1],element.border[2]);
         let opacity=(element.fill[3] as u16*element.opacity as u16/100) as u8;

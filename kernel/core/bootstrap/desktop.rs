@@ -817,6 +817,11 @@ impl super::DisplayDevice {
         focus: usize,
         paint_header: bool,
     ) {
+        let account = crate::runtime::with_runtime(|runtime| runtime.identity.user_nth(selected_user)).flatten();
+        if self.login_template_scene(crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES,
+            account.as_ref().map(|user| user.display_name.as_bytes()).unwrap_or(b"Select an account"), input, focus) {
+            return;
+        }
         let fit = (self.width.saturating_mul(1000) / 1536)
             .min(self.height.saturating_mul(1000) / 1024)
             .max(1);
@@ -988,6 +993,11 @@ impl super::DisplayDevice {
         input: &[u8],
         focus: usize,
     ) {
+        if crate::ui::installer_template::InstallerTemplate::parse_login(crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES).is_ok() {
+            self.paint_authentication_background_rect(0, 0, self.width, self.height);
+            self.authentication_frame(locked, selected_user, input, focus, true);
+            return;
+        }
         let fit = (self.width.saturating_mul(1000) / 1536)
             .min(self.height.saturating_mul(1000) / 1024)
             .max(1);
@@ -8395,6 +8405,7 @@ pub fn system_ui_present(
                 console
                     .display
                     .authentication_focus_controls(screen == 6, step, input, focus);
+                full_surface_redrawn = true;
             } else if screen == 7 && (focus_changed || content_changed) {
                 console.display.app_launcher_content_update(
                     console.display.ui_scale().max(1),

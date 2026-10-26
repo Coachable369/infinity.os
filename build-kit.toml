@@ -160,6 +160,15 @@ domain = "studio"
 command = ["swift", "test", "--scratch-path", "builds/.studio-work/swift", "--cache-path", "builds/.studio-work/cache/swiftpm", "--config-path", "builds/.studio-work/cache/swiftpm-config", "--security-path", "builds/.studio-work/cache/swiftpm-security", "--package-path", "tools/installer-designer", "--filter", "GlassButtonTests|PrecisionPreviewTests"]
 clean = false
 
+[profiles.studio-login-tests]
+domain = "studio"
+command = ["swift", "test", "--scratch-path", "builds/.studio-work/swift", "--cache-path", "builds/.studio-work/cache/swiftpm", "--config-path", "builds/.studio-work/cache/swiftpm-config", "--security-path", "builds/.studio-work/cache/swiftpm-security", "--package-path", "tools/installer-designer", "--filter", "LoginSceneTests|RuntimeTemplateCodecTests.testStoreProtectsRequiredStructureAndAllowsOrdinaryLayerDeletion"]
+clean = false
+
+[profiles.login-layout-tests]
+command = ["sh", "-c", "rustc --edition=2021 -Awarnings tools/login-template-test.rs -o build/login-template-test && build/login-template-test"]
+clean = false
+
 [profiles.desktop-effects-tests]
 command = ["sh", "-c", "rustc --edition=2021 --test tools/desktop-effects-test.rs -o build/desktop-effects-test && build/desktop-effects-test && rustc --edition=2021 --test tools/desktop-polish-test.rs -o build/desktop-polish-test && build/desktop-polish-test --test-threads=1 && rustc --edition=2021 --test tools/spatial-retained-test.rs -o build/spatial-retained-test && build/spatial-retained-test --test-threads=1"]
 clean = false

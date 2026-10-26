@@ -7,6 +7,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 PAYLOAD_KINDS = {
+    "login-screens.iuit": "login",
     "boot-screens.iuit": "boot",
     "installer-screens.iuit": "template",
     "configuration-screens.iuit": "template",
@@ -45,7 +46,7 @@ def verify_embedded_ui(kernel, payloads, checkpoint=None, *, snapshot=None):
 # DESC: Verifies every screen and theme payload consumed by live and installed kernels, excluding installer-only screens from installed boot.
 # ------------------=
 def verify_kernel_pair(live, installed, root=ROOT):
-    screens = [root / f"assets/boot/{name}-screens.iuit" for name in ("installer", "configuration", "settings", "boot")]
+    screens = [root / f"assets/boot/{name}-screens.iuit" for name in ("installer", "configuration", "settings", "boot", "login")]
     styles = [root / f"assets/ui-design-kit/default/uikit-{name}.bin" for name in ("tokens", "styles")]
     snapshot = {path: path.read_bytes() for path in [*screens, *styles]}
     verify_embedded_ui(live, [*screens, *styles], snapshot=snapshot)

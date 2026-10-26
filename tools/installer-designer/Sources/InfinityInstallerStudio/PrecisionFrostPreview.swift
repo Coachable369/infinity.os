@@ -11,6 +11,7 @@ struct CanvasRuntimeBackdrop: View {
     // ------------------=
     static func assetPath(for collection: ScreenCollection) -> String {
         switch collection {
+        case .login: "assets/desktop/infinity-shell-wallpaper-v3.bmp"
         case .boot: "assets/boot/infinity-eclipse-header-v1.bmp"
         case .installation: "assets/boot/infinity-installer-background-v2.bmp"
         case .configuration: "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp"

@@ -44,6 +44,8 @@ struct InfinityInstallerStudioApp: App {
                     .boot
                 } else if source.lastPathComponent == "configuration-screens.infinityui" {
                     .configuration
+                } else if source.lastPathComponent == "login-screens.infinityui" {
+                    .login
                 } else if source.lastPathComponent == "settings-screens.infinityui" {
                     .systemSettings
                 } else {
@@ -64,6 +66,21 @@ struct InfinityInstallerStudioApp: App {
                 Darwin.exit(0)
             } catch {
                 fputs("Template compilation failed: \(error)\n", stderr)
+                Darwin.exit(1)
+            }
+        }
+        if arguments.count == 3, arguments[1] == "--export-login-default" {
+            do {
+                let root = URL(fileURLWithPath: arguments[2], isDirectory: true)
+                let source = InstallerStudioDocument.factoryLogin()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                try ContentAwareAtomicWriter.write(encoder.encode(source), to: root.appending(path: "assets/boot/login-screens.infinityui"))
+                try ContentAwareAtomicWriter.write(RuntimeTemplateCodec.encode(source, assetRoot: root, collection: .login),
+                    to: root.appending(path: "assets/boot/login-screens.iuit"))
+                Darwin.exit(0)
+            } catch {
+                fputs("Login template export failed: \(error)\n", stderr)
                 Darwin.exit(1)
             }
         }

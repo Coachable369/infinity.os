@@ -49,6 +49,15 @@ pub enum InstallerTemplateRole {
     SettingsSliderTrack = 37,
     SettingsSliderThumb = 38,
     SceneBackground = 39,
+    LoginAccount = 40,
+    LoginSecurityKey = 41,
+    LoginAddUser = 42,
+    LoginRecovery = 43,
+    LoginOptions = 44,
+    LoginShutdown = 45,
+    LoginRestart = 46,
+    LoginNetwork = 47,
+    LoginAccessibility = 48,
 }
 
 // ------------------------=
@@ -184,6 +193,22 @@ pub enum InstallerTemplateVariable {
     Password = 4,
 }
 
+// ------------------------=
+// FUNC: login_action
+// DESC: Maps authored login controls to the existing bounded authentication actions, never to executable text.
+// ------------------=
+pub fn login_action(element: &InstallerTemplateElement<'_>) -> Option<usize> {
+    if element.hidden || element.opacity == 0 { return None; }
+    if element.role == InstallerTemplateRole::Input as u8 { return Some(1); }
+    if element.role == InstallerTemplateRole::PrimaryButton as u8 { return Some(2); }
+    if element.kind != 5 { return None; }
+    match element.role {
+        40 => Some(0),
+        41..=48 => Some(usize::from(element.role - 38)),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallerTemplateRect {
     pub x: u16,
@@ -245,7 +270,7 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Validates a complete bounded installer template before it can affect runtime UI.
     // ------------------=
     pub fn parse(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
-        Self::parse_profile(data, true, false)
+        Self::parse_profile(data, true, false, false)
     }
 
     // ------------------------=
@@ -253,7 +278,7 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Validates a System Settings design without imposing installer navigation controls.
     // ------------------=
     pub fn parse_settings(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
-        Self::parse_profile(data, false, false)
+        Self::parse_profile(data, false, false, false)
     }
 
     // ------------------------=
@@ -261,7 +286,15 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Validates two independently authored loading scenes without installer navigation or Settings bindings.
     // ------------------=
     pub fn parse_boot(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
-        Self::parse_profile(data, false, true)
+        Self::parse_profile(data, false, true, false)
+    }
+
+    // ------------------------=
+    // FUNC: parse_login
+    // DESC: Validates a single authentication scene retaining visible credential and sign-in controls.
+    // ------------------=
+    pub fn parse_login(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
+        Self::parse_profile(data, false, false, true)
     }
 
     // ------------------------=
@@ -272,6 +305,7 @@ impl<'a> InstallerTemplate<'a> {
         data: &'a [u8],
         requires_navigation: bool,
         boot: bool,
+        login: bool,
     ) -> Result<Self, InstallerTemplateError> {
         let mut reader = Reader::new(data);
         if reader.take(4)? != MAGIC {
@@ -285,7 +319,8 @@ impl<'a> InstallerTemplate<'a> {
         if screen_count == 0 || screen_count > MAX_SCREEN_COUNT {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
-        if (boot && screen_count != 2) || (!boot && !requires_navigation && screen_count != 11) {
+        if (boot && screen_count != 2) || (login && screen_count != 1)
+            || (!login && !boot && !requires_navigation && screen_count != 11) {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
 
@@ -331,6 +366,9 @@ impl<'a> InstallerTemplate<'a> {
             let mut settings_disclosure_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
+                if element.role >= 40 && (!login || element.kind != 5) {
+                    return Err(InstallerTemplateError::InvalidElement);
+                }
                 if boot && element.role == InstallerTemplateRole::ProgressBar as u8 && element.kind == 6 {
                     boot_progress_count = boot_progress_count.saturating_add(1);
                 }
@@ -392,6 +430,9 @@ impl<'a> InstallerTemplate<'a> {
                     settings_disclosure_count = settings_disclosure_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
+                    if login && (element.input_variable != 4 || element.opacity == 0) {
+                        return Err(InstallerTemplateError::InvalidNavigation);
+                    }
                     input_count = input_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::LiveDetails as u8 {
@@ -412,12 +453,12 @@ impl<'a> InstallerTemplate<'a> {
             }
             let invalid_installer = requires_navigation
                 && (back_count != 1 || primary_count != 1 || console_count == 0);
-            let expected_settings_rows = if requires_navigation || boot {
+            let expected_settings_rows = if requires_navigation || boot || login {
                 0
             } else {
                 [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize]
             };
-            let invalid_settings = !boot && !requires_navigation
+            let invalid_settings = !login && !boot && !requires_navigation
                 && (console_count != 1
                     || content_count != 1
                     || title_count == 0
@@ -443,12 +484,13 @@ impl<'a> InstallerTemplate<'a> {
                             || settings_summary_count != 0
                             || settings_main_count != 0
                             || settings_sidebar_count != 0)));
-            let invalid_settings_rows = !boot && !requires_navigation
+            let invalid_settings_rows = !login && !boot && !requires_navigation
                 && ![7, 8].contains(&screen)
                 && (settings_row_label_count != row_count
                     || settings_row_value_count != row_count
                     || settings_disclosure_count != row_count);
             if invalid_installer
+                || (login && (input_count != 1 || primary_count != 1))
                 || (boot && boot_progress_count != 1)
                 || invalid_settings
                 || invalid_settings_rows
@@ -457,10 +499,10 @@ impl<'a> InstallerTemplate<'a> {
             {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
-            if !boot && !requires_navigation && version >= 8 {
+            if !login && !boot && !requires_navigation && version >= 8 {
                 validate_settings_actions(elements_start, count, screen as usize - 1)?;
             }
-            if !boot && !requires_navigation && version >= 9 {
+            if !login && !boot && !requires_navigation && version >= 9 {
                 validate_settings_row_children(elements_start, count, screen as usize - 1)?;
             }
         }
@@ -800,7 +842,7 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::SceneBackground as u8
+            || role > InstallerTemplateRole::LoginAccessibility as u8
             || (role == InstallerTemplateRole::SceneBackground as u8 && (kind != 2 || self.version < 10))
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)

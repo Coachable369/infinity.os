@@ -1,0 +1,913 @@
+{
+  "canvasHeight" : 1000,
+  "canvasWidth" : 1000,
+  "screens" : [
+    {
+      "elements" : [
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "loginBackground",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "C5A853AA-420B-4DA8-9703-C5194C0C5614",
+          "imageAsset" : "assets/desktop/infinity-shell-wallpaper-v3.bmp",
+          "imageFit" : 2,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Login Background",
+          "opacity" : 100,
+          "role" : 39,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "loginPanel",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 736,
+            "width" : 339,
+            "x" : 35,
+            "y" : 120
+          },
+          "hidden" : false,
+          "id" : "E6AFAAB6-12FF-4C52-8AAF-3084F3A49807",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Login Panel",
+          "opacity" : 100,
+          "role" : 2,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "infinitySymbol",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 97,
+            "width" : 141,
+            "x" : 134,
+            "y" : 162
+          },
+          "hidden" : false,
+          "id" : "A2D1CC6A-8247-4A53-8664-08F8ACE49E84",
+          "imageAsset" : "infinity-emblem-v2.bmp",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Infinity Symbol",
+          "opacity" : 100,
+          "role" : 6,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "welcome",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 36,
+          "frame" : {
+            "height" : 47,
+            "width" : 302,
+            "x" : 53,
+            "y" : 264
+          },
+          "hidden" : false,
+          "id" : "38381764-095F-4722-90BE-12E5BC9C94DC",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome",
+          "opacity" : 100,
+          "role" : 4,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Welcome Back",
+          "zIndex" : 3
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "tagline",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 30,
+            "width" : 302,
+            "x" : 53,
+            "y" : 317
+          },
+          "hidden" : false,
+          "id" : "49CC868F-613D-41D9-8CF1-66E7A6615C06",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Tagline",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Secure. Limitless.",
+          "zIndex" : 4
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "loginAccount",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 83,
+            "width" : 275,
+            "x" : 67,
+            "y" : 367
+          },
+          "hidden" : false,
+          "id" : "AE8ADF80-8912-44D3-9294-9CF1ECE8E469",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Login Account",
+          "opacity" : 100,
+          "role" : 40,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Select an account",
+          "zIndex" : 5
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "password",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 55,
+            "width" : 275,
+            "x" : 67,
+            "y" : 467
+          },
+          "hidden" : false,
+          "id" : "66DD856F-C327-4503-B19A-382C6FC5DF95",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "credential.password",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Password",
+          "opacity" : 100,
+          "role" : 10,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "signIn",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 111,
+            "red" : 62
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 54,
+            "width" : 275,
+            "x" : 67,
+            "y" : 548
+          },
+          "hidden" : false,
+          "id" : "D332232A-7B90-4B9E-8F91-1D3839E7FCDB",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Sign In",
+          "opacity" : 100,
+          "role" : 8,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Sign In",
+          "zIndex" : 7
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "securityKey",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 54,
+            "width" : 275,
+            "x" : 67,
+            "y" : 664
+          },
+          "hidden" : false,
+          "id" : "3C922386-1741-4309-BCE5-0F691ECFA3E2",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Security Key",
+          "opacity" : 100,
+          "role" : 41,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Sign In with Security Key",
+          "zIndex" : 8
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "addUser",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 73,
+            "width" : 89,
+            "x" : 67,
+            "y" : 733
+          },
+          "hidden" : false,
+          "id" : "0354502B-E598-4EDB-8C36-6B0A2243C407",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Add User",
+          "opacity" : 100,
+          "role" : 42,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Add User",
+          "zIndex" : 9
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "forgotPassword",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 73,
+            "width" : 89,
+            "x" : 158,
+            "y" : 733
+          },
+          "hidden" : false,
+          "id" : "DB1CE035-B60E-430D-8675-6A2D84337D90",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Forgot Password",
+          "opacity" : 100,
+          "role" : 43,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Forgot Password",
+          "zIndex" : 10
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "options",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 73,
+            "width" : 89,
+            "x" : 250,
+            "y" : 733
+          },
+          "hidden" : false,
+          "id" : "EBDD9519-8A8B-4EE2-9029-59ECAF936A26",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Options",
+          "opacity" : 100,
+          "role" : 44,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Options",
+          "zIndex" : 11
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "utilityTray",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 87,
+            "width" : 311,
+            "x" : 344,
+            "y" : 892
+          },
+          "hidden" : false,
+          "id" : "819DEC1D-5182-477B-9713-5657E57E6759",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Utility Tray",
+          "opacity" : 100,
+          "role" : 3,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 12
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "shutDown",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 68,
+            "width" : 70,
+            "x" : 347,
+            "y" : 902
+          },
+          "hidden" : false,
+          "id" : "9C69C91B-85FC-4124-9B65-35448C214ED5",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Shut Down",
+          "opacity" : 100,
+          "role" : 45,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Shut Down",
+          "zIndex" : 13
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "restart",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 68,
+            "width" : 70,
+            "x" : 425,
+            "y" : 902
+          },
+          "hidden" : false,
+          "id" : "35732890-DEED-4C1C-B3AD-32457AD8FA28",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Restart",
+          "opacity" : 100,
+          "role" : 46,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Restart",
+          "zIndex" : 14
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "network",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 68,
+            "width" : 70,
+            "x" : 502,
+            "y" : 902
+          },
+          "hidden" : false,
+          "id" : "B48820DD-742A-441F-82CE-44A97E61A5BD",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Network",
+          "opacity" : 100,
+          "role" : 47,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Network",
+          "zIndex" : 15
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "accessibility",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 68,
+            "width" : 70,
+            "x" : 580,
+            "y" : 902
+          },
+          "hidden" : false,
+          "id" : "32C43135-E77E-49A9-94BE-AE443A3D886F",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Accessibility",
+          "opacity" : 100,
+          "role" : 48,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Accessibility",
+          "zIndex" : 16
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "loginWordmark",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 80,
+            "left" : 14,
+            "right" : 12,
+            "top" : 1
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 89,
+            "width" : 371,
+            "x" : 585,
+            "y" : 89
+          },
+          "hidden" : false,
+          "id" : "68BFDB62-2D63-4C7F-98C2-A68E590FC632",
+          "imageAsset" : "infinity-eclipse-header-v1.bmp",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Login Wordmark",
+          "opacity" : 100,
+          "role" : 6,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 17
+        }
+      ],
+      "id" : 1,
+      "title" : "Login"
+    }
+  ],
+  "version" : 1
+}

@@ -1072,6 +1072,9 @@ impl SystemLayout {
     // DESC: Resolves account, credential, recovery, and session utility controls exactly.
     // ------------------=
     pub fn authentication_target(self, normalized_x: i32, normalized_y: i32) -> Option<usize> {
+        if let Ok(template) = super::installer_template::InstallerTemplate::parse_login(super::installer_layout::LOGIN_TEMPLATE_BYTES) {
+            return super::installer_layout::login_target_in(&template, normalized_x, normalized_y);
+        }
         let point = self.point(normalized_x, normalized_y);
         let fit = (self.width.saturating_mul(1000) / 1536)
             .min(self.height.saturating_mul(1000) / 1024)
@@ -1126,6 +1129,12 @@ impl SystemLayout {
     // DESC: Returns the exact secure text field rectangle for click-to-caret placement.
     // ------------------=
     pub fn authentication_password_geometry(self) -> Rect {
+        if let Ok(template) = super::installer_template::InstallerTemplate::parse_login(super::installer_layout::LOGIN_TEMPLATE_BYTES) {
+            if let Some(element) = template.element(1, super::installer_template::InstallerTemplateRole::Input) {
+                let frame = super::installer_layout::scale_template_rect(element.frame, self.width, self.height);
+                return rect(frame.left, frame.top, frame.width, frame.height);
+            }
+        }
         let fit = (self.width.saturating_mul(1000) / 1536)
             .min(self.height.saturating_mul(1000) / 1024)
             .max(1);

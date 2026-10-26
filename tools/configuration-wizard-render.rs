@@ -144,7 +144,7 @@ pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:us
 #[cfg(studio_native_preview)]
 pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usize,
     background:&[u8],focus:usize,pressed:bool,phase:Option<u64>,state:DraftServiceState)->Result<Vec<u8>,String> {
-    let template=if kind==3 {InstallerTemplate::parse_boot(bytes)}else if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
+    let template=if kind==4 {InstallerTemplate::parse_login(bytes)}else if kind==3 {InstallerTemplate::parse_boot(bytes)}else if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
         .map_err(|error|format!("Invalid native template: {error:?}"))?;
     if template.element_count(screen).is_none() {return Err("Unknown template screen".into());}
     let motion_key=(u32::from(screen)<<8)|focus as u32;
@@ -190,7 +190,11 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             target.precision_window_frame(geometry.window,true,target.ui_scale());
         }
     }
-    if kind==3 {
+    if kind==4 {
+        if !target.login_template_scene(bytes, b"Select an account", b"", focus) {
+            return Err("Native login scene rejected the template".into());
+        }
+    } else if kind==3 {
         if !target.boot_template_scene(bytes,screen,if state.simulated {usize::from(state.percent)}else{100},b"",phase.unwrap_or(2400) as usize) {
             return Err("Native boot scene rejected the template".into());
         }

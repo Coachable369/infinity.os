@@ -79,6 +79,15 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case settingsSliderTrack = 37
     case settingsSliderThumb = 38
     case sceneBackground = 39
+    case loginAccount = 40
+    case loginSecurityKey = 41
+    case loginAddUser = 42
+    case loginRecovery = 43
+    case loginOptions = 44
+    case loginShutdown = 45
+    case loginRestart = 46
+    case loginNetwork = 47
+    case loginAccessibility = 48
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -123,6 +132,15 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .settingsSliderTrack: "Settings Slider Track"
         case .settingsSliderThumb: "Settings Slider Thumb"
         case .sceneBackground: "Scene Background"
+        case .loginAccount: "Login: Select Account"
+        case .loginSecurityKey: "Login: Security Key"
+        case .loginAddUser: "Login: Add User"
+        case .loginRecovery: "Login: Recover Password"
+        case .loginOptions: "Login: Options"
+        case .loginShutdown: "Login: Shut Down"
+        case .loginRestart: "Login: Restart"
+        case .loginNetwork: "Login: Network"
+        case .loginAccessibility: "Login: Accessibility"
         }
     }
 
@@ -297,6 +315,7 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
 }
 
 enum ScreenCollection: String, CaseIterable, Identifiable {
+    case login
     case boot
     case installation
     case configuration
@@ -305,6 +324,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .login: "Login Screen"
         case .boot: "Boot Loading Screens"
         case .installation: "Installation Screens"
         case .configuration: "OS Configuration Screens"
@@ -318,6 +338,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // ------------------=
     var requiredScreenCount: Int {
         switch self {
+        case .login: 1
         case .boot: 2
         case .installation: 11
         case .configuration: 8
@@ -340,6 +361,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if self == .login { return [.input, .primaryButton].contains(role) ? 1 : 0 }
         if self == .boot { return role == .progressBar ? 1 : 0 }
         if self == .systemSettings {
             if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID).count }
@@ -387,6 +409,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
+        if self == .login { return [.input, .primaryButton, .sceneBackground].contains(role) ? 1 : nil }
         if role == .sceneBackground { return self == .installation || self == .boot ? 1 : 0 }
         if role == .settingsNavigationIcon { return self == .systemSettings ? 11 : 0 }
         if [.masthead, .progressHero, .timeZoneMap].contains(role) { return 1 }

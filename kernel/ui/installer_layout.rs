@@ -7,6 +7,21 @@ use super::installer_template::{
 
 pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/installer-screens.iuit");
+pub const LOGIN_TEMPLATE_BYTES: &[u8] = include_bytes!("../../assets/boot/login-screens.iuit");
+
+// ------------------------=
+// FUNC: login_target_in
+// DESC: Hit-tests visible authentication controls in reverse paint order using their authored geometry.
+// ------------------=
+pub fn login_target_in(template: &InstallerTemplate<'_>, x: i32, y: i32) -> Option<usize> {
+    for index in (0..template.element_count(1)?).rev() {
+        let element = template.layer_at(1, index)?;
+        if scale_template_rect(element.frame, 1000, 1000).contains_point(x, y) {
+            if let Some(action) = super::installer_template::login_action(&element) { return Some(action); }
+        }
+    }
+    None
+}
 
 // ------------------------=
 // FUNC: installer_navigation_target

@@ -37,6 +37,9 @@ enum TemplateValidator {
         }
         let collection = explicitCollection
             ?? ScreenCollection.runtimeCollection(screenCount: document.screens.count)
+        if collection == .login && document.screens.count != 1 {
+            throw TemplateValidationIssue.invalidDocument("Login requires exactly one authentication screen")
+        }
         if collection == .boot && document.screens.count != 2 {
             throw TemplateValidationIssue.invalidDocument("Boot loading requires the ISO and installed scenes")
         }
@@ -55,6 +58,13 @@ enum TemplateValidator {
             let back = screen.elements.filter { $0.role == .backButton }
             let primary = screen.elements.filter { $0.role == .primaryButton }
             let liveInputs = screen.elements.filter { $0.role == .input && !$0.hidden }
+            if collection == .login {
+                guard liveInputs.count == 1, liveInputs[0].inputVariable == .password,
+                      primary.count == 1, primary[0].kind == .button, !primary[0].hidden,
+                      primary[0].opacity > 0, liveInputs[0].opacity > 0 else {
+                    throw TemplateValidationIssue.invalidScreen(screen.id, "Visible password and sign-in controls are required")
+                }
+            }
             let identifiers = screen.elements.map(\.codeIdentifier)
             guard Set(identifiers).count == identifiers.count,
                   Set(screen.elements.map(\.id)).count == screen.elements.count else {
@@ -87,7 +97,7 @@ enum TemplateValidator {
             if screen.elements.contains(where: { $0.role == .sceneBackground && $0.kind != .image }) {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Scene background must be an image")
             }
-            if collection != .systemSettings && collection != .boot {
+            if collection != .systemSettings && collection != .boot && collection != .login {
                 guard back.count == 1, primary.count == 1 else {
                     throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
                 }
@@ -108,13 +118,16 @@ enum TemplateValidator {
                 }
             }
             try validateSettingsActions(screen, collection: collection)
-            guard collection == .boot || screen.elements.contains(where: { $0.role == .console }) else {
+            guard collection == .boot || collection == .login || screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
             }
             guard liveInputs.count <= 1 else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Only one live input field is supported per screen")
             }
             for element in screen.elements {
+                if element.role.rawValue >= 40 && (collection != .login || element.kind != .button) {
+                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Authentication actions require login buttons")
+                }
                 guard element.kind == .button || element.captionColor == .white else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Only buttons may override caption color")
                 }
