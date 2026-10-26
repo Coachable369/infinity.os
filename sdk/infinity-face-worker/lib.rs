@@ -47,7 +47,11 @@ fn control()->Result<p::Control,u32> {
 // FUNC: visit
 // DESC: Yields compute and observes cancellation or a superseding command between bounded inference visits.
 // ------------------=
-fn visit(command:u64)->bool {call(0x1001,[0;6]);control().is_ok_and(|c|c.command_id==command && c.command!=p::CANCEL)}
+fn visit(command:u64)->bool {
+    // CONTROL_READ itself traps back to the scheduler. A separate yield doubles
+    // desktop round trips without adding a cancellation or preemption boundary.
+    control().is_ok_and(|c|c.command_id==command && c.command!=p::CANCEL)
+}
 // ------------------------=
 // FUNC: report
 // DESC: Reports UI progress only; the wire record has no authentication result or credential field.

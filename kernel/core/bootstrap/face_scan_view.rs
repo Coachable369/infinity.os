@@ -11,6 +11,27 @@ static mut LAST_MS:u64=0;
 static mut START_MS:Option<u64>=None;
 static mut BASE_DIRTY:bool=false;
 
+// ------------------------=
+// FUNC: wave
+// DESC: Produces a continuous periodic sine approximation with zero-velocity yaw reversals.
+// ------------------=
+fn wave(ms:u64,period:u64)->f32 {
+    let t=ms as f32/period as f32;
+    let x=if t<0.5 {t*2.0}else{(1.0-t)*2.0};
+    let positive=16.0*x*(1.0-x)/(5.0-4.0*x*(1.0-x));
+    if t<0.5 {positive}else{-positive}
+}
+// ------------------------=
+// FUNC: mesh_point
+// DESC: Projects the generated face texture on a fixed convex depth surface around a stable pivot.
+// ------------------=
+fn mesh_point(sx:f32,y:f32,r:Rect,sine:f32,cosine:f32)->f32 {
+    let x=(sx-128.0)/128.0;
+    let dome=(1.0-x*x-y*y).max(0.0)*0.20;
+    let nose=(1.0-x.abs()*4.0).max(0.0)*(1.0-(y-0.05).abs()*3.0).max(0.0)*0.10;
+    r.x as f32+r.width as f32*(0.5+(x*cosine+(dome+nose)*sine)*0.43)
+}
+
 impl DisplayDevice {
     // ------------------------=
     // FUNC: face_mask_base
@@ -29,43 +50,40 @@ impl DisplayDevice {
     }}
     // ------------------------=
     // FUNC: face_mask_scan
-    // DESC: Bilinearly samples generated angle sprites with moving blue-white scan illumination over a clean substrate.
+    // DESC: Rotates a textured connected-dot depth surface with bilinear filtering and scan illumination.
     // ------------------=
     pub(super) fn face_mask_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {unsafe {
         if BOUNDS!=Some(r) {return;}
-        const ANGLES:[usize;16]=[0,1,2,4,5,4,2,1,0,15,14,13,12,13,14,15];
-        let phase=if reduced {0}else{elapsed%6400};
-        let frame=ANGLES[(phase/400) as usize];
-        let next=ANGLES[((phase/400+1)%16) as usize];
-        let mix=if reduced {0}else{(phase%400)*256/400} as u32;
-        let sweep=if reduced {r.height/2}else{((elapsed%2400)*u64::from(r.height)/2400) as u32};
         let base=&*core::ptr::addr_of!(BASE);
         for y in 0..r.height as usize {
             core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
                 self.buffer.add((r.y as usize+y)*self.stride+r.x as usize),r.width as usize);
-            let fy=y*255*256/(r.height as usize).saturating_sub(1).max(1);
-            let sy=fy/256;let wy=(fy%256) as u32;
-            for x in 0..r.width as usize {
-                let fx=x*255*256/(r.width as usize).saturating_sub(1).max(1);
-                let sx=fx/256;let wx=(fx%256) as u32;
-                let mut rgba=[0u32;4];
-                for (cell,weight) in [(frame,256-mix),(next,mix)] {
-                    if weight==0 {continue;}
-                    for (px,py,w) in [(sx,sy,(256-wx)*(256-wy)),((sx+1).min(255),sy,wx*(256-wy)),
-                        (sx,(sy+1).min(255),(256-wx)*wy),((sx+1).min(255),(sy+1).min(255),wx*wy)] {
-                        let offset=(cell*256*256+py*256+px)*4;
-                        for c in 0..4 {rgba[c]+=u32::from(SPRITES[offset+c])*w*weight/256;}
+        }
+        let yaw=if reduced {0.0}else{wave(elapsed%10000,10000)*0.60};
+        let sine=yaw*(1.0-yaw*yaw/6.0+yaw*yaw*yaw*yaw/120.0);
+        let cosine=1.0-yaw*yaw/2.0+yaw*yaw*yaw*yaw/24.0;
+        let sweep=if reduced {0.5}else{(elapsed%3200) as f32/3200.0};
+        for dy in 0..r.height {
+            let ny=((dy as f32+0.5)/r.height as f32-0.5)/0.43;
+            let sy=128.0+ny*128.0;
+            if sy<0.0 || sy>=255.0 {continue;}
+            let iy=sy as usize;let fy=sy-iy as f32;
+            let glow=(1.0-(dy as f32/r.height as f32-sweep).abs()*28.0).max(0.0);
+            let mut left=mesh_point(0.0,ny,r,sine,cosine);
+            for sx in 0..255 {
+                let right=mesh_point((sx+1) as f32,ny,r,sine,cosine);
+                for dx in (left+0.5) as i32..(right+0.5) as i32 {
+                    let fx=((dx as f32+0.5-left)/(right-left)).clamp(0.0,1.0);
+                    let mut rgba=[0u8;4];
+                    for c in 0..4 {
+                        let at=(iy*256+sx)*4+c;
+                        let top=SPRITES[at] as f32*(1.0-fx)+SPRITES[at+4] as f32*fx;
+                        let bottom=SPRITES[at+1024] as f32*(1.0-fx)+SPRITES[at+1028] as f32*fx;
+                        rgba[c]=(top*(1.0-fy)+bottom*fy) as u8;
                     }
+                    self.blend_color(dx,r.y+dy as i32,rgba[0].saturating_add((glow*35.0) as u8),rgba[1],rgba[2],rgba[3]);
                 }
-                let alpha=(rgba[3]/65536) as u8;
-                if alpha==0 {continue;}
-                let distance=(y as i32-sweep as i32).unsigned_abs();
-                let band=(r.height/28).max(1);
-                let glow=band.saturating_sub(distance)*140/band;
-                self.blend_color(r.x+x as i32,r.y+y as i32,
-                    (rgba[0]/65536+glow).min(255) as u8,
-                    (rgba[1]/65536+glow).min(255) as u8,
-                    (rgba[2]/65536+glow).min(255) as u8,alpha);
+                left=right;
             }
         }
     }}
@@ -73,7 +91,7 @@ impl DisplayDevice {
 
 // ------------------------=
 // FUNC: animate
-// DESC: Presents bounded sprite damage at 12 Hz with static reduced motion and cursor-coherent restoration.
+// DESC: Presents bounded mesh damage at 30 Hz with static reduced motion and cursor-coherent restoration.
 // ------------------=
 #[cfg(target_os="none")]
 pub fn animate(visible:bool,reduced:bool)->bool {
@@ -81,7 +99,7 @@ pub fn animate(visible:bool,reduced:bool)->bool {
     unsafe {
         if !visible {START_MS=None;BOUNDS=None;return false;}
         let first=START_MS.is_none();
-        if !first && !BASE_DIRTY && (reduced || now.saturating_sub(LAST_MS)<83) {return false;}
+        if !first && !BASE_DIRTY && (reduced || now.saturating_sub(LAST_MS)<33) {return false;}
         let Some(c)=(*core::ptr::addr_of_mut!(CONSOLE)).as_mut() else{return false;};
         let Some(r)=BOUNDS.filter(|r|*r==Layout::new(c.display.width,c.display.height).mask) else{return false;};
         if first {START_MS=Some(now);}

@@ -1,5 +1,16 @@
 # Facial setup — verification before login activation
 
+## Continuous connected-dot rotation
+
+Reuse the generated front-face artwork as a texture on one stable convex
+depth surface. Rotate that surface continuously through a
+gentle left/right yaw: no crossfade between independently generated faces.
+Keep the existing 170% illustration rectangle, icy cyan connectors, bright
+nodes, and traveling scan illumination. Pixels use bilinear filtering; the surface
+is decorative, never measured landmarks. Target 30 Hz with bounded local damage,
+no decoding/allocation in paint, and a static reduced-motion pose. Preserve the
+Precision controls and real camera previews unchanged.
+
 ## Login integration revision (2026-10-26)
 
 The following integration supersedes this document's earlier setup-only/off

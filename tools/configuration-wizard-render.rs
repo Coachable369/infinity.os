@@ -68,6 +68,18 @@ pub(super) fn verify_face() {
     write_ppm("builds/validation/face-enrollment/native-frame.ppm",&pixels,width,height);
     pixels.copy_from_slice(&base);d.face_mask_scan(mask,700,true);let reduced=pixels.clone();
     pixels.copy_from_slice(&base);d.face_mask_scan(mask,1400,true);assert_eq!(pixels,reduced);
+    // Adjacent frames must move less than a substantial turn, including the yaw wrap.
+    let start=std::time::Instant::now();
+    for t in [0,2467,4967,7467,9967] {
+        d.face_mask_scan(mask,t,false);let a=pixels.clone();
+        d.face_mask_scan(mask,t+33,false);let b=pixels.clone();
+        d.face_mask_scan(mask,t+1000,false);
+        let distance=|other:&[u32]|->u64 {a.iter().zip(other).map(|(&x,&y)| {
+            [0,8,16].into_iter().map(|s|((x>>s)&255).abs_diff((y>>s)&255) as u64).sum::<u64>()
+        }).sum()};
+        assert!(distance(&b)<distance(&pixels));
+    }
+    println!("15 native animation frames plus pixel comparisons: {:?}",start.elapsed());
 }
 
 #[derive(Clone,Copy)]

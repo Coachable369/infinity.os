@@ -35,7 +35,7 @@ impl<'a> Recognizer<'a> {
         if arena.len()<self.arena_len() {return Err(Error::Memory);}
         let mut execution=Execution::new(self.detector,&mut arena[..self.detector.arena_len]).map_err(Error::Inference)?;
         vision::detector_input(rgb,execution.input().map_err(Error::Inference)?).map_err(Error::Image)?;
-        while !execution.step(128).map_err(Error::Inference)? {if !visit() {return Err(Error::Cancelled);}}
+        run_graph(&mut execution,&mut visit)?;
         let ranges=[(0,1600),(1600,2000),(2000,2100)];
         for (level,&(a,b)) in ranges.iter().enumerate() {
             execution.output(level,&mut scratch.class[a..b]).map_err(Error::Inference)?;
@@ -53,11 +53,23 @@ impl<'a> Recognizer<'a> {
         let mut execution=Execution::new(self.recognizer,&mut arena[..self.recognizer.arena_len]).map_err(Error::Inference)?;
         vision::align(rgb,&face,execution.input().map_err(Error::Inference)?,&mut result.grey).map_err(Error::Image)?;
         crate::quality(&result.grey,100).map_err(Error::Quality)?;
-        while !execution.step(128).map_err(Error::Inference)? {if !visit() {return Err(Error::Cancelled);}}
+        run_graph(&mut execution,&mut visit)?;
         if !visit() {return Err(Error::Cancelled);}
         execution.output(0,&mut result.embedding).map_err(Error::Inference)?;
         crate::norm(&result.embedding).map_err(Error::Quality)?;
         Ok(result)
+    }
+}
+// ------------------------=
+// FUNC: run_graph
+// DESC: Amortizes control syscalls over bounded batches; native timer preemption and host cancellation remain independent of graph checkpoints.
+// ------------------=
+fn run_graph(execution:&mut Execution<'_,'_>,visit:&mut impl FnMut()->bool)->Result<(),Error> {
+    loop {
+        if !visit() {execution.cancel();return Err(Error::Cancelled);}
+        for _ in 0..16 {
+            if execution.step(4096).map_err(Error::Inference)? {return Ok(());}
+        }
     }
 }
 impl Recognition {

@@ -130,7 +130,8 @@ impl<'a,'m> Execution<'a,'m> {
     pub fn step(&mut self,budget:usize)->Result<bool,Error> {
         if self.cancelled {return Err(Error::Cancelled);}
         if budget==0 || budget>4096 {return Err(Error::Bounds);}
-        for _ in 0..budget {
+        let mut remaining=budget;
+        while remaining>0 {
             if self.node==self.model.nodes {return Ok(true);}
             let at=self.model.node_start+self.node*64;
             let op=word(self.model.bytes,at)?;
@@ -140,10 +141,14 @@ impl<'a,'m> Execution<'a,'m> {
             for (i,t) in ins.iter_mut().enumerate().take(arity) {*t=self.model.tensor(word(self.model.bytes,at+12+i*4)?)?;}
             let mut p=[0usize;8];
             for (i,v) in p.iter_mut().enumerate() {*v=word(self.model.bytes,at+32+i*4)?;}
-            let value=self.scalar(op,arity,ins,out,p,self.element)?;
-            if !value.is_finite() {return Err(Error::Numeric);}
-            self.arena[out.offset+self.element]=value;
-            self.element+=1;
+            let count=remaining.min(out.len-self.element);
+            for _ in 0..count {
+                let value=self.scalar(op,arity,ins,out,p,self.element)?;
+                if !value.is_finite() {return Err(Error::Numeric);}
+                self.arena[out.offset+self.element]=value;
+                self.element+=1;
+            }
+            remaining-=count;
             if self.element==out.len {self.element=0;self.node+=1;}
         }
         Ok(self.node==self.model.nodes)
