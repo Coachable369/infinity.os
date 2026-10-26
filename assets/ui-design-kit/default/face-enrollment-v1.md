@@ -99,6 +99,17 @@ the master, derivative and specification. The PNG master remains unchanged.
 
 ## Completion gate
 
+### Capture review feedback
+
+Reuse the existing Field surface for three 4:3 review thumbnails beside the live
+preview, labeled Front, Left and Right. Only an accepted explicit capture fills
+its slot; live preview and rejected captures must never replace earlier accepted
+photos. Show Accepted/Pending beneath each slot and Checking photo while the
+capture command is pending. Transient review images are scrubbed on cancellation,
+failure, restart and teardown. Old/too-soon frames allow a retry within the
+existing session deadline without losing accepted views. These review images
+are not additional persistent biometric records.
+
 Do not wire this specification into a selectable configuration page before the
 isolated camera decoder, detector and embedding worker can supply real results.
 Review production screenshots with real frames and all error/focus states.

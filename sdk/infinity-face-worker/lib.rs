@@ -54,7 +54,7 @@ fn visit(command:u64)->bool {call(0x1001,[0;6]);control().is_ok_and(|c|c.command
 // ------------------=
 fn report(c:&p::Control,phase:u32,error:u32,state:Option<State>) {
     let phase=if phase==p::FAILED && c.command==p::CAPTURE && matches!(state,Some(State::Photos(_)))
-        && matches!(error,206..=214|216..=218) {p::REJECTED}else{phase};
+        && matches!(error,204..=214|216..=218) {p::REJECTED}else{phase};
     let (photos,comparisons)=match state {Some(State::Photos(n))=>(n as u32,0),Some(State::Verifying(n))=>(3,n as u32),
         Some(State::ReadyToVerify)=>(3,0),Some(State::Verified)=>(3,3),_=>(0,0)};
     let r=p::Report::new(c.command_id,phase,error,photos,comparisons);

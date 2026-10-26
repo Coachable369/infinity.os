@@ -6,6 +6,8 @@ pub mod wire;
 pub const PREVIEW_WIDTH: usize = 160;
 pub const PREVIEW_HEIGHT: usize = 120;
 pub const PREVIEW_BYTES: usize = PREVIEW_WIDTH * PREVIEW_HEIGHT * 3;
+pub const PHOTO_WIDTH: usize = 80;
+pub const PHOTO_HEIGHT: usize = 60;
 const SESSION_MS: u64 = 240_000;
 const COMMAND_MS: u64 = 60_000;
 
@@ -31,6 +33,9 @@ pub struct Setup {
     enrollment_written: usize,
     saved: bool,
     rejection:Option<u32>,
+    photos: [[u8; PHOTO_WIDTH * PHOTO_HEIGHT * 3]; 3],
+    photo_ready: [bool; 3],
+    capture_preview: bool,
 }
 impl Setup {
     // ------------------------=
@@ -40,7 +45,8 @@ impl Setup {
     pub const fn new() -> Self {
         Self {control:wire::Control::empty(),stage:Stage::Idle,pending:false,started:0,
             deadline:0,command_deadline:0,preview:[0;PREVIEW_BYTES],staging:[0;PREVIEW_BYTES],preview_revision:0,preview_written:0,preview_ready:false,
-            enrollment:[0;wire::ENROLLMENT_BYTES],enrollment_written:0,saved:false,rejection:None}
+            enrollment:[0;wire::ENROLLMENT_BYTES],enrollment_written:0,saved:false,rejection:None,
+            photos:[[0; PHOTO_WIDTH * PHOTO_HEIGHT * 3];3],photo_ready:[false;3],capture_preview:false}
     }
     // ------------------------=
     // FUNC: begin
@@ -51,6 +57,7 @@ impl Setup {
         if worker==0 || account==0 || model==[0;32] || name.trim().is_empty() || name.len()>64
             || name.chars().any(char::is_control) {return Err(Error::Invalid);}
         self.erase_preview();
+        self.erase_photos();
         self.erase_enrollment();self.saved=false;self.rejection=None;
         self.control=wire::Control::empty();
         self.control.worker=worker;self.control.account=account;self.control.model=model;
@@ -67,7 +74,7 @@ impl Setup {
         self.tick(now)?;
         if self.pending {return Err(Error::Busy);}
         if !matches!(self.stage,Stage::Photos(0..=2)) {return Err(Error::WrongStage);}
-        self.preview_written=0;self.rejection=None;self.issue(wire::CAPTURE,now)
+        self.preview_written=0;self.capture_preview=false;self.rejection=None;self.issue(wire::CAPTURE,now)
     }
     // ------------------------=
     // FUNC: verify
@@ -100,12 +107,12 @@ impl Setup {
         if report.version!=wire::VERSION || report.reserved!=0 || report.photos>3 || report.comparisons>3 {return Err(Error::Protocol);}
         if report.phase==wire::REJECTED {
             if self.control.command!=wire::CAPTURE || self.stage!=Stage::Photos(report.photos as u8)
-                || report.comparisons!=0 || !matches!(report.error,206..=214|216..=218) {return Err(Error::Protocol);}
+                || report.comparisons!=0 || !matches!(report.error,204..=214|216..=218) {return Err(Error::Protocol);}
             self.rejection=Some(report.error);self.pending=false;return Ok(());
         }
         if report.phase==wire::FAILED {
             if report.error==0 {return Err(Error::Protocol);}
-            self.stage=Stage::Failed(report.error);self.pending=false;self.erase_preview();self.erase_enrollment();return Ok(());
+            self.stage=Stage::Failed(report.error);self.pending=false;self.erase_preview();self.erase_enrollment();self.erase_photos();return Ok(());
         }
         if report.error!=0 {return Err(Error::Protocol);}
         let terminal=match (self.control.command,report.phase,self.stage) {
@@ -114,9 +121,11 @@ impl Setup {
             }
             (wire::CAPTURE,wire::PROCESSING,Stage::Photos(n)) if report.photos==n as u32 && report.comparisons==0 => false,
             (wire::CAPTURE,wire::READY,Stage::Photos(n)) if n<2 && report.photos==n as u32+1 && report.comparisons==0 => {
+                self.retain_photo(n as usize);
                 self.stage=Stage::Photos(n+1);true
             }
             (wire::CAPTURE,wire::REVIEW,Stage::Photos(2)) if report.photos==3 && report.comparisons==0 => {
+                self.retain_photo(2);
                 self.stage=Stage::Review;true
             }
             (wire::VERIFY,wire::PROCESSING,Stage::Verifying(n)) if report.photos==3 && report.comparisons==n as u32 => false,
@@ -147,6 +156,7 @@ impl Setup {
         if self.preview_written==PREVIEW_BYTES {
             self.preview.copy_from_slice(&self.staging);self.preview_ready=true;
             self.preview_written=0;self.preview_revision=self.preview_revision.wrapping_add(1);
+            if self.pending && self.control.command==wire::CAPTURE {self.capture_preview=true;}
         }
         Ok(())
     }
@@ -169,6 +179,35 @@ impl Setup {
         self.control.command_id=self.control.command_id.saturating_add(1);
         self.control.command=wire::CANCEL;self.pending=false;self.stage=Stage::Cancelled;self.erase_preview();
         self.erase_enrollment();
+        self.erase_photos();
+    }
+    // ------------------------=
+    // FUNC: retain_photo
+    // DESC: Retains only an accepted capture generation, never a prior live frame or rejected photograph.
+    // ------------------=
+    fn retain_photo(&mut self,index:usize) {
+        if !self.capture_preview {return;}
+        for y in 0..PHOTO_HEIGHT {for x in 0..PHOTO_WIDTH {
+            let src=(y*2*PREVIEW_WIDTH+x*2)*3;
+            let dst=(y*PHOTO_WIDTH+x)*3;
+            self.photos[index][dst..dst+3].copy_from_slice(&self.preview[src..src+3]);
+        }}
+        self.photo_ready[index]=true;
+    }
+    // ------------------------=
+    // FUNC: photo
+    // DESC: Exposes an accepted transient thumbnail for review without exposing biometric templates.
+    // ------------------=
+    pub fn photo(&self,index:usize)->Option<&[u8]> {
+        self.photo_ready.get(index).copied().unwrap_or(false).then(|| &self.photos[index][..])
+    }
+    // ------------------------=
+    // FUNC: erase_photos
+    // DESC: Scrubs transient review photographs on cancellation, restart and teardown.
+    // ------------------=
+    fn erase_photos(&mut self) {
+        for photo in &mut self.photos {for byte in photo {unsafe {core::ptr::write_volatile(byte,0);}}}
+        self.photo_ready=[false;3];self.capture_preview=false;
     }
     // ------------------------=
     // FUNC: write_enrollment
@@ -257,5 +296,5 @@ impl Drop for Setup {
     // FUNC: drop
     // DESC: Removes captured pixels on every coordinator teardown path.
     // ------------------=
-    fn drop(&mut self) {self.erase_preview();self.erase_enrollment();}
+    fn drop(&mut self) {self.erase_preview();self.erase_enrollment();self.erase_photos();}
 }

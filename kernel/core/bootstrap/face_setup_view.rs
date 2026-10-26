@@ -32,6 +32,9 @@ impl DisplayDevice {
                 Stage::Passed=>(b"Facial identity saved and verified from storage. Front and angled side portraits are encrypted locally. Password login remains on.",b"Continue"),
                 Stage::Failed(_)=>(b"The camera check did not complete. Check camera access, lighting, focus and pose. Retry starts a clean enrollment.",b"Retry camera check"),
             };
+            let (guidance,action)=if state.pending() && matches!(state.stage(),Stage::Photos(_)) {
+                (b"Photo captured. Checking face, lighting and pose. Please wait for the result before taking the next view." as &[u8],b"Checking photo..." as &[u8])
+            } else {(guidance,action)};
             self.access_text_wrapped(l.guidance.x as usize,l.guidance.y as usize,l.guidance.width as usize,
                 guidance,palette::TEXT.0,palette::TEXT.1,palette::TEXT.2,255,l.pixels,false);
             if state.stage()==Stage::Review {
@@ -56,11 +59,35 @@ impl DisplayDevice {
                     l.pixels*3/5,palette::SECONDARY,true,false);
             }
             self.face_mask_base(l.mask);
+            // Reuse the kit's image-backed field surfaces for real accepted photos.
+            let gap=l.pixels;
+            let left=l.preview.x as usize+l.preview.width as usize+gap;
+            let available=(l.field.x as usize+l.field.width as usize).saturating_sub(left);
+            let width=available.saturating_sub(gap*2)/3;
+            if width>0 {
+                for (index,label) in [b"Front" as &[u8],b"Left",b"Right"].into_iter().enumerate() {
+                    let x=left+index*(width+gap);let y=l.preview.y as usize;let height=width*3/4;
+                    self.access_surface(x,y,width,height,crate::ui::panel_recipe::Surface::Field,
+                        palette::BACKGROUND,palette::BORDER,255,false);
+                    if let Some(photo)=state.photo(index) {
+                        for py in 0..height {for px in 0..width {
+                            let offset=((py*crate::runtime::face_setup::PHOTO_HEIGHT/height)
+                                *crate::runtime::face_setup::PHOTO_WIDTH+px*crate::runtime::face_setup::PHOTO_WIDTH/width)*3;
+                            self.pixel((x+px) as i32,(y+py) as i32,photo[offset],photo[offset+1],photo[offset+2]);
+                        }}
+                    }
+                    self.access_label((x,y+height+gap/2,width,gap),label,l.pixels*3/5,palette::SECONDARY,true,false);
+                    self.access_label((x,y+height+gap*2,width,gap),
+                        if state.photo(index).is_some(){b"Accepted"}else{b"Pending"},
+                        l.pixels*3/5,palette::SECONDARY,true,false);
+                }
+            }
             let note:&[u8]=if error {b"Unable to start. A supported camera, valid account password and a face name are required."}
                 else if let Some(code)=state.rejection().or_else(||if let Stage::Failed(code)=state.stage(){Some(code)}else{None}) {match code {
                     104=>b"Camera disconnected or could not deliver a complete frame. Check the VM camera attachment.",
                     105|111|220=>b"The camera check timed out or was cancelled. Retry when you are ready.",
                     112=>b"The encrypted identity could not be saved and read back. Check storage and retry. No successful enrollment is being claimed.",
+                    204|205=>b"That frame was too old or captured too soon. Earlier accepted views are kept. Hold still and capture this view again.",
                     206=>b"No face detected. Center your face and improve the lighting.",
                     207=>b"More than one face detected. Only one person may be in the frame.",
                     208=>b"Move closer: the face is too small for a reliable comparison.",

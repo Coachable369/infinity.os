@@ -4,6 +4,41 @@ mod face_setup;
 use face_setup::{Setup,Stage,Error,wire as p};
 
 // ------------------------=
+// FUNC: accepted_photos_survive_preview_and_retry
+// DESC: Exercises all three captures, rejected side-view retries and cancellation with distinct actual RGB payloads.
+// ------------------=
+#[test]
+fn accepted_photos_survive_preview_and_retry() {
+    let mut setup=start();
+    for index in 0..3 {
+        let now=110+index*20;
+        setup.capture(now).unwrap();let id=setup.control().command_id;
+        assert_eq!(setup.capture(now+1),Err(Error::Busy));
+        for offset in (0..face_setup::PREVIEW_BYTES).step_by(3840) {
+            setup.write_preview(id,offset,&[30+index as u8;3840],now+2).unwrap();
+        }
+        if index==1 {
+            setup.accept(p::Report::new(id,p::REJECTED,204,1,0),now+3).unwrap();
+            assert_eq!(setup.stage(),Stage::Photos(1));assert!(setup.photo(1).is_none());
+            assert!(setup.photo(0).unwrap().iter().all(|&p|p==30));
+            setup.capture(now+4).unwrap();let retry=setup.control().command_id;
+            assert_eq!(setup.accept(p::Report::new(id,p::READY,0,2,0),now+5),Err(Error::Stale));
+            for offset in (0..face_setup::PREVIEW_BYTES).step_by(3840) {
+                setup.write_preview(retry,offset,&[31;3840],now+5).unwrap();
+            }
+        }
+        let id=setup.control().command_id;
+        setup.accept(p::Report::new(id,if index==2 {p::REVIEW}else{p::READY},0,index as u32+1,0),now+6).unwrap();
+        assert!(setup.photo(index as usize).unwrap().iter().all(|&p|p==30+index as u8));
+    }
+    assert_eq!(setup.stage(),Stage::Review);
+    setup.verify(160).unwrap();
+    for index in 0..3 {assert!(setup.photo(index).is_some());}
+    setup.cancel();
+    for index in 0..3 {assert!(setup.photo(index).is_none());}
+}
+
+// ------------------------=
 // FUNC: preparation_preview_is_not_an_enrollment
 // DESC: Allows an explicit start-camera preview without counting it as a photo or enabling authentication.
 // ------------------=
