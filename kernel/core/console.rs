@@ -7931,6 +7931,7 @@ impl ConsoleRuntime {
     // DESC: Handles pointer interaction input or state transitions.
     // ------------------=
     fn pointer_interaction(&mut self, buttons: u8) {
+        let previous_system_focus=self.system_focus;
         let buttons = crate::ui::input_preferences::current().buttons(buttons);
         if self.installer_work.busy() {
             self.pointer_buttons = buttons;
@@ -8121,6 +8122,21 @@ impl ConsoleRuntime {
             self.mode,
             ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked
         ) {
+            #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            if self.mode==ConsoleMode::Onboarding && self.system_step==7 {
+                let previous_focus=self.system_focus;
+                let face=crate::ui::face_setup_layout::Layout::new(self.system.framebuffer_width as usize,self.system.framebuffer_height as usize);
+                let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,
+                    y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+                if let Some(target)=face.hit(point) {
+                    self.system_focus=target;
+                    let retake=target==2 && crate::runtime::face_setup_host::view(|state|state.stage()==crate::runtime::face_setup::Stage::Review);
+                    if clicked && (target!=2 || retake) {self.input_face_setup(ConsoleKey::Enter);}
+                }
+                if clicked || previous_focus!=self.system_focus {self.redraw();}
+                else {crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}
+                return;
+            }
             if self.mode == ConsoleMode::Authentication || self.mode == ConsoleMode::Locked {
                 if let Some(target) = layout.authentication_target(self.pointer_x, self.pointer_y) {
                     self.system_focus = target;
@@ -8230,20 +8246,6 @@ impl ConsoleRuntime {
                             let point = layout.point(self.pointer_x, self.pointer_y);
                             if maximum != 0 && scrollbar.track.contains(point) {
                                 let direction = if point.y < scrollbar.thumb.y { -1 } else { 1 };
-            #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-            if self.mode==ConsoleMode::Onboarding && self.system_step==7 {
-                let previous_focus=self.system_focus;
-                let face=crate::ui::face_setup_layout::Layout::new(self.system.framebuffer_width as usize,self.system.framebuffer_height as usize);
-                let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,
-                    y:self.pointer_y*self.system.framebuffer_height as i32/1000};
-                if let Some(target)=face.hit(point) {
-                    self.system_focus=target;
-                    let retake=target==2 && crate::runtime::face_setup_host::view(|state|state.stage()==crate::runtime::face_setup::Stage::Review);
-                    if clicked && (target!=2 || retake) {self.input_face_setup(ConsoleKey::Enter);}
-                }
-                if clicked || previous_focus!=self.system_focus {self.redraw();}
-                return;
-            }
                                 let distance = direction
                                     * (timeline.height as isize * 4 / 5).max(1);
                                 crate::runtime::ai::with_ai_runtime(|runtime| {
@@ -9478,7 +9480,10 @@ impl ConsoleRuntime {
                 }
             }
         }
-        if buttons == 0
+        if matches!(self.mode,ConsoleMode::Onboarding|ConsoleMode::Authentication|ConsoleMode::Locked)
+            && !clicked && !right_clicked && !released && previous_system_focus==self.system_focus {
+            crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);
+        } else if buttons == 0
             && !released
             && !clicked
             && !right_clicked
@@ -13948,7 +13953,12 @@ pub fn poll_native_ai() {
             &runtime.onboarding_secret[..runtime.onboarding_secret_length],name) {
             runtime.onboarding_validation_error=true;runtime.redraw();
         }
-        if crate::runtime::face_setup_host::poll(visible) {runtime.redraw();}
+        let before=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection()));
+        if crate::runtime::face_setup_host::poll(visible) {
+            let after=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection()));
+            if visible && before==after {crate::bootstrap::face_preview_present();}
+            else {runtime.redraw();}
+        }
     }}
     #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){python_commands::poll(runtime);}}

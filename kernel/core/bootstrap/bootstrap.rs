@@ -1223,9 +1223,6 @@ pub fn animation_tick() {
     if !animation_due() {
         return;
     }
-    if crate::console::ui_animation_tick() {
-        return;
-    }
     unsafe {
         SYSTEM_CLOCK_TICKS = SYSTEM_CLOCK_TICKS.saturating_add(1);
         if SYSTEM_CLOCK_TICKS >= 60 {
@@ -1250,6 +1247,10 @@ pub fn animation_tick() {
         }
     };
     if defer_for_pointer {
+        return;
+    }
+    // Configuration artwork is decorative; cursor delivery has first priority.
+    if crate::console::ui_animation_tick() {
         return;
     }
     unsafe {

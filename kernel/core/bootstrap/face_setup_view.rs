@@ -1,6 +1,28 @@
 //! Configuration face check using existing Eclipse Access/Precision surfaces.
 use super::{DisplayDevice,access_style as palette};
 use crate::{runtime::face_setup::{Stage,PREVIEW_WIDTH,PREVIEW_HEIGHT},ui::face_setup_layout::Layout};
+
+// ------------------------=
+// FUNC: face_preview_present
+// DESC: Updates only live camera pixels, preserving cursor backing and avoiding whole-scene blur and artwork repaint.
+// ------------------=
+#[cfg(target_os="none")]
+pub fn face_preview_present() {unsafe {
+    let Some(console)=(*core::ptr::addr_of_mut!(super::CONSOLE)).as_mut() else{return;};
+    let r=Layout::new(console.display.width,console.display.height).preview;
+    console.restore_cursor();
+    crate::runtime::face_setup_host::view(|state| {
+        if let Some(pixels)=state.preview() {
+            for y in 0..r.height as usize {for x in 0..r.width as usize {
+                let i=((y*PREVIEW_HEIGHT/r.height as usize)*PREVIEW_WIDTH+x*PREVIEW_WIDTH/r.width as usize)*3;
+                console.display.pixel(r.x+x as i32,r.y+y as i32,pixels[i],pixels[i+1],pixels[i+2]);
+            }}
+        }
+    });
+    console.display.mark_dirty_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
+    console.save_and_draw_cursor(console.cursor_x,console.cursor_y);
+    console.display.present_damage();
+}}
 impl DisplayDevice {
     // ------------------------=
     // FUNC: face_setup_frame

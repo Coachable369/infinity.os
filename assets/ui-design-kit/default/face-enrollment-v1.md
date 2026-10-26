@@ -101,6 +101,25 @@ the master, derivative and specification. The PNG master remains unchanged.
 
 ### Capture review feedback
 
+### Digital face revision
+
+The configuration illustration now uses `face-digital-turn-v1.png`, generated
+with the built-in image tool, packed by `tools/build-face-turn-artwork.py` into
+sixteen RGBA cells. Generation prompt: anonymous gender-neutral 3D face made of
+luminous icy-blue dots connected by fine cyan triangles, transparent background,
+4-by-4 angle sheet, consistent orthographic framing, no solid skin or text.
+The selected front, three-quarter and profile cells form a back-and-forth yaw
+sweep with a separate bright traveling scan band. This is decorative animation,
+not measured landmarks or a reconstructed user identity. The solid-head candidate
+is not shipped. The previous mask remains an active Studio artwork asset.
+
+The new illustration rectangle is exactly 170% of the previous mask rectangle.
+The left content column contracts on smaller displays to prevent overlap, and
+the illustration sits above the button row. Reuse Precision fields and typography.
+Cache the clean background before compositing; reduced motion is static. Cursor
+activity takes priority over animation. Preview refresh damages only its camera
+rectangle, not the whole configuration screen.
+
 Reuse the existing Field surface for three 4:3 review thumbnails beside the live
 preview, labeled Front, Left and Right. Only an accepted explicit capture fills
 its slot; live preview and rejected captures must never replace earlier accepted

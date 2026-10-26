@@ -20,6 +20,8 @@ mod face_setup_view;
 mod face_scan_view;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 pub use self::face_scan_view::animate as face_scan_animation_tick;
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+pub use self::face_setup_view::face_preview_present;
 mod panel_view;
 mod ai_widget_view;
 mod file_preview_view;

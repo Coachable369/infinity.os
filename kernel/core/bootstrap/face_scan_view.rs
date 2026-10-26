@@ -1,155 +1,97 @@
-//! Illustrative scan mesh, not measured landmarks or proof of recognition.
+//! Generated connected-dot face, decorative only, never recognition evidence.
 use super::DisplayDevice;
 #[cfg(target_os="none")]
 use super::CONSOLE;
 use crate::ui::{geometry::Rect,face_setup_layout::Layout};
-const MASK:&[u8]=include_bytes!("../../../assets/ui-design-kit/default/face-mask-v1.bmp");
-const LIMIT:usize=480;
+const SPRITES:&[u8]=include_bytes!("../../../assets/ui-design-kit/default/face-digital-turn-v1.rgba");
+const LIMIT:usize=816;
 static mut BASE:[u32;LIMIT*LIMIT]=[0;LIMIT*LIMIT];
 static mut BOUNDS:Option<Rect>=None;
 static mut LAST_MS:u64=0;
 static mut START_MS:Option<u64>=None;
-static mut INTENSITY:u16=255;
 static mut BASE_DIRTY:bool=false;
-
-// ------------------------=
-// FUNC: active
-// DESC: Distinguishes the active capture sweep from the slower decorative idle mesh.
-// ------------------=
-#[cfg(target_os="none")]
-fn active()->bool {
-    crate::runtime::face_setup_host::view(|s| s.pending() && matches!(s.stage(),
-        crate::runtime::face_setup::Stage::Photos(_) | crate::runtime::face_setup::Stage::Verifying(_)))
-}
 
 impl DisplayDevice {
     // ------------------------=
     // FUNC: face_mask_base
-    // DESC: Paints the transparent authored mask and caches its clean substrate for bounded animation damage.
+    // DESC: Caches clean scene pixels before painting the first dot frame, preventing animation trails.
     // ------------------=
-    pub(super) fn face_mask_base(&mut self,r:Rect) {
-        self.paint_bitmap_alpha_fit_rect(MASK,r.x as usize,r.y as usize,r.width as usize,r.height as usize);
-        #[cfg(target_os="none")]
-        unsafe {
-            BOUNDS=None;
-            if r.width as usize>LIMIT || r.height as usize>LIMIT || r.x<0 || r.y<0
-                || r.right()>self.width as i32 || r.bottom()>self.height as i32 {return;}
-            let base=&mut *(&raw mut BASE);
-            for y in 0..r.height as usize {for x in 0..r.width as usize {
-                base[y*LIMIT+x]=self.framebuffer_pixel(r.x as usize+x,r.y as usize+y);
-            }}
-            BOUNDS=Some(r);
-            BASE_DIRTY=true;
-        }
-    }
-
-    // ------------------------=
-    // FUNC: face_mesh_pixel
-    // DESC: Clips soft mesh illumination to actual mask alpha, including its eye openings.
-    // ------------------=
-    fn face_mesh_pixel(&mut self,r:Rect,x:i32,y:i32,alpha:u8) {
-        if x<0||y<0||x>=r.width as i32||y>=r.height as i32{return;}
-        let sx=x as usize*480/r.width as usize;let sy=y as usize*480/r.height as usize;
-        // Pillow writes bottom-up 32-bit BMP; validate the alpha against the authored silhouette.
-        let offset=u32::from_le_bytes([MASK[10],MASK[11],MASK[12],MASK[13]]) as usize;
-        let a=MASK[offset+((479-sy)*480+sx)*4+3];
-        if a<160{return;}
-        let alpha=unsafe {(u16::from(alpha)*INTENSITY/255) as u8};
-        let (red,green)=if alpha>210 {(173,228)}else{(74,190)};
-        self.blend_color(r.x+x,r.y+y,red,green,255,alpha);
-    }
-
-    // ------------------------=
-    // FUNC: face_mesh_edge
-    // DESC: Draws a softly feathered connector whose intensity follows the traveling scan band.
-    // ------------------=
-    fn face_mesh_edge(&mut self,r:Rect,a:(i32,i32),b:(i32,i32),scan:i32) {
-        let steps=(b.0-a.0).abs().max((b.1-a.1).abs()).max(1);
-        for i in 0..=steps {
-            let x=a.0+(b.0-a.0)*i/steps;let y=a.1+(b.1-a.1)*i/steps;
-            let band=(r.height as i32/9).max(1);
-            let light=(band-(y-scan).abs()).max(0)*190/band;
-            let counter=(band-(y-(r.height as i32-scan)).abs()).max(0)*110/band;
-            let alpha=(30+light.max(counter)).min(255) as u8;
-            self.face_mesh_pixel(r,x,y,alpha);
-            self.face_mesh_pixel(r,x-1,y,alpha/5);
-            self.face_mesh_pixel(r,x+1,y,alpha/5);
-            self.face_mesh_pixel(r,x,y-1,alpha/4);
-            self.face_mesh_pixel(r,x,y+1,alpha/4);
-        }
-    }
-
+    pub(super) fn face_mask_base(&mut self,r:Rect) {unsafe {
+        BOUNDS=None;
+        if r.width as usize>LIMIT || r.height as usize>LIMIT || r.x<0 || r.y<0
+            || r.right()>self.width as i32 || r.bottom()>self.height as i32 {return;}
+        let base=&mut *core::ptr::addr_of_mut!(BASE);
+        for y in 0..r.height as usize {for x in 0..r.width as usize {
+            base[y*LIMIT+x]=*self.buffer.add((r.y as usize+y)*self.stride+r.x as usize+x);
+        }}
+        BOUNDS=Some(r);BASE_DIRTY=true;
+        self.face_mask_scan(r,0,true);
+    }}
     // ------------------------=
     // FUNC: face_mask_scan
-    // DESC: Lights a dense staggered 17-row face-conforming mesh with a continuous two-way sweep.
+    // DESC: Bilinearly samples generated angle sprites with moving blue-white scan illumination over a clean substrate.
     // ------------------=
-    pub(super) fn face_mask_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {
-        let phase=(elapsed%3200) as i32;
-        let progress=if phase<1600 {phase}else{3200-phase};
-        let scan=if reduced {r.height as i32/2}else{r.height as i32*progress/1600};
-        let halo=(r.height as i32/24).max(1);
-        for center in [scan,r.height as i32-scan] {
-            for y in (center-halo).max(0)..(center+halo).min(r.height as i32) {
-                let light=((halo-(y-center).abs())*60/halo) as u8;
-                for x in 0..r.width as i32 {self.face_mesh_pixel(r,x,y,light);}
+    pub(super) fn face_mask_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {unsafe {
+        if BOUNDS!=Some(r) {return;}
+        const ANGLES:[usize;16]=[0,1,2,4,5,4,2,1,0,15,14,13,12,13,14,15];
+        let phase=if reduced {0}else{elapsed%6400};
+        let frame=ANGLES[(phase/400) as usize];
+        let next=ANGLES[((phase/400+1)%16) as usize];
+        let mix=if reduced {0}else{(phase%400)*256/400} as u32;
+        let sweep=if reduced {r.height/2}else{((elapsed%2400)*u64::from(r.height)/2400) as u32};
+        let base=&*core::ptr::addr_of!(BASE);
+        for y in 0..r.height as usize {
+            core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
+                self.buffer.add((r.y as usize+y)*self.stride+r.x as usize),r.width as usize);
+            let fy=y*255*256/(r.height as usize).saturating_sub(1).max(1);
+            let sy=fy/256;let wy=(fy%256) as u32;
+            for x in 0..r.width as usize {
+                let fx=x*255*256/(r.width as usize).saturating_sub(1).max(1);
+                let sx=fx/256;let wx=(fx%256) as u32;
+                let mut rgba=[0u32;4];
+                for (cell,weight) in [(frame,256-mix),(next,mix)] {
+                    if weight==0 {continue;}
+                    for (px,py,w) in [(sx,sy,(256-wx)*(256-wy)),((sx+1).min(255),sy,wx*(256-wy)),
+                        (sx,(sy+1).min(255),(256-wx)*wy),((sx+1).min(255),(sy+1).min(255),wx*wy)] {
+                        let offset=(cell*256*256+py*256+px)*4;
+                        for c in 0..4 {rgba[c]+=u32::from(SPRITES[offset+c])*w*weight/256;}
+                    }
+                }
+                let alpha=(rgba[3]/65536) as u8;
+                if alpha==0 {continue;}
+                let distance=(y as i32-sweep as i32).unsigned_abs();
+                let band=(r.height/28).max(1);
+                let glow=band.saturating_sub(distance)*140/band;
+                self.blend_color(r.x+x as i32,r.y+y as i32,
+                    (rgba[0]/65536+glow).min(255) as u8,
+                    (rgba[1]/65536+glow).min(255) as u8,
+                    (rgba[2]/65536+glow).min(255) as u8,alpha);
             }
         }
-        // Widths trace the forehead, cheeks, jaw and tapered chin of the generated master.
-        let widths=[17,25,30,33,34,35,35,34,33,31,29,27,24,20,16,11,5];
-        let point=|row:usize,col:usize| {
-            let half=widths[row]*r.width as i32/100;
-            (r.width as i32/2-half+2*half*col as i32/10,
-                r.height as i32*(6+row as i32*56/10)/100)
-        };
-        for row in 0..17 {for col in 0..11 {
-            let p=point(row,col);
-            if col<10 {self.face_mesh_edge(r,p,point(row,col+1),scan);}
-            if row<16 {
-                self.face_mesh_edge(r,p,point(row+1,col),scan);
-                if col<10 {self.face_mesh_edge(r,p,point(row+1,col+1),scan);}
-            }
-            let hot=(p.1-scan).abs().min((p.1-(r.height as i32-scan)).abs())<(r.height as i32/10).max(1);
-            for dy in -5i32..=5 {for dx in -5i32..=5 {
-                let d=dx*dx+dy*dy;
-                if d<=25 {self.face_mesh_pixel(r,p.0+dx,p.1+dy,
-                    if hot {if d<=2 {255}else{(200/(d/2+1)) as u8}}else{(70/(d+1)) as u8});}
-            }}
-        }}
-    }
+    }}
 }
 
 // ------------------------=
 // FUNC: animate
-// DESC: Reuses the cached mask at 15 Hz idle or 30 Hz capture; page exit stops animation and reduced motion is static.
+// DESC: Presents bounded sprite damage at 12 Hz with static reduced motion and cursor-coherent restoration.
 // ------------------=
 #[cfg(target_os="none")]
 pub fn animate(visible:bool,reduced:bool)->bool {
     let now=crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000;
     unsafe {
         if !visible {START_MS=None;BOUNDS=None;return false;}
-        let scanning=active();
         let first=START_MS.is_none();
-        if !first && !BASE_DIRTY && (reduced || now.saturating_sub(LAST_MS)<if scanning {33}else{66}) {return false;}
-        let Some(c)=(*(&raw mut CONSOLE)).as_mut() else{return false;};
+        if !first && !BASE_DIRTY && (reduced || now.saturating_sub(LAST_MS)<83) {return false;}
+        let Some(c)=(*core::ptr::addr_of_mut!(CONSOLE)).as_mut() else{return false;};
         let Some(r)=BOUNDS.filter(|r|*r==Layout::new(c.display.width,c.display.height).mask) else{return false;};
         if first {START_MS=Some(now);}
         c.restore_cursor();
         let d=&mut c.display;let clip=d.render_clip;
         d.set_render_clip(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
-        let base=&*(&raw const BASE);
-        for y in 0..r.height as usize {
-            core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
-                d.buffer.add((r.y as usize+y)*d.stride+r.x as usize),r.width as usize);
-        }
-        let elapsed=now.saturating_sub(START_MS.unwrap_or(now));
-        INTENSITY=if scanning {255}else{100};
-        d.face_mask_scan(r,if scanning {elapsed}else{elapsed/4},reduced);
-        LAST_MS=now;
-        BASE_DIRTY=false;
+        d.face_mask_scan(r,now.saturating_sub(START_MS.unwrap_or(now)),reduced);
+        LAST_MS=now;BASE_DIRTY=false;
         d.mark_dirty_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
         d.render_clip=clip;
-        c.save_and_draw_cursor(c.cursor_x,c.cursor_y);
-        c.display.present_damage();
-        true
+        c.save_and_draw_cursor(c.cursor_x,c.cursor_y);c.display.present_damage();true
     }
 }
