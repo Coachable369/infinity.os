@@ -40,6 +40,11 @@ impl DisplayDevice {
             if element.hidden || element.opacity == 0 { continue; }
             let action = crate::ui::installer_template::login_action(&element);
             if action == Some(0) { element.text = account; }
+            if action == Some(3) {
+                element.text=b"Sign In with Facial Recognition";
+                #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                {element.text=crate::runtime::face_setup_host::login_caption();}
+            }
             if action == Some(1) {
                 let rect = scale_template_rect(element.frame, self.width, self.height);
                 self.onboarding_input_field_with_element(Some(element), rect.left, rect.top, rect.width, rect.height,

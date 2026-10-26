@@ -106,6 +106,9 @@ fn main() {
         .unwrap();
     let owner = identities.create_user(b"owner", b"Owner", 2).unwrap();
     let guest = identities.create_user(b"guest", b"Guest", 3).unwrap();
+    assert!(identities.user_profile(owner.id).unwrap().face_login_enabled);
+    assert_eq!(identities.set_face_login(guest.id,owner.id,false),Err(IdentityError::AccessDenied));
+    identities.set_face_login(owner.id,owner.id,false).unwrap();
     let expected = layout();
 
     assert_eq!(
@@ -119,6 +122,8 @@ fn main() {
 
     let encoded = identities.encode();
     let restored = IdentitySystem::decode(&encoded).unwrap();
+    assert!(!restored.user_profile(owner.id).unwrap().face_login_enabled);
+    assert!(restored.user_profile(guest.id).unwrap().face_login_enabled);
     assert_eq!(restored.user_desktop_layout(owner.id), Some(expected));
     assert_eq!(restored.user_desktop_layout(guest.id), None);
     assert!(restored.session_nth(0).is_none());

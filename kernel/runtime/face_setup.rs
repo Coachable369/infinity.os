@@ -39,6 +39,24 @@ pub struct Setup {
 }
 impl Setup {
     // ------------------------=
+    // FUNC: begin_login
+    // DESC: Starts a fresh bounded login comparison using an authenticated vault payload; stored data alone never passes verification.
+    // ------------------=
+    pub(crate) fn begin_login(&mut self,worker:u64,model:[u8;32],payload:&[u8],now:u64)->Result<(),Error> {
+        if payload.len()!=wire::ENROLLMENT_BYTES {return Err(Error::Invalid);}
+        self.begin(worker,worker,model,"Login",now)?;
+        self.control.command=wire::LOGIN;self.stage=Stage::Verifying(0);
+        self.enrollment.copy_from_slice(payload);
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: login_template
+    // DESC: Exposes stored templates only to the bound login worker while its comparison is pending.
+    // ------------------=
+    pub(crate) fn login_template(&self)->Option<&[u8]> {
+        (self.control.command==wire::LOGIN && self.pending).then_some(&self.enrollment)
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Initializes a setup session without granting camera or authentication authority.
     // ------------------=
@@ -116,6 +134,13 @@ impl Setup {
         }
         if report.error!=0 {return Err(Error::Protocol);}
         let terminal=match (self.control.command,report.phase,self.stage) {
+            (wire::LOGIN,wire::PROCESSING,Stage::Verifying(n)) if report.photos==3 && report.comparisons==n as u32 => false,
+            (wire::LOGIN,wire::VERIFYING,Stage::Verifying(n)) if n<2 && report.photos==3 && report.comparisons==n as u32+1 => {
+                self.stage=Stage::Verifying(n+1);false
+            }
+            (wire::LOGIN,wire::PASSED,Stage::Verifying(2)) if report.photos==3 && report.comparisons==3 => {
+                self.stage=Stage::Passed;self.erase_enrollment();true
+            }
             (wire::BEGIN,wire::READY,Stage::Loading) if report.photos==0 && report.comparisons==0 => {
                 self.stage=Stage::Photos(0);true
             }

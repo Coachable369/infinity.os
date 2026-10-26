@@ -1,5 +1,16 @@
 # Facial setup — verification before login activation
 
+## Login integration revision (2026-10-26)
+
+The following integration supersedes this document's earlier setup-only/off
+policy: facial sign-in defaults On per account, requires saved enrollment, and
+can be disabled in Privacy & Security. Reuse the existing login action surface
+for Facial Recognition and its pending/retry captions; retain password sign-in.
+The existing microphone permission gates greeting-only local speech recognition.
+See `docs/facial-login.md` for the trusted worker/proof boundary and the explicit
+RGB presentation-attack limitation. Enrollment guidance must disclose that
+photos/videos are not rejected by a certified liveness detector.
+
 Status: native source integration added; not yet compiled or production-rendered.
 Reuse Eclipse Access typography, spacing, glyphs, wallpaper and progress markers;
 reuse Eclipse Precision image-backed panels, fields and button states.

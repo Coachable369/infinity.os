@@ -3,6 +3,28 @@
 use super::*;
 
 // ------------------------=
+// FUNC: stored_templates_require_fresh_matching_frames
+// DESC: Imports synthetic stored vectors and proves freshness, mismatch rejection, three comparisons and malformed-template rejection.
+// ------------------=
+#[test]
+fn stored_templates_require_fresh_matching_frames() {
+    let mut payload=[0;protocol::ENROLLMENT_BYTES];
+    for i in 0..3 {payload[i*512..i*512+4].copy_from_slice(&1f32.to_le_bytes());}
+    let policy=Policy{cosine:0.6,min_laplacian_variance:100};
+    let mut e=Enrollment::from_verified(binding(2),&payload,policy,100).unwrap();
+    assert_eq!(e.state(),State::Verifying(0));
+    assert_eq!(e.observe(&observation(2,1,99,Pose::Front,&pixels(),&vector(0)),100),Err(Error::StaleFrame));
+    assert_eq!(e.observe(&observation(2,2,100,Pose::Front,&pixels(),&vector(1)),100),Err(Error::NoMatch));
+    for i in 0..3 {
+        let now=600+i*500;
+        assert_eq!(e.observe(&observation(2,3+i,now,Pose::Front,&pixels(),&vector(0)),now).unwrap(),
+            if i==2 {State::Verified}else{State::Verifying(i as u8+1)});
+    }
+    payload[..4].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert!(Enrollment::from_verified(binding(2),&payload,policy,100).is_err());
+}
+
+// ------------------------=
 // FUNC: binding
 // DESC: Creates a synthetic capture identity for workflow tests only.
 // ------------------=

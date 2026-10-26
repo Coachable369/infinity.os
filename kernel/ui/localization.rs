@@ -34,7 +34,7 @@ pub const fn resolve(_locale: LocaleId, id: StringId) -> &'static [u8] {
         StringId::PrivacyTagline => b"Secure. Private. Limitless.",
         StringId::PasswordPlaceholder => b"Enter your password",
         StringId::SignIn => b"Sign In",
-        StringId::SecurityKey => b"Sign In with Security Key",
+        StringId::SecurityKey => b"Sign In with Facial Recognition",
         StringId::AddUser => b"Add User",
         StringId::ForgotPassword => b"Forgot Password?",
         StringId::Options => b"Options",

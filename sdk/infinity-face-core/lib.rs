@@ -124,6 +124,20 @@ fn matches(a: &[f32; DIMENSIONS], b: &[f32; DIMENSIONS], threshold: f32) -> Resu
 
 impl Enrollment {
     // ------------------------=
+    // FUNC: from_verified
+    // DESC: Imports authenticated stored vectors for a new three-frame comparison, never as an already verified result.
+    // ------------------=
+    pub fn from_verified(binding:Binding, payload:&[u8], policy:Policy, now:u64)->Result<Self,Error> {
+        if payload.len()!=protocol::ENROLLMENT_BYTES {return Err(Error::InvalidEmbedding);}
+        let mut result=Self::new(binding,"Login",policy,now)?;
+        for (sample,bytes) in result.samples.iter_mut().zip(payload[..PHOTO_COUNT*DIMENSIONS*4].chunks_exact(DIMENSIONS*4)) {
+            for (value,raw) in sample.iter_mut().zip(bytes.chunks_exact(4)) {*value=f32::from_le_bytes(raw.try_into().map_err(|_|Error::InvalidEmbedding)?);}
+            norm(sample)?;
+        }
+        result.state=State::Verifying(0);
+        Ok(result)
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Starts a named, time-bounded enrollment without changing any account authentication policy.
     // ------------------=

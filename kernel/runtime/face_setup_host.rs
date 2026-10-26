@@ -16,6 +16,58 @@ static JPEG_NOTICE:&[u8]=include_bytes!("../../build/face/native-deps/stb_image.
 static mut JOB:Job=Job::new();
 static mut GENERATION:u64=0;
 static mut PAGE_VISIBLE:bool=false;
+static mut LOGIN_JOB:Job=Job::new();
+static mut LOGIN_ACCOUNT:Option<StableId>=None;
+static mut LOGIN_AFTER:u64=0;
+static mut LOGIN_FAILED:bool=false;
+
+// ------------------------=
+// FUNC: start_login
+// DESC: Starts an explicit pre-session comparison with a global retry interval and immutable packaged worker/models.
+// ------------------=
+pub fn start_login(account:StableId)->bool {unsafe {
+    LOGIN_FAILED=true;
+    let now=super::ai::qwen::workers::clock_ns();
+    if now<LOGIN_AFTER || LOGIN_ACCOUNT.is_some() || !available() {return false;}
+    LOGIN_AFTER=now.saturating_add(15_000_000_000);
+    let Some((_,controller))=super::native_compile_job::platform() else{return false;};
+    let Some(generation)=GENERATION.checked_add(1) else{return false;};GENERATION=generation;
+    let mut owner=*b"FACELOG\0\0\0\0\0\0\0\0\0";owner[8..].copy_from_slice(&generation.to_le_bytes());
+    let mut digest=[0;32];digest.copy_from_slice(&RECOGNIZER[8..40]);
+    if (&mut *core::ptr::addr_of_mut!(LOGIN_JOB)).start_login(WORKER,[DETECTOR,RECOGNIZER],SecurityIdentity(owner),generation,account,digest,now,
+        super::native_memory::memory_mut(),controller).is_err() {return false;}
+    LOGIN_ACCOUNT=Some(account);LOGIN_FAILED=false;true
+}}
+// ------------------------=
+// FUNC: poll_login
+// DESC: Cancels on account/page changes and returns a successful result once, only after clean worker exit; scrubbing continues after dismissal.
+// ------------------=
+pub fn poll_login(selected:Option<StableId>)->Option<super::face_login::Proof> {unsafe {
+    let job=&mut *core::ptr::addr_of_mut!(LOGIN_JOB);
+    let authorized=LOGIN_ACCOUNT.is_some() && LOGIN_ACCOUNT==selected;
+    if LOGIN_ACCOUNT.is_some() && !authorized {job.cancel();LOGIN_ACCOUNT=None;}
+    if job.poll(authorized,super::ai::qwen::workers::clock_ns(),super::native_memory::memory_mut()).is_err() {job.cancel();LOGIN_ACCOUNT=None;}
+    let proof=job.take_login_proof();
+    if job.terminal().is_some() {
+        if LOGIN_ACCOUNT.is_some() && proof.is_none() {LOGIN_FAILED=true;}
+        LOGIN_ACCOUNT=None;
+    }
+    proof
+}}
+// ------------------------=
+// FUNC: login_busy
+// DESC: Exposes pending comparison state without exposing scores or biometric data.
+// ------------------=
+pub fn login_busy()->bool {unsafe {(*core::ptr::addr_of!(LOGIN_ACCOUNT)).is_some()}}
+// ------------------------=
+// FUNC: login_caption
+// DESC: Gives visible pending/retry feedback without exposing account existence, embeddings or comparison scores.
+// ------------------=
+pub fn login_caption()->&'static [u8] {
+    if login_busy() {b"Look at the camera - comparing..."}
+    else if unsafe {LOGIN_FAILED} {b"Not verified - Retry Facial Sign-in"}
+    else {b"Sign In with Facial Recognition"}
+}
 
 // ------------------------=
 // FUNC: sync_page

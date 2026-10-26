@@ -943,7 +943,7 @@ impl super::DisplayDevice {
         );
         self.access_label((inner_x + sw(28), key_y, inner_w - sw(72),
             sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT)),
-            b"Sign In with Security Key", sw(21), access::TEXT, true, false);
+            b"Sign In with Facial Recognition", sw(21), access::TEXT, true, false);
         self.access_icon(
             inner_x + inner_w - sw(31),
             key_y + sw(27),
@@ -4306,6 +4306,7 @@ impl super::DisplayDevice {
         let pool_replica_state:&[u8]=match pool_placement.map(|p|p.state){
             Some(2)=>b"Verified",Some(3)=>b"Offline",Some(4)=>b"Stale",Some(5)=>b"Corrupt",Some(_)=>b"Not verified",None=>b"No placement"};
         let basic_state=super::settings_view::BasicSettingsSnapshot{chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
+            face_login_enabled:voice_profile.is_some_and(|v|crate::runtime::with_runtime(|r|r.identity.user_profile(v.user).is_some_and(|p|p.face_login_enabled)).unwrap_or(false)),
             timeout_minutes:parse_leading_u8(input).unwrap_or(crate::runtime::identity::DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES),
             timeout_maximum:crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES};
         if super::settings_view::supports_basic_section(focus) {

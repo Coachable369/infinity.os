@@ -19,6 +19,15 @@ impl Dispatch<'_> {
         if caller!=self.owner || !authorized {return -13;}
         if self.setup.tick(now).is_err() {return -110;}
         match op {
+            wire::TEMPLATE_READ=>{
+                if args[3]==0 || args[3]>4096 || args[4]!=0 || args[5]!=0 {return -22;}
+                let Some(data)=self.setup.login_template() else{return -13;};
+                if args[0]!=self.setup.control().command_id {return -116;}
+                let Ok(offset)=usize::try_from(args[1]) else{return -22;};
+                let Some(end)=offset.checked_add(args[3] as usize) else{return -22;};
+                let Some(bytes)=data.get(offset..end) else{return -22;};
+                if copy_to_user(tables,args[2],bytes).is_err() {-14}else{bytes.len() as i64}
+            }
             wire::CLOCK_MS=>i64::try_from(now).unwrap_or(i64::MAX),
             wire::MODEL_READ=>self.model(tables,args),
             wire::CONTROL_READ=>{

@@ -446,12 +446,12 @@
           "inputVariable" : "",
           "kind" : 5,
           "locked" : false,
-          "name" : "Security Key",
+          "name" : "Facial Recognition",
           "opacity" : 100,
           "role" : 41,
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
-          "text" : "Sign In with Security Key",
+          "text" : "Sign In with Facial Recognition",
           "zIndex" : 8
         },
         {

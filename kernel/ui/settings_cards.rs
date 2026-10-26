@@ -44,7 +44,7 @@ pub fn description(section: usize, row: usize) -> &'static [u8] {
         1 => &[b"Window and control materials", b"Icons throughout your desktop", b"Primary interface accent", b"Secondary interface accent", b"Glass transparency", b"Background diffusion", b"Manage openly licensed fonts", b"Your desktop background"],
         2 => &[b"Signed-in local identity", b"Authentication information", b"Current session details", b"Your private storage space", b"Local profile information"],
         3 => &[b"Local and remote routing policy", b"Show or hide desktop chat", b"Choose an installed local model", b"Remote processing restrictions", b"Microphone authorization", b"Voice activation availability", b"Installed model access"],
-        4 => &[b"Authority is granted explicitly", b"Microphone capability status", b"Remote processing permission", b"Lock after a period of inactivity", b"Protected interaction boundary"],
+        4 => &[b"Authority is granted explicitly", b"Microphone capability status", b"Remote processing permission", b"Lock after a period of inactivity", b"Select to toggle facial sign-in"],
         5 => &[b"Observed display availability", b"Keyboard input availability", b"Choose your pointer appearance", b"Observed recording availability", b"Observed playback availability"],
         8 => &[b"Refresh pool observations", b"Measured storage capacity", b"Inspect observed storage nodes", b"Choose an object to inspect", b"Inspect verified replica placement", b"One verified replica", b"Two verified replicas", b"Three verified replicas"],
         9 => &[b"Operating system information", b"Native execution platform", b"Current boot information", b"Identity schema information", b"Packaged appearance families"],

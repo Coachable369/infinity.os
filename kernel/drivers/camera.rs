@@ -11,6 +11,30 @@ static mut SERVICE:Option<Transport<'static,Uvc<'static>>>=None;
 static mut LEASE:Option<(SecurityIdentity,u64,u64)>=None;
 // Separate setup authorization is not a desktop session or an unlock token.
 static mut SETUP_AUTH:Option<(SecurityIdentity,crate::runtime::identity::StableId,u64)>=None;
+static mut LOGIN_AUTH:Option<(SecurityIdentity,crate::runtime::identity::StableId,u64)>=None;
+
+// ------------------------=
+// FUNC: authorize_face_login
+// DESC: Grants only a short pre-session camera capability to the fixed OS login worker for an enabled active account.
+// ------------------=
+pub(crate) fn authorize_face_login(owner:SecurityIdentity,account:crate::runtime::identity::StableId)->bool {unsafe {
+    if owner.0==[0;16] || (*core::ptr::addr_of!(SETUP_AUTH)).is_some() || (*core::ptr::addr_of!(LOGIN_AUTH)).is_some()
+        || (*core::ptr::addr_of!(LEASE)).is_some() || !available() {return false;}
+    let allowed=crate::runtime::with_runtime(|r|r.identity.user(account).is_some_and(|u|u.state==crate::runtime::identity::UserState::Active)
+        && r.identity.user_profile(account).is_some_and(|p|p.face_login_enabled)).unwrap_or(false);
+    if allowed {LOGIN_AUTH=Some((owner,account,crate::runtime::ai::qwen::workers::clock_ns()/1_000_000+240_000));}
+    allowed
+}}
+// ------------------------=
+// FUNC: face_login_authorized
+// DESC: Rechecks the exact account, worker, expiry and live preference before every login worker slice.
+// ------------------=
+pub(crate) fn face_login_authorized(owner:SecurityIdentity,account:crate::runtime::identity::StableId)->bool {
+    (unsafe {(*core::ptr::addr_of!(LOGIN_AUTH)).is_some_and(|(held,user,deadline)|held==owner && user==account
+        && crate::runtime::ai::qwen::workers::clock_ns()/1_000_000<deadline)})
+        && crate::runtime::with_runtime(|r|r.identity.user(account).is_some_and(|u|u.state==crate::runtime::identity::UserState::Active)
+            && r.identity.user_profile(account).is_some_and(|p|p.face_login_enabled)).unwrap_or(false)
+}
 
 // ------------------------=
 // FUNC: available
@@ -23,6 +47,9 @@ pub fn available()->bool {unsafe {(*core::ptr::addr_of!(EXCHANGE)).is_some()}}
 // DESC: Checks the authenticated session on every privileged operation, including capture when the application is not running.
 // ------------------=
 fn active(owner:SecurityIdentity)->bool {
+    if let Some((held,account,_))=unsafe {*core::ptr::addr_of!(LOGIN_AUTH)} {
+        if held==owner {return face_login_authorized(owner,account);}
+    }
     let setup=unsafe {*core::ptr::addr_of!(SETUP_AUTH)};
     if let Some((held,account,deadline))=setup {
         if held==owner {
@@ -65,6 +92,7 @@ pub(crate) fn authorize_setup(owner:SecurityIdentity,account:crate::runtime::ide
 // DESC: Removes setup authority and revokes capture on cancellation, completion, page exit, or worker failure.
 // ------------------=
 pub(crate) fn revoke_setup(owner:SecurityIdentity) {unsafe {
+    if (*core::ptr::addr_of!(LOGIN_AUTH)).is_some_and(|(held,_,_)|held==owner) {LOGIN_AUTH=None;cancel(owner);}
     if (*core::ptr::addr_of!(SETUP_AUTH)).is_some_and(|(held,_,_)|held==owner) {
         SETUP_AUTH=None;cancel(owner);
     }

@@ -7,6 +7,8 @@ pub const REPORT_WRITE:u64=0x1272;
 pub const PREVIEW_WRITE:u64=0x1273;
 pub const CLOCK_MS:u64=0x1274;
 pub const ENROLLMENT_WRITE:u64=0x1275;
+pub const TEMPLATE_READ:u64=0x1276;
+pub const LOGIN:u32=5;
 /// Three little-endian 128-float vectors followed by three aligned 56x56 grayscale portraits.
 pub const PORTRAIT_SIDE:usize=56;
 pub const ENROLLMENT_BYTES:usize=3*128*4+3*PORTRAIT_SIDE*PORTRAIT_SIDE;

@@ -41,6 +41,39 @@ pub enum State {
 }
 static mut STATE: State = State::Off;
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+static mut LOGIN_USER:Option<[u8;16]>=None;
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+static mut LOGIN_RETRY_AT:u64=0;
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+const LOGIN_OWNER:SecurityIdentity=SecurityIdentity(*b"FACEWAKE\0\0\0\0\0\0\0\0");
+
+// ------------------------=
+// FUNC: sync_login_listener
+// DESC: Reuses the existing local speech engine in greeting-only mode; page/account changes revoke capture before desktop conversation resumes.
+// ------------------=
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+pub(crate) fn sync_login_listener(account:Option<crate::runtime::identity::StableId>) {unsafe {
+    let selected=account.filter(|id|crate::runtime::with_runtime(|r|
+        r.identity.user_profile(*id).is_some_and(|p|p.face_login_enabled)
+        && r.identity.voice_profile(*id).is_some_and(|p|p.enabled)
+        && r.identity.user(*id).is_some_and(|u|u.state==crate::runtime::identity::UserState::Active)).unwrap_or(false)).map(|id|id.0);
+    if LOGIN_USER!=selected {
+        if LOGIN_USER.is_some() {stop(LOGIN_OWNER);}
+        LOGIN_USER=selected;
+    }
+    let now=super::qwen::workers::clock_ns();
+    if selected.is_some() && STATE==State::Failed && now>=LOGIN_RETRY_AT {
+        LOGIN_RETRY_AT=now.saturating_add(15_000_000_000);stop(LOGIN_OWNER);return;
+    }
+    if now<LOGIN_RETRY_AT {return;}
+    if selected.is_none() || !matches!(STATE,State::Off) {return;}
+    OWNER=LOGIN_OWNER;CONTINUOUS=true;NOISE_FLOOR=voice_noise_floor::NoiseFloor::new();
+    clear_wake_command();RESTART_LISTENING=false;
+    if voice_input::prepare() && crate::drivers::audio::capture_available() {
+        if !listen() {STATE=State::Failed;}
+    } else {STATE=State::Starting;}
+}}
 static mut INPUT_CAP: u64 = 0;
 static mut RECOGNIZE_CAP: u64 = 0;
 static mut RENEW_AT: u64 = 0;
@@ -153,6 +186,10 @@ fn active_owner(owner: SecurityIdentity) -> bool {
 // DESC: Resolves the authenticated user behind an audio session without treating session IDs as conversation identities.
 // ------------------=
 fn active_user(owner: SecurityIdentity) -> Option<[u8; 16]> {
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    if owner==LOGIN_OWNER {return unsafe {LOGIN_USER}.filter(|id|crate::runtime::with_runtime(|r|
+        r.identity.user_profile(crate::runtime::identity::StableId(*id)).is_some_and(|p|p.face_login_enabled)
+        && r.identity.voice_profile(crate::runtime::identity::StableId(*id)).is_some_and(|p|p.enabled)).unwrap_or(false));}
     crate::runtime::with_runtime(|r| {
         (0..crate::runtime::identity::MAX_SESSIONS)
             .filter_map(|i| r.identity.session_nth(i))
@@ -422,6 +459,8 @@ unsafe fn resume_captured_turn() {
 // DESC: Admits conversational capture only when the selected model and both native audio directions are usable.
 // ------------------=
 pub fn ready() -> bool {
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    if unsafe {LOGIN_USER.is_some() && OWNER==LOGIN_OWNER} {return voice_input::prepared() && crate::drivers::audio::capture_available();}
     super::with_ai_runtime(|ai| ai.chat.selected_model_ready())
         && crate::drivers::audio::capture_available()
         && crate::drivers::audio::playback_rate().is_some()
@@ -1373,6 +1412,16 @@ pub fn poll() -> bool {
                         STATE = State::Failed;
                         trace(b"recognition result authority failed");
                         return true;
+                    }
+                    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                    if OWNER==LOGIN_OWNER {
+                        if let (Some(account),Ok(length))=(LOGIN_USER,result) {
+                            if crate::runtime::face_login::greeting(&(&*core::ptr::addr_of!(TRANSCRIPT))[..length]) {
+                                let _=crate::runtime::face_setup_host::start_login(crate::runtime::identity::StableId(account));
+                            }
+                        }
+                        (&mut *core::ptr::addr_of_mut!(TRANSCRIPT)).fill(0);
+                        clear_captured_turn();reset_listening_state();return true;
                     }
                     if !RECOGNITION_CONTEXT_VALID {
                         (&mut *(&raw mut TRANSCRIPT)).fill(0);

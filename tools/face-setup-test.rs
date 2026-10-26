@@ -4,6 +4,24 @@ mod face_setup;
 use face_setup::{Setup,Stage,Error,wire as p};
 
 // ------------------------=
+// FUNC: login_cannot_skip_comparisons_or_export_enrollment
+// DESC: Tests the private login command independently from enrollment, including stale reports, early success and payload erasure.
+// ------------------=
+#[test]
+fn login_cannot_skip_comparisons_or_export_enrollment() {
+    let mut setup=Setup::new();setup.begin_login(7,[3;32],&[1;p::ENROLLMENT_BYTES],100).unwrap();
+    let id=setup.control().command_id;
+    assert_eq!(setup.control().command,p::LOGIN);
+    assert!(setup.login_template().is_some());
+    assert_eq!(setup.accept(p::Report::new(id,p::PASSED,0,3,3),101),Err(Error::Protocol));
+    assert_eq!(setup.accept(p::Report::new(id+1,p::VERIFYING,0,3,1),101),Err(Error::Stale));
+    assert_eq!(setup.write_enrollment(id,0,&[1;4],102),Err(Error::Stale));
+    for n in 1..=3 {setup.accept(p::Report::new(id,if n==3 {p::PASSED}else{p::VERIFYING},0,3,n),102+n as u64).unwrap();}
+    assert_eq!(setup.stage(),Stage::Passed);assert!(setup.login_template().is_none());assert!(setup.enrollment().is_none());assert!(!setup.saved());
+    setup.cancel();assert_eq!(setup.stage(),Stage::Cancelled);
+}
+
+// ------------------------=
 // FUNC: accepted_photos_survive_preview_and_retry
 // DESC: Exercises all three captures, rejected side-view retries and cancellation with distinct actual RGB payloads.
 // ------------------=

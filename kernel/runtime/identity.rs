@@ -258,6 +258,7 @@ struct Credential {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UserProfile {
+    pub face_login_enabled: bool,
     pub user: StableId,
     pub language: ShortText,
     pub region: ShortText,
@@ -542,6 +543,7 @@ impl IdentitySystem {
         };
         self.users[slot] = Some(user);
         self.profiles[slot] = Some(UserProfile {
+            face_login_enabled: true,
             user: user_id,
             language: ShortText::new(b"English (US)")?,
             region: ShortText::new(b"United States")?,
@@ -813,6 +815,13 @@ impl IdentitySystem {
         now: u64,
     ) -> Result<Session, IdentityError> {
         self.authenticate(user, secret, now)?;
+        self.create_verified_session(user,now)
+    }
+    // ------------------------=
+    // FUNC: create_verified_session
+    // DESC: Creates the ordinary least-authority session only after a credential verifier has succeeded.
+    // ------------------=
+    fn create_verified_session(&mut self,user:StableId,now:u64)->Result<Session,IdentityError> {
         let machine = self.machine.ok_or(IdentityError::InvalidState)?;
         let identity = self
             .user(user)
@@ -851,6 +860,30 @@ impl IdentitySystem {
     // ------------------=
     pub fn session_nth(&self, index: usize) -> Option<Session> {
         self.sessions.iter().flatten().nth(index).copied()
+    }
+
+    // ------------------------=
+    // FUNC: complete_face_login
+    // DESC: Consumes a fresh account-bound proof; disabled accounts or preferences and wrong locked sessions fail closed.
+    // ------------------=
+    pub(crate) fn complete_face_login(&mut self,user:StableId,locked:Option<StableId>,proof:super::face_login::Proof,now:u64)->Result<Session,IdentityError> {
+        if !proof.consume(user,now) || !self.user_profile(user).is_some_and(|p|p.face_login_enabled)
+            || !self.user(user).is_some_and(|u|u.state==UserState::Active) {return Err(IdentityError::AccessDenied);}
+        if let Some(id)=locked {
+            let session=self.sessions.iter_mut().flatten().find(|s|s.id==id && s.user==user && s.state==SessionState::Locked)
+                .ok_or(IdentityError::AccessDenied)?;
+            session.state=SessionState::Active;return Ok(*session);
+        }
+        self.create_verified_session(user,now)
+    }
+    // ------------------------=
+    // FUNC: set_face_login
+    // DESC: Persists the owning user's opt-out while leaving password authentication and enrollment intact.
+    // ------------------=
+    pub fn set_face_login(&mut self,actor:StableId,user:StableId,enabled:bool)->Result<(),IdentityError> {
+        if actor!=user {return Err(IdentityError::AccessDenied);}
+        let profile=self.profiles.iter_mut().flatten().find(|p|p.user==user).ok_or(IdentityError::NotFound)?;
+        profile.face_login_enabled=enabled;self.commit();Ok(())
     }
 
     // ------------------------=
@@ -1446,6 +1479,7 @@ impl IdentitySystem {
                     return Err(IdentityError::CorruptState);
                 }
                 if let Some(profile) = state.profiles[index].as_mut() {
+                    profile.face_login_enabled=user.1.face_login_enabled;
                     profile.no_activity_timeout_minutes = user.1.no_activity_timeout_minutes;
                     profile.icon_theme = icon_theme;
                     let accent_at = USER_ACCENT_OFFSET + index * 3;
@@ -1856,6 +1890,7 @@ fn write_profile(out: &mut [u8], at: usize, profile: UserProfile) {
 // ------------------=
 fn read_profile(input: &[u8], at: usize, user: StableId) -> Result<UserProfile, IdentityError> {
     Ok(UserProfile {
+        face_login_enabled: true,
         user,
         language: read_text(input, at)?,
         region: read_text(input, at + 49)?,
@@ -1906,6 +1941,7 @@ fn write_user(
     out[at + 159] = voice
         .map(|value| (value.activation as u8) | ((value.wake_word as u8) << 2))
         .unwrap_or(1 | ((WakeWord::Infinity as u8) << 2))
+        | if profile.is_some_and(|p|!p.face_login_enabled) {0x80}else{0}
 }
 
 // ------------------------=
@@ -1931,6 +1967,7 @@ fn read_user(
         personal_space_ref: read_id(input, at + 140),
     };
     let profile = UserProfile {
+        face_login_enabled: input[at+159]&0x80==0,
         user: id,
         language: ShortText::new(b"English (US)")?,
         region: ShortText::new(b"United States")?,
@@ -1966,7 +2003,7 @@ fn read_user(
             3
         },
     };
-    let voice_preferences = input[at + 159];
+    let voice_preferences = input[at + 159]&0x7f;
     let voice_was_uninitialized = voice_preferences == 0;
     let voice = VoiceProfile {
         user: id,

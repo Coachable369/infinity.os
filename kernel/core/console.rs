@@ -4484,6 +4484,13 @@ impl ConsoleRuntime {
     // DESC: Opens one inline Settings detail well, closes it on a second activation, and reveals lower rows safely.
     // ------------------=
     fn toggle_settings_row(&mut self, row: usize) {
+        if self.system_focus==4 && row==4 {
+            let result=crate::runtime::with_runtime(|r| {
+                let enabled=r.identity.user_profile(self.current_user).is_some_and(|p|p.face_login_enabled);
+                r.identity.set_face_login(self.current_user,self.current_user,!enabled)
+            });
+            if matches!(result,Some(Ok(()))) {let _=crate::runtime::persist_identity_state();}
+        }
         if self.system_focus == 10 {
             let mut preferences = crate::ui::input_preferences::current();
             preferences.cycle(row);
@@ -6249,7 +6256,14 @@ impl ConsoleRuntime {
                 return;
             }
             3 => {
-                crate::output_text(b"[authentication] security key provider unavailable\n");
+                #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                {
+                    let account=if self.mode==ConsoleMode::Locked {Some(self.current_user)}else{
+                        crate::runtime::with_runtime(|r|r.identity.user_nth(self.system_step).map(|u|u.id)).flatten()};
+                    let started=account.is_some_and(crate::runtime::face_setup_host::start_login);
+                    crate::output_text(if started {b"[authentication] Look at the camera. Comparing your enrolled face.\n"}
+                        else {b"[authentication] Facial sign-in unavailable or cooling down. Use your password.\n"});
+                }
                 return;
             }
             4 if self.mode == ConsoleMode::Authentication => {
@@ -6609,7 +6623,9 @@ impl ConsoleRuntime {
                 self.activate_settings_content_row(0);
             }
             if self.system_focus == 4 {
-                if self.settings_window.expanded_row == Some(3) {
+                if self.settings_window.expanded_row == Some(4) {
+                    self.toggle_settings_row(4);
+                } else if self.settings_window.expanded_row == Some(3) {
                     self.activate_settings_content_row(3);
                 } else {
                     self.toggle_settings_row(3);
@@ -13945,6 +13961,22 @@ pub fn poll_native_ai() {
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
         let visible=runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7;
+        let login_page=matches!(runtime.mode,ConsoleMode::Authentication|ConsoleMode::Locked);
+        let selected=if !login_page {None}else if runtime.mode==ConsoleMode::Locked {Some(runtime.current_user)}else{
+            crate::runtime::with_runtime(|r|r.identity.user_nth(runtime.system_step).map(|u|u.id)).flatten()};
+        let was_busy=crate::runtime::face_setup_host::login_busy();
+        crate::runtime::ai::voice_conversation::sync_login_listener(selected);
+        if let Some(proof)=crate::runtime::face_setup_host::poll_login(selected) {
+            if let Some(account)=selected {
+                let locked=(runtime.mode==ConsoleMode::Locked).then_some(runtime.current_session);
+                let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000;
+                if let Some(Ok(session))=crate::runtime::with_runtime(|r|r.identity.complete_face_login(account,locked,proof,now)) {
+                    runtime.current_user=account;runtime.current_session=session.id;runtime.reset_input();
+                    runtime.begin_authentication_success(locked.is_some());
+                }
+            }
+        }
+        if was_busy!=crate::runtime::face_setup_host::login_busy() {runtime.redraw();}
         if visible && runtime.command_length==0 {
             runtime.command[..8].copy_from_slice(b"Everyday");runtime.command_length=8;
         }

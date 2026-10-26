@@ -121,7 +121,7 @@ impl DisplayDevice {
                     _=>b"The recognition worker could not complete. No enrollment or login change was saved.",
                 }}
                 else if !camera_available {b"Native camera capture is unavailable on this configuration. You can skip this optional check."}
-                else {b"Private, on-device enrollment. Angled side views, not full profiles. No liveness certification; facial login remains off."};
+                else {b"Private, on-device enrollment. Facial sign-in defaults On in Settings. RGB matching cannot prevent photo or video replay. Password sign-in stays available."};
             self.access_text_wrapped(l.status.x as usize,l.status.y as usize,l.status.width as usize,note,
                 palette::SECONDARY.0,palette::SECONDARY.1,palette::SECONDARY.2,255,l.pixels*4/5,false);
             for (r,label,id,primary) in [(l.back,b"Back" as &[u8],0,false),(l.skip,b"Skip" as &[u8],3,false),(l.primary,action,1,true)] {

@@ -102,7 +102,7 @@ pub fn settings_detail_description(section: usize, row: usize) -> &'static [u8] 
         (4, 1) => b"Microphone access is explicitly granted or restricted here.",
         (4, 2) => b"Remote AI access requires explicit capability authorization.",
         (4, 3) => b"Lock this user's session after the selected period without input.",
-        (4, 4) => b"Sensitive decisions use the trusted system interface.",
+        (4, 4) => b"Select this row to toggle facial sign-in. Requires enrollment. RGB matching has no anti-spoof protection; password sign-in remains available.",
         (5, 0) => b"The active display is used by the native desktop compositor.",
         (5, 1) => b"Open Input to adjust keyboard repeat delay and rate.",
         (5, 3 | 4) => b"This audio path is unavailable; no device control is exposed.",

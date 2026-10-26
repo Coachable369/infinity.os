@@ -7,7 +7,7 @@ use crate::ui::{geometry::{Rect,Point},system_layout::{SettingsWindowState,Syste
 // FUNC: snapshot
 // DESC: Defines explicit preview values without emulating any runtime service.
 // ------------------=
-fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
+fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
 // ------------------------=
 // FUNC: state
 // DESC: Builds bounded native Settings window geometry for a selected section and viewport.

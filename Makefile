@@ -821,7 +821,16 @@ test-mouse-menu: x86_64 aarch64
 	@tools/mouse-menu-test.sh x86_64
 	@tools/mouse-menu-test.sh aarch64
 
-test: test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+test: face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+
+.PHONY: face-login-test
+face-login-test:
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings --test tools/face-login-test.rs -o build/behavior-tests/face-login-test
+	@build/behavior-tests/face-login-test
+	@rustc --edition=2021 -A warnings --test tools/face-setup-test.rs -o build/behavior-tests/face-setup-test
+	@build/behavior-tests/face-setup-test
+	@cargo test --manifest-path sdk/infinity-face-core/Cargo.toml
 
 vm-disk:
 	@test -s $(BUILD)/infinity-test-disk.raw || dd if=/dev/zero of=$(BUILD)/infinity-test-disk.raw bs=1M count=0 seek=16384 status=none

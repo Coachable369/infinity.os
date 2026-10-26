@@ -24,7 +24,7 @@ def main():
     for name in names:
         data=(root/name).read_bytes()
         artifacts.append(dict(path=name,bytes=len(data),sha256=hashlib.sha256(data).hexdigest()))
-    manifest=dict(version=2,target=target,purpose="encrypted-local-face-enrollment",login_enabled=False,
+    manifest=dict(version=3,target=target,purpose="encrypted-local-face-enrollment-and-login",login_enabled=True,
         runtime="native-isolated-rust-c",artifacts=artifacts,
         security_qualified=False,installed_verification=False)
     (root/f"build/face/{target}/manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")

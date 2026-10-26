@@ -4,6 +4,7 @@ use super::primitives::UI_FONT_CELL_HEIGHT;
 use crate::ui::system_layout::{SettingsWindowState,SettingsWindowGeometry,SettingsRowGeometry};
 #[derive(Clone,Copy)]
 pub(super) struct BasicSettingsSnapshot<'a> {
+ pub face_login_enabled:bool,
  pub chat_enabled:bool,pub chat_model:&'a[u8],pub voice_enabled:bool,pub wake_word:&'a[u8],pub speech_enabled:bool,
  pub preferences:crate::ui::input_preferences::Preferences,pub timeout_minutes:u8,pub timeout_maximum:u8,
 }
@@ -71,7 +72,7 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"Microphone", if voice_enabled { b"Granted" } else { b"Restricted" }),
                 (b"Remote AI", b"Denied"),
                 (b"No Activity Timeout", input),
-                (b"Trusted UI", b"Active"),
+                (b"Facial Recognition Sign-in", if snapshot.face_login_enabled {b"On"}else{b"Off"}),
                 (b"", b""),
                 (b"", b""),
                 (b"", b""),

@@ -180,12 +180,12 @@ unsafe fn work()->Result<(),u32> {
     let mut arena=Arena {used:4096};
     // Start means a real camera check, not minutes of silent model preparation.
     let initial=control()?;
-    if initial.command!=p::BEGIN {return Err(108);}
+    if !matches!(initial.command,p::BEGIN|p::LOGIN) {return Err(108);}
     let encoded=arena.bytes(1_228_800)?;let rgb=arena.bytes(640*480*3)?;let decode=arena.bytes(8*1024*1024)?;
     let mut stream=None;
     let (length,_,_)=capture(initial.command_id,encoded,&mut stream,false)?;
     jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
-    preview(initial.command_id,rgb)?;
+    if initial.command==p::BEGIN {preview(initial.command_id,rgb)?;}
     let detector=arena.model(1)?;let recognizer=arena.model(2)?;
     let engine=Recognizer::new(detector,recognizer).map_err(|_|106u32)?;
     let floats=arena.bytes(engine.arena_len().checked_mul(4).ok_or(102u32)?)?;
@@ -193,6 +193,15 @@ unsafe fn work()->Result<(),u32> {
     let scratch=arena.bytes(size_of::<Scratch>())?;scratch.fill(0);
     let scratch=&mut *scratch.as_mut_ptr().cast::<Scratch>();
     let mut enrollment:Option<Enrollment>=None;let mut seen=0;let mut preview_at=0;
+    if initial.command==p::LOGIN {
+        let data=arena.bytes(p::ENROLLMENT_BYTES)?;
+        for offset in (0..data.len()).step_by(4096) {
+            let n=(data.len()-offset).min(4096);
+            if call(p::TEMPLATE_READ,[initial.command_id,offset as u64,data.as_mut_ptr().add(offset) as u64,n as u64,0,0])!=n as i64 {return Err(113);}
+        }
+        enrollment=Some(Enrollment::from_verified(binding(&initial),data,Policy{cosine:0.6,min_laplacian_variance:100},clock()?).map_err(|_|113u32)?);
+        for byte in data {core::ptr::write_volatile(byte,0);}
+    }
     loop {
         let c=control()?;
         if c.command==p::CANCEL {if let Some(e)=enrollment.as_mut(){e.cancel();}call(0x1262,[0;6]);scratch.clear();report(&c,p::CANCELLED,0,None);return Ok(());}
@@ -223,7 +232,7 @@ unsafe fn work()->Result<(),u32> {
             report(&c,p::READY,0,enrollment.as_ref().map(Enrollment::state));continue;
         }
         let Some(e)=enrollment.as_mut() else {report(&c,p::FAILED,108,None);continue;};
-        if c.command!=p::CAPTURE && c.command!=p::VERIFY {report(&c,p::FAILED,108,Some(e.state()));continue;}
+        if c.command!=p::CAPTURE && c.command!=p::VERIFY && c.command!=p::LOGIN {report(&c,p::FAILED,108,Some(e.state()));continue;}
         if (c.command==p::CAPTURE && !matches!(e.state(),State::Photos(_)))
             || (c.command==p::VERIFY && !matches!(e.state(),State::ReadyToVerify|State::Verifying(_))) {
             report(&c,p::FAILED,108,Some(e.state()));continue;
@@ -254,7 +263,7 @@ unsafe fn work()->Result<(),u32> {
             let result=e.observe(&recognition.observation(binding(&c),sequence,captured),clock()?);
             match result {
                 Ok(state)=>{
-                    if state==State::Verified {
+                    if state==State::Verified && c.command!=p::LOGIN {
                         if let Err(error)=export_enrollment(c.command_id,e) {report(&c,p::FAILED,error,Some(state));break;}
                     }
                     report(&c,match state {State::ReadyToVerify=>p::REVIEW,State::Verified=>p::PASSED,State::Verifying(_)=>p::VERIFYING,_=>p::READY},0,Some(state));
@@ -263,6 +272,7 @@ unsafe fn work()->Result<(),u32> {
             }
         }
         for byte in encoded.iter_mut().chain(rgb.iter_mut()) {core::ptr::write_volatile(byte,0);}
+        if c.command==p::LOGIN {scratch.clear();return Ok(());}
     }
 }
 // ------------------------=
