@@ -12,9 +12,18 @@ mkdir -p build/behavior-tests
 cc -std=c11 -Wall -Wextra -Werror -Isdk/c/include tools/native-app-sdk-test.c \
   -o build/behavior-tests/native-app-sdk-test
 build/behavior-tests/native-app-sdk-test
+cc -std=c11 -Wall -Wextra -Werror -Isdk/c/include tools/generation-foundation-test.c \
+  -o build/behavior-tests/generation-foundation-test
+build/behavior-tests/generation-foundation-test
+PYTHONDONTWRITEBYTECODE=1 python3 tools/generation-foundation-test.py
+rustc --edition=2021 --test tools/application-acceptance-test.rs -o build/behavior-tests/application-acceptance-test
+build/behavior-tests/application-acceptance-test
 compiler=${LLVM_BIN:-/opt/homebrew/opt/llvm/bin}/clang
 for architecture in x86_64 aarch64; do
   "$compiler" --target="$architecture-none-elf" -std=c17 -ffreestanding -fno-builtin \
     -Wall -Wextra -Werror -Isdk/c/include -c tools/application-interaction-abi-test.c \
     -o "build/application-interaction-abi-$architecture.o"
+  "$compiler" --target="$architecture-none-elf" -std=c17 -ffreestanding -fno-builtin \
+    -Wall -Wextra -Werror -Isdk/c/include -c sdk/c/examples/generation-counter.c \
+    -o "build/generation-counter-$architecture.o"
 done
