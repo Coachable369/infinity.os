@@ -847,12 +847,12 @@ fn calibrated_instruction_tail_tests(owner:runtime::execution::SecurityIdentity)
 // ------------------=
 fn background_generation_listening_tests(owner:runtime::execution::SecurityIdentity) {
     use conversation::State;
-    for output_state in [1,3,4] {
+    for (output_state, task_active) in [(1,true),(3,true),(4,true),(1,false),(3,false),(4,false)] {
         assert!(conversation::start(owner));
         recognize_voice(b"Infinity create an application");
         assert_eq!(conversation::state().0,State::Thinking);
-        APP_GENERATING.store(true,Ordering::SeqCst);
-        BACKGROUND_GOAL.store(true,Ordering::SeqCst);
+        APP_GENERATING.store(task_active,Ordering::SeqCst);
+        BACKGROUND_GOAL.store(task_active,Ordering::SeqCst);
         OUTPUT_REQUEST.fetch_add(1,Ordering::SeqCst);
         OUTPUT.store(output_state,Ordering::SeqCst);
         let request=voice_output::request_id(owner);
@@ -867,8 +867,8 @@ fn background_generation_listening_tests(owner:runtime::execution::SecurityIdent
         assert_eq!(OUTPUT_STOPS.load(Ordering::SeqCst),stops);
         assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels);
         assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
-        assert!(APP_GENERATING.load(Ordering::SeqCst));
-        assert!(BACKGROUND_GOAL.load(Ordering::SeqCst));
+        assert_eq!(APP_GENERATING.load(Ordering::SeqCst),task_active);
+        assert_eq!(BACKGROUND_GOAL.load(Ordering::SeqCst),task_active);
         if output_state==1 {
             let recognized=RECOGNITION_REQUESTS.lock().unwrap().len();
             ECHO_PLAYBACK.store(true,Ordering::SeqCst);

@@ -64,6 +64,7 @@ static mut REPLY: [u8; 16384] = [0; 16384];
 static mut REPLY_LENGTH: usize = 0;
 static mut REPLY_AT: usize = 0;
 static mut REPLY_OUTPUT_REQUEST: u64 = 0;
+static mut OUTPUT_AT_SUBMIT: Option<u64> = None;
 static mut STOP_ALL_OUTPUT: bool = true;
 static mut SYNC_VISIBLE_AT: usize = 0;
 static mut LEVEL: u16 = 0;
@@ -351,6 +352,7 @@ unsafe fn submit_pending_transcript() -> bool {
         }
         if !ai.submit_voice_chat() { return false; }
         CHAT_TURN = ai.chat.turn_id();
+        OUTPUT_AT_SUBMIT = voice_output::request_id(OWNER);
         REPLY_OUTPUT_REQUEST = 0;
         REPLY_AT = 0;
         REPLY_LENGTH = 0;
@@ -765,9 +767,9 @@ unsafe fn recover_reply() {
 unsafe fn resume_background_listening() -> bool {
     if !CONTINUOUS || !matches!(STATE, State::Thinking | State::Speaking)
         || !super::with_ai_runtime(|ai| ai.chat.turn_id() == CHAT_TURN
-            && ai.chat.generation_state == GenerationState::Complete
-            && ai.app_turn_owner().is_some())
+            && ai.chat.generation_state == GenerationState::Complete)
         || voice_output::request_id(OWNER) == Some(REPLY_OUTPUT_REQUEST)
+        || voice_output::request_id(OWNER) == OUTPUT_AT_SUBMIT
         || !matches!(voice_output::status().state,
             voice_output::OutputState::Queued | voice_output::OutputState::Synthesizing
                 | voice_output::OutputState::Ready | voice_output::OutputState::Speaking
@@ -775,6 +777,9 @@ unsafe fn resume_background_listening() -> bool {
     {
         return false;
     }
+    // Output ownership, not the inference lease, determines this handoff:
+    // a workflow can release its lease before its final narration drains.
+    // Waiting for that lease would mute the next wake until synthesis ends.
     // The workflow already narrates its own phase. Do not cancel that exact
     // output request, append the acknowledgment to it, or keep discarding new
     // microphone input while it waits for an inference worker. Listening uses
