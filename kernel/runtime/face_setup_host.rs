@@ -40,7 +40,7 @@ pub fn available()->bool {crate::drivers::camera::available() && unsafe {super::
 pub fn view<R>(read:impl FnOnce(&Setup)->R)->R {unsafe {read(&(*core::ptr::addr_of!(JOB)).setup)}}
 // ------------------------=
 // FUNC: start
-// DESC: Starts the fixed isolated worker after account-password authorization; no persistent facial credential is created.
+// DESC: Starts the fixed isolated worker after password authorization; verified enrollment is saved only after the explicit review action.
 // ------------------=
 pub fn start(account:StableId,secret:&[u8],name:&str)->bool {unsafe {
     if !available() {return false;}

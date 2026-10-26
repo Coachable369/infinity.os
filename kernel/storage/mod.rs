@@ -877,6 +877,47 @@ pub(crate) fn python_packages_load(owner: [u8; 16], session: [u8; 16], out: &mut
     { with_store(|store| store.read_python_packages(object::ObjectId(owner), out)) }
     #[cfg(target_arch = "x86")]
     { let _ = out; Err(object::ObjectError::SpaceUnavailable) }
+// ------------------------=
+// FUNC: face_identity_path
+// DESC: Creates a fixed account-scoped vault path without accepting user-controlled path segments.
+// ------------------=
+fn face_identity_path(owner:[u8;16])->[u8;54] {
+    let mut path=[0;54];path[..22].copy_from_slice(b"/system/identity/face/");
+    for (i,byte) in owner.iter().enumerate() {
+        path[22+i*2]=b"0123456789abcdef"[(byte>>4) as usize];
+        path[23+i*2]=b"0123456789abcdef"[(byte&15) as usize];
+    }
+    path
+}
+
+// ------------------------=
+// FUNC: face_identity_commit
+// DESC: Atomically saves only an authenticated encrypted enrollment record in native system storage, replacing bounded prior state.
+// ------------------=
+pub(crate) fn face_identity_commit(owner:[u8;16],content:&[u8])->Result<u32,object::ObjectError> {
+    if content.len()!=crate::runtime::face_vault::BYTES || &content[..8]!=b"INFFACE1" || content[8..24]!=owner {
+        return Err(object::ObjectError::CorruptContent);
+    }
+    let path=face_identity_path(owner);
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|match store.resolve(&path) {
+        Ok(id)=>store.replace_state(id,content),
+        Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>store.create_attached(
+            b"@face-identity",object::ObjectType::Metadata,object::Space::System,content,&path).map(|_|1),
+        Err(error)=>Err(error),
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=path;Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
+// FUNC: face_identity_load
+// DESC: Reads the encrypted native enrollment for authenticated readback or authorized profile inspection.
+// ------------------=
+pub(crate) fn face_identity_load(owner:[u8;16],out:&mut[u8])->Result<usize,object::ObjectError> {
+    object_read_path(&face_identity_path(owner),None,out).map(|(_,length)|length)
+}
+
 }
 
 // ------------------------=

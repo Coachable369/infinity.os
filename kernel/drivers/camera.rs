@@ -38,6 +38,14 @@ fn active(owner:SecurityIdentity)->bool {
         .any(|session|session.id.0==owner.0 && session.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false)
 }
 // ------------------------=
+// FUNC: setup_authorized
+// DESC: Rechecks the exact password-authorized account and worker binding before private enrollment transfer or persistence.
+// ------------------=
+pub(crate) fn setup_authorized(owner:SecurityIdentity,account:crate::runtime::identity::StableId)->bool {
+    (unsafe {(*core::ptr::addr_of!(SETUP_AUTH)).is_some_and(|(held,user,_)|held==owner && user==account)})
+        && active(owner)
+}
+// ------------------------=
 // FUNC: authorize_setup
 // DESC: Verifies an existing password without creating a session and scopes camera authority to one short-lived setup worker.
 // ------------------=

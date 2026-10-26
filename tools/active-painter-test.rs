@@ -4,7 +4,8 @@
 #[path = "../kernel/runtime/font_faces.rs"] pub mod font_faces;
 #[path = "../kernel/runtime/font_preferences.rs"] pub mod font_preferences;
 #[path = "../kernel/runtime/font.rs"] pub mod font;
-mod runtime { pub use super::{font_faces,font_preferences,font}; }
+#[path="../kernel/runtime/face_setup.rs"] pub mod face_setup;
+mod runtime { pub use super::{font_faces,font_preferences,font,face_setup}; }
 // Transport-only fixture: the production date/time painter reads these values;
 // this harness neither simulates nor claims to verify storage/clock behavior.
 mod storage {
@@ -367,6 +368,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 #[cfg(not(studio_native_preview))]
 fn main() {
     if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}
+    if std::env::args().any(|arg|arg=="--face-enrollment-only") {configuration_wizard_render::verify_face();return;}
     if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}
     if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
     if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}

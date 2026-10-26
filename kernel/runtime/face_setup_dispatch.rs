@@ -44,12 +44,13 @@ impl Dispatch<'_> {
                     comparisons:word(16),reserved:word(20),command_id:u64::from_le_bytes(b[24..32].try_into().unwrap())};
                 if self.setup.accept(r,now).is_err() {-22}else{32}
             }
-            wire::PREVIEW_WRITE=>{
+            wire::PREVIEW_WRITE|wire::ENROLLMENT_WRITE=>{
                 if args[3]==0 || args[3]>4096 || args[4]!=0 || args[5]!=0 {return -22;}
                 let Ok(offset)=usize::try_from(args[1]) else {return -22;};
                 let mut bytes=[0u8;4096];let count=args[3] as usize;
                 if copy_from_user(tables,args[2],&mut bytes[..count]).is_err() {return -14;}
-                let result=self.setup.write_preview(args[0],offset,&bytes[..count],now);
+                let result=if op==wire::ENROLLMENT_WRITE {self.setup.write_enrollment(args[0],offset,&bytes[..count],now)}
+                    else {self.setup.write_preview(args[0],offset,&bytes[..count],now)};
                 for byte in &mut bytes {unsafe {core::ptr::write_volatile(byte,0);}}
                 if result.is_err() {-22}else{count as i64}
             }

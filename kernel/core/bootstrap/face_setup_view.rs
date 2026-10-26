@@ -6,21 +6,30 @@ impl DisplayDevice {
     // FUNC: face_setup_frame
     // DESC: Separates real camera thumbnails from the illustrative mask and truthful typed setup progress.
     // ------------------=
+    #[cfg(target_os="none")]
     pub(super) fn face_setup_frame(&mut self,input:&[u8],focus:usize,error:bool) {
+        crate::runtime::face_setup_host::view(|state|self.face_setup_frame_state(input,focus,error,state,
+            crate::runtime::face_setup_host::available()));
+    }
+    // ------------------------=
+    // FUNC: face_setup_frame_state
+    // DESC: Paints the production enrollment UI from explicit bounded state, shared with pixel verification without a simulated camera.
+    // ------------------=
+    pub(super) fn face_setup_frame_state(&mut self,input:&[u8],focus:usize,error:bool,
+        state:&crate::runtime::face_setup::Setup,camera_available:bool) {
         let l=Layout::new(self.width,self.height);
-        let r=l.card;self.onboarding_glass_panel(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
+        let r=l.card;self.access_panel(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
         let bounds=|r:crate::ui::geometry::Rect|(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
-        self.access_label(bounds(l.title),b"Check facial recognition",l.pixels*3/2,palette::TEXT,false,true);
-        crate::runtime::face_setup_host::view(|state| {
+        self.access_label(bounds(l.title),b"Create your facial identity",l.pixels*3/2,palette::TEXT,false,true);
             let (guidance,action):(&[u8],&[u8])=match state.stage() {
                 Stage::Idle|Stage::Cancelled=>(b"The camera preview starts on this screen. Keep one person in the frame. Only Capture takes an enrollment photo.",b"Retry camera preview"),
                 Stage::Loading=>(b"Checking the camera, then preparing private recognition. The real preview appears below; enrollment photos are captured separately.",b"Preparing..."),
                 Stage::Photos(0)=>(b"Photo 1 of 3. Face the camera straight on. Use even lighting and keep your whole face visible.",b"Capture front view"),
                 Stage::Photos(1)=>(b"Photo 2 of 3. Turn your face slightly to your left. Keep your eyes visible and hold still.",b"Capture left view"),
                 Stage::Photos(_)=>(b"Photo 3 of 3. Turn slightly to your right. Avoid backlighting and motion blur.",b"Capture right view"),
-                Stage::Review=>(b"Three views accepted. Face the camera again for three fresh comparisons. These are new captures, not the enrollment photos.",b"Verify with camera"),
+                Stage::Review=>(b"Three views accepted. Verify with three fresh comparisons, then save encrypted face templates and portraits to your account on this device.",b"Verify & save identity"),
                 Stage::Verifying(_)=>(b"Hold still and face the camera. Comparing three fresh captures against all enrolled views.",b"Verifying..."),
-                Stage::Passed=>(b"Camera comparison passed. This does not certify liveness or enable facial login. Password login remains on.",b"Continue"),
+                Stage::Passed=>(b"Facial identity saved and verified from storage. Front and angled side portraits are encrypted locally. Password login remains on.",b"Continue"),
                 Stage::Failed(_)=>(b"The camera check did not complete. Check camera access, lighting, focus and pose. Retry starts a clean enrollment.",b"Retry camera check"),
             };
             self.access_text_wrapped(l.guidance.x as usize,l.guidance.y as usize,l.guidance.width as usize,
@@ -48,9 +57,10 @@ impl DisplayDevice {
             }
             self.face_mask_base(l.mask);
             let note:&[u8]=if error {b"Unable to start. A supported camera, valid account password and a face name are required."}
-                else if let Stage::Failed(code)=state.stage() {match code {
+                else if let Some(code)=state.rejection().or_else(||if let Stage::Failed(code)=state.stage(){Some(code)}else{None}) {match code {
                     104=>b"Camera disconnected or could not deliver a complete frame. Check the VM camera attachment.",
                     105|111|220=>b"The camera check timed out or was cancelled. Retry when you are ready.",
+                    112=>b"The encrypted identity could not be saved and read back. Check storage and retry. No successful enrollment is being claimed.",
                     206=>b"No face detected. Center your face and improve the lighting.",
                     207=>b"More than one face detected. Only one person may be in the frame.",
                     208=>b"Move closer: the face is too small for a reliable comparison.",
@@ -61,13 +71,12 @@ impl DisplayDevice {
                     217|218=>b"The faces did not match consistently. Retry with the same person throughout.",
                     _=>b"The recognition worker could not complete. No enrollment or login change was saved.",
                 }}
-                else if !crate::runtime::face_setup_host::available() {b"Native camera capture is unavailable on this configuration. You can skip this optional check."}
-                else {b"Temporary check only: photos and biometric data are discarded. Nothing is saved for login."};
+                else if !camera_available {b"Native camera capture is unavailable on this configuration. You can skip this optional check."}
+                else {b"Private, on-device enrollment. Angled side views, not full profiles. No liveness certification; facial login remains off."};
             self.access_text_wrapped(l.status.x as usize,l.status.y as usize,l.status.width as usize,note,
                 palette::SECONDARY.0,palette::SECONDARY.1,palette::SECONDARY.2,255,l.pixels*4/5,false);
             for (r,label,id,primary) in [(l.back,b"Back" as &[u8],0,false),(l.skip,b"Skip" as &[u8],3,false),(l.primary,action,1,true)] {
                 self.access_button(r.x as usize,r.y as usize,r.width as usize,r.height as usize,label,primary,focus==id);
             }
-        });
     }
 }

@@ -53,6 +53,8 @@ fn visit(command:u64)->bool {call(0x1001,[0;6]);control().is_ok_and(|c|c.command
 // DESC: Reports UI progress only; the wire record has no authentication result or credential field.
 // ------------------=
 fn report(c:&p::Control,phase:u32,error:u32,state:Option<State>) {
+    let phase=if phase==p::FAILED && c.command==p::CAPTURE && matches!(state,Some(State::Photos(_)))
+        && matches!(error,206..=214|216..=218) {p::REJECTED}else{phase};
     let (photos,comparisons)=match state {Some(State::Photos(n))=>(n as u32,0),Some(State::Verifying(n))=>(3,n as u32),
         Some(State::ReadyToVerify)=>(3,0),Some(State::Verified)=>(3,3),_=>(0,0)};
     let r=p::Report::new(c.command_id,phase,error,photos,comparisons);
@@ -153,6 +155,24 @@ fn preview(command:u64,rgb:&[u8])->Result<(),u32> {
     Ok(())
 }
 // ------------------------=
+// FUNC: export_enrollment
+// DESC: Transfers verified views in bounded private chunks and clears each temporary transfer buffer, including cancellation paths.
+// ------------------=
+fn export_enrollment(command:u64,enrollment:&Enrollment)->Result<(),u32> {
+    let mut bytes=[0u8;4096];
+    let result=(|| {
+        for offset in (0..p::ENROLLMENT_BYTES).step_by(bytes.len()) {
+            let count=(p::ENROLLMENT_BYTES-offset).min(bytes.len());
+            enrollment.export_verified(offset,&mut bytes[..count]).map_err(|_|113u32)?;
+            if call(p::ENROLLMENT_WRITE,[command,offset as u64,bytes.as_ptr() as u64,count as u64,0,0])!=count as i64
+                || !visit(command) {return Err(113);}
+        }
+        Ok(())
+    })();
+    for byte in &mut bytes {unsafe {core::ptr::write_volatile(byte,0);}}
+    result
+}
+// ------------------------=
 // FUNC: work
 // DESC: Maintains temporary enrollment across explicit photo commands, runs real inference, and separately verifies a new capture phase.
 // ------------------=
@@ -233,7 +253,12 @@ unsafe fn work()->Result<(),u32> {
             };
             let result=e.observe(&recognition.observation(binding(&c),sequence,captured),clock()?);
             match result {
-                Ok(state)=>report(&c,match state {State::ReadyToVerify=>p::REVIEW,State::Verified=>p::PASSED,State::Verifying(_)=>p::VERIFYING,_=>p::READY},0,Some(state)),
+                Ok(state)=>{
+                    if state==State::Verified {
+                        if let Err(error)=export_enrollment(c.command_id,e) {report(&c,p::FAILED,error,Some(state));break;}
+                    }
+                    report(&c,match state {State::ReadyToVerify=>p::REVIEW,State::Verified=>p::PASSED,State::Verifying(_)=>p::VERIFYING,_=>p::READY},0,Some(state));
+                },
                 Err(error)=>{report(&c,p::FAILED,200+error as u32,Some(e.state()));break;}
             }
         }

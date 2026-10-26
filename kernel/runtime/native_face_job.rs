@@ -13,6 +13,7 @@ pub struct Job {
     camera_open:bool,
     terminal:Option<State>,
     scrubbed:usize,
+    account:super::identity::StableId,
 }
 impl Job {
     // ------------------------=
@@ -21,7 +22,7 @@ impl Job {
     // ------------------=
     pub const fn new()->Self {
         Self {setup:Setup::new(),task:None,owner:SecurityIdentity([0;16]),detector:&[],recognizer:&[],
-            deadline:0,camera_open:false,terminal:None,scrubbed:0}
+            deadline:0,camera_open:false,terminal:None,scrubbed:0,account:super::identity::StableId([0;16])}
     }
     // ------------------------=
     // FUNC: start_setup
@@ -35,6 +36,7 @@ impl Job {
         // The full account identity remains bound in the camera authority record.
         // The worker receives a per-attempt opaque handle, not a truncated account ID.
         let result=self.start(image,models,owner,worker,worker,digest,name,now_ns,memory,controller);
+        if result.is_ok() {self.account=account;}
         if result.is_err() {crate::drivers::camera::revoke_setup(owner);}
         result
     }
@@ -66,7 +68,8 @@ impl Job {
             if task.scrub_private(&mut self.scrubbed) {task.release(memory)?;}else{self.task=Some(task);}
             return Ok(());
         }
-        let alive=authorized && now_ns<self.deadline && self.setup.tick(now_ns/1_000_000).is_ok()
+        let alive=authorized && crate::drivers::camera::setup_authorized(self.owner,self.account)
+            && now_ns<self.deadline && self.setup.tick(now_ns/1_000_000).is_ok()
             && !matches!(self.setup.stage(),Stage::Cancelled|Stage::Failed(_)|Stage::Passed);
         let owner=self.owner;
         let mut dispatch=Dispatch {owner,setup:&mut self.setup,detector:self.detector,recognizer:self.recognizer};
@@ -87,6 +90,12 @@ impl Job {
             }
             dispatch.call(caller,alive,tables,op,args,now_ns/1_000_000)
         });
+        if self.setup.stage()==Stage::Passed && !self.setup.saved() {
+            let saved=self.save_identity(now_ns);
+            self.setup.finish_save(saved);
+            crate::drivers::camera::cancel(owner);crate::drivers::camera::revoke_setup(owner);
+            self.camera_open=false;
+        }
         if state==State::Runnable {
             self.task=Some(task);
         } else {
@@ -97,6 +106,30 @@ impl Job {
             self.task=Some(task);
         }
         Ok(())
+    }
+    // ------------------------=
+    // FUNC: save_identity
+    // DESC: Binds verified data to the password-authorized full account ID, encrypts before persistence and verifies decrypted durable readback.
+    // ------------------=
+    fn save_identity(&self,now_ns:u64)->bool {
+        if !crate::drivers::camera::setup_authorized(self.owner,self.account) {return false;}
+        let Some(payload)=self.setup.enrollment() else{return false;};
+        let Some(key)=super::with_runtime(|runtime| {
+            runtime.identity.user(self.account)?;
+            runtime.nodes.face_vault_key(&self.account.0)
+        }).flatten() else{return false;};
+        // The existing boot-seeded native entropy service is shared, but vault
+        // keys and authenticated record contexts remain domain-separated.
+        let Some(seed)=(unsafe {super::native_python_entropy::next(&self.account.0)}) else{return false;};
+        let seed=zeroize::Zeroizing::new(seed);
+        let mut nonce=[0;12];nonce.copy_from_slice(&seed[..12]);
+        let control=self.setup.control();
+        let Some(record)=super::face_vault::seal(&key,self.account.0,&control,nonce,now_ns,payload) else{return false;};
+        if crate::storage::face_identity_commit(self.account.0,&*record).is_err() {return false;}
+        let mut readback=zeroize::Zeroizing::new([0;super::face_vault::BYTES]);
+        if crate::storage::face_identity_load(self.account.0,&mut *readback)!=Ok(super::face_vault::BYTES) {return false;}
+        let Some(plain)=super::face_vault::open(&key,self.account.0,control.model,&*readback) else{return false;};
+        plain[super::face_vault::HEADER..super::face_vault::BYTES-16]==*payload
     }
     // ------------------------=
     // FUNC: cancel

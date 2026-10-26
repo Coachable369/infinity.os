@@ -1,11 +1,15 @@
 //! Private ABI for the OS-selected isolated verification worker. Not a public
-//! authentication API; these calls never create sessions or unlock the desktop.
+//! authentication API; these calls transfer verified enrollment but never create sessions or unlock the desktop.
 pub const VERSION:u32=1;
 pub const MODEL_READ:u64=0x1270;
 pub const CONTROL_READ:u64=0x1271;
 pub const REPORT_WRITE:u64=0x1272;
 pub const PREVIEW_WRITE:u64=0x1273;
 pub const CLOCK_MS:u64=0x1274;
+pub const ENROLLMENT_WRITE:u64=0x1275;
+/// Three little-endian 128-float vectors followed by three aligned 56x56 grayscale portraits.
+pub const PORTRAIT_SIDE:usize=56;
+pub const ENROLLMENT_BYTES:usize=3*128*4+3*PORTRAIT_SIDE*PORTRAIT_SIDE;
 pub const BEGIN:u32=1;
 pub const CAPTURE:u32=2;
 pub const VERIFY:u32=3;
@@ -17,6 +21,7 @@ pub const VERIFYING:u32=4;
 pub const PASSED:u32=5;
 pub const FAILED:u32=6;
 pub const CANCELLED:u32=7;
+pub const REJECTED:u32=8;
 
 #[repr(C)]
 #[derive(Clone,Copy)]

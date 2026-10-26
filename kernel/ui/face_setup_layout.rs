@@ -12,7 +12,7 @@ impl Layout {
         let left=width*8/100;let top=height*16/100;
         let w=width*84/100;let h=height*70/100;let gutter=unit(32);
         let column=w.saturating_sub(gutter*3)/2;
-        let preview_w=column.min(unit(160));let preview_h=preview_w*3/4;
+        let preview_w=column.min(unit(208));let preview_h=preview_w*3/4;
         let mask_size=column.min(unit(420)).min(480);
         let rect=|x:usize,y:usize,w:usize,h:usize|Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32};
         let bottom=top+h-gutter-unit(56);let button_w=(w-gutter*4)/3;

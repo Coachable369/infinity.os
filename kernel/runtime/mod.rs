@@ -4,6 +4,7 @@ pub use ai::clock as system_clock;
 pub mod browser;
 pub mod audio;
 pub mod face_setup;
+pub mod face_vault;
 pub mod face_setup_dispatch;
 #[cfg(all(target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
 pub mod native_face_job;

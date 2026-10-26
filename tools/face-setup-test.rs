@@ -28,6 +28,22 @@ fn start()->Setup {
     setup.accept(p::Report::new(command,p::READY,0,0,0),101).unwrap();setup
 }
 // ------------------------=
+// FUNC: rejected_side_view_preserves_front_and_rejects_early_export
+// DESC: Keeps accepted work after recoverable capture rejection and refuses enrollment transfer outside final verification.
+// ------------------=
+#[test]
+fn rejected_side_view_preserves_front_and_rejects_early_export() {
+    let mut setup=start();setup.capture(102).unwrap();
+    let command=setup.control().command_id;
+    setup.accept(p::Report::new(command,p::READY,0,1,0),103).unwrap();
+    setup.capture(104).unwrap();let command=setup.control().command_id;
+    assert_eq!(setup.write_enrollment(command,0,&[1;16],105),Err(Error::Stale));
+    setup.accept(p::Report::new(command,p::REJECTED,216,1,0),105).unwrap();
+    assert_eq!(setup.stage(),Stage::Photos(1));assert_eq!(setup.rejection(),Some(216));assert!(!setup.pending());
+    setup.capture(106).unwrap();assert_eq!(setup.rejection(),None);
+    setup.cancel();assert!(setup.enrollment().is_none());assert!(!setup.saved());
+}
+// ------------------------=
 // FUNC: sequential_photos_then_fresh_verification
 // DESC: Requires all three captures and all three separate verification reports before showing a passed comparison.
 // ------------------=
@@ -44,9 +60,19 @@ fn sequential_photos_then_fresh_verification() {
     assert_ne!(lease,setup.control().lease);let command=setup.control().command_id;
     assert_eq!(setup.accept(p::Report::new(command,p::PASSED,0,3,3),111),Err(Error::Protocol));
     for n in 1..=3 {
+        if n==3 {
+            assert_eq!(setup.accept(p::Report::new(command,p::PASSED,0,3,3),115),Err(Error::Protocol));
+            let payload=[7;p::ENROLLMENT_BYTES];
+            for offset in (0..payload.len()).step_by(4096) {
+                let end=(offset+4096).min(payload.len());
+                setup.write_enrollment(command,offset,&payload[offset..end],115).unwrap();
+            }
+        }
         setup.accept(p::Report::new(command,if n==3 {p::PASSED}else{p::VERIFYING},0,3,n),112+n as u64).unwrap();
     }
     assert_eq!(setup.stage(),Stage::Passed);assert!(!setup.pending());
+    assert!(!setup.saved());assert!(setup.enrollment().is_some());
+    setup.finish_save(true);assert!(setup.saved());assert!(setup.enrollment().is_none());
 }
 // ------------------------=
 // FUNC: stale_and_cancelled_reports_cannot_complete

@@ -8,6 +8,8 @@ use crate::ui::{geometry::Rect, installer_layout::{CONFIGURATION_TEMPLATE_BYTES,
 #[path="../kernel/core/bootstrap/access_style.rs"] mod access_style;
 #[path="../kernel/core/bootstrap/access_view.rs"] mod access_view;
 #[path="../kernel/core/bootstrap/access_input_view.rs"] mod access_input_view;
+#[path="../kernel/core/bootstrap/face_setup_view.rs"] mod face_setup_view;
+#[path="../kernel/core/bootstrap/face_scan_view.rs"] mod face_scan_view;
 #[cfg(studio_native_preview)]
 #[path="../kernel/core/bootstrap/access_scale.rs"] mod access_scale;
 #[cfg(studio_native_preview)]
@@ -40,6 +42,32 @@ mod installer {
 fn display(pixels: &mut [u32], width: usize, height: usize) -> DisplayDevice {
     DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,
         fast_motion_frame:false,submissions:0,recording_surface:false}
+}
+
+// ------------------------=
+// FUNC: verify_face
+// DESC: Renders unchanged native enrollment painters with no camera frame and verifies bounded animated damage and static reduced motion.
+// ------------------=
+pub(super) fn verify_face() {
+    let (width,height)=(1920,1080);
+    let mut pixels=vec![0x00090f26;width*height];
+    let mut d=display(&mut pixels,width,height);
+    let state=crate::runtime::face_setup::Setup::new();
+    d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
+    d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+    let base=pixels.clone();let mask=crate::ui::face_setup_layout::Layout::new(width,height).mask;
+    d.face_mask_scan(mask,700,false);let first=pixels.clone();
+    pixels.copy_from_slice(&base);d.face_mask_scan(mask,1400,false);
+    assert_ne!(pixels,first);
+    for y in 0..height {for x in 0..width {
+        if !mask.contains(crate::ui::geometry::Point{x:x as i32,y:y as i32}) {
+            assert_eq!(pixels[y*width+x],base[y*width+x]);
+        }
+    }}
+    std::fs::create_dir_all("builds/validation/face-enrollment").unwrap();
+    write_ppm("builds/validation/face-enrollment/native-frame.ppm",&pixels,width,height);
+    pixels.copy_from_slice(&base);d.face_mask_scan(mask,700,true);let reduced=pixels.clone();
+    pixels.copy_from_slice(&base);d.face_mask_scan(mask,1400,true);assert_eq!(pixels,reduced);
 }
 
 #[derive(Clone,Copy)]

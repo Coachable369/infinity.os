@@ -3,6 +3,10 @@ name = "infinityos-behavior-harness"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "face-vault-test"
+path = "../face-vault-test.rs"
+
 [build-dependencies]
 cc = "1"
 

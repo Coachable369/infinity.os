@@ -54,6 +54,7 @@ fn collect(e: &mut Enrollment) {
 #[test]
 fn fresh_capture_and_three_comparisons_required() {
     let mut e = enrollment(); collect(&mut e);
+    assert_eq!(e.export_verified(0,&mut [0;4]),Err(Error::WrongState));
     assert_eq!(e.begin_verification(binding(1),1500),Err(Error::WrongCapture));
     let mut foreign = binding(2); foreign.account = 99;
     assert_eq!(e.begin_verification(foreign,1500),Err(Error::WrongCapture));
@@ -65,6 +66,11 @@ fn fresh_capture_and_three_comparisons_required() {
         assert_eq!(state,if i==2 {State::Verified} else {State::Verifying(i as u8+1)});
     }
     assert_eq!(e.observe(&observation(2,4,3000,Pose::Front,&pixels(),&vector(0)),3000),Err(Error::WrongState));
+    let mut first=[0;4];e.export_verified(0,&mut first).unwrap();
+    assert_eq!(f32::from_le_bytes(first),1.0);
+    let mut portrait=[0;56*56];e.export_verified(3*128*4,&mut portrait).unwrap();
+    assert!(portrait.iter().all(|&value|value==130));
+    e.cancel();assert_eq!(e.export_verified(0,&mut first),Err(Error::WrongState));
 }
 // ------------------------=
 // FUNC: quality_rejection_does_not_advance

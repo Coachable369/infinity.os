@@ -18,6 +18,33 @@ Leaving the page immediately revokes capture authority and clears preview pixels
 
 ## Content and states
 
+### Enrollment persistence extension (2026-10-26)
+
+Reuse the existing generated alpha mask, Precision surfaces and Access font roles;
+no replacement icon family or alternate window chrome is needed. Increase the
+live preview to 208 height-normalized pixels wide, retaining 4:3 geometry. Active
+scanning adds a feathered, counter-traveling illumination band and brighter node
+cores; idle remains subdued, and reduced motion remains static. The mesh is
+illustrative, not tracked landmarks. This is the visual implementation target;
+production screenshot acceptance is still required.
+
+The explicit review action is **Verify & save identity**. Save three matching
+128-dimensional vectors and three aligned 56x56 grayscale portraits (front,
+angled left, angled right), encrypted with account-scoped ChaCha20-Poly1305.
+Use the protected native node key service and fresh boot-seeded entropy, never
+public keys or password verifiers as encryption keys. Bind account, pinned model,
+label and record version as authenticated metadata. Publish saved status only
+after atomic native-object commit and authenticated readback. Never store raw
+camera frames or unencrypted biometric data. Cancel erases temporary buffers;
+it does not remove a previously committed enrollment.
+
+This recognizer requires visible eye landmarks: full 90-degree profiles are not
+supported. Guided angled side views must not be advertised as full-profile
+recognition. Enrollment does not enable facial login or certify liveness. Disk
+protection inherits the native node-key custody threat model, not a claimed TPM
+or secure-enclave guarantee. Identity management/revocation and installed-camera
+acceptance are separate remaining gates.
+
 Use the current configuration content frame, eight-pixel rhythm and authored
 Inter sizes. Place the medium-large mask on the right (maximum 480 square physical
 pixels). Place the real 4:3 capture thumbnail below the guidance/name on the left,
@@ -43,10 +70,9 @@ the existing navigation gutter, not overlapping the preview.
 5. Verify: request a separate capture and ask the person to face the camera.
    Require three spaced, fresh comparisons against every accepted view.
    Show a mismatch as “Not verified—try again,” never a successful enrollment.
-6. Result: successful comparison reads “Camera comparison passed” and
-   “Facial login remains off.” This is not a liveness/security certification.
-   Until protected persistence exists, disclose that the check is temporary;
-   do not label a button Save or claim the enrollment survives reboot.
+6. Result: show saved only after encrypted durable readback; a write/readback
+   failure is an explicit failure, never successful enrollment. Password login
+   remains enabled. This is not a liveness/security certification.
 
 The close/cancel/Back actions revoke capture and discard temporary biometric
 buffers. Timeout, disconnect, permission loss and worker exit do the same.

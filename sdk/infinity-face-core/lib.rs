@@ -2,7 +2,7 @@
 //! Bounded enrollment/verification policy for an isolated recognition worker.
 //! Includes fixed-model detection/embedding operators, but no liveness test or authentication API.
 //! Inputs must come from the native worker's decoded, detected and aligned frame.
-//! No result from this crate authorizes login or persists a biometric template.
+//! Verified records can be exported only to the private OS persistence boundary; no result authorizes login.
 
 pub mod inference;
 pub mod vision;
@@ -14,7 +14,7 @@ pub mod jpeg;
 pub const DIMENSIONS: usize = 128;
 pub const PHOTO_COUNT: usize = 3;
 pub const CROP_SIDE: usize = 112;
-const TIMEOUT_MS: u64 = 120_000;
+const TIMEOUT_MS: u64 = 240_000;
 const FRAME_SPACING_MS: u64 = 500;
 const MAX_INFERENCE_LATENCY_MS: u64 = 30_000;
 
@@ -64,6 +64,7 @@ pub struct Enrollment {
     last_sequence: u64,
     last_capture: Option<u64>,
     samples: [[f32; DIMENSIONS]; PHOTO_COUNT],
+    portraits: [[u8; protocol::PORTRAIT_SIDE*protocol::PORTRAIT_SIDE]; PHOTO_COUNT],
     failures: u8,
 }
 
@@ -137,7 +138,8 @@ impl Enrollment {
         owned_name[..name.len()].copy_from_slice(name.as_bytes());
         Ok(Self { policy, binding, name: owned_name, name_len: name.len(), state: State::Photos(0),
             deadline: now_ms.checked_add(TIMEOUT_MS).ok_or(Error::InvalidPolicy)?, start: now_ms,
-            last_sequence: 0, last_capture: None, samples: [[0.0;DIMENSIONS];PHOTO_COUNT], failures: 0 })
+            last_sequence: 0, last_capture: None, samples: [[0.0;DIMENSIONS];PHOTO_COUNT],
+            portraits:[[0;protocol::PORTRAIT_SIDE*protocol::PORTRAIT_SIDE];PHOTO_COUNT], failures: 0 })
     }
     // ------------------------=
     // FUNC: state
@@ -220,6 +222,12 @@ impl Enrollment {
                     if !matches(prior, frame.embedding, self.policy.cosine)? { return Err(Error::DifferentPerson); }
                 }
                 self.samples[usize::from(count)].copy_from_slice(frame.embedding);
+                for y in 0..protocol::PORTRAIT_SIDE {for x in 0..protocol::PORTRAIT_SIDE {
+                    let at=y*2*CROP_SIDE+x*2;
+                    self.portraits[usize::from(count)][y*protocol::PORTRAIT_SIDE+x]=
+                        ((u16::from(frame.crop[at])+u16::from(frame.crop[at+1])
+                            +u16::from(frame.crop[at+CROP_SIDE])+u16::from(frame.crop[at+CROP_SIDE+1]))/4) as u8;
+                }}
                 self.state = if usize::from(count)+1 == PHOTO_COUNT { State::ReadyToVerify } else { State::Photos(count+1) };
             }
             State::Verifying(count) => {
@@ -244,11 +252,33 @@ impl Enrollment {
     // ------------------=
     pub fn cancel(&mut self) { self.wipe(); self.state = State::Cancelled; }
     // ------------------------=
+    // FUNC: export_verified
+    // DESC: Exports only independently verified enrollment in bounded slices to the private OS vault; never grants login authority.
+    // ------------------=
+    pub fn export_verified(&self, offset:usize, out:&mut [u8])->Result<(),Error> {
+        if self.state!=State::Verified {return Err(Error::WrongState);}
+        if out.is_empty() || out.len()>4096 || offset.checked_add(out.len()).is_none_or(|end|end>protocol::ENROLLMENT_BYTES) {
+            return Err(Error::InvalidPixels);
+        }
+        for (index,byte) in out.iter_mut().enumerate() {
+            let at=offset+index;
+            *byte=if at<PHOTO_COUNT*DIMENSIONS*4 {
+                self.samples[at/(DIMENSIONS*4)][at/4%DIMENSIONS].to_le_bytes()[at%4]
+            }else {
+                let at=at-PHOTO_COUNT*DIMENSIONS*4;
+                let size=protocol::PORTRAIT_SIDE*protocol::PORTRAIT_SIDE;
+                self.portraits[at/size][at%size]
+            };
+        }
+        Ok(())
+    }
+    // ------------------------=
     // FUNC: wipe
     // DESC: Overwrites private temporary vectors and enrollment labels without an optimizable-away ordinary memset.
     // ------------------=
     fn wipe(&mut self) {
         for sample in &mut self.samples { for value in sample { unsafe { core::ptr::write_volatile(value, 0.0); } } }
+        for portrait in &mut self.portraits {for value in portrait {unsafe {core::ptr::write_volatile(value,0);}}}
         for value in &mut self.name { unsafe { core::ptr::write_volatile(value, 0); } }
         self.name_len = 0;
     }
@@ -256,7 +286,7 @@ impl Enrollment {
 impl Drop for Enrollment {
     // ------------------------=
     // FUNC: drop
-    // DESC: Clears bounded temporary biometrics when the isolated workflow is discarded; there is deliberately no persistence API yet.
+    // DESC: Clears bounded temporary biometrics when the isolated workflow is discarded, including after verified export.
     // ------------------=
     fn drop(&mut self) { self.wipe(); }
 }
