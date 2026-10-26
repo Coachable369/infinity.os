@@ -9,6 +9,24 @@ struct UIKitStylesPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Shared glass button themes").font(.title2.weight(.semibold))
+                Text("Choose a theme for primary and secondary buttons together. Individual screen appearance overrides are preserved.")
+                    .foregroundStyle(.secondary)
+                LazyVGrid(columns: columns, spacing: 20) {
+                    ForEach(GlassButtonPreset.allCases) { preset in
+                        Button { store.applyButtonPreset(preset) } label: {
+                            VStack(alignment: .leading, spacing: 12) {
+                                sample(.primary, width: 250, height: 52, style: preset.style)
+                                    .frame(height: 52)
+                                Text(preset.rawValue).font(.headline)
+                                Text("Apply to shared buttons").font(.caption).foregroundStyle(.secondary)
+                            }.padding(16).background(InfinityUIKit.Palette.nativePanel)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text("A material for every surface")
                     .font(.title.weight(.semibold))
@@ -95,8 +113,8 @@ struct UIKitStylesPreview: View {
     // DESC: Renders the current draft atlas over real OS wallpaper, using native frost for panel glass and image-backed surface sampling otherwise.
     // ------------------=
     @ViewBuilder private func sample(_ kind: PrecisionSurfaceKind, width: Int, height: Int,
-                                    focus: UInt8 = 0, pressed: Bool = false) -> some View {
-        let material = material(kind, focus: focus, pressed: pressed)
+                                    focus: UInt8 = 0, pressed: Bool = false, style: UIKitSurfaceStyle? = nil) -> some View {
+        let material = previewMaterial(kind, focus: focus, pressed: pressed, style: style)
         if let image = UIKitStylePreviewImage.image(store: store, kind: kind, width: width, height: height, material: material) {
             Image(decorative: image, scale: 1).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
                 .overlay {
@@ -111,6 +129,17 @@ struct UIKitStylesPreview: View {
         } else {
             Text("Native preview artwork unavailable").font(.caption).foregroundStyle(.orange)
         }
+    }
+
+    // ------------------------=
+    // FUNC: previewMaterial
+    // DESC: Renders prospective button presets with the same pixel recipe as saved OS surfaces.
+    // ------------------=
+    private func previewMaterial(_ kind: PrecisionSurfaceKind, focus: UInt8, pressed: Bool,
+                                 style: UIKitSurfaceStyle?) -> PrecisionMaterial {
+        var result = material(kind, focus: focus, pressed: pressed)
+        if let style { result.style = style }
+        return result
     }
 }
 

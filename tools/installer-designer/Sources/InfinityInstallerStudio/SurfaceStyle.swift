@@ -1,6 +1,20 @@
 import AppKit
 import SwiftUI
 
+enum GlassButtonPreset: String, CaseIterable, Identifiable {
+    case sapphire = "Sapphire Glass", smoked = "Smoked Glass", ice = "Ice Glass"
+    var id: String { rawValue }
+    var style: UIKitSurfaceStyle {
+        let fill: UInt32 = switch self {
+        case .sapphire: 0xE8204DAD
+        case .smoked: 0xD8101B3A
+        case .ice: 0xC8447394
+        }
+        return UIKitSurfaceStyle(material: .glass, corners: .rounded, radius: 10,
+            fill: fill, border: 0xFF86C7FF)
+    }
+}
+
 enum UIKitSurfaceMaterial: Int, Codable, CaseIterable, Identifiable, Hashable {
     case authored = 0, glass = 1, matte = 2, flat = 3
     var id: Int { rawValue }
@@ -59,11 +73,11 @@ struct UIKitSurfaceStyle: Codable, Equatable, Hashable {
 
     // ------------------------=
     // FUNC: template
-    // DESC: Inherits shared geometry/material only; explicit saved template colors remain authoritative.
+    // DESC: Inherits shared recipes, opting buttons into shared colors unless their layer selects an explicit material.
     // ------------------=
-    func template(material: UIKitSurfaceMaterial, corners: UIKitCornerStyle, radius: Int) -> UIKitSurfaceStyle {
+    func template(material: UIKitSurfaceMaterial, corners: UIKitCornerStyle, radius: Int, inheritColors: Bool = false) -> UIKitSurfaceStyle {
         var result = self
-        result.fill = nil; result.border = nil
+        if material != .authored || !inheritColors { result.fill = nil; result.border = nil }
         if material != .authored { result.material = material }
         if corners != .authored { result.corners = corners; result.radius = radius.clamped(to: 0...40) }
         return result
@@ -74,7 +88,11 @@ struct UIKitSurfaceStyle: Codable, Equatable, Hashable {
     // DESC: Resolves a saved layer's explicit appearance over its shared native component recipe.
     // ------------------=
     static func template(for element: StudioElement, configuration: Bool, styles: [UIKitSurfaceStyle]) -> UIKitSurfaceStyle {
-        resolved(for: InfinityUIKit.precisionKind(role: element.role, kind: element.kind, configuration: configuration), styles: styles)
-            .template(material: element.surfaceMaterial, corners: element.surfaceCorners, radius: element.cornerRadius)
+        let kind = InfinityUIKit.precisionKind(role: element.role, kind: element.kind, configuration: configuration)
+        var result = resolved(for: kind, styles: styles)
+            .template(material: element.surfaceMaterial, corners: element.surfaceCorners, radius: element.cornerRadius,
+                inheritColors: kind == .primary || kind == .secondary)
+        if kind != .primary && kind != .secondary { result.fill = nil; result.border = nil }
+        return result
     }
 }

@@ -270,7 +270,8 @@ struct PrecisionAtlas {
             m.edge = studioColor(border)
             m.edgeOpacity = UInt8(Int(m.edgeOpacity) * Int(m.edge.alpha) / 255)
         }
-        if (style.material == .authored || style.material == .glass) && style.corners == .authored {
+        let glassButton = style.material == .glass && (kind == .primary || kind == .secondary)
+        if (style.material == .authored || style.material == .glass) && style.corners == .authored && !glassButton {
             return authoredPixel(kind, width: width, height: height, x: x, y: y, material: m)
         }
         if kind == .current || kind == .inactive {
@@ -317,7 +318,18 @@ struct PrecisionAtlas {
         if style.material == .flat {
             fill.red = base.0; fill.green = base.1; fill.blue = base.2
         }
-        let background = kind == .frame ? .clear : Self.themed(fill, base: base, target: m.fill, opacity: m.opacity)
+        var background = kind == .frame ? .clear : Self.themed(fill, base: base, target: m.fill, opacity: m.opacity)
+        if glassButton {
+            let reflection = state(0, 128 * 256, 8 * 256 + y * 239 * 256 / max(1, height))
+            let light = (reflection.red + reflection.green + reflection.blue) / 3
+            let center = state(0, 128 * 256, 128 * 256)
+            let baseline = (center.red + center.green + center.blue) / 3
+            let delta = (light - baseline) * 2
+            background.red = (background.red + delta).clamped(to: 0...255)
+            background.green = (background.green + delta).clamped(to: 0...255)
+            background.blue = (background.blue + delta).clamped(to: 0...255)
+            background.alpha = background.alpha * 210 / 255
+        }
         var edge = PrecisionPixel.clear
         if kind != .windowFill && m.edgeOpacity != 0 {
             var raw = PrecisionPixel.clear

@@ -51,7 +51,7 @@ struct UIKitStyleInspector: View {
             }
             Text("Each component has its own style. Glass retains the approved reflections; matte removes reflective shading. Rounded and square edges remain antialiased.")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("Screen elements can override material and corners in Appearance. Their explicit fill and border colors remain independent of this shared recipe.")
+            Text("Buttons with Kit default material inherit the shared button theme, including tint. Select an explicit material in a screen element’s Appearance to use its own fill and border colors instead. Other surfaces retain independent colors.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Reset This Style") { store.resetSurfaceStyle(store.selectedSurface) }
                 .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))

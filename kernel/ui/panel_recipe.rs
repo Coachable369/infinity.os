@@ -74,12 +74,15 @@ pub fn surface_style(kind: Surface) -> SurfaceStyle {
 
 // ------------------------=
 // FUNC: template_style
-// DESC: Inherits shared material and geometry while retaining the element's explicitly authored fill and border colors.
+// DESC: Inherits shared button tint unless a layer selects an explicit material; other surfaces retain authored colors.
 // ------------------=
 pub fn template_style(kind: Surface, material: u8, corners: u8, radius: u8) -> SurfaceStyle {
     let mut style = surface_style(kind);
-    style.fill = None;
-    style.border = None;
+    // Shared button themes own tint until the layer explicitly selects its own material.
+    if material != 0 || !matches!(kind, Surface::Primary|Surface::Secondary) {
+        style.fill = None;
+        style.border = None;
+    }
     if material != 0 { style.material = material; }
     if corners != 0 { style.corners = corners; style.radius = if radius > 40 { 40 } else { radius }; }
     style
@@ -321,7 +324,8 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
         m.edge=((color>>16) as u8,(color>>8) as u8,color as u8);
         m.edge_opacity=(u16::from(m.edge_opacity)*((color>>24) as u16)/255) as u8;
     }
-    if style.material<2 && style.corners==0 { return pixel_authored(kind,width,height,x,y,m); }
+    let glass_button=style.material==1 && matches!(kind,Surface::Primary|Surface::Secondary);
+    if style.material<2 && style.corners==0 && !glass_button { return pixel_authored(kind,width,height,x,y,m); }
     if matches!(kind,Surface::Current|Surface::Inactive) {
         if style.corners==0 {return pixel_authored_material(kind,width,height,x,y,m,true);}
         // Explicit silhouettes reuse the approved filled/quiet surface edges;
@@ -359,7 +363,19 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
         fill=(flatten(fill.0,base.0),flatten(fill.1,base.1),flatten(fill.2,base.2),fill.3);
     }
     if style.material==3 { fill=(base.0,base.1,base.2,fill.3); }
-    let background=if kind==Surface::Frame { (0,0,0,0) } else { themed(fill,base,m.fill,m.opacity) };
+    let mut background=if kind==Surface::Frame { (0,0,0,0) } else { themed(fill,base,m.fill,m.opacity) };
+    if glass_button {
+        // Reuse the approved artwork's luminance as a neutral reflection map.
+        // Tint first so a dark glass preset cannot erase the reflected light.
+        let reflection=state(0,128*256,8*256+y*239*256/height.max(1));
+        let light=(i32::from(reflection.0)+i32::from(reflection.1)+i32::from(reflection.2))/3;
+        let center=state(0,128*256,128*256);
+        let baseline=(i32::from(center.0)+i32::from(center.1)+i32::from(center.2))/3;
+        let delta=(light-baseline)*2;
+        let channel=|c:u8| (i32::from(c)+delta).clamp(0,255) as u8;
+        background=(channel(background.0),channel(background.1),channel(background.2),
+            (u16::from(background.3)*210/255) as u8);
+    }
     let edge=if kind==Surface::WindowFill || m.edge_opacity==0 {(0,0,0,0)}else {
         let raw=if rounded {
             if depth>=cut*scale*256 {(0,0,0,0)}else {

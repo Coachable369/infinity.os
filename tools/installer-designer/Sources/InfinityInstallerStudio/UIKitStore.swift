@@ -110,6 +110,18 @@ final class UIKitStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: applyButtonPreset
+    // DESC: Applies one shared button recipe to both action families as a single undoable edit without altering screen overrides.
+    // ------------------=
+    func applyButtonPreset(_ preset: GlassButtonPreset) {
+        guard document.styles[3] != preset.style || document.styles[4] != preset.style else { return }
+        recordUndo()
+        document.styles[3] = preset.style
+        document.styles[4] = preset.style
+        status = "Applied \(preset.rawValue) to shared primary and secondary buttons; individual screen overrides retained"
+    }
+
+    // ------------------------=
     // FUNC: resetSurfaceStyle
     // DESC: Restores one surface family to approved authored geometry and lighting without altering other styles.
     // ------------------=
