@@ -10,6 +10,17 @@ pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
 pub const LOGIN_TEMPLATE_BYTES: &[u8] = include_bytes!("../../assets/boot/login-screens.iuit");
 
 // ------------------------=
+// FUNC: login_uses_legacy_animation
+// DESC: Keeps legacy water restoration exclusive to the legacy scene, never over authored login layers.
+// ------------------=
+pub fn login_uses_legacy_animation(bytes: &[u8]) -> bool {
+    InstallerTemplate::parse_login(bytes)
+        .ok()
+        .and_then(|template| template.element_count(1))
+        .is_none()
+}
+
+// ------------------------=
 // FUNC: login_target_in
 // DESC: Hit-tests visible authentication controls in reverse paint order using their authored geometry.
 // ------------------=

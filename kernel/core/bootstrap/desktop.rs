@@ -619,7 +619,11 @@ impl super::DisplayDevice {
         &mut self,
         presentation: crate::ui::authentication_motion::Presentation,
     ) {
-        if self.skin_visual_mode() != 0 {
+        if self.skin_visual_mode() != 0
+            || !crate::ui::installer_layout::login_uses_legacy_animation(
+                crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES,
+            )
+        {
             return;
         }
         let (offset_x, offset_y, scale) = self.authentication_art_geometry();
@@ -7559,6 +7563,9 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn system_login_animation(&mut self, phase: usize) {
         if self.skin_visual_mode() != 0 || crate::console::reduced_motion() { return; }
+        if !crate::ui::installer_layout::login_uses_legacy_animation(
+            crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES,
+        ) { return; }
         use crate::ui::authentication_motion as motion;
         let elapsed_ms = crate::ui::performance::monotonic_ns().map(|now| now / 1_000_000)
             .unwrap_or((phase % 384) as u64 * motion::IDLE_PERIOD_MS / 384);

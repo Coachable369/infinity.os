@@ -11,6 +11,12 @@ mod installer_layout;
 // ------------------=
 fn main() {
     use installer_template::{InstallerTemplate, InstallerTemplateRole, login_action};
+    assert!(!installer_layout::login_uses_legacy_animation(installer_layout::LOGIN_TEMPLATE_BYTES));
+    assert!(installer_layout::login_uses_legacy_animation(&[]));
+    assert!(installer_layout::login_uses_legacy_animation(installer_layout::INSTALLER_TEMPLATE_BYTES));
+    let mut corrupt_login = installer_layout::LOGIN_TEMPLATE_BYTES.to_vec();
+    corrupt_login[0] ^= 0xff;
+    assert!(installer_layout::login_uses_legacy_animation(&corrupt_login));
     let template = InstallerTemplate::parse_login(installer_layout::LOGIN_TEMPLATE_BYTES).unwrap();
     let mut found = [false; 11];
     for index in 0..template.element_count(1).unwrap() {
