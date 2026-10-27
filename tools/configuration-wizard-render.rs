@@ -227,7 +227,7 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
         crate::ui::app_launcher::window_controls::publish(interaction);
         let preview_value:&[u8]=if screen==5{b"15 minutes"}else{b"Preview machine"};
         settings_rendered=target.render_basic_settings_view(usize::from(screen-1),preview_value,window,target.ui_scale(),
-            crate::settings_view::BasicSettingsSnapshot{face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
+            crate::settings_view::BasicSettingsSnapshot{output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
                 voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,
                 preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:15,timeout_maximum:120});
         crate::ui::app_launcher::window_controls::publish(None);

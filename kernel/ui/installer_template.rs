@@ -74,7 +74,7 @@ pub const fn settings_row_child_role(role: u8) -> bool {
 // DESC: Returns the trusted row count for sections sharing the native basic Settings painter.
 // ------------------=
 pub const fn settings_basic_row_count(section: usize) -> usize {
-    match section { 0 | 2 | 4 | 5 | 9 => 5, 3 => 7, 10 => 8, _ => 0 }
+    match section { 0 | 2 | 4 | 5 | 9 => 5, 3 | 10 => 8, _ => 0 }
 }
 
 // ------------------------=
@@ -94,6 +94,7 @@ pub enum SettingsAction {
     ToggleMicrophone,
     CycleWakeWord,
     ToggleSpeech,
+    CycleOutputVoice,
 }
 
 impl SettingsAction {
@@ -114,6 +115,7 @@ impl SettingsAction {
             Self::CycleModel => b"NEXT MODEL",
             Self::ToggleMicrophone => if voice_enabled { b"RESTRICT" } else { b"GRANT" },
             Self::CycleWakeWord => b"NEXT WAKE WORD",
+            Self::CycleOutputVoice => b"NEXT VOICE",
             Self::ToggleSpeech => if speech_enabled { b"MUTE REPLIES" } else { b"SPEAK REPLIES" },
         }
     }
@@ -132,6 +134,7 @@ pub const fn settings_action_for_row(section: usize, row: usize) -> Option<Setti
         (3, 4) | (4, 1) => Some(SettingsAction::ToggleMicrophone),
         (3, 5) => Some(SettingsAction::CycleWakeWord),
         (3, 6) => Some(SettingsAction::ToggleSpeech),
+        (3, 7) => Some(SettingsAction::CycleOutputVoice),
         _ => None,
     }
 }
@@ -456,7 +459,7 @@ impl<'a> InstallerTemplate<'a> {
             let expected_settings_rows = if requires_navigation || boot || login {
                 0
             } else {
-                [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize]
+                [5u8, 8, 5, 8, 5, 5, 6, 6, 8, 5, 8][screen.saturating_sub(1) as usize]
             };
             let invalid_settings = !login && !boot && !requires_navigation
                 && (console_count != 1
@@ -464,7 +467,7 @@ impl<'a> InstallerTemplate<'a> {
                     || title_count == 0
                     || body_count == 0
                     || section_count != 1
-                    || row_count != expected_settings_rows
+                    || (row_count != expected_settings_rows && !(screen == 4 && row_count == 7))
                     || settings_navigation_count != 11
                     || (if version >= 10 { settings_icon_count > 11 } else { settings_icon_count != 11 })
                     || settings_label_count != 11

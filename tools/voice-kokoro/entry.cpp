@@ -10,6 +10,8 @@
 #include "pcm-boundary.h"
 
 static std::unique_ptr<kokopop::Model> model;
+static const char *const installed_voices[] = {"af_heart", "af_bella", "af_nicole", "am_adam", "am_michael"};
+static unsigned selected_voice = 0;
 // A modest conversational pace reduces both generated mel frames and perceived
 // response latency without the clipped cadence produced by aggressive rates.
 static constexpr float conversational_speed = 1.15f;
@@ -40,9 +42,14 @@ static bool prepare_model() {
     std::string error;
     const kokopop_model_options options{1, KOKOPOP_BACKEND_CPU};
     if (!kokopop::load_model_from_gguf("/kokoro.gguf", &options, model, error)) return false;
-    if (model->is_mock || model->sample_rate("af_heart") != 24000) {
+    if (model->is_mock) {
         model.reset();
         return false;
+    }
+    for (const char *voice : installed_voices) {
+        if (model->voices.find(voice) == model->voices.end() || model->sample_rate(voice) != 24000) {
+            model.reset(); return false;
+        }
     }
     return true;
 }
@@ -73,7 +80,7 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
     if (native_cancelled()) return 2;
     kokopop_audio audio{};
     native_phase = 3;
-    if (!kokopop::synthesize_phonemes(*model, phonemes, "af_heart", conversational_speed, audio, error))
+    if (!kokopop::synthesize_phonemes(*model, phonemes, installed_voices[selected_voice], conversational_speed, audio, error))
         return native_cancelled() ? 2 : 5;
     int result = 0;
     native_phase = 4;
@@ -115,7 +122,9 @@ static void fade_edges(int16_t *pcm, size_t frames) {
 // FUNC: native_run
 // DESC: Keeps paragraph inference inside the fixed arena by synthesizing word-boundary phrases into bounded PCM.
 // ------------------=
-extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames) {
+extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames, unsigned voice) {
+    if (voice >= sizeof(installed_voices) / sizeof(installed_voices[0])) return 1;
+    selected_voice = voice;
     size_t position = 0, written = 0;
     while (position < length) {
         if (native_cancelled()) return 2;

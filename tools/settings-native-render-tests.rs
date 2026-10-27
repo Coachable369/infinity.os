@@ -7,12 +7,12 @@ use crate::ui::{geometry::{Rect,Point},system_layout::{SettingsWindowState,Syste
 // FUNC: snapshot
 // DESC: Defines explicit preview values without emulating any runtime service.
 // ------------------=
-fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
+fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
 // ------------------------=
 // FUNC: state
 // DESC: Builds bounded native Settings window geometry for a selected section and viewport.
 // ------------------=
-fn state(section:usize)->SettingsWindowState {SettingsWindowState{x:80,y:100,width:840,height:800,maximized:false,expanded_row:None,scroll_offset:0,control_focus:0,row_count:if section==10{8}else if section==3{7}else{5}}}
+fn state(section:usize)->SettingsWindowState {SettingsWindowState{x:80,y:100,width:840,height:800,maximized:false,expanded_row:None,scroll_offset:0,control_focus:0,row_count:if matches!(section,3|10){8}else{5}}}
 // ------------------------=
 // FUNC: frame
 // DESC: Renders production Settings into a memory framebuffer with optional damage clipping.
@@ -61,6 +61,20 @@ pub(super) fn verify() {
         for unsupported in [1,6,7,8]{let(pixels,ok)=frame(width,height,unsupported,state,snapshot(),None);assert!(!ok);assert!(pixels.iter().all(|p|*p==0x00182739));}
     }
     authored_style_pixels();
+    let layout = SystemLayout::new(1280, 800);
+    let mut voice_state = state(3);
+    voice_state.expanded_row = Some(7);
+    voice_state.scroll_offset = layout.settings_reveal_scroll(voice_state, 3);
+    let (default_voice, ok) = frame(1280, 800, 3, voice_state, snapshot(), None);
+    assert!(ok);
+    let mut selected = snapshot(); selected.output_voice = b"Michael (male)";
+    let (selected_voice, ok) = frame(1280, 800, 3, voice_state, selected, None);
+    assert!(ok && damage(&default_voice, &selected_voice, 1280).1 > 10);
+    let action = layout.settings_action_geometry(voice_state, 3, 7).unwrap();
+    assert!(action.visible && action.clip.intersects(action.bounds));
+    let mut ppm = b"P6\n1280 800\n255\n".to_vec();
+    for pixel in selected_voice { ppm.extend_from_slice(&[(pixel >> 16) as u8, (pixel >> 8) as u8, pixel as u8]); }
+    std::fs::write("build/voice-settings-proof.ppm", ppm).unwrap();
     authored_action_pixels();
     action_scene_pixels();
     dashboard_frames();

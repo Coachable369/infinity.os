@@ -284,7 +284,10 @@ pub struct VoiceProfile {
     pub enabled: bool,
     pub activation: VoiceActivation,
     pub wake_word: WakeWord,
+    pub output_voice: u8,
 }
+
+pub const OUTPUT_VOICE_NAMES: [&[u8]; 5] = [b"Heart (female)", b"Bella (female)", b"Nicole (female)", b"Adam (male)", b"Michael (male)"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PersonalSpaceOwnership {
@@ -566,6 +569,7 @@ impl IdentitySystem {
             enabled: true,
             activation: VoiceActivation::Continuous,
             wake_word: WakeWord::Infinity,
+            output_voice: 0,
         });
         self.ownership[slot] = Some(PersonalSpaceOwnership {
             owner: user_id,
@@ -1333,6 +1337,19 @@ impl IdentitySystem {
                 .iter()
                 .flatten()
                 .any(|u| u.state == UserState::Active)
+    // ------------------------=
+    // FUNC: update_output_voice
+    // DESC: Saves only an installed voice for its owning user without changing microphone authority.
+    // ------------------=
+    pub fn update_output_voice(&mut self, actor: StableId, user: StableId, voice: u8) -> Result<(), IdentityError> {
+        if actor != user { return Err(IdentityError::AccessDenied); }
+        if voice as usize >= OUTPUT_VOICE_NAMES.len() { return Err(IdentityError::InvalidInput); }
+        let profile = self.voice_profiles.iter_mut().flatten().find(|p| p.user == user).ok_or(IdentityError::NotFound)?;
+        profile.output_voice = voice;
+        self.commit();
+        Ok(())
+    }
+
             && self
                 .credentials
                 .iter()
@@ -1939,7 +1956,7 @@ fn write_user(
         );
     out[at + 158] = voice.map(|v| v.enabled as u8).unwrap_or(0) | (timeout_minutes << 1);
     out[at + 159] = voice
-        .map(|value| (value.activation as u8) | ((value.wake_word as u8) << 2))
+        .map(|value| (value.activation as u8) | ((value.wake_word as u8) << 2) | (value.output_voice << 4))
         .unwrap_or(1 | ((WakeWord::Infinity as u8) << 2))
         | if profile.is_some_and(|p|!p.face_login_enabled) {0x80}else{0}
 }
@@ -2015,9 +2032,13 @@ fn read_user(
             3 => VoiceActivation::Continuous,
             _ => VoiceActivation::Disabled,
         },
-        wake_word: match voice_preferences >> 2 {
+        wake_word: match (voice_preferences >> 2) & 3 {
             0 | 1 => WakeWord::Infinity,
             2 => WakeWord::Computer,
+        output_voice: match (voice_preferences >> 4) & 7 {
+            value @ 0..=4 => value,
+            _ => return Err(IdentityError::CorruptState),
+        },
             _ => return Err(IdentityError::CorruptState),
         },
     };

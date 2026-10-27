@@ -181,7 +181,7 @@ enum SettingsActionContract {
     static func rows(screenID: Int) -> [Int] {
         switch screenID {
         case 1: [0]
-        case 4: [0, 1, 2, 4, 5, 6]
+        case 4: [0, 1, 2, 4, 5, 6, 7]
         case 5: [1]
         default: []
         }
@@ -211,6 +211,7 @@ enum SettingsActionContract {
         case (4, 4), (5, 1): "GRANT"
         case (4, 5): "NEXT WAKE WORD"
         case (4, 6): "SPEAK REPLIES"
+        case (4, 7): "NEXT VOICE"
         default: ""
         }
     }
@@ -243,7 +244,7 @@ enum SettingsChildContract {
         if role == .settingsRowAction { return SettingsActionContract.rows(screenID: screenID) }
         if role == .settingsSliderTrack || role == .settingsSliderThumb { return screenID == 5 ? [3] : [] }
         guard roles.contains(role), (1...11).contains(screenID) else { return [] }
-        return Array(0..<[5, 0, 5, 7, 5, 5, 0, 0, 0, 5, 8][screenID - 1])
+        return Array(0..<[5, 0, 5, 8, 5, 5, 0, 0, 0, 5, 8][screenID - 1])
     }
 
     // ------------------------=
@@ -368,7 +369,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
             if SettingsChildContract.roles.contains(role) { return SettingsChildContract.rows(role: role, screenID: screenID).count }
             if [.settingsNavigationItem, .settingsNavigationLabel]
                 .contains(role) { return 11 }
-            let rowCounts = [5, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
+            let rowCounts = [5, 8, 5, 8, 5, 5, 6, 6, 8, 5, 8]
             let rowCount = rowCounts[screenID.clamped(to: 1...11) - 1]
             if role == .metadata { return rowCount }
             if [.settingsRowLabel, .settingsRowValue, .settingsDisclosure].contains(role) {
@@ -894,7 +895,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             ["Machine Name", "Language", "Region", "System Generation", "Updates"],
             ["Skin", "Icon Set", "Primary", "Secondary", "Opacity", "Blur", "UI Scale", "Wallpaper"],
             ["Current User", "Credential", "Session", "Personal Space", "Profile"],
-            ["AI Provider", "Desktop AI Chat", "Chat Model", "Remote Processing", "Voice", "Activation", "Model Access"],
+            ["AI Provider", "Desktop AI Chat", "Chat Model", "Remote Processing", "Voice", "Wake Word", "Spoken Replies", "AI Voice"],
             ["Ambient Authority", "Microphone", "Remote AI", "No Activity Timeout", "Trusted UI"],
             ["Display", "Keyboard", "Pointer", "Audio Input", "Audio Output"],
             ["Connectivity", "Profiles", "Interfaces & Topology", "Application & Service Access", "DNS / Resolution", "Routes", "Connections", "Diagnostics"],
@@ -907,7 +908,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             ["node1", "English (US)", "United States", "Active", "Generation based"],
             ["InfinityOS Default Dark", "Crystal Blue Glass", "Custom color", "Custom color", "100%", "0 px", "Automatic", "Cosmic Horizon"],
             ["Active", "Password", "Authenticated", "Private", "Persistent"],
-            ["Local only", "Enabled", "Local Model", "Off", "Off", "Disabled", "Capability gated"],
+            ["Local only", "Enabled", "Local Model", "Off", "Granted", "Infinity", "Enabled", "Heart (female)"],
             ["Denied", "Not granted", "Denied", "15 minutes", "Active"],
             ["Ready", "Ready", "Ready", "Unavailable", "Unavailable"],
             ["Offline", "5 operational modes", "Inspect", "Deny by default", "Bounded cache", "Deterministic", "Owner protected", "Observed counters"],
@@ -1159,6 +1160,21 @@ struct InstallerStudioDocument: Codable, Hashable {
     // ------------------=
     func migratedForSettingsActions() -> InstallerStudioDocument {
         var result = self
+        // Add the new voice row without replacing any existing user-authored settings layers.
+        if let index = result.screens.firstIndex(where: { $0.id == 4 }),
+           result.screens[index].elements.filter({ $0.role == .metadata }).count == 7 {
+            var children: [StudioElement] = []
+            Self.appendSettingsRows(to: &children, rows: ["AI Voice"], values: ["Heart (female)"])
+            let existingRows = result.screens[index].elements.filter { $0.role == .metadata }
+            let rowHeight = existingRows.count > 1 ? existingRows[1].frame.y - existingRows[0].frame.y : 58
+            let shift = existingRows[6].frame.y + rowHeight - children[0].frame.y
+            for child in children.indices {
+                children[child].frame.y += shift
+                children[child].id = Self.settingsElementID(screen: 4, element: 240 + child)
+                children[child].codeIdentifier = children[child].codeIdentifier.replacingOccurrences(of: "settingsRow.1", with: "settingsRow.8")
+            }
+            result.screens[index].elements.append(contentsOf: children)
+        }
         for index in result.screens.indices {
             let screen = result.screens[index]
             let rows = screen.elements.filter { $0.role == .metadata }

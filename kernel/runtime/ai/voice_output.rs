@@ -23,6 +23,7 @@ static mut CAPABILITY: u64 = 0;
 static mut DEADLINE: u64 = 0;
 static mut TEXT: [u8; 160] = [0; 160];
 static mut LENGTH: usize = 0;
+static mut OUTPUT_VOICE: u32 = 0;
 static mut PCM: [i16; CAPACITY] = [0; CAPACITY];
 static mut FRAMES: usize = 0;
 static mut PEAK: usize = 0;
@@ -87,9 +88,9 @@ fn trace(event: &[u8]) {
 fn trace(_: &[u8]) {}
 
 unsafe extern "C" {
-    fn infinity_kokoro_native_synthesize(text: *const u8, length: usize, pcm: *mut i16,
+    fn infinity_kokoro_native_synthesize_voice(text: *const u8, length: usize, pcm: *mut i16,
         capacity: usize, frames: *mut usize,
-        cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void) -> i32;
+        cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void, voice: u32) -> i32;
     fn infinity_kokoro_native_diagnostics(out: *mut usize);
 }
 impl SpeechSynthesisProvider for NativeSpeech {
@@ -100,8 +101,8 @@ impl SpeechSynthesisProvider for NativeSpeech {
     fn synthesize(&mut self, text: &[u8], output: &mut [i16]) -> Result<usize, AiError> {
         unsafe {
             let mut frames = 0;
-            let error = infinity_kokoro_native_synthesize(text.as_ptr(), text.len(), output.as_mut_ptr(),
-                output.len(), &mut frames, kokoro_cancelled, core::ptr::null_mut());
+            let error = infinity_kokoro_native_synthesize_voice(text.as_ptr(), text.len(), output.as_mut_ptr(),
+                output.len(), &mut frames, kokoro_cancelled, core::ptr::null_mut(), OUTPUT_VOICE);
             ERROR = error;
             if error == NATIVE_ENGINE_BUSY { return Err(AiError::QueueFull); }
             let mut diagnostics = [0usize; 12];
@@ -192,10 +193,16 @@ fn submit_mode(owner: SecurityIdentity, capability: u64, text: &[u8], content_st
     let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(capability, owner,
         CapabilityType::AudioOutput, 0, 1, 0, now / 1_000_000_000).is_ok()).unwrap_or(false);
     if !valid { return Err(AiError::AccessDenied); }
+    let output_voice = crate::runtime::with_runtime(|r| {
+        (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| r.identity.session_nth(i))
+            .find(|s| s.id.0 == owner.0)
+            .and_then(|s| r.identity.voice_profile(s.user)).map(|p| p.output_voice).unwrap_or(0)
+    }).unwrap_or(0);
     let rate = crate::drivers::audio::playback_rate().ok_or(AiError::ProviderUnavailable)?;
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
         retire();
+        if state != 8 && !continuation { OUTPUT_VOICE = output_voice as u32; }
         if state != 8 && !continuation {
             STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false; PLAYBACK_DRAINED = false;
             RESPONSE_QUEUED_NS.store(now, Ordering::Release);

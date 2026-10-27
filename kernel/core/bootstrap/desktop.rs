@@ -4305,7 +4305,8 @@ impl super::DisplayDevice {
         if let Some(placement)=pool_placement{for(i,b)in placement.resource.iter().enumerate(){pool_replica_identity[i*2]=b"0123456789abcdef"[(b>>4)as usize];pool_replica_identity[i*2+1]=b"0123456789abcdef"[(b&15)as usize];}}
         let pool_replica_state:&[u8]=match pool_placement.map(|p|p.state){
             Some(2)=>b"Verified",Some(3)=>b"Offline",Some(4)=>b"Stale",Some(5)=>b"Corrupt",Some(_)=>b"Not verified",None=>b"No placement"};
-        let basic_state=super::settings_view::BasicSettingsSnapshot{chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
+        let output_voice = crate::runtime::identity::OUTPUT_VOICE_NAMES[voice_profile.map(|p| p.output_voice as usize).unwrap_or(0).min(4)];
+        let basic_state=super::settings_view::BasicSettingsSnapshot{output_voice,chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
             face_login_enabled:voice_profile.is_some_and(|v|crate::runtime::with_runtime(|r|r.identity.user_profile(v.user).is_some_and(|p|p.face_login_enabled)).unwrap_or(false)),
             timeout_minutes:parse_leading_u8(input).unwrap_or(crate::runtime::identity::DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES),
             timeout_maximum:crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES};

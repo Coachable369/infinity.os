@@ -10,7 +10,7 @@ use ui::installer_template::{InstallerTemplate, InstallerTemplateRect, Installer
 use ui::system_layout::{SettingsTarget, SettingsWindowState, SystemLayout};
 
 static FIXTURE: OnceLock<Vec<u8>> = OnceLock::new();
-const ACTION_ROWS: &[(usize, usize)] = &[(0, 0), (3, 0), (3, 1), (3, 2), (3, 4), (3, 5), (3, 6), (4, 1)];
+const ACTION_ROWS: &[(usize, usize)] = &[(0, 0), (3, 0), (3, 1), (3, 2), (3, 4), (3, 5), (3, 6), (3, 7), (4, 1)];
 
 mod studio_native_render {
     // ------------------------=
@@ -136,7 +136,7 @@ fn fixture(case: &str) -> Vec<u8> {
 fn state(section: usize, row: usize) -> SettingsWindowState {
     SettingsWindowState { x: 70, y: 80, width: 850, height: 760, maximized: false,
         expanded_row: Some(row), scroll_offset: 0, control_focus: 0,
-        row_count: if section == 3 { 7 } else { 5 } }
+        row_count: if section == 3 { 8 } else { 5 } }
 }
 
 // ------------------------=
@@ -417,7 +417,7 @@ fn verify_children(case: &str) {
             assert_eq!(layout.settings_slider_target_for_section(point.x * 1000 / width as i32,
                 point.y * 1000 / height as i32, state, 3, maximum, 4), None);
         }
-        let sections = [(0, 5), (2, 5), (3, 7), (4, 5), (5, 5), (9, 5), (10, 8)];
+        let sections = [(0, 5), (2, 5), (3, 8), (4, 5), (5, 5), (9, 5), (10, 8)];
         for (section, row_count) in sections {
             for row in 0..row_count {
                 let mut state = SettingsWindowState { row_count, ..self::state(section, row) };

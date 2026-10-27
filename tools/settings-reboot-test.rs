@@ -60,6 +60,16 @@ fn main() {
     let user = identity.create_user(b"test", b"Test", 2).unwrap();
     identity.create_password(user.id, b"fixture-only-password", 3).unwrap();
     identity.complete_onboarding().unwrap();
+    assert_eq!(identity.voice_profile(user.id).unwrap().output_voice, 0);
+    for voice in 0..5 {
+        identity.update_output_voice(user.id, user.id, voice).unwrap();
+        let loaded = IdentitySystem::decode(&identity.encode()).unwrap();
+        assert_eq!(loaded.voice_profile(user.id).unwrap().output_voice, voice);
+    }
+    let before = identity.encode();
+    assert!(identity.update_output_voice(user.id, user.id, 5).is_err());
+    assert!(identity.update_output_voice(runtime::identity::StableId([0;16]), user.id, 1).is_err());
+    assert_eq!(before, identity.encode());
     assert_eq!(identity.voice_profile(user.id).unwrap().activation, VoiceActivation::Continuous);
     assert_eq!(identity.voice_profile(user.id).unwrap().wake_word, WakeWord::Infinity);
     identity
@@ -95,6 +105,7 @@ fn main() {
     assert_eq!(store.read(id,None,&mut bytes).unwrap(),bytes.len());
     let mut restored = IdentitySystem::decode(&bytes).unwrap();
     assert_eq!(restored.onboarding_state(), OnboardingState::Complete);
+    assert_eq!(restored.voice_profile(user.id).unwrap().output_voice, 4);
     assert!(!restored.ai_profile(user.id).unwrap().speech_output_enabled);
     assert_eq!(restored.user_profile(user.id).unwrap().theme.as_bytes(),b"saved-theme");
     assert!(restored.voice_profile(user.id).unwrap().enabled);
@@ -127,6 +138,7 @@ fn main() {
     assert!(migrated.voice_profile(user.id).unwrap().enabled);
     assert_eq!(migrated.voice_profile(user.id).unwrap().activation,VoiceActivation::Continuous);
     assert_eq!(migrated.voice_profile(user.id).unwrap().wake_word,WakeWord::Infinity);
+    assert_eq!(migrated.voice_profile(user.id).unwrap().output_voice,0);
     drop(store);
     std::fs::remove_file(path).unwrap();
     println!("200 durable checkpoints and two independent media remounts passed");

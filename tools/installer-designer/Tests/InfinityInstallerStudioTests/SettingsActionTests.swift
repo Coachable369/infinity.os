@@ -47,14 +47,14 @@ enum SettingsActionFixtures {
 final class SettingsActionTests: XCTestCase {
     // ------------------------=
     // FUNC: testDeterministicMigrationPreservesExistingLayersAndCustomActions
-    // DESC: Adds exactly eight stable action children without changing legacy user-authored layers or subsequent customized action records.
+    // DESC: Adds exactly nine stable action children without changing legacy user-authored layers or subsequent customized action records.
     // ------------------=
     func testDeterministicMigrationPreservesExistingLayersAndCustomActions() throws {
         var legacy = InstallerStudioDocument.factorySystemSettings()
         for screen in legacy.screens.indices { legacy.screens[screen].elements.removeAll { $0.role == .settingsRowAction } }
         legacy.screens[0].elements[0].opacity = 63
         let migrated = legacy.migratedForSettingsActions()
-        XCTAssertEqual(migrated.screens.flatMap(\.elements).filter { $0.role == .settingsRowAction }.count, 8)
+        XCTAssertEqual(migrated.screens.flatMap(\.elements).filter { $0.role == .settingsRowAction }.count, 9)
         XCTAssertEqual(migrated, legacy.migratedForSettingsActions())
         XCTAssertEqual(migrated, migrated.migratedForSettingsActions())
         for (before, after) in zip(legacy.screens, migrated.screens) {
@@ -224,29 +224,29 @@ final class SettingsActionTests: XCTestCase {
         let action = try XCTUnwrap(store.selectedScreen?.elements.last { $0.role == .settingsRowAction })
         store.nativePreviewSimulation.scroll = 999
         store.selectElement(action.id)
-        XCTAssertEqual(store.nativePreviewSimulation.expandedRow, 6)
+        XCTAssertEqual(store.nativePreviewSimulation.expandedRow, 7)
         let geometry = NativePreviewBounds(id: action.id, x: 120, y: -30, width: 180, height: 46,
             parentBounds: NativePreviewRect(x: 100, y: -96, width: 500, height: 128),
             viewportBounds: NativePreviewRect(x: 100, y: 200, width: 600, height: 400),
             revealScroll: 317, maximumScroll: 420)
-        XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 1, expandedRow: 6))
+        XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 1, expandedRow: 7))
         XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 0))
-        XCTAssertFalse(store.applyNativeSelectionReveal([], screen: 4, expandedRow: 6))
+        XCTAssertFalse(store.applyNativeSelectionReveal([], screen: 4, expandedRow: 7))
         var malformed = geometry; malformed.revealScroll = 421
-        XCTAssertFalse(store.applyNativeSelectionReveal([malformed], screen: 4, expandedRow: 6))
+        XCTAssertFalse(store.applyNativeSelectionReveal([malformed], screen: 4, expandedRow: 7))
         malformed = geometry; malformed.maximumScroll = nil
-        XCTAssertFalse(store.applyNativeSelectionReveal([malformed], screen: 4, expandedRow: 6))
+        XCTAssertFalse(store.applyNativeSelectionReveal([malformed], screen: 4, expandedRow: 7))
         XCTAssertEqual(store.nativePreviewSimulation.scroll, 999)
-        XCTAssertTrue(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 6))
+        XCTAssertTrue(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 7))
         XCTAssertEqual(store.nativePreviewSimulation.scroll, 317)
         store.nativePreviewSimulation.scroll = 280
-        XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 6))
+        XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 7))
         XCTAssertEqual(store.nativePreviewSimulation.scroll, 280)
         store.selectElement(action.id)
-        XCTAssertTrue(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 6))
+        XCTAssertTrue(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 7))
         store.selectElement(action.id); store.selectElement(nil)
         store.nativePreviewSimulation.scroll = 44
-        XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 6))
+        XCTAssertFalse(store.applyNativeSelectionReveal([geometry], screen: 4, expandedRow: 7))
         XCTAssertEqual(store.nativePreviewSimulation.scroll, 44)
     }
 

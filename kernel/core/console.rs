@@ -3675,7 +3675,7 @@ impl ConsoleRuntime {
         self.settings_window.expanded_row = layout.settings_expanded_row;
         self.settings_window.scroll_offset = layout.settings_scroll_offset;
         self.settings_scroll_target = layout.settings_scroll_offset;
-        self.settings_window.row_count = if matches!(layout.settings_section, 1 | 6 | 7 | 8 | 10) {
+        self.settings_window.row_count = if matches!(layout.settings_section, 1 | 3 | 6 | 7 | 8 | 10) {
             8
         } else {
             5
@@ -4458,7 +4458,7 @@ impl ConsoleRuntime {
         self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 8 | 10) {
             8
         } else if self.system_focus == 3 {
-            7
+            8
         } else {
             5
         };
@@ -5439,6 +5439,14 @@ impl ConsoleRuntime {
         self.reset_input();
     }
 
+            (3, 7) => {
+                let user = self.current_user;
+                let changed = crate::runtime::with_runtime(|r| {
+                    let current = r.identity.voice_profile(user).ok_or(crate::runtime::identity::IdentityError::NotFound)?;
+                    r.identity.update_output_voice(user, user, (current.output_voice + 1) % 5)
+                }).is_some_and(|result| result.is_ok());
+                if changed { let _ = crate::runtime::persist_identity_state(); }
+            }
     // ------------------------=
     // FUNC: close_app_launcher
     // DESC: Begins the native launcher exit transition while retaining its composited surface.
@@ -6574,7 +6582,7 @@ impl ConsoleRuntime {
                 self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 8 | 10) {
                     8
                 } else if self.system_focus == 3 {
-                    7
+                    8
                 } else {
                     5
                 };
@@ -6598,7 +6606,7 @@ impl ConsoleRuntime {
                 self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 8 | 10) {
                     8
                 } else if self.system_focus == 3 {
-                    7
+                    8
                 } else {
                     5
                 };
@@ -9412,7 +9420,7 @@ impl ConsoleRuntime {
                         self.settings_window.row_count = if matches!(index, 1 | 6 | 7 | 8 | 10) {
                             8
                         } else if index == 3 {
-                            7
+                            8
                         } else {
                             5
                         };
@@ -12686,7 +12694,8 @@ impl ConsoleRuntime {
             #[cfg(target_os = "none")]
             {
                 let status = crate::runtime::ai::voice_output::status();
-                self.output.write_line(b"Speech provider: native Kokoro / af_heart / 24 kHz");
+                let selected = crate::runtime::with_runtime(|r| r.identity.voice_profile(self.current_user)).flatten().map(|p| p.output_voice as usize).unwrap_or(0).min(4);
+                self.output.write_segments(&[b"Speech provider: native Kokoro / ", crate::runtime::identity::OUTPUT_VOICE_NAMES[selected], b" / 24 kHz"]);
                 self.output.write_number(b"Native speech state: ", status.state as u64);
                 self.output.write_number(b"Speech source frames: ", status.frames as u64);
                 self.output.write_number(b"Synthesis milliseconds: ", status.synthesis_ns / 1_000_000);

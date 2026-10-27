@@ -47,6 +47,7 @@ enum SettingsChildDefaults {
     // DESC: Preserves the existing native card descriptions as editable literal defaults during migration.
     // ------------------=
     static func summary(screenID: Int, row: Int) -> String {
+        if screenID == 4 && row == 7 { return "Five offline male and female voices" }
         let values: [String]
         switch screenID {
         case 1: values = ["Your device's network identity", "Current system language", "Current regional configuration", "Installed system generation", "System update availability"]
@@ -66,6 +67,7 @@ enum SettingsChildDefaults {
     // DESC: Preserves installed Settings explanations while making their text and typography explicit document properties.
     // ------------------=
     static func detail(screenID: Int, row: Int) -> String {
+        if screenID == 4 && row == 7 { return "Heart / Bella / Nicole (female); Adam / Michael (male)." }
         let values: [String]
         switch screenID {
         case 1: values = ["Rename this machine through the durable identity service.", "The installed interface language is English (US).", "Regional formatting follows the installed US locale.", "This is the active installed System Generation.", "Updates are delivered as a complete System Generation."]

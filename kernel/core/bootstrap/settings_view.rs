@@ -5,6 +5,7 @@ use crate::ui::system_layout::{SettingsWindowState,SettingsWindowGeometry,Settin
 #[derive(Clone,Copy)]
 pub(super) struct BasicSettingsSnapshot<'a> {
  pub face_login_enabled:bool,
+ pub output_voice:&'a[u8],
  pub chat_enabled:bool,pub chat_model:&'a[u8],pub voice_enabled:bool,pub wake_word:&'a[u8],pub speech_enabled:bool,
  pub preferences:crate::ui::input_preferences::Preferences,pub timeout_minutes:u8,pub timeout_maximum:u8,
 }
@@ -65,7 +66,7 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"Voice", if voice_enabled { b"Granted" } else { b"Restricted" }),
                 (b"Wake Word", wake_word),
                 (b"Spoken Replies", if speech_enabled { b"Enabled" } else { b"Disabled" }),
-                (b"", b""),
+                (b"AI Voice", snapshot.output_voice),
             ],
             4 => [
                 (b"Ambient Authority", b"Denied"),

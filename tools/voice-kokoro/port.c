@@ -343,7 +343,7 @@ void *__emutls_get_address(struct emulated_tls*t){
     if(t->initial)memcpy(p,t->initial,t->size);else memset(p,0,t->size);
     t->address=p;tls_slots[tls_count++]=t;return p;
 }
-extern int native_run(const char*,size_t,int16_t*,size_t,size_t*);
+extern int native_run(const char*,size_t,int16_t*,size_t,size_t*,unsigned);
 extern int native_prepare_synthesis(void);
 extern int whisper_private_native_transcribe(const int16_t*,size_t,char*,size_t,size_t*);
 extern int whisper_private_native_prepare(void);
@@ -371,12 +371,12 @@ int native_recover(void){
     return 0;
 }
 // ------------------------=
-// FUNC: native_synthesize
+// FUNC: native_synthesize_voice
 // DESC: Contains one bounded synthesis job and quarantines fatal engine state without crossing the Rust ABI.
 // ------------------=
-int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,size_t*frames,int(*cancel)(void*),void*context){
+int native_synthesize_voice(const char*text,size_t length,int16_t*pcm,size_t capacity,size_t*frames,int(*cancel)(void*),void*context,unsigned voice){
     if(!frames)return 1;*frames=0;
-    if(!text||!pcm||!length||length>160||!capacity||capacity>720000)return 1;
+    if(!text||!pcm||!length||length>160||!capacity||capacity>720000||voice>=5)return 1;
     if(!native_engine_try_acquire(&active))return NATIVE_ENGINE_BUSY;
     if(!native_save_pristine()){native_engine_release(&active);return 7;}
     if(poisoned){native_engine_release(&active);return 7;}
@@ -384,11 +384,19 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
-        result=native_cancelled()?2:native_run(text,length,pcm,capacity,frames);
+        result=native_cancelled()?2:native_run(text,length,pcm,capacity,frames,voice);
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
     }
     cancel_callback=NULL;cancel_context=NULL;
+// ------------------------=
+// FUNC: native_synthesize
+// DESC: Preserves the default-voice ABI for existing native diagnostics and clients.
+// ------------------=
+int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,size_t*frames,int(*cancel)(void*),void*context){
+    return native_synthesize_voice(text,length,pcm,capacity,frames,cancel,context,0);
+}
+
     if(result){memset(pcm,0,capacity*sizeof(*pcm));*frames=0;}
     native_engine_release(&active);
     return result;

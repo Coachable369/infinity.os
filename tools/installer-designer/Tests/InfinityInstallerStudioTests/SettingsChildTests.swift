@@ -5,7 +5,7 @@ import XCTest
 final class SettingsChildTests: XCTestCase {
     // ------------------------=
     // FUNC: testMigrationAddsStableCompleteChildrenWithoutRewritingCustomizations
-    // DESC: Verifies forty independently bound description/surface triplets and exactly one timeout track/thumb pair with stable identities.
+    // DESC: Verifies forty-one independently bound description/surface triplets and exactly one timeout track/thumb pair with stable identities.
     // ------------------=
     func testMigrationAddsStableCompleteChildrenWithoutRewritingCustomizations() throws {
         var legacy = InstallerStudioDocument.factorySystemSettings()
@@ -15,7 +15,7 @@ final class SettingsChildTests: XCTestCase {
         let migrated = legacy.migratedForSettingsChildren()
         XCTAssertEqual(migrated, legacy.migratedForSettingsChildren())
         XCTAssertEqual(migrated, migrated.migratedForSettingsChildren())
-        for (role, count) in zip(SettingsChildContract.roles, [40, 40, 40, 1, 1]) {
+        for (role, count) in zip(SettingsChildContract.roles, [41, 41, 41, 1, 1]) {
             XCTAssertEqual(migrated.screens.flatMap(\.elements).filter { $0.role == role }.count, count)
         }
         for (before, after) in zip(legacy.screens, migrated.screens) {

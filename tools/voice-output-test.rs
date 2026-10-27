@@ -70,13 +70,29 @@ mod runtime {
         // ------------------=
         pub fn retire_leaf(&self, _: u64, _: execution::SecurityIdentity) -> Result<(), ()> { Ok(()) }
     }
-    pub struct Runtime { pub capabilities: Caps }
+    pub mod identity { pub const MAX_SESSIONS: usize = 1; }
+    pub struct Session { pub id: execution::SecurityIdentity, pub user: execution::SecurityIdentity }
+    pub struct VoiceProfile { pub output_voice: u8 }
+    pub struct Identity;
+    impl Identity {
+        // ------------------------=
+        // FUNC: session_nth
+        // DESC: Supplies the owning authenticated session to the production voice selection path.
+        // ------------------=
+        pub fn session_nth(&self, _: usize) -> Option<Session> { Some(Session { id: execution::SecurityIdentity([1;16]), user: execution::SecurityIdentity([2;16]) }) }
+        // ------------------------=
+        // FUNC: voice_profile
+        // DESC: Selects a nondefault voice so the provider assertion proves preference propagation.
+        // ------------------=
+        pub fn voice_profile(&self, _: execution::SecurityIdentity) -> Option<VoiceProfile> { Some(VoiceProfile { output_voice: 4 }) }
+    }
+    pub struct Runtime { pub capabilities: Caps, pub identity: Identity }
     // ------------------------=
     // FUNC: with_runtime
     // DESC: Exposes deterministic authority to the production job.
     // ------------------=
     pub fn with_runtime<T>(f: impl FnOnce(&mut Runtime) -> T) -> Option<T> {
-        Some(f(&mut Runtime { capabilities: Caps }))
+        Some(f(&mut Runtime { capabilities: Caps, identity: Identity }))
     }
 }
 mod drivers { pub mod audio {
@@ -223,12 +239,13 @@ mod qwen { pub mod workers {
 } }
 #[path = "../kernel/runtime/ai/voice_output.rs"] mod voice_output;
 // ------------------------=
-// FUNC: infinity_kokoro_native_synthesize
+// FUNC: infinity_kokoro_native_synthesize_voice
 // DESC: Deterministic provider can finish after deadline without returning a provider error.
 // ------------------=
 #[no_mangle]
-unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, pcm: *mut i16, capacity: usize,
-    frames: *mut usize, cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void) -> i32 {
+unsafe extern "C" fn infinity_kokoro_native_synthesize_voice(_: *const u8, _: usize, pcm: *mut i16, capacity: usize,
+    frames: *mut usize, cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void, voice: u32) -> i32 {
+    assert_eq!(voice, 4);
     assert_eq!(capacity, 720000);
     if NATIVE_BUSY.load(Ordering::Acquire) { return 8; }
     if cancel(context) != 0 { *frames = 0; return 2; }

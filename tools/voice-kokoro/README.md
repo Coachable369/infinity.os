@@ -61,7 +61,14 @@ The reference pins kokopop revision
 `2c6989ac800f624ea984210215e1b76be42eea81` and validates the complete
 Kokoro v1.0 GGUF SHA-256 before loading it. Its upstream build fetches pinned
 GGML and eSpeak-ng dependencies into the private build tree. It does not
-install packages globally. The English `af_heart` voice is inside the model.
+install packages globally. Five English voices are already inside the model:
+`af_heart`, `af_bella`, `af_nicole` (female), `am_adam`, `am_michael` (male).
+Settings → AI & Voice → AI Voice cycles these offline choices, saved per user.
+Heart remains the default. Each response snapshots the selection so changing it
+does not switch speakers halfway through a streamed reply.
+
+Run `./build-kit run python3 tools/voice-kokoro/voices-test.py` for real host PCM
+checks of all five bundled voices; this is not installed-VM audio verification.
 The model download is approximately 168 MiB.
 
 Outputs under `build/voice-kokoro/reference`:
