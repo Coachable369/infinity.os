@@ -3,6 +3,8 @@
 //! memory; the dispatcher exposes only the bounded setup protocol and camera.
 use infinity_face_core::{Binding,Enrollment,Policy,State,protocol as p,recognition::{Recognizer,Scratch},jpeg};
 use core::{mem::size_of,panic::PanicInfo};
+mod capture;
+use capture::{capture,Stream};
 const HEAP_BASE:usize=0x200000000;
 const HEAP_BYTES:usize=192*1024*1024;
 
@@ -98,44 +100,6 @@ impl Arena {
 // ------------------=
 fn binding(c:&p::Control)->Binding {Binding {account:c.account,worker:c.worker,lease:c.lease,model:c.model}}
 // ------------------------=
-// FUNC: capture
-// DESC: Copies a pinned JPEG; preview retains a bounded stream while explicit photos always start a fresh stream.
-// ------------------=
-fn capture(command:u64,encoded:&mut [u8],stream:&mut Option<u64>,live:bool)->Result<(usize,u64,u64),u32> {
-    let begin=clock()?;
-    if stream.is_some_and(|opened|!live || begin.saturating_sub(opened)>=8000) {
-        call(0x1262,[0;6]);*stream=None;
-    }
-    let result=(|| {
-        while stream.is_none() {
-            let status=call(0x1260,[0;6]);
-            if status==0 {*stream=Some(clock()?);break;}
-            if status!= -11 && status!= -16 {return Err(104);}
-            if clock()?.saturating_sub(begin)>5000 || !visit(command) {return Err(105);}
-        }
-        loop {
-            if clock()?.saturating_sub(begin)>10_000 || !visit(command) {return Err(105);}
-            let mut meta=[0u64;2];
-            let status=call(0x1261,[0,0,0,0,meta.as_mut_ptr() as u64,0]);
-            if status== -11 {continue;}
-            if status==-110 {return Err(105);}
-            if status<0 || meta[0]==0 || meta[1]<4 || meta[1]>encoded.len() as u64 {return Err(104);}
-            let length=meta[1] as usize;let mut stale=false;
-            for offset in (0..length).step_by(4096) {
-                let n=(length-offset).min(4096);
-                let status=call(0x1261,[meta[0],offset as u64,unsafe {encoded.as_mut_ptr().add(offset)} as u64,n as u64,0,0]);
-                if status== -116 {stale=true;break;}
-                if status==-110 {return Err(105);}
-                if status!=n as i64 {return Err(104);}
-                if !visit(command) {return Err(105);}
-            }
-            if !stale {return Ok((length,meta[0],clock()?));}
-        }
-    })();
-    if !live || result.is_err() {call(0x1262,[0;6]);*stream=None;}
-    result
-}
-// ------------------------=
 // FUNC: preview
 // DESC: Sends an actual downsampled camera thumbnail in bounded sequential chunks, never a generated enrollment image.
 // ------------------=
@@ -186,7 +150,7 @@ unsafe fn work()->Result<(),u32> {
     let initial=control()?;
     if !matches!(initial.command,p::BEGIN|p::LOGIN) {return Err(108);}
     let encoded=arena.bytes(1_228_800)?;let rgb=arena.bytes(640*480*3)?;let decode=arena.bytes(8*1024*1024)?;
-    let mut stream=None;
+    let mut stream=Stream::default();
     let (length,_,_)=capture(initial.command_id,encoded,&mut stream,false)?;
     jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
     if initial.command==p::BEGIN {preview(initial.command_id,rgb)?;}

@@ -70,6 +70,10 @@ clean = false
 command = ["sh", "-c", "mkdir -p build/behavior-tests && rustc --edition=2021 -O -Awarnings tools/face-inference-batch-test.rs -o build/behavior-tests/face-inference-batch && build/behavior-tests/face-inference-batch"]
 clean = false
 
+[profiles.face-capture-tests]
+command = ["sh", "-c", "mkdir -p build/behavior-tests && rustc --edition=2021 --test tools/face-capture-test.rs -o build/behavior-tests/face-capture-test && build/behavior-tests/face-capture-test"]
+clean = false
+
 [profiles.hermes-memory-tests]
 command = ["make", "hermes-memory-test"]
 clean = false
