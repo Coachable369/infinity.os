@@ -49,6 +49,7 @@ fn display(pixels: &mut [u32], width: usize, height: usize) -> DisplayDevice {
 // DESC: Renders unchanged native enrollment painters with no camera frame and verifies bounded animated damage and static reduced motion.
 // ------------------=
 pub(super) fn verify_face() {
+    face_scan_view::verify_rigid_geometry();
     let (width,height)=(1920,1080);
     let mut pixels=vec![0x00090f26;width*height];
     let mut d=display(&mut pixels,width,height);
@@ -66,6 +67,10 @@ pub(super) fn verify_face() {
     }}
     std::fs::create_dir_all("builds/validation/face-enrollment").unwrap();
     write_ppm("builds/validation/face-enrollment/native-frame.ppm",&pixels,width,height);
+    for (name,t) in [("front",0),("right",3000),("left",9000)] {
+        d.face_mask_scan(mask,t,false);
+        write_ppm(&format!("builds/validation/face-enrollment/{name}.ppm"),&pixels,width,height);
+    }
     pixels.copy_from_slice(&base);d.face_mask_scan(mask,700,true);let reduced=pixels.clone();
     pixels.copy_from_slice(&base);d.face_mask_scan(mask,1400,true);assert_eq!(pixels,reduced);
     // Adjacent frames must move less than a substantial turn, including the yaw wrap.

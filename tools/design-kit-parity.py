@@ -32,8 +32,7 @@ spec.loader.exec_module(compiler)
 assert (kit / "uikit-styles.bin").read_bytes() == compiler.style_bytes(document)
 for kernel in args.kernel:
     with kernel.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
-        # The connected-dot face is included by the RGBA check. The previous
-        # mask remains editable Studio artwork, not an embedded kernel sprite.
-        for source in [*kit.glob("*.rgba"), kit / "browser-welcome-hero-v1.bmp", kit / "eclipse-access-wallpaper-v1.bmp", kit / "uikit-tokens.bin", kit / "uikit-styles.bin"]:
+        # The face atlas remains Studio artwork; native animation embeds rigid geometry.
+        for source in [*(p for p in kit.glob("*.rgba") if p.name != "face-digital-turn-v1.rgba"), kit / "face-canonical-v1.mesh", kit / "browser-welcome-hero-v1.bmp", kit / "eclipse-access-wallpaper-v1.bmp", kit / "uikit-tokens.bin", kit / "uikit-styles.bin"]:
             assert binary.find(source.read_bytes()) >= 0, (kernel, source.name)
 print("Selected installed design-kit payloads and kernel sprites match their source bytes")

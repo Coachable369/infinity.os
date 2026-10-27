@@ -112,6 +112,10 @@ DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba 
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/eclipse-precision-v1.rgba
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/face-mask-v1.bmp
 DESIGN_KIT_ASSETS += assets/ui-design-kit/default/face-digital-turn-v1.rgba
+DESIGN_KIT_ASSETS += assets/ui-design-kit/default/face-canonical-v1.mesh
+
+assets/ui-design-kit/default/face-canonical-v1.mesh: assets/ui-design-kit/default/face-canonical-v1.obj tools/build-face-mesh.py
+	python3 tools/build-face-mesh.py
 
 assets/ui-design-kit/default/face-digital-turn-v1.rgba: assets/ui-design-kit/default/face-digital-turn-v1.png tools/build-face-turn-artwork.py
 	python3 tools/build-face-turn-artwork.py

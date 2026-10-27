@@ -2,14 +2,22 @@
 
 ## Continuous connected-dot rotation
 
-Reuse the generated front-face artwork as a texture on one stable convex
-depth surface. Rotate that surface continuously through a
-gentle left/right yaw: no crossfade between independently generated faces.
+Use the 468 fixed vertices and triangles in face-canonical-v1.mesh. Apply a
+single rigid yaw matrix and perspective camera; never distort a flat image.
+Depth-test connectors against the triangle surface so the far cheek is hidden.
 Keep the existing 170% illustration rectangle, icy cyan connectors, bright
-nodes, and traveling scan illumination. Pixels use bilinear filtering; the surface
+nodes, and traveling scan illumination. Edges use subpixel coverage; the surface
 is decorative, never measured landmarks. Target 30 Hz with bounded local damage,
 no decoding/allocation in paint, and a static reduced-motion pose. Preserve the
 Precision controls and real camera previews unchanged.
+
+Geometry source: Google MediaPipe canonical_face_model.obj, Apache 2.0;
+https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.obj
+The original geometry and license are included beside the packed asset. No
+MediaPipe framework is linked. The generated angle atlas remains active Studio
+artwork but is not used by the native rotation renderer. tools/build-face-mesh.py
+packs the geometry; both kernels embed identical bytes and fresh installation
+copies the design kit. This section supersedes the older sprite animation notes.
 
 ## Login integration revision (2026-10-26)
 
