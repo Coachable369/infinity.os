@@ -85,6 +85,15 @@ pub(super) fn verify_face() {
         assert!(distance(&b)<distance(&pixels));
     }
     println!("15 native animation frames plus pixel comparisons: {:?}",start.elapsed());
+    // Camera/status repaints must not publish a front-facing frame between animation ticks.
+    for pose in [700,3000,6100,9000] {
+        d.face_mask_scan(mask,pose,false);let expected=pixels.clone();
+        for _ in 0..3 {
+            d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
+            d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+            assert_eq!(pixels,expected,"full repaint changed the visible face pose");
+        }
+    }
 }
 
 #[derive(Clone,Copy)]

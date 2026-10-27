@@ -12,6 +12,16 @@ static mut BOUNDS:Option<Rect>=None;
 static mut LAST_MS:u64=0;
 static mut START_MS:Option<u64>=None;
 static mut BASE_DIRTY:bool=false;
+static mut POSE_MS:u64=0;
+static mut POSE_REDUCED:bool=true;
+
+// ------------------------=
+// FUNC: advance_pose
+// DESC: Bounds visible angular movement after scheduler stalls instead of skipping to a distant wall-clock pose.
+// ------------------=
+fn advance_pose(pose:u64,previous:u64,now:u64)->u64 {
+    pose.wrapping_add(now.saturating_sub(previous).min(33))%96000
+}
 
 // ------------------------=
 // FUNC: wave
@@ -56,6 +66,10 @@ fn edge(a:[f32;3],b:[f32;3],x:f32,y:f32)->f32 {(b[0]-a[0])*(y-a[1])-(b[1]-a[1])*
 // ------------------=
 #[cfg(not(target_os="none"))]
 pub(crate) fn verify_rigid_geometry() {
+    assert_eq!(advance_pose(700,1000,1033),733);
+    assert_eq!(advance_pose(700,1000,5000),733);
+    assert_eq!(advance_pose(700,1000,999),700);
+    assert_eq!(advance_pose(95990,1000,1033),23);
     let camera=|p:[f32;3]|[(p[0]-128.0)/(420.0*p[2]),(128.0-p[1])/(420.0*p[2]),35.0-1.0/p[2]];
     let distance=|a:[f32;3],b:[f32;3]|(0..3).map(|k|(a[k]-b[k])*(a[k]-b[k])).sum::<f32>();
     for time in (0..12000).step_by(100) {
@@ -82,7 +96,8 @@ impl DisplayDevice {
         for y in 0..r.height as usize {for x in 0..r.width as usize {
             base[y*LIMIT+x]=*self.buffer.add((r.y as usize+y)*self.stride+r.x as usize+x);
         }}
-        BOUNDS=Some(r);BASE_DIRTY=true;self.face_mask_scan(r,0,true);
+        BOUNDS=Some(r);BASE_DIRTY=true;
+        self.face_mask_scan(r,POSE_MS,POSE_REDUCED);
     }}
     // ------------------------=
     // FUNC: face_mask_scan
@@ -90,6 +105,7 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn face_mask_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {unsafe {
         if BOUNDS!=Some(r) {return;}
+        POSE_MS=elapsed;POSE_REDUCED=reduced;
         let base=&*core::ptr::addr_of!(BASE);
         for y in 0..r.height as usize {
             core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
@@ -169,7 +185,7 @@ impl DisplayDevice {
 pub fn animate(visible:bool,reduced:bool)->bool {
     let now=crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000;
     unsafe {
-        if !visible {START_MS=None;BOUNDS=None;return false;}
+        if !visible {START_MS=None;BOUNDS=None;POSE_MS=0;POSE_REDUCED=true;return false;}
         let first=START_MS.is_none();
         if !first && !BASE_DIRTY && (reduced || now.saturating_sub(LAST_MS)<33) {return false;}
         let Some(c)=(*core::ptr::addr_of_mut!(CONSOLE)).as_mut() else{return false;};
@@ -178,7 +194,8 @@ pub fn animate(visible:bool,reduced:bool)->bool {
         c.restore_cursor();
         let d=&mut c.display;let clip=d.render_clip;
         d.set_render_clip(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
-        d.face_mask_scan(r,now.saturating_sub(START_MS.unwrap_or(now)),reduced);
+        let pose=if first || reduced {POSE_MS}else{advance_pose(POSE_MS,LAST_MS,now)};
+        d.face_mask_scan(r,pose,reduced);
         LAST_MS=now;BASE_DIRTY=false;
         d.mark_dirty_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
         d.render_clip=clip;
