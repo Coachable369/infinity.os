@@ -54,6 +54,7 @@ fn skip_element(data: &[u8], offset: &mut usize) -> (u8, usize) {
     if u16::from_le_bytes([data[4], data[5]]) >= 8 {
         *offset += ACTION_EXTENSION_BYTES;
     }
+    if u16::from_le_bytes([data[4], data[5]]) >= 12 { *offset += 3; }
     (role, kind_offset)
 }
 
@@ -137,12 +138,14 @@ impl TestTemplate {
                 });
             }
             for element in &mut screen.elements {
+                if self.version >= 12 && version < 12 { element.truncate(element.len() - 3); }
                 if self.version >= 8 && version < 8 {
                     element.truncate(element.len() - ACTION_EXTENSION_BYTES);
                 } else if self.version < 8 && version >= 8 {
                     element.extend_from_slice(&[0; 17]);
                     element.extend_from_slice(&[255; 4]);
                 }
+                if self.version < 12 && version >= 12 { element.extend_from_slice(&[0; 3]); }
                 if version < 11 {
                     let flags = element_kind_offset(element) + 3;
                     element[flags] &= 63;

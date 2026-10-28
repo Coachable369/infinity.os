@@ -529,6 +529,17 @@ struct StudioElement: Identifiable, Codable, Hashable {
     var parentRowID: UUID? = nil
     var actionCaptionMode: SettingsActionCaptionMode = .native
     var captionColor: StudioColor = .white
+    var fontFamily: Int = 0
+    var textSharpness: Int = 0
+    var textGlow: Int = 0
+
+    static let fontFamilies = ["Use screen default", "Inter", "Roboto", "Open Sans", "Lato", "Montserrat",
+        "Fira Sans", "Fira Code", "JetBrains Mono", "IBM Plex Sans", "IBM Plex Mono", "Source Sans 3",
+        "Source Serif 4", "Noto Sans", "Noto Serif", "Atkinson Hyperlegible", "Alegreya Sans", "Cabin",
+        "Cardo", "Comfortaa", "Crimson Pro", "DM Sans", "EB Garamond", "Exo 2", "Inconsolata", "Karla",
+        "Libre Baskerville", "Libre Franklin", "Manrope", "Merriweather", "Mulish", "Nunito", "Oswald",
+        "Oxygen", "Playfair Display", "Poppins", "PT Sans", "Raleway", "Rubik", "Space Grotesk",
+        "Titillium Web", "Work Sans", "Zilla Slab", "Barlow", "Bebas Neue", "Lexend", "Arimo"]
 
     // ------------------------=
     // FUNC: resolvingThemeColors
@@ -658,6 +669,7 @@ extension StudioElement {
         case id, codeIdentifier, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
         case fontSize, opacity, cornerRadius, zIndex, locked, hidden, surfaceMaterial, surfaceCorners, fillToken, borderToken, imageFit
         case parentRowID, actionCaptionMode, captionColor
+        case fontFamily, textSharpness, textGlow
     }
 
     // ------------------------=
@@ -693,6 +705,9 @@ extension StudioElement {
         parentRowID = try values.decodeIfPresent(UUID.self, forKey: .parentRowID)
         actionCaptionMode = try values.decodeIfPresent(SettingsActionCaptionMode.self, forKey: .actionCaptionMode) ?? .native
         captionColor = try values.decodeIfPresent(StudioColor.self, forKey: .captionColor) ?? .white
+        fontFamily = try values.decodeIfPresent(Int.self, forKey: .fontFamily) ?? 0
+        textSharpness = try values.decodeIfPresent(Int.self, forKey: .textSharpness) ?? 0
+        textGlow = try values.decodeIfPresent(Int.self, forKey: .textGlow) ?? 0
     }
 }
 

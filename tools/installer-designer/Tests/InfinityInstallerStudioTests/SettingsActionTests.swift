@@ -34,7 +34,7 @@ enum SettingsActionFixtures {
                 if version == 6 { record[flagsOffset] &= 3 }
                 if version >= 8 { record += bytes[cursor..<(cursor + 21)] }
                 if role < (version >= 8 ? 34 : 33) { records.append(record) }
-                cursor += 21
+                cursor += 24
             }
             output += [UInt8(truncatingIfNeeded: records.count), UInt8(truncatingIfNeeded: records.count >> 8)]
             for record in records { output += record }

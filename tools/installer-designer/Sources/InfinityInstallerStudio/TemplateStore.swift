@@ -792,11 +792,30 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: selectScreenBackground
+    // DESC: Exposes the screen-owned background in the same inspector used for ordinary images without changing its lock state.
+    // ------------------=
+    func selectScreenBackground() {
+        guard let elements = selectedScreen?.elements,
+              let background = elements.first(where: { $0.kind == .image && $0.role == .sceneBackground })
+                ?? elements.first(where: { $0.kind == .image && $0.role == .masthead }) else {
+            status = "This screen has no background image layer"; return
+        }
+        selectElement(background.id)
+        status = background.locked ? "Unlock the background in Image controls to replace it" : "Choose Replace Image in the inspector"
+    }
+
+    // ------------------------=
     // FUNC: importImageAsset
     // DESC: Copies a validated PNG or bitmap into boot assets and creates or updates its canvas layer.
     // ------------------=
     @discardableResult
     func importImageAsset(from source: URL, replacingSelected: Bool = false) throws -> UUID {
+        if replacingSelected {
+            guard let element = selectedElement, element.kind == .image, !element.locked else {
+                throw TemplateValidationIssue.invalidDocument("Select and unlock an image before replacing it")
+            }
+        }
         guard ["png", "bmp", "jpg", "jpeg", "tif", "tiff"].contains(source.pathExtension.lowercased()),
               let dimensions = UIKitAssetCatalog.dimensions(source),
               dimensions.0 > 0, dimensions.1 > 0,
@@ -826,7 +845,8 @@ final class TemplateStore: ObservableObject {
         {
             activeDocument.screens[location.screen].elements[location.elementIndex].imageAsset = relativePath
             activeDocument.screens[location.screen].elements[location.elementIndex].crop = .none
-            activeDocument.screens[location.screen].elements[location.elementIndex].imageFit = .fit
+            // Keep the authored background fit and geometry; replacing artwork must not change its layout.
+            activeDocument.screens[location.screen].elements[location.elementIndex].imageFit = location.element.imageFit
             status = "Image replaced"
             projectRoot = root
             return location.element.id

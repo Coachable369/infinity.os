@@ -229,6 +229,8 @@ private struct ScreenSidebar: View {
                     Text("SCREEN NAME")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    Button("Edit Background…", action: store.selectScreenBackground)
+                        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
                     TextField(
                         "Screen name",
                         text: Binding(

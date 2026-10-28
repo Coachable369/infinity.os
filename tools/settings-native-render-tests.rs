@@ -19,7 +19,7 @@ fn state(section:usize)->SettingsWindowState {SettingsWindowState{x:80,y:100,wid
 // ------------------=
 fn frame(width:usize,height:usize,section:usize,state:SettingsWindowState,values:BasicSettingsSnapshot<'_>,clip:Option<Region>)->(Vec<u32>,bool) {
     let mut pixels=vec![0x00182739;width*height];
-    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:clip,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:clip,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let success=display.render_basic_settings_view(section,if section==4{b"5 minutes"}else{b"Studio preview"},state,display.ui_scale(),values);
     (pixels,success)
 }
@@ -95,7 +95,7 @@ fn dashboard_frames() {
                 state.expanded_row=Some(page);
                 let mut pixels=vec![0x00182739;w*h];
                 let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width:w,height:h,stride:w,format:0,
-                    render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+                    render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
                 assert!(display.render_dashboard_settings_view(section,b"Preview",state,display.ui_scale(),snapshot));
                 assert!(pixels.iter().any(|pixel|*pixel!=0x00182739));
                 if let Some(before)=previous {assert_ne!(pixels,before);}
@@ -110,7 +110,7 @@ fn dashboard_frames() {
                     right:geometry.window.right().max(0)as usize-10,bottom:geometry.window.bottom().max(0)as usize-10};
                 let mut partial=vec![0x00182739;w*h];
                 let mut display=DisplayDevice{buffer:partial.as_mut_ptr(),width:w,height:h,stride:w,format:0,
-                    render_clip:Some(clip),fast_motion_frame:false,submissions:0,recording_surface:false};
+                    render_clip:Some(clip),fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
                 assert!(display.render_dashboard_settings_view(section,b"Preview",state,display.ui_scale(),snapshot));
                 for y in 0..h {for x in 0..w {assert_eq!(partial[y*w+x],if x>=clip.left&&x<clip.right&&y>=clip.top&&y<clip.bottom{pixels[y*w+x]}else{0x00182739});}}
                 previous=Some(pixels);
@@ -128,7 +128,7 @@ fn authored_style_pixels() {
     let mut element=crate::ui::settings_template::role_at(0,Role::SettingsRowLabel,0).unwrap();
     let render=|element:crate::ui::installer_template::InstallerTemplateElement<'_>,bounds:Rect| {
         let mut pixels=vec![0x00182739;320*1000];
-        let mut target=DisplayDevice{buffer:pixels.as_mut_ptr(),width:320,height:1000,stride:320,format:0,render_clip:Some(Region{left:0,top:0,right:320,bottom:160}),fast_motion_frame:false,submissions:0,recording_surface:false};
+        let mut target=DisplayDevice{buffer:pixels.as_mut_ptr(),width:320,height:1000,stride:320,format:0,render_clip:Some(Region{left:0,top:0,right:320,bottom:160}),fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
         target.paint_settings_bound_text(Some(element),bounds,b"Preview typography",(0,0,0),true,false);pixels
     };
     element.font_size=12;let small=render(element,bounds);element.font_size=24;let large=render(element,bounds);
@@ -138,7 +138,7 @@ fn authored_style_pixels() {
     element.hidden=true;assert_eq!(render(element,bounds),empty);element.hidden=false;element.opacity=100;
     let shifted=Rect{x:bounds.x+10,y:bounds.y+7,..bounds};let moved=render(element,shifted);let moved_bounds=damage(&empty,&moved,320).0;assert_eq!((moved_bounds.x,moved_bounds.y),(changed.x+10,changed.y+7));
     let render_surface=|style:u8,corners:u8|{
-        let mut pixels=vec![0x00182739;320*160];let mut target=DisplayDevice{buffer:pixels.as_mut_ptr(),width:320,height:160,stride:320,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        let mut pixels=vec![0x00182739;320*160];let mut target=DisplayDevice{buffer:pixels.as_mut_ptr(),width:320,height:160,stride:320,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
         let mut element=crate::ui::settings_template::role_at(0,Role::Metadata,0).unwrap();element.surface_material=style;element.corner_style=corners;element.corner_radius=30;
         target.settings_template_surface(bounds,Some(element),crate::ui::panel_recipe::Material{fill:(10,20,30),edge:(40,60,80),opacity:255,edge_opacity:255,focus:0,pressed:false,scale:1});pixels
     };
@@ -153,7 +153,7 @@ fn authored_style_pixels() {
 fn action_frame(element:crate::ui::installer_template::InstallerTemplateElement<'_>,bounds:Rect,clip:Option<Region>)->Vec<u32> {
     let mut pixels=vec![0x00182739;640*1000];
     let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width:640,height:1000,stride:640,format:0,
-        render_clip:clip,fast_motion_frame:false,submissions:0,recording_surface:false};
+        render_clip:clip,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     display.paint_template_button_state(element,bounds,true,false,false);
     pixels
 }

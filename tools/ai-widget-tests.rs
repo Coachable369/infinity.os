@@ -99,7 +99,7 @@ fn verify_pixels(width:usize,height:usize,mut previous_start:usize)->usize {
     let layout=SystemLayout::new(width,height);let scale=layout.scale();let g=layout.ai_chat_geometry(false);
     let mut pixels=vec![0x201207u32;width*height];
     let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
-        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let text=b"Create a graphical calendar with a seven-column month grid and previous and next month buttons and editable event notes app.";
     let accent=(70,195,240);
     display.app_card(g.panel,(6,21,35),(47,91,118),scale);

@@ -6,6 +6,25 @@ use super::template_font::face as template_face;
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: with_template_typography
+    // DESC: Scopes authored typography to one compositor layer and restores it after nested paints and early returns.
+    // ------------------=
+    pub(super) fn with_template_typography(&mut self, element: crate::ui::installer_template::InstallerTemplateElement<'_>,
+        paint: impl FnOnce(&mut Self)) {
+        let previous = self.template_typography;
+        self.template_typography = [element.font_family, element.text_sharpness, element.text_glow];
+        paint(self);
+        self.template_typography = previous;
+    }
+
+    // ------------------------=
+    // FUNC: template_family
+    // DESC: Resolves an explicit packaged family while preserving the scene default for legacy documents.
+    // ------------------=
+    fn template_family(&self, fallback: Option<u8>) -> Option<u8> {
+        if self.template_typography[0] == 0 { fallback } else { Some(self.template_typography[0]) }
+    }
+    // ------------------------=
     // FUNC: template_text_width
     // DESC: Measures template text at its authored pixel size using the packaged installer face.
     // ------------------=
@@ -27,7 +46,7 @@ impl DisplayDevice {
     // ------------------=
     fn template_text_width_face(&self, text: &[u8], pixels: usize, semibold: bool, family: Option<u8>) -> usize {
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let (_, metrics, kerning) = template_face(family, semibold);
+        let (_, metrics, kerning) = template_face(self.template_family(family), semibold);
         let mut width = 0usize;
         let mut previous = None;
         for byte in text {
@@ -103,7 +122,7 @@ impl DisplayDevice {
         green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool, family: Option<u8>) {
         let line_start = x;
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let (atlas, metrics, kerning) = template_face(family, semibold);
+        let (atlas, metrics, kerning) = template_face(self.template_family(family), semibold);
         let glyph_width = font_size.scale_usize(INSTALLER_FONT_CELL_WIDTH).max(1);
         let glyph_height = font_size.scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
         let line_advance = glyph_height.saturating_add(font_size.scale_usize(4));
@@ -126,7 +145,20 @@ impl DisplayDevice {
                     let atlas_alpha = crate::ui::glyph_filter::coverage(atlas,
                         INSTALLER_FONT_CELL_WIDTH * 95, glyph, INSTALLER_FONT_CELL_WIDTH,
                         INSTALLER_FONT_CELL_HEIGHT, glyph_width, glyph_height, column, row);
-                    let alpha = (atlas_alpha as u16 * opacity as u16 / 255) as u8;
+                    // Contrast-adjust coverage, leaving zero-effect legacy pixels unchanged.
+                    let sharp = i32::from(self.template_typography[1]);
+                    let coverage = if atlas_alpha == 0 { 0 } else {
+                        (i32::from(atlas_alpha) + (i32::from(atlas_alpha) - 128) * sharp / 100).clamp(0,255) as u8
+                    };
+                    let alpha = (coverage as u16 * opacity as u16 / 255) as u8;
+                    if self.template_typography[2] > 0 && alpha > 0 {
+                        let glow = (u32::from(alpha) * u32::from(self.template_typography[2]) / 800) as u8;
+                        let distance = (pixels / 24).clamp(1, 3) as i32;
+                        for (dx,dy) in [(-distance,0),(distance,0),(0,-distance),(0,distance)] {
+                            self.blend_color((x + column as i64) as i32 + dx,
+                                (y + row as i64) as i32 + dy, red, green, blue, glow);
+                        }
+                    }
                     if alpha != 0 {
                         self.blend_color(
                             (x + column as i64) as i32,

@@ -9,7 +9,7 @@ fn personalization_panels_and_pointer_pixels() {
     use crate::ui::{geometry::Rect,cursor,input_preferences::{self,Preferences}};
     let (width,height)=(1280,800);
     let mut pixels=vec![0x201005u32;width*height];
-    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     input_preferences::apply(Preferences::defaults());
     d.settings_personalization_panel(Rect{x:40,y:60,width:600,height:620},1,true);
     d.settings_personalization_panel(Rect{x:670,y:60,width:560,height:362},1,false);
@@ -44,7 +44,7 @@ fn gravity_collections_render_circular_glass() {
     let (width, height) = (1200, 420);
     let mut pixels = vec![0x201005u32; width * height];
     let mut d = DisplayDevice { buffer:pixels.as_mut_ptr(),width,height,stride:width,
-        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false };
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false };
     for (i,label) in [b"Ideas".as_slice(),b"Projects",b"Inspiration",b"Archive"].iter().enumerate() {
         d.gravity_collection(30+i*290,40,240,240,label,0,i,i==0);
         assert_eq!(pixels[40*width+30+i*290],0x201005);
@@ -72,7 +72,7 @@ fn pill_text_is_centered_and_density_stable() {
     for (width, height) in [(1280,720),(2560,1440),(3840,2160)] {
         let mut pixels = vec![0x102336u32; width * height];
         let mut d = DisplayDevice { buffer:pixels.as_mut_ptr(),width,height,stride:width,
-            format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false };
+            format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false };
         d.glass_label_pill(40,40,240,44,b"File Navigator",true);
         let mut capsule = Vec::new();
         let (mut x0,mut y0,mut x1,mut y1) = (usize::MAX,usize::MAX,0,0);
@@ -117,7 +117,7 @@ fn interrupted_carousel_cache_matches_fresh_frame() {
     let (width, height) = (960, 640);
     let background = vec![0x102336u32; width * height];
     let mut pixels = background.clone();
-    let mut d = DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut d = DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let mut previews = [Preview::EMPTY; 3];
     for (i, p) in previews.iter_mut().enumerate() { p.app = i as u8; }
     let mut origin = [(0,0,0,0); OVERVIEW_COUNT];
@@ -142,7 +142,7 @@ fn interrupted_carousel_cache_matches_fresh_frame() {
 fn holographic_glass_cards_render_on_isolated_stage() {
     let (width,height)=(1440,900);
     let mut pixels=vec![0u32;width*height];
-    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     d.paint_bitmap_cover_rect(include_bytes!("../assets/desktop/spatial-world-2.bmp"),0,0,width,height);
     let before=pixels.clone();
     for (app,p,selected) in [(0,(150,280,330,290),false),(4,(960,280,330,290),false),(2,(470,235,500,395),true)] {
@@ -176,7 +176,7 @@ fn shortcut_drag_partial_pixels_match_full_composition() {
     let (width,height)=(1200,800);
     let background=vec![0x102336u32;width*height];
     let mut pixels=background.clone();
-    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     shortcuts::publish(State::new());let _=shortcuts::take_changed();
     let mut state=State::new();state.place(11,100,150);
     for frame in 0..5 {
@@ -219,7 +219,7 @@ fn widget_chooser_partial_pixels_match_full_composition() {
     let (width,height)=(800,600);
     let background=vec![0x102336u32;width*height];
     let mut pixels=background.clone();
-    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     widgets::publish(State::new()); let _=widgets::take_damage(width,height,1);
     for position in [Some(crate::ui::geometry::Point{x:200,y:180}),Some(crate::ui::geometry::Point{x:780,y:590}),None] {
         let mut state=State::new(); state.menu=position; widgets::publish(state);
@@ -297,7 +297,7 @@ fn empty_shelf_has_no_icon() {
     let mut display = DisplayDevice {
         buffer: pixels.as_mut_ptr(), width, height, stride: width, format: 0,
         render_clip: None, fast_motion_frame: false, submissions: 0,
-        recording_surface: false,
+        template_typography: [0; 3], recording_surface: false,
     };
     let state = State::new();
     let rail = Geometry::new(width, height, state).rail;
@@ -340,7 +340,7 @@ fn shelf_partial_frames_match_complete_frames() {
             render_clip: None,
             fast_motion_frame: false,
             submissions: 0,
-            recording_surface: false,
+            template_typography: [0; 3], recording_surface: false,
         };
         display.paint_bitmap_cover_box(
             include_bytes!("../assets/desktop/infinity-default-dark-wallpaper-v2.bmp"),

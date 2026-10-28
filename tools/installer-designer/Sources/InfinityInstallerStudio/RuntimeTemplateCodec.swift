@@ -163,7 +163,9 @@ enum TemplateValidator {
                 guard element.frame == element.frame.clamped() else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Element lies outside the artboard")
                 }
-                guard (0...100).contains(element.opacity), (6...256).contains(element.fontSize),
+                guard (0...46).contains(element.fontFamily), (0...100).contains(element.textSharpness),
+                      (0...100).contains(element.textGlow),
+                      (0...100).contains(element.opacity), (6...256).contains(element.fontSize),
                       (0...255).contains(element.cornerRadius),
                       (Int(Int16.min)...Int(Int16.max)).contains(element.zIndex) else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Element appearance exceeds native limits")
@@ -215,7 +217,7 @@ enum RuntimeTemplateCodec {
         let assets: [String: Data]
     }
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 11
+    static let version: UInt16 = 12
     static let maximumAssetCount = 128
     static let maximumTemplateBytes = 512 * 1024 * 1024
 
@@ -283,6 +285,7 @@ enum RuntimeTemplateCodec {
                 output.append(element.actionCaptionMode.rawValue)
                 output.append(contentsOf: [element.captionColor.red, element.captionColor.green,
                     element.captionColor.blue, element.captionColor.alpha])
+                output.append(contentsOf: [UInt8(element.fontFamily), UInt8(element.textSharpness), UInt8(element.textGlow)])
                 guard output.count <= maximumTemplateBytes - 2 else {
                     throw TemplateValidationIssue.invalidDocument("Runtime template exceeds the native byte budget")
                 }
@@ -380,7 +383,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard [6, 7, 8, 9, 10, version].contains(sourceVersion) else {
+        guard [6, 7, 8, 9, 10, 11, version].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -449,6 +452,9 @@ enum RuntimeTemplateCodec {
                 } else if role == .settingsRowAction {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Action children require native template version 8")
                 }
+                let fontFamily = sourceVersion >= 12 ? Int(try reader.readUInt8()) : 0
+                let textSharpness = sourceVersion >= 12 ? Int(try reader.readUInt8()) : 0
+                let textGlow = sourceVersion >= 12 ? Int(try reader.readUInt8()) : 0
                 elements.append(StudioElement(
                     id: id,
                     codeIdentifier: codeIdentifier,
@@ -473,7 +479,8 @@ enum RuntimeTemplateCodec {
                     surfaceCorners: surfaceCorners,
                     parentRowID: parentRowID,
                     actionCaptionMode: captionMode,
-                    captionColor: captionColor
+                    captionColor: captionColor,
+                    fontFamily: fontFamily, textSharpness: textSharpness, textGlow: textGlow
                 ))
             }
             screens.append(InstallerScreenTemplate(

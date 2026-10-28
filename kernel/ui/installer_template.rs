@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 11;
+const FORMAT_VERSION: u16 = 12;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -262,6 +262,9 @@ pub struct InstallerTemplateElement<'a> {
     pub parent_id: [u8; 16],
     pub caption_mode: u8,
     pub caption_color: [u8; 4],
+    pub font_family: u8,
+    pub text_sharpness: u8,
+    pub text_glow: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,7 +334,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::InvalidHeader);
         }
         let version = reader.u16()?;
-        if version != FORMAT_VERSION && version != 10 && version != 9 && version != 8 && version != 7 && version != 6 {
+        if version != FORMAT_VERSION && version != 11 && version != 10 && version != 9 && version != 8 && version != 7 && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -923,6 +926,10 @@ impl<'a> Reader<'a> {
         } else {
             [255; 4]
         };
+        let typography = if self.version >= 12 { [self.u8()?, self.u8()?, self.u8()?] } else { [0; 3] };
+        if typography[0] > 46 || typography[1] > 100 || typography[2] > 100 {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
         if caption_mode > 1
             || (settings_row_child_role(role) && parent_id == [0; 16])
             || (!settings_row_child_role(role) && parent_id != [0; 16])
@@ -973,6 +980,7 @@ impl<'a> Reader<'a> {
             parent_id,
             caption_mode,
             caption_color,
+            font_family: typography[0], text_sharpness: typography[1], text_glow: typography[2],
         })
     }
 }

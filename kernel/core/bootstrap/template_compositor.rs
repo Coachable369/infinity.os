@@ -312,6 +312,14 @@ impl DisplayDevice {
     // DESC: Uses the authored Inter typography and fits only single-line-height titles so responsive aspect ratios cannot hide their final words.
     // ------------------=
     fn configuration_template_text_layer(&mut self, element: InstallerTemplateElement<'_>) {
+        self.with_template_typography(element, |display| display.configuration_template_text_layer_styled(element));
+    }
+
+    // ------------------------=
+    // FUNC: configuration_template_text_layer_styled
+    // DESC: Measures and paints configured text using its scoped native typography.
+    // ------------------=
+    fn configuration_template_text_layer_styled(&mut self, element: InstallerTemplateElement<'_>) {
         let rect = scale_template_rect(element.frame, self.width, self.height);
         let strong = element.role == InstallerTemplateRole::Title as u8;
         let mut pixels = (element.font_size as usize * self.height / 1000).max(6);
@@ -346,6 +354,15 @@ impl DisplayDevice {
     // DESC: Shares the native control painter while allowing authentication's typed action focus without changing button styles.
     // ------------------=
     fn access_template_control_with_focus(&mut self, element: InstallerTemplateElement<'_>,
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, progress:(usize,usize), focus_override: Option<bool>) {
+        self.with_template_typography(element, |display| display.access_template_control_styled(element, navigation, progress, focus_override));
+    }
+
+    // ------------------------=
+    // FUNC: access_template_control_styled
+    // DESC: Paints an access control with the selected caption typography scoped to this layer.
+    // ------------------=
+    fn access_template_control_styled(&mut self, element: InstallerTemplateElement<'_>,
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, progress:(usize,usize), focus_override: Option<bool>) {
         use super::access_style as palette;
         use crate::ui::panel_recipe::Surface;
@@ -465,6 +482,15 @@ impl DisplayDevice {
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>,
         rect: crate::ui::installer_layout::InstallerRect,
     ) {
+        self.with_template_typography(element, |display| display.template_element_in_rect_styled(element, image, navigation, rect));
+    }
+
+    // ------------------------=
+    // FUNC: template_element_in_rect_styled
+    // DESC: Composes a mapped element with native typography already scoped by its caller.
+    // ------------------=
+    fn template_element_in_rect_styled(&mut self, element: InstallerTemplateElement<'_>, image: Option<&[u8]>,
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, rect: crate::ui::installer_layout::InstallerRect) {
         let opacity = element.opacity as u16;
         let fill_alpha = (element.fill[3] as u16 * opacity / 100) as u8;
         let border_alpha = (element.border[3] as u16 * opacity / 100) as u8;
@@ -789,6 +815,15 @@ impl DisplayDevice {
         &mut self, element: InstallerTemplateElement<'_>, rect: crate::ui::geometry::Rect,
         primary: bool, focused: bool, depressed: bool,
     ) {
+        self.with_template_typography(element, |display| display.paint_template_button_state_styled(element, rect, primary, focused, depressed));
+    }
+
+    // ------------------------=
+    // FUNC: paint_template_button_state_styled
+    // DESC: Paints the native button and centered caption with its authored font and coverage effects.
+    // ------------------=
+    fn paint_template_button_state_styled(&mut self, element: InstallerTemplateElement<'_>, rect: crate::ui::geometry::Rect,
+        primary: bool, focused: bool, depressed: bool) {
         if element.hidden || element.opacity == 0 || rect.width == 0 || rect.height == 0 { return; }
         let previous_clip = self.render_clip;
         let visible = rect.intersection(crate::ui::geometry::Rect {

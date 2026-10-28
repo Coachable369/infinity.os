@@ -129,7 +129,7 @@ struct DisplayDevice {
     render_clip: Option<Region>,
     fast_motion_frame: bool,
     submissions: u64,
-    recording_surface: bool,
+    template_typography: [u8; 3], recording_surface: bool,
 }
 type PresentRegion = Region;
 #[path = "../kernel/core/bootstrap/launcher_backdrop.rs"]
@@ -275,7 +275,7 @@ fn launcher_backdrop_test() {
         render_clip: None,
         fast_motion_frame: false,
         submissions: 0,
-        recording_surface: false,
+        template_typography: [0; 3], recording_surface: false,
     };
     launcher_backdrop::invalidate();
     assert!(!launcher_backdrop::restore(&mut display));
@@ -318,7 +318,7 @@ fn spatial_stage_blurs_to_screen_edges() {
     let original = pixels.clone();
     let mut display = DisplayDevice {
         buffer: pixels.as_mut_ptr(), width, height, stride: width, format: 0,
-        render_clip: None, fast_motion_frame: false, submissions: 0, recording_surface: false,
+        render_clip: None, fast_motion_frame: false, submissions: 0, template_typography: [0; 3], recording_surface: false,
     };
     launcher_backdrop::invalidate();
     launcher_backdrop::capture(&display);
@@ -429,7 +429,7 @@ fn main() {
                 }),
                 fast_motion_frame: false,
                 submissions: 0,
-                recording_surface: false,
+                template_typography: [0; 3], recording_surface: false,
             };
             scene(&mut display);
             display.buffer = partial.as_mut_ptr();
@@ -473,7 +473,7 @@ fn precision_surface_benchmark() {
     use ui::{geometry::Rect,panel_recipe::{Material,Surface}};
     let mut pixels=vec![0x261009u32;1600*1000];
     let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width:1600,height:1000,stride:1600,format:0,
-        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let base=Material{fill:(16,27,58),edge:(134,199,255),opacity:224,
         edge_opacity:255,focus:0,pressed:false,scale:1};
     for mode in 0..3 {
@@ -524,7 +524,7 @@ fn window_substrate_pixels() {
             let base=0x142245|if retained {0x4c000000}else{0};
             let mut hidden=vec![base;width*height];let mut filled=hidden.clone();
             let mut card_display=DisplayDevice{buffer:hidden.as_mut_ptr(),width,height,stride:width,format,
-                render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:retained};
+                render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:retained};
             card_display.app_card_alpha(card,(18,31,55),(134,199,255),0,scale);
             card_display.buffer=filled.as_mut_ptr();
             card_display.app_card_alpha(card,(18,31,55),(134,199,255),255,scale);
@@ -550,7 +550,7 @@ fn window_substrate_pixels() {
                         |if retained {0x4c000000}else{0}).collect();
                     let mut pixels=original.clone();
                     let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format,
-                        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:retained};
+                        render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:retained};
                     d.window_substrate(rect,material,0);
                     for y in 0..height {for x in 0..width {
                         let at=y*width+x;
@@ -607,7 +607,7 @@ fn universal_window_frame_pixels() {
             let mut pixels=vec![0x302010u32;width*height];
             let mut reference=pixels.clone();
             let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,
-                format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+                format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
             let mut expected=display;expected.buffer=reference.as_mut_ptr();
             expected.fill_rect(40,40,160,120,11,21,39);
             expected.precision_window_frame(rect,active,display.ui_scale());
@@ -642,7 +642,7 @@ fn universal_window_frame_pixels() {
     let mut pixels=vec![0x302010u32;width*height];
     let mut reference=pixels.clone();
     let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,
-        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let mut expected=display;expected.buffer=reference.as_mut_ptr();
     for left in [20i32,0,-1,-20,-100,-200,20] {
         pixels.fill(0x302010);reference.fill(0x302010);
@@ -720,7 +720,7 @@ fn editor_streaming_benchmark(label:&str) {
             let mut view=editor_tools::Presentation::new();view.language=editor_tools::Language::C;view.cursor=input.len();editor_tools::publish(view);
             let mut pixels=vec![0u32;width*height];
             let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
-                render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+                render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
             let mut times=Vec::new();let mut damage=0;
             for sample in 0..12 {
                 display.submissions=0;let begin=Instant::now();
@@ -754,7 +754,7 @@ fn editor_typography_pixels() {
             for scale in 1..=2 {
                 let mut pixels=vec![0u32;64*72];
                 let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width:64,height:72,stride:64,
-                    format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+                    format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
                 for byte in 32..=126 {
                     pixels.fill(0);
                     display.editor_glyph(4,4,byte,scale,(255,255,255));
@@ -783,7 +783,7 @@ fn editor_typography_pixels() {
         ui::text_input::set_presentation(true,true,view.cursor,4,false);
         let mut pixels=vec![0x20120bu32;width*height];
         let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
-            render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+            render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
         display.editor_window(window,code,0,true,false,1);
         let g=ui::editor_chrome::Layout::new(window.window,1,false,editor_tools::Field::None);
         let chrome=&pixels[(window.window.y as usize+5)*width..g.body.y as usize*width];
@@ -825,7 +825,7 @@ fn editor_glyph_damage_pixels() {
                             for byte in b" Mj[]" {
                                 let mut actual=vec![0x7f203040u32;64*72];let mut expected=actual.clone();
                                 let mut display=DisplayDevice{buffer:actual.as_mut_ptr(),width:64,height:72,stride:64,format,
-                                    render_clip:clip,fast_motion_frame:false,submissions:0,recording_surface};
+                                    render_clip:clip,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface};
                                 let mut reference=display;reference.buffer=expected.as_mut_ptr();
                                 for row in 0..record[1] as usize*scale {
                                     for column in 0..record[3] as usize*scale {
@@ -865,7 +865,7 @@ fn editor_scheme_pixels(){
     for scheme in 0..10 {
         preferences::publish(Preferences{scheme,font:0,size:2});editor_tools::publish(view);
         let mut pixels=vec![0x20120bu32;width*height];
-        let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
         retained_windows::invalidate();
         d.retained_application_window(2,(window.window.x,window.window.y,
             window.window.width as usize,window.window.height as usize),true,
@@ -890,7 +890,7 @@ fn font_library_pixels() {
     let width=620;let height=520;
     let mut pixels=vec![0x081522u32;width*height];
     let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
-        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     ui::font_library::set_page(0);
     let bounds=ui::geometry::Rect{x:16,y:16,width:588,height:488};
     display.settings_font_library(bounds,1);
@@ -910,7 +910,7 @@ fn thinking_text_pixels_test() {
     let mut pixels = vec![0u32; 320 * 120];
     let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 320, height: 120,
         stride: 320, format: 0, render_clip: Some(Region { left: 0, top: 0, right: 320, bottom: 48 }),
-        fast_motion_frame: false, submissions: 0, recording_surface: false };
+        fast_motion_frame: false, submissions: 0, template_typography: [0; 3], recording_surface: false };
     display.ui_text_shaded(20, 10, b"Thinking...", 255, 255, 255, 1, false, Some((0, 96)));
     let first = pixels.clone();
     pixels.fill(0);
@@ -938,7 +938,7 @@ fn retained_theme_test() {
     let mut pixels = vec![0u32; 320 * 200];
     let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 320, height: 200,
         stride: 320, format: 0, render_clip: None, fast_motion_frame: false,
-        submissions: 0, recording_surface: false };
+        submissions: 0, template_typography: [0; 3], recording_surface: false };
     for theme in 0..4 {
         TEST_THEME.store(theme, std::sync::atomic::Ordering::Relaxed);
         for slot in 0..6 {
@@ -971,7 +971,7 @@ fn icon_downscale_test() {
     let mut pixels = [0u32; 2];
     let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 2, height: 1,
         stride: 2, format: 0, render_clip: None, fast_motion_frame: false,
-        submissions: 0, recording_surface: false };
+        submissions: 0, template_typography: [0; 3], recording_surface: false };
     assert!(display.paint_bitmap_alpha_atlas_cell(&bitmap, 1, 1, 0, 0, 0, 1));
     display.blend_color(1, 0, 255, 255, 255, 63);
     assert_ne!(pixels[0], 0);
@@ -997,7 +997,7 @@ fn window_controls_test() {
                     render_clip: None,
                     fast_motion_frame: false,
                     submissions: 0,
-                    recording_surface: true,
+                    template_typography: [0; 3], recording_surface: true,
                 };
                 display.window_control(8, 8, size, index, maximized);
                 let mut glyph_pixels = 0;
@@ -1024,7 +1024,7 @@ fn window_controls_test() {
         render_clip: None,
         fast_motion_frame: false,
         submissions: 0,
-        recording_surface: false,
+        template_typography: [0; 3], recording_surface: false,
     };
     for (slot, (index, maximized)) in [(0, false), (1, false), (1, true), (2, false)]
         .iter()
@@ -1048,7 +1048,7 @@ fn window_control_states_proof() {
     let (width,height)=(512,240);
     let mut pixels=vec![0x001a0b05u32;width*height];
     let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
-        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     for state in 0..3 {
         for (i,(index,maximized)) in [(0,false),(1,false),(1,true),(2,false)].into_iter().enumerate() {
             let (x,y)=(32+i*120,20+state*72);
@@ -1080,7 +1080,7 @@ fn retained_window_benchmark() {
         render_clip: None,
         fast_motion_frame: true,
         submissions: 0,
-        recording_surface: false,
+        template_typography: [0; 3], recording_surface: false,
     };
     let mut painted = 0;
     display.retained_window(1, (80, 80, 1280, 900), |target| {
@@ -1169,7 +1169,7 @@ fn retained_surface_test() {
         render_clip: None,
         fast_motion_frame: false,
         submissions: 0,
-        recording_surface: false,
+        template_typography: [0; 3], recording_surface: false,
     };
     let mut painted = 0;
     display.retained_window(0, (40, 40, 40, 40), |target| {
@@ -1229,7 +1229,7 @@ fn retained_left_edge_test() {
     let background=0x302010u32;
     let mut pixels=vec![background;320*200];
     let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width:320,height:200,stride:320,
-        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let mut paints=0;
     let positions:[i32;9]=[40,0,-1,-12,-70,-110,-12,0,40];
     let mut previous=positions[0];
@@ -1273,7 +1273,7 @@ fn signed_active_outline_test() {
     let background=0x302010u32;
     let mut pixels=vec![background;160*100];
     let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width:160,height:100,stride:160,
-        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     display.outline_rounded_rect_signed(-24,10,100,70,8,105,199,245);
     let outline=245u32<<16|199u32<<8|105;
     assert_eq!(pixels[10*160],outline,"visible top edge must retain its signed origin");
@@ -1290,7 +1290,7 @@ fn retained_projection_revision_test() {
     retained_windows::invalidate();
     let mut pixels=vec![0x302010u32;320*200];
     let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width:320,height:200,stride:320,format:0,
-        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
     let bounds=(40,40,100,80);let mut revision=None;
     assert!(retained_windows::invalidate_revision(4,&mut revision,Some(1)));
     display.retained_window(4,bounds,|target|target.fill_rect(40,40,100,80,1,2,3));
@@ -1320,7 +1320,7 @@ fn retained_partial_update_test() {
     let mut pixels = vec![0x302010u32; 320 * 200];
     let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 320,
         height: 200, stride: 320, format: 0, render_clip: None,
-        fast_motion_frame: false, submissions: 0, recording_surface: false };
+        fast_motion_frame: false, submissions: 0, template_typography: [0; 3], recording_surface: false };
     let bounds = (40, 40, 140, 100);
     display.retained_window(1, bounds, |target| {
         target.fill_rect_alpha(40, 40, 140, 100, 80, 100, 120, 128);

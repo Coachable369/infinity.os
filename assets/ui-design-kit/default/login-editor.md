@@ -29,3 +29,18 @@ Save & Update ISO path verifies login payload bytes in both live and installed
 kernels. An already installed VM is not changed by updating the ISO.
 
 Desktop top-bar item and dropdown editing is a separate, unfinished integration.
+
+## Per-element typography and backgrounds
+
+The inspector reuses existing pickers and sliders: Font family selects one of the
+46 immutable FontKit families (0 keeps the screen default); Sharpness adjusts
+glyph coverage contrast from 0–100; Text glow applies a bounded same-color halo
+from 0–100. Zero effect preserves legacy pixels. Effects are scoped to one layer,
+never to the desktop font preference. Native canvas and installed screens use the
+same painter and IUIT v12 records; v6–v11 retain their original defaults.
+
+Border radius is always visible for surfaces. Editing it explicitly selects
+Rounded corners, or Square at zero; Kit default remains available in Corners.
+Edit Background selects the screen's existing image layer. Locked images expose
+an explicit Unlock Image action; replacement retains geometry, fit and stacking,
+resets the crop, and copies the selected raster into packaged boot assets.

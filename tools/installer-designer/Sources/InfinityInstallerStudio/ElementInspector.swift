@@ -313,6 +313,28 @@ struct ElementInspector: View {
                 if element.kind == .button {
                     ColorPicker("Caption color", selection: colorBinding(\.captionColor, fallback: element.captionColor), supportsOpacity: true)
                 }
+                if element.kind == .text || element.kind == .button {
+                Picker("Font family", selection: Binding(
+                    get: { store.selectedElement?.fontFamily ?? element.fontFamily },
+                    set: { value in store.updateSelected("Font updated") { $0.fontFamily = value } }
+                )) {
+                    ForEach(StudioElement.fontFamilies.indices, id: \.self) { index in
+                        Text(StudioElement.fontFamilies[index]).tag(index)
+                    }
+                }
+                Text("Packaged OS fonts · rendered identically in the native canvas and saved screen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Sharpness")
+                    Slider(value: doubleBinding(\.textSharpness, fallback: element.textSharpness), in: 0...100, step: 1)
+                    Text("\(element.textSharpness)%").monospacedDigit().frame(width: 38)
+                }
+                HStack {
+                    Text("Text glow")
+                    Slider(value: doubleBinding(\.textGlow, fallback: element.textGlow), in: 0...100, step: 1)
+                    Text("\(element.textGlow)%").monospacedDigit().frame(width: 38)
+                }
+                }
                 HStack {
                     Text("Size")
                     Slider(value: doubleBinding(\.fontSize, fallback: element.fontSize), in: 8...72, step: 1)
@@ -329,6 +351,13 @@ struct ElementInspector: View {
     // ------------------=
     private func imageSection(_ element: StudioElement) -> some View {
         GroupBox("Image") {
+          VStack(alignment: .leading, spacing: 8) {
+            if element.locked {
+                Text("This image is locked. Unlock it to replace its source or adjust its crop.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Unlock Image") { store.toggleElementLock(element.id) }
+                    .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text(element.imageAsset.isEmpty ? "No image selected" : element.imageAsset)
                     .font(.caption.monospaced())
@@ -356,6 +385,7 @@ struct ElementInspector: View {
             }
             .disabled(element.locked)
             .frame(maxWidth: .infinity, alignment: .leading)
+          }
         }
     }
 
@@ -414,9 +444,13 @@ struct ElementInspector: View {
                     Slider(value: doubleBinding(\.opacity, fallback: element.opacity), in: 0...100, step: 1)
                     Text("\(element.opacity)%").monospacedDigit().frame(width: 38)
                 }
-                if element.surfaceCorners == .rounded && element.kind != .text && element.kind != .image { HStack {
-                    Text("Radius")
-                    Slider(value: doubleBinding(\.cornerRadius, fallback: element.cornerRadius), in: 0...40, step: 1)
+                if element.kind != .text && element.kind != .image { HStack {
+                    Text("Border radius")
+                    Slider(value: Binding(
+                        get: { Double(store.selectedElement?.cornerRadius ?? element.cornerRadius) },
+                        set: { value in store.updateSelected("Border radius updated") {
+                            $0.cornerRadius = Int(value); $0.surfaceCorners = value == 0 ? .square : .rounded
+                        } }), in: 0...40, step: 1)
                     Text("\(element.cornerRadius)").monospacedDigit().frame(width: 28)
                 } }
                 Toggle("Hidden", isOn: boolBinding(\.hidden, fallback: element.hidden))

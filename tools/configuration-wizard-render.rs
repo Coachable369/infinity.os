@@ -41,7 +41,7 @@ mod installer {
 // ------------------=
 fn display(pixels: &mut [u32], width: usize, height: usize) -> DisplayDevice {
     DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,
-        fast_motion_frame:false,submissions:0,recording_surface:false}
+        fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false}
 }
 
 // ------------------------=
