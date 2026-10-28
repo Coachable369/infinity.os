@@ -5,7 +5,10 @@
 // DESC: Records calibration and VAD transitions as timestamp, state, threshold, mean-square energy and peak; never retains PCM.
 // ------------------=
 pub fn capture(now: u64, state: u64, threshold: u16, pcm: &[i16]) {
-    let energy = pcm.iter().map(|&v| (i64::from(v) * i64::from(v)) as u64).sum::<u64>()
+    let energy = pcm
+        .iter()
+        .map(|&v| (i64::from(v) * i64::from(v)) as u64)
+        .sum::<u64>()
         / pcm.len().max(1) as u64;
     let peak = pcm.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
     const PREFIX: &[u8] = b"[VOICE CAPTURE] ";
@@ -22,7 +25,9 @@ pub fn capture(now: u64, state: u64, threshold: u16, pcm: &[i16]) {
         at += 1;
     }
     record[at - 1] = b'\n';
-    unsafe { crate::output::write(&record); }
+    unsafe {
+        crate::output::write(&record);
+    }
 }
 
 // ------------------------=
@@ -45,13 +50,17 @@ pub fn write(prefix: &[u8], event: &[u8], now: u64) {
         first -= 1;
         digits[first] = b'0' + (value % 10) as u8;
         value /= 10;
-        if value == 0 { break; }
+        if value == 0 {
+            break;
+        }
     }
     let count = digits.len() - first;
     record[at..at + count].copy_from_slice(&digits[first..]);
     at += count;
     record[at] = b'\n';
-    unsafe { crate::output::write(&record[..at + 1]); }
+    unsafe {
+        crate::output::write(&record[..at + 1]);
+    }
 }
 
 // ------------------------=
@@ -73,5 +82,7 @@ pub fn timing(values: [u64; 10]) {
         at += 1;
     }
     record[at - 1] = b'\n';
-    unsafe { crate::output::write(&record[..at]); }
+    unsafe {
+        crate::output::write(&record[..at]);
+    }
 }

@@ -165,7 +165,7 @@ pub const fn settings_action_for_row(section: usize, row: usize) -> Option<Setti
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum SettingsRowInteraction { Details, Edit, Toggle, Cycle }
+pub enum SettingsRowInteraction { Details, Edit, Toggle, Cycle, Select }
 // ------------------------=
 // FUNC: settings_row_interaction
 // DESC: Defines shared first-click semantics; complex forms and observed status remain inspectable rather than mutating implicitly.
@@ -176,6 +176,7 @@ pub const fn settings_row_interaction(section:usize,row:usize)->SettingsRowInter
         (0,0)=>Edit,
         (1,0..=5)|(3,0|2|5|7)|(4,3)|(10,0..=7)=>Cycle,
         (3,1|4|6)|(4,1|4)=>Toggle,
+        (8,5..=7)=>Select,
         _=>Details,
     }
 }

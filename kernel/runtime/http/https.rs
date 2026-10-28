@@ -7,7 +7,7 @@ use embedded_io_async::{Read, Write};
 use embedded_tls::{Aes128GcmSha256, TlsConfig, TlsConnection, TlsContext, TlsError};
 use rustls_pki_types::TrustAnchor;
 
-pub const MAX_RESPONSE_BODY: usize = 4 * 1024 * 1024;
+pub const MAX_RESPONSE_BODY: usize = 16 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum Error {

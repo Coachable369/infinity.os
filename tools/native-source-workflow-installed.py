@@ -64,7 +64,7 @@ def attended_activity(guest, now, due):
 # FUNC: request
 # DESC: Submits an actual desktop instruction and records bounded model/editor progress until trusted native plan completion.
 # ------------------=
-def request(guest, harness, text, language, launch, timeout, directory, prior_source=None):
+def request(guest, harness, text, language, launch, timeout, directory, prior_source=None, python_live=False):
     directory.mkdir()
     before = state(guest, harness)
     build_before = harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
@@ -107,13 +107,17 @@ def request(guest, harness, text, language, launch, timeout, directory, prior_so
                     if language:
                         native = harness.read(guest, "INFINITY_PYTHON_SNAPSHOT", 10)
                         assert native[:2] == (0x494e46505954484e, 1)
-                        assert native[2] > python_before and native[3:5] == (2, 0), native
-                        assert not launch or native[5] > 0, native
+                        assert native[2] > python_before, native
+                        if python_live:
+                            assert launch and native[3] == 1, native
+                        else:
+                            assert native[3:5] == (2, 0), native
+                            assert not launch or native[5] > 0, native
                         assert harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2] == build_before
                     else:
                         native = harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
                         assert native[2] > build_before and native[3] == 3, native
-                    result = {**receipt, "request": text, "editor_fingerprint": editor[16],
+                    result = {**receipt, "request": text, "editor_fingerprint": editor[16], "python_live": python_live,
                               "native_receipt": list(native), "delivered_lengths": deliveries,
                               "elapsed_seconds": time.monotonic() - started, "named_reload": reloaded}
                     (directory / "result.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -141,6 +145,155 @@ def new_saved_buffer(guest, harness):
     while state(guest, harness)["path"]:
         assert time.monotonic() < deadline, "New did not detach the saved source"
         time.sleep(.1)
+
+
+# ------------------------=
+# FUNC: dirty_update_rejection
+# DESC: Leaves an unrelated unsaved editor document and proves a named update cannot overwrite it or start generation, compilation, or execution.
+# ------------------=
+def dirty_update_rejection(guest, harness):
+    new_saved_buffer(guest, harness)
+    editor = harness.features(guest)
+    harness.ui.click(guest, editor[30] + 24, editor[29] + 12)
+    guest.key("x")
+    dirty = harness.ui.wait_feature(guest, lambda row: row[7] == 1 and not row[11])
+    previous = state(guest, harness)
+    compiler = harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)
+    python = harness.read(guest, "INFINITY_PYTHON_SNAPSHOT", 10)
+    catalog = harness.read(guest, "INFINITY_GENERATED_APPS_SNAPSHOT", 16)
+    guest.key("ctrl", "j")
+    harness.ui.text(guest, "Update the calculator app and add numeric buttons")
+    guest.key("ret")
+    deadline = time.monotonic() + 30
+    while True:
+        receipt = state(guest, harness)
+        after = harness.features(guest)
+        assert after[7] == dirty[7] and after[16] == dirty[16] and not after[11], after
+        assert harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2] == compiler[2]
+        assert harness.read(guest, "INFINITY_PYTHON_SNAPSHOT", 10)[2] == python[2]
+        assert harness.read(guest, "INFINITY_GENERATED_APPS_SNAPSHOT", 16)[12:14] == catalog[12:14]
+        if receipt["goal"] > previous["goal"] and receipt["plan_state"] in (6, 7) and not receipt["active_goal"]:
+            break
+        assert time.monotonic() < deadline, {"dirty_update_not_rejected": receipt}
+        time.sleep(.1)
+    guest.launch("text", 5)
+    editor = harness.features(guest)
+    harness.ui.click(guest, editor[30] + 24, editor[29] + 12)
+    guest.key("ctrl", "z")
+    harness.ui.wait_feature(guest, lambda row: row[7] == 0 and row[11])
+    return {"rejection": receipt, "preserved_bytes": dirty[7], "preserved_fingerprint": dirty[16],
+            "compiler_unchanged": True, "python_unchanged": True, "catalog_launches_unchanged": True}
+
+
+# ------------------------=
+# FUNC: atomic_update_history
+# DESC: Uses real editor Undo and Redo to verify the complete AI source update is one atomic transaction with an unchanged durable checkpoint.
+# ------------------=
+def atomic_update_history(guest, harness, before, after):
+    guest.launch("text", 5)
+    editor = harness.features(guest)
+    harness.ui.click(guest, editor[30] + 24, editor[29] + 12)
+    compiler = harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2]
+    guest.key("ctrl", "z")
+    undone = harness.ui.wait_feature(guest, lambda row: row[7] == before["document_bytes"]
+                                    and row[16] == before["editor_fingerprint"] and not row[11])
+    guest.key("ctrl", "y")
+    redone = harness.ui.wait_feature(guest, lambda row: row[7] == after["document_bytes"]
+                                    and row[16] == after["editor_fingerprint"] and row[11])
+    receipt = state(guest, harness)
+    assert receipt["bound_source"] == after["source"] and receipt["version"] == after["version"]
+    assert harness.read(guest, "INFINITY_NATIVE_BUILD_SNAPSHOT", 10)[2] == compiler
+    return {"undo_bytes": undone[7], "undo_fingerprint": undone[16], "redo_bytes": redone[7],
+            "redo_fingerprint": redone[16], "persisted_version": receipt["version"]}
+
+
+# ------------------------=
+# FUNC: current_unsaved_source
+# DESC: Inserts an unrelated user-owned comment through real editor input and retains its exact bytes as an immutable-artifact preservation expectation.
+# ------------------=
+def current_unsaved_source(guest, harness, stage):
+    guest.launch("text", 5)
+    editor = harness.features(guest)
+    harness.ui.click(guest, editor[30] + 24, editor[29] + 12)
+    guest.key("ctrl", "g")
+    harness.ui.text(guest, "1")
+    guest.key("ret")
+    marker = ("/* local-note: " + format(time.time_ns(), "016x") + " */\n").encode("ascii")
+    harness.ui.text(guest, marker.decode("ascii"))
+    dirty = harness.ui.wait_feature(guest, lambda row: row[7] == stage["document_bytes"] + len(marker) and not row[11])
+    assert state(guest, harness)["version"] == stage["version"]
+    return {**stage, "editor_fingerprint": dirty[16], "document_bytes": dirty[7],
+            "saved": False, "protected_prefix_hex": marker.hex()}
+
+
+# ------------------------=
+# FUNC: stop_running_application
+# DESC: Uses the existing native console interrupt, waits for resource reclamation, and never edits process memory or synthesizes lifecycle receipts.
+# ------------------=
+def stop_running_application(guest, harness, language):
+    symbol, count, active, stopped = (("INFINITY_PYTHON_SNAPSHOT", 10, (1,), 3) if language
+                                     else ("INFINITY_NATIVE_APP_SNAPSHOT", 8, (2,), 4))
+    before = harness.read(guest, symbol, count)
+    if before[3] not in active:
+        return
+    guest.launch("command", 5)
+    if harness.features(guest)[13]:
+        harness.ui.panel_click(guest, "toggle")
+    guest.key("esc")
+    guest.key("ctrl", "c")
+    deadline = time.monotonic() + 30
+    while True:
+        after = harness.read(guest, symbol, count)
+        if after[3] == stopped:
+            assert not language or after[7] == after[8], after
+            return
+        assert time.monotonic() < deadline, after
+        time.sleep(.1)
+
+
+# ------------------------=
+# FUNC: python_counter_actions
+# DESC: Verifies a genuine generated Python button and an explicitly authorized real LLM hook both change the same numeric application state.
+# ------------------=
+def python_counter_actions(guest, harness):
+    guest.launch("command", 5)
+    contract = harness.interaction_state(guest)
+    assert contract["instance"] and contract["choice_count"] > 0 and contract["commits"] > 0, contract
+    ui = harness.native_ui_state(guest)
+    before = calculator_result(ui)
+    buttons = [element for element in ui["elements"] if element["kind"] == 3]
+    assert before is not None and len(buttons) == 1, ui
+    harness.click_native_element(guest, buttons[0]["id"])
+    deadline = time.monotonic() + 10
+    while calculator_result(harness.native_ui_state(guest)) != before + 1:
+        assert time.monotonic() < deadline, harness.native_ui_state(guest)
+        time.sleep(.1)
+    contract = harness.interaction_state(guest)
+    assert contract["applied"] == 0 and contract["delivered"] == 0, contract
+    if not harness.features(guest)[13]:
+        harness.ui.panel_click(guest, "toggle")
+    harness.ui.panel_click(guest, "composer")
+    harness.ui.text(guest, "Add one to the counter once using its increment action")
+    guest.key("ret")
+    deadline = time.monotonic() + 120
+    due = time.monotonic() + 20
+    while True:
+        due = attended_activity(guest, time.monotonic(), due)
+        after = harness.interaction_state(guest)
+        assert after["instance"] == contract["instance"] and after["rejected"] == contract["rejected"], after
+        if after["applied"] > contract["applied"]:
+            assert after["applied"] == contract["applied"] + 1
+            assert after["delivered"] == contract["delivered"] + 1 and after["last_result"] == 1
+            assert after["revision"] > contract["revision"] and after["last_token"] > 0
+            assert after["last_choice"] in {choice["id"] for choice in contract["choices"]}
+            assert calculator_result(harness.native_ui_state(guest)) == before + 2
+            break
+        assert time.monotonic() < deadline, {"native_hook_not_applied": after}
+        time.sleep(.2)
+    harness.ui.panel_click(guest, "toggle")
+    guest.screenshot("generated-python-pointer-and-ai-hook")
+    return {"before": contract, "after": after, "initial_value": str(before), "final_value": str(before + 2),
+            "input_transport": "typed app assistant; real local inference; no microphone claim"}
 
 
 # ------------------------=
@@ -210,6 +363,95 @@ def calculator_cases(guest, harness):
 
 
 # ------------------------=
+# FUNC: catalog_launch
+# DESC: Launches a genuinely generated application by its human-readable name and correlates the owned source with actual native execution, without regenerating code.
+# ------------------=
+def catalog_launch(guest, harness, stage, cold_boot=False):
+    before = harness.read(guest, "INFINITY_GENERATED_APPS_SNAPSHOT", 16)
+    assert before[:2] == (0x494e4647454e4150, 1) and before[3] > 0
+    name = pathlib.PurePosixPath(stage["path"]).stem
+    stem, separator, suffix = name.rpartition("-")
+    if separator and len(suffix) >= 8 and all(c in "0123456789abcdefABCDEF" for c in suffix):
+        name = stem
+    name = name.replace("_", " ").replace("-", " ").lower()[:48]
+    assert name and name.isascii()
+    native_symbol, size = ("INFINITY_PYTHON_SNAPSHOT", 10) if stage["language"] else ("INFINITY_NATIVE_APP_SNAPSHOT", 8)
+    stop_running_application(guest, harness, 0)
+    stop_running_application(guest, harness, 1)
+    guest.launch("command", 5)
+    native_before = harness.read(guest, native_symbol, size)
+    goal_before = state(guest, harness)["goal"]
+    editor_before = harness.features(guest)[16]
+    guest.key("ctrl", "j")
+    harness.ui.text(guest, "launch " + name)
+    guest.key("ret")
+    deadline = time.monotonic() + 40
+    while True:
+        catalog = harness.read(guest, "INFINITY_GENERATED_APPS_SNAPSHOT", 16)
+        assert catalog[13] == before[13], {"catalog_launch_rejected": name, "receipt": catalog}
+        if catalog[12] > before[12]:
+            break
+        assert time.monotonic() < deadline, {"catalog_launch_timeout": name, "receipt": catalog}
+        time.sleep(.1)
+    assert struct.pack("<2Q", *catalog[6:8]).hex() == stage["source"]
+    assert catalog[8] == stage["language"] and catalog[3] == before[3] and catalog[4] == catalog[3]
+    if stage["language"]:
+        if stage.get("python_live"):
+            while not harness.interaction_state(guest)["instance"]:
+                assert time.monotonic() < deadline, harness.interaction_state(guest)
+                time.sleep(.1)
+            instance = harness.interaction_state(guest)["instance"]
+            assert cold_boot or instance != stage["context"]
+            wait_native_ui(guest, harness, instance)
+            native = harness.read(guest, native_symbol, size)
+            assert native[2] > native_before[2] and native[3] == 1, native
+            observed = {"native": list(native), "hooks": python_counter_actions(guest, harness)}
+        else:
+            while True:
+                native = harness.read(guest, native_symbol, size)
+                if native[2] > native_before[2] and native[3] >= 2:
+                    break
+                assert time.monotonic() < deadline, native
+                time.sleep(.1)
+            assert native[3:5] == (2, 0) and native[5] > 0 and native[7] == native[8], native
+            observed = {"native": list(native)}
+    else:
+        while True:
+            interaction = harness.interaction_state(guest)
+            if interaction["instance"] and (cold_boot or interaction["instance"] != stage["context"]):
+                break
+            assert time.monotonic() < deadline, interaction
+            time.sleep(.1)
+        wait_native_ui(guest, harness, interaction["instance"])
+        assert harness.read(guest, native_symbol, size)[3] == 2
+        observed = {"native": list(harness.read(guest, native_symbol, size)),
+                    "interaction": interaction, "arithmetic": calculator_cases(guest, harness)}
+    assert state(guest, harness)["goal"] == goal_before
+    assert harness.features(guest)[16] == editor_before
+    return {"name": name, "source": stage["source"], "catalog": list(catalog), "cold_boot": cold_boot,
+            "input_transport": "typed desktop AIKit fast path; no microphone claim", **observed}
+
+
+# ------------------------=
+# FUNC: cold_boot_catalog
+# DESC: Boots the same private installation without installer media and launches both generated identities using the persisted per-user catalog.
+# ------------------=
+def cold_boot_catalog(guest, harness, stages):
+    before = harness.read(guest, "INFINITY_GENERATED_APPS_SNAPSHOT", 16)
+    stop_running_application(guest, harness, 0)
+    stop_running_application(guest, harness, 1)
+    guest.stop()
+    guest.boot(False)
+    guest.authenticate()
+    guest.launch("command", 5)
+    after = harness.read(guest, "INFINITY_GENERATED_APPS_SNAPSHOT", 16)
+    assert after[3] == before[3] and after[4] == after[3] and after[3] >= 2, (before, after)
+    launches = [catalog_launch(guest, harness, stage, cold_boot=True) for stage in stages]
+    return {"before": list(before), "after": list(after), "launches": launches,
+            "iso_attached": False, "authenticated_again": True}
+
+
+# ------------------------=
 # FUNC: verify
 # DESC: Exercises installed model generation and source updates, optionally retaining separately attributed, byte-verified Python evidence from an earlier guest.
 # ------------------=
@@ -221,8 +463,16 @@ def verify(guest, harness, timeout, previous_python=None, previous_created=None)
     guest.source_workflow_evidence = result
     try:
         if previous_python is None:
-            python = request(guest, harness, "Create Hello world in Python", 1, True, timeout, directory / "01-python")
+            python = request(guest, harness,
+                "Create a simple Python UIKit counter app. Show a numeric display initially zero and exactly one increment button. "
+                "Each click adds one. Publish the actual counter state and an AI increment action using infinity. "
+                "Handle pointer and AI actions through the same code, acknowledge AI results, and remain open until closed.",
+                1, True, timeout, directory / "01-python", python_live=True)
             result["stages"].append(python)
+            wait_native_ui(guest, harness, python["context"])
+            result["python_generated_hooks"] = python_counter_actions(guest, harness)
+            result["python_registered_named_launch"] = catalog_launch(guest, harness, python)
+            stop_running_application(guest, harness, 1)
         else:
             result["previous_python_evidence"] = verified_python_evidence(previous_python)
         if previous_created is None:
@@ -238,6 +488,7 @@ def verify(guest, harness, timeout, previous_python=None, previous_created=None)
             original_ui = harness.native_ui_state(guest)["elements"]
         result["pre_update_execution"] = {"context": running,
             "native": list(harness.read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8))}
+        result["unrelated_dirty_rejected"] = dirty_update_rejection(guest, harness)
         new_saved_buffer(guest, harness)
         updated = request(guest, harness,
             "Update the calculator app and add numeric buttons and traditional mathematic calculator operators",
@@ -248,13 +499,20 @@ def verify(guest, harness, timeout, previous_python=None, previous_created=None)
         after = list(harness.read(guest, "INFINITY_NATIVE_APP_SNAPSHOT", 8))
         assert after[3] == 1, {"unexpected_execution_after_save_compile": after}
         result["no_launch_verified"] = {"context": running, "native": after}
-        new_saved_buffer(guest, harness)
+        result["atomic_source_update"] = atomic_update_history(guest, harness, created, updated)
+        dirty_target = current_unsaved_source(guest, harness, updated)
+        result["current_unsaved_target"] = dirty_target
         relaunched = request(guest, harness, "Update the calculator app and add a clear button and launch",
-                             0, True, timeout, directory / "04-relaunch", updated)
+                             0, True, timeout, directory / "04-relaunch", dirty_target)
+        relaunched["protected_prefix_hex"] = dirty_target["protected_prefix_hex"]
         result["stages"].append(relaunched)
+        result["unsaved_source_atomic_update"] = atomic_update_history(guest, harness, dirty_target, relaunched)
         assert relaunched["context"] != running
         wait_native_ui(guest, harness, relaunched["context"])
         result["arithmetic"] = calculator_cases(guest, harness)
+        result["c_registered_named_launch"] = catalog_launch(guest, harness, relaunched)
+        if previous_python is None:
+            result["cold_boot_catalog"] = cold_boot_catalog(guest, harness, [python, relaunched])
         result["passed"] = True
         return result
     finally:
@@ -274,7 +532,16 @@ def verified_python_evidence(path):
     assert terminal_receipt(stage, 0, 1, True)
     native = stage["native_receipt"]
     assert len(native) == 10 and native[:2] == [0x494e46505954484e, 1]
-    assert native[3:5] == [2, 0] and native[5] > 0 and native[7] == native[8]
+    if stage.get("python_live"):
+        assert native[3] == 1
+        hooks = report["source_workflows"]["python_generated_hooks"]
+        assert hooks["before"]["instance"] == hooks["after"]["instance"] == stage["context"]
+        assert hooks["after"]["applied"] == hooks["before"]["applied"] + 1
+        assert hooks["after"]["delivered"] == hooks["before"]["delivered"] + 1
+        assert hooks["after"]["last_result"] == 1
+        assert decimal.Decimal(hooks["final_value"]) == decimal.Decimal(hooks["initial_value"]) + 2
+    else:
+        assert native[3:5] == [2, 0] and native[5] > 0 and native[7] == native[8]
     verify_exports(report["stored_artifacts"], {"stages": [stage]})
     return {"report": str(path), "sha256": hashlib.sha256(encoded).hexdigest(),
             "kernel_sha256": report.get("updated_kernel_sha256"), "stage": stage,
@@ -303,23 +570,45 @@ def verified_c_source_evidence(path):
 
 # ------------------------=
 # FUNC: verify_exports
-# DESC: Correlates the final saved versions with immutable ObjectStore extraction and the live editor's numeric byte fingerprint.
+# DESC: Correlates each observed source revision with immutable native storage, retaining exact unchanged ranges across real AI edits.
 # ------------------=
 def verify_exports(receipt, workflows):
     final_versions = {stage["source"]: stage for stage in workflows["stages"]}
     assert final_versions
     directory = pathlib.Path(receipt["directory"])
     matched = []
-    for object_id, stage in final_versions.items():
-        matches = [artifact for artifact in receipt["artifacts"] if artifact["source"] and artifact["object"] == object_id]
+    histories = {}
+    for stage in workflows["stages"]:
+        object_id = stage["source"]
+        matches = [artifact for artifact in receipt["artifacts"] if artifact["source"]
+                   and artifact["object"] == object_id and artifact["version"] == stage["version"]]
         assert len(matches) == 1
         artifact = matches[0]
         assert bytes.fromhex(artifact["path_hex"]).decode("ascii") == stage["path"]
         assert artifact["version"] == stage["version"]
         content = (directory / artifact["file"]).read_bytes()
+        if stage.get("protected_prefix_hex"):
+            assert content.startswith(bytes.fromhex(stage["protected_prefix_hex"])), "AI update discarded an unrelated unsaved user edit"
         fingerprint = 1469598103934665603
         for byte in content:
             fingerprint = ((fingerprint ^ byte) * 1099511628211) & ((1 << 64) - 1)
         assert len(content) == stage["document_bytes"] and fingerprint == stage["editor_fingerprint"]
-        matched.append(object_id)
-    return {"verified_source_objects": matched}
+        histories.setdefault(object_id, []).append((stage["version"], content))
+        if object_id not in matched:
+            matched.append(object_id)
+    unchanged = []
+    for object_id, versions in histories.items():
+        for (old_version, old), (new_version, new) in zip(versions, versions[1:]):
+            assert new_version > old_version and old != new
+            prefix = 0
+            while prefix < min(len(old), len(new)) and old[prefix] == new[prefix]:
+                prefix += 1
+            suffix = 0
+            while suffix < min(len(old), len(new)) - prefix and old[-1-suffix] == new[-1-suffix]:
+                suffix += 1
+            unchanged.append({"source": object_id, "from_version": old_version, "to_version": new_version,
+                              "unchanged_prefix_bytes": prefix, "unchanged_suffix_bytes": suffix,
+                              "removed_middle_bytes": len(old) - prefix - suffix,
+                              "inserted_middle_bytes": len(new) - prefix - suffix})
+    return {"verified_source_objects": matched, "verified_versions": sum(map(len, histories.values())),
+            "immutable_version_diffs": unchanged}

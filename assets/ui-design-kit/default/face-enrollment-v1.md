@@ -112,12 +112,17 @@ The 187-node connector mesh follows the mask silhouette and excludes its eye
 holes. A blue-white band sweeps down and up every 3.2 seconds, lighting nearby
 connectors and nodes. Updates are time-based, capped at 30 Hz, and repaint only
 the cached mask rectangle; no scene-wide blur, allocation or image decoding.
-Idle, loading, review, failure, cancellation and completion do not animate.
+Idle and other visible non-capture states use the same connector mesh at 39%
+intensity, a 12.8-second sweep and at most 15 Hz. This is decorative idle motion,
+not an indication that the camera is on. Reduced motion keeps a static mesh;
+leaving the page stops all animation. Active capture retains its 30 Hz sweep.
 
 ## Generated artwork prompt
 
-Original front-facing symmetrical blank human face mask; matte white porcelain
-and silver shading, sculpted nose, subtle closed lips, hollow almond eye openings.
+Gender-neutral anonymous front-facing symmetrical blank human face mask; matte
+white porcelain and silver shading, balanced oval, understated mouth seam, simple
+nose and plain eye openings. No makeup, cosmetic brows, lashes, emphasized lips,
+or masculine jaw. Regenerated with the built-in image tool at the user's request.
 Orthographic, neutral, no neck/ears/pedestal. Soft cool blue edge illumination,
 bright on dark navy. Entire mask with padding. True alpha outside silhouette and
 eye openings. No background, text, watermark, checkerboard, dots or baked-in mesh.

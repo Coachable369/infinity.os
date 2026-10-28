@@ -1,13 +1,53 @@
 #![allow(dead_code)]
-#[path = "../kernel/ui/geometry.rs"]
-pub mod geometry;
-mod ui {
-    pub use crate::geometry;
-}
+#[path = "../kernel/ui/mod.rs"]
+mod ui;
+use ui::geometry;
 #[path = "../kernel/ui/minimized_shelf.rs"]
 mod shelf;
 use geometry::Point;
 use shelf::*;
+#[test]
+// ------------------------=
+// FUNC: native_tray_slots_survive_stacking_changes
+// DESC: Keeps restore targets stable when stacking order changes or a window leaves the tray.
+// ------------------=
+fn native_tray_slots_survive_stacking_changes() {
+    let mut state = State::new();
+    let a = ui::window::WindowId(100);
+    let b = ui::window::WindowId(101);
+    let mut windows = [None; ui::window::MAX_WINDOWS];
+    windows[0] = Some(a);
+    windows[1] = Some(b);
+    state.sync_native(windows);
+    windows.swap(0, 1);
+    state.sync_native(windows);
+    assert_eq!(state.native[0], Some(a));
+    assert_eq!(state.native[1], Some(b));
+    windows[1] = None;
+    state.sync_native(windows);
+    assert_eq!(state.native[0], None);
+    assert_eq!(state.native[1], Some(b));
+    assert_eq!(state.count(), 1);
+}
+
+#[test]
+// ------------------------=
+// FUNC: all_native_windows_fit_without_displacing_system_apps
+// DESC: Verifies all native slots retain independent tray identities alongside built-in applications.
+// ------------------=
+fn all_native_windows_fit_without_displacing_system_apps() {
+    let mut state=State::new();
+    state.set(EDITOR,true);
+    for slot in 0..ui::window::MAX_WINDOWS {
+        state.native[slot]=Some(ui::window::WindowId(100+slot as u32));
+        state.set(NATIVE+slot,true);
+    }
+    assert_eq!(state.count(),17);
+    state.set(NATIVE+15,false);
+    assert_eq!(state.count(),16);
+    assert_eq!(state.item(0),Some(EDITOR));
+    assert_eq!(state.native[0],Some(ui::window::WindowId(100)));
+}
 #[test]
 // ------------------------=
 // FUNC: browser_minimize_has_an_independent_restore_identity

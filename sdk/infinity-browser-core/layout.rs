@@ -37,6 +37,15 @@ pub struct Layout {
 
 impl Layout {
     // ------------------------=
+    // FUNC: with_download_list
+    // DESC: Expands the downloads drawer within page bounds without changing viewport or action targets.
+    // ------------------=
+    pub fn with_download_list(mut self,count:usize)->Self {
+        let scale=self.tabs.height/36;
+        let extra=(count.min(8) as u32*28*scale).min(self.download_card.y.saturating_sub(self.content.y+8*scale as i32).max(0)as u32);
+        self.download_card.y-=extra as i32;self.download_card.height+=extra;self
+    }
+    // ------------------------=
     // FUNC: find_control
     // DESC: Shares bounded search field and previous, next, close targets with the native painter.
     // ------------------=
@@ -230,7 +239,7 @@ mod tests {
     #[test]
     fn tab_targets_never_overlap_navigation() {
         for scale in 1..=4 {
-            let layout=Layout::new(760*scale,272*scale,scale).unwrap();
+            let layout=Layout::new(760*scale,272*scale,scale).unwrap().with_download_list(8);
             for count in 1..=8 {
                 let mut right=layout.tabs.x;
                 for index in 0..count {

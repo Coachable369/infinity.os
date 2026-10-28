@@ -2,6 +2,16 @@
 const PROVIDER_LIMIT: usize = 160;
 
 // ------------------------=
+// FUNC: playback_boundary
+// DESC: Starts resident playback only after a natural phrase end, never at a provider-size word split.
+// ------------------=
+pub fn playback_boundary(bytes: &[u8], complete: bool) -> bool {
+    let text = bytes.trim_ascii_end();
+    complete || text.last().is_some_and(|byte| matches!(byte, b'!' | b'?' | b',' | b';' | b':')
+        || (*byte == b'.' && sentence_period(text, text.len() - 1)))
+}
+
+// ------------------------=
 // FUNC: sentence_period
 // DESC: Keeps common abbreviations and initials inside their sentence instead of manufacturing a spoken pause.
 // ------------------=
@@ -81,6 +91,26 @@ pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
 
 #[cfg(test)]
 mod tests {
+    // ------------------------=
+    // FUNC: provider_splits_do_not_start_playback
+    // DESC: Keeps a long sentence resident across provider jobs until its audible phrase is complete.
+    // ------------------=
+    #[test]
+    fn provider_splits_do_not_start_playback() {
+        let mut text = b"These words belong to one continuous sentence ".repeat(5);
+        text.extend_from_slice(b"and finish here.");
+        let mut at = 0;
+        let mut starts = 0;
+        while at < text.len() {
+            let n = super::next(&text[at..], true, at == 0);
+            assert!(n > 0 && n <= 160);
+            starts += usize::from(super::playback_boundary(&text[at..at+n], at+n == text.len()));
+            at += n;
+        }
+        assert_eq!(starts, 1);
+        assert!(!super::playback_boundary(b"Please ask Dr.", false));
+        assert!(super::playback_boundary(b"The result is ready, ", false));
+    }
     // ------------------------=
     // FUNC: short_opening_sentence_starts_without_waiting_for_followup
     // DESC: Releases a complete greeting but never an unfinished word or abbreviation.

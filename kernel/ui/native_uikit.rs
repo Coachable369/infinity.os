@@ -48,8 +48,15 @@ impl Presentation {
     // DESC: Creates an inactive bounded application presentation.
     // ------------------=
     pub const fn new() -> Self {
-        Self { active: false, width: 480, height: 420, title: [0; TITLE_CAPACITY],
-            title_length: 0, elements: [None; MAX_ELEMENTS], revision: 0 }
+        Self {
+            active: false,
+            width: 480,
+            height: 420,
+            title: [0; TITLE_CAPACITY],
+            title_length: 0,
+            elements: [None; MAX_ELEMENTS],
+            revision: 0,
+        }
     }
 }
 
@@ -66,8 +73,12 @@ impl State {
     // DESC: Creates an empty UI Kit state and event queue.
     // ------------------=
     const fn new() -> Self {
-        Self { presentation: Presentation::new(), events: [None; 16], event_head: 0,
-            event_length: 0 }
+        Self {
+            presentation: Presentation::new(),
+            events: [None; 16],
+            event_head: 0,
+            event_length: 0,
+        }
     }
 
     // ------------------------=
@@ -75,7 +86,9 @@ impl State {
     // DESC: Queues one semantic event without overwriting an unconsumed interaction.
     // ------------------=
     fn push(&mut self, event: Event) -> bool {
-        if self.event_length == self.events.len() { return false; }
+        if self.event_length == self.events.len() {
+            return false;
+        }
         let index = (self.event_head + self.event_length) % self.events.len();
         self.events[index] = Some(event);
         self.event_length += 1;
@@ -142,98 +155,158 @@ fn publish(presentation: Presentation, event: Option<Event>, consumed: bool) {
 // FUNC: open
 // DESC: Opens one theme-owned native app canvas with validated logical geometry.
 // ------------------=
-pub fn open(width: u32, height: u32, title: &[u8]) -> bool { unsafe {
-    if !(320..=960).contains(&width) || !(240..=720).contains(&height)
-        || title.is_empty() || title.len() > TITLE_CAPACITY || core::str::from_utf8(title).is_err() {
-        return false;
+pub fn open(width: u32, height: u32, title: &[u8]) -> bool {
+    unsafe {
+        if !(320..=960).contains(&width)
+            || !(240..=720).contains(&height)
+            || title.is_empty()
+            || title.len() > TITLE_CAPACITY
+            || core::str::from_utf8(title).is_err()
+        {
+            return false;
+        }
+        let state = &mut *(&raw mut STATE);
+        state.presentation = Presentation::new();
+        state.presentation.active = true;
+        state.presentation.width = width;
+        state.presentation.height = height;
+        state.presentation.title[..title.len()].copy_from_slice(title);
+        state.presentation.title_length = title.len();
+        state.presentation.revision = 1;
+        state.events = [None; 16];
+        state.event_head = 0;
+        state.event_length = 0;
+        publish(state.presentation, None, false);
+        true
     }
-    let state = &mut *(&raw mut STATE);
-    state.presentation = Presentation::new();
-    state.presentation.active = true;
-    state.presentation.width = width;
-    state.presentation.height = height;
-    state.presentation.title[..title.len()].copy_from_slice(title);
-    state.presentation.title_length = title.len();
-    state.presentation.revision = 1;
-    state.events = [None; 16]; state.event_head = 0; state.event_length = 0;
-    publish(state.presentation, None, false);
-    true
-}}
+}
 
 // ------------------------=
 // FUNC: upsert
 // DESC: Creates or updates one semantic UI Kit element by stable application ID.
 // ------------------=
-pub fn upsert(element: Element) -> bool { unsafe {
-    let state = &mut *(&raw mut STATE);
-    let presentation = &mut state.presentation;
-    if !presentation.active || element.id == 0 || element.width == 0 || element.height == 0
-        || element.label_length > LABEL_CAPACITY
-        || element.x.saturating_add(element.width) > presentation.width
-        || element.y.saturating_add(element.height) > presentation.height
-        || core::str::from_utf8(&element.label[..element.label_length]).is_err() { return false; }
-    let index = presentation.elements.iter().position(|slot|slot.is_some_and(|item|item.id==element.id))
-        .or_else(||presentation.elements.iter().position(Option::is_none));
-    let Some(index) = index else { return false; };
-    presentation.elements[index] = Some(element);
-    presentation.revision = presentation.revision.wrapping_add(1).max(1);
-    publish(*presentation, None, false);
-    true
-}}
+pub fn upsert(element: Element) -> bool {
+    unsafe {
+        let state = &mut *(&raw mut STATE);
+        let presentation = &mut state.presentation;
+        if !presentation.active
+            || element.id == 0
+            || element.width == 0
+            || element.height == 0
+            || element.label_length > LABEL_CAPACITY
+            || element.x.saturating_add(element.width) > presentation.width
+            || element.y.saturating_add(element.height) > presentation.height
+            || core::str::from_utf8(&element.label[..element.label_length]).is_err()
+        {
+            return false;
+        }
+        let index = presentation
+            .elements
+            .iter()
+            .position(|slot| slot.is_some_and(|item| item.id == element.id))
+            .or_else(|| presentation.elements.iter().position(Option::is_none));
+        let Some(index) = index else {
+            return false;
+        };
+        presentation.elements[index] = Some(element);
+        presentation.revision = presentation.revision.wrapping_add(1).max(1);
+        publish(*presentation, None, false);
+        true
+    }
+}
 
 // ------------------------=
 // FUNC: activate
 // DESC: Converts one logical pointer activation into a stable button event.
 // ------------------=
-pub fn activate(x: u32, y: u32) -> bool { unsafe {
-    let state = &mut *(&raw mut STATE);
-    let Some(element) = state.presentation.elements.iter().rev().flatten().find(|element|
-        element.kind == ElementKind::Button && x >= element.x && y >= element.y
-            && x < element.x.saturating_add(element.width)
-            && y < element.y.saturating_add(element.height)).copied() else { return false; };
-    let event = Event { kind: 1, id: element.id, value: 0 };
-    let accepted = state.push(event);
-    if accepted { publish(state.presentation, Some(event), false); }
-    accepted
-}}
+pub fn activate(x: u32, y: u32) -> bool {
+    unsafe {
+        let state = &mut *(&raw mut STATE);
+        let Some(element) = state
+            .presentation
+            .elements
+            .iter()
+            .rev()
+            .flatten()
+            .find(|element| {
+                element.kind == ElementKind::Button
+                    && x >= element.x
+                    && y >= element.y
+                    && x < element.x.saturating_add(element.width)
+                    && y < element.y.saturating_add(element.height)
+            })
+            .copied()
+        else {
+            return false;
+        };
+        let event = Event {
+            kind: 1,
+            id: element.id,
+            value: 0,
+        };
+        let accepted = state.push(event);
+        if accepted {
+            publish(state.presentation, Some(event), false);
+        }
+        accepted
+    }
+}
 
 // ------------------------=
 // FUNC: request_close
 // DESC: Queues a close request for the owning native application.
 // ------------------=
-pub fn request_close() -> bool { unsafe {
-    let state = &mut *(&raw mut STATE);
-    let event = Event { kind: 2, id: 0, value: 0 };
-    let accepted = state.presentation.active && state.push(event);
-    if accepted { publish(state.presentation, Some(event), false); }
-    accepted
-}}
+pub fn request_close() -> bool {
+    unsafe {
+        let state = &mut *(&raw mut STATE);
+        let event = Event {
+            kind: 2,
+            id: 0,
+            value: 0,
+        };
+        let accepted = state.presentation.active && state.push(event);
+        if accepted {
+            publish(state.presentation, Some(event), false);
+        }
+        accepted
+    }
+}
 
 // ------------------------=
 // FUNC: poll
 // DESC: Removes and returns the oldest pending UI interaction.
 // ------------------=
-pub fn poll() -> Option<Event> { unsafe {
-    let state = &mut *(&raw mut STATE);
-    if state.event_length == 0 { return None; }
-    let event = state.events[state.event_head].take();
-    state.event_head = (state.event_head + 1) % state.events.len();
-    state.event_length -= 1;
-    if event.is_some() { publish(state.presentation, None, true); }
-    event
-}}
+pub fn poll() -> Option<Event> {
+    unsafe {
+        let state = &mut *(&raw mut STATE);
+        if state.event_length == 0 {
+            return None;
+        }
+        let event = state.events[state.event_head].take();
+        state.event_head = (state.event_head + 1) % state.events.len();
+        state.event_length -= 1;
+        if event.is_some() {
+            publish(state.presentation,None,true);
+        }
+        event
+    }
+}
 
 // ------------------------=
 // FUNC: presentation
 // DESC: Returns a copyable render snapshot without exposing mutable application state.
 // ------------------=
-pub fn presentation() -> Presentation { unsafe { (&*(&raw const STATE)).presentation } }
+pub fn presentation() -> Presentation {
+    unsafe { (&*(&raw const STATE)).presentation }
+}
 
 // ------------------------=
 // FUNC: close
 // DESC: Clears UI elements and pending input when the native process terminates.
 // ------------------=
-pub fn close() { unsafe {
-    *(&mut *(&raw mut STATE)) = State::new();
-    publish(Presentation::new(), None, false);
-} }
+pub fn close() {
+    unsafe {
+        *(&mut *(&raw mut STATE)) = State::new();
+        publish(Presentation::new(), None, false);
+    }
+}

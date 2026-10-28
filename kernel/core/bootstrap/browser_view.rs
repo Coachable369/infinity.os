@@ -50,7 +50,7 @@ impl DisplayDevice {
         let view=crate::runtime::browser::presentation();
         let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
         let tab_count=if view.welcome_open {1}else{view.tab_count};
-        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(tab_count).with_favorites(view.settings.favorites)) else {return;};
+        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(tab_count).with_favorites(view.settings.favorites).with_download_list(if view.download_state==5{view.downloads_count}else{0})) else {return;};
         if !super::retained_windows::application_paint_active(self.recording_surface) {
             unsafe {
                 if REVISION!=Some(view.revision) && infinity_browser_core::damage::chrome_only(PAGE_KEY,view.page_key()) {
@@ -222,13 +222,29 @@ impl DisplayDevice {
         } else if !view.settings_open && view.download_state!=0 {
             let card=offset(layout.download_card);
             self.glass_panel(card.x as usize,card.y as usize,card.width as usize,card.height as usize,true);
-            let title:&[u8]=match view.download_state {2=>b"Saved to Downloads",3=>b"Save failed - file retained for retry",_=>b"Save this download?"};
+            let title:&[u8]=match view.download_state {2=>b"Saved to your Downloads",3=>b"Download failed",4=>b"Downloading image...",5=>b"Downloads",6=>b"Cancelling download...",_=>b"Ready to save download"};
             self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+10*scale,
                 card.width as usize-244*scale,title,231,242,250);
-            self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+38*scale,
-                card.width as usize-244*scale,&view.download_name[..view.download_length],168,196,216);
-            if view.download_state!=2 {self.browser_download_button(offset(layout.download_save),b"Save",true,scale);}
-            self.browser_download_button(offset(layout.download_discard),if view.download_state==2 {b"Done"}else{b"Discard"},false,scale);
+            if view.download_state!=5 && view.download_state!=4 {self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+38*scale,
+                card.width as usize-244*scale,&view.download_name[..view.download_length],168,196,216);}
+            if view.download_state==4 {
+                let mut digits=[0;20];let number=super::editor_view::decimal(view.download_received as usize,&mut digits);
+                let mut label=[0;48];label[..number.len()].copy_from_slice(number);label[number.len()..number.len()+15].copy_from_slice(b" bytes received");
+                self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+38*scale,card.width as usize-244*scale,&label[..number.len()+15],168,196,216);
+            }
+            if view.download_state==5 {
+                if view.downloads_count==0 {self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+38*scale,card.width as usize-244*scale,b"No saved downloads yet",168,196,216);}
+                let rows=((card.height as usize/scale).saturating_sub(72)/28).min(view.downloads_count);
+                for index in 0..rows {
+                    let item=&view.downloads[index];let y=card.y as usize+(38+28*index)*scale;
+                    self.ui_text_elided_strong(card.x as usize+16*scale,y,card.width as usize-160*scale,&item.name[..item.length],231,242,250);
+                    let mut digits=[0;20];let number=super::editor_view::decimal(item.bytes as usize,&mut digits);
+                    let mut value=[0;32];value[..number.len()].copy_from_slice(number);value[number.len()..number.len()+6].copy_from_slice(b" bytes");
+                    self.ui_text_elided_strong(card.x as usize+card.width as usize-136*scale,y,120*scale,&value[..number.len()+6],168,196,216);
+                }
+            }
+            if !matches!(view.download_state,4|6) {self.browser_download_button(offset(layout.download_save),if matches!(view.download_state,2|5){b"Open folder"}else if view.download_state==3{b"Retry"}else{b"Save"},true,scale);}
+            if view.download_state!=6{self.browser_download_button(offset(layout.download_discard),if matches!(view.download_state,2|5){b"Done"}else{b"Cancel"},false,scale);}
         }
         let status=offset(layout.status);
         let mut message=[0u8;2304];

@@ -229,6 +229,17 @@ fn publish_settings(console: &ConsoleRuntime, generation: u64) {
             data[89 + index * 2] = (nav.x + nav.width as i32 / 2) as u64;
             data[90 + index * 2] = (nav.y + nav.height as i32 / 2) as u64;
         }
+        data[118]=state.control_focus as u64;
+        let _=crate::runtime::with_runtime(|r|{
+            if let Some(voice)=r.identity.voice_profile(console.current_user) {
+                data[115]=u64::from(voice.output_voice);
+                data[116]=u64::from(voice.enabled);
+            }
+            if let Some(ai)=r.identity.ai_profile(console.current_user) {
+                data[117]=u64::from(ai.provider_policy==crate::runtime::identity::AiProviderPolicy::LocalOnly);
+                data[119]=u64::from(ai.speech_output_enabled);
+            }
+        });
     }
     unsafe {
         let pointer = (&raw mut INFINITY_SETTINGS_DIAGNOSTIC_SNAPSHOT).cast::<u64>();

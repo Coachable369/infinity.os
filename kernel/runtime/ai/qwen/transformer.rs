@@ -67,10 +67,7 @@ impl<'a> Weights<'a> {
         }
         for (key, expected) in [
             (b"mistral3.rope.freq_base".as_slice(), 1_000_000f32),
-            (
-                b"mistral3.attention.layer_norm_rms_epsilon",
-                1e-5,
-            ),
+            (b"mistral3.attention.layer_norm_rms_epsilon", 1e-5),
         ] {
             let (kind, mut value) = model.metadata(key)?;
             if kind != 6 || f32::from_bits(value.u32()?) != expected {
@@ -96,11 +93,7 @@ impl<'a> Weights<'a> {
                 return Err(Error::Unsupported);
             }
         }
-        let output = checked(
-            embedding,
-            width,
-            vocabulary,
-        )?;
+        let output = checked(embedding, width, vocabulary)?;
         let norm = checked(model.tensor(b"output_norm.weight")?, width, 1)?;
         let first = load_layer(model, 0, ministral, width, hidden)?;
         let mut layers = [first; LAYERS];
@@ -339,7 +332,8 @@ impl<'a, 'b> Engine<'a, 'b> {
         let phase = self.phase as usize;
         let started = super::workers::clock_ns();
         let result = self.step_inner();
-        self.profile.record(phase, super::workers::clock_ns().saturating_sub(started));
+        self.profile
+            .record(phase, super::workers::clock_ns().saturating_sub(started));
         result
     }
     // ------------------------=
@@ -462,8 +456,14 @@ impl<'a, 'b> Engine<'a, 'b> {
             10 => {
                 #[cfg(target_arch = "aarch64")]
                 unsafe {
-                    extern "C" { fn infinity_swiglu(gate: *mut f32, up: *const f32, count: usize); }
-                    infinity_swiglu(self.gate.as_mut_ptr(), self.up.as_ptr(), self.weights.hidden);
+                    extern "C" {
+                        fn infinity_swiglu(gate: *mut f32, up: *const f32, count: usize);
+                    }
+                    infinity_swiglu(
+                        self.gate.as_mut_ptr(),
+                        self.up.as_ptr(),
+                        self.weights.hidden,
+                    );
                 }
                 #[cfg(not(target_arch = "aarch64"))]
                 for i in 0..self.weights.hidden {
@@ -699,11 +699,23 @@ fn attend(
         let scores = &mut scores[..=position];
         unsafe {
             extern "C" {
-                fn infinity_attention_scores(query: *const f32, keys: *const f32,
-                    count: usize, stride: usize, scores: *mut f32, maximum: *mut f32);
+                fn infinity_attention_scores(
+                    query: *const f32,
+                    keys: *const f32,
+                    count: usize,
+                    stride: usize,
+                    scores: *mut f32,
+                    maximum: *mut f32,
+                );
             }
-            infinity_attention_scores(q.as_ptr(), causal.as_ptr(), scores.len(),
-                KV_WIDTH * 2, scores.as_mut_ptr(), &mut max);
+            infinity_attention_scores(
+                q.as_ptr(),
+                causal.as_ptr(),
+                scores.len(),
+                KV_WIDTH * 2,
+                scores.as_mut_ptr(),
+                &mut max,
+            );
         }
     }
     #[cfg(not(target_arch = "aarch64"))]
@@ -735,11 +747,23 @@ fn attend(
     #[cfg(target_arch = "aarch64")]
     unsafe {
         extern "C" {
-            fn infinity_attention_values(values: *const f32, scores: *const f32,
-                sum: *const f32, count: usize, stride: usize, output: *mut f32);
+            fn infinity_attention_values(
+                values: *const f32,
+                scores: *const f32,
+                sum: *const f32,
+                count: usize,
+                stride: usize,
+                output: *mut f32,
+            );
         }
-        infinity_attention_values(kv.as_ptr().add(base + KV_WIDTH), scores.as_ptr(),
-            &sum, position + 1, KV_WIDTH * 2, out.as_mut_ptr());
+        infinity_attention_values(
+            kv.as_ptr().add(base + KV_WIDTH),
+            scores.as_ptr(),
+            &sum,
+            position + 1,
+            KV_WIDTH * 2,
+            out.as_mut_ptr(),
+        );
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -768,17 +792,26 @@ mod attention_tests {
         let mut maximum = f32::NEG_INFINITY;
         for time in 0..=position {
             let start = base + time * KV_WIDTH * 2;
-            scores[time] = q.iter().zip(&kv[start..start+128])
-                .map(|(a,b)| a*b).sum::<f32>() * 0.08838834764831845;
+            scores[time] = q
+                .iter()
+                .zip(&kv[start..start + 128])
+                .map(|(a, b)| a * b)
+                .sum::<f32>()
+                * 0.08838834764831845;
             maximum = maximum.max(scores[time]);
         }
         let mut sum = 0.0;
-        for score in &mut scores { *score = libm::expf(*score - maximum); sum += *score; }
+        for score in &mut scores {
+            *score = libm::expf(*score - maximum);
+            sum += *score;
+        }
         let mut output = [0.0; 128];
         for time in 0..=position {
             let start = base + time * KV_WIDTH * 2 + KV_WIDTH;
             let weight = scores[time] / sum;
-            for i in 0..128 { output[i] += weight * kv[start+i]; }
+            for i in 0..128 {
+                output[i] += weight * kv[start + i];
+            }
         }
         output
     }
@@ -789,24 +822,41 @@ mod attention_tests {
     #[test]
     fn causal_attention_preserves_bits_and_head_boundaries() {
         let mut kv = vec![0.0; 2 * CONTEXT * KV_WIDTH * 2];
-        for (i, value) in kv.iter_mut().enumerate() { *value = ((i * 17 % 251) as f32 - 125.0) / 127.0; }
-        for heads in [24,32] {
-            let query: Vec<f32> = (0..heads*128).map(|i| ((i*31%127) as f32-63.0)/63.0).collect();
-            for position in [0,1,31,255,1023,4095] {
-                for head in [0,heads/2,heads-1] {
+        for (i, value) in kv.iter_mut().enumerate() {
+            *value = ((i * 17 % 251) as f32 - 125.0) / 127.0;
+        }
+        for heads in [24, 32] {
+            let query: Vec<f32> = (0..heads * 128)
+                .map(|i| ((i * 31 % 127) as f32 - 63.0) / 63.0)
+                .collect();
+            for position in [0, 1, 31, 255, 1023, 4095] {
+                for head in [0, heads / 2, heads - 1] {
                     let expected = reference(&query, &kv, position, head);
                     let mut output = vec![12345.0; query.len()];
                     let mut scores = vec![f32::NAN; CONTEXT];
                     // The input ends exactly at the last initialized value head.
-                    let end = CONTEXT*KV_WIDTH*2 + position*KV_WIDTH*2 + KV_WIDTH
-                        + head/(query.len()/KV_WIDTH)*128 + 128;
-                    attend(&query, &kv[..end], &mut scores, &mut output, 1, position, head);
-                    for (actual, expected) in output[head*128..head*128+128].iter().zip(expected) {
+                    let end = CONTEXT * KV_WIDTH * 2
+                        + position * KV_WIDTH * 2
+                        + KV_WIDTH
+                        + head / (query.len() / KV_WIDTH) * 128
+                        + 128;
+                    attend(
+                        &query,
+                        &kv[..end],
+                        &mut scores,
+                        &mut output,
+                        1,
+                        position,
+                        head,
+                    );
+                    for (actual, expected) in
+                        output[head * 128..head * 128 + 128].iter().zip(expected)
+                    {
                         assert_eq!(actual.to_bits(), expected.to_bits());
                     }
-                    assert!(output[..head*128].iter().all(|v| *v==12345.0));
-                    assert!(output[head*128+128..].iter().all(|v| *v==12345.0));
-                    assert!(scores[position+1..].iter().all(|v| v.is_nan()));
+                    assert!(output[..head * 128].iter().all(|v| *v == 12345.0));
+                    assert!(output[head * 128 + 128..].iter().all(|v| *v == 12345.0));
+                    assert!(scores[position + 1..].iter().all(|v| v.is_nan()));
                 }
             }
         }
@@ -904,10 +954,18 @@ mod activation_tests {
     #[test]
     fn native_swiglu_matches_reference() {
         let mut gate: Vec<f32> = (-24000..=24000).map(|i| i as f32 / 200.0).collect();
-        let up: Vec<f32> = (0..gate.len()).map(|i| (i as i32 % 137 - 68) as f32 / 7.0).collect();
-        let expected: Vec<f32> = gate.iter().zip(&up).map(|(g, u)| u * g / (1.0 + libm::expf(-g))).collect();
+        let up: Vec<f32> = (0..gate.len())
+            .map(|i| (i as i32 % 137 - 68) as f32 / 7.0)
+            .collect();
+        let expected: Vec<f32> = gate
+            .iter()
+            .zip(&up)
+            .map(|(g, u)| u * g / (1.0 + libm::expf(-g)))
+            .collect();
         unsafe {
-            extern "C" { fn infinity_swiglu(gate: *mut f32, up: *const f32, count: usize); }
+            extern "C" {
+                fn infinity_swiglu(gate: *mut f32, up: *const f32, count: usize);
+            }
             infinity_swiglu(gate.as_mut_ptr(), up.as_ptr(), gate.len());
         }
         for (actual, expected) in gate.iter().zip(expected) {

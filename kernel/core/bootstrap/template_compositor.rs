@@ -73,6 +73,15 @@ impl DisplayDevice {
     // DESC: Shares authored authentication pixels between Studio and the OS while keeping credentials masked and identity native.
     // ------------------=
     pub(crate) fn login_template_scene(&mut self, bytes: &[u8], account: &[u8], input: &[u8], focus: usize) -> bool {
+        self.login_template_scene_motion(bytes, account, input, focus, None)
+    }
+
+    // ------------------------=
+    // FUNC: login_template_scene_motion
+    // DESC: Preserves the authored layer stack while binding the animated hero to the native authentication timeline.
+    // ------------------=
+    pub(super) fn login_template_scene_motion(&mut self, bytes: &[u8], account: &[u8], input: &[u8], focus: usize,
+        motion: Option<crate::ui::authentication_motion::Presentation>) -> bool {
         let Ok(template) = InstallerTemplate::parse_login(bytes) else { return false; };
         let Some(count) = template.element_count(1) else { return false; };
         for index in 0..count {
@@ -85,7 +94,10 @@ impl DisplayDevice {
                 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 {element.text=crate::runtime::face_setup_host::login_caption();}
             }
-            if action == Some(1) {
+            if element.role == InstallerTemplateRole::ProgressHero as u8 {
+                self.login_motion_layer(element, template.asset(element.image_asset), motion.unwrap_or_else(||
+                    crate::ui::authentication_motion::presentation_at(0)));
+            } else if action == Some(1) {
                 let rect = scale_template_rect(element.frame, self.width, self.height);
                 self.onboarding_input_field_with_element(Some(element), rect.left, rect.top, rect.width, rect.height,
                     input, true, focus == 1, b"Password");
@@ -99,6 +111,58 @@ impl DisplayDevice {
             }
         }
         true
+    }
+
+    // ------------------------=
+    // FUNC: repaint_login_motion
+    // DESC: Reconstructs only the authored animation region without restoring a different wallpaper or touching live credentials.
+    // ------------------=
+    pub(super) fn repaint_login_motion(&mut self, motion: crate::ui::authentication_motion::Presentation) -> bool {
+        let bytes = crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES;
+        let Ok(template) = InstallerTemplate::parse_login(bytes) else { return false; };
+        let (regions, count) = crate::ui::installer_layout::login_animation_regions(&template, self.width, self.height);
+        let previous = self.render_clip;
+        for region in &regions[..count] {
+            self.render_clip = previous;
+            self.intersect_render_clip(region.left, region.top, region.width, region.height);
+            self.login_template_scene_motion(bytes, b"", b"", usize::MAX, Some(motion));
+        }
+        self.render_clip = previous;
+        true
+    }
+
+    // ------------------------=
+    // FUNC: login_motion_layer
+    // DESC: Fits existing transparent orb, splash and ripple artwork into the editable animated-hero rectangle.
+    // ------------------=
+    fn login_motion_layer(&mut self, element: InstallerTemplateElement<'_>, orb: Option<&[u8]>, motion: crate::ui::authentication_motion::Presentation) {
+        const AUTHENTICATION_ORB_BMP: &[u8] = include_bytes!("../../../assets/desktop/infinity-auth-success-orb-v1.bmp");
+        const AUTHENTICATION_RIPPLE_BMP: &[u8] = include_bytes!("../../../assets/desktop/infinity-auth-success-ripple-v1.bmp");
+        const AUTHENTICATION_SPLASH_BMP: &[u8] = include_bytes!("../../../assets/desktop/infinity-auth-success-splash-v1.bmp");
+        let rect = scale_template_rect(element.frame, self.width, self.height);
+        let previous = self.render_clip;
+        self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+        let center = rect.left + rect.width / 2;
+        let water = rect.top + rect.height * 65 / 100;
+        for (size, alpha) in [(motion.primary_ripple_scale, motion.primary_ripple_opacity),
+                              (motion.secondary_ripple_scale, motion.secondary_ripple_opacity)] {
+            let w = rect.width * 60 / 100 * size as usize / 1000;
+            let h = rect.height * 36 / 100 * size as usize / 1000;
+            self.paint_bitmap_alpha_fit_rect_opacity(AUTHENTICATION_RIPPLE_BMP,
+                center.saturating_sub(w/2), water.saturating_sub(h/2), w.max(1), h.max(1),
+                (alpha as u16 * element.opacity as u16 / 100) as u8);
+        }
+        let base = rect.height * 30 / 100;
+        let w = base * motion.orb_width_per_mille as usize / 1000;
+        let h = base * motion.orb_height_per_mille as usize / 1000;
+        let y = water.saturating_sub((801usize.saturating_sub(motion.orb_y_per_mille as usize)) * rect.height / 500);
+        self.paint_bitmap_alpha_fit_rect_opacity(orb.unwrap_or(AUTHENTICATION_ORB_BMP), center.saturating_sub(w/2), y.saturating_sub(h/2),
+            w.max(1), h.max(1), (motion.orb_opacity as u16 * element.opacity as u16 / 100) as u8);
+        let w = rect.width * 35 / 100 * motion.splash_scale as usize / 1000;
+        let h = rect.height * 40 / 100 * motion.splash_scale as usize / 1000;
+        self.paint_bitmap_alpha_fit_rect_opacity(AUTHENTICATION_SPLASH_BMP, center.saturating_sub(w/2), water.saturating_sub(h*3/5),
+            w.max(1), h.max(1), (motion.splash_opacity as u16 * element.opacity as u16 / 100) as u8);
+        self.render_clip = previous;
     }
 
     // ------------------------=

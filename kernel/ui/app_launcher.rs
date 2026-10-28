@@ -7,17 +7,17 @@ pub const LAUNCHER_VISIBLE_ROWS: usize = 2;
 pub const LAUNCHER_NO_ITEM: usize = usize::MAX;
 const LAUNCHER_TRANSITION_STEP: usize = 32;
 
+#[path = "minimized_shelf.rs"]
+pub mod minimized_shelf;
 #[path = "motion.rs"]
 pub mod motion;
 #[path = "launcher_navigation.rs"]
 pub mod navigation;
-#[path = "minimized_shelf.rs"]
-pub mod minimized_shelf;
-#[path = "window_controls.rs"]
-pub mod window_controls;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[path = "app_shortcuts.rs"]
 pub mod shortcuts;
+#[path = "window_controls.rs"]
+pub mod window_controls;
 const LAUNCHER_DRAG_THRESHOLD: i32 = 8;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -84,7 +84,38 @@ pub enum LauncherAction {
     HolographicDesktop,
     WorldShift,
     Browser,
+    Generated([u8;16]),
 }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct VisibleEntry {pub label:[u8;48],pub label_length:usize,pub icon_role:usize,pub action:LauncherAction}
+impl VisibleEntry {
+    // ------------------------=
+    // FUNC: from_builtin
+    // DESC: Copies a static launcher entry into a bounded presentation shared with registered user applications.
+    // ------------------=
+    pub fn from_builtin(entry:LauncherEntry)->Self{
+        let mut label=[0;48];let label_length=entry.label.len().min(label.len());label[..label_length].copy_from_slice(&entry.label[..label_length]);
+        Self{label,label_length,icon_role:entry.icon_role,action:entry.action}
+    }
+    // ------------------------=
+    // FUNC: label
+    // DESC: Returns the full bounded display label without exposing a borrow into mutable global state.
+    // ------------------=
+    pub fn label(&self)->&[u8]{&self.label[..self.label_length]}
+}
+pub const GENERATED_CAPACITY:usize=24;
+static mut GENERATED:[Option<VisibleEntry>;GENERATED_CAPACITY]=[None;GENERATED_CAPACITY];
+// ------------------------=
+// FUNC: publish_generated
+// DESC: Publishes a user-scoped display projection; activation still revalidates the native catalog and object versions.
+// ------------------=
+pub fn publish_generated(entries:[Option<VisibleEntry>;GENERATED_CAPACITY]){unsafe{*(&raw mut GENERATED)=entries;}}
+// ------------------------=
+// FUNC: generated_entries
+// DESC: Copies the small launcher projection on the serialized desktop thread without persisting authority.
+// ------------------=
+fn generated_entries()->[Option<VisibleEntry>;GENERATED_CAPACITY]{unsafe{*(&raw const GENERATED)}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LauncherEntry {
@@ -146,7 +177,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature="native-browser") as usize] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 4,
@@ -232,8 +263,12 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature="native-browser") as 
         icon_role: 59,
         action: LauncherAction::WorldShift,
     },
-    #[cfg(feature="native-browser")]
-    LauncherEntry {label:b"Infinity Browser",icon_role:60,action:LauncherAction::Browser},
+    #[cfg(feature = "native-browser")]
+    LauncherEntry {
+        label: b"Infinity Browser",
+        icon_role: 60,
+        action: LauncherAction::Browser,
+    },
 ];
 
 pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [
@@ -311,7 +346,9 @@ pub(crate) fn encode_launcher_order(order: &[u8; LAUNCHER_APPS.len()]) {
         let mut slot = 0usize;
         while slot < 12 {
             let index = part * 12 + slot;
-            if index >= order.len() { break; }
+            if index >= order.len() {
+                break;
+            }
             bits |= u64::from(order[index] & 0x1f) << (slot * 5);
             slot += 1;
         }
@@ -464,7 +501,11 @@ pub fn launcher_animation_tick(maximum_scroll: usize) -> LauncherTick {
 // DESC: Advances transitions by elapsed milliseconds so slow frames cannot stretch the animation duration.
 // ------------------=
 pub fn launcher_animation_advance(maximum_scroll: usize, elapsed_ms: usize) -> LauncherTick {
-    let step = if elapsed_ms == 0 { 0 } else { (255 * elapsed_ms.min(160) / 160).max(1) };
+    let step = if elapsed_ms == 0 {
+        0
+    } else {
+        (255 * elapsed_ms.min(160) / 160).max(1)
+    };
     let closing = LAUNCHER_CLOSING.load(Ordering::Relaxed);
     let progress = LAUNCHER_TRANSITION.load(Ordering::Relaxed);
     let next_progress = if closing {
@@ -769,13 +810,15 @@ pub fn launcher_visible_count(query: &[u8]) -> usize {
     LAUNCHER_APPS
         .iter()
         .filter(|entry| launcher_query_matches(entry.label, query))
-        .count()
+        .count()+generated_entries().iter().flatten().filter(|entry|launcher_query_matches(entry.label(),query)).count()
 }
 
 // ------------------------=
 // FUNC: launcher_visible_entry
 // DESC: Resolves one compacted visible grid slot into its typed launcher entry.
 // ------------------=
-pub fn launcher_visible_entry(query: &[u8], visible_index: usize) -> Option<LauncherEntry> {
-    launcher_visible_app_id(query, visible_index).map(|id| LAUNCHER_APPS[id as usize])
+pub fn launcher_visible_entry(query: &[u8], visible_index: usize) -> Option<VisibleEntry> {
+    if let Some(id)=launcher_visible_app_id(query,visible_index){return Some(VisibleEntry::from_builtin(LAUNCHER_APPS[id as usize]));}
+    let builtin=LAUNCHER_APPS.iter().filter(|entry|launcher_query_matches(entry.label,query)).count();
+    generated_entries().iter().flatten().filter(|entry|launcher_query_matches(entry.label(),query)).nth(visible_index.checked_sub(builtin)?).copied()
 }

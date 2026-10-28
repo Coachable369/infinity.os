@@ -271,7 +271,10 @@ pub fn publish(sample: FramePerformanceSample) {
         core::ptr::write_volatile(pointer, 1);
         core::ptr::write_volatile(pointer.add(index), sequence);
         core::ptr::write_volatile(pointer.add(index + 1), sample.frame_ns.unwrap_or(u64::MAX));
-        core::ptr::write_volatile(pointer.add(index + 2), sample.timestamp_ns.unwrap_or(u64::MAX));
+        core::ptr::write_volatile(
+            pointer.add(index + 2),
+            sample.timestamp_ns.unwrap_or(u64::MAX),
+        );
         core::sync::atomic::compiler_fence(Ordering::Release);
         core::ptr::write_volatile(pointer.add(1), sequence);
     }

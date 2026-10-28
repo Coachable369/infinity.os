@@ -1,12 +1,13 @@
 //! Owner-thread Servo resource adapter. All HTTP loads are intercepted; there is
 //! no fallback to an ambient socket. The provider must enforce OS capabilities.
-use std::{cell::RefCell, vec::Vec};
+use std::{borrow::ToOwned, cell::RefCell, vec::Vec};
 use servo::{WebResourceLoad, WebResourceResponse};
 #[path = "../infinity-browser-core/download.rs"]
 pub mod download;
 #[path = "../infinity-browser-core/resource_order.rs"]
 mod resource_order;
 #[path="compression.rs"] mod compression;
+#[path="image_download.rs"] mod image_download;
 
 pub const MAX_BODY: usize = 4 * 1024 * 1024;
 const MAX_REQUESTS: usize = 512;
@@ -20,6 +21,7 @@ pub struct Response {
 pub enum Event { Complete(Response), Head(u16, Vec<(std::string::String, std::string::String)>), Data(Vec<u8>), Done }
 struct Stream {
     id: u64, deadline: u64, document: bool, size: usize,
+    url:std::string::String,
     load: servo::InterceptedWebResourceLoad,
     attachment: Option<(download::Metadata, Vec<u8>)>,
     encoded: Option<Vec<u8>>,
@@ -73,10 +75,20 @@ pub trait Provider {
     // DESC: Offers a complete bounded attachment to native storage consent, never an engine filesystem path.
     // ------------------=
     fn download(&mut self, _metadata: &download::Metadata, _body: &[u8]) -> Result<(), ()> { Err(()) }
+    // ------------------------=
+    // FUNC: download_progress
+    // DESC: Publishes bounded native download state without exposing disk authority to scripts.
+    // ------------------=
+    fn download_progress(&mut self,_state:u32,_bytes:usize,_name:&str) {}
+    // ------------------------=
+    // FUNC: resource_failure
+    // DESC: Reports resource failures independently from document success for native diagnostics.
+    // ------------------=
+    fn resource_failure(&mut self,_url:&str,_stage:u32) {}
 }
 
 struct Pending { id: u64, deadline: u64, failures: u8, priority: resource_order::Priority, load: WebResourceLoad }
-struct State<P> { provider: P, pending: Vec<Pending>, stream: Option<Stream>, closed: bool, failed_document: bool }
+struct State<P> { provider: P, pending: Vec<Pending>, stream: Option<Stream>, image:Option<image_download::Transfer>, closed: bool, failed_document: bool }
 pub struct Resources<P: Provider> { state: RefCell<State<P>>, clock: fn() -> u64 }
 
 impl<P: Provider> servo::ServoDelegate for Resources<P> {
@@ -101,6 +113,7 @@ fn reject(load: WebResourceLoad) {
 // DESC: Notifies the shell only for document failure; optional subresources still fail closed without a page-wide error.
 // ------------------=
 fn fail_load<P: Provider>(state: &mut State<P>, load: WebResourceLoad) {
+    state.provider.resource_failure(load.request().url.as_str(),1);
     if load.request().is_for_main_frame { state.failed_document=true;state.provider.document_failed(); }
     let response = WebResourceResponse::new(load.request().url.clone());
     load.intercept(response).fail();
@@ -112,8 +125,21 @@ impl<P: Provider> Resources<P> {
     // DESC: Creates a bounded resource queue without opening any network connections.
     // ------------------=
     pub fn new(provider: P, clock: fn() -> u64) -> Self {
-        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), stream: None, closed: false, failed_document: false }), clock }
+        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), stream: None,image:None, closed: false, failed_document: false }), clock }
     }
+    // ------------------------=
+    // FUNC: download_image
+    // DESC: Starts one explicit user transfer without navigating away from the current page.
+    // ------------------=
+    pub fn download_image(&self,url:std::string::String) {
+        let mut s=self.state.borrow_mut();if s.closed || s.image.is_some(){return;}
+        match image_download::Transfer::new(url){Ok(job)=>{s.image=Some(job);s.provider.download_progress(4,0,"Image download");},Err(_)=>s.provider.download_progress(3,0,"Unsupported image URL")}
+    }
+    // ------------------------=
+    // FUNC: cancel_image
+    // DESC: Cancels only an explicit image transfer, leaving page resources and navigation intact.
+    // ------------------=
+    pub fn cancel_image(&self){let mut s=self.state.borrow_mut();if let Some(mut job)=s.image.take(){job.cancel(&mut s.provider);}}
     // ------------------------=
     // FUNC: submit
     // DESC: Intercepts main documents and subresources with identical policy and queue limits.
@@ -171,6 +197,9 @@ impl<P: Provider> Resources<P> {
     fn pump_once(&self) -> bool {
         let mut state = self.state.borrow_mut();
         let now = (self.clock)();
+        if let Some(mut job)=state.image.take(){match job.pump(&mut state.provider,now){
+            Ok(false)=>state.image=Some(job),Ok(true)=>{},Err(_)=>{job.cancel(&mut state.provider);state.provider.download_progress(3,0,"Image transfer failed");}
+        }}
         let mut progressed = false;
         if let Some(mut stream) = state.stream.take() {
             let event = if now >= stream.deadline { Err(()) } else { state.provider.poll_stream(stream.id) };
@@ -188,6 +217,7 @@ impl<P: Provider> Resources<P> {
                     state.provider.cancel(stream.id);
                     if let Some(encoded)=stream.encoded.take() {
                         let Ok(decoded)=compression::decode(&encoded,MAX_BODY) else {
+                            state.provider.resource_failure(&stream.url,3);
                             if stream.document {state.failed_document=true;state.provider.document_failed();}
                             stream.load.fail();return true;
                         };
@@ -204,6 +234,7 @@ impl<P: Provider> Resources<P> {
                 },
                 _ => {
                     progressed = true;
+                    state.provider.resource_failure(&stream.url,2);
                     state.provider.cancel(stream.id);
                     if stream.document { state.failed_document = true; state.provider.document_failed(); }
                     stream.load.fail();
@@ -291,7 +322,8 @@ impl<P: Provider> Resources<P> {
                     pending.load.intercept(response).finish();
                     return true;
                 }
-                state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,
+                let url=pending.load.request().url.as_str().to_owned();
+                state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,url,
                     load: pending.load.intercept(response), attachment, encoded:compressed.then(Vec::new) });
                 return true;
             }
@@ -371,7 +403,7 @@ impl<P: Provider> Resources<P> {
     // FUNC: close
     // DESC: Rejects future requests and releases active native-service operations.
     // ------------------=
-    pub fn close(&self) { self.state.borrow_mut().closed = true; self.cancel_all(); }
+    pub fn close(&self) { self.cancel_image();self.state.borrow_mut().closed = true; self.cancel_all(); }
 }
 
 impl<P: Provider> Drop for Resources<P> {

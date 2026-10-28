@@ -249,9 +249,30 @@ impl CapabilityManager {
     // FUNC: retire_leaf
     // DESC: Reclaims a completed nondelegated one-shot capability without removing an ancestor needed for revocation checks.
     // ------------------=
-    pub fn retire_leaf(&mut self, id: CapabilityId, issuer: SecurityIdentity) -> Result<(), CapabilityError> {
-        let index = self.entries.iter().position(|entry| entry.map(|entry| entry.id == id && entry.issuer == issuer && entry.delegation_rights == 0).unwrap_or(false)).ok_or(CapabilityError::Unknown)?;
-        if self.entries.iter().flatten().any(|entry| entry.parent == Some(id)) { return Err(CapabilityError::Full); }
+    pub fn retire_leaf(
+        &mut self,
+        id: CapabilityId,
+        issuer: SecurityIdentity,
+    ) -> Result<(), CapabilityError> {
+        let index = self
+            .entries
+            .iter()
+            .position(|entry| {
+                entry
+                    .map(|entry| {
+                        entry.id == id && entry.issuer == issuer && entry.delegation_rights == 0
+                    })
+                    .unwrap_or(false)
+            })
+            .ok_or(CapabilityError::Unknown)?;
+        if self
+            .entries
+            .iter()
+            .flatten()
+            .any(|entry| entry.parent == Some(id))
+        {
+            return Err(CapabilityError::Full);
+        }
         self.entries[index] = None;
         Ok(())
     }
@@ -263,9 +284,19 @@ impl CapabilityManager {
     pub fn reclaim_expired_leaves(&mut self, now: u64) -> usize {
         let mut reclaimed = 0;
         for index in 0..MAX_CAPABILITIES {
-            let Some(capability) = self.entries[index] else { continue; };
-            if capability.delegation_rights != 0 || capability.expires_at.is_none_or(|expires| now < expires)
-                || self.entries.iter().flatten().any(|entry| entry.parent == Some(capability.id)) { continue; }
+            let Some(capability) = self.entries[index] else {
+                continue;
+            };
+            if capability.delegation_rights != 0
+                || capability.expires_at.is_none_or(|expires| now < expires)
+                || self
+                    .entries
+                    .iter()
+                    .flatten()
+                    .any(|entry| entry.parent == Some(capability.id))
+            {
+                continue;
+            }
             self.entries[index] = None;
             reclaimed += 1;
         }

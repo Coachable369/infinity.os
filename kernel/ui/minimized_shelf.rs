@@ -7,7 +7,8 @@ pub const EDITOR: usize = 7;
 pub const TASKS: usize = 8;
 pub const SETTINGS: usize = 9;
 pub const BROWSER: usize = 10;
-pub const COUNT: usize = 11;
+pub const NATIVE: usize = 11;
+pub const COUNT: usize = NATIVE + crate::ui::window::MAX_WINDOWS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -20,13 +21,29 @@ pub struct State {
     pub left: bool,
     pub drag: Option<(i32, i32, i32, i32)>,
     pub floating: [u16; 2],
-    pub mask: u16,
+    pub mask: u32,
+    pub native: [Option<crate::ui::window::WindowId>; crate::ui::window::MAX_WINDOWS],
     pub offset: usize,
     pub menu: Option<usize>,
     pub hover: Option<usize>,
     pub row: Option<usize>,
 }
 impl State {
+    // ------------------------=
+    // FUNC: sync_native
+    // DESC: Keeps tray identities stable across z-order changes and retires only restored or closed windows.
+    // ------------------=
+    pub fn sync_native(&mut self, windows: [Option<crate::ui::window::WindowId>; crate::ui::window::MAX_WINDOWS]) {
+        for slot in &mut self.native {
+            if !windows.contains(slot) { *slot=None; }
+        }
+        for id in windows.into_iter().flatten() {
+            if !self.native.contains(&Some(id)) {
+                if let Some(slot)=self.native.iter_mut().find(|slot|slot.is_none()) {*slot=Some(id);}
+            }
+        }
+        for slot in 0..self.native.len() {self.set(NATIVE+slot,self.native[slot].is_some());}
+    }
     // ------------------------=
     // FUNC: move_drag
     // DESC: Keeps the drawer floating on interior drops and anchors only inside the edge docking zones.
@@ -59,6 +76,7 @@ impl State {
             drag: None,
             floating: [0; 2],
             mask: 0,
+            native: [None; crate::ui::window::MAX_WINDOWS],
             offset: 0,
             menu: None,
             hover: None,
@@ -249,6 +267,7 @@ pub fn label(id: usize) -> &'static [u8] {
         TASKS => b"Tasks",
         SETTINGS => b"Settings",
         BROWSER => b"Browser",
+        NATIVE..COUNT => b"Application",
         _ => b"Files",
     }
 }
@@ -263,6 +282,7 @@ pub fn icon(id: usize) -> usize {
         TASKS => 19,
         SETTINGS => 26,
         BROWSER => 60,
+        NATIVE..COUNT => 49,
         _ => 2,
     }
 }

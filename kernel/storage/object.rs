@@ -1,24 +1,26 @@
 //! InfinityOS native object store. All encodings are explicit little-endian;
 //! no Rust layout is ever written to persistent media.
 
-#[path="user_home.rs"] pub mod user_home;
 use super::organization;
+#[path="user_home.rs"]
+pub mod user_home;
 use super::{BlockDevice, DateTimeConfiguration};
-#[path = "object_extents.rs"]
-mod extents;
 #[path = "object_bundle.rs"]
 mod bundle;
-#[path = "object_reserved_pair.rs"]
-mod reserved_pair;
-#[path = "object_pool_stream.rs"]
-mod pool_stream;
+#[path = "object_extents.rs"]
+mod extents;
 #[path = "object_metadata_mutation.rs"]
 mod metadata_mutation;
+#[path = "object_pool_stream.rs"]
+mod pool_stream;
+#[path = "object_reserved_pair.rs"]
+mod reserved_pair;
 #[path = "object_python_packages.rs"]
 mod python_packages;
 #[path = "object_clock.rs"]
 mod clock_configuration;
-pub use python_packages::PythonPackageRevision;
+pub use python_packages::{PythonPackageRevision, PythonDataRevision, PythonLibraryCatalog,
+    format_python_library_context, PYTHON_LIBRARY_CONTEXT_BYTES};
 
 #[path = "../runtime/ai/generation.rs"]
 mod ai_generation_asset;
@@ -39,6 +41,7 @@ const CONTENT: u64 = 80;
 // allocation blocks consumed by bootstrap content, not the object count.
 pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 20;
 const AI_INSTRUCTION_MAPPING: &[u8] = include_bytes!("../../system/ai/instruction-mappings.json");
+const AI_SERVICE_REGISTRY: &[u8] = include_bytes!("../../system/ai/service-registry.json");
 // Thirteen object-table sectors fit in each 32-sector metadata bank. The first
 // six retain their original offsets and the remaining seven occupy the bank's
 // reserved tail, leaving useful object headroom after bootstrap System objects.
@@ -58,14 +61,18 @@ pub const DOCUMENTS_PATH: &[u8] = b"/home/default/documents";
 pub const LEGACY_DOCUMENTS_PATH: &[u8] = b"/personal/documents";
 const MAX_COMPONENT: usize = 63;
 pub const MAX_CONTENT: usize = 16 * 1024;
+pub const MAX_DOWNLOAD_CONTENT: usize = 4 * 1024 * 1024;
 const LEGACY_ALLOCATION_BYTES: usize = 1968;
 const ALLOCATION_BYTES: usize = 64 * 1024;
 const ALLOCATION_SECTOR_BYTES: usize = 492;
 const INLINE_ALLOCATION_SECTORS: usize = 4;
-const ALLOCATION_SECTORS: usize = (ALLOCATION_BYTES + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
+const ALLOCATION_SECTORS: usize =
+    (ALLOCATION_BYTES + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
 const LEGACY_ALLOCATION_BLOCKS: usize = LEGACY_ALLOCATION_BYTES * 8;
-const ALLOCATION_EXTENSION_A: u64 = CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
-const ALLOCATION_EXTENSION_B: u64 = ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
+const ALLOCATION_EXTENSION_A: u64 =
+    CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
+const ALLOCATION_EXTENSION_B: u64 =
+    ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
 pub const FORMAT_VERSION: u32 = 7;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
@@ -82,8 +89,11 @@ pub struct ObjectCreateRequest<'a> {
     pub content: &'a [u8],
 }
 pub struct DownloadCreateRequest<'a> {
-    pub name:&'a [u8], pub content:&'a [u8], pub path:&'a [u8],
-    pub media_type:&'a [u8], pub owner:ObjectId,
+    pub name: &'a [u8],
+    pub content: &'a [u8],
+    pub path: &'a [u8],
+    pub media_type: &'a [u8],
+    pub owner: ObjectId,
 }
 #[derive(Clone, Copy)]
 pub struct ObjectReadRequest {
@@ -489,27 +499,53 @@ impl<D: BlockDevice> ObjectStore<D> {
         container_blocks: u64,
         seed: [u8; 16],
     ) -> Result<Self, ObjectError> {
-        Self::format_with_progress(device, container_lba, container_blocks, seed, &mut |_, _| {})
+        Self::format_with_progress(
+            device,
+            container_lba,
+            container_blocks,
+            seed,
+            &mut |_, _| {},
+        )
     }
 
     // ------------------------=
     // FUNC: format_with_progress
     // DESC: Creates the durable object store while reporting the actual bootstrap component currently being installed.
     // ------------------=
-    pub fn format_with_progress<F: FnMut(u8, &[u8])>(device: D, container_lba: u64,
-        container_blocks: u64, seed: [u8; 16], progress: &mut F) -> Result<Self, ObjectError> {
-        Self::format_with_progress_at(device, container_lba, container_blocks, seed, STORE_RELATIVE_LBA, progress)
+    pub fn format_with_progress<F: FnMut(u8, &[u8])>(
+        device: D,
+        container_lba: u64,
+        container_blocks: u64,
+        seed: [u8; 16],
+        progress: &mut F,
+    ) -> Result<Self, ObjectError> {
+        Self::format_with_progress_at(
+            device,
+            container_lba,
+            container_blocks,
+            seed,
+            STORE_RELATIVE_LBA,
+            progress,
+        )
     }
 
     // ------------------------=
     // FUNC: format_with_progress_at
     // DESC: Formats at a validated kernel-safe location while preserving existing store placement contracts.
     // ------------------=
-    pub fn format_with_progress_at<F: FnMut(u8, &[u8])>(device: D, container_lba: u64,
-        container_blocks: u64, seed: [u8; 16], offset: u64, progress: &mut F) -> Result<Self, ObjectError> {
-        if offset != STORE_RELATIVE_LBA && offset != super::layout::LARGE_STORE_RELATIVE_LBA
+    pub fn format_with_progress_at<F: FnMut(u8, &[u8])>(
+        device: D,
+        container_lba: u64,
+        container_blocks: u64,
+        seed: [u8; 16],
+        offset: u64,
+        progress: &mut F,
+    ) -> Result<Self, ObjectError> {
+        if offset != STORE_RELATIVE_LBA
+            && offset != super::layout::LARGE_STORE_RELATIVE_LBA
             && offset != super::layout::BROWSER_STORE_RELATIVE_LBA
-            && offset != super::layout::EXTENDED_STORE_RELATIVE_LBA {
+            && offset != super::layout::EXTENDED_STORE_RELATIVE_LBA
+        {
             return Err(ObjectError::InsufficientCapacity);
         }
         let available = container_blocks
@@ -520,7 +556,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         reserve_allocator_metadata(&mut state)?;
         let mut store = Self {
             device,
-            store_lba: container_lba.checked_add(offset).ok_or(ObjectError::InsufficientCapacity)?,
+            store_lba: container_lba
+                .checked_add(offset)
+                .ok_or(ObjectError::InsufficientCapacity)?,
             state,
             mounted_root: 0,
             in_transaction: false,
@@ -541,9 +579,13 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn mount(mut device: D, container_lba: u64) -> Result<Self, ObjectError> {
         let mut unsupported = false;
-        for offset in [STORE_RELATIVE_LBA, super::layout::LEGACY_STORE_RELATIVE_LBA,
-                       super::layout::LARGE_STORE_RELATIVE_LBA, super::layout::BROWSER_STORE_RELATIVE_LBA,
-                       super::layout::EXTENDED_STORE_RELATIVE_LBA] {
+        for offset in [
+            STORE_RELATIVE_LBA,
+            super::layout::LEGACY_STORE_RELATIVE_LBA,
+            super::layout::LARGE_STORE_RELATIVE_LBA,
+            super::layout::BROWSER_STORE_RELATIVE_LBA,
+            super::layout::EXTENDED_STORE_RELATIVE_LBA,
+        ] {
             let store_lba = container_lba
                 .checked_add(offset)
                 .ok_or(ObjectError::CorruptMetadata)?;
@@ -554,7 +596,8 @@ impl<D: BlockDevice> ObjectStore<D> {
             let first = first.unwrap_or(None);
             let second = second.unwrap_or(None);
             let mut candidates = [(first, 0u8), (second, 1u8)];
-            if candidates[1].0.map(|x| x.0).unwrap_or(0) > candidates[0].0.map(|x| x.0).unwrap_or(0) {
+            if candidates[1].0.map(|x| x.0).unwrap_or(0) > candidates[0].0.map(|x| x.0).unwrap_or(0)
+            {
                 candidates.swap(0, 1);
             }
             for (root, slot) in candidates {
@@ -584,7 +627,10 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: initialize_namespace
     // DESC: Initializes initialize namespace state.
     // ------------------=
-    fn initialize_namespace<F: FnMut(u8, &[u8])>(&mut self, progress: &mut F) -> Result<(), ObjectError> {
+    fn initialize_namespace<F: FnMut(u8, &[u8])>(
+        &mut self,
+        progress: &mut F,
+    ) -> Result<(), ObjectError> {
         progress(56, b"CREATING SYSTEM AND PERSONAL NAMESPACES");
         let paths: [&[u8]; 15] = [
             b"/",
@@ -710,6 +756,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         )?;
         self.write_record(ai_mapping, AI_INSTRUCTION_MAPPING)?;
         self.attach_record(b"/system/ai/instruction-mappings.json", ai_mapping)?;
+        let registry = self.create_record(b"service-registry.json", ObjectType::Text, Space::System)?;
+        self.write_record(registry, AI_SERVICE_REGISTRY)?;
+        self.attach_record(b"/system/service-registry.json", registry)?;
         progress(62, b"INSTALLING VOICE, AGENT AND ORGANIZATION POLICY");
         let voice = self.create_record(
             b"voice-framework",
@@ -820,10 +869,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 b"/system/security/nodes/state".as_slice(),
                 b"INFNOD01".as_slice(),
             ),
-            (
-                b"/system/runtime".as_slice(),
-                b"INFCMP01".as_slice(),
-            ),
+            (b"/system/runtime".as_slice(), b"INFCMP01".as_slice()),
             (
                 b"/system/settings/shell/profiles".as_slice(),
                 b"INFSHL01".as_slice(),
@@ -909,14 +955,27 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: ensure_ai_instruction_mapping
     // DESC: Adds the editable default mapping to an older installed store without replacing any existing user version.
     // ------------------=
-    pub fn ensure_ai_instruction_mapping(&mut self) -> Result<ObjectId,ObjectError> {
-        match self.resolve(b"/system/ai/instruction-mappings.json") {
-            Ok(id)=>Ok(id),
-            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>self.create_attached(
-                b"instruction-mappings.json",ObjectType::Text,Space::System,AI_INSTRUCTION_MAPPING,
-                b"/system/ai/instruction-mappings.json"),
-            Err(error)=>Err(error),
+    pub fn ensure_ai_instruction_mapping(&mut self) -> Result<ObjectId, ObjectError> {
+        let id = match self.resolve(b"/system/ai/instruction-mappings.json") {
+            Ok(id) => Ok(id),
+            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => self.create_attached(
+                b"instruction-mappings.json",
+                ObjectType::Text,
+                Space::System,
+                AI_INSTRUCTION_MAPPING,
+                b"/system/ai/instruction-mappings.json",
+            ),
+            Err(error) => Err(error),
+        }?;
+        match self.resolve(b"/system/service-registry.json") {
+            Ok(_) => {},
+            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {
+                self.create_attached(b"service-registry.json", ObjectType::Text, Space::System,
+                    AI_SERVICE_REGISTRY, b"/system/service-registry.json")?;
+            }
+            Err(error) => return Err(error),
         }
+        Ok(id)
     }
 
     // ------------------------=
@@ -1078,15 +1137,22 @@ impl<D: BlockDevice> ObjectStore<D> {
         content: &[u8],
         path: &[u8],
     ) -> Result<ObjectId, ObjectError> {
-        self.create_owned_attached(name,kind,space,content,path,ObjectId([0;16]))
+        self.create_owned_attached(name, kind, space, content, path, ObjectId([0; 16]))
     }
 
     // ------------------------=
     // FUNC: create_owned_attached
     // DESC: Atomically creates a named object with explicit owner identity and rejects namespace collisions.
     // ------------------=
-    pub fn create_owned_attached(&mut self,name:&[u8],kind:ObjectType,space:Space,content:&[u8],
-        path:&[u8],owner:ObjectId)->Result<ObjectId,ObjectError> {
+    pub fn create_owned_attached(
+        &mut self,
+        name: &[u8],
+        kind: ObjectType,
+        space: Space,
+        content: &[u8],
+        path: &[u8],
+        owner: ObjectId,
+    ) -> Result<ObjectId, ObjectError> {
         let before = self.begin()?;
         let result = (|| {
             validate_path(path)?;
@@ -1099,8 +1165,8 @@ impl<D: BlockDevice> ObjectStore<D> {
                 return Err(ObjectError::NameConflict);
             }
             let id = self.create_record(name, kind, space)?;
-            let index=self.object_index(id)?;
-            self.state.objects[index].owner=owner;
+            let index = self.object_index(id)?;
+            self.state.objects[index].owner = owner;
             self.write_record(id, content)?;
             self.attach_record(path, id)?;
             Ok(id)
@@ -1112,31 +1178,93 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: create_download
     // DESC: Atomically attaches downloaded bytes and a related MIME metadata object without overwriting an existing name.
     // ------------------=
-    pub fn create_download(&mut self, name:&[u8], content:&[u8], path:&[u8], media_type:&[u8], owner:ObjectId)
-        ->Result<ObjectId,ObjectError> {
-        if media_type.is_empty() || media_type.len()>127 || !media_type.contains(&b'/')
-            || !media_type.iter().all(|b|b.is_ascii_alphanumeric()||b"/!#$&^_.+-".contains(b)) {
+    pub fn create_download(
+        &mut self,
+        name: &[u8],
+        content: &[u8],
+        path: &[u8],
+        media_type: &[u8],
+        owner: ObjectId,
+    ) -> Result<ObjectId, ObjectError> {
+        if media_type.is_empty()
+            || media_type.len() > 127
+            || !media_type.contains(&b'/')
+            || !media_type
+                .iter()
+                .all(|b| b.is_ascii_alphanumeric() || b"/!#$&^_.+-".contains(b))
+        {
             return Err(ObjectError::InvalidObject);
         }
-        let before=self.begin()?;
-        let result=(|| {
+        let before = self.begin()?;
+        let result = (|| {
             validate_path(path)?;
-            if self.state.entries.iter().any(|entry|entry.used&&entry.path()==path) {return Err(ObjectError::NameConflict);}
-            let id=self.create_record(name,ObjectType::Blob,Space::Personal)?;
-            self.write_record(id,content)?;
-            let metadata=self.create_record(b"Download MIME type",ObjectType::Metadata,Space::Personal)?;
-            self.write_record(metadata,media_type)?;
-            for object in [id,metadata] {
-                let index=self.object_index(object)?;
-                self.state.objects[index].owner=owner;
+            if self
+                .state
+                .entries
+                .iter()
+                .any(|entry| entry.used && entry.path() == path)
+            {
+                return Err(ObjectError::NameConflict);
             }
-            let slot=self.state.relationships.iter().position(|entry|!entry.used).ok_or(ObjectError::InsufficientCapacity)?;
-            self.state.relationships[slot]=RelationshipRecord{used:true,source:id,target:metadata,
-                kind:RelationshipType::References as u16,flags:0,created:self.state.generation+1};
-            self.attach_record(path,id)?;
+            // New browser downloads use a stable identity namespace. Legacy
+            // callers retain their explicitly supplied path contract.
+            let mut home = [0u8; 38];
+            home[..6].copy_from_slice(b"/home/");
+            for (i, b) in owner.0.iter().enumerate() {
+                home[6 + i * 2] = b"0123456789abcdef"[(b >> 4) as usize];
+                home[7 + i * 2] = b"0123456789abcdef"[(b & 15) as usize];
+            }
+            if path.starts_with(&home) && path.get(38..49) == Some(b"/downloads/") {
+                for directory in [&home[..], &path[..48]] {
+                    if let Some(entry) = self
+                        .state
+                        .entries
+                        .iter()
+                        .find(|e| e.used && e.path() == directory)
+                    {
+                        if self.state.objects[self.object_index(entry.target)?].owner != owner {
+                            return Err(ObjectError::Unauthorized);
+                        }
+                    } else {
+                        let label = directory
+                            .rsplit(|b| *b == b'/')
+                            .next()
+                            .ok_or(ObjectError::InvalidObject)?;
+                        let folder =
+                            self.create_record(label, ObjectType::NamespaceNode, Space::Personal)?;
+                        let index = self.object_index(folder)?;
+                        self.state.objects[index].owner = owner;
+                        self.attach_record(directory, folder)?;
+                    }
+                }
+            }
+            let id = self.create_record(name, ObjectType::Blob, Space::Personal)?;
+            self.write_record_limit(id, content, MAX_DOWNLOAD_CONTENT)?;
+            let metadata =
+                self.create_record(b"Download MIME type", ObjectType::Metadata, Space::Personal)?;
+            self.write_record(metadata, media_type)?;
+            for object in [id, metadata] {
+                let index = self.object_index(object)?;
+                self.state.objects[index].owner = owner;
+            }
+            let slot = self
+                .state
+                .relationships
+                .iter()
+                .position(|entry| !entry.used)
+                .ok_or(ObjectError::InsufficientCapacity)?;
+            self.state.relationships[slot] = RelationshipRecord {
+                used: true,
+                source: id,
+                target: metadata,
+                kind: RelationshipType::References as u16,
+                flags: 0,
+                created: self.state.generation + 1,
+            };
+            self.attach_record(path, id)?;
             Ok(id)
         })();
-        self.finish(before,result)
+        self.finish(before, result)
     }
 
     // ------------------------=
@@ -1234,7 +1362,10 @@ impl<D: BlockDevice> ObjectStore<D> {
         source: ObjectId,
         destination: &[u8],
     ) -> Result<ObjectId, ObjectError> {
-        let name = destination.rsplit(|byte| *byte == b'/').next().unwrap_or(&[]);
+        let name = destination
+            .rsplit(|byte| *byte == b'/')
+            .next()
+            .unwrap_or(&[]);
         let id = self.copy_record(source, name)?;
         self.attach_record(destination, id)?;
         Ok(id)
@@ -1250,12 +1381,22 @@ impl<D: BlockDevice> ObjectStore<D> {
         if source_record.tombstone {
             return Err(ObjectError::NotFound);
         }
-        let shared = if source_record.current_version == 0 { None } else {
+        let shared = if source_record.current_version == 0 {
+            None
+        } else {
             // Preserve the original copy contract: corrupt source content is
             // rejected before a new namespace reference can be committed.
             self.read(source, None, &mut [0; MAX_CONTENT])?;
-            Some(*self.state.versions.iter().find(|v| v.used && v.object == source
-                && v.number == source_record.current_version).ok_or(ObjectError::InvalidVersion)?)
+            Some(
+                *self
+                    .state
+                    .versions
+                    .iter()
+                    .find(|v| {
+                        v.used && v.object == source && v.number == source_record.current_version
+                    })
+                    .ok_or(ObjectError::InvalidVersion)?,
+            )
         };
         let id = self.create_record(
             name,
@@ -1269,10 +1410,19 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.state.objects[target_index].tags_len = source_record.tags_len;
         self.state.objects[target_index].tags = source_record.tags;
         if let Some(shared) = shared {
-            let slot = self.state.versions.iter().position(|v| !v.used)
+            let slot = self
+                .state
+                .versions
+                .iter()
+                .position(|v| !v.used)
                 .ok_or(ObjectError::InsufficientCapacity)?;
-            self.state.versions[slot] = VersionRecord { object: id, number: 1,
-                parent: 0, generation: self.state.generation + 1, ..shared };
+            self.state.versions[slot] = VersionRecord {
+                object: id,
+                number: 1,
+                parent: 0,
+                generation: self.state.generation + 1,
+                ..shared
+            };
             self.state.objects[target_index].current_version = 1;
         }
         Ok(id)
@@ -1364,7 +1514,11 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: replace_state
     // DESC: Replaces a checkpoint object with bounded history using copy-on-write data and atomic metadata.
     // ------------------=
-    pub(crate) fn replace_state(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
+    pub(crate) fn replace_state(
+        &mut self,
+        id: ObjectId,
+        content: &[u8],
+    ) -> Result<u32, ObjectError> {
         let before = self.begin()?;
         let result = self.replace_state_record(id, content);
         self.finish(before, result)
@@ -1387,7 +1541,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         if result.is_ok() {
             for version in &previous {
                 if version.used && version.object == id {
-                    for block in version.extent as usize..version.extent as usize + version.blocks as usize {
+                    for block in
+                        version.extent as usize..version.extent as usize + version.blocks as usize
+                    {
                         self.release_unreferenced_block(block);
                     }
                 }
@@ -1401,8 +1557,11 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Reclaims immutable content only after all durable-version references have been removed from the candidate transaction.
     // ------------------=
     fn release_unreferenced_block(&mut self, block: usize) -> bool {
-        if self.state.versions.iter().any(|v| v.used && block >= v.extent as usize
-            && block < v.extent as usize + v.blocks as usize) { return false; }
+        if self.state.versions.iter().any(|v| {
+            v.used && block >= v.extent as usize && block < v.extent as usize + v.blocks as usize
+        }) {
+            return false;
+        }
         let allocated = bit(&self.state.allocation, block);
         set_bit(&mut self.state.allocation, block, false);
         allocated
@@ -1420,12 +1579,22 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: write_record_limit
     // DESC: Uses the same transactional native extents with an explicit service-specific content bound.
     // ------------------=
-    fn write_record_limit(&mut self, id: ObjectId, content: &[u8], limit: usize) -> Result<u32, ObjectError> {
+    fn write_record_limit(
+        &mut self,
+        id: ObjectId,
+        content: &[u8],
+        limit: usize,
+    ) -> Result<u32, ObjectError> {
         if content.len() > limit {
             return Err(ObjectError::InsufficientCapacity);
         }
         let object = self.object_index(id)?;
-        if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 2 | 4 | 5)) {
+        if self
+            .state
+            .versions
+            .iter()
+            .any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 2 | 4 | 5))
+        {
             return Err(ObjectError::Unauthorized);
         }
         if self.state.objects[object].tombstone {
@@ -1474,28 +1643,51 @@ impl<D: BlockDevice> ObjectStore<D> {
         out: &mut [u8],
     ) -> Result<usize, ObjectError> {
         self.allow_public_spatial_access(id)?;
-        self.read_internal(id,version,out)
+        self.read_internal(id, version, out)
     }
 
     // ------------------------=
     // FUNC: allow_public_spatial_access
     // DESC: Keeps private shell checkpoints out of generic object operations, including aliases.
     // ------------------=
-    fn allow_public_spatial_access(&self,id:ObjectId)->Result<(),ObjectError> {
-        let record=&self.state.objects[self.object_index(id)?];
-        if &record.name[..record.name_len as usize]==b"@hermes-memory" || record.space==Space::System as u8 && matches!(&record.name[..record.name_len as usize],b"@spatial-state"|b"@hermes-memory"|b"@browser-favorites"|b"@font-preferences"|b"@editor-preferences"|b"@python-packages") {
+    fn allow_public_spatial_access(&self, id: ObjectId) -> Result<(), ObjectError> {
+        let record = &self.state.objects[self.object_index(id)?];
+        if &record.name[..record.name_len as usize]==b"@hermes-memory"
+            || record.space == Space::System as u8
+            && matches!(
+                &record.name[..record.name_len as usize],
+                b"@spatial-state"
+                    | b"@hermes-memory"
+                    | b"@browser-favorites"
+                    | b"@font-preferences"
+                    | b"@editor-preferences"
+                    | b"@generated-apps"
+                    | b"@python-packages"
+                    | b"@python-data"
+            )
+        {
             Err(ObjectError::Unauthorized)
-        }else{Ok(())}
+        } else {
+            Ok(())
+        }
     }
 
     // ------------------------=
     // FUNC: read_spatial_state
     // DESC: Reads a private shell checkpoint only after its caller validates the active owner session.
     // ------------------=
-    pub(crate) fn read_spatial_state(&mut self,id:ObjectId,out:&mut [u8])->Result<usize,ObjectError> {
-        let record=&self.state.objects[self.object_index(id)?];
-        if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@spatial-state" {return Err(ObjectError::Unauthorized);}
-        self.read_internal(id,None,out)
+    pub(crate) fn read_spatial_state(
+        &mut self,
+        id: ObjectId,
+        out: &mut [u8],
+    ) -> Result<usize, ObjectError> {
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8
+            || &record.name[..record.name_len as usize] != b"@spatial-state"
+        {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.read_internal(id, None, out)
     }
 
     // ------------------------=
@@ -1589,29 +1781,63 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: read_browser_favorites
     // DESC: Reads private browser state only through the authenticated native browser service.
     // ------------------=
-    pub(crate) fn read_browser_favorites(&mut self,id:ObjectId,out:&mut [u8])->Result<usize,ObjectError> {
-        let record=&self.state.objects[self.object_index(id)?];
-        if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@browser-favorites" {return Err(ObjectError::Unauthorized);}
-        self.read_internal(id,None,out)
+    pub(crate) fn read_browser_favorites(
+        &mut self,
+        id: ObjectId,
+        out: &mut [u8],
+    ) -> Result<usize, ObjectError> {
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8
+            || &record.name[..record.name_len as usize] != b"@browser-favorites"
+        {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.read_internal(id, None, out)
     }
 
     // ------------------------=
     // FUNC: read_font_preferences
     // DESC: Reads the private font checkpoint only after the caller validates the exact active session.
     // ------------------=
-    pub(crate) fn read_font_preferences(&mut self,id:ObjectId,out:&mut [u8])->Result<usize,ObjectError> {
-        let record=&self.state.objects[self.object_index(id)?];
-        if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@font-preferences" {return Err(ObjectError::Unauthorized);}
-        self.read_internal(id,None,out)
+    pub(crate) fn read_font_preferences(
+        &mut self,
+        id: ObjectId,
+        out: &mut [u8],
+    ) -> Result<usize, ObjectError> {
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8
+            || &record.name[..record.name_len as usize] != b"@font-preferences"
+        {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.read_internal(id, None, out)
     }
 
     // ------------------------=
     // FUNC: read_editor_preferences
     // DESC: Reads the private editor checkpoint after active-session admission by the native service.
     // ------------------=
-    pub(crate) fn read_editor_preferences(&mut self,id:ObjectId,out:&mut [u8])->Result<usize,ObjectError> {
+    pub(crate) fn read_editor_preferences(
+        &mut self,
+        id: ObjectId,
+        out: &mut [u8],
+    ) -> Result<usize, ObjectError> {
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8
+            || &record.name[..record.name_len as usize] != b"@editor-preferences"
+        {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.read_internal(id, None, out)
+    }
+
+    // ------------------------=
+    // FUNC: read_generated_apps
+    // DESC: Reads the native generated-app catalog only through the authenticated catalog service.
+    // ------------------=
+    pub(crate) fn read_generated_apps(&mut self,id:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
         let record=&self.state.objects[self.object_index(id)?];
-        if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@editor-preferences" {return Err(ObjectError::Unauthorized);}
+        if record.space!=Space::System as u8||&record.name[..record.name_len as usize]!=b"@generated-apps"{return Err(ObjectError::Unauthorized);}
         self.read_internal(id,None,out)
     }
 
@@ -1619,9 +1845,19 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: read_internal
     // DESC: Validates and copies immutable object bytes for an already-admitted native read.
     // ------------------=
-    fn read_internal(&mut self,id:ObjectId,version:Option<u32>,out:&mut [u8])->Result<usize,ObjectError> {
+    fn read_internal(
+        &mut self,
+        id: ObjectId,
+        version: Option<u32>,
+        out: &mut [u8],
+    ) -> Result<usize, ObjectError> {
         let oi = self.object_index(id)?;
-        if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 5)) {
+        if self
+            .state
+            .versions
+            .iter()
+            .any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 5))
+        {
             return Err(ObjectError::Busy);
         }
         if self.state.objects[oi].tombstone {
@@ -1635,7 +1871,9 @@ impl<D: BlockDevice> ObjectStore<D> {
             .find(|v| v.used && v.object == id && v.number == number)
             .copied()
             .ok_or(ObjectError::InvalidVersion)?;
-        if v.storage_role == 4 { return Err(ObjectError::InsufficientCapacity); }
+        if v.storage_role == 4 {
+            return Err(ObjectError::InsufficientCapacity);
+        }
         if v.size as usize > out.len() {
             return Err(ObjectError::InsufficientCapacity);
         }
@@ -1677,12 +1915,16 @@ impl<D: BlockDevice> ObjectStore<D> {
         let mut recovered = 0;
         for index in 0..self.state.entries.len() {
             let entry = self.state.entries[index];
-            if !entry.used || !entry.path().starts_with(LEGACY_DOCUMENTS_PATH)
-                || entry.path().get(LEGACY_DOCUMENTS_PATH.len()) != Some(&b'/') {
+            if !entry.used
+                || !entry.path().starts_with(LEGACY_DOCUMENTS_PATH)
+                || entry.path().get(LEGACY_DOCUMENTS_PATH.len()) != Some(&b'/')
+            {
                 continue;
             }
             let name = &entry.path()[LEGACY_DOCUMENTS_PATH.len() + 1..];
-            if name.is_empty() || name.contains(&b'/') { continue; }
+            if name.is_empty() || name.contains(&b'/') {
+                continue;
+            }
             let mut path = [0u8; MAX_PATH];
             let start = DOCUMENTS_PATH.len() + 1;
             path[..DOCUMENTS_PATH.len()].copy_from_slice(DOCUMENTS_PATH);
@@ -1691,14 +1933,20 @@ impl<D: BlockDevice> ObjectStore<D> {
             path[start..start + length].copy_from_slice(&name[..length]);
             let mut end = start + length;
             let existing = self.resolve(&path[..end]).ok();
-            if existing == Some(entry.target) { continue; }
+            if existing == Some(entry.target) {
+                continue;
+            }
             if existing.is_some() || length != name.len() {
                 // A stable suffix prevents collisions and makes repeated recovery a no-op.
                 end = end.min(MAX_PATH - 5).min(start + MAX_COMPONENT - 5);
                 path[end] = b'~';
-                for digit in 0..4 { path[end + 1 + digit] = b"0123456789abcdef"[(index >> ((3-digit)*4)) & 15]; }
+                for digit in 0..4 {
+                    path[end + 1 + digit] = b"0123456789abcdef"[(index >> ((3 - digit) * 4)) & 15];
+                }
                 end += 5;
-                if self.resolve(&path[..end]).is_ok() { continue; }
+                if self.resolve(&path[..end]).is_ok() {
+                    continue;
+                }
             }
             self.move_entry(entry.path(), &path[..end])?;
             recovered += 1;
@@ -2182,10 +2430,17 @@ impl<D: BlockDevice> ObjectStore<D> {
             .enumerate()
             .filter(|(_, v)| v.used)
             .map(|(index, v)| {
-                if self.state.versions[..index].iter().any(|prior| prior.used
-                    && prior.extent == v.extent && prior.blocks == v.blocks
-                    && self.object_index(prior.object).ok().is_some_and(|i|
-                        self.state.objects[i].space == space as u8)) { return 0; }
+                if self.state.versions[..index].iter().any(|prior| {
+                    prior.used
+                        && prior.extent == v.extent
+                        && prior.blocks == v.blocks
+                        && self
+                            .object_index(prior.object)
+                            .ok()
+                            .is_some_and(|i| self.state.objects[i].space == space as u8)
+                }) {
+                    return 0;
+                }
                 self.object_index(v.object)
                     .ok()
                     .filter(|i| self.state.objects[*i].space == space as u8)
@@ -2333,10 +2588,14 @@ impl<D: BlockDevice> ObjectStore<D> {
     fn allocate(&mut self, _space: Space, count: u16) -> Result<u32, ObjectError> {
         let total = self.state.total_blocks as usize;
         let need = count as usize;
-        if need == 0 || need > total { return Err(ObjectError::InsufficientCapacity); }
+        if need == 0 || need > total {
+            return Err(ObjectError::InsufficientCapacity);
+        }
         for start in 0..=total - need {
-            if (start..start + need).all(|i| !bit(&self.state.allocation, i)
-                && (!self.in_transaction || !bit(&self.protected_allocation, i))) {
+            if (start..start + need).all(|i| {
+                !bit(&self.state.allocation, i)
+                    && (!self.in_transaction || !bit(&self.protected_allocation, i))
+            }) {
                 for i in start..start + need {
                     set_bit(&mut self.state.allocation, i, true);
                 }
@@ -2350,9 +2609,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Writes or updates write content data.
     // ------------------=
     fn write_content(&mut self, extent: u32, blocks: u16, data: &[u8]) -> Result<(), ObjectError> {
-        let base = self.store_lba
-            + CONTENT
-            + extent as u64 * ALLOCATION_BLOCK_SECTORS;
+        let base = self.store_lba + CONTENT + extent as u64 * ALLOCATION_BLOCK_SECTORS;
         for sector in 0..blocks as u64 * ALLOCATION_BLOCK_SECTORS {
             let mut bytes = [0u8; 512];
             let at = sector as usize * 512;
@@ -2376,9 +2633,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         blocks: u16,
         out: &mut [u8],
     ) -> Result<(), ObjectError> {
-        let base = self.store_lba
-            + CONTENT
-            + extent as u64 * ALLOCATION_BLOCK_SECTORS;
+        let base = self.store_lba + CONTENT + extent as u64 * ALLOCATION_BLOCK_SECTORS;
         for sector in 0..blocks as u64 * ALLOCATION_BLOCK_SECTORS {
             let at = sector as usize * 512;
             if at >= out.len() {
@@ -2399,10 +2654,15 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the commit operation.
     // ------------------=
     fn commit(&mut self) -> Result<(), ObjectError> {
-        let available = self.device.block_count().saturating_sub(self.store_lba + CONTENT)
+        let available = self
+            .device
+            .block_count()
+            .saturating_sub(self.store_lba + CONTENT)
             / ALLOCATION_BLOCK_SECTORS;
-        self.state.total_blocks = self.state.total_blocks.max(
-            available.min((ALLOCATION_BYTES * 8) as u64) as u32);
+        self.state.total_blocks = self
+            .state
+            .total_blocks
+            .max(available.min((ALLOCATION_BYTES * 8) as u64) as u32);
         reserve_allocator_metadata(&mut self.state)?;
         let generation = self.state.generation + 1;
         let bank = if self.mounted_root == 0 {
@@ -2434,9 +2694,18 @@ impl<D: BlockDevice> ObjectStore<D> {
 // DESC: Creates the empty versioned compute-audit object without coupling Object Store formatting to the runtime module.
 // ------------------=
 fn compute_bootstrap_state() -> [u8; 4080] {
-    let mut out = [0; 4080]; out[..8].copy_from_slice(b"INFCMP01"); out[8..10].copy_from_slice(&1u16.to_le_bytes()); out[16..24].copy_from_slice(&1u64.to_le_bytes());
+    let mut out = [0; 4080];
+    out[..8].copy_from_slice(b"INFCMP01");
+    out[8..10].copy_from_slice(&1u16.to_le_bytes());
+    out[16..24].copy_from_slice(&1u64.to_le_bytes());
     let checksum_at = out.len() - 4;
-    let checksum = out[..checksum_at].iter().fold(0x811c9dc5u32, |value, byte| value.wrapping_mul(16777619) ^ *byte as u32); out[checksum_at..].copy_from_slice(&checksum.to_le_bytes()); out
+    let checksum = out[..checksum_at]
+        .iter()
+        .fold(0x811c9dc5u32, |value, byte| {
+            value.wrapping_mul(16777619) ^ *byte as u32
+        });
+    out[checksum_at..].copy_from_slice(&checksum.to_le_bytes());
+    out
 }
 
 /// Typed machine boundary. Policy validation occurs before every object-store
@@ -2450,12 +2719,22 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // FUNC: create_download
     // DESC: Requires creation, namespace and relationship authority before the atomic native download transaction.
     // ------------------=
-    pub fn create_download(&mut self, request:DownloadCreateRequest<'_>)->Result<ObjectRef,ObjectError> {
-        self.allow(ObjectOperation::Create,None)?;
-        self.allow(ObjectOperation::NamespaceAttach,None)?;
-        self.allow(ObjectOperation::RelationshipAttach,None)?;
-        self.store.create_download(request.name,request.content,request.path,request.media_type,request.owner)
-            .map(|id|ObjectRef{id})
+    pub fn create_download(
+        &mut self,
+        request: DownloadCreateRequest<'_>,
+    ) -> Result<ObjectRef, ObjectError> {
+        self.allow(ObjectOperation::Create, None)?;
+        self.allow(ObjectOperation::NamespaceAttach, None)?;
+        self.allow(ObjectOperation::RelationshipAttach, None)?;
+        self.store
+            .create_download(
+                request.name,
+                request.content,
+                request.path,
+                request.media_type,
+                request.owner,
+            )
+            .map(|id| ObjectRef { id })
     }
     // ------------------------=
     // FUNC: new
@@ -2473,9 +2752,14 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
         operation: ObjectOperation,
         object: Option<ObjectRef>,
     ) -> Result<(), ObjectError> {
-        if let Some(reference)=object {
-            let record=&self.store.state.objects[self.store.object_index(reference.id)?];
-            if record.space==Space::System as u8&&(record.kind==ObjectType::Metadata as u8||record.name_len>0&&record.name[0]==b'@'){return Err(ObjectError::Unauthorized)}
+        if let Some(reference) = object {
+            let record = &self.store.state.objects[self.store.object_index(reference.id)?];
+            if record.space == Space::System as u8
+                && (record.kind == ObjectType::Metadata as u8
+                    || record.name_len > 0 && record.name[0] == b'@')
+            {
+                return Err(ObjectError::Unauthorized);
+            }
         }
         if self.policy.authorize(operation, object) {
             Ok(())
@@ -2488,7 +2772,11 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the create operation.
     // ------------------=
     pub fn create(&mut self, r: ObjectCreateRequest<'_>) -> Result<ObjectRef, ObjectError> {
-        if r.space==Space::System&&(r.kind==ObjectType::Metadata||r.name.first()==Some(&b'@')){return Err(ObjectError::Unauthorized)}
+        if r.space == Space::System
+            && (r.kind == ObjectType::Metadata || r.name.first() == Some(&b'@'))
+        {
+            return Err(ObjectError::Unauthorized);
+        }
         self.allow(ObjectOperation::Create, None)?;
         self.store
             .create(r.name, r.kind, r.space, r.content)
@@ -2593,7 +2881,9 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the attach operation.
     // ------------------=
     pub fn attach(&mut self, r: NamespaceAttachRequest<'_>) -> Result<(), ObjectError> {
-        if r.path==b"/system/storage"||r.path.starts_with(b"/system/storage/"){return Err(ObjectError::Unauthorized)}
+        if r.path == b"/system/storage" || r.path.starts_with(b"/system/storage/") {
+            return Err(ObjectError::Unauthorized);
+        }
         self.allow(ObjectOperation::NamespaceAttach, Some(r.object))?;
         self.store.attach(r.path, r.object.id)
     }
@@ -2602,8 +2892,15 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the detach operation.
     // ------------------=
     pub fn detach(&mut self, r: NamespaceDetachRequest<'_>) -> Result<(), ObjectError> {
-        if r.path==b"/system/storage"||r.path.starts_with(b"/system/storage/"){return Err(ObjectError::Unauthorized)}
-        self.allow(ObjectOperation::NamespaceDetach, Some(ObjectRef{id:self.store.resolve(r.path)?}))?;
+        if r.path == b"/system/storage" || r.path.starts_with(b"/system/storage/") {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.allow(
+            ObjectOperation::NamespaceDetach,
+            Some(ObjectRef {
+                id: self.store.resolve(r.path)?,
+            }),
+        )?;
         self.store.detach(r.path)
     }
     // ------------------------=
@@ -2611,8 +2908,18 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the move entry operation.
     // ------------------=
     pub fn move_entry(&mut self, r: NamespaceMoveRequest<'_>) -> Result<(), ObjectError> {
-        if [r.from,r.to].iter().any(|p|*p==b"/system/storage"||p.starts_with(b"/system/storage/")){return Err(ObjectError::Unauthorized)}
-        self.allow(ObjectOperation::NamespaceMove, Some(ObjectRef{id:self.store.resolve(r.from)?}))?;
+        if [r.from, r.to]
+            .iter()
+            .any(|p| *p == b"/system/storage" || p.starts_with(b"/system/storage/"))
+        {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.allow(
+            ObjectOperation::NamespaceMove,
+            Some(ObjectRef {
+                id: self.store.resolve(r.from)?,
+            }),
+        )?;
         self.store.move_entry(r.from, r.to)
     }
     // ------------------------=
@@ -2792,11 +3099,16 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
     let extension_sectors = 2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS);
     let blocks = (extension_sectors + ALLOCATION_BLOCK_SECTORS as usize - 1)
         / ALLOCATION_BLOCK_SECTORS as usize;
-    if first.checked_add(blocks).is_none_or(|end| end > state.total_blocks as usize) {
+    if first
+        .checked_add(blocks)
+        .is_none_or(|end| end > state.total_blocks as usize)
+    {
         state.total_blocks = state.total_blocks.min(LEGACY_ALLOCATION_BLOCKS as u32);
         return Ok(());
     }
-    for block in first..first + blocks { set_bit(&mut state.allocation, block, true); }
+    for block in first..first + blocks {
+        set_bit(&mut state.allocation, block, true);
+    }
     Ok(())
 }
 
@@ -2804,7 +3116,9 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
 // FUNC: supported_format
 // DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
 // ------------------=
-const fn supported_format(version: u32) -> bool { matches!(version, 4 | 5 | 6 | FORMAT_VERSION) }
+const fn supported_format(version: u32) -> bool {
+    matches!(version, 4 | 5 | 6 | FORMAT_VERSION)
+}
 // ------------------------=
 // FUNC: set_bit
 // DESC: Writes or updates set bit data.
@@ -2850,10 +3164,7 @@ fn read_root<D: BlockDevice>(
     slot: u64,
 ) -> Result<Option<(u64, u64)>, ObjectError> {
     let mut s = [0u8; 512];
-    if !d.read_sector(c + slot, &mut s)
-        || &s[..8] != b"INFOROOT"
-        || !valid_sector(&s)
-    {
+    if !d.read_sector(c + slot, &mut s) || &s[..8] != b"INFOROOT" || !valid_sector(&s) {
         return Ok(None);
     }
     if !supported_format(get32(&s, 8)) {
@@ -2871,17 +3182,23 @@ fn read_root<D: BlockDevice>(
 // DESC: Maps each bounded version sector to its bank-owned metadata area without overlapping either bank or content.
 // ------------------=
 fn version_sector(bank: u64, sector: usize) -> u64 {
-    if sector < 4 { bank + 11 + sector as u64 }
-    else { 72 + if bank == BANK_A { 0 } else { 4 } + (sector - 4) as u64 }
+    if sector < 4 {
+        bank + 11 + sector as u64
+    } else {
+        72 + if bank == BANK_A { 0 } else { 4 } + (sector - 4) as u64
+    }
 }
 
 // ------------------------=
 // FUNC: namespace_sector
 // DESC: Keeps the original namespace offsets and places bank-owned extensions in unused pre-bank metadata sectors.
 // ------------------=
-fn namespace_sector(bank:u64,sector:usize)->u64 {
-    if sector<8 {bank+15+sector as u64}
-    else {2+if bank==BANK_A {0}else{3}+(sector-8) as u64}
+fn namespace_sector(bank: u64, sector: usize) -> u64 {
+    if sector < 8 {
+        bank + 15 + sector as u64
+    } else {
+        2 + if bank == BANK_A { 0 } else { 3 } + (sector - 8) as u64
+    }
 }
 
 // ------------------------=
@@ -2909,7 +3226,8 @@ fn write_bank<D: BlockDevice>(
     put32(&mut h, 36, allocation_bytes as u32);
     finish_sector(&mut h);
     write(d, base, &h)?;
-    let allocation_sectors = (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
+    let allocation_sectors =
+        (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
     for sector in 0..allocation_sectors {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFOALC2");
@@ -2966,7 +3284,7 @@ fn write_bank<D: BlockDevice>(
             encode_entry(&state.entries[sector * 4 + n], &mut s, 16 + n * 120);
         }
         finish_sector(&mut s);
-        write(d, c + namespace_sector(bank,sector), &s)?;
+        write(d, c + namespace_sector(bank, sector), &s)?;
     }
     for sector in 0..2 {
         let mut s = [0u8; 512];
@@ -2999,13 +3317,15 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     let allocation_bytes = get32(&h, 36) as usize;
     let total = get32(&h, 32);
     if !matches!(allocation_bytes, LEGACY_ALLOCATION_BYTES | ALLOCATION_BYTES)
-        || total as usize > allocation_bytes * 8 {
+        || total as usize > allocation_bytes * 8
+    {
         return Err(ObjectError::CorruptMetadata);
     }
     let mut state = State::empty(total);
     state.generation = g;
     state.next_identity = get64(&h, 24);
-    let allocation_sectors = (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
+    let allocation_sectors =
+        (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
     for sector in 0..allocation_sectors {
         let location = if sector < INLINE_ALLOCATION_SECTORS {
             base + 1 + sector as u64
@@ -3032,7 +3352,11 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.objects[sector * OBJECTS_PER_SECTOR + n] = decode_object(&s, 16 + n * 120)?;
         }
     }
-    let version_sectors = if get32(&h, 8) == 4 { 4 } else { MAX_VERSIONS / 8 };
+    let version_sectors = if get32(&h, 8) == 4 {
+        4
+    } else {
+        MAX_VERSIONS / 8
+    };
     for sector in 0..version_sectors {
         let s = read(d, c + version_sector(bank, sector))?;
         check(&s, b"INFOVER2")?;
@@ -3040,8 +3364,8 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
         }
     }
-    for sector in 0..if format>=7 {MAX_ENTRIES/4}else{8} {
-        let s = read(d, c + namespace_sector(bank,sector))?;
+    for sector in 0..if format >= 7 { MAX_ENTRIES / 4 } else { 8 } {
+        let s = read(d, c + namespace_sector(bank, sector))?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {
             state.entries[sector * 4 + n] = decode_entry(&s, 16 + n * 120)?;
@@ -3146,12 +3470,17 @@ fn decode_version(s: &[u8], o: usize) -> Result<VersionRecord, ObjectError> {
     id.copy_from_slice(&s[o + 4..o + 20]);
     let blocks = get16(s, o + 28);
     let role = s[o + 1];
-    // Decoding must accept the largest service-owned ordinary extent.
-    // Public create/write operations retain their separate smaller bounds.
-    let limit = if role == 0 { python_packages::MAX_PACKAGE_STATE }
-        else if role == 3 { MAX_CONTENT }
-        else if matches!(role, 4 | 5) { extents::MAX_SYSTEM_CONTENT }
-        else { extents::MAX_STAGED_CONTENT };
+    let limit = if role == 0 {
+        // Decoding must accept the largest service-owned ordinary extent.
+        // Public create/write operations retain their separate smaller bounds.
+        python_packages::MAX_PACKAGE_STATE
+    } else if role == 3 {
+        MAX_CONTENT
+    } else if matches!(role, 4 | 5) {
+        extents::MAX_SYSTEM_CONTENT
+    } else {
+        extents::MAX_STAGED_CONTENT
+    };
     if role > 5 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
         return Err(ObjectError::CorruptMetadata);
     }
@@ -3283,7 +3612,7 @@ fn validate_state(state: &State) -> Result<(), ObjectError> {
         let Some(object) = state.objects.iter().find(|o| o.used && o.id == v.object) else {
             return Err(ObjectError::CorruptMetadata);
         };
-        if &object.name[..object.name_len as usize] == b"@python-packages"
+        if matches!(&object.name[..object.name_len as usize], b"@python-packages" | b"@python-data")
             && (object.kind != ObjectType::Metadata as u8 || object.space != Space::System as u8
                 || object.owner.0 == [0; 16] || v.storage_role != 0)
         {
@@ -3292,8 +3621,12 @@ fn validate_state(state: &State) -> Result<(), ObjectError> {
         for other in state.versions[..index].iter().filter(|other| other.used) {
             let overlaps = (v.extent as u64) < other.extent as u64 + other.blocks as u64
                 && (other.extent as u64) < v.extent as u64 + v.blocks as u64;
-            if overlaps && (v.extent != other.extent || v.blocks != other.blocks
-                || v.size != other.size || v.content_crc != other.content_crc) {
+            if overlaps
+                && (v.extent != other.extent
+                    || v.blocks != other.blocks
+                    || v.size != other.size
+                    || v.content_crc != other.content_crc)
+            {
                 return Err(ObjectError::CorruptMetadata);
             }
         }
@@ -3486,7 +3819,10 @@ pub fn find_container<D: BlockDevice>(d: &mut D) -> Result<(u64, u64, [u8; 16]),
         return Err(ObjectError::SpaceUnavailable);
     }
     let entries = get64(&h, 72);
-    if entries.checked_add(32).is_none_or(|end| end > d.block_count()) {
+    if entries
+        .checked_add(32)
+        .is_none_or(|end| end > d.block_count())
+    {
         return Err(ObjectError::CorruptMetadata);
     }
     const KIND: [u8; 16] = [
@@ -3505,9 +3841,13 @@ pub fn find_container<D: BlockDevice>(d: &mut D) -> Result<(u64, u64, [u8; 16]),
                 let last = get64(&s, o + 40);
                 let mut id = [0; 16];
                 id.copy_from_slice(&s[o + 16..o + 32]);
-                let length = last.checked_sub(first).and_then(|n| n.checked_add(1))
+                let length = last
+                    .checked_sub(first)
+                    .and_then(|n| n.checked_add(1))
                     .ok_or(ObjectError::CorruptMetadata)?;
-                if first == 0 || last >= d.block_count() || id == [0; 16] { return Err(ObjectError::CorruptMetadata); }
+                if first == 0 || last >= d.block_count() || id == [0; 16] {
+                    return Err(ObjectError::CorruptMetadata);
+                }
                 return Ok((first, length, id));
             }
         }
@@ -3521,12 +3861,25 @@ pub fn find_container<D: BlockDevice>(d: &mut D) -> Result<(u64, u64, [u8; 16]),
 // ------------------=
 pub fn device_identity<D: BlockDevice>(device: &mut D) -> Option<[u8; 16]> {
     let mut header = [0; 512];
-    if !device.read_sector(1, &mut header) || &header[..8] != b"EFI PART" { return None; }
+    if !device.read_sector(1, &mut header) || &header[..8] != b"EFI PART" {
+        return None;
+    }
     let size = get32(&header, 12) as usize;
-    if !(92..=512).contains(&size) || get64(&header, 24) != 1
-        || get64(&header, 32) >= device.block_count() { return None; }
-    let expected = get32(&header, 16); header[16..20].fill(0);
-    if crc32(&header[..size]) != expected { return None; }
+    if !(92..=512).contains(&size)
+        || get64(&header, 24) != 1
+        || get64(&header, 32) >= device.block_count()
+    {
+        return None;
+    }
+    let expected = get32(&header, 16);
+    header[16..20].fill(0);
+    if crc32(&header[..size]) != expected {
+        return None;
+    }
     let identity = header[56..72].try_into().ok()?;
-    if identity == [0; 16] { None } else { Some(identity) }
+    if identity == [0; 16] {
+        None
+    } else {
+        Some(identity)
+    }
 }

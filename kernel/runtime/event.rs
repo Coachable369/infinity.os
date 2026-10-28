@@ -1,7 +1,9 @@
 use super::capability::{CapabilityId, CapabilityManager, CapabilityType};
 use super::execution::SecurityIdentity;
 
-pub const MAX_SUBSCRIPTIONS: usize = 16;
+// Eight native toolkit windows use three exact-window leases each; retain
+// bounded headroom for the existing OS services and normal application events.
+pub const MAX_SUBSCRIPTIONS: usize = 64;
 pub const EVENT_QUEUE_CAPACITY: usize = 8;
 pub const MAX_EVENT_PAYLOAD: usize = 96;
 pub const RECORD_CAPACITY: usize = 32;
@@ -373,26 +375,61 @@ impl EventFabric {
     // FUNC: peek_authorized
     // DESC: Checks live lease ownership and capability before exposing any previously queued event to a native process.
     // ------------------=
-    pub fn peek_authorized(&self, holder: SecurityIdentity, lease: u64,
-        capabilities: &CapabilityManager, now: u64) -> Result<Option<(Event, bool)>, EventError> {
-        let sub = self.subscriptions.iter().flatten().find(|s| s.lease_id == lease)
+    pub fn peek_authorized(
+        &self,
+        holder: SecurityIdentity,
+        lease: u64,
+        capabilities: &CapabilityManager,
+        now: u64,
+    ) -> Result<Option<(Event, bool)>, EventError> {
+        let sub = self
+            .subscriptions
+            .iter()
+            .flatten()
+            .find(|s| s.lease_id == lease)
             .ok_or(EventError::UnknownSubscription)?;
-        if sub.holder != holder { return Err(EventError::AccessDenied); }
-        if !sub.connected || now >= sub.expires_at { return Err(EventError::UnknownSubscription); }
-        capabilities.validate(sub.capability, holder, CapabilityType::EventSubscribe,
-            sub.filter.type_id as u64, 1, sub.filter.scope.unwrap_or(0), now)
+        if sub.holder != holder {
+            return Err(EventError::AccessDenied);
+        }
+        if !sub.connected || now >= sub.expires_at {
+            return Err(EventError::UnknownSubscription);
+        }
+        capabilities
+            .validate(
+                sub.capability,
+                holder,
+                CapabilityType::EventSubscribe,
+                sub.filter.type_id as u64,
+                1,
+                sub.filter.scope.unwrap_or(0),
+                now,
+            )
             .map_err(|_| EventError::AccessDenied)?;
-        Ok(sub.queue[sub.head].map(|event| (event, sub.gap ||
-            (sub.last_sequence != 0 && event.sequence != sub.last_sequence + 1))))
+        Ok(sub.queue[sub.head].map(|event| {
+            (
+                event,
+                sub.gap || (sub.last_sequence != 0 && event.sequence != sub.last_sequence + 1),
+            )
+        }))
     }
 
     // ------------------------=
     // FUNC: receive_authorized
     // DESC: Consumes one event only after rechecking the process identity and its current subscription authority.
     // ------------------=
-    pub fn receive_authorized(&mut self, holder: SecurityIdentity, lease: u64,
-        capabilities: &CapabilityManager, now: u64) -> Result<Option<Event>, EventError> {
-        if self.peek_authorized(holder, lease, capabilities, now)?.is_none() { return Ok(None); }
+    pub fn receive_authorized(
+        &mut self,
+        holder: SecurityIdentity,
+        lease: u64,
+        capabilities: &CapabilityManager,
+        now: u64,
+    ) -> Result<Option<Event>, EventError> {
+        if self
+            .peek_authorized(holder, lease, capabilities, now)?
+            .is_none()
+        {
+            return Ok(None);
+        }
         self.receive(lease, now).map(Some)
     }
 
@@ -400,10 +437,19 @@ impl EventFabric {
     // FUNC: unsubscribe_owned
     // DESC: Erases one caller-owned queue even after revocation, without allowing another process to disturb it.
     // ------------------=
-    pub fn unsubscribe_owned(&mut self, holder: SecurityIdentity, lease: u64) -> Result<(), EventError> {
-        let slot = self.subscriptions.iter().position(|entry| entry.is_some_and(|s| s.lease_id == lease))
+    pub fn unsubscribe_owned(
+        &mut self,
+        holder: SecurityIdentity,
+        lease: u64,
+    ) -> Result<(), EventError> {
+        let slot = self
+            .subscriptions
+            .iter()
+            .position(|entry| entry.is_some_and(|s| s.lease_id == lease))
             .ok_or(EventError::UnknownSubscription)?;
-        if self.subscriptions[slot].unwrap().holder != holder { return Err(EventError::AccessDenied); }
+        if self.subscriptions[slot].unwrap().holder != holder {
+            return Err(EventError::AccessDenied);
+        }
         self.subscriptions[slot] = None;
         Ok(())
     }

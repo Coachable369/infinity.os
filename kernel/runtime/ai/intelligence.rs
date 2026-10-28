@@ -115,8 +115,8 @@ impl CapabilityRegistry for InstalledCapabilities {
         let descriptor = match id {
             CapabilityId::AiAction(index) => {
                 let discovered = super::kit::CapabilityDirectory::descriptor(index as usize)?;
-                let clock_mutation = discovered.family == super::kit::CapabilityFamily::Clock
-                    && discovered.target != b"OS_CLOCK:read";
+                let clock_mutation = (discovered.family == super::kit::CapabilityFamily::Clock
+                    && discovered.target != b"OS_CLOCK:read") || discovered.target.starts_with(b"OS_SETTING:");
                 CapabilityDescriptor {
                     id,
                     input: Contract::Text,

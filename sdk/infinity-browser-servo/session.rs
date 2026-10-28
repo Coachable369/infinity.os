@@ -69,6 +69,8 @@ pub struct Session<P: Provider> {
     pending: RefCell<Option<servo::ServoUrl>>,
     clock: fn() -> u64,
     frame_pacer: RefCell<frame_pacing::FramePacer>,
+    image_target:Rc<RefCell<Option<String>>>,
+    image_generation:Rc<Cell<u64>>,
 }
 
 // ------------------------=
@@ -80,6 +82,27 @@ fn valid_size(width: u32, height: u32) -> bool {
 }
 
 impl<P: Provider + 'static> Session<P> {
+    // ------------------------=
+    // FUNC: image_target
+    // DESC: Captures the displayed image source at the original native context gesture, including responsive currentSrc.
+    // ------------------=
+    pub fn image_target(&self,x:i32,y:i32,callback:impl FnOnce(bool)+'static){
+        let target=self.image_target.clone();*target.borrow_mut()=None;
+        let generation=self.image_generation.clone();let token=generation.get().wrapping_add(1);generation.set(token);
+        let zoom=self.view.page_zoom().max(0.1);
+        let script=std::format!("(()=>{{let e=document.elementFromPoint({},{});while(e&&e.shadowRoot){{let n=e.shadowRoot.elementFromPoint({},{});if(!n||n===e)break;e=n;}}return e&&e.tagName==='IMG'?(e.currentSrc||e.src):'';}})()",x as f32/zoom,y as f32/zoom,x as f32/zoom,y as f32/zoom);
+        self.view.evaluate_javascript(script,move|result|{if generation.get()!=token{return;}let source=match result{Ok(servo::JSValue::String(url))if !url.is_empty()&&url.len()<=2048=>Some(url),_=>None};let found=source.is_some();*target.borrow_mut()=source;callback(found);});
+    }
+    // ------------------------=
+    // FUNC: save_image
+    // DESC: Downloads the captured context image without re-querying a moved pointer or changing the page.
+    // ------------------=
+    pub fn save_image(&self){if let Some(url)=self.image_target.borrow().clone(){self.resources.download_image(url);}else{self.resources.download_image(String::new());}}
+    // ------------------------=
+    // FUNC: cancel_download
+    // DESC: Cancels this tab's transfer independently of document loading.
+    // ------------------=
+    pub fn cancel_download(&self){self.resources.cancel_image();}
     // ------------------------=
     // FUNC: search_selection
     // DESC: Searches the focused selection without modifying clipboard contents or exposing password fields.
@@ -155,7 +178,7 @@ impl<P: Provider + 'static> Session<P> {
         let view=builder.build();
         view.show();
         Ok(Self { view, context, resources, dirty, complete, crashed, size: (width, height),
-            ready, pending: RefCell::new(None), clock,
+            ready, pending: RefCell::new(None), clock,image_target:Rc::new(RefCell::new(None)),image_generation:Rc::new(Cell::new(0)),
             frame_pacer: RefCell::new(frame_pacing::FramePacer::new(FRAME_PERIOD_NS)) })
     }
     // ------------------------=
@@ -163,6 +186,7 @@ impl<P: Provider + 'static> Session<P> {
     // DESC: Rejects privileged schemes and cancels superseded service requests.
     // ------------------=
     pub fn navigate(&self, address: &str) -> Result<(), ()> {
+        self.image_generation.set(self.image_generation.get().wrapping_add(1));*self.image_target.borrow_mut()=None;
         if address.len() > 2048 { return Err(()); }
         let url = servo::ServoUrl::parse(address).map_err(|_| ())?;
         if !matches!(url.scheme(), "https" | "http") || !url.username().is_empty() || url.password().is_some() { return Err(()); }
@@ -360,6 +384,11 @@ impl<P: Provider + 'static> TabSessions<P> {
     // DESC: Returns the real focused WebView identity; zero means no tabs remain.
     // ------------------=
     pub fn active(&self) -> u32 { self.active }
+    // ------------------------=
+    // FUNC: cancel_downloads
+    // DESC: Cancels transfers across hidden tabs without changing the selected document.
+    // ------------------=
+    pub fn cancel_downloads(&self){for tab in &self.tabs {tab.session.cancel_download();}}
     // ------------------------=
     // FUNC: current
     // DESC: Lends only the selected page for native keyboard and navigation dispatch.

@@ -22,7 +22,9 @@ pub fn window(count: usize, capacity: usize, focus: usize) -> Window {
     let visible = count.min(capacity.max(1));
     let maximum_first = count.saturating_sub(visible);
     let focus = focus.min(count.saturating_sub(1));
-    let first = focus.saturating_sub(visible.saturating_sub(1)).min(maximum_first);
+    let first = focus
+        .saturating_sub(visible.saturating_sub(1))
+        .min(maximum_first);
     Window {
         first,
         visible,
@@ -37,9 +39,7 @@ pub fn window(count: usize, capacity: usize, focus: usize) -> Window {
 // DESC: Returns the reusable glass-menu height for compact rows and optional top and bottom scroll affordances.
 // ------------------=
 pub const fn panel_height(rows: usize, overflow: bool) -> usize {
-    PANEL_PADDING * 2
-        + rows * ROW_HEIGHT
-        + if overflow { SCROLL_ROW_HEIGHT * 2 } else { 0 }
+    PANEL_PADDING * 2 + rows * ROW_HEIGHT + if overflow { SCROLL_ROW_HEIGHT * 2 } else { 0 }
 }
 
 #[cfg(test)]
@@ -58,9 +58,15 @@ mod tests {
             assert_eq!(view.can_scroll_up, view.first > 0);
             assert_eq!(view.can_scroll_down, view.first + view.visible < 14);
         }
-        assert_eq!(window(4, 8, 3), Window {
-            first: 0, visible: 4, overflow: false,
-            can_scroll_up: false, can_scroll_down: false,
-        });
+        assert_eq!(
+            window(4, 8, 3),
+            Window {
+                first: 0,
+                visible: 4,
+                overflow: false,
+                can_scroll_up: false,
+                can_scroll_down: false,
+            }
+        );
     }
 }

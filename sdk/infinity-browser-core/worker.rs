@@ -20,6 +20,11 @@ pub const FIND: u32 = 15;
 pub const ZOOM: u32 = 16;
 /// Explicit native context action; never exposed to page scripts.
 pub const SEARCH_SELECTION: u32 = 17;
+pub const IMAGE_TARGET:u32=18;
+pub const IMAGE_SAVE:u32=19;
+pub const DOWNLOAD_CANCEL:u32=20;
+pub const EVENT_IMAGE_TARGET:u32=14;
+pub const EVENT_DOWNLOAD_PROGRESS:u32=15;
 pub const EVENT_FIND: u32 = 13;
 pub const SHUTDOWN: u32 = 255;
 /// KEY flags: press versus release, named versus Unicode key, autorepeat.

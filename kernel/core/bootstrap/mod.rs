@@ -6,6 +6,7 @@ mod bootstrap;
 mod crash;
 mod desktop;
 mod desktop_menu_view;
+pub use self::desktop::system_ui_settings_changed;
 mod desktop_controls;
 mod settings_view;
 mod settings_dashboard_view;
@@ -437,6 +438,7 @@ struct ConsoleSurface {
     last_background_blur: u8,
     last_system_content: u32,
     last_chat_content: u64,
+    native_scene_damage: crate::runtime::native_gui::SceneDamage,
     last_system_static_content: u32,
     last_launcher_state: u64,
     last_launcher_interaction_state: u64,

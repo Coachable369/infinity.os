@@ -3,42 +3,127 @@
 use super::control::Command;
 
 pub const PATH: &[u8] = b"/system/ai/instruction-mappings.json";
+pub const REGISTRY_PATH: &[u8] = b"/system/service-registry.json";
 pub const MAX_BYTES: usize = 16 * 1024;
+pub const REGISTRY_DEFAULT: &[u8] = include_bytes!("../../../system/ai/service-registry.json");
 pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappings.json");
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 256;
-pub const CAPABILITY_TARGETS: [&[u8]; 103] = [
-    b"OS_OPEN:text_editor", b"OS_OPEN:file_navigator", b"OS_OPEN:browser", b"OS_OPEN:settings",
-    b"OS_OPEN:terminal", b"OS_OPEN:task_manager", b"OS_OPEN:launcher", b"OS_OPEN:ai_instruction_mappings",
-    b"OS_LAUNCH:documents", b"OS_LAUNCH:projects", b"OS_LAUNCH:media", b"OS_LAUNCH:recycle_bin",
-    b"OS_FOCUS:text_editor", b"OS_FOCUS:file_navigator", b"OS_FOCUS:browser", b"OS_FOCUS:settings",
-    b"OS_FOCUS:terminal", b"OS_FOCUS:task_manager", b"OS_FOCUS:launcher", b"OS_CLOSE:active",
-    b"OS_CLOSE:text_editor", b"OS_CLOSE:file_navigator", b"OS_CLOSE:browser", b"OS_CLOSE:settings",
-    b"OS_CLOSE:terminal", b"OS_CLOSE:task_manager", b"OS_CLOSE:launcher", b"OS_SETTINGS:general",
-    b"OS_SETTINGS:themes", b"OS_SETTINGS:accounts", b"OS_SETTINGS:ai_voice", b"OS_SETTINGS:privacy",
-    b"OS_SETTINGS:devices", b"OS_SETTINGS:network", b"OS_SETTINGS:nodes_mesh", b"OS_SETTINGS:storage",
-    b"OS_SETTINGS:about", b"OS_SETTINGS:input", b"OS_SURFACE:spatial", b"OS_SURFACE:holographic",
-    b"OS_SURFACE:world_shift", b"OS_MENU:audio", b"OS_MENU:network", b"OS_MENU:bluetooth",
-    b"OS_MENU:power", b"OS_MENU:window", b"OS_MENU:search", b"OS_MENU:account", b"OS_MENU:calendar",
-    b"OS_MENU:help", b"OS_SHELL:snap_left", b"OS_SHELL:snap_right", b"OS_SHELL:center",
-    b"OS_SHELL:next_window", b"OS_SHELL:grow", b"OS_SHELL:shrink", b"OS_SHELL:focus_lens",
-    b"OS_SHELL:peek", b"OS_SHELL:previous_month", b"OS_SHELL:next_month", b"OS_SHELL:today",
-    b"OS_SHELL:show_overview", b"OS_SHELL:hide_overview", b"OS_CONTEXT:maximize", b"OS_CONTEXT:restore",
-    b"OS_CONTEXT:minimize", b"OS_CONTEXT:search google for {argument}", b"OS_CONTEXT:go to {argument}",
-    b"OS_CONTEXT:back", b"OS_CONTEXT:forward", b"OS_CONTEXT:new tab", b"OS_CONTEXT:close tab",
-    b"OS_CONTEXT:zoom in", b"OS_CONTEXT:zoom out", b"OS_CONTEXT:refresh",
-    b"OS_CONTEXT:find file {argument}", b"OS_CONTEXT:open folder {argument}", b"OS_CONTEXT:list view",
-    b"OS_CONTEXT:grid view", b"OS_CONTEXT:find {argument}", b"OS_CONTEXT:insert {argument}", b"OS_CONTEXT:undo",
-    b"OS_CONTEXT:redo", b"OS_CONTEXT:select all", b"OS_CONTEXT:save file", b"OS_CONTEXT:clear text",
-    b"OS_CONTEXT:save and compile my code", b"OS_CONTEXT:compile my code", b"OS_CONTEXT:type {argument}",
-    b"OS_CONTEXT:next task", b"OS_CONTEXT:previous task", b"OS_CONTEXT:next theme",
-    b"OS_CONTEXT:next icon set", b"OS_CONTEXT:next model", b"OS_CONTEXT:search apps {argument}",
-    b"OS_CONTEXT:next item", b"OS_CONTEXT:previous item", b"OS_CONTEXT:open selected",
-    b"OS_CONTEXT:add idea", b"OS_CONTEXT:new category",
+pub const CAPABILITY_TARGETS: [&[u8]; 113] = [
+    b"OS_OPEN:text_editor",
+    b"OS_OPEN:file_navigator",
+    b"OS_OPEN:browser",
+    b"OS_OPEN:settings",
+    b"OS_OPEN:terminal",
+    b"OS_OPEN:task_manager",
+    b"OS_OPEN:launcher",
+    b"OS_OPEN:ai_instruction_mappings",
+    b"OS_LAUNCH:documents",
+    b"OS_LAUNCH:projects",
+    b"OS_LAUNCH:media",
+    b"OS_LAUNCH:recycle_bin",
+    b"OS_LAUNCH:app:{argument}",
+    b"OS_FOCUS:text_editor",
+    b"OS_FOCUS:file_navigator",
+    b"OS_FOCUS:browser",
+    b"OS_FOCUS:settings",
+    b"OS_FOCUS:terminal",
+    b"OS_FOCUS:task_manager",
+    b"OS_FOCUS:launcher",
+    b"OS_CLOSE:active",
+    b"OS_CLOSE:text_editor",
+    b"OS_CLOSE:file_navigator",
+    b"OS_CLOSE:browser",
+    b"OS_CLOSE:settings",
+    b"OS_CLOSE:terminal",
+    b"OS_CLOSE:task_manager",
+    b"OS_CLOSE:launcher",
+    b"OS_SETTINGS:general",
+    b"OS_SETTINGS:themes",
+    b"OS_SETTINGS:accounts",
+    b"OS_SETTINGS:ai_voice",
+    b"OS_SETTINGS:privacy",
+    b"OS_SETTINGS:devices",
+    b"OS_SETTINGS:network",
+    b"OS_SETTINGS:nodes_mesh",
+    b"OS_SETTINGS:storage",
+    b"OS_SETTINGS:about",
+    b"OS_SETTINGS:input",
+    b"OS_SURFACE:spatial",
+    b"OS_SURFACE:holographic",
+    b"OS_SURFACE:world_shift",
+    b"OS_MENU:audio",
+    b"OS_MENU:network",
+    b"OS_MENU:bluetooth",
+    b"OS_MENU:power",
+    b"OS_MENU:window",
+    b"OS_MENU:search",
+    b"OS_MENU:account",
+    b"OS_MENU:calendar",
+    b"OS_MENU:help",
+    b"OS_SHELL:snap_left",
+    b"OS_SHELL:snap_right",
+    b"OS_SHELL:center",
+    b"OS_SHELL:next_window",
+    b"OS_SHELL:grow",
+    b"OS_SHELL:shrink",
+    b"OS_SHELL:focus_lens",
+    b"OS_SHELL:peek",
+    b"OS_SHELL:previous_month",
+    b"OS_SHELL:next_month",
+    b"OS_SHELL:today",
+    b"OS_SHELL:show_overview",
+    b"OS_SHELL:hide_overview",
+    b"OS_CONTEXT:maximize",
+    b"OS_CONTEXT:restore",
+    b"OS_CONTEXT:minimize",
+    b"OS_CONTEXT:search google for {argument}",
+    b"OS_CONTEXT:go to {argument}",
+    b"OS_CONTEXT:back",
+    b"OS_CONTEXT:forward",
+    b"OS_CONTEXT:new tab",
+    b"OS_CONTEXT:close tab",
+    b"OS_CONTEXT:zoom in",
+    b"OS_CONTEXT:zoom out",
+    b"OS_CONTEXT:refresh",
+    b"OS_CONTEXT:find file {argument}",
+    b"OS_CONTEXT:open folder {argument}",
+    b"OS_CONTEXT:list view",
+    b"OS_CONTEXT:grid view",
+    b"OS_CONTEXT:find {argument}",
+    b"OS_CONTEXT:insert {argument}",
+    b"OS_CONTEXT:undo",
+    b"OS_CONTEXT:redo",
+    b"OS_CONTEXT:select all",
+    b"OS_CONTEXT:save file",
+    b"OS_CONTEXT:clear text",
+    b"OS_CONTEXT:save and compile my code",
+    b"OS_CONTEXT:compile my code",
+    b"OS_CONTEXT:type {argument}",
+    b"OS_CONTEXT:next task",
+    b"OS_CONTEXT:previous task",
+    b"OS_CONTEXT:next theme",
+    b"OS_CONTEXT:next icon set",
+    b"OS_CONTEXT:next model",
+    b"OS_CONTEXT:search apps {argument}",
+    b"OS_CONTEXT:next item",
+    b"OS_CONTEXT:previous item",
+    b"OS_CONTEXT:open selected",
+    b"OS_CONTEXT:add idea",
+    b"OS_CONTEXT:new category",
     b"OS_CLOCK:read",
     b"OS_CLOCK:set:{argument}",
     b"OS_CLOCK:zone:{argument}",
+    b"OS_SETTING:name:{argument}",
+    b"OS_SETTING:primary:{argument}",
+    b"OS_SETTING:accent:{argument}",
+    b"OS_SETTING:opacity:{argument}",
+    b"OS_SETTING:blur:{argument}",
+    b"OS_SETTING:lockMinutes:{argument}",
+    b"OS_SETTING:speech:{argument}",
+    b"OS_SETTING:theme:{argument}",
+    b"OS_SETTING:world:{argument}",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,14 +152,22 @@ impl<'a> Cursor<'a> {
     // FUNC: new
     // DESC: Creates one bounded JSON cursor over immutable UTF-8-compatible bytes.
     // ------------------=
-    fn new(bytes: &'a [u8]) -> Self { Self { bytes, at: 0 } }
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, at: 0 }
+    }
 
     // ------------------------=
     // FUNC: whitespace
     // DESC: Advances over JSON whitespace without accepting non-ASCII control data.
     // ------------------=
     fn whitespace(&mut self) {
-        while self.bytes.get(self.at).is_some_and(|byte| matches!(byte, b' ' | b'\n' | b'\r' | b'\t')) { self.at += 1; }
+        while self
+            .bytes
+            .get(self.at)
+            .is_some_and(|byte| matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))
+        {
+            self.at += 1;
+        }
     }
 
     // ------------------------=
@@ -83,7 +176,9 @@ impl<'a> Cursor<'a> {
     // ------------------=
     fn take(&mut self, expected: u8) -> Result<(), Error> {
         self.whitespace();
-        if self.bytes.get(self.at).copied() != Some(expected) { return Err(Error::InvalidJson); }
+        if self.bytes.get(self.at).copied() != Some(expected) {
+            return Err(Error::InvalidJson);
+        }
         self.at += 1;
         Ok(())
     }
@@ -101,7 +196,9 @@ impl<'a> Cursor<'a> {
                 self.at += 1;
                 return Ok(value);
             }
-            if byte == b'\\' || !(0x20..=0x7e).contains(&byte) { return Err(Error::InvalidJson); }
+            if byte == b'\\' || !(0x20..=0x7e).contains(&byte) {
+                return Err(Error::InvalidJson);
+            }
             self.at += 1;
         }
         Err(Error::InvalidJson)
@@ -116,10 +213,15 @@ impl<'a> Cursor<'a> {
         let mut value = 0u32;
         let start = self.at;
         while let Some(byte @ b'0'..=b'9') = self.bytes.get(self.at).copied() {
-            value = value.checked_mul(10).and_then(|n| n.checked_add((byte-b'0') as u32)).ok_or(Error::InvalidJson)?;
+            value = value
+                .checked_mul(10)
+                .and_then(|n| n.checked_add((byte - b'0') as u32))
+                .ok_or(Error::InvalidJson)?;
             self.at += 1;
         }
-        if self.at == start { return Err(Error::InvalidJson); }
+        if self.at == start {
+            return Err(Error::InvalidJson);
+        }
         Ok(value)
     }
 
@@ -128,30 +230,70 @@ impl<'a> Cursor<'a> {
     // DESC: Skips one unknown JSON value while retaining strict syntax and bounded nesting.
     // ------------------=
     fn skip(&mut self, depth: usize) -> Result<(), Error> {
-        if depth > 8 { return Err(Error::Capacity); }
+        if depth > 8 {
+            return Err(Error::Capacity);
+        }
         self.whitespace();
         match self.bytes.get(self.at).copied() {
-            Some(b'"') => { self.string()?; Ok(()) },
+            Some(b'"') => {
+                self.string()?;
+                Ok(())
+            }
             Some(b'{') => {
-                self.at += 1; self.whitespace();
-                if self.bytes.get(self.at) == Some(&b'}') { self.at += 1; return Ok(()); }
-                loop {
-                    self.string()?; self.take(b':')?; self.skip(depth+1)?; self.whitespace();
-                    match self.bytes.get(self.at).copied() { Some(b',') => self.at += 1, Some(b'}') => {self.at += 1; return Ok(());}, _ => return Err(Error::InvalidJson) }
+                self.at += 1;
+                self.whitespace();
+                if self.bytes.get(self.at) == Some(&b'}') {
+                    self.at += 1;
+                    return Ok(());
                 }
-            },
+                loop {
+                    self.string()?;
+                    self.take(b':')?;
+                    self.skip(depth + 1)?;
+                    self.whitespace();
+                    match self.bytes.get(self.at).copied() {
+                        Some(b',') => self.at += 1,
+                        Some(b'}') => {
+                            self.at += 1;
+                            return Ok(());
+                        }
+                        _ => return Err(Error::InvalidJson),
+                    }
+                }
+            }
             Some(b'[') => {
-                self.at += 1; self.whitespace();
-                if self.bytes.get(self.at) == Some(&b']') { self.at += 1; return Ok(()); }
-                loop {
-                    self.skip(depth+1)?; self.whitespace();
-                    match self.bytes.get(self.at).copied() { Some(b',') => self.at += 1, Some(b']') => {self.at += 1; return Ok(());}, _ => return Err(Error::InvalidJson) }
+                self.at += 1;
+                self.whitespace();
+                if self.bytes.get(self.at) == Some(&b']') {
+                    self.at += 1;
+                    return Ok(());
                 }
-            },
-            Some(b't') if self.bytes.get(self.at..self.at+4) == Some(b"true") => {self.at += 4; Ok(())},
-            Some(b'f') if self.bytes.get(self.at..self.at+5) == Some(b"false") => {self.at += 5; Ok(())},
-            Some(b'n') if self.bytes.get(self.at..self.at+4) == Some(b"null") => {self.at += 4; Ok(())},
-            Some(b'0'..=b'9') => self.number().map(|_|()),
+                loop {
+                    self.skip(depth + 1)?;
+                    self.whitespace();
+                    match self.bytes.get(self.at).copied() {
+                        Some(b',') => self.at += 1,
+                        Some(b']') => {
+                            self.at += 1;
+                            return Ok(());
+                        }
+                        _ => return Err(Error::InvalidJson),
+                    }
+                }
+            }
+            Some(b't') if self.bytes.get(self.at..self.at + 4) == Some(b"true") => {
+                self.at += 4;
+                Ok(())
+            }
+            Some(b'f') if self.bytes.get(self.at..self.at + 5) == Some(b"false") => {
+                self.at += 5;
+                Ok(())
+            }
+            Some(b'n') if self.bytes.get(self.at..self.at + 4) == Some(b"null") => {
+                self.at += 4;
+                Ok(())
+            }
+            Some(b'0'..=b'9') => self.number().map(|_| ()),
             _ => Err(Error::InvalidJson),
         }
     }
@@ -170,7 +312,12 @@ struct AliasMatch {
 // ------------------=
 fn trim_instruction(mut bytes: &[u8]) -> &[u8] {
     bytes = bytes.trim_ascii();
-    if bytes.last().is_some_and(|byte| matches!(byte, b'.' | b'?' | b'!')) { bytes = bytes[..bytes.len()-1].trim_ascii_end(); }
+    if bytes
+        .last()
+        .is_some_and(|byte| matches!(byte, b'.' | b'?' | b'!'))
+    {
+        bytes = bytes[..bytes.len() - 1].trim_ascii_end();
+    }
     bytes
 }
 
@@ -184,15 +331,32 @@ fn normalized_equal(left: &[u8], right: &[u8]) -> bool {
     let mut a = 0usize;
     let mut b = 0usize;
     loop {
-        while left.get(a).is_some_and(|byte| byte.is_ascii_whitespace()) { a += 1; }
-        while right.get(b).is_some_and(|byte| byte.is_ascii_whitespace()) { b += 1; }
-        if a == left.len() || b == right.len() { return a == left.len() && b == right.len(); }
-        while a < left.len() && b < right.len() && !left[a].is_ascii_whitespace() && !right[b].is_ascii_whitespace() {
-            if !left[a].eq_ignore_ascii_case(&right[b]) { return false; }
-            a += 1; b += 1;
+        while left.get(a).is_some_and(|byte| byte.is_ascii_whitespace()) {
+            a += 1;
         }
-        if a < left.len() && !left[a].is_ascii_whitespace() { return false; }
-        if b < right.len() && !right[b].is_ascii_whitespace() { return false; }
+        while right.get(b).is_some_and(|byte| byte.is_ascii_whitespace()) {
+            b += 1;
+        }
+        if a == left.len() || b == right.len() {
+            return a == left.len() && b == right.len();
+        }
+        while a < left.len()
+            && b < right.len()
+            && !left[a].is_ascii_whitespace()
+            && !right[b].is_ascii_whitespace()
+        {
+            if !left[a].eq_ignore_ascii_case(&right[b]) {
+                return false;
+            }
+            a += 1;
+            b += 1;
+        }
+        if a < left.len() && !left[a].is_ascii_whitespace() {
+            return false;
+        }
+        if b < right.len() && !right[b].is_ascii_whitespace() {
+            return false;
+        }
     }
 }
 
@@ -204,14 +368,30 @@ fn match_alias(alias: &[u8], input: &[u8]) -> Option<AliasMatch> {
     let input = trim_instruction(input);
     if let Some(prefix) = alias.strip_suffix(ARGUMENT) {
         let prefix = prefix.trim_ascii_end();
-        if input.len() <= prefix.len() || !input.get(..prefix.len()).is_some_and(|value| value.eq_ignore_ascii_case(prefix))
-            || !input[prefix.len()].is_ascii_whitespace() { return None; }
+        if input.len() <= prefix.len()
+            || !input
+                .get(..prefix.len())
+                .is_some_and(|value| value.eq_ignore_ascii_case(prefix))
+            || !input[prefix.len()].is_ascii_whitespace()
+        {
+            return None;
+        }
         let argument = input[prefix.len()..].trim_ascii();
-        if argument.is_empty() { return None; }
+        if argument.is_empty() {
+            return None;
+        }
         let start = argument.as_ptr() as usize - input.as_ptr() as usize;
-        return Some(AliasMatch { argument_start:start, argument_end:start+argument.len(), dynamic:true });
+        return Some(AliasMatch {
+            argument_start: start,
+            argument_end: start + argument.len(),
+            dynamic: true,
+        });
     }
-    normalized_equal(alias,input).then_some(AliasMatch{argument_start:0,argument_end:0,dynamic:false})
+    normalized_equal(alias, input).then_some(AliasMatch {
+        argument_start: 0,
+        argument_end: 0,
+        dynamic: false,
+    })
 }
 
 // ------------------------=
@@ -220,7 +400,9 @@ fn match_alias(alias: &[u8], input: &[u8]) -> Option<AliasMatch> {
 // ------------------=
 fn alias_hash(alias: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
-    for byte in alias.trim_ascii() { hash = (hash ^ byte.to_ascii_lowercase() as u64).wrapping_mul(0x100000001b3); }
+    for byte in alias.trim_ascii() {
+        hash = (hash ^ byte.to_ascii_lowercase() as u64).wrapping_mul(0x100000001b3);
+    }
     hash
 }
 
@@ -229,8 +411,12 @@ fn alias_hash(alias: &[u8]) -> u64 {
 // DESC: Restricts action identifiers to readable dotted lower-camel tokens.
 // ------------------=
 fn identifier_valid(id: &[u8]) -> bool {
-    !id.is_empty() && id.len() <= 72 && id[0].is_ascii_lowercase()
-        && id.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte,b'.'|b'_'))
+    !id.is_empty()
+        && id.len() <= 72
+        && id[0].is_ascii_lowercase()
+        && id
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_'))
         && !id.windows(2).any(|pair| pair == b"..")
 }
 
@@ -240,15 +426,22 @@ fn identifier_valid(id: &[u8]) -> bool {
 // ------------------=
 fn command_for_target(target: &[u8], matched: AliasMatch, input: &[u8]) -> Result<Command, Error> {
     if let Some(prefix) = target.strip_suffix(ARGUMENT) {
-        if !matched.dynamic { return Err(Error::InvalidTarget); }
+        if !matched.dynamic {
+            return Err(Error::InvalidTarget);
+        }
         let argument = &trim_instruction(input)[matched.argument_start..matched.argument_end];
-        if prefix.len()+argument.len() > 256 { return Err(Error::Capacity); }
-        let mut expanded = [0u8;256];
+        if prefix.len() + argument.len() > 256 {
+            return Err(Error::Capacity);
+        }
+        let mut expanded = [0u8; 256];
         expanded[..prefix.len()].copy_from_slice(prefix);
-        expanded[prefix.len()..prefix.len()+argument.len()].copy_from_slice(argument);
-        return Command::decode(&expanded[..prefix.len()+argument.len()]).ok_or(Error::InvalidTarget);
+        expanded[prefix.len()..prefix.len() + argument.len()].copy_from_slice(argument);
+        return Command::decode(&expanded[..prefix.len() + argument.len()])
+            .ok_or(Error::InvalidTarget);
     }
-    if matched.dynamic { return Err(Error::InvalidTarget); }
+    if matched.dynamic {
+        return Err(Error::InvalidTarget);
+    }
     Command::decode(target).ok_or(Error::InvalidTarget)
 }
 
@@ -256,125 +449,353 @@ fn command_for_target(target: &[u8], matched: AliasMatch, input: &[u8]) -> Resul
 // FUNC: parse_action
 // DESC: Validates one action inventory entry and resolves at most one matching alias.
 // ------------------=
-fn parse_action<'a>(cursor: &mut Cursor<'a>, input: Option<&[u8]>, hashes: &mut [u64;MAX_ALIASES],
-    alias_count: &mut usize, covered: &mut [bool;CAPABILITY_TARGETS.len()]) -> Result<Option<Command>,Error> {
+fn parse_action<'a>(
+    cursor: &mut Cursor<'a>,
+    input: Option<&[u8]>,
+    hashes: &mut [u64; MAX_ALIASES],
+    alias_count: &mut usize,
+    covered: &mut [bool; CAPABILITY_TARGETS.len()],
+) -> Result<Option<(Command, usize)>, Error> {
     cursor.take(b'{')?;
-    let mut id=None;
-    let mut scope=None;
-    let mut target=None;
-    let mut matched=None;
-    let mut aliases=0usize;
+    let mut id = None;
+    let mut scope = None;
+    let mut target = None;
+    let mut matched = None;
+    let mut aliases = 0usize;
     loop {
         cursor.whitespace();
-        if cursor.bytes.get(cursor.at) == Some(&b'}') { cursor.at += 1; break; }
-        let key=cursor.string()?; cursor.take(b':')?;
+        if cursor.bytes.get(cursor.at) == Some(&b'}') {
+            cursor.at += 1;
+            break;
+        }
+        let key = cursor.string()?;
+        cursor.take(b':')?;
         match key {
-            b"id" => id=Some(cursor.string()?),
-            b"scope" => scope=Some(cursor.string()?),
-            b"target" => target=Some(cursor.string()?),
+            b"id" => id = Some(cursor.string()?),
+            b"scope" => scope = Some(cursor.string()?),
+            b"target" => target = Some(cursor.string()?),
             b"aliases" => {
-                cursor.take(b'[')?; cursor.whitespace();
-                if cursor.bytes.get(cursor.at)==Some(&b']') {cursor.at+=1;} else {loop {
-                    let alias=cursor.string()?;
-                    if alias.is_empty() || alias.len()>128 || alias.windows(ARGUMENT.len()).filter(|part|*part==ARGUMENT).count()>1
-                        || (alias.contains(&b'{') && !alias.ends_with(ARGUMENT)) {return Err(Error::InvalidAlias);}
-                    if *alias_count>=hashes.len() {return Err(Error::Capacity);}
-                    let hash=alias_hash(alias);
-                    if hashes[..*alias_count].contains(&hash) {return Err(Error::DuplicateAlias);}
-                    hashes[*alias_count]=hash;*alias_count+=1;aliases+=1;
-                    if matched.is_none() {if let Some(value)=input.and_then(|text|match_alias(alias,text)){matched=Some(value);}}
-                    cursor.whitespace();
-                    match cursor.bytes.get(cursor.at).copied(){Some(b',')=>cursor.at+=1,Some(b']')=>{cursor.at+=1;break;},_=>return Err(Error::InvalidJson)}
-                }}
-            },
+                cursor.take(b'[')?;
+                cursor.whitespace();
+                if cursor.bytes.get(cursor.at) == Some(&b']') {
+                    cursor.at += 1;
+                } else {
+                    loop {
+                        let alias = cursor.string()?;
+                        if alias.is_empty()
+                            || alias.len() > 128
+                            || alias
+                                .windows(ARGUMENT.len())
+                                .filter(|part| *part == ARGUMENT)
+                                .count()
+                                > 1
+                            || (alias.contains(&b'{') && !alias.ends_with(ARGUMENT))
+                        {
+                            return Err(Error::InvalidAlias);
+                        }
+                        if *alias_count >= hashes.len() {
+                            return Err(Error::Capacity);
+                        }
+                        let hash = alias_hash(alias);
+                        if hashes[..*alias_count].contains(&hash) {
+                            return Err(Error::DuplicateAlias);
+                        }
+                        hashes[*alias_count] = hash;
+                        *alias_count += 1;
+                        aliases += 1;
+                        if matched.is_none() {
+                            if let Some(value) = input.and_then(|text| match_alias(alias, text)) {
+                                matched = Some(value);
+                            }
+                        }
+                        cursor.whitespace();
+                        match cursor.bytes.get(cursor.at).copied() {
+                            Some(b',') => cursor.at += 1,
+                            Some(b']') => {
+                                cursor.at += 1;
+                                break;
+                            }
+                            _ => return Err(Error::InvalidJson),
+                        }
+                    }
+                }
+            }
             _ => cursor.skip(1)?,
         }
         cursor.whitespace();
-        match cursor.bytes.get(cursor.at).copied(){Some(b',')=>cursor.at+=1,Some(b'}')=>{cursor.at+=1;break;},_=>return Err(Error::InvalidJson)}
+        match cursor.bytes.get(cursor.at).copied() {
+            Some(b',') => cursor.at += 1,
+            Some(b'}') => {
+                cursor.at += 1;
+                break;
+            }
+            _ => return Err(Error::InvalidJson),
+        }
     }
-    let id=id.ok_or(Error::MissingField)?;
-    if !identifier_valid(id){return Err(Error::InvalidIdentifier);}
-    if !matches!(scope.ok_or(Error::MissingField)?,b"os"|b"application"){return Err(Error::InvalidScope);}
-    if aliases==0{return Err(Error::MissingField);}
-    let target=target.ok_or(Error::MissingField)?;
-    let target_index=CAPABILITY_TARGETS.iter().position(|candidate|*candidate==target).ok_or(Error::InvalidTarget)?;
-    if covered[target_index] {return Err(Error::DuplicateTarget);}
-    covered[target_index]=true;
-    let dynamic=target.ends_with(ARGUMENT);
-    if target.contains(&b'{') && !dynamic{return Err(Error::InvalidTarget);}
-    let probe=AliasMatch{argument_start:0,argument_end:1,dynamic};
+    let id = id.ok_or(Error::MissingField)?;
+    if !identifier_valid(id) {
+        return Err(Error::InvalidIdentifier);
+    }
+    if !matches!(scope.ok_or(Error::MissingField)?, b"os" | b"application") {
+        return Err(Error::InvalidScope);
+    }
+    if aliases == 0 {
+        return Err(Error::MissingField);
+    }
+    let target = target.ok_or(Error::MissingField)?;
+    let target_index = CAPABILITY_TARGETS
+        .iter()
+        .position(|candidate| *candidate == target)
+        .ok_or(Error::InvalidTarget)?;
+    if covered[target_index] {
+        return Err(Error::DuplicateTarget);
+    }
+    covered[target_index] = true;
+    let dynamic = target.ends_with(ARGUMENT);
+    if target.contains(&b'{') && !dynamic {
+        return Err(Error::InvalidTarget);
+    }
+    let probe = AliasMatch {
+        argument_start: 0,
+        argument_end: 1,
+        dynamic,
+    };
     if dynamic {
-        let mut sample=[b'x';1];
-        command_for_target(target,probe,&mut sample)?;
-    } else { command_for_target(target,probe,b"")?; }
-    matched.map(|value|command_for_target(target,value,input.unwrap_or(b""))).transpose()
+        let mut sample = [b'x'; 1];
+        command_for_target(target, probe, &mut sample)?;
+    } else {
+        command_for_target(target, probe, b"")?;
+    }
+    matched
+        .map(|value| command_for_target(target, value, input.unwrap_or(b"")).map(|command| (command, target_index)))
+        .transpose()
 }
 
 // ------------------------=
 // FUNC: walk
 // DESC: Validates the complete schema before returning a resolved typed command.
 // ------------------=
-fn walk(bytes:&[u8],input:Option<&[u8]>)->Result<Option<Command>,Error>{
-    if bytes.is_empty()||bytes.len()>MAX_BYTES{return Err(Error::Capacity);}
-    let mut cursor=Cursor::new(bytes);cursor.take(b'{')?;
-    let mut schema=false;let mut version=false;let mut actions=false;let mut resolved=None;
-    let mut hashes=[0u64;MAX_ALIASES];let mut alias_count=0usize;
-    let mut covered=[false;CAPABILITY_TARGETS.len()];
-    loop{
-        cursor.whitespace();if cursor.bytes.get(cursor.at)==Some(&b'}'){cursor.at+=1;break;}
-        let key=cursor.string()?;cursor.take(b':')?;
-        match key{
-            b"schema"=>{schema=cursor.string()?==SCHEMA;if !schema{return Err(Error::UnsupportedSchema);}},
-            b"version"=>{version=cursor.number()?==1;if !version{return Err(Error::UnsupportedVersion);}},
-            b"actions"=>{actions=true;cursor.take(b'[')?;cursor.whitespace();
-                if cursor.bytes.get(cursor.at)==Some(&b']'){cursor.at+=1;}else{loop{
-                    let command=parse_action(&mut cursor,input,&mut hashes,&mut alias_count,&mut covered)?;
-                    if resolved.is_none(){resolved=command;}
-                    cursor.whitespace();match cursor.bytes.get(cursor.at).copied(){Some(b',')=>cursor.at+=1,Some(b']')=>{cursor.at+=1;break;},_=>return Err(Error::InvalidJson)}
-                }}},
-            _=>cursor.skip(1)?,
-        }
-        cursor.whitespace();match cursor.bytes.get(cursor.at).copied(){Some(b',')=>cursor.at+=1,Some(b'}')=>{cursor.at+=1;break;},_=>return Err(Error::InvalidJson)}
+fn walk(bytes: &[u8], input: Option<&[u8]>) -> Result<(Option<(Command, usize)>, [bool; CAPABILITY_TARGETS.len()]), Error> {
+    if bytes.is_empty() || bytes.len() > MAX_BYTES {
+        return Err(Error::Capacity);
     }
-    cursor.whitespace();if cursor.at!=bytes.len(){return Err(Error::InvalidJson);}
-    if !schema||!version||!actions||alias_count==0{return Err(Error::MissingField);}
-    if covered.iter().any(|present|!*present){return Err(Error::MissingCapability);}
-    Ok(resolved)
+    let mut cursor = Cursor::new(bytes);
+    cursor.take(b'{')?;
+    let mut schema = false;
+    let mut version = false;
+    let mut actions = false;
+    let mut resolved = None;
+    let mut hashes = [0u64; MAX_ALIASES];
+    let mut alias_count = 0usize;
+    let mut covered = [false; CAPABILITY_TARGETS.len()];
+    loop {
+        cursor.whitespace();
+        if cursor.bytes.get(cursor.at) == Some(&b'}') {
+            cursor.at += 1;
+            break;
+        }
+        let key = cursor.string()?;
+        cursor.take(b':')?;
+        match key {
+            b"schema" => {
+                schema = cursor.string()? == SCHEMA;
+                if !schema {
+                    return Err(Error::UnsupportedSchema);
+                }
+            }
+            b"version" => {
+                version = cursor.number()? == 1;
+                if !version {
+                    return Err(Error::UnsupportedVersion);
+                }
+            }
+            b"actions" => {
+                actions = true;
+                cursor.take(b'[')?;
+                cursor.whitespace();
+                if cursor.bytes.get(cursor.at) == Some(&b']') {
+                    cursor.at += 1;
+                } else {
+                    loop {
+                        let command = parse_action(
+                            &mut cursor,
+                            input,
+                            &mut hashes,
+                            &mut alias_count,
+                            &mut covered,
+                        )?;
+                        if resolved.is_none() {
+                            resolved = command;
+                        }
+                        cursor.whitespace();
+                        match cursor.bytes.get(cursor.at).copied() {
+                            Some(b',') => cursor.at += 1,
+                            Some(b']') => {
+                                cursor.at += 1;
+                                break;
+                            }
+                            _ => return Err(Error::InvalidJson),
+                        }
+                    }
+                }
+            }
+            _ => cursor.skip(1)?,
+        }
+        cursor.whitespace();
+        match cursor.bytes.get(cursor.at).copied() {
+            Some(b',') => cursor.at += 1,
+            Some(b'}') => {
+                cursor.at += 1;
+                break;
+            }
+            _ => return Err(Error::InvalidJson),
+        }
+    }
+    cursor.whitespace();
+    if cursor.at != bytes.len() {
+        return Err(Error::InvalidJson);
+    }
+    if !schema || !version || !actions || alias_count == 0 {
+        return Err(Error::MissingField);
+    }
+    // Version-one user maps predate typed settings mutations. Preserve their
+    // aliases while allowing the additive settings directory from this build.
+    if covered[..103].iter().any(|present| !*present) {
+        return Err(Error::MissingCapability);
+    }
+    Ok((resolved, covered))
 }
 
 // ------------------------=
 // FUNC: validate
 // DESC: Validates an edited mapping as complete, unambiguous JSON containing only typed implemented targets.
 // ------------------=
-pub fn validate(bytes:&[u8])->Result<(),Error>{walk(bytes,None).map(|_|())}
+pub fn validate(bytes: &[u8]) -> Result<(), Error> {
+    walk(bytes, None).map(|_| ())
+}
+
+// ------------------------=
+// FUNC: validate_registry
+// DESC: Validates the editable discovery dictionary against actual native targets without granting authority to its prose.
+// ------------------=
+pub fn validate_registry(bytes: &[u8]) -> Result<(), Error> {
+    if bytes.len() > MAX_BYTES { return Err(Error::Capacity); }
+    let mut cursor = Cursor::new(bytes);
+    cursor.take(b'{')?;
+    let mut schema = false;
+    let mut version = false;
+    let mut covered = [false; CAPABILITY_TARGETS.len()];
+    loop {
+        let key = cursor.string()?;
+        cursor.take(b':')?;
+        match key {
+            b"schema" => schema = cursor.string()? == b"infinityos.intelligence-service-registry",
+            b"version" => version = cursor.number()? == 1,
+            b"endpoints" => {
+                cursor.take(b'[')?;
+                loop {
+                    cursor.take(b'{')?;
+                    let mut target = None;
+                    loop {
+                        let key = cursor.string()?;
+                        cursor.take(b':')?;
+                        if key == b"target" { target = Some(cursor.string()?); } else { cursor.skip(1)?; }
+                        cursor.whitespace();
+                        if cursor.bytes.get(cursor.at) == Some(&b'}') { cursor.at += 1; break; }
+                        cursor.take(b',')?;
+                    }
+                    let target = target.ok_or(Error::MissingField)?;
+                    let index = CAPABILITY_TARGETS.iter().position(|value| *value == target).ok_or(Error::InvalidTarget)?;
+                    if covered[index] { return Err(Error::DuplicateTarget); }
+                    covered[index] = true;
+                    cursor.whitespace();
+                    if cursor.bytes.get(cursor.at) == Some(&b']') { cursor.at += 1; break; }
+                    cursor.take(b',')?;
+                }
+            }
+            _ => cursor.skip(1)?,
+        }
+        cursor.whitespace();
+        if cursor.bytes.get(cursor.at) == Some(&b'}') { cursor.at += 1; break; }
+        cursor.take(b',')?;
+    }
+    cursor.whitespace();
+    if cursor.at != bytes.len() { return Err(Error::InvalidJson); }
+    if !schema || !version { return Err(Error::UnsupportedSchema); }
+    if covered.iter().any(|present| !present) { return Err(Error::MissingCapability); }
+    Ok(())
+}
 
 // ------------------------=
 // FUNC: resolve
 // DESC: Resolves one voice or chat instruction from the current editable mapping without granting arbitrary execution.
 // ------------------=
-pub fn resolve(bytes:&[u8],input:&[u8])->Result<Option<Command>,Error>{walk(bytes,Some(input))}
+pub fn resolve(bytes: &[u8], input: &[u8]) -> Result<Option<Command>, Error> {
+    walk(bytes, Some(input)).map(|result| result.0.map(|matched| matched.0))
+}
 
-pub struct ConfiguredMap{bytes:[u8;MAX_BYTES],length:usize}
+// ------------------------=
+// FUNC: resolve_installed
+// DESC: Adds defaults only for capabilities absent from older maps, preserving edited aliases for every installed target.
+// ------------------=
+pub fn resolve_installed(bytes: &[u8], input: &[u8]) -> Result<Option<Command>, Error> {
+    let (resolved, covered) = walk(bytes, Some(input))?;
+    if let Some((command, _)) = resolved { return Ok(Some(command)); }
+    let (candidate, _) = walk(DEFAULT, Some(input))?;
+    Ok(candidate.filter(|(_, index)| *index >= 103 && !covered[*index]).map(|matched| matched.0))
+}
 
-impl ConfiguredMap{
+pub struct ConfiguredMap {
+    bytes: [u8; MAX_BYTES],
+    length: usize,
+}
+
+impl ConfiguredMap {
+    // ------------------------=
+    // FUNC: inference_directory
+    // DESC: Projects validated installed targets into model context; editable prose cannot grant execution authority.
+    // ------------------=
+    pub fn inference_directory(&self, out: &mut [u8]) -> Option<usize> {
+        let (_, covered) = walk(&self.bytes[..self.length], None).ok()?;
+        let mut length = 0;
+        for (index, target) in CAPABILITY_TARGETS.iter().enumerate() {
+            // Older maps inherit additive native capabilities, exactly as alias resolution does.
+            if !covered[index] && index < 103 { continue; }
+            let end = length + target.len() + 1;
+            let destination = out.get_mut(length..end)?;
+            destination[..target.len()].copy_from_slice(target);
+            destination[target.len()] = b'\n';
+            length = end;
+        }
+        Some(length)
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Creates an empty cache which will load the installed mapping before first use.
     // ------------------=
-    pub const fn new()->Self{Self{bytes:[0;MAX_BYTES],length:0}}
+    pub const fn new() -> Self {
+        Self {
+            bytes: [0; MAX_BYTES],
+            length: 0,
+        }
+    }
 
     // ------------------------=
     // FUNC: refresh
     // DESC: Reloads the editable System object and falls back to the build-time mapping only when storage is unavailable or invalid.
     // ------------------=
-    pub fn refresh(&mut self){
-        #[cfg(target_os="none")]
-        let loaded=crate::storage::ai_instruction_mapping_load(&mut self.bytes).ok()
-            .filter(|length|validate(&self.bytes[..*length]).is_ok());
-        #[cfg(not(target_os="none"))]
-        let loaded:Option<usize>=None;
-        self.length=if let Some(length)=loaded{length}else{
-            self.bytes[..DEFAULT.len()].copy_from_slice(DEFAULT);DEFAULT.len()
+    pub fn refresh(&mut self) {
+        #[cfg(target_os = "none")]
+        let loaded = crate::storage::ai_instruction_mapping_load(&mut self.bytes)
+            .ok()
+            .filter(|length| validate(&self.bytes[..*length]).is_ok());
+        #[cfg(not(target_os = "none"))]
+        let loaded: Option<usize> = None;
+        self.length = if let Some(length) = loaded {
+            length
+        } else {
+            self.bytes[..DEFAULT.len()].copy_from_slice(DEFAULT);
+            DEFAULT.len()
         };
     }
 
@@ -382,5 +803,7 @@ impl ConfiguredMap{
     // FUNC: resolve
     // DESC: Resolves against the latest validated installed mapping.
     // ------------------=
-    pub fn resolve(&self,input:&[u8])->Option<Command>{resolve(&self.bytes[..self.length],input).ok().flatten()}
+    pub fn resolve(&self, input: &[u8]) -> Option<Command> {
+        resolve_installed(&self.bytes[..self.length], input).ok().flatten()
+    }
 }

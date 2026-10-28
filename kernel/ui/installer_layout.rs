@@ -21,6 +21,46 @@ pub fn login_uses_legacy_animation(bytes: &[u8]) -> bool {
 }
 
 // ------------------------=
+// FUNC: login_animation_regions
+// DESC: Bounds authored motion damage and excludes live credential/action pixels from decorative repainting.
+// ------------------=
+pub fn login_animation_regions(template: &InstallerTemplate<'_>, width: usize, height: usize)
+    -> ([InstallerRect; 64], usize) {
+    let empty = InstallerRect { left: 0, top: 0, width: 0, height: 0 };
+    let mut regions = [empty; 64];
+    let Some(hero) = template.element(1, InstallerTemplateRole::ProgressHero) else { return (regions, 0); };
+    if hero.hidden || hero.opacity == 0 { return (regions, 0); }
+    regions[0] = scale_template_rect(hero.frame, width, height);
+    let mut count = 1;
+    for index in 0..template.element_count(1).unwrap_or(0) {
+        let Some(element) = template.layer_at(1, index) else { continue; };
+        if super::installer_template::login_action(&element).is_none() { continue; }
+        let cut = scale_template_rect(element.frame, width, height);
+        let mut next = [empty; 64];
+        let mut used = 0;
+        for region in &regions[..count] {
+            let l = region.left.max(cut.left);
+            let t = region.top.max(cut.top);
+            let r = (region.left + region.width).min(cut.left + cut.width);
+            let b = (region.top + region.height).min(cut.top + cut.height);
+            let pieces = if l < r && t < b {
+                [InstallerRect { height: t - region.top, ..*region },
+                 InstallerRect { top: b, height: region.top + region.height - b, ..*region },
+                 InstallerRect { top: t, height: b - t, width: l - region.left, ..*region },
+                 InstallerRect { left: r, top: t, width: region.left + region.width - r, height: b - t }]
+            } else { [*region, empty, empty, empty] };
+            for piece in pieces {
+                if piece.width == 0 || piece.height == 0 { continue; }
+                if used == next.len() { return ([empty; 64], 0); }
+                next[used] = piece; used += 1;
+            }
+        }
+        regions = next; count = used;
+    }
+    (regions, count)
+}
+
+// ------------------------=
 // FUNC: login_target_in
 // DESC: Hit-tests visible authentication controls in reverse paint order using their authored geometry.
 // ------------------=
@@ -135,12 +175,16 @@ pub fn configuration_network_row_rect_in(
     }
     let frame = content.frame;
     let gutter = frame.width * 4 / 100;
-    Some(scale_template_rect(InstallerTemplateRect {
-        x: frame.x + gutter,
-        y: frame.y + frame.height * 42 / 100 + index as u16 * (frame.height * 12 / 100),
-        width: frame.width.saturating_sub(2 * gutter),
-        height: (frame.height * 10 / 100).max(1),
-    }, width, height))
+    Some(scale_template_rect(
+        InstallerTemplateRect {
+            x: frame.x + gutter,
+            y: frame.y + frame.height * 42 / 100 + index as u16 * (frame.height * 20 / 100),
+            width: frame.width.saturating_sub(2 * gutter),
+            height: (frame.height * 18 / 100).max(1),
+        },
+        width,
+        height,
+    ))
 }
 pub const CONFIGURATION_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/configuration-screens.iuit");
@@ -436,10 +480,7 @@ pub fn configuration_template_input_variable(step: usize) -> InstallerTemplateVa
     let value = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES)
         .ok()
         .and_then(|template| {
-            template.element(
-                step.saturating_add(1) as u8,
-                InstallerTemplateRole::Input,
-            )
+            template.element(step.saturating_add(1) as u8, InstallerTemplateRole::Input)
         })
         .filter(|element| !element.hidden)
         .map(|element| element.input_variable)
@@ -464,9 +505,7 @@ pub fn configuration_template_step_for_input_variable(
     for screen in 1..=template.screen_count() as u8 {
         if template
             .element(screen, InstallerTemplateRole::Input)
-            .is_some_and(|element| {
-                !element.hidden && element.input_variable == variable as u8
-            })
+            .is_some_and(|element| !element.hidden && element.input_variable == variable as u8)
         {
             return Some(screen.saturating_sub(1) as usize);
         }

@@ -234,7 +234,10 @@ fn merge(
         }
     }
     let counts = fabric::observed::summary(m, resources, now);
-    row.verified = counts[49]; row.offline = counts[50]; row.stale = counts[51]; row.corrupt = counts[52];
+    row.verified = counts[49];
+    row.offline = counts[50];
+    row.stale = counts[51];
+    row.corrupt = counts[52];
     row.healing = counts[53] != 0;
     s.objects[index] = Some(row);
     s.count = s.objects.iter().flatten().count();
@@ -370,9 +373,26 @@ mod tests {
         assert_eq!(s.placements[0].unwrap().state, 3);
         let wire = fabric::observed::summary(&m, &resources, 10);
         let row = s.objects[0].unwrap();
-        assert_eq!((row.desired,row.verified,row.offline,row.stale,row.corrupt,row.healing),(wire[48],wire[49],wire[50],wire[51],wire[52],wire[53]!=0));
+        assert_eq!(
+            (
+                row.desired,
+                row.verified,
+                row.offline,
+                row.stale,
+                row.corrupt,
+                row.healing
+            ),
+            (
+                wire[48],
+                wire[49],
+                wire[50],
+                wire[51],
+                wire[52],
+                wire[53] != 0
+            )
+        );
         assert_eq!(m.placements[0].unwrap().state, PlacementState::Verified);
-        assert_eq!(fabric::observed::summary(&m,&resources,9)[49],1);
+        assert_eq!(fabric::observed::summary(&m, &resources, 9)[49], 1);
         let before = s;
         merge(&mut s, &m, &resources, 10);
         assert!(s == before);

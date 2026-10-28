@@ -3,6 +3,8 @@
 mod ui;
 #[path = "editor-source-frame-tests.rs"]
 mod source_frame_tests;
+#[path = "python-generation-context-tests.rs"]
+mod python_generation_context_tests;
 use ui::{
     app_assistant::{self as ai, Action, Target},
     editor_tools::{highlight, Language, Token},
@@ -383,6 +385,42 @@ fn panels() {
         .is_none());
 }
 // ------------------------=
+// FUNC: main
+// DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
+// ------------------=
+fn main() {
+    python_generation_context_tests::run();
+    surgical_source_transactions();
+    source_frame_tests::run();
+    python_and_existing_source_workflows();
+    raw_python_generation_frames();
+    prefaced_source_generation_frames();
+    continued_source_transactions();
+    generated_repairs_preserve_source_identity();
+    rejected_creation_retains_terminal_state();
+    terminal_generation_failure_is_preserved();
+    generated_redraw_batching();
+    application_creation();
+    current_document_repair();
+    runtime_repair_requires_current_source_and_never_replays();
+    runtime_repair_rejects_unchanged_source();
+    assistant_controls();
+    contextual_searches();
+    generated_editor_actions();
+    attached_assistant_damage();
+    caret_damage_is_bounded();
+    menus_and_viewport();
+    editing();
+    dirty_document_lifecycle();
+    syntax();
+    panels();
+    ai::reset();
+    for id in 0..ai::PANEL_SLOTS {
+        assert!(ai::read(id) == ai::Panel::new());
+    }
+}
+
+// ------------------------=
 // FUNC: runtime_repair_requires_current_source_and_never_replays
 // DESC: Exercises shared retry limits, stale-source rejection, atomic preservation and validation-only authority after real runtime feedback.
 // ------------------=
@@ -510,35 +548,200 @@ fn runtime_repair_rejects_unchanged_source() {
 }
 
 // ------------------------=
-// FUNC: main
-// DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
+// FUNC: continued_source_transactions
+// DESC: Drives real panel parsing and bounded editor delivery across arbitrary mid-token, indentation and literal continuations without duplicate bytes or premature compile admission.
 // ------------------=
-fn main() {
-    runtime_repair_requires_current_source_and_never_replays();
-    runtime_repair_rejects_unchanged_source();
-    source_frame_tests::run();
-    python_and_existing_source_workflows();
-    raw_python_generation_frames();
-    generated_repairs_preserve_source_identity();
-    rejected_creation_retains_terminal_state();
-    terminal_generation_failure_is_preserved();
-    generated_redraw_batching();
-    application_creation();
-    current_document_repair();
-    assistant_controls();
-    contextual_searches();
-    generated_editor_actions();
-    attached_assistant_damage();
-    caret_damage_is_bounded();
-    menus_and_viewport();
-    editing();
-    dirty_document_lifecycle();
-    syntax();
-    panels();
-    ai::reset();
-    for id in 0..ai::PANEL_SLOTS {
-        assert!(ai::read(id) == ai::Panel::new());
+fn continued_source_transactions() {
+    use ai::GenerationStatus as S;
+    // ------------------------=
+    // FUNC: panel
+    // DESC: Creates one explicitly authorized Python generation proposal with stable request and source identities.
+    // ------------------=
+    fn panel() -> ai::Panel {
+        let mut panel = ai::Panel::new(); let request = b"Create a chess game in Python";
+        panel.request[..request.len()].copy_from_slice(request); panel.request_len = request.len();
+        panel.generation = S::Running; panel.workflow_goal = Some(19); panel.document_revision = 7;
+        panel
     }
+    // ------------------------=
+    // FUNC: drain
+    // DESC: Applies only production-selected contiguous preview ranges, asserting the same delivery cap used by the installed editor.
+    // ------------------=
+    fn drain(panel: &mut ai::Panel, document: &mut TextDocument) {
+        while let Some(range) = panel.stream.ready(&panel.argument[..panel.argument_len], None, true) {
+            assert!(range.len() <= ai::generation_stream::MAX_FLUSH_BYTES);
+            assert!(document.append_generation_preview(&panel.argument[range.clone()], range.start == 0));
+            assert!(panel.stream.committed(range.end, None));
+        }
+    }
+    let source = b"import math\ndef calculate(value):\n    text = '''literal\nEND_ACTION\ninside data'''\n    return value + 1\nprint(calculate(4))";
+    for cut in 1..source.len() {
+        let mut panel = panel(); let mut document = TextDocument::new();
+        let first = [b"REPLACE_COMPILE\n".as_slice(), &source[..cut]].concat();
+        panel.stream_model_output(2, &first); drain(&mut panel, &mut document);
+        assert!(!panel.accept_for_owner(2, &first, true));
+        assert_eq!(panel.pending, Action::None); assert!(!panel.apply_generated_compile_requested());
+        assert!(panel.prepare_source_continuation(&first), "cut {cut}");
+        assert_eq!(panel.continuation_source(), &source[..cut]);
+        assert_eq!(panel.continuation_count(), 1); assert_eq!(panel.workflow_goal, Some(19));
+        assert_eq!(panel.document_revision, 7);
+        let mut prompt = [0; 16384];
+        assert!(panel.source_continuation_prompt(&mut prompt).is_some());
+        assert!(panel.source_continuation_prompt(&mut [0; 8]).is_none());
+        drain(&mut panel, &mut document);
+        let second = [b"CONTINUE_SOURCE\n".as_slice(), &source[cut..], b"\nEND_ACTION"].concat();
+        for end in 1..=second.len() {
+            panel.stream_model_output(2, &second[..end]); drain(&mut panel, &mut document);
+            assert_eq!(panel.generation, S::Running, "cut {cut}, end {end}");
+            assert_eq!(panel.pending, Action::None);
+        }
+        assert_eq!(panel.completed_generation_output_length(&second), Some(second.len()));
+        assert!(panel.accept_for_owner(2, &second, true)); panel.generation = S::Complete;
+        drain(&mut panel, &mut document);
+        assert_eq!(document.bytes(), source); assert!(panel.apply_generated_compile_requested());
+    }
+    let mut bounded = panel();
+    assert!(bounded.prepare_source_continuation(b"REPLACE_COMPILE\nvalue = "));
+    assert!(bounded.prepare_source_continuation(b"CONTINUE_SOURCE\n1\nvalue += "));
+    assert!(bounded.prepare_source_continuation(b"CONTINUE_SOURCE\n2\nprint("));
+    assert_eq!(bounded.continuation_source(), b"value = 1\nvalue += 2\nprint(");
+    assert!(!bounded.prepare_source_continuation(b"CONTINUE_SOURCE\nvalue"));
+    assert_eq!(bounded.generation, S::Failed); assert_eq!(bounded.pending, Action::None);
+    let mut stalled = panel(); assert!(stalled.prepare_source_continuation(b"REPLACE_COMPILE\nvalue = "));
+    assert!(!stalled.prepare_source_continuation(b"CONTINUE_SOURCE\n")); assert_eq!(stalled.generation, S::Failed);
+    let mut stopped = panel(); assert!(stopped.prepare_source_continuation(b"REPLACE_COMPILE\nvalue = "));
+    stopped.cancel_delivery(); assert!(stopped.continuation_source().is_empty());
+    assert!(!stopped.prepare_source_continuation(b"CONTINUE_SOURCE\n1"));
+    stopped.reset_delivery(); assert_eq!(stopped.continuation_count(), 0); assert_eq!(stopped.argument_len, 0);
+    assert!(!stopped.stream_model_output(2, b"CONTINUE_SOURCE\n1\nEND_ACTION").progressed);
+    assert_eq!(stopped.argument_len, 0); assert_eq!(stopped.pending, Action::None);
+    for invalid in [b"REPLACE_COMPILE\nprint(1)".as_slice(), b"```python\nprint(1)", b"CONTINUE_SOURCE\nREPLACE_COMPILE\nprint(1)"] {
+        let mut bad = panel(); assert!(bad.prepare_source_continuation(b"REPLACE_COMPILE\nvalue = 1\n"));
+        assert!(!bad.accept_for_owner(2, invalid, true)); assert_eq!(bad.pending, Action::None);
+    }
+    let mut repeated = panel();
+    let prefix = b"import math\nvalue = math.sqrt(16)\nprint(value)\n";
+    assert!(repeated.prepare_source_continuation(&[b"REPLACE_COMPILE\n".as_slice(), prefix].concat()));
+    let retained=repeated.argument[..repeated.argument_len].to_vec();
+    for end in 0..prefix.len() {
+        assert!(!repeated.stream_model_output(2, &[b"CONTINUE_SOURCE\n".as_slice(), &prefix[..end]].concat()).progressed);
+        assert_eq!(repeated.generation,S::Running);
+        assert_eq!(&repeated.argument[..repeated.argument_len],retained.as_slice());
+    }
+    repeated.stream_model_output(2, &[b"CONTINUE_SOURCE\n".as_slice(), prefix].concat());
+    assert_eq!(repeated.generation, S::Failed);
+    for invalid in ["REPLACE_COMPILE\nprint('♟')".as_bytes().to_vec(),
+        [b"REPLACE_COMPILE\n".as_slice(), &vec![b'x'; ai::GENERATED_SOURCE_CAPACITY + 1]].concat()] {
+        let mut bad = panel(); bad.stream_model_output(2, &invalid);
+        assert_eq!(bad.generation, S::Failed); assert_eq!(bad.pending, Action::None); assert!(bad.response_len > 0);
+    }
+    // Existing source must remain untouched while a continuation is incomplete,
+    // then apply exactly one revision-fenced and undoable transaction.
+    let original = b"value = 1\nprint(value)"; let mut document = TextDocument::new(); assert!(document.open(original));
+    let mut update = ai::Panel::new();
+    assert!(update.queue_user_update(b"update current file to add one", 7, original,
+        ai::editor_compile_intent::SourceLanguage::Python, 19)); update.generation = S::Running;
+    assert!(update.prepare_source_continuation(b"REPLACE_COMPILE\nvalue = 1\nvalue += "));
+    assert!(!update.apply_existing_source(&mut document, 7, None)); assert_eq!(document.bytes(), original);
+    assert!(update.accept_for_owner(2, b"CONTINUE_SOURCE\n1\nprint(value)\nEND_ACTION", true)); update.generation = S::Complete;
+    assert!(!update.apply_existing_source(&mut document, 8, None)); assert_eq!(document.bytes(), original);
+    assert!(update.apply_existing_source(&mut document, 7, None)); assert_eq!(document.bytes(), b"value = 1\nvalue += 1\nprint(value)");
+    assert!(document.undo()); assert_eq!(document.bytes(), original);
+}
+
+// ------------------------=
+// FUNC: surgical_source_transactions
+// DESC: Exercises completed editor updates, stale/cancelled rejection, stable untouched bytes/caret, atomic undo and oversized rollback.
+// ------------------=
+fn surgical_source_transactions() {
+    let original = b"# keep this comment\ndef value():\n    return 1\n\ndef untouched():\n    return 42\n";
+    let changed = b"# keep this comment\ndef value():\n    return 12345\n\ndef untouched():\n    return 42\n";
+    let mut document = TextDocument::new();
+    assert!(document.open(original));
+    document.set_cursor(original.len() - 3);
+    let mut panel = ai::Panel::new();
+    assert!(panel.queue_user_update(b"update current file to return a larger value", 7, original,
+        ai::editor_compile_intent::SourceLanguage::Python, 3));
+    panel.argument[..changed.len()].copy_from_slice(changed);
+    panel.argument_len = changed.len();
+    panel.pending = Action::ReplaceCompile;
+    for state in [ai::GenerationStatus::Queued, ai::GenerationStatus::Running,
+        ai::GenerationStatus::Cancelled, ai::GenerationStatus::Failed] {
+        panel.generation = state;
+        assert!(!panel.apply_existing_source(&mut document, 7, Some(1)));
+        assert_eq!(document.bytes(), original);
+        assert!(document.is_saved());
+    }
+    panel.generation = ai::GenerationStatus::Complete;
+    assert!(!panel.apply_existing_source(&mut document, 8, Some(1)));
+    assert_eq!(document.bytes(), original);
+    assert!(panel.apply_existing_source(&mut document, 7, Some(1)));
+    assert_eq!(document.bytes(), changed);
+    assert_eq!(document.cursor(), changed.len() - 3);
+    assert_eq!(panel.stream.delivered, changed.len());
+    assert_eq!(panel.stream.flushes, 1);
+    assert!(!panel.apply_existing_source(&mut document, 7, Some(2)));
+    assert!(document.undo());
+    assert_eq!(document.bytes(), original);
+    assert_eq!(document.cursor(), original.len() - 3);
+    assert!(document.is_saved());
+    assert!(!document.undo());
+    assert!(document.redo());
+    assert_eq!(document.bytes(), changed);
+    assert!(!document.apply_source_update(&[b'x'; DOCUMENT_CAPACITY + 1]));
+    assert!(!document.apply_source_update(b"bad\0source"));
+    assert_eq!(document.bytes(), changed);
+    assert!(document.apply_source_update(changed));
+    assert!(document.undo());
+    assert_eq!(document.bytes(), original);
+
+    // A current-target update uses the live buffer while separately retaining
+    // its exact saved base. Undo history eviction must not erase that base.
+    assert!(document.saved_source_matches(original));
+    assert!(!document.saved_source_matches(changed));
+    document.set_cursor(0);
+    assert!(document.replace_selection(b"# local unsaved work\n"));
+    let dirty = document.bytes().to_vec();
+    assert!(!document.is_saved());
+    assert!(document.saved_source_matches(original));
+    assert!(!document.saved_source_matches(&dirty));
+    let mut dirty_changed = b"# local unsaved work\n".to_vec();
+    dirty_changed.extend_from_slice(changed);
+    assert!(panel.queue_user_update(b"update current file to return a larger value", 9, &dirty,
+        ai::editor_compile_intent::SourceLanguage::Python, 4));
+    panel.argument[..dirty_changed.len()].copy_from_slice(&dirty_changed);
+    panel.argument_len = dirty_changed.len();
+    panel.pending = Action::ReplaceCompile;
+    panel.generation = ai::GenerationStatus::Complete;
+    assert!(!panel.apply_existing_source(&mut document, 10, Some(3)));
+    assert_eq!(document.bytes(), dirty);
+    assert!(panel.apply_existing_source(&mut document, 9, Some(3)));
+    assert_eq!(document.bytes(), dirty_changed);
+    assert!(document.saved_source_matches(original));
+    assert!(document.undo());
+    assert_eq!(document.bytes(), dirty);
+    assert!(!document.is_saved());
+    assert!(document.redo());
+    document.save();
+    assert!(document.saved_source_matches(&dirty_changed));
+    assert!(!document.saved_source_matches(original));
+    assert!(document.undo());
+    assert!(document.saved_source_matches(&dirty_changed));
+    document.clear();
+    assert!(document.saved_source_matches(b""));
+    assert!(!document.saved_source_matches(original));
+
+    // Full-length replacements must finish in one transaction, not remain
+    // pending behind the 256-byte incremental-generation flush limit.
+    assert!(document.open(&[b'a'; 1024]));
+    panel.document_revision = 7;
+    panel.stream = ai::generation_stream::Stream::new();
+    panel.argument[..1024].fill(b'b'); panel.argument_len = 1024;
+    assert!(panel.apply_existing_source(&mut document, 7, Some(3)));
+    assert_eq!(document.bytes(), &[b'b'; 1024]);
+    assert_eq!(panel.stream.delivered, 1024);
+    assert!(document.undo());
+    assert_eq!(document.bytes(), &[b'a'; 1024]);
 }
 
 // ------------------------=
@@ -736,6 +939,13 @@ fn raw_python_generation_frames() {
     for source in [b"def hello_world():\n    print(\"Hello, World!\")\n\nhello_world()".as_slice(),
         b"print(\"Hello, World!\")",b"# don't interpret this comment\nmessage = 'hello'\nprint(message)",
         b"text = '''literal\nEND_ACTION\ninside data'''\nprint(text)"] {
+        let mut raw=prototype;
+        assert!(!raw.accept_generated(source,true,false));
+        assert_eq!(raw.pending,Action::None);
+        assert!(raw.accept_generated(source,true,true));
+        assert_eq!(&raw.argument[..raw.argument_len],source);
+        assert!(!raw.accept_generated(&[b"REPLACE_COMPILE\n".as_slice(),source].concat(),true,true));
+        assert_eq!(raw.pending,Action::None);
         for (prefix,suffix) in [(b"".as_slice(),b"\nEND_ACTION".as_slice()),(b"```python\n",b"\n```\nEND_ACTION")] {
             let response=[prefix,source,suffix].concat();let mut panel=prototype;
             let mut document=TextDocument::new();
@@ -764,6 +974,151 @@ fn raw_python_generation_frames() {
         assert!(!panel.accept_generated(b"print(1)\nEND_ACTION",true,true));
         assert_eq!(panel.pending,Action::None);
     }
+}
+
+// ------------------------=
+// FUNC: prefaced_source_generation_frames
+// DESC: Verifies bounded introductory prose stays outside exact source bytes while language authority, single-frame admission, cancellation and atomic repairs remain enforced.
+// ------------------=
+fn prefaced_source_generation_frames() {
+    use ai::GenerationStatus as S;
+    // ------------------------=
+    // FUNC: panel
+    // DESC: Creates an authorized generation fixture using the production request language.
+    // ------------------=
+    fn panel(python: bool) -> ai::Panel {
+        let request = if python { b"Create Hello world in Python".as_slice() }
+            else { b"Create a simple calculator app".as_slice() };
+        let mut panel = ai::Panel::new();
+        panel.request[..request.len()].copy_from_slice(request);
+        panel.request_len = request.len();
+        panel.generation = S::Running;
+        panel
+    }
+    // ------------------------=
+    // FUNC: drain
+    // DESC: Delivers only production-selected contiguous source ranges into a real editor document.
+    // ------------------=
+    fn drain(panel: &mut ai::Panel, document: &mut TextDocument) {
+        while let Some(range) = panel.stream.ready(&panel.argument[..panel.argument_len], None, true) {
+            assert!(range.len() <= ai::generation_stream::MAX_FLUSH_BYTES);
+            assert!(document.append_generation_preview(&panel.argument[range.clone()], range.start == 0));
+            assert!(panel.stream.committed(range.end, None));
+        }
+    }
+    for (python, fence, wrong_fence, source) in [
+        (false, b"```c\n".as_slice(), b"```python\n".as_slice(),
+            b"#include <stdio.h>\n/*\n```\nEND_ACTION\nREPLACE_COMPILE\n*/\nint main(void) { puts(\"END_ACTION\"); return 0; }".as_slice()),
+        (true, b"```python\n".as_slice(), b"```c\n".as_slice(),
+            b"value = '''data\n```\nEND_ACTION\nREPLACE_COMPILE\n'''\nprint(value)".as_slice()),
+    ] {
+        let intro = b"Here is the updated program:\n\n";
+        let opening = [intro.as_slice(), fence].concat();
+        let response = [opening.as_slice(), source, b"\n```\nEND_ACTION"].concat();
+        assert!(ai::source_frame::inspect(&response).is_none());
+        assert!(ai::source_frame::inspect_python(&response).is_none());
+        let final_frame = ai::source_frame::inspect_generated(&response, python).unwrap();
+        assert_eq!(final_frame.source, source);
+        assert!(final_frame.framed && !final_frame.malformed && !final_frame.continuable);
+        assert!(final_frame.completed_end.is_some());
+        let mut generated = panel(python);
+        let mut document = TextDocument::new();
+        for end in 1..=response.len() {
+            generated.stream_model_output(2, &response[..end]);
+            drain(&mut generated, &mut document);
+            assert_ne!(generated.generation, S::Failed);
+            assert_eq!(generated.pending, Action::None);
+            assert!(source.starts_with(document.bytes()));
+            if end <= opening.len() { assert!(document.bytes().is_empty()); }
+        }
+        assert_eq!(document.bytes(), source);
+        assert!(generated.accept_generated(&response, true, true));
+        assert_eq!(&generated.argument[..generated.argument_len], source);
+        assert_eq!(generated.pending, Action::ReplaceCompile);
+
+        for preamble in [vec![b'x'; 511], b"intro\n".repeat(7)] {
+            let valid = [preamble.as_slice(), b"\n", fence, source, b"\n```"].concat();
+            let frame = ai::source_frame::inspect_generated(&valid, python).unwrap();
+            assert_eq!(frame.source, source);
+            assert!(frame.completed_end.is_some() && !frame.malformed);
+        }
+        let too_long = [vec![b'x'; 512], b"\n".to_vec(), fence.to_vec(),
+            source.to_vec(), b"\n```".to_vec()].concat();
+        let too_many_lines = [b"intro\n".repeat(9), fence.to_vec(), source.to_vec(), b"\n```".to_vec()].concat();
+        for invalid in [
+            [intro.as_slice(), source, b"\nEND_ACTION"].concat(),
+            [intro.as_slice(), wrong_fence, source, b"\n```"].concat(),
+            [intro.as_slice(), b"```\n", source, b"\n```"].concat(),
+            [intro.as_slice(), b"```javascript\n", source, b"\n```"].concat(),
+            [intro.as_slice(), b"REPLACE_COMPILE\n", fence, source, b"\n```"].concat(),
+            [intro.as_slice(), b"CHAT\n", fence, source, b"\n```"].concat(),
+            [intro.as_slice(), b"END_ACTION\n", fence, source, b"\n```"].concat(),
+            [intro.as_slice(), source, b"\n", fence, source, b"\n```"].concat(),
+            [opening.as_slice(), source, b"\n```\n", fence, source, b"\n```"].concat(),
+            [response.as_slice(), b"\nREPLACE_COMPILE\n", source, b"\nEND_ACTION"].concat(),
+            [response.as_slice(), b"\nEND_ACTION"].concat(),
+            [opening.as_slice(), source, b"\n```\nAdditional explanation."].concat(),
+            too_long, too_many_lines,
+        ] {
+            let frame = ai::source_frame::inspect_generated(&invalid, python);
+            assert!(frame.is_none_or(|frame| frame.malformed && frame.completed_end.is_none()));
+            let mut rejected = panel(python);
+            assert!(rejected.completed_generation_output_length(&invalid).is_none());
+            assert!(!rejected.accept_generated(&invalid, true, true));
+            assert_eq!(rejected.pending, Action::None);
+        }
+        for end in 1..opening.len() {
+            let mut stopped = panel(python);
+            assert!(!stopped.stream_model_output(2, &response[..end]).progressed);
+            stopped.cancel_delivery();
+            assert!(!stopped.stream_model_output(2, &response).progressed);
+            assert_eq!(stopped.argument_len, 0);
+            assert_eq!(stopped.pending, Action::None);
+        }
+        let mut stopped = panel(python);
+        let mut partial = TextDocument::new();
+        stopped.stream_model_output(2, &response[..opening.len() + 12]);
+        drain(&mut stopped, &mut partial);
+        let visible = partial.bytes().to_vec();
+        stopped.cancel_delivery();
+        assert!(!stopped.stream_model_output(2, &response).progressed);
+        drain(&mut stopped, &mut partial);
+        assert_eq!(partial.bytes(), visible);
+        stopped.reset_delivery(); stopped.generation = S::Running;
+        stopped.stream_model_output(2, &response);
+        drain(&mut stopped, &mut partial);
+        assert_eq!(partial.bytes(), source);
+
+        let mut repair = panel(python);
+        repair.generation = S::Complete; repair.document_revision = 7;
+        repair.source_binding = Some(([4;16],2)); repair.workflow_goal = Some(9);
+        let request = repair.request[..repair.request_len].to_vec();
+        assert!(repair.queue_runtime_repair(&request,7,7,b"actual native failure diagnostics"));
+        assert!(repair.preserves_existing_source() && !repair.permits_generated_launch());
+        repair.generation = S::Running;
+        let original = if python { b"print(0)".as_slice() } else { b"int main(void) { return 1; }".as_slice() };
+        let mut existing = TextDocument::new(); assert!(existing.open(original));
+        for end in 1..=response.len() {
+            repair.stream_model_output(2,&response[..end]);
+            assert!(!repair.apply_existing_source(&mut existing,7,None));
+            assert_eq!(existing.bytes(),original);
+        }
+        assert!(repair.accept_generated(&response,true,true));
+        repair.generation = S::Complete;
+        assert!(repair.apply_existing_source(&mut existing,7,None));
+        assert_eq!(existing.bytes(),source);
+        assert!(!repair.permits_generated_launch());
+        assert!(existing.undo()); assert_eq!(existing.bytes(),original);
+    }
+    let mut conversation = ai::Panel::new();
+    let request = b"Explain this program";
+    conversation.request[..request.len()].copy_from_slice(request);
+    conversation.request_len = request.len();
+    let output = b"Here is an example:\n```python\nprint(1)\n```";
+    assert!(!conversation.stage_generated_source(output));
+    assert!(!conversation.accept_generated(output,true,true));
+    assert_eq!(conversation.pending,Action::None);
+    assert_eq!(conversation.argument_len,0);
 }
 
 // ------------------------=
@@ -931,7 +1286,7 @@ fn application_creation() {
         assert!(!panel.apply_generated_compile_requested());
         panel.generation=ai::GenerationStatus::Complete;
         assert!(panel.apply_generated_compile_requested());
-        assert_eq!(&panel.response[..panel.response_len], b"Source generation complete. Applying it to the editor, saving it in Documents, and starting native compilation.");
+        assert_eq!(panel.pending, Action::ReplaceCompile);
         assert_eq!(panel.take_action(9),Action::None);
         assert!(panel.accept_for_owner(2,b"REPLACE\nint main(void){return 7;}\nEND_ACTION",true));
         assert_eq!(panel.take_action(8),Action::ReplaceCompile);
@@ -941,6 +1296,8 @@ fn application_creation() {
             assert!(!panel.accept_for_owner(2,source,false));
             assert!(!panel.accept_for_owner(1,source,true));
             assert!(panel.accept_for_owner(2,source,true));
+            let complete=[source,b"\nEND_ACTION"].concat();
+            assert!(panel.accept_for_owner(2,&complete,true));
             assert_eq!(panel.take_action(8),Action::ReplaceCompile);
             assert_eq!(panel.take_action(8),Action::None);
         }

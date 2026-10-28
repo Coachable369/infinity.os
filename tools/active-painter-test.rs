@@ -92,6 +92,7 @@ fn luminous_strokes_batch_damage_without_changing_pixels() {
                 fast_motion_frame: false,
                 submissions: 0,
                 recording_surface,
+                template_typography: [0; 3],
             };
             let mut reference = display;
             reference.buffer = expected.as_mut_ptr();
@@ -373,6 +374,7 @@ fn main() {
     if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
     if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}
     if std::env::args().any(|arg|arg=="--universal-frames-only") {universal_window_frame_pixels();return;}
+    if std::env::args().any(|arg|arg=="--editor-terminal-only") {editor_terminal_pixels();return;}
     if std::env::args().any(|arg|arg=="--ai-widget-only") {
         ai_widget_tests::verify();return;
     }
@@ -388,8 +390,8 @@ fn main() {
     if std::env::args().any(|arg|arg=="--window-controls-only") {
         window_controls_test();window_control_states_proof();return;
     }
-    configuration_wizard_render::verify();
     settings_native_render_tests::verify();
+    configuration_wizard_render::verify();
     window_substrate_pixels();
     universal_window_frame_pixels();
     precision_surface_benchmark();
@@ -685,6 +687,48 @@ fn universal_window_fallback_entry(display:&mut DisplayDevice,paints:&mut usize)
 // DESC: Ensures cached and uncached application paths cannot lose their OS-owned corner artwork on update.
 // ------------------=
 fn universal_window_frame_regression() { universal_window_frame_pixels(); }
+
+// ------------------------=
+// FUNC: editor_terminal_pixels
+// DESC: Captures production dock pixels and verifies that expansion reserves source space without painting outside the window.
+// ------------------=
+fn editor_terminal_pixels(){
+    use std::io::Write;
+    use ui::editor_chrome::terminal;
+    use ui::editor_tools::{self,preferences::{self,Preferences}};
+    preferences::publish(Preferences::new());
+    let mut view=editor_tools::Presentation::new();view.language=editor_tools::Language::Python;
+    view.filename[..7].copy_from_slice(b"main.py");view.filename_len=7;
+    view.path[..31].copy_from_slice(b"/home/default/documents/main.py");view.path_len=31;
+    editor_tools::publish(view);
+    terminal::mutate(|state|{*state=terminal::State::new();state.preferences.open=true;state.focused=true;
+        state.append(b"$ python /home/default/documents/main.py\nName: Aurelius\nHello, Aurelius!\nPython completed successfully.\n");
+        state.input[..11].copy_from_slice(b"pip list -v");state.input_length=11;state.cursor=11;});
+    let(width,height)=(1280,800);let window=ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(30,35,940,900,false);
+    let mut pixels=vec![0x030201u32;width*height];
+    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography: [0; 3], recording_surface: false};
+    display.editor_window(window,b"name = input(\"Name: \")\nprint(f\"Hello, {name}!\")\n",0,true,false,1);
+    let g=ui::editor_chrome::Layout::new(window.window,1,false,editor_tools::Field::None);
+    assert_eq!(g.body.bottom(),g.terminal.panel.y);assert!(g.body.height>=72);
+    std::fs::create_dir_all("builds/validation/editor").unwrap();let mut file=std::fs::File::create("builds/validation/editor/terminal.ppm").unwrap();
+    write!(file,"P6\n{width} {height}\n255\n").unwrap();for p in &pixels{file.write_all(&[*p as u8,(*p>>8)as u8,(*p>>16)as u8]).unwrap();}
+    file.flush().unwrap();
+    // The shared AI adorner intentionally lives outside the window. Compare
+    // unchanged chrome against the same render with only the terminal collapsed.
+    let mut baseline=vec![0x030201u32;width*height];display.buffer=baseline.as_mut_ptr();
+    terminal::mutate(|state|state.preferences.open=false);
+    display.editor_window(window,b"name = input(\"Name: \")\nprint(f\"Hello, {name}!\")\n",0,true,false,1);
+    for y in 0..height{for x in 0..width{if !window.window.contains(ui::geometry::Point{x:x as i32,y:y as i32}){assert_eq!(pixels[y*width+x],baseline[y*width+x],"terminal changed exterior pixel {x},{y}");}}}
+    // Exercise the minimum practical editor width with the same real painter.
+    terminal::mutate(|state|state.preferences.open=true);
+    let narrow=ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(40,35,440,900,false);
+    baseline.fill(0x030201);display.editor_window(narrow,b"print(42)\n",0,true,false,1);
+    let g=ui::editor_chrome::Layout::new(narrow.window,1,false,editor_tools::Field::None);
+    assert!(g.terminal.run.right()<=g.terminal.panel.right()&&g.terminal.toggle.right()<=g.terminal.run.x);
+    let mut file=std::fs::File::create("builds/validation/editor/terminal-narrow.ppm").unwrap();write!(file,"P6\n{width} {height}\n255\n").unwrap();
+    for p in baseline{file.write_all(&[p as u8,(p>>8)as u8,(p>>16)as u8]).unwrap();}
+    terminal::mutate(|state|*state=terminal::State::new());editor_tools::publish(editor_tools::Presentation::new());
+}
 
 // ------------------------=
 // FUNC: editor_streaming_benchmark

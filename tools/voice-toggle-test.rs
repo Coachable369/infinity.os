@@ -534,6 +534,13 @@ mod voice_output {
         Ok(())
     }
     // ------------------------=
+    // FUNC: submit_span
+    // DESC: Records buffered synthesis admission; the fixture publishes Buffered when that job completes rather than starting DMA.
+    // ------------------=
+    pub fn submit_span(owner:SecurityIdentity,cap:u64,text:&[u8],start:usize,end:usize,final_span:bool)->Result<(),()>{
+        submit_progressive_span(owner,cap,text,start,end,final_span)
+    }
+    // ------------------------=
     // FUNC: seal_buffered
     // DESC: Starts deterministic playback after every response span is prepared.
     // ------------------=
@@ -714,8 +721,8 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(PHRASES.lock().unwrap().len(),before);
     // A slow, unpunctuated stream does not manufacture a spoken pause at the
-    // old 24/80-byte cutoffs. Its hard provider bound still starts playback
-    // before the complete answer, without waiting indefinitely for punctuation.
+    // old 24/80-byte cutoffs. Its hard provider bound prepares audio but keeps
+    // the unfinished phrase resident until the natural ending is available.
     for available in [24,32,80,159] {
         VISIBLE.store(available,Ordering::SeqCst);
         conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
@@ -727,7 +734,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     let first_length=PHRASES.lock().unwrap()[before].len();
     assert_eq!(first_length,LONG_RESPONSE[..160].iter().rposition(u8::is_ascii_whitespace).unwrap()+1);
     assert_eq!(SPANS.lock().unwrap()[spans],(0,first_length,false));
-    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
+    OUTPUT.store(4,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(PHRASES.lock().unwrap().len(),before+1);
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);

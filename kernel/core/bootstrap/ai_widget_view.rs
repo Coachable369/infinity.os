@@ -44,28 +44,31 @@ impl DisplayDevice {
     }
     // ------------------------=
     // FUNC: ai_widget_header
-    // DESC: Paints a bounded native status dropdown and distinct, generous window controls.
+    // DESC: Paints live microphone amplitude beside status, with a separate stop-audio control.
     // ------------------=
     pub(super) fn ai_widget_header(&mut self, geometry: AiChatGeometry, status: &[u8],
         minimized: bool, busy: bool, scale: usize, accent: (u8,u8,u8)) {
         let g = geometry;
-        if !minimized {
-            self.app_label(Rect { x: g.header.x + (16 * scale) as i32,
-                y: g.header.y + (8 * scale) as i32, width: (82 * scale) as u32,
-                height: (28 * scale) as u32 }, b"AI CHAT", (221,238,247), true, scale);
-        }
-        self.app_card(g.status, (9,30,47),
-            if ai_widget::current_menu().open { accent } else { (44,87,114) }, scale);
-        let dot_x = g.status.x + (10 * scale) as i32;
+        self.desktop_bound_surface(65,g.status);
+        if g.status.width>0 && g.status.height>0 {
+        let saved=self.render_clip;
+        self.intersect_render_clip(g.status.x.max(0)as usize,g.status.y.max(0)as usize,g.status.width as usize,g.status.height as usize);
         let dot_y = g.status.y + g.status.height as i32 / 2;
-        self.fill_rounded_rect_alpha(dot_x.max(0) as usize, (dot_y - 2 * scale as i32).max(0) as usize,
-            4 * scale, 4 * scale, 2 * scale, accent.0, accent.1, accent.2, if busy {255} else {170});
-        self.app_menu_label(Rect { x: g.status.x + (20 * scale) as i32,
-            width: g.status.width.saturating_sub((40 * scale) as u32), ..g.status },
+        for index in 0..17usize {
+            let envelope = 9 - index.abs_diff(8);
+            let height = scale * (2 + ai_widget::meter() * envelope * 2 / 32768);
+            self.fill_rounded_rect_alpha((g.status.x + ((8 + index * 3) * scale) as i32).max(0) as usize,
+                (dot_y - height as i32 / 2).max(0) as usize, scale.max(1), height, scale,
+                accent.0, accent.1, accent.2, 220);
+        }
+        self.app_menu_label(Rect { x: g.status.x + (66 * scale) as i32,
+            width: g.status.width.saturating_sub((100 * scale) as u32), ..g.status },
             status, (194,220,235), scale);
-        let arrow_x = g.status.right() - (11 * scale) as i32;
-        self.line(arrow_x - 3 * scale as i32, dot_y - scale as i32, arrow_x, dot_y + 2 * scale as i32, 148,190,215);
-        self.line(arrow_x, dot_y + 2 * scale as i32, arrow_x + 3 * scale as i32, dot_y - scale as i32, 148,190,215);
+        self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/stop-audio-v1.bmp"),
+            (g.status.right() - (30 * scale) as i32).max(0) as usize,
+            g.status.y.max(0) as usize, 30 * scale, 30 * scale, if busy {255} else {120});
+        self.render_clip=saved;
+        }
         for (rect, symbol) in [(g.minimize, if minimized {b'+'} else {b'-'}), (g.close,b'x')] {
             if rect.width>0&&rect.height>0 {
                 self.desktop_bound_surface(if symbol==b'x' {71}else{70},rect);

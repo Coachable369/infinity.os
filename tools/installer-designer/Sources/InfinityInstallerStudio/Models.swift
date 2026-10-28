@@ -10,9 +10,9 @@ enum ConfigurationNetworkLayout {
         let gutter = content.width * 4 / 100
         return CanvasRect(
             x: content.x + gutter,
-            y: content.y + content.height * 42 / 100 + index * (content.height * 12 / 100),
+            y: content.y + content.height * 42 / 100 + index * (content.height * 20 / 100),
             width: content.width - 2 * gutter,
-            height: max(1, content.height * 10 / 100)
+            height: max(1, content.height * 18 / 100)
         )
     }
 }
@@ -797,6 +797,7 @@ struct InstallerStudioDocument: Codable, Hashable {
     // A persisted migration marker prevents a deliberately deleted background
     // from being silently restored the next time the document is opened.
     var explicitInstallerBackground: Bool? = nil
+    var explicitLoginMotion: Bool? = nil
     var infinityMenu: StudioMenu? = nil
 
     // ------------------------=
@@ -1468,12 +1469,13 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[2].border = InfinityUIKit.EclipseAccess.mutedBorder.withAlpha(0)
         elements[2].cornerRadius = 16
         elements[3].fill = InfinityUIKit.EclipseAccess.text
-        elements[3].fontSize = 30
+        elements[3].fontSize = 34
         elements[4].fill = InfinityUIKit.EclipseAccess.secondary
-        elements[4].fontSize = 17
+        elements[4].fontSize = 22
         elements[5].fill = InfinityUIKit.EclipseAccess.background.withAlpha(245)
         elements[5].border = InfinityUIKit.EclipseAccess.border
         elements[5].cornerRadius = 10
+        elements[5].fontSize = 24
         elements[5].inputVariable = switch step {
         case 1: .machineNodeName
         case 2: .profileName
@@ -1483,14 +1485,16 @@ struct InstallerStudioDocument: Codable, Hashable {
         }
         elements[6].fill = InfinityUIKit.EclipseAccess.background.withAlpha(245)
         elements[6].border = InfinityUIKit.EclipseAccess.border
+        elements[6].fontSize = 24
         elements[7].fill = InfinityUIKit.EclipseAccess.primary
         elements[7].border = InfinityUIKit.EclipseAccess.border
+        elements[7].fontSize = 24
         elements[8].fill = InfinityUIKit.EclipseAccess.secondary
-        elements[8].fontSize = 13
+        elements[8].fontSize = 16
         elements[9].fill = InfinityUIKit.EclipseAccess.text
-        elements[9].fontSize = 17
+        elements[9].fontSize = 20
         elements[10].fill = InfinityUIKit.EclipseAccess.border
-        elements[10].fontSize = 14
+        elements[10].fontSize = 18
 
         for progressIndex in 0..<8 {
             var segment = StudioElement.make(
@@ -1577,25 +1581,25 @@ struct InstallerStudioDocument: Codable, Hashable {
     ) {
         var panel = StudioElement.make(
             name: "\(prefix) Card \(index + 1)", kind: .panel,
-            frame: CanvasRect(x: 72, y: top, width: 276, height: 54), zIndex: 6
+            frame: CanvasRect(x: 72, y: top, width: 276, height: 60), zIndex: 6
         )
         panel.fill = InfinityUIKit.EclipseAccess.elevated.withAlpha(240)
         panel.border = InfinityUIKit.EclipseAccess.border
         panel.cornerRadius = 10
         var headingElement = StudioElement.make(
             name: "\(prefix) Heading \(index + 1)", kind: .text,
-            frame: CanvasRect(x: 82, y: top + 8, width: 256, height: 20),
+            frame: CanvasRect(x: 82, y: top + 6, width: 256, height: 25),
             text: heading, zIndex: 7
         )
         headingElement.fill = InfinityUIKit.EclipseAccess.text
-        headingElement.fontSize = 16
+        headingElement.fontSize = 20
         var detailElement = StudioElement.make(
             name: "\(prefix) Detail \(index + 1)", kind: .text,
-            frame: CanvasRect(x: 82, y: top + 29, width: 256, height: 20),
+            frame: CanvasRect(x: 82, y: top + 32, width: 256, height: 25),
             text: detail, zIndex: 7
         )
         detailElement.fill = InfinityUIKit.EclipseAccess.secondary
-        detailElement.fontSize = 13
+        detailElement.fontSize = 17
         elements.append(contentsOf: [panel, headingElement, detailElement])
     }
 
@@ -1619,18 +1623,18 @@ struct InstallerStudioDocument: Codable, Hashable {
         panel.cornerRadius = 10
         var labelElement = StudioElement.make(
             name: "Setting Label \(index + 1)", kind: .text,
-            frame: CanvasRect(x: 82, y: top + 12, width: 153, height: 20),
+            frame: CanvasRect(x: 82, y: top + 8, width: 153, height: 28),
             text: label, zIndex: 7
         )
         labelElement.fill = InfinityUIKit.EclipseAccess.text
-        labelElement.fontSize = 15
+        labelElement.fontSize = 19
         var valueElement = StudioElement.make(
             name: "Setting Value \(index + 1)", kind: .text,
-            frame: CanvasRect(x: 235, y: top + 12, width: 103, height: 20),
+            frame: CanvasRect(x: 235, y: top + 8, width: 103, height: 28),
             text: value, zIndex: 7
         )
         valueElement.fill = InfinityUIKit.EclipseAccess.border
-        valueElement.fontSize = 13
+        valueElement.fontSize = 17
         elements.append(contentsOf: [panel, labelElement, valueElement])
     }
 

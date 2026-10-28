@@ -77,7 +77,9 @@ static HOST_THREADS: [std::sync::Mutex<Option<std::thread::Thread>>; COUNT] =
 // ------------------=
 #[cfg(not(target_os = "none"))]
 fn wake_host(index: usize) {
-    if let Some(thread) = HOST_THREADS[index].lock().unwrap().as_ref() { thread.unpark(); }
+    if let Some(thread) = HOST_THREADS[index].lock().unwrap().as_ref() {
+        thread.unpark();
+    }
 }
 static COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static PURE_COMPLETED: AtomicUsize = AtomicUsize::new(0);
@@ -104,7 +106,8 @@ fn ticks_ns(ticks: u64) -> u64 {
     {
         let frequency = TSC_HZ.load(Ordering::Acquire);
         if frequency != 0 {
-            return ticks / frequency * 1_000_000_000 + ticks % frequency * 1_000_000_000 / frequency;
+            return ticks / frequency * 1_000_000_000
+                + ticks % frequency * 1_000_000_000 / frequency;
         }
     }
     #[cfg(all(target_arch = "aarch64", target_os = "none"))]
@@ -112,7 +115,8 @@ fn ticks_ns(ticks: u64) -> u64 {
         let frequency: u64;
         core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) frequency, options(nomem, nostack));
         if frequency != 0 {
-            return ticks / frequency * 1_000_000_000 + ticks % frequency * 1_000_000_000 / frequency;
+            return ticks / frequency * 1_000_000_000
+                + ticks % frequency * 1_000_000_000 / frequency;
         }
     }
     let _ = ticks;
@@ -123,8 +127,11 @@ fn ticks_ns(ticks: u64) -> u64 {
 // DESC: Reads summed AP compute time by quantization and completed-job wait time.
 // ------------------=
 pub fn kernel_profile_ns() -> [u64; 3] {
-    [ticks_ns(Q4_TICKS.load(Ordering::Relaxed)), ticks_ns(Q6_TICKS.load(Ordering::Relaxed)),
-        ticks_ns(IDLE_TICKS.load(Ordering::Relaxed))]
+    [
+        ticks_ns(Q4_TICKS.load(Ordering::Relaxed)),
+        ticks_ns(Q6_TICKS.load(Ordering::Relaxed)),
+        ticks_ns(IDLE_TICKS.load(Ordering::Relaxed)),
+    ]
 }
 
 // ------------------------=
@@ -143,7 +150,10 @@ fn counter() -> u64 {
         core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack));
         return value;
     }
-    #[cfg(not(all(any(target_arch = "aarch64", target_arch = "x86_64"), target_os = "none")))]
+    #[cfg(not(all(
+        any(target_arch = "aarch64", target_arch = "x86_64"),
+        target_os = "none"
+    )))]
     0
 }
 // ------------------------=
@@ -152,14 +162,18 @@ fn counter() -> u64 {
 // ------------------=
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
 #[no_mangle]
-pub extern "C" fn infinity_speech_clock_ns() -> u64 { clock_ns() }
+pub extern "C" fn infinity_speech_clock_ns() -> u64 {
+    clock_ns()
+}
 // ------------------------=
 // FUNC: profile_ms
 // DESC: Reports cumulative summed worker compute and completed-result waiting time in milliseconds.
 // ------------------=
 pub fn profile_ms() -> (u64, u64) {
-    (ticks_ns(COMPUTE_TICKS.load(Ordering::Relaxed)) / 1_000_000,
-     ticks_ns(IDLE_TICKS.load(Ordering::Relaxed)) / 1_000_000)
+    (
+        ticks_ns(COMPUTE_TICKS.load(Ordering::Relaxed)) / 1_000_000,
+        ticks_ns(IDLE_TICKS.load(Ordering::Relaxed)) / 1_000_000,
+    )
 }
 // BSP-only submission state. No pointers into movable engine memory are retained.
 static mut PENDING: (usize, usize, bool) = (0, 0, false);
@@ -209,7 +223,11 @@ pub unsafe fn stop_host_workers() {
     let ready = READY.load(Ordering::Acquire);
     for (i, slot) in SLOTS.iter().enumerate() {
         if ready & (1 << i) != 0 {
-            while slot.state.compare_exchange(0, 3, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            while slot
+                .state
+                .compare_exchange(0, 3, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
                 core::hint::spin_loop();
             }
             wake_host(i);
@@ -226,11 +244,17 @@ pub unsafe fn stop_host_workers() {
 /// A task may use infinity_speech_parallel only for its separately documented
 /// allocation-free pure-math contract.
 pub unsafe fn background(task: unsafe fn()) -> bool {
-    if WAITING_BACKGROUND.is_some() { return false; }
+    if WAITING_BACKGROUND.is_some() {
+        return false;
+    }
     let ready = READY.load(Ordering::Acquire);
     for (index, slot) in SLOTS.iter().enumerate() {
-        if ready & (1 << index) != 0 && slot.state.compare_exchange(0, RESERVED,
-            Ordering::AcqRel, Ordering::Acquire).is_ok() {
+        if ready & (1 << index) != 0
+            && slot
+                .state
+                .compare_exchange(0, RESERVED, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
             (*slot.job.get()).background = Some(task);
             slot.state.store(4, Ordering::Release);
             #[cfg(not(target_os = "none"))]
@@ -262,14 +286,27 @@ pub unsafe extern "C" fn infinity_speech_parallel(
     task: unsafe extern "C" fn(*mut core::ffi::c_void),
     context: *mut core::ffi::c_void,
 ) -> usize {
-    let job = PureJob { task, context, remaining: AtomicUsize::new(0) };
+    let job = PureJob {
+        task,
+        context,
+        remaining: AtomicUsize::new(0),
+    };
     let ready = READY.load(Ordering::Acquire);
     let reserved = ready.trailing_zeros() as usize;
     let mut helpers = 0;
     for (index, slot) in SLOTS.iter().enumerate() {
-        if helpers == MAX_PURE_HELPERS { break; }
-        if index == reserved || ready & (1 << index) == 0 || slot.state.compare_exchange(
-            0, RESERVED, Ordering::AcqRel, Ordering::Acquire).is_err() { continue; }
+        if helpers == MAX_PURE_HELPERS {
+            break;
+        }
+        if index == reserved
+            || ready & (1 << index) == 0
+            || slot
+                .state
+                .compare_exchange(0, RESERVED, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            continue;
+        }
         (*slot.job.get()).pure = &job;
         job.remaining.fetch_add(1, Ordering::Relaxed);
         helpers += 1;
@@ -278,7 +315,9 @@ pub unsafe extern "C" fn infinity_speech_parallel(
         wake_host(index);
     }
     #[cfg(all(target_arch = "aarch64", target_os = "none"))]
-    if helpers != 0 { core::arch::asm!("sev", options(nomem, nostack)); }
+    if helpers != 0 {
+        core::arch::asm!("sev", options(nomem, nostack));
+    }
     task(context);
     // Never abandon a callback that can still access the caller's stack or
     // tensor buffers, including after cancellation. Callbacks do not wait for
@@ -298,7 +337,9 @@ pub unsafe extern "C" fn infinity_speech_parallel(
 // ------------------=
 unsafe fn dispatch_waiting_background() {
     if let Some(task) = WAITING_BACKGROUND.take() {
-        if !background(task) { WAITING_BACKGROUND = Some(task); }
+        if !background(task) {
+            WAITING_BACKGROUND = Some(task);
+        }
     }
 }
 
@@ -310,7 +351,9 @@ pub fn poll_background() {
     unsafe {
         // A cancelled engine no longer calls rows(), so its completed mailboxes
         // must be reclaimed here before an accepted speech task can run.
-        if PENDING.2 { collect_completed_matrix(); }
+        if PENDING.2 {
+            collect_completed_matrix();
+        }
         dispatch_waiting_background();
     }
 }
@@ -321,12 +364,15 @@ pub fn poll_background() {
 // ------------------=
 unsafe fn collect_completed_matrix() -> Option<(usize, bool)> {
     let (mask, start, discarded) = PENDING;
-    if mask == 0 || (0..COUNT).any(|i| mask & (1 << i) != 0
-        && SLOTS[i].state.load(Ordering::Acquire) != 2) {
+    if mask == 0
+        || (0..COUNT).any(|i| mask & (1 << i) != 0 && SLOTS[i].state.load(Ordering::Acquire) != 2)
+    {
         return None;
     }
     for (i, slot) in SLOTS.iter().enumerate() {
-        if mask & (1 << i) == 0 { continue; }
+        if mask & (1 << i) == 0 {
+            continue;
+        }
         let job = &*slot.job.get();
         COMPUTE_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
         if job.kind == 12 {
@@ -357,7 +403,9 @@ pub unsafe fn initialize(address: u64) {
         #[cfg(target_arch = "x86_64")]
         if bridge.version == 2 {
             let frequency = *((address as *const u64).add(2));
-            if !(1_000_000..=10_000_000_000).contains(&frequency) { return; }
+            if !(1_000_000..=10_000_000_000).contains(&frequency) {
+                return;
+            }
             TSC_HZ.store(frequency, Ordering::Release);
             (bridge.start)(worker_entry, COUNT as u64);
         }
@@ -396,7 +444,9 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
         }
     }
     #[cfg(not(target_os = "none"))]
-    { *HOST_THREADS[index].lock().unwrap() = Some(std::thread::current()); }
+    {
+        *HOST_THREADS[index].lock().unwrap() = Some(std::thread::current());
+    }
     READY.fetch_or(1 << index, Ordering::Release);
     let slot = &SLOTS[index];
     loop {
@@ -420,11 +470,19 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                 let mut refresh = 1;
                 while !CANCELLED.load(Ordering::Acquire) {
                     let at = NEXT_ROW.fetch_add(CHUNK_ROWS, Ordering::Relaxed);
-                    if at >= job.rows { break; }
-                    infinity_qwen_dot_rows_cached(job.kind, job.data.add(at * stride),
-                        job.input.as_ptr(), job.width, CHUNK_ROWS.min(job.rows - at),
+                    if at >= job.rows {
+                        break;
+                    }
+                    infinity_qwen_dot_rows_cached(
+                        job.kind,
+                        job.data.add(at * stride),
+                        job.input.as_ptr(),
+                        job.width,
+                        CHUNK_ROWS.min(job.rows - at),
                         (&raw mut MATRIX_OUTPUT).cast::<f32>().add(at),
-                        job.cache.as_mut_ptr(), refresh);
+                        job.cache.as_mut_ptr(),
+                        refresh,
+                    );
                     refresh = 0;
                 }
                 job.finished = counter();
@@ -439,7 +497,9 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                 return;
             }
             4 => {
-                if let Some(task) = (*slot.job.get()).background { task(); }
+                if let Some(task) = (*slot.job.get()).background {
+                    task();
+                }
                 (*slot.job.get()).background = None;
                 slot.state.store(0, Ordering::Release);
             }
@@ -499,7 +559,9 @@ pub unsafe fn rows(
             if !discarded {
                 core::ptr::copy_nonoverlapping(
                     (&raw const MATRIX_OUTPUT).cast::<f32>().add(start),
-                    output.as_mut_ptr().add(start), output.len() - start);
+                    output.as_mut_ptr().add(start),
+                    output.len() - start,
+                );
                 *cursor = 0;
                 return Some(true);
             }
@@ -521,8 +583,11 @@ pub unsafe fn rows(
         }
         NEXT_ROW.store(*cursor, Ordering::Relaxed);
         CANCELLED.store(false, Ordering::Release);
-        let idle = SLOTS.iter().enumerate().filter(|(i, slot)| ready & (1 << i) != 0
-            && slot.state.load(Ordering::Acquire) == 0).count();
+        let idle = SLOTS
+            .iter()
+            .enumerate()
+            .filter(|(i, slot)| ready & (1 << i) != 0 && slot.state.load(Ordering::Acquire) == 0)
+            .count();
         // Keep one AP available for the permanent browser worker and latency-sensitive
         // speech jobs. A single-AP target still makes forward progress through the
         // existing matrix-boundary handoff.
@@ -532,9 +597,17 @@ pub unsafe fn rows(
             if ready & (1 << i) == 0 || slot.state.load(Ordering::Acquire) != 0 {
                 continue;
             }
-            if reserve { reserve = false; continue; }
-            if slot.state.compare_exchange(0, RESERVED,
-                Ordering::AcqRel, Ordering::Acquire).is_err() { continue; }
+            if reserve {
+                reserve = false;
+                continue;
+            }
+            if slot
+                .state
+                .compare_exchange(0, RESERVED, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                continue;
+            }
             let job = &mut *slot.job.get();
             job.rows = output.len();
             job.width = input.len();
@@ -546,7 +619,9 @@ pub unsafe fn rows(
             #[cfg(not(target_os = "none"))]
             wake_host(i);
         }
-        if mask == 0 { return None; }
+        if mask == 0 {
+            return None;
+        }
         PENDING = (mask, *cursor, false);
         #[cfg(all(target_arch = "aarch64", target_os = "none"))]
         core::arch::asm!("sev", options(nomem, nostack));
@@ -596,10 +671,16 @@ mod tests {
         // DESC: Allocates bounded atomic observation state for native helper ownership tests.
         // ------------------=
         fn new(released: bool) -> Self {
-            Self { next: AtomicUsize::new(0), visits: [const { AtomicUsize::new(0) }; 512],
-                active: AtomicUsize::new(0), finished: AtomicUsize::new(0),
-                released: AtomicBool::new(released), cancel: AtomicBool::new(false),
-                helpers: AtomicUsize::new(0), done: AtomicBool::new(false) }
+            Self {
+                next: AtomicUsize::new(0),
+                visits: [const { AtomicUsize::new(0) }; 512],
+                active: AtomicUsize::new(0),
+                finished: AtomicUsize::new(0),
+                released: AtomicBool::new(released),
+                cancel: AtomicBool::new(false),
+                helpers: AtomicUsize::new(0),
+                done: AtomicBool::new(false),
+            }
         }
     }
     // ------------------------=
@@ -614,7 +695,9 @@ mod tests {
         }
         while !fixture.cancel.load(Ordering::Acquire) {
             let next = fixture.next.fetch_add(1, Ordering::Relaxed);
-            if next >= fixture.visits.len() { break; }
+            if next >= fixture.visits.len() {
+                break;
+            }
             fixture.visits[next].fetch_add(1, Ordering::Relaxed);
             std::thread::yield_now();
         }
@@ -648,9 +731,12 @@ mod tests {
     // ------------------=
     fn start_fixture_workers(count: usize) -> Vec<std::thread::JoinHandle<()>> {
         assert_eq!(online(), 0);
-        for slot in &SLOTS { slot.state.store(0, Ordering::Release); }
+        for slot in &SLOTS {
+            slot.state.store(0, Ordering::Release);
+        }
         let threads: Vec<_> = (1..=count)
-            .map(|id| std::thread::spawn(move || unsafe { worker_entry(id as *mut u8) })).collect();
+            .map(|id| std::thread::spawn(move || unsafe { worker_entry(id as *mut u8) }))
+            .collect();
         await_condition(|| online() == count);
         threads
     }
@@ -659,8 +745,12 @@ mod tests {
     // DESC: Joins every retired host AP before another test may reuse static scheduler state.
     // ------------------=
     fn finish_fixture_workers(threads: Vec<std::thread::JoinHandle<()>>) {
-        unsafe { stop_host_workers(); }
-        for thread in threads { thread.join().unwrap(); }
+        unsafe {
+            stop_host_workers();
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
         assert_eq!(online(), 0);
     }
     // ------------------------=
@@ -672,8 +762,16 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         let mut empty = PureFixture::new(true);
         let before = parallel_completed();
-        assert_eq!(unsafe { infinity_speech_parallel(pure_fixture_work, (&mut empty as *mut PureFixture).cast()) }, 0);
-        assert!(empty.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        assert_eq!(
+            unsafe {
+                infinity_speech_parallel(pure_fixture_work, (&mut empty as *mut PureFixture).cast())
+            },
+            0
+        );
+        assert!(empty
+            .visits
+            .iter()
+            .all(|count| count.load(Ordering::Acquire) == 1));
         assert_eq!(parallel_completed(), before);
 
         // The single online AP is both the caller and protected service slot.
@@ -683,7 +781,10 @@ mod tests {
         assert!(unsafe { background(pure_fixture_owner) });
         await_condition(|| single.done.load(Ordering::Acquire));
         assert_eq!(single.helpers.load(Ordering::Acquire), 0);
-        assert!(single.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        assert!(single
+            .visits
+            .iter()
+            .all(|count| count.load(Ordering::Acquire) == 1));
         assert_eq!(parallel_completed(), before);
         finish_fixture_workers(threads);
 
@@ -693,8 +794,10 @@ mod tests {
         let reserved = std::sync::Arc::new(PureFixture::new(false));
         let owner_context = reserved.clone();
         let owner = std::thread::spawn(move || unsafe {
-            infinity_speech_parallel(pure_fixture_work,
-                std::sync::Arc::as_ptr(&owner_context).cast_mut().cast())
+            infinity_speech_parallel(
+                pure_fixture_work,
+                std::sync::Arc::as_ptr(&owner_context).cast_mut().cast(),
+            )
         });
         await_condition(|| reserved.active.load(Ordering::Acquire) == 3);
         QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
@@ -705,8 +808,16 @@ mod tests {
         assert_eq!(owner.join().unwrap(), 2);
         assert_eq!(reserved.active.load(Ordering::Acquire), 0);
         assert_eq!(reserved.finished.load(Ordering::Acquire), 3);
-        assert!(reserved.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
-        await_condition(|| SLOTS.iter().take(3).all(|slot| slot.state.load(Ordering::Acquire) == 0));
+        assert!(reserved
+            .visits
+            .iter()
+            .all(|count| count.load(Ordering::Acquire) == 1));
+        await_condition(|| {
+            SLOTS
+                .iter()
+                .take(3)
+                .all(|slot| slot.state.load(Ordering::Acquire) == 0)
+        });
 
         // A four-vCPU machine has only three APs. A permanent browser owns
         // one, the speech owner uses the second, and only one helper remains.
@@ -719,14 +830,25 @@ mod tests {
         assert!(unsafe { background(pure_fixture_owner) });
         await_condition(|| constrained.active.load(Ordering::Acquire) == 2);
         let mut busy = PureFixture::new(true);
-        assert_eq!(unsafe { infinity_speech_parallel(pure_fixture_work, (&mut busy as *mut PureFixture).cast()) }, 0);
-        assert!(busy.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        assert_eq!(
+            unsafe {
+                infinity_speech_parallel(pure_fixture_work, (&mut busy as *mut PureFixture).cast())
+            },
+            0
+        );
+        assert!(busy
+            .visits
+            .iter()
+            .all(|count| count.load(Ordering::Acquire) == 1));
         constrained.released.store(true, Ordering::Release);
         await_condition(|| constrained.done.load(Ordering::Acquire));
         assert_eq!(constrained.helpers.load(Ordering::Acquire), 1);
         assert_eq!(constrained.active.load(Ordering::Acquire), 0);
         assert_eq!(constrained.finished.load(Ordering::Acquire), 2);
-        assert!(constrained.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+        assert!(constrained
+            .visits
+            .iter()
+            .all(|count| count.load(Ordering::Acquire) == 1));
         BACKGROUND_RELEASE.store(true, Ordering::Release);
         assert_eq!(parallel_completed() - before, 3);
         finish_fixture_workers(threads);
@@ -744,14 +866,28 @@ mod tests {
             // background submissions and collection must continue independently.
             let mut output = vec![f32::NAN; 256];
             let mut cursor = 0;
-            assert_eq!(unsafe { rows(12, &data, &input, &mut output, &mut cursor) }, Some(false));
+            assert_eq!(
+                unsafe { rows(12, &data, &input, &mut output, &mut cursor) },
+                Some(false)
+            );
             BACKGROUND_RELEASE.store(false, Ordering::Release);
             BACKGROUND_STARTED.store(false, Ordering::Release);
             assert!(unsafe { background(held_background) });
             await_condition(|| BACKGROUND_STARTED.load(Ordering::Acquire));
             let mut busy = PureFixture::new(true);
-            assert_eq!(unsafe { infinity_speech_parallel(pure_fixture_work, (&mut busy as *mut PureFixture).cast()) }, 0);
-            assert!(busy.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+            assert_eq!(
+                unsafe {
+                    infinity_speech_parallel(
+                        pure_fixture_work,
+                        (&mut busy as *mut PureFixture).cast(),
+                    )
+                },
+                0
+            );
+            assert!(busy
+                .visits
+                .iter()
+                .all(|count| count.load(Ordering::Acquire) == 1));
             QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
             assert!(unsafe { background(queued_background) });
             let deadline = std::time::Instant::now();
@@ -762,15 +898,26 @@ mod tests {
             await_condition(|| QUEUED_BACKGROUND_RAN.load(Ordering::Acquire));
             assert!(output.iter().all(|value| *value == 0.0));
             assert!(!fixture.done.load(Ordering::Acquire));
-            if cancelled { fixture.cancel.store(true, Ordering::Release); }
-            else { fixture.released.store(true, Ordering::Release); }
+            if cancelled {
+                fixture.cancel.store(true, Ordering::Release);
+            } else {
+                fixture.released.store(true, Ordering::Release);
+            }
             await_condition(|| fixture.done.load(Ordering::Acquire));
             assert_eq!(fixture.helpers.load(Ordering::Acquire), 3);
             assert_eq!(fixture.active.load(Ordering::Acquire), 0);
             assert_eq!(fixture.finished.load(Ordering::Acquire), 4);
-            assert!(fixture.visits.iter().all(|count| count.load(Ordering::Acquire) == usize::from(!cancelled)));
+            assert!(fixture
+                .visits
+                .iter()
+                .all(|count| count.load(Ordering::Acquire) == usize::from(!cancelled)));
             BACKGROUND_RELEASE.store(true, Ordering::Release);
-            await_condition(|| SLOTS.iter().take(6).all(|slot| slot.state.load(Ordering::Acquire) == 0));
+            await_condition(|| {
+                SLOTS
+                    .iter()
+                    .take(6)
+                    .all(|slot| slot.state.load(Ordering::Acquire) == 0)
+            });
         }
         assert_eq!(parallel_completed() - before, 6);
 
@@ -786,7 +933,9 @@ mod tests {
             let deadline = std::time::Instant::now();
             loop {
                 let result = unsafe { rows(12, &data, &input, &mut output, &mut cursor) };
-                if result == Some(true) { break; }
+                if result == Some(true) {
+                    break;
+                }
                 assert!(deadline.elapsed().as_secs() < 5);
                 std::thread::yield_now();
             }
@@ -796,7 +945,10 @@ mod tests {
             helper_total += helpers;
             assert_eq!(fixture.active.load(Ordering::Acquire), 0);
             assert_eq!(fixture.finished.load(Ordering::Acquire), helpers + 1);
-            assert!(fixture.visits.iter().all(|count| count.load(Ordering::Acquire) == 1));
+            assert!(fixture
+                .visits
+                .iter()
+                .all(|count| count.load(Ordering::Acquire) == 1));
             assert!(output.iter().all(|value| *value == 0.0));
         }
         assert_eq!(parallel_completed() - before, helper_total);
@@ -807,7 +959,9 @@ mod tests {
     // FUNC: queued_background
     // DESC: Observes execution of a task accepted while every available AP belonged to a matrix.
     // ------------------=
-    unsafe fn queued_background() { QUEUED_BACKGROUND_RAN.store(true, Ordering::Release); }
+    unsafe fn queued_background() {
+        QUEUED_BACKGROUND_RAN.store(true, Ordering::Release);
+    }
     use super::*;
     static BACKGROUND_STARTED: AtomicBool = AtomicBool::new(false);
     static BACKGROUND_RELEASE: AtomicBool = AtomicBool::new(false);
@@ -817,7 +971,9 @@ mod tests {
     // ------------------=
     unsafe fn held_background() {
         BACKGROUND_STARTED.store(true, Ordering::Release);
-        while !BACKGROUND_RELEASE.load(Ordering::Acquire) { std::thread::yield_now(); }
+        while !BACKGROUND_RELEASE.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
     }
     extern "C" {
         fn infinity_qwen_dot(
@@ -837,12 +993,19 @@ mod tests {
             return false;
         }
         if kind == 14 {
-            return expected.iter().zip(actual).all(|(a, b)| a.to_bits() == b.to_bits());
+            return expected
+                .iter()
+                .zip(actual)
+                .all(|(a, b)| a.to_bits() == b.to_bits());
         }
-        let (error, reference) = expected.iter().zip(actual).fold((0.0f64, 0.0f64), |sum, (a, b)| {
-            let delta = *a as f64 - *b as f64;
-            (sum.0 + delta * delta, sum.1 + *a as f64 * *a as f64)
-        });
+        let (error, reference) =
+            expected
+                .iter()
+                .zip(actual)
+                .fold((0.0f64, 0.0f64), |sum, (a, b)| {
+                    let delta = *a as f64 - *b as f64;
+                    (sum.0 + delta * delta, sum.1 + *a as f64 * *a as f64)
+                });
         actual.iter().all(|value| value.is_finite())
             && (error / (reference + expected.len() as f64)).sqrt() <= 0.02
     }
@@ -933,19 +1096,31 @@ mod tests {
             assert!(actual[..prefix].iter().all(|value| value.is_nan()));
             assert!(outputs_match(kind, &expected[prefix..], &actual[prefix..]));
             let mut oversized = vec![0.0; MATRIX_ROWS + 1];
-            assert_eq!(unsafe { rows(kind, &[], &input, &mut oversized, &mut cursor) }, None);
+            assert_eq!(
+                unsafe { rows(kind, &[], &input, &mut oversized, &mut cursor) },
+                None
+            );
             // Exercise the compact per-worker cache with the largest activation.
             let wide_input = vec![0.125f32; WIDTH];
             let wide_rows = CHUNK_ROWS * 7 + 3;
             let wide_data = data[..stride].repeat(wide_rows * WIDTH / 256);
             let mut wide_expected = vec![0.0; wide_rows];
             for (row, out) in wide_expected.iter_mut().enumerate() {
-                unsafe { infinity_qwen_dot(kind, wide_data.as_ptr().add(row * WIDTH / 256 * stride),
-                    wide_input.as_ptr(), WIDTH, out); }
+                unsafe {
+                    infinity_qwen_dot(
+                        kind,
+                        wide_data.as_ptr().add(row * WIDTH / 256 * stride),
+                        wide_input.as_ptr(),
+                        WIDTH,
+                        out,
+                    );
+                }
             }
             let mut wide_actual = vec![f32::NAN; wide_rows];
             let deadline = std::time::Instant::now();
-            while unsafe { rows(kind, &wide_data, &wide_input, &mut wide_actual, &mut cursor) } != Some(true) {
+            while unsafe { rows(kind, &wide_data, &wide_input, &mut wide_actual, &mut cursor) }
+                != Some(true)
+            {
                 assert!(deadline.elapsed().as_secs() < 5);
                 std::thread::yield_now();
             }
@@ -958,7 +1133,10 @@ mod tests {
         let input = vec![0.125f32; 256];
         let mut abandoned = vec![f32::NAN; 256];
         let mut cursor = 0;
-        assert_eq!(unsafe { rows(12, &data, &input, &mut abandoned, &mut cursor) }, Some(false));
+        assert_eq!(
+            unsafe { rows(12, &data, &input, &mut abandoned, &mut cursor) },
+            Some(false)
+        );
         assert!(unsafe { background(held_background) });
         discard();
         QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
@@ -982,7 +1160,9 @@ mod tests {
         assert_eq!(next, [0.0]);
         assert!(completed() >= 10);
         BACKGROUND_RELEASE.store(true, Ordering::Release);
-        unsafe { stop_host_workers(); }
+        unsafe {
+            stop_host_workers();
+        }
         for thread in threads {
             thread.join().unwrap();
         }

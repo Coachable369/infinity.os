@@ -1,5 +1,6 @@
 """Settings acceptance on a fresh disposable install, using real pointer events and read-only state."""
 import importlib.util
+import argparse
 import json
 import mmap
 import pathlib
@@ -13,6 +14,11 @@ spec = importlib.util.spec_from_file_location("editor_acceptance", ROOT / "tools
 helpers = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helpers)
 base = helpers.base
+native_spec = importlib.util.spec_from_file_location("settings_native_guest", ROOT / "tools/native-editor-installed-test.py")
+native = importlib.util.module_from_spec(native_spec)
+native_spec.loader.exec_module(native)
+helpers.click = native.adaptive_click
+base.symbol = native.base.symbol
 
 # ------------------------=
 # FUNC: settings
@@ -85,7 +91,7 @@ def review_sections(guest):
         assert state[13] >= state[9] and state[13] + state[15] <= state[9] + state[11]
         assert state[14] >= state[10] and state[14] + state[16] <= state[10] + state[12]
         guest.screenshot(f"settings-category-{section:02d}")
-        if section not in (6, 7, 10):
+        if section not in (0, 1, 3, 6, 7, 10):
             disclosure(guest, 0, True)
             guest.screenshot(f"settings-category-{section:02d}-expanded")
             disclosure(guest, 0, False)
@@ -93,13 +99,51 @@ def review_sections(guest):
     return reviewed
 
 # ------------------------=
+# FUNC: verify_voice_controls
+# DESC: Uses native keyboard reveal and real pointer clicks to verify five circular voices and a reversible speech checkbox.
+# ------------------=
+def verify_voice_controls(guest):
+    state = settings(guest)
+    helpers.click(guest, state[95], state[96])
+    wait_settings(guest, lambda s: s[4] == 3)
+    guest.key("tab")
+    guest.key("end")
+    state = wait_settings(guest, lambda s: s[118] == 135)
+    original = state[115]
+    for step in range(1, 6):
+        x, y, w, h = state[81:85]
+        vx, vy, vw, vh = state[13:17]
+        assert vx <= x and y >= vy and y + h <= vy + vh
+        helpers.click(guest, x + w // 2, y + h // 2)
+        state = wait_settings(guest, lambda s: s[115] == (original + step) % 5 and s[5] == 0)
+    guest.key("up")
+    state = wait_settings(guest, lambda s: s[118] == 134)
+    original_speech = state[119]
+    for expected in (1 - original_speech, original_speech):
+        x, y, w, h = state[73:77]
+        helpers.click(guest, x + w // 2, y + h // 2)
+        state = wait_settings(guest, lambda s: s[119] == expected and s[5] == 0)
+    guest.screenshot("settings-voice-controls")
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs the current ISO, removes installation media, and checks native expanders, shifted click targets, scrolling and screenshots.
 # ------------------=
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("work", type=pathlib.Path)
+    parser.add_argument("--arch", choices=("x86_64", "aarch64"), default="x86_64")
+    parser.add_argument("--iso", type=pathlib.Path)
+    parser.add_argument("--review-existing", action="store_true")
+    parser.add_argument("--resume-onboarding", action="store_true")
+    parser.add_argument("--accel", choices=("hvf", "tcg"))
+    args = parser.parse_args()
+    if args.arch == "aarch64" and args.iso is None:
+        parser.error("ARM QEMU requires explicit QEMU-linked --iso media")
     verify_artifacts()
-    work = pathlib.Path(sys.argv[1]).resolve()
-    if "--review-existing" in sys.argv[2:]:
+    work = args.work.resolve()
+    work.relative_to(ROOT / "build")
+    if args.review_existing:
         guest = base.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-x86_64-code.fd",
                            reuse=True, width=1920, height=1080)
         try:
@@ -114,29 +158,38 @@ def main():
         finally:
             guest.stop()
         return
-    work.mkdir(exist_ok=False)
+    work.mkdir(exist_ok=args.resume_onboarding)
     artifacts = work / "artifacts"
-    artifacts.mkdir()
-    for source, name in [("builds/InfinityOS-x86_64.iso", "installer.iso"), ("build/x86_64/kernel.elf", "kernel.elf"), ("build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
-        shutil.copyfile(ROOT / source, artifacts / name)
-    guest = base.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
+    artifacts.mkdir(exist_ok=args.resume_onboarding)
+    media = (args.iso or ROOT / f"builds/InfinityOS-{args.arch}.iso").resolve()
+    media.relative_to(ROOT)
+    if not args.resume_onboarding:
+        shutil.copyfile(media, artifacts / "installer.iso")
+    packaged = native.desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
+    guest = native.NativeGuest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
+                               width=1920, height=1080, memory_mb=12288, reuse=args.resume_onboarding)
+    guest.arch = args.arch
+    guest.acceleration = args.accel or ("hvf" if args.arch == "aarch64" else "tcg")
+    guest.patched = True
+    guest.boot_timeout_seconds = 600
     try:
         print("Fresh Settings installation", flush=True)
-        guest.install()
-        guest.stop()
+        if not args.resume_onboarding:
+            guest.install()
+            guest.stop()
         identity = guest.onboard()
         guest.launch("settings", 8)
         state = wait_settings(guest, lambda s: s[3] == 1 and s[4] == 0 and s[5] == 0)
         guest.screenshot("settings-general-collapsed")
-        disclosure(guest, 0, True)
+        disclosure(guest, 1, True)
         guest.screenshot("settings-general-expanded")
         # The second row has moved. Its actual arrow must still work, replacing the open well.
-        disclosure(guest, 1, True)
-        disclosure(guest, 1, False)
+        disclosure(guest, 2, True)
+        disclosure(guest, 2, False)
         state = settings(guest)
         helpers.click(guest, state[91], state[92])
         wait_settings(guest, lambda s: s[4] == 1 and s[5] == 0)
-        disclosure(guest, 3, True)
+        disclosure(guest, 6, True)
         guest.screenshot("settings-theme-color-expanded")
         state = settings(guest)
         assert state[7] > 0
@@ -149,13 +202,17 @@ def main():
         state = settings(guest)
         helpers.click(guest, state[97], state[98])
         wait_settings(guest, lambda s: s[4] == 4 and s[5] == 0)
-        disclosure(guest, 3, True)
+        disclosure(guest, 0, True)
         guest.screenshot("settings-privacy-timeout")
         reviewed = review_sections(guest)
+        verify_voice_controls(guest)
         (work / "result.json").write_text(json.dumps({"fresh_install": True, "iso_detached": True,
+            "architecture": args.arch, "source_media": str(media), "packaged": packaged,
             "identity": identity, "disclosures_toggle": True, "moved_row_click": True,
             "scroll_and_lower_row_click": True, "detail_nonoverlap": True,
             "saved_template_in_both_architectures": True,
+            "voice_choice_five_step_wrap": True, "speech_checkbox_round_trip": True,
+            "keyboard_row_focus": True,
             "category_navigation": reviewed}, indent=2))
         print("Installed Settings behavior passed", flush=True)
     finally:

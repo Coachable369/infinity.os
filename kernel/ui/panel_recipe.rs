@@ -5,7 +5,7 @@ const SIZE: usize = 256;
 const CELLS: usize = 14;
 const ART: &[u8; 2 * CELLS * SIZE * SIZE * 4] = include_bytes!("../../assets/ui-design-kit/default/eclipse-precision-v1.rgba");
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface { Frame, WindowFill, Panel, Primary, Secondary, Field, Current, Inactive }
 
 pub const STYLE_COUNT: usize = 6;
@@ -88,7 +88,7 @@ pub fn template_style(kind: Surface, material: u8, corners: u8, radius: u8) -> S
     style
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Material {
     pub fill: Rgb,
     pub edge: Rgb,
@@ -185,6 +185,14 @@ fn themed(pixel:Rgba,base:Rgb,target:Rgb,opacity:u8)->Rgba {
     };
     (shift(pixel.0,base.0,target.0),shift(pixel.1,base.1,target.1),shift(pixel.2,base.2,target.2),
         (u16::from(pixel.3)*u16::from(opacity)/255) as u8)
+}
+
+// ------------------------=
+// FUNC: legacy_panel_edge
+// DESC: Maps legacy dark drawn strokes to the shared frame accent without crushing image-backed rim pixels to black.
+// ------------------=
+pub fn legacy_panel_edge(requested:Rgb,frame:Rgb)->Rgb {
+    if requested.0.max(requested.1).max(requested.2)<128 {frame}else{requested}
 }
 
 // ------------------------=

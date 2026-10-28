@@ -229,7 +229,7 @@ impl DisplayDevice {
     ) {
         let (opacity, blur) = self.active_background_effects();
         if blur >= 2 && opacity < 100 && !self.fast_motion_frame
-            && crate::ui::panel_recipe::surface_style(crate::ui::panel_recipe::Surface::Panel).material!=2 {
+            && crate::ui::panel_recipe::surface_style(crate::ui::panel_recipe::Surface::Panel).material<2 {
             self.blur_framebuffer_region(left, top, width, height, blur as usize);
         }
         let (fill,edge)=match self.skin_visual_mode() {

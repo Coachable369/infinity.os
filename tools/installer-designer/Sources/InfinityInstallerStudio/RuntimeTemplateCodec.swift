@@ -582,6 +582,7 @@ enum RuntimeTemplateCodec {
         if sourceVersion >= 10 && decodedCollection == .installation {
             document.explicitInstallerBackground = true
         }
+        if collection == .login { document.explicitLoginMotion = true }
         if sourceVersion < 9 && collection == .systemSettings {
             document = document.migratedForSettingsActions()
         }

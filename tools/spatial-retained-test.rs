@@ -3,6 +3,7 @@
 #[path="../kernel/ui/desktop_effects.rs"] pub mod desktop_effects;
 #[path="../kernel/ui/geometry.rs"] pub mod geometry;
 #[path="../kernel/ui/panel_recipe.rs"] pub mod panel_recipe;
+#[path="../kernel/ui/surface_cache.rs"] pub mod surface_cache;
 #[path="../kernel/ui/skin.rs"] pub mod skin;
 const INFINITY_UI_ABI_VERSION:u16=1;
 static CACHE_TEST_LOCK:std::sync::Mutex<()>=std::sync::Mutex::new(());
@@ -24,7 +25,7 @@ struct DisplayDevice {
     render_clip: Option<PresentRegion>,
 }
 mod ui {
-    pub use crate::{desktop_effects,geometry,panel_recipe,skin};
+    pub use crate::{desktop_effects,geometry,panel_recipe,surface_cache,skin};
     pub mod app_launcher {pub use crate::motion;}
     pub mod input_capture {
         // ------------------------=

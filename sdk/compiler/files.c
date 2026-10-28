@@ -137,7 +137,7 @@ InfinityIoCount read(int fd, void *buffer, size_t size) {
 
 // ------------------------=
 // FUNC: write
-// DESC: Writes through the original provider without bypassing native version checks.
+// DESC: Completes blocking regular-file writes across bounded provider chunks; reports only committed bytes if a later chunk fails without bypassing version checks.
 // ------------------=
 InfinityIoCount write(int fd, const void *buffer, size_t size) {
     if (fd >= 0 && fd <= 2) {
@@ -156,11 +156,20 @@ InfinityIoCount write(int fd, const void *buffer, size_t size) {
     if (!(slot->mode & 2)) return file_error(EBADF);
     if ((!buffer && size) || size > (size_t)INT_MAX) return file_error(EINVAL);
     if (!slot->api.write) return file_error(ENOSYS);
-    size_t count = 0;
-    int error = slot->api.write(slot->context, slot->object, buffer, size, &count);
-    if (error) return file_error(error);
-    if (count > size) return file_error(EIO);
-    return (InfinityIoCount)count;
+    size_t completed = 0;
+    do {
+        size_t count = 0;
+        const unsigned char *part = buffer;
+        if (completed) part += completed;
+        int error = slot->api.write(slot->context, slot->object, part, size - completed, &count);
+        if (!error && (count > size - completed || (!count && completed < size))) error = EIO;
+        if (error) {
+            errno = error;
+            return completed ? (InfinityIoCount)completed : -1;
+        }
+        completed += count;
+    } while (completed < size);
+    return (InfinityIoCount)completed;
 }
 
 // ------------------------=

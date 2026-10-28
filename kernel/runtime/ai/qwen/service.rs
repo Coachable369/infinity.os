@@ -17,6 +17,7 @@ pub struct Service {
     generated: usize,
     busy: bool,
     completed: bool,
+    stop_reason: StopReason,
     desktop_context: bool,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
@@ -37,14 +38,28 @@ pub struct InferenceProgress {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SubmissionKind { Conversation, ApplicationSource }
+pub enum SubmissionKind { Conversation, ApplicationSource, ApplicationContinuation }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StopReason { None, EndToken, ContextLimit, OutputLimit, Cancelled }
+
+impl StopReason {
+    // ------------------------=
+    // FUNC: permits_source_continuation
+    // DESC: Allows bounded source recovery only for normal end or capacity boundaries, never cancellation or an inference error.
+    // ------------------=
+    pub const fn permits_source_continuation(self) -> bool {
+        matches!(self, Self::EndToken | Self::ContextLimit | Self::OutputLimit)
+    }
+}
 
 // ------------------------=
 // FUNC: submission_fits
 // DESC: Reserves a bounded source-rewrite budget plus an end token without changing the conversation context or ordinary chat policy.
 // ------------------=
 pub fn submission_fits(prompt_tokens:usize,kind:SubmissionKind)->bool {
-    let reserve=match kind {SubmissionKind::Conversation=>0,SubmissionKind::ApplicationSource=>1536};
+    let reserve=match kind {SubmissionKind::Conversation=>0,SubmissionKind::ApplicationSource=>1536,
+        SubmissionKind::ApplicationContinuation=>256};
     prompt_tokens.checked_add(reserve).is_some_and(|total|total<CONTEXT)
 }
 impl Service {
@@ -62,8 +77,14 @@ impl Service {
     // DESC: Retains idle desktop tokens while an isolated app turn temporarily borrows this model's cache.
     // ------------------=
     pub fn suspend_conversation(&mut self) -> Option<Conversation> {
-        if self.busy { return None; }
-        let saved = Conversation { prompt: self.prompt, count: self.prompt_count, desktop_context: self.desktop_context };
+        if self.busy {
+            return None;
+        }
+        let saved = Conversation {
+            prompt: self.prompt,
+            count: self.prompt_count,
+            desktop_context: self.desktop_context,
+        };
         self.clear_conversation();
         Some(saved)
     }
@@ -180,6 +201,7 @@ impl Service {
             generated: 0,
             busy: false,
             completed: false,
+            stop_reason: StopReason::None,
             desktop_context: false,
             reused_tokens: 0,
             prefill_tokens: 0,
@@ -192,12 +214,19 @@ impl Service {
     // DESC: Retains the tool instructions in the conversation prefix instead of re-encoding them on every request.
     // ------------------=
     pub fn submit_desktop(&mut self, text: &[u8], prefix: &[u8]) -> Result<(), Error> {
-        if self.desktop_context { return self.submit(text); }
+        if self.desktop_context {
+            return self.submit(text);
+        }
         let mut prompt = [0; 8192];
-        if text.is_empty() || prefix.len() > prompt.len() || text.len() > prompt.len() - prefix.len() { return Err(Error::Overflow); }
+        if text.is_empty()
+            || prefix.len() > prompt.len()
+            || text.len() > prompt.len() - prefix.len()
+        {
+            return Err(Error::Overflow);
+        }
         prompt[..prefix.len()].copy_from_slice(prefix);
-        prompt[prefix.len()..prefix.len()+text.len()].copy_from_slice(text);
-        self.submit(&prompt[..prefix.len()+text.len()])?;
+        prompt[prefix.len()..prefix.len() + text.len()].copy_from_slice(text);
+        self.submit(&prompt[..prefix.len() + text.len()])?;
         self.desktop_context = true;
         Ok(())
     }
@@ -219,6 +248,7 @@ impl Service {
             return Err(Error::Unsupported);
         }
         self.completed = false;
+        self.stop_reason = StopReason::None;
         let text = core::str::from_utf8(text).map_err(|_| Error::Format)?;
         self.engine.profile = super::metrics::Profile::new();
         self.worker_start = super::workers::kernel_profile_ns();
@@ -252,7 +282,10 @@ impl Service {
     // ------------------=
     pub fn profile(&self) -> (super::metrics::Profile, [u64; 3]) {
         let now = super::workers::kernel_profile_ns();
-        (self.engine.profile, core::array::from_fn(|i| now[i].saturating_sub(self.worker_start[i])))
+        (
+            self.engine.profile,
+            core::array::from_fn(|i| now[i].saturating_sub(self.worker_start[i])),
+        )
     }
     // ------------------------=
     // FUNC: append_turn
@@ -318,6 +351,7 @@ impl Service {
     // ------------------=
     pub fn cancel(&mut self) {
         self.completed = false;
+        self.stop_reason = StopReason::Cancelled;
         self.engine.cancel();
         self.busy = false;
     }
@@ -345,13 +379,36 @@ impl Service {
     // FUNC: completed
     // DESC: Distinguishes a model end token from cancellation, output exhaustion and context exhaustion.
     // ------------------=
-    pub fn completed(&self) -> bool { self.completed }
+    pub fn completed(&self) -> bool {
+        self.completed
+    }
+    // ------------------------=
+    // FUNC: stop_reason
+    // DESC: Reports the typed inference boundary so source workflows can resume without treating cancellation as recoverable work.
+    // ------------------=
+    pub const fn stop_reason(&self) -> StopReason { self.stop_reason }
     // ------------------------=
     // FUNC: output
     // DESC: Exposes only bytes produced by model-selected tokens.
     // ------------------=
     pub fn output(&self) -> &[u8] {
         &self.output[..self.output_count]
+    }
+    // ------------------------=
+    // FUNC: acceptance_context_limit
+    // DESC: Injects one bounded inference boundary into an already loaded active host model so tests can exercise real runtime recovery without claiming natural model output.
+    // ------------------=
+    #[cfg(not(target_os = "none"))]
+    pub fn acceptance_context_limit(&mut self, output: &[u8]) -> bool {
+        if !self.busy || output.len() > self.output.len() { return false; }
+        self.engine.cancel();
+        self.output.fill(0);
+        self.output[..output.len()].copy_from_slice(output);
+        self.output_count = output.len();
+        self.completed = false;
+        self.stop_reason = StopReason::ContextLimit;
+        self.busy = false;
+        true
     }
     // ------------------------=
     // FUNC: acceptance_context
@@ -398,12 +455,14 @@ impl Service {
             || self.prompt_count >= CONTEXT
         {
             self.completed = (self.ministral && next == 2) || (self.hermes && next == 128039);
+            self.stop_reason = if self.completed { StopReason::EndToken } else { StopReason::ContextLimit };
             self.busy = false;
             return Ok(false);
         }
         let mut piece = [0u8; 1024];
         let length = self.tokenizer.decode(next, &mut piece)?;
         if length > self.output.len() - self.output_count {
+            self.stop_reason = StopReason::OutputLimit;
             self.busy = false;
             return Ok(false);
         }
@@ -415,6 +474,7 @@ impl Service {
         self.prompt_count += 1;
         self.consumed = self.prompt_count;
         if self.engine.begin(next)? == Progress::ContextFull {
+            self.stop_reason = StopReason::ContextLimit;
             self.busy = false;
         }
         Ok(true)

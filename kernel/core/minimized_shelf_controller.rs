@@ -26,6 +26,8 @@ impl ConsoleRuntime {
     pub(super) fn publish_minimized_shelf(&self) {
         let mut state = shelf::current();
         let _ = crate::runtime::with_runtime(|runtime| {
+            state.sync_native(core::array::from_fn(|slot|runtime.ui.windows.ordered_window(slot)
+                .filter(|w|w.state==crate::ui::window::WindowState::Minimized).map(|w|w.id)));
             for id in 0..shelf::NAVIGATORS {
                 state.set(
                     id,
@@ -257,6 +259,24 @@ impl ConsoleRuntime {
     // DESC: Applies the shared restore and guarded-close lifecycle to a caller-validated existing window.
     // ------------------=
     pub(super) fn window_action(&mut self, id: usize, action: Action) {
+        if id>=shelf::NATIVE && id<shelf::COUNT {
+            if let Some(window_id)=shelf::current().native[id-shelf::NATIVE] {
+                let display=crate::ui::geometry::Rect{x:0,y:0,width:self.system.framebuffer_width as u32,height:self.system.framebuffer_height as u32};
+                let work=crate::runtime::native_gui::client_work_area(display,SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
+                crate::runtime::with_runtime(|runtime| {
+                    if let Some(window)=runtime.ui.windows.inspect(window_id).copied() {
+                        let state=if action==Action::Maximize {crate::ui::window::WindowState::Maximized}else{crate::ui::window::WindowState::Normal};
+                        let _=runtime.ui.windows.set_state(window.owner,window_id,state,work,display);
+                        if action==Action::Close {let _=runtime.ui.windows.request_close(window.owner,window_id);}
+                        let now=crate::ui::performance::monotonic_ns().unwrap_or(0);
+                        runtime.flush_window_events(now,window_id.0 as u64,window_id.0 as u64);
+                    }
+                });
+                self.mode=ConsoleMode::Desktop;
+                self.redraw();
+            }
+            return;
+        }
         self.ai_chat_focus = 0;
         self.shell_menu = 0;
         self.store_active_app_window();

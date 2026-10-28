@@ -412,7 +412,10 @@ pub const fn manifest<const N: usize>(
     assert!(N <= MAX_OPERATIONS && operation_count as usize <= N);
     let mut registered = [0; MAX_OPERATIONS];
     let mut index = 0;
-    while index < N { registered[index] = operations[index]; index += 1; }
+    while index < N {
+        registered[index] = operations[index];
+        index += 1;
+    }
     ServiceManifest {
         format_version: 1,
         service_id,

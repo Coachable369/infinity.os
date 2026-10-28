@@ -1,5 +1,8 @@
 //! One bounded native recognizer job. The UI never runs the decoder itself.
-use super::{types::AiError, voice::{SpeechRecognitionProvider, RECOGNITION_DEADLINE_SECONDS}};
+use super::{
+    types::AiError,
+    voice::{SpeechRecognitionProvider, RECOGNITION_DEADLINE_SECONDS},
+};
 use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 #[cfg(not(test))]
@@ -97,10 +100,21 @@ unsafe fn prepare_worker() {
     }
     // Another native job may report a fatal fault immediately after this
     // provider releases admission. Never overwrite its terminal publication.
-    let published = ENGINE.compare_exchange(1, if error == 0 { 2 } else { 3 }, Ordering::AcqRel, Ordering::Acquire).is_ok();
-    trace(if error != 0 { b"recognizer warmup failed" }
-        else if published { b"recognizer warmup ready" }
-        else { b"recognizer warmup discarded after native fault" });
+    let published = ENGINE
+        .compare_exchange(
+            1,
+            if error == 0 { 2 } else { 3 },
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_ok();
+    trace(if error != 0 {
+        b"recognizer warmup failed"
+    } else if published {
+        b"recognizer warmup ready"
+    } else {
+        b"recognizer warmup discarded after native fault"
+    });
 }
 
 // ------------------------=
@@ -124,15 +138,23 @@ pub fn prepare() -> bool {
         // deadline and flooding APs with identical failed warmup jobs.
         1 | 3 | 5 => false,
         _ => unsafe {
-            if matches!(STATE.load(Ordering::Acquire), 1 | 2 | WAITING_ENGINE) { return false; }
+            if matches!(STATE.load(Ordering::Acquire), 1 | 2 | WAITING_ENGINE) {
+                return false;
+            }
             if engine != 4 {
-                PREPARE_DEADLINE.store(super::qwen::workers::clock_ns().saturating_add(90_000_000_000), Ordering::Release);
+                PREPARE_DEADLINE.store(
+                    super::qwen::workers::clock_ns().saturating_add(90_000_000_000),
+                    Ordering::Release,
+                );
                 trace(b"recognizer warmup queued");
             } else if prepare_cancelled(core::ptr::null_mut()) != 0 {
                 let _ = ENGINE.compare_exchange(4, 3, Ordering::AcqRel, Ordering::Acquire);
                 return false;
             }
-            if ENGINE.compare_exchange(engine, 1, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            if ENGINE
+                .compare_exchange(engine, 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
                 return false;
             }
             if !super::qwen::workers::background(prepare_worker) {
@@ -147,13 +169,17 @@ pub fn prepare() -> bool {
 // FUNC: prepared
 // DESC: Reports only completed recognition and synthesis warmup, never model bytes merely being present.
 // ------------------=
-pub fn prepared() -> bool { ENGINE.load(Ordering::Acquire) == 2 }
+pub fn prepared() -> bool {
+    ENGINE.load(Ordering::Acquire) == 2
+}
 
 // ------------------------=
 // FUNC: prepare_failed
 // DESC: Reports terminal warmup failure without silently retrying a faulted native engine.
 // ------------------=
-pub fn prepare_failed() -> bool { ENGINE.load(Ordering::Acquire) == 3 }
+pub fn prepare_failed() -> bool {
+    ENGINE.load(Ordering::Acquire) == 3
+}
 
 // ------------------------=
 // FUNC: native_engine_fault
@@ -250,7 +276,9 @@ extern "C" fn cancelled(_: *mut core::ffi::c_void) -> i32 {
 // ------------------=
 unsafe fn worker() {
     STATE.store(2, Ordering::Release);
-    if ERROR != NATIVE_ENGINE_BUSY { trace(b"worker started"); }
+    if ERROR != NATIVE_ENGINE_BUSY {
+        trace(b"worker started");
+    }
     let start = super::qwen::workers::clock_ns();
     LENGTH = Whisper
         .recognize_pcm(
@@ -259,7 +287,9 @@ unsafe fn worker() {
             &mut *(&raw mut TEXT),
         )
         .unwrap_or(0);
-    if ERROR == 7 { native_engine_fault(); }
+    if ERROR == 7 {
+        native_engine_fault();
+    }
     if ERROR == NATIVE_ENGINE_BUSY && cancelled(core::ptr::null_mut()) == 0 {
         STATE.store(WAITING_ENGINE, Ordering::Release);
         return;
@@ -336,9 +366,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
     unsafe {
         OWNER = owner;
         CAPABILITY = capability;
-        DEADLINE = now.saturating_add(
-            RECOGNITION_DEADLINE_SECONDS.saturating_mul(1_000_000_000),
-        );
+        DEADLINE = now.saturating_add(RECOGNITION_DEADLINE_SECONDS.saturating_mul(1_000_000_000));
         (&mut *(&raw mut PCM))[..pcm.len()].copy_from_slice(pcm);
         SAMPLES = pcm.len();
         (&mut *(&raw mut TEXT)).fill(0);
@@ -387,9 +415,21 @@ pub fn status() -> InputStatus {
             5 => InputState::Cancelled,
             _ => InputState::Idle,
         },
-        error: if (3..=5).contains(&state) { unsafe { ERROR } } else { 0 },
-        elapsed_ns: if (3..=5).contains(&state) { unsafe { ELAPSED } } else { 0 },
-        heap_bytes: if (3..=5).contains(&state) { unsafe { MEMORY } } else { 0 },
+        error: if (3..=5).contains(&state) {
+            unsafe { ERROR }
+        } else {
+            0
+        },
+        elapsed_ns: if (3..=5).contains(&state) {
+            unsafe { ELAPSED }
+        } else {
+            0
+        },
+        heap_bytes: if (3..=5).contains(&state) {
+            unsafe { MEMORY }
+        } else {
+            0
+        },
     }
 }
 // ------------------------=
@@ -438,7 +478,9 @@ pub fn take(owner: SecurityIdentity, out: &mut [u8]) -> Result<usize, AiError> {
 // DESC: Revocation cancels ongoing decoding and prevents unauthorized transcript publication.
 // ------------------=
 pub fn poll() {
-    if ENGINE.load(Ordering::Acquire) == 4 { let _ = prepare(); }
+    if ENGINE.load(Ordering::Acquire) == 4 {
+        let _ = prepare();
+    }
     if !matches!(STATE.load(Ordering::Acquire), 1 | 2 | 3 | WAITING_ENGINE) {
         return;
     }
@@ -459,7 +501,9 @@ pub fn poll() {
         .unwrap_or(false);
         if !valid || cancelled(core::ptr::null_mut()) != 0 {
             stop(OWNER);
-        } else if STATE.load(Ordering::Acquire) == WAITING_ENGINE && ENGINE.load(Ordering::Acquire) != 1 {
+        } else if STATE.load(Ordering::Acquire) == WAITING_ENGINE
+            && ENGINE.load(Ordering::Acquire) != 1
+        {
             STATE.store(1, Ordering::Release);
             if !super::qwen::workers::background(worker) {
                 STATE.store(WAITING_ENGINE, Ordering::Release);

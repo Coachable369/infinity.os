@@ -3,6 +3,15 @@
 use super::*;
 use super::access_style as access;
 use crate::ui::panel_recipe::Surface as AccessSurface;
+static SETTINGS_PRESENTATION_DIRTY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+// ------------------------=
+// FUNC: system_ui_settings_changed
+// DESC: Invalidates desktop and retained settings surfaces once after a native settings mutation.
+// ------------------=
+pub fn system_ui_settings_changed() {
+    SETTINGS_PRESENTATION_DIRTY.store(true, core::sync::atomic::Ordering::Release);
+}
 #[path = "minimized_shelf.rs"]
 mod minimized_shelf;
 #[path = "desktop_widget_menu.rs"]
@@ -19,6 +28,45 @@ static mut THINKING_HEADER_DIRTY: bool = false;
 static mut LAST_BROWSER_REVISION:u64=0;
 static mut LAST_ASSISTANT_REVISION: u32 = 0;
 static mut LAST_BROWSER_PAGE_KEY:Option<infinity_browser_core::damage::PageKey>=None;
+
+impl DisplayDevice {
+    // ------------------------=
+    // FUNC: native_gui_window
+    // DESC: Presents real toolkit client pixels with the existing glass title, Inter typography, authored controls and exterior resize affordances.
+    // ------------------=
+    pub(super) fn native_gui_window(&mut self, window: crate::ui::window::Window, frame: crate::ui::compositor::SurfaceFrame<'_>, active:bool) {
+        use crate::ui::window::WindowState;
+        self.native_gui_surface(frame);
+        let scale=self.ui_scale();
+        let title=crate::runtime::native_gui::title_bounds(window,scale);
+        if title.height==0{return;}
+        let old_clip=self.render_clip;
+        let left=title.x.max(0) as usize;
+        let top=title.y.max(0) as usize;
+        let right=title.right().max(0).min(self.width as i32) as usize;
+        let bottom=title.bottom().max(0).min(self.height as i32) as usize;
+        if right>left&&bottom>top {
+            self.intersect_render_clip(left,top,right-left,bottom-top);
+            self.glass_window_substrate(title,true);
+            let controls=crate::ui::app_launcher::window_controls::bounds(title,title.height,scale);
+            let tx=title.x.saturating_add((16*scale) as i32);
+            let available=controls[0].x.saturating_sub(tx).saturating_sub((12*scale) as i32).max(0) as usize;
+            if tx>=0&&title.y>=0 {
+                let mut text=window.title().as_bytes();
+                while !text.is_empty()&&self.app_text_width(text,true,scale)>available {text=&text[..text.len()-1];}
+                self.app_text(tx as usize,title.y as usize+10*scale,text,(226,242,252),true,scale);
+            }
+            for (index,rect) in controls.into_iter().enumerate() {
+                if rect.x>=0&&rect.y>=0 {
+                    self.window_control(rect.x as usize,rect.y as usize,rect.width as usize,index,window.state==WindowState::Maximized);
+                }
+            }
+            self.render_clip=old_clip;
+        }
+        let bounds=if window.visible {window.bounds.union(title)}else{title};
+        self.precision_window_frame(bounds,active,scale);
+    }
+}
 
 // ------------------------=
 // FUNC: thinking_animation_tick
@@ -38,6 +86,11 @@ pub fn thinking_animation_tick(visible: bool) -> bool {
             ai.chat.enabled() && !ai.chat.minimized() && !ai.chat.selected_model_ready());
         let animation = &mut *(&raw mut THINKING_ANIMATION);
         let changed = animation.set_veil(veil) | animation.advance(active || veil, now);
+        if changed {
+            #[cfg(target_os="none")]
+            crate::ui::ai_widget::update_meter(crate::drivers::audio::take_meter_peak());
+            if !active { crate::ui::ai_widget::clear_meter(); }
+        }
         THINKING_HEADER_DIRTY |= changed;
         changed
     }
@@ -156,10 +209,11 @@ impl super::DisplayDevice {
         self.app_card_alpha(menu.rect,(5,18,31),(73,180,229),250,s);
         if !menu.viewer {
             for (row,label) in crate::console::clipboard_menu::LABELS.iter().enumerate() {
+                let label=if row==6 && menu.target==crate::console::clipboard_menu::Target::Browser {b"Save image to Downloads" as &[u8]}else{*label};
                 let top=y+(6+row*30)*s;
                 if row==menu.row {self.fill_rounded_rect_alpha(x+5*s,top,w-10*s,30*s,4*s,20,66,91,255);}
                 self.app_text(x+14*s,top+3*s,label,
-                    if row==6 && menu.target!=crate::console::clipboard_menu::Target::Editor {(83,111,132)}else{(215,231,241)},false,s);
+                    if row==6 && !matches!(menu.target,crate::console::clipboard_menu::Target::Editor|crate::console::clipboard_menu::Target::Browser) {(83,111,132)}else{(215,231,241)},false,s);
             }
             return;
         }
@@ -619,6 +673,7 @@ impl super::DisplayDevice {
         &mut self,
         presentation: crate::ui::authentication_motion::Presentation,
     ) {
+        if self.skin_visual_mode() == 0 && self.repaint_login_motion(presentation) { return; }
         if self.skin_visual_mode() != 0
             || !crate::ui::installer_layout::login_uses_legacy_animation(
                 crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES,
@@ -1934,6 +1989,10 @@ impl super::DisplayDevice {
         focus: usize,
         validation_error: bool,
     ) {
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if step>=7 {
+            self.paint_first_boot_background();self.onboarding_frame(step,input,masked,focus,validation_error);return;
+        }
         // Restore the authored backdrop under the card, bounded to its exact frame.
         // This also contains focus-easing damage without repainting the wallpaper.
         let previous_clip=self.render_clip;
@@ -1974,10 +2033,6 @@ impl super::DisplayDevice {
             .filter(|value| !value.is_empty())
             .unwrap_or(placeholder);
             let authored_input =
-        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-        if step>=7 {
-            self.paint_first_boot_background();self.onboarding_frame(step,input,masked,focus,validation_error);return;
-        }
                 crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .onboarding_input_geometry(step);
             self.onboarding_input_field(
@@ -4075,7 +4130,9 @@ impl super::DisplayDevice {
         let pool_replica_state:&[u8]=match pool_placement.map(|p|p.state){
             Some(2)=>b"Verified",Some(3)=>b"Offline",Some(4)=>b"Stale",Some(5)=>b"Corrupt",Some(_)=>b"Not verified",None=>b"No placement"};
         let output_voice = crate::runtime::identity::OUTPUT_VOICE_NAMES[voice_profile.map(|p| p.output_voice as usize).unwrap_or(0).min(4)];
-        let basic_state=super::settings_view::BasicSettingsSnapshot{output_voice,chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
+        let local_only=voice_profile.and_then(|v|crate::runtime::with_runtime(|r|r.identity.ai_profile(v.user)).flatten())
+            .map(|p|p.provider_policy==crate::runtime::identity::AiProviderPolicy::LocalOnly).unwrap_or(true);
+        let basic_state=super::settings_view::BasicSettingsSnapshot{local_only,output_voice,chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
             face_login_enabled:voice_profile.is_some_and(|v|crate::runtime::with_runtime(|r|r.identity.user_profile(v.user).is_some_and(|p|p.face_login_enabled)).unwrap_or(false)),
             timeout_minutes:parse_leading_u8(input).unwrap_or(crate::runtime::identity::DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES),
             timeout_maximum:crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES};
@@ -4087,7 +4144,7 @@ impl super::DisplayDevice {
         }
         let rows:[(&[u8],&[u8]);8]=match focus.min(10) {
             1 => [
-                (b"Skin", b"InfinityOS Default Dark"),
+                (b"Skin", match self.skin_visual_mode() { 1 => b"Diagnostic Light", 2 => b"Safe", _ => b"Cosmic Dark" }),
                 (b"Icon Set", icon_theme.name()),
                 (b"Primary", b"Custom color"),
                 (b"Secondary", b"Custom color"),
@@ -4180,6 +4237,16 @@ impl super::DisplayDevice {
             .enumerate()
         {
             let row=self.paint_settings_row_summary(focus,index,label,value,settings_window,scale,chrome);
+            if focus==8 && (5..=7).contains(&index) {
+                let bounds=layout.settings_row_element_geometry(settings_window,focus,index,
+                    crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure)
+                    .unwrap_or(crate::ui::geometry::Rect{x:row.summary.right()-(30*scale)as i32,
+                        y:row.summary.y+(20*scale)as i32,width:(20*scale)as u32,height:(20*scale)as u32});
+                self.precision_radio(crate::ui::geometry::Rect{height:bounds.width,..bounds},
+                    pool_object.is_some_and(|o|o.desired==(index-4)as u8),pool_object.is_some(),
+                    crate::ui::panel_recipe::Material{fill:chrome.primary,edge:chrome.outline,
+                        opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
+            }
             if settings_window.expanded_row == Some(index)
                 && row.detail.intersects(geometry.viewport)
             {
@@ -5389,7 +5456,7 @@ impl super::DisplayDevice {
                 cell_left,
                 geometry.grid_cell_width,
                 well_top + well_size + 8 * scale,
-                entry.label,
+                entry.label(),
                 220,
                 235,
                 245,
@@ -6741,6 +6808,24 @@ impl super::DisplayDevice {
                 Some((geometry.panel.x-base.x,geometry.panel.y-base.y)),false,&[65,66,67,68,69,70,71]);
             self.render_clip=saved;
         }
+        if !chat.minimized() && !crate::console::reduced_motion() {
+            let level=crate::ui::ai_widget::meter();
+            let generating=chat.generation_state==crate::runtime::ai::chat::GenerationState::Running;
+            if generating || level>0 {
+                let frame=unsafe { (*(&raw const THINKING_ANIMATION)).frame as usize };
+                let span=width.saturating_sub(24*scale).max(1);
+                let phase=(frame*2*scale)%(span*2);
+                let center=phase.min(span*2-phase);
+                for band in (0..8usize).rev() {
+                    let radius=(18+band*7)*scale;
+                    let x=left+12*scale+center.saturating_sub(radius);
+                    let w=(radius*2).min(left+width-12*scale-x);
+                    self.fill_rounded_rect_alpha(x,top+height.saturating_sub((72+band*2)*scale),
+                        w,(24+band*4)*scale,12*scale,accent_r,accent_g,accent_b,
+                        (2+level/4096+usize::from(generating)*2).min(12)as u8);
+                }
+            }
+        }
         for row in 0..3 { for col in 0..2 { self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226); } }
         let app_progress = crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_generation_progress());
         let can_stop = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
@@ -7010,7 +7095,7 @@ impl super::DisplayDevice {
         let dock_top = geometry.dock.y.max(0) as usize;
         if let Some(region)=self.clipped_render_region(dock_left,dock_top,dock_width,dock_height) {
             let (opacity,blur)=self.active_background_effects();
-            let mut material=dock_material::Material{primary:self.active_primary_rgb(),accent:self.active_accent_rgb(),
+            let mut material=dock_material::Material{primary:self.active_primary_rgb(),accent:0x86c7ff,
                 opacity,blur,scale,bgr:self.format!=0};
             match self.skin_visual_mode() {
                 1=>{material.primary=0xf8fbff;material.accent=0x7a91a6;},
@@ -7123,6 +7208,8 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn system_login_animation(&mut self, phase: usize) {
         if self.skin_visual_mode() != 0 || crate::console::reduced_motion() { return; }
+        let elapsed = crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000;
+        if self.repaint_login_motion(crate::ui::authentication_motion::idle_presentation(elapsed, false)) { return; }
         if !crate::ui::installer_layout::login_uses_legacy_animation(
             crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES,
         ) { return; }
@@ -7406,7 +7493,8 @@ pub fn system_ui_present(
             if font_changed {super::retained_windows::invalidate();}
             let wallpaper_changed=crate::ui::user_wallpaper::take_damage(console.display.width,console.display.height).is_some();
             let visibility_changed = crate::ui::desktop_stack::take_visibility_damage();
-            let structural_change_without_window = visibility_changed || font_changed || wallpaper_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
+            let settings_mutated = SETTINGS_PRESENTATION_DIRTY.swap(false, core::sync::atomic::Ordering::AcqRel);
+            let structural_change_without_window = settings_mutated || visibility_changed || font_changed || wallpaper_changed || crate::ui::spatial::take_world_damage() || (!bounded_menu_change
                 && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
                     || (!desktop_layer_focus_changed
                         && crate::ui::redraw::focus_change_requires_structural_redraw(
@@ -8122,13 +8210,22 @@ pub fn system_ui_present(
                 console.display.system_top_bar_clock(clock);
             }
             if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10 | 11) {
+                let mut native_windows = [None; 8];
+                let mut native_count = 0;
+                crate::console::native_gui_frames(|window, _, _| {
+                    if native_count < native_windows.len() {
+                        native_windows[native_count] = Some(window);
+                        native_count += 1;
+                    }
+                });
+                let native_damage = console.native_scene_damage.update(&native_windows, display_rect, layout.scale());
                 let control_damage=crate::ui::app_launcher::window_controls::take_damage();
                 for rect in control_damage.into_iter().flatten() {
                     for slot in 0..13 {super::retained_windows::invalidate_region(slot,super::PresentRegion {
                         left:rect.x.max(0) as usize,top:rect.y.max(0) as usize,
                         right:rect.right().max(0) as usize,bottom:rect.bottom().max(0) as usize});}
                 }
-                for damage in [control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                for damage in [native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {
@@ -8155,6 +8252,9 @@ pub fn system_ui_present(
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;
+            if matches!(screen,2|4|7|8|9|10|11) {
+                crate::console::native_gui_frames(|window,frame,active|console.display.native_gui_window(window,frame,active));
+            }
             console.display.clipboard_overlay();
             if matches!(screen,2|4|7|8|9|10|11) {console.display.file_preview_overlay();}
             console.save_and_draw_cursor(cursor_x, cursor_y);

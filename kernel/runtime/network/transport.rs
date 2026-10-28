@@ -120,8 +120,10 @@ impl ConnectionManager {
                 _ => NetworkError::AccessDenied,
             })?;
         let remote_wire = !remote.address.is_host_local();
-        if remote_wire && (protocol != TransportProtocol::Datagram
-            || !matches!((self.native_address, local.address, remote.address), (Some(address), IpAddress::V4(local_ip), IpAddress::V4(_)) if address == local_ip)) {
+        if remote_wire
+            && (protocol != TransportProtocol::Datagram
+                || !matches!((self.native_address, local.address, remote.address), (Some(address), IpAddress::V4(local_ip), IpAddress::V4(_)) if address == local_ip))
+        {
             self.failures = self.failures.saturating_add(1);
             return Err(NetworkError::UnsupportedOperation);
         }
@@ -140,7 +142,13 @@ impl ConnectionManager {
         ) {
             return Err(NetworkError::PolicyDenied);
         }
-        if remote_wire && self.connections.iter().flatten().any(|c| c.local == local && c.remote == remote && c.protocol == protocol) {
+        if remote_wire
+            && self
+                .connections
+                .iter()
+                .flatten()
+                .any(|c| c.local == local && c.remote == remote && c.protocol == protocol)
+        {
             return Err(NetworkError::Conflict);
         }
         let slot = self
@@ -228,7 +236,9 @@ impl ConnectionManager {
         if connection.state != ConnectionState::Open {
             return Err(NetworkError::ConnectionClosed);
         }
-        if !connection.remote.address.is_host_local() { return Err(NetworkError::UnsupportedOperation); }
+        if !connection.remote.address.is_host_local() {
+            return Err(NetworkError::UnsupportedOperation);
+        }
         let packet = Packet::from_slice(data)?;
         if self.receive[slot]
             .push(packet, connection.queue_limit as usize)
@@ -282,7 +292,17 @@ impl ConnectionManager {
             .ok_or(NetworkError::ConnectionClosed)?;
         let current = self.connections[slot].unwrap();
         if !current.remote.address.is_host_local() {
-            capabilities.validate(current.capability_scope, current.owner, CapabilityType::NetworkConnect, 0, 1, 0, now).map_err(|_| NetworkError::CapabilityRevoked)?;
+            capabilities
+                .validate(
+                    current.capability_scope,
+                    current.owner,
+                    CapabilityType::NetworkConnect,
+                    0,
+                    1,
+                    0,
+                    now,
+                )
+                .map_err(|_| NetworkError::CapabilityRevoked)?;
         }
         let packet = self.receive[slot]
             .pop()
@@ -319,7 +339,10 @@ impl ConnectionManager {
     pub fn bind_native_address(&mut self, address: Option<[u8; 4]>) {
         if self.native_address != address {
             for index in 0..MAX_CONNECTIONS {
-                if self.connections[index].map(|c| !c.remote.address.is_host_local()).unwrap_or(false) {
+                if self.connections[index]
+                    .map(|c| !c.remote.address.is_host_local())
+                    .unwrap_or(false)
+                {
                     self.connections[index] = None;
                     self.receive[index] = PacketQueue::new();
                 }
@@ -332,16 +355,69 @@ impl ConnectionManager {
     // FUNC: deliver_datagram
     // DESC: Delivers validated wire traffic only to an existing authorized endpoint and current inbound policy.
     // ------------------=
-    pub fn deliver_datagram(&mut self, packet: super::wire::Datagram, policies: &mut PolicyEngine, capabilities: &CapabilityManager, now: u64) -> Result<(), NetworkError> {
-        if packet.length > packet.bytes.len() { return Err(NetworkError::InvalidEndpoint); }
-        let source = Endpoint { address: IpAddress::V4(packet.source), port: packet.source_port };
-        let destination = Endpoint { address: IpAddress::V4(packet.destination), port: packet.destination_port };
-        let index = self.connections.iter().position(|entry| entry.map(|c| c.protocol == TransportProtocol::Datagram && c.remote == source && c.local == destination && c.state == ConnectionState::Open).unwrap_or(false)).ok_or(NetworkError::ConnectionRefused)?;
+    pub fn deliver_datagram(
+        &mut self,
+        packet: super::wire::Datagram,
+        policies: &mut PolicyEngine,
+        capabilities: &CapabilityManager,
+        now: u64,
+    ) -> Result<(), NetworkError> {
+        if packet.length > packet.bytes.len() {
+            return Err(NetworkError::InvalidEndpoint);
+        }
+        let source = Endpoint {
+            address: IpAddress::V4(packet.source),
+            port: packet.source_port,
+        };
+        let destination = Endpoint {
+            address: IpAddress::V4(packet.destination),
+            port: packet.destination_port,
+        };
+        let index = self
+            .connections
+            .iter()
+            .position(|entry| {
+                entry
+                    .map(|c| {
+                        c.protocol == TransportProtocol::Datagram
+                            && c.remote == source
+                            && c.local == destination
+                            && c.state == ConnectionState::Open
+                    })
+                    .unwrap_or(false)
+            })
+            .ok_or(NetworkError::ConnectionRefused)?;
         let connection = self.connections[index].unwrap();
-        capabilities.validate(connection.capability_scope, connection.owner, CapabilityType::NetworkConnect, 0, 1, 0, now).map_err(|_| NetworkError::CapabilityRevoked)?;
-        let decision = policies.evaluate(connection.subject, Direction::Inbound, Some(2), destination, source, TransportProtocol::Datagram, now);
-        if !matches!(decision.action, PolicyAction::Allow | PolicyAction::AuditOnly) { return Err(NetworkError::PolicyDenied); }
-        self.receive[index].push(Packet::from_slice(&packet.bytes[..packet.length])?, connection.queue_limit as usize)
+        capabilities
+            .validate(
+                connection.capability_scope,
+                connection.owner,
+                CapabilityType::NetworkConnect,
+                0,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| NetworkError::CapabilityRevoked)?;
+        let decision = policies.evaluate(
+            connection.subject,
+            Direction::Inbound,
+            Some(2),
+            destination,
+            source,
+            TransportProtocol::Datagram,
+            now,
+        );
+        if !matches!(
+            decision.action,
+            PolicyAction::Allow | PolicyAction::AuditOnly
+        ) {
+            return Err(NetworkError::PolicyDenied);
+        }
+        self.receive[index].push(
+            Packet::from_slice(&packet.bytes[..packet.length])?,
+            connection.queue_limit as usize,
+        )
     }
 
     // ------------------------=

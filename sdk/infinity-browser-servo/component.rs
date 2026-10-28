@@ -7,7 +7,7 @@ mod clipboard;
 #[path = "../infinity-browser-core/worker.rs"]
 mod abi;
 use core::{mem::MaybeUninit, sync::atomic::{AtomicPtr, Ordering}};
-use std::{string::ToString, time::Duration};
+use std::{borrow::ToOwned, string::ToString, time::Duration};
 use infinity_servo_runtime_primitives::native::{Hooks, Runtime};
 static HOST: AtomicPtr<abi::Host> = AtomicPtr::new(core::ptr::null_mut());
 static mut RUNTIME: MaybeUninit<Runtime> = MaybeUninit::uninit();
@@ -128,6 +128,19 @@ fn write_clipboard(bytes:&[u8])->bool {
     let h=host();unsafe{(h.clipboard_write)(h.context,bytes.as_ptr(),bytes.len())==1}
 }
 impl resources::Provider for Network {
+    // ------------------------=
+    // FUNC: resource_failure
+    // DESC: Emits bounded origin-only diagnostics without leaking URL queries, credentials or document paths.
+    // ------------------=
+    fn resource_failure(&mut self,url:&str,stage:u32) {
+        let origin=servo::ServoUrl::parse(url).ok().and_then(|u|u.host_str().map(str::to_owned)).unwrap_or_default();
+        event(abi::EVENT_DIAGNOSTIC,stage,&std::format!("resource failure stage={stage} host={origin}"));
+    }
+    // ------------------------=
+    // FUNC: download_progress
+    // DESC: Reports explicit transfer state and byte counts through the bounded native event channel.
+    // ------------------=
+    fn download_progress(&mut self,state:u32,bytes:usize,name:&str){event(abi::EVENT_DOWNLOAD_PROGRESS,state,&std::format!("{}:{}",bytes,name));}
     // ------------------------=
     // FUNC: retry_pre_header_failures
     // DESC: Allows bounded idempotent recovery from transient native mailbox transport failures.
@@ -263,6 +276,7 @@ fn run() {
                 continue;
             }
             let Some(group)=session.as_mut() else { continue; };
+            if command.kind==abi::DOWNLOAD_CANCEL {group.cancel_downloads();event(abi::EVENT_DOWNLOAD_PROGRESS,0,"0:");continue;}
             if matches!(command.kind,abi::TAB_CREATE|abi::TAB_SELECT|abi::TAB_CLOSE) {
                 let previous=group.active();
                 let result=match command.kind {
@@ -346,6 +360,9 @@ fn verify_closed_channel_retirement() {
 fn dispatch(view:&mut session::Session<Network>,command:&abi::Command)->Result<(),()> {
     let point=servo::WebViewPoint::Device((command.x as f32,command.y as f32).into());
     match command.kind {
+        abi::IMAGE_TARGET=>view.image_target(command.x,command.y,move|found|event(abi::EVENT_IMAGE_TARGET,found as u32,"")),
+        abi::IMAGE_SAVE=>view.save_image(),
+        abi::DOWNLOAD_CANCEL=>view.cancel_download(),
         abi::SEARCH_SELECTION=>view.search_selection(),
         abi::ZOOM=>view.zoom(command.x),
         abi::FIND=>{

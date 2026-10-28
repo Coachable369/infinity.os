@@ -1,0 +1,54 @@
+#ifndef INFINITY_TCL_CONFIG_H
+#define INFINITY_TCL_CONFIG_H
+/* Exact LP64 Newlib/native-task contract, shared by ARM64 and x86-64. */
+#define STDC_HEADERS 1
+#define HAVE_STDINT_H 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_INTPTR_T 1
+#define HAVE_UINTPTR_T 1
+#define HAVE_STDIO_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_SYS_TIME_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_GETCWD 1
+#define HAVE_OPENDIR 1
+#define HAVE_MKTIME 1
+#define HAVE_GMTIME_R 1
+#define HAVE_LOCALTIME_R 1
+#define HAVE_SIGNED_CHAR 1
+#define HAVE_ZLIB 1
+#define HAVE_ZLIB_H 1
+#define HAVE_STRUCT_STAT_ST_BLOCKS 1
+#define HAVE_STRUCT_STAT_ST_BLKSIZE 1
+#define TIME_WITH_SYS_TIME 1
+#define NO_UNION_WAIT 1
+#define NO_UNAME 1
+#define NO_SYS_PARAM_H 1
+#define NO_REALPATH 1
+#define TCL_WIDE_INT_TYPE long
+#define TCL_CFG_OPTIMIZED 1
+#define TCL_CFG_DEBUG 0
+#define TCL_CFG_MEM_DEBUG 0
+#define TCL_CFG_THREADS 0
+#define TCL_CFG_PROFILED 0
+#define TCL_CFG_LIBRARY "/system/python/tcl8.6"
+#define TCL_CFG_ENCODING "utf-8"
+#define TCL_LIBRARY "/system/python/tcl8.6"
+#define TCL_PACKAGE_PATH "/system/python"
+#define TCL_DEFAULT_ENCODING "utf-8"
+#define TCL_SHLIB_EXT ".so"
+#define CFG_INSTALL_LIBDIR "/system/python"
+#define CFG_INSTALL_BINDIR "/system/python"
+#define CFG_INSTALL_SCRDIR "/system/python/tcl8.6"
+#define CFG_INSTALL_INCDIR "/system/python/include"
+#define CFG_INSTALL_DOCDIR "/system/python/docs"
+#define CFG_RUNTIME_LIBDIR "/system/python"
+#define CFG_RUNTIME_BINDIR "/system/python"
+#define CFG_RUNTIME_SCRDIR "/system/python/tcl8.6"
+#define CFG_RUNTIME_INCDIR "/system/python/include"
+#define CFG_RUNTIME_DOCDIR "/system/python/docs"
+#endif

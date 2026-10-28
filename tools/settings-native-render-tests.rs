@@ -7,7 +7,7 @@ use crate::ui::{geometry::{Rect,Point},system_layout::{SettingsWindowState,Syste
 // FUNC: snapshot
 // DESC: Defines explicit preview values without emulating any runtime service.
 // ------------------=
-fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
+fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
 // ------------------------=
 // FUNC: state
 // DESC: Builds bounded native Settings window geometry for a selected section and viewport.
@@ -58,6 +58,17 @@ pub(super) fn verify() {
         }
         let section=3;let state=state(section);let(a,_)=frame(width,height,section,state,snapshot(),None);let mut changed=snapshot();changed.chat_enabled=false;let(b,_)=frame(width,height,section,state,changed,None);let(bounds,count)=damage(&a,&b,width);assert!(count>10);
         let row=layout.settings_row_geometry_for_section(state,1,section).summary;assert!(row.contains(Point{x:bounds.x,y:bounds.y}));assert!(row.contains(Point{x:bounds.right()-1,y:bounds.bottom()-1}));
+        let mut focused=state;focused.control_focus=crate::ui::controls::SETTINGS_ROW_FOCUS+1;
+        let(focused_frame,ok)=frame(width,height,section,focused,snapshot(),None);assert!(ok);
+        let(bounds,count)=damage(&a,&focused_frame,width);assert!(count>10);
+        assert!(row.contains(Point{x:bounds.x,y:bounds.y}));
+        assert!(row.contains(Point{x:bounds.right()-1,y:bounds.bottom()-1}));
+        let mut policy=snapshot();policy.local_only=false;
+        let(policy_frame,ok)=frame(width,height,section,state,policy,None);assert!(ok);
+        let(bounds,count)=damage(&a,&policy_frame,width);assert!(count>10);
+        let policy_row=layout.settings_row_geometry_for_section(state,0,section).summary;
+        assert!(policy_row.contains(Point{x:bounds.x,y:bounds.y}));
+        assert!(policy_row.contains(Point{x:bounds.right()-1,y:bounds.bottom()-1}));
         for unsupported in [1,6,7,8]{let(pixels,ok)=frame(width,height,unsupported,state,snapshot(),None);assert!(!ok);assert!(pixels.iter().all(|p|*p==0x00182739));}
     }
     authored_style_pixels();

@@ -270,7 +270,7 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
         crate::ui::app_launcher::window_controls::publish(interaction);
         let preview_value:&[u8]=if screen==5{b"15 minutes"}else{b"Preview machine"};
         settings_rendered=target.render_basic_settings_view(usize::from(screen-1),preview_value,window,target.ui_scale(),
-            crate::settings_view::BasicSettingsSnapshot{output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
+            crate::settings_view::BasicSettingsSnapshot{local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
                 voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,
                 preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:15,timeout_maximum:120});
         crate::ui::app_launcher::window_controls::publish(None);
@@ -302,7 +302,8 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             target.ai_widget_send(geometry.send,false,scale);
         }
     } else if kind==4 {
-        if !target.login_template_scene(bytes, b"Select an account", b"", focus) {
+        if !target.login_template_scene_motion(bytes, b"Select an account", b"", focus,
+            Some(crate::ui::authentication_motion::presentation_at(phase.unwrap_or(0).min(2400) as u16))) {
             return Err("Native login scene rejected the template".into());
         }
     } else if kind==3 {
@@ -672,13 +673,25 @@ fn authored_button_pixels(bytes:&[u8],screens:u8) {
             for (focus,pressed) in [(2,false),(1,false),(1,true)] {
                 access_style::animate(1,1000,pressed,true);
                 let (w,h)=(1280,800);let mut pixels=vec![0;w*h];
+                let scale=display(&mut pixels,w,h).ui_scale();
                 let r=scale_template_rect(element.frame,w,h);
                 display(&mut pixels,w,h).template_element_in_rect(element,None,
                     Some((focus,true,Some((element.frame.x as i32+1,element.frame.y as i32+1,pressed)))),r);
                 let p=pixels[(r.top+r.height/2)*w+r.left+r.width/2];
-                let red=p&255;let green=(p>>8)&255;let blue=(p>>16)&255;
-                assert!(blue>green+12 && blue>red+12,"non-blue control: {screen} {role:?} {p:06x}");
-                if role==Role::BackButton {assert!(blue<100 && green<65,"secondary too bright");}
+                // Saved scenes and UIKit recipes may intentionally use any
+                // palette. Verify their actual contract instead of requiring
+                // every user-authored button to remain factory blue.
+                use crate::ui::panel_recipe::{self,Surface,Material};
+                let kind=if role==Role::PrimaryButton {Surface::Primary}else{Surface::Secondary};
+                let (red,green,blue,alpha)=panel_recipe::pixel_styled(kind,r.width,r.height,r.width/2,r.height/2,
+                    Material{fill:(element.fill[0],element.fill[1],element.fill[2]),
+                        edge:(element.border[0],element.border[1],element.border[2]),
+                        opacity:(u16::from(element.fill[3])*u16::from(element.opacity)/100)as u8,
+                        edge_opacity:(u16::from(element.border[3])*u16::from(element.opacity)/100)as u8,
+                        focus:255,pressed,scale},
+                    panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius));
+                let channel=|c:u8|u32::from(c)*u32::from(alpha)/255;
+                assert_eq!(p,channel(red)|(channel(green)<<8)|(channel(blue)<<16));
             }
         }
     }

@@ -182,6 +182,10 @@ python3 tools/installed-kernel-parity-test.py
 python3 tools/native-compiler-parity-test.py
 python3 tools/native-python/parity.py
 python3 tools/native-python/verify-loader.py
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-source tools/native-python/stdlib-acceptance.py --python-exit 0
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-source tools/native-python/stdlib-acceptance.py --python-exit 0
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-source tools/native-python/bundled-tests.py --python-exit 0
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-source tools/native-python/bundled-tests.py --python-exit 0
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation valid
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation invalid
@@ -302,6 +306,10 @@ python3 tools/installed-kernel-parity-test.py
 python3 tools/native-compiler-parity-test.py
 python3 tools/native-python/parity.py
 python3 tools/native-python/verify-loader.py
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-source tools/native-python/stdlib-acceptance.py --python-exit 0
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-source tools/native-python/stdlib-acceptance.py --python-exit 0
+python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-source tools/native-python/bundled-tests.py --python-exit 0
+python3 tools/native-process-probe/run.py --arch x86_64 --compiler builds/toolchains/x86_64/python.elf --python-script --python-source tools/native-python/bundled-tests.py --python-exit 0
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation valid
 python3 tools/native-process-probe/run.py --arch aarch64 --compiler builds/toolchains/aarch64/python.elf --python-script --python-validation invalid

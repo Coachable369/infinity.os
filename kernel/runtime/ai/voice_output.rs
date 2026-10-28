@@ -1,8 +1,10 @@
 //! Single-owner native speech output jobs. BSP owns authority and playback;
 //! a bounded AP task owns synthesis buffers until release-publishing completion.
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use crate::runtime::{audio::PlaybackState, capability::CapabilityType, execution::SecurityIdentity};
 use super::{types::AiError, voice::SpeechSynthesisProvider};
+use crate::runtime::{
+    audio::PlaybackState, capability::CapabilityType, execution::SecurityIdentity,
+};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 const SOURCE_RATE: u32 = 24000;
 const CAPACITY: usize = SOURCE_RATE as usize * 30;
 const NATIVE_ENGINE_BUSY: i32 = 8;
@@ -52,7 +54,17 @@ mod speech_pcm;
 mod voice_trace;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OutputState { Idle, Queued, Synthesizing, Ready, Failed, Speaking, Cancelled, Complete, Buffered }
+pub enum OutputState {
+    Idle,
+    Queued,
+    Synthesizing,
+    Ready,
+    Failed,
+    Speaking,
+    Cancelled,
+    Complete,
+    Buffered,
+}
 #[derive(Clone, Copy)]
 pub struct OutputStatus {
     pub state: OutputState,
@@ -68,7 +80,13 @@ pub struct OutputStatus {
     pub error: i32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PlaybackProgress { pub sequence: usize, pub frames: usize, pub total_frames: usize, pub content_position: usize, pub content_boundary: bool }
+pub struct PlaybackProgress {
+    pub sequence: usize,
+    pub frames: usize,
+    pub total_frames: usize,
+    pub content_position: usize,
+    pub content_boundary: bool,
+}
 struct NativeSpeech;
 
 #[cfg(not(test))]
@@ -88,9 +106,16 @@ fn trace(event: &[u8]) {
 fn trace(_: &[u8]) {}
 
 unsafe extern "C" {
-    fn infinity_kokoro_native_synthesize_voice(text: *const u8, length: usize, pcm: *mut i16,
-        capacity: usize, frames: *mut usize,
-        cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void, voice: u32) -> i32;
+    fn infinity_kokoro_native_synthesize_voice(
+        text: *const u8,
+        length: usize,
+        pcm: *mut i16,
+        capacity: usize,
+        frames: *mut usize,
+        cancel: extern "C" fn(*mut core::ffi::c_void) -> i32,
+        context: *mut core::ffi::c_void,
+        voice: u32,
+    ) -> i32;
     fn infinity_kokoro_native_diagnostics(out: *mut usize);
 }
 impl SpeechSynthesisProvider for NativeSpeech {
@@ -101,15 +126,32 @@ impl SpeechSynthesisProvider for NativeSpeech {
     fn synthesize(&mut self, text: &[u8], output: &mut [i16]) -> Result<usize, AiError> {
         unsafe {
             let mut frames = 0;
-            let error = infinity_kokoro_native_synthesize_voice(text.as_ptr(), text.len(), output.as_mut_ptr(),
-                output.len(), &mut frames, kokoro_cancelled, core::ptr::null_mut(), OUTPUT_VOICE);
+            let error = infinity_kokoro_native_synthesize_voice(
+                text.as_ptr(),
+                text.len(),
+                output.as_mut_ptr(),
+                output.len(),
+                &mut frames,
+                kokoro_cancelled,
+                core::ptr::null_mut(),
+                OUTPUT_VOICE,
+            );
             ERROR = error;
-            if error == NATIVE_ENGINE_BUSY { return Err(AiError::QueueFull); }
+            if error == NATIVE_ENGINE_BUSY {
+                return Err(AiError::QueueFull);
+            }
             let mut diagnostics = [0usize; 12];
             infinity_kokoro_native_diagnostics(diagnostics.as_mut_ptr());
-            PEAK = diagnostics[1]; ERROR = error;
-            if error == 0 && frames > 0 && frames <= output.len() { Ok(frames) }
-            else { if error == 0 { ERROR = 6; } Err(AiError::ProviderUnavailable) }
+            PEAK = diagnostics[1];
+            ERROR = error;
+            if error == 0 && frames > 0 && frames <= output.len() {
+                Ok(frames)
+            } else {
+                if error == 0 {
+                    ERROR = 6;
+                }
+                Err(AiError::ProviderUnavailable)
+            }
         }
     }
 }
@@ -117,13 +159,16 @@ impl SpeechSynthesisProvider for NativeSpeech {
 // FUNC: kokoro_cancelled
 // DESC: Adapts the private native provider callback without granting access to runtime locks.
 // ------------------=
-extern "C" fn kokoro_cancelled(_: *mut core::ffi::c_void) -> i32 { cancelled() }
+extern "C" fn kokoro_cancelled(_: *mut core::ffi::c_void) -> i32 {
+    cancelled()
+}
 // ------------------------=
 // FUNC: cancelled
 // DESC: Checks only atomics and the native timer on an AP, never runtime locks or desktop state.
 // ------------------=
 extern "C" fn cancelled() -> i32 {
-    (CANCEL.load(Ordering::Acquire) || super::qwen::workers::clock_ns() >= unsafe { DEADLINE }) as i32
+    (CANCEL.load(Ordering::Acquire) || super::qwen::workers::clock_ns() >= unsafe { DEADLINE })
+        as i32
 }
 // ------------------------=
 // FUNC: worker
@@ -131,91 +176,204 @@ extern "C" fn cancelled() -> i32 {
 // ------------------=
 unsafe fn worker() {
     let start = super::qwen::workers::clock_ns();
-    QUEUE_WAIT_NS.store(start.saturating_sub(SPAN_QUEUED_NS.load(Ordering::Acquire)), Ordering::Release);
+    QUEUE_WAIT_NS.store(
+        start.saturating_sub(SPAN_QUEUED_NS.load(Ordering::Acquire)),
+        Ordering::Release,
+    );
     STATE.store(2, Ordering::Release);
-    if ERROR != NATIVE_ENGINE_BUSY { trace(b"synthesis started"); }
+    if ERROR != NATIVE_ENGINE_BUSY {
+        trace(b"synthesis started");
+    }
     let result = NativeSpeech.synthesize(&(&*(&raw const TEXT))[..LENGTH], &mut *(&raw mut PCM));
     // This status is the native provider's fatal admission state, not a later
     // driver/device publication error that happens to share the numeric code.
-    if ERROR == 7 { super::voice_input::native_engine_fault(); }
+    if ERROR == 7 {
+        super::voice_input::native_engine_fault();
+    }
     if ERROR == NATIVE_ENGINE_BUSY && cancelled() == 0 {
         STATE.store(WAITING_ENGINE, Ordering::Release);
         return;
     }
     FRAMES = result.unwrap_or(0);
     if result.is_ok() && cancelled() == 0 {
-        OUTPUT_SAMPLES = ((FRAMES * RATE as usize + SOURCE_RATE as usize - 1) / SOURCE_RATE as usize) * 2;
-        speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
+        OUTPUT_SAMPLES =
+            ((FRAMES * RATE as usize + SOURCE_RATE as usize - 1) / SOURCE_RATE as usize) * 2;
+        speech_pcm::fill_rate(
+            &(&*(&raw const PCM))[..FRAMES],
+            &mut (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES],
+            0,
+            SOURCE_RATE,
+            RATE,
+        );
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
-    trace(if result.is_ok() { b"synthesis completed" } else { match ERROR {
-        1 => b"synthesis failed: invalid request",
-        2 => b"synthesis cancelled",
-        3 => b"synthesis failed: model",
-        4 => b"synthesis failed: phonemizer",
-        5 => b"synthesis failed: inference",
-        6 => b"synthesis failed: pcm",
-        7 => b"synthesis failed: native fault",
-        _ => b"synthesis failed: unknown",
-    }});
-    STATE.store(if ERROR == 2 || cancelled() != 0 { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
+    trace(if result.is_ok() {
+        b"synthesis completed"
+    } else {
+        match ERROR {
+            1 => b"synthesis failed: invalid request",
+            2 => b"synthesis cancelled",
+            3 => b"synthesis failed: model",
+            4 => b"synthesis failed: phonemizer",
+            5 => b"synthesis failed: inference",
+            6 => b"synthesis failed: pcm",
+            7 => b"synthesis failed: native fault",
+            _ => b"synthesis failed: unknown",
+        }
+    });
+    STATE.store(
+        if ERROR == 2 || cancelled() != 0 {
+            6
+        } else if result.is_ok() {
+            3
+        } else {
+            4
+        },
+        Ordering::Release,
+    );
 }
 // ------------------------=
 // FUNC: submit_span
 // DESC: Synthesizes one bounded content span into the reusable InfinityAudio queue under generation-safe authority.
 // ------------------=
-pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
-    content_end: usize, final_chunk: bool) -> Result<(), AiError> {
-    submit_mode(owner, capability, text, content_start, content_end, final_chunk, false)
+pub fn submit_span(
+    owner: SecurityIdentity,
+    capability: u64,
+    text: &[u8],
+    content_start: usize,
+    content_end: usize,
+    final_chunk: bool,
+) -> Result<(), AiError> {
+    submit_mode(
+        owner,
+        capability,
+        text,
+        content_start,
+        content_end,
+        final_chunk,
+        false,
+    )
 }
 // ------------------------=
 // FUNC: submit_progressive_span
 // DESC: Plays each completed conversational phrase while preparing one private lookahead phrase.
 // ------------------=
-pub fn submit_progressive_span(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
-    content_end: usize, final_chunk: bool) -> Result<(), AiError> {
-    submit_mode(owner, capability, text, content_start, content_end, final_chunk, true)
+pub fn submit_progressive_span(
+    owner: SecurityIdentity,
+    capability: u64,
+    text: &[u8],
+    content_start: usize,
+    content_end: usize,
+    final_chunk: bool,
+) -> Result<(), AiError> {
+    submit_mode(
+        owner,
+        capability,
+        text,
+        content_start,
+        content_end,
+        final_chunk,
+        true,
+    )
 }
 // ------------------------=
 // FUNC: submit_mode
 // DESC: Admits one synthesis worker without modifying DMA-owned storage or another response's authority.
 // ------------------=
-fn submit_mode(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
-    content_end: usize, final_chunk: bool, progressive: bool) -> Result<(), AiError> {
-    if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
+fn submit_mode(
+    owner: SecurityIdentity,
+    capability: u64,
+    text: &[u8],
+    content_start: usize,
+    content_end: usize,
+    final_chunk: bool,
+    progressive: bool,
+) -> Result<(), AiError> {
+    if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) {
+        return Err(AiError::InvalidRequest);
+    }
     let state = STATE.load(Ordering::Acquire);
-    let continuation = unsafe { progressive && PROGRESSIVE && !FINAL_CHUNK && OWNER == owner
-        && content_start >= CONTENT_END && matches!(state, 5 | 7) };
-    if !(matches!(state, 0 | 4 | 6 | 7 | 8) || (state == 5 && continuation)) || content_end < content_start { return Err(AiError::QueueFull); }
-    if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } { return Err(AiError::QueueFull); }
-    if state == 8 && content_start < unsafe { CONTENT_END } { return Err(AiError::InvalidRequest); }
+    let continuation = unsafe {
+        PROGRESSIVE
+            && !FINAL_CHUNK
+            && OWNER == owner
+            && content_start >= CONTENT_END
+            && matches!(state, 5 | 7)
+    };
+    if !(matches!(state, 0 | 4 | 6 | 7 | 8) || (state == 5 && continuation))
+        || content_end < content_start
+    {
+        return Err(AiError::QueueFull);
+    }
+    if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } {
+        return Err(AiError::QueueFull);
+    }
+    if state == 8 && content_start < unsafe { CONTENT_END } {
+        return Err(AiError::InvalidRequest);
+    }
     let now = super::qwen::workers::clock_ns();
-    let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(capability, owner,
-        CapabilityType::AudioOutput, 0, 1, 0, now / 1_000_000_000).is_ok()).unwrap_or(false);
-    if !valid { return Err(AiError::AccessDenied); }
+    let valid = crate::runtime::with_runtime(|r| {
+        r.capabilities
+            .validate(
+                capability,
+                owner,
+                CapabilityType::AudioOutput,
+                0,
+                1,
+                0,
+                now / 1_000_000_000,
+            )
+            .is_ok()
+    })
+    .unwrap_or(false);
+    if !valid {
+        return Err(AiError::AccessDenied);
+    }
     let output_voice = crate::runtime::with_runtime(|r| {
         (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| r.identity.session_nth(i))
             .find(|s| s.id.0 == owner.0)
             .and_then(|s| r.identity.voice_profile(s.user)).map(|p| p.output_voice).unwrap_or(0)
     }).unwrap_or(0);
     let rate = crate::drivers::audio::playback_rate().ok_or(AiError::ProviderUnavailable)?;
-    if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
+    if !matches!(rate, 44100 | 48000) {
+        return Err(AiError::ProviderUnavailable);
+    }
     unsafe {
         retire();
         if state != 8 && !continuation { OUTPUT_VOICE = output_voice as u32; }
         if state != 8 && !continuation {
-            STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false; PLAYBACK_DRAINED = false;
+            STREAM_OPEN = false;
+            PLAYING = false;
+            PENDING_AFTER_DRAIN = false;
+            PLAYBACK_DRAINED = false;
             RESPONSE_QUEUED_NS.store(now, Ordering::Release);
             FIRST_PLAYBACK_NS.store(0, Ordering::Release);
-            let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
+            let next = STREAM_GENERATION
+                .load(Ordering::Acquire)
+                .wrapping_add(1)
+                .max(1);
             STREAM_GENERATION.store(next, Ordering::Release);
         }
         PROGRESSIVE = progressive;
-        if continuation { PENDING_AFTER_DRAIN = PLAYING; PLAYBACK_DRAINED = !PLAYING; }
-        RATE = rate; OWNER = owner; CAPABILITY = capability; DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
-        CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
-        (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
-        FRAMES = 0; PEAK = 0; ERROR = 0; ELAPSED = 0; CANCEL.store(false, Ordering::Release);
+        if continuation {
+            PENDING_AFTER_DRAIN = PLAYING;
+            PLAYBACK_DRAINED = !PLAYING;
+        }
+        RATE = rate;
+        OWNER = owner;
+        CAPABILITY = capability;
+        DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
+        CONTENT_START = content_start;
+        CONTENT_END = content_end;
+        FINAL_CHUNK = final_chunk;
+        (&mut *(&raw mut TEXT)).fill(0);
+        (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text);
+        LENGTH = text.len();
+        FRAMES = 0;
+        PEAK = 0;
+        ERROR = 0;
+        ELAPSED = 0;
+        CANCEL.store(false, Ordering::Release);
         REQUEST_ID.store(REQUEST_ID.load(Ordering::Relaxed).wrapping_add(1).max(1), Ordering::Release);
         SPAN_QUEUED_NS.store(now, Ordering::Release);
         QUEUE_WAIT_NS.store(0, Ordering::Release);
@@ -223,7 +381,11 @@ fn submit_mode(owner: SecurityIdentity, capability: u64, text: &[u8], content_st
         // Inference can temporarily occupy every AP. Keep one bounded job
         // queued and retry on poll rather than dropping a streaming reply.
         DISPATCHED = super::qwen::workers::background(worker);
-        trace(if DISPATCHED { b"job dispatched" } else { b"job waiting for worker" });
+        trace(if DISPATCHED {
+            b"job dispatched"
+        } else {
+            b"job waiting for worker"
+        });
     }
     Ok(())
 }
@@ -240,14 +402,20 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 // ------------------=
 pub fn can_prefetch() -> bool {
     let state = STATE.load(Ordering::Acquire);
-    !CANCEL.load(Ordering::Acquire) && (state == 8 || (state == 5 && unsafe { PROGRESSIVE && !FINAL_CHUNK }))
+    !CANCEL.load(Ordering::Acquire)
+        && (state == 8 || (state == 5 && unsafe { PROGRESSIVE && !FINAL_CHUNK }))
 }
 // ------------------------=
 // FUNC: record_playback_start
 // DESC: Records the first successful hardware start once per response, preserving it across resident batch rollover.
 // ------------------=
 fn record_playback_start() {
-    let _ = FIRST_PLAYBACK_NS.compare_exchange(0, super::qwen::workers::clock_ns(), Ordering::AcqRel, Ordering::Acquire);
+    let _ = FIRST_PLAYBACK_NS.compare_exchange(
+        0,
+        super::qwen::workers::clock_ns(),
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
 }
 // ------------------------=
 // FUNC: seal_buffered
@@ -255,14 +423,25 @@ fn record_playback_start() {
 // ------------------=
 pub fn seal_buffered(owner: SecurityIdentity) -> bool {
     unsafe {
-        if owner != OWNER || !STREAM_OPEN || STATE.load(Ordering::Acquire) != 8 { return false; }
-        if crate::drivers::audio::infinity_audio_seal(owner, STREAM_GENERATION.load(Ordering::Acquire) as u64) {
+        if owner != OWNER || !STREAM_OPEN || STATE.load(Ordering::Acquire) != 8 {
+            return false;
+        }
+        if crate::drivers::audio::infinity_audio_seal(
+            owner,
+            STREAM_GENERATION.load(Ordering::Acquire) as u64,
+        ) {
             record_playback_start();
-            PLAYING = true; STATE.store(5, Ordering::Release); trace(b"continuous playback started");
+            PLAYING = true;
+            STATE.store(5, Ordering::Release);
+            trace(b"continuous playback started");
             let _ = super::voice_input::prepare();
             true
         } else {
-            crate::drivers::audio::stop_playback(owner); STREAM_OPEN = false; ERROR = 7; STATE.store(4, Ordering::Release); false
+            crate::drivers::audio::stop_playback(owner);
+            STREAM_OPEN = false;
+            ERROR = 7;
+            STATE.store(4, Ordering::Release);
+            false
         }
     }
 }
@@ -272,14 +451,18 @@ pub fn seal_buffered(owner: SecurityIdentity) -> bool {
 // ------------------=
 pub fn playback_progress(owner: SecurityIdentity) -> Option<PlaybackProgress> {
     unsafe {
-        if !PLAYING || OWNER != owner { return None; }
+        if !PLAYING || OWNER != owner {
+            return None;
+        }
         let generation = STREAM_GENERATION.load(Ordering::Acquire);
-        crate::drivers::audio::infinity_audio_progress(owner, generation as u64).map(|progress| PlaybackProgress {
-            sequence: progress.generation as usize,
-            frames: progress.played_frames as usize,
-            total_frames: progress.queued_frames as usize,
-            content_position: progress.content_position,
-            content_boundary: progress.content_boundary,
+        crate::drivers::audio::infinity_audio_progress(owner, generation as u64).map(|progress| {
+            PlaybackProgress {
+                sequence: progress.generation as usize,
+                frames: progress.played_frames as usize,
+                total_frames: progress.queued_frames as usize,
+                content_position: progress.content_position,
+                content_boundary: progress.content_boundary,
+            }
         })
     }
 }
@@ -288,19 +471,33 @@ pub fn playback_progress(owner: SecurityIdentity) -> Option<PlaybackProgress> {
 // DESC: Copies recent own-session DMA audio at the microphone rate; only the desktop owner reads immutable playing storage.
 // ------------------=
 pub fn echo_reference(owner: SecurityIdentity, output: &mut [i16]) -> bool {
-    unsafe { PLAYING && owner == OWNER && crate::drivers::audio::infinity_audio_echo_reference(
-        owner, STREAM_GENERATION.load(Ordering::Acquire) as u64, output) }
+    unsafe {
+        PLAYING
+            && owner == OWNER
+            && crate::drivers::audio::infinity_audio_echo_reference(
+                owner,
+                STREAM_GENERATION.load(Ordering::Acquire) as u64,
+                output,
+            )
+    }
 }
 // ------------------------=
 // FUNC: stop
 // DESC: Cancels only the owning session's job; worker buffers are not reused until it acknowledges cancellation.
 // ------------------=
 pub fn stop(owner: SecurityIdentity) -> bool {
-    if STATE.load(Ordering::Acquire) == 0 || unsafe { OWNER != owner } { return false; }
+    if STATE.load(Ordering::Acquire) == 0 || unsafe { OWNER != owner } {
+        return false;
+    }
     CANCEL.store(true, Ordering::Release);
     unsafe {
-        if PLAYING || STREAM_OPEN { crate::drivers::audio::stop_playback(owner); }
-        if STATE.load(Ordering::Acquire) == 8 { STATE.store(6, Ordering::Release); retire(); }
+        if PLAYING || STREAM_OPEN {
+            crate::drivers::audio::stop_playback(owner);
+        }
+        if STATE.load(Ordering::Acquire) == 8 {
+            STATE.store(6, Ordering::Release);
+            retire();
+        }
     }
     true
 }
@@ -324,14 +521,44 @@ pub fn stop_request(owner: SecurityIdentity, request: u64) -> bool {
 // ------------------=
 pub fn status() -> OutputStatus {
     let state = STATE.load(Ordering::Acquire);
-    OutputStatus { state: match state {1|WAITING_ENGINE=>OutputState::Queued,2=>OutputState::Synthesizing,3=>OutputState::Ready,4=>OutputState::Failed,5=>OutputState::Speaking,6=>OutputState::Cancelled,7=>OutputState::Complete,8=>OutputState::Buffered,_=>OutputState::Idle},
-        frames: if (3..=8).contains(&state) { unsafe { FRAMES } } else { 0 }, peak_bytes: if (3..=8).contains(&state) { unsafe { PEAK } } else { 0 },
-        synthesis_ns: if (3..=8).contains(&state) { unsafe { ELAPSED } } else { 0 },
+    OutputStatus {
+        state: match state {
+            1 | WAITING_ENGINE => OutputState::Queued,
+            2 => OutputState::Synthesizing,
+            3 => OutputState::Ready,
+            4 => OutputState::Failed,
+            5 => OutputState::Speaking,
+            6 => OutputState::Cancelled,
+            7 => OutputState::Complete,
+            8 => OutputState::Buffered,
+            _ => OutputState::Idle,
+        },
+        frames: if (3..=8).contains(&state) {
+            unsafe { FRAMES }
+        } else {
+            0
+        },
+        peak_bytes: if (3..=8).contains(&state) {
+            unsafe { PEAK }
+        } else {
+            0
+        },
+        synthesis_ns: if (3..=8).contains(&state) {
+            unsafe { ELAPSED }
+        } else {
+            0
+        },
         queued_ns: RESPONSE_QUEUED_NS.load(Ordering::Acquire),
         queue_wait_ns: QUEUE_WAIT_NS.load(Ordering::Acquire),
         first_playback_ns: FIRST_PLAYBACK_NS.load(Ordering::Acquire),
-        error: if (3..=8).contains(&state) { unsafe { ERROR } } else { 0 } }
+        error: if (3..=8).contains(&state) {
+            unsafe { ERROR }
+        } else {
+            0
+        },
+    }
 }
+
 // ------------------------=
 // FUNC: owned_by
 // DESC: Reports whether a non-idle speech job belongs to the supplied session without exposing its identity.
@@ -345,11 +572,19 @@ pub fn owned_by(owner: SecurityIdentity) -> bool {
 // ------------------=
 unsafe fn retire() {
     if CAPABILITY != 0 {
-        let cap = CAPABILITY; let owner = OWNER;
-        crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(cap, owner); }); CAPABILITY = 0;
+        let cap = CAPABILITY;
+        let owner = OWNER;
+        crate::runtime::with_runtime(|r| {
+            let _ = r.capabilities.retire_leaf(cap, owner);
+        });
+        CAPABILITY = 0;
     }
     (&mut *(&raw mut TEXT)).fill(0);
-    let pcm_used = if ERROR == 0 { FRAMES.min(CAPACITY) } else { CAPACITY };
+    let pcm_used = if ERROR == 0 {
+        FRAMES.min(CAPACITY)
+    } else {
+        CAPACITY
+    };
     (&mut *(&raw mut PCM))[..pcm_used].fill(0);
     (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
 }
@@ -360,13 +595,20 @@ unsafe fn retire() {
 // ------------------=
 unsafe fn publish_resident_span() -> bool {
     if !STREAM_OPEN {
-        let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
+        let next = STREAM_GENERATION
+            .load(Ordering::Acquire)
+            .wrapping_add(1)
+            .max(1);
         STREAM_GENERATION.store(next, Ordering::Release);
     }
     let generation = STREAM_GENERATION.load(Ordering::Acquire) as u64;
     if STREAM_OPEN {
         match crate::drivers::audio::infinity_audio_can_append(
-            OWNER, generation, OUTPUT_SAMPLES, CONTENT_START, CONTENT_END,
+            OWNER,
+            generation,
+            OUTPUT_SAMPLES,
+            CONTENT_START,
+            CONTENT_END,
         ) {
             None => return true,
             Some(false) => {
@@ -391,11 +633,18 @@ unsafe fn publish_resident_span() -> bool {
             Some(true) => {}
         }
     }
-    let opened = STREAM_OPEN || crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
-    if opened && crate::drivers::audio::infinity_audio_append(
-        OWNER, CAPABILITY, generation, &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES],
-        CONTENT_START, CONTENT_END,
-    ) {
+    let opened =
+        STREAM_OPEN || crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
+    if opened
+        && crate::drivers::audio::infinity_audio_append(
+            OWNER,
+            CAPABILITY,
+            generation,
+            &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES],
+            CONTENT_START,
+            CONTENT_END,
+        )
+    {
         STREAM_OPEN = true;
         CAPABILITY = 0;
         (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
@@ -412,7 +661,9 @@ unsafe fn publish_resident_span() -> bool {
             PENDING_AFTER_DRAIN = false;
             STATE.store(5, Ordering::Release);
             trace(b"continuous response playback started");
-            if FINAL_CHUNK { let _ = super::voice_input::prepare(); }
+            if FINAL_CHUNK {
+                let _ = super::voice_input::prepare();
+            }
             true
         } else {
             crate::drivers::audio::stop_playback(OWNER);
@@ -423,7 +674,9 @@ unsafe fn publish_resident_span() -> bool {
             false
         }
     } else {
-        if opened { crate::drivers::audio::stop_playback(OWNER); }
+        if opened {
+            crate::drivers::audio::stop_playback(OWNER);
+        }
         STREAM_OPEN = false;
         ERROR = 7;
         STATE.store(4, Ordering::Release);
@@ -437,13 +690,18 @@ unsafe fn publish_resident_span() -> bool {
 // ------------------=
 pub fn poll() {
     let mut state = STATE.load(Ordering::Acquire);
-    if state == 0 { return; }
+    if state == 0 {
+        return;
+    }
     unsafe {
         if PLAYING {
-            if CANCEL.load(Ordering::Acquire) { crate::drivers::audio::stop_playback(OWNER); }
+            if CANCEL.load(Ordering::Acquire) {
+                crate::drivers::audio::stop_playback(OWNER);
+            }
             if let Some(playback) = crate::drivers::audio::playback_state() {
                 if playback != PlaybackState::Playing {
-                    PLAYING = false; STREAM_OPEN = false;
+                    PLAYING = false;
+                    STREAM_OPEN = false;
                     if playback != PlaybackState::Complete {
                         CANCEL.store(true, Ordering::Release);
                         PENDING_AFTER_DRAIN = false;
@@ -451,8 +709,13 @@ pub fn poll() {
                         PLAYBACK_DRAINED = true;
                     }
                     if state == 5 && !PENDING_AFTER_DRAIN {
-                        state = if playback == PlaybackState::Complete { 7 } else { 6 };
-                        STATE.store(state, Ordering::Release); retire();
+                        state = if playback == PlaybackState::Complete {
+                            7
+                        } else {
+                            6
+                        };
+                        STATE.store(state, Ordering::Release);
+                        retire();
                     }
                 }
             }
@@ -460,9 +723,15 @@ pub fn poll() {
         state = STATE.load(Ordering::Acquire);
         if state <= 3 || state == WAITING_ENGINE {
             let now = super::qwen::workers::clock_ns() / 1_000_000_000;
-            let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(CAPABILITY, OWNER,
-                CapabilityType::AudioOutput, 0, 1, 0, now).is_ok()).unwrap_or(false);
-            if !valid { CANCEL.store(true, Ordering::Release); }
+            let valid = crate::runtime::with_runtime(|r| {
+                r.capabilities
+                    .validate(CAPABILITY, OWNER, CapabilityType::AudioOutput, 0, 1, 0, now)
+                    .is_ok()
+            })
+            .unwrap_or(false);
+            if !valid {
+                CANCEL.store(true, Ordering::Release);
+            }
         }
         if state == WAITING_ENGINE {
             DISPATCHED = false;
@@ -470,13 +739,19 @@ pub fn poll() {
             STATE.store(state, Ordering::Release);
         }
         if state == 1 && !DISPATCHED {
-            if cancelled() != 0 { STATE.store(6, Ordering::Release); retire(); }
-            else { DISPATCHED = super::qwen::workers::background(worker); }
+            if cancelled() != 0 {
+                STATE.store(6, Ordering::Release);
+                retire();
+            } else {
+                DISPATCHED = super::qwen::workers::background(worker);
+            }
             return;
         }
         if state == 3 {
-            if CANCEL.load(Ordering::Acquire) { STATE.store(6, Ordering::Release); retire(); }
-            else if !PENDING_AFTER_DRAIN || PLAYBACK_DRAINED {
+            if CANCEL.load(Ordering::Acquire) {
+                STATE.store(6, Ordering::Release);
+                retire();
+            } else if !PENDING_AFTER_DRAIN || PLAYBACK_DRAINED {
                 PENDING_AFTER_DRAIN = false;
                 PLAYBACK_DRAINED = false;
                 let _ = publish_resident_span();
@@ -484,9 +759,13 @@ pub fn poll() {
         } else if matches!(state, 4 | 6 | 7) {
             if matches!(state, 4 | 6) && (PLAYING || STREAM_OPEN) {
                 crate::drivers::audio::stop_playback(OWNER);
-                PLAYING = false; STREAM_OPEN = false; PENDING_AFTER_DRAIN = false;
+                PLAYING = false;
+                STREAM_OPEN = false;
+                PENDING_AFTER_DRAIN = false;
             }
-            if CAPABILITY != 0 { retire(); }
+            if CAPABILITY != 0 {
+                retire();
+            }
         }
     }
 }

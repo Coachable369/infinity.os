@@ -19,6 +19,19 @@ accessibility. Removing an optional button removes its pointer target.
 The password control always masks entered credentials. Studio renders a blank
 credential field and never obtains a real user's password or identity data.
 
+## Native motion survives visual edits
+
+The editable **Sphere and Splash Animation** layer retains the native successful
+authentication timeline through its Progress Hero role. Move, resize, fade, hide,
+or remove this layer without replacing authentication behavior. The Preview
+controls expose the 0–2400 ms drop, impact, and ripple phases using the native
+renderer. Older login documents acquire the missing layer once; the saved
+`explicitLoginMotion` marker preserves later intentional removal.
+
+Animation repaints use the saved scene and its authored rectangle, never the
+legacy wallpaper geometry. Live password and action-control regions are excluded
+from decorative repaint damage. Reduced-motion preferences remain respected.
+
 Verification: `./build-kit studio-login-tests` exercises round-trip persistence,
 undo, credential constraints, and production pixels. `./build-kit login-layout-tests`
 exercises the native parser, typed actions, visibility, and pointer targeting.
@@ -28,7 +41,8 @@ ISO delivery still requires rebuilding the UI-linked kernels. The incremental
 Save & Update ISO path verifies login payload bytes in both live and installed
 kernels. An already installed VM is not changed by updating the ISO.
 
-Desktop top-bar item and dropdown editing is a separate, unfinished integration.
+Desktop navbar and widget editing is described in `desktop-editor.md`. Native
+dropdown contents remain owned by their services.
 
 ## Per-element typography and backgrounds
 

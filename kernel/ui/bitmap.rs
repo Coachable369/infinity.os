@@ -116,12 +116,10 @@ impl<'a> RuntimeBitmap<'a> {
         }
         let mut source_left = self.width * crop[0] as usize / 100;
         let mut source_top = self.height * crop[1] as usize / 100;
-        let mut source_width = self.width
-            * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize))
-            / 100;
-        let mut source_height = self.height
-            * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize))
-            / 100;
+        let mut source_width =
+            self.width * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize)) / 100;
+        let mut source_height =
+            self.height * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize)) / 100;
         if source_width == 0 || source_height == 0 {
             return None;
         }

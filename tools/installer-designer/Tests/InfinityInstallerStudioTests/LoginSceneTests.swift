@@ -4,6 +4,24 @@ import XCTest
 
 final class LoginSceneTests: XCTestCase {
     // ------------------------=
+    // FUNC: testMotionMigrationPreservesIntentionalEdits
+    // DESC: Restores missing legacy motion once and retains geometry, deletion and native binding across saves.
+    // ------------------=
+    func testMotionMigrationPreservesIntentionalEdits() throws {
+        var old = InstallerStudioDocument.factoryLogin()
+        old.explicitLoginMotion = nil
+        old.screens[0].elements.removeAll { $0.role == .progressHero }
+        var migrated = old.migratedForLoginMotion()
+        let i = try XCTUnwrap(migrated.screens[0].elements.firstIndex { $0.role == .progressHero })
+        migrated.screens[0].elements[i].frame.x = 550
+        migrated.screens[0].elements[i].opacity = 65
+        XCTAssertEqual(migrated.migratedForLoginMotion(), migrated)
+        let saved = try JSONDecoder().decode(InstallerStudioDocument.self, from: JSONEncoder().encode(migrated))
+        XCTAssertEqual(saved, migrated)
+        migrated.screens[0].elements.remove(at: i)
+        XCTAssertFalse(migrated.migratedForLoginMotion().screens[0].elements.contains { $0.role == .progressHero })
+    }
+    // ------------------------=
     // FUNC: testEditableLoginRoundTripAndUndo
     // DESC: Exercises authored authentication layers, undo, binary persistence and protected credential controls.
     // ------------------=
@@ -37,6 +55,10 @@ final class LoginSceneTests: XCTestCase {
         store.selectScreenCollection(.login)
         let runner = NativePreviewRunner(timeout: .seconds(60))
         let frame = try await runner.render(NativePreviewSnapshot.capture(store, width: 1536, height: 1024))
+        store.nativePreviewSimulation.loginPhase = 900
+        let impact = try await runner.render(NativePreviewSnapshot.capture(store, width: 1536, height: 1024))
+        XCTAssertNotEqual(frame.pixels, impact.pixels)
+        store.nativePreviewSimulation.loginPhase = 0
         let image = try XCTUnwrap(frame.image())
         let png = try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
         try png.write(to: try XCTUnwrap(store.projectRoot).appending(path: "builds/studio-login-preview.png"))

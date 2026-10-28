@@ -32,7 +32,7 @@ voice-synthesis-test:
 	$(RUSTC) --test kernel/drivers/speech_pcm.rs -o build/voice-flite/speech-pcm-test
 	build/voice-flite/speech-pcm-test
 
-voice-synthesis-hardware-test:
+voice-synthesis-hardware-test: voice-synthesis-test
 	sh tools/voice-flite/probe/run.sh tcg
 
 .PHONY: voice-recognition-test voice-indicator-test voice-output-test
@@ -304,7 +304,12 @@ $(UIKIT_RUNTIME_ASSETS): $(BUILD)/uikit-runtime.stamp
 	@test -s $@
 
 .PHONY: uikit-runtime uikit-document-test
-uikit-runtime: $(UIKIT_RUNTIME_ASSETS)
+uikit-runtime: $(UIKIT_RUNTIME_ASSETS) assets/ui-design-kit/default/stop-audio-v1.bmp
+
+assets/ui-design-kit/default/stop-audio-v1.bmp: assets/ui-design-kit/default/stop-audio-v1.png tools/build-voice-artwork.py
+	@python3 tools/build-voice-artwork.py
+
+$(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp $(BUILD)/aarch64/kernel-browser-qemu.stamp $(BUILD)/x86_64/installed-kernel.o $(BUILD)/x86_64/kernel.o: assets/ui-design-kit/default/stop-audio-v1.bmp
 
 uikit-document-test: $(UIKIT_RUNTIME_ASSETS) build/behavior-tests/ui-payload-validator
 	@mkdir -p build/behavior-tests
@@ -324,7 +329,7 @@ build/behavior-tests/libinfinity_browser_core.rlib: $(wildcard sdk/infinity-brow
 	@rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z sdk/infinity-browser-core/lib.rs -o $@
 
 .PHONY: studio-native-renderer
-studio-native-renderer: build/behavior-tests/libinfinity_browser_core.rlib
+studio-native-renderer: build/behavior-tests/libinfinity_browser_core.rlib assets/ui-design-kit/default/stop-audio-v1.bmp
 	@rustc --edition=2021 -O -Awarnings --cfg studio_native_preview --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib tools/active-painter-test.rs -o build/behavior-tests/infinity-studio-native-renderer
 
 .PHONY: settings-action-test
@@ -345,7 +350,7 @@ precision-panel-test: assets/ui-design-kit/default/eclipse-precision-v1.rgba
 	rustc --edition=2021 -O tools/precision-panel-test.rs -o builds/validation/eclipse-precision/precision-panel-test
 	builds/validation/eclipse-precision/precision-panel-test
 
-active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib desktop-browser-polish-test precision-panel-test
+active-painter-test: build/behavior-tests/libinfinity_browser_core.rlib desktop-browser-polish-test precision-panel-test assets/ui-design-kit/default/stop-audio-v1.bmp
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 -C opt-level=z -Awarnings tools/memory-throughput-test.rs -o build/behavior-tests/memory-throughput-test
 	@build/behavior-tests/memory-throughput-test
@@ -428,7 +433,7 @@ $(BUILD)/face/x86_64/face-worker.elf: $(NATIVE_FACE_SOURCES)
 $(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: $(BUILD)/face/aarch64/face-worker.elf
 $(BUILD)/x86_64/installed-kernel.o $(BUILD)/x86_64/kernel.o: $(BUILD)/face/x86_64/face-worker.elf
 $(BUILD)/aarch64/loader.obj $(BUILD)/x86_64/loader.obj: boot/common/uefi_camera.h
-NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/extension.c tools/native-python/library.c $(shell find sdk/python sdk/compiler -type f)
+NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/bundled_packages.py tools/native-python/dependencies.py tools/native-python/tcl_sources.py tools/native-python/tcl_build.py tools/native-python/tk_build.py tools/native-python/ffi_build.py tools/native-python/module_inventory.py tools/native-python/extension.c tools/native-python/library.c tools/native-python/ffi-library.c $(shell find sdk/python sdk/compiler -type f)
 
 builds/toolchains/aarch64/python.elf: $(NATIVE_PYTHON_SOURCES)
 	python3 tools/native-python/build.py aarch64
@@ -566,7 +571,8 @@ x86-native-speech-parity: $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/k
 $(BUILD)/test-media/InfinityOS-x86_64.bootmedia: $(BUILD)/infinity-x86_64.img x86-native-speech-parity
 	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso/EFI
-	cp $< $(BUILD)/iso/efi.img
+	dd if=$< of=$(BUILD)/iso/efi.img bs=1048576
+	cmp -s $< $(BUILD)/iso/efi.img
 	rm -rf $(BUILD)/iso/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY $(BUILD)/iso/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
@@ -626,6 +632,16 @@ editor-assistant-test:
 	build/behavior-tests/editor-source-lookup
 	$(RUSTC) --edition=2021 --test kernel/runtime/native_python_workflow.rs -o build/behavior-tests/native-python-workflow
 	build/behavior-tests/native-python-workflow
+	$(RUSTC) --edition=2021 --test kernel/runtime/generated_app_recovery.rs -o build/behavior-tests/generated-app-recovery
+	build/behavior-tests/generated-app-recovery
+	$(RUSTC) --edition=2021 --test kernel/runtime/native_python_exception.rs -o build/behavior-tests/python-exception
+	build/behavior-tests/python-exception
+	python3 tools/native-python/runtime-recovery-check-test.py
+	python3 tools/native-python/runtime-recovery-acceptance-test.py
+	python3 tools/native-python/module-tests.py
+	python3 tools/native-python/socket-test.py
+	python3 tools/native-python/network-test.py
+	python3 tools/native-python/process-test.py
 	python3 tools/native-source-workflow-test.py
 
 authentication-logo-test: x86_64
@@ -640,8 +656,12 @@ authentication-motion-test:
 
 eclipse-access-test:
 	@mkdir -p build/behavior-tests
+	$(RUSTC) --edition=2021 --test tools/native-font-test.rs -o build/behavior-tests/native-font-test
+	build/behavior-tests/native-font-test
 	$(RUSTC) --edition=2021 --test tools/eclipse-font-test.rs -o build/behavior-tests/eclipse-font-test
 	build/behavior-tests/eclipse-font-test --test-threads=1
+	$(RUSTC) --edition=2021 tools/configuration-layout-test.rs -o build/behavior-tests/configuration-layout-test
+	build/behavior-tests/configuration-layout-test
 	$(RUSTC) --edition=2021 --test tools/eclipse-access-test.rs -o build/behavior-tests/eclipse-access-test
 	build/behavior-tests/eclipse-access-test --test-threads=1
 
@@ -651,6 +671,10 @@ editor-window-test:
 	build/behavior-tests/editor-window-test
 	rustc --edition=2021 tools/editor-upgrade-test.rs -o build/behavior-tests/editor-upgrade-test
 	build/behavior-tests/editor-upgrade-test
+	$(RUSTC) --edition=2021 tools/editor-terminal-test.rs -o build/behavior-tests/editor-terminal-test
+	build/behavior-tests/editor-terminal-test
+	$(RUSTC) --edition=2021 tools/generated-apps-test.rs -o build/behavior-tests/generated-apps-test
+	build/behavior-tests/generated-apps-test
 
 installer-entropy-test:
 	@mkdir -p build/behavior-tests
@@ -895,7 +919,8 @@ $(BUILD)/test-media/InfinityOS-x86.bootmedia: $(BUILD)/infinity-x86.img $(UI_ASS
 	@mkdir -p $(BUILD)/test-media
 	rm -rf $(BUILD)/iso-x86/System/InfinityUI/Icons $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Crash
 	@mkdir -p $(BUILD)/iso-x86/System/Fonts $(BUILD)/iso-x86/System/FontLicenses $(BUILD)/iso-x86/System/Applications $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Installer $(BUILD)/iso-x86/System/InfinityUI/Crash
-	cp $< $(BUILD)/iso-x86/x86-boot.img
+	dd if=$< of=$(BUILD)/iso-x86/x86-boot.img bs=1048576
+	cmp -s $< $(BUILD)/iso-x86/x86-boot.img
 	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/iso-x86/System/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/iso-x86/System/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/iso-x86/System/InfinityUI/
@@ -999,7 +1024,8 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 $(BUILD)/test-media/InfinityOS-aarch64.bootmedia: $(BUILD)/infinity-aarch64.img
 	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso-aarch64/EFI
-	cp $< $(BUILD)/iso-aarch64/efi.img
+	dd if=$< of=$(BUILD)/iso-aarch64/efi.img bs=1048576
+	cmp -s $< $(BUILD)/iso-aarch64/efi.img
 	rm -rf $(BUILD)/iso-aarch64/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY $(BUILD)/iso-aarch64/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
@@ -1028,7 +1054,8 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 $(BUILD)/test-media/InfinityOS-aarch64-qemu.bootmedia: $(BUILD)/infinity-aarch64-qemu.img
 	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso-aarch64-qemu/EFI
-	cp $< $(BUILD)/iso-aarch64-qemu/efi.img
+	dd if=$< of=$(BUILD)/iso-aarch64-qemu/efi.img bs=1048576
+	cmp -s $< $(BUILD)/iso-aarch64-qemu/efi.img
 	rm -rf $(BUILD)/iso-aarch64-qemu/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY $(BUILD)/iso-aarch64-qemu/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }

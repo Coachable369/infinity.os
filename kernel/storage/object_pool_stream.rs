@@ -43,7 +43,11 @@ impl<D: BlockDevice> ObjectStore<D> {
         target: Option<ObjectId>,
         backing: Option<ObjectId>,
         content: &[u8],
-        encode: impl FnOnce(ObjectId, ObjectId, u32) -> Result<([u8; N], [u8; M], [u8; K], [u8;128]), ObjectError>,
+        encode: impl FnOnce(
+            ObjectId,
+            ObjectId,
+            u32,
+        ) -> Result<([u8; N], [u8; M], [u8; K], [u8; 128]), ObjectError>,
     ) -> Result<(), ObjectError> {
         if N > MAX_CONTENT || M > MAX_CONTENT || K > MAX_CONTENT {
             return Err(ObjectError::InsufficientCapacity);
@@ -83,7 +87,8 @@ impl<D: BlockDevice> ObjectStore<D> {
                     self.create_record(b"object-manifest", ObjectType::Metadata, Space::System)?
                 }
             };
-            let (catalog_bytes, manifest_bytes, receipt, audit) = encode(object, manifest, version)?;
+            let (catalog_bytes, manifest_bytes, receipt, audit) =
+                encode(object, manifest, version)?;
             self.replace_state_record(manifest, &manifest_bytes)?;
             self.replace_state_record(catalog, &catalog_bytes)?;
             self.replace_state_record(checkpoint, &receipt)?;
@@ -148,14 +153,20 @@ impl<D: BlockDevice> ObjectStore<D> {
         catalog: ObjectId,
         bytes: &[u8],
     ) -> Result<(), ObjectError> {
-        self.pool_retire_owned_with_state(records,catalog,bytes,None,None)
+        self.pool_retire_owned_with_state(records, catalog, bytes, None, None)
     }
     // ------------------------=
     // FUNC: pool_retire_owned_with_state
     // DESC: Atomically retires owned records while preserving an optional durable remote-reclamation outbox under the same root.
     // ------------------=
-    pub(crate) fn pool_retire_owned_with_state(&mut self, records:&[ObjectId], catalog:ObjectId, bytes:&[u8],
-        extra:Option<(ObjectId,&[u8])>,audit:Option<[u8;128]>)->Result<(),ObjectError> {
+    pub(crate) fn pool_retire_owned_with_state(
+        &mut self,
+        records: &[ObjectId],
+        catalog: ObjectId,
+        bytes: &[u8],
+        extra: Option<(ObjectId, &[u8])>,
+        audit: Option<[u8; 128]>,
+    ) -> Result<(), ObjectError> {
         let before = self.begin()?;
         let result = (|| {
             for id in records.iter().filter(|id| id.0 != [0; 16]) {
@@ -183,11 +194,15 @@ impl<D: BlockDevice> ObjectStore<D> {
                 self.state.objects[oi].tombstone = true;
             }
             self.replace_state_record(catalog, bytes)?;
-            if let Some((id,bytes))=extra {
-                if id==catalog || records.contains(&id) {return Err(ObjectError::InvalidObject);}
-                self.replace_state_record(id,bytes)?;
+            if let Some((id, bytes)) = extra {
+                if id == catalog || records.contains(&id) {
+                    return Err(ObjectError::InvalidObject);
+                }
+                self.replace_state_record(id, bytes)?;
             }
-            if let Some(record)=audit {self.append_pool_audit_record(record)?;}
+            if let Some(record) = audit {
+                self.append_pool_audit_record(record)?;
+            }
             for id in records.iter().filter(|id| id.0 != [0; 16]) {
                 for vi in 0..MAX_VERSIONS {
                     let v = self.state.versions[vi];

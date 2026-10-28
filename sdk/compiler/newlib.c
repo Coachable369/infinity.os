@@ -44,6 +44,11 @@ void *_sbrk(ptrdiff_t increment) { return sbrk(increment); }
 // ------------------=
 int _fstat(int fd, struct stat *out) { return fstat(fd, out); }
 // ------------------------=
+// FUNC: _stat
+// DESC: Routes Newlib's reentrant metadata lookup through the same capability-mounted native file provider as stat.
+// ------------------=
+int _stat(const char *path, struct stat *out) { return stat(path, out); }
+// ------------------------=
 // FUNC: _isatty
 // DESC: Reports the existing native console endpoint terminal status.
 // ------------------=

@@ -19,7 +19,7 @@ impl DisplayDevice {
         // Reuse the kit's frosted surface recipe with the Eclipse blue/silver
         // tokens; do not introduce an independently rasterized glass layer.
         self.glass_panel_with_palette(x, y, w, h, false,
-            (16, 27, 58), (194, 219, 245));
+            (16, 27, 58), self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline));
         let snap = state.drag.and_then(|(px, _, _, _)| {
             if px <= 35 {
                 Some(true)

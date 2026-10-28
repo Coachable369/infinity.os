@@ -17,8 +17,8 @@ enum InfinityUIKit {
 
         static let configurationCard = CanvasRect(x: 40, y: 128, width: 340, height: 736)
         static let configurationContent = CanvasRect(x: 61, y: 222, width: 298, height: 504)
-        static let configurationTitle = CanvasRect(x: 72, y: 270, width: 276, height: 44)
-        static let configurationBody = CanvasRect(x: 72, y: 326, width: 276, height: 82)
+        static let configurationTitle = CanvasRect(x: 72, y: 264, width: 276, height: 70)
+        static let configurationBody = CanvasRect(x: 72, y: 342, width: 276, height: 84)
         static let configurationInput = CanvasRect(x: 72, y: 442, width: 276, height: 47)
         static let configurationBack = CanvasRect(x: 61, y: 789, width: 87, height: 47)
         static let configurationPrimary = CanvasRect(x: 156, y: 789, width: 203, height: 47)

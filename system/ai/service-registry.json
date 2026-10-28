@@ -1,0 +1,649 @@
+{
+  "schema": "infinityos.intelligence-service-registry",
+  "version": 1,
+  "mappingPath": "/system/ai/instruction-mappings.json",
+  "authority": "Descriptive discovery only. Native typed targets and session permissions control execution. Edit aliases in mappingPath.",
+  "settingsAudit": {
+    "version": 1,
+    "general": {
+      "executable": [
+        "os.setting.name",
+        "os.clock.read",
+        "os.clock.set",
+        "os.clock.timeZone"
+      ],
+      "readOnly": [
+        "language",
+        "region",
+        "system generation",
+        "updates"
+      ]
+    },
+    "appearance": {
+      "executable": [
+        "os.setting.theme",
+        "os.setting.primary",
+        "os.setting.accent",
+        "os.setting.opacity",
+        "os.setting.blur"
+      ],
+      "uiOnly": [
+        "named icon family",
+        "font selection",
+        "wallpaper selection",
+        "named worldshift selection"
+      ]
+    },
+    "accounts": {
+      "uiOnly": [
+        "identity management",
+        "credentials",
+        "profile",
+        "session management"
+      ],
+      "authorization": "Native identity confirmation required"
+    },
+    "aiVoice": {
+      "executable": [
+        "os.setting.speech"
+      ],
+      "uiOnly": [
+        "provider policy",
+        "desktop chat enabled",
+        "named model selection",
+        "microphone grant",
+        "wake word"
+      ]
+    },
+    "privacy": {
+      "executable": [
+        "os.setting.lockMinutes"
+      ],
+      "uiOnly": [
+        "microphone grant"
+      ],
+      "readOnly": [
+        "ambient authority",
+        "remote AI",
+        "trusted UI"
+      ]
+    },
+    "devices": {
+      "uiOnly": [
+        "cursor selection"
+      ],
+      "readOnly": [
+        "display",
+        "keyboard",
+        "audio input",
+        "audio output"
+      ]
+    },
+    "input": {
+      "uiOnly": [
+        "pointer speed",
+        "scroll speed",
+        "scroll direction",
+        "primary button",
+        "acceleration",
+        "key repeat delay",
+        "key repeat rate",
+        "reset defaults"
+      ]
+    },
+    "network": {
+      "uiOnly": [
+        "network mode",
+        "interface enable",
+        "DHCP",
+        "IPv4 address",
+        "prefix",
+        "gateway",
+        "metric",
+        "DNS enable",
+        "DNS servers",
+        "remove default route",
+        "activate profile",
+        "default firewall policy"
+      ],
+      "authorization": "Native networking permissions and typed addresses required"
+    },
+    "nodesMesh": {
+      "uiOnly": [
+        "select node",
+        "revoke trust",
+        "block node",
+        "open session",
+        "begin pairing",
+        "cancel pairing",
+        "confirm pairing",
+        "join",
+        "leave",
+        "category policy"
+      ],
+      "authorization": "Explicit NodeId and secure confirmation required"
+    },
+    "storage": {
+      "uiOnly": [
+        "select object",
+        "select node",
+        "placement",
+        "replication policy"
+      ],
+      "authorization": "Explicit object and node IDs; verify asynchronous completion"
+    },
+    "about": {
+      "readOnly": [
+        "version",
+        "architecture",
+        "boot",
+        "identity format",
+        "icon families"
+      ]
+    }
+  },
+  "settingContracts": {
+    "name": {
+      "type": "string",
+      "maxBytes": 48,
+      "scope": "machine"
+    },
+    "theme": {
+      "type": "string",
+      "values": [
+        "dark",
+        "light",
+        "color name",
+        "#RRGGBB"
+      ],
+      "colorMeaning": "primary color, not a separately installed theme"
+    },
+    "primary": {
+      "type": "RGB",
+      "scope": "machine"
+    },
+    "accent": {
+      "type": "RGB",
+      "scope": "user"
+    },
+    "opacity": {
+      "type": "integer",
+      "min": 40,
+      "max": 100,
+      "step": 4
+    },
+    "blur": {
+      "type": "integer",
+      "min": 0,
+      "max": 8
+    },
+    "lockMinutes": {
+      "type": "integer",
+      "min": 1,
+      "max": 120
+    },
+    "speech": {
+      "type": "enum",
+      "values": [
+        "on",
+        "off"
+      ]
+    },
+    "authorization": "Active owner session with settings-update capability; editing this document cannot change native permissions",
+    "completion": "Persist authoritative settings and refresh live UI before reporting success"
+  },
+  "endpoints": [
+    {
+      "id": "os.setting.name",
+      "target": "OS_SETTING:name:{argument}"
+    },
+    {
+      "id": "os.setting.primary",
+      "target": "OS_SETTING:primary:{argument}"
+    },
+    {
+      "id": "os.setting.accent",
+      "target": "OS_SETTING:accent:{argument}"
+    },
+    {
+      "id": "os.setting.opacity",
+      "target": "OS_SETTING:opacity:{argument}"
+    },
+    {
+      "id": "os.setting.blur",
+      "target": "OS_SETTING:blur:{argument}"
+    },
+    {
+      "id": "os.setting.lockMinutes",
+      "target": "OS_SETTING:lockMinutes:{argument}"
+    },
+    {
+      "id": "os.setting.speech",
+      "target": "OS_SETTING:speech:{argument}"
+    },
+    {
+      "id": "os.setting.theme",
+      "target": "OS_SETTING:theme:{argument}"
+    },
+    {
+      "id": "os.setting.world",
+      "target": "OS_SETTING:world:{argument}"
+    },
+    {
+      "id": "os.app.open.textEditor",
+      "target": "OS_OPEN:text_editor"
+    },
+    {
+      "id": "os.app.open.fileNavigator",
+      "target": "OS_OPEN:file_navigator"
+    },
+    {
+      "id": "os.app.open.browser",
+      "target": "OS_OPEN:browser"
+    },
+    {
+      "id": "os.app.open.settings",
+      "target": "OS_OPEN:settings"
+    },
+    {
+      "id": "os.app.open.terminal",
+      "target": "OS_OPEN:terminal"
+    },
+    {
+      "id": "os.app.open.taskManager",
+      "target": "OS_OPEN:task_manager"
+    },
+    {
+      "id": "os.app.open.launcher",
+      "target": "OS_OPEN:launcher"
+    },
+    {
+      "id": "os.ai.editInstructionMappings",
+      "target": "OS_OPEN:ai_instruction_mappings"
+    },
+    {
+      "id": "os.launch.documents",
+      "target": "OS_LAUNCH:documents"
+    },
+    {
+      "id": "os.launch.projects",
+      "target": "OS_LAUNCH:projects"
+    },
+    {
+      "id": "os.launch.media",
+      "target": "OS_LAUNCH:media"
+    },
+    {
+      "id": "os.launch.recycleBin",
+      "target": "OS_LAUNCH:recycle_bin"
+    },
+    {
+      "id": "os.launch.createdApplication",
+      "target": "OS_LAUNCH:app:{argument}"
+    },
+    {
+      "id": "os.window.focus.textEditor",
+      "target": "OS_FOCUS:text_editor"
+    },
+    {
+      "id": "os.window.focus.fileNavigator",
+      "target": "OS_FOCUS:file_navigator"
+    },
+    {
+      "id": "os.window.focus.browser",
+      "target": "OS_FOCUS:browser"
+    },
+    {
+      "id": "os.window.focus.settings",
+      "target": "OS_FOCUS:settings"
+    },
+    {
+      "id": "os.window.focus.terminal",
+      "target": "OS_FOCUS:terminal"
+    },
+    {
+      "id": "os.window.focus.taskManager",
+      "target": "OS_FOCUS:task_manager"
+    },
+    {
+      "id": "os.window.focus.launcher",
+      "target": "OS_FOCUS:launcher"
+    },
+    {
+      "id": "os.window.close.active",
+      "target": "OS_CLOSE:active"
+    },
+    {
+      "id": "os.window.close.textEditor",
+      "target": "OS_CLOSE:text_editor"
+    },
+    {
+      "id": "os.window.close.fileNavigator",
+      "target": "OS_CLOSE:file_navigator"
+    },
+    {
+      "id": "os.window.close.browser",
+      "target": "OS_CLOSE:browser"
+    },
+    {
+      "id": "os.window.close.settings",
+      "target": "OS_CLOSE:settings"
+    },
+    {
+      "id": "os.window.close.terminal",
+      "target": "OS_CLOSE:terminal"
+    },
+    {
+      "id": "os.window.close.taskManager",
+      "target": "OS_CLOSE:task_manager"
+    },
+    {
+      "id": "os.window.close.launcher",
+      "target": "OS_CLOSE:launcher"
+    },
+    {
+      "id": "os.settings.general",
+      "target": "OS_SETTINGS:general"
+    },
+    {
+      "id": "os.settings.themes",
+      "target": "OS_SETTINGS:themes"
+    },
+    {
+      "id": "os.settings.accounts",
+      "target": "OS_SETTINGS:accounts"
+    },
+    {
+      "id": "os.settings.aiVoice",
+      "target": "OS_SETTINGS:ai_voice"
+    },
+    {
+      "id": "os.settings.privacy",
+      "target": "OS_SETTINGS:privacy"
+    },
+    {
+      "id": "os.settings.devices",
+      "target": "OS_SETTINGS:devices"
+    },
+    {
+      "id": "os.settings.network",
+      "target": "OS_SETTINGS:network"
+    },
+    {
+      "id": "os.settings.nodesMesh",
+      "target": "OS_SETTINGS:nodes_mesh"
+    },
+    {
+      "id": "os.settings.storage",
+      "target": "OS_SETTINGS:storage"
+    },
+    {
+      "id": "os.settings.about",
+      "target": "OS_SETTINGS:about"
+    },
+    {
+      "id": "os.settings.input",
+      "target": "OS_SETTINGS:input"
+    },
+    {
+      "id": "os.surface.spatial",
+      "target": "OS_SURFACE:spatial"
+    },
+    {
+      "id": "os.surface.holographic",
+      "target": "OS_SURFACE:holographic"
+    },
+    {
+      "id": "os.surface.worldShift",
+      "target": "OS_SURFACE:world_shift"
+    },
+    {
+      "id": "os.menu.audio",
+      "target": "OS_MENU:audio"
+    },
+    {
+      "id": "os.menu.network",
+      "target": "OS_MENU:network"
+    },
+    {
+      "id": "os.menu.bluetooth",
+      "target": "OS_MENU:bluetooth"
+    },
+    {
+      "id": "os.menu.power",
+      "target": "OS_MENU:power"
+    },
+    {
+      "id": "os.menu.window",
+      "target": "OS_MENU:window"
+    },
+    {
+      "id": "os.menu.search",
+      "target": "OS_MENU:search"
+    },
+    {
+      "id": "os.menu.account",
+      "target": "OS_MENU:account"
+    },
+    {
+      "id": "os.menu.calendar",
+      "target": "OS_MENU:calendar"
+    },
+    {
+      "id": "os.menu.help",
+      "target": "OS_MENU:help"
+    },
+    {
+      "id": "os.window.snapLeft",
+      "target": "OS_SHELL:snap_left"
+    },
+    {
+      "id": "os.window.snapRight",
+      "target": "OS_SHELL:snap_right"
+    },
+    {
+      "id": "os.window.center",
+      "target": "OS_SHELL:center"
+    },
+    {
+      "id": "os.window.next",
+      "target": "OS_SHELL:next_window"
+    },
+    {
+      "id": "os.window.grow",
+      "target": "OS_SHELL:grow"
+    },
+    {
+      "id": "os.window.shrink",
+      "target": "OS_SHELL:shrink"
+    },
+    {
+      "id": "os.desktop.focusLens",
+      "target": "OS_SHELL:focus_lens"
+    },
+    {
+      "id": "os.desktop.peek",
+      "target": "OS_SHELL:peek"
+    },
+    {
+      "id": "os.calendar.previousMonth",
+      "target": "OS_SHELL:previous_month"
+    },
+    {
+      "id": "os.calendar.nextMonth",
+      "target": "OS_SHELL:next_month"
+    },
+    {
+      "id": "os.calendar.today",
+      "target": "OS_SHELL:today"
+    },
+    {
+      "id": "os.widgets.showOverview",
+      "target": "OS_SHELL:show_overview"
+    },
+    {
+      "id": "os.widgets.hideOverview",
+      "target": "OS_SHELL:hide_overview"
+    },
+    {
+      "id": "app.window.maximize",
+      "target": "OS_CONTEXT:maximize"
+    },
+    {
+      "id": "app.window.restore",
+      "target": "OS_CONTEXT:restore"
+    },
+    {
+      "id": "app.window.minimize",
+      "target": "OS_CONTEXT:minimize"
+    },
+    {
+      "id": "app.browser.search",
+      "target": "OS_CONTEXT:search google for {argument}"
+    },
+    {
+      "id": "app.browser.navigate",
+      "target": "OS_CONTEXT:go to {argument}"
+    },
+    {
+      "id": "app.browser.back",
+      "target": "OS_CONTEXT:back"
+    },
+    {
+      "id": "app.browser.forward",
+      "target": "OS_CONTEXT:forward"
+    },
+    {
+      "id": "app.browser.newTab",
+      "target": "OS_CONTEXT:new tab"
+    },
+    {
+      "id": "app.browser.closeTab",
+      "target": "OS_CONTEXT:close tab"
+    },
+    {
+      "id": "app.browser.zoomIn",
+      "target": "OS_CONTEXT:zoom in"
+    },
+    {
+      "id": "app.browser.zoomOut",
+      "target": "OS_CONTEXT:zoom out"
+    },
+    {
+      "id": "app.refresh",
+      "target": "OS_CONTEXT:refresh"
+    },
+    {
+      "id": "app.navigator.find",
+      "target": "OS_CONTEXT:find file {argument}"
+    },
+    {
+      "id": "app.navigator.openFolder",
+      "target": "OS_CONTEXT:open folder {argument}"
+    },
+    {
+      "id": "app.navigator.listView",
+      "target": "OS_CONTEXT:list view"
+    },
+    {
+      "id": "app.navigator.gridView",
+      "target": "OS_CONTEXT:grid view"
+    },
+    {
+      "id": "app.editor.find",
+      "target": "OS_CONTEXT:find {argument}"
+    },
+    {
+      "id": "app.editor.insert",
+      "target": "OS_CONTEXT:insert {argument}"
+    },
+    {
+      "id": "app.editor.undo",
+      "target": "OS_CONTEXT:undo"
+    },
+    {
+      "id": "app.editor.redo",
+      "target": "OS_CONTEXT:redo"
+    },
+    {
+      "id": "app.editor.selectAll",
+      "target": "OS_CONTEXT:select all"
+    },
+    {
+      "id": "app.editor.save",
+      "target": "OS_CONTEXT:save file"
+    },
+    {
+      "id": "app.editor.clear",
+      "target": "OS_CONTEXT:clear text"
+    },
+    {
+      "id": "app.editor.saveCompile",
+      "target": "OS_CONTEXT:save and compile my code"
+    },
+    {
+      "id": "app.editor.compile",
+      "target": "OS_CONTEXT:compile my code"
+    },
+    {
+      "id": "app.terminal.draft",
+      "target": "OS_CONTEXT:type {argument}"
+    },
+    {
+      "id": "app.tasks.next",
+      "target": "OS_CONTEXT:next task"
+    },
+    {
+      "id": "app.tasks.previous",
+      "target": "OS_CONTEXT:previous task"
+    },
+    {
+      "id": "app.settings.nextTheme",
+      "target": "OS_CONTEXT:next theme"
+    },
+    {
+      "id": "app.settings.nextIconSet",
+      "target": "OS_CONTEXT:next icon set"
+    },
+    {
+      "id": "app.settings.nextModel",
+      "target": "OS_CONTEXT:next model"
+    },
+    {
+      "id": "app.launcher.search",
+      "target": "OS_CONTEXT:search apps {argument}"
+    },
+    {
+      "id": "app.spatial.nextItem",
+      "target": "OS_CONTEXT:next item"
+    },
+    {
+      "id": "app.spatial.previousItem",
+      "target": "OS_CONTEXT:previous item"
+    },
+    {
+      "id": "app.spatial.openSelected",
+      "target": "OS_CONTEXT:open selected"
+    },
+    {
+      "id": "app.spatial.addIdea",
+      "target": "OS_CONTEXT:add idea"
+    },
+    {
+      "id": "app.spatial.newCategory",
+      "target": "OS_CONTEXT:new category"
+    },
+    {
+      "id": "os.clock.read",
+      "target": "OS_CLOCK:read"
+    },
+    {
+      "id": "os.clock.set",
+      "target": "OS_CLOCK:set:{argument}"
+    },
+    {
+      "id": "os.clock.timeZone",
+      "target": "OS_CLOCK:zone:{argument}"
+    }
+  ]
+}

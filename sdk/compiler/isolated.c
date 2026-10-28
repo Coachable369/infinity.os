@@ -260,7 +260,12 @@ static int isolated_namespace_read_link(void *context, const char *path, char *o
 // ------------------=
 static int isolated_console_read(void *context, uint32_t stream, void *out, size_t bytes, size_t *done) {
     (void)context;
-    return service_result(infinity_system_call(INFINITY_COMPILER_CONSOLE_READ, stream, (uintptr_t)out, bytes, (uintptr_t)done, 0, 0));
+    int64_t result;
+    do {
+        result = infinity_system_call(INFINITY_COMPILER_CONSOLE_READ, stream, (uintptr_t)out, bytes, (uintptr_t)done, 0, 0);
+        if (result == -11) infinity_system_call(0x1001, 0, 0, 0, 0, 0, 0);
+    } while (result == -11);
+    return service_result(result);
 }
 
 // ------------------------=

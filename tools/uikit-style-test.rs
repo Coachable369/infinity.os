@@ -8,6 +8,11 @@ use panel_recipe::{Surface, SurfaceStyle, Material};
 // DESC: Verifies native style decoding, unchanged authored pixels, real material/geometry transitions and antialiased image borders.
 // ------------------=
 fn main() {
+    let frame=(134,199,255);
+    for old in [(33,58,85),(41,72,94),(43,80,104)] {
+        assert_eq!(panel_recipe::legacy_panel_edge(old,frame),frame);
+    }
+    assert_eq!(panel_recipe::legacy_panel_edge((255,80,80),frame),(255,80,80));
     let material=Material{fill:(16,27,58),edge:(134,199,255),opacity:235,edge_opacity:255,focus:255,pressed:false,scale:1};
     for kind in [Surface::Frame,Surface::WindowFill,Surface::Panel,Surface::Primary,Surface::Secondary,Surface::Field] {
         for y in 0..67 {for x in 0..131 {

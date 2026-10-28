@@ -147,6 +147,10 @@ impl TrustedUiManager {
     // DESC: Requires the exact trusted surface and owner, not merely an unrelated active secure-input lease.
     // ------------------=
     pub fn input_is_for(&self, owner: u32, surface: TrustedSurface, now: u64) -> bool {
-        self.secure_input.map(|lease| lease.owner_context == owner && lease.surface == surface && now < lease.expires_at).unwrap_or(false)
+        self.secure_input
+            .map(|lease| {
+                lease.owner_context == owner && lease.surface == surface && now < lease.expires_at
+            })
+            .unwrap_or(false)
     }
 }

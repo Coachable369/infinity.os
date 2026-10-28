@@ -1,12 +1,25 @@
 //! Keyboard polish for the existing launcher; focus 0 is its search field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Direction { Up, Down, Left, Right, Previous, Next }
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+    Previous,
+    Next,
+}
 
 // ------------------------=
 // FUNC: next_focus
 // DESC: Moves arrows geometrically and Tab sequentially without losing focus on incomplete rows.
 // ------------------=
-pub fn next_focus(current: usize, apps: usize, categories: usize, columns: usize, direction: Direction) -> usize {
+pub fn next_focus(
+    current: usize,
+    apps: usize,
+    categories: usize,
+    columns: usize,
+    direction: Direction,
+) -> usize {
     let total = apps + categories + 1;
     let current = current.min(total - 1);
     let columns = columns.max(1);
@@ -18,14 +31,22 @@ pub fn next_focus(current: usize, apps: usize, categories: usize, columns: usize
         Direction::Up if current <= apps => current.saturating_sub(columns),
         Direction::Down if current <= apps => {
             let target = current + columns;
-            if target <= apps { target }
-            else if (current - 1) / columns < apps.saturating_sub(1) / columns { apps }
-            else if categories > 0 { apps + 1 + ((current - 1) % columns).min(categories - 1) }
-            else { current }
+            if target <= apps {
+                target
+            } else if (current - 1) / columns < apps.saturating_sub(1) / columns {
+                apps
+            } else if categories > 0 {
+                apps + 1 + ((current - 1) % columns).min(categories - 1)
+            } else {
+                current
+            }
         }
         Direction::Up => {
-            if apps == 0 { 0 }
-            else { ((apps - 1) / columns * columns + 1 + current - apps - 1).min(apps) }
+            if apps == 0 {
+                0
+            } else {
+                ((apps - 1) / columns * columns + 1 + current - apps - 1).min(apps)
+            }
         }
         Direction::Down => current,
     }
@@ -36,14 +57,20 @@ pub fn next_focus(current: usize, apps: usize, categories: usize, columns: usize
 // DESC: Makes Return in search choose the first result, never an unrelated category when empty.
 // ------------------=
 pub fn activation_focus(focus: usize, apps: usize) -> Option<usize> {
-    if focus == 0 { (apps > 0).then_some(1) } else { Some(focus) }
+    if focus == 0 {
+        (apps > 0).then_some(1)
+    } else {
+        Some(focus)
+    }
 }
 
 // ------------------------=
 // FUNC: clear_before_dismiss
 // DESC: Keeps filtered launcher results recoverable with a first Escape before closing on a second.
 // ------------------=
-pub fn clear_before_dismiss(query_length: usize) -> bool { query_length > 0 }
+pub fn clear_before_dismiss(query_length: usize) -> bool {
+    query_length > 0
+}
 
 #[cfg(test)]
 mod tests {
@@ -60,11 +87,20 @@ mod tests {
         assert_eq!(next_focus(13, 13, 5, 6, Direction::Down), 14);
         assert_eq!(next_focus(18, 13, 5, 6, Direction::Up), 13);
         assert_eq!(next_focus(1, 13, 5, 6, Direction::Up), 0);
-        for apps in 0..20 { for current in 0..apps + 6 {
-            for direction in [Direction::Up, Direction::Down, Direction::Left, Direction::Right, Direction::Previous, Direction::Next] {
-                assert!(next_focus(current, apps, 5, 6, direction) < apps + 6);
+        for apps in 0..20 {
+            for current in 0..apps + 6 {
+                for direction in [
+                    Direction::Up,
+                    Direction::Down,
+                    Direction::Left,
+                    Direction::Right,
+                    Direction::Previous,
+                    Direction::Next,
+                ] {
+                    assert!(next_focus(current, apps, 5, 6, direction) < apps + 6);
+                }
             }
-        }}
+        }
         assert_eq!(next_focus(0, 0, 0, 6, Direction::Down), 0);
     }
     #[test]

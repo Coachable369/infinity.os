@@ -13,6 +13,12 @@ import sys
 import tarfile
 import urllib.request
 import zipfile
+from module_inventory import module_inventory
+from dependencies import bzip2_sources, timezone_wheel, lzma_library
+from tcl_sources import sources as tcl_sources
+from tk_build import python_support
+from ffi_build import python_support as ffi_support
+from bundled_packages import freeze_packages, native_sources, license_notices, packages
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = "3.13.16"
@@ -56,7 +62,7 @@ def frozen_library(source, arch):
         "_frozen_importlib_external": ("importlib/_bootstrap_external.py", (library / "importlib/_bootstrap_external.py").read_bytes()),
         "zipimport": ("zipimport.py", (library / "zipimport.py").read_bytes()),
     }
-    excluded = {"test", "tests", "idlelib", "tkinter", "turtledemo", "ensurepip", "venv", "_pyrepl"}
+    excluded = {"test", "tests", "idlelib", "turtledemo", "ensurepip", "venv", "_pyrepl"}
     for path in sorted(library.rglob("*.py")):
         relative = path.relative_to(library)
         if any(part in excluded for part in relative.parts):
@@ -68,9 +74,19 @@ def frozen_library(source, arch):
             if body.count(before) != 1:
                 raise SystemExit("CPython subprocess platform contract changed")
             body = body.replace(before, b'{"emscripten", "wasi", "ios", "tvos", "watchos", "infinityos"}')
+        if name == "http.client":
+            before = b"    if http_version == 11:\n        context.set_alpn_protocols(['http/1.1'])"
+            if body.count(before) != 1:
+                raise SystemExit("CPython HTTPS ALPN feature contract changed")
+            body = body.replace(before, b"    if http_version == 11 and ssl.HAS_ALPN:\n        context.set_alpn_protocols(['http/1.1'])")
         names[name] = (relative.as_posix(), body)
-    for name, filename in (("socket", "socket_unavailable.py"), ("select", "select_unavailable.py"),
-                           ("mmap", "mmap_unavailable.py"),
+    for name, filename in (("_socket", "socket.py"), ("_ssl", "ssl.py"), ("select", "select_unavailable.py"),
+                           ("_infinity_modules", "_infinity_modules.py"),
+                           ("_infinity_network", "network.py"),
+                           ("_infinity_subprocess", "subprocess.py"),
+                           ("_infinity_child_entry", "child_entry.py"),
+                           ("_infinity_generated_run", "generated_run.py"),
+                           ("infinity", "infinity.py"),
                            ("_infinity_platform", "platform.py")):
         names[name] = (name + ".py", (ROOT / "sdk/python" / filename).read_bytes())
     resources, metadata = {}, {}
@@ -81,15 +97,6 @@ def frozen_library(source, arch):
                 continue
             body = bundle.read(entry)
             if entry.filename.endswith(".py"):
-                if entry.filename == "pip/_internal/utils/compatibility_tags.py":
-                    # This package service only grants importable pure-Python
-                    # wheel contents. Keep the interpreter's real native ABI,
-                    # but restrict every pip candidate/support-index consumer.
-                    before = b"    return supported\n"
-                    if body.count(before) != 1:
-                        raise SystemExit("pip supported-wheel tag contract changed")
-                    body = body.replace(before,
-                        b'    return [tag for tag in supported if tag.abi == "none" and tag.platform == "any"]\n')
                 if entry.filename == "pip/_vendor/platformdirs/unix.py":
                     # InfinityOS grants capability-scoped namespaces, not a
                     # Unix root UID. Keep upstream's ordinary per-user paths
@@ -110,7 +117,29 @@ def frozen_library(source, arch):
                 resources[entry.filename] = body
                 if entry.filename.startswith("pip-26.2.1.dist-info/"):
                     metadata[entry.filename.split("/", 1)[1]] = body
-    resource_code = f"RESOURCES = {resources!r}\nPIP_METADATA = {metadata!r}\n"
+            # Upstream pyproject-hooks launches this real Python file in a
+            # separate native child. Its bytes are immutable package resources.
+            if entry.filename == "pip/_vendor/pyproject_hooks/_in_process/_in_process.py":
+                resources[entry.filename] = body
+    distributions = {"pip": metadata}
+    timezone_metadata = {}
+    with zipfile.ZipFile(timezone_wheel()) as bundle:
+        for entry in bundle.infolist():
+            if entry.is_dir():
+                continue
+            body = bundle.read(entry)
+            if entry.filename.endswith(".py"):
+                name = entry.filename[:-3].replace("/__init__", "").replace("/", ".")
+                names[name] = (entry.filename, body)
+            else:
+                resources[entry.filename] = body
+                if ".dist-info/" in entry.filename:
+                    timezone_metadata[entry.filename.split("/", 1)[1]] = body
+    distributions["tzdata"] = timezone_metadata
+    original_modules = set(names)
+    freeze_packages(names, resources, distributions)
+    public_roots = sorted({name.split(".")[0] for name in set(names) - original_modules})
+    resource_code = f"RESOURCES = {resources!r}\nDISTRIBUTION_METADATA = {distributions!r}\nPUBLIC_PACKAGE_ROOTS = {public_roots!r}\n"
     names["_infinity_resources"] = ("_infinity_resources.py", resource_code.encode())
     native_config = dict(SOABI=f"cpython-313-{arch}-infinityos", EXT_SUFFIX=".so",
         MULTIARCH=f"{arch}-infinityos", Py_GIL_DISABLED=0, Py_DEBUG=0, WITH_PYMALLOC=1,
@@ -128,7 +157,7 @@ def frozen_library(source, arch):
 def arithmetic_sources():
     destination = ROOT / "third_party/python/compiler-rt" / LLVM_REVISION
     destination.mkdir(parents=True, exist_ok=True)
-    pending = ["trunctfdf2.c"]
+    pending = ["trunctfdf2.c", "extenddftf2.c"]
     visited = set()
     while pending:
         name = pending.pop()
@@ -150,7 +179,7 @@ def arithmetic_sources():
     if not license_path.exists():
         with urllib.request.urlopen(f"https://raw.githubusercontent.com/llvm/llvm-project/{LLVM_REVISION}/compiler-rt/LICENSE.TXT", timeout=60) as response:
             license_path.write_bytes(response.read())
-    return [destination / "trunctfdf2.c"], license_path
+    return [destination / name for name in ("trunctfdf2.c", "extenddftf2.c")], license_path
 
 # ------------------------=
 # FUNC: run
@@ -222,14 +251,20 @@ def main():
             run("make", "-j4", "all-target-newlib", cwd=native_lib, stdout=log, stderr=subprocess.STDOUT)
         newlib = native_lib / f"{arch}-none-elf/newlib"
     compression, zlib_sources = compression_sources()
-    includes = [out, ROOT / "sdk/python/include", source / "Include", source / "Include/internal", source,
+    bzip2, bzip2_units = bzip2_sources()
+    lzma_include, lzma_archive, lzma_license = lzma_library(arch, LLVM, newlib)
+    # Reuse the checksum-pinned Tcl distribution's complete SQLite amalgamation.
+    sqlite = tcl_sources()["tcl"] / "pkgs/sqlite3.53.0/compat/sqlite3"
+    tkinter = python_support(arch,newlib,compression,source)
+    ctypes = ffi_support(arch, LLVM, newlib, source)
+    includes = [out, bzip2, sqlite, lzma_include, ROOT / "sdk/python/include", source / "Include", source / "Include/internal", source,
                 source / "Modules/_hacl/include", source / "Modules/expat", compression,
                 ROOT / "sdk/compiler/include", newlib / "targ-include", newlib,
-                ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include"]
+                ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include", *tkinter["includes"], *ctypes["includes"]]
     flags = [f"--target={arch}-none-elf", "-std=c11", "-O2", "-fPIE", "-ffunction-sections", "-fdata-sections",
              "-DPy_BUILD_CORE", "-DNDEBUG", "-include", str(ROOT / "sdk/compiler/target.h"),
              '-DPREFIX="/system/python"', '-DEXEC_PREFIX="/system/python"', '-DVERSION="3.13"',
-             '-DVPATH=""', '-DPLATLIBDIR="lib"', '-DPYTHONPATH=""']
+             '-DVPATH=""', '-DPLATLIBDIR="lib"', '-DPYTHONPATH=""', '-DHAVE_FFI_PREP_CIF_VAR=1']
     flags += ["-mno-red-zone"] if arch == "x86_64" else ["-mno-outline-atomics", "-mstrict-align"]
     flags += [f"-I{x}" for x in includes]
     flags += ["-idirafter", str(ROOT / "sdk/c/include")]
@@ -240,6 +275,9 @@ def main():
     run(LLVM / "clang", *extension_flags, "-fPIC", "-O0", "-c", ROOT / "tools/native-python/library.c", "-o", out / "library.o")
     run("/opt/homebrew/opt/lld/bin/ld.lld", "-shared", "--hash-style=sysv", "-z", "max-page-size=4096",
         out / "library.o", "-o", out / "library.so")
+    run(LLVM / "clang", *extension_flags, "-fPIC", "-c", ROOT / "tools/native-python/ffi-library.c", "-o", out / "ffi-library.o")
+    run("/opt/homebrew/opt/lld/bin/ld.lld", "-shared", "--hash-style=sysv", "-z", "max-page-size=4096",
+        out / "ffi-library.o", "-o", out / "native_ffi_test.so")
     make = (source / "Makefile.pre.in").read_text()
     sources = []
     for group in ("PEGEN_OBJS", "TOKENIZER_OBJS", "POBJS", "PYTHON_OBJS", "OBJECT_OBJS", "MODULE_OBJS"):
@@ -256,12 +294,26 @@ def main():
         modules.append(fields[0])
         sources += [source / "Modules" / x for x in fields[1:] if x.endswith(".c")]
     extra_modules = {
+        "_sqlite3": ["_sqlite/" + name + ".c" for name in
+                     "blob connection cursor microprotocols module prepare_protocol row statement util".split()],
+        "_lzma": ["_lzmamodule.c"],
+        "mmap": ["mmapmodule.c"],
         "array": ["arraymodule.c"], "_bisect": ["_bisectmodule.c"], "_csv": ["_csv.c"],
         "_heapq": ["_heapqmodule.c"], "_json": ["_json.c"], "_opcode": ["_opcode.c"],
         "_contextvars": ["_contextvarsmodule.c"],
+        "_queue": ["_queuemodule.c"], "_statistics": ["_statisticsmodule.c"],
+        "_elementtree": ["_elementtree.c"], "_zoneinfo": ["_zoneinfo.c"],
+        "_lsprof": ["_lsprof.c", "rotatingtree.c"],
+        "_multibytecodec": ["cjkcodecs/multibytecodec.c"],
+        "_codecs_cn": ["cjkcodecs/_codecs_cn.c"],
+        "_codecs_hk": ["cjkcodecs/_codecs_hk.c"],
+        "_codecs_iso2022": ["cjkcodecs/_codecs_iso2022.c"],
+        "_codecs_jp": ["cjkcodecs/_codecs_jp.c"],
+        "_codecs_kr": ["cjkcodecs/_codecs_kr.c"],
+        "_codecs_tw": ["cjkcodecs/_codecs_tw.c"],
         "_pickle": ["_pickle.c"], "_random": ["_randommodule.c"], "_struct": ["_struct.c"],
         "math": ["mathmodule.c"], "cmath": ["cmathmodule.c"], "_datetime": ["_datetimemodule.c"],
-        "binascii": ["binascii.c"], "zlib": ["zlibmodule.c"], "unicodedata": ["unicodedata.c"],
+        "binascii": ["binascii.c"], "zlib": ["zlibmodule.c"], "_bz2": ["_bz2module.c"], "unicodedata": ["unicodedata.c"],
         "pyexpat": ["pyexpat.c", "expat/xmlparse.c", "expat/xmlrole.c", "expat/xmltok.c"],
         "_md5": ["md5module.c", "_hacl/Hacl_Hash_MD5.c"],
         "_sha1": ["sha1module.c", "_hacl/Hacl_Hash_SHA1.c"],
@@ -272,14 +324,35 @@ def main():
     for name, units in extra_modules.items():
         modules.append(name)
         sources += [source / "Modules" / unit for unit in units]
-    sources += zlib_sources
+    modules.append("_infinity_https")
+    sources.append(ROOT / "sdk/python/https.c")
+    modules.append("_infinity_app")
+    sources.append(ROOT / "sdk/python/app.c")
+    modules.append("_infinity_socket")
+    sources.append(ROOT / "sdk/python/socket.c")
+    modules.append("_infinity_process")
+    sources.append(ROOT / "sdk/python/process.c")
+    modules.append("_infinity_runtime")
+    sources.append(ROOT / "sdk/python/runtime.c")
+    modules.append(tkinter["module"])
+    sources.append(tkinter["source"])
+    modules.append("_ctypes")
+    sources += ctypes["sources"]
+    modules.append("markupsafe._speedups")
+    sources += native_sources()
+    sources += zlib_sources + bzip2_units + [sqlite / "sqlite3.c", ROOT / "sdk/python/sqlite.c"]
     config = (source / "Modules/config.c.in").read_text()
-    config = config.replace("/* -- ADDMODULE MARKER 1 -- */", "\n".join(f"extern PyObject *PyInit_{m}(void);" for m in modules))
-    config = config.replace("/* -- ADDMODULE MARKER 2 -- */", "\n".join(f'{{"{m}", PyInit_{m}}},' for m in modules))
+    config = config.replace("/* -- ADDMODULE MARKER 1 -- */", "\n".join(f"extern PyObject *PyInit_{m.rsplit('.', 1)[-1]}(void);" for m in modules))
+    config = config.replace("/* -- ADDMODULE MARKER 2 -- */", "\n".join(f'{{"{m}", PyInit_{m.rsplit(".", 1)[-1]}}},' for m in modules))
     (out / "config.c").write_text(config)
     frozen = ['#include "Python.h"', '#include "pycore_import.h"']
     entries = [[], []]
     names, pip_wheel = frozen_library(source, arch)
+    inventory = module_inventory(source, VERSION, arch, names, modules)
+    inventory["bundled_distributions"] = {p["name"]: p["version"] for p in packages()}
+    inventory["bundled_distributions"].update(pip="26.2.1", tzdata="2026.5")
+    names["_infinity_inventory"] = ("_infinity_inventory.py",
+        ("INVENTORY = " + repr(inventory) + "\n").encode())
     for index, (name, (filename, body)) in enumerate(names.items()):
         data = marshal.dumps(compile(body, f"/stdlib/{filename}", "exec", optimize=0))
         frozen.append(f"static const unsigned char data_{index}[]={{" + ",".join(map(str, data)) + "};")
@@ -307,7 +380,18 @@ def main():
         obj = out / (hashlib.sha256(str(path).encode()).hexdigest()[:12] + "-" + path.stem + ".o")
         # CPython's installation PREFIX is not a third-party library macro;
         # Expat uses PREFIX as an XML namespace structure type.
-        unit_flags = [*flags, "-UPREFIX"] if path.parent == source / "Modules/expat" else flags
+        unit_flags = [*flags, "-UPREFIX"] if path.parent == source / "Modules/expat" else list(flags)
+        if path == source / "Modules/mmapmodule.c":
+            # This native port exposes real getpagesize(), not a fabricated
+            # general POSIX sysconf service. Anonymous allocation granularity
+            # is the same verified physical page size on both targets.
+            unit_flags += ["-Dmy_getallocationgranularity=getpagesize"]
+        if path.parent == sqlite or path == ROOT / "sdk/python/sqlite.c":
+            unit_flags += ["-DSQLITE_OS_OTHER=1", "-DSQLITE_THREADSAFE=0", "-DSQLITE_TEMP_STORE=3",
+                           "-DSQLITE_OMIT_LOAD_EXTENSION", "-DSQLITE_OMIT_WAL", "-DSQLITE_ENABLE_FTS5",
+                           "-DSQLITE_ENABLE_RTREE", "-DSQLITE_ENABLE_MATH_FUNCTIONS"]
+        if path.parent == source / "Modules/_sqlite":
+            unit_flags += ["-DPY_SQLITE_HAVE_SERIALIZE"]
         command = [str(LLVM / "clang"), *unit_flags, "-c", str(path), "-o", str(obj)]
         result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (obj.with_suffix(".log")).write_bytes(result.stdout)
@@ -323,7 +407,8 @@ def main():
         print("\n".join(failures[:2])[:12000])
         raise SystemExit(f"{len(failures)} failed units; see {out / 'errors.log'}")
     link = ["/opt/homebrew/opt/lld/bin/ld.lld", "-static", "--error-limit=0", "--image-base=0x100000000", "-z", "max-page-size=4096",
-        "-e", "infinity_compiler_entry", *results, "--start-group", newlib / "libc.a", newlib / "libm.a", "--end-group", "-o", out / "python.elf"]
+        "-e", "infinity_compiler_entry", *results, *tkinter["objects"], "--start-group", lzma_archive, ctypes["archive"],
+        newlib / "libc.a", newlib / "libm.a", "--end-group", "-o", out / "python.elf"]
     result = subprocess.run([str(x) for x in link], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (out / "link.log").write_bytes(result.stdout)
     record(arch, "link", result.stdout)
@@ -332,6 +417,7 @@ def main():
         raise SystemExit(f"Native Python link failed; see {out / 'link.log'}")
     evidence = dict(architecture=arch, cpython_version=VERSION, source_archive_sha256=SHA,
         pip_version="26.2.1", pip_wheel_sha256=hashlib.sha256(pip_wheel.read_bytes()).hexdigest(),
+        bundled_distributions=inventory["bundled_distributions"],
         frozen_module_count=len(names), builtin_modules=modules,
         executable_sha256=hashlib.sha256((out / "python.elf").read_bytes()).hexdigest(),
         compiled=True, runtime_verified=False, installed_verified=False)
@@ -343,12 +429,22 @@ def main():
         temporary.replace(package / name)
     notices = [(source / "LICENSE").read_bytes(), b"\n\nLLVM compiler runtime:\n", arithmetic_license.read_bytes(),
                b"\n\nzlib:\n", (compression / "zlib.h").read_bytes().split(b"#ifndef", 1)[0],
-               b"\n\nBundled Expat:\n", (source / "Modules/expat/COPYING").read_bytes()]
-    with zipfile.ZipFile(pip_wheel) as bundle:
-        for name in bundle.namelist():
-            if "/licenses/" in name or name.endswith(("LICENSE", "LICENSE.txt", "COPYING")):
-                notices += [b"\n\n" + name.encode() + b":\n", bundle.read(name)]
+               b"\n\nBundled Expat:\n", (source / "Modules/expat/COPYING").read_bytes(),
+               b"\n\nbzip2:\n", (bzip2 / "LICENSE").read_bytes(),
+               b"\n\nXZ/liblzma:\n", lzma_license.read_bytes(),
+               b"\n\nlibffi:\n", ctypes["license"].read_bytes(),
+               b"\n\nSQLite (public domain):\n", (sqlite / "sqlite3.c").read_bytes().split(b"#define", 1)[0]]
+    for component,path in tcl_sources().items():
+        license_file=path / "license.terms"
+        notices += [b"\n\n"+component.encode()+b":\n",license_file.read_bytes()]
+    for wheel in (pip_wheel, timezone_wheel()):
+        with zipfile.ZipFile(wheel) as bundle:
+            for name in bundle.namelist():
+                if "/licenses/" in name or name.endswith(("LICENSE", "LICENSE.txt", "COPYING")):
+                    notices += [b"\n\n" + name.encode() + b":\n", bundle.read(name)]
+    notices += license_notices()
     (package / "python-license.txt").write_bytes(b"".join(notices))
+    (package / "python-modules.json").write_text(json.dumps(inventory, indent=2) + "\n")
     (ROOT / "builds/validation/native-python" / arch / "build.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(out / "python.elf")
 

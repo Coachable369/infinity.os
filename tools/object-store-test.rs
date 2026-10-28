@@ -5,13 +5,39 @@ mod spatial_path;
 mod favorites;
 #[path="../kernel/runtime/font_preferences.rs"]
 mod font_preferences;
-
+#[path="../kernel/runtime/generated_apps.rs"]
+mod generated_apps;
 #[path="../kernel/runtime/ai/hermes_profile.rs"]
 mod hermes_profile;
 #[path="../kernel/storage/hermes_memory_store.rs"]
 mod hermes_memory_store;
 #[path="../kernel/storage/editor_objects.rs"]
 mod editor_objects;
+
+// ------------------------=
+// FUNC: editable_ai_dictionaries
+// DESC: Saves both installed AI JSON documents through the production editor adapter and verifies edits after remount.
+// ------------------=
+fn editable_ai_dictionaries() {
+    let sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    let disk = MemoryDisk::new(sectors);
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x6d; 16]).unwrap();
+    let owner = storage::object::ObjectId([1; 16]);
+    for path in [b"/system/service-registry.json".as_slice(), b"/system/ai/instruction-mappings.json"] {
+        let mut buffer = [0u8; 16 * 1024];
+        let (length, revision) = editor_objects::load(&mut store, owner, path, &mut buffer).unwrap();
+        assert!(length > 0 && length + 1 <= buffer.len());
+        // JSON whitespace is a valid user edit without changing a native contract.
+        buffer[length] = b'\n';
+        let edited = buffer[..length + 1].to_vec();
+        editor_objects::save(&mut store, owner, path, &edited, revision).unwrap();
+        store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let (length, _) = editor_objects::load(&mut store, owner, path, &mut buffer).unwrap();
+        assert_eq!(&buffer[..length], edited.as_slice());
+        assert_eq!(editor_objects::save(&mut store, storage::object::ObjectId([0; 16]), path,
+            &edited, None), Err(ObjectError::Unauthorized));
+    }
+}
 
 // ------------------------=
 // FUNC: hermes_persistence
@@ -508,8 +534,12 @@ impl ObjectCapabilityPolicy for Deny {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    editable_ai_dictionaries();
     if std::env::args().any(|arg|arg=="--clock-only"){clock_persistence();return;}
     if std::env::args().any(|arg|arg=="--hermes-memory-only"){hermes_persistence();return;}
+    if std::env::args().any(|arg|arg=="--generated-apps-only") {
+        private_generated_app_catalog(STORE_RELATIVE_LBA as usize + 32_768);return;
+    }
     if std::env::args().any(|arg|arg=="--namespace-expansion-only") {
         namespace_expansion();return;
     }
@@ -523,10 +553,12 @@ fn main() {
     hermes_persistence();
     namespace_expansion();
     download_transaction(test_sectors);
+    owned_image_download(test_sectors);
     private_spatial_checkpoint(test_sectors);
     private_browser_favorites(test_sectors);
     private_font_preferences(test_sectors);
     private_editor_preferences(test_sectors);
+    private_generated_app_catalog(test_sectors);
     private_browser_settings(test_sectors);
     legacy_store_mount(test_sectors);
     large_kernel_store_mount();
@@ -542,13 +574,22 @@ fn main() {
     assert!(completed_stages.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(store.runtime_bootstrap_valid());
     let mapping=store.resolve(b"/system/ai/instruction-mappings.json").expect("AI instruction mapping");
-    let mut mapping_bytes=[0u8;16*1024];
+    let registry = store.resolve(b"/system/service-registry.json").unwrap();
+    let mut registry_bytes = [0u8; 16*1024];
+    let registry_length = store.read(registry, None, &mut registry_bytes).unwrap();
+    assert_eq!(&registry_bytes[..registry_length], include_bytes!("../system/ai/service-registry.json"));
+    let mut mapping_bytes=[0u8;32*1024];
     let mapping_length=store.read(mapping,None,&mut mapping_bytes).unwrap();
     assert_eq!(&mapping_bytes[..mapping_length],include_bytes!("../system/ai/instruction-mappings.json"));
     store.write(mapping,b"user-edited mapping").unwrap();
     assert_eq!(store.ensure_ai_instruction_mapping().unwrap(),mapping);
     let preserved=store.read(mapping,None,&mut mapping_bytes).unwrap();
     assert_eq!(&mapping_bytes[..preserved],b"user-edited mapping");
+    store.remove_path(b"/system/service-registry.json").unwrap();
+    assert_eq!(store.ensure_ai_instruction_mapping().unwrap(), mapping);
+    assert!(store.resolve(b"/system/service-registry.json").is_ok());
+    // Release the alias after testing migration, retaining this fixture's namespace budget.
+    store.remove_path(b"/system/service-registry.json").unwrap();
     // This fixture exercises all five free namespace slots. The independent
     // provisioning test above verifies the sample; delete it here as a user
     // may do, retaining the same namespace budget for the lifecycle tests.
@@ -1039,6 +1080,36 @@ fn download_transaction(sectors:usize) {
 }
 
 // ------------------------=
+// FUNC: owned_image_download
+// DESC: Verifies a large user-owned image and its folders survive remount without overwriting another download.
+// ------------------=
+fn owned_image_download(sectors:usize) {
+    let disk=MemoryDisk::new(sectors);
+    let owner=storage::object::ObjectId([0x42;16]);
+    let path=b"/home/42424242424242424242424242424242/downloads/image.png";
+    let home=b"/home/42424242424242424242424242424242";
+    let folder=b"/home/42424242424242424242424242424242/downloads";
+    let content:Vec<u8>=(0..256*1024).map(|n|((n*31+n/251)%256)as u8).collect();
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x97;16]).unwrap();
+    let id=store.create_download(b"image.png",&content,path,b"image/png",owner).unwrap();
+    assert_eq!(store.create_download(b"image.png",b"replacement",path,b"image/png",owner),Err(ObjectError::NameConflict));
+    for name in [home.as_slice(),folder.as_slice()] {
+        let metadata=store.metadata(store.resolve(name).unwrap()).unwrap();
+        assert_eq!(metadata.owner,owner);
+    }
+    drop(store);
+    let mut store=ObjectStore::mount(disk,0).unwrap();
+    assert_eq!(store.resolve(path).unwrap(),id);
+    let mut actual=vec![0;content.len()];
+    assert_eq!(store.read(id,None,&mut actual).unwrap(),content.len());
+    assert_eq!(actual,content);
+    assert_eq!(store.metadata(id).unwrap().owner,owner);
+    let mime=store.relationship_nth(id,0).unwrap().target.id;
+    let mut bytes=[0;32];let n=store.read(mime,None,&mut bytes).unwrap();
+    assert_eq!(&bytes[..n],b"image/png");
+}
+
+// ------------------------=
 // FUNC: private_spatial_checkpoint
 // DESC: Exercises fresh-store spatial persistence, alias/copy isolation, replacement and cold remount.
 // ------------------=
@@ -1139,6 +1210,36 @@ fn private_editor_preferences(sectors:usize) {
         if fail {disk.arm(0);}let result=store.replace_state(id,&next);disk.disarm();assert_eq!(result.is_err(),fail);
         drop(store);let mut mounted=ObjectStore::mount(backing,0).unwrap();
         assert_eq!(mounted.read_editor_preferences(id,&mut bytes).unwrap(),8);assert_eq!(bytes,if fail{old}else{next});
+    }
+}
+
+// ------------------------=
+// FUNC: private_generated_app_catalog
+// DESC: Exercises real owned app objects, private catalog persistence, remount, failed-write rollback and stale version evidence.
+// ------------------=
+fn private_generated_app_catalog(sectors:usize){
+    use generated_apps::{Registry,Entry,Language,BYTES};
+    for fail in [false,true]{
+        let backing=MemoryDisk::new(sectors);let disk=FailingDisk::new(backing.clone());
+        let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x98;16]).unwrap();
+        let owner=storage::object::ObjectId([0x77;16]);let path=b"/home/default/documents/counter.py";
+        let source=store.create_owned_attached(b"counter.py",ObjectType::Text,Space::Personal,b"print(1)\n",path,owner).unwrap();
+        let old_version=store.current_version(source).unwrap();
+        let entry=Entry::new(path,path,source.0,source.0,old_version,old_version,Language::Python).unwrap();
+        let mut registry=Registry::new(owner.0);registry.register(owner.0,entry).unwrap();let mut old=[0;BYTES];registry.encode(&mut old).unwrap();
+        let catalog=store.create_attached(b"@generated-apps",ObjectType::Metadata,Space::System,&old,b"/system/generated-apps/test-user").unwrap();
+        let mut bytes=[0;BYTES];assert_eq!(store.read(catalog,None,&mut bytes),Err(ObjectError::Unauthorized));
+        assert_eq!(store.write(catalog,&old),Err(ObjectError::Unauthorized));assert_eq!(store.remove(catalog),Err(ObjectError::Unauthorized));
+        assert_eq!(store.copy_attached(catalog,b"/home/default/leaked-apps"),Err(ObjectError::Unauthorized));
+        let version=store.write(source,b"print(2)\n").unwrap();assert_ne!(version,entry.source_version);
+        let next=Entry{source_version:version,artifact_version:version,..entry};registry.register(owner.0,next).unwrap();let mut updated=[0;BYTES];registry.encode(&mut updated).unwrap();
+        if fail{disk.arm(0);}let result=store.replace_state(catalog,&updated);disk.disarm();assert_eq!(result.is_err(),fail);
+        drop(store);let mut mounted=ObjectStore::mount(backing,0).unwrap();
+        let length=mounted.read_generated_apps(catalog,&mut bytes).unwrap();assert_eq!(length,BYTES);
+        let entry=Registry::decode(owner.0,&bytes).unwrap().find(owner.0,b"counter").unwrap();
+        assert_eq!(entry.source_id,mounted.resolve(path).unwrap().0);assert_eq!(mounted.metadata(source).unwrap().owner,owner);
+        assert_eq!(entry.source_version,if fail{old_version}else{version});
+        assert_eq!(mounted.current_version(source).unwrap(),version);
     }
 }
 

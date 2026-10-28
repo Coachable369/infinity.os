@@ -23,6 +23,61 @@ pub(super) fn decimal(mut value: usize, out: &mut [u8; 20]) -> &[u8] {
 }
 impl super::DisplayDevice {
     // ------------------------=
+    // FUNC: editor_terminal
+    // DESC: Paints the native dock from real shell output with bounded text, crisp kit controls and a focused input caret.
+    // ------------------=
+    fn editor_terminal(&mut self,layout:Layout,s:usize) {
+        use crate::ui::editor_chrome::terminal;
+        let parent_clip=self.render_clip;
+        let area=Rect{height:(layout.status.y-layout.body.y).max(0)as u32,..layout.body};
+        let appearance=crate::ui::editor_tools::preferences::current();
+        let cell=crate::ui::editor_tools::preferences::Preferences{size:3,..appearance}.cell()*s;
+        let g=terminal::layout(area,s,cell);
+        let state=terminal::read();let count=state.visual_count(state.viewport_columns);
+        let background=appearance.color(0);let foreground=appearance.color(4);let border=(33,58,85);
+        self.fill_rect(g.panel.x.max(0) as usize,g.panel.y.max(0) as usize,g.panel.width as usize,g.panel.height as usize,background.0,background.1,background.2);
+        self.fill_rect(g.header.x.max(0) as usize,g.header.y.max(0) as usize,g.header.width as usize,s,border.0,border.1,border.2);
+        if state.preferences.open {
+            self.fill_rounded_rect_alpha((g.header.x+g.header.width as i32/2-16*s as i32).max(0)as usize,g.header.y.max(0)as usize,32*s,2*s,s,94,166,214,220);
+        }
+        self.app_disclosure(Rect{x:g.toggle.x+8*s as i32,width:18*s as u32,..g.toggle},state.preferences.open,MUTED,s);
+        self.app_label(Rect{x:g.toggle.x+32*s as i32,width:g.toggle.width.saturating_sub(32*s as u32),..g.toggle},b"Terminal",MUTED,false,s);
+        for (rect,label,enabled) in [(g.run,b"Run".as_slice(),!state.running),(g.stop,b"Stop",state.running),(g.restart,b"Restart",true)] {
+            self.app_card(rect,if enabled{(15,27,46)}else{(11,18,32)},if enabled{(33,92,124)}else{border},s);
+            self.app_label(Rect{x:rect.x+10*s as i32,width:rect.width.saturating_sub(12*s as u32),..rect},label,if enabled{TEXT}else{MUTED},false,s);
+        }
+        if !state.preferences.open{return;}
+        // Terminal rows keep their kit density independently of source-code zoom.
+        crate::ui::editor_tools::preferences::publish(crate::ui::editor_tools::preferences::Preferences{size:3,..appearance});
+        self.intersect_render_clip(g.output.x.max(0)as usize,g.output.y.max(0)as usize,g.output.width as usize,g.output.height as usize);
+        let rows=g.rows(s);let start=count.saturating_sub(rows).saturating_sub(state.scroll);
+        let path=crate::ui::editor_tools::current();
+        for index in 0..rows {
+            let Some((row,from,to))=state.visual_line(start+index,state.viewport_columns)else{break;};
+            let text=&state.lines[row][..state.lengths[row]];
+            let color=if terminal::diagnostic(text,&path.path[..path.path_len]).is_some(){CYAN}else{foreground};
+            for (column,&byte) in text[from..to].iter().enumerate(){
+                self.editor_glyph(g.output.x.max(0)as usize+column*cell,g.output.y.max(0)as usize+index*18*s,byte,s,color);
+            }
+        }
+        self.render_clip=parent_clip;
+        if count>rows {
+            self.fill_rounded_rect_alpha(g.track.x.max(0)as usize,g.track.y.max(0)as usize,g.track.width as usize,g.track.height as usize,2*s,21,39,56,255);
+            self.fill_rounded_rect_alpha(g.thumb.x.max(0)as usize,g.thumb.y.max(0)as usize,g.thumb.width as usize,g.thumb.height as usize,2*s,94,166,214,255);
+        }
+        self.app_card(g.input,(15,27,46),if state.focused{CYAN}else{border},s);
+        let visible=(g.input.width as usize).saturating_sub(28*s)/cell.max(1);
+        let start=state.cursor.saturating_sub(visible.saturating_sub(1));
+        self.intersect_render_clip((g.input.x+10*s as i32).max(0)as usize,g.input.y.max(0)as usize,g.input.width.saturating_sub(20*s as u32)as usize,g.input.height as usize);
+        if state.input_length==0&&!state.focused {self.app_label(Rect{x:g.input.x+12*s as i32,..g.input},b"Enter a command or program input...",MUTED,false,s);}
+        for(column,&byte)in state.input[start.min(state.input_length)..state.input_length].iter().take(visible).enumerate(){
+            self.editor_glyph((g.input.x+12*s as i32).max(0)as usize+column*cell,(g.input.y+5*s as i32).max(0)as usize,byte,s,foreground);
+        }
+        if state.focused {self.fill_rect((g.input.x+12*s as i32).max(0)as usize+(state.cursor-start)*cell,(g.input.y+5*s as i32).max(0)as usize,s,18*s,CYAN.0,CYAN.1,CYAN.2);}
+        self.render_clip=parent_clip;
+        crate::ui::editor_tools::preferences::publish(appearance);
+    }
+    // ------------------------=
     // FUNC: editor_caret_blink
     // DESC: Repaints only the caret strip, retaining window chrome and all other document pixels.
     // ------------------=
@@ -107,15 +162,23 @@ impl super::DisplayDevice {
                 s,
             );
         }
-        if g.menu_bar.width > 540 * s as u32 && view.path_len > 0 {
+        let path_width=g.menu_bar.width.saturating_sub(if g.menu_bar.width>700*s as u32{536*s as u32}else{304*s as u32});
+        if path_width >= 96 * s as u32 && view.path_len > 0 {
+            let path=&view.path[..view.path_len];
+            let mut short=[0u8;98];let mut skip=0;
+            if self.app_text_width(path,false,s)>path_width as usize {
+                let ellipsis=self.app_text_width(b"...",false,s);
+                while skip<path.len()&&self.app_text_width(&path[skip..],false,s)+ellipsis>path_width as usize{skip+=1;}
+            }
+            let text=if skip>0{short[..3].copy_from_slice(b"...");short[3..3+path.len()-skip].copy_from_slice(&path[skip..]);&short[..3+path.len()-skip]}else{path};
             self.app_label(
                 Rect {
                     x: g.menu_bar.x + 288 * s as i32,
                     y: g.menu_bar.y,
-                    width: g.menu_bar.width.saturating_sub(536 * s as u32),
+                    width: path_width,
                     height: g.menu_bar.height,
                 },
-                &view.path[..view.path_len],
+                text,
                 MUTED,
                 false,
                 s,
@@ -273,6 +336,7 @@ impl super::DisplayDevice {
             self.app_button(g.field_close, b"x", false, s);
         }
         self.code_editor(g, input, scroll, s);
+        self.editor_terminal(g,s);
         self.fill_rect(
             g.status.x as usize,
             g.status.y as usize,

@@ -449,7 +449,8 @@ impl SystemLayout {
             browser_left + offset * self.scale,
             browser_top + 32 * self.scale,
             width * self.scale,
-            (super::app_menu::PANEL_PADDING * 2 + item_count * super::app_menu::ROW_HEIGHT) * self.scale,
+            (super::app_menu::PANEL_PADDING * 2 + item_count * super::app_menu::ROW_HEIGHT)
+                * self.scale,
         )
     }
 
@@ -800,14 +801,16 @@ impl SystemLayout {
     ) -> Option<AiChatTarget> {
         let point = self.point(normalized_x, normalized_y);
         let geometry = self.ai_chat_geometry(minimized);
-        if crate::ui::desktop_widgets::current().visible & 2 == 0 { return None; }
+        if crate::ui::desktop_widgets::current().visible & 2 == 0 {
+            return None;
+        }
         if geometry.close.contains(point) {
             return Some(AiChatTarget::Close);
         }
         if geometry.minimize.contains(point) {
             return Some(AiChatTarget::Minimize);
         }
-        if geometry.status.contains(point) {
+        if geometry.status.contains(point) && point.x >= geometry.status.right() - (30 * self.scale) as i32 {
             return Some(AiChatTarget::Status);
         }
         if minimized || !geometry.panel.contains(point) {
@@ -879,7 +882,12 @@ impl SystemLayout {
         let geometry = self.desktop_foreground_geometry();
         let mut layers = 0;
         let widgets = crate::ui::desktop_widgets::current();
-        if (0..2).any(|id| widgets.visible & (1<<id) != 0 && widgets.rect(id,self.width,self.height,self.scale,false).intersects(damage)) {
+        if (0..2).any(|id| {
+            widgets.visible & (1 << id) != 0
+                && widgets
+                    .rect(id, self.width, self.height, self.scale, false)
+                    .intersects(damage)
+        }) {
             layers |= DESKTOP_FOREGROUND_WIDGETS;
         }
         if geometry.dock.intersects(damage) {
@@ -1222,9 +1230,12 @@ impl SystemLayout {
                     window_maximized,
                 );
             let title_height = 34 * self.scale;
-            let controls=crate::ui::app_launcher::window_controls::bounds(
-                rect(browser_left,browser_top,browser_width,browser_height),title_height as u32,self.scale);
-            if let Some(index)=crate::ui::app_launcher::window_controls::hit(controls,point) {
+            let controls = crate::ui::app_launcher::window_controls::bounds(
+                rect(browser_left, browser_top, browser_width, browser_height),
+                title_height as u32,
+                self.scale,
+            );
+            if let Some(index) = crate::ui::app_launcher::window_controls::hit(controls, point) {
                 return Some(DesktopTarget::HomeControl(index));
             }
             if !window_maximized {
@@ -1283,8 +1294,12 @@ impl SystemLayout {
             }
             let sidebar_width = browser_width * 27 / 100;
             for index in (0..9usize).chain(core::iter::once(11)) {
-                if self.navigator_sidebar_row(rect(browser_left, browser_top, browser_width, browser_height), index)
-                .contains(point)
+                if self
+                    .navigator_sidebar_row(
+                        rect(browser_left, browser_top, browser_width, browser_height),
+                        index,
+                    )
+                    .contains(point)
                 {
                     return Some(DesktopTarget::HomeSidebar(index));
                 }
@@ -1611,7 +1626,8 @@ impl SystemLayout {
         let title_height = 48 * self.scale;
         let control_size = 26 * self.scale;
         let control_gap = 8 * self.scale;
-        let close_left = left.saturating_add(width.saturating_sub(control_size + 12 * self.scale) as i32);
+        let close_left =
+            left.saturating_add(width.saturating_sub(control_size + 12 * self.scale) as i32);
         let maximize_left = close_left.saturating_sub((control_size + control_gap) as i32);
         let minimize_left = maximize_left.saturating_sub((control_size + control_gap) as i32);
         let toolbar_top = top.saturating_add(title_height as i32);
@@ -1621,7 +1637,9 @@ impl SystemLayout {
             title: signed_rect(
                 left.saturating_add((12 * self.scale) as i32),
                 top,
-                minimize_left.saturating_sub(left.saturating_add((20 * self.scale) as i32)).max(0) as usize,
+                minimize_left
+                    .saturating_sub(left.saturating_add((20 * self.scale) as i32))
+                    .max(0) as usize,
                 title_height,
             ),
             minimize: signed_rect(
@@ -1657,7 +1675,7 @@ impl SystemLayout {
     // DESC: Keeps app minimum height pixel-based on tall firmware displays so landscape designs are not stretched.
     // ------------------=
     pub fn desktop_app_minimum_height(self) -> i32 {
-        (480*self.scale*1000/self.height.max(1)).min(360) as i32
+        (480 * self.scale * 1000 / self.height.max(1)).min(360) as i32
     }
 
     // ------------------------=
@@ -1813,7 +1831,9 @@ impl SystemLayout {
             window_height,
             maximized,
         );
-        let visible_rows = ((window.content.height as usize).saturating_sub(130*self.scale) / (24 * self.scale).max(1)).max(1);
+        let visible_rows = ((window.content.height as usize).saturating_sub(130 * self.scale)
+            / (24 * self.scale).max(1))
+        .max(1);
         let maximum_scroll = visual_rows.saturating_sub(visible_rows);
         let track_height = (window.content.height as usize).saturating_sub(130 * self.scale);
         let track = rect(
@@ -1935,18 +1955,38 @@ impl SystemLayout {
             window_height,
             maximized,
         );
-        let g=crate::ui::object_picker::geometry(window.content,self.scale,!open_picker);
-        if !open_picker && g.name.contains(point) {return Some(EditorDialogTarget::NameField);}
-        if g.location.contains(point) {return Some(EditorDialogTarget::LocationField);}
-        if g.parent.contains(point) {return Some(EditorDialogTarget::Parent);}
-        if g.previous.contains(point) {return Some(EditorDialogTarget::Previous);}
-        if g.next.contains(point) {return Some(EditorDialogTarget::Next);}
-        if g.cancel.contains(point) {return Some(EditorDialogTarget::Cancel);}
-        if g.accept.contains(point) {return Some(EditorDialogTarget::Accept);}
+        let g = crate::ui::object_picker::geometry(window.content, self.scale, !open_picker);
+        if !open_picker && g.name.contains(point) {
+            return Some(EditorDialogTarget::NameField);
+        }
+        if g.location.contains(point) {
+            return Some(EditorDialogTarget::LocationField);
+        }
+        if g.parent.contains(point) {
+            return Some(EditorDialogTarget::Parent);
+        }
+        if g.previous.contains(point) {
+            return Some(EditorDialogTarget::Previous);
+        }
+        if g.next.contains(point) {
+            return Some(EditorDialogTarget::Next);
+        }
+        if g.cancel.contains(point) {
+            return Some(EditorDialogTarget::Cancel);
+        }
+        if g.accept.contains(point) {
+            return Some(EditorDialogTarget::Accept);
+        }
         for index in 0..row_count.min(g.rows) {
-            let row=Rect {x:g.list.x,y:g.list.y+(index*g.row_height) as i32,
-                width:g.list.width,height:g.row_height as u32};
-            if row.contains(point) {return Some(EditorDialogTarget::Row(index));}
+            let row = Rect {
+                x: g.list.x,
+                y: g.list.y + (index * g.row_height) as i32,
+                width: g.list.width,
+                height: g.row_height as u32,
+            };
+            if row.contains(point) {
+                return Some(EditorDialogTarget::Row(index));
+            }
         }
         None
     }
@@ -2236,19 +2276,31 @@ impl SystemLayout {
                 viewport_height = bottom.saturating_sub(viewport_top);
             }
         }
-        let mut total_content_height = if matches!(section, SETTINGS_NODE_SECTION | SETTINGS_NETWORK_SECTION) {
-            let node = section == SETTINGS_NODE_SECTION;
-            let pages = if node { 5 } else { 7 };
-            let columns = ((content_width + 12 * self.scale)
-                / ((if node { 184 } else { 112 }) * self.scale + 12 * self.scale)).clamp(1, pages);
-            let tab_rows = pages.div_ceil(columns);
-            let body = 620;
-            tab_rows * 56 + 104 + 24
-                + body + if content_width < 840 * self.scale { body + 12 } else { 0 }
-        } else {
-            let detail_height = state.expanded_row.map(|i| settings_detail_height(i, section)).unwrap_or(0);
-            state.row_count.clamp(1, 8) * 58 + detail_height
-        };
+        let mut total_content_height =
+            if matches!(section, SETTINGS_NODE_SECTION | SETTINGS_NETWORK_SECTION) {
+                let node = section == SETTINGS_NODE_SECTION;
+                let pages = if node { 5 } else { 7 };
+                let columns = ((content_width + 12 * self.scale)
+                    / ((if node { 184 } else { 112 }) * self.scale + 12 * self.scale))
+                    .clamp(1, pages);
+                let tab_rows = pages.div_ceil(columns);
+                let body = 620;
+                tab_rows * 56
+                    + 104
+                    + 24
+                    + body
+                    + if content_width < 840 * self.scale {
+                        body + 12
+                    } else {
+                        0
+                    }
+            } else {
+                let detail_height = state
+                    .expanded_row
+                    .map(|i| settings_detail_height(i, section))
+                    .unwrap_or(0);
+                state.row_count.clamp(1, 8) * 58 + detail_height
+            };
         if section != SETTINGS_NODE_SECTION && section != SETTINGS_NETWORK_SECTION {
             if let Some((console, _, _, _)) = authored {
                 use crate::ui::installer_template::InstallerTemplateRole;
@@ -2261,17 +2313,22 @@ impl SystemLayout {
                     ) else {
                         break;
                     };
-                    let first = crate::ui::settings_template::role_at(section, InstallerTemplateRole::Metadata, 0).unwrap();
+                    let first = crate::ui::settings_template::role_at(
+                        section,
+                        InstallerTemplateRole::Metadata,
+                        0,
+                    )
+                    .unwrap();
                     let base = map(first.frame, console).y.max(0) as usize;
                     let mapped = map(row.frame, console);
-                    last_bottom = last_bottom.max((mapped.y.max(0) as usize).max(base + index * 84 * self.scale)
-                        + (mapped.height as usize).max(72 * self.scale));
+                    last_bottom = last_bottom.max(
+                        (mapped.y.max(0) as usize).max(base + index * 84 * self.scale)
+                            + (mapped.height as usize).max(72 * self.scale),
+                    );
                 }
                 let detail = state
                     .expanded_row
-                    .map(|index| {
-                        (settings_detail_height(index, section) + 8) * self.scale
-                    })
+                    .map(|index| (settings_detail_height(index, section) + 8) * self.scale)
                     .unwrap_or(0);
                 total_content_height = last_bottom
                     .saturating_sub(viewport_top)
@@ -2280,8 +2337,8 @@ impl SystemLayout {
             }
         }
         if section == 1 {
-            total_content_height = total_content_height
-                .saturating_add(SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14);
+            total_content_height =
+                total_content_height.saturating_add(SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14);
         }
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
@@ -2417,17 +2474,22 @@ impl SystemLayout {
                 };
                 let detail_height = state
                     .expanded_row
-                    .map(|expanded| {
-                        settings_detail_height(expanded, section) * self.scale
-                    })
+                    .map(|expanded| settings_detail_height(expanded, section) * self.scale)
                     .unwrap_or(0);
                 let prior_detail =
                     usize::from(state.expanded_row.is_some_and(|expanded| expanded < index))
                         * (detail_height + 8 * self.scale);
                 let hero_offset = usize::from(section == 1)
-                    * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14) * self.scale;
-                let first = crate::ui::settings_template::role_at(section, InstallerTemplateRole::Metadata, 0).unwrap();
-                let row_top = map_y(row.frame.y).max(map_y(first.frame.y) + index * 84 * self.scale);
+                    * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14)
+                    * self.scale;
+                let first = crate::ui::settings_template::role_at(
+                    section,
+                    InstallerTemplateRole::Metadata,
+                    0,
+                )
+                .unwrap();
+                let row_top =
+                    map_y(row.frame.y).max(map_y(first.frame.y) + index * 84 * self.scale);
                 let summary_top = row_top as i32 + hero_offset as i32 + prior_detail as i32
                     - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
                 let mut summary = rect(
@@ -2436,7 +2498,8 @@ impl SystemLayout {
                     row.frame.width as usize * outer.width as usize
                         / console.frame.width.max(1) as usize,
                     (row.frame.height as usize * outer.height as usize
-                        / console.frame.height.max(1) as usize).max(72 * self.scale),
+                        / console.frame.height.max(1) as usize)
+                        .max(72 * self.scale),
                 );
                 summary.y = summary_top;
                 return SettingsRowGeometry {
@@ -2445,7 +2508,11 @@ impl SystemLayout {
                         x: summary.x,
                         y: summary.bottom().saturating_add((4 * self.scale) as i32),
                         width: summary.width,
-                        height: if state.expanded_row == Some(index) {detail_height as u32}else{0},
+                        height: if state.expanded_row == Some(index) {
+                            detail_height as u32
+                        } else {
+                            0
+                        },
                     },
                 };
             }
@@ -2464,8 +2531,18 @@ impl SystemLayout {
             0
         };
         SettingsRowGeometry {
-            summary: Rect {x:window.viewport.x,y:summary_top,width:window.viewport.width,height:(46*self.scale)as u32},
-            detail: Rect {x:window.viewport.x,y:summary_top.saturating_add((50*self.scale)as i32),width:window.viewport.width,height:detail_height as u32},
+            summary: Rect {
+                x: window.viewport.x,
+                y: summary_top,
+                width: window.viewport.width,
+                height: (46 * self.scale) as u32,
+            },
+            detail: Rect {
+                x: window.viewport.x,
+                y: summary_top.saturating_add((50 * self.scale) as i32),
+                width: window.viewport.width,
+                height: detail_height as u32,
+            },
         }
     }
 
@@ -2604,12 +2681,14 @@ impl SystemLayout {
     // DESC: Shares padded, density-aware sidebar paint and hit bounds while keeping device rows inside short windows.
     // ------------------=
     pub fn navigator_sidebar_row(self, window: Rect, index: usize) -> Rect {
-        let step = ((window.height as usize).saturating_sub(138*self.scale)/12)
-            .clamp(20*self.scale, 32*self.scale);
-        rect(window.x.max(0) as usize+16*self.scale,
-            window.y.max(0) as usize+106*self.scale+index*step,
-            (window.width as usize*27/100).saturating_sub(32*self.scale),
-            step.saturating_sub(4*self.scale))
+        let step = ((window.height as usize).saturating_sub(138 * self.scale) / 12)
+            .clamp(20 * self.scale, 32 * self.scale);
+        rect(
+            window.x.max(0) as usize + 16 * self.scale,
+            window.y.max(0) as usize + 106 * self.scale + index * step,
+            (window.width as usize * 27 / 100).saturating_sub(32 * self.scale),
+            step.saturating_sub(4 * self.scale),
+        )
     }
 
     // ------------------------=
@@ -2624,22 +2703,27 @@ impl SystemLayout {
     ) -> Rect {
         if let (Some(console), Some(item)) = (
             crate::ui::settings_template::element(
-                section.min(10), crate::ui::installer_template::InstallerTemplateRole::Console,
-            ).filter(|_| section < 11),
+                section.min(10),
+                crate::ui::installer_template::InstallerTemplateRole::Console,
+            )
+            .filter(|_| section < 11),
             crate::ui::settings_template::role_at(
                 section.min(10),
                 crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationItem,
                 index.min(10),
             ),
         ) {
-            let window = self.settings_window_geometry_for_section(state, section.min(10)).window;
+            let window = self
+                .settings_window_geometry_for_section(state, section.min(10))
+                .window;
             return rect(
                 window.x.max(0) as usize
-                    + item.frame.x.saturating_sub(console.frame.x) as usize
-                        * window.width as usize / console.frame.width.max(1) as usize,
+                    + item.frame.x.saturating_sub(console.frame.x) as usize * window.width as usize
+                        / console.frame.width.max(1) as usize,
                 window.y.max(0) as usize
                     + item.frame.y.saturating_sub(console.frame.y) as usize
-                        * window.height as usize / console.frame.height.max(1) as usize,
+                        * window.height as usize
+                        / console.frame.height.max(1) as usize,
                 item.frame.width as usize * window.width as usize
                     / console.frame.width.max(1) as usize,
                 item.frame.height as usize * window.height as usize
@@ -2685,8 +2769,12 @@ impl SystemLayout {
     ) -> Option<SettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
         let geometry = self.settings_window_geometry_for_section(state, section);
-        let controls=crate::ui::app_launcher::window_controls::bounds(geometry.window,geometry.title.height,self.scale);
-        if let Some(index)=crate::ui::app_launcher::window_controls::hit(controls,point) {
+        let controls = crate::ui::app_launcher::window_controls::bounds(
+            geometry.window,
+            geometry.title.height,
+            self.scale,
+        );
+        if let Some(index) = crate::ui::app_launcher::window_controls::hit(controls, point) {
             return Some(SettingsTarget::WindowControl(index));
         }
         if !state.maximized {
@@ -2698,7 +2786,10 @@ impl SystemLayout {
             return Some(SettingsTarget::Title);
         }
         for index in 0..11usize {
-            if self.settings_section_geometry_for_section(state, index, section).contains(point) {
+            if self
+                .settings_section_geometry_for_section(state, index, section)
+                .contains(point)
+            {
                 return Some(SettingsTarget::Section(index));
             }
         }
@@ -2725,7 +2816,11 @@ impl SystemLayout {
         if !geometry.viewport.contains(point) {
             return None;
         }
-        if section == 1 && self.settings_world_shift_hero_geometry(state).contains(point) {
+        if section == 1
+            && self
+                .settings_world_shift_hero_geometry(state)
+                .contains(point)
+        {
             return Some(SettingsTarget::WorldShiftHero);
         }
         for index in 0..state.row_count.clamp(1, 8) {
@@ -2787,19 +2882,20 @@ impl SystemLayout {
         ordinal: usize,
     ) -> Option<Rect> {
         let console = crate::ui::settings_template::element(
-            section, crate::ui::installer_template::InstallerTemplateRole::Console,
+            section,
+            crate::ui::installer_template::InstallerTemplateRole::Console,
         )?;
-        let element = crate::ui::settings_template::role_at(
-            section, role, ordinal,
-        )?;
-        let window = self.settings_window_geometry_for_section(state, section).window;
+        let element = crate::ui::settings_template::role_at(section, role, ordinal)?;
+        let window = self
+            .settings_window_geometry_for_section(state, section)
+            .window;
         Some(rect(
             window.x.max(0) as usize
-                + element.frame.x.saturating_sub(console.frame.x) as usize
-                    * window.width as usize / console.frame.width.max(1) as usize,
+                + element.frame.x.saturating_sub(console.frame.x) as usize * window.width as usize
+                    / console.frame.width.max(1) as usize,
             window.y.max(0) as usize
-                + element.frame.y.saturating_sub(console.frame.y) as usize
-                    * window.height as usize / console.frame.height.max(1) as usize,
+                + element.frame.y.saturating_sub(console.frame.y) as usize * window.height as usize
+                    / console.frame.height.max(1) as usize,
             element.frame.width as usize * window.width as usize
                 / console.frame.width.max(1) as usize,
             element.frame.height as usize * window.height as usize
@@ -3316,9 +3412,8 @@ impl SystemLayout {
             crate::ui::installer_template::InstallerTemplateRole::Metadata, index)
             .is_some_and(|row| row.hidden || row.opacity == 0) { return None; }
         let point = self.point(normalized_x, normalized_y);
-        let geometry = self.settings_effect_slider_geometry_for_section(
-            state, index, 0, maximum, section,
-        );
+        let geometry =
+            self.settings_effect_slider_geometry_for_section(state, index, 0, maximum, section);
         let row = self.settings_row_geometry_for_section(state, index, section);
         let viewport = self.settings_window_geometry_for_section(state, section).viewport;
         use crate::ui::installer_template::InstallerTemplateRole as Role;
@@ -3367,13 +3462,7 @@ impl SystemLayout {
         index: usize,
         maximum: u8,
     ) -> u8 {
-        self.settings_slider_drag_value_for_section(
-            normalized_x,
-            state,
-            index,
-            maximum,
-            usize::MAX,
-        )
+        self.settings_slider_drag_value_for_section(normalized_x, state, index, maximum, usize::MAX)
     }
 
     // ------------------------=
@@ -3389,9 +3478,8 @@ impl SystemLayout {
         section: usize,
     ) -> u8 {
         let point = self.point(normalized_x, 0);
-        let geometry = self.settings_effect_slider_geometry_for_section(
-            state, index, 0, maximum, section,
-        );
+        let geometry =
+            self.settings_effect_slider_geometry_for_section(state, index, 0, maximum, section);
         let half_thumb = geometry.thumb.width / 2;
         let start = geometry.track.x + half_thumb as i32;
         let travel = geometry
@@ -3418,7 +3506,11 @@ impl SystemLayout {
             return None;
         }
         let point = self.point(normalized_x, normalized_y);
-        if !self.settings_window_geometry_for_section(state, 1).viewport.contains(point) {
+        if !self
+            .settings_window_geometry_for_section(state, 1)
+            .viewport
+            .contains(point)
+        {
             return None;
         }
         let geometry = self.settings_color_geometry(state, index);
@@ -3451,10 +3543,18 @@ const fn settings_detail_height(index: usize, section: usize) -> usize {
     if crate::ui::installer_template::settings_action_for_row(section, index).is_some() {
         return 128;
     }
-    if section == 1 && index == 6 { return 488; }
-    if section == 5 && index == 2 { return 620; }
-    if section == 1 && index == 7 { return 400; }
-    if section == 8 { return 144; }
+    if section == 1 && index == 6 {
+        return 488;
+    }
+    if section == 5 && index == 2 {
+        return 620;
+    }
+    if section == 1 && index == 7 {
+        return 400;
+    }
+    if section == 8 {
+        return 144;
+    }
     match index {
         1 => 108,
         2 | 3 => 112,
@@ -3597,7 +3697,9 @@ pub fn movable_window_position(
     let bottom_overhang = height.saturating_sub(140).clamp(0, 120);
     let minimum_x = visible_chrome.saturating_sub(width);
     let maximum_x = 1000i32.saturating_sub(visible_chrome);
-    let maximum_y = 920i32.saturating_sub(height).saturating_add(bottom_overhang);
+    let maximum_y = 920i32
+        .saturating_sub(height)
+        .saturating_add(bottom_overhang);
     (
         requested_x.clamp(minimum_x.min(0), maximum_x.max(0)),
         requested_y.clamp(50, maximum_y.max(50)),

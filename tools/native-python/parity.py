@@ -9,6 +9,7 @@ import argparse
 import contextlib
 import subprocess
 import tempfile
+from bundled_packages import packages
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,6 +46,12 @@ def main():
     evidence = {}
     for arch in (args.arch,) if args.arch else ("aarch64", "x86_64"):
         package = ROOT / "builds/toolchains" / arch
+        inventory = json.loads((package / "python-modules.json").read_text())
+        expected = {entry["name"]: entry["version"] for entry in packages()}
+        expected.update(pip="26.2.1", tzdata="2026.5")
+        assert inventory["bundled_distributions"] == expected
+        # Whole-image byte parity below proves this package-bearing interpreter
+        # reaches both kernels; execution is checked separately by build.sh.
         payloads = {name: (package / name).read_bytes() for name in ("python.elf", "infinity_native_test.so", "python-license.txt")}
         with contextlib.ExitStack() as stack:
             live = (stack.enter_context(iso_live_kernel(args.iso)) if args.iso

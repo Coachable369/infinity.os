@@ -6,6 +6,25 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+import wave
+
+# ------------------------=
+# FUNC: verify_waveform
+# DESC: Compares every played speech sample with independently synthesized PCM after exact rate conversion; missing or corrupted samples fail.
+# ------------------=
+def verify_waveform(mono, reference, rate):
+    expected = array.array("h")
+    for index in range((len(reference) * rate + 15999) // 16000):
+        source, fraction = divmod(index * 16000, rate)
+        a = reference[source]
+        b = reference[source + 1] if source + 1 < len(reference) else 0
+        delta = (b - a) * fraction
+        # C/Rust integer division truncates toward zero, not negative infinity.
+        expected.append(a + (abs(delta) // rate if delta >= 0 else -(abs(delta) // rate)))
+    assert len(mono) >= len(expected), "Playback lost the end of the phrase"
+    assert mono[:len(expected)] == expected, "Playback differs from the complete synthesized waveform"
+    assert all(sample == 0 for sample in mono[len(expected):]), "Non-silent data after the phrase"
+    return len(expected)
 
 # ------------------------=
 # FUNC: main
@@ -36,6 +55,13 @@ def main():
     mono = pcm[::2]
     assert sum(abs(s) > 100 for s in mono) > rate
     assert abs(len(mono) / rate - frames / 16000) < 0.3
+    with wave.open("build/voice-flite/host/native-voice.wav", "rb") as reference_file:
+        assert (reference_file.getnchannels(), reference_file.getsampwidth(), reference_file.getframerate()) == (1, 2, 16000)
+        reference = array.array("h", reference_file.readframes(reference_file.getnframes()))
+        if sys.byteorder != "little":
+            reference.byteswap()
+    assert len(reference) == frames
+    matched_frames = verify_waveform(mono, reference, rate)
     # QEMU may omit RIFF lengths at poweroff; repair container metadata only, never PCM.
     fixed = bytearray(raw)
     struct.pack_into("<I", fixed, 4, len(raw) - 8)
@@ -45,6 +71,7 @@ def main():
                "synthesis_seconds": ticks / frequency, "synthesis_rtf": ticks / frequency / (frames / 16000),
                "arena_peak_bytes": peak, "playback_polls": refills, "poll_interval_ms": 120,
                "playback_mode": "resident phrase DMA with silence tail", "stt_verified": False,
+               "exact_reference_frames": matched_frames,
                "installed_system_verified": False}
     (output / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     print(json.dumps(metrics, indent=2))

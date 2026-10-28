@@ -1,18 +1,34 @@
 //! Bounded, user-owned spatial metadata. References never convey object authority.
 use super::session_state::{self, DesktopSessionLayout};
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum EditorAction { Cancel, Save, SaveAndAdd }
-pub const EDITOR_BUTTONS: [(usize,usize,usize,usize);3] = [(130,520,180,48),(340,520,200,48),(570,520,300,48)];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorAction {
+    Cancel,
+    Save,
+    SaveAndAdd,
+}
+pub const EDITOR_BUTTONS: [(usize, usize, usize, usize); 3] = [
+    (130, 520, 180, 48),
+    (340, 520, 200, 48),
+    (570, 520, 300, 48),
+];
 // ------------------------=
 // FUNC: editor_action
 // DESC: Shares visible editor button hit regions with pointer dispatch; removal cannot trigger add-another.
 // ------------------=
-pub fn editor_action(kind:u8,tab:usize,x:i32,y:i32)->Option<EditorAction> {
-    for (i,(a,b,w,h)) in EDITOR_BUTTONS.iter().copied().enumerate() {
-        if i==2 && !(tab==2 && matches!(kind,2|4|5)) {continue;}
-        if x>=a as i32 && x<(a+w) as i32 && y>=b as i32 && y<(b+h) as i32 {
-            return Some([EditorAction::Cancel,EditorAction::Save,EditorAction::SaveAndAdd][i]);
+pub fn editor_action(kind: u8, tab: usize, x: i32, y: i32) -> Option<EditorAction> {
+    for (i, (a, b, w, h)) in EDITOR_BUTTONS.iter().copied().enumerate() {
+        if i == 2 && !(tab == 2 && matches!(kind, 2 | 4 | 5)) {
+            continue;
+        }
+        if x >= a as i32 && x < (a + w) as i32 && y >= b as i32 && y < (b + h) as i32 {
+            return Some(
+                [
+                    EditorAction::Cancel,
+                    EditorAction::Save,
+                    EditorAction::SaveAndAdd,
+                ][i],
+            );
         }
     }
     None
@@ -42,20 +58,26 @@ pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
 static DESKTOP_WORLD: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(255);
 static WORLD_DIRTY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
-static BACKDROP_TINT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0xa52a1708);
+static BACKDROP_TINT: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(0xa52a1708);
 // ------------------------=
 // FUNC: backdrop_tint
 // DESC: Reads RGB and strength as one coherent snapshot outside persistent storage.
 // ------------------=
 pub fn backdrop_tint() -> [u8; 4] {
-    BACKDROP_TINT.load(core::sync::atomic::Ordering::Relaxed).to_le_bytes()
+    BACKDROP_TINT
+        .load(core::sync::atomic::Ordering::Relaxed)
+        .to_le_bytes()
 }
 // ------------------------=
 // FUNC: publish_backdrop_tint
 // DESC: Publishes user-owned veil settings for the next cached spatial composition.
 // ------------------=
 pub fn publish_backdrop_tint(value: [u8; 4]) {
-    BACKDROP_TINT.store(u32::from_le_bytes(value), core::sync::atomic::Ordering::Relaxed);
+    BACKDROP_TINT.store(
+        u32::from_le_bytes(value),
+        core::sync::atomic::Ordering::Relaxed,
+    );
 }
 // ------------------------=
 // FUNC: publish_world
@@ -170,15 +192,20 @@ pub fn collection_hit(x: i32, y: i32) -> Option<u8> {
 // FUNC: collection_detail_row
 // DESC: Shares the inline collection detail row geometry with pointer routing.
 // ------------------=
-pub const fn collection_detail_row(index: usize) -> (usize,usize,usize,usize) {
-    (210, 295+index*52, 580, 44)
+pub const fn collection_detail_row(index: usize) -> (usize, usize, usize, usize) {
+    (210, 295 + index * 52, 580, 44)
 }
 // ------------------------=
 // FUNC: collection_detail_action
 // DESC: Shares add, previous, next and collapse hit targets for a paged live collection.
 // ------------------=
-pub const fn collection_detail_action(index: usize) -> (usize,usize,usize,usize) {
-    match index {0=>(640,232,150,44),1=>(540,512,110,40),2=>(660,512,110,40),_=>(790,232,34,36)}
+pub const fn collection_detail_action(index: usize) -> (usize, usize, usize, usize) {
+    match index {
+        0 => (640, 232, 150, 44),
+        1 => (540, 512, 110, 40),
+        2 => (660, 512, 110, 40),
+        _ => (790, 232, 34, 36),
+    }
 }
 // ------------------------=
 // FUNC: gravity_primary_action
@@ -361,11 +388,7 @@ impl Preview {
         label: Label::empty(),
     };
 }
-pub const TABS: [&[u8]; 3] = [
-    b"Gravity Wall",
-    b"Matter Shelf",
-    b"Constellations",
-];
+pub const TABS: [&[u8]; 3] = [b"Gravity Wall", b"Matter Shelf", b"Constellations"];
 
 // ------------------------=
 // FUNC: card

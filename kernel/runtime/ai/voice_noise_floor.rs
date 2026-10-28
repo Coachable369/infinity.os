@@ -16,18 +16,29 @@ impl NoiseFloor {
     // DESC: Starts a half-second 16-kHz calibration with the established minimum speech threshold.
     // ------------------=
     pub const fn new() -> Self {
-        Self { samples: 0, frames: 0, energy: 0, energies: [0; FRAMES], threshold: 300, continuation_threshold: 300 }
+        Self {
+            samples: 0,
+            frames: 0,
+            energy: 0,
+            energies: [0; FRAMES],
+            threshold: 300,
+            continuation_threshold: 300,
+        }
     }
     // ------------------------=
     // FUNC: ready
     // DESC: Reports completion from actual captured samples, not elapsed wall time.
     // ------------------=
-    pub const fn ready(&self) -> bool { self.frames == FRAMES }
+    pub const fn ready(&self) -> bool {
+        self.frames == FRAMES
+    }
     // ------------------------=
     // FUNC: threshold
     // DESC: Returns a bounded speech floor with six decibels of separation from measured ambient sound.
     // ------------------=
-    pub const fn threshold(&self) -> u16 { self.threshold }
+    pub const fn threshold(&self) -> u16 {
+        self.threshold
+    }
     // ------------------------=
     // FUNC: continuation_threshold
     // DESC: Keeps confirmed quieter speech above measured ambient without lowering the stricter new-utterance gate.
@@ -42,7 +53,9 @@ impl NoiseFloor {
     pub fn push(&mut self, pcm: &[i16]) -> usize {
         let mut consumed = 0;
         for &sample in pcm {
-            if self.ready() { break; }
+            if self.ready() {
+                break;
+            }
             consumed += 1;
             self.samples += 1;
             self.energy += (i64::from(sample) * i64::from(sample)) as u64;
@@ -64,7 +77,11 @@ impl NoiseFloor {
                     let mut high = 32769u64;
                     while high - low > 1 {
                         let middle = (low + high) / 2;
-                        if middle * middle <= baseline { low = middle; } else { high = middle; }
+                        if middle * middle <= baseline {
+                            low = middle;
+                        } else {
+                            high = middle;
+                        }
                     }
                     self.threshold = (low * 2).clamp(300, 3000) as u16;
                     self.continuation_threshold = (low * 3 / 2).max(150).min(u64::from(self.threshold)) as u16;
@@ -87,12 +104,16 @@ mod tests {
         for (ambient, expected) in [(0, 300), (500, 1000), (700, 1400), (32767, 3000)] {
             let mut floor = NoiseFloor::new();
             assert_eq!(floor.push(&[32767; FRAME]), FRAME);
-            for _ in 0..24 { floor.push(&[ambient; FRAME]); }
+            for _ in 0..24 {
+                floor.push(&[ambient; FRAME]);
+            }
             assert!(floor.ready());
             assert_eq!(floor.threshold(), expected);
             assert_eq!(floor.push(&[0; FRAME]), 0);
             let mut chunked = NoiseFloor::new();
-            for _ in 0..8000 { chunked.push(&[ambient]); }
+            for _ in 0..8000 {
+                chunked.push(&[ambient]);
+            }
             assert_eq!(chunked.threshold(), expected);
             assert!(core::mem::size_of::<NoiseFloor>() <= 144);
         }
@@ -114,7 +135,9 @@ mod tests {
         pcm.extend_from_slice(&[32767; FRAME * 3]);
         for size in [1, 17, 320, 701, 4800, 8000] {
             let mut floor = NoiseFloor::new();
-            for chunk in pcm.chunks(size) { floor.push(chunk); }
+            for chunk in pcm.chunks(size) {
+                floor.push(chunk);
+            }
             assert!(floor.ready());
             assert_eq!(floor.threshold(), 1000);
         }
@@ -129,7 +152,9 @@ mod tests {
             let mut pcm = std::vec![0; FRAME * 15];
             pcm.extend_from_slice(&[400; FRAME * 10]);
             let mut floor = NoiseFloor::new();
-            for chunk in pcm.chunks(size) { floor.push(chunk); }
+            for chunk in pcm.chunks(size) {
+                floor.push(chunk);
+            }
             assert!(floor.ready());
             assert_eq!(floor.threshold(), 800);
         }

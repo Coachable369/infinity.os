@@ -1,6 +1,5 @@
 {
-  "version": 1,
-  "colors": [
+  "colors" : [
     4278783782,
     3859815226,
     4028247651,
@@ -15,5 +14,44 @@
     4294926704,
     2566914048
   ],
-  "overrides": []
+  "overrides" : [
+
+  ],
+  "styles" : [
+    {
+      "corners" : 0,
+      "material" : 0,
+      "radius" : 10
+    },
+    {
+      "corners" : 0,
+      "material" : 0,
+      "radius" : 10
+    },
+    {
+      "corners" : 0,
+      "material" : 0,
+      "radius" : 10
+    },
+    {
+      "border" : 4287023103,
+      "corners" : 2,
+      "fill" : 3624934202,
+      "material" : 1,
+      "radius" : 10
+    },
+    {
+      "border" : 4287023103,
+      "corners" : 2,
+      "fill" : 3624934202,
+      "material" : 1,
+      "radius" : 10
+    },
+    {
+      "corners" : 0,
+      "material" : 0,
+      "radius" : 10
+    }
+  ],
+  "version" : 1
 }

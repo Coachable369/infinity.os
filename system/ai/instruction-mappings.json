@@ -1,9 +1,18 @@
 {
   "schema": "infinityos.ai-instruction-map",
   "version": 1,
-  "description": "Complete editable directory of implemented InfinityOS AI controls, including controls not used by the current default UI flow. Targets are typed OS protocols; missing or unknown capabilities are rejected.",
-  "directory": {"status":"complete","targetCount":103,"includes":["operating-system controls","application controls","launcher-only destinations","native system clock"]},
+  "description": "Editable typed AI controls. Only implemented targets are executable; some Settings workflows still require their native UI.",
+  "directory": {"status":"partial-settings-coverage","targetCount":113,"registryPath":"/system/service-registry.json","includes":["OS controls","application controls","native system clock","persisted appearance and identity settings","named World Shift selection"]},
   "actions": [
+    {"id":"os.setting.world","scope":"os","target":"OS_SETTING:world:{argument}","aliases":["change worldshift to {argument}","set worldshift to {argument}","switch world shift to {argument}","change world shift to {argument}"]},
+    {"id":"os.setting.name","scope":"os","target":"OS_SETTING:name:{argument}","aliases":["set computer name to {argument}","change computer name to {argument}","set machine name to {argument}"]},
+    {"id":"os.setting.primary","scope":"os","target":"OS_SETTING:primary:{argument}","aliases":["set primary color to {argument}","set color scheme to {argument}","update color scheme to {argument}"]},
+    {"id":"os.setting.accent","scope":"os","target":"OS_SETTING:accent:{argument}","aliases":["set accent color to {argument}","change accent color to {argument}"]},
+    {"id":"os.setting.opacity","scope":"os","target":"OS_SETTING:opacity:{argument}","aliases":["set glass opacity to {argument}"]},
+    {"id":"os.setting.blur","scope":"os","target":"OS_SETTING:blur:{argument}","aliases":["set background blur to {argument}"]},
+    {"id":"os.setting.lockMinutes","scope":"os","target":"OS_SETTING:lockMinutes:{argument}","aliases":["set inactivity timeout to {argument}"]},
+    {"id":"os.setting.speech","scope":"os","target":"OS_SETTING:speech:{argument}","aliases":["set speech output to {argument}","turn speech output {argument}"]},
+    {"id":"os.setting.theme","scope":"os","target":"OS_SETTING:theme:{argument}","aliases":["set theme to {argument}","change theme to {argument}","set color theme to {argument}","set ui theme to {argument}","change ui theme to {argument}"]},
     {"id":"os.app.open.textEditor","scope":"os","target":"OS_OPEN:text_editor","aliases":["open text editor","launch text editor","start code editor"]},
     {"id":"os.app.open.fileNavigator","scope":"os","target":"OS_OPEN:file_navigator","aliases":["open file navigator","open file manager","show my files"]},
     {"id":"os.app.open.browser","scope":"os","target":"OS_OPEN:browser","aliases":["open browser","launch infinity browser","start web browser"]},
@@ -16,7 +25,7 @@
     {"id":"os.launch.projects","scope":"os","target":"OS_LAUNCH:projects","aliases":["open projects","show my projects"]},
     {"id":"os.launch.media","scope":"os","target":"OS_LAUNCH:media","aliases":["open media","show my media"]},
     {"id":"os.launch.recycleBin","scope":"os","target":"OS_LAUNCH:recycle_bin","aliases":["open recycle bin","show recycle bin"]},
-
+    {"id":"os.launch.createdApplication","scope":"os","target":"OS_LAUNCH:app:{argument}","aliases":["launch my app {argument}","run my application {argument}"]},
     {"id":"os.window.focus.textEditor","scope":"os","target":"OS_FOCUS:text_editor","aliases":["focus text editor","bring text editor to front"]},
     {"id":"os.window.focus.fileNavigator","scope":"os","target":"OS_FOCUS:file_navigator","aliases":["focus file navigator","bring file manager to front"]},
     {"id":"os.window.focus.browser","scope":"os","target":"OS_FOCUS:browser","aliases":["focus browser","bring browser to front"]},
@@ -32,7 +41,6 @@
     {"id":"os.window.close.terminal","scope":"os","target":"OS_CLOSE:terminal","aliases":["close terminal","close command window"]},
     {"id":"os.window.close.taskManager","scope":"os","target":"OS_CLOSE:task_manager","aliases":["close task manager","dismiss task manager"]},
     {"id":"os.window.close.launcher","scope":"os","target":"OS_CLOSE:launcher","aliases":["close app launcher","dismiss app launcher"]},
-
     {"id":"os.settings.general","scope":"os","target":"OS_SETTINGS:general","aliases":["open general settings","show general settings"]},
     {"id":"os.settings.themes","scope":"os","target":"OS_SETTINGS:themes","aliases":["open themes","open appearance settings","show themes and skins"]},
     {"id":"os.settings.accounts","scope":"os","target":"OS_SETTINGS:accounts","aliases":["open users and accounts","show account settings"]},
@@ -44,7 +52,6 @@
     {"id":"os.settings.storage","scope":"os","target":"OS_SETTINGS:storage","aliases":["open storage settings","show storage"]},
     {"id":"os.settings.about","scope":"os","target":"OS_SETTINGS:about","aliases":["open about","show system information"]},
     {"id":"os.settings.input","scope":"os","target":"OS_SETTINGS:input","aliases":["open input settings","show pointer settings"]},
-
     {"id":"os.surface.spatial","scope":"os","target":"OS_SURFACE:spatial","aliases":["open spatial desktop","show gravity wall"]},
     {"id":"os.surface.holographic","scope":"os","target":"OS_SURFACE:holographic","aliases":["open holographic desktop","show holographic desktop"]},
     {"id":"os.surface.worldShift","scope":"os","target":"OS_SURFACE:world_shift","aliases":["open world shift","show world shift"]},
@@ -57,7 +64,6 @@
     {"id":"os.menu.account","scope":"os","target":"OS_MENU:account","aliases":["open account menu","show account menu"]},
     {"id":"os.menu.calendar","scope":"os","target":"OS_MENU:calendar","aliases":["open calendar","show calendar"]},
     {"id":"os.menu.help","scope":"os","target":"OS_MENU:help","aliases":["open help menu","show help"]},
-
     {"id":"os.window.snapLeft","scope":"os","target":"OS_SHELL:snap_left","aliases":["tile window left","snap window left"]},
     {"id":"os.window.snapRight","scope":"os","target":"OS_SHELL:snap_right","aliases":["tile window right","snap window right"]},
     {"id":"os.window.center","scope":"os","target":"OS_SHELL:center","aliases":["center window","center active window"]},
@@ -71,7 +77,6 @@
     {"id":"os.calendar.today","scope":"os","target":"OS_SHELL:today","aliases":["calendar today","show today"]},
     {"id":"os.widgets.showOverview","scope":"os","target":"OS_SHELL:show_overview","aliases":["show system overview","open system overview"]},
     {"id":"os.widgets.hideOverview","scope":"os","target":"OS_SHELL:hide_overview","aliases":["hide system overview","close system overview"]},
-
     {"id":"app.window.maximize","scope":"application","target":"OS_CONTEXT:maximize","aliases":["maximize","maximize window"]},
     {"id":"app.window.restore","scope":"application","target":"OS_CONTEXT:restore","aliases":["restore","restore window"]},
     {"id":"app.window.minimize","scope":"application","target":"OS_CONTEXT:minimize","aliases":["minimize","minimize window"]},

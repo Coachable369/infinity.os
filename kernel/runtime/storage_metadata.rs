@@ -511,7 +511,7 @@ pub fn configure(
         if !storage_operator::authorized(r, user, session)
             || grant == 0
             || lease == 0
-            || (lease > 3600 && !(lease==u64::MAX && grant&node::durable::TAG!=0))
+            || (lease > 3600 && !(lease == u64::MAX && grant & node::durable::TAG != 0))
         {
             return Err(RemoteError::AccessDenied);
         }
@@ -797,15 +797,34 @@ pub fn share(
     object: [u8; 16],
     path: &[u8],
 ) -> Result<u64, RemoteError> {
-    let _=(user,session,object,path);
+    let _ = (user, session, object, path);
     Err(RemoteError::UnsupportedOperation)
 }
 // ------------------------=
 // FUNC: share_durable
 // DESC: Admits explicit until-revoked reader and repair delegation only when every configured peer operation already has durable authority.
 // ------------------=
-pub fn share_durable(user:StableId,session:StableId,object:[u8;16],path:&[u8])->Result<u64,RemoteError>{
-    with_runtime(|r|{if r.storage_metadata.peers.iter().flatten().count()<2 || r.storage_metadata.peers.iter().flatten().any(|p|p.expires!=u64::MAX||p.grant&node::durable::TAG==0){return Err(RemoteError::AccessDenied)}let id=start(r,user,session,object,path,None)?;r.storage_metadata.job.as_mut().unwrap().durable_share=true;Ok(id)}).ok_or(RemoteError::ServiceUnavailable)?
+pub fn share_durable(
+    user: StableId,
+    session: StableId,
+    object: [u8; 16],
+    path: &[u8],
+) -> Result<u64, RemoteError> {
+    with_runtime(|r| {
+        if r.storage_metadata.peers.iter().flatten().count() < 2
+            || r.storage_metadata
+                .peers
+                .iter()
+                .flatten()
+                .any(|p| p.expires != u64::MAX || p.grant & node::durable::TAG == 0)
+        {
+            return Err(RemoteError::AccessDenied);
+        }
+        let id = start(r, user, session, object, path, None)?;
+        r.storage_metadata.job.as_mut().unwrap().durable_share = true;
+        Ok(id)
+    })
+    .ok_or(RemoteError::ServiceUnavailable)?
 }
 // ------------------------=
 // FUNC: read
@@ -817,10 +836,13 @@ pub fn read(
     request: StorageOperationV1,
 ) -> Result<u64, RemoteError> {
     with_runtime(|r| {
-        if !matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Operation::PoolInspect)
-            || request.length != 0
+        if !matches!(
+            request.operation,
+            Operation::ObjectRead | Operation::ObjectInspect | Operation::PoolInspect
+        ) || request.length != 0
             || !(1..=64).contains(&request.value)
-            || (request.operation==Operation::PoolInspect && (request.value!=1 || request.offset!=0))
+            || (request.operation == Operation::PoolInspect
+                && (request.value != 1 || request.offset != 0))
         {
             return Err(RemoteError::MalformedRequest);
         }
@@ -1175,8 +1197,19 @@ fn build_bundle(
             .map_err(|_| RemoteError::AccessDenied)?,
     };
     let mut grants = [None; 3];
-    let inherited = j.bundle.map(|b|b.grants.iter().flatten().map(|g|g.expires).min().unwrap_or(now));
-    let delegation_expiry = inherited.unwrap_or(if j.durable_share {u64::MAX}else{now.saturating_add(3600)});
+    let inherited = j.bundle.map(|b| {
+        b.grants
+            .iter()
+            .flatten()
+            .map(|g| g.expires)
+            .min()
+            .unwrap_or(now)
+    });
+    let delegation_expiry = inherited.unwrap_or(if j.durable_share {
+        u64::MAX
+    } else {
+        now.saturating_add(3600)
+    });
     for i in 0..3 {
         let mut grant = ReaderGrant {
             group: group.digest(),
@@ -1192,7 +1225,8 @@ fn build_bundle(
                 .flatten()
                 .map(|p| p.expires)
                 .min()
-                .unwrap_or(now).min(delegation_expiry),
+                .unwrap_or(now)
+                .min(delegation_expiry),
             signature: [0; 64],
         };
         grant.signature = r
@@ -1205,7 +1239,17 @@ fn build_bundle(
     if !record.deleted {
         let mut destinations = [NodeId([0; 32]); 4];
         let mut n = 0;
-        let mut expires = j.bundle.map(|b|b.repair_grants.iter().flatten().map(|g|g.expires).min().unwrap_or(now)).unwrap_or(delegation_expiry);
+        let mut expires = j
+            .bundle
+            .map(|b| {
+                b.repair_grants
+                    .iter()
+                    .flatten()
+                    .map(|g| g.expires)
+                    .min()
+                    .unwrap_or(now)
+            })
+            .unwrap_or(delegation_expiry);
         for peer in r
             .storage_metadata
             .peers
@@ -1279,11 +1323,36 @@ fn complete(j: &mut Job, data: [u8; 64], length: u8) {
 // DESC: Encodes a bounded ordinary inspection window only after the caller has completed fresh owner and repair metadata barriers.
 // ------------------=
 #[inline(never)]
-fn inspect_reply(mut p:StorageOperationV1,m:&fabric::manifest::Manifest)->Result<StorageOperationV1,RemoteError>{
-    if p.operation!=Operation::ObjectInspect||p.object!=m.object||p.length!=0||!(1..=64).contains(&p.value)||p.offset>=fabric::manifest::MANIFEST_BYTES as u64{return Err(RemoteError::MalformedRequest)}
-    if p.authority_generation!=m.authority_generation||(p.manifest_generation!=0&&p.manifest_generation!=m.generation)||(p.object_version!=0&&p.object_version!=m.version){return Err(RemoteError::Conflict)}
-    let mut encoded=[0;fabric::manifest::MANIFEST_BYTES];m.encode(&mut encoded).map_err(|_|RemoteError::PersistenceFailed)?;
-    let at=p.offset as usize;let count=(encoded.len()-at).min(p.value as usize);p.data=[0;64];p.data[..count].copy_from_slice(&encoded[at..at+count]);p.length=count as u16;p.value=encoded.len() as u64;p.manifest_generation=m.generation;p.object_version=m.version;Ok(p)
+fn inspect_reply(
+    mut p: StorageOperationV1,
+    m: &fabric::manifest::Manifest,
+) -> Result<StorageOperationV1, RemoteError> {
+    if p.operation != Operation::ObjectInspect
+        || p.object != m.object
+        || p.length != 0
+        || !(1..=64).contains(&p.value)
+        || p.offset >= fabric::manifest::MANIFEST_BYTES as u64
+    {
+        return Err(RemoteError::MalformedRequest);
+    }
+    if p.authority_generation != m.authority_generation
+        || (p.manifest_generation != 0 && p.manifest_generation != m.generation)
+        || (p.object_version != 0 && p.object_version != m.version)
+    {
+        return Err(RemoteError::Conflict);
+    }
+    let mut encoded = [0; fabric::manifest::MANIFEST_BYTES];
+    m.encode(&mut encoded)
+        .map_err(|_| RemoteError::PersistenceFailed)?;
+    let at = p.offset as usize;
+    let count = (encoded.len() - at).min(p.value as usize);
+    p.data = [0; 64];
+    p.data[..count].copy_from_slice(&encoded[at..at + count]);
+    p.length = count as u16;
+    p.value = encoded.len() as u64;
+    p.manifest_generation = m.generation;
+    p.object_version = m.version;
+    Ok(p)
 }
 // ------------------------=
 // FUNC: remote_chunk
@@ -1516,7 +1585,9 @@ fn advance_reply(
 // ------------------=
 #[inline(never)]
 fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteError> {
-    if j.bundle.is_some_and(|b|!b.persistent_authority()){return Err(RemoteError::UnsupportedOperation)}
+    if j.bundle.is_some_and(|b| !b.persistent_authority()) {
+        return Err(RemoteError::UnsupportedOperation);
+    }
     let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
     match j.phase {
         Phase::Find => {
@@ -1531,7 +1602,9 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
             j.index += 1;
             if let NativeReply::Bundle(Some(b)) = reply {
                 if b.value.record.object == j.object {
-                    if !b.persistent_authority(){return Err(RemoteError::UnsupportedOperation)}
+                    if !b.persistent_authority() {
+                        return Err(RemoteError::UnsupportedOperation);
+                    }
                     if j.service_fresh && !service_delegated(r, &b, now) {
                         return Err(RemoteError::AccessDenied);
                     }
@@ -1680,7 +1753,9 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
                 j.phase = Phase::Overlay;
                 return Ok(());
             }
-            if !b.persistent_authority(){return Err(RemoteError::UnsupportedOperation)}
+            if !b.persistent_authority() {
+                return Err(RemoteError::UnsupportedOperation);
+            }
             let grant = b
                 .authorize(local, principal(), now)
                 .map_err(|_| RemoteError::AccessDenied)?;
@@ -1719,13 +1794,34 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
         Phase::ReadLocal => {
             let b = j.bundle.unwrap();
             let p = j.read.unwrap();
-            if matches!(p.operation,Operation::ObjectInspect|Operation::PoolInspect) {
-                if !b.persistent_authority(){return Err(RemoteError::UnsupportedOperation)}
-                b.authorize(local,principal(),now).map_err(|_|RemoteError::AccessDenied)?;
-                let manifest=j.overlay.map_or(b.manifest,|o|o.manifest);
-                j.result=Some(if p.operation==Operation::ObjectInspect {inspect_reply(p,&manifest)} else {
-                    if p.authority_generation!=manifest.authority_generation || (p.manifest_generation!=0 && p.manifest_generation!=manifest.generation) || (p.object_version!=0 && p.object_version!=manifest.version) {Err(RemoteError::Conflict)} else {
-                        let mut response=p;response.data=fabric::observed::summary(&manifest,r.fabric_resources.entries(),now);response.length=64;response.value=1;response.manifest_generation=manifest.generation;response.object_version=manifest.version;Ok(response)
+            if matches!(
+                p.operation,
+                Operation::ObjectInspect | Operation::PoolInspect
+            ) {
+                if !b.persistent_authority() {
+                    return Err(RemoteError::UnsupportedOperation);
+                }
+                b.authorize(local, principal(), now)
+                    .map_err(|_| RemoteError::AccessDenied)?;
+                let manifest = j.overlay.map_or(b.manifest, |o| o.manifest);
+                j.result = Some(if p.operation == Operation::ObjectInspect {
+                    inspect_reply(p, &manifest)
+                } else {
+                    if p.authority_generation != manifest.authority_generation
+                        || (p.manifest_generation != 0
+                            && p.manifest_generation != manifest.generation)
+                        || (p.object_version != 0 && p.object_version != manifest.version)
+                    {
+                        Err(RemoteError::Conflict)
+                    } else {
+                        let mut response = p;
+                        response.data =
+                            fabric::observed::summary(&manifest, r.fabric_resources.entries(), now);
+                        response.length = 64;
+                        response.value = 1;
+                        response.manifest_generation = manifest.generation;
+                        response.object_version = manifest.version;
+                        Ok(response)
                     }
                 });
                 return Ok(());
@@ -1946,7 +2042,7 @@ fn poll_config(r: &mut InfinityRuntime, now: u64) {
                 node.copy_from_slice(&b[at..at + 32]);
                 let grant = u64::from_le_bytes(b[at + 32..at + 40].try_into().unwrap());
                 let expires = u64::from_le_bytes(b[at + 40..at + 48].try_into().unwrap());
-                if node != [0; 32] && grant&node::durable::TAG != 0 && expires==u64::MAX {
+                if node != [0; 32] && grant & node::durable::TAG != 0 && expires == u64::MAX {
                     r.storage_metadata.peers[i] = Some(Peer {
                         node: NodeId(node),
                         grant,

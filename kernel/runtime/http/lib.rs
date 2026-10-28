@@ -6,6 +6,7 @@
 pub mod async_stream;
 pub mod body;
 pub mod client;
+pub mod channel;
 pub mod clock;
 pub mod device;
 pub mod dhcp;
@@ -19,6 +20,7 @@ pub mod sockets;
 mod rsa;
 pub mod task;
 pub mod tls;
+pub mod trust;
 pub mod transport;
 pub use rand_chacha;
 pub use rand_core;

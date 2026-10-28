@@ -45,7 +45,7 @@ mod native_compiler_task {
         native_memory::{KernelAccessMap,Memory},native_process::State};
     pub const COMPILE_ARGS:&[&[u8]]=&[];pub const LINK_ARGS:&[&[u8]]=&[];
     macro_rules! empty_headers {($($name:ident),*)=>{$(pub const $name:&[u8]=&[];)*};}
-    empty_headers!(STDIO,STDDEF,STRING,STDLIB,STDINT,STDBOOL,STDARG,LIMITS,ERRNO,CTYPE,ASSERT,CONSOLE,CAMERA,SYSCALL,UIKIT,INTERACTION,APP,APP_API);
+    empty_headers!(STDIO,STDDEF,STRING,STDLIB,STDINT,STDBOOL,STDARG,LIMITS,ERRNO,CTYPE,ASSERT,CONSOLE,CAMERA,SYSCALL,FONT,UIKIT,INTERACTION,APP,APP_API);
     pub struct Task;
     impl Task {
         // ------------------------=

@@ -20,6 +20,10 @@ enum InfinityPointerPhase {
     INFINITY_POINTER_MOVE=0, INFINITY_POINTER_DOWN=1, INFINITY_POINTER_UP=2,
     INFINITY_POINTER_SCROLL=3, INFINITY_POINTER_CANCEL=4
 };
+enum InfinityInputModifiers {
+    INFINITY_MODIFIER_SHIFT=1, INFINITY_MODIFIER_CONTROL=2,
+    INFINITY_MODIFIER_SUPER=4
+};
 /* Copy the native input event payload into this structure (do not cast a
  * potentially unaligned byte buffer). All values use little-endian native ABI.
  * Key: flags bit0=pressed, bits8..15=normalized modifiers; a=key, b=Unicode.

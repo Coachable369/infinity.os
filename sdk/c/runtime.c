@@ -10,9 +10,7 @@ extern int main(void);
 // DESC: Writes one unsigned byte through the granted native console endpoint.
 // ------------------=
 int putchar(int character) {
-    unsigned char byte = (unsigned char)character;
-    if (!infinity_host || infinity_host->write_stdout(infinity_host->context, &byte, 1) != 1) return EOF;
-    return byte;
+    return fputc(character, stdout);
 }
 
 // ------------------------=
@@ -20,11 +18,7 @@ int putchar(int character) {
 // DESC: Writes a null-terminated string and newline through the native console endpoint.
 // ------------------=
 int puts(const char *text) {
-    if (!text || !infinity_host) return EOF;
-    size_t length = 0;
-    while (text[length]) ++length;
-    if (infinity_host->write_stdout(infinity_host->context, (const unsigned char *)text, length) != (int)length)
-        return EOF;
+    if (fputs(text, stdout) == EOF) return EOF;
     return putchar('\n') == EOF ? EOF : 0;
 }
 

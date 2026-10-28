@@ -20,6 +20,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("eclipse_native_guest", ROOT / "tools/native-editor-installed-test.py")
 native = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = native
 spec.loader.exec_module(native)
 
 
@@ -118,6 +119,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iso", type=Path, required=True, help="Explicit current ARM QEMU test media, not the VirtualBox release ISO")
     parser.add_argument("--reuse-installed", action="store_true", help="Capture login only on this harness's existing private installation")
+    parser.add_argument("--editor-terminal", action="store_true", help="Also run installed native editor-terminal acceptance after capturing first-run and login screens")
     parser.add_argument("--update-kernel", type=Path, help="Update only the reused private disk; not fresh-install parity evidence")
     parser.add_argument("--output", type=Path, default=ROOT / "builds/validation/eclipse-access" / str(time.time_ns()))
     parser.add_argument("work", type=Path, help="New harness work directory under build/, or the exact existing harness directory when reusing")
@@ -138,7 +140,7 @@ def main():
     CaptureGuest.capture_report = report
     native.NativeGuest = CaptureGuest
     sys.argv = [str(ROOT / "tools/native-editor-installed-test.py"), "--arch", "aarch64",
-                "--iso", str(args.iso.resolve()), "--boot-only"]
+                "--iso", str(args.iso.resolve()), "--editor-terminal-only" if args.editor_terminal else "--boot-only"]
     if args.reuse_installed:
         sys.argv.append("--reuse-installed")
     if args.update_kernel:
@@ -148,6 +150,8 @@ def main():
         native.main()
         installation = json.loads((args.work.resolve() / "evidence.json").read_text())
         report["installed_boot_verified"] = installation["installed_boot_verified"]
+        if args.editor_terminal:
+            report["editor_terminal"] = installation.get("editor_terminal")
         report["kernel_sha256"] = installation.get("updated_kernel_sha256", installation["packaged"]["installed-kernel.elf"]["sha256"])
         report["source_media"] = installation["source_media"]
         expected = {"login-password-focus"}

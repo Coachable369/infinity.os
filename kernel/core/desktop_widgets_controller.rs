@@ -6,6 +6,44 @@ use crate::ui::{
 };
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: surface_desktop
+    // DESC: Minimizes existing application surfaces without closing tasks or discarding documents.
+    // ------------------=
+    fn surface_desktop(&mut self) {
+        use crate::ui::app_launcher::minimized_shelf as shelf;
+        self.store_active_app_window();
+        self.checkpoint_active_file_navigator();
+        for (window, id) in [(&mut self.editor_window,shelf::EDITOR),
+            (&mut self.command_window,shelf::COMMAND),(&mut self.task_manager_window,shelf::TASKS),
+            (&mut self.browser_window,shelf::BROWSER)] {
+            if window.visible { shelf::set(id,true); window.visible=false; }
+        }
+        self.command_window_suspended = shelf::current().mask & (1 << shelf::COMMAND) != 0;
+        if self.settings_open { shelf::set(shelf::SETTINGS,true); self.settings_open=false; }
+        crate::runtime::with_runtime(|runtime| {
+            while let Some(index)=runtime.file_navigators.active_index() {
+                shelf::set(index,true);
+                runtime.file_navigators.minimize_active();
+            }
+            let display=Rect{x:0,y:0,width:self.system.framebuffer_width as u32,height:self.system.framebuffer_height as u32};
+            let scale=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale();
+            let work=crate::runtime::native_gui::client_work_area(display,scale);
+            let mut windows=[None;crate::ui::window::MAX_WINDOWS];
+            for (index,slot) in windows.iter_mut().enumerate() {
+                *slot=runtime.ui.windows.ordered_window(index).copied().filter(|w|w.visible && matches!(w.z_class,crate::ui::window::ZOrderClass::Normal|crate::ui::window::ZOrderClass::Floating));
+            }
+            for window in windows.into_iter().flatten() {
+                let _=runtime.ui.windows.set_state(window.owner,window.id,crate::ui::window::WindowState::Minimized,work,display);
+            }
+        });
+        self.home_window_visible=false;
+        self.desktop_app=DesktopAppKind::None;
+        self.mode=ConsoleMode::Desktop;
+        self.shell_menu=0;
+        let _=self.checkpoint_desktop_layout();
+        self.redraw();
+    }
+    // ------------------------=
     // FUNC: desktop_widgets_pointer
     // DESC: Moves exposed widgets without capturing covered application input; persists only completed edits.
     // ------------------=
@@ -120,6 +158,7 @@ impl ConsoleRuntime {
             return true;
         }
         if clicked {
+            self.surface_desktop();
             for id in (0..2).rev() {
                 if !state.shown(id,self.browser_window_state().visible) {
                     continue;

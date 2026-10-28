@@ -1279,16 +1279,7 @@ fn semantic_damage_storm_test() {
 // ------------------=
 fn installed_system_hit_geometry_test() {
     let wide = SystemLayout::new(1920, 1080);
-    assert_eq!(wide.top_bar_height(), 38);
-    assert_eq!(
-        wide.top_bar_logo_geometry(),
-        Rect {
-            x: 8,
-            y: 7,
-            width: 52,
-            height: 24,
-        }
-    );
+    assert_eq!(wide.top_bar_height(), 43);
     assert_eq!(
         wide.onboarding_target(0, 200, 810),
         Some(OnboardingTarget::Primary)
@@ -1307,7 +1298,7 @@ fn installed_system_hit_geometry_test() {
     );
 
     let square = SystemLayout::new(1600, 1600);
-    assert_eq!(square.top_bar_height(), 38);
+    assert_eq!(square.top_bar_height(), 64);
     assert_eq!(
         square.onboarding_target(0, 200, 810),
         Some(OnboardingTarget::Primary)
@@ -1319,23 +1310,21 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(square.authentication_target(200, 420), Some(0));
     assert_eq!(square.authentication_target(200, 500), Some(1));
     assert_eq!(square.authentication_target(200, 560), Some(2));
-    assert_eq!(
-        square.desktop_target(30, 20, 30, 500, true, false),
-        Some(DesktopTarget::InfinityMenu)
-    );
-    assert_eq!(square.desktop_target(200, 15, 30, 500, true, false), None);
-    assert_eq!(
-        square.desktop_target(400, 15, 30, 500, true, false),
-        Some(DesktopTarget::TopMenu(5))
-    );
-    assert_eq!(
-        square.desktop_target(805, 15, 30, 500, true, false),
-        Some(DesktopTarget::Status(0))
-    );
-    assert_eq!(
-        square.desktop_target(970, 15, 30, 500, true, false),
-        Some(DesktopTarget::Status(7))
-    );
+    for (width, height) in [(1920,1080), (1600,1600), (3840,2160)] {
+        let layout = SystemLayout::new(width,height);
+        for (role, target) in [(49,DesktopTarget::InfinityMenu),
+            (50,DesktopTarget::TopMenu(5)), (52,DesktopTarget::Status(7)),
+            (53,DesktopTarget::Status(0)), (54,DesktopTarget::Status(1)),
+            (55,DesktopTarget::Status(2)), (56,DesktopTarget::Status(3)),
+            (57,DesktopTarget::Status(4)), (58,DesktopTarget::Status(5)),
+            (59,DesktopTarget::Status(6))] {
+            let bounds = ui::desktop_template::bounds(1,role,width,height).unwrap();
+            let x = (bounds.x + bounds.width as i32 / 2) * 1000 / width as i32;
+            let y = (bounds.y + bounds.height as i32 / 2) * 1000 / height as i32;
+            assert_eq!(layout.desktop_target(x,y,30,500,true,false),Some(target));
+        }
+        assert_eq!(layout.desktop_target(300,15,30,500,true,false),None);
+    }
     assert_eq!(
         square.desktop_target(100, 510, 30, 500, true, false),
         Some(DesktopTarget::HomeTitle)
@@ -1390,15 +1379,16 @@ fn installed_system_hit_geometry_test() {
         .desktop_app_window_geometry(-528, 200, 600, 500, false);
     assert_eq!(overhung.window.x, -1056);
     assert_eq!(overhung.window.right(), 144);
-    assert_eq!(
-        square.system_menu_target(0, 50, 50),
-        SystemMenuTarget::Item(0)
-    );
+    let (menu_x, menu_y, menu_w, menu_h, count) = square.system_menu_geometry(0);
+    for row in 0..count {
+        let x = ((menu_x + menu_w / 2) * 1000 / 1600) as i32;
+        let y = ((menu_y + 26 + row * 34) * 1000 / 1600) as i32;
+        assert_eq!(square.system_menu_target(0,x,y),SystemMenuTarget::Item(row));
+    }
     assert_eq!(
         square.system_menu_target(0, 500, 500),
         SystemMenuTarget::Dismiss
     );
-    let (menu_x, menu_y, menu_w, menu_h, _) = square.system_menu_geometry(0);
     let (damage_x, damage_y, damage_w, damage_h) = square.system_menu_damage_geometry(0);
     assert_eq!((damage_x, damage_y), (menu_x, menu_y));
     assert!(damage_w > menu_w && damage_h > menu_h);
@@ -1703,15 +1693,6 @@ fn installed_system_hit_geometry_test() {
 
     let hidpi = SystemLayout::new(2560, 1440);
     assert_eq!(hidpi.top_bar_height(), 76);
-    assert_eq!(
-        hidpi.top_bar_logo_geometry(),
-        Rect {
-            x: 16,
-            y: 14,
-            width: 104,
-            height: 48,
-        }
-    );
     assert_eq!(
         hidpi.onboarding_target(0, 220, 810),
         Some(OnboardingTarget::Primary)

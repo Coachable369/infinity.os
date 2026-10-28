@@ -1,0 +1,49 @@
+{
+  "base": "http://127.0.0.1:4178/",
+  "results": [
+    {
+      "width": 1440,
+      "screenshots": 3,
+      "aspectRatios": true,
+      "fullResolutionLink": true,
+      "overflow": false,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "screenshots": 3,
+      "aspectRatios": true,
+      "fullResolutionLink": true,
+      "overflow": false,
+      "errors": []
+    },
+    {
+      "width": 320,
+      "screenshots": 3,
+      "aspectRatios": true,
+      "fullResolutionLink": true,
+      "overflow": false,
+      "errors": []
+    },
+    {
+      "width": 768,
+      "screenshots": 3,
+      "aspectRatios": true,
+      "fullResolutionLink": true,
+      "overflow": false,
+      "errors": []
+    },
+    {
+      "width": 1920,
+      "screenshots": 3,
+      "aspectRatios": true,
+      "fullResolutionLink": true,
+      "overflow": false,
+      "errors": []
+    }
+  ],
+  "animatedCanvas": true,
+  "nonblankCanvas": true,
+  "pause": true,
+  "noScript": true
+}

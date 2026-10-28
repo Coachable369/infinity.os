@@ -718,6 +718,22 @@ pub fn object_save_download<P:object::ObjectCapabilityPolicy>(request:object::Do
     #[cfg(target_arch="x86")]
     {let _=(request,policy);Err(object::ObjectError::SpaceUnavailable)}
 }
+
+// ------------------------=
+// FUNC: browser_downloads
+// DESC: Lists only committed downloads owned by the exact authenticated profile, including after reboot.
+// ------------------=
+pub(crate) fn browser_downloads(owner:[u8;16],session:[u8;16])->Result<([infinity_browser_core::download::Receipt;8],usize),object::ObjectError>{
+    let _=browser_favorites_path(owner,session)?;
+    let directory=infinity_browser_core::download::owner_directory(owner);
+    with_store(|store|{let mut entries=[infinity_browser_core::download::Receipt::EMPTY;8];let mut count=0;
+        for index in 0..object::NAMESPACE_CAPACITY {if let Some((path,id))=store.namespace_entry(index){
+            if path.len()<=49 || !path.starts_with(&directory) || path[48]!=b'/' || path[49..].contains(&b'/'){continue;}
+            let metadata=store.metadata(id)?;if metadata.owner!=object::ObjectId(owner){continue;}
+            let mut entry=infinity_browser_core::download::Receipt::EMPTY;entry.length=(path.len()-49).min(63);entry.name[..entry.length].copy_from_slice(&path[49..49+entry.length]);entry.bytes=store.current_size(id)?;
+            entries.copy_within(0..7,1);entries[0]=entry;count=(count+1).min(8);
+        }}Ok((entries,count))})
+}
 // ------------------------=
 // FUNC: object_write_path
 // DESC: Implements the object write path operation.
@@ -725,6 +741,9 @@ pub fn object_save_download<P:object::ObjectCapabilityPolicy>(request:object::Do
 pub fn object_write_path(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectError> {
     if path == crate::runtime::ai::mapping::PATH
         && crate::runtime::ai::mapping::validate(content).is_err() {
+        return Err(object::ObjectError::CorruptContent);
+    }
+    if path == crate::runtime::ai::mapping::REGISTRY_PATH && crate::runtime::ai::mapping::validate_registry(content).is_err() {
         return Err(object::ObjectError::CorruptContent);
     }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -785,6 +804,9 @@ pub(crate) fn editor_write_path(owner: [u8; 16], session: [u8; 16], path: &[u8],
     expected: editor_objects::MemoryRevision) -> Result<editor_objects::MemoryRevision, object::ObjectError> {
     let _ = browser_favorites_path(owner, session)?;
     if path == crate::runtime::ai::mapping::PATH && crate::runtime::ai::mapping::validate(content).is_err() {
+        return Err(object::ObjectError::CorruptContent);
+    }
+    if path == crate::runtime::ai::mapping::REGISTRY_PATH && crate::runtime::ai::mapping::validate_registry(content).is_err() {
         return Err(object::ObjectError::CorruptContent);
     }
     #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
@@ -856,28 +878,6 @@ pub fn identity_state_commit(content: &[u8]) -> Result<u32, object::ObjectError>
 }
 
 // ------------------------=
-// FUNC: checkpoint_state
-// DESC: Saves mutable system state with bounded copy-on-write history and durable commit barriers.
-// ------------------=
-fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectError> {
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    { with_store(|store| store.checkpoint(path, content)) }
-    #[cfg(target_arch = "x86")]
-    { let _ = (path, content); Err(object::ObjectError::SpaceUnavailable) }
-}
-
-// ------------------------=
-// FUNC: python_packages_load
-// DESC: Loads only the active profile's package archive without granting generic system-object access.
-// ------------------=
-pub(crate) fn python_packages_load(owner: [u8; 16], session: [u8; 16], out: &mut [u8])
-    -> Result<(Option<object::PythonPackageRevision>, usize), object::ObjectError> {
-    let _ = browser_favorites_path(owner, session)?;
-    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-    { with_store(|store| store.read_python_packages(object::ObjectId(owner), out)) }
-    #[cfg(target_arch = "x86")]
-    { let _ = out; Err(object::ObjectError::SpaceUnavailable) }
-// ------------------------=
 // FUNC: face_identity_path
 // DESC: Creates a fixed account-scoped vault path without accepting user-controlled path segments.
 // ------------------=
@@ -918,6 +918,28 @@ pub(crate) fn face_identity_load(owner:[u8;16],out:&mut[u8])->Result<usize,objec
     object_read_path(&face_identity_path(owner),None,out).map(|(_,length)|length)
 }
 
+// ------------------------=
+// FUNC: checkpoint_state
+// DESC: Saves mutable system state with bounded copy-on-write history and durable commit barriers.
+// ------------------=
+fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.checkpoint(path, content)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = (path, content); Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: python_packages_load
+// DESC: Loads only the active profile's package archive without granting generic system-object access.
+// ------------------=
+pub(crate) fn python_packages_load(owner: [u8; 16], session: [u8; 16], out: &mut [u8])
+    -> Result<(Option<object::PythonPackageRevision>, usize), object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    { with_store(|store| store.read_python_packages(object::ObjectId(owner), out)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = out; Err(object::ObjectError::SpaceUnavailable) }
 }
 
 // ------------------------=
@@ -932,6 +954,46 @@ pub(crate) fn python_packages_save(owner: [u8; 16], session: [u8; 16],
     { with_store(|store| store.save_python_packages(object::ObjectId(owner), expected, content)) }
     #[cfg(target_arch = "x86")]
     { let _ = (expected, content); Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: python_library_catalog
+// DESC: Discovers only the active profile's committed import roots, rechecking session authority before even a revision-cache hit.
+// ------------------=
+pub(crate) fn python_library_catalog(owner: [u8; 16], session: [u8; 16],
+    cached: Option<(object::PythonPackageRevision, object::PythonLibraryCatalog)>)
+    -> Result<(Option<object::PythonPackageRevision>, object::PythonLibraryCatalog), object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    { with_store(|store| store.read_python_library_catalog(object::ObjectId(owner), cached)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = cached; Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: python_data_load
+// DESC: Loads only the authenticated profile's exact source-scoped application checkpoint.
+// ------------------=
+pub(crate) fn python_data_load(owner: [u8; 16], session: [u8; 16], source: [u8; 16], source_version: u32,
+    out: &mut [u8]) -> Result<(Option<object::PythonDataRevision>, usize), object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    { with_store(|store| store.read_python_data(object::ObjectId(owner), object::ObjectId(source), source_version, out)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = (source, source_version, out); Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: python_data_save
+// DESC: Rechecks live profile and stable source authority before an atomic application-data checkpoint.
+// ------------------=
+pub(crate) fn python_data_save(owner: [u8; 16], session: [u8; 16], source: [u8; 16], source_version: u32,
+    expected: Option<object::PythonDataRevision>, content: &[u8]) -> Result<object::PythonDataRevision, object::ObjectError> {
+    let _ = browser_favorites_path(owner, session)?;
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    { with_store(|store| store.save_python_data(object::ObjectId(owner), object::ObjectId(source), source_version, expected, content)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = (source, source_version, expected, content); Err(object::ObjectError::SpaceUnavailable) }
 }
 
 // ------------------------=
@@ -1040,6 +1102,50 @@ pub(crate) fn editor_preferences(owner:[u8;16],session:[u8;16],save:Option<crate
         }else if let Some(id)=id {let mut b=[0;8];let n=store.read_editor_preferences(id,&mut b)?;Preferences::decode(&b[..n]).ok_or(object::ObjectError::CorruptContent)}else{Ok(Preferences::new())}
     })}
     #[cfg(target_arch="x86")]
+    {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
+// FUNC: generated_app_catalog
+// DESC: Reads or commits the active user's versioned generated-app references without persisting authority.
+// ------------------=
+pub(crate) fn generated_app_catalog(owner:[u8;16],session:[u8;16],save:Option<&crate::runtime::generated_apps::Registry>)->Result<crate::runtime::generated_apps::Registry,object::ObjectError>{
+    use crate::runtime::generated_apps::{Registry,BYTES};
+    let _=browser_favorites_path(owner,session)?;
+    let prefix=b"/system/generated-apps/";let mut path=[0u8;55];path[..prefix.len()].copy_from_slice(prefix);
+    for(i,byte)in owner.iter().enumerate(){path[prefix.len()+i*2]=b"0123456789abcdef"[(byte>>4)as usize];path[prefix.len()+i*2+1]=b"0123456789abcdef"[(byte&15)as usize];}
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|{
+        let id=match store.resolve(&path[..prefix.len()+32]){Ok(id)=>Some(id),Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>None,Err(e)=>return Err(e)};
+        let mut bytes=[0;BYTES];
+        if let Some(registry)=save {
+            if registry.owner!=owner{return Err(object::ObjectError::Unauthorized);}
+            registry.encode(&mut bytes).map_err(|_|object::ObjectError::CorruptContent)?;
+            Registry::decode(owner,&bytes).map_err(|_|object::ObjectError::CorruptContent)?;
+            if let Some(id)=id{store.replace_state(id,&bytes)?;}else{store.create_attached(b"@generated-apps",object::ObjectType::Metadata,object::Space::System,&bytes,&path[..prefix.len()+32])?;}Ok(*registry)
+        }else if let Some(id)=id{let n=store.read_generated_apps(id,&mut bytes)?;Registry::decode(owner,&bytes[..n]).map_err(|_|object::ObjectError::CorruptContent)}else{Ok(Registry::new(owner))}
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
+// FUNC: editor_terminal_preferences
+// DESC: Persists dock layout as a session-authorized private System object without storing terminal text.
+// ------------------=
+pub(crate) fn editor_terminal_preferences(owner:[u8;16],session:[u8;16],save:Option<crate::ui::editor_chrome::terminal::Preferences>)->Result<crate::ui::editor_chrome::terminal::Preferences,object::ObjectError> {
+    use crate::ui::editor_chrome::terminal::Preferences;
+    let _=browser_favorites_path(owner,session)?;
+    let mut path=[0u8;49];path[..17].copy_from_slice(b"/system/terminal/");
+    for(i,byte)in owner.iter().enumerate(){path[17+i*2]=b"0123456789abcdef"[(byte>>4)as usize];path[18+i*2]=b"0123456789abcdef"[(byte&15)as usize];}
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|{
+        let id=match store.resolve(&path){Ok(id)=>Some(id),Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>None,Err(e)=>return Err(e)};
+        if let Some(p)=save {Preferences::decode(&p.encode()).ok_or(object::ObjectError::CorruptContent)?;
+            if let Some(id)=id{store.replace_state(id,&p.encode())?;}else{store.create_attached(b"@editor-preferences",object::ObjectType::Metadata,object::Space::System,&p.encode(),&path)?;}Ok(p)
+        }else if let Some(id)=id{let mut b=[0;8];let n=store.read_editor_preferences(id,&mut b)?;Preferences::decode(&b[..n]).ok_or(object::ObjectError::CorruptContent)}else{Ok(Preferences::new())}
+    })}
+    #[cfg(target_arch = "x86")]
     {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
 }
 

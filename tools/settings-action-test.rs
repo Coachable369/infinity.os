@@ -456,7 +456,7 @@ fn main() {
     assert_eq!(settings_row_interaction(3, 6), I::Toggle);
     assert_eq!(settings_row_interaction(4, 4), I::Toggle);
     assert_eq!(settings_row_interaction(0, 0), I::Edit);
-    assert_eq!(settings_row_interaction(8, 5), I::Details);
+    for row in 5..=7 { assert_eq!(settings_row_interaction(8, row), I::Select); }
     if let Some(case) = std::env::args().nth(1) {
         if case.starts_with("child-") { verify_children(&case); } else { verify_case(&case); }
         return;

@@ -21,7 +21,13 @@ impl Resampler {
     // DESC: Reserves fixed filter storage in an inactive state suitable for static initialization.
     // ------------------=
     pub const fn empty() -> Self {
-        Self { rate: 0, phase: 0, cursor: 0, history: [0; TAPS], coefficients: FILTER_48000 }
+        Self {
+            rate: 0,
+            phase: 0,
+            cursor: 0,
+            history: [0; TAPS],
+            coefficients: FILTER_48000,
+        }
     }
 
     // ------------------------=
@@ -44,14 +50,20 @@ impl Resampler {
     // FUNC: clear
     // DESC: Erases retained microphone history and phase without recalculating reusable coefficients.
     // ------------------=
-    pub fn clear(&mut self) { self.history.fill(0); self.phase = 0; self.cursor = 0; }
+    pub fn clear(&mut self) {
+        self.history.fill(0);
+        self.phase = 0;
+        self.cursor = 0;
+    }
 
     // ------------------------=
     // FUNC: process
     // DESC: Returns consumed and produced counts, preserving unconsumed input under output backpressure.
     // ------------------=
     pub fn process(&mut self, input: &[i16], output: &mut [i16]) -> (usize, usize) {
-        if self.rate == 0 || output.is_empty() { return (0, 0); }
+        if self.rate == 0 || output.is_empty() {
+            return (0, 0);
+        }
         if self.rate == OUTPUT_RATE {
             let n = input.len().min(output.len());
             output[..n].copy_from_slice(&input[..n]);
@@ -60,7 +72,9 @@ impl Resampler {
         let mut consumed = 0;
         let mut produced = 0;
         for &sample in input {
-            if produced == output.len() { break; }
+            if produced == output.len() {
+                break;
+            }
             self.history[self.cursor] = sample;
             self.cursor = (self.cursor + 1) % TAPS;
             consumed += 1;
@@ -75,10 +89,16 @@ impl Resampler {
                 for tap in 0..TAPS {
                     let index = (self.cursor + TAPS - 1 - tap) % TAPS;
                     let offset = (bank * TAPS + tap) * 4;
-                    let coefficient = i32::from_le_bytes(self.coefficients[offset..offset + 4].try_into().unwrap());
+                    let coefficient = i32::from_le_bytes(
+                        self.coefficients[offset..offset + 4].try_into().unwrap(),
+                    );
                     value += self.history[index] as i64 * coefficient as i64;
                 }
-                let rounded = if value < 0 { -((-value + (1 << 29)) >> 30) } else { (value + (1 << 29)) >> 30 };
+                let rounded = if value < 0 {
+                    -((-value + (1 << 29)) >> 30)
+                } else {
+                    (value + (1 << 29)) >> 30
+                };
                 output[produced] = rounded.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
                 produced += 1;
             }
@@ -100,7 +120,11 @@ mod tests {
         let mut r = Resampler::empty();
         for rate in [44_100, 48_000, 16_000, 48_000, 44_100] {
             assert!(r.configure(rate));
-            let expected = if rate == 44_100 { FILTER_44100 } else { FILTER_48000 };
+            let expected = if rate == 44_100 {
+                FILTER_44100
+            } else {
+                FILTER_48000
+            };
             assert!(core::ptr::eq(r.coefficients, expected));
             assert_eq!((r.phase, r.cursor), (0, 0));
             assert!(r.history.iter().all(|sample| *sample == 0));

@@ -42,6 +42,7 @@
           "hidden" : false,
           "id" : "49554954-0001-0001-8000-000000000001",
           "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "imageFit" : 0,
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -86,11 +87,12 @@
             "height" : 460,
             "width" : 520,
             "x" : 240,
-            "y" : 160
+            "y" : 190
           },
           "hidden" : false,
           "id" : "49554954-0001-0002-8000-000000000001",
           "imageAsset" : "assets/boot/infinity-emblem-v2.bmp",
+          "imageFit" : 0,
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -140,6 +142,7 @@
           "hidden" : false,
           "id" : "49554954-0001-0003-8000-000000000001",
           "imageAsset" : "",
+          "imageFit" : 0,
           "inputVariable" : "",
           "kind" : 6,
           "locked" : false,
@@ -192,9 +195,10 @@
             "x" : 0,
             "y" : 0
           },
-          "hidden" : false,
+          "hidden" : true,
           "id" : "49554954-0002-0001-8000-000000000001",
           "imageAsset" : "assets/boot/infinity-eclipse-header-v1.bmp",
+          "imageFit" : 0,
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -236,14 +240,15 @@
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 460,
-            "width" : 520,
-            "x" : 240,
-            "y" : 285
+            "height" : 550,
+            "width" : 610,
+            "x" : 190,
+            "y" : 240
           },
           "hidden" : false,
           "id" : "49554954-0002-0002-8000-000000000001",
           "imageAsset" : "assets/boot/infinity-emblem-v2.bmp",
+          "imageFit" : 0,
           "inputVariable" : "",
           "kind" : 2,
           "locked" : false,
@@ -293,6 +298,7 @@
           "hidden" : false,
           "id" : "49554954-0002-0003-8000-000000000001",
           "imageAsset" : "",
+          "imageFit" : 0,
           "inputVariable" : "",
           "kind" : 6,
           "locked" : false,
@@ -303,6 +309,56 @@
           "surfaceMaterial" : 0,
           "text" : "INFINITYOS READY",
           "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "infinityOSNeonChromeLogo.2",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 330,
+            "width" : 720,
+            "x" : 150,
+            "y" : 30
+          },
+          "hidden" : false,
+          "id" : "5729CBE7-B5F3-468E-B5CA-ADC97075A299",
+          "imageAsset" : "installer-assets/Infinity-OS-Neon-Chrome-Logo-2.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Infinity-OS-Neon-Chrome-Logo-2",
+          "opacity" : 100,
+          "role" : 6,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "zIndex" : 3
         }
       ],
       "id" : 2,

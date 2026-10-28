@@ -44,7 +44,8 @@ impl ThinkingAnimation {
     // ------------------=
     pub fn advance(&mut self, active: bool, now_ns: u64) -> bool {
         let frame = now_ns / 33_333_333;
-        let changed = active && (!self.active || frame != self.frame);
+        let changed = active != self.active || (active && frame != self.frame);
+        self.body_dirty |= changed && (active != self.active || frame % 3 == 0);
         self.active = active;
         self.frame = frame;
         changed
@@ -67,7 +68,11 @@ pub fn grayscale(position: usize, offset: usize, period: usize) -> u8 {
 // DESC: Includes the readiness orbit below the header while keeping normal speech animation damage bounded.
 // ------------------=
 pub fn repaint_height(panel_height: u32, scale: usize, preparing: bool) -> u32 {
-    if preparing { panel_height } else { panel_height.min((48 * scale) as u32) }
+    if preparing {
+        panel_height
+    } else {
+        panel_height.min((82 * scale) as u32)
+    }
 }
 
 #[cfg(test)]
@@ -89,7 +94,7 @@ mod tests {
         for scale in [1, 2, 3] {
             let height = 600 * scale as u32;
             assert_eq!(repaint_height(height, scale, true), height);
-            assert_eq!(repaint_height(height, scale, false), 48 * scale as u32);
+            assert_eq!(repaint_height(height, scale, false), 82 * scale as u32);
         }
         assert_eq!(repaint_height(20, 1, false), 20);
     }
@@ -104,7 +109,7 @@ mod tests {
         assert!(animation.advance(true, 0));
         assert!(!animation.advance(true, 10_000_000));
         assert!(animation.advance(true, 34_000_000));
-        assert!(!animation.advance(false, 68_000_000));
+        assert!(animation.advance(false, 68_000_000));
         assert!(!animation.advance(false, 99_000_000));
         assert!(animation.advance(true, 99_000_000));
         assert_ne!(grayscale(0, 0, 64), grayscale(0, 32, 64));

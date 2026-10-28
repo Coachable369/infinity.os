@@ -114,7 +114,7 @@ enum NativeBitmapEncoder {
                 }
             }
         }
-        var result = Data(repeating: 0, count: 122)
+        var result = Data(repeating: 0, count: 122 + pixels.count)
         result[0] = 66; result[1] = 77
         put(UInt32(122 + pixels.count), at: 2, into: &result)
         put(122, at: 10, into: &result); put(108, at: 14, into: &result)
@@ -126,8 +126,15 @@ enum NativeBitmapEncoder {
             put(mask, at: offset, into: &result)
         }
         put(0x73524742, at: 70, into: &result)
-        for offset in stride(from: 0, to: pixels.count, by: 4) {
-            result.append(contentsOf: [pixels[offset + 2], pixels[offset + 1], pixels[offset], pixels[offset + 3]])
+        pixels.withUnsafeBytes { (source: UnsafeRawBufferPointer) in
+            result.withUnsafeMutableBytes { (target: UnsafeMutableRawBufferPointer) in
+                for offset in stride(from: 0, to: source.count, by: 4) {
+                    target[122 + offset] = source[offset + 2]
+                    target[123 + offset] = source[offset + 1]
+                    target[124 + offset] = source[offset]
+                    target[125 + offset] = source[offset + 3]
+                }
+            }
         }
         return result
     }

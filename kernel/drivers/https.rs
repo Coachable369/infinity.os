@@ -18,6 +18,7 @@ use core::{
 };
 
 pub const BODY: usize = crate::http_transport::https::MAX_RESPONSE_BODY;
+const BROWSER_BODY: usize = 4 * 1024 * 1024;
 const HEAD: usize = 8192;
 static BODY_LOANED: AtomicBool = AtomicBool::new(false);
 static mut BODY_STORAGE: [u8; BODY] = [0; BODY];
@@ -166,6 +167,8 @@ static mut RX: Ring = Ring::new();
 static mut TX: Ring = Ring::new();
 static mut AUTH: Option<Authority> = None;
 static mut ENDPOINT: ([u8; 4], u16) = ([0; 4], 0);
+#[path = "https_channel.rs"] mod channel;
+pub(crate) use channel::{socket_begin, socket_command, socket_result, socket_read, SocketResult};
 struct Guard;
 impl Drop for Guard {
     // ------------------------=
@@ -498,6 +501,18 @@ pub(crate) fn get_browser_with_headers(
     receive: CapabilityId, resolve: CapabilityId, host: &str, port: u16,
     path: &str, headers: &[u8],
 ) -> Result<Ticket, Failure> {
+    get_bounded(owner,connect,send,receive,resolve,host,port,path,BROWSER_BODY,headers,"GET",&[],None)
+}
+
+// ------------------------=
+// FUNC: get_package
+// DESC: Allows a bounded larger wheel download through the existing authenticated actor without increasing browser response budgets.
+// ------------------=
+pub(crate) fn get_package(
+    owner: SecurityIdentity, connect: CapabilityId, send: CapabilityId,
+    receive: CapabilityId, resolve: CapabilityId, host: &str, port: u16,
+    path: &str, headers: &[u8],
+) -> Result<Ticket, Failure> {
     get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY,headers,"GET",&[],None)
 }
 
@@ -510,7 +525,41 @@ pub(crate) fn get_browser_streaming(
     receive: CapabilityId, resolve: CapabilityId, host: &str, port: u16,
     path: &str, headers: &[u8], method: &str, body: &[u8], progress: fn(Option<&[u8]>, &[u8]) -> bool,
 ) -> Result<Ticket, Failure> {
-    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY,headers,method,body,Some(progress))
+    get_bounded(owner,connect,send,receive,resolve,host,port,path,BROWSER_BODY,headers,method,body,Some(progress))
+}
+
+// ------------------------=
+// FUNC: prepare_connection
+// DESC: Reuses the actor's exact authenticated owner, native interface, DNS, route, entropy and profile-generation authority for HTTP and socket conversations.
+// ------------------=
+unsafe fn prepare_connection(owner: SecurityIdentity, connect: CapabilityId, send: CapabilityId,
+    receive: CapabilityId, resolve: CapabilityId, require_time: bool)
+    -> Result<(Configuration, Authority, [u8; 32], u64), Failure> {
+    let now = crate::ui::performance::monotonic_ns().map(|n| n / 1_000_000).unwrap_or(CLOCK);
+    CLOCK = now;
+    let time = crate::console::certificate_time(SERVICES).unwrap_or(0);
+    if require_time && time == 0 { return Err(Failure::Unavailable); }
+    let rng = (&mut *(&raw mut RNG)).as_mut().ok_or(Failure::Unavailable)?;
+    let mut seed = [0; 32]; rng.fill_bytes(&mut seed);
+    let port = 49152 + (rng.next_u32() % 16384) as u16;
+    let (config, auth) = crate::runtime::with_runtime(|runtime| {
+        let n = &runtime.network;
+        let interface = n.interfaces.interface(2)?;
+        let source = (0..n.interfaces.address_count()).filter_map(|i| n.interfaces.address_nth(i))
+            .find(|a| a.interface_id == 2 && a.state == AddressState::Preferred && matches!(a.address, IpAddress::V4(_)))?;
+        let IpAddress::V4(address) = source.address else { return None; };
+        let gateway = default_gateway(n);
+        let dns = preferred_dns(n.resolver.server(0), n.resolver.server(1), gateway)?;
+        Some((Configuration {
+            mac: interface.device.hardware_address?, address, prefix: source.prefix_length,
+            gateway, dns_server: dns, local_port: port,
+            deadline: Instant::from_millis(now.saturating_add(30000).min(i64::MAX as u64) as i64),
+        }, Authority { owner, connect, send, receive, resolve, generation: n.profiles.generation(),
+            address, prefix: source.prefix_length, mac: interface.device.hardware_address?,
+            dns, gateway, local_port: port }))
+    }).flatten().ok_or(Failure::Unavailable)?;
+    if !authorized(auth, config.dns_server, 53, now / 1000) { return Err(Failure::Denied); }
+    Ok((config, auth, seed, time))
 }
 
 // ------------------------=
@@ -548,65 +597,7 @@ fn get_bounded(
             return Err(Failure::Busy);
         }
         let ticket=Ticket(NEXT_TICKET.checked_add(1).ok_or(Failure::Unavailable)?);
-        let now = crate::ui::performance::monotonic_ns()
-            .map(|n| n / 1_000_000)
-            .unwrap_or(CLOCK);
-        CLOCK = now;
-        let time = crate::console::certificate_time(SERVICES).ok_or(Failure::Unavailable)?;
-        let rng = (&mut *(&raw mut RNG))
-            .as_mut()
-            .ok_or(Failure::Unavailable)?;
-        let mut seed = [0; 32];
-        rng.fill_bytes(&mut seed);
-        let port = 49152 + (rng.next_u32() % 16384) as u16;
-        let (config, auth) = crate::runtime::with_runtime(|runtime| {
-            let n = &runtime.network;
-            let interface = n.interfaces.interface(2)?;
-            let source = (0..n.interfaces.address_count())
-                .filter_map(|i| n.interfaces.address_nth(i))
-                .find(|a| {
-                    a.interface_id == 2
-                        && a.state == AddressState::Preferred
-                        && matches!(a.address, IpAddress::V4(_))
-                })?;
-            let IpAddress::V4(address) = source.address else {
-                return None;
-            };
-            let gateway = default_gateway(n);
-            let dns = preferred_dns(n.resolver.server(0), n.resolver.server(1), gateway)?;
-            Some((
-                Configuration {
-                    mac: interface.device.hardware_address?,
-                    address,
-                    prefix: source.prefix_length,
-                    gateway,
-                    dns_server: dns,
-                    local_port: port,
-                    deadline: Instant::from_millis(
-                        now.saturating_add(30000).min(i64::MAX as u64) as i64
-                    ),
-                },
-                Authority {
-                    owner,
-                    connect,
-                    send,
-                    receive,
-                    resolve,
-                    generation: n.profiles.generation(),
-                    address,
-                    prefix: source.prefix_length,
-                    mac: interface.device.hardware_address?,
-                    dns,
-                    gateway,
-                    local_port: port,
-                },
-            ))
-        })
-        .flatten()
-        .ok_or(Failure::Unavailable)?;
-        if !authorized(auth, config.dns_server, 53, now / 1000) {
-            return Err(Failure::Denied);
-        }
+        let (config, auth, seed, time) = prepare_connection(owner,connect,send,receive,resolve,true)?;
         let mut name = [0; 253];
         name[..host.len()].copy_from_slice(host.as_bytes());
         let name_length = host.len();
@@ -716,6 +707,7 @@ fn take_matching(owner:SecurityIdentity,ticket:Option<Ticket>)->Result<Option<Ou
         }
         let result = (&mut *(&raw mut RESULT)).take();
         if result.is_some() {
+            channel::clear();
             OWNER = None;
             AUTH = None;
             ACTIVE_TICKET=None;
@@ -750,6 +742,7 @@ fn cancel_matching(owner:SecurityIdentity,ticket:Option<Ticket>)->Result<(),Fail
             return Err(Failure::Denied);
         }
         Pin::new_unchecked(&mut *(&raw mut TASK)).cancel();
+        channel::clear();
         RX = Ring::new();
         TX = Ring::new();
         RESULT = Some(Err(Failure::Cancelled));
@@ -792,6 +785,7 @@ pub(super) fn poll(nic: &mut super::e1000::E1000, now_ms: u64) {
             .unwrap_or(false);
             if !active {
                 Pin::new_unchecked(&mut *(&raw mut TASK)).cancel();
+                channel::clear();
                 OWNER = None;
                 AUTH = None;
                 ACTIVE_TICKET=None;
@@ -816,6 +810,7 @@ pub(super) fn poll(nic: &mut super::e1000::E1000, now_ms: u64) {
         };
         if !authorized(auth, ENDPOINT.0, ENDPOINT.1, now_ms / 1000) {
             Pin::new_unchecked(&mut *(&raw mut TASK)).cancel();
+            channel::clear();
             RESULT = Some(Err(Failure::Denied));
             TX = Ring::new();
             RX = Ring::new();

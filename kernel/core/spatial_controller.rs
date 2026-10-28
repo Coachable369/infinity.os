@@ -597,6 +597,27 @@ impl ConsoleRuntime {
         self.spatial_open_surface(false, 1);
     }
     // ------------------------=
+    // FUNC: spatial_select_named_world
+    // DESC: Uses the persisted World Shift workflow and confirms stored and published destination state.
+    // ------------------=
+    pub(super) fn spatial_select_named_world(&mut self,name:&[u8])->bool {
+        self.worldshift_open();
+        if self.spatial.owner!=self.current_user.0 || !self.spatial.writable {return false;}
+        let defaults=[b"Home".as_slice(),b"Create",b"Research",b"Explore"];
+        let name=if name.eq_ignore_ascii_case(b"reserch"){b"Research".as_slice()}else{name};
+        let Some(index)=(0..4).find(|i| {
+            let saved=self.spatial.state.worlds[*i].name.get();
+            let label=if saved.is_empty(){defaults[*i]}else{saved};
+            label.eq_ignore_ascii_case(name)
+        }) else{return false;};
+        self.spatial.focus=index;
+        self.spatial_execute_action(0);
+        self.spatial.state.world_enabled && self.spatial.state.active_world as usize==index
+            && crate::ui::spatial::desktop_world() as usize==index
+            && crate::storage::spatial_state::load(self.current_user.0,self.current_session.0)
+                .is_ok_and(|state|state.world_enabled && state.active_world as usize==index)
+    }
+    // ------------------------=
     // FUNC: spatial_open_surface
     // DESC: Opens either the independent app switcher or the configuration workspace.
     // ------------------=

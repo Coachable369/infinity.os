@@ -228,8 +228,9 @@ final class TemplateStore: ObservableObject {
         projectRoot = root
         desktopDocument = root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/desktop-screens.infinityui")) }
             .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryDesktop()
-        loginDocument = root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/login-screens.infinityui")) }
+        loginDocument = (root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/login-screens.infinityui")) }
             .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryLogin()
+        ).migratedForLoginMotion()
         bootDocument = root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/boot-screens.infinityui")) }
             .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryBoot()
         let configuration = root.flatMap { root in

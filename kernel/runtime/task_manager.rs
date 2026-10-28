@@ -64,10 +64,22 @@ impl TaskManager {
     // FUNC: register_application_image
     // DESC: Makes one nonzero custom installed image identity eligible for isolated application launch.
     // ------------------=
-    pub fn register_application_image(&mut self, image_identity: u32) -> Result<(), TaskManagerError> {
-        if image_identity == 0 { return Err(TaskManagerError::UnknownApplication); }
-        if is_application_image(image_identity) || self.installed_application_images.contains(&image_identity) { return Ok(()); }
-        let slot = self.installed_application_images.iter_mut().find(|value| **value == 0)
+    pub fn register_application_image(
+        &mut self,
+        image_identity: u32,
+    ) -> Result<(), TaskManagerError> {
+        if image_identity == 0 {
+            return Err(TaskManagerError::UnknownApplication);
+        }
+        if is_application_image(image_identity)
+            || self.installed_application_images.contains(&image_identity)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .installed_application_images
+            .iter_mut()
+            .find(|value| **value == 0)
             .ok_or(TaskManagerError::UnknownApplication)?;
         *slot = image_identity;
         Ok(())
@@ -78,7 +90,8 @@ impl TaskManager {
     // DESC: Reports whether a built-in or registered custom application image is installed.
     // ------------------=
     pub fn has_application_image(&self, image_identity: u32) -> bool {
-        is_application_image(image_identity) || self.installed_application_images.contains(&image_identity)
+        is_application_image(image_identity)
+            || self.installed_application_images.contains(&image_identity)
     }
 
     // ------------------------=
@@ -101,7 +114,11 @@ impl TaskManager {
     // FUNC: distributed_task_nth
     // DESC: Returns one UI-ready distributed snapshot without maintaining a second task model.
     // ------------------=
-    pub fn distributed_task_nth(&self, compute: &super::compute::ComputeService, index: usize) -> Option<super::compute::ComputeSnapshot> {
+    pub fn distributed_task_nth(
+        &self,
+        compute: &super::compute::ComputeService,
+        index: usize,
+    ) -> Option<super::compute::ComputeSnapshot> {
         compute.task_nth(index)
     }
 
@@ -109,7 +126,11 @@ impl TaskManager {
     // FUNC: distributed_inspect
     // DESC: Resolves UI task inspection through the same authoritative compute state as IOP and console clients.
     // ------------------=
-    pub fn distributed_inspect(&self, compute: &super::compute::ComputeService, task_id: u64) -> Result<super::compute::ComputeSnapshot, super::compute::ComputeError> {
+    pub fn distributed_inspect(
+        &self,
+        compute: &super::compute::ComputeService,
+        task_id: u64,
+    ) -> Result<super::compute::ComputeSnapshot, super::compute::ComputeError> {
         compute.inspect(task_id)
     }
 
@@ -152,7 +173,10 @@ impl TaskManager {
         for index in 0..execution.count() {
             if let Some(context) = execution.nth(index) {
                 let delta = if self.previous_handles[index] == context.handle.0 {
-                    context.usage.cpu_ticks.saturating_sub(self.previous_ticks[index])
+                    context
+                        .usage
+                        .cpu_ticks
+                        .saturating_sub(self.previous_ticks[index])
                 } else {
                     context.usage.cpu_ticks
                 };
@@ -166,7 +190,10 @@ impl TaskManager {
             self.cpu_share_percent[index] = if total == 0 {
                 0
             } else {
-                deltas[index].saturating_mul(100).saturating_div(total).min(100) as u8
+                deltas[index]
+                    .saturating_mul(100)
+                    .saturating_div(total)
+                    .min(100) as u8
             };
         }
     }

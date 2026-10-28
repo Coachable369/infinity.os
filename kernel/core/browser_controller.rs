@@ -7,6 +7,8 @@ static mut LAUNCH:Option<Launch>=None;
 static mut INPUT:infinity_browser_core::input_queue::Queue<64>=infinity_browser_core::input_queue::Queue::new();
 static mut POINTER:infinity_browser_core::pointer::Pointer=infinity_browser_core::pointer::Pointer::new();
 static mut DOWNLOAD:Option<crate::runtime::browser::Download>=None;
+static mut IMAGE_AUTO_SAVE:bool=false;
+static mut CANCEL_ACK:u64=0;
 static mut CONSENT:Option<Launch>=None;
 static mut NEW_TABS:u8=0;
 static mut FAVORITES:infinity_browser_core::favorites::Favorites=infinity_browser_core::favorites::Favorites::new();
@@ -211,17 +213,19 @@ fn save_download(console:&ConsoleRuntime) {unsafe {
     }).flatten();
     let Some(capability)=capability else {crate::runtime::browser::download_presentation(&download.name[..download.name_length],3);return;};
     let policy=DownloadPolicy{owner,capability};
-    let prefix=b"/home/default/downloads/";
-    let mut path=[0u8;95];path[..prefix.len()].copy_from_slice(prefix);
-    path[prefix.len()..prefix.len()+download.name_length].copy_from_slice(&download.name[..download.name_length]);
-    let saved=crate::storage::object_save_download(crate::storage::object::DownloadCreateRequest {
-        name:&download.name[..download.name_length],content:&download.bytes[..download.length],
-        path:&path[..prefix.len()+download.name_length],media_type:&download.media_type[..download.type_length],
-        owner:crate::storage::object::ObjectId(console.current_user.0),
-    },&policy).is_ok();
+    let mut saved_name=[0u8;63];let mut saved_length=0;
+    let saved=crate::runtime::browser::with_download_bytes(owner,download.length,|bytes|{
+        for attempt in 0..100 {let(path,length)=infinity_browser_core::download::destination(console.current_user.0,&download.name[..download.name_length],attempt);
+            let result=crate::storage::object_save_download(crate::storage::object::DownloadCreateRequest {
+                name:&path[49..length],content:bytes,path:&path[..length],media_type:&download.media_type[..download.type_length],
+                owner:crate::storage::object::ObjectId(console.current_user.0),
+            },&policy);
+            match result {Ok(_)=>{saved_length=length-49;saved_name[..saved_length].copy_from_slice(&path[49..length]);return true;},Err(crate::storage::object::ObjectError::NameConflict)=>{},Err(_)=>return false}
+        }false
+    }).unwrap_or(false);
     crate::runtime::with_runtime(|runtime|{let _=runtime.capabilities.retire_leaf(capability,owner);});
-    crate::runtime::browser::download_presentation(&download.name[..download.name_length],if saved {2}else{3});
-    if saved {DOWNLOAD=None;}
+    crate::runtime::browser::download_presentation(if saved{&saved_name[..saved_length]}else{&download.name[..download.name_length]},if saved {2}else{3});
+    if saved {DOWNLOAD=None;crate::runtime::browser::discard_download();}
 }}
 
 // ------------------------=
@@ -319,7 +323,7 @@ pub(super) fn close() {unsafe {
     crate::runtime::browser::chrome_menu_presentation(0,0);
     NEW_TABS=0;
     CONSENT=None;crate::runtime::browser::permission_presentation(0);
-    DOWNLOAD=None;crate::runtime::browser::download_presentation(&[],0);
+    DOWNLOAD=None;IMAGE_AUTO_SAVE=false;crate::runtime::browser::discard_download();crate::runtime::browser::download_presentation(&[],0);
     (&mut *(&raw mut INPUT)).clear();
     POINTER=infinity_browser_core::pointer::Pointer::new();
     if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut() {launch.stage=3;}
@@ -465,13 +469,24 @@ pub(super) fn context_target(console:&ConsoleRuntime,p:crate::ui::geometry::Poin
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let view=crate::runtime::browser::presentation();if view.permission!=0 || view.settings_open {return None;}
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let layout=Layout::new(bounds.width,bounds.height,scale as u32)?.with_favorites(view.settings.favorites);
+    let layout=Layout::new(bounds.width,bounds.height,scale as u32)?.with_favorites(view.settings.favorites).with_download_list(if view.download_state==5{view.downloads_count}else{0});
     let (x,y)=(p.x-bounds.x,p.y-bounds.y);
     if layout.address.local(x,y).is_some() {
         crate::runtime::browser::focus_address(true);Some(super::clipboard_menu::Target::Address)
-    }else if !view.welcome_open && layout.content.local(x,y).is_some() {
+    }else if !view.welcome_open && !(view.download_state!=0 && layout.download_card.local(x,y).is_some()) && layout.content.local(x,y).is_some() {
+        if let Some((cx,cy))=layout.content.local(x,y){let mut command=abi::Command::empty();command.kind=abi::IMAGE_TARGET;command.x=cx as i32;command.y=cy as i32;
+            if enqueue(console,command){poll(console);}}
         crate::runtime::browser::focus_address(false);Some(super::clipboard_menu::Target::Browser)
     }else{None}
+}
+// ------------------------=
+// FUNC: save_context_image
+// DESC: Starts the captured image download only for an explicit authenticated native menu action.
+// ------------------=
+pub(super) fn save_context_image(console:&ConsoleRuntime){
+    if unsafe{DOWNLOAD.is_some()||CANCEL_ACK!=0} || crate::runtime::browser::presentation().download_state==4 {return;}
+    let mut command=abi::Command::empty();command.kind=abi::IMAGE_SAVE;
+    if enqueue(console,command){unsafe{IMAGE_AUTO_SAVE=true;}poll(console);}
 }
 // ------------------------=
 // FUNC: search_text
@@ -629,7 +644,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
     let current=crate::runtime::browser::presentation();
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(if current.welcome_open {1}else{current.tab_count}).with_favorites(current.settings.favorites)) else{return false;};
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(if current.welcome_open {1}else{current.tab_count}).with_favorites(current.settings.favorites).with_download_list(if current.download_state==5{current.downloads_count}else{0})) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
@@ -660,8 +675,16 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
         return true;
     }
     if !view.settings_open && view.download_state!=0 && layout.download_card.local(x,y).is_some() {
-        if layout.download_save.local(x,y).is_some() {save_download(console);}
-        if layout.download_discard.local(x,y).is_some() {unsafe {DOWNLOAD=None;}crate::runtime::browser::download_presentation(&[],0);}
+        if layout.download_save.local(x,y).is_some() {
+            if matches!(view.download_state,2|5){let path=infinity_browser_core::download::owner_directory(console.current_user.0);let _=console.open_file_navigator_window(&path);}
+            else if view.download_state!=4 {if unsafe{DOWNLOAD.is_some()}{save_download(console);}else{save_context_image(console);}}
+        }
+        if layout.download_discard.local(x,y).is_some() && unsafe{CANCEL_ACK==0} {
+            if matches!(view.download_state,2|5){crate::runtime::browser::download_presentation(&[],0);}
+            else {let mut command=abi::Command::empty();command.kind=abi::DOWNLOAD_CANCEL;
+                if enqueue(console,command){unsafe {CANCEL_ACK=crate::runtime::browser::download_cancel_ack().wrapping_add(1);DOWNLOAD=None;IMAGE_AUTO_SAVE=false;}
+                    crate::runtime::browser::discard_download();crate::runtime::browser::download_presentation(&[],6);}}
+        }
         return true;
     }
     let mut command=abi::Command::empty();
@@ -721,6 +744,10 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
             command.kind=abi::RELOAD;
         },
         Control::NewTab=>{new_tab(console);return true;},
+        Control::Downloads=>{if view.download_state==0 {match crate::storage::browser_downloads(console.current_user.0,console.current_session.0){
+            Ok((entries,count))=>{crate::runtime::browser::downloads_presentation(entries,count);crate::runtime::browser::download_presentation(b"Recent saved files - all files in your Downloads folder",5);},
+            Err(_)=>crate::runtime::browser::download_presentation(b"Downloads storage unavailable",3),
+        }}else if view.download_state==5 {crate::runtime::browser::download_presentation(&[],0);}return true;},
         Control::Minimize=>console.minimize_desktop_app(),
         Control::Maximize=>console.toggle_window_maximized(5),
         Control::Close=>console.close_desktop_app(),
@@ -764,9 +791,11 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_favorites(crate::runtime::browser::presentation().settings.favorites)) else{return false;};
+    let view=crate::runtime::browser::presentation();
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_favorites(view.settings.favorites).with_download_list(if view.download_state==5{view.downloads_count}else{0})) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
+    if view.download_state!=0 && layout.download_card.local(x,y).is_some(){return true;}
     let Some((x,y))=layout.content.local(x,y) else{return false;};
     let mut command=abi::Command::empty();command.kind=abi::SCROLL;
     command.x=x as i32;command.y=y as i32;command.b=(i32::from(vertical)*48) as u32;
@@ -792,7 +821,8 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_favorites(crate::runtime::browser::presentation().settings.favorites)) else{return false;};
+    let view=crate::runtime::browser::presentation();
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_tab_count(view.tab_count).with_favorites(view.settings.favorites).with_download_list(if view.download_state==5{view.downloads_count}else{0})) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
@@ -832,17 +862,23 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
 // ------------------=
 pub(super) fn poll(console:&ConsoleRuntime) {
     favorites_sync(console);
+    unsafe{if CANCEL_ACK!=0 {
+        let owner=SecurityIdentity(console.current_session.0);
+        if crate::runtime::browser::take_download(owner).is_some(){crate::runtime::browser::discard_download();}
+        if crate::runtime::browser::download_cancel_ack()>=CANCEL_ACK{CANCEL_ACK=0;crate::runtime::browser::download_presentation(&[],0);}
+    }}
+    if unsafe{IMAGE_AUTO_SAVE && DOWNLOAD.is_some()}{save_download(console);unsafe{IMAGE_AUTO_SAVE=false;}}
     unsafe {
         let slot=&mut *(&raw mut LAUNCH);
         let Some(launch)=slot.as_mut() else {return;};
-        if launch.stage==2 && DOWNLOAD.is_none() && launch.owner==SecurityIdentity(console.current_session.0) {
+        if launch.stage==2 && CANCEL_ACK==0 && DOWNLOAD.is_none() && launch.owner==SecurityIdentity(console.current_session.0) {
             if let Some(value)=crate::runtime::browser::take_download(launch.owner) {
                 crate::runtime::browser::download_presentation(&value.name[..value.name_length],1);DOWNLOAD=Some(value);
             }
         }
         if launch.owner!=SecurityIdentity(console.current_session.0) {
             NEW_TABS=0;
-            DOWNLOAD=None;crate::runtime::browser::download_presentation(&[],0);launch.stage=3;
+            DOWNLOAD=None;IMAGE_AUTO_SAVE=false;crate::runtime::browser::discard_download();crate::runtime::browser::download_presentation(&[],0);launch.stage=3;
         }
         if matches!(launch.stage,1|2) {
             (&mut *(&raw mut INPUT)).drain(16,|command|crate::runtime::browser::submit(launch.owner,command).is_ok());

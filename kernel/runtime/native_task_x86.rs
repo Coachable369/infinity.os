@@ -6,13 +6,30 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct Registers {
-    pub r15: u64, pub r14: u64, pub r13: u64, pub r12: u64,
-    pub r11: u64, pub r10: u64, pub r9: u64, pub r8: u64,
-    pub rdi: u64, pub rsi: u64, pub rbp: u64, pub rdx: u64,
-    pub rcx: u64, pub rbx: u64, pub rax: u64,
-    pub vector: u64, pub error: u64,
-    pub rip: u64, pub cs: u64, pub flags: u64, pub rsp: u64, pub ss: u64,
-    pub fs_base: u64, pub gs_base: u64,
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rdi: u64,
+    pub rsi: u64,
+    pub rbp: u64,
+    pub rdx: u64,
+    pub rcx: u64,
+    pub rbx: u64,
+    pub rax: u64,
+    pub vector: u64,
+    pub error: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub flags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+    pub fs_base: u64,
+    pub gs_base: u64,
 }
 
 #[repr(C, align(64))]
@@ -20,12 +37,31 @@ pub struct ExtendedState(pub [u8; 65536]);
 
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
-struct Descriptor { limit: u16, base: u64 }
+struct Descriptor {
+    limit: u16,
+    base: u64,
+}
 
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
-struct Gate { low: u16, selector: u16, ist: u8, flags: u8, middle: u16, high: u32, zero: u32 }
-const EMPTY_GATE: Gate = Gate { low: 0, selector: 8, ist: 0, flags: 0, middle: 0, high: 0, zero: 0 };
+struct Gate {
+    low: u16,
+    selector: u16,
+    ist: u8,
+    flags: u8,
+    middle: u16,
+    high: u32,
+    zero: u32,
+}
+const EMPTY_GATE: Gate = Gate {
+    low: 0,
+    selector: 8,
+    ist: 0,
+    flags: 0,
+    middle: 0,
+    high: 0,
+    zero: 0,
+};
 
 #[repr(C, align(4096))]
 struct Stack([u8; 32768]);
@@ -45,32 +81,54 @@ static mut infinity_task_kernel_cr3: u64 = 0;
 static mut infinity_task_registers: u64 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunError { Busy, UnsupportedCpu, InvalidContext }
+pub enum RunError {
+    Busy,
+    UnsupportedCpu,
+    InvalidContext,
+}
 
 core::arch::global_asm!(include_str!("native_task_x86.S"));
 unsafe extern "C" {
     fn infinity_task_enter(registers: *mut Registers, root: u64, trap_stack: u64);
     fn infinity_task_restore_segments(code: u64, stack: u64);
     static infinity_task_vectors: [u64; 256];
-    static infinity_task_code_start:u8;
-    static infinity_task_code_end:u8;
+    static infinity_task_code_start: u8;
+    static infinity_task_code_end: u8;
 }
 
 // ------------------------=
 // FUNC: map_trampoline
 // DESC: Maps only the ring-transition code, descriptor tables, private trap stack and stable register frame into user process roots as supervisor-only.
 // ------------------=
-pub unsafe fn map_trampoline<T:super::native_memory::PageTable>(tables:&mut T,memory:&mut super::native_memory::NativeMemory)->Result<(),super::native_memory::MemoryError> {
+pub unsafe fn map_trampoline<T: super::native_memory::PageTable>(
+    tables: &mut T,
+    memory: &mut super::native_memory::NativeMemory,
+) -> Result<(), super::native_memory::MemoryError> {
     use super::native_memory::PagePermissions as P;
-    let start=(&raw const infinity_task_code_start) as u64;
-    let end=(&raw const infinity_task_code_end) as u64;
-    super::native_cpu::map_privileged(tables,memory,start,(end-start) as usize,P::KERNEL_RX)?;
-    super::native_cpu::map_privileged(tables,memory,(&raw const infinity_task_vectors) as u64,2048,P::KERNEL_R)?;
-    for (address,bytes) in [((&raw const TRAP_STACK) as u64,32768),
-        ((&raw const TSS) as u64,104),((&raw const GDT) as u64,56),((&raw const IDT) as u64,4096),
-        ((&raw const infinity_task_kernel_rsp) as u64,8),((&raw const infinity_task_kernel_cr3) as u64,8),
-        ((&raw const infinity_task_registers) as u64,8),((&raw const USER_FRAME) as u64,core::mem::size_of::<Registers>())] {
-        super::native_cpu::map_privileged(tables,memory,address,bytes,P::KERNEL_RW)?;
+    let start = (&raw const infinity_task_code_start) as u64;
+    let end = (&raw const infinity_task_code_end) as u64;
+    super::native_cpu::map_privileged(tables, memory, start, (end - start) as usize, P::KERNEL_RX)?;
+    super::native_cpu::map_privileged(
+        tables,
+        memory,
+        (&raw const infinity_task_vectors) as u64,
+        2048,
+        P::KERNEL_R,
+    )?;
+    for (address, bytes) in [
+        ((&raw const TRAP_STACK) as u64, 32768),
+        ((&raw const TSS) as u64, 104),
+        ((&raw const GDT) as u64, 56),
+        ((&raw const IDT) as u64, 4096),
+        ((&raw const infinity_task_kernel_rsp) as u64, 8),
+        ((&raw const infinity_task_kernel_cr3) as u64, 8),
+        ((&raw const infinity_task_registers) as u64, 8),
+        (
+            (&raw const USER_FRAME) as u64,
+            core::mem::size_of::<Registers>(),
+        ),
+    ] {
+        super::native_cpu::map_privileged(tables, memory, address, bytes, P::KERNEL_RW)?;
     }
     Ok(())
 }
@@ -81,12 +139,18 @@ pub unsafe fn map_trampoline<T:super::native_memory::PageTable>(tables:&mut T,me
 // ------------------=
 unsafe fn extended_state(state: *mut ExtendedState, restore: bool, mask: u64) {
     if mask != 0 {
-        if restore { core::arch::asm!("xrstor64 [{}]", in(reg) state,
-            in("eax") mask as u32, in("edx") (mask >> 32) as u32); }
-        else { core::arch::asm!("xsave64 [{}]", in(reg) state,
-            in("eax") mask as u32, in("edx") (mask >> 32) as u32); }
-    } else if restore { core::arch::asm!("fxrstor64 [{}]", in(reg) state); }
-    else { core::arch::asm!("fxsave64 [{}]", in(reg) state); }
+        if restore {
+            core::arch::asm!("xrstor64 [{}]", in(reg) state,
+            in("eax") mask as u32, in("edx") (mask >> 32) as u32);
+        } else {
+            core::arch::asm!("xsave64 [{}]", in(reg) state,
+            in("eax") mask as u32, in("edx") (mask >> 32) as u32);
+        }
+    } else if restore {
+        core::arch::asm!("fxrstor64 [{}]", in(reg) state);
+    } else {
+        core::arch::asm!("fxsave64 [{}]", in(reg) state);
+    }
 }
 
 // ------------------------=
@@ -95,8 +159,12 @@ unsafe fn extended_state(state: *mut ExtendedState, restore: bool, mask: u64) {
 // ------------------=
 unsafe fn state_mask() -> Result<u64, RunError> {
     let features = core::arch::x86_64::__cpuid(1);
-    if features.edx & (1 << 24) == 0 { return Err(RunError::UnsupportedCpu); }
-    if features.ecx & (1 << 27) == 0 { return Ok(0); }
+    if features.edx & (1 << 24) == 0 {
+        return Err(RunError::UnsupportedCpu);
+    }
+    if features.ecx & (1 << 27) == 0 {
+        return Ok(0);
+    }
     if core::arch::x86_64::__cpuid_count(13, 0).ebx > 65536 {
         return Err(RunError::UnsupportedCpu);
     }
@@ -107,27 +175,45 @@ unsafe fn state_mask() -> Result<u64, RunError> {
 // FUNC: run
 // DESC: Runs one timer-bounded user slice, preserving kernel state and returning a syscall, interrupt, or app fault.
 // ------------------=
-pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initialized: &mut bool,
-    root: u64, apic: u64) -> Result<(), RunError> {
-    if root == 0 || root & 4095 != 0 || apic == 0 || apic & 4095 != 0 ||
-        registers.rip >= (1 << 47) || registers.rsp >= (1 << 47) ||
-        registers.fs_base >= (1 << 47) || registers.gs_base >= (1 << 47) {
+pub unsafe fn run(
+    registers: &mut Registers,
+    state: &mut ExtendedState,
+    initialized: &mut bool,
+    root: u64,
+    apic: u64,
+) -> Result<(), RunError> {
+    if root == 0
+        || root & 4095 != 0
+        || apic == 0
+        || apic & 4095 != 0
+        || registers.rip >= (1 << 47)
+        || registers.rsp >= (1 << 47)
+        || registers.fs_base >= (1 << 47)
+        || registers.gs_base >= (1 << 47)
+    {
         return Err(RunError::InvalidContext);
     }
     let mask = state_mask()?;
     let mut apic_low: u32;
     let mut apic_high: u32;
     core::arch::asm!("rdmsr", in("ecx") 0x1bu32, out("eax") apic_low, out("edx") apic_high);
-    if apic_low & (1 << 11) == 0 || apic_low & (1 << 10) != 0 ||
-        (((apic_high as u64) << 32) | (apic_low as u64 & !4095)) != apic {
+    if apic_low & (1 << 11) == 0
+        || apic_low & (1 << 10) != 0
+        || (((apic_high as u64) << 32) | (apic_low as u64 & !4095)) != apic
+    {
         return Err(RunError::UnsupportedCpu);
     }
-    if BUSY.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+    if BUSY
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
         return Err(RunError::Busy);
     }
     let flags: u64;
     core::arch::asm!("pushfq", "pop {}", "cli", out(reg) flags);
-    let code: u16; let stack_selector: u16; let task_selector: u16;
+    let code: u16;
+    let stack_selector: u16;
+    let task_selector: u16;
     core::arch::asm!("mov {0:x}, cs", "mov {1:x}, ss", "str {2:x}",
         out(reg) code, out(reg) stack_selector, out(reg) task_selector);
     let low: u32;
@@ -144,17 +230,35 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
     core::ptr::write_unaligned((&raw mut TSS).cast::<u8>().add(4).cast::<u64>(), stack);
     core::ptr::write_unaligned((&raw mut TSS).cast::<u8>().add(102).cast::<u16>(), 104);
     let tss = (&raw mut TSS) as u64;
-    GDT = [0, 0x00af9a000000ffff, 0x00cf92000000ffff,
-        0x00cff2000000ffff, 0x00affa000000ffff,
-        103 | ((tss & 0xffffff) << 16) | (0x89 << 40) | (((tss >> 24) & 255) << 56), tss >> 32];
+    GDT = [
+        0,
+        0x00af9a000000ffff,
+        0x00cf92000000ffff,
+        0x00cff2000000ffff,
+        0x00affa000000ffff,
+        103 | ((tss & 0xffffff) << 16) | (0x89 << 40) | (((tss >> 24) & 255) << 56),
+        tss >> 32,
+    ];
     for index in 0..256 {
         let entry = infinity_task_vectors[index];
-        IDT[index] = Gate { low: entry as u16, selector: 8, ist: 0,
-            flags: if index == 128 { 0xee } else { 0x8e }, middle: (entry >> 16) as u16,
-            high: (entry >> 32) as u32, zero: 0 };
+        IDT[index] = Gate {
+            low: entry as u16,
+            selector: 8,
+            ist: 0,
+            flags: if index == 128 { 0xee } else { 0x8e },
+            middle: (entry >> 16) as u16,
+            high: (entry >> 32) as u32,
+            zero: 0,
+        };
     }
-    let gdt = Descriptor { limit: 55, base: (&raw const GDT) as u64 };
-    let idt = Descriptor { limit: 4095, base: (&raw const IDT) as u64 };
+    let gdt = Descriptor {
+        limit: 55,
+        base: (&raw const GDT) as u64,
+    };
+    let idt = Descriptor {
+        limit: 4095,
+        base: (&raw const IDT) as u64,
+    };
     let register = |offset| (apic + offset) as *mut u32;
     let old_svr = core::ptr::read_volatile(register(0xf0));
     let old_tpr = core::ptr::read_volatile(register(0x80));
@@ -190,10 +294,10 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
     write_msr(0xc0000100, registers.fs_base);
     write_msr(0xc0000101, registers.gs_base);
     extended_state(state, true, mask);
-    let transition=(&raw mut USER_FRAME).cast::<Registers>();
+    let transition = (&raw mut USER_FRAME).cast::<Registers>();
     transition.write(*registers);
     infinity_task_enter(transition, root, stack);
-    *registers=transition.read();
+    *registers = transition.read();
     extended_state(state, false, mask);
     extended_state(&raw mut KERNEL_STATE, true, mask);
     registers.fs_base = read_msr(0xc0000100);
@@ -211,7 +315,10 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
     core::ptr::write_volatile(register(0xf0), old_svr);
     core::arch::asm!("lgdt [{}]", "lidt [{}]", in(reg) &old_gdt, in(reg) &old_idt);
     infinity_task_restore_segments(code as u64, stack_selector as u64);
-    if task_selector != 0 && task_selector & 4 == 0 && (task_selector as usize & !7) + 15 <= old_gdt.limit as usize {
+    if task_selector != 0
+        && task_selector & 4 == 0
+        && (task_selector as usize & !7) + 15 <= old_gdt.limit as usize
+    {
         // LTR requires an available TSS descriptor. Restore its busy state through LTR itself.
         let access = (old_gdt.base + (task_selector as u64 & !7) + 5) as *mut u8;
         let value = core::ptr::read_volatile(access);
@@ -234,7 +341,8 @@ pub unsafe fn run(registers: &mut Registers, state: &mut ExtendedState, initiali
 // DESC: Reads kernel-managed thread-pointer state across a user execution slice.
 // ------------------=
 unsafe fn read_msr(index: u32) -> u64 {
-    let low: u32; let high: u32;
+    let low: u32;
+    let high: u32;
     core::arch::asm!("rdmsr", in("ecx") index, out("eax") low, out("edx") high);
     (high as u64) << 32 | low as u64
 }

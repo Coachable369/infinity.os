@@ -1249,9 +1249,20 @@ impl IdentitySystem {
     // FUNC: update_speech_output
     // DESC: Persists reply playback independently of microphone permission.
     // ------------------=
-    pub fn update_speech_output(&mut self, actor: StableId, user: StableId, enabled: bool) -> Result<(), IdentityError> {
-        if actor != user { return Err(IdentityError::AccessDenied); }
-        let profile = self.ai_profiles.iter_mut().flatten().find(|p| p.user == user)
+    pub fn update_speech_output(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        enabled: bool,
+    ) -> Result<(), IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        let profile = self
+            .ai_profiles
+            .iter_mut()
+            .flatten()
+            .find(|p| p.user == user)
             .ok_or(IdentityError::NotFound)?;
         profile.speech_output_enabled = enabled;
         self.commit();
@@ -1327,17 +1338,6 @@ impl IdentitySystem {
     }
 
     // ------------------------=
-    // FUNC: complete_onboarding
-    // DESC: Commits setup only after machine, user, credential, ownership, and profiles all exist.
-    // ------------------=
-    pub fn complete_onboarding(&mut self) -> Result<(), IdentityError> {
-        let ready = self.machine.is_some()
-            && self
-                .users
-                .iter()
-                .flatten()
-                .any(|u| u.state == UserState::Active)
-    // ------------------------=
     // FUNC: update_output_voice
     // DESC: Saves only an installed voice for its owning user without changing microphone authority.
     // ------------------=
@@ -1350,6 +1350,17 @@ impl IdentitySystem {
         Ok(())
     }
 
+    // ------------------------=
+    // FUNC: complete_onboarding
+    // DESC: Commits setup only after machine, user, credential, ownership, and profiles all exist.
+    // ------------------=
+    pub fn complete_onboarding(&mut self) -> Result<(), IdentityError> {
+        let ready = self.machine.is_some()
+            && self
+                .users
+                .iter()
+                .flatten()
+                .any(|u| u.state == UserState::Active)
             && self
                 .credentials
                 .iter()
@@ -2024,6 +2035,10 @@ fn read_user(
     let voice_was_uninitialized = voice_preferences == 0;
     let voice = VoiceProfile {
         user: id,
+        output_voice: match (voice_preferences >> 4) & 7 {
+            value @ 0..=4 => value,
+            _ => return Err(IdentityError::CorruptState),
+        },
         enabled: voice_was_uninitialized || input[at + 158] & 1 != 0,
         activation: match voice_preferences & 0x03 {
             0 => VoiceActivation::Continuous,
@@ -2035,10 +2050,6 @@ fn read_user(
         wake_word: match (voice_preferences >> 2) & 3 {
             0 | 1 => WakeWord::Infinity,
             2 => WakeWord::Computer,
-        output_voice: match (voice_preferences >> 4) & 7 {
-            value @ 0..=4 => value,
-            _ => return Err(IdentityError::CorruptState),
-        },
             _ => return Err(IdentityError::CorruptState),
         },
     };

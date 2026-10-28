@@ -809,6 +809,7 @@ fn main() {
     memory_request_ingress_contract();
     shared_request_ingress_contract();
     instruction_mapping_contract();
+    settings_mutation_contract();
     aikit_contract();
     control_contract();
     if std::env::args().any(|arg| arg == "--app-native" || arg == "--control-native") {
@@ -1221,7 +1222,8 @@ fn aikit_contract() {
     use runtime::ai::{control::Command, mapping};
     assert_eq!(CapabilityDirectory::count(), mapping::CAPABILITY_TARGETS.len());
     assert_eq!(CapabilityDirectory::descriptor(0).unwrap().family, CapabilityFamily::Open);
-    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Clock);
+    assert_eq!(CapabilityDirectory::descriptor(103).unwrap().family, CapabilityFamily::Clock);
+    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Settings);
     assert!(CapabilityDirectory::descriptor(CapabilityDirectory::count()).is_none());
     assert!(CapabilityDirectory::contains(mapping::CAPABILITY_TARGETS[0]));
 
@@ -1257,13 +1259,119 @@ fn aikit_contract() {
 }
 
 // ------------------------=
+// FUNC: settings_mutation_contract
+// DESC: Executes mapped settings with native session authority and verifies serialized state, isolation and locked-session denial.
+// ------------------=
+fn settings_mutation_contract() {
+    use runtime::ai::{mapping, control::Command, settings};
+    use runtime::identity::{IdentitySystem, IdentityError};
+    let mut identity = IdentitySystem::new();
+    identity.begin_onboarding().unwrap();
+    identity.create_machine(b"Before", 3, 1, 1).unwrap();
+    let user = identity.create_user(b"owner", b"Owner", 2).unwrap();
+    identity.create_password(user.id, b"test-password", 3).unwrap();
+    identity.complete_onboarding().unwrap();
+    let session = identity.create_session(user.id, b"test-password", 4).unwrap();
+    for input in [b"set computer name to Studio".as_slice(), b"set color scheme to #102030",
+        b"set accent color to grey", b"set glass opacity to 80", b"set background blur to 6",
+        b"set inactivity timeout to 15", b"set speech output to off", b"set theme to light"] {
+        let Command::Setting(request) = mapping::resolve(mapping::DEFAULT, input).unwrap().unwrap() else { panic!() };
+        settings::apply(&mut identity, session.id, user.id, request).unwrap();
+    }
+    let restored = IdentitySystem::decode(&identity.encode()).unwrap();
+    assert_eq!(restored.machine().unwrap().display_name.as_bytes(), b"Studio");
+    for (input,expected) in [
+        ("Change the machine name to Jonathans computer.","Jonathans computer"),
+        ("Change the computer name to Jonathans Computer.","Jonathans Computer"),
+        ("Change the computer name to Jonathan's computer.","Jonathan's computer"),
+        ("Change the machine name to Jonathan’s computer.","Jonathan’s computer"),
+    ] {
+        for origin in [RequestOrigin::Voice,RequestOrigin::DesktopChat] {
+            let mut configured=mapping::ConfiguredMap::new();
+            let envelope=RequestEnvelope{input:input.as_bytes(),owner:user.id.0,origin,correlation_id:2};
+            let RequestRoute::Control(Command::Setting(request))=IntentRouter::route(&mut configured,&envelope) else{panic!()};
+            assert!(!Command::Setting(request).requires_app_ready());
+            settings::apply(&mut identity,session.id,user.id,request).unwrap();
+            let readback=IdentitySystem::decode(&identity.encode()).unwrap();
+            assert_eq!(readback.machine().unwrap().display_name.as_bytes(),expected.as_bytes());
+            assert!(settings::matches(&readback,user.id,request));
+        }
+    }
+    for input in [b"Please change the computer name to Studio".as_slice(),b"set my accent color to grey",
+        b"Change Worldshift to Research",b"Set Worldshift to reserch"] {
+        let mut configured=mapping::ConfiguredMap::new();
+        let envelope=RequestEnvelope{input,owner:user.id.0,origin:RequestOrigin::Voice,correlation_id:1};
+        let RequestRoute::Control(Command::Setting(request))=IntentRouter::route(&mut configured,&envelope) else{panic!("settings must not invoke the model");};
+        if !matches!(request,runtime::ai::control::setting_command::Request::World{..}) {
+            settings::apply(&mut identity,session.id,user.id,request).unwrap();
+            assert!(settings::matches(&IdentitySystem::decode(&identity.encode()).unwrap(),user.id,request));
+        }
+    }
+    assert_eq!(restored.primary_rgb(), 0x102030);
+    assert!(Command::TextEditor.requires_app_ready());
+    assert_eq!(restored.background_effects(), (80,6));
+    let profile = restored.user_profile(user.id).unwrap();
+    assert_eq!(profile.accent_rgb, 0x808080);
+    assert_eq!(profile.no_activity_timeout_minutes, 15);
+    assert_eq!(profile.theme.as_bytes(), b"Diagnostic Light");
+    assert!(!restored.ai_profile(user.id).unwrap().speech_output_enabled);
+    let Command::Setting(purple) = mapping::resolve(mapping::DEFAULT, b"Set UI theme to purple").unwrap().unwrap() else { panic!() };
+    settings::apply(&mut identity, session.id, user.id, purple).unwrap();
+    assert_eq!(IdentitySystem::decode(&identity.encode()).unwrap().primary_rgb(), 0x7c3aed);
+    let mut configured = mapping::ConfiguredMap::new();
+    configured.refresh();
+    let mut directory = [0u8; 6144];
+    let length = configured.inference_directory(&mut directory).unwrap();
+    let targets: Vec<&[u8]> = directory[..length].split(|byte| *byte == b'\n').filter(|line| !line.is_empty()).collect();
+    assert_eq!(targets, mapping::CAPABILITY_TARGETS.to_vec());
+    assert_eq!(configured.inference_directory(&mut [0; 1]), None);
+    assert_eq!(mapping::validate_registry(mapping::REGISTRY_DEFAULT), Ok(()));
+    assert!(mapping::validate_registry(b"{}").is_err());
+    let invalid = String::from_utf8(mapping::REGISTRY_DEFAULT.to_vec()).unwrap().replace("OS_SETTING:name:{argument}", "OS_SETTING:erase:{argument}");
+    assert_eq!(mapping::validate_registry(invalid.as_bytes()), Err(mapping::Error::InvalidTarget));
+    identity.lock_session(session.id, user.id).unwrap();
+    let before = identity.encode();
+    assert_eq!(settings::apply(&mut identity, session.id, user.id,
+        runtime::ai::control::setting_command::Request::Accent(0xffffff)), Err(IdentityError::AccessDenied));
+    assert_eq!(identity.encode(), before);
+}
+
+// ------------------------=
 // FUNC: instruction_mapping_contract
 // DESC: Verifies editable aliases, dynamic arguments, typed-target rejection and direct runtime dispatch without model inference.
 // ------------------=
 fn instruction_mapping_contract() {
     use runtime::ai::{control::{Command,ContextRequest},mapping};
     assert!(mapping::validate(mapping::DEFAULT).is_ok());
-    assert_eq!(mapping::CAPABILITY_TARGETS.len(),103);
+    assert_eq!(mapping::CAPABILITY_TARGETS.len(),113);
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"set accent color to grey").unwrap(),
+        Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
+    let generated=Command::LaunchGenerated(runtime::ai::control::ApplicationName::parse(b"calculator").unwrap());
+    assert_eq!(mapping::resolve(mapping::DEFAULT,b"launch my app calculator").unwrap(),Some(generated));
+    assert_eq!(Command::explicit(b"launch calculator"),Some(generated));
+    assert_eq!(Command::decode(b"OS_LAUNCH:app:calculator"),Some(generated));
+    assert_eq!(Command::decode(b"OS_LAUNCH:app:calculator;shutdown"),None);
+    // Voice here is the typed post-ASR origin, not microphone recognition proof.
+    for voice in [false, true] {
+        let owner = [0x52; 16];
+        let mut ai = AiRuntime::new();
+        ai.bind_chat_owner(owner);
+        for byte in b"launch calculator" { assert!(ai.chat.push_input(*byte)); }
+        assert!(if voice { ai.submit_voice_chat() } else { ai.submit_chat() });
+        assert_eq!(ai.pending_control_origin(), Some(if voice {
+            runtime::ai::kit::RequestOrigin::Voice
+        } else { runtime::ai::kit::RequestOrigin::DesktopChat }));
+        assert_eq!(ai.take_control(owner, true), Some(generated));
+        assert_eq!(ai.take_control(owner, true), None);
+        ai.finish_control(generated, true);
+        assert!(!ai.control_pending());
+        let mut denied = AiRuntime::new();
+        denied.bind_chat_owner(owner);
+        for byte in b"launch calculator" { assert!(denied.chat.push_input(*byte)); }
+        assert!(if voice { denied.submit_voice_chat() } else { denied.submit_chat() });
+        assert_eq!(denied.take_control([0x53; 16], true), None);
+        assert!(!denied.control_pending());
+    }
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"show my files").unwrap(),Some(Command::FileNavigator));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"edit ai instructions").unwrap(),Some(Command::AiInstructionMapping));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"open documents").unwrap(),Some(Command::LaunchEntry(1)));
@@ -1278,6 +1386,25 @@ fn instruction_mapping_contract() {
     assert!(mapping::validate(&custom).is_ok());
     assert_eq!(mapping::resolve(&custom,b"paint my code").unwrap(),Some(Command::FileNavigator));
     assert_eq!(mapping::resolve(&custom,b"show my files").unwrap(),None);
+    let mut custom_settings=mapping::DEFAULT.to_vec();
+    let old=b"set accent color to {argument}";
+    let replacement=b"use accent color of {argument}";
+    let at=custom_settings.windows(old.len()).position(|part|part==old).unwrap();
+    custom_settings[at..at+old.len()].copy_from_slice(replacement);
+    assert_eq!(mapping::resolve_installed(&custom_settings,b"set accent color to grey").unwrap(),None);
+    assert_eq!(mapping::resolve_installed(&custom_settings,b"use accent color of grey").unwrap(),
+        Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
+    let mut legacy=String::from("{\"schema\":\"infinityos.ai-instruction-map\",\"version\":1,\"actions\":[");
+    for (index,target) in mapping::CAPABILITY_TARGETS.iter().take(103).enumerate() {
+        if index>0 {legacy.push(',');}
+        let dynamic=target.ends_with(b"{argument}");
+        legacy.push_str(&format!("{{\"id\":\"legacy.{index}\",\"scope\":\"os\",\"target\":\"{}\",\"aliases\":[\"legacy {index}{}\"]}}",
+            core::str::from_utf8(target).unwrap(),if dynamic {" {argument}"}else{""}));
+    }
+    legacy.push_str("]}");
+    assert_eq!(mapping::validate(legacy.as_bytes()),Ok(()));
+    assert_eq!(mapping::resolve_installed(legacy.as_bytes(),b"set accent color to grey").unwrap(),
+        Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
     let incomplete=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"os.app.open.editor","scope":"os","target":"OS_OPEN:text_editor","aliases":["paint code"]}]}"#;
     assert_eq!(mapping::validate(incomplete),Err(mapping::Error::MissingCapability));
     let unsafe_target=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"bad","scope":"os","target":"SYSTEM_CALL:delete","aliases":["erase everything"]}]}"#;
@@ -1498,7 +1625,7 @@ fn control_contract() {
     assert!(ai.submit_chat());
     assert_eq!(ai.take_control([9; 16], true), Some(Command::Browser));
     ai.finish_control(Command::Browser, false);
-    assert_eq!(ai.chat.generation_state, GenerationState::Failed);
+    assert_eq!(ai.chat.generation_state, GenerationState::Complete);
     for request in [b"Do not open the text editor.".as_slice(), b"Don't close browser",
         b"Explain focus text editor", b"Never open terminal", b"Example: close app", b"Hello, how are you?"] {
         let mut chat = ChatRuntime::new();

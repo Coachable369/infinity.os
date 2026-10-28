@@ -19,6 +19,7 @@ struct InfinityDirectory {
     InfinityCompilerHost owner;
     uint64_t cursor;
     int active;
+    char path[256];
     struct dirent entry;
 };
 static struct InfinityDirectory directories[64];
@@ -133,6 +134,9 @@ static int valid_directory(DIR *directory) {
 // ------------------=
 DIR *opendir(const char *path) {
     if (!path || !*path) { fail(EINVAL); return 0; }
+    size_t path_length = 0;
+    while (path_length < sizeof directories[0].path && path[path_length]) ++path_length;
+    if (path_length == sizeof directories[0].path) { fail(ENAMETOOLONG); return 0; }
     if (!host || !host->directory_open || !host->directory_next ||
         !host->directory_close) { fail(ENOSYS); return 0; }
     size_t index = 0;
@@ -146,7 +150,28 @@ DIR *opendir(const char *path) {
     directory->owner = owner;
     directory->cursor = cursor;
     directory->active = 1;
+    for (size_t i = 0; i <= path_length; ++i) directory->path[i] = path[i];
     return directory;
+}
+
+// ------------------------=
+// FUNC: rewinddir
+// DESC: Reopens the same scoped provider directory before releasing the old cursor; failure preserves its position.
+// ------------------=
+void rewinddir(DIR *directory) {
+    if (!valid_directory(directory)) { fail(EBADF); return; }
+    uint64_t replacement = 0;
+    int error = directory->owner.directory_open(directory->owner.context,
+        directory->path, &replacement);
+    if (error) { fail(error); return; }
+    error = directory->owner.directory_close(directory->owner.context, directory->cursor);
+    if (error) {
+        directory->owner.directory_close(directory->owner.context, replacement);
+        fail(error);
+        return;
+    }
+    directory->cursor = replacement;
+    errno = 0;
 }
 
 // ------------------------=

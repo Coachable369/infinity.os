@@ -132,6 +132,7 @@ pub fn visual_cursor_row(content: &[u8], columns: usize, cursor: usize) -> usize
 #[derive(Clone, Copy)]
 pub struct TextDocument {
     bytes: [u8; DOCUMENT_CAPACITY],
+    saved_bytes: [u8; DOCUMENT_CAPACITY],
     length: usize,
     cursor: usize,
     saved_length: usize,
@@ -166,6 +167,7 @@ impl TextDocument {
     pub const fn new() -> Self {
         Self {
             bytes: [0; DOCUMENT_CAPACITY],
+            saved_bytes: [0; DOCUMENT_CAPACITY],
             length: 0,
             cursor: 0,
             saved_length: 0,
@@ -346,6 +348,7 @@ impl TextDocument {
             return false;
         }
         self.bytes[..content.len()].copy_from_slice(content);
+        self.saved_bytes[..content.len()].copy_from_slice(content);
         self.length = content.len();
         self.cursor = content.len();
         self.anchor = self.cursor;
@@ -464,15 +467,53 @@ impl TextDocument {
         true
     }
     // ------------------------=
+    // FUNC: apply_source_update
+    // DESC: Replaces only the differing source span as one undoable edit, retaining the unchanged prefix/suffix and a stable caret outside the edit.
+    // ------------------=
+    pub fn apply_source_update(&mut self, content: &[u8]) -> bool {
+        if content.len() > DOCUMENT_CAPACITY || content.iter().any(|b|
+            !(32..=126).contains(b) && !matches!(*b, b'\n' | b'\t' | b'\r')) {
+            return false;
+        }
+        if content == self.bytes() { return true; }
+        let prefix = self.bytes().iter().zip(content).take_while(|(a,b)| a == b).count();
+        let suffix = self.bytes()[prefix..].iter().rev().zip(content[prefix..].iter().rev())
+            .take_while(|(a,b)| a == b).count();
+        let old_end = self.length - suffix;
+        let new_end = content.len() - suffix;
+        let cursor = self.cursor;
+        let anchor = self.anchor;
+        self.checkpoint();
+        self.bytes.copy_within(old_end..self.length, new_end);
+        self.bytes[prefix..new_end].copy_from_slice(&content[prefix..new_end]);
+        self.length = content.len();
+        self.revision = self.revision.max(self.saved_revision).wrapping_add(1);
+        self.cursor = if cursor <= prefix { cursor } else if cursor >= old_end {
+            new_end + cursor - old_end
+        } else { new_end };
+        self.anchor = if anchor <= prefix { anchor } else if anchor >= old_end {
+            new_end + anchor - old_end
+        } else { new_end };
+        true
+    }
+    // ------------------------=
     // FUNC: replace_generation_preview
     // DESC: Replaces a live generated-source preview while retaining one undo checkpoint and leaving save state dirty.
     // ------------------=
     pub fn replace_generation_preview(&mut self, content: &[u8], checkpoint: bool) -> bool {
         if content.len() > DOCUMENT_CAPACITY
-            || content.iter().any(|byte| !(32..=126).contains(byte)
-                && !matches!(*byte, b'\n' | b'\t' | b'\r')) { return false; }
-        if self.bytes() == content { return true; }
-        if checkpoint { self.checkpoint(); }
+            || content
+                .iter()
+                .any(|byte| !(32..=126).contains(byte) && !matches!(*byte, b'\n' | b'\t' | b'\r'))
+        {
+            return false;
+        }
+        if self.bytes() == content {
+            return true;
+        }
+        if checkpoint {
+            self.checkpoint();
+        }
         self.bytes[..content.len()].copy_from_slice(content);
         self.length = content.len();
         self.cursor = content.len();
@@ -639,8 +680,17 @@ impl TextDocument {
     // DESC: Commits the current in-session document revision.
     // ------------------=
     pub fn save(&mut self) {
+        self.saved_bytes[..self.length].copy_from_slice(&self.bytes[..self.length]);
         self.saved_length = self.length;
         self.saved_revision = self.revision;
+    }
+
+    // ------------------------=
+    // FUNC: saved_source_matches
+    // DESC: Compares the exact persisted checkpoint independently of current unsaved edits and undo history.
+    // ------------------=
+    pub fn saved_source_matches(&self, content: &[u8]) -> bool {
+        self.saved_length == content.len() && self.saved_bytes[..self.saved_length] == *content
     }
 
     // ------------------------=

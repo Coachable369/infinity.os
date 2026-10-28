@@ -118,6 +118,34 @@ fn bounded_input_drain_preserves_every_action() {
 }
 
 // ------------------------=
+// FUNC: service_batch_dispatches_speech_before_one_final_frame
+// DESC: Exercises model/voice/action invalidations with nested service work and proves no intermediate paint delays speech dispatch.
+// ------------------=
+#[test]
+fn service_batch_dispatches_speech_before_one_final_frame() {
+    let mut gate = PresentationBatch::new();
+    let owner = gate.enter();
+    let mut paints = 0;
+    let mut service_steps = 0;
+    for _ in 0..3 {
+        service_steps += 1;
+        if gate.request() { paints += 1; }
+    }
+    let nested = gate.enter();
+    assert_eq!(gate.leave(nested), Presentation::None);
+    let speech_dispatched = service_steps == 3;
+    assert!(speech_dispatched);
+    assert_eq!(paints, 0);
+    // Animation invalidation belongs to this service frame, not a separate
+    // frame rendered ahead of inference and speech dispatch.
+    assert!(!gate.request());
+    assert_eq!(paints, 0);
+    if gate.leave(owner) == Presentation::Scene { paints += 1; }
+    assert_eq!(paints, 1);
+    assert_eq!(gate.leave(owner), Presentation::None);
+}
+
+// ------------------------=
 // FUNC: pointer_drain_keeps_edges_and_one_latest_presentation
 // DESC: Executes mixed motion, press, release, and wheel events before one visual flush, with bounded FIFO continuation.
 // ------------------=

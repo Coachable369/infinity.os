@@ -35,6 +35,7 @@ pub enum WindowState {
     Minimized,
     Maximized,
     Fullscreen,
+    Withdrawn,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -108,6 +109,7 @@ pub enum WindowEventKind {
     CaptureChanged,
     ContextFailed,
     TitleChanged,
+    CloseRequested,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -342,7 +344,12 @@ impl WindowServer {
     // FUNC: set_title
     // DESC: Sets bounded readable UTF-8 chrome text without truncating multibyte characters or accepting control codes.
     // ------------------=
-    pub fn set_title(&mut self, caller: ContextId, id: WindowId, title: &str) -> Result<(), WindowError> {
+    pub fn set_title(
+        &mut self,
+        caller: ContextId,
+        id: WindowId,
+        title: &str,
+    ) -> Result<(), WindowError> {
         if title.len() > MAX_WINDOW_TITLE || title.chars().any(char::is_control) {
             return Err(WindowError::InvalidTitle);
         }
@@ -374,13 +381,18 @@ impl WindowServer {
             let visible_title_width = window.bounds.width.min(72) as i32;
             let title_height = window.bounds.height.min(48) as i32;
             let minimum_x = work_area.x.saturating_sub(
-                window.bounds.width.saturating_sub(visible_title_width as u32) as i32,
+                window
+                    .bounds
+                    .width
+                    .saturating_sub(visible_title_width as u32) as i32,
             );
             let maximum_x = work_area.right().saturating_sub(visible_title_width);
             let maximum_y = work_area.bottom().saturating_sub(title_height);
             let old_bounds = window.bounds;
             window.previous_bounds = old_bounds;
-            window.bounds.x = requested.x.clamp(minimum_x.min(work_area.x), maximum_x.max(work_area.x));
+            window.bounds.x = requested
+                .x
+                .clamp(minimum_x.min(work_area.x), maximum_x.max(work_area.x));
             window.bounds.y = requested.y.clamp(work_area.y, maximum_y.max(work_area.y));
             (old_bounds, window.bounds, window.owner)
         };
@@ -404,7 +416,8 @@ impl WindowServer {
             let window = self.mutate(caller, id)?;
             let available_width = (work_area.right().saturating_sub(window.bounds.x).max(0) as u32)
                 .max(window.bounds.width);
-            let available_height = (work_area.bottom().saturating_sub(window.bounds.y).max(0) as u32)
+            let available_height = (work_area.bottom().saturating_sub(window.bounds.y).max(0)
+                as u32)
                 .max(window.bounds.height);
             if window.state != WindowState::Normal
                 || available_width < window.minimum_width
@@ -438,7 +451,11 @@ impl WindowServer {
             let window = self.mutate(caller, id)?;
             let old_bounds = window.bounds;
             if window.state == state {
-                return Ok(WindowTransition { old_bounds, new_bounds: old_bounds, state });
+                return Ok(WindowTransition {
+                    old_bounds,
+                    new_bounds: old_bounds,
+                    state,
+                });
             }
             if window.state == WindowState::Normal && state != WindowState::Normal {
                 window.restore_bounds = window.bounds;
@@ -451,7 +468,7 @@ impl WindowServer {
                     window.visible = true;
                     window.accepts_input = true;
                 }
-                WindowState::Minimized => {
+                WindowState::Minimized | WindowState::Withdrawn => {
                     window.visible = false;
                     window.accepts_input = false;
                 }
@@ -486,6 +503,16 @@ impl WindowServer {
             new_bounds,
             state,
         })
+    }
+
+    // ------------------------=
+    // FUNC: request_close
+    // DESC: Requests application-controlled close without destroying pixels or bypassing a save/veto callback.
+    // ------------------=
+    pub fn request_close(&mut self, caller: ContextId, id: WindowId) -> Result<(), WindowError> {
+        let window = *self.mutate(caller, id)?;
+        self.emit(WindowEventKind::CloseRequested, id, caller, window.bounds, window.bounds);
+        Ok(())
     }
 
     // ------------------------=
@@ -531,11 +558,17 @@ impl WindowServer {
     ) -> Result<(), WindowError> {
         let mut ancestor = Some(parent);
         for _ in 0..MAX_WINDOWS {
-            let Some(id) = ancestor else { break; };
-            if id == child { return Err(WindowError::InvalidBounds); }
+            let Some(id) = ancestor else {
+                break;
+            };
+            if id == child {
+                return Err(WindowError::InvalidBounds);
+            }
             ancestor = self.inspect(id).ok_or(WindowError::Unknown)?.modal_parent;
         }
-        if ancestor.is_some() { return Err(WindowError::InvalidBounds); }
+        if ancestor.is_some() {
+            return Err(WindowError::InvalidBounds);
+        }
         let parent_window = *self.inspect(parent).ok_or(WindowError::Unknown)?;
         if parent_window.owner != caller {
             return Err(WindowError::AccessDenied);
@@ -579,7 +612,11 @@ impl WindowServer {
     // DESC: Moves a window to the front of its z-class without allowing focus to cross privileged layer boundaries.
     // ------------------=
     fn raise(&mut self, id: WindowId) {
-        if let Some(index) = self.windows.iter().position(|entry| entry.is_some_and(|window| window.id == id)) {
+        if let Some(index) = self
+            .windows
+            .iter()
+            .position(|entry| entry.is_some_and(|window| window.id == id))
+        {
             self.windows[index..].rotate_left(1);
         }
     }
@@ -593,7 +630,9 @@ impl WindowServer {
         for layer in 0..=ZOrderClass::Cursor as u8 {
             for window in self.windows.iter().flatten() {
                 if window.z_class as u8 == layer {
-                    if count == index { return Some(window); }
+                    if count == index {
+                        return Some(window);
+                    }
                     count += 1;
                 }
             }
@@ -678,8 +717,14 @@ impl WindowServer {
     // FUNC: release_window_pointer
     // DESC: Prevents a window-scoped capability from releasing capture belonging to a sibling window.
     // ------------------=
-    pub fn release_window_pointer(&mut self, caller: ContextId, window: WindowId) -> Result<(), WindowError> {
-        if self.pointer_capture != Some((window, caller)) { return Err(WindowError::AccessDenied); }
+    pub fn release_window_pointer(
+        &mut self,
+        caller: ContextId,
+        window: WindowId,
+    ) -> Result<(), WindowError> {
+        if self.pointer_capture != Some((window, caller)) {
+            return Err(WindowError::AccessDenied);
+        }
         self.release_pointer(caller)
     }
 
@@ -754,12 +799,23 @@ impl WindowServer {
     // DESC: Routes pointer input to the capture owner when active or otherwise performs policy hit testing.
     // ------------------=
     pub fn pointer_target(&self, point: Point) -> Option<WindowId> {
+        self.captured_pointer().or_else(|| self.hit_test(point))
+    }
+
+    // ------------------------=
+    // FUNC: captured_pointer
+    // DESC: Exposes only a still-visible modal-authorized capture so desktop chrome cannot steal a widget's drag.
+    // ------------------=
+    pub fn captured_pointer(&self) -> Option<WindowId> {
         self.pointer_capture
-            .filter(|capture| self.inspect(capture.0).is_some_and(|window|
-                window.visible && window.accepts_input &&
-                self.top_modal().is_none_or(|modal| modal.id == window.id)))
+            .filter(|capture| {
+                self.inspect(capture.0).is_some_and(|window| {
+                    window.visible
+                        && window.accepts_input
+                        && self.top_modal().is_none_or(|modal| modal.id == window.id)
+                })
+            })
             .map(|capture| capture.0)
-            .or_else(|| self.hit_test(point))
     }
 
     // ------------------------=

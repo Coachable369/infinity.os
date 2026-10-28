@@ -110,14 +110,31 @@ impl WireTrust {
     // DESC: Exposes only public transaction state for lifecycle diagnostics, including terminal transactions hidden from the confirmation UI.
     // ------------------=
     pub fn lifecycle(&self, peer: NodeId) -> Option<([u8; 32], WireState, u64, u8, u64, u32)> {
-        self.transactions.iter().flatten().find(|t| t.link.peer == Some(peer)).map(|t| (t.id, t.stage, t.expires, t.local_confirmed as u8 | ((t.remote_confirmed as u8) << 1), t.ended_at, t.end_site))
+        self.transactions
+            .iter()
+            .flatten()
+            .find(|t| t.link.peer == Some(peer))
+            .map(|t| {
+                (
+                    t.id,
+                    t.stage,
+                    t.expires,
+                    t.local_confirmed as u8 | ((t.remote_confirmed as u8) << 1),
+                    t.ended_at,
+                    t.end_site,
+                )
+            })
     }
     // ------------------------=
     // FUNC: transaction_for_pairing
     // DESC: Resolves an exact local pairing handle to its authenticated wire transaction without exposing secret state.
     // ------------------=
     pub fn transaction_for_pairing(&self, handle: u64) -> Option<[u8; 32]> {
-        self.transactions.iter().flatten().find(|transaction| transaction.pairing == handle && handle != 0).map(|transaction| transaction.id)
+        self.transactions
+            .iter()
+            .flatten()
+            .find(|transaction| transaction.pairing == handle && handle != 0)
+            .map(|transaction| transaction.id)
     }
     // ------------------------=
     // FUNC: new
@@ -222,7 +239,10 @@ impl WireTrust {
             [0; 32]
         };
         let pairing = if reconnect {
-            self.transactions[index].as_ref().map(|transaction| transaction.pairing).unwrap_or(0)
+            self.transactions[index]
+                .as_ref()
+                .map(|transaction| transaction.pairing)
+                .unwrap_or(0)
         } else {
             nodes.begin_pairing(peer.id, now)?.id
         };
@@ -319,7 +339,8 @@ impl WireTrust {
         if !matches!(
             t.stage,
             WireState::PendingVerification | WireState::RemotelyConfirmed
-        ) && !(t.stage == WireState::LocallyConfirmed && t.remote_confirmed) {
+        ) && !(t.stage == WireState::LocallyConfirmed && t.remote_confirmed)
+        {
             return Err(NodeError::UnsupportedState);
         }
         if code != verification_code(t.digest) {
@@ -451,7 +472,11 @@ impl WireTrust {
     // DESC: Demultiplexes one authenticated protocol payload without consuming unrelated application data.
     // ------------------=
     pub fn receive_protocol(&mut self, prefix: &[u8]) -> Option<ReceivedData> {
-        let index = self.received.iter().position(|slot| slot.as_ref().map(|v| v.bytes[..v.length].starts_with(prefix)).unwrap_or(false))?;
+        let index = self.received.iter().position(|slot| {
+            slot.as_ref()
+                .map(|v| v.bytes[..v.length].starts_with(prefix))
+                .unwrap_or(false)
+        })?;
         let value = self.received[index].take();
         self.received[index..].rotate_left(1);
         self.received[7] = None;
@@ -462,30 +487,77 @@ impl WireTrust {
     // FUNC: established_data
     // DESC: Classifies only a canonical live-session DATA header without cryptography; authentication and replay rejection still occur in ingest and every attempt is budgeted.
     // ------------------=
-    pub(super) fn established_data(&self,nodes:&NodeRuntime,link:LinkSnapshot,bytes:&[u8],now:u64)->bool {
-        if bytes.len()<154||bytes.len()>154+MAX_DATA||&bytes[..8]!=MAGIC||bytes[8]!=DATA||bytes[9..16]!=[1,0,0,0,0,0,0]{return false}
-        let length=u16::from_le_bytes([bytes[136],bytes[137]])as usize;
-        if length>MAX_DATA||bytes.len()!=154+length{return false}
-        let Some(t)=self.transactions.iter().flatten().find(|t|t.link.connection==link.connection&&t.link.peer==link.peer&&t.id==bytes[80..112]&&t.stage==WireState::Established)else{return false};
-        let Ok(peer)=checked_transaction_peer(nodes,t,now)else{return false};
-        let Some(session)=nodes.sessions.iter().flatten().find(|s|Some(s.id)==t.session)else{return false};
-        bytes[16..48]==peer.id.0&&nodes.local_id().is_some_and(|id|bytes[48..80]==id.0)&&bytes[112..128]==session.protocol_reference
+    pub(super) fn established_data(
+        &self,
+        nodes: &NodeRuntime,
+        link: LinkSnapshot,
+        bytes: &[u8],
+        now: u64,
+    ) -> bool {
+        if bytes.len() < 154
+            || bytes.len() > 154 + MAX_DATA
+            || &bytes[..8] != MAGIC
+            || bytes[8] != DATA
+            || bytes[9..16] != [1, 0, 0, 0, 0, 0, 0]
+        {
+            return false;
+        }
+        let length = u16::from_le_bytes([bytes[136], bytes[137]]) as usize;
+        if length > MAX_DATA || bytes.len() != 154 + length {
+            return false;
+        }
+        let Some(t) = self.transactions.iter().flatten().find(|t| {
+            t.link.connection == link.connection
+                && t.link.peer == link.peer
+                && t.id == bytes[80..112]
+                && t.stage == WireState::Established
+        }) else {
+            return false;
+        };
+        let Ok(peer) = checked_transaction_peer(nodes, t, now) else {
+            return false;
+        };
+        let Some(session) = nodes
+            .sessions
+            .iter()
+            .flatten()
+            .find(|s| Some(s.id) == t.session)
+        else {
+            return false;
+        };
+        bytes[16..48] == peer.id.0
+            && nodes.local_id().is_some_and(|id| bytes[48..80] == id.0)
+            && bytes[112..128] == session.protocol_reference
     }
     // ------------------------=
     // FUNC: peek_outgoing
     // DESC: Observes one due packet without consuming retry or backpressure state.
     // ------------------=
-    pub(super) fn peek_outgoing(&self,connection:u32,now:u64)->Option<Packet>{
-        let t=self.transactions.iter().flatten().find(|t|t.link.connection==connection)?;
-        if now>=t.expires||now<t.next_send||t.attempts>=RETRIES{return None}t.pending
+    pub(super) fn peek_outgoing(&self, connection: u32, now: u64) -> Option<Packet> {
+        let t = self
+            .transactions
+            .iter()
+            .flatten()
+            .find(|t| t.link.connection == connection)?;
+        if now >= t.expires || now < t.next_send || t.attempts >= RETRIES {
+            return None;
+        }
+        t.pending
     }
     // ------------------------=
     // FUNC: outgoing_data
     // DESC: Classifies an already protected pending DATA packet only while its exact session and trust remain valid.
     // ------------------=
-    pub(super) fn outgoing_data(&self,nodes:&NodeRuntime,connection:u32,now:u64)->bool {
-        self.transactions.iter().flatten().find(|t|t.link.connection==connection).is_some_and(|t|
-            t.stage==WireState::Established&&checked_transaction_peer(nodes,t,now).is_ok()&&t.pending.is_some_and(|p|p.bytes[8]==DATA))
+    pub(super) fn outgoing_data(&self, nodes: &NodeRuntime, connection: u32, now: u64) -> bool {
+        self.transactions
+            .iter()
+            .flatten()
+            .find(|t| t.link.connection == connection)
+            .is_some_and(|t| {
+                t.stage == WireState::Established
+                    && checked_transaction_peer(nodes, t, now).is_ok()
+                    && t.pending.is_some_and(|p| p.bytes[8] == DATA)
+            })
     }
     // ------------------------=
     // FUNC: outgoing
@@ -652,14 +724,20 @@ impl WireTrust {
             .try_into()
             .map_err(|_| NodeError::InvalidAdvertisement)?;
         let peer_id = link.peer.ok_or(NodeError::UnknownNode)?;
-        let verification = self.transactions.iter().flatten().find(|t|
-            t.id == id && t.link.connection == link.connection && t.link.peer == Some(peer_id));
+        let verification = self.transactions.iter().flatten().find(|t| {
+            t.id == id && t.link.connection == link.connection && t.link.peer == Some(peer_id)
+        });
         let peer = if matches!(kind, CONFIRM | CANCEL | DATA | CLOSE) {
             match verification {
-                Some(t) => { check_pending(nodes, t, now)?; checked_transaction_peer(nodes, t, now)? }
+                Some(t) => {
+                    check_pending(nodes, t, now)?;
+                    checked_transaction_peer(nodes, t, now)?
+                }
                 None => checked_peer(nodes, peer_id, now)?,
             }
-        } else { checked_peer(nodes, peer_id, now)? };
+        } else {
+            checked_peer(nodes, peer_id, now)?
+        };
         if bytes[16..48] != peer.id.0
             || bytes[48..80] != nodes.local_id().ok_or(NodeError::EntropyUnavailable)?.0
         {
@@ -723,12 +801,14 @@ impl WireTrust {
                         return Err(NodeError::UnsupportedState);
                     }
                     if glare {
-                        if body[115..123] != t.local_offer[115..123] {return Err(NodeError::IdentityMismatch);}
+                        if body[115..123] != t.local_offer[115..123] {
+                            return Err(NodeError::IdentityMismatch);
+                        }
                         if nodes.local_id().ok_or(NodeError::UnknownNode)?.0 < peer.id.0 {
                             self.retire(id)?;
                             return Ok(());
                         }
-                        glare_deadline=Some(t.expires);
+                        glare_deadline = Some(t.expires);
                     }
                 } else if !matches!(peer.trust, TrustState::Untrusted | TrustState::Discovered)
                     || !matches!(
@@ -746,7 +826,13 @@ impl WireTrust {
                 }
                 index
             } else {
-                if kind == SESSION_INIT && (peer.trust != TrustState::Trusted || nodes.paired_digest(peer.id).map(|digest| body[123..155] != digest).unwrap_or(true)) {
+                if kind == SESSION_INIT
+                    && (peer.trust != TrustState::Trusted
+                        || nodes
+                            .paired_digest(peer.id)
+                            .map(|digest| body[123..155] != digest)
+                            .unwrap_or(true))
+                {
                     return Err(NodeError::NotTrusted);
                 }
                 self.transactions
@@ -768,7 +854,10 @@ impl WireTrust {
             let pairing = if kind == INIT {
                 nodes.begin_pairing(peer.id, now)?.id
             } else {
-                self.transactions[index].as_ref().map(|transaction| transaction.pairing).unwrap_or(0)
+                self.transactions[index]
+                    .as_ref()
+                    .map(|transaction| transaction.pairing)
+                    .unwrap_or(0)
             };
             let entropy = self.fresh()?;
             let (local_offer, secret) = offer(nodes, link, scope, paired, entropy)?;
@@ -975,7 +1064,12 @@ impl WireTrust {
                 // Authenticated consent proves peer liveness even if the local
                 // durable write fails. Keep the transaction retryable within its
                 // original lease; this does not grant trust before persistence.
-                if let Some(live) = nodes.discovered.iter_mut().flatten().find(|p| p.id == peer.id) {
+                if let Some(live) = nodes
+                    .discovered
+                    .iter_mut()
+                    .flatten()
+                    .find(|p| p.id == peer.id)
+                {
                     live.last_seen = now;
                 }
                 commit_confirmation(nodes, t, now, self.persist_pairing)?;
@@ -1164,24 +1258,52 @@ fn checked_identity(nodes: &NodeRuntime, id: NodeId) -> Result<NodeDescriptor, N
 // FUNC: checked_transaction_peer
 // DESC: Separates established session authority from discovery hints, retaining exact peer/key/trust and original session expiry checks.
 // ------------------=
-fn checked_transaction_peer(nodes: &NodeRuntime, t: &Transaction, now: u64) -> Result<NodeDescriptor, NodeError> {
+fn checked_transaction_peer(
+    nodes: &NodeRuntime,
+    t: &Transaction,
+    now: u64,
+) -> Result<NodeDescriptor, NodeError> {
     if t.stage == WireState::Established {
         let peer = checked_identity(nodes, t.link.peer.ok_or(NodeError::UnknownNode)?)?;
-        if peer.trust != TrustState::Trusted { return Err(NodeError::NotTrusted); }
-        if t.remote_offer[..32] != peer.public_key { return Err(NodeError::IdentityMismatch); }
-        let session = nodes.sessions.iter().flatten().find(|s| Some(s.id) == t.session)
+        if peer.trust != TrustState::Trusted {
+            return Err(NodeError::NotTrusted);
+        }
+        if t.remote_offer[..32] != peer.public_key {
+            return Err(NodeError::IdentityMismatch);
+        }
+        let session = nodes
+            .sessions
+            .iter()
+            .flatten()
+            .find(|s| Some(s.id) == t.session)
             .ok_or(NodeError::SessionNotFound)?;
-        if session.peer != peer.id { return Err(NodeError::IdentityMismatch); }
-        if session.state != SessionState::Established || now >= session.expires_at || now >= t.expires {
+        if session.peer != peer.id {
+            return Err(NodeError::IdentityMismatch);
+        }
+        if session.state != SessionState::Established
+            || now >= session.expires_at
+            || now >= t.expires
+        {
             return Err(NodeError::SessionExpired);
         }
         return Ok(peer);
     }
-    if t.session.is_none() && matches!(t.stage, WireState::PendingVerification
-        | WireState::LocallyConfirmed | WireState::RemotelyConfirmed | WireState::Confirmed) {
-        if now >= t.expires { return Err(NodeError::PairingExpired); }
+    if t.session.is_none()
+        && matches!(
+            t.stage,
+            WireState::PendingVerification
+                | WireState::LocallyConfirmed
+                | WireState::RemotelyConfirmed
+                | WireState::Confirmed
+        )
+    {
+        if now >= t.expires {
+            return Err(NodeError::PairingExpired);
+        }
         let peer = checked_identity(nodes, t.link.peer.ok_or(NodeError::UnknownNode)?)?;
-        if t.remote_offer[..32] != peer.public_key { return Err(NodeError::IdentityMismatch); }
+        if t.remote_offer[..32] != peer.public_key {
+            return Err(NodeError::IdentityMismatch);
+        }
         return Ok(peer);
     }
     checked_peer(nodes, t.link.peer.ok_or(NodeError::UnknownNode)?, now)
@@ -1387,7 +1509,9 @@ fn commit_confirmation(
 // FUNC: reject_unconfigured_persistence
 // DESC: Fails closed until the host service explicitly supplies its durable pairing writer.
 // ------------------=
-fn reject_unconfigured_persistence(_: &[u8; NODE_STATE_BYTES]) -> bool { false }
+fn reject_unconfigured_persistence(_: &[u8; NODE_STATE_BYTES]) -> bool {
+    false
+}
 // ------------------------=
 // FUNC: queue
 // DESC: Replaces one bounded retransmission slot with a new authenticated protocol step.

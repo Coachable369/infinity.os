@@ -5,6 +5,17 @@
 
 struct InfinityFile { int handle; int error; int eof; };
 static FILE streams[FOPEN_MAX];
+FILE infinity_stdin = {0, 0, 0};
+FILE infinity_stdout = {1, 0, 0};
+FILE infinity_stderr = {2, 0, 0};
+
+// ------------------------=
+// FUNC: standard
+// DESC: Recognizes only the three SDK-owned standard stream objects by identity.
+// ------------------=
+static int standard(FILE *stream) {
+    return stream == stdin || stream == stdout || stream == stderr;
+}
 
 // ------------------------=
 // FUNC: objects
@@ -21,6 +32,7 @@ static const InfinityObjectApi *objects(void) {
 // DESC: Validates a FILE pointer by identity before dereferencing it.
 // ------------------=
 static int valid(FILE *stream) {
+    if (standard(stream)) return infinity_host && stream->handle >= 0;
     for (size_t i = 0; i < FOPEN_MAX; ++i)
         if (stream == &streams[i]) return stream->handle > 0 && objects();
     return 0;
@@ -32,6 +44,9 @@ static int valid(FILE *stream) {
 // ------------------=
 void infinity_stdio_reset(void) {
     for (size_t i = 0; i < FOPEN_MAX; ++i) streams[i] = (FILE){0, 0, 0};
+    infinity_stdin = (FILE){0, 0, 0};
+    infinity_stdout = (FILE){1, 0, 0};
+    infinity_stderr = (FILE){2, 0, 0};
 }
 
 // ------------------------=
@@ -78,6 +93,7 @@ int fflush(FILE *stream) {
         return result;
     }
     if (!valid(stream)) return EOF;
+    if (standard(stream)) return 0; /* Native terminal streams are unbuffered. */
     if (objects()->flush(infinity_host->context, stream->handle)) { stream->error = 1; return EOF; }
     return 0;
 }
@@ -88,6 +104,7 @@ int fflush(FILE *stream) {
 // ------------------=
 int fclose(FILE *stream) {
     if (!valid(stream)) return EOF;
+    if (standard(stream)) { stream->handle = -1; return 0; }
     int result = objects()->close(infinity_host->context, stream->handle);
     *stream = (FILE){0, 0, 0};
     return result ? EOF : 0;
@@ -112,6 +129,18 @@ size_t fread(void *data, size_t size, size_t count, FILE *stream) {
     if (!valid(stream)) return 0;
     if (!data || count > PTRDIFF_MAX / size) { stream->error = 1; return 0; }
     size_t bytes = size * count;
+    if (standard(stream)) {
+        const InfinityObjectApi *o = objects();
+        if (stream != stdin || !o) { stream->error = 1; return 0; }
+        size_t consumed = 0;
+        while (consumed < bytes) {
+            ptrdiff_t got = o->read(infinity_host->context, 0, (unsigned char *)data + consumed, bytes - consumed);
+            if (got < 0 || (size_t)got > bytes - consumed) { stream->error = 1; break; }
+            if (!got) { stream->eof = 1; break; }
+            consumed += (size_t)got;
+        }
+        return consumed / size;
+    }
     ptrdiff_t result = objects()->read(infinity_host->context, stream->handle, data, bytes);
     if (result < 0 || (size_t)result > bytes) { stream->error = 1; return 0; }
     if ((size_t)result < bytes) stream->eof = 1;
@@ -127,6 +156,22 @@ size_t fwrite(const void *data, size_t size, size_t count, FILE *stream) {
     if (!valid(stream)) return 0;
     if (!data || count > PTRDIFF_MAX / size) { stream->error = 1; return 0; }
     size_t bytes = size * count;
+    if (standard(stream)) {
+        const InfinityObjectApi *o = objects();
+        if (stream == stdin || (stream == stdout && !infinity_host->write_stdout)
+            || (stream == stderr && !o)) { stream->error = 1; return 0; }
+        size_t written = 0;
+        while (written < bytes) {
+            size_t chunk = bytes - written;
+            if (chunk > 4096) chunk = 4096;
+            ptrdiff_t sent = stream == stdout ? infinity_host->write_stdout(infinity_host->context,
+                (const unsigned char *)data + written, chunk) :
+                o->write(infinity_host->context, 2, (const unsigned char *)data + written, chunk);
+            if (sent <= 0 || (size_t)sent > chunk) { stream->error = 1; break; }
+            written += (size_t)sent;
+        }
+        return written / size;
+    }
     ptrdiff_t result = objects()->write(infinity_host->context, stream->handle, data, bytes);
     if (result < 0 || (size_t)result > bytes) { stream->error = 1; return 0; }
     if ((size_t)result < bytes) stream->error = 1;
@@ -139,6 +184,7 @@ size_t fwrite(const void *data, size_t size, size_t count, FILE *stream) {
 // ------------------=
 int fseek(FILE *stream, long offset, int origin) {
     if (!valid(stream) || origin < SEEK_SET || origin > SEEK_END) return -1;
+    if (standard(stream)) return -1; /* Console streams are not seekable. */
     if (objects()->seek(infinity_host->context, stream->handle, offset, (uint32_t)origin) < 0) return -1;
     stream->eof = 0;
     return 0;
@@ -150,6 +196,7 @@ int fseek(FILE *stream, long offset, int origin) {
 // ------------------=
 long ftell(FILE *stream) {
     if (!valid(stream)) return -1;
+    if (standard(stream)) return -1;
     int64_t position = objects()->seek(infinity_host->context, stream->handle, 0, SEEK_CUR);
     return position < 0 || position > LONG_MAX ? -1 : (long)position;
 }

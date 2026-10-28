@@ -86,6 +86,15 @@ pub fn detach() {
 // ------------------=
 pub fn context() -> Option<Context> { unsafe { CURRENT } }
 // ------------------------=
+// FUNC: published
+// DESC: Confirms a live exact-owner instance committed real state without granting AI execution or exposing unpublished staging.
+// ------------------=
+pub fn published(expected: Context) -> bool {
+    if context().is_none_or(|live|live.instance!=expected.instance || live.owner!=expected.owner || live.session!=expected.session) { return false; }
+    with_registry(|registry|registry.diagnostic_snapshot(expected.instance,expected.owner,expected.session))
+        .is_ok_and(|snapshot|snapshot.revision>0 && snapshot.length>0)
+}
+// ------------------------=
 // FUNC: with_registry
 // DESC: Runs a BSP-side trusted operation without exposing registry references to a native application.
 // ------------------=

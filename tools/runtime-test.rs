@@ -312,6 +312,8 @@ fn main(){execution_and_scheduler();capabilities();iop();events();services();ui_
     native_surface_abi::<runtime::native_memory::X86AddressSpace>();
     native_surface_abi::<runtime::native_memory_arm::ArmAddressSpace>();
     native_input_routes();
+    native_gui_lifecycle::<runtime::native_memory::X86AddressSpace>();
+    native_gui_lifecycle::<runtime::native_memory_arm::ArmAddressSpace>();
     println!("PASS Milestone 4 host acceptance");}
 
 // ------------------------=
@@ -573,4 +575,161 @@ fn native_input_routes() {
         let event = runtime.events.receive(leases[1],1).unwrap();
         assert_eq!(u32::from_le_bytes(event.payload[4..8].try_into().unwrap()),kind);
     }
+}
+
+// ------------------------=
+// FUNC: native_scene_damage
+// DESC: Verifies bounded reconstruction on movement, resize, minimize, withdrawal, destruction and reorder without repainting unchanged content.
+// ------------------=
+fn native_scene_damage(mut window: ui::window::Window) {
+    use runtime::native_gui::SceneDamage;
+    use ui::{geometry::{Point,Rect},window::WindowState};
+    let display=Rect{x:0,y:0,width:800,height:600};
+    window.bounds=Rect{x:100,y:150,width:320,height:240};
+    window.visible=true; window.state=WindowState::Normal;
+    let mut scene=SceneDamage::new();
+    let mut windows=[None;8]; windows[0]=Some(window);
+    let initial=scene.update(&windows,display,1).unwrap();
+    assert_eq!(initial,Rect{x:97,y:103,width:326,height:290});
+    assert_eq!(scene.update(&windows,display,1),None);
+    window.bounds.x=-280; windows[0]=Some(window);
+    let moved=scene.update(&windows,display,1).unwrap();
+    assert_eq!(moved,Rect{x:0,y:103,width:423,height:290});
+    window.bounds.width=500; windows[0]=Some(window);
+    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:0,y:103,width:223,height:290});
+    window.state=WindowState::Minimized;window.visible=false;windows[0]=Some(window);
+    assert!(scene.update(&windows,display,1).unwrap().contains(Point{x:220,y:390}));
+    let minimized=scene.update(&[None;8],display,1).unwrap();
+    assert_eq!(minimized,Rect{x:0,y:103,width:223,height:50});
+    assert_eq!(scene.update(&[None;8],display,1),None);
+    window.state=WindowState::Normal;window.visible=true;window.bounds.x=100;windows[0]=Some(window);
+    scene.update(&windows,display,1).unwrap();
+    window.state=WindowState::Withdrawn;window.visible=false;windows[0]=Some(window);
+    assert!(scene.update(&windows,display,1).unwrap().contains(Point{x:600,y:390}));
+    assert_eq!(scene.update(&windows,display,1),None);
+    window.state=WindowState::Normal;window.visible=true;windows[0]=Some(window);
+    let mut other=window;other.id=ui::window::WindowId(window.id.0+1);other.bounds.x=250;
+    windows[1]=Some(other);scene.update(&windows,display,1).unwrap();
+    windows.swap(0,1);
+    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:97,y:103,width:656,height:290});
+    assert_eq!(scene.update(&[None;8],display,1).unwrap(),Rect{x:97,y:103,width:656,height:290});
+}
+
+// ------------------------=
+// FUNC: native_gui_lifecycle
+// DESC: Verifies exact GUI grants, visible committed pixels, actual input delivery and stale-token rejection after complete reclamation on both native MMUs.
+// ------------------=
+fn native_gui_lifecycle<T: runtime::native_memory::PageTable>() {
+    use runtime::{native_memory::*, native_gui::Gui};
+    use ui::{geometry::{Rect,Point},window::{ContextId,SurfaceId},input::{UiEvent,PointerPhase}};
+    let mut runtime = runtime::InfinityRuntime::new(false);
+    runtime.define_bootstrap().unwrap(); runtime.start_all(0);
+    let caller = identity(74); let owner = ContextId(74);
+    let area = Rect{x:0,y:0,width:800,height:600};
+    let layout = std::alloc::Layout::from_size_align(4*1024*1024,4096).unwrap();
+    let arena = unsafe {std::alloc::alloc_zeroed(layout)}; assert!(!arena.is_null());
+    let mut memory=NativeMemory::empty(); memory.initialize(arena as u64,layout.size() as u64).unwrap();
+    let initial=memory.available_pages();
+    let user_page=memory.allocate(1,owner.0).unwrap();
+    let mut tables=T::new(&mut memory,owner.0).unwrap();
+    let user=0x1_0000_0000;
+    tables.map_range(&mut memory,user,user_page.physical_address,4096,PagePermissions::USER_RW).unwrap();
+    let baseline=memory.available_pages();
+    let mut gui=Gui::new();
+    macro_rules! call { ($op:expr,$args:expr) => {gui.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,true,$op,$args,area,area,1).unwrap()}; }
+    assert_eq!(gui.dispatch(&mut runtime,&mut memory,&mut tables,caller,owner,false,0x1251,[0;6],area,area,1),Some(-1));
+    let create=call!(0x1251,[0;6]); assert!(create>0);
+    assert_eq!(call!(0x1251,[0;6]),create);
+    let surface=call!(0x1120,[create as u64,8,8,0,0,0]); assert!(surface>0);
+    assert_eq!(call!(0x1251,[2,9999,0,0,0,0]),-1);
+    let publish=call!(0x1251,[2,surface as u64,0,0,0,0]); assert!(publish>0);
+    let window_create=call!(0x1251,[1,0,0,0,0,0]); assert!(window_create>0);
+    let window=call!(0x1100,[window_create as u64,surface as u64,10,20,8,8]); assert!(window>0);
+    native_scene_damage(*runtime.ui.windows.inspect(ui::window::WindowId(window as u32)).unwrap());
+    assert_eq!(call!(0x1254,[window as u64,1,0,0,0,0]),-1);
+    gui.pointer_target(Some(ui::window::WindowId(window as u32)));
+    assert_eq!(call!(0x1254,[window as u64,1,0,0,0,0]),0);
+    assert_eq!(ui::text_input::pointer_shape(),ui::text_input::PointerShape::Text);
+    assert_eq!(call!(0x1254,[window as u64,6,0,0,0,0]),-6);
+    gui.pointer_target(None);
+    assert_eq!(ui::text_input::pointer_shape(),ui::text_input::PointerShape::Default);
+    copy_to_user(&mut tables,user,&0xff123456u32.to_le_bytes()).unwrap();
+    assert_eq!(call!(0x1121,[publish as u64,surface as u64,user,0,4,0]),0);
+    assert_eq!(call!(0x1122,[publish as u64,surface as u64,1,0,0,0]),0);
+    assert_eq!(gui.surfaces.frame(&runtime,SurfaceId(surface as u32)).unwrap().pixels[0],0xff123456);
+    let input=call!(0x1251,[8,window as u64,0,0,0,0]); assert!(input>0);
+    let lease=call!(0x1110,[input as u64,runtime::EVENT_NATIVE_INPUT as u64,window as u64,100,8,0]); assert!(lease>0);
+    assert!(runtime.native_input(UiEvent::Pointer{position:Point{x:12,y:23},phase:PointerPhase::Down,button:1},0,0,2));
+    assert_eq!(call!(0x1111,[lease as u64,user,128,0,0,0]),1);
+    let mut packet=[0u8;128]; copy_from_user(&tables,user,&mut packet).unwrap();
+    assert_eq!(u32::from_le_bytes(packet[36..40].try_into().unwrap()),3);
+    assert_eq!(i32::from_le_bytes(packet[48..52].try_into().unwrap()),2);
+    assert_eq!(i32::from_le_bytes(packet[52..56].try_into().unwrap()),3);
+    // Native title/edge input is distinct from client input and close remains
+    // a typed request until the actual application accepts it.
+    let id=ui::window::WindowId(window as u32);
+    runtime.ui.windows.move_window(owner,id,Point{x:120,y:160},area).unwrap();
+    runtime.ui.windows.resize_window(owner,id,320,200,area).unwrap();
+    let title=runtime::native_gui::title_bounds(*runtime.ui.windows.inspect(id).unwrap(),1);
+    let title_point=Point{x:title.x+20,y:title.y+20};
+    assert_eq!(gui.desktop_pointer(&mut runtime,title_point,PointerPhase::Down,1,area,1,3),(true,Some(id)));
+    let moved=Point{x:title_point.x+70,y:title_point.y+30};
+    assert_eq!(gui.desktop_pointer(&mut runtime,moved,PointerPhase::Move,1,area,1,4),(true,Some(id)));
+    gui.desktop_pointer(&mut runtime,moved,PointerPhase::Up,1,area,1,5);
+    assert_eq!(runtime.ui.windows.inspect(id).unwrap().bounds.x,190);
+    assert_eq!(runtime.ui.windows.inspect(id).unwrap().bounds.y,190);
+    let bounds=runtime.ui.windows.inspect(id).unwrap().bounds;
+    let edge=Point{x:bounds.right()+2,y:bounds.bottom()+2};
+    assert_eq!(gui.desktop_pointer(&mut runtime,edge,PointerPhase::Down,1,area,1,6),(true,Some(id)));
+    let resized=Point{x:edge.x+40,y:edge.y+30};
+    gui.desktop_pointer(&mut runtime,resized,PointerPhase::Move,1,area,1,7);
+    gui.desktop_pointer(&mut runtime,resized,PointerPhase::Up,1,area,1,8);
+    assert_eq!(runtime.ui.windows.inspect(id).unwrap().bounds.width,360);
+    assert_eq!(runtime.ui.windows.inspect(id).unwrap().bounds.height,230);
+    let close_grant=call!(0x1251,[11,window as u64,0,0,0,0]); assert!(close_grant>0);
+    let close_lease=call!(0x1110,[close_grant as u64,runtime::EVENT_WINDOW_CLOSE_REQUESTED as u64,window as u64,100,4,0]);
+    assert!(close_lease>0);
+    let title=runtime::native_gui::title_bounds(*runtime.ui.windows.inspect(id).unwrap(),1);
+    let controls=ui::app_launcher::window_controls::bounds(title,title.height,1);
+    let close_point=Point{x:controls[2].x+10,y:controls[2].y+10};
+    gui.desktop_pointer(&mut runtime,close_point,PointerPhase::Down,1,area,1,9);
+    gui.desktop_pointer(&mut runtime,Point{x:close_point.x-50,y:close_point.y+100},PointerPhase::Up,1,area,1,10);
+    assert_eq!(runtime.events.queue_depth(close_lease as u64),Some(0));
+    gui.desktop_pointer(&mut runtime,close_point,PointerPhase::Down,1,area,1,11);
+    gui.desktop_pointer(&mut runtime,close_point,PointerPhase::Up,1,area,1,12);
+    assert_eq!(runtime.events.queue_depth(close_lease as u64),Some(1));
+    assert!(runtime.ui.windows.inspect(id).is_some());
+    assert_eq!(call!(0x1111,[close_lease as u64,user,128,0,0,0]),1);
+    copy_from_user(&tables,user,&mut packet).unwrap();
+    assert_eq!(u32::from_le_bytes(packet[4..8].try_into().unwrap()),runtime::EVENT_WINDOW_CLOSE_REQUESTED);
+    assert_eq!(packet[33],ui::window::WindowEventKind::CloseRequested as u8);
+    assert_eq!(u32::from_le_bytes(packet[36..40].try_into().unwrap()),id.0);
+    let manage=call!(0x1251,[5,window as u64,0,0,0,0]); assert!(manage>0);
+    assert_eq!(call!(0x1105,[manage as u64,window as u64,4,0,0,0]),0);
+    assert_eq!(call!(0x1253,[window as u64,5,0,0,0,0]),4);
+    assert_eq!(runtime::native_gui::title_bounds(*runtime.ui.windows.inspect(id).unwrap(),1).height,0);
+    assert_eq!(gui.desktop_pointer(&mut runtime,close_point,PointerPhase::Move,0,area,1,13),(false,None));
+    assert_eq!(call!(0x1105,[manage as u64,window as u64,0,0,0,0]),0);
+    for _ in 0..40 {
+        let s=call!(0x1120,[create as u64,8,8,0,0,0]); assert!(s>0);
+        let w=call!(0x1100,[window_create as u64,s as u64,300,300,8,8]); assert!(w>0);
+        let m=call!(0x1251,[5,w as u64,0,0,0,0]); assert!(m>0);
+        let d=call!(0x1251,[4,s as u64,0,0,0,0]); assert!(d>0);
+        assert_eq!(call!(0x1101,[m as u64,w as u64,0,0,0,0]),0);
+        assert_eq!(call!(0x1124,[d as u64,s as u64,0,0,0,0]),0);
+    }
+    let mut foreign=Gui::new();
+    assert_eq!(foreign.dispatch(&mut runtime,&mut memory,&mut tables,caller,ContextId(75),true,0x1122,[publish as u64,surface as u64,2,0,0,0],area,area,2),Some(-1));
+    gui.close(&mut runtime,&mut memory);
+    assert_eq!(memory.available_pages(),baseline);
+    assert!(runtime.ui.windows.inspect(ui::window::WindowId(window as u32)).is_none());
+    assert_eq!(runtime.events.queue_depth(lease as u64),None);
+    assert!(runtime.capabilities.get(create as u64).is_none());
+    let replacement=call!(0x1251,[0;6]); assert!(replacement>create);
+    assert_eq!(call!(0x1120,[create as u64,8,8,0,0,0]),-1);
+    gui.close(&mut runtime,&mut memory);
+    foreign.close(&mut runtime,&mut memory);
+    tables.release(&mut memory).unwrap(); memory.release(user_page).unwrap();
+    assert_eq!(memory.available_pages(),initial);
+    unsafe {std::alloc::dealloc(arena,layout);}
 }

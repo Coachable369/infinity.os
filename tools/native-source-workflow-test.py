@@ -179,6 +179,34 @@ def main():
                "version": 2, "path_hex": path.encode().hex(), "file": "source.py"}]}
     stages = {"stages": [{**receipt, "path": path, "editor_fingerprint": fingerprint}]}
     assert workflow.verify_exports(exports, stages)["verified_source_objects"] == [receipt["source"]]
+    marker = b"# local-note: 5729\n"
+    updated_content = marker + b"print(3)\n"
+    (destination / "source-v3.py").write_bytes(updated_content)
+    updated_fingerprint = 1469598103934665603
+    for byte in updated_content:
+        updated_fingerprint = ((updated_fingerprint ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    history = copy.deepcopy(exports)
+    history["artifacts"].append({**history["artifacts"][0], "version": 3, "file": "source-v3.py", "current": True})
+    history["artifacts"][0]["current"] = False
+    updated_stage = {**stages["stages"][0], "version": 3, "document_bytes": len(updated_content),
+                     "editor_fingerprint": updated_fingerprint, "protected_prefix_hex": marker.hex()}
+    history_stages = {"stages": stages["stages"] + [updated_stage]}
+    verified = workflow.verify_exports(history, history_stages)
+    assert verified["verified_versions"] == 2 and len(verified["immutable_version_diffs"]) == 1
+    wrong_marker = {**updated_stage, "protected_prefix_hex": b"# a different user's edit\n".hex()}
+    try:
+        workflow.verify_exports(history, {"stages": [wrong_marker]})
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("Discarded unrelated editor bytes were accepted")
+    missing_history = {**history, "artifacts": history["artifacts"][1:]}
+    try:
+        workflow.verify_exports(missing_history, history_stages)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("Unverified historical editor revision was accepted")
     previous = destination / "previous.json"
     completed = {**stages["stages"][0], **launched,
                  "native_receipt": [0x494e46505954484e, 1, 8, 2, 0, 2, 0, 64, 64, 8]}

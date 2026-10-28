@@ -20,17 +20,29 @@ pub fn authorize_recognition(
 ) -> Result<(), AiError> {
     use crate::runtime::iop::{MessageType, OperationId, IOP_VERSION};
     let h = &message.header;
-    if h.protocol_version != IOP_VERSION || h.schema_version != 1
+    if h.protocol_version != IOP_VERSION
+        || h.schema_version != 1
         || h.message_type != MessageType::Request
         || h.operation_type_id != OperationId::SpeechRecognize as u32
-        || h.caller_identity != owner || h.payload_length != 0
-        || samples == 0 || samples > 160000
+        || h.caller_identity != owner
+        || h.payload_length != 0
+        || samples == 0
+        || samples > 160000
         || h.deadline <= now
         || h.deadline.saturating_sub(now) > RECOGNITION_DEADLINE_SECONDS
     {
         return Err(AiError::InvalidRequest);
     }
-    capabilities.validate(h.capability_ref, owner, CapabilityType::AudioInput, 0, 1, 0, now)
+    capabilities
+        .validate(
+            h.capability_ref,
+            owner,
+            CapabilityType::AudioInput,
+            0,
+            1,
+            0,
+            now,
+        )
         .map_err(|_| AiError::AccessDenied)?;
     Ok(())
 }
@@ -91,7 +103,9 @@ impl VoiceService {
             return Err(AiError::InvalidRequest);
         }
         self.expire(now);
-        if self.session.is_some() { return Err(AiError::QueueFull); }
+        if self.session.is_some() {
+            return Err(AiError::QueueFull);
+        }
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1).max(1);
         self.session = Some(VoiceSession {
@@ -109,20 +123,36 @@ impl VoiceService {
     // FUNC: push_pcm
     // DESC: Segments bounded native 16-kHz mono chunks only for the current authorized session owner.
     // ------------------=
-    pub fn push_pcm(&mut self, id: u32, owner: SecurityIdentity, pcm: &[i16], rate: u32,
-        now: u64, capabilities: &CapabilityManager) -> Result<VadState, AiError> {
+    pub fn push_pcm(
+        &mut self,
+        id: u32,
+        owner: SecurityIdentity,
+        pcm: &[i16],
+        rate: u32,
+        now: u64,
+        capabilities: &CapabilityManager,
+    ) -> Result<VadState, AiError> {
         let session = self.session.ok_or(AiError::InvalidRequest)?;
-        if session.id != id { return Err(AiError::InvalidRequest); }
-        if session.owner != owner { return Err(AiError::AccessDenied); }
+        if session.id != id {
+            return Err(AiError::InvalidRequest);
+        }
+        if session.owner != owner {
+            return Err(AiError::AccessDenied);
+        }
         if session.state != VoiceState::Listening || rate != RATE as u32 || pcm.len() > RATE / 10 {
             return Err(AiError::InvalidRequest);
         }
-        if !self.refresh_authority(now, capabilities) { return Err(AiError::AccessDenied); }
+        if !self.refresh_authority(now, capabilities) {
+            return Err(AiError::AccessDenied);
+        }
         self.detector.push(pcm);
         let state = self.detector.state();
         if let Some(session) = self.session.as_mut() {
-            if state == VadState::Complete { session.state = VoiceState::Recognizing; }
-            else if matches!(state, VadState::Limit | VadState::NoSpeech) { session.state = VoiceState::Failed; }
+            if state == VadState::Complete {
+                session.state = VoiceState::Recognizing;
+            } else if matches!(state, VadState::Limit | VadState::NoSpeech) {
+                session.state = VoiceState::Failed;
+            }
         }
         Ok(state)
     }
@@ -131,10 +161,18 @@ impl VoiceService {
     // FUNC: speech_segment
     // DESC: Returns trimmed sample bounds only to the owning session, never a fabricated transcript.
     // ------------------=
-    pub fn speech_segment(&self, id: u32, owner: SecurityIdentity) -> Result<Option<Segment>, AiError> {
+    pub fn speech_segment(
+        &self,
+        id: u32,
+        owner: SecurityIdentity,
+    ) -> Result<Option<Segment>, AiError> {
         let session = self.session.ok_or(AiError::InvalidRequest)?;
-        if session.id != id { return Err(AiError::InvalidRequest); }
-        if session.owner != owner { return Err(AiError::AccessDenied); }
+        if session.id != id {
+            return Err(AiError::InvalidRequest);
+        }
+        if session.owner != owner {
+            return Err(AiError::AccessDenied);
+        }
         Ok(self.detector.segment())
     }
 
@@ -144,8 +182,12 @@ impl VoiceService {
     // ------------------=
     pub fn stop(&mut self, id: u32, owner: SecurityIdentity) -> Result<(), AiError> {
         let session = self.session.ok_or(AiError::InvalidRequest)?;
-        if session.id != id { return Err(AiError::InvalidRequest); }
-        if session.owner != owner { return Err(AiError::AccessDenied); }
+        if session.id != id {
+            return Err(AiError::InvalidRequest);
+        }
+        if session.owner != owner {
+            return Err(AiError::AccessDenied);
+        }
         self.session = None;
         self.detector.cancel();
         Ok(())

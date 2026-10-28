@@ -38,7 +38,8 @@ pub fn retire_authority(
     let c = with_runtime(|r| {
         if !storage_operator::authorized(r, user, session)
             || grant == 0
-            || (!(1..=3600).contains(&lease) && !(lease==u64::MAX && grant&node::durable::TAG!=0))
+            || (!(1..=3600).contains(&lease)
+                && !(lease == u64::MAX && grant & node::durable::TAG != 0))
         {
             return Err(RemoteError::AccessDenied);
         }

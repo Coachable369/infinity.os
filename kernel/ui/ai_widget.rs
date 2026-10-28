@@ -2,6 +2,26 @@
 use super::geometry::{Point, Rect};
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
+static METER: AtomicUsize = AtomicUsize::new(0);
+// ------------------------=
+// FUNC: update_meter
+// DESC: Smooths bounded live amplitude with immediate attack and gradual release, without retaining audio.
+// ------------------=
+pub fn update_meter(peak: u16) {
+    let old = METER.load(Ordering::Relaxed);
+    METER.store((peak as usize).max(old * 3 / 4).min(32768), Ordering::Relaxed);
+}
+// ------------------------=
+// FUNC: meter
+// DESC: Returns the current normalized visual microphone envelope.
+// ------------------=
+pub fn meter() -> usize { METER.load(Ordering::Relaxed) }
+// ------------------------=
+// FUNC: clear_meter
+// DESC: Removes residual amplitude immediately when capture visualization stops.
+// ------------------=
+pub fn clear_meter() { METER.store(0, Ordering::Relaxed); }
+
 const METRICS: &[u8] = include_bytes!("../../assets/fonts/InfinityUI-Regular-16.metrics");
 const KERN: &[u8] = include_bytes!("../../assets/fonts/InfinityUI-Regular-16.kern");
 static MENU: AtomicU8 = AtomicU8::new(0);

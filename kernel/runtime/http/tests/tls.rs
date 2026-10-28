@@ -122,6 +122,106 @@ impl Wake for Noop {
     fn wake(self: Arc<Self>) {}
 }
 
+struct ChannelControl {
+    commands: std::collections::VecDeque<infinity_http::channel::Command>,
+    results: std::rc::Rc<std::cell::RefCell<Vec<(Result<usize, infinity_http::channel::Failure>, Vec<u8>)>>>,
+    connected: std::rc::Rc<std::cell::Cell<bool>>,
+}
+impl infinity_http::channel::Control for ChannelControl {
+    // ------------------------=
+    // FUNC: connected
+    // DESC: Records actual entry into the connected native conversation.
+    // ------------------=
+    fn connected(&mut self) { self.connected.set(true); }
+    // ------------------------=
+    // FUNC: command
+    // DESC: Supplies typed socket operations and exact outgoing application bytes without parsing protocol prose.
+    // ------------------=
+    fn command(&mut self, _: &mut Context<'_>, out: &mut [u8]) -> Poll<infinity_http::channel::Command> {
+        let command = self.commands.pop_front().expect("unexpected socket operation");
+        if let infinity_http::channel::Command::Write(4) = command { out[..4].copy_from_slice(&[1, 0, 255, 2]); }
+        Poll::Ready(command)
+    }
+    // ------------------------=
+    // FUNC: complete
+    // DESC: Retains structured transport outcomes and decrypted byte values for assertions.
+    // ------------------=
+    fn complete(&mut self, result: Result<usize, infinity_http::channel::Failure>, data: &[u8]) {
+        self.results.borrow_mut().push((result, data.to_vec()));
+    }
+}
+
+// ------------------------=
+// FUNC: channel_exchange
+// DESC: Exercises the real persistent TLS socket conversation against an independent TLS server and verifies invalid peers never receive application bytes.
+// ------------------=
+fn channel_exchange(wrong_host: bool, wrong_root: bool) {
+    use infinity_http::{channel::{Channel, Command, Failure}, client::Conversation};
+    use std::future::Future;
+    let (root, leaf, key) = certificates();
+    let (other_root, _, _) = certificates();
+    let server = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .with_protocol_versions(&[&rustls::version::TLS13]).unwrap().with_no_client_auth()
+        .with_single_cert(vec![leaf.der().clone()], rustls::pki_types::PrivatePkcs8KeyDer::from(key.serialize_der()).into()).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let worker = std::thread::spawn(move || {
+        let (socket, _) = listener.accept().unwrap();
+        socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut stream = rustls::StreamOwned::new(rustls::ServerConnection::new(Arc::new(server)).unwrap(), socket);
+        let mut bytes = [0; 4];
+        let accepted = stream.read_exact(&mut bytes).is_ok();
+        if accepted {
+            assert_eq!(bytes, [1, 0, 255, 2]);
+            stream.write_all(&[9, 8, 0, 7]).unwrap(); stream.flush().unwrap();
+        }
+        accepted
+    });
+    let roots = [webpki::anchor_from_trusted_cert(if wrong_root { other_root.der() } else { root.der() }).unwrap()];
+    let results = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let connected = std::rc::Rc::new(std::cell::Cell::new(false));
+    let host: &[u8] = if wrong_host { b"wrong.example" } else { b"localhost" };
+    let mut hostname = [0; 253]; hostname[..host.len()].copy_from_slice(host);
+    let commands = [Command::StartTls { hostname, length: host.len(), trust: infinity_http::trust::Policy::System }, Command::Write(4), Command::Read(4), Command::Close];
+    let mut channel = Channel { control: ChannelControl { commands: commands.into(), results: results.clone(), connected: connected.clone() },
+        rng: Some(rand_chacha::ChaCha20Rng::from_seed([7; 32])), roots: &roots, unix_seconds: 1_800_000_000 };
+    let stream = TcpStream::connect(address).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+    let outcome = {
+        let mut future = std::pin::pin!(channel.exchange(TestStream(stream)));
+        let waker = Waker::from(Arc::new(Noop));
+        let mut context = Context::from_waker(&waker);
+        match future.as_mut().poll(&mut context) { Poll::Ready(result) => result, Poll::Pending => panic!("synchronous test transport unexpectedly pending") }
+    };
+    assert!(connected.get());
+    if wrong_host || wrong_root {
+        assert!(outcome.is_err());
+        assert_eq!(*results.borrow(), vec![(Err(Failure::Certificate), vec![])]);
+        assert!(!worker.join().unwrap());
+    } else {
+        assert!(outcome.is_ok());
+        assert_eq!(*results.borrow(), vec![(Ok(0), vec![]), (Ok(4), vec![]), (Ok(4), vec![9, 8, 0, 7]), (Ok(0), vec![])]);
+        assert!(worker.join().unwrap());
+    }
+}
+
+#[test]
+// ------------------------=
+// FUNC: persistent_native_channel_authenticates_and_exchanges_binary_bytes
+// DESC: Verifies independent socket operations retain one cryptographically authenticated connection.
+// ------------------=
+fn persistent_native_channel_authenticates_and_exchanges_binary_bytes() { channel_exchange(false, false); }
+
+#[test]
+// ------------------------=
+// FUNC: persistent_native_channel_rejects_hostname_and_root_mismatch
+// DESC: Proves certificate failure prevents later queued application writes from executing.
+// ------------------=
+fn persistent_native_channel_rejects_hostname_and_root_mismatch() {
+    channel_exchange(true, false); channel_exchange(false, true);
+}
+
 #[test]
 // ------------------------=
 // FUNC: authenticated_tls13_get_returns_complete_chunked_body

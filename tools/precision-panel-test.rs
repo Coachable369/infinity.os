@@ -3,11 +3,12 @@
 use std::io::Write;
 #[path = "../kernel/ui/geometry.rs"] pub mod geometry;
 #[path = "../kernel/ui/panel_recipe.rs"] pub mod panel_recipe;
+#[path = "../kernel/ui/surface_cache.rs"] pub mod surface_cache;
 #[path = "../kernel/ui/glyph_filter.rs"] mod glyph_filter;
 #[path = "../kernel/ui/skin.rs"] pub mod skin;
 #[path = "../kernel/runtime/font_faces.rs"] mod font_faces;
 const INFINITY_UI_ABI_VERSION: u16 = 1;
-mod ui { pub use crate::{geometry, panel_recipe, skin}; }
+mod ui { pub use crate::{geometry, panel_recipe, surface_cache, skin}; }
 #[path = "../kernel/core/bootstrap/panel_view.rs"] mod panel_view;
 use geometry::Rect;
 use panel_recipe::{Material, Rgb, Surface};
@@ -116,10 +117,12 @@ fn sampler_contract() -> usize {
             let mut recolored = 0;
             let mut interior = 0;
             for y in 0..height { for x in 0..width {
-                let p = panel_recipe::pixel(kind, width, height, x, y, m);
-                let h = panel_recipe::pixel(kind, width, height, x, y, hidden);
-                let t = panel_recipe::pixel(kind, width, height, x, y, translucent);
-                let changed = panel_recipe::pixel(kind, width, height, x, y, other);
+                // These invariants describe the original atlas, not a user's
+                // independently tinted glass/square/rounded surface overrides.
+                let p = panel_recipe::pixel_authored(kind, width, height, x, y, m);
+                let h = panel_recipe::pixel_authored(kind, width, height, x, y, hidden);
+                let t = panel_recipe::pixel_authored(kind, width, height, x, y, translucent);
+                let changed = panel_recipe::pixel_authored(kind, width, height, x, y, other);
                 assert_eq!(p.3, changed.3);
                 visible += usize::from(p.3 > 0);
                 partial += usize::from(p.3 > 0 && p.3 < m.opacity);
@@ -160,6 +163,9 @@ fn sampler_contract() -> usize {
 // DESC: Checks approved-board pixel witnesses, frame stroke thickness, bounded focus bloom and reflective button state separation.
 // ------------------=
 fn reference_state_contract() {
+    // Factory reference witnesses intentionally bypass independently editable
+    // surface overrides. adapter_contract below verifies the active theme.
+    use panel_recipe::pixel_authored as reference_pixel;
     let mut skin=skin::SkinRegistry::new();
     for persisted_default in [false,true] {
         if persisted_default {skin.set_accent(0x3e6fff,skin::AppearanceScope::User).unwrap();}
@@ -200,14 +206,14 @@ fn reference_state_contract() {
         }
         assert_eq!(distinct.len(),9);
         let primary=Material{fill:(62,111,255),scale,..exact};
-        let a=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,primary);
-        let b=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,Material{pressed:true,..primary});
+        let a=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,primary);
+        let b=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,Material{pressed:true,..primary});
         assert_ne!(a,b);
         // Actual Precision state colors stay electric blue, not the cyan
         // Access artwork or legacy teal recoloring that broke the installer.
         assert!(a.2>a.1.saturating_add(70));
-        let top=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,10*scale,primary);
-        let bottom=panel_recipe::pixel(Surface::Primary,112*scale,51*scale,56*scale,39*scale,primary);
+        let top=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,10*scale,primary);
+        let bottom=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,39*scale,primary);
         assert!(i16::from(top.1)-i16::from(bottom.1)>20,"reflective lighting lost");
         for y in 2..7 {
             let light=Material{opacity:0,..primary};
@@ -431,7 +437,18 @@ fn render_overview(output: &std::path::Path) {
 // ------------------=
 fn main() {
     assert_eq!(std::env::var("INFINITY_BUILD_KIT_ACTIVE").as_deref(), Ok("1"));
+    for corners in [0, 1, 2] {
+        for pressed in [false, true] {
+            let sample=panel_recipe::pixel_styled(Surface::Primary,280,44,140,22,
+                Material{fill:(17,30,70),edge:(134,199,255),opacity:255,edge_opacity:255,
+                    focus:255,pressed,scale:1},
+                panel_recipe::SurfaceStyle{material:1,corners,radius:10,..panel_recipe::SurfaceStyle::AUTHORED});
+            assert!(sample.2>sample.1 && sample.1>sample.0 && sample.0>0);
+            assert!(sample.3>0 && sample.3<255);
+        }
+    }
     let surface_pixels = sampler_contract();
+    control_pixels();
     reference_state_contract();
     let adapter_pixels = adapter_contract();
     let glyph_samples = glyph_contract();
@@ -441,4 +458,31 @@ fn main() {
     let evidence = format!("{{\"surface_pixels\":{surface_pixels},\"adapter_pixels\":{adapter_pixels},\"glyph_samples\":{glyph_samples},\"scales\":[1,2,3,4],\"signed_clipping\":true,\"independent_outline_alpha\":true,\"installed_verified\":false}}\n");
     std::fs::write(directory.join("pixel-evidence.json"), &evidence).unwrap();
     println!("{evidence}");
+}
+
+// ------------------------=
+// FUNC: control_pixels
+// DESC: Verifies checked/selected/disabled pixels and exact signed clipping for shared controls across four display scales.
+// ------------------=
+fn control_pixels() {
+    for scale in 1..=4 {
+        let rect=Rect{x:8,y:8,width:(20*scale)as u32,height:(20*scale)as u32};
+        for radio in [false,true] {
+            let render=|selected,enabled,clip| {
+                let mut display=DisplayDevice::new(120,120);display.clip=clip;
+                if radio {display.precision_radio(rect,selected,enabled,material(scale));}
+                else {display.precision_checkbox(rect,selected,enabled,material(scale));}
+                display.pixels
+            };
+            let off=render(false,true,None);let on=render(true,true,None);
+            let disabled=render(true,false,None);
+            assert_ne!(off,on);assert_ne!(on,disabled);
+            let clip=Region{left:13,top:17,right:30,bottom:32};
+            let clipped=render(true,true,Some(clip));
+            for y in 0..120 {for x in 0..120 {
+                let inside=x>=clip.left&&x<clip.right&&y>=clip.top&&y<clip.bottom;
+                assert_eq!(clipped[y*120+x],if inside {on[y*120+x]}else{0x090f26});
+            }}
+        }
+    }
 }

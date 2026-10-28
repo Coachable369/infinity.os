@@ -35,6 +35,15 @@ impl super::DisplayDevice {
             scale: self.ui_scale() }, if opacity < 100 { blur } else { 0 });
     }
     // ------------------------=
+    // FUNC: app_disclosure
+    // DESC: Reuses the Settings kit's antialiased twiddle stroke for compact expandable app panels.
+    // ------------------=
+    pub(super) fn app_disclosure(&mut self,rect:Rect,expanded:bool,color:(u8,u8,u8),scale:usize){
+        let x=rect.x+rect.width as i32/2;let y=rect.y+rect.height as i32/2;let s=scale as i32;
+        let (a,b,c)=if expanded{((x-5*s,y-3*s),(x,y+3*s),(x+5*s,y-3*s))}else{((x-3*s,y-5*s),(x+3*s,y),(x-3*s,y+5*s))};
+        self.icon_line(a.0,a.1,b.0,b.1,color,12*scale);self.icon_line(b.0,b.1,c.0,c.1,color,12*scale);
+    }
+    // ------------------------=
     // FUNC: app_menu_text_width
     // DESC: Measures the shared compact 14 px Inter application-menu face.
     // ------------------=
@@ -220,6 +229,10 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn app_card_alpha(&mut self, r: Rect, color: (u8, u8, u8),
         border: (u8, u8, u8), opacity: u8, s: usize) {
+        // Legacy dark stroke colors are not atlas tint colors: subtracting
+        // them from the silver reference crushes its antialiased rim to black.
+        let border = crate::ui::panel_recipe::legacy_panel_edge(border,
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline));
         self.precision_surface(r,crate::ui::panel_recipe::Surface::Panel,
             crate::ui::panel_recipe::Material{fill:color,edge:border,opacity,
                 edge_opacity:255,focus:0,pressed:false,scale:s});
@@ -231,7 +244,7 @@ impl super::DisplayDevice {
     pub(super) fn window_substrate(&mut self, rect: Rect,
         mut material: crate::ui::panel_recipe::Material, blur: u8) {
         if blur >= 2 && !self.fast_motion_frame
-            && crate::ui::panel_recipe::surface_style(crate::ui::panel_recipe::Surface::WindowFill).material!=2 {
+            && crate::ui::panel_recipe::surface_style(crate::ui::panel_recipe::Surface::WindowFill).material<2 {
             let left = rect.x.max(0) as usize;
             let top = rect.y.max(0) as usize;
             let right = rect.right().max(0).min(self.width as i32) as usize;

@@ -21,6 +21,9 @@ contents_dir="$app_dir/Contents"
 binary_dir="$(swift build "${swift_paths[@]}" --package-path "$script_dir" -c release --show-bin-path)"
 
 mkdir -p "$studio_work/behavior-tests"
+if [[ ! -f "$repo_dir/assets/ui-design-kit/default/stop-audio-v1.bmp" || "$repo_dir/assets/ui-design-kit/default/stop-audio-v1.png" -nt "$repo_dir/assets/ui-design-kit/default/stop-audio-v1.bmp" ]]; then
+    python3 "$repo_dir/tools/build-voice-artwork.py"
+fi
 rustc --edition=2021 --crate-name infinity_browser_core --crate-type rlib -C opt-level=z "$repo_dir/sdk/infinity-browser-core/lib.rs" -o "$studio_work/behavior-tests/libinfinity_browser_core.rlib"
 rustc --edition=2021 -O -Awarnings --cfg studio_native_preview --extern infinity_browser_core="$studio_work/behavior-tests/libinfinity_browser_core.rlib" "$repo_dir/tools/active-painter-test.rs" -o "$studio_work/behavior-tests/infinity-studio-native-renderer"
 rustc --edition=2021 -O "$repo_dir/tools/studio-precision-parity.rs" -o "$studio_work/behavior-tests/studio-precision-parity"

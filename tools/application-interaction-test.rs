@@ -158,11 +158,13 @@ fn approvals() {
 fn typed_actions() {
     use application_decision::parse_proposal;
     let context=application_host::attach([1;16],[2;16]).unwrap();
+    assert!(!application_host::published(context));
     let mut packet=[0u8;2072];packet[..4].copy_from_slice(&1u32.to_le_bytes());
     packet[4..8].copy_from_slice(&1u32.to_le_bytes());packet[8..16].copy_from_slice(&1u64.to_le_bytes());
     packet[16..20].copy_from_slice(&5u32.to_le_bytes());packet[24..29].copy_from_slice(b"hello");
     let mut output=[0u8;592];
     application_host::syscall(0x1150,[2;16],&packet,&mut output,1).unwrap();
+    assert!(!application_host::published(context));
     let mut action=[0u8;416];action[..4].copy_from_slice(&1u32.to_le_bytes());
     action[4..8].copy_from_slice(&9u32.to_le_bytes());action[8..12].copy_from_slice(&1u32.to_le_bytes());
     action[16..31].copy_from_slice(b"document.insert");action[64..75].copy_from_slice(b"insert text");
@@ -177,6 +179,9 @@ fn typed_actions() {
     action[384..391].copy_from_slice(b"content");action[408..412].copy_from_slice(&32u32.to_le_bytes());
     application_host::syscall(0x1155,[2;16],&action,&mut output,1).unwrap();
     application_host::syscall(0x1152,[2;16],&packet[..8],&mut output,1).unwrap();
+    assert!(application_host::published(context));
+    assert!(!application_host::published(application_host::Context{owner:[9;16],..context}));
+    assert!(!application_host::published(application_host::Context{session:[9;16],..context}));
     let diagnostic=unsafe{application_host::INFINITY_APP_INTERACTION_SNAPSHOT};
     assert_eq!(&diagnostic[8..11],&[1,1,1]);
     let exported=unsafe{application_host::INFINITY_APP_INTERACTION_CHOICES};
@@ -215,6 +220,7 @@ fn typed_actions() {
     let literal=parse_proposal(b"ACTION:9 42 0 0 0\nTEXT:17:CHOICE:3\nACTION:4").unwrap();
     assert_eq!(literal.text,b"CHOICE:3\nACTION:4");
     application_host::detach();
+    assert!(!application_host::published(context));
 }
 
 // ------------------------=

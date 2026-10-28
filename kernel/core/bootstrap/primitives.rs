@@ -411,6 +411,29 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: native_gui_surface
+    // DESC: Copies validated opaque native toolkit pixels with signed clipping and one bounded damage submission; format conversion matches the desktop framebuffer.
+    // ------------------=
+    pub(super) fn native_gui_surface(&mut self,frame:crate::ui::compositor::SurfaceFrame<'_>) {
+        if !frame.visible || frame.descriptor.format!=crate::ui::surface::PixelFormat::Xrgb8888 || frame.opacity!=255 {return;}
+        let bounds=frame.bounds;
+        if bounds.width==0 || bounds.height==0 || frame.descriptor.size.width==0 || frame.descriptor.size.height==0 {return;}
+        let required=(frame.descriptor.stride_pixels as usize).checked_mul(frame.descriptor.size.height as usize);
+        if required.is_none_or(|count|count>frame.pixels.len()){return;}
+        let left=bounds.x.max(0) as usize;let top=bounds.y.max(0) as usize;
+        let right=(i64::from(bounds.x)+i64::from(bounds.width)).clamp(0,self.width as i64) as usize;
+        let bottom=(i64::from(bounds.y)+i64::from(bounds.height)).clamp(0,self.height as i64) as usize;
+        for y in top..bottom {for x in left..right {
+            if !self.render_point_visible(x,y){continue;}
+            let sx=((x as i64-i64::from(bounds.x)) as u64*u64::from(frame.descriptor.size.width)/u64::from(bounds.width)) as usize;
+            let sy=((y as i64-i64::from(bounds.y)) as u64*u64::from(frame.descriptor.size.height)/u64::from(bounds.height)) as usize;
+            let pixel=frame.pixels[sy*frame.descriptor.stride_pixels as usize+sx];
+            self.write_rgb_unchecked(x,y,(pixel>>16) as u8,(pixel>>8) as u8,pixel as u8);
+        }}
+        self.mark_dirty_rect(left,top,right.saturating_sub(left),bottom.saturating_sub(top));
+    }
+
+    // ------------------------=
     // FUNC: browser_pixels
     // DESC: Copies a bounded native RGBA viewport into the compositor surface with one damage submission.
     // ------------------=

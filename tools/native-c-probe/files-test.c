@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 static const InfinityCompilerHost *host;
 static int denied, closes;
+static unsigned char written[12347];
+static size_t write_cursor, write_limit = sizeof written, write_chunk = 4096;
+static int write_fixture, write_fault;
 static uint32_t observed_mode;
 static InfinityCompilerMetadata metadata = {41, 3, 123, 456, 1, 3};
 // ------------------------=
@@ -37,6 +40,19 @@ static int object_read(void *context, uint64_t id, void *out, size_t size, size_
 // DESC: Verifies provider delivery of exact payload bytes.
 // ------------------=
 static int object_write(void *context, uint64_t id, const void *data, size_t size, size_t *count) {
+    if (write_fixture) {
+        assert(context == &denied && id == 41);
+        if (denied) return denied;
+        if (write_cursor >= write_limit) return ENOSPC;
+        if (write_fault == 1) { *count = 0; return 0; }
+        if (write_fault == 2) { *count = size + 1; return 0; }
+        *count = size < write_chunk ? size : write_chunk;
+        if (*count > write_limit - write_cursor) *count = write_limit - write_cursor;
+        assert(*count <= sizeof written - write_cursor);
+        if (*count) memcpy(written + write_cursor, data, *count);
+        write_cursor += *count;
+        return 0;
+    }
     assert(context == &denied && id == 41 && size == 3 && memcmp(data, "xyz", 3) == 0);
     *count = size; return denied;
 }
@@ -190,6 +206,26 @@ int main(void) {
     assert(next != fd && next >= 3);
     assert(write(next, "xyz", 3) == -1 && errno == EBADF);
     assert(close(next) == 0);
+    int stream = open("object", O_RDWR);
+    assert(stream >= 3);
+    unsigned char payload[sizeof written];
+    for (size_t i = 0; i < sizeof payload; ++i) payload[i] = (unsigned char)(i * 31 + 7);
+    write_fixture = 1;
+    assert(write(stream, payload, sizeof payload) == (ssize_t)sizeof payload);
+    assert(write_cursor == sizeof payload && memcmp(payload, written, sizeof payload) == 0);
+    write_cursor = 0; write_limit = 4097;
+    assert(write(stream, payload, sizeof payload) == 4097 && errno == ENOSPC);
+    assert(write_cursor == 4097 && memcmp(payload, written, 4097) == 0);
+    write_cursor = 0; write_limit = sizeof written; write_fault = 1;
+    assert(write(stream, payload, sizeof payload) == -1 && errno == EIO && !write_cursor);
+    write_fault = 2;
+    assert(write(stream, payload, sizeof payload) == -1 && errno == EIO && !write_cursor);
+    write_fault = 0; denied = EACCES;
+    assert(write(stream, payload, sizeof payload) == -1 && errno == EACCES && !write_cursor);
+    denied = 0;
+    assert(write(stream, 0, 0) == 0 && !write_cursor);
+    assert(close(stream) == 0);
+    write_fixture = 0;
     int descriptors[128];
     for (int i = 0; i < 128; ++i) { descriptors[i] = open("object", O_RDONLY); assert(descriptors[i] >= 3); }
     assert(open("object", O_RDONLY) == -1 && errno == EMFILE);

@@ -356,7 +356,6 @@ pub fn run() -> ! {
         crate::console::input_batch(poll_devices);
         crate::console::poll_installer_work(|| crate::console::input_batch(poll_devices));
         crate::drivers::network::poll();
-        crate::bootstrap::animation_tick();
         crate::console::poll_native_ai();
     }
 }

@@ -15,6 +15,7 @@ for test_name in \
     window-session-state-test \
     file-navigator-layout-test \
     desktop-layout-identity-test \
+    settings-overflow-test \
     task-manager-test \
     file-navigator-workspace-test \
     application-association-test

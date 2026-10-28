@@ -10,7 +10,10 @@ impl Profile {
     // DESC: Initializes fixed-size per-operation counters without allocating.
     // ------------------=
     pub const fn new() -> Self {
-        Self { phase_ns: [0; 16], phase_calls: [0; 16] }
+        Self {
+            phase_ns: [0; 16],
+            phase_calls: [0; 16],
+        }
     }
     // ------------------------=
     // FUNC: record
@@ -79,7 +82,10 @@ impl Metrics {
     // DESC: Records end-to-end request time including final stop-token evaluation.
     // ------------------=
     pub fn finish(&mut self, now: Option<u64>) {
-        self.total_response_ns = self.start_ns.zip(now).map_or(0, |(a, b)| b.saturating_sub(a));
+        self.total_response_ns = self
+            .start_ns
+            .zip(now)
+            .map_or(0, |(a, b)| b.saturating_sub(a));
     }
     // ------------------------=
     // FUNC: slice

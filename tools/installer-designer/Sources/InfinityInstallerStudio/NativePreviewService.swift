@@ -36,6 +36,7 @@ struct NativePreviewSimulation: Equatable, Sendable {
     var confirmation = false
     var progress = 42
     var bootPhase = 2400
+    var loginPhase = 0
     var timeZone = 3
     var dateFocus = 2
     var datePart = 0
@@ -76,7 +77,7 @@ struct NativePreviewSimulation: Equatable, Sendable {
     func arguments() throws -> [String] {
         guard (0...100).contains(progress), (0...11).contains(timeZone), (2...4).contains(dateFocus),
               (0...4).contains(datePart), (-1...127).contains(expandedRow), (0...10000).contains(scroll),
-              (0...127).contains(controlFocus) else { throw NativePreviewIssue.invalid("Preview state exceeds native bounds") }
+              (0...255).contains(controlFocus) else { throw NativePreviewIssue.invalid("Preview state exceeds native bounds") }
         guard enabled else { return [] }
         var result = ["--simulate-services", "--progress", String(progress), "--time-zone", String(timeZone),
             "--date-focus", String(dateFocus), "--date-part", String(datePart), "--scroll", String(scroll),
@@ -374,7 +375,7 @@ struct NativePreviewRunner: NativePreviewRunning {
                     "--screen", String(snapshot.screen), "--width", String(snapshot.width), "--height", String(snapshot.height),
                     "--output", output.path, "--background", background.path, "--atlas", atlas.path,
                     "--glyphs", glyphs.path, "--styles", styles.path, "--tokens", tokens.path,
-                    "--focus", String(snapshot.state.focus), "--phase-ms", String(snapshot.kind == "boot" ? snapshot.simulation.bootPhase : snapshot.state.milliseconds)]
+                    "--focus", String(snapshot.state.focus), "--phase-ms", String(snapshot.kind == "boot" ? snapshot.simulation.bootPhase : snapshot.kind == "login" ? snapshot.simulation.loginPhase : snapshot.state.milliseconds)]
                 if snapshot.state.isPressed { arguments.append("--pressed") }
                 arguments += try snapshot.simulation.arguments()
                 for (index, asset) in snapshot.assets.enumerated() {

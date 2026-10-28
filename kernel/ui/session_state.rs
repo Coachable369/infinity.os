@@ -142,7 +142,8 @@ impl PersistentDesktopLayoutStore {
                     16 + MAX_PERSISTED_DESKTOP_LAYOUTS * DESKTOP_LAYOUT_RECORD_BYTES + index * 4;
                 put_u16(&mut out, extra, layout.app_drawer_floating[0]);
                 put_u16(&mut out, extra + 2, layout.app_drawer_floating[1]);
-                out[1464 + index * 8..1472 + index * 8].copy_from_slice(&layout.widgets.to_le_bytes());
+                out[1464 + index * 8..1472 + index * 8]
+                    .copy_from_slice(&layout.widgets.to_le_bytes());
             }
         }
         let checksum = session_checksum(&out[..DESKTOP_LAYOUT_STATE_BYTES - 4]);
@@ -179,7 +180,8 @@ impl PersistentDesktopLayoutStore {
                 get_u16(input, extra).min(900),
                 get_u16(input, extra + 2).min(341),
             ];
-            layout.widgets = u64::from_le_bytes(input[1464 + index * 8..1472 + index * 8].try_into().ok()?);
+            layout.widgets =
+                u64::from_le_bytes(input[1464 + index * 8..1472 + index * 8].try_into().ok()?);
             if !store.save(user, layout) {
                 return None;
             }

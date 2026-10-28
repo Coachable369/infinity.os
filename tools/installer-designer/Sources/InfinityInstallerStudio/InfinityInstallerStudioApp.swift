@@ -55,6 +55,9 @@ struct InfinityInstallerStudioApp: App {
                 if source.lastPathComponent == "settings-screens.infinityui" {
                     document = document.migratedForSettingsCardReadability()
                 }
+                if source.lastPathComponent == "login-screens.infinityui" {
+                    document = document.migratedForLoginMotion()
+                }
                 let collection: ScreenCollection = if source.lastPathComponent == "boot-screens.infinityui" {
                     .boot
                 } else if source.lastPathComponent == "desktop-screens.infinityui" {
@@ -189,7 +192,26 @@ struct InfinityInstallerStudioApp: App {
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!store.canRedo)
             }
-            CommandGroup(after: .pasteboard) {
+            CommandGroup(replacing: .pasteboard) {
+                Button("Cut") { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
+                    .keyboardShortcut("x", modifiers: .command)
+                Button("Copy") {
+                    if NSApp.keyWindow?.firstResponder is NSTextView {
+                        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+                    } else if !store.editingMenu { store.copySelectedElements() }
+                }.keyboardShortcut("c", modifiers: .command)
+                Button("Paste") {
+                    if NSApp.keyWindow?.firstResponder is NSTextView {
+                        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
+                    } else if !store.editingMenu { store.pasteElementsInPlace() }
+                }.keyboardShortcut("v", modifiers: .command)
+                Button("Copy Selected Elements") { store.copySelectedElements() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .disabled(store.editingUIKit || store.editingMenu || store.selectedElementIDs.isEmpty)
+                Button("Paste Elements in Place") { store.pasteElementsInPlace() }
+                    .keyboardShortcut("v", modifiers: [.command, .shift])
+                    .disabled(store.editingUIKit || store.editingMenu)
+                Divider()
                 Button(store.editingMenu ? "Duplicate Menu Item" : "Duplicate Element") {
                     if store.editingMenu {
                         if let id = store.selectedMenuItemID { store.selectedMenuItemID = store.duplicateMenuItem(id) }

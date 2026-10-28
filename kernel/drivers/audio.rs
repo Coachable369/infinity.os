@@ -127,6 +127,15 @@ pub fn capture_status() -> Option<CaptureStatus> {
     if LOCK.swap(true, Ordering::Acquire) { return None; }
     let status = unsafe { INPUT_STATUS }; LOCK.store(false, Ordering::Release); Some(status)
 }
+
+static METER_PEAK: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+// ------------------------=
+// FUNC: take_meter_peak
+// DESC: Consumes only microphone amplitude since the previous visual frame, never recorded samples.
+// ------------------=
+pub fn take_meter_peak() -> u16 {
+    METER_PEAK.swap(0, Ordering::Relaxed).min(32768) as u16
+}
 // ------------------------=
 // FUNC: renew_capture
 // DESC: Extends a caller-owned live stream through another validated short IOP lease without restarting DMA.
@@ -688,7 +697,9 @@ pub fn poll() {
                         Ok(count) => {
                             let samples = &(&*(&raw const INPUT_PCM))[..count];
                             INPUT_STATUS.frames += (count / 2) as u64;
-                            for &s in samples { INPUT_STATUS.peak = INPUT_STATUS.peak.max(s.unsigned_abs()); }
+                            let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+                            INPUT_STATUS.peak = INPUT_STATUS.peak.max(peak);
+                            METER_PEAK.fetch_max(peak as u32, Ordering::Relaxed);
                             if (&mut *(&raw mut INPUT)).push_stereo(samples).is_err() { finish_capture(device, CaptureState::Overrun); }
                             else if n >= INPUT_UNTIL { finish_capture(device, CaptureState::Complete); }
                         }

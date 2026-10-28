@@ -10,7 +10,14 @@ const AMBIENT_FRAMES: usize = 9;
 pub const END_SILENCE: usize = RATE * 4 / 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VadState { Waiting, Speech, Complete, NoSpeech, Limit, Cancelled }
+pub enum VadState {
+    Waiting,
+    Speech,
+    Complete,
+    NoSpeech,
+    Limit,
+    Cancelled,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Segment {
     pub start: usize,
@@ -36,28 +43,45 @@ impl Detector {
     // DESC: Creates a fixed 20-ms RMS gate with three-frame onset and bounded silence timeout.
     // ------------------=
     pub const fn new(threshold: u16) -> Self {
-        Self { state: VadState::Waiting, samples: 0, frame_samples: 0, energy: 0,
-            consecutive: 0, last_voice: 0, segment: Segment { start: 0, end: 0 }, threshold,
+        Self {
+            state: VadState::Waiting,
+            samples: 0,
+            frame_samples: 0,
+            energy: 0,
+            consecutive: 0,
+            last_voice: 0,
+            segment: Segment { start: 0, end: 0 },
+            threshold,
             continuation_threshold: threshold,
-            waiting_energies: [0; AMBIENT_FRAMES], waiting_frames: 0,
-            limit_silence: 0 }
+            waiting_energies: [0; AMBIENT_FRAMES],
+            waiting_frames: 0,
+            limit_silence: 0,
+        }
     }
     // ------------------------=
     // FUNC: state
     // DESC: Returns the authoritative segmentation state without consuming samples.
     // ------------------=
-    pub const fn state(&self) -> VadState { self.state }
+    pub const fn state(&self) -> VadState {
+        self.state
+    }
     // ------------------------=
     // FUNC: samples
     // DESC: Returns consumed mono samples including bounded preroll and trailing silence.
     // ------------------=
-    pub const fn samples(&self) -> usize { self.samples }
+    pub const fn samples(&self) -> usize {
+        self.samples
+    }
     // ------------------------=
     // FUNC: segment
     // DESC: Exposes completed speech with its captured endpoint tail, preserving quiet final consonants.
     // ------------------=
     pub fn segment(&self) -> Option<Segment> {
-        if self.state == VadState::Complete { Some(self.segment) } else { None }
+        if self.state == VadState::Complete {
+            Some(self.segment)
+        } else {
+            None
+        }
     }
     // ------------------------=
     // FUNC: push
@@ -66,8 +90,12 @@ impl Detector {
     pub fn push(&mut self, pcm: &[i16]) -> usize {
         let mut consumed = 0;
         for &sample in pcm {
-            if !matches!(self.state, VadState::Waiting | VadState::Speech) { break; }
-            self.samples += 1; self.frame_samples += 1; consumed += 1;
+            if !matches!(self.state, VadState::Waiting | VadState::Speech) {
+                break;
+            }
+            self.samples += 1;
+            self.frame_samples += 1;
+            consumed += 1;
             let value = i64::from(sample);
             self.energy += (value * value) as u64;
             if self.frame_samples == FRAME {
@@ -84,15 +112,23 @@ impl Detector {
                     // Apply the same sustained-voice requirement at the tail
                     // as at onset. One noisy frame must not extend a phrase
                     // indefinitely or keep the retry gate latched.
-                    if self.consecutive >= ONSET_FRAMES { self.last_voice = self.samples; }
+                    if self.consecutive >= ONSET_FRAMES {
+                        self.last_voice = self.samples;
+                    }
                     if self.state == VadState::Waiting && self.consecutive >= ONSET_FRAMES {
-                        self.segment.start = self.samples.saturating_sub(ONSET_FRAMES * FRAME + PRE_ROLL);
+                        self.segment.start =
+                            self.samples.saturating_sub(ONSET_FRAMES * FRAME + PRE_ROLL);
                         self.state = VadState::Speech;
                     }
-                } else { self.consecutive = 0; }
-                self.frame_samples = 0; self.energy = 0;
-                if self.state == VadState::Speech && self.consecutive == 0
-                    && self.samples - self.last_voice >= END_SILENCE {
+                } else {
+                    self.consecutive = 0;
+                }
+                self.frame_samples = 0;
+                self.energy = 0;
+                if self.state == VadState::Speech
+                    && self.consecutive == 0
+                    && self.samples - self.last_voice >= END_SILENCE
+                {
                     self.segment.end = self.samples;
                     self.state = VadState::Complete;
                 }
@@ -101,7 +137,9 @@ impl Detector {
                 if self.state == VadState::Speech {
                     self.segment = Segment { start: 0, end: 0 };
                     self.state = VadState::Limit;
-                    self.frame_samples = 0; self.energy = 0; self.limit_silence = 0;
+                    self.frame_samples = 0;
+                    self.energy = 0;
+                    self.limit_silence = 0;
                 } else {
                     self.state = VadState::NoSpeech;
                 }
@@ -139,8 +177,11 @@ impl Detector {
     fn drain_limit(&mut self, pcm: &[i16]) -> usize {
         let mut consumed = 0;
         for &sample in pcm {
-            if self.state != VadState::Limit { break; }
-            consumed += 1; self.frame_samples += 1;
+            if self.state != VadState::Limit {
+                break;
+            }
+            consumed += 1;
+            self.frame_samples += 1;
             let value = i64::from(sample);
             self.energy += (value * value) as u64;
             if self.frame_samples == FRAME {
@@ -151,9 +192,16 @@ impl Detector {
                 // gate before allowing a fresh, separately wake-authorized turn.
                 let voiced = self.energy >= u64::from(self.threshold.max(1)).pow(2) * FRAME as u64;
                 self.consecutive = if voiced { self.consecutive + 1 } else { 0 };
-                self.limit_silence = if self.consecutive >= ONSET_FRAMES { 0 } else { self.limit_silence + FRAME };
-                self.frame_samples = 0; self.energy = 0;
-                if self.consecutive == 0 && self.limit_silence >= END_SILENCE { self.state = VadState::NoSpeech; }
+                self.limit_silence = if self.consecutive >= ONSET_FRAMES {
+                    0
+                } else {
+                    self.limit_silence + FRAME
+                };
+                self.frame_samples = 0;
+                self.energy = 0;
+                if self.consecutive == 0 && self.limit_silence >= END_SILENCE {
+                    self.state = VadState::NoSpeech;
+                }
             }
         }
         consumed
@@ -163,9 +211,14 @@ impl Detector {
     // DESC: Invalidates utterance bounds and removes accumulated energy on interruption.
     // ------------------=
     pub fn cancel(&mut self) {
-        self.state = VadState::Cancelled; self.segment = Segment { start: 0, end: 0 };
-        self.energy = 0; self.frame_samples = 0; self.consecutive = 0; self.last_voice = 0;
-        self.waiting_energies.fill(0); self.waiting_frames = 0;
+        self.state = VadState::Cancelled;
+        self.segment = Segment { start: 0, end: 0 };
+        self.energy = 0;
+        self.frame_samples = 0;
+        self.consecutive = 0;
+        self.last_voice = 0;
+        self.waiting_energies.fill(0);
+        self.waiting_frames = 0;
     }
 }
 
@@ -178,7 +231,12 @@ impl Utterance {
     // FUNC: new
     // DESC: Reserves a fixed 320,000-byte maximum utterance with no frame-time allocation.
     // ------------------=
-    pub const fn new(threshold: u16) -> Self { Self { pcm: [0; MAX_SAMPLES], detector: Detector::new(threshold) } }
+    pub const fn new(threshold: u16) -> Self {
+        Self {
+            pcm: [0; MAX_SAMPLES],
+            detector: Detector::new(threshold),
+        }
+    }
     // ------------------------=
     // FUNC: push
     // DESC: Stores exactly the samples accepted by VAD, never overflowing utterance storage.
@@ -212,15 +270,21 @@ impl Utterance {
     // FUNC: state
     // DESC: Exposes speech onset, completion and bounded failures for service diagnostics.
     // ------------------=
-    pub const fn state(&self) -> VadState { self.detector.state() }
+    pub const fn state(&self) -> VadState {
+        self.detector.state()
+    }
     // ------------------------=
     // FUNC: active_speech_samples
     // DESC: Reports confirmed near-end speech duration so duplex playback ignores brief echo residuals before barge-in.
     // ------------------=
     pub const fn active_speech_samples(&self) -> usize {
         if matches!(self.detector.state(), VadState::Speech | VadState::Complete) {
-            self.detector.samples().saturating_sub(self.detector.segment.start)
-        } else { 0 }
+            self.detector
+                .samples()
+                .saturating_sub(self.detector.segment.start)
+        } else {
+            0
+        }
     }
     // ------------------------=
     // FUNC: speech
@@ -234,7 +298,8 @@ impl Utterance {
     // DESC: Erases private microphone samples before reuse or cancellation.
     // ------------------=
     pub fn clear(&mut self, threshold: u16) {
-        self.pcm.fill(0); self.detector = Detector::new(threshold);
+        self.pcm.fill(0);
+        self.detector = Detector::new(threshold);
     }
     // ------------------------=
     // FUNC: clear_with_continuation
@@ -248,7 +313,10 @@ impl Utterance {
     // FUNC: cancel
     // DESC: Stops segmentation and erases all retained audio, including preroll.
     // ------------------=
-    pub fn cancel(&mut self) { self.pcm.fill(0); self.detector.cancel(); }
+    pub fn cancel(&mut self) {
+        self.pcm.fill(0);
+        self.detector.cancel();
+    }
 }
 
 #[cfg(test)]
@@ -271,7 +339,9 @@ mod tests {
         assert_eq!(expected.iter().filter(|&&v| v == 120).count(), PRE_ROLL);
         for chunk in [1, 17, 319, 320, 701, 4096] {
             let mut utterance = Utterance::new(300);
-            for samples in input.chunks(chunk) { utterance.push(samples); }
+            for samples in input.chunks(chunk) {
+                utterance.push(samples);
+            }
             assert_eq!(utterance.speech().unwrap(), expected, "chunk size {chunk}");
         }
     }
@@ -284,9 +354,12 @@ mod tests {
         let mut value = Utterance::new(300);
         value.push(&[1234; FRAME * 4]);
         assert!(value.pcm.iter().any(|s| *s != 0));
-        value.cancel(); assert!(value.pcm.iter().all(|s| *s == 0));
-        value.clear(300); value.push(&[5678; FRAME]);
-        value.clear(300); assert!(value.pcm.iter().all(|s| *s == 0));
+        value.cancel();
+        assert!(value.pcm.iter().all(|s| *s == 0));
+        value.clear(300);
+        value.push(&[5678; FRAME]);
+        value.clear(300);
+        assert!(value.pcm.iter().all(|s| *s == 0));
         assert_eq!(value.detector.samples(), 0);
     }
     #[test]
@@ -295,13 +368,13 @@ mod tests {
     // DESC: Distinguishes short onset residuals from sustained near-end speech used for duplex interruption.
     // ------------------=
     fn reports_only_confirmed_speech_duration() {
-        let mut value=Utterance::new(300);
-        value.push(&[1000;FRAME*2]);
-        assert_eq!(value.active_speech_samples(),0);
-        value.push(&[1000;FRAME*8]);
-        assert!(value.active_speech_samples()>=RATE/5);
+        let mut value = Utterance::new(300);
+        value.push(&[1000; FRAME * 2]);
+        assert_eq!(value.active_speech_samples(), 0);
+        value.push(&[1000; FRAME * 8]);
+        assert!(value.active_speech_samples() >= RATE / 5);
         value.clear(300);
-        assert_eq!(value.active_speech_samples(),0);
+        assert_eq!(value.active_speech_samples(), 0);
     }
 
     #[test]
@@ -455,11 +528,15 @@ mod tests {
     // ------------------=
     fn overlong_speech_is_rejected_until_real_pause() {
         let mut value = Utterance::new(300);
-        for _ in 0..MAX_SAMPLES / FRAME { value.push(&[1000; FRAME]); }
+        for _ in 0..MAX_SAMPLES / FRAME {
+            value.push(&[1000; FRAME]);
+        }
         assert_eq!(value.state(), VadState::Limit);
         assert!(value.speech().is_none());
         assert!(value.pcm.iter().all(|&sample| sample == 0));
-        for _ in 0..1000 { value.push(&[1000; FRAME]); }
+        for _ in 0..1000 {
+            value.push(&[1000; FRAME]);
+        }
         assert_eq!(value.state(), VadState::Limit);
         value.push(&[0; END_SILENCE - FRAME]);
         assert_eq!(value.state(), VadState::Limit);
@@ -470,7 +547,8 @@ mod tests {
         assert_eq!(value.state(), VadState::NoSpeech);
         assert!(value.speech().is_none());
         value.clear(300);
-        value.push(&[1000; FRAME * 5]); value.push(&[0; END_SILENCE]);
+        value.push(&[1000; FRAME * 5]);
+        value.push(&[0; END_SILENCE]);
         assert_eq!(value.state(), VadState::Complete);
     }
 
@@ -520,7 +598,14 @@ mod tests {
             for frame in 0..END_SILENCE / FRAME {
                 value.push(&[if frame % 5 == 2 { 570 } else { 380 }; FRAME]);
             }
-            assert_eq!(value.state(), if overlong { VadState::NoSpeech } else { VadState::Complete });
+            assert_eq!(
+                value.state(),
+                if overlong {
+                    VadState::NoSpeech
+                } else {
+                    VadState::Complete
+                }
+            );
             assert_eq!(value.speech().is_none(), overlong);
         }
     }

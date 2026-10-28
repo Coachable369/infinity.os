@@ -37,6 +37,17 @@ glyphs, advances and kerning; Studio registers the same existing
 inside their own bounds and fields use the authored size for both text and caret.
 Legacy installer, settings and signed-in desktop font selections are unchanged.
 
+Configuration readability revision: at the 1000-unit authoring height, titles use
+34px in a 70px-tall wrapping frame; body copy 22px, inputs/buttons 24px, secondary
+labels 16–18px, card headings 20px and card details 17px. Card text bounds grow
+with the fonts. These are authored template values, also used by Studio factory
+reset, not renderer-only overrides. Existing user copy, image crops, palette and
+animation states remain intact. Native screenshot validation remains required.
+Network choice cards follow the same readability scale: 20px headings, 18px
+two-line details and 16px status, with 24px existing glyphs. Their native and
+Studio rows occupy 18 percent of the authored content height, with a 20 percent
+stride; status shares the heading row, never the description's wrapping space.
+
 Keep the current forms, actions and hit rectangles. Login branding is top-right
 below the identity bar. Configuration branding is center-right, an editable
 template image layer. Its crop removes only transparent margins of the original

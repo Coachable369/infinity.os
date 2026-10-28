@@ -242,9 +242,16 @@ impl ExecutionManager {
     // FUNC: bind_address_space
     // DESC: Binds a context to a nonzero page-aligned architecture root after mapping validation succeeds.
     // ------------------=
-    pub fn bind_address_space(&mut self, handle: ContextHandle, root: u64) -> Result<(), ExecutionError> {
-        if root == 0 || root & 0xfff != 0 { return Err(ExecutionError::InvalidAddressSpace); }
-        self.get_mut(handle).ok_or(ExecutionError::UnknownContext)?
+    pub fn bind_address_space(
+        &mut self,
+        handle: ContextHandle,
+        root: u64,
+    ) -> Result<(), ExecutionError> {
+        if root == 0 || root & 0xfff != 0 {
+            return Err(ExecutionError::InvalidAddressSpace);
+        }
+        self.get_mut(handle)
+            .ok_or(ExecutionError::UnknownContext)?
             .address_space = AddressSpaceToken(root);
         Ok(())
     }

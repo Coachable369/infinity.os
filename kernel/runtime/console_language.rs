@@ -166,12 +166,27 @@ impl OperationGraph<'_> {
     // DESC: Admits only implemented single-stage Pool mutations; execution still requires the authenticated IOP broker.
     // ------------------=
     pub fn executable_pool_mutation(&self) -> bool {
-        !self.plan_only && self.node_count == 1 && self.nodes[0].map(|node| {
-            node.schema.domain == b"pool" && matches!(node.schema.operation,
-                OperationId::ObjectCreate | OperationId::ObjectUpdate |
-                OperationId::ObjectCopy | OperationId::ObjectSetPolicy | OperationId::ResourceAdvertise | OperationId::PoolHeal |
-                OperationId::ObjectDelete | OperationId::PoolUploadBegin | OperationId::PoolUploadAppend | OperationId::PoolUploadCommit | OperationId::PoolUploadAbort)
-        }).unwrap_or(false)
+        !self.plan_only
+            && self.node_count == 1
+            && self.nodes[0]
+                .map(|node| {
+                    node.schema.domain == b"pool"
+                        && matches!(
+                            node.schema.operation,
+                            OperationId::ObjectCreate
+                                | OperationId::ObjectUpdate
+                                | OperationId::ObjectCopy
+                                | OperationId::ObjectSetPolicy
+                                | OperationId::ResourceAdvertise
+                                | OperationId::PoolHeal
+                                | OperationId::ObjectDelete
+                                | OperationId::PoolUploadBegin
+                                | OperationId::PoolUploadAppend
+                                | OperationId::PoolUploadCommit
+                                | OperationId::PoolUploadAbort
+                        )
+                })
+                .unwrap_or(false)
     }
 }
 
@@ -314,121 +329,413 @@ pub enum ConsoleLanguageError {
 }
 
 const NO_ARGS: &[ArgumentSchema] = &[];
-const POOL_PEER: ArgumentSchema = ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: false };
-const POOL_GRANT: ArgumentSchema = ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: false };
-const POOL_RESULT_ARGS: &[ArgumentSchema] = &[ArgumentSchema { name: b"request", value_type: ArgumentType::Text, required: true }];
+const POOL_PEER: ArgumentSchema = ArgumentSchema {
+    name: b"peer",
+    value_type: ArgumentType::NodeRef,
+    required: false,
+};
+const POOL_GRANT: ArgumentSchema = ArgumentSchema {
+    name: b"grant",
+    value_type: ArgumentType::Text,
+    required: false,
+};
+const POOL_RESULT_ARGS: &[ArgumentSchema] = &[ArgumentSchema {
+    name: b"request",
+    value_type: ArgumentType::Text,
+    required: true,
+}];
 const POOL_FIXTURE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema {name:b"length",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema {name:b"seed",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema {name:b"policy",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema {name:b"confirm",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {
+        name: b"length",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"seed",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"policy",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_RETIRE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema{name:b"peer",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema{name:b"grant",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema{name:b"lease",value_type:ArgumentType::Text,required:false},
-    ArgumentSchema{name:b"durable",value_type:ArgumentType::Boolean,required:false},
-    ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {
+        name: b"peer",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"grant",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"lease",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"durable",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_SHARE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema{name:b"durable",value_type:ArgumentType::Boolean,required:false},
-    ArgumentSchema{name:b"path",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {
+        name: b"durable",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"path",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_REPAIR_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema{name:b"peer",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {
+        name: b"peer",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_UPLOAD_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name:b"length",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"hash",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"policy",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"nonce",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"generation",value_type:ArgumentType::Text,required:false },
+    ArgumentSchema {
+        name: b"length",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"hash",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"policy",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"nonce",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
 ];
 const POOL_APPEND_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name:b"offset",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"hex",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema {
+        name: b"offset",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"hex",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_DELETE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name:b"generation",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"version",value_type:ArgumentType::Text,required:true },
-    ArgumentSchema { name:b"confirm",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"version",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_PARTICIPATE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name: b"peer", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"begin", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"chunk", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"commit", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"inspect", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"read", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"lease", value_type: ArgumentType::Text, required: false },
-    ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
-    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema {
+        name: b"peer",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"begin",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"chunk",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"commit",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"inspect",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"read",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"lease",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"durable",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_ADVERTISE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
-    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Boolean, required: false },
-    ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: true },
-    ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema {
+        name: b"durable",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"peer",
+        value_type: ArgumentType::NodeRef,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"grant",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_CREATE_ARGS: &[ArgumentSchema] = &[
-    POOL_PEER, POOL_GRANT,
-    ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"policy", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
+    POOL_PEER,
+    POOL_GRANT,
+    ArgumentSchema {
+        name: b"nonce",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"policy",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"content",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
 ];
 const POOL_INSPECT_ARGS: &[ArgumentSchema] = &[
-    POOL_PEER, POOL_GRANT,
-    ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: false },
-    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: false },
+    POOL_PEER,
+    POOL_GRANT,
+    ArgumentSchema {
+        name: b"offset",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
 ];
 const POOL_POLICY_ARGS: &[ArgumentSchema] = &[
-    POOL_PEER, POOL_GRANT,
-    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"policy", value_type: ArgumentType::Text, required: true },
+    POOL_PEER,
+    POOL_GRANT,
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"version",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"policy",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_READ_ARGS: &[ArgumentSchema] = &[
-    POOL_PEER, POOL_GRANT,
-    ArgumentSchema { name: b"source", value_type: ArgumentType::Text, required: false },
-    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"length", value_type: ArgumentType::Text, required: true },
+    POOL_PEER,
+    POOL_GRANT,
+    ArgumentSchema {
+        name: b"source",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"version",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"offset",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"length",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const POOL_WRITE_ARGS: &[ArgumentSchema] = &[
-    POOL_PEER, POOL_GRANT,
-    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
+    POOL_PEER,
+    POOL_GRANT,
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"version",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"content",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
 ];
 const POOL_COPY_ARGS: &[ArgumentSchema] = &[
-    POOL_PEER, POOL_GRANT,
-    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
+    POOL_PEER,
+    POOL_GRANT,
+    ArgumentSchema {
+        name: b"generation",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"version",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"nonce",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const NODE_LINK_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name: b"local", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"remote", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"local-port", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"remote-port", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema {
+        name: b"local",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"remote",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"local-port",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"remote-port",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const NODE_GRANT_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"scope", value_type: ArgumentType::Text, required: false },
-    ArgumentSchema { name: b"seconds", value_type: ArgumentType::Text, required: false },
-    ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
-    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Boolean, required: false },
+    ArgumentSchema {
+        name: b"name",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"scope",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"seconds",
+        value_type: ArgumentType::Text,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"durable",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
+    ArgumentSchema {
+        name: b"confirm",
+        value_type: ArgumentType::Boolean,
+        required: false,
+    },
 ];
-const NODE_REMOTE_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
-];
+const NODE_REMOTE_ARGS: &[ArgumentSchema] = &[ArgumentSchema {
+    name: b"grant",
+    value_type: ArgumentType::Text,
+    required: true,
+}];
 const NODE_REMOTE_POLICY_ARGS: &[ArgumentSchema] = &[
-    ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"value", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema {
+        name: b"grant",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"name",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
+    ArgumentSchema {
+        name: b"value",
+        value_type: ArgumentType::Text,
+        required: true,
+    },
 ];
 const FIND_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema {
@@ -604,7 +911,10 @@ const NETWORK_CONFIG_ARGS: &[ArgumentSchema] = &[
 ];
 
 pub static DOMAINS: &[DomainSchema] = &[
-    DomainSchema { name: b"pool", description: b"Authoritative native Pool objects and protection policy" },
+    DomainSchema {
+        name: b"pool",
+        description: b"Authoritative native Pool objects and protection policy",
+    },
     DomainSchema {
         name: b"system",
         description: b"System health, identity, and generations",

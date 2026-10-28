@@ -29,7 +29,7 @@ pub enum TextEditKey {
     End,
 }
 
-#[path="text_paste.rs"]
+#[path = "text_paste.rs"]
 mod text_paste;
 pub use text_paste::paste_ascii;
 

@@ -8,6 +8,8 @@ static REVOKED: AtomicBool = AtomicBool::new(false);
 static PLAYED: AtomicUsize = AtomicUsize::new(0);
 static PLAYING: AtomicBool = AtomicBool::new(false);
 static HOLD: AtomicBool = AtomicBool::new(false);
+#[path = "../kernel/runtime/ai/speech_chunk.rs"]
+mod speech_chunk;
 static WORKER_BUSY: AtomicBool = AtomicBool::new(false);
 static QUEUE_ROOM: AtomicBool = AtomicBool::new(true);
 static SYNTHESIS_FRAMES: AtomicUsize = AtomicUsize::new(80);
@@ -461,6 +463,29 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert_eq!(status().state,S::Complete);
     assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"response playback must not restart between spans");
     // Busy inference workers delay, rather than discard, queued synthesis.
+    // A provider-size fragment after a spoken phrase is prepared while DMA
+    // plays, but cannot start until its sentence-ending continuation is ready.
+    let played = PLAYED.load(Ordering::SeqCst);
+    submit_progressive_span(owner,1,b"A completed phrase.",0,19,false).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    assert_eq!(status().state,S::Speaking);
+    submit_span(owner,1,b"An unfinished provider fragment",19,50,false).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    assert_eq!(status().state,S::Ready);
+    PLAYING.store(false,Ordering::SeqCst); poll();
+    assert_eq!(status().state,S::Buffered);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1);
+    submit_progressive_span(owner,1,b" now finishes naturally.",50,74,true).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    assert_eq!(status().state,S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+2);
+    assert_eq!(PLAYED_CONTENT.lock().unwrap().last().unwrap(), &[(19,50),(50,74)]);
+    PLAYING.store(false,Ordering::SeqCst); poll();
+    assert_eq!(status().state,S::Complete);
+
     WORKER_BUSY.store(true,Ordering::SeqCst);
     submit(owner,1,b"Waiting for an AP.").unwrap();
     poll(); assert_eq!(status().state,S::Queued);

@@ -442,7 +442,13 @@ class Guest:
         if initial[4] == 9:
             before = self.authenticate()
             return self.cold_boot_proof(before)
-        assert initial[7] == 0, "Fresh account setup must begin at the welcome step"
+        assert 0 <= initial[7] <= 8, "Expected a configuration step"
+        # Interrupted onboarding restores durable identity, but not the secret
+        # or transient form fields. Revisit all fields through ordinary Back
+        # navigation so final validation sees the same data as a fresh setup.
+        for target in range(initial[7] - 1, -1, -1):
+            self.key("esc")
+            self.wait(lambda state: state[7] == target, "previous configuration step")
         self.key("ret")
         for step in range(1, 5):
             self.wait(lambda state: state[7] == step, f"configuration input {step}")
@@ -458,7 +464,15 @@ class Guest:
         self.key("ret")
         self.wait(lambda state: state[8] == 1 and not state[9] & 8, "wired selected")
         self.key("ret")
-        self.wait(lambda state: state[7] == 7 and not state[9] & 8, "network committed")
+        state = self.wait(lambda state: state[7] == 7 and not state[9] & 8, "network committed")
+        # Enrollment is optional and these guests have no attached camera.
+        # Select Skip using keyboard focus, then finish the actual Ready page.
+        while state[8] != 3:
+            previous_focus = state[8]
+            self.key("tab")
+            state = self.wait(lambda value: value[8] != previous_focus, "camera skip focus")
+        self.key("ret")
+        self.wait(lambda state: state[7] == 8, "camera enrollment skipped")
         self.key("ret")
         before = self.wait(lambda state: state[4] == 5 and state[9] & 3 == 3, "authenticated desktop")
         assert any(before[16:20]), "Node identity must exist on the installed system"

@@ -75,7 +75,8 @@ fn syscall_checks(vfs: &mut packages::Vfs) {
     assert_eq!(vfs.read(b"/packages/probe.py").unwrap(), b"abc\0\0\0");
     assert_eq!(vfs.syscall(&mut tables, 0x120f, [handle, 0, 0, 0, 0, 0]), Some(0));
     assert_eq!(vfs.syscall(&mut tables, 0x120b, [base, 1, base + 256, 0, 0, 0]), Some(0));
-    copy_from_user(&tables, base + 256, &mut bytes).unwrap(); assert_ne!(u64::from_le_bytes(bytes), handle);
+    copy_from_user(&tables, base + 256, &mut bytes).unwrap();
+    let parent_handle = u64::from_le_bytes(bytes); assert_ne!(parent_handle, handle);
     assert_eq!(vfs.syscall(&mut tables, 0x120c, [handle, base + 1024, 3, base + 512, 0, 0]), Some(-9));
     copy_to_user(&mut tables, base, b"/packages\0").unwrap();
     assert_eq!(vfs.syscall(&mut tables, 0x1206, [base, base + 256, 0, 0, 0, 0]), Some(0));
@@ -84,9 +85,129 @@ fn syscall_checks(vfs: &mut packages::Vfs) {
     assert_eq!(vfs.syscall(&mut tables, 0x1207, [directory, base + 1024, 256, 0, 0, 0]), Some(0));
     let mut name = [0; 9]; copy_from_user(&tables, base + 1024, &mut name).unwrap(); assert_eq!(&name, b"probe.py\0");
     assert!(vfs.put(b"/packages/pip", b"replace").is_err());
+    assert!(vfs.put(b"/packages/tzdata", b"replace").is_err());
+    assert_eq!(vfs.syscall(&mut tables, 0x1216, [base, 0, 0, 0, 0, 0]), Some(0));
+    let mut parked = packages::Client::new();
+    vfs.enter_child(&mut parked, 1).unwrap();
+    assert_eq!(vfs.enter_child(&mut packages::Client::new(), 2), Err(-16));
+    assert_eq!(vfs.syscall(&mut tables, 0x120c, [parent_handle, base + 1024, 3, base + 512, 0, 0]), Some(-9));
+    assert_eq!(vfs.syscall(&mut tables, 0x1207, [directory, base + 1024, 256, 0, 0, 0]), Some(-9));
+    assert_eq!(vfs.remove(b"/packages/probe.py", false), Err(-16));
+    assert_eq!(vfs.rename(b"/packages/probe.py", b"/packages/replaced.py"), Err(-16));
+    copy_to_user(&mut tables, base, b"/tmp\0").unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x1216, [base, 0, 0, 0, 0, 0]), Some(0));
+    copy_to_user(&mut tables, base, b"child.txt\0").unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x120b, [base, 7, base + 256, 0, 0, 0]), Some(0));
+    copy_from_user(&tables, base + 256, &mut bytes).unwrap(); let child_handle = u64::from_le_bytes(bytes);
+    assert!(child_handle >= 1u64 << 32);
+    copy_to_user(&mut tables, base + 1024, b"child-result").unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x120d, [child_handle, base + 1024, 12, base + 512, 0, 0]), Some(0));
+    vfs.leave_child(&mut parked);
+    assert_eq!(vfs.read(b"/tmp/child.txt").unwrap(), b"child-result");
+    assert_eq!(vfs.read(b"probe.py").unwrap(), b"abc\0\0\0");
+    assert_eq!(vfs.syscall(&mut tables, 0x120c, [child_handle, base + 1024, 12, base + 512, 0, 0]), Some(-9));
+    assert_eq!(vfs.syscall(&mut tables, 0x120c, [parent_handle, base + 1024, 3, base + 512, 0, 0]), Some(0));
+    vfs.enter_child(&mut parked, 2).unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x120c, [child_handle, base + 1024, 12, base + 512, 0, 0]), Some(-9));
+    vfs.leave_child(&mut parked);
+    vfs.reset(false);
+    vfs.enter_child(&mut parked, 3).unwrap();
+    assert_eq!(vfs.put(b"/packages/unapproved.py", b"bad"), Err(-13));
+    vfs.put(b"/tmp/allowed.py", b"scratch").unwrap();
+    vfs.leave_child(&mut parked);
     assert_eq!(vfs.syscall(&mut tables, 0x1200, [0; 6]), None);
+    vfs.reset(false);
+    assert!(vfs.put(b"/data/not-granted", b"bad").is_err());
+    vfs.grant_data(b"").unwrap();
+    copy_to_user(&mut tables, base, b"/data/database-journal\0").unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x120b, [base, 7, base + 256, 0, 0, 0]), Some(0));
+    copy_from_user(&tables, base + 256, &mut bytes).unwrap(); let data_handle = u64::from_le_bytes(bytes);
+    copy_to_user(&mut tables, base + 1024, b"journal-before-db").unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x120d, [data_handle, base + 1024, 17, base + 512, 0, 0]), Some(0));
+    assert!(!vfs.dirty()); assert!(vfs.data_dirty());
+    assert!(!vfs.data_barrier(0x120d, 0));
+    assert_eq!(vfs.syscall(&mut tables, 0x1236, [data_handle, 0, 0, 0, 0, 0]), Some(0));
+    assert!(vfs.data_barrier(0x1236, 0));
+    assert!(!vfs.data_barrier(0x1236, -9));
+    vfs.data_checkpointed(); assert!(!vfs.data_dirty());
+    assert_eq!(vfs.syscall(&mut tables, 0x120f, [data_handle, 0, 0, 0, 0, 0]), Some(0));
+    assert_eq!(vfs.syscall(&mut tables, 0x1218, [base, 0, 0, 0, 0, 0]), Some(0));
+    assert!(vfs.data_barrier(0x1218, 0)); // SQLite journal deletion must be a separate durable transaction.
+    vfs.data_checkpointed();
+    vfs.put(b"/data/private", b"owned").unwrap();
+    vfs.enter_child(&mut parked, 4).unwrap();
+    assert_eq!(vfs.read(b"/data/private"), Err(-13));
+    assert_eq!(vfs.put(b"/data/private", b"child"), Err(-13));
+    assert!(!vfs.data_barrier(0x1236, 0));
+    copy_to_user(&mut tables, base, b"/data/private\0").unwrap();
+    assert_eq!(vfs.syscall(&mut tables, 0x120b, [base, 1, base + 256, 0, 0, 0]), Some(-13));
+    vfs.leave_child(&mut parked);
+    assert_eq!(vfs.read(b"/data/private").unwrap(), b"owned");
+    assert_eq!(vfs.rename(b"/data/private", b"/tmp/escaped"), Err(-18));
+    vfs.data_checkpoint_failed();
+    assert_eq!(vfs.put(b"/data/private", b"uncommittable"), Err(-13));
     tables.release(&mut memory).unwrap(); memory.release(pages).unwrap();
     unsafe { std::alloc::dealloc(arena, layout); }
+}
+
+// ------------------------=
+// FUNC: app_data_checks
+// DESC: Verifies exact owner/source binding, independent archives, remount persistence, source rename stability and atomic storage failure recovery.
+// ------------------=
+fn app_data_checks(vfs: &mut packages::Vfs) {
+    use storage::object::{ObjectType, Space};
+    let owner = ObjectId([0x61; 16]); let foreign = ObjectId([0x62; 16]);
+    let sectors = STORE_RELATIVE_LBA as usize + 32768;
+    let disk = Disk { bytes: Rc::new(RefCell::new(vec![[0; 512]; sectors])), fail: Rc::new(RefCell::new(None)) };
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x63; 16]).unwrap();
+    let source = store.create_owned_attached(b"app.py", ObjectType::Text, Space::Personal, b"pass\n",
+        b"/home/default/documents/app.py", owner).unwrap();
+    let other = store.create_owned_attached(b"other.py", ObjectType::Text, Space::Personal, b"pass\n",
+        b"/home/default/documents/other.py", owner).unwrap();
+    vfs.reset(true); assert_eq!(vfs.grant_data(b""), Err(-13));
+    vfs.reset(false); vfs.grant_data(b"").unwrap();
+    vfs.put(b"database", b"committed-v1").unwrap();
+    vfs.put(b"/tmp/scratch", b"must-not-persist").unwrap();
+    let mut archive = vec![0; packages::MAX_ARCHIVE]; let mut out = vec![0; packages::MAX_ARCHIVE];
+    let length = vfs.encode_data(&mut archive).unwrap();
+    let revision = store.save_python_data(owner, source, 1, None, &archive[..length]).unwrap();
+    assert_eq!(store.read_python_data(owner, other, 1, &mut out).unwrap(), (None, 0));
+    assert_eq!(store.read_python_data(foreign, source, 1, &mut out), Err(ObjectError::Unauthorized));
+    assert_eq!(store.save_python_data(foreign, source, 1, Some(revision), &archive[..length]), Err(ObjectError::Unauthorized));
+    assert_eq!(store.save_python_data(owner, other, 1, Some(revision), &archive[..length]), Err(ObjectError::InvalidVersion));
+    assert_eq!(store.save_python_data(owner, source, 1, None, &archive[..length]), Err(ObjectError::InvalidVersion));
+    assert_eq!(store.read(revision.id, None, &mut out), Err(ObjectError::Unauthorized));
+    assert_eq!(store.attach(b"/home/default/documents/data-alias", revision.id), Err(ObjectError::Unauthorized));
+    assert_eq!(store.remove(revision.id), Err(ObjectError::Unauthorized));
+    assert_eq!(store.save_python_packages(owner, None, &archive[..length]), Err(ObjectError::CorruptContent));
+    store.move_entry(b"/home/default/documents/app.py", b"/home/default/documents/renamed.py").unwrap();
+    let updated_source = store.write(source, b"print('updated editor source')\n").unwrap();
+    assert!(updated_source > 1);
+    assert_eq!(store.read_python_data(owner, source, 1, &mut out).unwrap(), (Some(revision), length));
+    assert_eq!(store.read_python_data(owner, source, updated_source + 1, &mut out), Err(ObjectError::Unauthorized));
+    drop(store); let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    let (loaded, count) = store.read_python_data(owner, source, 1, &mut out).unwrap();
+    assert_eq!(loaded, Some(revision)); assert_eq!(&out[..count], &archive[..length]);
+    vfs.reset(false); vfs.grant_data(&out[..count]).unwrap();
+    assert_eq!(vfs.read(b"/data/database").unwrap(), b"committed-v1");
+    assert!(vfs.read(b"/tmp/scratch").is_err());
+    assert!(!vfs.dirty()); assert!(!vfs.data_dirty());
+    vfs.put(b"/data/database", b"committed-v2").unwrap();
+    let changed_length = vfs.encode_data(&mut out).unwrap();
+    for fail_after in [0, 4, 33] {
+        *disk.fail.borrow_mut() = Some(fail_after);
+        assert_eq!(store.save_python_data(owner, source, 1, Some(revision), &out[..changed_length]), Err(ObjectError::TransactionFailed));
+        *disk.fail.borrow_mut() = None;
+        drop(store); store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let mut check = vec![0; length];
+        assert_eq!(store.read_python_data(owner, source, 1, &mut check).unwrap(), (Some(revision), length));
+        assert_eq!(check, archive[..length]);
+    }
+    let mut oversized = vec![0; packages::MAX_ARCHIVE]; oversized[..8].copy_from_slice(b"IDAT0001");
+    assert_eq!(store.save_python_data(owner, source, 1, Some(revision), &oversized), Err(ObjectError::InsufficientCapacity));
+    drop(store); let mut store = ObjectStore::mount(disk, 0).unwrap();
+    let (loaded, count) = store.read_python_data(owner, source, 1, &mut out).unwrap();
+    assert_eq!(loaded, Some(revision)); assert_eq!(&out[..count], &archive[..length]);
 }
 
 // ------------------------=
@@ -96,13 +217,28 @@ fn syscall_checks(vfs: &mut packages::Vfs) {
 fn main() {
     use packages::{admit_pip, PipMode, PolicyError};
     assert_eq!(admit_pip(&[b"list", b"--format=json"]), Ok(PipMode::ReadOnly));
+    assert_eq!(admit_pip(&[b"install", b"--ignore-installed", b"tomli==2.5.0"]), Ok(PipMode::Install));
+    assert_eq!(admit_pip(&[b"install", b"--ignore-installed", b"pip"]), Err(PolicyError::SelfModification));
+    assert_eq!(admit_pip(&[b"install", b"--ignore-installed", b"tzdata"]), Err(PolicyError::SelfModification));
     assert_eq!(admit_pip(&[b"freeze", b"--all"]), Ok(PipMode::ReadOnly));
     assert_eq!(admit_pip(&[b"install", b"/home/default/documents/demo.whl"]), Ok(PipMode::Install));
+    assert_eq!(admit_pip(&[b"install", b"/home/default/documents/demo.zip"]), Ok(PipMode::Install));
+    assert_eq!(admit_pip(&[b"install", b"https://example.org/demo-1.0.tar.gz"]), Ok(PipMode::Install));
+    for archive in [b"/work/demo.tar".as_slice(), b"/work/demo.tar.xz", b"/work/demo.txz",
+        b"https://example.org/demo-1.0.tar.xz#sha256=0123456789abcdef"] {
+        assert_eq!(admit_pip(&[b"install", archive]), Ok(PipMode::Install));
+    }
+    assert_eq!(admit_pip(&[b"install", b"/home/default/documents/source-tree"]), Err(PolicyError::Input));
     assert_eq!(admit_pip(&[b"uninstall", b"-y", b"demo"]), Ok(PipMode::Uninstall));
     assert_eq!(admit_pip(&[b"uninstall", b"demo"]), Err(PolicyError::Confirmation));
     assert_eq!(admit_pip(&[b"install", b"--target=/system"]), Err(PolicyError::Option));
-    assert_eq!(admit_pip(&[b"install", b"https://example.org/demo.whl"]), Err(PolicyError::Input));
+    assert_eq!(admit_pip(&[b"install", b"https://example.org/demo.whl"]), Ok(PipMode::Install));
+    assert_eq!(admit_pip(&[b"install", b"http://example.org/demo.whl"]), Err(PolicyError::Input));
+    assert_eq!(admit_pip(&[b"install", b"demo[feature]>=1.0,<2.0"]), Ok(PipMode::Install));
+    assert_eq!(admit_pip(&[b"install", b"--trusted-host=example.org", b"demo"]), Err(PolicyError::Option));
+    assert_eq!(admit_pip(&[b"install", b"https://example.org/pip-26.2.1-py3-none-any.whl"]), Err(PolicyError::SelfModification));
     assert_eq!(admit_pip(&[b"install", b"PIP==26.2.1"]), Err(PolicyError::SelfModification));
+    assert_eq!(admit_pip(&[b"uninstall", b"-y", b"tzdata"]), Err(PolicyError::SelfModification));
     assert_eq!(admit_pip(&[b"install", b"pip-tools"]), Ok(PipMode::Install));
     assert_eq!(admit_pip(&[b"install", b"/work/pip-26.2.1-py3-none-any.whl"]), Err(PolicyError::SelfModification));
     assert_eq!(admit_pip(&[b"list", b"--outdated"]), Err(PolicyError::Option));
@@ -140,13 +276,19 @@ fn main() {
     assert!(vfs.read(b"/packages/staged/module.py").is_err());
 
     let owner = ObjectId([0x41; 16]); let foreign = ObjectId([0x42; 16]);
-    let sectors = STORE_RELATIVE_LBA as usize + 65536;
+    let sectors = STORE_RELATIVE_LBA as usize + 262144;
     let disk = Disk { bytes: Rc::new(RefCell::new(vec![[0; 512]; sectors])), fail: Rc::new(RefCell::new(None)) };
     let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x53; 16]).unwrap();
     let mut out = vec![0; packages::MAX_ARCHIVE];
     assert_eq!(store.read_python_packages(owner, &mut out).unwrap(), (None, 0));
     let revision = store.save_python_packages(owner, None, &archive[..length]).unwrap();
     assert_eq!(revision.version, 1);
+    let (directory_revision, directory) = store.read_python_library_catalog(owner, None).unwrap();
+    assert_eq!(directory_revision, Some(revision)); assert_eq!(directory.count, 2);
+    assert_eq!(directory.module(0), Some(b"demo".as_slice())); assert_eq!(directory.module(1), Some(b"staged".as_slice()));
+    assert_eq!(store.read_python_library_catalog(owner, Some((revision, directory))).unwrap(), (Some(revision), directory));
+    let (foreign_revision, foreign_directory) = store.read_python_library_catalog(foreign, Some((revision, directory))).unwrap();
+    assert_eq!(foreign_revision, None); assert_eq!(foreign_directory.count, 0);
     assert_eq!(store.read_python_packages(foreign, &mut out).unwrap(), (None, 0));
     assert_eq!(store.save_python_packages(foreign, Some(revision), &archive[..length]), Err(ObjectError::InvalidVersion));
     assert_eq!(store.save_python_packages(owner, None, &archive[..length]), Err(ObjectError::InvalidVersion));
@@ -185,6 +327,7 @@ fn main() {
     for _ in 0..80 { current = store.save_python_packages(owner, Some(current), &archive[..length]).unwrap(); }
     assert_eq!(store.usage_blocks(), initial_blocks);
     assert_eq!(current.id, revision.id); assert_eq!(current.version, 81);
+    assert_eq!(store.read_python_library_catalog(owner, Some((revision, directory))).unwrap(), (Some(current), directory));
     assert_eq!(store.save_python_packages(owner, Some(revision), &archive[..length]), Err(ObjectError::InvalidVersion));
     for fail_after in [0, 4, 33, 100] {
         *disk.fail.borrow_mut() = Some(fail_after);
@@ -194,15 +337,16 @@ fn main() {
         let (loaded, count) = store.read_python_packages(owner, &mut out).unwrap();
         assert_eq!(loaded, Some(current)); assert_eq!(&out[..count], &archive[..length]);
     }
-    // The archive contract is eight MiB, independent of smaller download and
+    // Cross the former eight MiB policy using scalable native allocation,
     // ordinary-object limits. Exercise the exact bound, not only a small wheel.
     vfs.reset(true);
-    let full_file = vec![0x6b; 4 * 1024 * 1024];
+    let full_file = vec![0x6b; packages::limits::FILE_BYTES];
     vfs.put(b"/packages/a", &full_file).unwrap();
     let overhead = 16 + 2 * (8 + b"/packages/a".len());
     let tail = vec![0x7c; packages::MAX_ARCHIVE - overhead - full_file.len()];
     vfs.put(b"/packages/b", &tail).unwrap();
     assert_eq!(vfs.encode(&mut archive).unwrap(), packages::MAX_ARCHIVE);
+    assert!(archive.len() > 8 * 1024 * 1024);
     current = store.save_python_packages(owner, Some(current), &archive).unwrap();
     drop(store); store = ObjectStore::mount(disk.clone(), 0).unwrap();
     let (loaded, count) = store.read_python_packages(owner, &mut out).unwrap();
@@ -229,5 +373,6 @@ fn main() {
     assert_eq!(store.create(b"oversized-public", storage::object::ObjectType::Blob,
         storage::object::Space::Personal, &full_file), Err(ObjectError::InsufficientCapacity));
     assert!(store.save_python_packages(ObjectId([0; 16]), None, &archive[..length]).is_err());
-    println!("Private package storage and filesystem behavior passed");
+    app_data_checks(vfs);
+    println!("Private package and application data storage behavior passed");
 }

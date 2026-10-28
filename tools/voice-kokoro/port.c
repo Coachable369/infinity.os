@@ -179,11 +179,6 @@ int _unlink(const char*path){(void)path;errno=EROFS;return -1;}
 // ------------------=
 int posix_memalign(void**out,size_t alignment,size_t size){if(!out||alignment<sizeof(void*)||(alignment&(alignment-1)))return EINVAL;void*p=memalign(alignment,size);if(!p)return ENOMEM;*out=p;return 0;}
 // ------------------------=
-// FUNC: pthread_cond_init
-// DESC: Initializes a serial-worker condition without granting thread creation.
-// ------------------=
-int pthread_cond_init(pthread_cond_t*cond,const pthread_condattr_t*attr){if(!cond||attr)return EINVAL;*cond=PTHREAD_COND_INITIALIZER;return 0;}
-// ------------------------=
 // FUNC: sysconf
 // DESC: Reports the explicitly single-worker resource contract and rejects unknown queries.
 // ------------------=
@@ -389,17 +384,17 @@ int native_synthesize_voice(const char*text,size_t length,int16_t*pcm,size_t cap
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
     }
     cancel_callback=NULL;cancel_context=NULL;
+    if(result){memset(pcm,0,capacity*sizeof(*pcm));*frames=0;}
+    native_engine_release(&active);
+    return result;
+}
+
 // ------------------------=
 // FUNC: native_synthesize
 // DESC: Preserves the default-voice ABI for existing native diagnostics and clients.
 // ------------------=
 int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,size_t*frames,int(*cancel)(void*),void*context){
     return native_synthesize_voice(text,length,pcm,capacity,frames,cancel,context,0);
-}
-
-    if(result){memset(pcm,0,capacity*sizeof(*pcm));*frames=0;}
-    native_engine_release(&active);
-    return result;
 }
 
 // ------------------------=

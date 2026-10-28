@@ -1,5 +1,6 @@
 //! Explicitly enabled local conversation. All transitions run on the desktop owner;
 //! decoding runs on a bounded AP and uses the existing local AI service.
+use super::wake_word;
 use super::{
     chat::{ChatRole, GenerationState},
     voice_input, voice_output,
@@ -11,17 +12,16 @@ use crate::runtime::{
     execution::SecurityIdentity,
     identity::{SessionState, WakeWord},
 };
-use super::wake_word;
 #[path = "../../ui/voice_indicator.rs"]
 pub mod indicator;
 #[path = "speech_chunk.rs"]
 mod speech_chunk;
+#[path = "voice_timing.rs"]
+pub mod timing;
 #[path = "voice_echo.rs"]
 mod voice_echo;
 #[path = "voice_noise_floor.rs"]
 mod voice_noise_floor;
-#[path = "voice_timing.rs"]
-pub mod timing;
 use timing::Milestone;
 #[cfg(not(test))]
 #[path = "voice_trace.rs"]
@@ -324,7 +324,9 @@ unsafe fn clear_pending_prompt(remove_composer: bool) {
         super::with_ai_runtime(|ai| {
             if ai.chat.input() == &(&*(&raw const PENDING_PROMPT))[..PENDING_PROMPT_LENGTH] {
                 ai.chat.set_input_cursor(PENDING_PROMPT_LENGTH);
-                for _ in 0..PENDING_PROMPT_LENGTH { let _ = ai.chat.pop_input(); }
+                for _ in 0..PENDING_PROMPT_LENGTH {
+                    let _ = ai.chat.pop_input();
+                }
             }
         });
     }
@@ -337,11 +339,14 @@ unsafe fn clear_pending_prompt(remove_composer: bool) {
 // DESC: Binds a queued voice prompt to its original owner, model, wake setting, deadline, and exact unchanged composer.
 // ------------------=
 unsafe fn pending_prompt_valid() -> bool {
-    PENDING_PROMPT_LENGTH != 0 && active_owner(OWNER)
+    PENDING_PROMPT_LENGTH != 0
+        && active_owner(OWNER)
         && super::qwen::workers::clock_ns() < PENDING_PROMPT_UNTIL
         && configured_wake_word(OWNER) == PENDING_PROMPT_WORD
-        && super::with_ai_runtime(|ai| ai.chat.selected_model() == PENDING_PROMPT_MODEL
-            && ai.chat.input() == &(&*(&raw const PENDING_PROMPT))[..PENDING_PROMPT_LENGTH])
+        && super::with_ai_runtime(|ai| {
+            ai.chat.selected_model() == PENDING_PROMPT_MODEL
+                && ai.chat.input() == &(&*(&raw const PENDING_PROMPT))[..PENDING_PROMPT_LENGTH]
+        })
 }
 // ------------------------=
 // FUNC: queue_command
@@ -353,18 +358,30 @@ unsafe fn queue_command(input: &[u8]) -> bool {
         clear_pending_prompt(false);
         return false;
     };
-    if length > super::chat::CHAT_INPUT_CAPACITY { clear_pending_prompt(false); return false; }
+    if length > super::chat::CHAT_INPUT_CAPACITY {
+        clear_pending_prompt(false);
+        return false;
+    }
     let inserted = super::with_ai_runtime(|ai| {
-        if !ai.chat.input().is_empty() || ai.chat.generation_state == GenerationState::Running { return false; }
+        let side_control=ai.app_turn_owner().is_some()
+            && super::control::Command::explicit(&(&*(&raw const PENDING_PROMPT))[..length]).is_some();
+        if !ai.chat.input().is_empty() || (ai.chat.generation_state == GenerationState::Running && !side_control) {
+            return false;
+        }
         for index in 0..length {
             if !ai.chat.push_input(PENDING_PROMPT[index]) {
-                for _ in 0..index { let _ = ai.chat.pop_input(); }
+                for _ in 0..index {
+                    let _ = ai.chat.pop_input();
+                }
                 return false;
             }
         }
         true
     });
-    if !inserted { clear_pending_prompt(false); return false; }
+    if !inserted {
+        clear_pending_prompt(false);
+        return false;
+    }
     // An addressed command takes priority over a background workflow
     // announcement. The existing provider retains its buffers until its
     // cancellation acknowledgement; reply admission below waits for it.
@@ -380,14 +397,18 @@ unsafe fn queue_command(input: &[u8]) -> bool {
 // DESC: Submits only the unchanged authorized voice composer after its original selected local model becomes ready.
 // ------------------=
 unsafe fn submit_pending_transcript() -> bool {
-    if !pending_prompt_valid() { return false; }
+    if !pending_prompt_valid() {
+        return false;
+    }
     let submitted = super::with_ai_runtime(|ai| {
-        if ai.chat.input().is_empty()
-            || ai.chat.generation_state == GenerationState::Running
-        {
+        let side_control=ai.app_turn_owner().is_some()
+            && super::control::Command::explicit(ai.chat.input()).is_some();
+        if ai.chat.input().is_empty() || (ai.chat.generation_state == GenerationState::Running && !side_control) {
             return false;
         }
-        if !ai.submit_voice_chat() { return false; }
+        if !ai.submit_voice_chat() {
+            return false;
+        }
         CHAT_TURN = ai.chat.turn_id();
         OUTPUT_AT_SUBMIT = voice_output::request_id(OWNER);
         REPLY_OUTPUT_REQUEST = 0;
@@ -399,7 +420,8 @@ unsafe fn submit_pending_transcript() -> bool {
         true
     });
     if submitted {
-        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Submitted, super::qwen::workers::clock_ns());
+        (&mut *(&raw mut TURN_TIMING))
+            .observe(Milestone::Submitted, super::qwen::workers::clock_ns());
         clear_pending_prompt(false);
     }
     submitted
@@ -564,7 +586,11 @@ unsafe fn listen() -> bool {
         reset_listening_state();
         return true;
     }
-    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, CAPTURE_CAPABILITY_SECONDS) else {
+    let Some(cap) = grant(
+        OWNER,
+        CapabilityType::AudioInput,
+        CAPTURE_CAPABILITY_SECONDS,
+    ) else {
         trace(b"listen failed grant");
         return false;
     };
@@ -596,7 +622,11 @@ unsafe fn listen() -> bool {
 // DESC: Recovers a completed or overrun DMA stream without discarding speech already accepted by VAD.
 // ------------------=
 unsafe fn reopen_capture() -> bool {
-    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, CAPTURE_CAPABILITY_SECONDS) else {
+    let Some(cap) = grant(
+        OWNER,
+        CapabilityType::AudioInput,
+        CAPTURE_CAPABILITY_SECONDS,
+    ) else {
         REOPEN_FAILURE = 1;
         return false;
     };
@@ -606,7 +636,9 @@ unsafe fn reopen_capture() -> bool {
         return false;
     }
     INPUT_CAP = cap;
-    let rate = crate::drivers::audio::capture_status().map(|s| s.sample_rate).unwrap_or(0);
+    let rate = crate::drivers::audio::capture_status()
+        .map(|s| s.sample_rate)
+        .unwrap_or(0);
     if !(&mut *(&raw mut RESAMPLER)).configure(rate) {
         REOPEN_FAILURE = 3;
         crate::drivers::audio::stop_capture(OWNER);
@@ -630,7 +662,9 @@ unsafe fn reopen_capture() -> bool {
 // ------------------=
 pub fn start(owner: SecurityIdentity) -> bool {
     unsafe {
-        let Some(user) = active_user(owner) else { return false; };
+        let Some(user) = active_user(owner) else {
+            return false;
+        };
         if !matches!(STATE, State::Off | State::Failed) {
             if OWNER != owner {
                 return false;
@@ -646,13 +680,14 @@ pub fn start(owner: SecurityIdentity) -> bool {
         // accept it.  The widget exposes this interval as STARTING instead of
         // letting users unknowingly stack transcripts behind model loading.
         let idle = super::with_ai_runtime(|ai| {
-            ai.chat.input().is_empty()
-                && ai.chat.generation_state != GenerationState::Running
+            ai.chat.input().is_empty() && (ai.chat.generation_state != GenerationState::Running || ai.app_turn_owner().is_some())
         });
         let route_ready = super::with_ai_runtime(|ai| ai.chat.selected_model_ready())
             && crate::drivers::audio::capture_available()
             && crate::drivers::audio::playback_rate().is_some();
-        if !idle { return false; }
+        if !idle {
+            return false;
+        }
         // Warm speech on its existing background worker while the local model
         // and audio routes become ready. Never open capture during this work.
         if voice_input::prepare_failed() && !voice_input::recover_engine() {
@@ -695,12 +730,19 @@ pub fn start(owner: SecurityIdentity) -> bool {
 // DESC: Retries transient cold-start dependencies; a successful start, fatal error or manual stop consumes the schedule.
 // ------------------=
 pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Option<bool> {
-    if *deadline == u64::MAX || now < *deadline { return None; }
+    if *deadline == u64::MAX || now < *deadline {
+        return None;
+    }
     *deadline = u64::MAX;
-    if state().0 != State::Off { return None; }
+    if state().0 != State::Off {
+        return None;
+    }
     let started = start(owner);
-    if !started && state().0 == State::Off && active_user(owner).is_some()
-        && !voice_input::prepare_failed() {
+    if !started
+        && state().0 == State::Off
+        && active_user(owner).is_some()
+        && !voice_input::prepare_failed()
+    {
         *deadline = now.saturating_add(250_000_000);
         return None;
     }
@@ -770,7 +812,8 @@ fn stop_session(owner: SecurityIdentity,cancel_turn:bool,all_output:bool) -> boo
         (&mut *(&raw mut RESAMPLER)).clear();
         (&mut *(&raw mut RAW)).fill(0);
         (&mut *(&raw mut MONO)).fill(0);
-        (&mut *(&raw mut ECHO)).fill(0);ECHO_VALID_UNTIL=0;
+        (&mut *(&raw mut ECHO)).fill(0);
+        ECHO_VALID_UNTIL = 0;
         (&mut *(&raw mut TRANSCRIPT)).fill(0);
         clear_pending_prompt(true);
         (&mut *(&raw mut REPLY)).fill(0);
@@ -783,6 +826,7 @@ fn stop_session(owner: SecurityIdentity,cancel_turn:bool,all_output:bool) -> boo
         true
     }
 }
+
 // ------------------------=
 // FUNC: recover_reply
 // DESC: Drains a failed turn before bounded speech reset, preserving completed actions and respecting explicit mute and authority.
@@ -841,16 +885,22 @@ unsafe fn resume_background_listening() -> bool {
 // ------------------=
 unsafe fn speak_next() -> bool {
     let enabled = crate::runtime::with_runtime(|r| {
-        (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| r.identity.session_nth(i))
+        (0..crate::runtime::identity::MAX_SESSIONS)
+            .filter_map(|i| r.identity.session_nth(i))
             .find(|s| s.id.0 == OWNER.0 && s.state == SessionState::Active)
-            .and_then(|s| r.identity.ai_profile(s.user)).map(|p| p.speech_output_enabled).unwrap_or(false)
-    }).unwrap_or(false);
+            .and_then(|s| r.identity.ai_profile(s.user))
+            .map(|p| p.speech_output_enabled)
+            .unwrap_or(false)
+    })
+    .unwrap_or(false);
     if !enabled {
         trace(b"speech output disabled by profile");
         REPLY_AT = REPLY_LENGTH;
         SYNC_VISIBLE_AT = REPLY_LENGTH;
     }
-    while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
+    while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' {
+        REPLY_AT += 1;
+    }
     if REPLY_AT >= REPLY_LENGTH {
         if !REPLY_COMPLETE {
             STATE = State::Thinking;
@@ -859,15 +909,20 @@ unsafe fn speak_next() -> bool {
         if voice_output::status().state == voice_output::OutputState::Buffered {
             return voice_output::seal_buffered(OWNER);
         }
-        if matches!(voice_output::status().state, voice_output::OutputState::Queued
-            | voice_output::OutputState::Synthesizing | voice_output::OutputState::Ready
-            | voice_output::OutputState::Speaking) {
+        if matches!(
+            voice_output::status().state,
+            voice_output::OutputState::Queued
+                | voice_output::OutputState::Synthesizing
+                | voice_output::OutputState::Ready
+                | voice_output::OutputState::Speaking
+        ) {
             STATE = State::Speaking;
             return true;
         }
         trace(b"reply drained");
         if TURN_TIMING_ACTIVE && timing_snapshot().at(Milestone::FirstAudio).is_some() {
-            (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Drained, super::qwen::workers::clock_ns());
+            (&mut *(&raw mut TURN_TIMING))
+                .observe(Milestone::Drained, super::qwen::workers::clock_ns());
         }
         report_timing();
         TURN_TIMING_ACTIVE = false;
@@ -890,7 +945,10 @@ unsafe fn speak_next() -> bool {
     }
     let remaining = &(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH];
     let count = speech_chunk::next(remaining, REPLY_COMPLETE, REPLY_AT == 0);
-    if count == 0 { STATE = State::Thinking; return true; }
+    if count == 0 {
+        STATE = State::Thinking;
+        return true;
+    }
     // Compilation and generation narration share this single native output
     // owner. Contention is admission backpressure, not a microphone failure.
     // Do not treat a background phrase as lookahead for this reply.
@@ -903,14 +961,32 @@ unsafe fn speak_next() -> bool {
         STATE = State::Thinking;
         return true;
     }
-    let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, voice_output::OUTPUT_LEASE_SECONDS) else {
+    let Some(cap) = grant(
+        OWNER,
+        CapabilityType::AudioOutput,
+        voice_output::OUTPUT_LEASE_SECONDS,
+    ) else {
         trace(b"speech output lease denied");
         return false;
     };
     let start = REPLY_AT;
     let end = REPLY_AT + count;
     let final_chunk = REPLY_COMPLETE && end >= REPLY_LENGTH;
-    if voice_output::submit_progressive_span(OWNER, cap, &remaining[..count], start, end, final_chunk).is_err() {
+    let submit = if speech_chunk::playback_boundary(&remaining[..count], final_chunk) {
+        voice_output::submit_progressive_span
+    } else {
+        voice_output::submit_span
+    };
+    if submit(
+        OWNER,
+        cap,
+        &remaining[..count],
+        start,
+        end,
+        final_chunk,
+    )
+    .is_err()
+    {
         trace(b"speech submission rejected");
         retire(cap);
         return false;
@@ -918,7 +994,8 @@ unsafe fn speak_next() -> bool {
     trace(b"speech queued");
     REPLY_OUTPUT_REQUEST = voice_output::request_id(OWNER).unwrap_or(0);
     if TURN_TIMING_ACTIVE {
-        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::SpeechQueued, super::qwen::workers::clock_ns());
+        (&mut *(&raw mut TURN_TIMING))
+            .observe(Milestone::SpeechQueued, super::qwen::workers::clock_ns());
     }
     REPLY_AT += count;
     STATE = State::Speaking;
@@ -931,19 +1008,30 @@ unsafe fn speak_next() -> bool {
 unsafe fn refresh_reply() {
     super::with_ai_runtime(|ai| {
         REPLY_COMPLETE = ai.chat.generation_state == GenerationState::Complete;
-        if let Some(message) = ai.chat.message(ai.chat.message_count().saturating_sub(1)).filter(|m| m.role == ChatRole::Assistant) {
+        if let Some(message) = ai
+            .chat
+            .message(ai.chat.message_count().saturating_sub(1))
+            .filter(|m| m.role == ChatRole::Assistant)
+        {
             REPLY_LENGTH = 0;
             for &byte in message.text() {
-                if REPLY_LENGTH == 16384 { break; }
+                if REPLY_LENGTH == 16384 {
+                    break;
+                }
                 if byte.is_ascii() {
-                    REPLY[REPLY_LENGTH] = if (32..=126).contains(&byte) { byte } else { b' ' };
+                    REPLY[REPLY_LENGTH] = if (32..=126).contains(&byte) {
+                        byte
+                    } else {
+                        b' '
+                    };
                     REPLY_LENGTH += 1;
                 }
             }
         }
     });
     if TURN_TIMING_ACTIVE && REPLY_LENGTH != 0 {
-        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::FirstText, super::qwen::workers::clock_ns());
+        (&mut *(&raw mut TURN_TIMING))
+            .observe(Milestone::FirstText, super::qwen::workers::clock_ns());
     }
 }
 // ------------------------=
@@ -952,8 +1040,12 @@ unsafe fn refresh_reply() {
 // ------------------=
 pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
     unsafe {
-        if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) { return; }
-        if STATE == State::Listening && OWNER != owner { return; }
+        if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) {
+            return;
+        }
+        if STATE == State::Listening && OWNER != owner {
+            return;
+        }
         if !super::with_ai_runtime(|ai| ai.chat.turn_id() == turn
             && matches!(ai.chat.generation_state,GenerationState::Running|GenerationState::Complete)) {
             return;
@@ -975,7 +1067,9 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         OWNER = owner;
         CONTINUOUS = continuous;
         clear_wake_command();
-        REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
+        REPLY_AT = 0;
+        REPLY_LENGTH = 0;
+        REPLY_COMPLETE = false;
         SYNC_VISIBLE_AT = 0;
         RESTART_LISTENING = false;
         CHAT_TURN = turn;
@@ -993,7 +1087,11 @@ unsafe fn renew_capture_authority(now: u64) -> bool {
         return false;
     }
     if now >= CAPABILITY_REPLACE_AT {
-        if let Some(next) = grant(OWNER, CapabilityType::AudioInput, CAPTURE_CAPABILITY_SECONDS) {
+        if let Some(next) = grant(
+            OWNER,
+            CapabilityType::AudioInput,
+            CAPTURE_CAPABILITY_SECONDS,
+        ) {
             if crate::drivers::audio::renew_capture(OWNER, next) {
                 INPUT_CAP = next;
                 CAPABILITY_REPLACE_AT = now.saturating_add(CAPTURE_CAPABILITY_REPLACE_NS);
@@ -1058,14 +1156,20 @@ unsafe fn synchronize_visible_reply() -> bool {
     let before = SYNC_VISIBLE_AT;
     if TURN_TIMING_ACTIVE && matches!(STATE, State::Thinking | State::Speaking) {
         let first = voice_output::status().first_playback_ns;
-        if first != 0 && timing_snapshot().at(Milestone::SpeechQueued).is_some_and(|queued| first >= queued) {
+        if first != 0
+            && timing_snapshot()
+                .at(Milestone::SpeechQueued)
+                .is_some_and(|queued| first >= queued)
+        {
             (&mut *(&raw mut TURN_TIMING)).observe(Milestone::FirstAudio, first);
         }
     }
     if let Some(progress) = voice_output::playback_progress(OWNER) {
         let mut target = progress.content_position.min(REPLY_LENGTH);
         if target < REPLY_LENGTH && !progress.content_boundary {
-            while target > SYNC_VISIBLE_AT && !REPLY[target - 1].is_ascii_whitespace() { target -= 1; }
+            while target > SYNC_VISIBLE_AT && !REPLY[target - 1].is_ascii_whitespace() {
+                target -= 1;
+            }
         }
         SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(target);
     } else if voice_output::status().state == voice_output::OutputState::Complete {
@@ -1079,9 +1183,9 @@ unsafe fn synchronize_visible_reply() -> bool {
 // ------------------=
 unsafe fn capture_frame(duplex: bool) -> bool {
     use crate::runtime::audio::CaptureState;
-    let now=super::qwen::workers::clock_ns();
-    if INPUT_CAP==0 && CONTINUOUS {
-        if REOPEN_DEADLINE!=0 && now>=REOPEN_DEADLINE {
+    let now = super::qwen::workers::clock_ns();
+    if INPUT_CAP == 0 && CONTINUOUS {
+        if REOPEN_DEADLINE != 0 && now >= REOPEN_DEADLINE {
             trace(match REOPEN_FAILURE {
                 1 => b"capture recovery expired grant",
                 2 => b"capture recovery expired open",
@@ -1090,25 +1194,36 @@ unsafe fn capture_frame(duplex: bool) -> bool {
             });
             return false;
         }
-        if now<REOPEN_AT {return true;}
+        if now < REOPEN_AT {
+            return true;
+        }
         if reopen_capture() {
             trace(b"capture recovered");
         } else {
-            if REOPEN_DEADLINE==0 {REOPEN_DEADLINE=now.saturating_add(2_000_000_000);}
-            REOPEN_AT=now.saturating_add(100_000_000);
+            if REOPEN_DEADLINE == 0 {
+                REOPEN_DEADLINE = now.saturating_add(2_000_000_000);
+            }
+            REOPEN_AT = now.saturating_add(100_000_000);
         }
         return true;
     }
-    let Some(status)=crate::drivers::audio::capture_status() else {return true;};
+    let Some(status) = crate::drivers::audio::capture_status() else {
+        return true;
+    };
     if status.state != CaptureState::Recording {
         // A bounded DMA overrun or expired capture window is not a user mute.
         // Preserve the accepted utterance and retry hardware re-open across the
         // codec reset boundary. Permission/device failures stay fatal.
-        if CONTINUOUS && matches!(status.state,CaptureState::Overrun|CaptureState::Complete) {
-            retire(INPUT_CAP);INPUT_CAP=0;
-            REOPEN_AT=now;
-            REOPEN_DEADLINE=now.saturating_add(2_000_000_000);
-            trace(if status.state==CaptureState::Overrun {b"capture overrun recovery"} else {b"capture window recovery"});
+        if CONTINUOUS && matches!(status.state, CaptureState::Overrun | CaptureState::Complete) {
+            retire(INPUT_CAP);
+            INPUT_CAP = 0;
+            REOPEN_AT = now;
+            REOPEN_DEADLINE = now.saturating_add(2_000_000_000);
+            trace(if status.state == CaptureState::Overrun {
+                b"capture overrun recovery"
+            } else {
+                b"capture window recovery"
+            });
             return true;
         }
         trace(match status.state {
@@ -1120,8 +1235,10 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         });
         return false;
     }
-    if now>=RENEW_AT {
-        if !renew_capture_authority(now) { return false; }
+    if now >= RENEW_AT {
+        if !renew_capture_authority(now) {
+            return false;
+        }
     }
     if CAPTURE_BOUNDARY_PENDING {
         match crate::drivers::audio::discard_capture_pending(OWNER) {
@@ -1147,68 +1264,86 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     {
         return true;
     }
-    let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
-    if count==0 {
-        if !CAPTURE_EMPTY_REPORTED && now.saturating_sub(CAPTURE_EMPTY_SINCE)>=1_000_000_000 {
+    let count = crate::drivers::audio::read_capture(OWNER, &mut *(&raw mut RAW));
+    if count == 0 {
+        if !CAPTURE_EMPTY_REPORTED && now.saturating_sub(CAPTURE_EMPTY_SINCE) >= 1_000_000_000 {
             trace(b"capture recording but no samples 1s");
-            CAPTURE_EMPTY_REPORTED=true;
+            CAPTURE_EMPTY_REPORTED = true;
         }
         return true;
     }
     if !CAPTURE_FRAME_SEEN {
         trace(b"capture samples received");
-        CAPTURE_FRAME_SEEN=true;
+        CAPTURE_FRAME_SEEN = true;
     } else if CAPTURE_EMPTY_REPORTED {
         trace(b"capture samples resumed");
     }
-    CAPTURE_EMPTY_SINCE=now;
-    CAPTURE_EMPTY_REPORTED=false;
-    let (used,n)=(&mut *(&raw mut RESAMPLER)).process(&(&*(&raw const RAW))[..count],&mut *(&raw mut MONO));
-    if used!=count {
+    CAPTURE_EMPTY_SINCE = now;
+    CAPTURE_EMPTY_REPORTED = false;
+    let (used, n) =
+        (&mut *(&raw mut RESAMPLER)).process(&(&*(&raw const RAW))[..count], &mut *(&raw mut MONO));
+    if used != count {
         trace(b"capture resampler backpressure");
         return false;
     }
-    if duplex && voice_output::echo_reference(OWNER,&mut *(&raw mut ECHO)) {
-        ECHO_VALID_UNTIL=now+200_000_000;
+    if duplex && voice_output::echo_reference(OWNER, &mut *(&raw mut ECHO)) {
+        ECHO_VALID_UNTIL = now + 200_000_000;
     }
-    if now<ECHO_VALID_UNTIL {
-        voice_echo::subtract(&mut (&mut *(&raw mut MONO))[..n],&*(&raw const ECHO));
+    if now < ECHO_VALID_UNTIL {
+        voice_echo::subtract(&mut (&mut *(&raw mut MONO))[..n], &*(&raw const ECHO));
     } else {
         (&mut *(&raw mut ECHO)).fill(0);
     }
     if !(&*(&raw const NOISE_FLOOR)).ready() {
         // Login audio is output, not an ambient microphone baseline. Keep the
         // DMA drained and the veil visible until the real output cursor stops.
-        if crate::drivers::audio::playback_state().is_some_and(|state| state != crate::runtime::audio::PlaybackState::Playing) {
+        if crate::drivers::audio::playback_state()
+            .is_some_and(|state| state != crate::runtime::audio::PlaybackState::Playing)
+        {
             let consumed = (&mut *(&raw mut NOISE_FLOOR)).push(&(&*(&raw const MONO))[..n]);
             if (&*(&raw const NOISE_FLOOR)).ready() {
                 clear_captured_turn();
                 (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[consumed..n]);
                 trace(b"microphone calibration ready");
                 #[cfg(not(test))]
-                voice_trace::capture(now, 0, (&*(&raw const NOISE_FLOOR)).threshold(),
-                    &(&*(&raw const MONO))[..n]);
+                voice_trace::capture(
+                    now,
+                    0,
+                    (&*(&raw const NOISE_FLOOR)).threshold(),
+                    &(&*(&raw const MONO))[..n],
+                );
             }
-        } else { NOISE_FLOOR = voice_noise_floor::NoiseFloor::new(); }
+        } else {
+            NOISE_FLOOR = voice_noise_floor::NoiseFloor::new();
+        }
         (&mut *(&raw mut RAW)).fill(0);
         (&mut *(&raw mut MONO)).fill(0);
         LEVEL = 0;
         return true;
     }
-    LEVEL=(&*(&raw const MONO))[..n].iter().map(|x|x.unsigned_abs()).max().unwrap_or(0);
+    LEVEL = (&*(&raw const MONO))[..n]
+        .iter()
+        .map(|x| x.unsigned_abs())
+        .max()
+        .unwrap_or(0);
     // Keep one following utterance during ASR. Once it completes, backpressure
     // leaves further samples in the already bounded native capture FIFO.
-    let accept = STATE != State::Recognizing || (RECOGNITION_CONTEXT_VALID
-        && (UTTERANCE_STARTED_AT != 0 || now < FOLLOWUP_ONSET_UNTIL));
-    if STATE == State::Recognizing && UTTERANCE_STARTED_AT == 0
-        && FOLLOWUP_ONSET_UNTIL != 0 && now >= FOLLOWUP_ONSET_UNTIL {
+    let accept = STATE != State::Recognizing
+        || (RECOGNITION_CONTEXT_VALID && (UTTERANCE_STARTED_AT != 0 || now < FOLLOWUP_ONSET_UNTIL));
+    if STATE == State::Recognizing
+        && UTTERANCE_STARTED_AT == 0
+        && FOLLOWUP_ONSET_UNTIL != 0
+        && now >= FOLLOWUP_ONSET_UNTIL
+    {
         clear_captured_turn();
         FOLLOWUP_ONSET_UNTIL = 0;
     }
     let consumed = if accept {
         (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n])
-    } else { n };
-    let vad=(&*(&raw const UTTERANCE)).state();
+    } else {
+        n
+    };
+    let vad = (&*(&raw const UTTERANCE)).state();
     if UTTERANCE_STARTED_AT == 0 && matches!(vad, VadState::Speech | VadState::Complete) {
         UTTERANCE_STARTED_AT = now.max(1);
     }
@@ -1224,12 +1359,21 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         (&mut *(&raw mut HANDOFF_PCM))[..HANDOFF_LENGTH]
             .copy_from_slice(&(&*(&raw const MONO))[consumed..n]);
     }
-    if vad!=LAST_VAD_STATE {
+    if vad != LAST_VAD_STATE {
         #[cfg(not(test))]
-        voice_trace::capture(now, match vad {
-            VadState::Waiting => 1, VadState::Speech => 2, VadState::Complete => 3,
-            VadState::NoSpeech => 4, VadState::Limit => 5, VadState::Cancelled => 6,
-        }, (&*(&raw const NOISE_FLOOR)).threshold(), &(&*(&raw const MONO))[..n]);
+        voice_trace::capture(
+            now,
+            match vad {
+                VadState::Waiting => 1,
+                VadState::Speech => 2,
+                VadState::Complete => 3,
+                VadState::NoSpeech => 4,
+                VadState::Limit => 5,
+                VadState::Cancelled => 6,
+            },
+            (&*(&raw const NOISE_FLOOR)).threshold(),
+            &(&*(&raw const MONO))[..n],
+        );
         trace(match vad {
             VadState::Waiting => b"vad waiting",
             VadState::Speech => b"vad speech onset",
@@ -1238,10 +1382,16 @@ unsafe fn capture_frame(duplex: bool) -> bool {
             VadState::Limit => b"vad sample limit",
             VadState::Cancelled => b"vad cancelled",
         });
-        LAST_VAD_STATE=vad;
+        LAST_VAD_STATE = vad;
     }
-    (&mut *(&raw mut RAW)).fill(0);(&mut *(&raw mut MONO)).fill(0);
-    if duplex && matches!((&*(&raw const UTTERANCE)).state(),VadState::NoSpeech|VadState::Limit) {
+    (&mut *(&raw mut RAW)).fill(0);
+    (&mut *(&raw mut MONO)).fill(0);
+    if duplex
+        && matches!(
+            (&*(&raw const UTTERANCE)).state(),
+            VadState::NoSpeech | VadState::Limit
+        )
+    {
         (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
             (&*(&raw const NOISE_FLOOR)).threshold(),
             (&*(&raw const NOISE_FLOOR)).continuation_threshold());
@@ -1265,11 +1415,15 @@ pub fn poll() -> bool {
             trace(b"conversation stopped inactive owner");
             stop(OWNER);
         }
-        if STATE == State::Recognizing && RECOGNITION_CONTEXT_VALID
+        if STATE == State::Recognizing
+            && RECOGNITION_CONTEXT_VALID
             && (configured_wake_word(OWNER) != RECOGNITION_WORD
-                || super::with_ai_runtime(|ai| ai.chat.selected_model() != RECOGNITION_MODEL
-                    || (RECOGNITION_MODEL_WAS_READY && !ai.chat.selected_model_ready())
-                    || ai.chat.generation_state == GenerationState::Running)) {
+                || super::with_ai_runtime(|ai| {
+                    ai.chat.selected_model() != RECOGNITION_MODEL
+                        || (RECOGNITION_MODEL_WAS_READY && !ai.chat.selected_model_ready())
+                        || (ai.chat.generation_state == GenerationState::Running && ai.app_turn_owner().is_none())
+                }))
+        {
             RECOGNITION_CONTEXT_VALID = false;
             RECOGNITION_WAKE_AUTHORIZED = false;
             CAPTURE_BOUNDARY_PENDING = true;
@@ -1277,10 +1431,14 @@ pub fn poll() -> bool {
             clear_captured_turn();
             trace(b"recognition context changed; pending audio erased");
         }
-        if WAKE_ARMED && (configured_wake_word(OWNER) != WAKE_ARMED_WORD
-            || super::with_ai_runtime(|ai| ai.chat.selected_model() != WAKE_ARMED_MODEL
-                || !ai.chat.selected_model_ready()
-                || ai.chat.generation_state == GenerationState::Running)) {
+        if WAKE_ARMED
+            && (configured_wake_word(OWNER) != WAKE_ARMED_WORD
+                || super::with_ai_runtime(|ai| {
+                    ai.chat.selected_model() != WAKE_ARMED_MODEL
+                        || !ai.chat.selected_model_ready()
+                        || (ai.chat.generation_state == GenerationState::Running && ai.app_turn_owner().is_none())
+                }))
+        {
             clear_wake_command();
             trace(b"wake command revoked by context change");
         }
@@ -1322,8 +1480,12 @@ pub fn poll() -> bool {
                         trace(b"speech recovery limit reached");
                     }
                 } else if ready() {
-                    if listen() { trace(b"conversation listening after warmup"); }
-                    else { STATE = State::Failed; trace(b"capture failed after warmup"); }
+                    if listen() {
+                        trace(b"conversation listening after warmup");
+                    } else {
+                        STATE = State::Failed;
+                        trace(b"capture failed after warmup");
+                    }
                 } else {
                     let _ = voice_input::prepare();
                 }
@@ -1336,7 +1498,9 @@ pub fn poll() -> bool {
                     clear_wake_command();
                     trace(b"wake command window expired");
                 }
-                if (&*(&raw const UTTERANCE)).state() != VadState::Complete && !capture_frame(narration_playing) {
+                if (&*(&raw const UTTERANCE)).state() != VadState::Complete
+                    && !capture_frame(narration_playing)
+                {
                     trace(b"conversation stopped capture frame");
                     stop(OWNER);
                     return true;
@@ -1350,7 +1514,7 @@ pub fn poll() -> bool {
                             CapabilityType::AudioInput,
                             CAPTURE_CAPABILITY_SECONDS,
                         )
-                            .unwrap_or(0);
+                        .unwrap_or(0);
                         let submitted = (&*(&raw const UTTERANCE))
                             .speech()
                             .map(|pcm| voice_input::submit(OWNER, RECOGNIZE_CAP, pcm).is_ok())
@@ -1363,19 +1527,23 @@ pub fn poll() -> bool {
                         RECOGNITION_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
                         RECOGNITION_WORD = configured_wake_word(OWNER);
                         RECOGNITION_CONTEXT_VALID = submitted;
-                        RECOGNITION_MODEL_WAS_READY = super::with_ai_runtime(|ai| ai.chat.selected_model_ready());
-                        RECOGNITION_WAKE_AUTHORIZED = WAKE_ARMED && UTTERANCE_STARTED_AT != 0
+                        RECOGNITION_MODEL_WAS_READY =
+                            super::with_ai_runtime(|ai| ai.chat.selected_model_ready());
+                        RECOGNITION_WAKE_AUTHORIZED = WAKE_ARMED
+                            && UTTERANCE_STARTED_AT != 0
                             && UTTERANCE_STARTED_AT < WAKE_ARMED_UNTIL;
-                        FOLLOWUP_ONSET_UNTIL = super::qwen::workers::clock_ns()
-                            .saturating_add(WAKE_COMMAND_WINDOW_NS);
-                        (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
-                            (&*(&raw const NOISE_FLOOR)).threshold(),
-                            (&*(&raw const NOISE_FLOOR)).continuation_threshold());
+                        FOLLOWUP_ONSET_UNTIL =
+                            super::qwen::workers::clock_ns().saturating_add(WAKE_COMMAND_WINDOW_NS);
+                        (&mut *(&raw mut UTTERANCE))
+                            .clear_with_continuation(
+                                (&*(&raw const NOISE_FLOOR)).threshold(),
+                                (&*(&raw const NOISE_FLOOR)).continuation_threshold());
                         UTTERANCE_STARTED_AT = 0;
                         UTTERANCE_ENDED_AT = 0;
                         LAST_VAD_STATE = VadState::Waiting;
                         if submitted && HANDOFF_LENGTH != 0 {
-                            (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const HANDOFF_PCM))[..HANDOFF_LENGTH]);
+                            (&mut *(&raw mut UTTERANCE))
+                                .push(&(&*(&raw const HANDOFF_PCM))[..HANDOFF_LENGTH]);
                             if (&*(&raw const UTTERANCE)).state() == VadState::Speech {
                                 UTTERANCE_STARTED_AT = super::qwen::workers::clock_ns().max(1);
                             }
@@ -1395,7 +1563,9 @@ pub fn poll() -> bool {
                         clear_wake_command();
                         clear_captured_turn();
                     }
-                    VadState::Limit => { clear_wake_command(); }
+                    VadState::Limit => {
+                        clear_wake_command();
+                    }
                     _ => {}
                 }
             }
@@ -1464,7 +1634,8 @@ pub fn poll() -> bool {
                         .unwrap_or(false);
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
                     if queued {
-                        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Transcript, super::qwen::workers::clock_ns());
+                        (&mut *(&raw mut TURN_TIMING))
+                            .observe(Milestone::Transcript, super::qwen::workers::clock_ns());
                         clear_captured_turn();
                         RECOGNITION_CONTEXT_VALID = false;
                         RECOGNITION_WAKE_AUTHORIZED = false;
@@ -1476,13 +1647,17 @@ pub fn poll() -> bool {
                             State::Submitting
                         };
                     } else if wake_only {
-                        if matches!((&*(&raw const UTTERANCE)).state(), VadState::Limit | VadState::NoSpeech) {
+                        if matches!(
+                            (&*(&raw const UTTERANCE)).state(),
+                            VadState::Limit | VadState::NoSpeech
+                        ) {
                             clear_wake_command();
                         } else {
                             WAKE_ARMED = true;
                             WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
                                 .saturating_add(WAKE_COMMAND_WINDOW_NS);
-                            WAKE_ARMED_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
+                            WAKE_ARMED_MODEL =
+                                super::with_ai_runtime(|ai| ai.chat.selected_model());
                             WAKE_ARMED_WORD = configured_wake_word(OWNER);
                         }
                         trace(b"wake phrase armed command capture");
@@ -1491,9 +1666,9 @@ pub fn poll() -> bool {
                         trace(b"unaddressed speech ignored");
                         resume_captured_turn();
                     } else {
-                        trace(match (result_was_empty,result_failed) {
-                            (true,_) => b"recognition returned empty transcript",
-                            (_,true) => b"recognition result take failed",
+                        trace(match (result_was_empty, result_failed) {
+                            (true, _) => b"recognition returned empty transcript",
+                            (_, true) => b"recognition result take failed",
                             _ => b"transcript rejected by chat state",
                         });
                         clear_wake_command();
@@ -1502,18 +1677,20 @@ pub fn poll() -> bool {
                 }
                 voice_input::InputState::Failed | voice_input::InputState::Cancelled => {
                     let status = voice_input::status();
-                    trace(if status.state==voice_input::InputState::Cancelled {
+                    trace(if status.state == voice_input::InputState::Cancelled {
                         b"recognition cancelled"
-                    } else { match status.error {
-                        1 => b"recognition invalid request",
-                        2 => b"recognition deadline or cancellation",
-                        3 => b"recognition model initialization failed",
-                        4 => b"recognition decode failed",
-                        5 => b"recognition no hypothesis",
-                        6 => b"recognition transcript overflow",
-                        7 => b"recognition engine fatal state",
-                        _ => b"recognition provider failure",
-                    }});
+                    } else {
+                        match status.error {
+                            1 => b"recognition invalid request",
+                            2 => b"recognition deadline or cancellation",
+                            3 => b"recognition model initialization failed",
+                            4 => b"recognition decode failed",
+                            5 => b"recognition no hypothesis",
+                            6 => b"recognition transcript overflow",
+                            7 => b"recognition engine fatal state",
+                            _ => b"recognition provider failure",
+                        }
+                    });
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
                     // Empty/oversized hypotheses are failed utterances, not failed
@@ -1528,7 +1705,9 @@ pub fn poll() -> bool {
                             clear_wake_command();
                             clear_captured_turn();
                         }
-                        if !RECOGNITION_CONTEXT_VALID { clear_captured_turn(); }
+                        if !RECOGNITION_CONTEXT_VALID {
+                            clear_captured_turn();
+                        }
                         resume_captured_turn();
                     } else if status.state == voice_input::InputState::Failed
                         && matches!(status.error, 3 | 4 | 7) {
@@ -1547,7 +1726,9 @@ pub fn poll() -> bool {
                     clear_captured_turn();
                     resume_captured_turn();
                     trace(b"queued transcript expired or context changed");
-                } else if submit_pending_transcript() { STATE = State::Thinking; }
+                } else if submit_pending_transcript() {
+                    STATE = State::Thinking;
+                }
             }
             State::Thinking => {
                 if super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN) {
@@ -1555,7 +1736,10 @@ pub fn poll() -> bool {
                     return true;
                 }
                 let generation = super::with_ai_runtime(|ai| ai.chat.generation_state);
-                if matches!(generation, GenerationState::Running | GenerationState::Complete) {
+                if matches!(
+                    generation,
+                    GenerationState::Running | GenerationState::Complete
+                ) {
                     refresh_reply();
                     if !speak_next() {
                         recover_reply();
@@ -1579,11 +1763,15 @@ pub fn poll() -> bool {
                 }
                 voice_output::OutputState::Buffered => {
                     refresh_reply();
-                    if !speak_next() { recover_reply(); }
+                    if !speak_next() {
+                        recover_reply();
+                    }
                 }
                 voice_output::OutputState::Speaking if voice_output::can_prefetch() => {
                     refresh_reply();
-                    if !speak_next() { recover_reply(); }
+                    if !speak_next() {
+                        recover_reply();
+                    }
                 }
                 voice_output::OutputState::Failed | voice_output::OutputState::Cancelled => {
                     trace(b"speech output failed or cancelled");
@@ -1616,7 +1804,9 @@ pub fn poll() -> bool {
         }
         presentation_changed |= synchronize_visible_reply();
         report_timing();
-        STATE != previous || presentation_changed || was_waiting_for_pause != waiting_for_pause()
+        STATE != previous
+            || presentation_changed
+            || was_waiting_for_pause != waiting_for_pause()
             || was_calibrating != calibrating()
     }
 }

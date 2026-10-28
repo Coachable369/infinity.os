@@ -147,6 +147,10 @@ impl ConsoleRuntime {
             let diagnostic_length=compiler_commands::repair_diagnostics(self,&mut diagnostics);
             #[cfg(not(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
             let diagnostic_length=0;
+            #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            let diagnostic_length=if self.editor_document_path[..self.editor_document_path_length].ends_with(b".py") {
+                python_commands::repair_diagnostics(self,&mut diagnostics)
+            }else{diagnostic_length};
             panel.expanded=true;panel.focused=false;
             panel.source_language=if self.editor_document_path[..self.editor_document_path_length].ends_with(b".py") {
                 assistant::editor_compile_intent::SourceLanguage::Python
@@ -180,7 +184,7 @@ impl ConsoleRuntime {
             panel.reset_delivery();
             panel.pending=Action::None;panel.argument_len=0;panel.awaiting_compile_save=false;
             panel.stream=assistant::generation_stream::Stream::new();
-            panel.repair_attempts=0;panel.repair_diagnostics_len=0;
+            panel.repair_attempts=0;panel.runtime_repair=false;panel.runtime_repair_noop=false;panel.repair_diagnostics_len=0;
             panel.input[..input.len()].copy_from_slice(input);panel.length=input.len();
             panel.request=panel.input;panel.request_len=input.len();
             panel.document_revision=self.assistant_revision();
@@ -488,7 +492,7 @@ impl ConsoleRuntime {
         panel.reset_delivery();
         panel.request = panel.input;
         panel.request_len = panel.length;
-        panel.repair_attempts=0;panel.repair_diagnostics_len=0;
+        panel.repair_attempts=0;panel.runtime_repair=false;panel.runtime_repair_noop=false;panel.repair_diagnostics_len=0;
         panel.stream=assistant::generation_stream::Stream::new();
         panel.workflow_goal=None;
         panel.generation=assistant::GenerationStatus::Idle;
@@ -546,7 +550,12 @@ impl ConsoleRuntime {
                     else { self.editor_document.bytes() }
                 } else { assistant::help(id) };
                 panel.document_revision = self.assistant_revision();
-                if let Some(n) = panel.generation_prompt(id == 2, context, &mut prompt) {
+                let python = id == 2 && panel.effective_language() == assistant::editor_compile_intent::SourceLanguage::Python;
+                let capacity = prompt.len() - if python { super::python_libraries::CONTEXT_BYTES } else { 0 };
+                let length = panel.generation_prompt(id == 2, context, &mut prompt[..capacity])
+                    .and_then(|n| if python { self.append_python_libraries(&mut prompt, n,
+                        &panel.input[..panel.length]) } else { Some(n) });
+                if let Some(n) = length {
                     assistant::write(id,panel);
                     match crate::runtime::ai::with_ai_runtime(|ai| ai.submit_app_turn(id, &prompt[..n])) {
                         Ok(()) => {
@@ -596,12 +605,16 @@ impl ConsoleRuntime {
                 panel.reply(b"Application creation cancelled because its editor or session changed.");
             } else {
                 let mut prompt=[0u8;16*1024];
+                let python = panel.effective_language() == assistant::editor_compile_intent::SourceLanguage::Python;
+                let capacity = prompt.len() - if python { super::python_libraries::CONTEXT_BYTES } else { 0 };
                 let prompt_length=if panel.repair_diagnostics_len>0
                     || assistant::editor_compile_intent::repair(&panel.request[..panel.request_len]).is_some() {
-                    panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt)
+                    panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt[..capacity])
                 } else if assistant::editor_compile_intent::update(&panel.request[..panel.request_len]).is_some() {
-                    panel.update_prompt(self.editor_document.bytes(),&mut prompt)
-                } else {panel.generation_prompt(true,b"",&mut prompt)};
+                    panel.update_prompt(self.editor_document.bytes(),&mut prompt[..capacity])
+                } else {panel.generation_prompt(true,b"",&mut prompt[..capacity])};
+                let prompt_length = prompt_length.and_then(|n| if python { self.append_python_libraries(&mut prompt, n,
+                    &panel.request[..panel.request_len]) } else { Some(n) });
                 if let Some(n)=prompt_length {
                     match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_source(2,&prompt[..n])) {
                         Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating source locally...");
@@ -658,6 +671,20 @@ impl ConsoleRuntime {
             || !assistant::editor_compile_intent::source_request(&panel.request[..panel.request_len])
             || panel.document_revision!=self.assistant_revision() || panel.argument_len==0 {return false;}
         let now=crate::ui::performance::monotonic_ns();
+        // Existing documents remain usable and unchanged while the replacement
+        // is being generated. Completion applies one minimal-span transaction.
+        if panel.preserves_existing_source() {
+            let revision = self.assistant_revision();
+            let previous = panel.generation;
+            let edited = panel.apply_existing_source(&mut self.editor_document, revision, now);
+            let transitioned = panel.generation != previous;
+            if edited { panel.document_revision = self.assistant_revision(); }
+            // A rejected no-op repair may queue the remaining bounded retry or
+            // fail without editing. Persist that state so neither save/compile
+            // nor the same completed proposal can be replayed on the next tick.
+            if edited || transitioned { assistant::write(2, panel); }
+            return edited || transitioned;
+        }
         let Some(range)=panel.stream.ready(&panel.argument[..panel.argument_len],now,
             panel.generation==assistant::GenerationStatus::Complete) else{return false;};
         let follow_tail=self.editor_scroll_geometry().maximum_scroll.saturating_sub(self.editor_scroll_row)<=1;
@@ -848,7 +875,7 @@ impl ConsoleRuntime {
                 }
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 {
-                    let launch=action==Action::ReplaceCompile && assistant::editor_compile_intent::requests_launch(&panel.request[..panel.request_len]);
+                    let launch=action==Action::ReplaceCompile && panel.permits_generated_launch();
                     if action==Action::ReplaceCompile && panel.effective_language()==assistant::editor_compile_intent::SourceLanguage::Python {
                         #[cfg(feature="native-python")]
                         let result=match compiler_commands::save_generated_source(self) {

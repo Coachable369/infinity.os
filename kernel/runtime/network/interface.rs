@@ -144,8 +144,17 @@ impl InterfaceManager {
     // FUNC: bind_native_device
     // DESC: Replaces firmware metadata with an actual native NIC binding while retaining configured addresses.
     // ------------------=
-    pub fn bind_native_device(&mut self, id: InterfaceId, device: NetworkDevice) -> Result<(), NetworkError> {
-        let interface = self.interfaces.iter_mut().flatten().find(|v| v.id == id).ok_or(NetworkError::InterfaceNotFound)?;
+    pub fn bind_native_device(
+        &mut self,
+        id: InterfaceId,
+        device: NetworkDevice,
+    ) -> Result<(), NetworkError> {
+        let interface = self
+            .interfaces
+            .iter_mut()
+            .flatten()
+            .find(|v| v.id == id)
+            .ok_or(NetworkError::InterfaceNotFound)?;
         interface.device = device;
         Ok(())
     }
@@ -154,8 +163,19 @@ impl InterfaceManager {
     // FUNC: update_native_counters
     // DESC: Publishes observed descriptor completions and ingress drops into the authoritative interface state.
     // ------------------=
-    pub fn update_native_counters(&mut self, id: InterfaceId, rx: u64, tx: u64, drops: u64) -> Result<(), NetworkError> {
-        let interface = self.interfaces.iter_mut().flatten().find(|v| v.id == id).ok_or(NetworkError::InterfaceNotFound)?;
+    pub fn update_native_counters(
+        &mut self,
+        id: InterfaceId,
+        rx: u64,
+        tx: u64,
+        drops: u64,
+    ) -> Result<(), NetworkError> {
+        let interface = self
+            .interfaces
+            .iter_mut()
+            .flatten()
+            .find(|v| v.id == id)
+            .ok_or(NetworkError::InterfaceNotFound)?;
         interface.rx_packets = rx;
         interface.tx_packets = tx;
         interface.rx_drops = drops;
@@ -270,12 +290,25 @@ impl InterfaceManager {
     // DESC: Removes only user-configured static addresses from one interface before atomic replacement.
     // ------------------=
     pub fn remove_static_addresses(&mut self, interface_id: InterfaceId) {
-        for address in self.addresses.iter().flatten().filter(|value| value.interface_id == interface_id && value.source == AddressSource::Static) {
+        for address in self.addresses.iter().flatten().filter(|value| {
+            value.interface_id == interface_id && value.source == AddressSource::Static
+        }) {
             if let IpAddress::V4(ip) = address.address {
-                let mask = u32::MAX.checked_shl(32 - address.prefix_length as u32).unwrap_or(0);
+                let mask = u32::MAX
+                    .checked_shl(32 - address.prefix_length as u32)
+                    .unwrap_or(0);
                 let destination = IpAddress::V4((u32::from_be_bytes(ip) & mask).to_be_bytes());
                 for route in &mut self.routes {
-                    if route.map(|value| value.interface_id == interface_id && value.source == RouteSource::Interface && value.destination == destination && value.prefix_length == address.prefix_length && value.next_hop.is_none()).unwrap_or(false) {
+                    if route
+                        .map(|value| {
+                            value.interface_id == interface_id
+                                && value.source == RouteSource::Interface
+                                && value.destination == destination
+                                && value.prefix_length == address.prefix_length
+                                && value.next_hop.is_none()
+                        })
+                        .unwrap_or(false)
+                    {
                         *route = None;
                     }
                 }
@@ -512,10 +545,20 @@ impl InterfaceManager {
                 return Err(error);
             }
         };
-        let IpAddress::V4(ip) = address else { unreachable!() };
+        let IpAddress::V4(ip) = address else {
+            unreachable!()
+        };
         let mask = u32::MAX.checked_shl(32 - prefix_length as u32).unwrap_or(0);
         let destination = IpAddress::V4((u32::from_be_bytes(ip) & mask).to_be_bytes());
-        if let Err(error) = self.add_route(destination, prefix_length, None, interface_id, 0, RouteSource::Interface, None) {
+        if let Err(error) = self.add_route(
+            destination,
+            prefix_length,
+            None,
+            interface_id,
+            0,
+            RouteSource::Interface,
+            None,
+        ) {
             self.addresses = addresses;
             self.routes = routes;
             (self.next_address, self.next_route) = counters;

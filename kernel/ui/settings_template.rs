@@ -1,7 +1,9 @@
 //! The packaged Settings document is immutable for the lifetime of a System Generation.
+use super::installer_template::{
+    InstallerTemplate, InstallerTemplateElement, InstallerTemplateRole,
+};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU8, Ordering};
-use super::installer_template::{InstallerTemplate, InstallerTemplateElement, InstallerTemplateRole};
 
 struct ValidatedTemplate {
     state: AtomicU8,
@@ -123,21 +125,33 @@ pub fn settings_detail_description(section: usize, row: usize) -> &'static [u8] 
 // ------------------=
 pub fn template() -> Option<InstallerTemplate<'static>> {
     if TEMPLATE.state.load(Ordering::Acquire) != 2 {
-        if TEMPLATE.state.compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire).is_ok() {
+        if TEMPLATE
+            .state
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire)
+            .is_ok()
+        {
             #[cfg(studio_native_preview)]
             let bytes=crate::studio_native_render::settings_template_bytes()
                 .unwrap_or(super::installer_layout::SETTINGS_TEMPLATE_BYTES);
             #[cfg(not(studio_native_preview))]
             let bytes=super::installer_layout::SETTINGS_TEMPLATE_BYTES;
-            let value = InstallerTemplate::parse_settings(bytes).ok();
-            unsafe { *TEMPLATE.value.get() = value; }
+            let value =
+                InstallerTemplate::parse_settings(bytes)
+                    .ok();
+            unsafe {
+                *TEMPLATE.value.get() = value;
+            }
             if let Some(template) = value {
                 for section in 0..11 {
                     let count = template.element_count(section as u8 + 1).unwrap_or(0);
-                    unsafe { (*TEMPLATE.counts.get())[section] = count; }
+                    unsafe {
+                        (*TEMPLATE.counts.get())[section] = count;
+                    }
                     for index in 0..count.min(128) {
-                        unsafe { (*TEMPLATE.elements.get())[section][index as usize] =
-                            template.element_at(section as u8 + 1, index); }
+                        unsafe {
+                            (*TEMPLATE.elements.get())[section][index as usize] =
+                                template.element_at(section as u8 + 1, index);
+                        }
                     }
                     if count <= 128 {
                         // Insertion-sort indices once, never reparse the document to sort a frame.
@@ -149,7 +163,11 @@ pub fn template() -> Option<InstallerTemplate<'static>> {
                                 let mut position = index;
                                 while position > 0 {
                                     let previous = elements[layers[position - 1] as usize].unwrap();
-                                    if (previous.z_index, previous.id) <= (candidate.z_index, candidate.id) { break; }
+                                    if (previous.z_index, previous.id)
+                                        <= (candidate.z_index, candidate.id)
+                                    {
+                                        break;
+                                    }
                                     layers[position] = layers[position - 1];
                                     position -= 1;
                                 }
@@ -174,18 +192,30 @@ pub fn template() -> Option<InstallerTemplate<'static>> {
 // ------------------=
 pub fn layer_at(section: usize, layer: u16) -> Option<InstallerTemplateElement<'static>> {
     let template = template()?;
-    if section >= 11 { return None; }
+    if section >= 11 {
+        return None;
+    }
     let count = unsafe { (*TEMPLATE.counts.get())[section] };
-    if layer >= count { return None; }
-    if count > 128 { return template.layer_at(section as u8 + 1, layer); }
-    unsafe { (*TEMPLATE.elements.get())[section][(*TEMPLATE.layers.get())[section][layer as usize] as usize] }
+    if layer >= count {
+        return None;
+    }
+    if count > 128 {
+        return template.layer_at(section as u8 + 1, layer);
+    }
+    unsafe {
+        (*TEMPLATE.elements.get())[section]
+            [(*TEMPLATE.layers.get())[section][layer as usize] as usize]
+    }
 }
 
 // ------------------------=
 // FUNC: element
 // DESC: Looks up one singular Settings role in the validated packaged document.
 // ------------------=
-pub fn element(section: usize, role: InstallerTemplateRole) -> Option<InstallerTemplateElement<'static>> {
+pub fn element(
+    section: usize,
+    role: InstallerTemplateRole,
+) -> Option<InstallerTemplateElement<'static>> {
     role_at(section, role, 0)
 }
 
@@ -193,17 +223,27 @@ pub fn element(section: usize, role: InstallerTemplateRole) -> Option<InstallerT
 // FUNC: role_at
 // DESC: Looks up a repeated Settings role without revalidating every screen on each pointer movement.
 // ------------------=
-pub fn role_at(section: usize, role: InstallerTemplateRole, ordinal: usize) -> Option<InstallerTemplateElement<'static>> {
+pub fn role_at(
+    section: usize,
+    role: InstallerTemplateRole,
+    ordinal: usize,
+) -> Option<InstallerTemplateElement<'static>> {
     let template = template()?;
-    if section >= 11 { return None; }
+    if section >= 11 {
+        return None;
+    }
     let screen = section.saturating_add(1) as u8;
     let mut found = 0;
     for index in 0..unsafe { (*TEMPLATE.counts.get())[section] } {
         let element = if index < 128 {
             unsafe { (*TEMPLATE.elements.get())[section][index as usize]? }
-        } else { template.element_at(screen, index)? };
+        } else {
+            template.element_at(screen, index)?
+        };
         if element.role == role as u8 {
-            if found == ordinal { return Some(element); }
+            if found == ordinal {
+                return Some(element);
+            }
             found += 1;
         }
     }

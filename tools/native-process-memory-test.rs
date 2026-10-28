@@ -322,6 +322,34 @@ fn verify_streams<T: PageTable>() {
     assert_eq!(u64::from_le_bytes(count),0);
     drop(io);
     assert!(native_stdio::Streams::resume(&source,&mut output[..1],&mut errors,saved).is_none());
+    // Stderr drain is explicit: the preceding unchanged compiler path retained
+    // its prefix/truncation behavior. Drain must not move stdin or clear stdout.
+    let mut drained = saved;
+    drained.drain_errors();
+    let mut io = native_stdio::Streams::resume(&source, &mut output, &mut errors, drained).unwrap();
+    assert_eq!(io.diagnostics(), (&[][..], false));
+    assert_eq!(io.output(), binary);
+    assert_eq!(io.syscall(&mut tables, 0x121c, [2,user+4092,2,user+8192,0,0]), -14);
+    assert_eq!(io.diagnostics(), (&[][..], false));
+    assert_eq!(io.syscall(&mut tables, 0x121c, [2,user+4092,2,user+7000,0,0]), 0);
+    assert_eq!(io.diagnostics(), (&binary[..2], false));
+    drained = io.checkpoint();
+    drop(io);
+    let mut rolling_errors = [0; 8192];
+    // More than one full lifetime buffer of genuine checked writes, followed
+    // by a distinct final packet. Every consumed chunk is retained by caller.
+    for packet in [&[0x11;4096][..], &[0x22;4096][..], &binary[..]] {
+        drained.drain_errors();
+        let mut io = native_stdio::Streams::resume(&source, &mut output, &mut rolling_errors, drained).unwrap();
+        copy_to_user(&mut tables, user, packet).unwrap();
+        assert_eq!(io.syscall(&mut tables, 0x121c, [2,user,packet.len() as u64,user+7000,0,0]), 0);
+        assert_eq!(io.diagnostics(), (packet, false));
+        assert_eq!(io.output(), binary);
+        assert_eq!(io.syscall(&mut tables, 0x121b, [0,user,10,user+7000,0,0]), 0);
+        copy_from_user(&tables, user+7000, &mut count).unwrap();
+        assert_eq!(u64::from_le_bytes(count), 0);
+        drained = io.checkpoint();
+    }
     tables.release(&mut memory).unwrap();
     memory.release(data).unwrap();
     unsafe {std::alloc::dealloc(arena,layout);}
@@ -347,6 +375,12 @@ fn verify_mappings<T: PageTable>() {
     copy_from_user(&tables, first, &mut bytes).unwrap();
     assert_eq!(bytes, [0; 8192]);
     copy_to_user(&mut tables, first, &[42; 8192]).unwrap();
+    assert_eq!(mappings.sync(&tables,first,8192),Ok(()));
+    assert_eq!(mappings.sync(&tables,first+4096,4096),Ok(()));
+    assert_eq!(mappings.sync(&tables,first+1,4096),Err(MemoryError::AccessDenied));
+    assert_eq!(mappings.sync(&tables,first,8193),Err(MemoryError::UnknownAllocation));
+    assert_eq!(stranger.sync(&tables,first,4096),Err(MemoryError::UnknownAllocation));
+    assert_eq!(mappings.sync(&tables,u64::MAX-4095,8192),Err(MemoryError::AddressOverflow));
     assert_eq!(mappings.map(&mut tables, &mut memory, 8192, true), Err(MemoryError::AccessDenied));
     assert_eq!(stranger.unmap(&mut tables, &mut memory, first, 8192), Err(MemoryError::UnknownAllocation));
     assert_eq!(mappings.unmap(&mut tables, &mut memory, first, 4096), Err(MemoryError::UnknownAllocation));
@@ -359,6 +393,7 @@ fn verify_mappings<T: PageTable>() {
     assert_eq!(second, first + 8192);
     mappings.unmap(&mut tables, &mut memory, first, 8192).unwrap();
     assert!(tables.mapping(first).is_none());
+    assert_eq!(mappings.sync(&tables,first,8192),Err(MemoryError::UnknownAllocation));
     assert_eq!(mappings.map(&mut tables, &mut memory, 8192, true).unwrap(), first);
     copy_from_user(&tables, first, &mut bytes).unwrap();
     assert_eq!(bytes, [0; 8192]);

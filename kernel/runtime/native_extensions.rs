@@ -19,10 +19,10 @@ fn number(bytes: &[u8], at: usize, width: usize) -> Option<u64> {
 }
 
 // ------------------------=
-// FUNC: executable_symbol
-// DESC: Resolves defined interpreter exports from its immutable ELF and requires the address to be user mapped.
+// FUNC: executable_export
+// DESC: Resolves a defined interpreter export from its immutable ELF without invoking or mapping untrusted extension code.
 // ------------------=
-fn executable_symbol<T: PageTable>(bytes: &[u8], tables: &T, name: &[u8]) -> Option<u64> {
+fn executable_export(bytes: &[u8], name: &[u8]) -> Option<u64> {
     let sections = number(bytes, 40, 8)? as usize;
     let count = number(bytes, 60, 2)? as usize;
     if count > 256 || number(bytes, 58, 2)? != 64 { return None; }
@@ -49,12 +49,33 @@ fn executable_symbol<T: PageTable>(bytes: &[u8], tables: &T, name: &[u8]) -> Opt
             let Some(end) = rest.iter().take(256).position(|b| *b == 0) else { continue; };
             if &rest[..end] != name { continue; }
             let value = number(symbol, 8, 8)?;
-            let mapping = tables.mapping(value)?;
-            if !mapping.permissions.user { return None; }
             return Some(value);
         }
     }
     None
+}
+
+// ------------------------=
+// FUNC: executable_symbol
+// DESC: Resolves interpreter exports only when their actual calling-process mapping is user accessible.
+// ------------------=
+fn executable_symbol<T: PageTable>(bytes: &[u8], tables: &T, name: &[u8]) -> Option<u64> {
+    let value = executable_export(bytes, name)?;
+    tables.mapping(value).filter(|mapping| mapping.permissions.user).map(|_| value)
+}
+
+// ------------------------=
+// FUNC: validate_python_extension
+// DESC: Rejects incompatible architecture, dependencies, TLS, constructors, relocations or unresolved imports before committing a native package transaction.
+// ------------------=
+pub fn validate_python_extension(main: &[u8], source: &[u8], machine: u16) -> Result<(), i64> {
+    let image = elf::Image::parse(source, machine).map_err(|_| -8i64)?;
+    image.relocations(|relocation| {
+        if relocation.relative { return Ok(()); }
+        let symbol = image.symbol(relocation.symbol)?;
+        if symbol.defined || symbol.weak || executable_export(main, symbol.name).is_some() { Ok(()) }
+        else { Err(elf::Error::Symbol) }
+    }).map_err(|_| -8)
 }
 
 impl Libraries {

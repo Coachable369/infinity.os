@@ -180,7 +180,8 @@ fn verify_settings_children_contract() {
             assert_eq!(parent.role, InstallerTemplateRole::Metadata as u8);
         }
     }
-    assert_eq!(counts, [40, 40, 40, 1, 1]);
+    // The output-voice selector adds one labelled, valued, disclosed row.
+    assert_eq!(counts, [41, 41, 41, 1, 1]);
     let legacy = template_at_version(SETTINGS_TEMPLATE, 8);
     let old = InstallerTemplate::parse_settings(&legacy).unwrap();
     assert_eq!(old.screen_count(), parsed.screen_count());
@@ -316,6 +317,7 @@ fn verify_settings_action_contract() {
         (3, 4, SettingsAction::ToggleMicrophone),
         (3, 5, SettingsAction::CycleWakeWord),
         (3, 6, SettingsAction::ToggleSpeech),
+        (3, 7, SettingsAction::CycleOutputVoice),
         (4, 1, SettingsAction::ToggleMicrophone),
     ];
     for section in 0..12 {
@@ -362,7 +364,7 @@ fn verify_settings_action_contract() {
         assert_eq!(action.caption_color, [201, 222, 243, 188]);
         actions += 1;
     }
-    assert_eq!(actions, 8);
+    assert_eq!(actions, expected.len());
     let first = first_action_index(&valid.screens[0]);
     let mut literal = valid.clone();
     let action = &mut literal.screens[0].elements[first];

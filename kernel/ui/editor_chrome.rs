@@ -1,4 +1,6 @@
 //! Shared editor menu, viewport and hit geometry. No renderer-only controls.
+#[path = "editor_terminal.rs"]
+pub mod terminal;
 use super::{
     editor_tools::Field,
     geometry::{Point, Rect},
@@ -160,6 +162,7 @@ pub enum Command {
     Assistant,
     Palette,
     Performance,
+    Terminal,
     Language(usize),
     Schemes,
     Fonts,
@@ -267,7 +270,8 @@ const SELECTION: [Entry; 3] = [
         command: Command::GoTo,
     },
 ];
-const VIEW: [Entry; 7] = [
+const VIEW: [Entry; 8] = [
+    Entry {label:b"Toggle terminal",shortcut:b"Ctrl+`",command:Command::Terminal},
     Entry {
         label: b"Color scheme",
         shortcut: b">",
@@ -378,6 +382,7 @@ pub struct Layout {
     pub menu_bar: Rect,
     pub document: Rect,
     pub body: Rect,
+    pub terminal: terminal::Layout,
     pub status: Rect,
     pub syntax: Rect,
     pub search: Rect,
@@ -415,7 +420,9 @@ impl Layout {
         let status = box_at(menu_bar.x, window.bottom() - (32 * s) as i32, width, 31 * s);
         let field_height = if field == Field::None { 0 } else { 64 * s };
         let body_y = document.bottom() + field_height as i32;
-        let body = box_at(menu_bar.x, body_y, width, (status.y - body_y).max(1) as u32);
+        let mut body = box_at(menu_bar.x, body_y, width, (status.y - body_y).max(1) as u32);
+        let terminal = terminal::Layout::new(body, scale, terminal::preferences(), 0, 0);
+        body.height=(terminal.panel.y-body.y).max(1) as u32;
         let syntax = box_at(right - (164 * s) as i32, status.y, 156 * s, status.height);
         let search_width = (230 * s).min(window.width.saturating_sub(340 * s));
         let search = box_at(
@@ -441,6 +448,7 @@ impl Layout {
             menu_bar,
             document,
             body,
+            terminal,
             status,
             syntax,
             search,
@@ -527,8 +535,11 @@ impl Layout {
     pub fn popup(self, menu: Menu) -> Rect {
         let s = self.scale as u32;
         let w = (300 * s).min(self.menu_bar.width.saturating_sub(16 * s));
-        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
-            super::editor_tools::current().menu_index);
+        let view = super::app_menu::window(
+            menu.count(),
+            self.menu_capacity(),
+            super::editor_tools::current().menu_index,
+        );
         let h = super::app_menu::panel_height(view.visible, view.overflow) as u32 * s;
         let x = if menu == Menu::Syntax {
             self.syntax.right() - w as i32
@@ -552,8 +563,11 @@ impl Layout {
     pub fn menu_row(self, menu: Menu, index: usize) -> Rect {
         let p = self.popup(menu);
         let s = self.scale as u32;
-        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
-            super::editor_tools::current().menu_index);
+        let view = super::app_menu::window(
+            menu.count(),
+            self.menu_capacity(),
+            super::editor_tools::current().menu_index,
+        );
         let arrow = usize::from(view.overflow) * super::app_menu::SCROLL_ROW_HEIGHT;
         box_at(
             p.x + 4 * self.scale as i32,
@@ -569,8 +583,11 @@ impl Layout {
     // ------------------=
     pub fn menu_scroll_row(self, menu: Menu, down: bool) -> Rect {
         let panel = self.popup(menu);
-        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
-            super::editor_tools::current().menu_index);
+        let view = super::app_menu::window(
+            menu.count(),
+            self.menu_capacity(),
+            super::editor_tools::current().menu_index,
+        );
         let top = if down {
             super::app_menu::PANEL_PADDING
                 + super::app_menu::SCROLL_ROW_HEIGHT
@@ -590,8 +607,11 @@ impl Layout {
     // DESC: Resolves clicks only within real menu rows, never the underlying document.
     // ------------------=
     pub fn row_at(self, menu: Menu, p: Point) -> Option<MenuHit> {
-        let view = super::app_menu::window(menu.count(), self.menu_capacity(),
-            super::editor_tools::current().menu_index);
+        let view = super::app_menu::window(
+            menu.count(),
+            self.menu_capacity(),
+            super::editor_tools::current().menu_index,
+        );
         if view.overflow && self.menu_scroll_row(menu, false).contains(p) {
             return Some(MenuHit::ScrollUp);
         }

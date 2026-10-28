@@ -1,6 +1,9 @@
 //! Object-backed stream primitives for the native C ABI. No host filesystem or
 //! process-global namespace is used. Callers supply explicit namespace grants.
-use crate::storage::{BlockDevice, object::{ObjectStore, ObjectId, ObjectType, Space, ObjectError, MAX_CONTENT}};
+use crate::storage::{
+    object::{ObjectError, ObjectId, ObjectStore, ObjectType, Space, MAX_CONTENT},
+    BlockDevice,
+};
 
 pub const READ: u32 = 1;
 pub const WRITE: u32 = 2;
@@ -11,15 +14,37 @@ pub const EXCLUSIVE: u32 = 32;
 pub const TEXT: u32 = 64;
 const MAX_PATH: usize = 95;
 const DOCUMENTS: &[u8] = b"/home/default/documents";
-static DOCUMENT_GRANTS: [Grant<'static>; 1] = [Grant { root: DOCUMENTS, write: true }];
+static DOCUMENT_GRANTS: [Grant<'static>; 1] = [Grant {
+    root: DOCUMENTS,
+    write: true,
+}];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum IoError { Invalid = 1, Denied, NotFound, Exists, Capacity, BadHandle, Conflict, Storage, IsDirectory, Unsupported }
+pub enum IoError {
+    Invalid = 1,
+    Denied,
+    NotFound,
+    Exists,
+    Capacity,
+    BadHandle,
+    Conflict,
+    Storage,
+    IsDirectory,
+    Unsupported,
+}
 
-pub struct Grant<'a> { pub root: &'a [u8], pub write: bool }
+pub struct Grant<'a> {
+    pub root: &'a [u8],
+    pub write: bool,
+}
 
-pub struct Metadata { pub identity: ObjectId, pub size: u64, pub namespace: bool, pub access: u32 }
+pub struct Metadata {
+    pub identity: ObjectId,
+    pub size: u64,
+    pub namespace: bool,
+    pub access: u32,
+}
 
 #[derive(Clone, Copy)]
 struct Handle {
@@ -63,21 +88,35 @@ fn storage_error(error: ObjectError) -> IoError {
 // DESC: Canonicalizes a UTF-8 namespace reference and rejects NUL, overlong paths, and traversal above the root.
 // ------------------=
 fn normalize(cwd: &[u8], path: &[u8], out: &mut [u8; MAX_PATH]) -> Result<usize, IoError> {
-    if path.is_empty() || path.contains(&0) || core::str::from_utf8(path).is_err() { return Err(IoError::Invalid); }
+    if path.is_empty() || path.contains(&0) || core::str::from_utf8(path).is_err() {
+        return Err(IoError::Invalid);
+    }
     out[0] = b'/';
     let mut length = 1;
     let base = if path[0] == b'/' { b"".as_slice() } else { cwd };
     for part in base.split(|b| *b == b'/').chain(path.split(|b| *b == b'/')) {
-        if part.is_empty() || part == b"." { continue; }
+        if part.is_empty() || part == b"." {
+            continue;
+        }
         if part == b".." {
-            if length == 1 { return Err(IoError::Denied); }
-            length = out[..length].iter().rposition(|b| *b == b'/').unwrap().max(1);
+            if length == 1 {
+                return Err(IoError::Denied);
+            }
+            length = out[..length]
+                .iter()
+                .rposition(|b| *b == b'/')
+                .unwrap()
+                .max(1);
             continue;
         }
         let start = length + usize::from(length > 1);
         let end = start.checked_add(part.len()).ok_or(IoError::Capacity)?;
-        if end > MAX_PATH { return Err(IoError::Capacity); }
-        if length > 1 { out[length] = b'/'; }
+        if end > MAX_PATH {
+            return Err(IoError::Capacity);
+        }
+        if length > 1 {
+            out[length] = b'/';
+        }
         out[start..end].copy_from_slice(part);
         length = end;
     }
@@ -91,25 +130,46 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // ------------------=
     pub fn inspect(&self, token: i32) -> Result<Metadata, IoError> {
         let h = self.handles[self.slot(token)?].unwrap();
-        Ok(Metadata { identity: h.id, size: h.length as u64, namespace: false,
-            access: h.flags & (READ | WRITE) })
+        Ok(Metadata {
+            identity: h.id,
+            size: h.length as u64,
+            namespace: false,
+            access: h.flags & (READ | WRITE),
+        })
     }
 
     // ------------------------=
     // FUNC: inspect_path
     // DESC: Resolves object metadata through namespace grants without opening or copying content.
     // ------------------=
-    pub fn inspect_path<D: BlockDevice>(&self, store: &ObjectStore<D>, path: &[u8]) -> Result<Metadata, IoError> {
+    pub fn inspect_path<D: BlockDevice>(
+        &self,
+        store: &ObjectStore<D>,
+        path: &[u8],
+    ) -> Result<Metadata, IoError> {
         let mut canonical = [0; MAX_PATH];
         let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
         let path = &canonical[..length];
-        if !self.authorized(path, false) { return Err(IoError::Denied); }
+        if !self.authorized(path, false) {
+            return Err(IoError::Denied);
+        }
         let id = store.resolve(path).map_err(storage_error)?;
         let metadata = store.metadata(id).map_err(storage_error)?;
-        let writable = self.authorized(path, true) && matches!(metadata.space, Space::Personal | Space::Applications)
-            && matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData | ObjectType::NamespaceNode);
-        Ok(Metadata { identity: id, size: metadata.logical_size as u64,
-            namespace: metadata.kind == ObjectType::NamespaceNode, access: READ | if writable { WRITE } else { 0 } })
+        let writable = self.authorized(path, true)
+            && matches!(metadata.space, Space::Personal | Space::Applications)
+            && matches!(
+                metadata.kind,
+                ObjectType::Text
+                    | ObjectType::Blob
+                    | ObjectType::ApplicationData
+                    | ObjectType::NamespaceNode
+            );
+        Ok(Metadata {
+            identity: id,
+            size: metadata.logical_size as u64,
+            namespace: metadata.kind == ObjectType::NamespaceNode,
+            access: READ | if writable { WRITE } else { 0 },
+        })
     }
     // ------------------------=
     // FUNC: access_mode
@@ -136,7 +196,9 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // ------------------=
     pub fn discard_all(&mut self) {
         self.handles.fill(None);
-        for buffer in &mut self.buffers { buffer.fill(0); }
+        for buffer in &mut self.buffers {
+            buffer.fill(0);
+        }
     }
     // ------------------------=
     // FUNC: documents
@@ -145,9 +207,18 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     pub const fn documents() -> ObjectIo<'static, N> {
         let mut cwd = [0; MAX_PATH];
         let mut index = 0;
-        while index < DOCUMENTS.len() { cwd[index] = DOCUMENTS[index]; index += 1; }
-        ObjectIo { grants: &DOCUMENT_GRANTS, cwd, cwd_len: DOCUMENTS.len(), handles: [None; N],
-            buffers: [[0; MAX_CONTENT]; N], next_token: 3 }
+        while index < DOCUMENTS.len() {
+            cwd[index] = DOCUMENTS[index];
+            index += 1;
+        }
+        ObjectIo {
+            grants: &DOCUMENT_GRANTS,
+            cwd,
+            cwd_len: DOCUMENTS.len(),
+            handles: [None; N],
+            buffers: [[0; MAX_CONTENT]; N],
+            next_token: 3,
+        }
     }
     // ------------------------=
     // FUNC: new
@@ -155,16 +226,28 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // ------------------=
     pub fn new(cwd: &[u8], grants: &'a [Grant<'a>]) -> Result<Self, IoError> {
         let mut canonical = [0; MAX_PATH];
-        if cwd.first() != Some(&b'/') { return Err(IoError::Invalid); }
+        if cwd.first() != Some(&b'/') {
+            return Err(IoError::Invalid);
+        }
         let length = normalize(b"/", cwd, &mut canonical)?;
         for grant in grants {
             let mut root = [0; MAX_PATH];
-            if grant.root.first() != Some(&b'/') { return Err(IoError::Invalid); }
+            if grant.root.first() != Some(&b'/') {
+                return Err(IoError::Invalid);
+            }
             let size = normalize(b"/", grant.root, &mut root)?;
-            if &root[..size] != grant.root { return Err(IoError::Invalid); }
+            if &root[..size] != grant.root {
+                return Err(IoError::Invalid);
+            }
         }
-        Ok(Self { grants, cwd: canonical, cwd_len: length, handles: [None; N],
-            buffers: [[0; MAX_CONTENT]; N], next_token: 3 })
+        Ok(Self {
+            grants,
+            cwd: canonical,
+            cwd_len: length,
+            handles: [None; N],
+            buffers: [[0; MAX_CONTENT]; N],
+            next_token: 3,
+        })
     }
 
     // ------------------------=
@@ -172,9 +255,12 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // DESC: Requires an exact grant root or component-delimited descendant for every namespace operation.
     // ------------------=
     fn authorized(&self, path: &[u8], write: bool) -> bool {
-        self.grants.iter().any(|g| (!write || g.write) &&
-            (g.root == b"/" || path == g.root ||
-             (path.starts_with(g.root) && path.get(g.root.len()) == Some(&b'/'))))
+        self.grants.iter().any(|g| {
+            (!write || g.write)
+                && (g.root == b"/"
+                    || path == g.root
+                    || (path.starts_with(g.root) && path.get(g.root.len()) == Some(&b'/')))
+        })
     }
 
     // ------------------------=
@@ -182,7 +268,10 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // DESC: Resolves a session handle without accepting closed or recycled descriptors.
     // ------------------=
     fn slot(&self, token: i32) -> Result<usize, IoError> {
-        self.handles.iter().position(|h| h.is_some_and(|v| v.token == token)).ok_or(IoError::BadHandle)
+        self.handles
+            .iter()
+            .position(|h| h.is_some_and(|v| v.token == token))
+            .ok_or(IoError::BadHandle)
     }
 
     // ------------------------=
@@ -190,7 +279,9 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // DESC: Copies this context's native working namespace without changing state.
     // ------------------=
     pub fn current_directory(&self, out: &mut [u8]) -> Result<usize, IoError> {
-        if out.len() < self.cwd_len { return Err(IoError::Capacity); }
+        if out.len() < self.cwd_len {
+            return Err(IoError::Capacity);
+        }
         out[..self.cwd_len].copy_from_slice(&self.cwd[..self.cwd_len]);
         Ok(self.cwd_len)
     }
@@ -199,12 +290,21 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: canonical_path
     // DESC: Resolves a normalized existing namespace reference under explicit read authority.
     // ------------------=
-    pub fn canonical_path<D: BlockDevice>(&self, store: &ObjectStore<D>, path: &[u8], out: &mut [u8]) -> Result<usize, IoError> {
+    pub fn canonical_path<D: BlockDevice>(
+        &self,
+        store: &ObjectStore<D>,
+        path: &[u8],
+        out: &mut [u8],
+    ) -> Result<usize, IoError> {
         let mut canonical = [0; MAX_PATH];
         let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
-        if !self.authorized(&canonical[..length], false) { return Err(IoError::Denied); }
+        if !self.authorized(&canonical[..length], false) {
+            return Err(IoError::Denied);
+        }
         store.resolve(&canonical[..length]).map_err(storage_error)?;
-        if out.len() < length { return Err(IoError::Capacity); }
+        if out.len() < length {
+            return Err(IoError::Capacity);
+        }
         out[..length].copy_from_slice(&canonical[..length]);
         Ok(length)
     }
@@ -213,12 +313,19 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: change_directory
     // DESC: Commits a working namespace only after resolution, type and grant validation.
     // ------------------=
-    pub fn change_directory<D: BlockDevice>(&mut self, store: &ObjectStore<D>, path: &[u8]) -> Result<(), IoError> {
+    pub fn change_directory<D: BlockDevice>(
+        &mut self,
+        store: &ObjectStore<D>,
+        path: &[u8],
+    ) -> Result<(), IoError> {
         let mut canonical = [0; MAX_PATH];
         let length = self.canonical_path(store, path, &mut canonical)?;
         let id = store.resolve(&canonical[..length]).map_err(storage_error)?;
-        if store.metadata(id).map_err(storage_error)?.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
-        self.cwd = canonical; self.cwd_len = length;
+        if store.metadata(id).map_err(storage_error)?.kind != ObjectType::NamespaceNode {
+            return Err(IoError::Invalid);
+        }
+        self.cwd = canonical;
+        self.cwd_len = length;
         Ok(())
     }
 
@@ -226,17 +333,40 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: make_directory
     // DESC: Creates a normal namespace object only beneath an authorized writable parent.
     // ------------------=
-    pub fn make_directory<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, path: &[u8]) -> Result<(), IoError> {
+    pub fn make_directory<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        path: &[u8],
+    ) -> Result<(), IoError> {
         let mut canonical = [0; MAX_PATH];
         let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
         let path = &canonical[..length];
-        if !self.authorized(path, true) { return Err(IoError::Denied); }
-        let separator = path.iter().rposition(|b| *b == b'/').ok_or(IoError::Invalid)?;
-        let parent = store.resolve(&path[..separator.max(1)]).map_err(storage_error)?;
+        if !self.authorized(path, true) {
+            return Err(IoError::Denied);
+        }
+        let separator = path
+            .iter()
+            .rposition(|b| *b == b'/')
+            .ok_or(IoError::Invalid)?;
+        let parent = store
+            .resolve(&path[..separator.max(1)])
+            .map_err(storage_error)?;
         let metadata = store.metadata(parent).map_err(storage_error)?;
-        if metadata.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
-        if !matches!(metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
-        store.create_attached(&path[separator + 1..], ObjectType::NamespaceNode, metadata.space, b"", path).map_err(storage_error)?;
+        if metadata.kind != ObjectType::NamespaceNode {
+            return Err(IoError::Invalid);
+        }
+        if !matches!(metadata.space, Space::Personal | Space::Applications) {
+            return Err(IoError::Denied);
+        }
+        store
+            .create_attached(
+                &path[separator + 1..],
+                ObjectType::NamespaceNode,
+                metadata.space,
+                b"",
+                path,
+            )
+            .map_err(storage_error)?;
         Ok(())
     }
 
@@ -244,17 +374,38 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: unlink
     // DESC: Removes an authorized content reference using ObjectStore's atomic reclamation rules.
     // ------------------=
-    pub fn unlink<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, path: &[u8]) -> Result<(), IoError> {
+    pub fn unlink<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        path: &[u8],
+    ) -> Result<(), IoError> {
         let mut canonical = [0; MAX_PATH];
         let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
         let path = &canonical[..length];
-        if !self.authorized(path, true) { return Err(IoError::Denied); }
+        if !self.authorized(path, true) {
+            return Err(IoError::Denied);
+        }
         let id = store.resolve(path).map_err(storage_error)?;
         let metadata = store.metadata(id).map_err(storage_error)?;
-        if metadata.kind == ObjectType::NamespaceNode { return Err(IoError::IsDirectory); }
-        if !matches!(metadata.space, Space::Personal | Space::Applications) ||
-            !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) { return Err(IoError::Denied); }
-        if self.handles.iter().flatten().any(|h| h.id == id && h.flags & WRITE != 0) { return Err(IoError::Conflict); }
+        if metadata.kind == ObjectType::NamespaceNode {
+            return Err(IoError::IsDirectory);
+        }
+        if !matches!(metadata.space, Space::Personal | Space::Applications)
+            || !matches!(
+                metadata.kind,
+                ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData
+            )
+        {
+            return Err(IoError::Denied);
+        }
+        if self
+            .handles
+            .iter()
+            .flatten()
+            .any(|h| h.id == id && h.flags & WRITE != 0)
+        {
+            return Err(IoError::Conflict);
+        }
         store.remove_path(path).map_err(storage_error)?;
         Ok(())
     }
@@ -263,30 +414,56 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: link
     // DESC: Adds a capability-authorized namespace reference to the same content identity without copying bytes.
     // ------------------=
-    pub fn link<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, existing: &[u8], created: &[u8], symbolic: bool) -> Result<(), IoError> {
-        if symbolic { return Err(IoError::Unsupported); }
+    pub fn link<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        existing: &[u8],
+        created: &[u8],
+        symbolic: bool,
+    ) -> Result<(), IoError> {
+        if symbolic {
+            return Err(IoError::Unsupported);
+        }
         let mut source = [0; MAX_PATH];
         let source_length = normalize(&self.cwd[..self.cwd_len], existing, &mut source)?;
-        if !self.authorized(&source[..source_length], false) { return Err(IoError::Denied); }
-        let id = store.resolve(&source[..source_length]).map_err(storage_error)?;
+        if !self.authorized(&source[..source_length], false) {
+            return Err(IoError::Denied);
+        }
+        let id = store
+            .resolve(&source[..source_length])
+            .map_err(storage_error)?;
         let metadata = store.metadata(id).map_err(storage_error)?;
-        if !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) {
+        if !matches!(
+            metadata.kind,
+            ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData
+        ) {
             return Err(IoError::IsDirectory);
         }
         let mut destination = [0; MAX_PATH];
         let destination_length = normalize(&self.cwd[..self.cwd_len], created, &mut destination)?;
         let destination = &destination[..destination_length];
-        if !self.authorized(destination, true) { return Err(IoError::Denied); }
+        if !self.authorized(destination, true) {
+            return Err(IoError::Denied);
+        }
         match store.resolve(destination) {
             Ok(_) => return Err(IoError::Exists),
             Err(ObjectError::NamespaceNotFound) => (),
             Err(error) => return Err(storage_error(error)),
         }
-        let separator = destination.iter().rposition(|b| *b == b'/').ok_or(IoError::Invalid)?;
-        let parent = store.resolve(&destination[..separator.max(1)]).map_err(storage_error)?;
+        let separator = destination
+            .iter()
+            .rposition(|b| *b == b'/')
+            .ok_or(IoError::Invalid)?;
+        let parent = store
+            .resolve(&destination[..separator.max(1)])
+            .map_err(storage_error)?;
         let parent_metadata = store.metadata(parent).map_err(storage_error)?;
-        if parent_metadata.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
-        if !matches!(parent_metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
+        if parent_metadata.kind != ObjectType::NamespaceNode {
+            return Err(IoError::Invalid);
+        }
+        if !matches!(parent_metadata.space, Space::Personal | Space::Applications) {
+            return Err(IoError::Denied);
+        }
         store.attach(destination, id).map_err(storage_error)
     }
 
@@ -294,55 +471,124 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: open
     // DESC: Opens the saved object version or creates a normal namespace object after validating grants and capacity.
     // ------------------=
-    pub fn open<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, path: &[u8], flags: u32) -> Result<i32, IoError> {
+    pub fn open<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        path: &[u8],
+        flags: u32,
+    ) -> Result<i32, IoError> {
         if flags & !(READ | WRITE | CREATE | TRUNCATE | APPEND | EXCLUSIVE | TEXT) != 0
             || flags & (READ | WRITE) == 0
             || (flags & (CREATE | TRUNCATE | APPEND) != 0 && flags & WRITE == 0)
-            || (flags & EXCLUSIVE != 0 && flags & CREATE == 0) { return Err(IoError::Invalid); }
-        let slot = self.handles.iter().position(Option::is_none).ok_or(IoError::Capacity)?;
+            || (flags & EXCLUSIVE != 0 && flags & CREATE == 0)
+        {
+            return Err(IoError::Invalid);
+        }
+        let slot = self
+            .handles
+            .iter()
+            .position(Option::is_none)
+            .ok_or(IoError::Capacity)?;
         let next = self.next_token.checked_add(1).ok_or(IoError::Capacity)?;
         let mut canonical = [0; MAX_PATH];
         let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
         let path = &canonical[..length];
-        if !self.authorized(path, flags & WRITE != 0) { return Err(IoError::Denied); }
+        if !self.authorized(path, flags & WRITE != 0) {
+            return Err(IoError::Denied);
+        }
         let id = match store.resolve(path) {
             Ok(id) => {
-                if flags & EXCLUSIVE != 0 { return Err(IoError::Exists); }
+                if flags & EXCLUSIVE != 0 {
+                    return Err(IoError::Exists);
+                }
                 id
-            },
+            }
             Err(ObjectError::NamespaceNotFound) if flags & CREATE != 0 => {
-                let separator = path.iter().rposition(|b| *b == b'/').ok_or(IoError::Invalid)?;
-                let parent = store.resolve(&path[..separator.max(1)]).map_err(storage_error)?;
+                let separator = path
+                    .iter()
+                    .rposition(|b| *b == b'/')
+                    .ok_or(IoError::Invalid)?;
+                let parent = store
+                    .resolve(&path[..separator.max(1)])
+                    .map_err(storage_error)?;
                 let metadata = store.metadata(parent).map_err(storage_error)?;
-                if metadata.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
-                if !matches!(metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
-                let kind = if flags & TEXT != 0 { ObjectType::Text } else { ObjectType::Blob };
-                store.create_attached(&path[separator + 1..], kind, metadata.space, b"", path).map_err(storage_error)?
-            },
+                if metadata.kind != ObjectType::NamespaceNode {
+                    return Err(IoError::Invalid);
+                }
+                if !matches!(metadata.space, Space::Personal | Space::Applications) {
+                    return Err(IoError::Denied);
+                }
+                let kind = if flags & TEXT != 0 {
+                    ObjectType::Text
+                } else {
+                    ObjectType::Blob
+                };
+                store
+                    .create_attached(&path[separator + 1..], kind, metadata.space, b"", path)
+                    .map_err(storage_error)?
+            }
             Err(error) => return Err(storage_error(error)),
         };
         let metadata = store.metadata(id).map_err(storage_error)?;
-        if metadata.kind == ObjectType::NamespaceNode { return Err(IoError::IsDirectory); }
+        if metadata.kind == ObjectType::NamespaceNode {
+            return Err(IoError::IsDirectory);
+        }
         let streamed = metadata.kind == ObjectType::SystemComponent;
-        if !streamed && !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) { return Err(IoError::Denied); }
+        if !streamed
+            && !matches!(
+                metadata.kind,
+                ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData
+            )
+        {
+            return Err(IoError::Denied);
+        }
         if streamed {
-            if flags & WRITE != 0 { return Err(IoError::Denied); }
+            if flags & WRITE != 0 {
+                return Err(IoError::Denied);
+            }
             // Only sealed extents are readable; unpublished installer resources
             // and ordinary system objects never become implicit file grants.
-            store.read_system_extent(id, 0, &mut []).map_err(storage_error)?;
+            store
+                .read_system_extent(id, 0, &mut [])
+                .map_err(storage_error)?;
         }
         if flags & WRITE != 0 {
-            if !matches!(metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
-            if self.handles.iter().flatten().any(|h| h.id == id && h.flags & WRITE != 0) { return Err(IoError::Conflict); }
+            if !matches!(metadata.space, Space::Personal | Space::Applications) {
+                return Err(IoError::Denied);
+            }
+            if self
+                .handles
+                .iter()
+                .flatten()
+                .any(|h| h.id == id && h.flags & WRITE != 0)
+            {
+                return Err(IoError::Conflict);
+            }
         }
-        if !streamed && metadata.logical_size as usize > MAX_CONTENT { return Err(IoError::Capacity); }
-        let size = if streamed { metadata.logical_size as usize } else if flags & TRUNCATE != 0 { 0 } else {
-            store.read(id, Some(metadata.current_version), &mut self.buffers[slot]).map_err(storage_error)?
+        if !streamed && metadata.logical_size as usize > MAX_CONTENT {
+            return Err(IoError::Capacity);
+        }
+        let size = if streamed {
+            metadata.logical_size as usize
+        } else if flags & TRUNCATE != 0 {
+            0
+        } else {
+            store
+                .read(id, Some(metadata.current_version), &mut self.buffers[slot])
+                .map_err(storage_error)?
         };
         let token = self.next_token;
         self.next_token = next;
-        self.handles[slot] = Some(Handle { token, id, version: metadata.current_version, flags,
-            position: if flags & APPEND != 0 { size } else { 0 }, length: size, dirty: flags & TRUNCATE != 0, streamed });
+        self.handles[slot] = Some(Handle {
+            token,
+            id,
+            version: metadata.current_version,
+            flags,
+            position: if flags & APPEND != 0 { size } else { 0 },
+            length: size,
+            dirty: flags & TRUNCATE != 0,
+            streamed,
+        });
         Ok(token)
     }
 
@@ -350,7 +596,12 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: read
     // DESC: Reads a bounded range from the opened version and advances its independent cursor.
     // ------------------=
-    pub fn read<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, token: i32, out: &mut [u8]) -> Result<usize, IoError> {
+    pub fn read<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        token: i32,
+        out: &mut [u8],
+    ) -> Result<usize, IoError> {
         let slot = self.slot(token)?;
         let position = self.handles[slot].unwrap().position;
         let count = self.read_at(store, token, position, out)?;
@@ -363,16 +614,33 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: read_at
     // DESC: Reads the opened snapshot at an explicit offset without moving its cursor.
     // ------------------=
-    pub fn read_at<D: BlockDevice>(&self, store: &mut ObjectStore<D>, token: i32, offset: usize, out: &mut [u8]) -> Result<usize, IoError> {
+    pub fn read_at<D: BlockDevice>(
+        &self,
+        store: &mut ObjectStore<D>,
+        token: i32,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<usize, IoError> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_ref().unwrap();
-        if h.flags & READ == 0 { return Err(IoError::Denied); }
-        let count = out.len().min(h.length.saturating_sub(offset)).min(64 * 1024);
+        if h.flags & READ == 0 {
+            return Err(IoError::Denied);
+        }
+        let count = out
+            .len()
+            .min(h.length.saturating_sub(offset))
+            .min(64 * 1024);
         if count > 0 {
             if h.streamed {
-                if store.metadata(h.id).map_err(storage_error)?.current_version != h.version { return Err(IoError::Conflict); }
-                store.read_system_extent(h.id, offset as u64, &mut out[..count]).map_err(storage_error)?;
-            } else { out[..count].copy_from_slice(&self.buffers[slot][offset..offset + count]); }
+                if store.metadata(h.id).map_err(storage_error)?.current_version != h.version {
+                    return Err(IoError::Conflict);
+                }
+                store
+                    .read_system_extent(h.id, offset as u64, &mut out[..count])
+                    .map_err(storage_error)?;
+            } else {
+                out[..count].copy_from_slice(&self.buffers[slot][offset..offset + count]);
+            }
         }
         Ok(count)
     }
@@ -384,11 +652,24 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     pub fn write(&mut self, token: i32, bytes: &[u8]) -> Result<usize, IoError> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_mut().unwrap();
-        if h.flags & WRITE == 0 { return Err(IoError::Denied); }
-        if bytes.is_empty() { return Ok(0); }
-        let position = if h.flags & APPEND != 0 { h.length } else { h.position };
-        let end = position.checked_add(bytes.len()).filter(|end| *end <= MAX_CONTENT).ok_or(IoError::Capacity)?;
-        if position > h.length { self.buffers[slot][h.length..position].fill(0); }
+        if h.flags & WRITE == 0 {
+            return Err(IoError::Denied);
+        }
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        let position = if h.flags & APPEND != 0 {
+            h.length
+        } else {
+            h.position
+        };
+        let end = position
+            .checked_add(bytes.len())
+            .filter(|end| *end <= MAX_CONTENT)
+            .ok_or(IoError::Capacity)?;
+        if position > h.length {
+            self.buffers[slot][h.length..position].fill(0);
+        }
         self.buffers[slot][position..end].copy_from_slice(bytes);
         h.position = end;
         h.length = h.length.max(end);
@@ -403,10 +684,19 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     pub fn truncate(&mut self, token: i32, length: usize) -> Result<(), IoError> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_mut().unwrap();
-        if h.flags & WRITE == 0 { return Err(IoError::Denied); }
-        if length > MAX_CONTENT { return Err(IoError::Capacity); }
-        if length > h.length { self.buffers[slot][h.length..length].fill(0); }
-        if length != h.length { h.length = length; h.dirty = true; }
+        if h.flags & WRITE == 0 {
+            return Err(IoError::Denied);
+        }
+        if length > MAX_CONTENT {
+            return Err(IoError::Capacity);
+        }
+        if length > h.length {
+            self.buffers[slot][h.length..length].fill(0);
+        }
+        if length != h.length {
+            h.length = length;
+            h.dirty = true;
+        }
         Ok(())
     }
 
@@ -417,9 +707,17 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     pub fn seek(&mut self, token: i32, offset: i64, origin: u32) -> Result<usize, IoError> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_mut().unwrap();
-        let base = match origin { 0 => 0, 1 => h.position, 2 => h.length, _ => return Err(IoError::Invalid) };
+        let base = match origin {
+            0 => 0,
+            1 => h.position,
+            2 => h.length,
+            _ => return Err(IoError::Invalid),
+        };
         let limit = if h.streamed { h.length } else { MAX_CONTENT };
-        let next = (base as i64).checked_add(offset).filter(|p| *p >= 0 && *p <= limit as i64).ok_or(IoError::Invalid)?;
+        let next = (base as i64)
+            .checked_add(offset)
+            .filter(|p| *p >= 0 && *p <= limit as i64)
+            .ok_or(IoError::Invalid)?;
         h.position = next as usize;
         Ok(h.position)
     }
@@ -428,12 +726,22 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: flush
     // DESC: Publishes dirty bytes as one version only if the saved object has not changed externally.
     // ------------------=
-    pub fn flush<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, token: i32) -> Result<(), IoError> {
+    pub fn flush<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        token: i32,
+    ) -> Result<(), IoError> {
         let slot = self.slot(token)?;
         let h = self.handles[slot].as_mut().unwrap();
-        if !h.dirty { return Ok(()); }
-        if store.metadata(h.id).map_err(storage_error)?.current_version != h.version { return Err(IoError::Conflict); }
-        h.version = store.write(h.id, &self.buffers[slot][..h.length]).map_err(storage_error)?;
+        if !h.dirty {
+            return Ok(());
+        }
+        if store.metadata(h.id).map_err(storage_error)?.current_version != h.version {
+            return Err(IoError::Conflict);
+        }
+        h.version = store
+            .write(h.id, &self.buffers[slot][..h.length])
+            .map_err(storage_error)?;
         h.dirty = false;
         Ok(())
     }
@@ -442,7 +750,11 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     // FUNC: close
     // DESC: Flushes and releases the descriptor, reporting a write conflict without overwriting another app's version.
     // ------------------=
-    pub fn close<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, token: i32) -> Result<(), IoError> {
+    pub fn close<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        token: i32,
+    ) -> Result<(), IoError> {
         let slot = self.slot(token)?;
         let result = self.flush(store, token);
         self.handles[slot] = None;

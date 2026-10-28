@@ -231,12 +231,12 @@ impl DisplayDevice {
             let mut end = start + 1;
             let mut last_space = None;
             while end <= paragraph_end {
-                if end < paragraph_end && text[end] == b' ' {
-                    last_space = Some(end);
-                }
                 if self.template_text_width_face(&text[start..end], pixels, semibold, family) > max_width {
                     end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
                     break;
+                }
+                if end < paragraph_end && text[end] == b' ' {
+                    last_space = Some(end);
                 }
                 if end == paragraph_end {
                     break;

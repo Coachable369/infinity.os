@@ -12,6 +12,7 @@ SECTIONS {
     .rodata : { *(.rodata .rodata.*) } :rodata
     . = ALIGN(0x1000);
     .data : { *(.data .data.*) } :data
+    .got : { *(.got .got.*) } :data
     .tdata ALIGN(64) : { *(.tdata .tdata.*) } :data :tls
     .tbss : { *(.tbss .tbss.*) } :data :tls
     .bss : { *(.bss .bss.*) *(COMMON) } :data

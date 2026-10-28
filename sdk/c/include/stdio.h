@@ -8,6 +8,12 @@
 #define SEEK_END 2
 #define FOPEN_MAX 8
 typedef struct InfinityFile FILE;
+extern FILE infinity_stdin;
+extern FILE infinity_stdout;
+extern FILE infinity_stderr;
+#define stdin (&infinity_stdin)
+#define stdout (&infinity_stdout)
+#define stderr (&infinity_stderr)
 FILE *fopen(const char *path, const char *mode);
 int fclose(FILE *stream);
 int fflush(FILE *stream);
@@ -26,6 +32,9 @@ int fputs(const char *text, FILE *stream);
 int puts(const char *text);
 int putchar(int character);
 int printf(const char *format, ...);
+int fprintf(FILE *stream, const char *format, ...);
+int vfprintf(FILE *stream, const char *format, va_list arguments);
+int vprintf(const char *format, va_list arguments);
 int snprintf(char *output, size_t size, const char *format, ...);
 int vsnprintf(char *output, size_t size, const char *format, va_list arguments);
 #endif

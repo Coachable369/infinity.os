@@ -1,8 +1,8 @@
 pub mod ai;
 pub use ai::clock as system_clock;
-#[cfg(feature="native-browser")]
-pub mod browser;
 pub mod audio;
+pub mod camera;
+pub mod camera_uvc;
 pub mod face_setup;
 pub mod face_login;
 pub mod face_vault;
@@ -11,92 +11,115 @@ pub mod face_setup_dispatch;
 pub mod native_face_job;
 #[cfg(all(feature="native-face",target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
 pub mod face_setup_host;
-pub mod camera;
-pub mod camera_uvc;
+#[cfg(feature = "native-browser")]
+pub mod browser;
 pub mod capability;
 pub mod compute;
 pub mod compute_operator;
 pub mod console_language;
 pub mod event;
 pub mod execution;
-pub mod native_process;
-pub mod native_stdio;
-pub mod native_compiler_launch;
-pub mod native_job_files;
-#[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
-pub mod native_compiler_task;
-#[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
+#[cfg(all(
+    target_os = "none",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+))]
 pub mod native_app_task;
-#[cfg(all(feature="native-compiler", target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
-pub mod native_compiler_package;
-#[cfg(all(feature="native-compiler", target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
-pub mod native_compile_job;
 pub mod native_c_image;
 pub mod native_arguments;
 pub mod native_python_scope;
 pub mod native_python_packages;
 pub mod native_extensions;
-pub mod native_job_directories;
 #[cfg(all(feature="native-python", target_os="none", any(target_arch="aarch64", target_arch="x86_64")))]
 pub mod native_python_package;
 #[cfg(all(feature="native-python", target_os="none", any(target_arch="aarch64", target_arch="x86_64")))]
 pub mod native_python_entropy;
+pub mod native_python_exception;
+#[cfg(all(
+    feature = "native-compiler",
+    target_os = "none",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+))]
+pub mod native_compile_job;
+pub mod native_compiler_launch;
+#[cfg(all(
+    feature = "native-compiler",
+    target_os = "none",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+))]
+pub mod native_compiler_package;
+#[cfg(all(
+    target_os = "none",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+))]
+pub mod native_compiler_task;
+pub mod native_job_files;
+pub mod native_job_directories;
+pub mod native_process;
+pub mod native_stdio;
+pub mod native_console_input;
 // ObjectStore-backed compiler sessions are exercised by the dedicated native
 // storage harness; the storage-free runtime harness does not link a disk stack.
+pub mod application_association;
+pub mod generated_apps;
+pub mod crypto;
+pub mod fabric;
+pub mod font;
+pub mod font_faces;
+pub mod native_font;
+pub mod native_font_syscall;
+pub mod font_preferences;
+pub mod identity;
+pub mod iop;
 #[cfg(target_os = "none")]
 pub mod native_c_io;
 #[cfg(target_os = "none")]
 pub mod native_c_service;
 #[cfg(target_os = "none")]
 pub mod native_c_syscall;
+#[cfg(all(
+    target_os = "none",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+))]
+pub mod native_cpu;
+pub mod native_event;
+pub mod native_input;
+pub mod native_mappings;
 pub mod native_memory;
 pub mod native_memory_arm;
-pub mod native_mappings;
-pub mod native_window;
-pub mod native_event;
 pub mod native_surface;
-pub mod native_input;
-#[cfg(all(target_os = "none", target_arch = "x86_64"))]
-pub mod native_task_x86;
+pub mod native_gui;
 #[cfg(all(target_os = "none", target_arch = "aarch64"))]
 pub mod native_task_arm;
-#[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
-pub mod native_cpu;
-pub mod font;
-pub mod font_preferences;
-pub mod font_faces;
-pub mod fabric;
-pub mod storage_client;
-pub mod storage_operator;
-pub mod storage_advertiser;
-pub mod storage_coordinator;
-pub mod storage_view;
-pub mod storage_fixture;
-pub mod storage_metadata;
-pub mod storage_metadata_repair;
-pub mod storage_metadata_auto;
-pub mod system_sound_policy;
-pub mod identity;
-pub mod iop;
+#[cfg(all(target_os = "none", target_arch = "x86_64"))]
+pub mod native_task_x86;
+pub mod native_window;
 pub mod network;
-pub mod crypto;
 pub mod node;
 pub mod node_client;
-pub mod node_operator;
 pub mod node_links;
+pub mod node_operator;
 pub mod object_navigation;
 pub mod resource_policy;
 pub mod scheduler;
 pub mod service;
+pub mod storage_advertiser;
+pub mod storage_client;
+pub mod storage_coordinator;
+pub mod storage_fixture;
+pub mod storage_metadata;
+pub mod storage_metadata_auto;
+pub mod storage_metadata_repair;
+pub mod storage_operator;
+pub mod storage_view;
+pub mod system_sound_policy;
 pub mod task_manager;
-pub mod application_association;
 
 use capability::{CapabilityManager, CapabilityType};
+use core::sync::atomic::{AtomicU32, Ordering};
 use event::{EventClass, EventFabric, RoutingDomain};
 #[cfg(not(target_os = "none"))]
 use event::{EventFilter, OverflowPolicy};
 use execution::ExecutionManager;
-use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(not(target_os = "none"))]
 use iop::IopMessage;
 use iop::{IopRouter, OperationId};
@@ -134,6 +157,7 @@ pub const EVENT_COMPOSITOR_RECOVERED: u32 = 0x9800a;
 pub const EVENT_SECURE_INPUT_STARTED: u32 = 0x9800b;
 pub const EVENT_SECURE_INPUT_STOPPED: u32 = 0x9800c;
 pub const EVENT_NATIVE_INPUT: u32 = 0x9800d;
+pub const EVENT_WINDOW_CLOSE_REQUESTED: u32 = 0x9800e;
 pub const EVENT_NETWORK_INTERFACE_STATE_CHANGED: u32 = 0x99001;
 pub const EVENT_NETWORK_ADDRESS_CHANGED: u32 = 0x99002;
 pub const EVENT_NETWORK_ROUTE_CHANGED: u32 = 0x99003;
@@ -211,23 +235,39 @@ const NETWORK_EVENT_TYPES: [u32; 15] = [
 ];
 
 const NODE_EVENT_TYPES: [u32; 19] = [
-    EVENT_NODE_DISCOVERED, EVENT_NODE_PAIRING_REQUESTED, EVENT_NODE_PAIRED,
-    EVENT_NODE_PAIRING_REJECTED, EVENT_NODE_TRUST_CHANGED, EVENT_NODE_TRUST_REVOKED,
-    EVENT_NODE_BLOCKED, EVENT_NODE_UNBLOCKED, EVENT_NODE_SESSION_ESTABLISHED,
-    EVENT_NODE_SESSION_CLOSED, EVENT_NODE_JOINED, EVENT_NODE_LEFT, EVENT_NODE_DEGRADED,
-    EVENT_NODE_RECOVERED, EVENT_NODE_OFFLINE, EVENT_NODE_COMPATIBILITY_CHANGED,
+    EVENT_NODE_DISCOVERED,
+    EVENT_NODE_PAIRING_REQUESTED,
+    EVENT_NODE_PAIRED,
+    EVENT_NODE_PAIRING_REJECTED,
+    EVENT_NODE_TRUST_CHANGED,
+    EVENT_NODE_TRUST_REVOKED,
+    EVENT_NODE_BLOCKED,
+    EVENT_NODE_UNBLOCKED,
+    EVENT_NODE_SESSION_ESTABLISHED,
+    EVENT_NODE_SESSION_CLOSED,
+    EVENT_NODE_JOINED,
+    EVENT_NODE_LEFT,
+    EVENT_NODE_DEGRADED,
+    EVENT_NODE_RECOVERED,
+    EVENT_NODE_OFFLINE,
+    EVENT_NODE_COMPATIBILITY_CHANGED,
     EVENT_NODE_POLICY_CHANGED,
     EVENT_NODE_DOMAIN_CHANGED,
     EVENT_NODE_CHECKPOINT_CHANGED,
 ];
 
 const COMPUTE_EVENT_TYPES: [u32; 8] = [
-    EVENT_COMPUTE_QUEUED, EVENT_COMPUTE_PLACED, EVENT_COMPUTE_STARTED,
-    EVENT_COMPUTE_COMPLETED, EVENT_COMPUTE_FAILED, EVENT_COMPUTE_CANCELLED,
-    EVENT_COMPUTE_RESTARTED, EVENT_COMPUTE_NODE_LOST,
+    EVENT_COMPUTE_QUEUED,
+    EVENT_COMPUTE_PLACED,
+    EVENT_COMPUTE_STARTED,
+    EVENT_COMPUTE_COMPLETED,
+    EVENT_COMPUTE_FAILED,
+    EVENT_COMPUTE_CANCELLED,
+    EVENT_COMPUTE_RESTARTED,
+    EVENT_COMPUTE_NODE_LOST,
 ];
 
-const UI_EVENT_TYPES: [u32; 13] = [
+const UI_EVENT_TYPES: [u32; 14] = [
     EVENT_WINDOW_CREATED,
     EVENT_WINDOW_DESTROYED,
     EVENT_WINDOW_FOCUSED,
@@ -241,6 +281,7 @@ const UI_EVENT_TYPES: [u32; 13] = [
     EVENT_SECURE_INPUT_STARTED,
     EVENT_SECURE_INPUT_STOPPED,
     EVENT_NATIVE_INPUT,
+    EVENT_WINDOW_CLOSE_REQUESTED,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -321,11 +362,13 @@ impl InfinityRuntime {
         &mut self,
         handler: application_association::ApplicationHandler,
     ) -> Result<(), application_association::AssociationError> {
-        if let application_association::LaunchAdapter::InstalledApplication(image) = handler.launch {
+        if let application_association::LaunchAdapter::InstalledApplication(image) = handler.launch
+        {
             if task_manager::is_application_image(image) {
                 return Err(application_association::AssociationError::InvalidManifest);
             }
-            self.task_manager.register_application_image(image)
+            self.task_manager
+                .register_application_image(image)
                 .map_err(|_| application_association::AssociationError::ApplicationUnavailable)?;
         }
         self.associations.install(handler)
@@ -657,16 +700,25 @@ impl InfinityRuntime {
         if self.ui.surfaces.inspect(surface).map(|entry| entry.owner) != Some(context) {
             return Err(UiOperationError::AccessDenied);
         }
-        if self.ui.windows.uses_surface(surface) || self.ui.surfaces.inspect(surface)
-            .is_some_and(|entry| entry.associated_window.is_some()) {
-            return Err(UiOperationError::Surface(crate::ui::surface::SurfaceError::InUse));
+        if self.ui.windows.uses_surface(surface)
+            || self
+                .ui
+                .surfaces
+                .inspect(surface)
+                .is_some_and(|entry| entry.associated_window.is_some())
+        {
+            return Err(UiOperationError::Surface(
+                crate::ui::surface::SurfaceError::InUse,
+            ));
         }
         let window = self
             .ui
             .windows
             .create(context, surface, bounds, z_class)
             .map_err(UiOperationError::Window)?;
-        self.ui.surfaces.associate_window(context, surface, Some(window))
+        self.ui
+            .surfaces
+            .associate_window(context, surface, Some(window))
             .map_err(UiOperationError::Surface)?;
         self.flush_window_events(now, window.0 as u64, window.0 as u64);
         Ok(window)
@@ -756,6 +808,7 @@ impl InfinityRuntime {
                 crate::ui::window::WindowEventKind::Focused => EVENT_WINDOW_FOCUSED,
                 crate::ui::window::WindowEventKind::Moved => EVENT_WINDOW_MOVED,
                 crate::ui::window::WindowEventKind::Resized => EVENT_WINDOW_RESIZED,
+                crate::ui::window::WindowEventKind::CloseRequested => EVENT_WINDOW_CLOSE_REQUESTED,
                 crate::ui::window::WindowEventKind::StateChanged
                 | crate::ui::window::WindowEventKind::TitleChanged
                 | crate::ui::window::WindowEventKind::CaptureChanged => EVENT_WINDOW_STATE_CHANGED,
@@ -1426,31 +1479,73 @@ impl InfinityRuntime {
             SERVICE_NODE_IDENTITY,
             [SERVICE_CRYPTO, SERVICE_OBJECT, SERVICE_EVENT, 0],
             3,
-            [OperationId::NodeInspect as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [
+                OperationId::NodeInspect as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
             1,
             RestartPolicy::BoundedRetry { maximum: 3 },
             Criticality::Important,
         ))?;
         self.services.define(manifest(
             SERVICE_NODE_DISCOVERY,
-            [SERVICE_NODE_IDENTITY, SERVICE_NETWORK_DISCOVERY, SERVICE_EVENT, 0],
+            [
+                SERVICE_NODE_IDENTITY,
+                SERVICE_NETWORK_DISCOVERY,
+                SERVICE_EVENT,
+                0,
+            ],
             3,
-            [OperationId::NodeList as u32, OperationId::NodeInspect as u32, OperationId::NodeLinkConfigure as u32, OperationId::NodeLinkList as u32, OperationId::NodeLinkRemove as u32, OperationId::NodeDiscoverStatus as u32, 0, 0, 0, 0, 0, 0],
+            [
+                OperationId::NodeList as u32,
+                OperationId::NodeInspect as u32,
+                OperationId::NodeLinkConfigure as u32,
+                OperationId::NodeLinkList as u32,
+                OperationId::NodeLinkRemove as u32,
+                OperationId::NodeDiscoverStatus as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
             6,
             RestartPolicy::OnFailure,
             Criticality::Important,
         ))?;
         self.services.define(manifest(
             SERVICE_NODE_TRUST,
-            [SERVICE_NODE_IDENTITY, SERVICE_NODE_DISCOVERY, SERVICE_OBJECT, SERVICE_EVENT],
+            [
+                SERVICE_NODE_IDENTITY,
+                SERVICE_NODE_DISCOVERY,
+                SERVICE_OBJECT,
+                SERVICE_EVENT,
+            ],
             4,
             [
-                OperationId::NodePairBegin as u32, OperationId::NodePairConfirm as u32,
-                OperationId::NodePairCancel as u32, OperationId::NodeTrustUpdate as u32,
-                OperationId::NodeRevokeTrust as u32, OperationId::NodeSessionList as u32,
-                OperationId::NodeSessionOpen as u32, OperationId::NodeSessionClose as u32,
-                OperationId::NodeCapabilityList as u32, OperationId::NodeCapabilityGrant as u32,
-                OperationId::NodeCapabilityRevoke as u32, 0,
+                OperationId::NodePairBegin as u32,
+                OperationId::NodePairConfirm as u32,
+                OperationId::NodePairCancel as u32,
+                OperationId::NodeTrustUpdate as u32,
+                OperationId::NodeRevokeTrust as u32,
+                OperationId::NodeSessionList as u32,
+                OperationId::NodeSessionOpen as u32,
+                OperationId::NodeSessionClose as u32,
+                OperationId::NodeCapabilityList as u32,
+                OperationId::NodeCapabilityGrant as u32,
+                OperationId::NodeCapabilityRevoke as u32,
+                0,
             ],
             11,
             RestartPolicy::BoundedRetry { maximum: 3 },
@@ -1458,13 +1553,26 @@ impl InfinityRuntime {
         ))?;
         self.services.define(manifest(
             SERVICE_MESH,
-            [SERVICE_NODE_TRUST, SERVICE_NETWORK_TRANSPORT, SERVICE_EVENT, 0],
+            [
+                SERVICE_NODE_TRUST,
+                SERVICE_NETWORK_TRANSPORT,
+                SERVICE_EVENT,
+                0,
+            ],
             3,
             [
-                OperationId::MeshStatus as u32, OperationId::MeshMemberList as u32,
-                OperationId::MeshMemberAdd as u32, OperationId::MeshMemberRemove as u32,
-                OperationId::MeshPolicyRead as u32, OperationId::MeshPolicyUpdate as u32,
-                0, 0, 0, 0, 0, 0,
+                OperationId::MeshStatus as u32,
+                OperationId::MeshMemberList as u32,
+                OperationId::MeshMemberAdd as u32,
+                OperationId::MeshMemberRemove as u32,
+                OperationId::MeshPolicyRead as u32,
+                OperationId::MeshPolicyUpdate as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
             ],
             6,
             RestartPolicy::OnFailure,
@@ -1474,7 +1582,20 @@ impl InfinityRuntime {
             SERVICE_NODE_AUDIT,
             [SERVICE_NODE_TRUST, SERVICE_OBJECT, SERVICE_EVENT, 0],
             3,
-            [OperationId::NodeAuditList as u32, OperationId::NodeAuditInspect as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [
+                OperationId::NodeAuditList as u32,
+                OperationId::NodeAuditInspect as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
             2,
             RestartPolicy::OnFailure,
             Criticality::Important,
@@ -1483,17 +1604,32 @@ impl InfinityRuntime {
             SERVICE_REPLICA_STORAGE,
             [SERVICE_OBJECT, SERVICE_NODE_TRUST, SERVICE_EVENT, 0],
             3,
-            [OperationId::ReplicaInspect as u32, OperationId::ReplicaTransferBegin as u32,
-                OperationId::ReplicaTransferChunk as u32, OperationId::ReplicaTransferCommit as u32,
-                OperationId::ResourceInspect as u32, OperationId::ResourceAdvertise as u32,
-                OperationId::ObjectRead as u32, OperationId::ObjectCreate as u32,
-                OperationId::ObjectInspect as u32, OperationId::ObjectUpdate as u32,
-                OperationId::ObjectSetPolicy as u32, OperationId::PoolInspect as u32,
-                OperationId::ObjectCopy as u32, OperationId::ObjectDelete as u32,
-                OperationId::PoolUploadBegin as u32, OperationId::PoolUploadAppend as u32,
-                OperationId::PoolUploadCommit as u32, OperationId::PoolUploadAbort as u32,
-                OperationId::PoolHeal as u32, OperationId::ReplicaDelete as u32,OperationId::PoolMetadata as u32],
-            21, RestartPolicy::OnFailure, Criticality::Important,
+            [
+                OperationId::ReplicaInspect as u32,
+                OperationId::ReplicaTransferBegin as u32,
+                OperationId::ReplicaTransferChunk as u32,
+                OperationId::ReplicaTransferCommit as u32,
+                OperationId::ResourceInspect as u32,
+                OperationId::ResourceAdvertise as u32,
+                OperationId::ObjectRead as u32,
+                OperationId::ObjectCreate as u32,
+                OperationId::ObjectInspect as u32,
+                OperationId::ObjectUpdate as u32,
+                OperationId::ObjectSetPolicy as u32,
+                OperationId::PoolInspect as u32,
+                OperationId::ObjectCopy as u32,
+                OperationId::ObjectDelete as u32,
+                OperationId::PoolUploadBegin as u32,
+                OperationId::PoolUploadAppend as u32,
+                OperationId::PoolUploadCommit as u32,
+                OperationId::PoolUploadAbort as u32,
+                OperationId::PoolHeal as u32,
+                OperationId::ReplicaDelete as u32,
+                OperationId::PoolMetadata as u32,
+            ],
+            21,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(
@@ -1516,7 +1652,9 @@ impl InfinityRuntime {
         for _ in 0..MAX_SERVICES {
             self.services.start_ready(&mut self.execution, now);
             for id in 1..=SERVICE_REPLICA_STORAGE {
-                if id == SERVICE_REPLICA_STORAGE && self.storage_handler.is_none() { continue; }
+                if id == SERVICE_REPLICA_STORAGE && self.storage_handler.is_none() {
+                    continue;
+                }
                 if self
                     .services
                     .inspect(id)
@@ -1621,31 +1759,37 @@ impl InfinityRuntime {
         if self.node_event_capabilities[0].is_none() {
             if let Some(node_trust) = self.service_identity(SERVICE_NODE_TRUST) {
                 for (index, event_type) in NODE_EVENT_TYPES.iter().copied().enumerate() {
-                    self.node_event_capabilities[index] = self.capabilities.grant(
-                        CapabilityType::EventPublish,
-                        event_type as u64,
-                        1,
-                        0,
-                        runtime,
-                        node_trust,
-                        None,
-                        0,
-                    ).ok();
+                    self.node_event_capabilities[index] = self
+                        .capabilities
+                        .grant(
+                            CapabilityType::EventPublish,
+                            event_type as u64,
+                            1,
+                            0,
+                            runtime,
+                            node_trust,
+                            None,
+                            0,
+                        )
+                        .ok();
                 }
             }
         }
         if self.compute_event_capabilities[0].is_none() {
             for (index, event_type) in COMPUTE_EVENT_TYPES.iter().copied().enumerate() {
-                self.compute_event_capabilities[index] = self.capabilities.grant(
-                    CapabilityType::EventPublish,
-                    event_type as u64,
-                    1,
-                    0,
-                    runtime,
-                    runtime,
-                    None,
-                    0,
-                ).ok();
+                self.compute_event_capabilities[index] = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::EventPublish,
+                        event_type as u64,
+                        1,
+                        0,
+                        runtime,
+                        runtime,
+                        None,
+                        0,
+                    )
+                    .ok();
             }
         }
         if self.settings_network_profile_capability.is_none() {
@@ -2137,30 +2281,126 @@ pub fn register_local_compute_resources(memory_bytes: u64, now: u64) -> bool {
 // FUNC: register_local_compute_resources_from
 // DESC: Publishes measured local execution and memory capacity against the runtime's current durable node identity.
 // ------------------=
-fn register_local_compute_resources_from(runtime: &mut InfinityRuntime, memory_bytes: u64, now: u64) -> bool {
-    if memory_bytes == 0 { return false; }
-    let Some(owner) = runtime.nodes.local_id() else { return false; };
-    let mut compute_id = [0; 16]; compute_id.copy_from_slice(&owner.0[..16]); compute_id[0] ^= 0xc1;
-    let mut memory_id = [0; 16]; memory_id.copy_from_slice(&owner.0[..16]); memory_id[0] ^= 0xa3;
-    let mut compute_device = [0; 16]; compute_device.copy_from_slice(&owner.0[16..]); compute_device[0] ^= 0xc1;
-    let mut memory_device = [0; 16]; memory_device.copy_from_slice(&owner.0[16..]); memory_device[0] ^= 0xa3;
-    let compute = fabric::resources::Resource { id: fabric::resources::ResourceId(compute_id), owner, kind: fabric::resources::ResourceKind::Compute, device: compute_device, capacity: execution::MAX_CONTEXTS as u64, available: execution::MAX_CONTEXTS.saturating_sub(runtime.execution.count()) as u64, reserved: 0, health: fabric::resources::Health::Healthy, online: true, capabilities: 1, generation: 1, sequence: now.max(1), expires: u64::MAX };
-    let memory = fabric::resources::Resource { id: fabric::resources::ResourceId(memory_id), owner, kind: fabric::resources::ResourceKind::Memory, device: memory_device, capacity: memory_bytes, available: memory_bytes, reserved: 0, health: fabric::resources::Health::Healthy, online: true, capabilities: 1, generation: 1, sequence: now.max(1), expires: u64::MAX };
-    if runtime.fabric_resources.observe_local(compute, owner, now).is_err() || runtime.fabric_resources.observe_local(memory, owner, now).is_err() { return false; }
-    runtime.compute.observe_node(&runtime.fabric_resources, compute::NodeComputeObservation { node: owner, trust_domain: 0, latency_us: 0, latency_known: true, load_percent: 0, generation: now.max(1) }).is_ok()
+fn register_local_compute_resources_from(
+    runtime: &mut InfinityRuntime,
+    memory_bytes: u64,
+    now: u64,
+) -> bool {
+    if memory_bytes == 0 {
+        return false;
+    }
+    let Some(owner) = runtime.nodes.local_id() else {
+        return false;
+    };
+    let mut compute_id = [0; 16];
+    compute_id.copy_from_slice(&owner.0[..16]);
+    compute_id[0] ^= 0xc1;
+    let mut memory_id = [0; 16];
+    memory_id.copy_from_slice(&owner.0[..16]);
+    memory_id[0] ^= 0xa3;
+    let mut compute_device = [0; 16];
+    compute_device.copy_from_slice(&owner.0[16..]);
+    compute_device[0] ^= 0xc1;
+    let mut memory_device = [0; 16];
+    memory_device.copy_from_slice(&owner.0[16..]);
+    memory_device[0] ^= 0xa3;
+    let compute = fabric::resources::Resource {
+        id: fabric::resources::ResourceId(compute_id),
+        owner,
+        kind: fabric::resources::ResourceKind::Compute,
+        device: compute_device,
+        capacity: execution::MAX_CONTEXTS as u64,
+        available: execution::MAX_CONTEXTS.saturating_sub(runtime.execution.count()) as u64,
+        reserved: 0,
+        health: fabric::resources::Health::Healthy,
+        online: true,
+        capabilities: 1,
+        generation: 1,
+        sequence: now.max(1),
+        expires: u64::MAX,
+    };
+    let memory = fabric::resources::Resource {
+        id: fabric::resources::ResourceId(memory_id),
+        owner,
+        kind: fabric::resources::ResourceKind::Memory,
+        device: memory_device,
+        capacity: memory_bytes,
+        available: memory_bytes,
+        reserved: 0,
+        health: fabric::resources::Health::Healthy,
+        online: true,
+        capabilities: 1,
+        generation: 1,
+        sequence: now.max(1),
+        expires: u64::MAX,
+    };
+    if runtime
+        .fabric_resources
+        .observe_local(compute, owner, now)
+        .is_err()
+        || runtime
+            .fabric_resources
+            .observe_local(memory, owner, now)
+            .is_err()
+    {
+        return false;
+    }
+    runtime
+        .compute
+        .observe_node(
+            &runtime.fabric_resources,
+            compute::NodeComputeObservation {
+                node: owner,
+                trust_domain: 0,
+                latency_us: 0,
+                latency_known: true,
+                load_percent: 0,
+                generation: now.max(1),
+            },
+        )
+        .is_ok()
 }
 
 // ------------------------=
 // FUNC: submit_compute_request
 // DESC: Creates one authoritative task and binds it to explicit remote transport authority for native coordinator execution.
 // ------------------=
-pub fn submit_compute_request(request: compute::ComputeRequestV1, caller: execution::SecurityIdentity, authorities: [compute_operator::RemoteComputeAuthority; 2], authority_count: u8, now: u64) -> Result<u64, compute::ComputeError> {
+pub fn submit_compute_request(
+    request: compute::ComputeRequestV1,
+    caller: execution::SecurityIdentity,
+    authorities: [compute_operator::RemoteComputeAuthority; 2],
+    authority_count: u8,
+    now: u64,
+) -> Result<u64, compute::ComputeError> {
     let runtime = runtime_mut();
-    let local = runtime.nodes.local_id().ok_or(compute::ComputeError::ResourceUnavailable)?;
-    if !runtime.compute_coordinator.available() { return Err(compute::ComputeError::Full); }
-    let task = runtime.compute.request(request, caller, &runtime.capabilities, &mut runtime.fabric_resources, local, now)?;
-    if let Err(error) = runtime.compute_coordinator.track(task, caller, authorities, authority_count) {
-        let _ = runtime.compute.remote_transport_failed(task, 1, error, &mut runtime.fabric_resources, local, now);
+    let local = runtime
+        .nodes
+        .local_id()
+        .ok_or(compute::ComputeError::ResourceUnavailable)?;
+    if !runtime.compute_coordinator.available() {
+        return Err(compute::ComputeError::Full);
+    }
+    let task = runtime.compute.request(
+        request,
+        caller,
+        &runtime.capabilities,
+        &mut runtime.fabric_resources,
+        local,
+        now,
+    )?;
+    if let Err(error) =
+        runtime
+            .compute_coordinator
+            .track(task, caller, authorities, authority_count)
+    {
+        let _ = runtime.compute.remote_transport_failed(
+            task,
+            1,
+            error,
+            &mut runtime.fabric_resources,
+            local,
+            now,
+        );
         return Err(error);
     }
     Ok(task)
@@ -2174,10 +2414,25 @@ pub fn poll_node_transport(now: u64) {
     with_runtime(|runtime| runtime.node_clock = Some(runtime.node_clock.unwrap_or(now).max(now)));
     with_runtime(|runtime| {
         if let Some(owner) = runtime.service_identity(SERVICE_NODE_DISCOVERY) {
-            runtime.node_links.reconcile(&mut runtime.nodes, &mut runtime.node_transport, &mut runtime.network, &mut runtime.capabilities, owner, now);
+            runtime.node_links.reconcile(
+                &mut runtime.nodes,
+                &mut runtime.node_transport,
+                &mut runtime.network,
+                &mut runtime.capabilities,
+                owner,
+                now,
+            );
         }
     });
-    let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
+    let change = with_runtime(|runtime| {
+        runtime.node_transport.poll(
+            &mut runtime.nodes,
+            &mut runtime.network,
+            &runtime.capabilities,
+            now,
+        )
+    })
+    .flatten();
     let committed = with_runtime(|runtime| {
         node_operator::prune(runtime, now);
         storage_operator::prune(runtime, now);
@@ -2188,10 +2443,20 @@ pub fn poll_node_transport(now: u64) {
         storage_metadata::poll(runtime, now);
         storage_metadata_repair::poll(runtime, now);
         storage_metadata_auto::poll(runtime, now);
-        runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
-        runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
-    }).flatten();
-    if let Some(committed) = committed { let _ = publish_committed_node_control(committed, now); }
+        runtime.iop.poll_remote_node(
+            &runtime.capabilities,
+            &mut runtime.nodes,
+            &mut runtime.node_transport.trust,
+            now,
+        );
+        runtime
+            .iop
+            .execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
+    })
+    .flatten();
+    if let Some(committed) = committed {
+        let _ = publish_committed_node_control(committed, now);
+    }
     with_runtime(|runtime| {
         let iop = &mut runtime.iop;
         let nodes = &mut runtime.nodes;
@@ -2199,11 +2464,16 @@ pub fn poll_node_transport(now: u64) {
         runtime.remote_compute.expire(execution, now);
         let remote_compute = &mut runtime.remote_compute;
         iop.execute_remote_compute(nodes, now, |request| {
-            remote_compute.execute(request.payload, execution, request.local, now)
+            remote_compute
+                .execute(request.payload, execution, request.local, now)
                 .map_err(|error| match error {
                     compute::ComputeError::AccessDenied => iop::remote::RemoteError::AccessDenied,
-                    compute::ComputeError::DeadlineExceeded => iop::remote::RemoteError::DeadlineExceeded,
-                    compute::ComputeError::Context | compute::ComputeError::ResourceUnavailable => iop::remote::RemoteError::ServiceUnavailable,
+                    compute::ComputeError::DeadlineExceeded => {
+                        iop::remote::RemoteError::DeadlineExceeded
+                    }
+                    compute::ComputeError::Context | compute::ComputeError::ResourceUnavailable => {
+                        iop::remote::RemoteError::ServiceUnavailable
+                    }
                     _ => iop::remote::RemoteError::InvalidState,
                 })
         });
@@ -2214,72 +2484,180 @@ pub fn poll_node_transport(now: u64) {
         let metadata_handler = runtime.storage_metadata.handler;
         let directory = &mut runtime.fabric_resources;
         let compute_service = &mut runtime.compute;
-        runtime.iop.execute_remote_storage(&mut runtime.nodes, now, |request| {
-            use iop::storage_protocol::{Operation, StorageCommit, EVENT_RESOURCE_CHANGED};
-            if request.payload.operation==Operation::PoolMetadata {
-                let handler=metadata_handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
-                return match handler(storage_metadata::NativeRequest::Wire{request,now})?{storage_metadata::NativeReply::Wire(response)=>Ok((response,None)),_=>Err(iop::remote::RemoteError::InvalidState)};
-            }
-            let handler = handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
-            if request.payload.operation == Operation::ResourceAdvertise {
-                let advertised = fabric::resource_protocol::decode(request.payload, request.peer, now)
-                    .map_err(|_| iop::remote::RemoteError::MalformedRequest)?;
-                let changed = directory.accept_storage_advertisement(request, now).map_err(|error| {
-                    use fabric::resources::ResourceError;
-                    match error { ResourceError::AccessDenied => iop::remote::RemoteError::AccessDenied,
-                        ResourceError::Stale | ResourceError::Conflict => iop::remote::RemoteError::Conflict,
-                        ResourceError::Full => iop::remote::RemoteError::QueueFull,
-                        _ => iop::remote::RemoteError::MalformedRequest }
-                })?;
-                if matches!(advertised.kind, fabric::resources::ResourceKind::Compute | fabric::resources::ResourceKind::Memory | fabric::resources::ResourceKind::Accelerator) {
-                    let compute_resource = directory.entries().iter().flatten().filter(|resource| resource.owner == request.peer && matches!(resource.kind, fabric::resources::ResourceKind::Compute | fabric::resources::ResourceKind::Accelerator) && resource.online).max_by_key(|resource| resource.sequence).copied();
-                    let memory_resource = directory.entries().iter().flatten().filter(|resource| resource.owner == request.peer && resource.kind == fabric::resources::ResourceKind::Memory && resource.online).max_by_key(|resource| resource.sequence).copied();
-                    if let (Some(compute_resource), Some(memory_resource)) = (compute_resource, memory_resource) {
-                        let used = compute_resource.capacity.saturating_sub(compute_resource.available);
-                        let load_percent = used.saturating_mul(100).checked_div(compute_resource.capacity).unwrap_or(100).min(100) as u8;
-                        let _ = compute_service.observe_node(directory, compute::NodeComputeObservation { node: request.peer, trust_domain: 0, latency_us: 0, latency_known: false, load_percent, generation: compute_resource.sequence.max(memory_resource.sequence) });
-                    }
+        runtime
+            .iop
+            .execute_remote_storage(&mut runtime.nodes, now, |request| {
+                use iop::storage_protocol::{Operation, StorageCommit, EVENT_RESOURCE_CHANGED};
+                if request.payload.operation == Operation::PoolMetadata {
+                    let handler =
+                        metadata_handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
+                    return match handler(storage_metadata::NativeRequest::Wire { request, now })? {
+                        storage_metadata::NativeReply::Wire(response) => Ok((response, None)),
+                        _ => Err(iop::remote::RemoteError::InvalidState),
+                    };
                 }
-                return Ok((request.payload, changed.then_some(StorageCommit {
-                    event: EVENT_RESOURCE_CHANGED, object: request.payload.object,
-                    generation: request.payload.manifest_generation, copied: request.payload.offset,
-                    state: request.payload.data[44], correlation: request.correlation, causation: request.request_id,
-                    transitions: if request.payload.data[44]!=0 {iop::storage_protocol::transition::RESOURCE_AVAILABLE} else {iop::storage_protocol::transition::RESOURCE_OFFLINE},
-                })));
-            }
-            handler(request)
-        })
-    }).flatten().flatten();
-    if let Some(notice) = storage_commit { let _ = publish_storage_commit(notice, now); }
-    let membership = with_runtime(|runtime| runtime.iop.poll_membership(&mut runtime.nodes, &mut runtime.node_transport.trust, now, persist_control_state)).flatten();
-    if let Some(notice) = membership { let _ = publish_committed_node_control(notice, now); }
+                let handler = handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
+                if request.payload.operation == Operation::ResourceAdvertise {
+                    let advertised =
+                        fabric::resource_protocol::decode(request.payload, request.peer, now)
+                            .map_err(|_| iop::remote::RemoteError::MalformedRequest)?;
+                    let changed = directory
+                        .accept_storage_advertisement(request, now)
+                        .map_err(|error| {
+                            use fabric::resources::ResourceError;
+                            match error {
+                                ResourceError::AccessDenied => {
+                                    iop::remote::RemoteError::AccessDenied
+                                }
+                                ResourceError::Stale | ResourceError::Conflict => {
+                                    iop::remote::RemoteError::Conflict
+                                }
+                                ResourceError::Full => iop::remote::RemoteError::QueueFull,
+                                _ => iop::remote::RemoteError::MalformedRequest,
+                            }
+                        })?;
+                    if matches!(
+                        advertised.kind,
+                        fabric::resources::ResourceKind::Compute
+                            | fabric::resources::ResourceKind::Memory
+                            | fabric::resources::ResourceKind::Accelerator
+                    ) {
+                        let compute_resource = directory
+                            .entries()
+                            .iter()
+                            .flatten()
+                            .filter(|resource| {
+                                resource.owner == request.peer
+                                    && matches!(
+                                        resource.kind,
+                                        fabric::resources::ResourceKind::Compute
+                                            | fabric::resources::ResourceKind::Accelerator
+                                    )
+                                    && resource.online
+                            })
+                            .max_by_key(|resource| resource.sequence)
+                            .copied();
+                        let memory_resource = directory
+                            .entries()
+                            .iter()
+                            .flatten()
+                            .filter(|resource| {
+                                resource.owner == request.peer
+                                    && resource.kind == fabric::resources::ResourceKind::Memory
+                                    && resource.online
+                            })
+                            .max_by_key(|resource| resource.sequence)
+                            .copied();
+                        if let (Some(compute_resource), Some(memory_resource)) =
+                            (compute_resource, memory_resource)
+                        {
+                            let used = compute_resource
+                                .capacity
+                                .saturating_sub(compute_resource.available);
+                            let load_percent = used
+                                .saturating_mul(100)
+                                .checked_div(compute_resource.capacity)
+                                .unwrap_or(100)
+                                .min(100) as u8;
+                            let _ = compute_service.observe_node(
+                                directory,
+                                compute::NodeComputeObservation {
+                                    node: request.peer,
+                                    trust_domain: 0,
+                                    latency_us: 0,
+                                    latency_known: false,
+                                    load_percent,
+                                    generation: compute_resource
+                                        .sequence
+                                        .max(memory_resource.sequence),
+                                },
+                            );
+                        }
+                    }
+                    return Ok((
+                        request.payload,
+                        changed.then_some(StorageCommit {
+                            event: EVENT_RESOURCE_CHANGED,
+                            object: request.payload.object,
+                            generation: request.payload.manifest_generation,
+                            copied: request.payload.offset,
+                            state: request.payload.data[44],
+                            correlation: request.correlation,
+                            causation: request.request_id,
+                            transitions: if request.payload.data[44] != 0 {
+                                iop::storage_protocol::transition::RESOURCE_AVAILABLE
+                            } else {
+                                iop::storage_protocol::transition::RESOURCE_OFFLINE
+                            },
+                        }),
+                    ));
+                }
+                handler(request)
+            })
+    })
+    .flatten()
+    .flatten();
+    if let Some(notice) = storage_commit {
+        let _ = publish_storage_commit(notice, now);
+    }
+    let membership = with_runtime(|runtime| {
+        runtime.iop.poll_membership(
+            &mut runtime.nodes,
+            &mut runtime.node_transport.trust,
+            now,
+            persist_control_state,
+        )
+    })
+    .flatten();
+    if let Some(notice) = membership {
+        let _ = publish_committed_node_control(notice, now);
+    }
     let event = match change {
-        Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
-        Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
+        Some(node::transport::DiscoveryChange::Discovered(peer)) => {
+            Some((EVENT_NODE_DISCOVERED, peer))
+        }
+        Some(node::transport::DiscoveryChange::Recovered(peer)) => {
+            Some((EVENT_NODE_RECOVERED, peer))
+        }
         Some(node::transport::DiscoveryChange::Offline(peer)) => {
             with_runtime(|runtime| {
                 runtime.fabric_resources.mark_peer_offline(peer);
                 if let Some(local) = runtime.nodes.local_id() {
-                    runtime.compute.node_lost(peer, &mut runtime.fabric_resources, local, now);
+                    runtime
+                        .compute
+                        .node_lost(peer, &mut runtime.fabric_resources, local, now);
                 }
             });
             Some((EVENT_NODE_OFFLINE, peer))
-        },
+        }
         None => None,
     };
-    if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }
+    if let Some((kind, peer)) = event {
+        let _ = publish_node_state_event(kind, peer, now, now);
+    }
     // Publish at most one retained resource-loss observation per iteration.
     // Inventory is already offline; IEF delivery never determines availability.
-    if let Some(resource) = with_runtime(|runtime| runtime.fabric_resources.offline_notice()).flatten() {
+    if let Some(resource) =
+        with_runtime(|runtime| runtime.fabric_resources.offline_notice()).flatten()
+    {
         with_runtime(|runtime| {
             if let Some(local) = runtime.nodes.local_id() {
-                runtime.compute.node_lost(resource.owner, &mut runtime.fabric_resources, local, now);
+                runtime.compute.node_lost(
+                    resource.owner,
+                    &mut runtime.fabric_resources,
+                    local,
+                    now,
+                );
             }
         });
         let notice = iop::storage_protocol::StorageCommit {
-            event: iop::storage_protocol::EVENT_RESOURCE_CHANGED, object: resource.id.0,
-            generation: resource.sequence, copied: resource.available,
-            state: 0, correlation: now, causation: now,
+            event: iop::storage_protocol::EVENT_RESOURCE_CHANGED,
+            object: resource.id.0,
+            generation: resource.sequence,
+            copied: resource.available,
+            state: 0,
+            correlation: now,
+            causation: now,
             transitions: iop::storage_protocol::transition::RESOURCE_OFFLINE,
         };
         if publish_storage_commit(notice, now) {
@@ -2294,11 +2672,27 @@ pub fn poll_node_transport(now: u64) {
         refresh_node_projection(runtime, now);
     });
     with_runtime(|runtime| {
-        let Some(local) = runtime.nodes.local_id() else { return; };
-        let Some(service) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
-        runtime.compute_coordinator.poll(&mut runtime.compute, &mut runtime.iop, &mut runtime.capabilities, &runtime.nodes, &mut runtime.execution, &mut runtime.fabric_resources, local, service, now);
+        let Some(local) = runtime.nodes.local_id() else {
+            return;
+        };
+        let Some(service) = runtime.service_identity(SERVICE_RUNTIME) else {
+            return;
+        };
+        runtime.compute_coordinator.poll(
+            &mut runtime.compute,
+            &mut runtime.iop,
+            &mut runtime.capabilities,
+            &runtime.nodes,
+            &mut runtime.execution,
+            &mut runtime.fabric_resources,
+            local,
+            service,
+            now,
+        );
     });
-    if persist_compute_state() { publish_committed_compute_notices(now); }
+    if persist_compute_state() {
+        publish_committed_compute_notices(now);
+    }
 }
 
 // ------------------------=
@@ -2307,13 +2701,37 @@ pub fn poll_node_transport(now: u64) {
 // ------------------=
 fn publish_committed_compute_notices(now: u64) {
     with_runtime(|runtime| {
-        let Some(source) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
+        let Some(source) = runtime.service_identity(SERVICE_RUNTIME) else {
+            return;
+        };
         for index in 0..runtime.compute.notice_count() {
-            let Some(notice) = runtime.compute.notice_nth(index) else { continue; };
-            if notice.sequence <= runtime.compute_notice_published { continue; }
-            let Some(kind) = COMPUTE_EVENT_TYPES.iter().position(|event_type| *event_type == notice.event_type()) else { continue; };
-            let Some(capability) = runtime.compute_event_capabilities[kind] else { return; };
-            if compute::publish_notice(notice, source, capability, &mut runtime.events, &runtime.capabilities, now).is_err() { return; }
+            let Some(notice) = runtime.compute.notice_nth(index) else {
+                continue;
+            };
+            if notice.sequence <= runtime.compute_notice_published {
+                continue;
+            }
+            let Some(kind) = COMPUTE_EVENT_TYPES
+                .iter()
+                .position(|event_type| *event_type == notice.event_type())
+            else {
+                continue;
+            };
+            let Some(capability) = runtime.compute_event_capabilities[kind] else {
+                return;
+            };
+            if compute::publish_notice(
+                notice,
+                source,
+                capability,
+                &mut runtime.events,
+                &runtime.capabilities,
+                now,
+            )
+            .is_err()
+            {
+                return;
+            }
             runtime.compute_notice_published = notice.sequence;
         }
     });
@@ -2339,37 +2757,119 @@ fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64
 // FUNC: publish_storage_commit_from
 // DESC: Publishes a committed typed storage mutation while the caller already owns the runtime; avoids recursive runtime borrowing in local IOP.
 // ------------------=
-fn publish_storage_commit_from(runtime: &mut InfinityRuntime, notice: iop::storage_protocol::StorageCommit, now: u64) -> bool {
-    use iop::storage_protocol::{EVENT_REPLICA_CHANGED, EVENT_RESOURCE_CHANGED, EVENT_OBJECT_CHANGED, EVENT_POLICY_CHANGED};
-        let index = match notice.event { EVENT_REPLICA_CHANGED => 0, EVENT_RESOURCE_CHANGED => 1,
-            EVENT_OBJECT_CHANGED => 2, EVENT_POLICY_CHANGED => 3, _ => return false };
-        let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else { return false; };
-        let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else { return false; };
-        if runtime.storage_event_cap[index].is_none() {
-            runtime.storage_event_cap[index] = runtime.capabilities.grant(CapabilityType::EventPublish,
-                notice.event as u64, 1, 0, issuer, source, None, 0).ok();
-        }
-        let Some(capability) = runtime.storage_event_cap[index] else { return false; };
-        if runtime.capabilities.validate(capability,source,CapabilityType::EventPublish,notice.event as u64,1,0,now).is_err() {
-            runtime.storage_event_cap[index]=None;
-            return false;
-        }
-        let payload = notice.payload();
-        runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, notice.event,
-            source, 0, notice.correlation, notice.causation, &payload, 140, now,
-            &runtime.capabilities, capability).is_ok()
+fn publish_storage_commit_from(
+    runtime: &mut InfinityRuntime,
+    notice: iop::storage_protocol::StorageCommit,
+    now: u64,
+) -> bool {
+    use iop::storage_protocol::{
+        EVENT_OBJECT_CHANGED, EVENT_POLICY_CHANGED, EVENT_REPLICA_CHANGED, EVENT_RESOURCE_CHANGED,
+    };
+    let index = match notice.event {
+        EVENT_REPLICA_CHANGED => 0,
+        EVENT_RESOURCE_CHANGED => 1,
+        EVENT_OBJECT_CHANGED => 2,
+        EVENT_POLICY_CHANGED => 3,
+        _ => return false,
+    };
+    let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else {
+        return false;
+    };
+    let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else {
+        return false;
+    };
+    if runtime.storage_event_cap[index].is_none() {
+        runtime.storage_event_cap[index] = runtime
+            .capabilities
+            .grant(
+                CapabilityType::EventPublish,
+                notice.event as u64,
+                1,
+                0,
+                issuer,
+                source,
+                None,
+                0,
+            )
+            .ok();
+    }
+    let Some(capability) = runtime.storage_event_cap[index] else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            capability,
+            source,
+            CapabilityType::EventPublish,
+            notice.event as u64,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+    {
+        runtime.storage_event_cap[index] = None;
+        return false;
+    }
+    let payload = notice.payload();
+    runtime
+        .events
+        .publish(
+            EventClass::StateChange,
+            RoutingDomain::Mesh,
+            notice.event,
+            source,
+            0,
+            notice.correlation,
+            notice.causation,
+            &payload,
+            140,
+            now,
+            &runtime.capabilities,
+            capability,
+        )
+        .is_ok()
 }
 
 // ------------------------=
 // FUNC: publish_node_checkpoint
 // DESC: Publishes a coalescible postcommit hint independently of durable event-ring pressure; dropped final hints are recovered by periodic IOP reads.
 // ------------------=
-fn publish_node_checkpoint(runtime: &mut InfinityRuntime, checkpoint: u64, correlation: u64, causation: u64, now: u64) {
+fn publish_node_checkpoint(
+    runtime: &mut InfinityRuntime,
+    checkpoint: u64,
+    correlation: u64,
+    causation: u64,
+    now: u64,
+) {
     runtime.node_checkpoint_notified = checkpoint;
-    let Some(index) = NODE_EVENT_TYPES.iter().position(|kind| *kind == EVENT_NODE_CHECKPOINT_CHANGED) else { return; };
-    let Some(cap) = runtime.node_event_capabilities[index] else { return; };
-    let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return; };
-    let _ = runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, EVENT_NODE_CHECKPOINT_CHANGED, source, 0, correlation, causation, &checkpoint.to_le_bytes(), 180, now, &runtime.capabilities, cap);
+    let Some(index) = NODE_EVENT_TYPES
+        .iter()
+        .position(|kind| *kind == EVENT_NODE_CHECKPOINT_CHANGED)
+    else {
+        return;
+    };
+    let Some(cap) = runtime.node_event_capabilities[index] else {
+        return;
+    };
+    let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else {
+        return;
+    };
+    let _ = runtime.events.publish(
+        EventClass::StateChange,
+        RoutingDomain::Mesh,
+        EVENT_NODE_CHECKPOINT_CHANGED,
+        source,
+        0,
+        correlation,
+        causation,
+        &checkpoint.to_le_bytes(),
+        180,
+        now,
+        &runtime.capabilities,
+        cap,
+    );
 }
 
 // ------------------------=
@@ -2379,32 +2879,79 @@ fn publish_node_checkpoint(runtime: &mut InfinityRuntime, checkpoint: u64, corre
 fn refresh_node_projection(runtime: &mut InfinityRuntime, now: u64) {
     use event::{EventFilter, OverflowPolicy};
     use iop::OperationId;
-    if runtime.node_projection_tick == Some(now) { return; }
+    if runtime.node_projection_tick == Some(now) {
+        return;
+    }
     runtime.node_projection_tick = Some(now);
-    let Some(holder) = runtime.service_identity(SERVICE_SETTINGS) else { return; };
-    let Some(service) = runtime.service_identity(SERVICE_NODE_TRUST) else { return; };
+    let Some(holder) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return;
+    };
+    let Some(service) = runtime.service_identity(SERVICE_NODE_TRUST) else {
+        return;
+    };
     if runtime.node_projection_capability.is_none() {
-        runtime.node_projection_capability = runtime.capabilities.grant(CapabilityType::EventSubscribe, EVENT_NODE_CHECKPOINT_CHANGED as u64, 1, 0, service, holder, None, 0).ok();
+        runtime.node_projection_capability = runtime
+            .capabilities
+            .grant(
+                CapabilityType::EventSubscribe,
+                EVENT_NODE_CHECKPOINT_CHANGED as u64,
+                1,
+                0,
+                service,
+                holder,
+                None,
+                0,
+            )
+            .ok();
     }
     if runtime.node_projection_subscription.is_none() {
         if let Some(cap) = runtime.node_projection_capability {
-            runtime.node_projection_subscription = runtime.events.subscribe(holder, cap, EventFilter { type_id: EVENT_NODE_CHECKPOINT_CHANGED, scope: None }, u64::MAX, OverflowPolicy::LatestOnly, 1, &runtime.capabilities, now).ok();
+            runtime.node_projection_subscription = runtime
+                .events
+                .subscribe(
+                    holder,
+                    cap,
+                    EventFilter {
+                        type_id: EVENT_NODE_CHECKPOINT_CHANGED,
+                        scope: None,
+                    },
+                    u64::MAX,
+                    OverflowPolicy::LatestOnly,
+                    1,
+                    &runtime.capabilities,
+                    now,
+                )
+                .ok();
         }
     }
     if let Some(lease) = runtime.node_projection_subscription {
         if let Ok(event) = runtime.events.receive(lease, now) {
             if event.source == service && event.payload_len == 8 {
-                runtime.node_projection.observe(u64::from_le_bytes(event.payload[..8].try_into().unwrap()));
+                runtime
+                    .node_projection
+                    .observe(u64::from_le_bytes(event.payload[..8].try_into().unwrap()));
             }
         }
     }
-    match node_client::read(runtime, node::reconciliation::request([0; 32], OperationId::NodeDiscoverStatus), now) {
+    match node_client::read(
+        runtime,
+        node::reconciliation::request([0; 32], OperationId::NodeDiscoverStatus),
+        now,
+    ) {
         Ok(status) => runtime.node_projection.observe(status.scope),
-        Err(_) => { runtime.node_projection.stale = true; return; }
+        Err(_) => {
+            runtime.node_projection.stale = true;
+            return;
+        }
     }
     if runtime.node_projection.stale {
         let mut candidate = runtime.node_projection.clone();
-        if candidate.reconcile(|request| node_client::read(runtime, request, now)).is_ok() { runtime.node_projection = candidate; }
+        if candidate
+            .reconcile(|request| node_client::read(runtime, request, now))
+            .is_ok()
+        {
+            runtime.node_projection = candidate;
+        }
     }
 }
 
@@ -2414,9 +2961,14 @@ fn refresh_node_projection(runtime: &mut InfinityRuntime, now: u64) {
 // ------------------=
 fn persist_control_state(bytes: &[u8; node::types::NODE_STATE_BYTES]) -> bool {
     #[cfg(target_os = "none")]
-    { crate::storage::node_state_commit(bytes).is_ok() }
+    {
+        crate::storage::node_state_commit(bytes).is_ok()
+    }
     #[cfg(not(target_os = "none"))]
-    { let _ = bytes; false }
+    {
+        let _ = bytes;
+        false
+    }
 }
 
 // ------------------------=
@@ -2424,11 +2976,15 @@ fn persist_control_state(bytes: &[u8; node::types::NODE_STATE_BYTES]) -> bool {
 // DESC: Transactionally checkpoints dirty distributed task and audit state in installed System Space.
 // ------------------=
 pub fn persist_compute_state() -> bool {
-    if !runtime_ref().compute.needs_persistence() { return true; }
+    if !runtime_ref().compute.needs_persistence() {
+        return true;
+    }
     #[cfg(target_os = "none")]
     {
         let encoded = runtime_ref().compute.encode_state();
-        if crate::storage::compute_state_commit(&encoded).is_err() { return false; }
+        if crate::storage::compute_state_commit(&encoded).is_err() {
+            return false;
+        }
         runtime_mut().compute.mark_persisted();
         true
     }
@@ -2466,15 +3022,41 @@ fn publish_committed_node_control(notice: node::control::CommittedControl, now: 
     payload[32..40].copy_from_slice(&notice.version.to_le_bytes());
     payload[40..44].copy_from_slice(&notice.operation.machine_id().to_le_bytes());
     with_runtime(|runtime| {
-        publish_node_checkpoint(runtime, notice.version, notice.correlation, notice.causation, now);
-        let Some(index) = NODE_EVENT_TYPES.iter().position(|t| *t == kind) else { return false; };
-        let Some(capability) = runtime.node_event_capabilities[index] else { return false; };
-        let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return false; };
-        runtime.events.publish(EventClass::Record, RoutingDomain::Mesh, kind, source,
-            u64::from_le_bytes(notice.subject.0[..8].try_into().unwrap()),
-            notice.correlation, notice.causation, &payload, 180, now,
-            &runtime.capabilities, capability).is_ok()
-    }).unwrap_or(false)
+        publish_node_checkpoint(
+            runtime,
+            notice.version,
+            notice.correlation,
+            notice.causation,
+            now,
+        );
+        let Some(index) = NODE_EVENT_TYPES.iter().position(|t| *t == kind) else {
+            return false;
+        };
+        let Some(capability) = runtime.node_event_capabilities[index] else {
+            return false;
+        };
+        let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else {
+            return false;
+        };
+        runtime
+            .events
+            .publish(
+                EventClass::Record,
+                RoutingDomain::Mesh,
+                kind,
+                source,
+                u64::from_le_bytes(notice.subject.0[..8].try_into().unwrap()),
+                notice.correlation,
+                notice.causation,
+                &payload,
+                180,
+                now,
+                &runtime.capabilities,
+                capability,
+            )
+            .is_ok()
+    })
+    .unwrap_or(false)
 }
 
 // ------------------------=
@@ -2530,7 +3112,9 @@ pub fn storage_initialized() {
                 SERVICE_NODE_AUDIT,
                 SERVICE_REPLICA_STORAGE,
             ] {
-                if id == SERVICE_REPLICA_STORAGE && runtime.storage_handler.is_none() { continue; }
+                if id == SERVICE_REPLICA_STORAGE && runtime.storage_handler.is_none() {
+                    continue;
+                }
                 if runtime
                     .services
                     .inspect(id)
@@ -2554,17 +3138,34 @@ pub fn storage_initialized() {
         #[cfg(target_os = "none")]
         {
             let boot_node = runtime.nodes.local_id();
-            let boot_memory = boot_node.and_then(|owner| runtime.fabric_resources.entries().iter().flatten()
-                .find(|resource| resource.owner == owner && resource.kind == fabric::resources::ResourceKind::Memory)
-                .map(|resource| resource.capacity));
+            let boot_memory = boot_node.and_then(|owner| {
+                runtime
+                    .fabric_resources
+                    .entries()
+                    .iter()
+                    .flatten()
+                    .find(|resource| {
+                        resource.owner == owner
+                            && resource.kind == fabric::resources::ResourceKind::Memory
+                    })
+                    .map(|resource| resource.capacity)
+            });
             let mut persisted = zeroize::Zeroizing::new([0u8; node::types::NODE_STATE_BYTES]);
             match crate::storage::node_state_load(&mut persisted[..]) {
-                Ok(length) if &persisted[..length] == b"INFNOD01\x01\0FIRST-BOOT-KEY-GENERATION" => {
-                    let committed = runtime.nodes.encode_state().map(|state| {
-                        let state = zeroize::Zeroizing::new(state);
-                        crate::storage::node_state_commit(&state[..]).is_ok()
-                    }).unwrap_or(false);
-                    if !committed { runtime.nodes = node::NodeRuntime::new(); }
+                Ok(length)
+                    if &persisted[..length] == b"INFNOD01\x01\0FIRST-BOOT-KEY-GENERATION" =>
+                {
+                    let committed = runtime
+                        .nodes
+                        .encode_state()
+                        .map(|state| {
+                            let state = zeroize::Zeroizing::new(state);
+                            crate::storage::node_state_commit(&state[..]).is_ok()
+                        })
+                        .unwrap_or(false);
+                    if !committed {
+                        runtime.nodes = node::NodeRuntime::new();
+                    }
                 }
                 Ok(length) => {
                     if runtime.nodes.restore_state(&persisted[..length]).is_err() {
@@ -2573,11 +3174,15 @@ pub fn storage_initialized() {
                         runtime.nodes = node::NodeRuntime::new();
                     }
                 }
-                Err(_) => { runtime.nodes = node::NodeRuntime::new(); }
+                Err(_) => {
+                    runtime.nodes = node::NodeRuntime::new();
+                }
             }
             if runtime.nodes.local_id() != boot_node {
                 if let Some(owner) = boot_node {
-                    let _ = runtime.fabric_resources.retire_local_compute_identity(owner);
+                    let _ = runtime
+                        .fabric_resources
+                        .retire_local_compute_identity(owner);
                 }
                 if let Some(memory_bytes) = boot_memory {
                     let _ = register_local_compute_resources_from(runtime, memory_bytes, 1);
@@ -2647,31 +3252,49 @@ pub fn publish_node_state_event(
     now: u64,
 ) -> bool {
     with_runtime(|runtime| {
-        let Some(index) = NODE_EVENT_TYPES.iter().position(|candidate| *candidate == event_type) else {
+        let Some(index) = NODE_EVENT_TYPES
+            .iter()
+            .position(|candidate| *candidate == event_type)
+        else {
             return false;
         };
-        let Some(capability) = runtime.node_event_capabilities[index] else { return false; };
-        let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return false; };
-        let class = if matches!(event_type, EVENT_NODE_PAIRED | EVENT_NODE_TRUST_CHANGED | EVENT_NODE_TRUST_REVOKED | EVENT_NODE_BLOCKED | EVENT_NODE_UNBLOCKED) {
+        let Some(capability) = runtime.node_event_capabilities[index] else {
+            return false;
+        };
+        let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else {
+            return false;
+        };
+        let class = if matches!(
+            event_type,
+            EVENT_NODE_PAIRED
+                | EVENT_NODE_TRUST_CHANGED
+                | EVENT_NODE_TRUST_REVOKED
+                | EVENT_NODE_BLOCKED
+                | EVENT_NODE_UNBLOCKED
+        ) {
             EventClass::Record
         } else {
             EventClass::StateChange
         };
-        runtime.events.publish(
-            class,
-            RoutingDomain::Mesh,
-            event_type,
-            source,
-            u64::from_le_bytes(node_id.0[..8].try_into().unwrap_or([0; 8])),
-            correlation_id,
-            correlation_id,
-            &node_id.0,
-            180,
-            now,
-            &runtime.capabilities,
-            capability,
-        ).is_ok()
-    }).unwrap_or(false)
+        runtime
+            .events
+            .publish(
+                class,
+                RoutingDomain::Mesh,
+                event_type,
+                source,
+                u64::from_le_bytes(node_id.0[..8].try_into().unwrap_or([0; 8])),
+                correlation_id,
+                correlation_id,
+                &node_id.0,
+                180,
+                now,
+                &runtime.capabilities,
+                capability,
+            )
+            .is_ok()
+    })
+    .unwrap_or(false)
 }
 
 // ------------------------=
@@ -2697,9 +3320,15 @@ pub fn persist_shell_profile_state() -> bool {
 // DESC: Commits completed setup before desktop entry; restores retryable state on a failed durable write.
 // ------------------=
 pub fn complete_onboarding_durable() -> bool {
-    let Some(before) = with_runtime(|r| r.identity.encode()) else { return false; };
-    if !with_runtime(|r| r.identity.complete_onboarding().is_ok()).unwrap_or(false) { return false; }
-    if persist_identity_state() { return true; }
+    let Some(before) = with_runtime(|r| r.identity.encode()) else {
+        return false;
+    };
+    if !with_runtime(|r| r.identity.complete_onboarding().is_ok()).unwrap_or(false) {
+        return false;
+    }
+    if persist_identity_state() {
+        return true;
+    }
     if let Ok(state) = identity::IdentitySystem::decode(&before) {
         with_runtime(|r| r.identity = state);
     }
@@ -2919,17 +3548,13 @@ pub fn configure_static_ipv4_from_settings(
         INFINITY_NETWORK_SETTINGS_COMMIT.store(4, Ordering::Release);
         return false;
     }
-    if let Err(error) = runtime
-        .network
-        .interfaces
-        .replace_static_ipv4(
-            2,
-            network::types::IpAddress::V4(address),
-            prefix,
-            gateway.map(network::types::IpAddress::V4),
-            metric,
-        )
-    {
+    if let Err(error) = runtime.network.interfaces.replace_static_ipv4(
+        2,
+        network::types::IpAddress::V4(address),
+        prefix,
+        gateway.map(network::types::IpAddress::V4),
+        metric,
+    ) {
         INFINITY_NETWORK_SETTINGS_COMMIT.store(0x100 + error as u32, Ordering::Release);
         return false;
     }

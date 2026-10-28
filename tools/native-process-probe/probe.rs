@@ -15,11 +15,16 @@ use native_memory::*;
 #[path = "../../kernel/runtime/native_job_directories.rs"] mod native_job_directories;
 #[cfg(feature = "python-pip-probe")]
 #[path = "../../kernel/runtime/native_python_packages.rs"] mod native_python_packages;
+#[cfg(feature = "python-pip-probe")]
+#[path = "../../kernel/core/console_python_extensions.rs"] mod native_python_extensions;
 #[path = "../../kernel/runtime/native_arguments.rs"] mod native_arguments;
 #[path = "../../kernel/runtime/native_extensions.rs"] mod native_extensions;
 #[path = "../../kernel/runtime/native_compiler_task.rs"] mod native_compiler_task;
 #[path = "../../kernel/runtime/ai/clock.rs"] mod system_clock;
 #[path = "../../kernel/runtime/native_app_task.rs"] mod native_app_task;
+#[path = "../../kernel/runtime/font_faces.rs"] mod font_faces;
+#[path = "../../kernel/runtime/native_font.rs"] mod native_font;
+#[path = "../../kernel/runtime/native_font_syscall.rs"] mod native_font_syscall;
 use cpu as native_cpu;
 #[path = "compiler.rs"] mod compiler;
 #[path = "../../kernel/runtime/native_cpu.rs"] mod cpu;

@@ -63,7 +63,11 @@ impl Preferences {
             acceleration: bytes[3] & 4 != 0,
             delay: bytes[4],
             rate: bytes[5],
-            cursor_size: if bytes[6] == 0 { 2 } else { bytes[6].clamp(1, 6) },
+            cursor_size: if bytes[6] == 0 {
+                2
+            } else {
+                bytes[6].clamp(1, 6)
+            },
             cursor_style: bytes[7].min(9),
         }
     }

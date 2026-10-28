@@ -59,12 +59,18 @@ mod diagnostics;
 mod pool_commands;
 #[path = "console_editor.rs"]
 mod editor_commands;
+#[path = "console_editor_terminal.rs"]
+mod editor_terminal_commands;
 #[path = "console_menu_editor.rs"]
 mod menu_editor_commands;
+#[path = "console_generated_apps.rs"]
+mod generated_app_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
 #[path = "console_source.rs"]
 mod source_commands;
+#[path = "console_python_libraries.rs"]
+mod python_libraries;
 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 #[path="console_compile.rs"]
 mod compiler_commands;
@@ -359,6 +365,7 @@ impl ConsoleOutput {
     // DESC: Writes or updates write line data.
     // ------------------=
     fn write_line(&mut self, line: &[u8]) {
+        if !line.is_empty(){crate::ui::editor_chrome::terminal::mutate(|state|{if state.line_open{state.append(b"\n");}state.append(line);state.append(b"\n");});}
         if self.count == OUTPUT_ROWS {
             for row in 1..OUTPUT_ROWS {
                 self.lines[row - 1] = self.lines[row];
@@ -966,7 +973,7 @@ impl ConsoleRuntime {
         } else if self.desktop_app == DesktopAppKind::TextEditor
             && self.editor_dialog == EditorDialog::None
         {
-            (self.editor_document.cursor(), 4)
+            if crate::ui::editor_chrome::terminal::inspect(|state|state.preferences.open&&state.focused){(self.command_cursor,1)}else{(self.editor_document.cursor(), 4)}
         } else {
             let file_cursor = crate::runtime::with_runtime(|runtime| {
                 runtime.file_navigator.and_then(|state| {
@@ -995,6 +1002,7 @@ impl ConsoleRuntime {
     // DESC: Resolves the directional resize pointer for the captured or hovered active window handle.
     // ------------------=
     fn resize_pointer_shape(&self) -> Option<crate::ui::text_input::PointerShape> {
+        if let Some(shape)=self.editor_terminal_pointer_shape(){return Some(shape);}
         let preview=crate::ui::file_preview::current();
         if preview.open {
             use crate::ui::text_input::PointerShape as S;
@@ -1235,6 +1243,10 @@ impl ConsoleRuntime {
             crate::ui::ai_widget::publish_menu(Default::default());
         }
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
+        // Terminal geometry, wrapped diagnostics and editor cursor scans are
+        // presentation snapshots. Input handlers use the live command buffer,
+        // so publish these once after the drain, not for each motion sample.
+        self.publish_editor_terminal();
         // Inspection hashes the entire editor buffer. Publish once after the
         // input drain, not once per pointer packet in a coalesced burst.
         crate::ui::app_features::publish(&self.editor_document,self.assistant_owner(),SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
@@ -1385,6 +1397,7 @@ impl ConsoleRuntime {
         self.synchronize_workplace();
         if self.preview_key(key) {self.redraw();return;}
         if self.clipboard_menu_key(key) {self.redraw();return;}
+        if self.native_gui_key(key) {self.session_idle.note_activity();return;}
         if self.authentication_success.active() {
             return;
         }
@@ -1484,7 +1497,7 @@ impl ConsoleRuntime {
                 return;
             }
             if self.desktop_app == DesktopAppKind::TextEditor {
-                self.input_text_editor(key);
+                if !self.input_editor_terminal(key){self.input_text_editor(key);}
                 self.redraw();
                 return;
             }
@@ -1709,7 +1722,7 @@ impl ConsoleRuntime {
                     runtime.chat.set_minimized(!runtime.chat.minimized())
                 }),
                 5 => self.set_ai_chat_enabled(false),
-                6 => crate::ui::ai_widget::publish_menu(crate::ui::ai_widget::MenuState {open:true,selected:0}),
+                6 => self.execute_ai_chat_status_action(crate::ui::ai_widget::MenuAction::Stop),
                 _ => {}
             },
             ConsoleKey::Escape => {
@@ -2648,6 +2661,7 @@ impl ConsoleRuntime {
         self.spatial_preserve_world_appearance();
         crate::output_text(b"[desktop] world appearance preserved\n");
         self.sync_icon_theme();
+        self.sync_settings_theme();
         self.sync_accent();
         self.sync_primary();
         self.sync_background_effects();
@@ -2778,8 +2792,9 @@ impl ConsoleRuntime {
     // ------------------=
     fn dispatch_ai_control(&mut self, command: crate::runtime::ai::control::Command) -> Option<bool> {
         use crate::runtime::ai::control::Command;
-        if self.editor_dialog != EditorDialog::None || self.settings_editing { return Some(false); }
+        if command.requires_app_ready() && (self.editor_dialog != EditorDialog::None || self.settings_editing) { return Some(false); }
         match command {
+            Command::Setting(request) => return Some(self.dispatch_setting(request)),
             Command::Clock(request) => return Some(self.dispatch_clock(request)),
             Command::Shell(action) => {
                 use crate::runtime::ai::control::ShellAction as S;
@@ -2808,6 +2823,7 @@ impl ConsoleRuntime {
                 let Some(entry)=crate::ui::app_launcher::LAUNCHER_APPS.get(index) else{return Some(false);};
                 self.activate_launcher_action(entry.action);return Some(true);
             },
+            Command::LaunchGenerated(name) => return Some(self.launch_registered_application(&name.bytes[..name.length])),
             Command::Menu(menu) => {self.open_shell_menu(menu);return Some(self.mode==ConsoleMode::SystemMenu);},
             Command::AiInstructionMapping => {
                 self.open_text_editor_path(crate::runtime::ai::mapping::PATH);
@@ -3747,6 +3763,7 @@ impl ConsoleRuntime {
     // DESC: Restores the authenticated user's last durable cross-session desktop layout.
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
+        self.restore_editor_terminal();
         self.restore_font_preferences();
         self.restore_desktop_wallpaper();
         self.restore_file_association_preferences();
@@ -4496,6 +4513,7 @@ impl ConsoleRuntime {
     // DESC: Opens one inline Settings detail well, closes it on a second activation, and reveals lower rows safely.
     // ------------------=
     fn toggle_settings_row(&mut self, row: usize) {
+        crate::bootstrap::system_ui_settings_changed();
         if self.system_focus==4 && row==4 {
             let result=crate::runtime::with_runtime(|r| {
                 let enabled=r.identity.user_profile(self.current_user).is_some_and(|p|p.face_login_enabled);
@@ -4574,6 +4592,54 @@ impl ConsoleRuntime {
         } else {
             self.editor_scroll_row = self.editor_scroll_row.saturating_add(distance).min(maximum);
         }
+    }
+
+    // ------------------------=
+    // FUNC: dispatch_setting
+    // DESC: Applies direct settings requests through authenticated identity storage and the shared live appearance projections.
+    // ------------------=
+    fn dispatch_setting(&mut self, request: crate::runtime::ai::control::setting_command::Request) -> bool {
+        use crate::runtime::ai::control::setting_command::Request as R;
+        let user = self.current_user;
+        if let R::World{bytes,length}=request {
+            let allowed=crate::runtime::with_runtime(|r|
+                crate::runtime::ai::settings::authorize(&r.identity,self.current_session,user).is_ok()).unwrap_or(false);
+            return allowed && bytes.get(..length).is_some_and(|name|self.spatial_select_named_world(name));
+        }
+        let changed = crate::runtime::with_runtime(|runtime| {
+            crate::runtime::ai::settings::apply(&mut runtime.identity, self.current_session, user, request).is_ok()
+        }).unwrap_or(false);
+        if !changed { return false; }
+        if matches!(request,R::Name{..}) && self.settings_open && self.system_focus==0 {
+            self.settings_editing=false;
+        }
+        crate::bootstrap::system_ui_settings_changed();
+        let saved = crate::runtime::persist_identity_state();
+        match request {
+            R::Theme(_)=>self.sync_settings_theme(),
+            R::Primary(_)=>self.sync_primary(),
+            R::Accent(_)=>self.sync_accent(),
+            R::Opacity(_)|R::Blur(_)=>self.sync_background_effects(),
+            _=>{},
+        }
+        let verified=crate::runtime::with_runtime(|r|crate::runtime::ai::settings::matches(&r.identity,user,request)).unwrap_or(false);
+        saved && verified
+    }
+
+    // ------------------------=
+    // FUNC: sync_settings_theme
+    // DESC: Restores the persisted theme through the same skin service used by Settings and every OS surface.
+    // ------------------=
+    fn sync_settings_theme(&mut self) {
+        let _ = crate::runtime::with_runtime(|runtime| {
+            let profile = runtime.identity.user_profile(self.current_user)?;
+            let theme = profile.theme.as_bytes();
+            let light = theme.eq_ignore_ascii_case(b"Diagnostic Light");
+            if !light && !theme.eq_ignore_ascii_case(b"Cosmic Dark") { return None; }
+            Some(runtime.ui.skins.activate(crate::ui::skin::SkinId::from_bytes(
+                if light { b"infinity.diagnostic.light" } else { b"infinity.default.dark" }),
+                crate::ui::skin::AppearanceScope::User))
+        });
     }
 
     // ------------------------=
@@ -5328,32 +5394,31 @@ impl ConsoleRuntime {
     // DESC: Executes the selected typed settings row without coupling row and navigation focus.
     // ------------------=
     fn activate_settings_content_row(&mut self, row: usize) {
+        crate::bootstrap::system_ui_settings_changed();
         match (self.system_focus, row) {
             (8, 0) => crate::runtime::storage_view::open(self.current_user, self.current_session),
             (8, 1) => crate::runtime::storage_view::open(self.current_user, self.current_session),
             (8, 2) => crate::runtime::storage_view::select_node(),
             (8, 3) => crate::runtime::storage_view::select_next(),
             (8, 4) => crate::runtime::storage_view::select_placement(),
-            (8, 5..=7) => crate::runtime::storage_view::set_policy((row - 4) as u8),
+            (8, 5..=7) => {
+                let view=crate::runtime::storage_view::snapshot();
+                if let Some(object)=view.objects[view.selected.min(7)] {
+                    if crate::ui::controls::transition(
+                        crate::ui::controls::Value::Radio{selected:object.desired.saturating_sub(1)as usize,count:3},
+                        crate::ui::controls::Input::Select(row-5),view.ready&&!view.failed).is_some() {
+                        crate::runtime::storage_view::set_policy((row-4)as u8);
+                    }
+                }
+            }
             (0, 0) => {
                 self.settings_editing = true;
                 self.reset_input();
             }
             (1, 0) => {
-                let _ = crate::runtime::with_runtime(|runtime| {
-                    let dark = crate::ui::skin::SkinId::from_bytes(b"infinity.default.dark");
-                    let alternate =
-                        crate::ui::skin::SkinId::from_bytes(b"infinity.diagnostic.light");
-                    let next = if runtime.ui.skins.active().id == dark {
-                        alternate
-                    } else {
-                        dark
-                    };
-                    runtime
-                        .ui
-                        .skins
-                        .activate(next, crate::ui::skin::AppearanceScope::User)
-                });
+                let light = crate::runtime::with_runtime(|runtime| runtime.ui.skins.active().id
+                    == crate::ui::skin::SkinId::from_bytes(b"infinity.default.dark")).unwrap_or(false);
+                self.dispatch_setting(crate::runtime::ai::control::setting_command::Request::Theme(light));
             }
             (1, 1) => self.cycle_icon_theme(),
             (1, 2) => self.cycle_primary(),
@@ -5397,6 +5462,19 @@ impl ConsoleRuntime {
             }
             (3, 4) | (4, 1) => self.toggle_voice_microphone(),
             (3, 5) => self.cycle_voice_wake_word(),
+            (3, 7) => {
+                let user = self.current_user;
+                let changed = crate::runtime::with_runtime(|r| {
+                    let current = r.identity.voice_profile(user).ok_or(crate::runtime::identity::IdentityError::NotFound)?;
+                    let next = crate::ui::controls::next_choice(current.output_voice as usize, 5)
+                        .ok_or(crate::runtime::identity::IdentityError::NotFound)?;
+                    r.identity.update_output_voice(user, user, next as u8)
+                }).is_some_and(|result| result.is_ok());
+                if changed {
+                    let _ = crate::runtime::persist_identity_state();
+                    crate::bootstrap::system_ui_settings_changed();
+                }
+            }
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
@@ -5410,6 +5488,63 @@ impl ConsoleRuntime {
             }
             _ => {}
         }
+    }
+
+    // ------------------------=
+    // FUNC: activate_settings_row_control
+    // DESC: Routes mouse and keyboard activation through one semantic row binding, preserving native authorization and persistence.
+    // ------------------=
+    fn activate_settings_row_control(&mut self, row: usize) {
+        if row >= self.settings_window.row_count { return; }
+        use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
+        match settings_row_interaction(self.system_focus,row) {
+            I::Cycle | I::Toggle if self.system_focus==10 || (self.system_focus==4 && row==4) => {
+                self.toggle_settings_row(row);
+                self.settings_window.expanded_row=None;
+            }
+            I::Cycle | I::Toggle | I::Select => self.activate_settings_content_row(row),
+            I::Edit => {
+                self.settings_window.expanded_row=Some(row);
+                self.activate_settings_content_row(row);
+            }
+            I::Details => self.toggle_settings_row(row),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settings_row_keyboard
+    // DESC: Gives every ordinary Settings row visible keyboard focus and the same Enter/Space action as a click, with bounded scroll reveal.
+    // ------------------=
+    fn settings_row_keyboard(&mut self, key: ConsoleKey) -> bool {
+        use crate::ui::controls::{SETTINGS_ROW_FOCUS as BASE,settings_tab_focus};
+        let rows=self.settings_window.row_count;
+        let focus=self.settings_window.control_focus;
+        let row=focus.checked_sub(BASE).filter(|&row|row<rows);
+        let next=match key {
+            ConsoleKey::Tab(backwards)=>settings_tab_focus(focus,rows,backwards),
+            ConsoleKey::Right if row.is_none()=>BASE,
+            ConsoleKey::Enter if row.is_none()=>BASE,
+            ConsoleKey::Left | ConsoleKey::Escape if row.is_some()=>0,
+            ConsoleKey::Up if row.is_some()=>BASE+row.unwrap().saturating_sub(1),
+            ConsoleKey::Down if row.is_some()=>BASE+(row.unwrap()+1).min(rows.saturating_sub(1)),
+            ConsoleKey::Home if row.is_some()=>BASE,
+            ConsoleKey::End if row.is_some()=>BASE+rows.saturating_sub(1),
+            ConsoleKey::Enter | ConsoleKey::Character(b' ') if row.is_some()=> {
+                self.activate_settings_row_control(row.unwrap()); return true;
+            }
+            _=>return false,
+        };
+        self.settings_window.control_focus=next;
+        if let Some(row)=next.checked_sub(BASE).filter(|&row|row<rows) {
+            let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
+            let window=layout.settings_window_geometry_for_section(self.settings_window,self.system_focus);
+            let bounds=layout.settings_row_geometry_for_section(self.settings_window,row,self.system_focus).summary;
+            let delta=if bounds.y<window.viewport.y {bounds.y-window.viewport.y}
+                else {(bounds.bottom()-window.viewport.bottom()).max(0)};
+            let scroll=self.settings_window.scroll_offset.saturating_add_signed(delta as isize).min(window.maximum_scroll);
+            self.settings_window.scroll_offset=scroll;self.settings_scroll_target=scroll;
+        }
+        true
     }
 
     // ------------------------=
@@ -5448,6 +5583,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn open_app_launcher(&mut self) {
         self.store_active_app_window();
+        self.refresh_generated_launcher();
         crate::ui::app_launcher::launcher_open();
         self.launcher_tick_ns = crate::ui::performance::monotonic_ns();
         self.launcher_scroll_dragging = false;
@@ -5456,14 +5592,6 @@ impl ConsoleRuntime {
         self.reset_input();
     }
 
-            (3, 7) => {
-                let user = self.current_user;
-                let changed = crate::runtime::with_runtime(|r| {
-                    let current = r.identity.voice_profile(user).ok_or(crate::runtime::identity::IdentityError::NotFound)?;
-                    r.identity.update_output_voice(user, user, (current.output_voice + 1) % 5)
-                }).is_some_and(|result| result.is_ok());
-                if changed { let _ = crate::runtime::persist_identity_state(); }
-            }
     // ------------------------=
     // FUNC: close_app_launcher
     // DESC: Begins the native launcher exit transition while retaining its composited surface.
@@ -5490,6 +5618,7 @@ impl ConsoleRuntime {
             LauncherAction::TaskManager => self.open_task_manager(),
             LauncherAction::HolographicDesktop => self.holographic_open(),
             LauncherAction::WorldShift => self.worldshift_open(),
+            LauncherAction::Generated(id) => self.launch_registered_identity(id),
             LauncherAction::Browser => {
                 #[cfg(feature="native-browser")]
                 browser_controller::open_home(self);
@@ -5843,6 +5972,8 @@ impl ConsoleRuntime {
     // DESC: Advances modular first-boot steps and commits identity and connectivity changes.
     // ------------------=
     fn input_onboarding(&mut self, key: ConsoleKey) {
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if self.system_step==7 {self.input_face_setup(key);return;}
         if self.system_step == 6 {
             if matches!(key, ConsoleKey::Tab(_)) {
                 let reverse = matches!(key, ConsoleKey::Tab(true));
@@ -5886,8 +6017,6 @@ impl ConsoleRuntime {
                     self.system_focus = 1;
                 }
                 return;
-        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-        if self.system_step==7 {self.input_face_setup(key);return;}
             }
         }
         if crate::ui::installer_layout::configuration_template_input_variable(self.system_step)
@@ -6020,49 +6149,6 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
-    // FUNC: commit_onboarding_input
-    // DESC: Stores the current field bytes in the runtime variable selected by the saved UI template.
-    // ------------------=
-    fn commit_onboarding_input(
-        &mut self,
-        variable: crate::ui::installer_template::InstallerTemplateVariable,
-    ) -> bool {
-        use crate::ui::installer_template::InstallerTemplateVariable;
-        match variable {
-            InstallerTemplateVariable::MachineNodeName => {
-                if self.command_length == 0 || self.command_length > self.onboarding_machine.len() {
-                    return false;
-                }
-                self.onboarding_machine_length = self.command_length;
-                self.onboarding_machine[..self.onboarding_machine_length]
-                    .copy_from_slice(&self.command[..self.onboarding_machine_length]);
-            }
-            InstallerTemplateVariable::ProfileName => {
-                if self.command_length == 0 || self.command_length > self.onboarding_handle.len() {
-                    return false;
-                }
-                self.onboarding_handle_length = self.command_length;
-                self.onboarding_handle[..self.onboarding_handle_length]
-                    .copy_from_slice(&self.command[..self.onboarding_handle_length]);
-            }
-            InstallerTemplateVariable::DisplayName => {
-                if self.command_length == 0 || self.command_length > self.onboarding_name.len() {
-                    return false;
-                }
-                self.onboarding_name_length = self.command_length;
-                self.onboarding_name[..self.onboarding_name_length]
-                    .copy_from_slice(&self.command[..self.onboarding_name_length]);
-            }
-            InstallerTemplateVariable::Password => {
-                if self.command_length < 8 || self.command_length > self.onboarding_secret.len() {
-                    return false;
-                }
-                self.onboarding_secret_length = self.command_length;
-                self.onboarding_secret[..self.onboarding_secret_length]
-                    .copy_from_slice(&self.command[..self.onboarding_secret_length]);
-            }
-            InstallerTemplateVariable::None => return false,
-    // ------------------------=
     // FUNC: input_face_setup
     // DESC: Handles optional explicit camera setup without creating sessions or changing password authentication.
     // ------------------=
@@ -6105,6 +6191,49 @@ impl ConsoleRuntime {
         }
     }
 
+    // ------------------------=
+    // FUNC: commit_onboarding_input
+    // DESC: Stores the current field bytes in the runtime variable selected by the saved UI template.
+    // ------------------=
+    fn commit_onboarding_input(
+        &mut self,
+        variable: crate::ui::installer_template::InstallerTemplateVariable,
+    ) -> bool {
+        use crate::ui::installer_template::InstallerTemplateVariable;
+        match variable {
+            InstallerTemplateVariable::MachineNodeName => {
+                if self.command_length == 0 || self.command_length > self.onboarding_machine.len() {
+                    return false;
+                }
+                self.onboarding_machine_length = self.command_length;
+                self.onboarding_machine[..self.onboarding_machine_length]
+                    .copy_from_slice(&self.command[..self.onboarding_machine_length]);
+            }
+            InstallerTemplateVariable::ProfileName => {
+                if self.command_length == 0 || self.command_length > self.onboarding_handle.len() {
+                    return false;
+                }
+                self.onboarding_handle_length = self.command_length;
+                self.onboarding_handle[..self.onboarding_handle_length]
+                    .copy_from_slice(&self.command[..self.onboarding_handle_length]);
+            }
+            InstallerTemplateVariable::DisplayName => {
+                if self.command_length == 0 || self.command_length > self.onboarding_name.len() {
+                    return false;
+                }
+                self.onboarding_name_length = self.command_length;
+                self.onboarding_name[..self.onboarding_name_length]
+                    .copy_from_slice(&self.command[..self.onboarding_name_length]);
+            }
+            InstallerTemplateVariable::Password => {
+                if self.command_length < 8 || self.command_length > self.onboarding_secret.len() {
+                    return false;
+                }
+                self.onboarding_secret_length = self.command_length;
+                self.onboarding_secret[..self.onboarding_secret_length]
+                    .copy_from_slice(&self.command[..self.onboarding_secret_length]);
+            }
+            InstallerTemplateVariable::None => return false,
         }
         true
     }
@@ -6572,6 +6701,7 @@ impl ConsoleRuntime {
             }
             return;
         }
+        if self.mode==ConsoleMode::Settings && self.settings_row_keyboard(key) { return; }
         if self.mode==ConsoleMode::SystemMenu {
             if self.authored_menu_key(key){return;}
             match key {
@@ -7384,11 +7514,62 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: native_gui_event
+    // DESC: Forwards normalized input only from the authenticated ordinary desktop, never from login, setup or secure overlays.
+    // ------------------=
+    fn native_gui_event(&self,event:crate::ui::input::UiEvent<'_>,scroll_y:i32)->bool {
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !self.spatial.open && !self.authentication_success.active() {
+            let event=match event {
+                crate::ui::input::UiEvent::Pointer{position,phase,button}=>crate::ui::input::UiEvent::Pointer {
+                    position:crate::ui::geometry::Point {
+                        x:(position.x as i64*self.system.framebuffer_width as i64/1000) as i32,
+                        y:(position.y as i64*self.system.framebuffer_height as i64/1000) as i32,
+                    },phase,button}, other=>other,
+            };
+            return python_commands::gui_input(self,event,scroll_y);
+        }
+        let _=(event,scroll_y);false
+    }
+    // ------------------------=
+    // FUNC: native_gui_key
+    // DESC: Preserves typed key semantics for native toolkits while retaining OS shortcuts and routing real key press/release pairs.
+    // ------------------=
+    fn native_gui_key(&self,key:ConsoleKey)->bool {
+        use crate::ui::input::{Key,UiEvent};
+        if matches!(key,ConsoleKey::Tab(true)) || matches!(key,ConsoleKey::Shortcut(code)
+            if code.is_ascii_uppercase() || matches!(code,b'j'|0x80|0x81)) {
+            #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            python_commands::release_gui_keyboard();
+            return false;
+        }
+        let (key,modifiers)=match key {
+            ConsoleKey::Character(byte)=>(Key::Character(byte as char),0),
+            ConsoleKey::Shortcut(byte) if byte.is_ascii()=>(Key::Character(byte as char),2),
+            ConsoleKey::SelectMove(direction)=>(match direction {
+                -1=>Key::Left,1=>Key::Right,-2=>Key::Up,2=>Key::Down,
+                -3=>Key::Home,3=>Key::End,_=>return false,
+            },1),
+            ConsoleKey::Enter=>(Key::Enter,0),ConsoleKey::Escape=>(Key::Escape,0),
+            ConsoleKey::Backspace=>(Key::Backspace,0),ConsoleKey::Delete=>(Key::Delete,0),
+            ConsoleKey::Tab(back)=>(Key::Tab,u8::from(back)),
+            ConsoleKey::Left=>(Key::Left,0),ConsoleKey::Right=>(Key::Right,0),
+            ConsoleKey::Up=>(Key::Up,0),ConsoleKey::Down=>(Key::Down,0),
+            ConsoleKey::Home=>(Key::Home,0),ConsoleKey::End=>(Key::End,0),_=>return false,
+        };
+        if !self.native_gui_event(UiEvent::Key{key,pressed:true,modifiers},0){return false;}
+        let _=self.native_gui_event(UiEvent::Key{key,pressed:false,modifiers},0);true
+    }
+    // ------------------------=
     // FUNC: pointer_scroll
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
         if self.authored_menu_scroll(vertical){return true;}
+        if self.native_gui_event(crate::ui::input::UiEvent::Pointer {
+            position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},
+            phase:crate::ui::input::PointerPhase::Scroll,button:0},vertical as i32) {self.session_idle.note_activity();return true;}
+        if self.scroll_editor_terminal(vertical){return true;}
         let mut preview=crate::ui::file_preview::current();
         if preview.open && self.workplace_authorized(false) && preview.owner==self.current_session.0 {
             preview.scroll_by(-(vertical as isize)*3);crate::ui::file_preview::publish(preview);self.redraw();return true;
@@ -7779,9 +7960,10 @@ impl ConsoleRuntime {
             Some(FileNavigatorAction::Navigate(location)) => {
                 self.home_previous_location = self.home_location;
                 self.home_location = location;
+                let downloads=infinity_browser_core::download::owner_directory(self.current_user.0);
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime.file_navigator.as_mut().map(|navigator| {
-                        let result = navigator.navigate(home_location_path(location));
+                        let result = navigator.navigate(if location==3{&downloads}else{home_location_path(location)});
                         navigator.menu_open = None;
                         result
                     })
@@ -8009,6 +8191,7 @@ impl ConsoleRuntime {
         let forward_clicked = buttons & crate::drivers::input::pointer::BUTTON_FORWARD != 0
             && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_FORWARD == 0;
         let released = !left_button && self.pointer_pressed;
+        let prior_buttons = self.pointer_buttons;
         if (left_button && !clicked && (self.app_window_dragging || self.home_window_dragging || self.settings_window_dragging)) || right_clicked {
             self.title_clicks.cancel();
         }
@@ -8029,6 +8212,17 @@ impl ConsoleRuntime {
             if dismissed {self.advance_desktop_effects();self.redraw();return;}
         }
         if self.clipboard_menu_pointer(clicked,right_clicked) {self.redraw();return;}
+        let mut native_handled = false;
+        for (mask,button) in [(1u8,1u8),(2,3),(4,2)] {
+            if (prior_buttons ^ buttons) & mask != 0 {
+                native_handled |= self.native_gui_event(crate::ui::input::UiEvent::Pointer {
+                    position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},
+                    phase:if buttons&mask!=0 {crate::ui::input::PointerPhase::Down}else{crate::ui::input::PointerPhase::Up},button},0);
+            }
+        }
+        native_handled |= self.native_gui_event(crate::ui::input::UiEvent::Pointer {
+            position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},phase:crate::ui::input::PointerPhase::Move,button:0},0);
+        if native_handled { self.session_idle.note_activity(); return; }
         #[cfg(feature="native-browser")]
         if browser_controller::pointer(self,buttons,true) {return;}
         self.spatial_finish_arrival();
@@ -8058,6 +8252,8 @@ impl ConsoleRuntime {
             self.redraw();
         }
         if clicked && self.dispatch_window_control(layout) {self.redraw();return;}
+        if !self.app_window_dragging && self.app_window_resizing.is_none()
+            && self.pointer_editor_terminal(clicked,released){return;}
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !self.app_window_dragging && self.app_window_resizing.is_none()
             && !self.settings_window_dragging && self.settings_window_resizing.is_none() && self.pointer_window_assistant(clicked) {
             if clicked {self.redraw();} else {
@@ -8245,7 +8441,7 @@ impl ConsoleRuntime {
                     match target {
                         AiChatTarget::Status => {
                             self.ai_chat_focus=6;
-                            crate::ui::ai_widget::publish_menu(crate::ui::ai_widget::MenuState {open:true,selected:0});
+                            self.execute_ai_chat_status_action(crate::ui::ai_widget::MenuAction::Stop);
                         }
                         AiChatTarget::Model => {
                             self.ai_chat_focus = 1;
@@ -8919,7 +9115,8 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::HomeSidebar(location)) => {
                         self.home_previous_location = self.home_location;
                         self.home_location = location;
-                        let path = home_location_path(location);
+                        let downloads=infinity_browser_core::download::owner_directory(self.current_user.0);
+                        let path = if location==3{downloads.as_slice()}else{home_location_path(location)};
                         let _ = crate::runtime::with_runtime(|runtime| {
                             runtime
                                 .file_navigator
@@ -9460,19 +9657,8 @@ impl ConsoleRuntime {
                     SettingsTarget::ContentRow(row)
                         if clicked && !matches!(self.system_focus, 6 | 7) =>
                     {
-                        use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
-                        match settings_row_interaction(self.system_focus,row) {
-                            I::Cycle | I::Toggle if self.system_focus==10 || (self.system_focus==4 && row==4) => {
-                                self.toggle_settings_row(row);
-                                self.settings_window.expanded_row=None;
-                            }
-                            I::Cycle | I::Toggle => self.activate_settings_content_row(row),
-                            I::Edit => {
-                                self.settings_window.expanded_row=Some(row);
-                                self.activate_settings_content_row(row);
-                            }
-                            I::Details => self.toggle_settings_row(row),
-                        }
+                        self.settings_window.control_focus=crate::ui::controls::SETTINGS_ROW_FOCUS+row;
+                        self.activate_settings_row_control(row);
                     }
                     SettingsTarget::ExpandedAction if clicked => {
                         if let Some(row) = self.settings_window.expanded_row {
@@ -9602,6 +9788,8 @@ impl ConsoleRuntime {
             if matches!(key,ConsoleKey::Escape){self.close_desktop_app();}
             return;
         }
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if python_commands::input(self,key){return;}
         #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if compiler_commands::input(self,key) {return;}
         if self.workplace_console_key(key) {return;}
@@ -9636,6 +9824,7 @@ impl ConsoleRuntime {
         if self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
         if self.clock_command(&command[..length]) {self.reset_input();return;}
+        if self.generated_application_command(&command[..length]) {self.reset_input();return;}
         #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if compiler_commands::command(self,&command[..length]) {self.reset_input();return;}
         #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -11455,11 +11644,11 @@ impl ConsoleRuntime {
                     Err(IdentityError::InvalidInput)
                 } else {
                     let value = argument(b"value").ok_or(IdentityError::InvalidInput)?;
-                    crate::runtime::with_runtime(|runtime| {
-                        runtime.identity.update_user_theme(actor, actor, value)
-                    })
-                    .unwrap_or(Err(IdentityError::InvalidState))?;
-                    if crate::runtime::persist_identity_state() {
+                    let light = value.eq_ignore_ascii_case(b"light") || value.eq_ignore_ascii_case(b"Diagnostic Light");
+                    if !light && !value.eq_ignore_ascii_case(b"dark") && !value.eq_ignore_ascii_case(b"Cosmic Dark") {
+                        return Err(IdentityError::InvalidInput);
+                    }
+                    if self.dispatch_setting(crate::runtime::ai::control::setting_command::Request::Theme(light)) {
                         Ok(())
                     } else {
                         Err(IdentityError::InvalidState)
@@ -14006,9 +14195,30 @@ pub fn reduced_motion() -> bool {
 
 // ------------------------=
 // FUNC: poll_native_ai
-// DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
+// DESC: Advances services before decorative animation and coalesces both into one final repaint, without delaying the separate input drain.
 // ------------------=
 pub fn poll_native_ai() {
+    input_batch(|| {
+        poll_native_ai_inner();
+        crate::bootstrap::animation_tick();
+    });
+    // The first-visible metric must be recorded after the deferred frame, not
+    // while speech/inference are still mutating its presentation snapshot.
+    let desktop = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
+        runtime.ai_chat_allowed() && matches!(runtime.mode,
+            ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher)) };
+    if desktop && !unsafe { (&*(&raw const INPUT_PRESENTATION)).active() } {
+        crate::runtime::ai::with_ai_runtime(|ai| {
+            if ai.app_turn_owner().is_none() { ai.record_first_visible_response(); }
+        });
+    }
+}
+
+// ------------------------=
+// FUNC: poll_native_ai_inner
+// DESC: Advances bounded native service work without blocking each state transition on its own framebuffer repaint.
+// ------------------=
+fn poll_native_ai_inner() {
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
         let visible=runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7;
@@ -14043,10 +14253,12 @@ pub fn poll_native_ai() {
             else {runtime.redraw();}
         }
     }}
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){runtime.preserve_editor_execution();}}
     #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){python_commands::poll(runtime);}}
     #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){compiler_commands::poll(runtime);}}
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut(){runtime.poll_editor_terminal();}}
     #[cfg(target_os = "none")]
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
         let now = crate::runtime::ai::qwen::workers::clock_ns();
@@ -14138,7 +14350,6 @@ pub fn poll_native_ai() {
         } } }
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
         if app_turn.is_some() || !desktop_allowed { return; }
-        crate::runtime::ai::with_ai_runtime(|ai|ai.record_first_visible_response());
         #[cfg(target_os = "none")]
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
             let enabled = crate::runtime::with_runtime(|r| r.identity.ai_profile(runtime.current_user)
@@ -14150,6 +14361,17 @@ pub fn poll_native_ai() {
             }
         } }
     }
+}
+
+// ------------------------=
+// FUNC: native_gui_frames
+// DESC: Presents committed native surfaces without exposing retained kernel pointers to applications.
+// ------------------=
+pub fn native_gui_frames(render:impl FnMut(crate::ui::window::Window,crate::ui::compositor::SurfaceFrame<'_>,bool)) {
+    #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    {python_commands::gui_frames(render);}
+    #[cfg(not(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
+    {let _=render;}
 }
 static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate::ui::input_batch::PresentationBatch::new();
 

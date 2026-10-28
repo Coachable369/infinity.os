@@ -33,11 +33,18 @@ pub struct EntireDiskLayout {
 // DESC: Selects a bounded non-overlapping store location without migrating existing disks.
 // ------------------=
 pub fn store_relative_lba(kernel_blocks: u64) -> Result<u64, LayoutError> {
-    if kernel_blocks > MAX_KERNEL_BLOCKS { return Err(LayoutError::InsufficientCapacity); }
-    Ok(if kernel_blocks <= 256 * 2048 { STORE_RELATIVE_LBA }
-        else if kernel_blocks <= 512 * 2048 { LARGE_STORE_RELATIVE_LBA }
-        else if kernel_blocks <= 1024 * 2048 { BROWSER_STORE_RELATIVE_LBA }
-        else { EXTENDED_STORE_RELATIVE_LBA })
+    if kernel_blocks > MAX_KERNEL_BLOCKS {
+        return Err(LayoutError::InsufficientCapacity);
+    }
+    Ok(if kernel_blocks <= 256 * 2048 {
+        STORE_RELATIVE_LBA
+    } else if kernel_blocks <= 512 * 2048 {
+        LARGE_STORE_RELATIVE_LBA
+    } else if kernel_blocks <= 1024 * 2048 {
+        BROWSER_STORE_RELATIVE_LBA
+    } else {
+        EXTENDED_STORE_RELATIVE_LBA
+    })
 }
 
 // ------------------------=

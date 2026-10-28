@@ -43,7 +43,25 @@ fn exit(code: u32) -> ! {
 // FUNC: panic
 // DESC: Makes every assertion failure observable through the guest exit status.
 // ------------------=
-fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
+fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+    use core::fmt::Write;
+    struct Serial;
+    impl core::fmt::Write for Serial {
+        // ------------------------=
+        // FUNC: write_str
+        // DESC: Emits bounded probe failure diagnostics; guest exit status remains the test oracle.
+        // ------------------=
+        fn write_str(&mut self, text: &str) -> core::fmt::Result {
+            for byte in text.bytes() {
+                #[cfg(target_arch="aarch64")]
+                unsafe {core::ptr::write_volatile(0x0900_0000 as *mut u32, byte as u32);}
+                #[cfg(target_arch="x86_64")]
+                unsafe {core::arch::asm!("out dx, al",in("dx") 0x3f8u16,in("al") byte);}
+            }
+            Ok(())
+        }
+    }
+    let _=writeln!(Serial,"{info}");
     exit(0x12)
 }
 #[no_mangle]
@@ -211,7 +229,7 @@ pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
             rand_chacha::ChaCha20Rng::from_seed([19; 32]),
             if google {infinity_http::tls::system_roots()} else {&roots},
             now,
-            if google {"www.google.com"} else {"localhost"},
+            if google {option_env!("HTTPS_TEST_HOST").unwrap_or("www.google.com")} else {"localhost"},
             port,
             "/",
             Buffers {

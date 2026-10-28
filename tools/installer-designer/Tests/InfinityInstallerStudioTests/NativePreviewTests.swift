@@ -38,6 +38,40 @@ private actor ControlledNativeRenderer: NativePreviewRunning {
 
 final class NativePreviewTests: XCTestCase {
     // ------------------------=
+    // FUNC: testSettingsRowFocusUsesNativeRange
+    // DESC: Admits all bounded native row-focus identities and rejects values outside the shared control range.
+    // ------------------=
+    func testSettingsRowFocusUsesNativeRange() throws {
+        var simulation = NativePreviewSimulation()
+        for focus in 0...255 {
+            simulation.controlFocus = focus
+            XCTAssertNoThrow(try simulation.arguments())
+        }
+        for focus in [-1, 256, Int.max] {
+            simulation.controlFocus = focus
+            XCTAssertThrowsError(try simulation.arguments())
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testSettingsKeyboardFocusReachesNativePainter
+    // DESC: Sends Studio's row focus through the real renderer and verifies that it changes pixels without changing authored element geometry.
+    // ------------------=
+    @MainActor func testSettingsKeyboardFocusReachesNativePainter() async throws {
+        let store = TemplateStore(); store.projectRoot = root
+        store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 4)
+        let runner = NativePreviewRunner()
+        store.nativePreviewSimulation.controlFocus = 0
+        let normal = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        store.nativePreviewSimulation.controlFocus = 128
+        let focused = try await runner.render(NativePreviewSnapshot.capture(store, width: 1280, height: 800))
+        XCTAssertEqual(normal.pixels.count, focused.pixels.count)
+        XCTAssertNotEqual(normal.pixels, focused.pixels)
+        XCTAssertEqual(normal.bounds, focused.bounds)
+    }
+
+    // ------------------------=
     // FUNC: testSettingsChildPixelsFollowAuthoredGeometryAndVisibility
     // DESC: Compares actual production frames for row descriptions and detail surfaces at two viewport sizes, including hidden/transparent parity.
     // ------------------=

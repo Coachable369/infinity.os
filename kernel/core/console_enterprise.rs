@@ -175,6 +175,8 @@ impl ConsoleRuntime {
         if !self.workplace_authorized(false) {return;}
         if row==6 {
             if menu.target==Target::Editor {self.clipboard_menu_key(ConsoleKey::Shortcut(b'C'));}
+            #[cfg(feature="native-browser")]
+            if menu.target==Target::Browser {browser_controller::save_context_image(self);}
             return;
         }
         if row==4 {

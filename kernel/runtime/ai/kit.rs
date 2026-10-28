@@ -33,16 +33,30 @@ impl RequestApi {
     // FUNC: new
     // DESC: Creates the transport-neutral AI request ingress with nonzero correlation sequencing.
     // ------------------=
-    pub const fn new() -> Self { Self { next_correlation_id: 1 } }
+    pub const fn new() -> Self {
+        Self {
+            next_correlation_id: 1,
+        }
+    }
 
     // ------------------------=
     // FUNC: accept
     // DESC: Wraps caller input and authority metadata in the canonical typed AIKit request envelope.
     // ------------------=
-    pub fn accept<'a>(&mut self, input: &'a [u8], owner: [u8; 16], origin: RequestOrigin) -> RequestEnvelope<'a> {
+    pub fn accept<'a>(
+        &mut self,
+        input: &'a [u8],
+        owner: [u8; 16],
+        origin: RequestOrigin,
+    ) -> RequestEnvelope<'a> {
         let correlation_id = self.next_correlation_id;
         self.next_correlation_id = self.next_correlation_id.saturating_add(1).max(1);
-        RequestEnvelope { input, owner, origin, correlation_id }
+        RequestEnvelope {
+            input,
+            owner,
+            origin,
+            correlation_id,
+        }
     }
 }
 
@@ -82,9 +96,15 @@ impl IntentRouter {
     // FUNC: route
     // DESC: Resolves installed aliases and deterministic commands before delegating unresolved requests to inference.
     // ------------------=
-    pub fn route(mapping: &mut mapping::ConfiguredMap, request: &RequestEnvelope<'_>) -> RequestRoute {
+    pub fn route(
+        mapping: &mut mapping::ConfiguredMap,
+        request: &RequestEnvelope<'_>,
+    ) -> RequestRoute {
         mapping.refresh();
-        if let Some(command) = mapping.resolve(request.input).or_else(|| control::Command::explicit(request.input)) {
+        if let Some(command) = mapping
+            .resolve(request.input)
+            .or_else(|| control::Command::explicit(request.input))
+        {
             RequestRoute::Control(command)
         } else {
             RequestRoute::Inference(InferenceBroker::route(request.input))
@@ -124,8 +144,12 @@ pub struct ApplicationCapabilityDescriptor {
     pub available: bool,
 }
 
-
 impl CapabilityDirectory {
+    // ------------------------=
+    // FUNC: registry_path
+    // DESC: Exposes the native editable audit dictionary to IntelligenceKit and authorized service clients.
+    // ------------------=
+    pub const fn registry_path() -> &'static [u8] { mapping::REGISTRY_PATH }
     // ------------------------=
     // FUNC: application_descriptor
     // DESC: Discovers an explicitly authorized live app contract without copying it into the static OS mapping list.
@@ -143,7 +167,9 @@ impl CapabilityDirectory {
     // FUNC: count
     // DESC: Reports the authoritative installed AI capability count without maintaining a second inventory.
     // ------------------=
-    pub const fn count() -> usize { mapping::CAPABILITY_TARGETS.len() }
+    pub const fn count() -> usize {
+        mapping::CAPABILITY_TARGETS.len()
+    }
 
     // ------------------------=
     // FUNC: descriptor
@@ -151,7 +177,11 @@ impl CapabilityDirectory {
     // ------------------=
     pub fn descriptor(index: usize) -> Option<CapabilityDescriptor> {
         let target = *mapping::CAPABILITY_TARGETS.get(index)?;
-        Some(CapabilityDescriptor { index, target, family: capability_family(target)? })
+        Some(CapabilityDescriptor {
+            index,
+            target,
+            family: capability_family(target)?,
+        })
     }
 
     // ------------------------=
@@ -168,7 +198,8 @@ impl CapabilityDirectory {
 // DESC: Classifies an authoritative protocol target into its stable typed AIKit family.
 // ------------------=
 fn capability_family(target: &[u8]) -> Option<CapabilityFamily> {
-    let families: [(&[u8], CapabilityFamily); 10] = [
+    let families: [(&[u8], CapabilityFamily); 11] = [
+        (b"OS_SETTING:", CapabilityFamily::Settings),
         (b"OS_OPEN:", CapabilityFamily::Open),
         (b"OS_LAUNCH:", CapabilityFamily::Launch),
         (b"OS_FOCUS:", CapabilityFamily::Focus),
@@ -180,7 +211,10 @@ fn capability_family(target: &[u8]) -> Option<CapabilityFamily> {
         (b"OS_CONTEXT:", CapabilityFamily::Context),
         (b"OS_CLOCK:", CapabilityFamily::Clock),
     ];
-    families.iter().find(|(prefix, _)| target.starts_with(prefix)).map(|(_, family)| *family)
+    families
+        .iter()
+        .find(|(prefix, _)| target.starts_with(prefix))
+        .map(|(_, family)| *family)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,9 +240,15 @@ impl PolicyEngine {
     // DESC: Rechecks authenticated ownership and current AI and desktop permissions immediately before dispatch.
     // ------------------=
     pub fn authorize(context: PolicyContext) -> Result<(), PolicyDenial> {
-        if context.requester != context.owner { return Err(PolicyDenial::OwnerChanged); }
-        if !context.chat_enabled { return Err(PolicyDenial::AiDisabled); }
-        if !context.desktop_allowed { return Err(PolicyDenial::PermissionDenied); }
+        if context.requester != context.owner {
+            return Err(PolicyDenial::OwnerChanged);
+        }
+        if !context.chat_enabled {
+            return Err(PolicyDenial::AiDisabled);
+        }
+        if !context.desktop_allowed {
+            return Err(PolicyDenial::PermissionDenied);
+        }
         Ok(())
     }
 }
@@ -256,7 +296,13 @@ impl AuditLog {
     // FUNC: new
     // DESC: Creates an empty bounded structured AI execution audit log.
     // ------------------=
-    pub const fn new() -> Self { Self { records: [None; AUDIT_CAPACITY], cursor: 0, count: 0 } }
+    pub const fn new() -> Self {
+        Self {
+            records: [None; AUDIT_CAPACITY],
+            cursor: 0,
+            count: 0,
+        }
+    }
 
     // ------------------------=
     // FUNC: append
@@ -272,15 +318,23 @@ impl AuditLog {
     // FUNC: count
     // DESC: Reports the bounded number of retained structured audit records.
     // ------------------=
-    pub const fn count(&self) -> usize { self.count }
+    pub const fn count(&self) -> usize {
+        self.count
+    }
 
     // ------------------------=
     // FUNC: record
     // DESC: Reads retained audit records in chronological order without exposing mutable storage.
     // ------------------=
     pub fn record(&self, index: usize) -> Option<AuditRecord> {
-        if index >= self.count { return None; }
-        let oldest = if self.count < AUDIT_CAPACITY { 0 } else { self.cursor };
+        if index >= self.count {
+            return None;
+        }
+        let oldest = if self.count < AUDIT_CAPACITY {
+            0
+        } else {
+            self.cursor
+        };
         self.records[(oldest + index) % AUDIT_CAPACITY]
     }
 }
@@ -297,7 +351,11 @@ impl ExecutionBroker {
     // DESC: Creates an empty exact-once execution broker with a bounded in-memory audit trail.
     // ------------------=
     pub const fn new() -> Self {
-        Self { pending: None, active: None, audit: AuditLog::new() }
+        Self {
+            pending: None,
+            active: None,
+            audit: AuditLog::new(),
+        }
     }
 
     // ------------------------=
@@ -305,7 +363,9 @@ impl ExecutionBroker {
     // DESC: Stages one typed command for later policy-authorized native dispatch.
     // ------------------=
     pub fn stage(&mut self, request: ExecutionRequest) -> Result<(), ExecutionError> {
-        if self.pending.is_some() || self.active.is_some() { return Err(ExecutionError::Busy); }
+        if self.pending.is_some() || self.active.is_some() {
+            return Err(ExecutionError::Busy);
+        }
         self.pending = Some(request);
         self.record(request, AuditOutcome::Staged);
         Ok(())
@@ -315,32 +375,45 @@ impl ExecutionBroker {
     // FUNC: pending
     // DESC: Reports whether a command awaits the final session and permission policy check.
     // ------------------=
-    pub const fn pending(&self) -> bool { self.pending.is_some() }
+    pub const fn pending(&self) -> bool {
+        self.pending.is_some()
+    }
 
     // ------------------------=
     // FUNC: pending_origin
     // DESC: Exposes the originating surface for the final native window ownership check.
     // ------------------=
-    pub fn pending_origin(&self) -> Option<RequestOrigin> { self.pending.map(|request| request.origin) }
+    pub fn pending_origin(&self) -> Option<RequestOrigin> {
+        self.pending.map(|request| request.origin)
+    }
 
     // ------------------------=
     // FUNC: active_origin
     // DESC: Keeps action completion attached to the consumer that submitted it.
     // ------------------=
-    pub fn active_origin(&self) -> Option<RequestOrigin> { self.active.map(|request| request.origin) }
+    pub fn active_origin(&self) -> Option<RequestOrigin> {
+        self.active.map(|request| request.origin)
+    }
 
     // ------------------------=
     // FUNC: busy
     // DESC: Reports whether a command is waiting for policy or is currently owned by native dispatch.
     // ------------------=
-    pub const fn busy(&self) -> bool { self.pending.is_some() || self.active.is_some() }
+    pub const fn busy(&self) -> bool {
+        self.pending.is_some() || self.active.is_some()
+    }
 
     // ------------------------=
     // FUNC: take
     // DESC: Moves one authorized request into active dispatch exactly once and audits any denial.
     // ------------------=
-    pub fn take(&mut self, context: PolicyContext) -> Result<Option<ExecutionRequest>, PolicyDenial> {
-        let Some(request) = self.pending.take() else { return Ok(None); };
+    pub fn take(
+        &mut self,
+        context: PolicyContext,
+    ) -> Result<Option<ExecutionRequest>, PolicyDenial> {
+        let Some(request) = self.pending.take() else {
+            return Ok(None);
+        };
         if context.owner != request.owner {
             self.record(request, AuditOutcome::Denied(PolicyDenial::OwnerChanged));
             return Err(PolicyDenial::OwnerChanged);
@@ -350,7 +423,7 @@ impl ExecutionBroker {
             return Err(denial);
         }
         if request.origin == RequestOrigin::Model
-            && matches!(request.command, control::Command::Clock(super::clock::Request::SetTime { .. } | super::clock::Request::SetZone(_))) {
+            && matches!(request.command, control::Command::Setting(_) | control::Command::Clock(super::clock::Request::SetTime { .. } | super::clock::Request::SetZone(_))) {
             self.record(request, AuditOutcome::Denied(PolicyDenial::PermissionDenied));
             return Err(PolicyDenial::PermissionDenied);
         }
@@ -363,13 +436,24 @@ impl ExecutionBroker {
     // FUNC: finish
     // DESC: Completes the matching active native dispatch and records its verified outcome.
     // ------------------=
-    pub fn finish(&mut self, command: control::Command, success: bool) -> Result<(), ExecutionError> {
+    pub fn finish(
+        &mut self,
+        command: control::Command,
+        success: bool,
+    ) -> Result<(), ExecutionError> {
         let request = self.active.take().ok_or(ExecutionError::NoActiveRequest)?;
         if request.command != command {
             self.active = Some(request);
             return Err(ExecutionError::CommandMismatch);
         }
-        self.record(request, if success { AuditOutcome::Completed } else { AuditOutcome::Failed });
+        self.record(
+            request,
+            if success {
+                AuditOutcome::Completed
+            } else {
+                AuditOutcome::Failed
+            },
+        );
         Ok(())
     }
 
@@ -408,7 +492,9 @@ impl ExecutionBroker {
     // FUNC: audit_count
     // DESC: Reports the bounded number of currently retained structured audit records.
     // ------------------=
-    pub const fn audit_count(&self) -> usize { self.audit.count() }
+    pub const fn audit_count(&self) -> usize {
+        self.audit.count()
+    }
 
     // ------------------------=
     // FUNC: audit

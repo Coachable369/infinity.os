@@ -11,6 +11,8 @@ mod access_view;
 mod panel_view;
 #[path = "../kernel/ui/panel_recipe.rs"]
 mod panel_recipe;
+#[path = "../kernel/ui/surface_cache.rs"]
+mod surface_cache;
 use panel_recipe::Surface;
 #[path = "../kernel/ui/bitmap.rs"]
 mod bitmap;
@@ -19,7 +21,7 @@ mod geometry;
 #[path = "../kernel/ui/skin.rs"]
 mod skin;
 mod ui {
-    pub(crate) use crate::{geometry, panel_recipe, skin};
+    pub(crate) use crate::{geometry, panel_recipe, surface_cache, skin};
 }
 pub const INFINITY_UI_ABI_VERSION: u16 = 1;
 mod bootstrap {

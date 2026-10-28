@@ -224,6 +224,9 @@ struct InstallerCanvas: View {
     }
 
     @ViewBuilder private var simulationControls: some View {
+        if store.selectedCollection == .login {
+            Stepper("Sphere / splash: \(store.nativePreviewSimulation.loginPhase) ms", value: $store.nativePreviewSimulation.loginPhase, in: 0...2400, step: 100)
+        }
         if store.selectedCollection == .boot {
             VStack(alignment: .leading) {
                 Stepper("Boot progress: \(store.nativePreviewSimulation.progress)%", value: $store.nativePreviewSimulation.progress, in: 0...100, step: 5)

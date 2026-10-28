@@ -24,6 +24,7 @@ extension InstallerStudioDocument {
         }
         add("Login Background", .image, .sceneBackground, 0, 0, 1536, 1024, "", "assets/desktop/infinity-shell-wallpaper-v3.bmp")
         elements[0].imageFit = .fill
+        add("Sphere and Splash Animation", .image, .progressHero, 700, 530, 790, 390, "", "assets/desktop/infinity-auth-success-orb-v1.bmp")
         add("Login Panel", .panel, .console, 54, 123, 521, 754)
         add("Infinity Symbol", .image, .image, 206, 166, 218, 100, "", "infinity-emblem-v2.bmp")
         add("Welcome", .text, .title, 82, 271, 465, 49, "Welcome Back")
@@ -45,6 +46,25 @@ extension InstallerStudioDocument {
         add("Login Wordmark", .image, .image, 900, 92, 570, 92, "", "infinity-eclipse-header-v1.bmp")
         elements[elements.count - 1].crop = ImageCrop(left: 14, top: 1, right: 12, bottom: 80)
         return InstallerStudioDocument(version: currentVersion, canvasWidth: 1000, canvasHeight: 1000,
-            screens: [InstallerScreenTemplate(id: 1, title: "Login", elements: elements)])
+            screens: [InstallerScreenTemplate(id: 1, title: "Login", elements: elements)], explicitLoginMotion: true)
+    }
+
+    // ------------------------=
+    // FUNC: migratedForLoginMotion
+    // DESC: Restores the lost native animation once without undoing subsequent deliberate deletion or hiding.
+    // ------------------=
+    func migratedForLoginMotion() -> InstallerStudioDocument {
+        guard explicitLoginMotion != true, screens.count == 1 else { return self }
+        var result = self
+        result.explicitLoginMotion = true
+        guard !result.screens[0].elements.contains(where: { $0.role == .progressHero }) else { return result }
+        if var hero = Self.factoryLogin().screens[0].elements.first(where: { $0.role == .progressHero }) {
+            hero.zIndex = (result.screens[0].elements.first(where: { $0.role == .sceneBackground })?.zIndex ?? 0) + 1
+            for i in result.screens[0].elements.indices where result.screens[0].elements[i].zIndex >= hero.zIndex {
+                result.screens[0].elements[i].zIndex += 1
+            }
+            result.screens[0].elements.append(hero)
+        }
+        return result
     }
 }

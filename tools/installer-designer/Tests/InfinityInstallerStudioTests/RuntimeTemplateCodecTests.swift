@@ -1038,7 +1038,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         for collection in ScreenCollection.allCases {
             store.selectScreenCollection(collection)
-            let requiredRole: StudioElementRole = collection == .boot ? .progressBar : collection == .login ? .primaryButton : .content
+            let requiredRole: StudioElementRole = collection == .boot ? .progressBar : collection == .login ? .primaryButton : collection == .desktop ? .console : .content
             let required = store.selectedScreen!.elements.first { $0.role == requiredRole }!
             store.selectElement(required.id)
             let count = store.selectedScreen!.elements.count

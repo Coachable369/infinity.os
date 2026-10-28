@@ -400,6 +400,7 @@ fn large_pool_delete_power_cuts_preserve_shared_content() {
         trial.0.borrow_mut().remaining = None;
         let mut recovered = ObjectStore::mount(trial, 0).unwrap();
         assert_eq!(recovered.pool_inspect(OWNER, 0, 0).unwrap().0, 2);
+        assert_eq!(retirement::audit(&mut recovered).0,2);
         let mut b = [0; 64];
         recovered.pool_read(&first, 16384, &mut b).unwrap();
         assert_eq!(b, [31; 64]);

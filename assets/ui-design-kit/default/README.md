@@ -32,6 +32,9 @@ smooth shoulders, tight blue/violet light rim, one embedded four-point sparkle.
 
 ## Geometry and states
 
+Native boolean, selection and disclosure controls reuse the
+[Eclipse control contract](controls.md).
+
 - Logical footprint: **28 × 104 px**, down from 48 × 104.
 - Straight left attachment; mirror the same pixels for left-side windows.
 - Preserve alpha; never add an opaque image background or a second sparkle.
@@ -44,19 +47,23 @@ Run with `./build-kit run python3 tools/build-assistant-artwork.py`.
 Both installed ESPs carry this kit under `EFI/InfinityOS/InfinityUI/DesignKit/Default`.
 The shared kernel embeds the sprite, so live and installed rendering use identical pixels.
 
-## Browser tabs
+## Browser tabs and Downloads
 
 The approved full-window [browser chrome](browser-chrome-v5.md) governs navigation,
 window controls, URL-field surfaces and the browser-specific assistant button.
 
 Use [Soft shoulder tabs](browser-tabs-soft-v4.md) and its generated reference
-board. The shared native recipe uses rounded sloping shoulders and OS-themed dark surfaces, Inter labels and separate close targets. The vertical AI adornment is
-unchanged. Rendering stays inside tab bounds with no exterior glow or idle work.
+board; [Browser v2](browser-tabs-downloads-v2.md) governs Downloads.
+The browser uses rounded sloping tabs with OS-themed dark surfaces, native Inter labels
+and separate close targets. The vertical
+AI adornment remains unchanged. The old glowing horizontal sprite and its builder
+are removed; neither runtime nor installed packages should retain them.
 
-`sdk/infinity-browser-core/tab_style.rs` owns the shared pixel and hit recipe.
-`tools/browser-tab-artwork-proof.rs` renders production pixels and native labels
-for all four states and crowded/full-width examples. Both installed design-kit
-payloads include the reference board and specification through the common list.
+`sdk/infinity-browser-core/tab_style.rs` owns the shared native pixel recipe for
+both CPU targets. `tools/browser-tab-artwork-proof.rs` renders production pixels
+for inactive, hover, active and active-hover states at normal and crowded sizes.
+The Downloads drawer shares native geometry with input dispatch and displays
+committed user-owned objects, byte counts, transfer failures and cancellation.
 
 ## Welcome hero and navy page
 

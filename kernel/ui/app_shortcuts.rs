@@ -85,8 +85,10 @@ impl State {
         out[4..4 + LAUNCHER_APPS.len()].copy_from_slice(&order);
         let positions_at = 4 + LAUNCHER_APPS.len() + 1;
         for (i, p) in self.positions.iter().enumerate() {
-            out[positions_at + i * 4..positions_at + 2 + i * 4].copy_from_slice(&p[0].to_le_bytes());
-            out[positions_at + 2 + i * 4..positions_at + 4 + i * 4].copy_from_slice(&p[1].to_le_bytes());
+            out[positions_at + i * 4..positions_at + 2 + i * 4]
+                .copy_from_slice(&p[0].to_le_bytes());
+            out[positions_at + 2 + i * 4..positions_at + 4 + i * 4]
+                .copy_from_slice(&p[1].to_le_bytes());
         }
         let checksum_at = STATE_BYTES - 4;
         let sum = checksum(&out[..checksum_at]);
@@ -99,16 +101,19 @@ impl State {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<(Self, [u8; LAUNCHER_APPS.len()])> {
         let legacy = bytes.len() == LEGACY_STATE_BYTES && &bytes[..4] == b"IAP1";
-        let current = matches!(bytes.len(),94) || bytes.len()==STATE_BYTES;
-        let current = current && bytes.get(..4)==Some(b"IAP2");
+        let current = matches!(bytes.len(), 94) || bytes.len() == STATE_BYTES;
+        let current = current && bytes.get(..4) == Some(b"IAP2");
         let checksum_at = bytes.len().checked_sub(4)?;
         if (!legacy && !current)
-            || checksum(&bytes[..checksum_at]) != u32::from_le_bytes(bytes[checksum_at..].try_into().ok()?)
+            || checksum(&bytes[..checksum_at])
+                != u32::from_le_bytes(bytes[checksum_at..].try_into().ok()?)
         {
             return None;
         }
-        let stored_count = if legacy { 15 } else { (bytes.len()-9)/5 };
-        if stored_count>LAUNCHER_APPS.len() {return None;}
+        let stored_count = if legacy { 15 } else { (bytes.len() - 9) / 5 };
+        if stored_count > LAUNCHER_APPS.len() {
+            return None;
+        }
         let mut order = core::array::from_fn(|index| index as u8);
         order[..stored_count].copy_from_slice(&bytes[4..4 + stored_count]);
         let mut seen = 0u32;
@@ -121,8 +126,16 @@ impl State {
         let mut state = Self::new();
         let positions_at = 4 + stored_count + 1;
         for (i, p) in state.positions.iter_mut().take(stored_count).enumerate() {
-            p[0] = u16::from_le_bytes(bytes[positions_at + i * 4..positions_at + 2 + i * 4].try_into().ok()?);
-            p[1] = u16::from_le_bytes(bytes[positions_at + 2 + i * 4..positions_at + 4 + i * 4].try_into().ok()?);
+            p[0] = u16::from_le_bytes(
+                bytes[positions_at + i * 4..positions_at + 2 + i * 4]
+                    .try_into()
+                    .ok()?,
+            );
+            p[1] = u16::from_le_bytes(
+                bytes[positions_at + 2 + i * 4..positions_at + 4 + i * 4]
+                    .try_into()
+                    .ok()?,
+            );
             if *p != [0, 0] && (!(35..=930).contains(&p[0]) || !(90..=840).contains(&p[1])) {
                 return None;
             }

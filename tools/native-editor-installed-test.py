@@ -688,7 +688,7 @@ def export_generated_artifacts(guest, generation, architecture):
         content = path.read_bytes()
         assert len(content) == artifact["bytes"] and zlib.crc32(content) == artifact["crc32"]
         artifact["sha256"] = hashlib.sha256(content).hexdigest()
-        if generation and artifact["source"]:
+        if generation and artifact["source"] and artifact.get("current", True):
             fingerprint = 1469598103934665603
             for value in content:
                 fingerprint = ((fingerprint ^ value) * 1099511628211) & ((1 << 64) - 1)
@@ -1254,6 +1254,7 @@ def main():
     parser.add_argument("--update-kernel", type=pathlib.Path, help="Update only this disposable installed disk; not fresh-install parity evidence")
     parser.add_argument("--boot-only", action="store_true", help="Verify detached installed boot, account setup and cold-boot identity only; retain the stopped private disk without application generation")
     parser.add_argument("--editor-lifecycle-only", action="store_true", help="Verify actual unsaved editor minimize, close Cancel, and close Discard/reopen behavior without model generation or compilation")
+    parser.add_argument("--editor-terminal-only", action="store_true", help="Verify native C/Python dock Run/Stop/Restart, real stdin/output, diagnostics, persisted layout, registered launch and Python control hooks")
     parser.add_argument("--widget-controls-only", action="store_true", help="Verify desktop composer focus, overflow, real status-menu actions and cancellation on a detached installation")
     parser.add_argument("--source-workflows", action="store_true", help="Verify real Python creation plus named C updates, no-launch completion and explicit relaunch through the installed native services")
     parser.add_argument("--source-workflows-python-evidence", type=pathlib.Path, help="Reuse a byte-verified completed Python stage from a prior report; run only the failed C stages in this guest")
@@ -1274,6 +1275,10 @@ def main():
     parser.add_argument("--trace-native-faults", action="store_true", help="Enable address-only HVF fault tracing at compilation, not during boot or model inference")
     parser.add_argument("work", type=pathlib.Path)
     args = parser.parse_args()
+    if args.editor_terminal_only and (args.source_workflows or args.boot_only or args.editor_lifecycle_only or args.widget_controls_only
+            or args.streaming_only or args.benchmark_generation or args.generate_request or args.application_case
+            or args.create_application or args.create_ui_application or args.compiler_only or args.generation_only or args.save_compile):
+        parser.error("--editor-terminal-only cannot be combined with another focused case")
     if args.source_workflows_python_evidence:
         if not args.source_workflows:
             parser.error("--source-workflows-python-evidence requires --source-workflows")
@@ -1325,7 +1330,7 @@ def main():
         args.application_case.relative_to(ROOT)
     if args.arch == "aarch64" and args.iso is None:
         parser.error("ARM QEMU requires explicit --iso media linked for its RAM layout; the published ARM ISO targets VirtualBox")
-    if args.generate_request or args.streaming_only or args.editor_lifecycle_only or args.widget_controls_only or args.source_workflows:
+    if args.generate_request or args.streaming_only or args.editor_lifecycle_only or args.editor_terminal_only or args.widget_controls_only or args.source_workflows:
         if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
             parser.error("Generated application acceptance must run through ./build-kit run")
     # Both app artifact export and the benchmark's read-only profile validation
@@ -1388,6 +1393,16 @@ def main():
             guest.install()
             guest.stop()
             report["identity"] = guest.onboard()
+        if args.editor_terminal_only:
+            terminal_spec = importlib.util.spec_from_file_location("editor_terminal_acceptance", ROOT / "tools/editor-terminal-installed-test.py")
+            terminal_module = importlib.util.module_from_spec(terminal_spec)
+            terminal_spec.loader.exec_module(terminal_module)
+            report["editor_terminal"] = terminal_module.verify(guest, sys.modules[__name__])
+            report["installed_boot_verified"] = True
+            report["installed_acceptance_scope"] = report["editor_terminal"]["scope"]
+            report["installed_acceptance"] = report["editor_terminal"]["passed"]
+            report["generated_workflow_passed"] = False
+            return
         if args.source_workflows:
             workflow_spec = importlib.util.spec_from_file_location("native_source_workflows", ROOT / "tools/native-source-workflow-installed.py")
             workflow = importlib.util.module_from_spec(workflow_spec)
@@ -1506,6 +1521,8 @@ def main():
             report["source_workflows"] = guest.source_workflow_evidence
         if getattr(guest, "streaming_evidence", None):
             report["streaming"] = guest.streaming_evidence
+        if getattr(guest, "editor_terminal_evidence", None):
+            report["editor_terminal"] = guest.editor_terminal_evidence
         if getattr(guest, "editor_lifecycle_evidence", None):
             report["editor_lifecycle"] = guest.editor_lifecycle_evidence
         if getattr(guest, "benchmark_evidence", None):

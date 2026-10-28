@@ -1,8 +1,8 @@
 //! InfinityOS-native networking service architecture. Public contracts remain
 //! independent of POSIX sockets and host network stacks.
 
-pub mod discovery;
 mod datagram;
+pub mod discovery;
 pub mod interface;
 pub mod policy;
 pub mod profile;
@@ -105,22 +105,64 @@ impl NetworkRuntime {
     // FUNC: browser_authority
     // DESC: Issues renewable web-only session leases under the current Network profile; site privileges remain separate.
     // ------------------=
-    pub fn browser_authority(&self, capabilities: &mut CapabilityManager, owner: SecurityIdentity, active: bool, now: u64) -> Option<[CapabilityId; 4]> {
+    pub fn browser_authority(
+        &self,
+        capabilities: &mut CapabilityManager,
+        owner: SecurityIdentity,
+        active: bool,
+        now: u64,
+    ) -> Option<[CapabilityId; 4]> {
         let profile = self.profiles.active()?;
-        if !active || !profile.interfaces_enabled || !profile.internet_allowed || !profile.resolver_enabled { return None; }
+        if !active
+            || !profile.interfaces_enabled
+            || !profile.internet_allowed
+            || !profile.resolver_enabled
+        {
+            return None;
+        }
         capabilities.reclaim_expired_leaves(now);
         let mut ids = [0; 4];
         let mut created = [false; 4];
-        for (i, kind) in [CapabilityType::NetworkConnect, CapabilityType::NetworkSend,
-            CapabilityType::NetworkReceive, CapabilityType::NetworkResolve].into_iter().enumerate() {
-            if let Some(id) = (0..capabilities.count()).filter_map(|n| capabilities.nth(n))
-                .find(|c| capabilities.validate(c.id, owner, kind, 0, 1, 0, now.saturating_add(30)).is_ok()).map(|c| c.id) {
+        for (i, kind) in [
+            CapabilityType::NetworkConnect,
+            CapabilityType::NetworkSend,
+            CapabilityType::NetworkReceive,
+            CapabilityType::NetworkResolve,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if let Some(id) = (0..capabilities.count())
+                .filter_map(|n| capabilities.nth(n))
+                .find(|c| {
+                    capabilities
+                        .validate(c.id, owner, kind, 0, 1, 0, now.saturating_add(30))
+                        .is_ok()
+                })
+                .map(|c| c.id)
+            {
                 ids[i] = id;
             } else {
-                match capabilities.grant(kind, 0, 1, 0, owner, owner, Some(now.saturating_add(600)), 0) {
-                    Ok(id) => { ids[i] = id; created[i] = true; },
+                match capabilities.grant(
+                    kind,
+                    0,
+                    1,
+                    0,
+                    owner,
+                    owner,
+                    Some(now.saturating_add(600)),
+                    0,
+                ) {
+                    Ok(id) => {
+                        ids[i] = id;
+                        created[i] = true;
+                    }
                     Err(_) => {
-                        for j in 0..i { if created[j] { let _ = capabilities.retire_leaf(ids[j], owner); } }
+                        for j in 0..i {
+                            if created[j] {
+                                let _ = capabilities.retire_leaf(ids[j], owner);
+                            }
+                        }
                         return None;
                     }
                 }
@@ -173,7 +215,11 @@ impl NetworkRuntime {
         if let Some(existing) = self.interfaces.interface(interface_id) {
             let mut observed = existing.device;
             observed.link_state = device.link_state;
-            observed.operational_state = if device.link_state == LinkState::Up { OperationalState::Ready } else { OperationalState::Offline };
+            observed.operational_state = if device.link_state == LinkState::Up {
+                OperationalState::Ready
+            } else {
+                OperationalState::Offline
+            };
             self.interfaces.bind_native_device(interface_id, observed)?;
             return Ok(interface_id);
         }

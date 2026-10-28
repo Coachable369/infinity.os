@@ -1,17 +1,33 @@
 #![no_std]
 mod dot;
+#[cfg(feature = "firmware")]
+#[path = "../../../kernel/core/boot_info.rs"]
+mod boot_info;
+#[cfg(feature = "firmware")]
+#[path = "../../../kernel/runtime/ai/qwen/workers.rs"]
+mod workers;
 static mut PCM: [i16; 720000] = [0; 720000];
 static mut CANCEL_CALLS: usize = 0;
+#[repr(C, align(4096))]
+struct WorkerStack([u8; 8 * 1024 * 1024]);
+static mut WORKER_STACK: WorkerStack = WorkerStack([0; 8 * 1024 * 1024]);
+#[repr(C, align(4096))]
+struct ExceptionStack([u8; 16 * 1024]);
+static mut EXCEPTION_STACK: ExceptionStack = ExceptionStack([0; 16 * 1024]);
+core::arch::global_asm!(include_str!("../../../boot/aarch64/handoff.S"));
 #[repr(C, align(4096))]
 struct TranslationTable([u64; 512]);
 static mut TRANSLATIONS: TranslationTable = TranslationTable([0; 512]);
 unsafe extern "C" {
+    fn infinity_ap_callback(context: *const u64);
     #[link_name = "infinity_kokoro_native_profile_read"]
     fn native_profile_read(out: *mut u64);
     #[link_name = "infinity_kokoro_native_resource"]
     fn native_resource(name: *const u8, length: *mut usize) -> *const u8;
     #[link_name = "infinity_kokoro_native_diagnostics"]
     fn native_diagnostics(out: *mut usize);
+    #[cfg(feature = "recognition-warmup")]
+    fn infinity_kokoro_native_prepare_recognition(memory: *mut usize, cancel: usize, context: usize) -> i32;
     #[link_name = "infinity_kokoro_native_synthesize"]
     fn native_synthesize(
         text: *const u8,
@@ -37,20 +53,73 @@ core::arch::global_asm!(
     "bl probe",
     "b .",
     ".balign 2048",
-    "exception_vectors:",
+    ".global exception_vectors", "exception_vectors:",
     ".rept 16",
     ".balign 128",
     "b exception",
     ".endr"
 );
 // ------------------------=
+// FUNC: firmware_speech
+// DESC: Exercises synthesis on the actual production AP with firmware memory attributes and captures CPU fault registers.
+// ------------------=
+#[cfg(feature = "firmware")]
+unsafe fn firmware_speech() {
+    unsafe extern "C" { fn exception_vectors(); }
+    core::arch::asm!("msr vbar_el1, {}", "isb", in(reg) exception_vectors as *const () as u64);
+    #[cfg(feature = "recognition-warmup")]
+    firmware_recognition_warmup();
+    #[cfg(not(feature = "recognition-warmup"))]
+    speech_cases(0);
+    finish()
+}
+// ------------------------=
+// FUNC: firmware_recognition_warmup
+// DESC: Isolates real speech-context initialization above 4 GiB on the production firmware worker without desktop activity.
+// ------------------=
+#[cfg(feature = "recognition-warmup")]
+unsafe fn firmware_recognition_warmup() {
+    let (start, end, frequency, stack, level, masks): (u64, u64, u64, u64, u64, u64);
+    core::arch::asm!("mov {}, sp", out(reg) stack);
+    core::arch::asm!("mrs {}, CurrentEL", out(reg) level);
+    core::arch::asm!("mrs {}, daif", out(reg) masks);
+    core::arch::asm!("mrs {}, cntvct_el0", out(reg) start);
+    let mut memory = 0;
+    let result = infinity_kokoro_native_prepare_recognition(&mut memory, 0, 0);
+    core::arch::asm!("mrs {}, cntvct_el0", out(reg) end);
+    core::arch::asm!("mrs {}, cntfrq_el0", out(reg) frequency);
+    let mut diagnostics = [0usize; 12];
+    native_diagnostics(diagnostics.as_mut_ptr());
+    for value in [3, result as u64, memory as u64, end - start, frequency, stack, level, masks] {
+        bytes(&value.to_le_bytes());
+    }
+    for value in diagnostics { bytes(&(value as u64).to_le_bytes()); }
+}
+// ------------------------=
+// FUNC: infinity_kernel_entry
+// DESC: Boots through the real ARM loader and worker bridge without replacing firmware translation tables.
+// ------------------=
+#[cfg(feature = "firmware")]
+#[no_mangle]
+pub unsafe extern "C" fn infinity_kernel_entry(info: &boot_info::BootInfo) -> ! {
+    bytes(&0x4953504545434841u64.to_le_bytes());
+    assert_eq!(info.magic, boot_info::BOOT_MAGIC);
+    workers::initialize(info.worker_bridge);
+    let start = workers::clock_ns();
+    while !workers::background(firmware_speech) {
+        assert!(workers::clock_ns() - start < 2_000_000_000);
+    }
+    loop { core::hint::spin_loop(); }
+}
+// ------------------------=
 // FUNC: bytes
 // DESC: Emits actual guest PCM and structured results through the test UART.
 // ------------------=
 unsafe fn bytes(data: &[u8]) {
+    let uart = if cfg!(feature = "virtualbox") { 0xffdde000usize } else { 0x09000000 };
     for &b in data {
-        while core::ptr::read_volatile(0x09000018 as *const u32) & 32 != 0 {}
-        core::ptr::write_volatile(0x09000000 as *mut u32, b as u32);
+        while core::ptr::read_volatile((uart + 24) as *const u32) & 32 != 0 {}
+        core::ptr::write_volatile(uart as *mut u32, b as u32);
     }
 }
 // ------------------------=
@@ -135,8 +204,19 @@ unsafe fn normal_memory() {
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
     normal_memory();
-    let guard = core::slice::from_raw_parts_mut((0xbe000000usize - 65536 - 4096) as *mut u8, 4096);
-    guard.fill(0xa5);
+    (&mut *(&raw mut WORKER_STACK.0)).fill(0xa5);
+    let stack = (&raw mut WORKER_STACK.0).cast::<u8>() as u64;
+    let emergency = (&raw mut EXCEPTION_STACK.0).cast::<u8>() as u64 + 16 * 1024;
+    let context = [stack + 8 * 1024 * 1024, speech_cases as *const () as u64, 0,
+                   0, 0, 0, 0, 0, 0, 0, emergency];
+    infinity_ap_callback(context.as_ptr());
+    finish()
+}
+// ------------------------=
+// FUNC: speech_cases
+// DESC: Measures real synthesis stack use through the production ARM worker trampoline, including large-frame skips.
+// ------------------=
+unsafe extern "C" fn speech_cases(_: u64) {
     for case in 0..10 {
         let mut frames = 0;
         let (start, end, frequency): (u64, u64, u64);
@@ -188,7 +268,6 @@ pub unsafe extern "C" fn probe() -> ! {
         if result != [0, 0, 2, 1, 2, 0, 0, 0, 0, 0][case as usize] {
             finish();
         }
-        assert!(guard.iter().all(|byte| *byte == 0xa5));
     }
     let mut notice_length = 0;
     let notice = native_resource(b"/licenses/kokoro-dependencies.txt\0".as_ptr(), &mut notice_length);
@@ -200,5 +279,12 @@ pub unsafe extern "C" fn probe() -> ! {
     for value in profile { bytes(&value.to_le_bytes()); }
     bytes(&dot::verify().to_le_bytes());
     bytes(&dot::verify_tiles().to_le_bytes());
-    finish()
+    #[cfg(not(feature = "firmware"))]
+    let stack = &*(&raw const WORKER_STACK.0);
+    #[cfg(not(feature = "firmware"))]
+    let first = stack.iter().position(|byte| *byte != 0xa5).unwrap_or(stack.len());
+    #[cfg(not(feature = "firmware"))]
+    bytes(&((stack.len() - first) as u64).to_le_bytes());
+    #[cfg(feature = "firmware")]
+    bytes(&0u64.to_le_bytes());
 }

@@ -87,9 +87,36 @@ int snprintf(char *output, size_t size, const char *format, ...) {
 // DESC: Formats one bounded console record and writes it through the native output capability.
 // ------------------=
 int printf(const char *format, ...) {
-    char output[1024]; va_list arguments; va_start(arguments, format);
-    int result = vsnprintf(output, sizeof output, format, arguments); va_end(arguments);
-    if (result < 0 || (size_t)result >= sizeof output) return EOF;
-    for (int index = 0; index < result; ++index) if (putchar((unsigned char)output[index]) == EOF) return EOF;
+    va_list arguments; va_start(arguments, format);
+    int result = vfprintf(stdout, format, arguments); va_end(arguments);
     return result;
+}
+
+// ------------------------=
+// FUNC: vfprintf
+// DESC: Formats a bounded native stream record, rejecting oversized output rather than silently truncating it.
+// ------------------=
+int vfprintf(FILE *stream, const char *format, va_list arguments) {
+    char output[1024];
+    int result = vsnprintf(output, sizeof output, format, arguments);
+    if (result < 0 || (size_t)result >= sizeof output) return EOF;
+    return fwrite(output, 1, (size_t)result, stream) == (size_t)result ? result : EOF;
+}
+
+// ------------------------=
+// FUNC: fprintf
+// DESC: Formats a record to the selected standard or granted object stream.
+// ------------------=
+int fprintf(FILE *stream, const char *format, ...) {
+    va_list arguments; va_start(arguments, format);
+    int result = vfprintf(stream, format, arguments); va_end(arguments);
+    return result;
+}
+
+// ------------------------=
+// FUNC: vprintf
+// DESC: Formats a standard-output record through the same checked stream implementation.
+// ------------------=
+int vprintf(const char *format, va_list arguments) {
+    return vfprintf(stdout, format, arguments);
 }

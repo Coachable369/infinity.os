@@ -15,22 +15,59 @@ pub const NODE_STATE_BYTES: usize = 12288;
 pub struct NodeId(pub [u8; 32]);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TrustState { Discovered, Untrusted, PairingPending, Trusted, Restricted, Revoked, Blocked, Incompatible }
+pub enum TrustState {
+    Discovered,
+    Untrusted,
+    PairingPending,
+    Trusted,
+    Restricted,
+    Revoked,
+    Blocked,
+    Incompatible,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Reachability { Unknown, Online, Degraded, Offline }
+pub enum Reachability {
+    Unknown,
+    Online,
+    Degraded,
+    Offline,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PairingState { AwaitingConfirmation, Confirmed, Cancelled, Expired, Failed }
+pub enum PairingState {
+    AwaitingConfirmation,
+    Confirmed,
+    Cancelled,
+    Expired,
+    Failed,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SessionState { Handshaking, Established, RekeyRequired, Closed, Failed }
+pub enum SessionState {
+    Handshaking,
+    Established,
+    RekeyRequired,
+    Closed,
+    Failed,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MeshRole { Member, Operator, Gateway, Compute, Storage }
+pub enum MeshRole {
+    Member,
+    Operator,
+    Gateway,
+    Compute,
+    Storage,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PolicyDecision { Deny, Allow, SessionOnly, Leased }
+pub enum PolicyDecision {
+    Deny,
+    Allow,
+    SessionOnly,
+    Leased,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct NodeTrustPolicy {
@@ -46,7 +83,12 @@ impl NodeTrustPolicy {
     // DESC: Creates a policy with no remote authority in any category.
     // ------------------=
     pub const fn deny_all() -> Self {
-        Self { categories: [PolicyDecision::Deny; 12], scope: 0, expires_at: 0, version: 1 }
+        Self {
+            categories: [PolicyDecision::Deny; 12],
+            scope: 0,
+            expires_at: 0,
+            version: 1,
+        }
     }
 }
 
@@ -118,10 +160,31 @@ pub struct AuditRecord {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NodeError {
-    EntropyUnavailable, InvalidAdvertisement, SignatureInvalid, UnsupportedVersion,
-    UnknownNode, NotTrusted, Blocked, PairingNotFound, PairingExpired, VerificationMismatch,
-    SessionNotFound, SessionExpired, ReplayDetected, AuthenticationFailed, CapabilityDenied,
-    CapabilityExpired, CapabilityRevoked, MeshFull, AlreadyMember, NotMember, ResourceLimit,
-    IdentityMismatch, DuplicateIdentity, ProtocolDowngrade, StateCorrupt, UnsupportedState,
+    EntropyUnavailable,
+    InvalidAdvertisement,
+    SignatureInvalid,
+    UnsupportedVersion,
+    UnknownNode,
+    NotTrusted,
+    Blocked,
+    PairingNotFound,
+    PairingExpired,
+    VerificationMismatch,
+    SessionNotFound,
+    SessionExpired,
+    ReplayDetected,
+    AuthenticationFailed,
+    CapabilityDenied,
+    CapabilityExpired,
+    CapabilityRevoked,
+    MeshFull,
+    AlreadyMember,
+    NotMember,
+    ResourceLimit,
+    IdentityMismatch,
+    DuplicateIdentity,
+    ProtocolDowngrade,
+    StateCorrupt,
+    UnsupportedState,
     HumanApprovalRequired,
 }

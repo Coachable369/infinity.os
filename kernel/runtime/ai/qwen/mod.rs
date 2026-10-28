@@ -2,8 +2,8 @@
 pub mod gguf;
 pub mod metrics;
 pub mod pump;
-pub mod workers;
 pub mod quant;
 pub mod service;
 pub mod tokenizer;
 pub mod transformer;
+pub mod workers;

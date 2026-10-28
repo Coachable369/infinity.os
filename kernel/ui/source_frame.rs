@@ -3,8 +3,11 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Frame<'a> {
     pub source: &'a [u8],
+    pub raw_source: &'a [u8],
     pub completed_end: Option<usize>,
     pub malformed: bool,
+    pub continuable: bool,
+    pub framed: bool,
 }
 
 // ------------------------=
@@ -50,7 +53,7 @@ fn starts_python(mut source: &[u8]) -> bool {
 // DESC: Identifies only standalone protocol headers, never a token embedded in C or quoted text.
 // ------------------=
 fn control_line(line: &[u8]) -> bool {
-    [b"REPLACE_COMPILE".as_slice(), b"REPLACE", b"INSERT", b"ACTION", b"CHAT"]
+    [b"REPLACE_COMPILE".as_slice(), b"REPLACE", b"INSERT", b"ACTION", b"CHAT", b"CONTINUE_SOURCE"]
         .contains(&line)
 }
 
@@ -59,7 +62,7 @@ fn control_line(line: &[u8]) -> bool {
 // DESC: Withholds an unfinished final control line before any of its bytes reach the editor.
 // ------------------=
 fn partial_control(line: &[u8]) -> bool {
-    !line.is_empty() && [b"END_ACTION".as_slice(), b"REPLACE_COMPILE", b"REPLACE", b"INSERT", b"ACTION", b"CHAT", b"```"]
+    !line.is_empty() && [b"END_ACTION".as_slice(), b"REPLACE_COMPILE", b"REPLACE", b"INSERT", b"ACTION", b"CHAT", b"CONTINUE_SOURCE", b"```"]
         .iter().any(|marker| marker.starts_with(line))
 }
 
@@ -100,7 +103,7 @@ impl LexicalState {
 // DESC: Selects the first source frame identically for preview and completion, accepting CRLF and indented markers without leaking repeated model actions.
 // ------------------=
 pub fn inspect(output: &[u8]) -> Option<Frame<'_>> {
-    inspect_language(output,false)
+    inspect_language(output,false,false)
 }
 
 // ------------------------=
@@ -108,23 +111,71 @@ pub fn inspect(output: &[u8]) -> Option<Frame<'_>> {
 // DESC: Uses identical framing and literal boundaries while allowing a raw Python body selected by trusted request language.
 // ------------------=
 pub fn inspect_python(output: &[u8]) -> Option<Frame<'_>> {
-    inspect_language(output,true)
+    inspect_language(output,true,false)
+}
+
+// ------------------------=
+// FUNC: inspect_generated
+// DESC: Allows one bounded prose introduction only for an already authorized source transaction and its matching explicit language fence.
+// ------------------=
+pub fn inspect_generated(output: &[u8], python: bool) -> Option<Frame<'_>> {
+    inspect_language(output,python,true)
+}
+
+// ------------------------=
+// FUNC: preamble_fence
+// DESC: Finds one explicit matching source fence within eight short introduction lines, rejecting protocol or competing source frames.
+// ------------------=
+fn preamble_fence(output: &[u8], python: bool) -> Option<usize> {
+    let mut cursor = 0;
+    let mut lines = 0;
+    while cursor <= 512 && lines <= 8 {
+        let end = cursor + output.get(cursor..)?.iter().position(|byte| *byte == b'\n')?;
+        let line = output[cursor..end].trim_ascii();
+        if if python { matches!(line,b"```python"|b"```py") } else { matches!(line,b"```c"|b"```C") } {
+            return Some(cursor);
+        }
+        if lines == 8 || end + 1 > 512 || control_line(line) || line == b"END_ACTION"
+            || line.windows(3).any(|bytes| bytes == b"```")
+            || starts_source(line) || python && starts_python(line)
+            || line.iter().any(|byte| !matches!(*byte,b'\t'|b'\r'|32..=126)) {
+            return None;
+        }
+        cursor = end + 1;
+        lines += 1;
+    }
+    None
+}
+
+// ------------------------=
+// FUNC: preamble_tail
+// DESC: Accepts only whitespace or one optional closing protocol marker after a prefaced fence, withholding a split marker and rejecting additional frames.
+// ------------------=
+fn preamble_tail(tail: &[u8]) -> (bool,bool) {
+    let tail = tail.trim_ascii_start();
+    let complete = tail.trim_ascii_end();
+    if complete.is_empty() || complete == b"END_ACTION" { return (true,false); }
+    if tail == complete && b"END_ACTION".starts_with(tail) { return (false,false); }
+    (false,true)
 }
 
 // ------------------------=
 // FUNC: inspect_language
 // DESC: Shares first-frame selection and completion bounds for framed source and language-scoped raw source.
 // ------------------=
-fn inspect_language(output: &[u8], python: bool) -> Option<Frame<'_>> {
+fn inspect_language(output: &[u8], python: bool, allow_preamble: bool) -> Option<Frame<'_>> {
     let trimmed = output.trim_ascii_start();
     let leading = output.len() - trimmed.len();
     let first_end = trimmed.iter().position(|b| *b == b'\n');
     let first = trimmed[..first_end.unwrap_or(trimmed.len())].trim_ascii();
-    let mut start = if matches!(first, b"REPLACE" | b"REPLACE_COMPILE") {
-        leading + first_end? + 1
+    let (mut start, prefaced) = if matches!(first, b"REPLACE" | b"REPLACE_COMPILE") {
+        (leading + first_end? + 1,false)
     } else if starts_source(trimmed) || python && starts_python(trimmed) || first.starts_with(b"```") {
-        leading
+        (leading,false)
+    } else if allow_preamble {
+        (preamble_fence(output,python)?,true)
     } else { return None; };
+    let framed = prefaced || matches!(first, b"REPLACE" | b"REPLACE_COMPILE") || first.starts_with(b"```");
     start += output[start..].len() - output[start..].trim_ascii_start().len();
     let mut fenced = false;
     if output[start..].starts_with(b"`") {
@@ -141,23 +192,25 @@ fn inspect_language(output: &[u8], python: bool) -> Option<Frame<'_>> {
         let line = output[cursor..end].trim_ascii();
         if !lexical.block && lexical.quote == 0 {
             if fenced && line == b"END_ACTION" {
-                return Some(Frame { source: output[start..cursor].trim_ascii_end(), completed_end: None, malformed: true });
+                return Some(Frame { source: output[start..cursor].trim_ascii_end(), raw_source: &output[start..cursor], completed_end: None, malformed: true, continuable: false, framed });
             }
             if line == b"END_ACTION" || (fenced && line == b"```") {
-                return Some(Frame { source: output[start..cursor].trim_ascii_end(),
-                    completed_end: Some(end - (output[cursor..end].len() - output[cursor..end].trim_ascii_end().len())), malformed: false });
+                let (complete,malformed) = if prefaced { preamble_tail(&output[end..]) } else { (true,false) };
+                return Some(Frame { source: output[start..cursor].trim_ascii_end(), raw_source: &output[start..cursor],
+                    completed_end: complete.then_some(end - (output[cursor..end].len() - output[cursor..end].trim_ascii_end().len())),
+                    malformed, continuable: false, framed });
             }
             if control_line(line) {
-                return Some(Frame { source: output[start..cursor].trim_ascii_end(), completed_end: None, malformed: true });
+                return Some(Frame { source: output[start..cursor].trim_ascii_end(), raw_source: &output[start..cursor], completed_end: None, malformed: true, continuable: false, framed });
             }
             if relative_end.is_none() && partial_control(line) {
-                return Some(Frame { source: output[start..cursor].trim_ascii_end(), completed_end: None, malformed: true });
+                return Some(Frame { source: output[start..cursor].trim_ascii_end(), raw_source: &output[start..cursor], completed_end: None, malformed: true, continuable: true, framed });
             }
         }
         lexical.advance(&output[cursor..end]);
         cursor = end;
     }
-    Some(Frame { source: output[start..].trim_ascii_end(), completed_end: None, malformed: fenced })
+    Some(Frame { source: output[start..].trim_ascii_end(), raw_source: &output[start..], completed_end: None, malformed: fenced, continuable: true, framed })
 }
 
 // ------------------------=

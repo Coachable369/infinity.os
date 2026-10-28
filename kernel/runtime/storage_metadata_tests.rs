@@ -66,15 +66,31 @@ fn signed_bundle_uses_exact_operator_scope_and_canonical_payload() {
             });
             let bundle = build_bundle(&r, j, manifest, 10).unwrap();
             bundle.validate().unwrap();
-            let mut manifest_bytes=[0;fabric::manifest::MANIFEST_BYTES];manifest.encode(&mut manifest_bytes).unwrap();
-            let mut reconstructed=Vec::new();
-            for offset in (0..manifest_bytes.len()).step_by(64){
-                let request=StorageOperationV1{operation:Operation::ObjectInspect,object:manifest.object,authority_generation:1,manifest_generation:manifest.generation,object_version:manifest.version,offset:offset as u64,scope:0,value:64,length:0,data:[0;64]};
-                let response=inspect_reply(request,&manifest).unwrap();assert_eq!(response.manifest_generation,manifest.generation);assert_eq!(response.value,manifest_bytes.len() as u64);
+            let mut manifest_bytes = [0; fabric::manifest::MANIFEST_BYTES];
+            manifest.encode(&mut manifest_bytes).unwrap();
+            let mut reconstructed = Vec::new();
+            for offset in (0..manifest_bytes.len()).step_by(64) {
+                let request = StorageOperationV1 {
+                    operation: Operation::ObjectInspect,
+                    object: manifest.object,
+                    authority_generation: 1,
+                    manifest_generation: manifest.generation,
+                    object_version: manifest.version,
+                    offset: offset as u64,
+                    scope: 0,
+                    value: 64,
+                    length: 0,
+                    data: [0; 64],
+                };
+                let response = inspect_reply(request, &manifest).unwrap();
+                assert_eq!(response.manifest_generation, manifest.generation);
+                assert_eq!(response.value, manifest_bytes.len() as u64);
                 reconstructed.extend_from_slice(&response.data[..response.length as usize]);
-                let mut stale=request;stale.manifest_generation+=1;assert_eq!(inspect_reply(stale,&manifest),Err(RemoteError::Conflict));
+                let mut stale = request;
+                stale.manifest_generation += 1;
+                assert_eq!(inspect_reply(stale, &manifest), Err(RemoteError::Conflict));
             }
-            assert_eq!(reconstructed,manifest_bytes);
+            assert_eq!(reconstructed, manifest_bytes);
             assert_eq!(bundle.group.members[1], b.local_id().unwrap());
             assert_eq!(bundle.path(), b"/Shared/Test");
             for grant in bundle.grants.iter().flatten() {
@@ -172,15 +188,30 @@ fn signed_bundle_uses_exact_operator_scope_and_canonical_payload() {
             assert_eq!(result.offset, 10);
             assert_eq!(result.data, [7; 64]);
             assert!(!decoded.persistent_authority());
-            job.bundle=None;job.durable_share=true;
-            for peer in r.storage_metadata.peers.iter_mut().flatten(){peer.grant|=node::durable::TAG;peer.expires=u64::MAX;}
-            let durable=build_bundle(&r,&job,manifest,20).unwrap();
+            job.bundle = None;
+            job.durable_share = true;
+            for peer in r.storage_metadata.peers.iter_mut().flatten() {
+                peer.grant |= node::durable::TAG;
+                peer.expires = u64::MAX;
+            }
+            let durable = build_bundle(&r, &job, manifest, 20).unwrap();
             assert!(durable.persistent_authority());
-            assert!(durable.grants.iter().flatten().all(|g|g.expires==u64::MAX));
-            assert!(durable.repair_grants.iter().flatten().all(|g|g.expires==u64::MAX));
-            job.bundle=Some(decoded);
-            let unchanged=build_bundle(&r,&job,manifest,21).unwrap();
-            assert_eq!(unchanged.grants[0].unwrap().expires,decoded.grants[0].unwrap().expires);
+            assert!(durable
+                .grants
+                .iter()
+                .flatten()
+                .all(|g| g.expires == u64::MAX));
+            assert!(durable
+                .repair_grants
+                .iter()
+                .flatten()
+                .all(|g| g.expires == u64::MAX));
+            job.bundle = Some(decoded);
+            let unchanged = build_bundle(&r, &job, manifest, 21).unwrap();
+            assert_eq!(
+                unchanged.grants[0].unwrap().expires,
+                decoded.grants[0].unwrap().expires
+            );
             assert!(!unchanged.persistent_authority());
         })
         .unwrap()

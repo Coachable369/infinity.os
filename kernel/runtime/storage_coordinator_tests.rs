@@ -259,20 +259,42 @@ fn committed_transition_delivery_recovers_after_failure() {
     assert_eq!(&delivered.payload[..40], &notice.payload());
     assert_eq!(delivered.correlation_id, 3);
     assert_eq!(delivered.causation_id, 2);
-    retain_notice(&mut r,notice);
-    let another=StorageCommit{object:[8;16],generation:5,transitions:CREATED,..notice};
-    retain_notice(&mut r,another);
-    let pending=r.storage_coordinator.notice.unwrap();
-    assert_eq!(pending.object,[8;16]);
-    assert_eq!(pending.transitions,CREATED|RECONSTRUCT);
-    flush_notice(&mut r,3);
-    let recovered=r.events.receive(lease,3).unwrap();
-    assert_eq!(u32::from_le_bytes(recovered.payload[36..40].try_into().unwrap()),CREATED|RECONSTRUCT);
-    let NativeReply::Manifest(Some(before))=read_manifest_fixture(NativeRequest::Load{index:0,owner:NodeId([1;32]),scope:0}).unwrap()else{panic!("fixture")};
-    let mut stale=before;stale.generation+=1;stale.placements[0].as_mut().unwrap().state=PlacementState::Stale;
-    assert_ne!(manifest_transitions(&before,&stale)&STALE_DETECTED,0);
-    let mut reconciled=stale;reconciled.generation+=1;reconciled.placements[0].as_mut().unwrap().state=PlacementState::Verified;
-    assert_eq!(manifest_transitions(&stale,&reconciled)&(VERIFIED|AVAILABLE|STALE_RECONCILED),VERIFIED|AVAILABLE|STALE_RECONCILED);
+    retain_notice(&mut r, notice);
+    let another = StorageCommit {
+        object: [8; 16],
+        generation: 5,
+        transitions: CREATED,
+        ..notice
+    };
+    retain_notice(&mut r, another);
+    let pending = r.storage_coordinator.notice.unwrap();
+    assert_eq!(pending.object, [8; 16]);
+    assert_eq!(pending.transitions, CREATED | RECONSTRUCT);
+    flush_notice(&mut r, 3);
+    let recovered = r.events.receive(lease, 3).unwrap();
+    assert_eq!(
+        u32::from_le_bytes(recovered.payload[36..40].try_into().unwrap()),
+        CREATED | RECONSTRUCT
+    );
+    let NativeReply::Manifest(Some(before)) = read_manifest_fixture(NativeRequest::Load {
+        index: 0,
+        owner: NodeId([1; 32]),
+        scope: 0,
+    })
+    .unwrap() else {
+        panic!("fixture")
+    };
+    let mut stale = before;
+    stale.generation += 1;
+    stale.placements[0].as_mut().unwrap().state = PlacementState::Stale;
+    assert_ne!(manifest_transitions(&before, &stale) & STALE_DETECTED, 0);
+    let mut reconciled = stale;
+    reconciled.generation += 1;
+    reconciled.placements[0].as_mut().unwrap().state = PlacementState::Verified;
+    assert_eq!(
+        manifest_transitions(&stale, &reconciled) & (VERIFIED | AVAILABLE | STALE_RECONCILED),
+        VERIFIED | AVAILABLE | STALE_RECONCILED
+    );
     assert_eq!(
         iop::storage_protocol::mutation_transitions(
             Operation::TransferChunk,

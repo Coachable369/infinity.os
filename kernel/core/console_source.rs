@@ -44,12 +44,14 @@ impl ConsoleRuntime {
         if let Some((object, version)) = readable_source(current, self.current_user.0) {
             if lookup::current_target(target) || lookup::matches(target, current) {
                 if self.editor_document.bytes().is_empty() { return Err(b"The current source is empty; open the intended saved application source first."); }
-                if !self.editor_document.is_saved() { return Err(b"Save or discard your current edits before requesting an application update."); }
                 let mut snapshot = [0; crate::ui::text_editor::DOCUMENT_CAPACITY];
                 let length = read_source_snapshot(current, self.current_user.0, (object, version), &mut snapshot)?;
-                if !lookup::saved_source_matches(self.editor_document.is_saved(), self.editor_document.bytes(), &snapshot[..length]) {
+                if !self.editor_document.saved_source_matches(&snapshot[..length]) {
                     return Err(b"The saved source changed since this document was opened. Reopen it before requesting an update; your editor contents were preserved.");
                 }
+                // The current buffer, including prior unsaved edits, is supplied
+                // to the model by the caller. Its revision remains fenced until
+                // the completed patch is applied; unrelated dirty tabs are not replaced.
                 return Ok((if current.ends_with(b".py") { SourceLanguage::Python } else { SourceLanguage::C }, object, version));
             }
         }
@@ -63,6 +65,19 @@ impl ConsoleRuntime {
             }
             selected[..target.len()].copy_from_slice(target);
             length = target.len();
+        } else if let Some(entry) = {
+            let registry = crate::storage::generated_app_catalog(self.current_user.0, self.current_session.0, None)
+                .map_err(|_| b"Cannot read your application catalog. No source was changed.".as_slice())?;
+            match registry.find(self.current_user.0, target) {
+                Ok(_) => Some(self.registered_application(target, false)?),
+                Err(crate::runtime::generated_apps::Error::Missing) => None,
+                Err(crate::runtime::generated_apps::Error::Ambiguous) => return Err(b"Several registered apps match. Specify the exact source path."),
+                Err(_) => return Err(b"Cannot resolve this application safely. No source was changed."),
+            }
+        } {
+            if entry.source_len > selected.len() { return Err(b"Registered source path exceeds the editor limit."); }
+            selected[..entry.source_len].copy_from_slice(&entry.source[..entry.source_len]);
+            length = entry.source_len;
         } else {
             for index in 0..256 {
                 let entry = crate::storage::namespace_list_nth(crate::storage::object::DOCUMENTS_PATH, index)

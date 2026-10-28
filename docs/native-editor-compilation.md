@@ -1,5 +1,113 @@
 # Native Text Editor compilation
 
+## Editor terminal and application catalog — current implementation
+
+The editor has a collapsible bottom terminal with a draggable vertical splitter,
+independent command/input focus, soft-wrapped scrollback and current-file diagnostic
+navigation. Dock visibility and requested height are native per-user preferences;
+transcripts are session-local. Run saves the current `.c` or `.py` document before
+using the existing native compiler or Python execution service. Stop cancels that
+session's execution; Restart waits for cleanup before saving and starting again.
+Closing the editor transfers a running application to Command instead of killing
+it. Logout or revoked session authority still cancels execution.
+
+The native C SDK exposes `stdin`, `stdout`, `stderr`, `fprintf`, `vfprintf` and
+`vprintf` in addition to its existing stream functions. Standard streams are
+unbuffered and not seekable. Formatted records use the existing bounded integer,
+pointer, character and string formatter (at most1023 output bytes); oversized or
+unsupported formats fail rather than silently truncate. Arbitrary byte output can
+use `fwrite`, which makes bounded native writes. The unchanged ABI2 object callback
+table routes standard descriptors0/1/2; isolated applications do not thereby gain
+ambient file-opening authority. Console-write syscall channel0/1 is stdout and2
+is stderr, with separate accepted-byte counters and ordered terminal presentation.
+
+Successfully published C programs and validated Python scripts enter the owner's
+native application catalog. Entries bind a source object and version, artifact
+identity/version, language and display name. `apps list`, `apps launch NAME`,
+launcher search and AIKit's `os.launch.createdApplication` share that registry and
+revalidate ownership and current artifacts before execution. Editing can resolve
+the source even when an old executable is stale; launching cannot. `apps hooks`
+reports actual published application-host controls, never inferred model claims.
+Python applications can publish those controls through the native `infinity`
+module backed by the same UIKit/application-host services.
+
+Tk applications keep Tk as their only window owner. They can import `infinity`
+and call `state`, `choice` or `text_action`, and `publish` without calling
+`infinity.window`. A Tk `after(16, pump)` callback may poll `infinity.event()`;
+on an AI event, invoke the same application operation used by the Tk button,
+update the actual widget/model state, publish its new observation, then call
+`infinity.done(event["token"], applied)`. Schedule the next pump only while the
+Tk root remains alive. Do not call `infinity.run`, which owns a separate event
+loop. Publishing advertises capabilities but does not authorize AI execution;
+the same session-scoped grant, legal-action validation and revision checks apply.
+Python launch receipts require an observed native execution visit. AI interaction
+readiness additionally requires an actual committed application observation; an
+attached context or an opened window alone does not prove interactive capability.
+Neither receipt proves that all requested application behavior is correct.
+
+`tools/editor-terminal-test.rs` covers bounded layout, wrap/reflow, preferences,
+input and diagnostics. `tools/native-c-probe/stdio-test.c` exercises real SDK
+standard-stream behavior with explicit typed transport fixtures.
+`tools/editor-terminal-installed-test.py` exercises actual Run/Stop/Restart,
+stdin/stdout/stderr, pointer resizing, cold-boot preferences, catalog launch and
+Python controls in a disposable installed guest. These are test entrypoints, not
+a declaration that the installed acceptance or release build has passed.
+
+## Application-independent runtime recovery — 2026-10-20
+
+Generated C and Python runs retain their exact source bytes, ObjectStore identity
+and version, editor revision, request, owner/session, and native process context.
+A late failure cannot rewrite a newer document, revive a cancelled request, or
+inherit another user's authority. Runtime failure invalidates the original
+IntelligenceKit launch/interaction completion evidence without repeating its plan.
+Previously completed compilation history is retained.
+Retiring the failed active goal also clears its waiting chat state so the next
+voice or typed request is admitted. A late receipt cannot replace a newer chat
+turn or cancel its model lease.
+Failure checkpoints retain the exact failed goal ID even when a newer complex
+goal is waiting for its first dispatch; neither checkpoint replaces the other.
+
+Generated Python execution uses the frozen `_infinity_generated_run` entrypoint.
+The native `_infinity_runtime` reporter emits a versioned, bounded diagnostic-only
+packet (`0x1290`) with exception category, class and source line; the actual
+traceback still goes to stderr. The receiver accepts only one report for the
+granted source of the current generated run. Validation, manual CLI execution,
+pip, `SystemExit`, and keyboard cancellation do not gain automatic-repair
+authority from an exit code or diagnostic text.
+
+Source exceptions and actual C process faults can enter the existing editor
+repair flow only after process reclamation, while the initiating source/request
+is unchanged and no competing generation is active. C nonzero exit codes alone,
+OS/resource failures, timeouts, STOP, and lost sessions do not justify rewriting
+code. Runtime and compiler repairs share the existing two-attempt limit. The
+complete current source and bounded real diagnostics are model inputs; source
+replacement remains atomic and revision-checked.
+An unchanged proposal (including changes only to trailing framing whitespace)
+cannot count as a repair or trigger a save. It keeps the original document and
+diagnostics, consumes at most the remaining retry, and otherwise fails explicitly.
+The same rule applies to C and Python; no application-name heuristics are used.
+
+A runtime repair is **save and revalidate only**. It does not rerun application
+operations, replay stdin or UI actions, restore permissions, or report functional
+success. The user explicitly chooses Run after repair. Python exceptions swallowed
+by an application's own handlers (including Tk's default callback handler) are
+not uncaught-process evidence and are outside this automatic path.
+
+Behavioral verification is separate: typed receipt and authority tests exercise
+the production state transitions; isolated native probes check actual exception
+classes, source lines, exit status and memory reclamation. Functional acceptance
+must execute independently specified scenarios against the exact repaired
+artifact. Syntax success, publication, normal exit, and model assertions are not
+substitutes for those checks or for installed-VM acceptance.
+
+Run the bounded real-Hermes/ARM64 acceptance sequence with
+`./build-kit run python3 tools/native-python/runtime-recovery-acceptance.py`.
+It first captures actual native failures in two distinct application types,
+then repairs their exact saved source and runs independent functional checks.
+Per-stage evidence and source hashes are retained under `build/runtime-recovery/`;
+copy a run into `builds/validation/` before a full build clears build scratch.
+Neither the model probe nor syntax validation alone counts as native success.
+
 ## Source delivery and repair — 2026-10-18
 
 Live preview and final admission share a single source-frame parser. Only the

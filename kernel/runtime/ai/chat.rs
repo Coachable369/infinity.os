@@ -16,7 +16,11 @@ pub const HERMES_MODEL_ID: ModelId = 0x4149_1005;
 // FUNC: response_line_height
 // DESC: Matches scale-one chat glyph height with a compact baseline gap, independent of desktop geometry scaling.
 // ------------------=
-pub const fn response_line_height(cell_height: usize, font_pixels: usize, atlas_pixels: usize) -> usize {
+pub const fn response_line_height(
+    cell_height: usize,
+    font_pixels: usize,
+    atlas_pixels: usize,
+) -> usize {
     cell_height * font_pixels / if atlas_pixels == 0 { 1 } else { atlas_pixels } + 2
 }
 
@@ -291,7 +295,9 @@ impl ChatRuntime {
     // ------------------=
     pub fn update_native_response(&mut self, bytes: &[u8]) {
         if self.count != 0
-            && self.message(self.count - 1).is_some_and(|m| m.role == ChatRole::Assistant)
+            && self
+                .message(self.count - 1)
+                .is_some_and(|m| m.role == ChatRole::Assistant)
         {
             self.messages[self.count - 1] = Some(ChatMessage::new(ChatRole::Assistant, bytes));
         } else {
@@ -416,14 +422,23 @@ impl ChatRuntime {
     // FUNC: paste_input
     // DESC: Atomically inserts shared clipboard text without submitting a chat request.
     // ------------------=
-    pub fn paste_input(&mut self,text:&[u8])->bool {
-        crate::ui::text_input::paste_ascii(&mut self.input,&mut self.input_length,&mut self.input_cursor,text)
+    pub fn paste_input(&mut self, text: &[u8]) -> bool {
+        crate::ui::text_input::paste_ascii(
+            &mut self.input,
+            &mut self.input_length,
+            &mut self.input_cursor,
+            text,
+        )
     }
     // ------------------------=
     // FUNC: clear_input
     // DESC: Erases composer bytes after a successful explicit cut.
     // ------------------=
-    pub fn clear_input(&mut self) {self.input.fill(0);self.input_length=0;self.input_cursor=0;}
+    pub fn clear_input(&mut self) {
+        self.input.fill(0);
+        self.input_length = 0;
+        self.input_cursor = 0;
+    }
 
     // ------------------------=
     // FUNC: input_cursor

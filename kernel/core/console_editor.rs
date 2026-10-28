@@ -103,6 +103,7 @@ impl ConsoleRuntime {
                     self.input_window_assistant(ConsoleKey::Shortcut(b'i'));
                 }
                 C::Performance => self.open_settings(0),
+                C::Terminal => self.toggle_editor_terminal(),
                 _ => {}
             }
         }

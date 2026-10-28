@@ -124,7 +124,7 @@ pub(crate) fn run()->Result<(),String> {
     }
     if width==0 || height==0 || width>3840 || height>2160 || focus>2 {return Err("Preview viewport or focus exceeds native bounds".into());}
     if state.percent>100 || state.zone>11 || !(2..=4).contains(&state.date_focus) || state.date_part>4
-        || state.expanded.is_some_and(|index|index>127) || state.scroll>10000 || state.control>127 {
+        || state.expanded.is_some_and(|index|index>127) || state.scroll>10000 || state.control>255 {
         return Err("Simulated service state exceeds native bounds".into());
     }
     let bytes=read_bounded(&template.ok_or("Missing template path")?,&root,512*1024*1024)?;

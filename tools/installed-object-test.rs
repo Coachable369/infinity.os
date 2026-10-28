@@ -136,7 +136,7 @@ fn profile_model_projection_validates_envelope() {
 
 // ------------------------=
 // FUNC: export_generated
-// DESC: Extracts bounded generated C and native executables from the stopped private test disk through its actual read-only ObjectStore.
+// DESC: Extracts current executables and immutable generated-source history from the stopped private disk without mutating ObjectStore state.
 // ------------------=
 fn export_generated<D: BlockDevice>(store: &mut ObjectStore<D>, directory: &str) {
     use std::fmt::Write;
@@ -156,20 +156,32 @@ fn export_generated<D: BlockDevice>(store: &mut ObjectStore<D>, directory: &str)
         let path = path.to_vec();
         let metadata = store.metadata(object).expect("generated object metadata");
         assert!(metadata.logical_size > 0 && metadata.logical_size <= 16 * 1024 * 1024);
-        assert!(records.len() < 128);
-        let mut content = vec![0; metadata.logical_size as usize];
-        assert_eq!(store.read(object, None, &mut content).expect("generated object bytes"), content.len());
-        if executable {
-            assert!(content.len() >= 64 && &content[..6] == b"\x7fELF\x02\x01");
-        }
         let mut object_hex = String::new();
         let mut path_hex = String::new();
         for value in object.0 { write!(object_hex, "{value:02x}").unwrap(); }
         for value in path { write!(path_hex, "{value:02x}").unwrap(); }
-        let name = format!("{}.{}", object_hex, extension);
-        std::fs::write(destination.join(&name), &content).expect("write extracted artifact");
-        records.push(format!("{{\"object\":\"{object_hex}\",\"path_hex\":\"{path_hex}\",\"file\":\"{name}\",\"source\":{source},\"version\":{},\"bytes\":{},\"crc32\":{}}}",
-                             metadata.current_version, content.len(), storage::object::crc32(&content)));
+        let versions = if source {
+            let count = store.history_count(object);
+            assert!(count > 0 && count <= 128);
+            (0..count).map(|at| store.history_version_nth(object, at).unwrap()).collect::<Vec<_>>()
+        } else { vec![(metadata.current_version, true)] };
+        for (version, current) in versions {
+            assert!(records.len() < 512);
+            // Historical source can be longer than its current version. Read a
+            // bounded buffer through the version-aware API, then retain exactly
+            // the verified payload length returned by native storage.
+            let mut content = vec![0; if source { 16 * 1024 * 1024 } else { metadata.logical_size as usize }];
+            let length = store.read(object, Some(version), &mut content).expect("generated object version bytes");
+            assert!(length <= content.len());
+            content.truncate(length);
+            if current { assert_eq!(length, metadata.logical_size as usize); }
+            if executable { assert!(content.len() >= 64 && &content[..6] == b"\x7fELF\x02\x01"); }
+            let name = if current { format!("{object_hex}.{extension}") }
+                       else { format!("{object_hex}-v{version}.{extension}") };
+            std::fs::write(destination.join(&name), &content).expect("write extracted artifact");
+            records.push(format!("{{\"object\":\"{object_hex}\",\"path_hex\":\"{path_hex}\",\"file\":\"{name}\",\"source\":{source},\"current\":{current},\"version\":{version},\"bytes\":{},\"crc32\":{}}}",
+                                 content.len(), storage::object::crc32(&content)));
+        }
     }
     assert!(!records.is_empty(), "No generated artifact was persisted");
     let report = format!("{{\"version\":1,\"read_only_native_storage\":true,\"artifacts\":[{}]}}\n", records.join(","));
@@ -207,7 +219,11 @@ fn main() {
     assert_eq!(store.read(organization, None, &mut bytes).expect("read organization schema"), 256);
     assert!(storage::organization::organization_schema_valid(&bytes));
     let mapping=store.resolve(b"/system/ai/instruction-mappings.json").expect("installed AI instruction mapping");
-    let mut mapping_bytes=[0u8;16*1024];
+    let registry = store.resolve(b"/system/service-registry.json").unwrap();
+    let mut registry_bytes = [0u8; 16*1024];
+    let registry_length = store.read(registry, None, &mut registry_bytes).unwrap();
+    assert_eq!(&registry_bytes[..registry_length], include_bytes!("../system/ai/service-registry.json"));
+    let mut mapping_bytes=[0u8;32*1024];
     let mapping_length=store.read(mapping,None,&mut mapping_bytes).expect("read installed AI instruction mapping");
     assert_eq!(&mapping_bytes[..mapping_length],include_bytes!("../system/ai/instruction-mappings.json"));
     if std::env::args().any(|argument| argument == "--bounded-node-checkpoint") {

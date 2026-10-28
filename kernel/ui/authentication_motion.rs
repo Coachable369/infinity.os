@@ -196,8 +196,11 @@ impl Timeline {
             return Advance::Finished;
         }
         self.presented_ms = self.elapsed_ms;
-        if self.committed { Advance::DesktopFade(self.opacity()) }
-        else { Advance::Frame(self.presentation()) }
+        if self.committed {
+            Advance::DesktopFade(self.opacity())
+        } else {
+            Advance::Frame(self.presentation())
+        }
     }
 }
 
@@ -213,7 +216,11 @@ pub const fn scene_opacity(elapsed_ms: u16) -> u8 {
     } as u32;
     let eased = t * t * (3_000 - 2 * t) / 1_000_000;
     let value = (255 * eased / 1_000) as u8;
-    if elapsed_ms < COMMIT_MS { 255 - value } else { value }
+    if elapsed_ms < COMMIT_MS {
+        255 - value
+    } else {
+        value
+    }
 }
 
 // ------------------------=
@@ -430,7 +437,9 @@ mod tests {
         }
         assert_eq!(timeline.advance(50), Advance::CommitDesktop);
         assert!(timeline.active());
-        for _ in 0..11 { assert!(matches!(timeline.advance(50), Advance::DesktopFade(_))); }
+        for _ in 0..11 {
+            assert!(matches!(timeline.advance(50), Advance::DesktopFade(_)));
+        }
         assert_eq!(timeline.advance(50), Advance::Finished);
         assert!(!timeline.active());
     }
@@ -456,16 +465,25 @@ mod tests {
             match timeline.advance(u16::MAX) {
                 Advance::Frame(p) => {
                     assert!(!committed);
-                    if p.primary_ripple_opacity > 30 && timeline.opacity() > 30 { visible_waves += 1; }
+                    if p.primary_ripple_opacity > 30 && timeline.opacity() > 30 {
+                        visible_waves += 1;
+                    }
                 }
-                Advance::CommitDesktop => { assert!(!committed); committed = true; }
+                Advance::CommitDesktop => {
+                    assert!(!committed);
+                    committed = true;
+                }
                 Advance::DesktopFade(_) | Advance::Finished => assert!(committed),
                 Advance::Idle => panic!("transition ended early"),
             }
         }
         assert!(visible_waves >= 12);
         assert!(!timeline.active());
-        for t in FADE_START_MS..COMMIT_MS { assert!(scene_opacity(t + 1) <= scene_opacity(t)); }
-        for t in COMMIT_MS..DURATION_MS { assert!(scene_opacity(t + 1) >= scene_opacity(t)); }
+        for t in FADE_START_MS..COMMIT_MS {
+            assert!(scene_opacity(t + 1) <= scene_opacity(t));
+        }
+        for t in COMMIT_MS..DURATION_MS {
+            assert!(scene_opacity(t + 1) >= scene_opacity(t));
+        }
     }
 }

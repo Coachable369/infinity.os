@@ -11,6 +11,7 @@ fn main() {
     assert_eq!(LAUNCHER_APPS.iter().filter(|entry| entry.action==app_launcher::LauncherAction::Browser).count(),
         cfg!(feature="native-browser") as usize);
     shortcut_drag_and_persistence();
+    generated_catalog_projection();
     for section in [6, 7, 8, 9] {
         assert_eq!(
             LAUNCHER_APPS
@@ -75,7 +76,7 @@ fn main() {
     );
     assert_eq!(
         app_launcher::launcher_visible_entry(b"", 0),
-        Some(LAUNCHER_APPS[1])
+        Some(app_launcher::VisibleEntry::from_builtin(LAUNCHER_APPS[1]))
     );
     assert_eq!(app_launcher::launcher_visible_entry(b"", 1), Some(third));
     assert_eq!(app_launcher::launcher_visible_entry(b"", 2), Some(first));
@@ -199,4 +200,23 @@ fn legacy_checksum(bytes: &[u8]) -> u32 {
     bytes
         .iter()
         .fold(2166136261u32, |hash, byte| (hash ^ *byte as u32).wrapping_mul(16777619))
+}
+
+// ------------------------=
+// FUNC: generated_catalog_projection
+// DESC: Exercises dynamic launcher filtering, stable action identities and user-switch removal without changing built-in reorder state.
+// ------------------=
+fn generated_catalog_projection(){
+    use app_launcher::{VisibleEntry,LauncherAction,GENERATED_CAPACITY};
+    let count=app_launcher::launcher_visible_count(b"");
+    let mut entries=[None;GENERATED_CAPACITY];let mut label=[0;48];label[..10].copy_from_slice(b"calculator");
+    let entry=VisibleEntry{label,label_length:10,icon_role:49,action:LauncherAction::Generated([9;16])};entries[0]=Some(entry);
+    app_launcher::publish_generated(entries);
+    assert_eq!(app_launcher::launcher_visible_count(b""),count+1);
+    assert_eq!(app_launcher::launcher_visible_entry(b"calculator",0),Some(entry));
+    assert_eq!(app_launcher::launcher_visible_entry(b"CALCULATOR",0).unwrap().action,LauncherAction::Generated([9;16]));
+    assert_eq!(app_launcher::launcher_visible_entry(b"calculator",1),None);
+    app_launcher::publish_generated([None;GENERATED_CAPACITY]);
+    assert_eq!(app_launcher::launcher_visible_count(b""),count);
+    assert_eq!(app_launcher::launcher_visible_entry(b"calculator",0),None);
 }

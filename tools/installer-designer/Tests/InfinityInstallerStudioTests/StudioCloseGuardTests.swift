@@ -30,7 +30,7 @@ final class StudioCloseGuardTests: XCTestCase {
         let root = repository.appending(path: "builds/.studio-work/tmp/studio-close-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let documents = [InstallerStudioDocument.factoryBoot(), .factoryDefault(), .factoryConfiguration(), .factorySystemSettings()]
+        let documents = [InstallerStudioDocument.factoryBoot(), .factoryDefault(), .factoryConfiguration(), .factorySystemSettings(), .factoryLogin(), .factoryDesktop()]
         let references = Set(documents.flatMap(\.screens).flatMap(\.elements).map(\.imageAsset))
         for path in references where path.hasPrefix("assets/") {
             let source = repository.appending(path: path), destination = root.appending(path: path)
@@ -65,6 +65,8 @@ final class StudioCloseGuardTests: XCTestCase {
         XCTAssertEqual(reopened.document, store.document)
         XCTAssertEqual(reopened.configurationDocument, store.configurationDocument)
         XCTAssertEqual(reopened.settingsDocument, store.settingsDocument)
+        XCTAssertEqual(reopened.loginDocument, store.loginDocument)
+        XCTAssertEqual(reopened.desktopDocument, store.desktopDocument)
         XCTAssertEqual(reopened.uiKit.document, store.uiKit.document)
         XCTAssertFalse(reopened.hasUnsavedChanges)
     }

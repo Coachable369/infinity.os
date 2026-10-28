@@ -16,8 +16,21 @@ APP = "infinity_test_app-1.0.0-py3-none-any.whl"
 UPGRADE = "infinity_test_app-1.1.0-py3-none-any.whl"
 TRAVERSAL = "infinity_test_escape-1.0.0-py3-none-any.whl"
 PLATFORM = "infinity_test_platform-1.0.0-cp313-cp313-win_amd64.whl"
-NATIVE = {arch: "infinity_test_native-1.0.0-cp313-cp313-infinityos_" + arch + ".whl"
+INVALID_NATIVE = "infinity_invalid_native-1.0.0-py3-none-any.whl"
+NATIVE = {arch: "infinity_test_native-1.0.0-cp312-cp312-infinityos_" + arch + ".whl"
           for arch in ("aarch64", "x86_64")}
+COMPATIBLE = {arch: "infinity_native_package-1.0.0-cp313-cp313-infinityos_" + arch + ".whl"
+              for arch in ("aarch64", "x86_64")}
+NATIVE_IMPORT = b'''import infinity_native_test
+assert infinity_native_test.__file__ == "/packages/infinity_native_test.so"
+assert infinity_native_test.add(19, 23) == 42
+try:
+    infinity_native_test.add(2**63 - 1, 1)
+except OverflowError:
+    pass
+else:
+    raise AssertionError("Native extension overflow did not raise")
+'''
 
 BASE_SOURCE = b'''# ------------------------=
 # FUNC: add
@@ -58,6 +71,14 @@ except PermissionError:
 else:
     raise AssertionError("An ordinary script received package write authority")
 assert total() == 54
+import tomli
+assert tomli.version_marker == 123
+try:
+    import tomli._parser
+except ModuleNotFoundError:
+    pass
+else:
+    raise AssertionError("Bundled submodules contaminated an owned override")
 assert version("infinity-test-app") == "1.0.0"
 assert version("infinity-test-base") == "1.0.0"
 metadata = distribution("infinity-test-app")
@@ -71,6 +92,8 @@ ABSENT_SCRIPT = b'''import sys
 from importlib.util import find_spec
 from importlib.metadata import PackageNotFoundError, version
 assert find_spec("infinity_test_app") is None
+import tomli
+assert tomli.loads("value=42") == {"value": 42}
 try:
     version("infinity-test-app")
 except PackageNotFoundError:
@@ -97,6 +120,8 @@ sys.exit(0)
 '''
 
 ISOLATED_SCRIPT = b'''import sys
+import tomli
+assert tomli.loads("value=42") == {"value": 42}
 from importlib.util import find_spec
 from importlib.metadata import PackageNotFoundError, version
 for name in ("infinity_test_app", "infinity_test_base"):
@@ -116,6 +141,7 @@ import io
 import json
 import mmap
 import sys
+import sysconfig
 from xml.parsers import expat
 from importlib.metadata import distribution
 import pip
@@ -138,11 +164,12 @@ except expat.ExpatError as error:
 else:
     raise AssertionError("Malformed XML was accepted")
 tags = get_supported()
-assert tags and all(tag.abi == "none" and tag.platform == "any" for tag in tags)
+assert tags
 assert Wheel("portable-1.0.0-py3-none-any.whl").supported(tags)
 for architecture in ("aarch64", "x86_64"):
     native = Wheel("native-1.0.0-cp313-cp313-infinityos_" + architecture + ".whl")
-    assert not native.supported(tags)
+    assert native.supported(tags) == (sysconfig.get_platform().replace("-", "_") == "infinityos_" + architecture)
+    assert not Wheel("native-1.0.0-cp312-cp312-infinityos_" + architecture + ".whl").supported(tags)
 capture = io.StringIO()
 with contextlib.redirect_stdout(capture):
     result = main(["list", "--format=json", "--disable-pip-version-check"])
@@ -173,7 +200,8 @@ def wheel_bytes(name, files, requirements=(), tag="py3-none-any", compression=zi
                 + "\n")
     entries[info + "/METADATA"] = metadata.encode()
     entries[info + "/WHEEL"] = ("Wheel-Version: 1.0\nGenerator: InfinityOS acceptance\n"
-                                "Root-Is-Purelib: true\nTag: " + tag + "\n").encode()
+                                "Root-Is-Purelib: " + ("true" if tag == "py3-none-any" else "false")
+                                + "\nTag: " + tag + "\n").encode()
     records = io.StringIO(newline="")
     writer = csv.writer(records, lineterminator="\n")
     for path, contents in sorted(entries.items()):
@@ -200,12 +228,14 @@ def fixtures():
     result = {
         BASE: wheel_bytes("infinity-test-base", {"infinity_test_base/__init__.py": BASE_SOURCE}),
         APP: wheel_bytes("infinity-test-app", {
+            "tomli/__init__.py": b"version_marker = 123\n",
             "infinity_test_app/__init__.py": APP_SOURCE,
             "infinity_test_app/nested/__init__.py": b"",
             "infinity_test_app/nested/calculate.py": CALCULATE_SOURCE,
             "infinity_test_app/nested/numbers.txt": b"19 35\n",
         }, requirements=("infinity-test-base==1.0.0",), compression=zipfile.ZIP_DEFLATED),
         UPGRADE: wheel_bytes("infinity-test-app", {
+            "tomli/__init__.py": b"version_marker = 123\n",
             "infinity_test_app/__init__.py": APP_SOURCE,
             "infinity_test_app/nested/__init__.py": b"",
             "infinity_test_app/nested/calculate.py": CALCULATE_SOURCE,
@@ -214,10 +244,15 @@ def fixtures():
         TRAVERSAL: wheel_bytes("infinity-test-escape", {"../../outside.py": b"escaped = True\n"}),
         PLATFORM: wheel_bytes("infinity-test-platform", {"infinity_test_platform.py": b"value = 1\n"},
                               tag="cp313-cp313-win_amd64"),
+        INVALID_NATIVE: wheel_bytes("infinity-invalid-native", {"infinity_invalid_native.so": b"not an ELF image"}),
     }
     for arch, filename in NATIVE.items():
         result[filename] = wheel_bytes("infinity-test-native", {"infinity_test_native.py": b"value = 1\n"},
-                                      tag="cp313-cp313-infinityos_" + arch)
+                                      tag="cp312-cp312-infinityos_" + arch)
+    for arch, filename in COMPATIBLE.items():
+        binary = (ROOT / "builds/toolchains" / arch / "infinity_native_test.so").read_bytes()
+        result[filename] = wheel_bytes("infinity-native-package", {"infinity_native_test.so": binary},
+                                      tag="cp313-cp313-infinityos_" + arch, compression=zipfile.ZIP_DEFLATED)
     return result
 
 
@@ -248,6 +283,13 @@ def scenario():
             for arch, filename in NATIVE.items()}, "exit_nonzero": True, "unchanged_store": True},
         {"name": "uninstall", "argv": ["-m", "pip", "uninstall", "-y", "infinity-test-app"], "exit": 0},
         {"name": "removed", "argv": ["/work/absent.py"], "exit": 0},
+        {"name": "install-native", "argv_by_arch": {
+            arch: ["-m", "pip", "install", "--no-index", "--no-compile", "/work/" + filename]
+            for arch, filename in COMPATIBLE.items()}, "exit": 0},
+        {"name": "import-native", "argv": ["/work/native-import.py"], "exit": 0, "archive_remount": True},
+        {"name": "uninstall-native", "argv": ["-m", "pip", "uninstall", "-y", "infinity-native-package"], "exit": 0},
+        {"name": "reject-invalid-native", "argv": ["-m", "pip", "install", "--no-index", "/work/" + INVALID_NATIVE],
+         "transaction_exit": 65, "unchanged_store": True},
     ]
 
 
@@ -261,7 +303,8 @@ def write_inputs(destination):
         raise ValueError("Acceptance inputs must stay inside repository build/builds")
     destination.mkdir(parents=True, exist_ok=True)
     inputs = {**fixtures(), "import.py": IMPORT_SCRIPT, "metadata.py": METADATA_SCRIPT,
-              "absent.py": ABSENT_SCRIPT, "isolated.py": ISOLATED_SCRIPT, "upgraded.py": UPGRADED_SCRIPT}
+              "absent.py": ABSENT_SCRIPT, "isolated.py": ISOLATED_SCRIPT, "upgraded.py": UPGRADED_SCRIPT,
+              "native-import.py": NATIVE_IMPORT}
     assert len(inputs) <= 16 and sum(map(len, inputs.values())) < 65536
     for name, data in inputs.items():
         (destination / name).write_bytes(data)
@@ -299,7 +342,7 @@ def verify_fixtures():
                 assert "infinity_test_app/nested/calculate.py" in paths
             if name == TRAVERSAL:
                 assert "../../outside.py" in paths
-    for source in (IMPORT_SCRIPT, ABSENT_SCRIPT, ISOLATED_SCRIPT, METADATA_SCRIPT, UPGRADED_SCRIPT):
+    for source in (IMPORT_SCRIPT, ABSENT_SCRIPT, ISOLATED_SCRIPT, METADATA_SCRIPT, UPGRADED_SCRIPT, NATIVE_IMPORT):
         compile(source, "<native-package-acceptance>", "exec")
     # Execute fixture arithmetic directly, not a host-installed substitute package.
     dependency = {}

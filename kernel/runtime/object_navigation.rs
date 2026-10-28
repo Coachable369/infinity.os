@@ -19,13 +19,40 @@ pub const FILE_NAVIGATOR_HISTORY_CAPACITY: usize = 12;
 pub const FILE_NAVIGATOR_NO_SELECTION: u16 = u16::MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
+pub enum OpenTarget {
+    Unsupported,
+    TextEditor,
+    FileNavigator,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContextAction {
-    Open, Preview, SetWallpaper, OpenWith, SetDefaultWith, Rename, Duplicate, Trash, Copy, Cut, Paste, PasteTo,
-    NewFolder, List, Grid, Sort, Handler0, Handler1, Handler2, Handler3, Handler4,
-    Handler5, Handler6, Handler7, Unavailable, Back,
+    Open,
+    Preview,
+    SetWallpaper,
+    OpenWith,
+    SetDefaultWith,
+    Rename,
+    Duplicate,
+    Trash,
+    Copy,
+    Cut,
+    Paste,
+    PasteTo,
+    NewFolder,
+    List,
+    Grid,
+    Sort,
+    Handler0,
+    Handler1,
+    Handler2,
+    Handler3,
+    Handler4,
+    Handler5,
+    Handler6,
+    Handler7,
+    Unavailable,
+    Back,
 }
 
 impl ContextAction {
@@ -35,13 +62,32 @@ impl ContextAction {
     // ------------------=
     pub const fn label(self) -> &'static [u8] {
         match self {
-            Self::Open => b"Open", Self::Preview => b"Preview", Self::SetWallpaper => b"Set as desktop wallpaper...", Self::OpenWith => b"Open With...", Self::SetDefaultWith => b"Always Open With...", Self::Rename => b"Rename",
-            Self::Duplicate => b"Duplicate", Self::Trash => b"Move to Trash", Self::NewFolder => b"New Folder",
-            Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
-            Self::Handler0 | Self::Handler1 | Self::Handler2 | Self::Handler3 | Self::Handler4
-                | Self::Handler5 | Self::Handler6 | Self::Handler7 => b"Application",
-            Self::Unavailable => b"No compatible app", Self::Back => b"Back",
-            Self::Copy => b"Copy", Self::Cut => b"Cut", Self::Paste => b"Paste", Self::PasteTo => b"Paste to...",
+            Self::Open => b"Open",
+            Self::Preview => b"Preview",
+            Self::SetWallpaper => b"Set as desktop wallpaper...",
+            Self::OpenWith => b"Open With...",
+            Self::SetDefaultWith => b"Always Open With...",
+            Self::Rename => b"Rename",
+            Self::Duplicate => b"Duplicate",
+            Self::Trash => b"Move to Trash",
+            Self::NewFolder => b"New Folder",
+            Self::List => b"List View",
+            Self::Grid => b"Grid View",
+            Self::Sort => b"Sort by Name",
+            Self::Handler0
+            | Self::Handler1
+            | Self::Handler2
+            | Self::Handler3
+            | Self::Handler4
+            | Self::Handler5
+            | Self::Handler6
+            | Self::Handler7 => b"Application",
+            Self::Unavailable => b"No compatible app",
+            Self::Back => b"Back",
+            Self::Copy => b"Copy",
+            Self::Cut => b"Cut",
+            Self::Paste => b"Paste",
+            Self::PasteTo => b"Paste to...",
         }
     }
 
@@ -51,8 +97,14 @@ impl ContextAction {
     // ------------------=
     pub const fn handler_index(self) -> Option<usize> {
         match self {
-            Self::Handler0 => Some(0), Self::Handler1 => Some(1), Self::Handler2 => Some(2), Self::Handler3 => Some(3),
-            Self::Handler4 => Some(4), Self::Handler5 => Some(5), Self::Handler6 => Some(6), Self::Handler7 => Some(7),
+            Self::Handler0 => Some(0),
+            Self::Handler1 => Some(1),
+            Self::Handler2 => Some(2),
+            Self::Handler3 => Some(3),
+            Self::Handler4 => Some(4),
+            Self::Handler5 => Some(5),
+            Self::Handler6 => Some(6),
+            Self::Handler7 => Some(7),
             _ => None,
         }
     }
@@ -1550,8 +1602,12 @@ impl FileNavigatorState {
     // DESC: Opens a selected destination field without changing the current namespace or staged clipboard payload.
     // ------------------=
     pub fn begin_paste_to(&mut self) {
-        self.begin_location_edit();self.location_editing=false;self.paste_to_editing=true;
-        self.workplace_notice=0;self.menu_open=None;self.dialog_open=Some(FileNavigatorDialog::Location);
+        self.begin_location_edit();
+        self.location_editing = false;
+        self.paste_to_editing = true;
+        self.workplace_notice = 0;
+        self.menu_open = None;
+        self.dialog_open = Some(FileNavigatorDialog::Location);
     }
 
     // ------------------------=
@@ -1599,7 +1655,8 @@ impl FileNavigatorState {
             return false;
         };
         self.editor_text = text;
-        self.paste_to_editing=false;self.editor_selected=true;
+        self.paste_to_editing = false;
+        self.editor_selected = true;
         self.editor_cursor = self.editor_text.as_bytes().len();
         self.rename_editing = true;
         self.location_editing = false;
@@ -1660,15 +1717,39 @@ impl FileNavigatorState {
                 3 => &[Handler0, Handler1, Handler2, Back],
                 4 => &[Handler0, Handler1, Handler2, Handler3, Back],
                 5 => &[Handler0, Handler1, Handler2, Handler3, Handler4, Back],
-                6 => &[Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Back],
-                7 => &[Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Handler6, Back],
-                _ => &[Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Handler6, Handler7, Back],
+                6 => &[
+                    Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Back,
+                ],
+                7 => &[
+                    Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Handler6, Back,
+                ],
+                _ => &[
+                    Handler0, Handler1, Handler2, Handler3, Handler4, Handler5, Handler6, Handler7,
+                    Back,
+                ],
             };
         }
-        if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, Paste, PasteTo, List, Grid, Sort] }
-        else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
-        else if self.context_image { &[Open,Preview,SetWallpaper,OpenWith,SetDefaultWith,Rename,Duplicate,Copy,Cut,Paste,PasteTo,Trash] }
-        else { &[Open, Preview, OpenWith, SetDefaultWith, Rename, Duplicate, Copy, Cut, Paste, PasteTo, Trash] }
+        if self.context_item == FILE_NAVIGATOR_NO_SELECTION {
+            &[NewFolder, Paste, PasteTo, List, Grid, Sort]
+        } else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT {
+            &[Open]
+        } else if self.context_image {
+            &[Open,Preview,SetWallpaper,OpenWith,SetDefaultWith,Rename,Duplicate,Copy,Cut,Paste,PasteTo,Trash]
+        } else {
+            &[
+                Open,
+                Preview,
+                OpenWith,
+                SetDefaultWith,
+                Rename,
+                Duplicate,
+                Copy,
+                Cut,
+                Paste,
+                PasteTo,
+                Trash,
+            ]
+        }
     }
 
     // ------------------------=
@@ -1676,7 +1757,8 @@ impl FileNavigatorState {
     // DESC: Supplies a registered application name for chooser rows and shared copy for other actions.
     // ------------------=
     pub fn context_action_label(&self, action: ContextAction) -> &[u8] {
-        action.handler_index()
+        action
+            .handler_index()
             .and_then(|index| self.context_handler_labels.get(index))
             .map(ByteText::as_bytes)
             .filter(|label| !label.is_empty())

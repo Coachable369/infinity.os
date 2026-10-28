@@ -2,9 +2,33 @@
 import io
 import os
 import sys
-from importlib.machinery import FrozenImporter
+from importlib.machinery import FrozenImporter, BuiltinImporter, PathFinder
 from importlib.resources.abc import ResourceReader
-from _infinity_resources import RESOURCES, PIP_METADATA
+from _infinity_resources import RESOURCES, DISTRIBUTION_METADATA, PUBLIC_PACKAGE_ROOTS
+
+_original_paths = None
+
+
+class PublicPackageFinder:
+    # ------------------------=
+    # FUNC: __init__
+    # DESC: Wraps native finders only for public third-party packages, never standard-library or platform modules.
+    # ------------------=
+    def __init__(self, delegate):
+        self.delegate = delegate
+
+    # ------------------------=
+    # FUNC: find_spec
+    # DESC: Allows authorized user package versions to override the immutable baseline without mixing their submodules.
+    # ------------------=
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in PUBLIC_PACKAGE_ROOTS:
+            candidate = PathFinder.find_spec(fullname, path, target)
+            if candidate is not None:
+                return candidate
+            if path is not None and not all(str(item).startswith("/stdlib/") for item in path):
+                return None
+        return self.delegate.find_spec(fullname, path, target)
 
 
 class FrozenResources(ResourceReader):
@@ -59,20 +83,40 @@ def frozen_resource_reader(cls, fullname):
 
 
 # ------------------------=
+# FUNC: frozen_resource_data
+# DESC: Serves legacy pkgutil package-data reads from verified immutable bytes without exposing host paths.
+# ------------------=
+def frozen_resource_data(cls, path):
+    if not path.startswith("/stdlib/") or ".." in path.split("/"):
+        raise FileNotFoundError(path)
+    try:
+        return RESOURCES[path[len("/stdlib/"):]]
+    except KeyError:
+        raise FileNotFoundError(path) from None
+
+
+# ------------------------=
 # FUNC: configure
 # DESC: Installs frozen resource access and the owned native package scheme before user code runs.
 # ------------------=
 def configure():
     FrozenImporter.get_resource_reader = classmethod(frozen_resource_reader)
+    FrozenImporter.get_data = classmethod(frozen_resource_data)
+    sys.meta_path[:] = [PublicPackageFinder(finder) if finder in (BuiltinImporter, FrozenImporter)
+                       else finder for finder in sys.meta_path]
     # This is guest VFS scratch, not the host's /tmp. The kernel grants its
     # bounded transaction lifetime and discards it after process completion.
     os.environ["TMPDIR"] = "/tmp"
     os.environ["HOME"] = "/packages"
     import sysconfig
     scheme = dict(sysconfig._INSTALL_SCHEMES["posix_prefix"])
-    scheme.update(purelib="/packages", platlib="/packages", scripts="/packages/bin",
-                  data="/packages", include="/packages/include", platinclude="/packages/include")
+    scheme.update(purelib="{base}", platlib="{base}", scripts="{base}/bin",
+                  data="{base}", include="{base}/include", platinclude="{base}/include")
     sysconfig._INSTALL_SCHEMES["infinity"] = scheme
+    global _original_paths
+    if _original_paths is None:
+        _original_paths = sysconfig.get_paths
+        sysconfig.get_paths = native_paths
     # pip uses both preferred and default schemes; this is the distributor
     # extension point intentionally exposed by CPython's sysconfig.
     sysconfig._get_preferred_schemes = preferred_schemes
@@ -81,11 +125,18 @@ def configure():
 
     class FrozenDistribution(importlib.metadata.Distribution):
         # ------------------------=
+        # FUNC: __init__
+        # DESC: Binds immutable metadata to the exact bundled system distribution.
+        # ------------------=
+        def __init__(self, metadata):
+            self._metadata_files = metadata
+
+        # ------------------------=
         # FUNC: read_text
-        # DESC: Exposes genuine installed pip metadata from the pinned upstream wheel.
+        # DESC: Exposes genuine installed metadata from the exact pinned upstream wheel.
         # ------------------=
         def read_text(self, filename):
-            value = PIP_METADATA.get(filename)
+            value = self._metadata_files.get(filename)
             return value.decode("utf-8") if value is not None else None
 
         # ------------------------=
@@ -107,15 +158,45 @@ def configure():
 
         # ------------------------=
         # FUNC: find_distributions
-        # DESC: Discovers bundled pip only when the system distribution root is in scope.
+        # DESC: Discovers bundled distributions only when the immutable system root is in scope, excluding isolated build environments.
         # ------------------=
         @staticmethod
         def find_distributions(context=importlib.metadata.DistributionFinder.Context()):
             name = context.name
-            if "/stdlib" in context.path and (name is None or name.lower().replace("_", "-") == "pip"):
-                yield FrozenDistribution()
+            if "/stdlib" not in context.path:
+                return
+            for installed, metadata in DISTRIBUTION_METADATA.items():
+                if name is None or name.lower().replace("_", "-") == installed:
+                    yield FrozenDistribution(metadata)
 
     sys.meta_path.append(FrozenDistributionFinder)
+    # Pip continues to own dependency resolution, hashes, metadata and wheel
+    # installation. Only transport crosses into the native authenticated actor.
+    if "pip" in getattr(sys, "orig_argv", ())[:3]:
+        from _infinity_network import configure_pip
+        configure_pip()
+        from _infinity_subprocess import install
+        install()
+
+
+# ------------------------=
+# FUNC: native_paths
+# DESC: Honors pip's isolated temporary build prefixes while keeping ordinary installs inside the authorized package root.
+# ------------------=
+def native_paths(scheme=None, vars=None, expand=True):
+    import sysconfig
+    scheme = sysconfig.get_default_scheme() if scheme is None else scheme
+    if scheme == "infinity" and expand:
+        variables = dict(vars or {})
+        base = variables.get("base", "/packages")
+        if base == sys.prefix:
+            base = "/packages"
+        base = os.path.normpath(base)
+        if base != "/packages" and not base.startswith("/tmp/"):
+            raise PermissionError("Python installation prefix is outside its private grants")
+        variables["base"] = base
+        return _original_paths(scheme, variables, expand)
+    return _original_paths(scheme, vars, expand)
 
 
 # ------------------------=

@@ -1,9 +1,29 @@
 {
   "canvasHeight" : 1000,
   "canvasWidth" : 1000,
+  "explicitLoginMotion" : true,
   "screens" : [
     {
       "elements" : [
+        {
+          "id" : "E5B1CB0B-A950-4A15-B22B-7AF45CE839A8",
+          "codeIdentifier" : "sphereAndSplashAnimation",
+          "name" : "Sphere and Splash Animation",
+          "kind" : 2,
+          "role" : 20,
+          "frame" : { "x" : 455, "y" : 517, "width" : 514, "height" : 380 },
+          "text" : "",
+          "imageAsset" : "assets/desktop/infinity-auth-success-orb-v1.bmp",
+          "imageFit" : 1,
+          "fill" : { "red" : 16, "green" : 27, "blue" : 58, "alpha" : 230 },
+          "border" : { "red" : 134, "green" : 199, "blue" : 255, "alpha" : 255 },
+          "fontSize" : 22,
+          "opacity" : 100,
+          "cornerRadius" : 10,
+          "zIndex" : 99,
+          "locked" : false,
+          "hidden" : false
+        },
         {
           "actionCaptionMode" : 0,
           "border" : {
@@ -32,6 +52,7 @@
             "green" : 27,
             "red" : 16
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 1000,
@@ -52,6 +73,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 0
         },
         {
@@ -69,7 +92,7 @@
             "red" : 255
           },
           "codeIdentifier" : "loginPanel",
-          "cornerRadius" : 10,
+          "cornerRadius" : 20,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -82,6 +105,7 @@
             "green" : 27,
             "red" : 16
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 736,
@@ -99,9 +123,11 @@
           "name" : "Login Panel",
           "opacity" : 100,
           "role" : 2,
-          "surfaceCorners" : 0,
+          "surfaceCorners" : 2,
           "surfaceMaterial" : 0,
           "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 1
         },
         {
@@ -132,12 +158,13 @@
             "green" : 27,
             "red" : 16
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 97,
             "width" : 141,
-            "x" : 134,
-            "y" : 162
+            "x" : 130,
+            "y" : 210
           },
           "hidden" : false,
           "id" : "A2D1CC6A-8247-4A53-8664-08F8ACE49E84",
@@ -152,6 +179,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 2
         },
         {
@@ -182,12 +211,13 @@
             "green" : 245,
             "red" : 241
           },
+          "fontFamily" : 0,
           "fontSize" : 36,
           "frame" : {
             "height" : 47,
-            "width" : 302,
-            "x" : 53,
-            "y" : 264
+            "width" : 300,
+            "x" : 50,
+            "y" : 150
           },
           "hidden" : false,
           "id" : "38381764-095F-4722-90BE-12E5BC9C94DC",
@@ -202,6 +232,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Welcome Back",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 3
         },
         {
@@ -232,12 +264,13 @@
             "green" : 245,
             "red" : 241
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 30,
             "width" : 302,
-            "x" : 53,
-            "y" : 317
+            "x" : 60,
+            "y" : 320
           },
           "hidden" : false,
           "id" : "49CC868F-613D-41D9-8CF1-66E7A6615C06",
@@ -251,7 +284,9 @@
           "role" : 5,
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
-          "text" : "Secure. Limitless.",
+          "text" : "Let’s get you logged in..",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 4
         },
         {
@@ -282,6 +317,7 @@
             "green" : 15,
             "red" : 9
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 83,
@@ -302,6 +338,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Select an account",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 5
         },
         {
@@ -332,6 +370,7 @@
             "green" : 27,
             "red" : 16
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 55,
@@ -352,6 +391,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 6
         },
         {
@@ -382,6 +423,7 @@
             "green" : 111,
             "red" : 62
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 54,
@@ -402,6 +444,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Sign In",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 7
         },
         {
@@ -432,12 +476,13 @@
             "green" : 15,
             "red" : 9
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 54,
             "width" : 275,
-            "x" : 67,
-            "y" : 664
+            "x" : 70,
+            "y" : 720
           },
           "hidden" : false,
           "id" : "3C922386-1741-4309-BCE5-0F691ECFA3E2",
@@ -452,157 +497,9 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Sign In with Facial Recognition",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 8
-        },
-        {
-          "actionCaptionMode" : 0,
-          "border" : {
-            "alpha" : 255,
-            "blue" : 255,
-            "green" : 199,
-            "red" : 134
-          },
-          "captionColor" : {
-            "alpha" : 255,
-            "blue" : 255,
-            "green" : 255,
-            "red" : 255
-          },
-          "codeIdentifier" : "addUser",
-          "cornerRadius" : 10,
-          "crop" : {
-            "bottom" : 0,
-            "left" : 0,
-            "right" : 0,
-            "top" : 0
-          },
-          "fill" : {
-            "alpha" : 255,
-            "blue" : 38,
-            "green" : 15,
-            "red" : 9
-          },
-          "fontSize" : 14,
-          "frame" : {
-            "height" : 73,
-            "width" : 89,
-            "x" : 67,
-            "y" : 733
-          },
-          "hidden" : false,
-          "id" : "0354502B-E598-4EDB-8C36-6B0A2243C407",
-          "imageAsset" : "",
-          "imageFit" : 1,
-          "inputVariable" : "",
-          "kind" : 5,
-          "locked" : false,
-          "name" : "Add User",
-          "opacity" : 100,
-          "role" : 42,
-          "surfaceCorners" : 0,
-          "surfaceMaterial" : 0,
-          "text" : "Add User",
-          "zIndex" : 9
-        },
-        {
-          "actionCaptionMode" : 0,
-          "border" : {
-            "alpha" : 255,
-            "blue" : 255,
-            "green" : 199,
-            "red" : 134
-          },
-          "captionColor" : {
-            "alpha" : 255,
-            "blue" : 255,
-            "green" : 255,
-            "red" : 255
-          },
-          "codeIdentifier" : "forgotPassword",
-          "cornerRadius" : 10,
-          "crop" : {
-            "bottom" : 0,
-            "left" : 0,
-            "right" : 0,
-            "top" : 0
-          },
-          "fill" : {
-            "alpha" : 255,
-            "blue" : 38,
-            "green" : 15,
-            "red" : 9
-          },
-          "fontSize" : 14,
-          "frame" : {
-            "height" : 73,
-            "width" : 89,
-            "x" : 158,
-            "y" : 733
-          },
-          "hidden" : false,
-          "id" : "DB1CE035-B60E-430D-8675-6A2D84337D90",
-          "imageAsset" : "",
-          "imageFit" : 1,
-          "inputVariable" : "",
-          "kind" : 5,
-          "locked" : false,
-          "name" : "Forgot Password",
-          "opacity" : 100,
-          "role" : 43,
-          "surfaceCorners" : 0,
-          "surfaceMaterial" : 0,
-          "text" : "Forgot Password",
-          "zIndex" : 10
-        },
-        {
-          "actionCaptionMode" : 0,
-          "border" : {
-            "alpha" : 255,
-            "blue" : 255,
-            "green" : 199,
-            "red" : 134
-          },
-          "captionColor" : {
-            "alpha" : 255,
-            "blue" : 255,
-            "green" : 255,
-            "red" : 255
-          },
-          "codeIdentifier" : "options",
-          "cornerRadius" : 10,
-          "crop" : {
-            "bottom" : 0,
-            "left" : 0,
-            "right" : 0,
-            "top" : 0
-          },
-          "fill" : {
-            "alpha" : 255,
-            "blue" : 38,
-            "green" : 15,
-            "red" : 9
-          },
-          "fontSize" : 14,
-          "frame" : {
-            "height" : 73,
-            "width" : 89,
-            "x" : 250,
-            "y" : 733
-          },
-          "hidden" : false,
-          "id" : "EBDD9519-8A8B-4EE2-9029-59ECAF936A26",
-          "imageAsset" : "",
-          "imageFit" : 1,
-          "inputVariable" : "",
-          "kind" : 5,
-          "locked" : false,
-          "name" : "Options",
-          "opacity" : 100,
-          "role" : 44,
-          "surfaceCorners" : 0,
-          "surfaceMaterial" : 0,
-          "text" : "Options",
-          "zIndex" : 11
         },
         {
           "actionCaptionMode" : 0,
@@ -632,6 +529,7 @@
             "green" : 27,
             "red" : 16
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 87,
@@ -652,6 +550,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 12
         },
         {
@@ -682,6 +582,7 @@
             "green" : 15,
             "red" : 9
           },
+          "fontFamily" : 0,
           "fontSize" : 14,
           "frame" : {
             "height" : 68,
@@ -702,6 +603,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Shut Down",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 13
         },
         {
@@ -732,6 +635,7 @@
             "green" : 15,
             "red" : 9
           },
+          "fontFamily" : 0,
           "fontSize" : 14,
           "frame" : {
             "height" : 68,
@@ -752,6 +656,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Restart",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 14
         },
         {
@@ -782,6 +688,7 @@
             "green" : 15,
             "red" : 9
           },
+          "fontFamily" : 0,
           "fontSize" : 14,
           "frame" : {
             "height" : 68,
@@ -802,6 +709,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Network",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 15
         },
         {
@@ -832,6 +741,7 @@
             "green" : 15,
             "red" : 9
           },
+          "fontFamily" : 0,
           "fontSize" : 14,
           "frame" : {
             "height" : 68,
@@ -852,6 +762,8 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "Accessibility",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 16
         },
         {
@@ -882,12 +794,13 @@
             "green" : 27,
             "red" : 16
           },
+          "fontFamily" : 0,
           "fontSize" : 22,
           "frame" : {
             "height" : 89,
             "width" : 371,
-            "x" : 585,
-            "y" : 89
+            "x" : 540,
+            "y" : 530
           },
           "hidden" : false,
           "id" : "68BFDB62-2D63-4C7F-98C2-A68E590FC632",
@@ -902,7 +815,62 @@
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
           "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
           "zIndex" : 17
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "newText",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 52,
+          "frame" : {
+            "height" : 74,
+            "width" : 104,
+            "x" : 180,
+            "y" : 630
+          },
+          "hidden" : false,
+          "id" : "8865DE07-4931-4FDE-BB03-6B20AD725B2B",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "New Text",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "OR",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 18
         }
       ],
       "id" : 1,

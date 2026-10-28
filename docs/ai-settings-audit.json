@@ -1,0 +1,25 @@
+{
+  "schema": "infinityos.ai-settings-audit",
+  "version": 1,
+  "date": "2026-10-23",
+  "status": "partial-implementation",
+  "scope": "Settings sidebar sections and their implemented ConsoleRuntime handlers; not a claim of every IOP operation being voice-executable",
+  "sources": ["kernel/core/console.rs", "kernel/core/console_clock.rs", "kernel/core/bootstrap/settings_view.rs", "kernel/core/bootstrap/desktop.rs", "kernel/runtime/ai/mapping.rs"],
+  "sections": [
+    {"id":"general","direct":["machine name","clock read","clock set","time zone"],"displayOnly":["language","region","system generation","updates"],"handlers":["update_machine_name","dispatch_clock"]},
+    {"id":"themes","direct":["dark/light skin","primary color","accent color","glass opacity","background blur"],"contextActions":["next icon set"],"remaining":["named installed icon family","font selection","wallpaper selection"],"handlers":["activate_settings_content_row","select_icon_theme","preview_primary","commit_primary","preview_accent","commit_accent","commit_background_effects"]},
+    {"id":"accounts","displayOnly":["current user","credential","session","personal space","profile"],"remaining":["identity-management workflows require their existing authorization and confirmation interfaces"]},
+    {"id":"ai_voice","direct":["spoken replies"],"contextActions":["next model"],"remaining":["provider policy","desktop chat enabled","named model selection","microphone grant","wake word"],"displayOnly":["remote processing"],"handlers":["activate_settings_content_row","set_ai_chat_enabled","select_next_chat_model","set_voice_microphone_enabled","cycle_voice_wake_word"]},
+    {"id":"privacy","direct":["inactivity timeout minutes"],"remaining":["microphone grant"],"displayOnly":["ambient authority","remote AI","trusted UI"],"handlers":["update_user_no_activity_timeout","set_voice_microphone_enabled"]},
+    {"id":"devices","remaining":["cursor selection"],"displayOnly":["display","keyboard","audio input","audio output"],"note":"Several displayed statuses are fixed labels, not service availability receipts."},
+    {"id":"input","remaining":["pointer speed","scroll speed","scroll direction","primary button","acceleration","key repeat delay","key repeat rate","reset defaults"],"handlers":["toggle_settings_row","input_preferences::apply","persist_desktop_layout"]},
+    {"id":"network","remaining":["automatic/wired/wireless/offline mode","interface enable","DHCP","IPv4 address/prefix/gateway/metric","DNS enable and servers","default-route removal","profile activation","default firewall policy"],"handlers":["activate_network_control","commit_network_edit","reconfigure_network_from_settings","set_network_interface_from_settings","configure_dynamic_ipv4_from_settings","configure_static_ipv4_from_settings","configure_resolver_from_settings","remove_default_network_route_from_settings","activate_network_profile_from_settings","set_network_default_policy_from_settings"],"gate":"Network/security changes need typed arguments, permission checks and verified service results; opening the Network page is not mutation success."},
+    {"id":"nodes_mesh","remaining":["node selection","revoke trust","block","open session","begin/cancel pairing","secure pairing confirmation","join/leave","category policy"],"handlers":["activate_node_control","confirm_selected_node_pairing","node_client::submit"],"gate":"Bind an explicit stable NodeId and retain secure confirmation; never operate on an inferred ambient selection."},
+    {"id":"storage","remaining":["object selection","node selection","placement selection","replication policy"],"handlers":["storage_view::open","storage_view::select_node","storage_view::select_next","storage_view::select_placement","storage_view::set_policy"],"gate":"Bind explicit object/node IDs and verify asynchronous operation completion."},
+    {"id":"about","displayOnly":["version","architecture","boot","identity format","icon families"]}
+  ],
+  "fixedInThisPass": ["provider-size speech chunks buffered until phrase boundary", "eight typed settings targets", "shared authorized identity mutation service", "theme toggle now persisted", "console theme change now applied live", "skin label reflects active skin"],
+  "remainingAcceptance": ["complete remaining mappings above", "remove fixed Settings availability labels", "installed ARM and x86 speech listening and settings persistence checks", "measure phrase gaps with real Kokoro PCM; host queue tests do not prove prosody"],
+  "limits": {"mappingBytes":16384,"mappingAliases":256,"currentTargets":112,"speechProviderTextBytes":160,"residentSpeechSeconds":32},
+  "migration": "Existing complete version-one 104-target user maps remain valid; additive settings aliases fall back to build defaults without rewriting user data. A durable complete catalog migration remains necessary."
+}

@@ -26,10 +26,13 @@ enum InfinitySystemCall {
     INFINITY_SYS_SURFACE_DESTROY = 0x1124,
     INFINITY_SYS_UI_OPEN = 0x1140,
     INFINITY_SYS_UI_UPSERT = 0x1141,
-    INFINITY_SYS_UI_POLL = 0x1142
+    INFINITY_SYS_UI_POLL = 0x1142,
+    INFINITY_SYS_FONT_GLYPH = 0x1250
 };
 
-/* Negative results are ABI errors. Authority is always supplied by the
+/* CONSOLE_WRITE arguments are bytes, length (at most4096), channel (0/1
+ * stdout,2 stderr). CONSOLE_READ arguments are buffer and capacity (at most1024).
+ * Negative results are ABI errors. Authority is always supplied by the
  * current execution context; there is no caller identity or kernel callback. */
 // ------------------------=
 // FUNC: infinity_system_call

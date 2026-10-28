@@ -5,6 +5,7 @@ use crate::ui::system_layout::{SettingsWindowState,SettingsWindowGeometry,Settin
 #[derive(Clone,Copy)]
 pub(super) struct BasicSettingsSnapshot<'a> {
  pub face_login_enabled:bool,
+ pub local_only:bool,
  pub output_voice:&'a[u8],
  pub chat_enabled:bool,pub chat_model:&'a[u8],pub voice_enabled:bool,pub wake_word:&'a[u8],pub speech_enabled:bool,
  pub preferences:crate::ui::input_preferences::Preferences,pub timeout_minutes:u8,pub timeout_maximum:u8,
@@ -52,7 +53,7 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"", b""),
             ],
             3 => [
-                (b"AI Provider", b"Local only"),
+                (b"AI Provider", if snapshot.local_only {b"Local only"}else{b"Prefer local"}),
                 (
                     b"Desktop AI Chat",
                     if chat_enabled {
@@ -307,8 +308,9 @@ impl DisplayDevice {
         let authored_disclosure=crate::ui::settings_template::role_at(focus,Role::SettingsDisclosure,index);
         let (pr,pg,pb)=chrome.primary;let(er,eg,eb)=chrome.outline;
         let expanded=settings_window.expanded_row==Some(index);
+        let keyboard_focus=settings_window.control_focus==crate::ui::controls::SETTINGS_ROW_FOCUS+index;
         let alpha=|n:u8|(u16::from(n)*u16::from(chrome.opacity)/100)as u8;
-        self.settings_template_surface(row.summary,authored_row.map(|mut e|{e.fill[3]=alpha(e.fill[3]);e}),Material{fill:(pr/2,pg.saturating_mul(3)/4,pb.saturating_mul(3)/4),edge:if expanded{(er,eg,eb)}else{(er/2,eg/2,eb/2)},opacity:alpha(218),edge_opacity:255,focus:0,pressed:false,scale});
+        self.settings_template_surface(row.summary,authored_row.map(|mut e|{e.fill[3]=alpha(e.fill[3]);e}),Material{fill:(pr/2,pg.saturating_mul(3)/4,pb.saturating_mul(3)/4),edge:if expanded||keyboard_focus{(er,eg,eb)}else{(er/2,eg/2,eb/2)},opacity:alpha(218),edge_opacity:255,focus:if keyboard_focus{255}else{0},pressed:false,scale});
         let card=crate::ui::settings_cards::content(row.summary,scale);
         self.fill_rounded_rect_alpha(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,4,20,34,alpha(150));
         self.outline_rounded_rect(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,35,64,84);
@@ -318,6 +320,7 @@ impl DisplayDevice {
             I::Cycle if focus==3 && index==7=>b"Click to cycle through five voices".as_slice(),
             I::Cycle=>b"Click to cycle through available choices".as_slice(),
             I::Toggle=>b"Click to turn this setting on or off".as_slice(),
+            I::Select=>b"Select this policy for the current object".as_slice(),
             I::Edit=>b"Click to edit this value".as_slice(),
             I::Details=>crate::ui::settings_cards::description(focus,index),
         };
@@ -326,9 +329,19 @@ impl DisplayDevice {
         } else {
             self.ui_text_elided_strong(card.description.x.max(0)as usize,card.description.y.max(0)as usize,card.description.width as usize,native_description,141,174,198);
         }
-        let label=if focus==1&&index==6{label}else{authored_label.map(|e|e.text).filter(|text|!text.is_empty()).unwrap_or(label)};
+        let label=if focus==1&&index==6{label}else{authored_label.filter(|e|e.caption_mode==1).map(|e|e.text).filter(|text|!text.is_empty()).unwrap_or(label)};
         let label_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowLabel).unwrap_or(card.label);
-        let value_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowValue).unwrap_or(card.value);
+        let mut value_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowValue).unwrap_or(card.value);
+        if matches!(settings_row_interaction(focus,index),I::Cycle|I::Toggle) {
+            let control=Rect{x:value_bounds.x-(8*scale)as i32,y:value_bounds.y-(5*scale)as i32,
+                width:value_bounds.width+(16*scale)as u32,height:value_bounds.height+(10*scale)as u32};
+            self.app_button_surface(control,false,0,false,scale);
+            value_bounds.width=value_bounds.width.saturating_sub((20*scale)as u32);
+            let affordance=Rect{x:control.right()-(24*scale)as i32,y:control.y,width:(20*scale)as u32,height:control.height};
+            if settings_row_interaction(focus,index)==I::Cycle {
+                self.app_disclosure(affordance,false,(134,199,255),scale);
+            }
+        }
         self.paint_settings_bound_text(authored_label,label_bounds,label,(190,205,217),true,false);
         let advance=self.paint_settings_bound_text(authored_value,value_bounds,value,(220,232,240),false,true);
         if focus==0&&index==0&&!authored_value.is_some_and(|e|e.hidden||e.opacity==0||e.fill[3]==0) {
@@ -566,6 +579,22 @@ impl DisplayDevice {
         for(index,(label,value))in basic_settings_rows(focus,input,snapshot).iter().take(state.row_count.clamp(1,8)).enumerate(){
             if crate::ui::settings_template::role_at(focus,crate::ui::installer_template::InstallerTemplateRole::Metadata,index).is_some_and(|e|e.hidden||e.opacity==0){continue;}
             let row=self.paint_settings_row_summary(focus,index,label,value,state,scale,chrome);
+            let toggle=match (focus,index) {
+                (3,1)=>Some(snapshot.chat_enabled),
+                (3,4)|(4,1)=>Some(snapshot.voice_enabled),
+                (3,6)=>Some(snapshot.speech_enabled),
+                (4,4)=>Some(snapshot.face_login_enabled),
+                _=>None,
+            };
+            if let Some(enabled)=toggle {
+                use crate::ui::{installer_template::InstallerTemplateRole as Role,geometry::Rect,panel_recipe::Material};
+                let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+                let value=layout.settings_row_element_geometry(state,focus,index,Role::SettingsRowValue)
+                    .unwrap_or(crate::ui::settings_cards::content(row.summary,scale).value);
+                let indicator=Rect{x:value.right()-(20*scale)as i32,y:value.y+(value.height as i32-(20*scale)as i32)/2,width:(20*scale)as u32,height:(20*scale)as u32};
+                self.precision_checkbox(indicator,enabled,true,
+                    Material{fill:chrome.primary,edge:chrome.outline,opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
+            }
             if state.expanded_row==Some(index)&&row.detail.intersects(g.viewport){
                 let(r,g,b)=chrome.primary;let(er,eg,eb)=chrome.outline;
                 let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);

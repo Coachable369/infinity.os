@@ -26,7 +26,9 @@ pub enum SystemSoundEvent {
         phase: BootPhase,
         audio_available: bool,
     },
-    Authentication { accepted: bool },
+    Authentication {
+        accepted: bool,
+    },
 }
 
 // ------------------------=
@@ -50,7 +52,7 @@ pub const fn cue_for_event(
 
 #[cfg(test)]
 mod tests {
-    use super::{BootOrigin, BootPhase, SystemSoundCue, SystemSoundEvent, cue_for_event};
+    use super::{cue_for_event, BootOrigin, BootPhase, SystemSoundCue, SystemSoundEvent};
 
     // ------------------------=
     // FUNC: emits_boot_once_only_on_the_ready_screen

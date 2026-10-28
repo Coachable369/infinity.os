@@ -496,7 +496,9 @@ impl ApplicationResourceManager {
             return Err(ResourcePolicyError::InvalidPolicy);
         }
         let explicit = self.override_for(app_id);
-        let mode = explicit.map(|value| value.mode).unwrap_or(self.defaults.mode);
+        let mode = explicit
+            .map(|value| value.mode)
+            .unwrap_or(self.defaults.mode);
         let (share, weight, queue, io) = mode_parameters(mode);
         let system_cpu = capacity.logical_compute_units.max(1);
         let policy_cpu = ((u32::from(system_cpu) * u32::from(share)) / 100)
@@ -506,7 +508,10 @@ impl ApplicationResourceManager {
         let mut cpu_maximum = policy_cpu.min(requested_cpu);
         let mut cpu_weight = explicit.map(|value| value.cpu_weight).unwrap_or(weight);
         let system_memory_ceiling = capacity.memory_bytes.saturating_mul(u64::from(share)) / 100;
-        let request_memory = manifest.memory_maximum.max(manifest.memory_preferred).max(64 * 1024);
+        let request_memory = manifest
+            .memory_maximum
+            .max(manifest.memory_preferred)
+            .max(64 * 1024);
         let mut memory_hard_limit = explicit
             .map(|value| value.memory_hard_limit)
             .unwrap_or(system_memory_ceiling.min(request_memory))
@@ -579,8 +584,12 @@ impl ApplicationResourceManager {
             memory_preferred: manifest.memory_preferred.min(memory_hard_limit),
             memory_soft_limit: memory_hard_limit.saturating_mul(3) / 4,
             memory_hard_limit,
-            message_queue_limit: explicit.map(|value| value.message_queue_limit).unwrap_or(queue),
-            storage_io_priority: explicit.map(|value| value.storage_io_priority).unwrap_or(io),
+            message_queue_limit: explicit
+                .map(|value| value.message_queue_limit)
+                .unwrap_or(queue),
+            storage_io_priority: explicit
+                .map(|value| value.storage_io_priority)
+                .unwrap_or(io),
             network_priority: explicit.map(|value| value.network_priority).unwrap_or(3),
             background_allowed,
             burst_allowed,
@@ -604,7 +613,9 @@ impl ApplicationResourceManager {
             network_enforcement: EnforcementState::Advisory,
             background_enforcement: EnforcementState::PartiallyEnforced,
             pool_enforcement: match locality {
-                LocalityPolicy::LocalOnly | LocalityPolicy::LocalPreferred => EnforcementState::Enforced,
+                LocalityPolicy::LocalOnly | LocalityPolicy::LocalPreferred => {
+                    EnforcementState::Enforced
+                }
                 _ => EnforcementState::Unsupported,
             },
         })
@@ -621,7 +632,11 @@ impl ApplicationResourceManager {
         effective: EffectiveApplicationResourcePolicy,
     ) -> Result<(), ResourcePolicyError> {
         execution
-            .update_budget(handle, effective.runtime_budget(), effective.runtime_priority())
+            .update_budget(
+                handle,
+                effective.runtime_budget(),
+                effective.runtime_priority(),
+            )
             .map_err(ResourcePolicyError::Runtime)
     }
 
@@ -727,7 +742,11 @@ impl ApplicationResourceManager {
     // FUNC: inspect_lease
     // DESC: Rejects unknown, revoked, and stale leases before returning current authority.
     // ------------------=
-    pub fn inspect_lease(&self, lease_id: u64, now: u64) -> Result<ResourceLease, ResourcePolicyError> {
+    pub fn inspect_lease(
+        &self,
+        lease_id: u64,
+        now: u64,
+    ) -> Result<ResourceLease, ResourcePolicyError> {
         let lease = self
             .leases
             .iter()
@@ -814,7 +833,10 @@ impl ApplicationResourceManager {
     // DESC: Restores validated version-one policy state without accepting malformed or unbounded entries.
     // ------------------=
     pub fn decode(input: &[u8]) -> Result<Self, ResourcePolicyError> {
-        if input.len() != PERSISTENCE_BYTES || &input[..4] != b"IRP1" || u16::from_le_bytes([input[4], input[5]]) != 1 {
+        if input.len() != PERSISTENCE_BYTES
+            || &input[..4] != b"IRP1"
+            || u16::from_le_bytes([input[4], input[5]]) != 1
+        {
             return Err(ResourcePolicyError::InvalidPersistence);
         }
         let defaults = GlobalResourceDefaults {
@@ -850,7 +872,9 @@ impl ApplicationResourceManager {
                 cpu_maximum: u16::from_le_bytes(input[at + 8..at + 10].try_into().unwrap()),
                 cpu_weight: u16::from_le_bytes(input[at + 10..at + 12].try_into().unwrap()),
                 memory_hard_limit: u64::from_le_bytes(input[at + 12..at + 20].try_into().unwrap()),
-                message_queue_limit: u16::from_le_bytes(input[at + 20..at + 22].try_into().unwrap()),
+                message_queue_limit: u16::from_le_bytes(
+                    input[at + 20..at + 22].try_into().unwrap(),
+                ),
                 storage_io_priority: input[at + 22],
                 network_priority: input[at + 23],
             };
@@ -898,7 +922,10 @@ const fn mode_parameters(mode: ResourceMode) -> (u16, u16, u16, u8) {
 // FUNC: class_ceiling
 // DESC: Returns only real locally representable capacity and rejects unavailable remote classes.
 // ------------------=
-fn class_ceiling(policy: EffectiveApplicationResourcePolicy, class: ResourceClass) -> Result<u64, ResourcePolicyError> {
+fn class_ceiling(
+    policy: EffectiveApplicationResourcePolicy,
+    class: ResourceClass,
+) -> Result<u64, ResourcePolicyError> {
     match class {
         ResourceClass::Cpu => Ok(policy.cpu_maximum as u64),
         ResourceClass::Memory => Ok(policy.memory_hard_limit),

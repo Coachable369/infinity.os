@@ -4,27 +4,38 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use hkdf::Hkdf;
 use sha2::Sha256;
 
-pub struct Seeds { next: AtomicU64 }
+pub struct Seeds {
+    next: AtomicU64,
+}
 impl Seeds {
     // ------------------------=
     // FUNC: new
     // DESC: Creates a boot-lifetime sequence that must not be reset on browser close.
     // ------------------=
-    pub const fn new() -> Self { Self { next: AtomicU64::new(1) } }
+    pub const fn new() -> Self {
+        Self {
+            next: AtomicU64::new(1),
+        }
+    }
 
     // ------------------------=
     // FUNC: derive
     // DESC: Derives a distinct session seed without treating counters or identities as entropy.
     // ------------------=
     pub fn derive(&self, entropy: &[u8; 32], owner: &[u8; 16]) -> Option<[u8; 32]> {
-        let sequence = self.next.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
-            |value| value.checked_add(1)).ok()?;
+        let sequence = self
+            .next
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .ok()?;
         let mut context = [0u8; 24];
         context[..16].copy_from_slice(owner);
         context[16..].copy_from_slice(&sequence.to_le_bytes());
         let mut seed = [0u8; 32];
         Hkdf::<Sha256>::new(Some(b"InfinityOS native browser RNG v2"), entropy)
-            .expand(&context, &mut seed).ok()?;
+            .expand(&context, &mut seed)
+            .ok()?;
         Some(seed)
     }
 }
@@ -51,7 +62,9 @@ mod tests {
     // ------------------=
     #[test]
     fn exhaustion_never_wraps() {
-        let seeds = Seeds { next: AtomicU64::new(u64::MAX - 1) };
+        let seeds = Seeds {
+            next: AtomicU64::new(u64::MAX - 1),
+        };
         assert!(seeds.derive(&[7; 32], &[1; 16]).is_some());
         assert_eq!(seeds.derive(&[7; 32], &[1; 16]), None);
         assert_eq!(seeds.derive(&[7; 32], &[1; 16]), None);

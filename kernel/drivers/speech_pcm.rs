@@ -13,18 +13,37 @@ pub fn fill(input: &[i16], output: &mut [i16], start: usize, rate: u32) -> bool 
 // FUNC: fill_rate
 // DESC: Band-limits 16/24-kHz speech during upsampling, preserving pitch, duration and chunk phase without image-frequency harshness.
 // ------------------=
-pub fn fill_rate(input: &[i16], output: &mut [i16], start: usize, source_rate: u32, rate: u32) -> bool {
-    if !matches!(source_rate, 16_000 | 24_000) || !matches!(rate, 44_100 | 48_000)
-        || output.len() % 2 != 0 || input.len() > source_rate as usize * 30 || start > 1_500_000 { return false; }
+pub fn fill_rate(
+    input: &[i16],
+    output: &mut [i16],
+    start: usize,
+    source_rate: u32,
+    rate: u32,
+) -> bool {
+    if !matches!(source_rate, 16_000 | 24_000)
+        || !matches!(rate, 44_100 | 48_000)
+        || output.len() % 2 != 0
+        || input.len() > source_rate as usize * 30
+        || start > 1_500_000
+    {
+        return false;
+    }
     for (i, pair) in output.chunks_exact_mut(2).enumerate() {
         let phase = (start + i) as u64 * source_rate as u64;
         let index = (phase / rate as u64) as usize;
-        if index >= input.len() { pair.fill(0); continue; }
+        if index >= input.len() {
+            pair.fill(0);
+            continue;
+        }
         let fraction = ((phase % rate as u64) * 64 / rate as u64) as usize;
         let mut sum = 0i64;
         for (tap, coefficient) in speech_filter::PHASES[fraction].iter().enumerate() {
             let position = index as isize + tap as isize - 7;
-            let sample = if position < 0 { 0 } else { input.get(position as usize).copied().unwrap_or(0) };
+            let sample = if position < 0 {
+                0
+            } else {
+                input.get(position as usize).copied().unwrap_or(0)
+            };
             sum += sample as i64 * *coefficient as i64;
         }
         pair.fill(((sum + 16384) >> 15).clamp(i16::MIN as i64, i16::MAX as i64) as i16);
@@ -40,13 +59,15 @@ mod tests {
     // DESC: Measures a waveform's frequency component away from finite-buffer boundaries.
     // ------------------=
     fn amplitude(samples: &[i16], rate: u32, frequency: f64) -> f64 {
-        let mut re = 0.0; let mut im = 0.0;
-        let mono = samples.len()/2;
-        for i in 96..mono-96 {
-            let phase = 2.0*std::f64::consts::PI*frequency*i as f64/rate as f64;
-            re += samples[i*2] as f64*phase.cos(); im += samples[i*2] as f64*phase.sin();
+        let mut re = 0.0;
+        let mut im = 0.0;
+        let mono = samples.len() / 2;
+        for i in 96..mono - 96 {
+            let phase = 2.0 * std::f64::consts::PI * frequency * i as f64 / rate as f64;
+            re += samples[i * 2] as f64 * phase.cos();
+            im += samples[i * 2] as f64 * phase.sin();
         }
-        2.0*(re*re+im*im).sqrt()/(mono-192) as f64
+        2.0 * (re * re + im * im).sqrt() / (mono - 192) as f64
     }
     // ------------------------=
     // FUNC: suppresses_resampling_images_without_losing_speech_band
@@ -54,22 +75,33 @@ mod tests {
     // ------------------=
     #[test]
     fn suppresses_resampling_images_without_losing_speech_band() {
-        for source in [16000,24000] { for rate in [44100,48000] {
-            let input: Vec<i16> = (0..source/10).map(|i|
-                (10000.0*(2.0*std::f64::consts::PI*6000.0*i as f64/source as f64).sin()) as i16).collect();
-            let mut output = vec![0; (rate/10*2) as usize];
-            let mut linear = output.clone();
-            assert!(fill_rate(&input,&mut output,0,source,rate));
-            for (i,pair) in linear.chunks_exact_mut(2).enumerate() {
-                let phase=i as u64*source as u64; let index=(phase/rate as u64) as usize;
-                let a=input[index] as i64;let b=input.get(index+1).copied().unwrap_or(0) as i64;
-                pair.fill((a+(b-a)*(phase%rate as u64) as i64/rate as i64) as i16);
+        for source in [16000, 24000] {
+            for rate in [44100, 48000] {
+                let input: Vec<i16> = (0..source / 10)
+                    .map(|i| {
+                        (10000.0
+                            * (2.0 * std::f64::consts::PI * 6000.0 * i as f64 / source as f64)
+                                .sin()) as i16
+                    })
+                    .collect();
+                let mut output = vec![0; (rate / 10 * 2) as usize];
+                let mut linear = output.clone();
+                assert!(fill_rate(&input, &mut output, 0, source, rate));
+                for (i, pair) in linear.chunks_exact_mut(2).enumerate() {
+                    let phase = i as u64 * source as u64;
+                    let index = (phase / rate as u64) as usize;
+                    let a = input[index] as i64;
+                    let b = input.get(index + 1).copied().unwrap_or(0) as i64;
+                    pair.fill((a + (b - a) * (phase % rate as u64) as i64 / rate as i64) as i16);
+                }
+                assert!(amplitude(&output, rate, 6000.0) > 8000.0);
+                let image = (source - 6000) as f64;
+                assert!(amplitude(&output, rate, image) < amplitude(&linear, rate, image) * 0.15);
             }
-            assert!(amplitude(&output,rate,6000.0)>8000.0);
-            let image=(source-6000) as f64;
-            assert!(amplitude(&output,rate,image)<amplitude(&linear,rate,image)*0.15);
-        }}
-        for row in speech_filter::PHASES { assert_eq!(row.iter().map(|v|*v as i32).sum::<i32>(),32768); }
+        }
+        for row in speech_filter::PHASES {
+            assert_eq!(row.iter().map(|v| *v as i32).sum::<i32>(), 32768);
+        }
     }
     // ------------------------=
     // FUNC: neural_voice_rate_preserves_duration_and_chunk_phase

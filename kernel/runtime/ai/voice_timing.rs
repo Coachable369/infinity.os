@@ -27,7 +27,12 @@ impl Timeline {
     // DESC: Creates an inactive timeline without treating absent events as completed stages.
     // ------------------=
     pub const fn new() -> Self {
-        Self { sequence: 0, present: 0, timestamps: [0; 7], microphone_ready_ns: None }
+        Self {
+            sequence: 0,
+            present: 0,
+            timestamps: [0; 7],
+            microphone_ready_ns: None,
+        }
     }
 
     // ------------------------=
@@ -47,7 +52,9 @@ impl Timeline {
     // DESC: Records each actual milestone once; repeated polls cannot move first-response timings.
     // ------------------=
     pub fn observe(&mut self, event: Milestone, now: u64) {
-        if self.sequence == 0 { return; }
+        if self.sequence == 0 {
+            return;
+        }
         let index = event as usize;
         let mask = 1 << index;
         if self.present & mask == 0 {
@@ -70,7 +77,9 @@ impl Timeline {
     // ------------------=
     pub fn elapsed(&self, start: Milestone, end: Milestone) -> Option<u64> {
         let mask = (1 << start as usize) | (1 << end as usize);
-        if self.present & mask != mask { return None; }
+        if self.present & mask != mask {
+            return None;
+        }
         self.timestamps[end as usize].checked_sub(self.timestamps[start as usize])
     }
 
@@ -134,14 +143,26 @@ mod tests {
         timing.observe(Milestone::Submitted, 220);
         timing.observe(Milestone::FirstText, 300);
         timing.observe(Milestone::SpeechQueued, 350);
-        assert_eq!(timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio), None);
+        assert_eq!(
+            timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio),
+            None
+        );
         assert!(!timing.complete());
         timing.observe(Milestone::FirstAudio, 900);
         timing.observe(Milestone::Drained, 1900);
-        assert_eq!(timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio), Some(800));
-        assert_eq!(timing.elapsed(Milestone::SpeechQueued, Milestone::FirstAudio), Some(550));
+        assert_eq!(
+            timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio),
+            Some(800)
+        );
+        assert_eq!(
+            timing.elapsed(Milestone::SpeechQueued, Milestone::FirstAudio),
+            Some(550)
+        );
         assert!(timing.complete());
-        assert_eq!(timing.record(), [1, 1, 127, 100, 200, 220, 300, 350, 900, 1900]);
+        assert_eq!(
+            timing.record(),
+            [1, 1, 127, 100, 200, 220, 300, 350, 900, 1900]
+        );
     }
 
     #[test]
@@ -154,10 +175,16 @@ mod tests {
         timing.begin(0);
         timing.observe(Milestone::FirstAudio, 100);
         timing.observe(Milestone::FirstAudio, 200);
-        assert_eq!(timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio), Some(100));
+        assert_eq!(
+            timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio),
+            Some(100)
+        );
         timing.begin(300);
         assert_eq!(timing.sequence, 2);
-        assert_eq!(timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio), None);
+        assert_eq!(
+            timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio),
+            None
+        );
         assert_eq!(timing.record(), [1, 2, 1, 300, 0, 0, 0, 0, 0, 0]);
     }
 
@@ -170,7 +197,10 @@ mod tests {
         let mut timing = Timeline::new();
         timing.begin(100);
         timing.observe(Milestone::FirstAudio, 90);
-        assert_eq!(timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio), None);
+        assert_eq!(
+            timing.elapsed(Milestone::Endpoint, Milestone::FirstAudio),
+            None
+        );
         assert!(!timing.complete());
     }
 

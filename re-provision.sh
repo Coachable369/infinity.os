@@ -5,8 +5,8 @@ project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 vm_name=${1:-infinityos-4}
 . "$project_root/tools/select-install-iso.sh"
 iso_input=$(select_install_iso "$project_root" "${2:-}")
-memory_mb=${INFINITY_VM_MEMORY_MB:-20480}
-cpu_count=${INFINITY_VM_CPU_COUNT:-6}
+memory_mb=${INFINITY_VM_MEMORY_MB:-22480}
+cpu_count=${INFINITY_VM_CPU_COUNT:-8}
 disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
 vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
 trace_root=${INFINITY_VM_TRACE_ROOT:-$project_root/build/vm-logs}
@@ -211,6 +211,9 @@ create_arm64_vm() {
         --keyboard usb \
         --audio-driver default \
         --audio-controller hda \
+        --audio-enabled on \
+        --audio-in on \
+        --audio-out on \
         --uart1 0x3F8 4 \
         --uart-mode1 file "$trace_log" \
         --audio-enabled on

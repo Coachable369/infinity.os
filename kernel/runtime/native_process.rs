@@ -3,9 +3,21 @@
 use super::execution::SecurityIdentity;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Trap { Preempted, Call(u64, [u64; 6]), Fault(u64, u64, u64) }
+pub enum Trap {
+    Preempted,
+    Call(u64, [u64; 6]),
+    Fault(u64, u64, u64),
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum State { Runnable, Exited(i64), Faulted(u64, u64, u64), Cancelled, Deadline, Budget, PlatformFailure }
+pub enum State {
+    Runnable,
+    Exited(i64),
+    Faulted(u64, u64, u64),
+    Cancelled,
+    Deadline,
+    Budget,
+    PlatformFailure,
+}
 
 pub trait Executor {
     // ------------------------=
@@ -36,28 +48,52 @@ impl<E: Executor> Process<E> {
     // DESC: Binds process identity and finite scheduling budget from the trusted launch context.
     // ------------------=
     pub fn new(executor: E, owner: SecurityIdentity, slices: u64, deadline: Option<u64>) -> Self {
-        Self { executor, owner, state: State::Runnable, remaining: slices, deadline, visits: 0, calls: 0 }
+        Self {
+            executor,
+            owner,
+            state: State::Runnable,
+            remaining: slices,
+            deadline,
+            visits: 0,
+            calls: 0,
+        }
     }
     // ------------------------=
     // FUNC: cancel
     // DESC: Stops future execution without changing an already recorded terminal outcome.
     // ------------------=
-    pub fn cancel(&mut self) { if self.state == State::Runnable { self.state = State::Cancelled; } }
+    pub fn cancel(&mut self) {
+        if self.state == State::Runnable {
+            self.state = State::Cancelled;
+        }
+    }
     // ------------------------=
     // FUNC: counters
     // DESC: Reports actual hardware visits and dispatched service calls for resource accounting.
     // ------------------=
-    pub fn counters(&self) -> (u64, u64) { (self.visits, self.calls) }
+    pub fn counters(&self) -> (u64, u64) {
+        (self.visits, self.calls)
+    }
     // ------------------------=
     // FUNC: step
     // DESC: Executes one slice, handles lifecycle traps locally, and dispatches one service with trusted process identity.
     // ------------------=
-    pub fn step<F: FnMut(SecurityIdentity, u64, [u64; 6]) -> i64>(&mut self, now: u64, mut service: F) -> State {
-        if self.state != State::Runnable { return self.state; }
-        if self.deadline.is_some_and(|deadline| now >= deadline) {
-            self.state = State::Deadline; return self.state;
+    pub fn step<F: FnMut(SecurityIdentity, u64, [u64; 6]) -> i64>(
+        &mut self,
+        now: u64,
+        mut service: F,
+    ) -> State {
+        if self.state != State::Runnable {
+            return self.state;
         }
-        if self.remaining == 0 { self.state = State::Budget; return self.state; }
+        if self.deadline.is_some_and(|deadline| now >= deadline) {
+            self.state = State::Deadline;
+            return self.state;
+        }
+        if self.remaining == 0 {
+            self.state = State::Budget;
+            return self.state;
+        }
         self.remaining -= 1;
         self.visits += 1;
         match self.executor.enter() {

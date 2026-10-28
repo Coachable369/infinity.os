@@ -17,14 +17,6 @@ pub(crate) fn snapshot_matches(expected: ([u8; 16], u32), read_object: [u8; 16],
 }
 
 // ------------------------=
-// FUNC: saved_source_matches
-// DESC: Refuses unsaved or stale editor bytes instead of binding them to a newer persisted source version.
-// ------------------=
-pub(crate) fn saved_source_matches(saved: bool, editor: &[u8], snapshot: &[u8]) -> bool {
-    saved && !editor.is_empty() && editor == snapshot
-}
-
-// ------------------------=
 // FUNC: current_target
 // DESC: Recognizes only explicit references to the document already open in the editor.
 // ------------------=
@@ -58,7 +50,7 @@ mod tests {
     use super::*;
     // ------------------------=
     // FUNC: update_admission_requires_matching_saved_version
-    // DESC: Rejects stale buffers, unsaved edits, replaced objects and version changes without mutating the inspected source.
+    // DESC: Rejects replaced objects and version changes without mutating the inspected source.
     // ------------------=
     #[test]
     fn update_admission_requires_matching_saved_version() {
@@ -66,10 +58,6 @@ mod tests {
         let editor = b"print(1)\n";
         let newer = b"print(2)\n";
         assert!(snapshot_matches(receipt, [1; 16], Some(receipt)));
-        assert!(saved_source_matches(true, editor, editor));
-        assert!(!saved_source_matches(false, editor, editor));
-        assert!(!saved_source_matches(true, editor, newer));
-        assert!(!saved_source_matches(true, b"", b""));
         assert!(!snapshot_matches(receipt, [2; 16], Some(receipt)));
         assert!(!snapshot_matches(receipt, [1; 16], Some(([1; 16], 8))));
         assert!(!snapshot_matches(receipt, [1; 16], Some(([2; 16], 7))));

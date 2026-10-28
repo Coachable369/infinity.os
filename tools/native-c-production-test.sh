@@ -7,9 +7,14 @@ out=build/native-c-production
 mkdir -p "$out"
 
 cc -std=c11 -Wall -Wextra -Werror -fno-builtin -Isdk/c/include \
-    sdk/c/libc.c sdk/c/format.c tools/native-c-probe/libc-test.c \
+    sdk/c/libc.c sdk/c/format.c sdk/c/stdio.c tools/native-c-probe/libc-test.c \
     -o "$out/libc-test"
 "$out/libc-test"
+
+cc -std=c11 -Wall -Wextra -Werror -fno-builtin -Isdk/c/include \
+    sdk/c/stdio.c sdk/c/format.c tools/native-c-probe/stdio-test.c \
+    -o "$out/stdio-test"
+"$out/stdio-test"
 
 rustc --edition=2021 -A warnings tools/native-development-command-test.rs \
     -o "$out/command-test"

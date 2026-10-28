@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "../../sdk/c/internal.h"
+const InfinityAppApi *infinity_host;
 
 // ------------------------=
 // FUNC: compare_int

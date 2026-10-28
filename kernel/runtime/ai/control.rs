@@ -1,18 +1,70 @@
 //! Bounded desktop tools. Model output is data until an authenticated UI dispatch.
 #[path = "../../ui/editor_compile_intent.rs"]
 mod editor_compile_intent;
+#[path = "setting_command.rs"]
+pub mod setting_command;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Command { Clock(super::clock::Request), TextEditor, FileNavigator, Browser, Settings, Terminal, TaskManager, Launcher, AiInstructionMapping,
-    Focus(App), Close(App), CloseActive, SettingsSection(u8), Context(ContextRequest),
-    Spatial, Holographic, WorldShift, LaunchEntry(usize), Menu(usize), Shell(ShellAction) }
+pub enum Command {
+    Setting(setting_command::Request),
+    Clock(super::clock::Request),
+    TextEditor,
+    FileNavigator,
+    Browser,
+    Settings,
+    Terminal,
+    TaskManager,
+    Launcher,
+    AiInstructionMapping,
+    Focus(App),
+    Close(App),
+    CloseActive,
+    SettingsSection(u8),
+    Context(ContextRequest),
+    Spatial,
+    Holographic,
+    WorldShift,
+    LaunchEntry(usize),
+    LaunchGenerated(ApplicationName),
+    Menu(usize),
+    Shell(ShellAction),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ShellAction { SnapLeft, SnapRight, Center, NextWindow, Grow, Shrink, FocusLens, Peek,
-    PreviousMonth, NextMonth, Today, ShowOverview, HideOverview }
+pub enum ShellAction {
+    SnapLeft,
+    SnapRight,
+    Center,
+    NextWindow,
+    Grow,
+    Shrink,
+    FocusLens,
+    Peek,
+    PreviousMonth,
+    NextMonth,
+    Today,
+    ShowOverview,
+    HideOverview,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct ApplicationName{pub bytes:[u8;95],pub length:usize}
+impl ApplicationName{
+    // ------------------------=
+    // FUNC: parse
+    // DESC: Retains a bounded app identity without accepting shell syntax, control characters or executable arguments.
+    // ------------------=
+    pub fn parse(bytes:&[u8])->Option<Self>{
+        let bytes=bytes.trim_ascii();if bytes.is_empty()||bytes.len()>95||!bytes.iter().all(|b|b.is_ascii_alphanumeric()||matches!(b,b' '|b'.'|b'_'|b'-'|b'/')){return None;}
+        let mut name=Self{bytes:[0;95],length:bytes.len()};name.bytes[..bytes.len()].copy_from_slice(bytes);Some(name)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ContextRequest { pub bytes: [u8; 256], pub length: usize }
+pub struct ContextRequest {
+    pub bytes: [u8; 256],
+    pub length: usize,
+}
 
 impl ContextRequest {
     // ------------------------=
@@ -120,12 +172,16 @@ impl App {
     pub fn named(name: &[u8]) -> Option<Self> {
         match name.strip_prefix(b"the ").unwrap_or(name) {
             b"text_editor" | b"text editor" | b"editor" | b"code editor" => Some(Self::TextEditor),
-            b"file_navigator" | b"file navigator" | b"file manager" | b"files" => Some(Self::FileNavigator),
+            b"file_navigator" | b"file navigator" | b"file manager" | b"files" => {
+                Some(Self::FileNavigator)
+            }
             b"browser" | b"web browser" | b"infinity browser" => Some(Self::Browser),
             b"settings" | b"system settings" => Some(Self::Settings),
             b"terminal" | b"command window" | b"console" => Some(Self::Terminal),
             b"task_manager" | b"task manager" => Some(Self::TaskManager),
-            b"launcher" | b"app launcher" | b"applications" | b"app tray" | b"application tray" => Some(Self::Launcher),
+            b"launcher" | b"app launcher" | b"applications" | b"app tray" | b"application tray" => {
+                Some(Self::Launcher)
+            }
             _ => None,
         }
     }
@@ -140,6 +196,9 @@ impl Command {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let bytes = bytes.trim_ascii();
+        if let Some(request) = bytes.strip_prefix(b"OS_SETTING:") {
+            return setting_command::Request::protocol(request).map(Self::Setting);
+        }
         if let Some(request) = bytes.strip_prefix(b"OS_CLOCK:") {
             return super::clock::Request::protocol(request).map(Self::Clock);
         }
@@ -186,6 +245,7 @@ impl Command {
             };
         }
         if let Some(entry) = bytes.strip_prefix(b"OS_LAUNCH:") {
+            if let Some(name)=entry.strip_prefix(b"app:"){return ApplicationName::parse(name).map(Self::LaunchGenerated);}
             return match entry {
                 b"documents" => Some(Self::LaunchEntry(1)),
                 b"projects" => Some(Self::LaunchEntry(2)),
@@ -246,52 +306,132 @@ impl Command {
     // DESC: Resolves unambiguous launch requests even while model weights are loading; other phrasing uses inference.
     // ------------------=
     pub fn explicit(input: &[u8]) -> Option<Self> {
+        if let Some(request)=setting_command::Request::spoken(input) {return Some(Self::Setting(request));}
         if let Some(request) = super::clock::Request::parse(input) { return Some(Self::Clock(request)); }
-        for (name,action) in [(b"tile window left".as_slice(),ShellAction::SnapLeft),(b"tile window right",ShellAction::SnapRight),
-            (b"center window",ShellAction::Center),(b"next window",ShellAction::NextWindow),(b"grow window",ShellAction::Grow),
-            (b"shrink window",ShellAction::Shrink),(b"toggle focus lens",ShellAction::FocusLens),(b"peek through",ShellAction::Peek),
-            (b"previous month",ShellAction::PreviousMonth),(b"next month",ShellAction::NextMonth),(b"calendar today",ShellAction::Today),
-            (b"show system overview",ShellAction::ShowOverview),(b"hide system overview",ShellAction::HideOverview)] {
-            if input.trim_ascii().eq_ignore_ascii_case(name) {return Some(Self::Shell(action));}
+        for (name, action) in [
+            (b"tile window left".as_slice(), ShellAction::SnapLeft),
+            (b"tile window right", ShellAction::SnapRight),
+            (b"center window", ShellAction::Center),
+            (b"next window", ShellAction::NextWindow),
+            (b"grow window", ShellAction::Grow),
+            (b"shrink window", ShellAction::Shrink),
+            (b"toggle focus lens", ShellAction::FocusLens),
+            (b"peek through", ShellAction::Peek),
+            (b"previous month", ShellAction::PreviousMonth),
+            (b"next month", ShellAction::NextMonth),
+            (b"calendar today", ShellAction::Today),
+            (b"show system overview", ShellAction::ShowOverview),
+            (b"hide system overview", ShellAction::HideOverview),
+        ] {
+            if input.trim_ascii().eq_ignore_ascii_case(name) {
+                return Some(Self::Shell(action));
+            }
         }
-        if let Some(request)=ContextRequest::parse(input) {return Some(Self::Context(request));}
+        if let Some(request) = ContextRequest::parse(input) {
+            return Some(Self::Context(request));
+        }
         let mut normalized = [0u8; 128];
         let input = input.trim_ascii();
-        if input.len() > normalized.len() { return None; }
+        if input.len() > normalized.len() {
+            return None;
+        }
         let mut length = 0;
         for byte in input {
-            let byte = if byte.is_ascii_whitespace() { b' ' } else { byte.to_ascii_lowercase() };
-            if byte == b' ' && (length == 0 || normalized[length - 1] == b' ') { continue; }
+            let byte = if byte.is_ascii_whitespace() {
+                b' '
+            } else {
+                byte.to_ascii_lowercase()
+            };
+            if byte == b' ' && (length == 0 || normalized[length - 1] == b' ') {
+                continue;
+            }
             normalized[length] = byte;
             length += 1;
         }
         let mut request = normalized[..length].trim_ascii();
-        if request.last().is_some_and(|b| matches!(b, b'.' | b'?' | b'!')) {
-            request = request[..request.len()-1].trim_ascii_end();
+        if request
+            .last()
+            .is_some_and(|b| matches!(b, b'.' | b'?' | b'!'))
+        {
+            request = request[..request.len() - 1].trim_ascii_end();
         }
-        request = request.strip_suffix(b", please").or_else(|| request.strip_suffix(b" please")).unwrap_or(request);
-        request = request.strip_prefix(b"can you ").or_else(|| request.strip_prefix(b"could you "))
-            .or_else(|| request.strip_prefix(b"would you ")).unwrap_or(request);
+        request = request
+            .strip_suffix(b", please")
+            .or_else(|| request.strip_suffix(b" please"))
+            .unwrap_or(request);
+        request = request
+            .strip_prefix(b"can you ")
+            .or_else(|| request.strip_prefix(b"could you "))
+            .or_else(|| request.strip_prefix(b"would you "))
+            .unwrap_or(request);
         request = request.strip_prefix(b"please ").unwrap_or(request);
-        if matches!(request, b"close app" | b"close current app" | b"close active app" | b"close window" | b"close current window") {
+        if matches!(
+            request,
+            b"close app"
+                | b"close current app"
+                | b"close active app"
+                | b"close window"
+                | b"close current window"
+        ) {
             return Some(Self::CloseActive);
         }
-        if let Some(name) = request.strip_prefix(b"close ") { return App::named(name).map(Self::Close); }
-        if let Some(name) = request.strip_prefix(b"focus on ").or_else(|| request.strip_prefix(b"focus ")) {
+        if let Some(name) = request.strip_prefix(b"close ") {
+            return App::named(name).map(Self::Close);
+        }
+        if let Some(name) = request
+            .strip_prefix(b"focus on ")
+            .or_else(|| request.strip_prefix(b"focus "))
+        {
             return App::named(name).map(Self::Focus);
         }
-        if let Some(name) = request.strip_prefix(b"bring ").and_then(|s| s.strip_suffix(b" to front").or_else(|| s.strip_suffix(b" to the front"))) {
+        if let Some(name) = request.strip_prefix(b"bring ").and_then(|s| {
+            s.strip_suffix(b" to front")
+                .or_else(|| s.strip_suffix(b" to the front"))
+        }) {
             return App::named(name).map(Self::Focus);
         }
-        request = request.strip_prefix(b"open ").or_else(|| request.strip_prefix(b"launch "))
+        // Unqualified "open ..." also introduces questions such as "open
+        // something useful". Reserve the arbitrary-name fast path for the
+        // explicit launch verb; configured "open my app NAME" aliases still
+        // resolve through AIKit without inference.
+        let named_launch = request.starts_with(b"launch ");
+        request = request
+            .strip_prefix(b"open ")
+            .or_else(|| request.strip_prefix(b"launch "))
             .or_else(|| request.strip_prefix(b"start "))?;
         request = request.strip_prefix(b"the ").unwrap_or(request);
-        let menus=[(b"audio menu".as_slice(),8),(b"network menu",9),(b"bluetooth menu",10),
-            (b"power menu",11),(b"window menu",12),(b"search menu",13),(b"account menu",14),(b"calendar",15),(b"help menu",5)];
-        if let Some((_,menu))=menus.iter().find(|(name,_)|*name==request) {return Some(Self::Menu(*menu));}
-        if let Some(section)= [b"general settings".as_slice(),b"themes",b"users and accounts",b"ai and voice",
-            b"privacy and security",b"devices",b"network",b"nodes and mesh",b"storage",b"about",b"input settings"]
-            .iter().position(|name|*name==request) {return Some(Self::SettingsSection(section as u8));}
+        let menus = [
+            (b"audio menu".as_slice(), 8),
+            (b"network menu", 9),
+            (b"bluetooth menu", 10),
+            (b"power menu", 11),
+            (b"window menu", 12),
+            (b"search menu", 13),
+            (b"account menu", 14),
+            (b"calendar", 15),
+            (b"help menu", 5),
+        ];
+        if let Some((_, menu)) = menus.iter().find(|(name, _)| *name == request) {
+            return Some(Self::Menu(*menu));
+        }
+        if let Some(section) = [
+            b"general settings".as_slice(),
+            b"themes",
+            b"users and accounts",
+            b"ai and voice",
+            b"privacy and security",
+            b"devices",
+            b"network",
+            b"nodes and mesh",
+            b"storage",
+            b"about",
+            b"input settings",
+        ]
+        .iter()
+        .position(|name| *name == request)
+        {
+            return Some(Self::SettingsSection(section as u8));
+        }
         match request {
             b"spatial desktop" | b"gravity wall" => Some(Self::Spatial),
             b"holographic desktop" => Some(Self::Holographic),
@@ -302,9 +442,24 @@ impl Command {
             b"settings" | b"system settings" => Some(Self::Settings),
             b"terminal" | b"command window" | b"console" => Some(Self::Terminal),
             b"task manager" => Some(Self::TaskManager),
-            b"launcher" | b"app launcher" | b"applications" | b"app tray" | b"application tray" => Some(Self::Launcher),
-            _ => crate::ui::app_launcher::LAUNCHER_APPS.iter().position(|entry|entry.label.eq_ignore_ascii_case(request)).map(Self::LaunchEntry),
+            b"launcher" | b"app launcher" | b"applications" | b"app tray" | b"application tray" => {
+                Some(Self::Launcher)
+            }
+            _ => crate::ui::app_launcher::LAUNCHER_APPS
+                .iter()
+                .position(|entry| entry.label.eq_ignore_ascii_case(request))
+                .map(Self::LaunchEntry).or_else(||if named_launch {
+                    ApplicationName::parse(request).map(Self::LaunchGenerated)
+                } else {None}),
         }
+    }
+
+    // ------------------------=
+    // FUNC: requires_app_ready
+    // DESC: Keeps native authorized system controls independent of unrelated application dialogs and editor focus.
+    // ------------------=
+    pub fn requires_app_ready(self) -> bool {
+        !matches!(self,Self::Setting(_)|Self::Clock(_))
     }
 
     // ------------------------=
@@ -313,9 +468,15 @@ impl Command {
     // ------------------=
     pub fn result(self, success: bool) -> &'static [u8] {
         if !success {
-            return b"The OS could not complete that action. The app may not be open, or a dialog needs attention.";
+            return match self {
+                Self::Setting(setting_command::Request::Invalid)=>b"That setting value is not supported. Check the name, color, or numeric range in Settings and try again.",
+                Self::Setting(_)=>b"The setting change could not be saved and verified. Check your signed-in permissions and system storage, then try again.",
+                Self::Clock(_)=>b"The clock request could not be completed. Check the time or time zone and your signed-in permissions.",
+                _=>b"The OS could not complete that action. The app may not be open, or a dialog needs attention.",
+            };
         }
         match self {
+            Self::Setting(_) => b"The setting was saved and applied.",
             Self::Clock(_) => b"The system clock request completed through the native clock service.",
             Self::TextEditor => b"Opened Text Editor.",
             Self::FileNavigator => b"Opened File Navigator.",
@@ -337,6 +498,7 @@ impl Command {
             Self::SettingsSection(_) => b"Opened the requested Settings category.",
             Self::Spatial | Self::Holographic | Self::WorldShift => b"Opened the requested desktop surface.",
             Self::LaunchEntry(_) => b"Requested the app through the native launcher.",
+            Self::LaunchGenerated(_) => b"Launching your registered application through its native runtime.",
             Self::Menu(_) => b"Opened the requested top-bar menu.",
             Self::Shell(_) => b"Requested the desktop action through its native controls.",
         }
@@ -349,9 +511,21 @@ impl Command {
 // ------------------=
 pub fn protocol_output(bytes: &[u8]) -> bool {
     let bytes = bytes.trim_ascii();
-    [b"OS_OPEN:".as_slice(), b"OS_FOCUS:", b"OS_CLOSE:", b"OS_CONTEXT:", b"OS_SETTINGS:",
-        b"OS_SURFACE:",b"OS_LAUNCH:",b"OS_MENU:",b"OS_SHELL:",b"OS_CLOCK:"].iter()
-        .any(|prefix| prefix.starts_with(bytes) || bytes.starts_with(prefix))
+    [
+        b"OS_OPEN:".as_slice(),
+        b"OS_FOCUS:",
+        b"OS_CLOSE:",
+        b"OS_CONTEXT:",
+        b"OS_SETTINGS:",
+        b"OS_SURFACE:",
+        b"OS_LAUNCH:",
+        b"OS_MENU:",
+        b"OS_SHELL:",
+        b"OS_CLOCK:",
+        b"OS_SETTING:",
+    ]
+    .iter()
+    .any(|prefix| prefix.starts_with(bytes) || bytes.starts_with(prefix))
 }
 
 // ------------------------=
@@ -359,29 +533,90 @@ pub fn protocol_output(bytes: &[u8]) -> bool {
 // DESC: Conservatively prevents conversation, negated, quoted, or explanatory requests from executing model-proposed tools.
 // ------------------=
 pub fn veto_action(input: &[u8]) -> bool {
-    let action = input.split(|b| !b.is_ascii_alphabetic()).any(|word|
-        [b"open".as_slice(), b"launch", b"start", b"bring", b"focus", b"close", b"dismiss",
-         b"show", b"take", b"navigate", b"switch", b"restore", b"activate",b"search",b"find",b"insert",b"type",
-         b"maximize",b"minimize",b"zoom",b"save",b"undo",b"redo",b"refresh",b"create",b"new",b"next",b"previous"]
-            .iter().any(|verb| word.eq_ignore_ascii_case(verb)));
-    !action || input.contains(&b'"') || input.contains(&b'`') || input.split(|b| !b.is_ascii_alphabetic() && *b != b'\'')
-        .any(|word| [b"not".as_slice(), b"never", b"no", b"don't", b"dont", b"explain", b"example", b"meaning"]
-            .iter().any(|blocked| word.eq_ignore_ascii_case(blocked)))
+    let action = input.split(|b| !b.is_ascii_alphabetic()).any(|word| {
+        [
+            b"open".as_slice(),
+            b"launch",
+            b"start",
+            b"bring",
+            b"focus",
+            b"close",
+            b"dismiss",
+            b"show",
+            b"take",
+            b"navigate",
+            b"switch",
+            b"set",
+            b"change",
+            b"rename",
+            b"turn",
+            b"restore",
+            b"activate",
+            b"search",
+            b"find",
+            b"insert",
+            b"type",
+            b"maximize",
+            b"minimize",
+            b"zoom",
+            b"save",
+            b"undo",
+            b"redo",
+            b"refresh",
+            b"create",
+            b"new",
+            b"next",
+            b"previous",
+        ]
+        .iter()
+        .any(|verb| word.eq_ignore_ascii_case(verb))
+    });
+    !action
+        || input.contains(&b'"')
+        || input.contains(&b'`')
+        || input
+            .split(|b| !b.is_ascii_alphabetic() && *b != b'\'')
+            .any(|word| {
+                [
+                    b"not".as_slice(),
+                    b"never",
+                    b"no",
+                    b"don't",
+                    b"dont",
+                    b"explain",
+                    b"example",
+                    b"meaning",
+                ]
+                .iter()
+                .any(|blocked| word.eq_ignore_ascii_case(blocked))
+            })
 }
 
 // ------------------------=
 // FUNC: publish
 // DESC: Stages only complete model tool records; truncated or malformed records never become actions.
 // ------------------=
-pub fn publish(chat: &mut super::chat::ChatRuntime, pending: &mut Option<Command>,
-    bytes: &[u8], finished: bool, completed: bool) -> bool {
-    if !protocol_output(bytes) { return chat.publish_native_completion(bytes, finished); }
-    if !finished { return false; }
+pub fn publish(
+    chat: &mut super::chat::ChatRuntime,
+    pending: &mut Option<Command>,
+    bytes: &[u8],
+    finished: bool,
+    completed: bool,
+) -> bool {
+    if !protocol_output(bytes) {
+        return chat.publish_native_completion(bytes, finished);
+    }
+    if !finished {
+        return false;
+    }
     if completed {
         if let Some(command) = Command::decode(bytes) {
-            if (0..chat.message_count()).rev().filter_map(|i| chat.message(i))
+            if (0..chat.message_count())
+                .rev()
+                .filter_map(|i| chat.message(i))
                 .find(|message| message.role == super::chat::ChatRole::User)
-                .is_some_and(|message| veto_action(message.text())) {
+                .is_some_and(|message| veto_action(message.text()))
+            {
                 return chat.publish_native_completion(b"No app action was taken.", true);
             }
             *pending = Some(command);
@@ -389,7 +624,9 @@ pub fn publish(chat: &mut super::chat::ChatRuntime, pending: &mut Option<Command
             return true;
         }
     }
-    chat.update_native_response(b"I could not resolve a supported OS command. No action was taken.");
+    chat.update_native_response(
+        b"I could not resolve a supported OS command. No action was taken.",
+    );
     // The model's tool record failed validation, but the bounded native
     // fallback above is a complete user-visible answer. Publishing it as a
     // failed generation makes the voice conversation discard that answer and

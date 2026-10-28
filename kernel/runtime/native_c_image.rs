@@ -7,7 +7,15 @@ pub const MAX_COMPILER_IMAGE: usize = 128 * 1024 * 1024;
 pub mod tls;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ImageError { Header, Architecture, Unsupported, Bounds, Overlap, Permissions, Entry }
+pub enum ImageError {
+    Header,
+    Architecture,
+    Unsupported,
+    Bounds,
+    Overlap,
+    Permissions,
+    Entry,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Segment {
@@ -41,9 +49,13 @@ pub struct Image {
 // DESC: Decodes a bounded little-endian ELF integer without unchecked indexing.
 // ------------------=
 fn integer(bytes: &[u8], at: usize, width: usize) -> Result<u64, ImageError> {
-    let value = bytes.get(at..at.checked_add(width).ok_or(ImageError::Bounds)?)
+    let value = bytes
+        .get(at..at.checked_add(width).ok_or(ImageError::Bounds)?)
         .ok_or(ImageError::Bounds)?;
-    Ok(value.iter().enumerate().fold(0, |sum, (i, byte)| sum | (u64::from(*byte) << (i * 8))))
+    Ok(value
+        .iter()
+        .enumerate()
+        .fold(0, |sum, (i, byte)| sum | (u64::from(*byte) << (i * 8))))
 }
 
 // ------------------------=
@@ -77,11 +89,17 @@ impl Image {
     // ------------------=
     fn parse_with_policy(bytes: &[u8], machine: u16, compiler: bool) -> Result<Self, ImageError> {
         let expected_type = if compiler { 2 } else { 3 };
-        let memory_limit = if compiler { MAX_COMPILER_IMAGE } else { MAX_IMAGE };
+        let memory_limit = if compiler {
+            MAX_COMPILER_IMAGE
+        } else {
+            MAX_IMAGE
+        };
         if bytes.len() > memory_limit
             || bytes.get(..7) != Some(b"\x7fELF\x02\x01\x01")
             || integer(bytes, 16, 2)? != expected_type
-            || integer(bytes, 20, 4)? != 1 || integer(bytes, 52, 2)? != 64 {
+            || integer(bytes, 20, 4)? != 1
+            || integer(bytes, 52, 2)? != 64
+        {
             return Err(ImageError::Header);
         }
         if !matches!(machine, 62 | 183) || integer(bytes, 18, 2)? != u64::from(machine) {
@@ -93,16 +111,24 @@ impl Image {
             return Err(ImageError::Unsupported);
         }
         let end = table.checked_add(count * 56).ok_or(ImageError::Bounds)?;
-        if end > bytes.len() { return Err(ImageError::Bounds); }
+        if end > bytes.len() {
+            return Err(ImageError::Bounds);
+        }
         let sections = index(bytes, 40)?;
         let section_count = integer(bytes, 60, 2)? as usize;
         let mut relocations = None;
         if section_count != 0 {
-            if sections < 64 || integer(bytes, 58, 2)? != 64
-                || integer(bytes, 62, 2)? as usize >= section_count {
+            if sections < 64
+                || integer(bytes, 58, 2)? != 64
+                || integer(bytes, 62, 2)? as usize >= section_count
+            {
                 return Err(ImageError::Header);
             }
-            if sections.checked_add(section_count * 64).ok_or(ImageError::Bounds)? > bytes.len() {
+            if sections
+                .checked_add(section_count * 64)
+                .ok_or(ImageError::Bounds)?
+                > bytes.len()
+            {
                 return Err(ImageError::Bounds);
             }
             for number in 0..section_count {
@@ -110,18 +136,31 @@ impl Image {
                 let kind = integer(bytes, section + 4, 4)?;
                 let length = index(bytes, section + 32)?;
                 if matches!(kind, 4 | 9) && length != 0 {
-                    if compiler || kind != 4 || relocations.is_some() || length % 24 != 0 ||
-                        length / 24 > 4096 || index(bytes, section + 56)? != 24 {
+                    if compiler
+                        || kind != 4
+                        || relocations.is_some()
+                        || length % 24 != 0
+                        || length / 24 > 4096
+                        || index(bytes, section + 56)? != 24
+                    {
                         return Err(ImageError::Unsupported);
                     }
                     let source = index(bytes, section + 24)?;
-                    if source.checked_add(length).is_none_or(|end| end > bytes.len()) {
+                    if source
+                        .checked_add(length)
+                        .is_none_or(|end| end > bytes.len())
+                    {
                         return Err(ImageError::Bounds);
                     }
-                    relocations = Some(Region { address: source, length });
+                    relocations = Some(Region {
+                        address: source,
+                        length,
+                    });
                 }
             }
-        } else if sections != 0 { return Err(ImageError::Unsupported); }
+        } else if sections != 0 {
+            return Err(ImageError::Unsupported);
+        }
         let raw_entry = index(bytes, 24)?;
         let mut raw_segments = [Segment::default(); MAX_SEGMENTS];
         let mut raw_segment_count = 0usize;
@@ -129,26 +168,48 @@ impl Image {
         let mut virtual_end = 0usize;
         for number in 0..count {
             let p = table + number * 56;
-            if integer(bytes, p, 4)? != 1 { continue; }
-            let segment = Segment { source: index(bytes, p + 8)?, address: index(bytes, p + 16)?,
-                file_size: index(bytes, p + 32)?, memory_size: index(bytes, p + 40)?,
-                flags: integer(bytes, p + 4, 4)? as u32 };
+            if integer(bytes, p, 4)? != 1 {
+                continue;
+            }
+            let segment = Segment {
+                source: index(bytes, p + 8)?,
+                address: index(bytes, p + 16)?,
+                file_size: index(bytes, p + 32)?,
+                memory_size: index(bytes, p + 40)?,
+                flags: integer(bytes, p + 4, 4)? as u32,
+            };
             let alignment = index(bytes, p + 48)?;
             if segment.flags & !7 != 0 || segment.flags & 4 == 0 || segment.flags & 3 == 3 {
                 return Err(ImageError::Permissions);
             }
-            if alignment > 1 && (!alignment.is_power_of_two()
-                || segment.source % alignment != segment.address % alignment
-                || alignment > 4096) { return Err(ImageError::Bounds); }
-            let memory_end = segment.address.checked_add(segment.memory_size).ok_or(ImageError::Bounds)?;
-            let file_end = segment.source.checked_add(segment.file_size).ok_or(ImageError::Bounds)?;
-            if segment.file_size > segment.memory_size || file_end > bytes.len()
-                || (!compiler && memory_end > memory_limit) {
+            if alignment > 1
+                && (!alignment.is_power_of_two()
+                    || segment.source % alignment != segment.address % alignment
+                    || alignment > 4096)
+            {
                 return Err(ImageError::Bounds);
             }
-            if segment.memory_size == 0 { continue; }
+            let memory_end = segment
+                .address
+                .checked_add(segment.memory_size)
+                .ok_or(ImageError::Bounds)?;
+            let file_end = segment
+                .source
+                .checked_add(segment.file_size)
+                .ok_or(ImageError::Bounds)?;
+            if segment.file_size > segment.memory_size
+                || file_end > bytes.len()
+                || (!compiler && memory_end > memory_limit)
+            {
+                return Err(ImageError::Bounds);
+            }
+            if segment.memory_size == 0 {
+                continue;
+            }
             for previous in &raw_segments[..raw_segment_count] {
-                if segment.address < previous.address + previous.memory_size && previous.address < memory_end {
+                if segment.address < previous.address + previous.memory_size
+                    && previous.address < memory_end
+                {
                     return Err(ImageError::Overlap);
                 }
             }
@@ -157,15 +218,26 @@ impl Image {
             raw_segments[raw_segment_count] = segment;
             raw_segment_count += 1;
         }
-        if raw_segment_count == 0 || virtual_base == usize::MAX
-            || virtual_end.checked_sub(virtual_base).is_none_or(|span| span > memory_limit) {
+        if raw_segment_count == 0
+            || virtual_base == usize::MAX
+            || virtual_end
+                .checked_sub(virtual_base)
+                .is_none_or(|span| span > memory_limit)
+        {
             return Err(ImageError::Bounds);
         }
         let load_bias = if compiler { virtual_base } else { 0 };
         let entry = raw_entry.checked_sub(load_bias).ok_or(ImageError::Entry)?;
-        let mut image = Self { entry, memory_size: virtual_end - load_bias, virtual_base: load_bias,
-            segments: [Segment::default(); MAX_SEGMENTS], segment_count: 0, tls: None, relro: None,
-            relative_relocations: relocations };
+        let mut image = Self {
+            entry,
+            memory_size: virtual_end - load_bias,
+            virtual_base: load_bias,
+            segments: [Segment::default(); MAX_SEGMENTS],
+            segment_count: 0,
+            tls: None,
+            relro: None,
+            relative_relocations: relocations,
+        };
         let mut tls_seen = false;
         for number in 0..count {
             let p = table + number * 56;
@@ -173,20 +245,34 @@ impl Image {
                 0 | 6 => continue,
                 1 => continue,
                 7 => {
-                    if tls_seen { return Err(ImageError::Unsupported); }
+                    if tls_seen {
+                        return Err(ImageError::Unsupported);
+                    }
                     tls_seen = true;
-                    let template = tls::Template { source: index(bytes, p + 8)?,
-                        address: index(bytes, p + 16)?, file_size: index(bytes, p + 32)?,
-                        memory_size: index(bytes, p + 40)?, alignment: index(bytes, p + 48)?.max(1) };
+                    let template = tls::Template {
+                        source: index(bytes, p + 8)?,
+                        address: index(bytes, p + 16)?,
+                        file_size: index(bytes, p + 32)?,
+                        memory_size: index(bytes, p + 40)?,
+                        alignment: index(bytes, p + 48)?.max(1),
+                    };
                     template.validate(bytes)?;
-                    if integer(bytes, p + 4, 4)? & !6 != 0 { return Err(ImageError::Permissions); }
-                    if template.memory_size == 0 { continue; }
+                    if integer(bytes, p + 4, 4)? & !6 != 0 {
+                        return Err(ImageError::Permissions);
+                    }
+                    if template.memory_size == 0 {
+                        continue;
+                    }
                     image.tls = Some(TemplateAddress::normalize(template, load_bias)?);
                     continue;
                 }
                 0x6474e551 if compiler => {
-                    if integer(bytes, p + 4, 4)? & 1 != 0 || index(bytes, p + 32)? != 0
-                        || index(bytes, p + 40)? != 0 { return Err(ImageError::Permissions); }
+                    if integer(bytes, p + 4, 4)? & 1 != 0
+                        || index(bytes, p + 32)? != 0
+                        || index(bytes, p + 40)? != 0
+                    {
+                        return Err(ImageError::Permissions);
+                    }
                     continue;
                 }
                 0x6474e552 if compiler => {
@@ -196,10 +282,13 @@ impl Image {
                     let address = index(bytes, p + 16)?;
                     let length = index(bytes, p + 40)?;
                     let end = address.checked_add(length).ok_or(ImageError::Bounds)?;
-                    if length == 0 || !raw_segments[..raw_segment_count].iter().any(|segment| {
-                        segment.flags & 2 != 0 && address >= segment.address
-                            && end <= segment.address + segment.memory_size
-                    }) {
+                    if length == 0
+                        || !raw_segments[..raw_segment_count].iter().any(|segment| {
+                            segment.flags & 2 != 0
+                                && address >= segment.address
+                                && end <= segment.address + segment.memory_size
+                        })
+                    {
                         return Err(ImageError::Bounds);
                     }
                     image.relro = Some(Region {
@@ -214,19 +303,28 @@ impl Image {
         }
         for raw in &raw_segments[..raw_segment_count] {
             let mut segment = *raw;
-            segment.address = segment.address.checked_sub(load_bias).ok_or(ImageError::Bounds)?;
+            segment.address = segment
+                .address
+                .checked_sub(load_bias)
+                .ok_or(ImageError::Bounds)?;
             image.segments[image.segment_count] = segment;
             image.segment_count += 1;
         }
         if let Some(tls) = image.tls {
-            if tls.file_size != 0 && !image.segments[..image.segment_count].iter().any(|s|
-                tls.address >= s.address && tls.address + tls.file_size <= s.address + s.file_size
-                && tls.source >= s.source && tls.source - s.source == tls.address - s.address) {
+            if tls.file_size != 0
+                && !image.segments[..image.segment_count].iter().any(|s| {
+                    tls.address >= s.address
+                        && tls.address + tls.file_size <= s.address + s.file_size
+                        && tls.source >= s.source
+                        && tls.source - s.source == tls.address - s.address
+                })
+            {
                 return Err(ImageError::Bounds);
             }
         }
-        if !image.segments[..image.segment_count].iter().any(|s| s.flags & 1 != 0
-            && image.entry >= s.address && image.entry < s.address + s.file_size) {
+        if !image.segments[..image.segment_count].iter().any(|s| {
+            s.flags & 1 != 0 && image.entry >= s.address && image.entry < s.address + s.file_size
+        }) {
             return Err(ImageError::Entry);
         }
         if let Some(relocations) = image.relative_relocations {
@@ -242,10 +340,12 @@ impl Image {
                     return Err(ImageError::Overlap);
                 }
                 let end = target.checked_add(8).ok_or(ImageError::Bounds)?;
-                if !image.segments[..image.segment_count].iter().any(|s| s.flags & 2 != 0 &&
-                    target >= s.address && end <= s.address + s.memory_size) ||
-                    !image.segments[..image.segment_count].iter().any(|s|
-                        addend >= s.address && addend <= s.address + s.memory_size) {
+                if !image.segments[..image.segment_count].iter().any(|s| {
+                    s.flags & 2 != 0 && target >= s.address && end <= s.address + s.memory_size
+                }) || !image.segments[..image.segment_count]
+                    .iter()
+                    .any(|s| addend >= s.address && addend <= s.address + s.memory_size)
+                {
                     return Err(ImageError::Permissions);
                 }
                 previous = Some(target);
@@ -260,7 +360,9 @@ impl Image {
     // ------------------=
     pub fn load(bytes: &[u8], machine: u16, destination: &mut [u8]) -> Result<Self, ImageError> {
         let image = Self::parse(bytes, machine)?;
-        if image.relative_relocations.is_some() { return Err(ImageError::Unsupported); }
+        if image.relative_relocations.is_some() {
+            return Err(ImageError::Unsupported);
+        }
         Self::copy_into(bytes, destination, image)
     }
 
@@ -268,9 +370,16 @@ impl Image {
     // FUNC: load_at
     // DESC: Relocates only checked in-image relative pointers at the explicit private virtual base before execution.
     // ------------------=
-    pub fn load_at(bytes: &[u8], machine: u16, destination: &mut [u8], virtual_base: usize) -> Result<Self, ImageError> {
+    pub fn load_at(
+        bytes: &[u8],
+        machine: u16,
+        destination: &mut [u8],
+        virtual_base: usize,
+    ) -> Result<Self, ImageError> {
         let image = Self::parse(bytes, machine)?;
-        virtual_base.checked_add(image.memory_size).ok_or(ImageError::Bounds)?;
+        virtual_base
+            .checked_add(image.memory_size)
+            .ok_or(ImageError::Bounds)?;
         Self::copy_into(bytes, destination, image)?;
         if let Some(relocations) = image.relative_relocations {
             for at in (relocations.address..relocations.address + relocations.length).step_by(24) {
@@ -286,7 +395,11 @@ impl Image {
     // FUNC: load_compiler
     // DESC: Loads a validated compiler executable into caller-owned isolated memory using normalized segment offsets.
     // ------------------=
-    pub fn load_compiler(bytes: &[u8], machine: u16, destination: &mut [u8]) -> Result<Self, ImageError> {
+    pub fn load_compiler(
+        bytes: &[u8],
+        machine: u16,
+        destination: &mut [u8],
+    ) -> Result<Self, ImageError> {
         let image = Self::parse_compiler(bytes, machine)?;
         Self::copy_into(bytes, destination, image)
     }
@@ -296,7 +409,9 @@ impl Image {
     // DESC: Copies validated segments and zeroes their uninitialized tails without retaining the source image.
     // ------------------=
     fn copy_into(bytes: &[u8], destination: &mut [u8], image: Self) -> Result<Self, ImageError> {
-        if destination.len() < image.memory_size { return Err(ImageError::Bounds); }
+        if destination.len() < image.memory_size {
+            return Err(ImageError::Bounds);
+        }
         destination[..image.memory_size].fill(0);
         for segment in &image.segments[..image.segment_count] {
             destination[segment.address..segment.address + segment.file_size]
@@ -313,11 +428,17 @@ impl TemplateAddress {
     // FUNC: normalize
     // DESC: Converts a validated TLS virtual address to the same isolated-memory coordinate system as load segments.
     // ------------------=
-    fn normalize(mut template: tls::Template, load_bias: usize) -> Result<tls::Template, ImageError> {
+    fn normalize(
+        mut template: tls::Template,
+        load_bias: usize,
+    ) -> Result<tls::Template, ImageError> {
         template.address = if template.file_size == 0 {
             0
         } else {
-            template.address.checked_sub(load_bias).ok_or(ImageError::Bounds)?
+            template
+                .address
+                .checked_sub(load_bias)
+                .ok_or(ImageError::Bounds)?
         };
         Ok(template)
     }

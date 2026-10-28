@@ -969,7 +969,10 @@ pub fn participate(
     lease: u64,
 ) -> Result<(), RemoteError> {
     let config = with_runtime(|r| {
-        if !storage_operator::authorized(r, user, session) || (!(1..=3600).contains(&lease) && !(lease==u64::MAX && grants.iter().all(|g|g&node::durable::TAG!=0))) {
+        if !storage_operator::authorized(r, user, session)
+            || (!(1..=3600).contains(&lease)
+                && !(lease == u64::MAX && grants.iter().all(|g| g & node::durable::TAG != 0)))
+        {
             return Err(RemoteError::AccessDenied);
         }
         let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
@@ -1052,8 +1055,8 @@ fn persist(
     manifest: &Manifest,
     now: u64,
 ) -> Result<(), fabric::manifest::ManifestError> {
-    if super::storage_metadata::bound_from(r,manifest.object){
-        let _=super::storage_metadata::queue_placement(r,expected,*manifest,now);
+    if super::storage_metadata::bound_from(r, manifest.object) {
+        let _ = super::storage_metadata::queue_placement(r, expected, *manifest, now);
         // The source manifest is reloaded on the next bounded coordinator pass;
         // no durable placement is claimed before the asynchronous W2 commit.
         return Err(fabric::manifest::ManifestError::Storage);
@@ -1230,11 +1233,22 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
             _ => return Err(RemoteError::InvalidState),
         };
         for slot in &mut config.peers {
-            if let Some(p)=slot {
-                if p.expires!=u64::MAX || p.grants.iter().any(|g|g&node::durable::TAG==0){p.grants=[0;5];p.expires=0;}
-                if p.advertise_expires!=u64::MAX || p.advertise&node::durable::TAG==0{p.advertise=0;p.advertise_expires=0;}
-                if p.delete_expires!=u64::MAX || p.delete&node::durable::TAG==0{p.delete=0;p.delete_expires=0;}
-                if p.grants==[0;5] && p.advertise==0 && p.delete==0{*slot=None;}
+            if let Some(p) = slot {
+                if p.expires != u64::MAX || p.grants.iter().any(|g| g & node::durable::TAG == 0) {
+                    p.grants = [0; 5];
+                    p.expires = 0;
+                }
+                if p.advertise_expires != u64::MAX || p.advertise & node::durable::TAG == 0 {
+                    p.advertise = 0;
+                    p.advertise_expires = 0;
+                }
+                if p.delete_expires != u64::MAX || p.delete & node::durable::TAG == 0 {
+                    p.delete = 0;
+                    p.delete_expires = 0;
+                }
+                if p.grants == [0; 5] && p.advertise == 0 && p.delete == 0 {
+                    *slot = None;
+                }
             }
         }
         r.storage_coordinator.config = config;

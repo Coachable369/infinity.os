@@ -125,7 +125,9 @@ mod tests {
             for head in 0..heads {
                 attend(&query, &kv, &mut [0.0], &mut output, 0, 0, head);
                 let expected = (head / (heads / 8) + 1) as f32;
-                assert!(output[head * 128..(head + 1) * 128].iter().all(|v| *v == expected));
+                assert!(output[head * 128..(head + 1) * 128]
+                    .iter()
+                    .all(|v| *v == expected));
             }
         }
     }

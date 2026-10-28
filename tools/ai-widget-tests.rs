@@ -8,6 +8,10 @@ use ui::{ai_widget as widget, geometry::{Point,Rect},system_layout::{SystemLayou
 // ------------------=
 pub fn verify() {
     verify_input();verify_menu();
+    widget::update_meter(32768);assert_eq!(widget::meter(),32768);
+    widget::update_meter(0);assert_eq!(widget::meter(),24576);
+    for _ in 0..50 {widget::update_meter(0);}
+    assert_eq!(widget::meter(),0);
     widget::prompt_viewport(b"",0,0,1);
     let mut previous_start=0;
     for (width,height) in [(1024,768),(1920,1080),(2560,1600)] {
@@ -73,7 +77,8 @@ fn verify_menu() {
         let layout=SystemLayout::new(width,height);let s=layout.scale();
         for minimized in [false,true] {
             let g=layout.ai_chat_geometry(minimized);
-            for (rect,target) in [(g.status,AiChatTarget::Status),(g.close,AiChatTarget::Close),(g.minimize,AiChatTarget::Minimize)] {
+            let stop=Rect{x:g.status.right()-(30*layout.scale())as i32,width:(30*layout.scale())as u32,..g.status};
+            for (rect,target) in [(stop,AiChatTarget::Status),(g.close,AiChatTarget::Close),(g.minimize,AiChatTarget::Minimize)] {
                 let p=Point{x:rect.x+rect.width as i32/2,y:rect.y+rect.height as i32/2};
                 assert_eq!(layout.ai_chat_target(p.x*1000/width as i32,p.y*1000/height as i32,minimized),Some(target));
             }
@@ -126,11 +131,11 @@ fn verify_pixels(width:usize,height:usize,mut previous_start:usize)->usize {
         }
     }}
     assert!(changed>100);
-    let menu=widget::MenuState{open:true,selected:1};widget::publish_menu(menu);
+    widget::publish_menu(Default::default());
+    widget::update_meter(16000);
     display.ai_widget_header(g,b"Generating",false,true,scale,accent);
     display.app_card(g.send,accent,(130,223,247),scale);
     display.app_symbol(g.send,b'^',(3,25,41),scale);
-    display.ai_widget_status_menu(g.status,menu,true,true,scale);
     std::fs::create_dir_all("builds/validation/ai-widget").unwrap();
     let mut file=std::fs::File::create(format!("builds/validation/ai-widget/controls-{width}x{height}.ppm")).unwrap();
     write!(file,"P6\n{width} {height}\n255\n").unwrap();

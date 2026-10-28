@@ -19,7 +19,8 @@ use application::*;
 // DESC: Verifies the real shared inference service selects and executes a legal semantic move; this is host evidence, not guest proof.
 // ------------------=
 fn main() {
-    if std::env::args().any(|value|value=="--export-generation-prompt") {
+    if std::env::args().any(|value|value=="--export-generation-prompt")
+        && !std::env::args().any(|value|value=="--repair-runtime-source") {
         generation_probe::export_generation_prompt().unwrap();
         return;
     }
@@ -47,10 +48,18 @@ fn main() {
     let index=runtime::ai::chat::CHAT_MODELS.iter().position(|entry|entry.id==model).unwrap();
     assert!(ai.chat.select_model_index(index));
     source_reserve_releases_lease(&mut ai);
+    context_limit_continuation_boundary(&mut ai);
     if arguments.iter().any(|value|value=="--admission-only") {return;}
     let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
     let start=std::time::Instant::now();
     while qwen::workers::online()!=4 {assert!(start.elapsed().as_secs()<10);std::thread::yield_now();}
+    if arguments.iter().any(|value|value=="--repair-runtime-source") {
+        let result=generation_probe::run_runtime_repair(&mut ai);
+        unsafe {qwen::workers::stop_host_workers();}
+        for worker in workers {worker.join().unwrap();}
+        result.unwrap();
+        return;
+    }
     if std::env::args().any(|value|value=="--repair" || value=="--repair-current") {
         compiler_repair_probe(&mut ai);
         unsafe {qwen::workers::stop_host_workers();}
@@ -129,6 +138,13 @@ fn source_reserve_boundaries() {
     for count in [2560,4095,4096,usize::MAX] {assert!(!submission_fits(count,SubmissionKind::ApplicationSource));}
     assert!(submission_fits(4094,SubmissionKind::Conversation));
     assert!(!submission_fits(4096,SubmissionKind::Conversation));
+    assert!(submission_fits(3839,SubmissionKind::ApplicationContinuation));
+    for count in [3840,4096,usize::MAX] {assert!(!submission_fits(count,SubmissionKind::ApplicationContinuation));}
+    use qwen::service::StopReason;
+    for reason in [StopReason::EndToken,StopReason::ContextLimit,StopReason::OutputLimit] {
+        assert!(reason.permits_source_continuation());
+    }
+    for reason in [StopReason::None,StopReason::Cancelled] {assert!(!reason.permits_source_continuation());}
 }
 
 // ------------------------=
@@ -163,6 +179,84 @@ fn source_reserve_releases_lease(ai:&mut AiRuntime) {
         ai.cancel_app_turn();assert_eq!(ai.app_turn_owner(),None);
     }
     ui::app_assistant::reset();
+}
+
+// ------------------------=
+// FUNC: context_limit_continuation_boundary
+// DESC: Injects typed context exhaustion into the loaded native service and exercises actual goal-bound continuation, original deadlines, STOP, tokenizer rejection and exact desktop-context restoration; this is fault-injection evidence, not generated-source evidence.
+// ------------------=
+fn context_limit_continuation_boundary(ai:&mut AiRuntime) {
+    use ui::app_assistant::{self as assistant,Panel,GenerationStatus,Action};
+    use runtime::ai::kit::RequestRoute;
+    let owner=[1;16];
+    assistant::reset();
+    ai.chat.clear_input();
+    assert!(ai.chat.paste_input(b"Hello."));
+    assert!(ai.submit_chat());
+    assert!(ai.cancel_chat());
+    let (tokens,desktop)=ai.acceptance_native_context().unwrap();
+    let saved_tokens=tokens.to_vec();
+    assert!(!saved_tokens.is_empty());
+    for oversized in [false,true] {
+        let request=b"create a graphical notes app in Python";
+        let route=ai.route_application_request(2,request).unwrap();
+        let RequestRoute::Goal(goal)=route else {panic!("expected a typed software goal");};
+        ai.poll_qwen();
+        let command=ai.take_control(owner,true).unwrap();
+        ai.finish_control(command,true);
+        ai.poll_qwen();
+        assert_eq!(ai.software_goal_for_request(request),Some(goal));
+        let prefix=if oversized {b"a ".repeat(6000)} else {b"import math\nvalue = math.sqrt(".to_vec()};
+        let framed=[b"REPLACE_COMPILE\n".as_slice(),&prefix].concat();
+        let mut panel=Panel::new();
+        panel.request[..request.len()].copy_from_slice(request);panel.request_len=request.len();
+        panel.workflow_goal=Some(goal);panel.document_revision=37;
+        panel.generation=GenerationStatus::Running;
+        assert!(panel.stage_generated_source(&framed));
+        let mut document=ui::text_editor::TextDocument::new();
+        let range=panel.stream.ready(&panel.argument[..panel.argument_len],None,false).unwrap();
+        assert!(document.append_generation_preview(&panel.argument[range.clone()],true));
+        assert!(panel.stream.committed(range.end,None));
+        let delivered=document.bytes().to_vec();
+        assistant::write(2,panel);
+        assert!(ai.submit_app_source(2,b"Continue the requested Python application.").is_ok());
+        let started=9_876_543_210;
+        assert!(ai.acceptance_app_context_limit(&framed,started));
+        for _ in 0..16 {
+            ai.poll_qwen();
+            if assistant::read(2).continuation_count()>0 || ai.app_turn_owner().is_none() {break;}
+        }
+        let panel=assistant::read(2);
+        assert_eq!(panel.workflow_goal,Some(goal));
+        assert_eq!(panel.document_revision,37);
+        assert_eq!(panel.continuation_count(),1);
+        assert_eq!(panel.continuation_source(),prefix.as_slice());
+        assert_eq!(panel.pending,Action::None);
+        assert_eq!(document.bytes(),delivered.as_slice());
+        if oversized {
+            assert_eq!(panel.generation,GenerationStatus::Failed);
+            assert_eq!(ai.app_turn_owner(),None);
+            assert_eq!(ai.acceptance_app_lease_state(),(None,None,false,false));
+        } else {
+            assert_eq!(panel.generation,GenerationStatus::Running);
+            assert_eq!(ai.app_turn_owner(),Some(2));
+            assert_eq!(ai.acceptance_app_lease_state(),(Some(goal),Some(started),true,true));
+            assert!(ai.app_generation_progress().unwrap().prompt_tokens>0);
+        }
+        assert!(ai.cancel_chat());
+        assert_eq!(ai.app_turn_owner(),None);
+        assert_eq!(ai.acceptance_app_lease_state(),(None,None,false,false));
+        assert!(ai.acceptance_native_output().is_empty());
+        let (restored,restored_desktop)=ai.acceptance_native_context().unwrap();
+        assert_eq!(restored,saved_tokens.as_slice());assert_eq!(restored_desktop,desktop);
+        assert!(ai.submit_app_turn(1,b"Say hello.").is_ok());
+        assert_eq!(ai.app_turn_owner(),Some(1));
+        ai.cancel_app_turn();
+        assert_eq!(ai.app_turn_owner(),None);
+    }
+    assistant::reset();
+    ai.chat.clear_input();
+    assert!(ai.reset_native_benchmark());
 }
 
 // ------------------------=
@@ -222,6 +316,7 @@ fn repair_boundaries() {
     assert!(!panel.stage_generated_source(b"/* incomplete comment"));
     assert!(!panel.stage_generated_source(b"Here is code:\nint main(void){return 0;}"));
     assert!(panel.accept_generated(commented,true,true));
+    assert!(panel.accept_generated(&[commented.as_slice(),b"\nEND_ACTION"].concat(),true,true));
     assert_eq!(&panel.argument[..panel.argument_len],commented);
     let initial=panel;
     assert!(!panel.queue_compiler_repair(request,4,5,b"diagnostic"));assert!(panel==initial);
@@ -369,6 +464,12 @@ fn buffered_source_preview() {
     }
     let mut panel=Panel::new();panel.request[..request.len()].copy_from_slice(request);
     panel.request_len=request.len();
+    // Real model EOS may finish recognizable raw source, but cannot substitute
+    // for the requested boundary in an explicitly framed source transaction.
+    assert!(!panel.accept_generated(source,true,false));
+    assert!(panel.accept_generated(source,true,true));
+    assert!(!panel.accept_generated(&[b"REPLACE_COMPILE\n".as_slice(),source].concat(),true,true));
+    assert_eq!(panel.pending,ui::app_assistant::Action::None);
     assert!(!panel.accept_generated(b"REPLACE_COMPILE\n```c\nint main(void){return 0;}\nEND_ACTION",true,true));
     assert!(!panel.apply_generated_compile_requested());
     // Ordinary literal Markdown edits retain their requested fences.
