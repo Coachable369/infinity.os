@@ -71,7 +71,7 @@ command = ["sh", "-c", "mkdir -p build/behavior-tests && rustc --edition=2021 -O
 clean = false
 
 [profiles.face-capture-tests]
-command = ["sh", "-c", "mkdir -p build/behavior-tests && rustc --edition=2021 --test tools/face-capture-test.rs -o build/behavior-tests/face-capture-test && build/behavior-tests/face-capture-test"]
+command = ["sh", "-c", "mkdir -p build/behavior-tests && rustc --edition=2021 --test tools/face-capture-test.rs -o build/behavior-tests/face-capture-test && build/behavior-tests/face-capture-test && rustc --edition=2021 --test kernel/runtime/face_schedule.rs -o build/behavior-tests/face-schedule-test && build/behavior-tests/face-schedule-test"]
 clean = false
 
 [profiles.hermes-memory-tests]

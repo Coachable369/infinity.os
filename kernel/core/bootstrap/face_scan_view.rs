@@ -20,7 +20,7 @@ static mut POSE_REDUCED:bool=true;
 // DESC: Bounds visible angular movement after scheduler stalls instead of skipping to a distant wall-clock pose.
 // ------------------=
 fn advance_pose(pose:u64,previous:u64,now:u64)->u64 {
-    pose.wrapping_add(now.saturating_sub(previous).min(33))%96000
+    pose.wrapping_add(now.saturating_sub(previous).min(100))%96000
 }
 
 // ------------------------=
@@ -32,6 +32,17 @@ fn wave(ms:u64,period:u64)->f32 {
     let x=if t<0.5 {t*2.0}else{(1.0-t)*2.0};
     let positive=16.0*x*(1.0-x)/(5.0-4.0*x*(1.0-x));
     if t<0.5 {positive}else{-positive}
+}
+// ------------------------=
+// FUNC: rotation
+// DESC: Produces a normalized full-turn yaw pair, continuous at every quadrant and at the loop seam.
+// ------------------=
+fn rotation(ms:u64)->(f32,f32) {
+    let s=wave(ms,12000);let c=wave(ms+3000,12000);
+    let square=s*s+c*c;
+    let mut inverse=1.0;
+    for _ in 0..3 {inverse*=0.5*(3.0-square*inverse*inverse);}
+    (s*inverse,c*inverse)
 }
 // ------------------------=
 // FUNC: triangle
@@ -67,19 +78,27 @@ fn edge(a:[f32;3],b:[f32;3],x:f32,y:f32)->f32 {(b[0]-a[0])*(y-a[1])-(b[1]-a[1])*
 #[cfg(not(target_os="none"))]
 pub(crate) fn verify_rigid_geometry() {
     assert_eq!(advance_pose(700,1000,1033),733);
-    assert_eq!(advance_pose(700,1000,5000),733);
+    assert_eq!(advance_pose(700,1000,5000),800);
     assert_eq!(advance_pose(700,1000,999),700);
     assert_eq!(advance_pose(95990,1000,1033),23);
     let camera=|p:[f32;3]|[(p[0]-128.0)/(420.0*p[2]),(128.0-p[1])/(420.0*p[2]),35.0-1.0/p[2]];
     let distance=|a:[f32;3],b:[f32;3]|(0..3).map(|k|(a[k]-b[k])*(a[k]-b[k])).sum::<f32>();
     for time in (0..12000).step_by(100) {
-        let t=wave(time,12000)*0.58;let s=2.0*t/(1.0+t*t);let c=(1.0-t*t)/(1.0+t*t);
+        let (s,c)=rotation(time);
         for i in 0..(MESH.len()-8-468*12)/6 {
             let [a,b,_]=triangle(i);
             let expected=distance(camera(project(a,0.0,1.0)),camera(project(b,0.0,1.0)));
             let actual=distance(camera(project(a,s,c)),camera(project(b,s,c)));
             assert!((expected-actual).abs()<0.0002);
         }
+    }
+    assert_eq!(rotation(0),(0.0,1.0));
+    assert_eq!(rotation(3000),(1.0,0.0));
+    assert_eq!(rotation(6000),(0.0,-1.0));
+    assert_eq!(rotation(9000),(-1.0,0.0));
+    for time in 0..12000 {
+        let a=rotation(time);let b=rotation(time+1);
+        assert!((a.0-b.0).abs()<0.001 && (a.1-b.1).abs()<0.001);
     }
 }
 
@@ -111,9 +130,7 @@ impl DisplayDevice {
             core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
                 self.buffer.add((r.y as usize+y)*self.stride+r.x as usize),r.width as usize);
         }
-        // Rational half-angle rotation preserves lengths without transcendental dependencies.
-        let t=if reduced {0.0}else{wave(elapsed,12000)*0.58};
-        let s=2.0*t/(1.0+t*t);let c=(1.0-t*t)/(1.0+t*t);
+        let (s,c)=if reduced {(0.0,1.0)}else{rotation(elapsed)};
         let points:[[f32;3];468]=core::array::from_fn(|i|project(i,s,c));
         let depth=&mut *core::ptr::addr_of_mut!(DEPTH);depth.fill(0.0);
         let triangles=(MESH.len()-8-468*12)/6;

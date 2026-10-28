@@ -216,6 +216,7 @@ unsafe fn work()->Result<(),u32> {
             if c.command==p::CAPTURE {
                 if let Err(error)=preview(c.command_id,rgb) {report(&c,p::FAILED,error,Some(e.state()));break;}
             }
+            capture::stop(&mut stream);
             let recognition=match engine.recognize(rgb,floats,scratch,||visit(c.command_id)) {
                 Ok(v)=>v,Err(error)=>{
                     use infinity_face_core::{recognition::Error as R,vision::Error as V};

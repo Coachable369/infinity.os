@@ -2,6 +2,7 @@
 //! packaged executable/models and authorizing the account before launch.
 use super::{execution::SecurityIdentity, face_setup::{Setup,Stage},face_setup_dispatch::Dispatch,
     native_app_task::Task,native_cpu as cpu,native_memory::{NativeMemory,MemoryError},native_process::State};
+#[path="face_schedule.rs"] mod schedule;
 
 pub struct Job {
     pub setup:Setup,
@@ -79,7 +80,8 @@ impl Job {
         let owner=self.owner;
         let mut dispatch=Dispatch {owner,setup:&mut self.setup,detector:self.detector,recognizer:self.recognizer};
         let open=&mut self.camera_open;
-        let state=task.poll(now_ns,alive,|caller,tables,op,args| {
+        let state=schedule::batch(super::ai::qwen::workers::clock_ns,|slice_now| {
+        let state=task.poll(slice_now,alive,|caller,tables,op,args| {
             if caller!=owner || !alive {return -13;}
             if (0x1260..=0x1262).contains(&op) {
                 let command=dispatch.setup.control();
@@ -93,8 +95,10 @@ impl Job {
                 if op==0x1262 {crate::drivers::camera::cancel(owner);*open=false;}
                 return result;
             }
-            dispatch.call(caller,alive,tables,op,args,now_ns/1_000_000)
+            dispatch.call(caller,alive,tables,op,args,slice_now/1_000_000)
         });
+        (state!=State::Runnable).then_some(state)
+        }).unwrap_or(State::Runnable);
         if !self.login && self.setup.stage()==Stage::Passed && !self.setup.saved() {
             let saved=self.save_identity(now_ns);
             self.setup.finish_save(saved);

@@ -4,6 +4,15 @@ use super::{call,clock,visit};
 pub struct Stream { opened:Option<u64>, first_frame:Option<u64>, sequence:u64 }
 
 // ------------------------=
+// FUNC: stop
+// DESC: Releases camera polling after a complete photo is copied, so USB waits cannot starve recognition or input.
+// ------------------=
+pub fn stop(stream:&mut Stream) {
+    if stream.opened.is_some() {call(0x1262,[0;6]);}
+    *stream=Stream::default();
+}
+
+// ------------------------=
 // FUNC: capture
 // DESC: Drains startup frames for exposure settling and captures a fresh pinned frame without restarting a healthy preview stream.
 // ------------------=

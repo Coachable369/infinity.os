@@ -70,6 +70,20 @@ fn lease_renewal_settles_again() {
     CAMERA.with(|c|{let c=c.borrow();assert_eq!(c.starts,2);assert_eq!(c.stops,1);});
 }
 // ------------------------=
+// FUNC: analysis_releases_camera_then_retry_warms
+// DESC: Recognition has no active camera polling; the next preview still waits for settled exposure.
+// ------------------=
+#[test]
+fn analysis_releases_camera_then_retry_warms() {
+    reset();let mut stream=capture::Stream::default();let mut pixels=[0;8192];
+    capture::capture(1,&mut pixels,&mut stream,false).unwrap();
+    capture::stop(&mut stream);capture::stop(&mut stream);
+    CAMERA.with(|c|assert_eq!(c.borrow().stops,1));
+    capture::capture(1,&mut pixels,&mut stream,true).unwrap();
+    assert!(pixels.iter().all(|v|*v==128));
+    CAMERA.with(|c|assert_eq!(c.borrow().starts,2));
+}
+// ------------------------=
 // FUNC: cancellation_preserves_stream_and_timeout_closes
 // DESC: Verifies command supersession does not reset exposure while genuine failure stops capture within its deadline.
 // ------------------=
