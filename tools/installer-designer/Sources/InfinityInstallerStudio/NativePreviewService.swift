@@ -119,6 +119,7 @@ struct NativePreviewSnapshot: Equatable, Sendable {
         let kind: String
         switch store.selectedCollection {
         case .login: document = store.loginDocument; kind = "login"
+        case .desktop: document = store.desktopDocument; kind = "desktop"
         case .boot: document = store.bootDocument; kind = "boot"
         case .installation: document = store.document; kind = "installer"
         case .configuration: document = store.configurationDocument; kind = "configuration"

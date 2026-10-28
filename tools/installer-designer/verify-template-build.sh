@@ -16,4 +16,8 @@ cmp "$runtime_template" "$scratch_dir/installer-screens.iuit"
 cmp "$configuration_runtime" "$scratch_dir/configuration-screens.iuit"
 "$script_dir/compile-template.sh" "$repo_dir/assets/boot/boot-screens.infinityui" "$scratch_dir/boot-screens.iuit" >/dev/null
 cmp "$repo_dir/assets/boot/boot-screens.iuit" "$scratch_dir/boot-screens.iuit"
+for collection in login desktop; do
+    "$script_dir/compile-template.sh" "$repo_dir/assets/boot/$collection-screens.infinityui" "$scratch_dir/$collection-screens.iuit" >/dev/null
+    cmp "$repo_dir/assets/boot/$collection-screens.iuit" "$scratch_dir/$collection-screens.iuit"
+done
 echo "Saved installer and configuration templates are the exact ISO runtime inputs: PASS"

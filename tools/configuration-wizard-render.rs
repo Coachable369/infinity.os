@@ -241,7 +241,7 @@ pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:us
 #[cfg(studio_native_preview)]
 pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usize,
     background:&[u8],focus:usize,pressed:bool,phase:Option<u64>,state:DraftServiceState)->Result<Vec<u8>,String> {
-    let template=if kind==4 {InstallerTemplate::parse_login(bytes)}else if kind==3 {InstallerTemplate::parse_boot(bytes)}else if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
+    let template=if kind==5 {InstallerTemplate::parse_desktop(bytes)}else if kind==4 {InstallerTemplate::parse_login(bytes)}else if kind==3 {InstallerTemplate::parse_boot(bytes)}else if kind==2 {InstallerTemplate::parse_settings(bytes)}else{InstallerTemplate::parse(bytes)}
         .map_err(|error|format!("Invalid native template: {error:?}"))?;
     if template.element_count(screen).is_none() {return Err("Unknown template screen".into());}
     let motion_key=(u32::from(screen)<<8)|focus as u32;
@@ -287,7 +287,21 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             target.precision_window_frame(geometry.window,true,target.ui_scale());
         }
     }
-    if kind==4 {
+    if kind==5 {
+        if !target.desktop_template_scene(bytes,screen,&[],None,true,if screen==3 {&[65,66,67,68,69,70,71]}else{&[]}) {
+            return Err("Native desktop scene rejected the template".into());
+        }
+        if screen==3 {
+            let geometry=crate::ui::system_layout::SystemLayout::new(width,height).ai_chat_geometry(false);
+            let scale=target.ui_scale();
+            target.ai_widget_header(geometry,b"Say Infinity",false,false,scale,(134,199,255));
+            target.ai_widget_model(geometry.model,b"Hermes 3 Llama 3.2 3B",scale);
+            target.desktop_bound_surface(67,geometry.timeline);
+            target.ai_widget_empty_timeline(geometry.timeline,scale);
+            target.ai_widget_composer(geometry.composer,b"",0,None,scale,(134,199,255));
+            target.ai_widget_send(geometry.send,false,scale);
+        }
+    } else if kind==4 {
         if !target.login_template_scene(bytes, b"Select an account", b"", focus) {
             return Err("Native login scene rejected the template".into());
         }

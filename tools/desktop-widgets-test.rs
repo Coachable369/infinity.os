@@ -1,10 +1,26 @@
 #![allow(dead_code)]
+#[path="../kernel/ui/desktop_template.rs"] mod desktop_template;
+#[path="../kernel/ui/installer_template.rs"] mod installer_template;
+#[path="../kernel/ui/installer_layout.rs"] mod installer_layout;
+#[path="../kernel/ui/bitmap.rs"] mod bitmap;
 #[path = "../kernel/ui/desktop_widgets.rs"]
 mod desktop_widgets;
 #[path = "../kernel/ui/geometry.rs"]
 mod geometry;
 use desktop_widgets::State;
 use geometry::Point;
+// ------------------------=
+// FUNC: authored_defaults_match_preview_at_every_resolution
+// DESC: Ensures saved scene geometry is not silently shifted by runtime drag constraints.
+// ------------------=
+#[test]
+fn authored_defaults_match_preview_at_every_resolution() {
+    for (w,h,s) in [(800,600,1),(1280,800,1),(1536,1024,1),(3840,2160,2)] {
+        for id in 0..2 {
+            assert_eq!(State::new().rect(id,w,h,s,false),desktop_template::bounds((id+2)as u8,2,w,h).unwrap());
+        }
+    }
+}
 // ------------------------=
 // FUNC: browser_suppresses_overview_without_mutating_preferences
 // DESC: Verifies the browser removes the overview hit/paint surface while retaining AI and saved desktop state.

@@ -173,6 +173,21 @@ domain = "studio"
 command = ["swift", "test", "--scratch-path", "builds/.studio-work/swift", "--cache-path", "builds/.studio-work/cache/swiftpm", "--config-path", "builds/.studio-work/cache/swiftpm-config", "--security-path", "builds/.studio-work/cache/swiftpm-security", "--package-path", "tools/installer-designer", "--filter", "LoginSceneTests|RuntimeTemplateCodecTests.testStoreProtectsRequiredStructureAndAllowsOrdinaryLayerDeletion"]
 clean = false
 
+[profiles.studio-menu-tests]
+domain = "studio"
+command = ["swift", "test", "--scratch-path", "builds/.studio-work/swift", "--cache-path", "builds/.studio-work/cache/swiftpm", "--config-path", "builds/.studio-work/cache/swiftpm-config", "--security-path", "builds/.studio-work/cache/swiftpm-security", "--package-path", "tools/installer-designer", "--filter", "MenuEditorTests|DesktopSceneTests.testDesktopEditingRoundTrip|RuntimeTemplateCodecTests"]
+clean = false
+
+[profiles.studio-menu-native-tests]
+domain = "studio"
+command = ["sh", "tools/studio-menu-test.sh"]
+clean = false
+
+[profiles.studio-menu-kernel-check]
+domain = "studio"
+command = ["env", "RUSTC_BOOTSTRAP=1", "cargo", "check", "--offline", "--release", "-Z", "build-std=core", "--features", "native-browser"]
+clean = false
+
 [profiles.login-layout-tests]
 command = ["sh", "-c", "rustc --edition=2021 -Awarnings tools/login-template-test.rs -o build/login-template-test && build/login-template-test"]
 clean = false

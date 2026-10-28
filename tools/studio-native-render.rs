@@ -53,6 +53,15 @@ pub(crate) fn background()->&'static[u8] {ASSETS.get().map(|assets|assets.backgr
 pub(crate) fn settings_template_bytes()->Option<&'static[u8]> {Some(ASSETS.get()?.template.as_slice())}
 
 // ------------------------=
+// FUNC: desktop_template_bytes
+// DESC: Uses the unsaved desktop payload only when it is a valid desktop document.
+// ------------------=
+pub(crate) fn desktop_template_bytes()->Option<&'static[u8]> {
+    let bytes=ASSETS.get()?.template.as_slice();
+    crate::ui::installer_template::InstallerTemplate::parse_desktop(bytes).ok().map(|_|bytes)
+}
+
+// ------------------------=
 // FUNC: read_bounded
 // DESC: Reads only repository-local bounded inputs so malformed previews cannot allocate arbitrary files or leave the project tree.
 // ------------------=
@@ -89,7 +98,7 @@ pub(crate) fn run()->Result<(),String> {
             "--template"=>template=Some(PathBuf::from(value)),
             "--output"=>output=Some(PathBuf::from(value)),
             "--background"=>background=Some(PathBuf::from(value)),
-            "--kind"=>kind=match value.as_str(){"installer"=>0,"configuration"=>1,"settings"=>2,"boot"=>3,"login"=>4,_=>return Err("Unknown preview collection".into())},
+            "--kind"=>kind=match value.as_str(){"installer"=>0,"configuration"=>1,"settings"=>2,"boot"=>3,"login"=>4,"desktop"=>5,_=>return Err("Unknown preview collection".into())},
             "--screen"=>screen=value.parse().map_err(|_|"Invalid preview screen")?,
             "--width"=>width=value.parse().map_err(|_|"Invalid preview width")?,
             "--height"=>height=value.parse().map_err(|_|"Invalid preview height")?,

@@ -623,22 +623,8 @@ impl SystemLayout {
     // DESC: Returns the exact shared system top-bar height used by the renderer.
     // ------------------=
     pub fn top_bar_height(self) -> usize {
-        (38 * self.scale).min(self.height / 14).max(34 * self.scale)
-    }
-
-    // ------------------------=
-    // FUNC: top_bar_logo_geometry
-    // DESC: Keeps the Infinity mark compact inside the top bar with balanced optical gutters at every UI scale.
-    // ------------------=
-    pub fn top_bar_logo_geometry(self) -> Rect {
-        let width = 52 * self.scale;
-        let height = width * 7 / 15;
-        rect(
-            8 * self.scale,
-            self.top_bar_height().saturating_sub(height) / 2,
-            width,
-            height,
-        )
+        crate::ui::desktop_template::bounds(1,2,self.width,self.height)
+            .map(|r|r.bottom().max(0) as usize).unwrap_or(0)
     }
 
     // ------------------------=
@@ -676,9 +662,31 @@ impl SystemLayout {
     // DESC: Returns the shared responsive geometry for the right-side desktop AI chat surface.
     // ------------------=
     pub fn ai_chat_geometry(self, minimized: bool) -> AiChatGeometry {
-        let panel = crate::ui::desktop_widgets::current().rect(1,self.width,self.height,self.scale,minimized);
-        let (left,top,width,height) = (panel.x.max(0) as usize,panel.y.max(0) as usize,panel.width as usize,panel.height as usize);
-        let compact = width < 340 * self.scale && !minimized;
+        let panel = crate::ui::desktop_widgets::current().rect(
+            1,
+            self.width,
+            self.height,
+            self.scale,
+            minimized,
+        );
+        let (left, top, width, height) = (
+            panel.x.max(0) as usize,
+            panel.y.max(0) as usize,
+            panel.width as usize,
+            panel.height as usize,
+        );
+        if !minimized {
+            if let Some(base)=crate::ui::desktop_template::bounds(3,2,self.width,self.height) {
+                let child=|role| crate::ui::desktop_template::bounds(3,role,self.width,self.height)
+                    .map(|r|Rect{x:r.x+panel.x-base.x,y:r.y+panel.y-base.y,..r})
+                    .unwrap_or(Rect{x:panel.x,y:panel.y,width:0,height:0});
+                let status=child(65);
+                return AiChatGeometry{panel,header:Rect{height:(status.bottom()-panel.y).max(0) as u32,..panel},
+                    status,model:child(66),timeline:child(67),composer:child(68),send:child(69),
+                    minimize:child(70),close:child(71)};
+            }
+        }
+        let compact = !minimized;
         let header_height = if compact { 82 } else { 46 } * self.scale;
         let model_top = top + header_height + 8 * self.scale;
         let model_height = 42 * self.scale;
@@ -1194,54 +1202,14 @@ impl SystemLayout {
         window_maximized: bool,
     ) -> Option<DesktopTarget> {
         let point = self.point(normalized_x, normalized_y);
-        let top_bar = self.top_bar_height();
-        let brand_width = (280 * self.scale).min(self.width / 3);
-        if rect(
-            8 * self.scale,
-            4 * self.scale,
-            brand_width,
-            top_bar.saturating_sub(8 * self.scale),
-        )
-        .contains(point)
-        {
-            return Some(DesktopTarget::InfinityMenu);
-        }
-        if rect(
-            610 * self.scale,
-            4 * self.scale,
-            62 * self.scale,
-            top_bar.saturating_sub(8 * self.scale),
-        )
-        .contains(point)
-        {
-            return Some(DesktopTarget::TopMenu(5));
-        }
-        let status_width = 32 * self.scale;
-        let clock_width = 104 * self.scale;
-        let status_left = self
-            .width
-            .saturating_sub(7 * status_width + clock_width + 10 * self.scale);
-        for index in 0..7usize {
-            if rect(
-                status_left + index * status_width,
-                4 * self.scale,
-                status_width,
-                top_bar.saturating_sub(8 * self.scale),
-            )
-            .contains(point)
-            {
-                return Some(DesktopTarget::Status(index));
-            }
-        }
-        if rect(
-            self.width.saturating_sub(clock_width + 8 * self.scale),
-            4 * self.scale,
-            clock_width,
-            top_bar.saturating_sub(8 * self.scale),
-        )
-        .contains(point)
-        {
-            return Some(DesktopTarget::Status(7));
+        if let Some(role)=crate::ui::desktop_template::navigation_hit(point,self.width,self.height) {
+            return match role {
+                49=>Some(DesktopTarget::InfinityMenu),
+                50=>Some(DesktopTarget::TopMenu(5)),
+                52=>Some(DesktopTarget::Status(7)),
+                53..=59=>Some(DesktopTarget::Status(usize::from(role-53))),
+                _=>None,
+            };
         }
 
         if window_visible {
@@ -2066,10 +2034,21 @@ impl SystemLayout {
     // DESC: Returns the shared top-menu origin, bounds, and row count for the selected native menu.
     // ------------------=
     pub fn system_menu_geometry(self, menu_kind: usize) -> (usize, usize, usize, usize, usize) {
+        if menu_kind==0 {
+            if let Some(menu)=crate::ui::desktop_template::menu(){
+                let count=crate::ui::installer_template::navigation::view().count(&menu).max(1).min(crate::ui::installer_template::navigation::PAGE);
+                let width=(310*self.scale).min(self.width.saturating_sub(16*self.scale));
+                let x=crate::ui::desktop_template::bounds(1,49,self.width,self.height).map(|r|r.x.max(0)as usize).unwrap_or(8*self.scale)
+                    .min(self.width.saturating_sub(width+8*self.scale));
+                return (x,self.top_bar_height()+6*self.scale,width,(22+count*34)*self.scale,count);
+            }
+        }
         if menu_kind >= 8 {
             let width = (310 * self.scale).min(self.width.saturating_sub(16 * self.scale));
-            let status_left = self.width.saturating_sub((7 * 32 + 104 + 10) * self.scale);
-            let anchor = status_left + (menu_kind.saturating_sub(8).min(7) * 32 + 16) * self.scale;
+            let index=menu_kind.saturating_sub(8).min(7);
+            let role=if index==7 {52}else{53+index as u8};
+            let anchor=crate::ui::desktop_template::bounds(1,role,self.width,self.height)
+                .map(|r|r.x.max(0) as usize+r.width as usize/2).unwrap_or(self.width/2);
             let x = anchor
                 .saturating_sub(width / 2)
                 .min(self.width.saturating_sub(width + 8 * self.scale));
@@ -2092,7 +2071,10 @@ impl SystemLayout {
             5 => (608, 252, 4),
             _ => (16, 268, 10),
         };
-        let x = (anchor * self.scale).min(self.width.saturating_sub(width * self.scale + 8));
+        let authored=if menu_kind==5 {50}else{49};
+        let anchor=crate::ui::desktop_template::bounds(1,authored,self.width,self.height)
+            .map(|r|r.x.max(0) as usize).unwrap_or(anchor*self.scale);
+        let x = anchor.min(self.width.saturating_sub(width * self.scale + 8));
         let y = self.top_bar_height() + 6 * self.scale;
         let menu_width = (width * self.scale).min(self.width.saturating_sub(x + 8));
         let menu_height = (22 + count * 34) * self.scale;

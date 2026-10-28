@@ -73,52 +73,9 @@ pub fn target(width: usize, height: usize, normalized_x: i32, normalized_y: i32)
         x: width as i32 * normalized_x.clamp(0, 1000) / 1000,
         y: height as i32 * normalized_y.clamp(0, 1000) / 1000,
     };
-    let top_height = (38 * scale).min(height / 14).max(34 * scale);
-    let brand_width = (280 * scale).min(width / 3);
-    if (Rect {
-        x: (8 * scale) as i32,
-        y: (4 * scale) as i32,
-        width: brand_width as u32,
-        height: top_height.saturating_sub(8 * scale) as u32,
-    })
-    .contains(point)
-    {
-        return HoverTarget::Brand;
-    }
-    if (Rect {
-        x: (610 * scale) as i32,
-        y: (4 * scale) as i32,
-        width: (62 * scale) as u32,
-        height: top_height.saturating_sub(8 * scale) as u32,
-    })
-    .contains(point)
-    {
-        return HoverTarget::Help;
-    }
-    let status_width = 32 * scale;
-    let clock_width = 104 * scale;
-    let status_left = width.saturating_sub(7 * status_width + clock_width + 10 * scale);
-    for index in 0..7 {
-        if (Rect {
-            x: (status_left + index * status_width) as i32,
-            y: (4 * scale) as i32,
-            width: status_width as u32,
-            height: top_height.saturating_sub(8 * scale) as u32,
-        })
-        .contains(point)
-        {
-            return HoverTarget::Status(index);
-        }
-    }
-    if (Rect {
-        x: width.saturating_sub(clock_width + 8 * scale) as i32,
-        y: (4 * scale) as i32,
-        width: clock_width as u32,
-        height: top_height.saturating_sub(8 * scale) as u32,
-    })
-    .contains(point)
-    {
-        return HoverTarget::Clock;
+    if let Some(role)=super::desktop_template::navigation_hit(point,width,height) {
+        return match role {49=>HoverTarget::Brand,50=>HoverTarget::Help,52=>HoverTarget::Clock,
+            53..=59=>HoverTarget::Status(usize::from(role-53)),_=>HoverTarget::None};
     }
     let dock_width = width * 54 / 100;
     let dock_height = 72 * scale;

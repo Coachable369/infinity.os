@@ -22,6 +22,7 @@ pub mod desktop_effects;
 pub mod desktop_polish;
 pub mod desktop_widgets;
 pub mod editor_tools;
+pub mod desktop_template;
 pub mod editor_chrome;
 pub mod geometry;
 pub mod glyph_filter;

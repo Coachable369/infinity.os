@@ -1,0 +1,2039 @@
+{
+  "canvasHeight" : 1000,
+  "canvasWidth" : 1000,
+  "screens" : [
+    {
+      "elements" : [
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "desktopWallpaper",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "37B2E9D6-0244-4D41-AD15-D2D534B48636",
+          "imageAsset" : "assets/desktop/infinity-shell-wallpaper-v3.bmp",
+          "imageFit" : 2,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Desktop Wallpaper",
+          "opacity" : 100,
+          "role" : 39,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 0
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "navigationGlass",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 40,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "EEE120C3-C000-40B7-8EA5-96852A44CB5E",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Navigation Glass",
+          "opacity" : 100,
+          "role" : 2,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 1
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "infinityMenu",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 32,
+            "width" : 170,
+            "x" : 8,
+            "y" : 4
+          },
+          "hidden" : false,
+          "id" : "571E2A06-3452-47BC-83DC-DF204F645C5F",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Infinity Menu",
+          "opacity" : 100,
+          "role" : 49,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "infinityEmblem",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 43,
+            "x" : 10,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "D6C56B3B-951E-4AC6-B51D-4873349FBC09",
+          "imageAsset" : "assets/desktop/infinity-topbar-icon-v2.bmp",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Infinity Emblem",
+          "opacity" : 100,
+          "role" : 6,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 3
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "infinityWordmark",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 26,
+            "width" : 115,
+            "x" : 58,
+            "y" : 7
+          },
+          "hidden" : false,
+          "id" : "0BFF5320-88DC-4622-AC01-8DCD71EB5D1E",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Infinity Wordmark",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "I N F I N I T Y O S",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 4
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "helpMenu",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 26,
+            "width" : 60,
+            "x" : 380,
+            "y" : 7
+          },
+          "hidden" : false,
+          "id" : "19C1D290-BDFF-4911-9E2D-5D8FBE3297B6",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Help Menu",
+          "opacity" : 100,
+          "role" : 50,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Help",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 5
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "privacyStatus",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 26,
+            "width" : 130,
+            "x" : 580,
+            "y" : 7
+          },
+          "hidden" : false,
+          "id" : "D40BA0DB-CB2D-4426-847B-183B037428A5",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Status",
+          "opacity" : 100,
+          "role" : 51,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "LOCAL | PRIVATE",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 6
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "volume",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 714,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "3E297389-C31C-497D-B6F8-C88FCEFB9B5B",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/40-volume.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Volume",
+          "opacity" : 100,
+          "role" : 53,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 7
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "network",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 742,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "1FFAA773-1F83-476A-AACF-8E37E4E4B2FF",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/37-wifi.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Network",
+          "opacity" : 100,
+          "role" : 54,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 8
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "bluetooth",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 770,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "0A5E1F1D-4AE7-47CE-9414-E04879DD3E39",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/38-bluetooth.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Bluetooth",
+          "opacity" : 100,
+          "role" : 55,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 9
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "battery",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 798,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "29C2C8F5-F42E-4C8D-8160-973547D4EED0",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/39-battery.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Battery",
+          "opacity" : 100,
+          "role" : 56,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 10
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "devices",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 826,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "F6AACA9B-43F5-41C6-8CF8-E9083CD36C63",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/19-computer.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Devices",
+          "opacity" : 100,
+          "role" : 57,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 11
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "search",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 854,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "814342DF-3255-4E19-A51A-6963F7BE1E77",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/27-search.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Search",
+          "opacity" : 100,
+          "role" : 58,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 12
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "settings",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 24,
+            "x" : 882,
+            "y" : 5
+          },
+          "hidden" : false,
+          "id" : "549FD8DC-FF1F-4FDF-A92E-F592B99D9193",
+          "imageAsset" : "assets/icons/crystal-blue-glass/64/base/26-settings.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Settings",
+          "opacity" : 100,
+          "role" : 59,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 13
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "systemClock",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 26,
+            "width" : 80,
+            "x" : 915,
+            "y" : 7
+          },
+          "hidden" : false,
+          "id" : "F80BDB6C-4029-4C0E-91D4-351A16144A0D",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "System Clock",
+          "opacity" : 100,
+          "role" : 52,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "12:34:56",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 14
+        }
+      ],
+      "id" : 1,
+      "title" : "Desktop Navigation"
+    },
+    {
+      "elements" : [
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "desktopWallpaper",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "6A0C2A06-3EB2-45EB-ACEC-D42843CC4388",
+          "imageAsset" : "assets/desktop/infinity-shell-wallpaper-v3.bmp",
+          "imageFit" : 2,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Desktop Wallpaper",
+          "opacity" : 100,
+          "role" : 39,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 0
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "overviewGlass",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 300,
+            "width" : 280,
+            "x" : 680,
+            "y" : 70
+          },
+          "hidden" : false,
+          "id" : "DADDF5A1-8D66-4777-971D-9123F98BAEC9",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Overview Glass",
+          "opacity" : 100,
+          "role" : 2,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 1
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "overviewTitle",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 30,
+            "width" : 240,
+            "x" : 697,
+            "y" : 86
+          },
+          "hidden" : false,
+          "id" : "202DE781-91EC-4451-B95A-629CD55D9007",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Overview Title",
+          "opacity" : 100,
+          "role" : 4,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "SYSTEM OVERVIEW",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "machineName",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 155,
+            "x" : 697,
+            "y" : 130
+          },
+          "hidden" : false,
+          "id" : "86A64D64-6339-43E7-B01F-C754A2F92F57",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Machine Name",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Machine Name",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 3
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "machineNameValue",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 85,
+            "x" : 857,
+            "y" : 130
+          },
+          "hidden" : false,
+          "id" : "38B12F6B-1271-42C4-A411-46C5E6015C05",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Machine Name Value",
+          "opacity" : 100,
+          "role" : 60,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Infinity",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 4
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "systemGeneration",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 155,
+            "x" : 697,
+            "y" : 175
+          },
+          "hidden" : false,
+          "id" : "43FBCA7C-43AF-49EC-A83C-2ACF2E1E937A",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "System Generation",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "System Generation",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 5
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "systemGenerationValue",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 85,
+            "x" : 857,
+            "y" : 175
+          },
+          "hidden" : false,
+          "id" : "D0D30733-D2F4-4A84-B796-90F6F7E74D25",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "System Generation Value",
+          "opacity" : 100,
+          "role" : 61,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Active",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 6
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "runtime",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 155,
+            "x" : 697,
+            "y" : 220
+          },
+          "hidden" : false,
+          "id" : "DE284886-18A5-4662-83F1-B977DA130B69",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Runtime",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Runtime",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 7
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "runtimeValue",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 85,
+            "x" : 857,
+            "y" : 220
+          },
+          "hidden" : false,
+          "id" : "B0F5C107-55E7-418F-AFDC-2D075B5C0E8C",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Runtime Value",
+          "opacity" : 100,
+          "role" : 62,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Online",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 8
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "storageService",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 155,
+            "x" : 697,
+            "y" : 265
+          },
+          "hidden" : false,
+          "id" : "E745084C-B377-42B9-BF1B-57859C61B9AE",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Storage Service",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Storage Service",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 9
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "storageServiceValue",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 85,
+            "x" : 857,
+            "y" : 265
+          },
+          "hidden" : false,
+          "id" : "5C548810-7D0A-402A-882C-DC17592C5E76",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Storage Service Value",
+          "opacity" : 100,
+          "role" : 63,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Ready",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 10
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "input",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 155,
+            "x" : 697,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "121DB135-400E-4E8C-BA89-D257C249EB2A",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Input",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Input",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 11
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "inputValue",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 85,
+            "x" : 857,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "5B149D74-1C7F-4866-907E-CF1B0BB32D79",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Input Value",
+          "opacity" : 100,
+          "role" : 64,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Ready",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 12
+        }
+      ],
+      "id" : 2,
+      "title" : "System Overview Widget"
+    },
+    {
+      "elements" : [
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "desktopWallpaper",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "8CF6BE05-39DC-48BD-94CA-C1A7EBB627EA",
+          "imageAsset" : "assets/desktop/infinity-shell-wallpaper-v3.bmp",
+          "imageFit" : 2,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Desktop Wallpaper",
+          "opacity" : 100,
+          "role" : 39,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 0
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "aIWidgetGlass",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 508,
+            "width" : 280,
+            "x" : 680,
+            "y" : 390
+          },
+          "hidden" : false,
+          "id" : "B890A31E-9C5C-4BC1-BAA5-88CE699F83A8",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "AI Widget Glass",
+          "opacity" : 100,
+          "role" : 2,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 1
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "aITitle",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 27,
+            "width" : 155,
+            "x" : 697,
+            "y" : 403
+          },
+          "hidden" : false,
+          "id" : "298213C0-0987-43FC-B3C7-61861D8E16D2",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "AI Title",
+          "opacity" : 100,
+          "role" : 4,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "INFINITY AI",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "minimize",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 20,
+            "x" : 909,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "DD92A5F4-46FE-4896-9F5A-96D91B4DFF41",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Minimize",
+          "opacity" : 100,
+          "role" : 70,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "-",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 3
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "close",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 28,
+            "width" : 20,
+            "x" : 934,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "40622C9C-0450-41AD-859C-C268C00856CC",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Close",
+          "opacity" : 100,
+          "role" : 71,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "x",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 4
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "voiceWaveform",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 42,
+            "width" : 256,
+            "x" : 692,
+            "y" : 438
+          },
+          "hidden" : false,
+          "id" : "ACDA9298-54D0-4B31-B23A-73A90DB73622",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Voice Waveform",
+          "opacity" : 100,
+          "role" : 65,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 5
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "selectedModel",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 64,
+            "width" : 256,
+            "x" : 692,
+            "y" : 494
+          },
+          "hidden" : false,
+          "id" : "23E4DF1D-93B4-4BF8-8627-A5EC780818CA",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Selected Model",
+          "opacity" : 100,
+          "role" : 66,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Hermes 3 Llama 3.2 3B",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 6
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "conversation",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 227,
+            "width" : 256,
+            "x" : 692,
+            "y" : 573
+          },
+          "hidden" : false,
+          "id" : "F0D5EB0B-4CCF-43D7-A2DD-627A5F2EE58B",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Conversation",
+          "opacity" : 100,
+          "role" : 67,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 7
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "promptInput",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 64,
+            "width" : 210,
+            "x" : 692,
+            "y" : 817
+          },
+          "hidden" : false,
+          "id" : "0F119C28-D1C9-4BE8-8C68-13FD138E3185",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Prompt Input",
+          "opacity" : 100,
+          "role" : 68,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 8
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "send",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 64,
+            "width" : 36,
+            "x" : 912,
+            "y" : 817
+          },
+          "hidden" : false,
+          "id" : "C938C842-EBA1-4615-A989-0CBB6EE5B1CF",
+          "imageAsset" : "",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Send",
+          "opacity" : 100,
+          "role" : 69,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "↑",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 9
+        }
+      ],
+      "id" : 3,
+      "title" : "AI Voice Widget"
+    }
+  ],
+  "version" : 1
+}

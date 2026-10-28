@@ -1,4 +1,8 @@
 #![allow(dead_code)]
+#[path="../kernel/ui/desktop_template.rs"] mod desktop_template;
+#[path="../kernel/ui/installer_template.rs"] mod installer_template;
+#[path="../kernel/ui/installer_layout.rs"] mod installer_layout;
+#[path="../kernel/ui/bitmap.rs"] mod bitmap;
 
 #[path = "../kernel/ui/desktop_polish.rs"]
 mod desktop_polish;
@@ -38,12 +42,12 @@ fn hover_targets_respect_shell_geometry_and_gutters() {
         desktop_polish::target(
             width,
             height,
-            normalized(630, width),
+            normalized(width*400/1000, width),
             normalized(18, height)
         ),
         desktop_polish::HoverTarget::Help
     );
-    let status_left = width - (7 * 32 + 104 + 10);
+    let status_left = width*714/1000;
     assert_eq!(
         desktop_polish::target(
             width,

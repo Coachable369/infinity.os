@@ -12,6 +12,21 @@ struct InfinityInstallerStudioApp: App {
     // ------------------=
     init() {
         let arguments = CommandLine.arguments
+        if arguments.count == 3, arguments[1] == "--export-desktop-default" {
+            do {
+                let root = URL(fileURLWithPath: arguments[2], isDirectory: true)
+                let document = InstallerStudioDocument.factoryDesktop()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                try ContentAwareAtomicWriter.write(encoder.encode(document), to: root.appending(path: "assets/boot/desktop-screens.infinityui"))
+                try ContentAwareAtomicWriter.write(RuntimeTemplateCodec.encode(document, assetRoot: root, collection: .desktop),
+                    to: root.appending(path: "assets/boot/desktop-screens.iuit"))
+                Darwin.exit(0)
+            } catch {
+                fputs("Desktop template export failed: \(error)\n", stderr)
+                Darwin.exit(1)
+            }
+        }
         if arguments.count == 3, arguments[1] == "--export-settings-default" {
             do {
                 let source = URL(fileURLWithPath: arguments[2])
@@ -42,6 +57,8 @@ struct InfinityInstallerStudioApp: App {
                 }
                 let collection: ScreenCollection = if source.lastPathComponent == "boot-screens.infinityui" {
                     .boot
+                } else if source.lastPathComponent == "desktop-screens.infinityui" {
+                    .desktop
                 } else if source.lastPathComponent == "configuration-screens.infinityui" {
                     .configuration
                 } else if source.lastPathComponent == "login-screens.infinityui" {
@@ -173,10 +190,19 @@ struct InfinityInstallerStudioApp: App {
                     .disabled(!store.canRedo)
             }
             CommandGroup(after: .pasteboard) {
-                Button("Duplicate Element") { store.duplicateSelected() }
+                Button(store.editingMenu ? "Duplicate Menu Item" : "Duplicate Element") {
+                    if store.editingMenu {
+                        if let id = store.selectedMenuItemID { store.selectedMenuItemID = store.duplicateMenuItem(id) }
+                    } else { store.duplicateSelected() }
+                }
                     .keyboardShortcut("d", modifiers: .command)
                     .disabled(store.editingUIKit)
-                Button("Delete Element") { store.deleteSelected() }
+                Button(store.editingMenu ? "Delete Menu Item" : "Delete Element") {
+                    if NSApp.keyWindow?.firstResponder is NSTextView {
+                        NSApp.sendAction(#selector(NSText.delete(_:)), to: nil, from: nil)
+                    } else if store.editingMenu { store.deleteSelectedMenuItem() }
+                    else { store.deleteSelected() }
+                }
                     .keyboardShortcut(.delete, modifiers: [])
                     .disabled(store.editingUIKit)
             }
@@ -185,7 +211,7 @@ struct InfinityInstallerStudioApp: App {
                     store.toggleMarqueeSelection()
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
-                .disabled(store.editingUIKit)
+                .disabled(store.editingUIKit || store.editingMenu)
                 Divider()
                 Button("Zoom In") { store.zoomIn() }
                     .keyboardShortcut("+", modifiers: .command)

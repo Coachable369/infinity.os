@@ -80,10 +80,18 @@ impl State {
         } else {
             bottom.saturating_sub(default_y)
         };
-        let w = width * 22 / 100;
+        let authored=super::desktop_template::bounds((id+2) as u8,2,width,height);
+        // Authoring owns the default geometry. Work-area snapping constrains
+        // user drags, not saved designs (which may intentionally overlap a dock).
+        if self.positions[id] == [0, 0] && !(minimized && id == 1) {
+            if let Some(rect) = authored { return rect; }
+        }
+        let w=authored.map(|r|r.width as usize).unwrap_or(width*22/100);
+        let h=if minimized&&id==1 {h}else{authored.map(|r|r.height as usize).unwrap_or(h)};
+        let default_y=authored.map(|r|r.y.max(0) as usize).unwrap_or(default_y);
         let [x, y] = self.positions[id];
         let x = if x == 0 {
-            width * 68 / 100
+            authored.map(|r|r.x.max(0) as usize).unwrap_or(width*68/100)
         } else {
             (x as usize - 1) * width / 1000
         };

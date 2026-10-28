@@ -14,6 +14,12 @@ const ACTION_ROWS: &[(usize, usize)] = &[(0, 0), (3, 0), (3, 1), (3, 2), (3, 4),
 
 mod studio_native_render {
     // ------------------------=
+    // FUNC: desktop_template_bytes
+    // DESC: Retains the production desktop document while this fixture edits only Settings.
+    // ------------------=
+    pub fn desktop_template_bytes() -> Option<&'static [u8]> { None }
+
+    // ------------------------=
     // FUNC: settings_template_bytes
     // DESC: Supplies one immutable authored fixture through the production Studio preview adapter.
     // ------------------=
@@ -61,7 +67,7 @@ fn word(bytes: &[u8], cursor: &mut usize) -> usize {
 // ------------------=
 fn records(bytes: &[u8]) -> Vec<Record> {
     let version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
-    assert!(matches!(version, 10 | 11));
+    assert!(matches!(version, 10 | 11 | 12));
     let mut cursor = 6;
     let screens = word(bytes, &mut cursor);
     let mut result = Vec::new();
@@ -84,6 +90,7 @@ fn records(bytes: &[u8]) -> Vec<Record> {
             cursor += 4 + 16;
             let caption = cursor;
             cursor += 1 + 4;
+            if version >= 12 { cursor += 3; }
             result.push(Record { section, id, role, flags: kind + 3, frame: kind + 6,
                 opacity: kind + 22, caption });
         }

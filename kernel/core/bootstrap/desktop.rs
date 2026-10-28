@@ -1079,211 +1079,6 @@ impl super::DisplayDevice {
         active_menu: Option<usize>,
         clock: crate::storage::DateTimeConfiguration,
     ) -> usize {
-        let scale = self.ui_scale().max(1);
-        let height = (38 * scale).min(self.height / 14).max(34 * scale);
-        let rail_inset = 2 * scale;
-        let rail_width = self.width.saturating_sub(rail_inset * 2);
-        let rail_height = height.saturating_sub(rail_inset * 2);
-        let content_y = height / 2;
-        let text_y = content_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2);
-        let (top_r, top_g, top_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::TopBar);
-        let (outline_r, outline_g, outline_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        let (selection_r, selection_g, selection_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-        let backdrop_alpha = self.active_background_alpha(176);
-        let rail_alpha = self.active_background_alpha(238);
-        let hover = crate::ui::desktop_polish::current();
-        self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, backdrop_alpha);
-        self.app_card_alpha(crate::ui::geometry::Rect {
-            x:rail_inset as i32,y:rail_inset as i32,
-            width:rail_width as u32,height:rail_height as u32,
-        },(top_r,top_g,top_b),(outline_r,outline_g,outline_b),rail_alpha,scale);
-
-        let brand_width = (280 * scale).min(self.width / 3);
-        let brand_active = active_menu == Some(0)
-            || matches!(hover, crate::ui::desktop_polish::HoverTarget::Brand);
-        self.fill_rounded_rect_alpha(
-            8 * scale,
-            4 * scale,
-            brand_width,
-            height.saturating_sub(8 * scale),
-            7 * scale,
-            if brand_active { selection_r } else { 8 },
-            if brand_active { selection_g } else { 27 },
-            if brand_active { selection_b } else { 45 },
-            if brand_active { 172 } else { 116 },
-        );
-        self.top_bar_infinity_icon(36 * scale, content_y, 68 * scale);
-        self.ui_text(76 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
-        self.fill_rect_alpha(
-            brand_width.saturating_sub(1),
-            10 * scale,
-            1,
-            height.saturating_sub(20 * scale),
-            outline_r,
-            outline_g,
-            outline_b,
-            104,
-        );
-
-        let help_x = 610 * scale;
-        if active_menu == Some(5) {
-            let active_width = self.ui_text_width(b"Help", 1) + 18 * scale;
-            self.fill_rounded_rect_alpha(
-                help_x.saturating_sub(9 * scale),
-                4 * scale,
-                active_width,
-                height.saturating_sub(8 * scale),
-                7 * scale,
-                selection_r,
-                selection_g,
-                selection_b,
-                210,
-            );
-        }
-        self.ui_text(help_x, text_y, b"Help", 213, 222, 231, 1);
-
-        let icon_size = 18 * scale;
-        let status_y = content_y;
-        let status_width = 32 * scale;
-        let clock_width = 104 * scale;
-        let status_left = self
-            .width
-            .saturating_sub(7 * status_width + clock_width + 10 * scale);
-        let private_width = self.ui_text_width(b"LOCAL  |  PRIVATE", 1);
-        let private_left = status_left.saturating_sub(private_width + 28 * scale);
-        self.fill_rounded_rect_alpha(
-            private_left,
-            7 * scale,
-            private_width + 18 * scale,
-            height.saturating_sub(14 * scale),
-            height.saturating_sub(14 * scale) / 2,
-            5,
-            27,
-            45,
-            210,
-        );
-        self.fill_rounded_rect_alpha(
-            private_left + 7 * scale,
-            content_y.saturating_sub(2 * scale),
-            4 * scale,
-            4 * scale,
-            2 * scale,
-            33,
-            224,
-            151,
-            255,
-        );
-        self.ui_text(
-            private_left + 14 * scale,
-            text_y,
-            b"LOCAL  |  PRIVATE",
-            211,
-            221,
-            231,
-            1,
-        );
-        for (index, kind) in [0usize, 1, 2, 3, 13, 4, 5].iter().enumerate() {
-            let center = status_left + index * status_width + status_width / 2;
-            let hovered = matches!(
-                hover,
-                crate::ui::desktop_polish::HoverTarget::Status(value) if value == index
-            );
-            self.fill_rounded_rect_alpha(
-                center.saturating_sub(13 * scale),
-                content_y.saturating_sub(13 * scale),
-                26 * scale,
-                26 * scale,
-                13 * scale,
-                if hovered { selection_r } else { 6 },
-                if hovered { selection_g } else { 28 },
-                if hovered { selection_b } else { 47 },
-                if hovered { 142 } else { 76 },
-            );
-            if hovered {
-                self.outline_rounded_rect(
-                    center.saturating_sub(13 * scale),
-                    content_y.saturating_sub(13 * scale),
-                    26 * scale,
-                    26 * scale,
-                    13 * scale,
-                    outline_r,
-                    outline_g,
-                    outline_b,
-                );
-            }
-            self.system_status_icon(center, status_y, *kind, icon_size);
-        }
-        self.paint_system_top_bar_clock_well(clock, height, scale);
-        height
-    }
-
-    // ------------------------=
-    // FUNC: paint_system_top_bar_clock_well
-    // DESC: Draws the live clock as an inset segment of the continuous top-bar glass rail.
-    // ------------------=
-    pub(super) fn paint_system_top_bar_clock_well(
-        &mut self,
-        clock: crate::storage::DateTimeConfiguration,
-        height: usize,
-        scale: usize,
-    ) {
-        let segment_width = (104 * scale).min(self.width);
-        let segment_left = self.width.saturating_sub(segment_width + 4 * scale);
-        let separator_left = segment_left.saturating_sub(3 * scale);
-        let separator_top = 8 * scale;
-        let separator_height = height.saturating_sub(16 * scale);
-        let hovered = matches!(
-            crate::ui::desktop_polish::current(),
-            crate::ui::desktop_polish::HoverTarget::Clock
-        );
-        let (outline_r, outline_g, outline_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        self.fill_rect_alpha(
-            separator_left,
-            separator_top,
-            scale,
-            separator_height,
-            outline_r,
-            outline_g,
-            outline_b,
-            104,
-        );
-        self.fill_rect_alpha(
-            separator_left + scale,
-            separator_top,
-            scale,
-            separator_height,
-            0,
-            3,
-            8,
-            92,
-        );
-        self.fill_rounded_rect_alpha(
-            segment_left + 5 * scale,
-            6 * scale,
-            segment_width.saturating_sub(10 * scale),
-            height.saturating_sub(12 * scale),
-            8 * scale,
-            if hovered { 21 } else { 5 },
-            if hovered { 73 } else { 24 },
-            if hovered { 108 } else { 42 },
-            if hovered { 176 } else { 122 },
-        );
-        self.fill_rounded_rect_alpha(
-            segment_left + 12 * scale,
-            height / 2 - 2 * scale,
-            4 * scale,
-            4 * scale,
-            2 * scale,
-            33,
-            224,
-            151,
-            255,
-        );
-
         let mut time = *b"00:00:00";
         time[0] = b'0' + clock.hour / 10;
         time[1] = b'0' + clock.hour % 10;
@@ -1291,61 +1086,26 @@ impl super::DisplayDevice {
         time[4] = b'0' + clock.minute % 10;
         time[6] = b'0' + clock.second / 10;
         time[7] = b'0' + clock.second % 10;
-        let time_width = self.ui_text_width(&time, 1);
-        self.ui_text_strong(
-            segment_left + 7 * scale + segment_width.saturating_sub(time_width + 7 * scale) / 2,
-            height / 2 - UI_FONT_CELL_HEIGHT / 2,
-            &time,
-            226,
-            237,
-            246,
-            1,
-        );
+        self.desktop_template_scene(crate::ui::desktop_template::BYTES,1,
+            &[(crate::ui::installer_template::InstallerTemplateRole::DesktopClock as u8,&time)],
+            None,false,&[]);
+        let _ = active_menu;
+        crate::ui::desktop_template::bounds(1,2,self.width,self.height)
+            .map(|r|r.bottom().max(0) as usize).unwrap_or(0)
     }
 
     // ------------------------=
     // FUNC: system_top_bar_clock
-    // DESC: Restores and repaints only the desktop clock segment when wall time advances.
+    // DESC: Reconstructs the authored clock region from wallpaper and all intersecting top-bar layers.
     // ------------------=
     pub(super) fn system_top_bar_clock(&mut self, clock: crate::storage::DateTimeConfiguration) {
         crate::ui::status_menu::set_today(clock.year, clock.month, clock.day);
-        let scale = self.ui_scale().max(1);
-        let height = (38 * scale).min(self.height / 14).max(34 * scale);
-        let repaint_width = (116 * scale).min(self.width);
-        let repaint_left = self.width.saturating_sub(repaint_width);
-        let repaint_top = 3 * scale;
-        let repaint_height = height.saturating_sub(6 * scale);
-        let repaint_right = self.width.saturating_sub(4 * scale);
-        let interior_width = repaint_right.saturating_sub(repaint_left);
-        let (top_r, top_g, top_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::TopBar);
-        self.paint_desktop_background_rect(
-            repaint_left,
-            repaint_top,
-            interior_width,
-            repaint_height,
-        );
-        self.fill_rect_alpha(
-            repaint_left,
-            repaint_top,
-            interior_width,
-            repaint_height,
-            top_r,
-            top_g,
-            top_b,
-            238,
-        );
-        self.fill_rect_alpha(
-            repaint_left,
-            repaint_top,
-            interior_width,
-            height / 2 - repaint_top,
-            18,
-            39,
-            59,
-            88,
-        );
-        self.paint_system_top_bar_clock_well(clock, height, scale);
+        let Some(r)=crate::ui::desktop_template::bounds(1,52,self.width,self.height) else{return;};
+        let saved=self.render_clip;
+        self.intersect_render_clip(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize);
+        self.paint_desktop_background_rect(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize);
+        self.system_top_bar(None,clock);
+        self.render_clip=saved;
     }
 
     // ------------------------=
@@ -1390,6 +1150,7 @@ impl super::DisplayDevice {
     // DESC: Draws a native vector-backed desktop menu for the active top-bar domain.
     // ------------------=
     pub(super) fn system_menu_panel(&mut self, menu_kind: usize, focus: usize, scale: usize) {
+        if menu_kind==0&&self.authored_infinity_menu(scale){return;}
         if menu_kind >= 8 {
             self.status_menu_panel(menu_kind, focus, scale);
             return;
@@ -2388,7 +2149,10 @@ impl super::DisplayDevice {
             };
             let _ = self.themed_icon(left + 30 * scale, top + 24 * scale, icon_role, 32 * scale);
             let native_ui=crate::ui::native_uikit::presentation();
-            let window_title:&[u8]=if screen==8&&native_ui.active {
+            let authored_window = screen == 8 && crate::ui::installer_template::navigation::scene() != 0;
+            let window_title:&[u8]=if authored_window {
+                crate::ui::desktop_template::template().and_then(|t|t.screen_title(crate::ui::installer_template::navigation::scene())).unwrap_or(b"InfinityOS")
+            } else if screen==8&&native_ui.active {
                 &native_ui.title[..native_ui.title_length]
             } else if screen == 9 {
                 b"Text Editor"
@@ -2400,13 +2164,13 @@ impl super::DisplayDevice {
             self.ui_text_elided_strong(
                 left + 54 * scale,
                 top + 16 * scale,
-                108 * scale,
+                if authored_window { width.saturating_sub(210 * scale) } else { 108 * scale },
                 window_title,
                 231,
                 243,
                 250,
             );
-            self.ui_text(
+            if !authored_window { self.ui_text(
                 left + 174 * scale,
                 top + 16 * scale,
                 b"File",
@@ -2423,7 +2187,7 @@ impl super::DisplayDevice {
                 233,
                 241,
                 1,
-            );
+            ); }
             for (index, control) in [geometry.minimize, geometry.maximize, geometry.close]
                 .iter()
                 .enumerate()
@@ -2567,6 +2331,11 @@ impl super::DisplayDevice {
         let content_top = geometry.content.y.max(0) as usize;
         let content_width = geometry.content.width as usize;
         let content_height = geometry.content.height as usize;
+        if screen==8&&crate::ui::installer_template::navigation::scene()!=0 {
+            let content=crate::ui::geometry::Rect{x:geometry.content.x,y:geometry.toolbar.y,width:geometry.content.width,
+                height:(geometry.content.bottom()-geometry.toolbar.y).max(0)as u32};
+            if self.authored_desktop_content(crate::ui::installer_template::navigation::scene(),content){return;}
+        }
         if screen==8 && crate::ui::native_uikit::presentation().active {
             self.render_native_uikit(geometry.content,scale);
             return;
@@ -6919,70 +6688,13 @@ impl super::DisplayDevice {
     // DESC: Paints the system widget at its shared movable geometry.
     // ------------------=
     fn desktop_overview_widget(&mut self, scale: usize) {
-        let (accent_r, accent_g, accent_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
-        let geometry = crate::ui::desktop_widgets::current().rect(0,self.width,self.height,scale,false);
-        let widget_left = geometry.x.max(0) as usize;
-        let widget_width = geometry.width as usize;
-        let overview_top = geometry.y.max(0) as usize;
-        let overview_height = geometry.height as usize;
-        self.glass_panel(
-            widget_left,
-            overview_top,
-            widget_width,
-            overview_height,
-            false,
-        );
-        for row in 0..3 { for col in 0..2 { self.fill_rect(widget_left+(5+col*4)*scale,overview_top+(17+row*4)*scale,scale,scale,120,191,226); } }
-        self.ui_text(
-            widget_left + 18 * scale,
-            overview_top + 16 * scale,
-            b"SYSTEM OVERVIEW",
-            accent_r,
-            accent_g,
-            accent_b,
-            1,
-        );
-        let machine = crate::runtime::with_runtime(|runtime| runtime.identity.machine()).flatten();
-        let machine_name = machine
-            .map(|value| value.display_name)
-            .unwrap_or(crate::runtime::identity::ShortText::empty());
-        for (index, (label, value)) in [
-            (b"Machine Name".as_slice(), machine_name.as_bytes()),
-            (b"System Generation", b"Active".as_slice()),
-            (b"Runtime", b"Online".as_slice()),
-            (b"Storage Service", b"Ready".as_slice()),
-            (b"Input", b"Ready".as_slice()),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let row_y = overview_top + 48 * scale + index * (overview_height.saturating_sub(48 * scale) / 5).min(34 * scale);
-            self.ui_text(widget_left + 18 * scale, row_y, label, 158, 174, 190, 1);
-            let value_width = self.ui_text_width(value, 1);
-            self.ui_text_strong(
-                widget_left + widget_width.saturating_sub(value_width + 18 * scale),
-                row_y,
-                value,
-                223,
-                234,
-                242,
-                1,
-            );
-            if matches!(index, 2 | 3 | 4) {
-                self.fill_rounded_rect_alpha(
-                    widget_left + widget_width.saturating_sub(value_width + 30 * scale),
-                    row_y + 7 * scale,
-                    6 * scale,
-                    6 * scale,
-                    3 * scale,
-                    73,
-                    210,
-                    122,
-                    255,
-                );
-            }
-        }
+        let geometry=crate::ui::desktop_widgets::current().rect(0,self.width,self.height,scale,false);
+        let Some(base)=crate::ui::desktop_template::bounds(2,2,self.width,self.height) else{return;};
+        let machine=crate::runtime::with_runtime(|runtime|runtime.identity.machine()).flatten();
+        let name=machine.map(|v|v.display_name).unwrap_or(crate::runtime::identity::ShortText::empty());
+        self.desktop_template_scene(crate::ui::desktop_template::BYTES,2,
+            &[(60,name.as_bytes()),(61,b"Active"),(62,b"Online"),(63,b"Ready"),(64,b"Ready")],
+            Some((geometry.x-base.x,geometry.y-base.y)),false,&[]);
     }
 
     // ------------------------=
@@ -7021,8 +6733,14 @@ impl super::DisplayDevice {
         let width = geometry.panel.width as usize;
         let height = geometry.panel.height as usize;
         let (accent_r, accent_g, accent_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
-        self.glass_panel(left, top, width, height, false);
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        if let Some(base)=crate::ui::desktop_template::bounds(3,2,self.width,self.height) {
+            let saved=self.render_clip;
+            self.intersect_render_clip(left,top,width,height);
+            self.desktop_template_scene(crate::ui::desktop_template::BYTES,3,&[],
+                Some((geometry.panel.x-base.x,geometry.panel.y-base.y)),false,&[65,66,67,68,69,70,71]);
+            self.render_clip=saved;
+        }
         for row in 0..3 { for col in 0..2 { self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226); } }
         let app_progress = crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_generation_progress());
         let can_stop = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
@@ -7090,56 +6808,7 @@ impl super::DisplayDevice {
             return;
         }
         let model = chat.selected_model_descriptor();
-        let model_left = geometry.model.x.max(0) as usize;
-        let model_top = geometry.model.y.max(0) as usize;
-        self.fill_rounded_rect_alpha(
-            model_left,
-            model_top,
-            geometry.model.width as usize,
-            geometry.model.height as usize,
-            9 * scale,
-            7,
-            25,
-            40,
-            226,
-        );
-        self.outline_rounded_rect(
-            model_left,
-            model_top,
-            geometry.model.width as usize,
-            geometry.model.height as usize,
-            9 * scale,
-            accent_r / 2,
-            accent_g / 2,
-            accent_b / 2,
-        );
-        self.ui_text(
-            model_left + 12 * scale,
-            model_top + 5 * scale,
-            b"MODEL",
-            123,
-            151,
-            170,
-            1,
-        );
-        self.ui_text_strong(
-            model_left + 12 * scale,
-            model_top + 21 * scale,
-            model.name,
-            224,
-            235,
-            243,
-            1,
-        );
-        self.ui_text(
-            model_left + geometry.model.width as usize - 18 * scale,
-            model_top + 15 * scale,
-            b">",
-            accent_r,
-            accent_g,
-            accent_b,
-            1,
-        );
+        self.ai_widget_model(geometry.model,model.name,scale);
         if !chat.selected_model_ready() {
             let loading_left = geometry.timeline.x.max(0) as usize;
             let loading_top = geometry.timeline.y.max(0) as usize;
@@ -7153,7 +6822,7 @@ impl super::DisplayDevice {
                 width:loading_width as u32,height:loading_height as u32,
             },(2,12,22),(accent_r/2,accent_g/2,accent_b/2),244,scale);
             let center_x = loading_left + loading_width / 2;
-            let center_y = loading_top + loading_height / 2 - 30 * scale;
+            let center_y = (loading_top + loading_height / 2).saturating_sub(30 * scale);
             let points = [
                 (-22, 0), (-16, -16), (0, -22), (16, -16),
                 (22, 0), (16, 16), (0, 22), (-16, 16),
@@ -7190,48 +6859,14 @@ impl super::DisplayDevice {
         let timeline_top = geometry.timeline.y.max(0) as usize;
         let timeline_width = geometry.timeline.width as usize;
         let timeline_height = geometry.timeline.height as usize;
-        self.fill_rounded_rect_alpha(
-            timeline_left,
-            timeline_top,
-            timeline_width,
-            timeline_height,
-            9 * scale,
-            2,
-            12,
-            22,
-            190,
-        );
-        if chat.message_count() == 0 {
+        self.desktop_bound_surface(67,geometry.timeline);
+        if timeline_width == 0 || timeline_height == 0 {
+            crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_timeline_scroll_metrics(0));
+        } else if chat.message_count() == 0 {
             crate::runtime::ai::with_ai_runtime(|runtime| {
                 runtime.chat.set_timeline_scroll_metrics(0)
             });
-            self.ui_text_strong(
-                timeline_left + 14 * scale,
-                timeline_top + 18 * scale,
-                b"How can I help with InfinityOS?",
-                218,
-                232,
-                241,
-                1,
-            );
-            self.ui_text(
-                timeline_left + 14 * scale,
-                timeline_top + 44 * scale,
-                b"Ask about this system, storage,",
-                137,
-                160,
-                178,
-                1,
-            );
-            self.ui_text(
-                timeline_left + 14 * scale,
-                timeline_top + 62 * scale,
-                b"devices, memory, or networking.",
-                137,
-                160,
-                178,
-                1,
-            );
+            self.ai_widget_empty_timeline(geometry.timeline,scale);
         } else {
             let bubble_width = timeline_width.saturating_sub(43 * scale);
             let text_width = bubble_width.saturating_sub(20 * scale);
@@ -7356,86 +6991,9 @@ impl super::DisplayDevice {
         let composer_text = chat.input();
         self.ai_widget_composer(geometry.composer,composer_text,chat.input_cursor(),
             crate::ui::text_input::caret(3),scale,(accent_r,accent_g,accent_b));
-        let send_left = geometry.send.x.max(0) as usize;
-        let send_top = geometry.send.y.max(0) as usize;
-        let send_width = geometry.send.width as usize;
-        let send_height = geometry.send.height as usize;
-        let send_ready = !composer_text.is_empty()
-            && chat.selected_model_ready()
+        let send_ready = !composer_text.is_empty() && chat.selected_model_ready()
             && chat.generation_state != crate::runtime::ai::chat::GenerationState::Running;
-        self.fill_rounded_rect_alpha(
-            send_left,
-            send_top + 2 * scale,
-            send_width,
-            send_height,
-            11 * scale,
-            0,
-            6,
-            13,
-            180,
-        );
-        self.fill_rounded_rect_alpha(
-            send_left,
-            send_top,
-            geometry.send.width as usize,
-            geometry.send.height as usize,
-            11 * scale,
-            if send_ready { accent_r } else { accent_r / 3 },
-            if send_ready { accent_g } else { accent_g / 3 },
-            if send_ready { accent_b } else { accent_b / 3 },
-            if send_ready { 248 } else { 190 },
-        );
-        self.outline_rounded_rect(
-            send_left,
-            send_top,
-            send_width,
-            send_height,
-            11 * scale,
-            if send_ready { 171 } else { 73 },
-            if send_ready { 228 } else { 107 },
-            if send_ready { 255 } else { 126 },
-        );
-        if send_width >= 86 * scale { self.ui_text_centered_strong(
-            send_left,
-            send_width.saturating_sub(15 * scale),
-            send_top + send_height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
-            b"Send",
-            if send_ready { 250 } else { 158 },
-            if send_ready { 253 } else { 177 },
-            if send_ready { 255 } else { 190 },
-            1,
-        ); }
-        let arrow_x = if send_width >= 86 * scale { send_left + send_width - 17 * scale }
-            else { send_left + send_width / 2 } as i32;
-        let arrow_y = send_top.saturating_add(send_height / 2) as i32;
-        let arrow_color = if send_ready { (250, 253, 255) } else { (120, 145, 160) };
-        self.line(
-            arrow_x - 4 * scale as i32,
-            arrow_y,
-            arrow_x + 3 * scale as i32,
-            arrow_y,
-            arrow_color.0,
-            arrow_color.1,
-            arrow_color.2,
-        );
-        self.line(
-            arrow_x,
-            arrow_y - 3 * scale as i32,
-            arrow_x + 3 * scale as i32,
-            arrow_y,
-            arrow_color.0,
-            arrow_color.1,
-            arrow_color.2,
-        );
-        self.line(
-            arrow_x,
-            arrow_y + 3 * scale as i32,
-            arrow_x + 3 * scale as i32,
-            arrow_y,
-            arrow_color.0,
-            arrow_color.1,
-            arrow_color.2,
-        );
+        self.ai_widget_send(geometry.send,send_ready,scale);
         self.ai_widget_status_menu(geometry.status,crate::ui::ai_widget::current_menu(),voice_enabled,can_stop,scale);
     }
 
@@ -7743,7 +7301,8 @@ pub fn system_ui_present(
                 editor_dialog,
                 editor_dialog_input,
                 editor_dialog_focus,
-            ) ^ (chat_content as u32 ^ (chat_content >> 32) as u32) ^ crate::ui::text_input::presentation_hash()
+            ) ^ crate::ui::installer_template::navigation::revision().rotate_left(17)
+                ^ (chat_content as u32 ^ (chat_content >> 32) as u32) ^ crate::ui::text_input::presentation_hash()
                 ^ crate::ui::object_picker::presentation().state_hash()
                 ^ if screen == 10 {
                     u32::from(clock.second)
@@ -7927,6 +7486,7 @@ pub fn system_ui_present(
             let thinking_header_changed = core::mem::replace(&mut *(&raw mut THINKING_HEADER_DIRTY), false);
             let thinking_body_changed = (&mut *(&raw mut THINKING_ANIMATION)).take_body_damage();
             let command_input_only = screen == 8 && console.last_system_screen == 8
+                && crate::ui::installer_template::navigation::scene()==0
                 && !assistant_changed
                 && content_changed && static_content == console.last_system_static_content
                 && !structural_change_without_window && !file_navigator_changed && !focus_changed

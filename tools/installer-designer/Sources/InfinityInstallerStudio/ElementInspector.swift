@@ -76,6 +76,10 @@ struct ElementInspector: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: InfinityUIKit.Metrics.controlGap) {
                         inspectorHeader(element)
+                        if store.selectedCollection == .desktop && element.role == .desktopBrand {
+                            Button("Edit Menu", systemImage: "list.bullet.rectangle") { store.editInfinityMenu() }
+                                .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
+                        }
                         Divider()
                         geometrySection(element)
                         if element.role == .input {

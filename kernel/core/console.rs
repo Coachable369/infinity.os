@@ -59,6 +59,8 @@ mod diagnostics;
 mod pool_commands;
 #[path = "console_editor.rs"]
 mod editor_commands;
+#[path = "console_menu_editor.rs"]
+mod menu_editor_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
 #[path = "console_source.rs"]
@@ -591,6 +593,7 @@ struct ConsoleRuntime {
     editor_scroll_grab_offset: i32,
     editor_window: DesktopAppWindowState,
     command_window: DesktopAppWindowState,
+    authored_host: Option<(DesktopAppWindowState, bool)>,
     task_manager_window: DesktopAppWindowState,
     browser_window: DesktopAppWindowState,
     task_manager_selected: usize,
@@ -772,6 +775,7 @@ impl ConsoleRuntime {
             editor_scroll_grab_offset: 0,
             editor_window: crate::ui::editor_chrome::default_window(system.framebuffer_width,system.framebuffer_height),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
+            authored_host: None,
             task_manager_window: DesktopAppWindowState::new(160, 140, 760, 650),
             browser_window: crate::ui::system_layout::default_browser_window(
                 system.framebuffer_width,
@@ -3075,6 +3079,12 @@ impl ConsoleRuntime {
     // DESC: Opens the native Infinity Console language inside a desktop command window.
     // ------------------=
     fn open_command_window(&mut self) {
+        if crate::ui::installer_template::navigation::scene() != 0 {
+            self.store_active_app_window();
+            self.desktop_app = DesktopAppKind::CommandWindow;
+            self.load_active_app_window();
+        }
+        let restored = self.close_authored_destination();
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::COMMAND, false);
         self.ensure_app_task(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW);
         if self.mode != ConsoleMode::Desktop {
@@ -3086,7 +3096,7 @@ impl ConsoleRuntime {
         self.load_active_app_window();
         self.app_window_dragging = false;
         self.app_window_resizing = None;
-        if !self.command_window_suspended {
+        if !self.command_window_suspended && !restored {
             self.reset_input();
             self.output.clear();
             self.output.write_line(b"Infinity Command Window");
@@ -3314,6 +3324,7 @@ impl ConsoleRuntime {
     // DESC: Guards dirty Text Editor closure and dismisses other active desktop applications immediately.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        if self.close_authored_destination() { self.redraw(); return; }
         if self.desktop_app==DesktopAppKind::CommandWindow && compiler_commands::close_uikit() {
             self.redraw();
             return;
@@ -3330,6 +3341,7 @@ impl ConsoleRuntime {
     // DESC: Dismisses the active desktop application after its document lifecycle has explicitly authorized closure.
     // ------------------=
     fn close_desktop_app_unchecked(&mut self) {
+        if self.close_authored_destination() { return; }
         #[cfg(feature="native-browser")]
         if self.desktop_app==DesktopAppKind::Browser {browser_controller::close();}
         if let Some(id) = self.shelf_app_id() { crate::ui::app_launcher::minimized_shelf::set(id, false); }
@@ -5405,6 +5417,11 @@ impl ConsoleRuntime {
     // DESC: Opens one native top-bar menu and selects its first actionable row.
     // ------------------=
     fn open_shell_menu(&mut self, menu: usize) {
+        if menu==0 {
+            let mut view=crate::ui::installer_template::navigation::View::new();
+            if let Some(menu)=crate::ui::desktop_template::menu(){view.selected=view.count(&menu).saturating_sub(1);view.step(&menu,true);}
+            crate::ui::installer_template::navigation::publish(view);
+        }
         if self.mode != ConsoleMode::SystemMenu {
             self.shell_return_mode=self.mode;
             self.shell_return_focus=self.system_focus;
@@ -5535,6 +5552,7 @@ impl ConsoleRuntime {
     // DESC: Returns the bounded row count for the currently open native menu.
     // ------------------=
     fn shell_menu_item_count(&self) -> usize {
+        if self.shell_menu==0 {if let Some(menu)=crate::ui::desktop_template::menu(){return crate::ui::installer_template::navigation::view().count(&menu);}}
         if self.shell_menu >= 8 {
             return crate::ui::status_menu::items(self.shell_menu).len();
         }
@@ -5561,6 +5579,7 @@ impl ConsoleRuntime {
     // DESC: Executes the selected menu command through real shell, settings, session, or firmware behavior.
     // ------------------=
     fn activate_shell_menu_item(&mut self) {
+        if self.shell_menu==0&&crate::ui::desktop_template::menu().is_some(){self.activate_authored_menu();return;}
         if self.shell_menu >= 8 {
             use crate::ui::status_menu::Action;
             if let Some((_, action)) =
@@ -6554,6 +6573,7 @@ impl ConsoleRuntime {
             return;
         }
         if self.mode==ConsoleMode::SystemMenu {
+            if self.authored_menu_key(key){return;}
             match key {
                 ConsoleKey::Escape=>{self.close_shell_menu();return;}
                 ConsoleKey::Left | ConsoleKey::Right=>{
@@ -7368,6 +7388,7 @@ impl ConsoleRuntime {
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
+        if self.authored_menu_scroll(vertical){return true;}
         let mut preview=crate::ui::file_preview::current();
         if preview.open && self.workplace_authorized(false) && preview.owner==self.current_session.0 {
             preview.scroll_by(-(vertical as isize)*3);crate::ui::file_preview::publish(preview);self.redraw();return true;
@@ -8550,6 +8571,10 @@ impl ConsoleRuntime {
                             if self.desktop_app == DesktopAppKind::TextEditor {
                                 let _ = self.pointer_editor_chrome(true);
                             } else if self.desktop_app == DesktopAppKind::CommandWindow {
+                                if crate::ui::installer_template::navigation::scene() != 0 {
+                                    self.redraw();
+                                    return;
+                                }
                                 let geometry = layout.desktop_app_window_geometry(
                                     self.app_window_x,
                                     self.app_window_y,
@@ -9170,6 +9195,7 @@ impl ConsoleRuntime {
                     _ => {}
                 }
             }
+            if self.authored_menu_pointer(clicked){self.redraw();return;}
             match layout.system_menu_target(self.shell_menu, self.pointer_x, self.pointer_y) {
                 SystemMenuTarget::Item(index) => {
                     self.system_focus = index;
@@ -9572,6 +9598,10 @@ impl ConsoleRuntime {
     // DESC: Handles input console input or state transitions.
     // ------------------=
     fn input_console(&mut self, key: ConsoleKey) {
+        if self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::CommandWindow&&crate::ui::installer_template::navigation::scene()!=0 {
+            if matches!(key,ConsoleKey::Escape){self.close_desktop_app();}
+            return;
+        }
         #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if compiler_commands::input(self,key) {return;}
         if self.workplace_console_key(key) {return;}

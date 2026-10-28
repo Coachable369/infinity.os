@@ -27,6 +27,8 @@ struct StudioRootView: View {
                 if store.editingUIKit {
                     UIKitWorkspace(store: kit).frame(minWidth: 560)
                     UIKitInspector(store: kit).frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
+                } else if store.editingMenu {
+                    MenuEditor(store: store)
                 } else {
                     InstallerCanvas(store: store).frame(minWidth: 560)
                     ElementInspector(store: store).frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
@@ -72,7 +74,7 @@ private struct StudioToolbar: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Divider().frame(height: 28).padding(.horizontal, 4)
-            if !store.editingUIKit {
+            if !store.editingUIKit && !store.editingMenu {
             Button(action: store.toggleMarqueeSelection) {
                 Label(
                     store.marqueeSelectionEnabled ? "Marquee On" : "Marquee Select",
@@ -104,7 +106,7 @@ private struct StudioToolbar: View {
                     Label("Reset Artwork", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(kit.selectedAsset == nil)
-            } else {
+            } else if !store.editingMenu {
             Menu {
                 Button("Panel") { store.addElement(kind: .panel) }
                 Button("Text") { store.addElement(kind: .text) }
@@ -172,6 +174,7 @@ private struct ScreenSidebar: View {
     @AppStorage("studio.sidebar.configuration") private var configurationExpanded = true
     @AppStorage("studio.sidebar.settings") private var settingsExpanded = false
     @AppStorage("studio.sidebar.boot") private var bootExpanded = true
+    @AppStorage("studio.sidebar.desktop") private var desktopExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -196,6 +199,12 @@ private struct ScreenSidebar: View {
                     collectionHeader(.login)
                 }
                 .id(ScreenCollection.login)
+                DisclosureGroup(isExpanded: $desktopExpanded) {
+                    screenRows(for: .desktop, screens: store.desktopDocument.screens)
+                } label: {
+                    collectionHeader(.desktop)
+                }
+                .id(ScreenCollection.desktop)
                 DisclosureGroup(isExpanded: $bootExpanded) {
                     screenRows(for: .boot, screens: store.bootDocument.screens)
                 } label: {
@@ -224,7 +233,7 @@ private struct ScreenSidebar: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             Divider()
-            if !store.editingUIKit && store.selectedScreen != nil {
+            if !store.editingUIKit && !store.editingMenu && store.selectedScreen != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SCREEN NAME")
                         .font(.caption2.weight(.semibold))
@@ -308,8 +317,7 @@ private struct ScreenSidebar: View {
                 .foregroundStyle(!store.editingUIKit && store.selectedCollection == collection
                     ? InfinityUIKit.Palette.nativeAccent
                     : InfinityUIKit.Palette.nativeTextSecondary)
-            Text(collection == .installation ? "INSTALLATION WIZARD" :
-                collection == .configuration ? "CONFIGURATION WIZARD" : "SYSTEM SETTINGS")
+            Text(collection.title.uppercased())
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(store.selectedCollection == collection ? .primary : .secondary)
             Spacer()

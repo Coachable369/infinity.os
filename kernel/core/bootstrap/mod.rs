@@ -5,6 +5,7 @@ use crate::boot_info::BootInfo;
 mod bootstrap;
 mod crash;
 mod desktop;
+mod desktop_menu_view;
 mod desktop_controls;
 mod settings_view;
 mod settings_dashboard_view;

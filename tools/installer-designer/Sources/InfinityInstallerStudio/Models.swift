@@ -88,6 +88,29 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case loginRestart = 46
     case loginNetwork = 47
     case loginAccessibility = 48
+    case desktopBrand = 49
+    case desktopHelp = 50
+    case desktopPrivacy = 51
+    case desktopClock = 52
+    case desktopVolume = 53
+    case desktopNetwork = 54
+    case desktopBluetooth = 55
+    case desktopBattery = 56
+    case desktopDevices = 57
+    case desktopSearch = 58
+    case desktopSettings = 59
+    case desktopMachine = 60
+    case desktopGeneration = 61
+    case desktopRuntime = 62
+    case desktopStorage = 63
+    case desktopInput = 64
+    case desktopVoice = 65
+    case desktopModel = 66
+    case desktopTimeline = 67
+    case desktopComposer = 68
+    case desktopSend = 69
+    case desktopMinimize = 70
+    case desktopClose = 71
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -141,6 +164,29 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .loginRestart: "Login: Restart"
         case .loginNetwork: "Login: Network"
         case .loginAccessibility: "Login: Accessibility"
+        case .desktopBrand: "Desktop: Brand"
+        case .desktopHelp: "Desktop: Help"
+        case .desktopPrivacy: "Desktop: Privacy"
+        case .desktopClock: "Desktop: Clock"
+        case .desktopVolume: "Desktop: Volume"
+        case .desktopNetwork: "Desktop: Network"
+        case .desktopBluetooth: "Desktop: Bluetooth"
+        case .desktopBattery: "Desktop: Battery"
+        case .desktopDevices: "Desktop: Devices"
+        case .desktopSearch: "Desktop: Search"
+        case .desktopSettings: "Desktop: Settings"
+        case .desktopMachine: "Desktop: Machine"
+        case .desktopGeneration: "Desktop: Generation"
+        case .desktopRuntime: "Desktop: Runtime"
+        case .desktopStorage: "Desktop: Storage"
+        case .desktopInput: "Desktop: Input"
+        case .desktopVoice: "Desktop: Voice"
+        case .desktopModel: "Desktop: Model"
+        case .desktopTimeline: "Desktop: Timeline"
+        case .desktopComposer: "Desktop: Composer"
+        case .desktopSend: "Desktop: Send"
+        case .desktopMinimize: "Desktop: Minimize"
+        case .desktopClose: "Desktop: Close"
         }
     }
 
@@ -321,6 +367,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     case installation
     case configuration
     case systemSettings
+    case desktop
 
     var id: String { rawValue }
     var title: String {
@@ -330,6 +377,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         case .installation: "Installation Screens"
         case .configuration: "OS Configuration Screens"
         case .systemSettings: "System Settings"
+        case .desktop: "Desktop & Widgets"
         }
     }
 
@@ -344,6 +392,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         case .installation: 11
         case .configuration: 8
         case .systemSettings: 11
+        case .desktop: 3
         }
     }
 
@@ -362,6 +411,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if self == .desktop { return role == .console ? 1 : 0 }
         if self == .login { return [.input, .primaryButton].contains(role) ? 1 : 0 }
         if self == .boot { return role == .progressBar ? 1 : 0 }
         if self == .systemSettings {
@@ -410,6 +460,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
+        if self == .desktop { return role.rawValue >= 49 || role == .console || role == .sceneBackground ? 1 : nil }
         if self == .login { return [.input, .primaryButton, .sceneBackground].contains(role) ? 1 : nil }
         if role == .sceneBackground { return self == .installation || self == .boot ? 1 : 0 }
         if role == .settingsNavigationIcon { return self == .systemSettings ? 11 : 0 }
@@ -746,6 +797,7 @@ struct InstallerStudioDocument: Codable, Hashable {
     // A persisted migration marker prevents a deliberately deleted background
     // from being silently restored the next time the document is opened.
     var explicitInstallerBackground: Bool? = nil
+    var infinityMenu: StudioMenu? = nil
 
     // ------------------------=
     // FUNC: factoryDefault

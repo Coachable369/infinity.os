@@ -29,6 +29,46 @@ pub(super) struct ConfigurationViewState<'a> {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: desktop_bound_surface
+    // DESC: Paints a live widget control with its authored material, border, opacity and optional artwork.
+    // ------------------=
+    pub(crate) fn desktop_bound_surface(&mut self, role:u8, rect:crate::ui::geometry::Rect)->bool {
+        let Some(mut e)=crate::ui::desktop_template::element(3,role) else{return false;};
+        if e.hidden||e.opacity==0||rect.width==0||rect.height==0{return false;}
+        let Some(t)=crate::ui::desktop_template::template() else{return false;};
+        e.text=b"";
+        self.template_element_in_rect(e,t.asset(e.image_asset),None,
+            crate::ui::installer_layout::InstallerRect{left:rect.x.max(0)as usize,top:rect.y.max(0)as usize,
+                width:rect.width as usize,height:rect.height as usize});
+        true
+    }
+    // ------------------------=
+    // FUNC: desktop_template_scene
+    // DESC: Composes authored desktop layers using the production typography, image and glass painters, retaining native value bindings.
+    // ------------------=
+    pub(crate) fn desktop_template_scene(&mut self, bytes:&[u8], scene:u8, values:&[(u8,&[u8])],
+        translation:Option<(i32,i32)>, wallpaper:bool, skip:&[u8])->bool {
+        let template = if core::ptr::eq(bytes.as_ptr(),crate::ui::desktop_template::BYTES.as_ptr())
+            && bytes.len()==crate::ui::desktop_template::BYTES.len() {
+            crate::ui::desktop_template::template()
+        } else {InstallerTemplate::parse_desktop(bytes).ok()};
+        let Some(template)=template else{return false;};
+        let Some(count)=template.element_count(scene) else{return false;};
+        for i in 0..count {
+            let Some(mut e)=template.layer_at(scene,i) else{return false;};
+            if e.hidden||e.opacity==0||skip.contains(&e.role)
+                ||(!wallpaper&&e.role==InstallerTemplateRole::SceneBackground as u8){continue;}
+            if let Some((_,value))=values.iter().find(|(role,_)|*role==e.role){e.text=value;}
+            let r=crate::ui::desktop_template::mapped(e,self.width,self.height,translation);
+            let old=self.render_clip;
+            self.intersect_render_clip(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize);
+            self.template_element_in_rect(e,template.asset(e.image_asset),None,
+                crate::ui::installer_layout::InstallerRect{left:r.x.max(0)as usize,top:r.y.max(0)as usize,width:r.width as usize,height:r.height as usize});
+            self.render_clip=old;
+        }
+        true
+    }
+    // ------------------------=
     // FUNC: login_template_scene
     // DESC: Shares authored authentication pixels between Studio and the OS while keeping credentials masked and identity native.
     // ------------------=

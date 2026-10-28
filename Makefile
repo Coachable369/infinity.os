@@ -89,6 +89,7 @@ WALLPAPER_ASSETS := assets/desktop/infinity-default-dark-wallpaper-v2.png \
 UI_ASSETS := $(shell find assets/skins -type f) $(WALLPAPER_ASSETS)
 INSTALLER_UI_ASSETS := assets/boot/infinity-installer-mesh-diagram-v1.png \
 	assets/boot/login-screens.infinityui assets/boot/login-screens.iuit \
+	assets/boot/desktop-screens.infinityui assets/boot/desktop-screens.iuit \
 	assets/boot/boot-screens.infinityui assets/boot/boot-screens.iuit \
 	assets/boot/installer-screens.infinityui assets/boot/installer-screens.iuit \
 	assets/boot/configuration-screens.infinityui assets/boot/configuration-screens.iuit \
@@ -103,6 +104,7 @@ SETTINGS_TEMPLATE_SOURCE := assets/boot/settings-screens.infinityui
 SETTINGS_TEMPLATE_RUNTIME := assets/boot/settings-screens.iuit
 KERNEL_SOURCES += assets/boot/boot-screens.infinityui assets/boot/boot-screens.iuit
 KERNEL_SOURCES += assets/boot/login-screens.infinityui assets/boot/login-screens.iuit
+KERNEL_SOURCES += assets/boot/desktop-screens.infinityui assets/boot/desktop-screens.iuit
 INSTALLER_DESIGNER_SOURCES := $(shell find tools/installer-designer/Sources -type f -name '*.swift') \
 	tools/installer-designer/Package.swift tools/installer-designer/compile-template.sh
 CRASH_ASSETS := $(shell find assets/crash -type f)
@@ -385,7 +387,10 @@ assets/boot/boot-screens.iuit: force-installer-template-compile assets/boot/boot
 assets/boot/login-screens.iuit: force-installer-template-compile assets/boot/login-screens.infinityui $(INSTALLER_DESIGNER_SOURCES) $(INSTALLER_IMAGE_ASSETS)
 	@tools/installer-designer/compile-template.sh assets/boot/login-screens.infinityui assets/boot/login-screens.iuit
 
-installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) assets/boot/boot-screens.iuit assets/boot/login-screens.iuit
+assets/boot/desktop-screens.iuit: force-installer-template-compile assets/boot/desktop-screens.infinityui $(INSTALLER_DESIGNER_SOURCES) $(INSTALLER_IMAGE_ASSETS)
+	@tools/installer-designer/compile-template.sh assets/boot/desktop-screens.infinityui assets/boot/desktop-screens.iuit
+
+installer-template-runtime: assets/boot/desktop-screens.iuit $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) assets/boot/boot-screens.iuit assets/boot/login-screens.iuit
 
 installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME) assets/boot/boot-screens.iuit settings-action-test
 	@tools/installer-designer/verify-template-build.sh

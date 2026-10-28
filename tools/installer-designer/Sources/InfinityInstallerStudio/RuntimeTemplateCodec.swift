@@ -36,15 +36,23 @@ enum TemplateValidator {
             throw TemplateValidationIssue.invalidDocument("Installer screens must be ordered and numbered contiguously")
         }
         let collection = explicitCollection
-            ?? ScreenCollection.runtimeCollection(screenCount: document.screens.count)
+            ?? (document.screens.contains { $0.elements.contains { $0.role.rawValue >= 49 } } ? .desktop
+                : ScreenCollection.runtimeCollection(screenCount: document.screens.count))
         if collection == .login && document.screens.count != 1 {
             throw TemplateValidationIssue.invalidDocument("Login requires exactly one authentication screen")
+        }
+        if collection == .desktop && document.screens.count < 3 {
+            throw TemplateValidationIssue.invalidDocument("Desktop requires its navigation, overview and AI widget scenes")
         }
         if collection == .boot && document.screens.count != 2 {
             throw TemplateValidationIssue.invalidDocument("Boot loading requires the ISO and installed scenes")
         }
         if collection == .systemSettings && document.screens.count != ScreenCollection.systemSettings.requiredScreenCount {
             throw TemplateValidationIssue.invalidDocument("System Settings requires its eleven native sections")
+        }
+        if let menu = document.infinityMenu {
+            guard collection == .desktop else { throw TemplateValidationIssue.invalidDocument("Infinity Menu belongs to the desktop collection") }
+            try menu.validate(screens: document.screens)
         }
         for screen in document.screens {
             guard screen.elements.count <= Int(UInt16.max) else {
@@ -97,7 +105,7 @@ enum TemplateValidator {
             if screen.elements.contains(where: { $0.role == .sceneBackground && $0.kind != .image }) {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Scene background must be an image")
             }
-            if collection != .systemSettings && collection != .boot && collection != .login {
+            if collection != .systemSettings && collection != .boot && collection != .login && collection != .desktop {
                 guard back.count == 1, primary.count == 1 else {
                     throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
                 }
@@ -125,8 +133,14 @@ enum TemplateValidator {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Only one live input field is supported per screen")
             }
             for element in screen.elements {
-                if element.role.rawValue >= 40 && (collection != .login || element.kind != .button) {
+                if (40...48).contains(element.role.rawValue) && (collection != .login || element.kind != .button) {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Authentication actions require login buttons")
+                }
+                if element.role.rawValue >= 49 {
+                    let allowed = screen.id == 1 ? 49...59 : screen.id == 2 ? 60...64 : 65...71
+                    guard collection == .desktop, screen.id <= 3, allowed.contains(Int(element.role.rawValue)) else {
+                        throw TemplateValidationIssue.invalidElement(screen.id, element.id, "This binding belongs to a different desktop scene")
+                    }
                 }
                 guard element.kind == .button || element.captionColor == .white else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Only buttons may override caption color")
@@ -242,7 +256,7 @@ enum RuntimeTemplateCodec {
         try palette.validate()
         var output = Data()
         output.append(magic)
-        output.appendLittleEndian(version)
+        output.appendLittleEndian(document.infinityMenu == nil ? version : UInt16(13))
         output.appendLittleEndian(UInt16(document.screens.count))
         for screen in document.screens {
             output.append(UInt8(screen.id))
@@ -319,7 +333,41 @@ enum RuntimeTemplateCodec {
             output.appendLittleEndian(UInt32(bytes.count))
             output.append(bytes)
         }
+        if let menu = document.infinityMenu {
+            output.append(contentsOf: [73, 78, 65, 86, 1])
+            output.appendLittleEndian(UInt16(menu.rows.count))
+            output.append(UInt8(menu.items.count))
+            for item in menu.items { encodeMenuItem(item, into: &output) }
+        }
         return output
+    }
+
+    // ------------------------=
+    // FUNC: encodeMenuItem
+    // DESC: Encodes the validated navigation tree as bounded typed records, never executable command strings.
+    // ------------------=
+    private static func encodeMenuItem(_ item: StudioMenuItem, into output: inout Data) {
+        output.append(contentsOf: item.id.bytes)
+        output.append(contentsOf: [item.action.rawValue, UInt8(item.target), (item.enabled ? 1 : 0) | (item.checked ? 2 : 0), UInt8(item.children.count)])
+        output.appendLengthPrefixed(item.label, length: .u8, limit: 63)
+        for child in item.children { encodeMenuItem(child, into: &output) }
+    }
+
+    // ------------------------=
+    // FUNC: decodeMenuItem
+    // DESC: Decodes a bounded menu subtree, checking depth and total count before recursion or allocation.
+    // ------------------=
+    private static func decodeMenuItem(_ reader: inout DataReader, depth: Int, remaining: inout Int) throws -> StudioMenuItem {
+        guard remaining > 0, depth < StudioMenu.maximumDepth else { throw TemplateValidationIssue.invalidDocument("Invalid menu hierarchy") }
+        remaining -= 1
+        let id = try UUID(bytes: reader.readBytes(count: 16))
+        guard let action = StudioMenuAction(rawValue: try reader.readUInt8()) else { throw TemplateValidationIssue.invalidDocument("Unknown menu action") }
+        let target = Int(try reader.readUInt8()); let flags = try reader.readUInt8(); let count = Int(try reader.readUInt8())
+        guard flags & ~3 == 0, count <= remaining, action == .submenu || count == 0 else { throw TemplateValidationIssue.invalidDocument("Invalid menu flags or children") }
+        let label = try reader.readString(length: .u8, limit: 63)
+        var children: [StudioMenuItem] = []
+        for _ in 0..<count { children.append(try decodeMenuItem(&reader, depth: depth + 1, remaining: &remaining)) }
+        return StudioMenuItem(id: id, label: label, action: action, target: target, enabled: flags & 1 != 0, checked: flags & 2 != 0, children: children)
     }
 
     // ------------------------=
@@ -383,7 +431,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard [6, 7, 8, 9, 10, 11, version].contains(sourceVersion) else {
+        guard [6, 7, 8, 9, 10, 11, version, 13].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -508,6 +556,16 @@ enum RuntimeTemplateCodec {
             }
             assets[name] = bytes
         }
+        var navigation: StudioMenu?
+        if sourceVersion == 13 {
+            guard try reader.readData(count: 5) == Data([73, 78, 65, 86, 1]) else { throw TemplateValidationIssue.invalidDocument("Invalid menu signature") }
+            var remaining = Int(try reader.readUInt16()); let count = Int(try reader.readUInt8())
+            guard remaining <= StudioMenu.maximumItems, count <= remaining else { throw TemplateValidationIssue.invalidDocument("Menu exceeds native limits") }
+            var items: [StudioMenuItem] = []
+            for _ in 0..<count { items.append(try decodeMenuItem(&reader, depth: 0, remaining: &remaining)) }
+            guard remaining == 0 else { throw TemplateValidationIssue.invalidDocument("Menu record count mismatch") }
+            navigation = StudioMenu(items: items)
+        }
         guard reader.isAtEnd else {
             throw TemplateValidationIssue.invalidDocument("Trailing runtime-template bytes")
         }
@@ -517,7 +575,8 @@ enum RuntimeTemplateCodec {
             canvasHeight: 1000,
             screens: screens
         )
-        let decodedCollection = collection ?? (screens.contains(where: { $0.elements.contains(where: { $0.role == .settingsNavigationItem }) })
+        document.infinityMenu = navigation
+        let decodedCollection = collection ?? (screens.contains(where: { $0.elements.contains(where: { $0.role.rawValue >= 49 }) }) ? .desktop : screens.contains(where: { $0.elements.contains(where: { $0.role == .settingsNavigationItem }) })
             ? .systemSettings : screens.contains(where: { $0.elements.contains(where: { $0.role == .input }) })
                 ? .configuration : .installation)
         if sourceVersion >= 10 && decodedCollection == .installation {
