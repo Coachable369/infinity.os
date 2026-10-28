@@ -9434,7 +9434,19 @@ impl ConsoleRuntime {
                     SettingsTarget::ContentRow(row)
                         if clicked && !matches!(self.system_focus, 6 | 7) =>
                     {
-                        self.toggle_settings_row(row)
+                        use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
+                        match settings_row_interaction(self.system_focus,row) {
+                            I::Cycle | I::Toggle if self.system_focus==10 || (self.system_focus==4 && row==4) => {
+                                self.toggle_settings_row(row);
+                                self.settings_window.expanded_row=None;
+                            }
+                            I::Cycle | I::Toggle => self.activate_settings_content_row(row),
+                            I::Edit => {
+                                self.settings_window.expanded_row=Some(row);
+                                self.activate_settings_content_row(row);
+                            }
+                            I::Details => self.toggle_settings_row(row),
+                        }
                     }
                     SettingsTarget::ExpandedAction if clicked => {
                         if let Some(row) = self.settings_window.expanded_row {

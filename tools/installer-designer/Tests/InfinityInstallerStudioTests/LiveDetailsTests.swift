@@ -14,6 +14,9 @@ final class LiveDetailsTests: XCTestCase {
         store.selectLiveDetails()
         let original = try XCTUnwrap(store.selectedElement)
         XCTAssertFalse(original.locked)
+        store.marqueeSelectionEnabled = false
+        store.beginContextResize(original.id)
+        XCTAssertTrue(store.resizeHandlesVisible)
         store.beginGesture(elementID: original.id)
         store.moveSelected(translation: CGSize(width: 30, height: -40), canvasScale: CGSize(width: 1, height: 1))
         store.endGesture()
@@ -26,6 +29,9 @@ final class LiveDetailsTests: XCTestCase {
         XCTAssertTrue(store.selectedElement!.hidden)
         store.toggleElementLock(original.id)
         let locked = store.selectedElement!
+        store.marqueeSelectionEnabled = false
+        store.beginContextResize(original.id)
+        XCTAssertFalse(store.resizeHandlesVisible)
         store.updateSelected { $0.frame.x = 800 }
         XCTAssertEqual(store.selectedElement, locked)
         let restored = try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(store.document))

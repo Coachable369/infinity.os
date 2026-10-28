@@ -27,6 +27,10 @@ struct InstallerCanvas: View {
                     ZStack(alignment: .topLeading) {
                         artboardBackground(scale: canvasScale)
                             .contentShape(Rectangle())
+                            .contextMenu {
+                                Button("Paste") { store.pasteElementsInPlace() }
+                                    .disabled(!store.canPasteElements())
+                            }
                             .onTapGesture {
                                 if !store.marqueeSelectionEnabled { store.selectElement(nil) }
                             }
@@ -59,6 +63,10 @@ struct InstallerCanvas: View {
                                 }
                                 .contextMenu {
                                     if let id = hoveredLayerID { CanvasLayerMenu(store: store, elementID: id) }
+                                    else {
+                                        Button("Paste") { store.pasteElementsInPlace() }
+                                            .disabled(!store.canPasteElements())
+                                    }
                                 }
                                 .zIndex(39_000)
                         }
@@ -468,10 +476,30 @@ private struct CanvasLayerMenu: View {
     let elementID: UUID
 
     var body: some View {
+        Button("Resize") { store.beginContextResize(elementID) }
+            .disabled(store.selectedScreen?.elements.first(where: { $0.id == elementID })
+                .map { $0.locked || !store.geometryIsEditable($0) } ?? true)
+        Divider()
         ForEach(LayerOrderAction.allCases, id: \.self) { action in
             Button(action.rawValue) { store.reorderLayer(elementID, action: action) }
                 .disabled(!store.canReorderLayer(elementID, action: action))
         }
+        Divider()
+        Button("Copy") {
+            store.prepareContextSelection(elementID)
+            store.copySelectedElements()
+        }
+        Button("Paste") { store.pasteElementsInPlace() }.disabled(!store.canPasteElements())
+        Button("Duplicate Element") { store.selectElement(elementID); store.duplicateSelected() }
+        Divider()
+        Button(store.selectedScreen?.elements.first(where: { $0.id == elementID })?.locked == true ? "Unlock" : "Lock") {
+            store.toggleElementLock(elementID)
+        }
+        Button("Delete Element", role: .destructive) { store.selectElement(elementID); store.deleteSelected() }
+            .disabled(store.selectedScreen?.elements.first(where: { $0.id == elementID })?.locked != false)
+        Divider()
+        Button("Undo") { store.undo() }.disabled(!store.canUndo)
+        Button("Redo") { store.redo() }.disabled(!store.canRedo)
     }
 }
 

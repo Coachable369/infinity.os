@@ -313,7 +313,14 @@ impl DisplayDevice {
         self.fill_rounded_rect_alpha(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,4,20,34,alpha(150));
         self.outline_rounded_rect(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,35,64,84);
         let _=self.themed_icon((card.icon.x+card.icon.width as i32/2).max(0)as usize,(card.icon.y+card.icon.height as i32/2).max(0)as usize,crate::ui::icon_theme::settings_section_icon(focus),(28*scale).min(card.icon.width as usize));
-        let native_description=crate::ui::settings_cards::description(focus,index);
+        use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
+        let native_description=match settings_row_interaction(focus,index) {
+            I::Cycle if focus==3 && index==7=>b"Click to cycle through five voices".as_slice(),
+            I::Cycle=>b"Click to cycle through available choices".as_slice(),
+            I::Toggle=>b"Click to turn this setting on or off".as_slice(),
+            I::Edit=>b"Click to edit this value".as_slice(),
+            I::Details=>crate::ui::settings_cards::description(focus,index),
+        };
         if let Some(description)=layout.settings_row_child_geometry(settings_window,focus,index,Role::SettingsSummaryDescription,0,1) {
             self.paint_settings_child_description(description,native_description,(141,174,198));
         } else {
@@ -336,7 +343,9 @@ impl DisplayDevice {
         }
         let disclosure=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsDisclosure).unwrap_or(Rect{x:row.summary.right()-(30*scale)as i32,y:row.summary.y+(20*scale)as i32,width:(20*scale)as u32,height:(32*scale)as u32});
         let text=if expanded{b"v".as_slice()}else{authored_disclosure.map(|e|e.text).filter(|v|!v.is_empty()).unwrap_or(b">")};
-        self.paint_settings_bound_text(authored_disclosure,disclosure,text,(109,220,255),true,false);
+        if matches!(settings_row_interaction(focus,index),I::Details|I::Edit) {
+            self.paint_settings_bound_text(authored_disclosure,disclosure,text,(109,220,255),true,false);
+        }
         row
     }
     // ------------------------=

@@ -193,6 +193,7 @@ fn verify_case(case: &str) {
                     (3, 4) | (4, 1) => SettingsAction::ToggleMicrophone,
                     (3, 5) => SettingsAction::CycleWakeWord,
                     (3, 6) => SettingsAction::ToggleSpeech,
+                    (3, 7) => SettingsAction::CycleOutputVoice,
                     _ => unreachable!(),
                 };
                 assert_eq!(geometry.action, expected_action);
@@ -443,6 +444,12 @@ fn verify_children(case: &str) {
 // DESC: Runs each immutable authored fixture in a separate process so native template caching remains identical to production.
 // ------------------=
 fn main() {
+    use ui::installer_template::{settings_row_interaction, SettingsRowInteraction as I};
+    assert_eq!(settings_row_interaction(3, 7), I::Cycle);
+    assert_eq!(settings_row_interaction(3, 6), I::Toggle);
+    assert_eq!(settings_row_interaction(4, 4), I::Toggle);
+    assert_eq!(settings_row_interaction(0, 0), I::Edit);
+    assert_eq!(settings_row_interaction(8, 5), I::Details);
     if let Some(case) = std::env::args().nth(1) {
         if case.starts_with("child-") { verify_children(&case); } else { verify_case(&case); }
         return;

@@ -7,8 +7,8 @@ import UniformTypeIdentifiers
 
 enum LayerOrderAction: String, CaseIterable {
     case front = "Bring to Front"
-    case back = "Send to Back"
     case forward = "Bring Forward"
+    case back = "Send to Back"
     case backward = "Send Backward"
 }
 
@@ -167,6 +167,38 @@ final class TemplateStore: ObservableObject {
     var canRemoveScreen: Bool { selectedCollection != .boot && selectedCollection != .login && activeScreens.count > InstallerStudioDocument.minimumScreenCount }
     var resizeHandlesVisible: Bool {
         marqueeSelectionEnabled && selectedElementIDs.count == 1 && selectedElement?.locked == false
+    }
+
+    // ------------------------=
+    // FUNC: prepareContextSelection
+    // DESC: Keeps a multi-selection when its member is right-clicked; otherwise targets the clicked element.
+    // ------------------=
+    func prepareContextSelection(_ id: UUID) {
+        guard selectedScreen?.elements.contains(where: { $0.id == id }) == true else { return }
+        if !selectedElementIDs.contains(id) { selectElement(id) }
+    }
+
+    // ------------------------=
+    // FUNC: beginContextResize
+    // DESC: Exposes existing snapping resize grips for the clicked unlocked, user-positioned element.
+    // ------------------=
+    func beginContextResize(_ id: UUID) {
+        guard let element = selectedScreen?.elements.first(where: { $0.id == id }),
+              !element.locked, geometryIsEditable(element) else { return }
+        selectElement(id)
+        marqueeSelectionEnabled = true
+        status = "Drag a grip to resize — uses the current snapping setting"
+    }
+
+    // ------------------------=
+    // FUNC: canPasteElements
+    // DESC: Enables paste only for a bounded, decodable Studio clipboard payload on an editable screen.
+    // ------------------=
+    func canPasteElements(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard !editingUIKit, selectedScreen != nil,
+              let data = pasteboard.data(forType: Self.elementPasteboardType), data.count <= 4_194_304,
+              let elements = try? JSONDecoder().decode([StudioElement].self, from: data) else { return false }
+        return !elements.isEmpty && elements.count <= 256
     }
     // ------------------------=
     // FUNC: selectedElementIsRequired
