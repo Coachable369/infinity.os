@@ -7,12 +7,21 @@ ROOT="/var/www/meetinfinityos.com"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
 if [[ -z "${SSHPASS:-}" ]]; then
-  source /opt/codebase/coachable/v2.0/environment.env
-  export SSHPASS="$SSH_PASSWORD"
+  for env_file in /opt/codebase/coachable/v2.0/.env /opt/codebase/coachable/v2.0/environment.env; do
+    if [[ -f "$env_file" ]]; then
+      set -a
+      source "$env_file"
+      set +a
+    fi
+  done
+  export SSHPASS="${SSH_PASSWORD:-${DEPLOY_SSH_PASSWORD:-${REMOTE_SSH_PASSWORD:-}}}"
 fi
 
+# Share Coachable's authenticated connection across backup, upload and publish.
+SSH_OPTS=(-o ConnectTimeout=15 -o ControlMaster=auto -o ControlPersist=120 -o 'ControlPath=/tmp/ssh-%r@%h:%p')
+
 # Backups live outside the public document root.
-sshpass -e ssh -o ConnectTimeout=15 -o NumberOfPasswordPrompts=1 "$HOST" bash -s -- "$ROOT" "$STAMP" <<'REMOTE'
+sshpass -e ssh "${SSH_OPTS[@]}" "$HOST" bash -s -- "$ROOT" "$STAMP" <<'REMOTE'
 set -euo pipefail
 test -f "$1/public_html/index.html"
 mkdir -p "$1/backups" "$1/public_html/assets" "$1/staging-$2"
@@ -28,9 +37,9 @@ COPYFILE_DISABLE=1 tar -czf - -C "$SITE_DIR" index.html whitepaper.html invest.h
   assets/Inter-Variable.ttf assets/vendor/three.module.min.js \
   assets/vendor/three.core.min.js assets/vendor/BufferGeometryUtils.js \
   assets/OFL-inter.txt assets/LICENSE-lucide.txt assets/LICENSE-three.txt |
-  sshpass -e ssh -o ConnectTimeout=15 -o NumberOfPasswordPrompts=1 "$HOST" \
+  sshpass -e ssh "${SSH_OPTS[@]}" "$HOST" \
     "tar -xzf - -C '$ROOT/staging-$STAMP'"
-sshpass -e ssh -o ConnectTimeout=15 -o NumberOfPasswordPrompts=1 "$HOST" bash -s -- "$ROOT" "$STAMP" <<'REMOTE'
+sshpass -e ssh "${SSH_OPTS[@]}" "$HOST" bash -s -- "$ROOT" "$STAMP" <<'REMOTE'
 set -euo pipefail
 mkdir -p "$1/public_html/assets/vendor"
 mkdir -p "$1/public_html/assets/screenshots"
