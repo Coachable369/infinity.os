@@ -43,8 +43,8 @@ The user explicitly approved heavy frameworks for this redesign on 2026-10-20.
 - Header 76px desktop / 68px mobile. Real BMP-derived brand mark.
 - 44px icon controls, Lucide symbols, accessible names, clear focus borders.
 - Full-width page sections, unframed headings, thin separators.
-- Existing app-study frame is a genuine framed tool, radius 6px maximum.
-- Feature selection, keyboard navigation and FAQ remain fully usable.
+- Screenshot figures reuse the thin frame, radius 4px maximum.
+- Section links, keyboard navigation and FAQ remain fully usable.
 
 ## Acceptance
 
@@ -52,6 +52,24 @@ Capture actual desktop and mobile frames. Check no overflow or text/art overlap.
 Prove canvas pixels change at rest and after scrolling, geometry has real depth,
 electrical pulse position advances, and pause/reduced-motion stop the animation.
 Check original logo derivative pixels, all image loads and console errors.
+
+## InfinityOS in Action
+
+Replace the illustrative app study with the three supplied October 28, 2026 OS
+captures. Reuse this kit's typography, cyan links, carbon background and fine
+rules; no new icons or simulated window chrome are needed. Keep the existing
+`experience` anchor. Each reusable screenshot subsection has a numbered label,
+32px heading, 15px explanatory copy and an uncropped, full-width figure. Text
+uses two balanced columns on desktop and stacks on mobile; figures retain their
+original aspect ratios. Mobile headings step to 26px and body copy to 14px.
+
+Order: sign-in, desktop with AI Chat and System Overview, then app library.
+Describe visible controls without implying verified security or performance.
+Label the captures as development screenshots. Offer responsive 960px/1600px
+images and a lossless full-resolution link. Use ordinary anchor navigation and
+no gallery JavaScript, carousels, decorative cards or empty future slots.
+Additional subsections follow the same article/figure contract and can be added
+without changing scripts. Keep image content legible and free of overlays.
 
 ## Whitepaper Reading Page
 

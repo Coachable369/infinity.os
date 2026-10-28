@@ -37,7 +37,33 @@ shared navigation including keyboard dismissal and focus restoration.
 
 `verification/browser-results.json` records actual browser state and pixel checks.
 Desktop and mobile screenshots are visual evidence, not textual test oracles.
-Interactive preview content is explicitly illustrative; it is not a live OS session.
+The experience section contains actual OS screenshots, not a live OS session.
+
+## InfinityOS in Action
+
+The three October 28, 2026 captures show sign-in, the desktop with AI Chat and
+System Overview, and the app library. Each has a factual description, an
+uncropped responsive image and a lossless full-resolution link. The supplied
+screenshots are preserved without retouching; metadata is removed for delivery.
+
+To add another screenshot, append a `.screenshot-entry` article to
+`.screenshot-gallery` with a unique anchor, labelled heading, description and
+figure. Add its anchor to `.screenshot-index`. Keep related subsections inside
+the article using semantic headings. No script changes or empty future slots
+are needed. Export 960px/1600px WebP derivatives and a lossless full-size WebP
+to `assets/screenshots/`, record the real dimensions in the image attributes,
+and add the exact files to the `deploy.sh` allowlist. Check every image and
+full-resolution link at desktop and mobile widths before publishing.
+
+`tests/gallery-browser.cjs` uses authoring-only Playwright and Sharp dependencies.
+Run it through `./build-kit run node meetinfinityos.com/tests/gallery-browser.cjs`
+with those packages on `NODE_PATH`. It owns and closes a localhost preview on
+port 4178, checks five viewport widths, full-resolution navigation, uncropped
+images, overflow, mobile navigation, animation/pause and no-script rendering.
+Screenshots and structured results go to `verification/gallery/`. Set
+`GALLERY_URL=https://meetinfinityos.com/` to exercise the deployed page instead.
+The gallery sits outside the opening animation stage, so adding entries does
+not prolong the scroll animation or keep the offscreen scene rendering.
 
 ## Whitepapers
 

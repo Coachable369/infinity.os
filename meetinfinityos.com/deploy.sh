@@ -22,6 +22,9 @@ REMOTE
 COPYFILE_DISABLE=1 tar -czf - -C "$SITE_DIR" index.html whitepaper.html invest.html styles.css whitepaper.css navigation.js app.js art.js \
   emblem-geometry.js scene-math.mjs assets/emblem-outline.json \
   assets/brand.webp assets/infinity-emblem.webp assets/infinity-detail.webp \
+  assets/screenshots/sign-in-960.webp assets/screenshots/sign-in-1600.webp assets/screenshots/sign-in-full.webp \
+  assets/screenshots/desktop-ai-960.webp assets/screenshots/desktop-ai-1600.webp assets/screenshots/desktop-ai-full.webp \
+  assets/screenshots/app-library-960.webp assets/screenshots/app-library-1600.webp assets/screenshots/app-library-full.webp \
   assets/Inter-Variable.ttf assets/vendor/three.module.min.js \
   assets/vendor/three.core.min.js assets/vendor/BufferGeometryUtils.js \
   assets/OFL-inter.txt assets/LICENSE-lucide.txt assets/LICENSE-three.txt |
@@ -30,6 +33,9 @@ COPYFILE_DISABLE=1 tar -czf - -C "$SITE_DIR" index.html whitepaper.html invest.h
 sshpass -e ssh -o ConnectTimeout=15 -o NumberOfPasswordPrompts=1 "$HOST" bash -s -- "$ROOT" "$STAMP" <<'REMOTE'
 set -euo pipefail
 mkdir -p "$1/public_html/assets/vendor"
+mkdir -p "$1/public_html/assets/screenshots"
+mv "$1/staging-$2/assets/screenshots/"* "$1/public_html/assets/screenshots/"
+rmdir "$1/staging-$2/assets/screenshots"
 mv "$1/staging-$2/assets/vendor/"* "$1/public_html/assets/vendor/"
 rmdir "$1/staging-$2/assets/vendor"
 mv "$1/staging-$2/assets/"* "$1/public_html/assets/"
