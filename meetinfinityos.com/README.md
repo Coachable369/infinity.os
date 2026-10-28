@@ -100,9 +100,15 @@ Upload only the runtime HTML, CSS, JavaScript modules and allowlisted assets to
 Do not upload tests, design boards, verification files, or credentials.
 Preserve a server-side backup before replacing the published files.
 No DNS, Apache-vhost, TLS, database, or OS-image change is needed.
-`bash deploy.sh` performs this allowlisted upload, keeps a timestamped server
+Run `./deploy.sh` from the repository root (or this website directory).
+Use `./deploy.sh --check` first for local upload-file validation without loading
+credentials or connecting to production; `./deploy.sh --help` lists usage.
+The script performs this allowlisted upload, keeps a timestamped server
 backup, publishes the HTML last, and checks both HTTPS hostnames. Credentials
 are read from the existing deployment environment and are never stored here.
+Deployment behavior tests: `./build-kit run python3 meetinfinityos.com/tests/deploy-test.py`
+from the repository root. These inspect the upload archive with a fake SSH
+transport and cannot publish to production.
 
 This standalone website is not an installed InfinityOS component and requires
 no ISO rebuild. Run bounded verification through the repository build kit;
