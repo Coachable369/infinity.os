@@ -14006,9 +14006,9 @@ pub fn poll_native_ai() {
             &runtime.onboarding_secret[..runtime.onboarding_secret_length],name) {
             runtime.onboarding_validation_error=true;runtime.redraw();
         }
-        let before=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection()));
+        let before=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection(),s.checking_photo()));
         if crate::runtime::face_setup_host::poll(visible) {
-            let after=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection()));
+            let after=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection(),s.checking_photo()));
             if visible && before==after {crate::bootstrap::face_preview_present();}
             else {runtime.redraw();}
         }

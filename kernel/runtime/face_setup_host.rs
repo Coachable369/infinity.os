@@ -129,8 +129,8 @@ pub fn cancel() {unsafe {(&mut *core::ptr::addr_of_mut!(JOB)).cancel();}}
 // ------------------=
 pub fn poll(on_setup_page:bool)->bool {unsafe {
     let job=&mut *core::ptr::addr_of_mut!(JOB);
-    let before=(job.setup.stage(),job.setup.pending(),job.setup.preview_revision(),job.setup.preview().is_some(),job.terminal());
+    let before=(job.setup.stage(),job.setup.pending(),job.setup.rejection(),job.setup.checking_photo(),job.setup.preview_revision(),job.setup.preview().is_some(),job.terminal());
     if !on_setup_page && !matches!(job.setup.stage(),Stage::Idle|Stage::Cancelled|Stage::Passed) {job.cancel();}
     if job.poll(on_setup_page,super::ai::qwen::workers::clock_ns(),super::native_memory::memory_mut()).is_err() {job.cancel();}
-    before!=(job.setup.stage(),job.setup.pending(),job.setup.preview_revision(),job.setup.preview().is_some(),job.terminal())
+    before!=(job.setup.stage(),job.setup.pending(),job.setup.rejection(),job.setup.checking_photo(),job.setup.preview_revision(),job.setup.preview().is_some(),job.terminal())
 }}

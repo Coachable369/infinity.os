@@ -55,6 +55,11 @@ fn main() {
             let mut chunk=vec![0;count]; copy_from_user(&tables,address,&mut chunk).unwrap(); copy.extend(chunk);
         }
         assert_eq!(copy,jpeg);
+        // A polling reader must not immediately pin its consumed snapshot again.
+        for _ in 0..64 {
+            assert_eq!(camera.metadata(owner,cap,&caps,0),Err(Error::Unavailable));
+            assert_eq!(camera.read_to_user(&read,owner,&caps,0,sequence,0,address,1,&mut tables),Err(Error::Stale));
+        }
         let (next_sequence,_)=camera.publish(&jpeg,&caps,0).unwrap();
         assert!(next_sequence>sequence);
         let supervisor_address=address+8192;

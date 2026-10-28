@@ -98,7 +98,7 @@ impl<'a> Camera<'a> {
     }
     // ------------------------=
     // FUNC: read_to_user
-    // DESC: Copies at most one page into checked private user memory; sequence checks prevent mixing frames.
+    // DESC: Copies a pinned frame in checked pages and consumes it on the final read so polling cannot starve fresh frames.
     // ------------------=
     pub fn read_to_user(&mut self, message: &IopMessage, caller: SecurityIdentity, caps: &CapabilityManager,
         now: u64, sequence: u64, offset: usize, destination: u64, count: usize, tables: &mut impl PageTable) -> Result<usize,Error> {
@@ -110,7 +110,12 @@ impl<'a> Camera<'a> {
         if sequence!=self.sequence || self.length==0 {return Err(Error::Stale);}
         if count==0 || count>MAX_READ_BYTES || offset>self.length || count>self.length-offset {return Err(Error::Invalid);}
         copy_to_user(tables,destination,&self.storage[offset..offset+count]).map_err(|_|Error::Memory)?;
-        if offset+count==self.length {self.pinned=false;}
+        if offset+count==self.length {
+            // Consumed snapshots must not be re-pinned while the next physical
+            // frame is arriving: that can starve publication until timeout.
+            self.storage[..self.length].fill(0);
+            self.length=0;self.pinned=false;
+        }
         Ok(count)
     }
     // ------------------------=

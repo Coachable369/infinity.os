@@ -24,6 +24,7 @@ pub const PASSED:u32=5;
 pub const FAILED:u32=6;
 pub const CANCELLED:u32=7;
 pub const REJECTED:u32=8;
+pub const PREVIEW_PAUSED:u32=9;
 
 #[repr(C)]
 #[derive(Clone,Copy)]

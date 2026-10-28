@@ -60,7 +60,7 @@ fn visit(command:u64)->bool {
 // ------------------=
 fn report(c:&p::Control,phase:u32,error:u32,state:Option<State>) {
     let phase=if phase==p::FAILED && c.command==p::CAPTURE && matches!(state,Some(State::Photos(_)))
-        && matches!(error,204..=214|216..=218) {p::REJECTED}else{phase};
+        && matches!(error,105|204..=214|216..=218) {p::REJECTED}else{phase};
     let (photos,comparisons)=match state {Some(State::Photos(n))=>(n as u32,0),Some(State::Verifying(n))=>(3,n as u32),
         Some(State::ReadyToVerify)=>(3,0),Some(State::Verified)=>(3,3),_=>(0,0)};
     let r=p::Report::new(c.command_id,phase,error,photos,comparisons);
@@ -154,13 +154,14 @@ unsafe fn work()->Result<(),u32> {
     let (length,_,_)=capture(initial.command_id,encoded,&mut stream,false)?;
     jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
     if initial.command==p::BEGIN {preview(initial.command_id,rgb)?;}
+    capture::stop(&mut stream);
     let detector=arena.model(1)?;let recognizer=arena.model(2)?;
     let engine=Recognizer::new(detector,recognizer).map_err(|_|106u32)?;
     let floats=arena.bytes(engine.arena_len().checked_mul(4).ok_or(102u32)?)?;
     let floats=core::slice::from_raw_parts_mut(floats.as_mut_ptr().cast::<f32>(),engine.arena_len());
     let scratch=arena.bytes(size_of::<Scratch>())?;scratch.fill(0);
     let scratch=&mut *scratch.as_mut_ptr().cast::<Scratch>();
-    let mut enrollment:Option<Enrollment>=None;let mut seen=0;let mut preview_at=0;
+    let mut enrollment:Option<Enrollment>=None;let mut seen=0;let mut preview_at=0;let mut preview_paused=false;
     if initial.command==p::LOGIN {
         let data=arena.bytes(p::ENROLLMENT_BYTES)?;
         for offset in (0..data.len()).step_by(4096) {
@@ -180,7 +181,7 @@ unsafe fn work()->Result<(),u32> {
             }
         }
         if c.command_id==seen || c.command_id==0 {
-            if enrollment.as_ref().is_some_and(|e|matches!(e.state(),State::Photos(_))) && clock()?>=preview_at {
+            if !preview_paused && enrollment.as_ref().is_some_and(|e|matches!(e.state(),State::Photos(_))) && clock()?>=preview_at {
                 let result=capture(c.command_id,encoded,&mut stream,true).and_then(|(length,_,_)| {
                     jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
                     preview(c.command_id,rgb)
@@ -188,12 +189,20 @@ unsafe fn work()->Result<(),u32> {
                 // Capture/Back may supersede a preview mid-copy. Never fail the
                 // new command or publish the old frame into its generation.
                 if control()?.command_id!=c.command_id {continue;}
-                if let Err(error)=result {report(&c,p::FAILED,error,None);return Ok(());}
+                if let Err(error)=result {
+                    if error==105 {
+                        preview_paused=true;
+                        report(&c,p::PREVIEW_PAUSED,error,enrollment.as_ref().map(Enrollment::state));
+                        continue;
+                    }
+                    report(&c,p::FAILED,error,None);return Ok(());
+                }
                 preview_at=clock()?.saturating_add(100);
             }
             call(0x1001,[0;6]);continue;
         }
         seen=c.command_id;
+        preview_paused=false;
         if c.command==p::BEGIN {
             let name=core::str::from_utf8(&c.name[..c.name_len as usize]).map_err(|_|107u32)?;
             enrollment=Some(Enrollment::new(binding(&c),name,Policy {cosine:0.6,min_laplacian_variance:100},clock()?).map_err(|_|107u32)?);
@@ -211,7 +220,12 @@ unsafe fn work()->Result<(),u32> {
         let frames=if let State::Verifying(n)=e.state() {3u8.saturating_sub(n)}else{1};
         for _ in 0..frames {
             report(&c,p::PROCESSING,0,Some(e.state()));
-            let (length,sequence,captured)=match capture(c.command_id,encoded,&mut stream,false) {Ok(v)=>v,Err(error)=>{report(&c,p::FAILED,error,Some(e.state()));break;}};
+            let (length,sequence,captured)=match capture(c.command_id,encoded,&mut stream,false) {
+                Ok(v)=>v,Err(error)=>{
+                    preview_paused=error==105;
+                    report(&c,p::FAILED,error,Some(e.state()));break;
+                }
+            };
             if jpeg::decode(&encoded[..length],rgb,decode).is_err() {report(&c,p::FAILED,109,Some(e.state()));break;}
             if c.command==p::CAPTURE {
                 if let Err(error)=preview(c.command_id,rgb) {report(&c,p::FAILED,error,Some(e.state()));break;}

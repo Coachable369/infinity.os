@@ -163,3 +163,22 @@ Do not wire this specification into a selectable configuration page before the
 isolated camera decoder, detector and embedding worker can supply real results.
 Review production screenshots with real frames and all error/focus states.
 Never use numerical policy-unit-test vectors as visual or recognition evidence.
+
+### Capture feedback revision (2026-10-28)
+
+Reuse the existing three Field surfaces, typography, spacing and photo geometry.
+An explicit capture first shows Capturing while waiting for new camera pixels.
+Only its fully delivered frame fills the requested Front/Left/Right slot with
+Checking status. Freeze that candidate while analysis runs; do not label it
+Accepted until the worker's quality, pose and identity checks succeed. Acceptance
+advances to the next view automatically. A rejected candidate is removed and the
+same view is requested again with the measured rejection reason. Earlier accepted
+views remain unchanged. No new visual asset or alternative panel style is needed.
+
+A camera acquisition timeout pauses preview and requires an explicit capture
+retry within the existing enrollment deadline, preserving accepted views. It
+must not repeatedly restart enrollment or reload recognition models. Model-load,
+analysis and overall session timeouts have distinct guidance. Disconnect,
+revocation, cancellation and terminal failures still scrub temporary pictures.
+This revision changes transient capture feedback, not biometric thresholds,
+sample counts, persistence format or liveness claims.

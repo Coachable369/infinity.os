@@ -49,6 +49,7 @@ fn display(pixels: &mut [u32], width: usize, height: usize) -> DisplayDevice {
 // DESC: Renders unchanged native enrollment painters with no camera frame and verifies bounded animated damage and static reduced motion.
 // ------------------=
 pub(super) fn verify_face() {
+    verify_face_capture_feedback();
     face_scan_view::verify_rigid_geometry();
     let (width,height)=(1920,1080);
     let mut pixels=vec![0x00090f26;width*height];
@@ -92,6 +93,48 @@ pub(super) fn verify_face() {
             d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
             d.face_setup_frame_state(b"Everyday",1,false,&state,true);
             assert_eq!(pixels,expected,"full repaint changed the visible face pose");
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: verify_face_capture_feedback
+// DESC: Checks production thumbnail pixels through capture, analysis, rejection and acceptance; synthetic RGB is not recognition evidence.
+// ------------------=
+fn verify_face_capture_feedback() {
+    use crate::runtime::face_setup::{Setup,PhotoStatus,PREVIEW_BYTES,wire as p};
+    for (width,height) in [(1280,800),(1920,1080)] {
+        let mut pixels=vec![0;width*height];let mut d=display(&mut pixels,width,height);
+        let l=crate::ui::face_setup_layout::Layout::new(width,height);
+        let left=l.preview.x as usize+l.preview.width as usize+l.pixels;
+        let slot_width=(l.field.x as usize+l.field.width as usize-left-l.pixels*2)/3;
+        let center=(l.preview.y as usize+slot_width*3/8)*width+left+slot_width/2;
+        let mut state=Setup::new();state.begin(1,2,[3;32],"Everyday",100).unwrap();
+        state.accept(p::Report::new(state.control().command_id,p::READY,0,0,0),101).unwrap();
+        state.capture(102).unwrap();
+        d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
+        d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+        assert_ne!(pixels[center],0x002a2a2a);
+        for attempt in 0..2 {
+            let id=state.control().command_id;
+            for offset in (0..PREVIEW_BYTES).step_by(3840) {state.write_preview(id,offset,&[42;3840],103+attempt*10).unwrap();}
+            assert_eq!(state.photo_status(0),PhotoStatus::Checking);
+            d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
+            d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+            assert_eq!(pixels[center],0x002a2a2a);
+            if attempt==0 {
+                state.accept(p::Report::new(id,p::REJECTED,214,0,0),104).unwrap();
+                d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
+                d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+                assert_ne!(pixels[center],0x002a2a2a);
+                state.capture(112).unwrap();
+            } else {
+                state.accept(p::Report::new(id,p::READY,0,1,0),114).unwrap();
+                d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
+                d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+                assert_eq!(state.photo_status(0),PhotoStatus::Accepted);
+                assert_eq!(pixels[center],0x002a2a2a);
+            }
         }
     }
 }

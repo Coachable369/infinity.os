@@ -15,6 +15,8 @@ const COMMAND_MS: u64 = 60_000;
 pub enum Stage { Idle, Loading, Photos(u8), Review, Verifying(u8), Passed, Failed(u32), Cancelled }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Invalid, Busy, WrongStage, Expired, Stale, Protocol }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhotoStatus { Pending, Checking, Accepted }
 
 /// Owned by the trusted setup controller, not a user-selected executable.
 pub struct Setup {
@@ -121,11 +123,19 @@ impl Setup {
     pub fn accept(&mut self, report:wire::Report, now:u64) -> Result<(),Error> {
         self.tick(now)?;
         if report.command_id!=self.control.command_id {return Err(Error::Stale);}
-        if !self.pending && !(matches!(self.stage,Stage::Photos(_)) && report.phase==wire::FAILED) {return Err(Error::Stale);}
+        if !self.pending && !(matches!(self.stage,Stage::Photos(_)) && matches!(report.phase,wire::FAILED|wire::PREVIEW_PAUSED)) {return Err(Error::Stale);}
         if report.version!=wire::VERSION || report.reserved!=0 || report.photos>3 || report.comparisons>3 {return Err(Error::Protocol);}
+        if report.phase==wire::PREVIEW_PAUSED {
+            if self.pending || self.stage!=Stage::Photos(report.photos as u8)
+                || report.comparisons!=0 || report.error!=105 {return Err(Error::Protocol);}
+            self.rejection=Some(report.error);self.erase_preview();return Ok(());
+        }
         if report.phase==wire::REJECTED {
             if self.control.command!=wire::CAPTURE || self.stage!=Stage::Photos(report.photos as u8)
-                || report.comparisons!=0 || !matches!(report.error,204..=214|216..=218) {return Err(Error::Protocol);}
+                || report.comparisons!=0 || !matches!(report.error,105|204..=214|216..=218) {return Err(Error::Protocol);}
+            for byte in &mut self.photos[report.photos as usize] {unsafe {core::ptr::write_volatile(byte,0);}}
+            self.capture_preview=false;
+            if report.error==105 {self.erase_preview();}
             self.rejection=Some(report.error);self.pending=false;return Ok(());
         }
         if report.phase==wire::FAILED {
@@ -146,11 +156,13 @@ impl Setup {
             }
             (wire::CAPTURE,wire::PROCESSING,Stage::Photos(n)) if report.photos==n as u32 && report.comparisons==0 => false,
             (wire::CAPTURE,wire::READY,Stage::Photos(n)) if n<2 && report.photos==n as u32+1 && report.comparisons==0 => {
-                self.retain_photo(n as usize);
+                if !self.capture_preview {return Err(Error::Protocol);}
+                self.photo_ready[n as usize]=true;self.capture_preview=false;
                 self.stage=Stage::Photos(n+1);true
             }
             (wire::CAPTURE,wire::REVIEW,Stage::Photos(2)) if report.photos==3 && report.comparisons==0 => {
-                self.retain_photo(2);
+                if !self.capture_preview {return Err(Error::Protocol);}
+                self.photo_ready[2]=true;self.capture_preview=false;
                 self.stage=Stage::Review;true
             }
             (wire::VERIFY,wire::PROCESSING,Stage::Verifying(n)) if report.photos==3 && report.comparisons==n as u32 => false,
@@ -174,6 +186,7 @@ impl Setup {
         self.tick(now)?;
         if command!=self.control.command_id || !matches!(self.stage,Stage::Loading|Stage::Photos(_))
             || !matches!(self.control.command,wire::BEGIN|wire::CAPTURE) {return Err(Error::Stale);}
+        if self.checking_photo() {return Err(Error::Stale);}
         if bytes.is_empty() || bytes.len()>4096 || offset!=self.preview_written
             || offset.checked_add(bytes.len()).is_none_or(|end|end>PREVIEW_BYTES) {return Err(Error::Invalid);}
         self.staging[offset..offset+bytes.len()].copy_from_slice(bytes);
@@ -181,7 +194,11 @@ impl Setup {
         if self.preview_written==PREVIEW_BYTES {
             self.preview.copy_from_slice(&self.staging);self.preview_ready=true;
             self.preview_written=0;self.preview_revision=self.preview_revision.wrapping_add(1);
-            if self.pending && self.control.command==wire::CAPTURE {self.capture_preview=true;}
+            if self.pending && self.control.command==wire::CAPTURE {
+                if let Stage::Photos(index)=self.stage {
+                    self.capture_preview=true;self.retain_photo(index as usize);
+                }
+            }
         }
         Ok(())
     }
@@ -192,7 +209,11 @@ impl Setup {
     pub fn tick(&mut self, now:u64) -> Result<(),Error> {
         if matches!(self.stage,Stage::Idle|Stage::Cancelled|Stage::Failed(_)|Stage::Passed) {return Ok(());}
         if now<self.started || now>=self.deadline || (self.pending && now>=self.command_deadline) {
-            self.cancel();self.stage=Stage::Failed(111);return Err(Error::Expired);
+            let code=if now>=self.deadline || now<self.started {111}
+                else if self.stage==Stage::Loading {114}
+                else if self.checking_photo() || matches!(self.stage,Stage::Verifying(_)) {115}
+                else {105};
+            self.cancel();self.stage=Stage::Failed(code);return Err(Error::Expired);
         }
         Ok(())
     }
@@ -208,7 +229,7 @@ impl Setup {
     }
     // ------------------------=
     // FUNC: retain_photo
-    // DESC: Retains only an accepted capture generation, never a prior live frame or rejected photograph.
+    // DESC: Copies the explicit captured frame into its checking slot without accepting it as an enrollment sample.
     // ------------------=
     fn retain_photo(&mut self,index:usize) {
         if !self.capture_preview {return;}
@@ -217,14 +238,30 @@ impl Setup {
             let dst=(y*PHOTO_WIDTH+x)*3;
             self.photos[index][dst..dst+3].copy_from_slice(&self.preview[src..src+3]);
         }}
-        self.photo_ready[index]=true;
+    }
+    // ------------------------=
+    // FUNC: checking_photo
+    // DESC: Distinguishes waiting for camera pixels from analysis of a complete explicit capture.
+    // ------------------=
+    pub fn checking_photo(&self)->bool {
+        self.pending && self.control.command==wire::CAPTURE && self.capture_preview
+            && matches!(self.stage,Stage::Photos(0..=2))
+    }
+    // ------------------------=
+    // FUNC: photo_status
+    // DESC: Exposes candidate and accepted thumbnail states without treating a captured frame as a recognized face.
+    // ------------------=
+    pub fn photo_status(&self,index:usize)->PhotoStatus {
+        if self.photo_ready.get(index).copied().unwrap_or(false) {PhotoStatus::Accepted}
+        else if index<3 && self.checking_photo() && self.stage==Stage::Photos(index as u8) {PhotoStatus::Checking}
+        else {PhotoStatus::Pending}
     }
     // ------------------------=
     // FUNC: photo
-    // DESC: Exposes an accepted transient thumbnail for review without exposing biometric templates.
+    // DESC: Exposes a complete explicit-capture thumbnail, with acceptance distinguished by photo_status.
     // ------------------=
     pub fn photo(&self,index:usize)->Option<&[u8]> {
-        self.photo_ready.get(index).copied().unwrap_or(false).then(|| &self.photos[index][..])
+        (self.photo_status(index)!=PhotoStatus::Pending).then(|| &self.photos[index][..])
     }
     // ------------------------=
     // FUNC: erase_photos

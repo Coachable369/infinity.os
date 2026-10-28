@@ -55,7 +55,11 @@ impl DisplayDevice {
                 Stage::Failed(_)=>(b"The camera check did not complete. Check camera access, lighting, focus and pose. Retry starts a clean enrollment.",b"Retry camera check"),
             };
             let (guidance,action)=if state.pending() && matches!(state.stage(),Stage::Photos(_)) {
-                (b"Photo captured. Checking face, lighting and pose. Please wait for the result before taking the next view." as &[u8],b"Checking photo..." as &[u8])
+                if state.checking_photo() {
+                    (b"Photo captured. Checking face, lighting and pose. An accepted view advances automatically; otherwise, capture this view again." as &[u8],b"Checking photo..." as &[u8])
+                } else {
+                    (b"Waiting for a fresh camera frame. Face the camera and hold still." as &[u8],b"Capturing..." as &[u8])
+                }
             } else {(guidance,action)};
             self.access_text_wrapped(l.guidance.x as usize,l.guidance.y as usize,l.guidance.width as usize,
                 guidance,palette::TEXT.0,palette::TEXT.1,palette::TEXT.2,255,l.pixels,false);
@@ -68,7 +72,7 @@ impl DisplayDevice {
             }
             let r=l.preview;
             self.access_label((r.x as usize,r.y as usize-l.pixels-8,r.width as usize,l.pixels+4),
-                if matches!(state.stage(),Stage::Loading|Stage::Photos(_)){b"Live camera preview"}else{b"Camera capture"},l.pixels*4/5,palette::SECONDARY,false,false);
+                if matches!(state.stage(),Stage::Loading|Stage::Photos(_)) && !state.checking_photo(){b"Live camera preview"}else{b"Camera capture"},l.pixels*4/5,palette::SECONDARY,false,false);
             self.access_surface(r.x as usize,r.y as usize,r.width as usize,r.height as usize,
                 crate::ui::panel_recipe::Surface::Field,palette::BACKGROUND,palette::BORDER,255,false);
             if let Some(pixels)=state.preview() {
@@ -100,14 +104,22 @@ impl DisplayDevice {
                     }
                     self.access_label((x,y+height+gap/2,width,gap),label,l.pixels*3/5,palette::SECONDARY,true,false);
                     self.access_label((x,y+height+gap*2,width,gap),
-                        if state.photo(index).is_some(){b"Accepted"}else{b"Pending"},
+                        match state.photo_status(index) {
+                            crate::runtime::face_setup::PhotoStatus::Checking=>b"Checking...",
+                            crate::runtime::face_setup::PhotoStatus::Accepted=>b"Accepted",
+                            crate::runtime::face_setup::PhotoStatus::Pending=>b"Pending",
+                        },
                         l.pixels*3/5,palette::SECONDARY,true,false);
                 }
             }
             let note:&[u8]=if error {b"Unable to start. A supported camera, valid account password and a face name are required."}
                 else if let Some(code)=state.rejection().or_else(||if let Stage::Failed(code)=state.stage(){Some(code)}else{None}) {match code {
                     104=>b"Camera disconnected or could not deliver a complete frame. Check the VM camera attachment.",
-                    105|111|220=>b"The camera check timed out or was cancelled. Retry when you are ready.",
+                    105 if matches!(state.stage(),Stage::Photos(_))=>b"No fresh camera frame arrived in time. Accepted views are kept. Check the camera attachment, then capture this view again.",
+                    105=>b"No fresh camera frame arrived in time. Check the camera attachment and retry.",
+                    111|220=>b"The enrollment session expired. Retry when you are ready.",
+                    114=>b"Recognition models took too long to prepare. No identity was saved. Retry camera setup.",
+                    115=>b"Face analysis took too long. No identity was saved. Retry camera setup.",
                     112=>b"The encrypted identity could not be saved and read back. Check storage and retry. No successful enrollment is being claimed.",
                     204|205=>b"That frame was too old or captured too soon. Earlier accepted views are kept. Hold still and capture this view again.",
                     206=>b"No face detected. Center your face and improve the lighting.",
