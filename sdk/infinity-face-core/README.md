@@ -27,6 +27,14 @@ trusted-worker outputs, not values accepted from arbitrary user processes.
 Frame sequence and timestamp checks catch transport reuse, not presentation
 attacks. A new lease does not by itself establish that a face is alive.
 
+The fixed worker calls `admit_frame` immediately after camera delivery, before
+JPEG decoding and inference. This checks capture age, binding, sequence and
+spacing. `observe_admitted` consumes that capture-bound receipt after inference,
+with a separate 60-second processing bound and the existing session deadline.
+Slow computation does not turn a fresh capture into a stale one. Recognition,
+quality, pose and all three verification comparisons are still required; a
+receipt is not proof of identity and does not bypass replay checks.
+
 The tests use synthetic pixels and vectors strictly for numerical/state behavior;
 they do not test facial recognition or real camera capture.
 

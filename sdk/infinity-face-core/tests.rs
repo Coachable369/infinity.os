@@ -3,6 +3,52 @@
 use super::*;
 
 // ------------------------=
+// FUNC: fresh_frames_survive_bounded_slow_recognition
+// DESC: Completes enrollment and three fresh comparisons despite bounded inference latency exceeding the capture-age limit.
+// ------------------=
+#[test]
+fn fresh_frames_survive_bounded_slow_recognition() {
+    let mut e=enrollment();let crop=pixels();let v=vector(0);
+    for (index,pose) in [Pose::Front,Pose::Left,Pose::Right].into_iter().enumerate() {
+        let captured=1000+index as u64*40_000;
+        let receipt=e.admit_frame(binding(1),index as u64+1,captured,captured+10).unwrap();
+        let frame=observation(1,index as u64+1,captured,pose,&crop,&v);
+        assert_eq!(e.observe_admitted(&frame,receipt,captured+35_000).unwrap(),
+            if index==2 {State::ReadyToVerify}else{State::Photos(index as u8+1)});
+    }
+    e.begin_verification(binding(2),120_000).unwrap();
+    for index in 0..3u64 {
+        let captured=120_000+index*40_000;
+        let receipt=e.admit_frame(binding(2),index+1,captured,captured+10).unwrap();
+        let frame=observation(2,index+1,captured,Pose::Front,&crop,&v);
+        assert_eq!(e.observe_admitted(&frame,receipt,captured+35_000).unwrap(),
+            if index==2 {State::Verified}else{State::Verifying(index as u8+1)});
+    }
+}
+
+// ------------------------=
+// FUNC: admission_preserves_freshness_binding_replay_and_deadlines
+// DESC: Delayed computation cannot admit old/future frames, substitute captures, replay results or evade session deadlines.
+// ------------------=
+#[test]
+fn admission_preserves_freshness_binding_replay_and_deadlines() {
+    let mut e=enrollment();let crop=pixels();let v=vector(0);
+    assert!(matches!(e.admit_frame(binding(1),1,100,30_101),Err(Error::StaleFrame)));
+    assert!(matches!(e.admit_frame(binding(1),1,101,100),Err(Error::StaleFrame)));
+    assert!(matches!(e.admit_frame(binding(2),1,100,100),Err(Error::WrongCapture)));
+    let receipt=e.admit_frame(binding(1),1,100,100).unwrap();
+    assert_eq!(e.observe_admitted(&observation(1,2,100,Pose::Front,&crop,&v),receipt,200),Err(Error::WrongCapture));
+    let receipt=e.admit_frame(binding(1),1,100,100).unwrap();
+    assert_eq!(e.observe_admitted(&observation(1,1,100,Pose::Front,&crop,&v),receipt,60_100),Err(Error::StaleFrame));
+    let receipt=e.admit_frame(binding(1),2,61_000,61_000).unwrap();
+    assert_eq!(e.observe_admitted(&observation(1,2,61_000,Pose::Front,&crop,&v),receipt,96_000),Ok(State::Photos(1)));
+    assert!(matches!(e.admit_frame(binding(1),2,61_000,96_000),Err(Error::StaleFrame)));
+    assert!(matches!(e.admit_frame(binding(1),3,61_499,61_499),Err(Error::TooSoon)));
+    let receipt=e.admit_frame(binding(1),3,TIMEOUT_MS-100,TIMEOUT_MS-100).unwrap();
+    assert_eq!(e.observe_admitted(&observation(1,3,TIMEOUT_MS-100,Pose::Left,&crop,&v),receipt,TIMEOUT_MS),Err(Error::Expired));
+}
+
+// ------------------------=
 // FUNC: stored_templates_require_fresh_matching_frames
 // DESC: Imports synthetic stored vectors and proves freshness, mismatch rejection, three comparisons and malformed-template rejection.
 // ------------------=

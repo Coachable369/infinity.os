@@ -16,7 +16,8 @@ pub const PHOTO_COUNT: usize = 3;
 pub const CROP_SIDE: usize = 112;
 const TIMEOUT_MS: u64 = 240_000;
 const FRAME_SPACING_MS: u64 = 500;
-const MAX_INFERENCE_LATENCY_MS: u64 = 30_000;
+const MAX_FRAME_AGE_MS: u64 = 30_000;
+const MAX_PROCESSING_MS: u64 = 60_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pose { Front, Left, Right }
@@ -51,6 +52,15 @@ pub struct Observation<'a> {
     /// Aligned grayscale face pixels, not a downsample of the entire scene.
     pub crop: &'a [u8],
     pub embedding: &'a [f32; DIMENSIONS],
+}
+
+/// Private-field receipt issued before inference by the fixed camera worker.
+/// Capture freshness and bounded processing time are separate checks.
+pub struct FrameAdmission {
+    binding: Binding,
+    sequence: u64,
+    captured_ms: u64,
+    admitted_ms: u64,
 }
 
 pub struct Enrollment {
@@ -213,6 +223,31 @@ impl Enrollment {
         result
     }
     // ------------------------=
+    // FUNC: admit_frame
+    // DESC: Checks actual capture freshness before inference without granting recognition or login success.
+    // ------------------=
+    pub fn admit_frame(&mut self, binding: Binding, sequence: u64, captured_ms: u64, now_ms: u64) -> Result<FrameAdmission, Error> {
+        self.tick(now_ms)?;
+        self.expected_pose().ok_or(Error::WrongState)?;
+        if binding != self.binding { return Err(Error::WrongCapture); }
+        if sequence == 0 || sequence <= self.last_sequence || captured_ms < self.start
+            || captured_ms > now_ms || now_ms - captured_ms > MAX_FRAME_AGE_MS { return Err(Error::StaleFrame); }
+        if self.last_capture.is_some_and(|last| captured_ms < last.saturating_add(FRAME_SPACING_MS)) { return Err(Error::TooSoon); }
+        Ok(FrameAdmission { binding, sequence, captured_ms, admitted_ms: now_ms })
+    }
+    // ------------------------=
+    // FUNC: observe_admitted
+    // DESC: Consumes a capture-bound receipt after bounded inference, retaining expiry, replay, pose, quality and identity checks.
+    // ------------------=
+    pub fn observe_admitted(&mut self, frame: &Observation<'_>, receipt: FrameAdmission, now_ms: u64) -> Result<State, Error> {
+        self.tick(now_ms)?;
+        if frame.binding != receipt.binding || frame.sequence != receipt.sequence || frame.captured_ms != receipt.captured_ms {
+            return Err(Error::WrongCapture);
+        }
+        if now_ms < receipt.admitted_ms || now_ms - receipt.admitted_ms >= MAX_PROCESSING_MS { return Err(Error::StaleFrame); }
+        self.observe(frame, receipt.admitted_ms)
+    }
+    // ------------------------=
     // FUNC: observe_checked
     // DESC: Applies capture and comparison checks; fresh quality or match failures reset progress, while polling duplicates do not.
     // ------------------=
@@ -221,7 +256,7 @@ impl Enrollment {
         let expected = self.expected_pose().ok_or(Error::WrongState)?;
         if frame.binding != self.binding { return Err(Error::WrongCapture); }
         if frame.sequence == 0 || frame.sequence <= self.last_sequence || frame.captured_ms < self.start
-            || frame.captured_ms > now_ms || now_ms-frame.captured_ms > MAX_INFERENCE_LATENCY_MS { return Err(Error::StaleFrame); }
+            || frame.captured_ms > now_ms || now_ms-frame.captured_ms > MAX_FRAME_AGE_MS { return Err(Error::StaleFrame); }
         self.last_sequence = frame.sequence;
         if self.last_capture.is_some_and(|last| frame.captured_ms < last.saturating_add(FRAME_SPACING_MS)) { return Err(Error::TooSoon); }
         if frame.face_count == 0 { return Err(Error::NoFace); }

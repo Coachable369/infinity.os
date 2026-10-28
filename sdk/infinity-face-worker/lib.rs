@@ -226,6 +226,10 @@ unsafe fn work()->Result<(),u32> {
                     report(&c,p::FAILED,error,Some(e.state()));break;
                 }
             };
+            let admission=match e.admit_frame(binding(&c),sequence,captured,clock()?) {
+                Ok(receipt)=>receipt,
+                Err(error)=>{report(&c,p::FAILED,200+error as u32,Some(e.state()));break;}
+            };
             if jpeg::decode(&encoded[..length],rgb,decode).is_err() {report(&c,p::FAILED,109,Some(e.state()));break;}
             if c.command==p::CAPTURE {
                 if let Err(error)=preview(c.command_id,rgb) {report(&c,p::FAILED,error,Some(e.state()));break;}
@@ -243,7 +247,7 @@ unsafe fn work()->Result<(),u32> {
                     report(&c,p::FAILED,code,Some(e.state()));break;
                 }
             };
-            let result=e.observe(&recognition.observation(binding(&c),sequence,captured),clock()?);
+            let result=e.observe_admitted(&recognition.observation(binding(&c),sequence,captured),admission,clock()?);
             match result {
                 Ok(state)=>{
                     if state==State::Verified && c.command!=p::LOGIN {
