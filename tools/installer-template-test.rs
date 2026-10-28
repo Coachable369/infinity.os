@@ -166,7 +166,7 @@ impl TestTemplate {
 // ------------------=
 fn verify_settings_children_contract() {
     let valid = TestTemplate::read(SETTINGS_TEMPLATE);
-    assert_eq!(valid.version, 11);
+    assert_eq!(valid.version, 12);
     let parsed = InstallerTemplate::parse_settings(SETTINGS_TEMPLATE).unwrap();
     let mut counts = [0usize; 5];
     for screen in &valid.screens {
