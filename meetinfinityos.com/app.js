@@ -155,8 +155,7 @@
   function updateScroll() {
     scrollQueued = false;
     const rect = story.getBoundingClientRect();
-    // Keep the opening sequence independent of the growing screenshot gallery.
-    progress = Math.max(0, Math.min(1, -rect.top / Math.max(1, rect.height)));
+    progress = Math.max(0, Math.min(1, -rect.top / Math.max(1, rect.height - window.innerHeight)));
     root.style.setProperty("--story-progress", progress);
     const macroRect = macro.getBoundingClientRect();
     const drift = Math.max(-45, Math.min(45, (window.innerHeight * .5 - macroRect.top) * .08));
@@ -177,5 +176,69 @@
   window.addEventListener("scroll", queueScroll, { passive: true });
   window.addEventListener("resize", queueScroll, { passive: true });
 
+  const tabs = [...document.querySelectorAll(".feature-tab")];
+  const panel = document.querySelector("#feature-panel");
+  const modes = {
+    voice: { app: "Infinity workspace", prompt: "“Infinity, open my text editor.”", response: "A little less between you and your next idea.", status: "VOICE / A NATURAL BEGINNING" },
+    create: { app: "Text Editor", prompt: "“Help me find the first line.”", response: "A spark becomes a draft. The next move is yours.", status: "CREATE / SOMETHING STARTS HERE" },
+    explore: { app: "Infinity Browser", prompt: "“Let’s explore something new.”", response: "Keep the interesting things close. Follow the next connection.", status: "EXPLORE / STAY CURIOUS" }
+  };
+  // ------------------------=
+  // FUNC: selectFeature
+  // DESC: Activates a distinct product-study scene and replays its short illustrative sequence.
+  // ------------------=
+  function selectFeature(tab, focus = false) {
+    const mode = tab.dataset.feature;
+    const data = modes[mode];
+    const screenshot = [...document.querySelectorAll("[data-screenshot-scene]")].find(scene => scene.dataset.screenshotScene === mode);
+    if (!data && !screenshot) return;
+    for (const item of tabs) {
+      const selected = item === tab;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-selected", String(selected));
+      item.tabIndex = selected ? 0 : -1;
+    }
+    panel.setAttribute("aria-labelledby", tab.id);
+    panel.dataset.mode = mode;
+    for (const scene of document.querySelectorAll("[data-scene]")) scene.hidden = scene.dataset.scene !== mode;
+    document.querySelector(".product-study").hidden = Boolean(screenshot);
+    for (const scene of document.querySelectorAll("[data-screenshot-scene]")) scene.hidden = scene !== screenshot;
+    document.getElementById("preview-kind").textContent = screenshot ? "INFINITYOS / SCREENSHOT" : "INFINITYOS / PRODUCT STUDY";
+    document.getElementById("preview-disclaimer").textContent = screenshot ? "Development build · October 2026" : "Illustrative preview · In development";
+    if (data) for (const key of ["app", "prompt", "response", "status"]) document.getElementById(`preview-${key}`).textContent = data[key];
+    panel.classList.remove("replaying");
+    void panel.offsetWidth;
+    panel.classList.add("replaying");
+    if (focus) tab.focus();
+  }
+  // ------------------------=
+  // FUNC: featureClicked
+  // DESC: Selects the clicked product-study mode.
+  // ------------------=
+  function featureClicked(event) { selectFeature(event.currentTarget); }
+  // ------------------------=
+  // FUNC: tabKeydown
+  // DESC: Provides arrow and Home/End navigation across feature modes.
+  // ------------------=
+  function tabKeydown(event) {
+    let index = tabs.indexOf(event.currentTarget);
+    if (["ArrowDown", "ArrowRight"].includes(event.key)) index = (index + 1) % tabs.length;
+    else if (["ArrowUp", "ArrowLeft"].includes(event.key)) index = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    selectFeature(tabs[index], true);
+  }
+  for (const tab of tabs) { tab.addEventListener("click", featureClicked); tab.addEventListener("keydown", tabKeydown); }
+  const selector = document.querySelector(".feature-selector");
+  // ------------------------=
+  // FUNC: updateSelectorOrientation
+  // DESC: Keeps tab semantics aligned with the responsive column or row layout.
+  // ------------------=
+  function updateSelectorOrientation() { selector.setAttribute("aria-orientation", window.innerWidth <= 960 ? "horizontal" : "vertical"); }
+  window.addEventListener("resize", updateSelectorOrientation, { passive: true });
+  updateSelectorOrientation();
+  for (const [index, bar] of [...document.querySelectorAll(".voice-wave i")].entries()) bar.style.setProperty("--i", index);
   updateMotion();
 })();

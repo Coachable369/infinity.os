@@ -41,29 +41,30 @@ The experience section contains actual OS screenshots, not a live OS session.
 
 ## InfinityOS in Action
 
-The three October 28, 2026 captures show sign-in, the desktop with AI Chat and
-System Overview, and the app library. Each has a factual description, an
-uncropped responsive image and a lossless full-resolution link. The supplied
-screenshots are preserved without retouching; metadata is removed for delivery.
+The original two-column experience section and Voice/Create/Explore previews
+remain intact. The left selector now also includes a Screenshots group:
+Sign-in, Desktop & AI, and App library. Each selection displays its actual
+October 28, 2026 capture, factual description and full-resolution link in the
+same right-hand preview. Actual screenshots and illustrative scenes have
+distinct captions. Images are uncropped and unretouched.
 
-To add another screenshot, append a `.screenshot-entry` article to
-`.screenshot-gallery` with a unique anchor, labelled heading, description and
-figure. Add its anchor to `.screenshot-index`. Keep related subsections inside
-the article using semantic headings. No script changes or empty future slots
-are needed. Export 960px/1600px WebP derivatives and a lossless full-size WebP
-to `assets/screenshots/`, record the real dimensions in the image attributes,
-and add the exact files to the `deploy.sh` allowlist. Check every image and
-full-resolution link at desktop and mobile widths before publishing.
+To add another screenshot, append a `.screenshot-tab` to `.feature-selector`
+and a matching `.screenshot-scene` inside `#feature-panel`. Match the button's
+`data-feature` to the scene's `data-screenshot-scene`, supply unique accessible
+IDs, and include a heading, description, responsive image and full-resolution
+link. The controller discovers these entries without new mode-specific code.
+Add related detail subsections within that scene and a fallback link in
+`.screenshot-fallback`. Export 960px/1600px WebP derivatives and a lossless
+full-size WebP to `assets/screenshots/`; add exact files to `deploy.sh`.
 
-`tests/gallery-browser.cjs` uses authoring-only Playwright and Sharp dependencies.
-Run it through `./build-kit run node meetinfinityos.com/tests/gallery-browser.cjs`
-with those packages on `NODE_PATH`. It owns and closes a localhost preview on
-port 4178, checks five viewport widths, full-resolution navigation, uncropped
-images, overflow, mobile navigation, animation/pause and no-script rendering.
-Screenshots and structured results go to `verification/gallery/`. Set
-`GALLERY_URL=https://meetinfinityos.com/` to exercise the deployed page instead.
-The gallery sits outside the opening animation stage, so adding entries does
-not prolong the scroll animation or keep the offscreen scene rendering.
+`tests/experience-browser.cjs` uses authoring-only Playwright and Sharp.
+Run through `./build-kit run node meetinfinityos.com/tests/experience-browser.cjs`
+with those dependencies on `NODE_PATH`. The check owns and closes a localhost
+preview on port 4178, exercises all six selections, keyboard navigation,
+full-resolution links, image geometry, five viewport widths, mobile navigation,
+motion controls and no-script fallback links. Evidence is written to
+`verification/experience/`. Set `EXPERIENCE_URL=https://meetinfinityos.com/`
+to run against production instead.
 
 ## Whitepapers
 

@@ -43,7 +43,7 @@ The user explicitly approved heavy frameworks for this redesign on 2026-10-20.
 - Header 76px desktop / 68px mobile. Real BMP-derived brand mark.
 - 44px icon controls, Lucide symbols, accessible names, clear focus borders.
 - Full-width page sections, unframed headings, thin separators.
-- Screenshot figures reuse the thin frame, radius 4px maximum.
+- Screenshot previews reuse the original app-study frame, radius 6px maximum.
 - Section links, keyboard navigation and FAQ remain fully usable.
 
 ## Acceptance
@@ -55,21 +55,25 @@ Check original logo derivative pixels, all image loads and console errors.
 
 ## InfinityOS in Action
 
-Replace the illustrative app study with the three supplied October 28, 2026 OS
-captures. Reuse this kit's typography, cyan links, carbon background and fine
-rules; no new icons or simulated window chrome are needed. Keep the existing
-`experience` anchor. Each reusable screenshot subsection has a numbered label,
-32px heading, 15px explanatory copy and an uncropped, full-width figure. Text
-uses two balanced columns on desktop and stacks on mobile; figures retain their
-original aspect ratios. Mobile headings step to 26px and body copy to 14px.
+Preserve the original two-column experience section, feature-selector styling,
+Voice/Create/Explore scenes, preview frame and opening-story placement. Rename
+its heading to "InfinityOS in Action". Do not replace it with a page-length gallery.
 
-Order: sign-in, desktop with AI Chat and System Overview, then app library.
-Describe visible controls without implying verified security or performance.
-Label the captures as development screenshots. Offer responsive 960px/1600px
-images and a lossless full-resolution link. Use ordinary anchor navigation and
-no gallery JavaScript, carousels, decorative cards or empty future slots.
-Additional subsections follow the same article/figure contract and can be added
-without changing scripts. Keep image content legible and free of overlays.
+Append a Screenshots group to the existing left-hand selector: Sign-in,
+Desktop & AI, and App library. These use the same numbered rows, active rule,
+type hierarchy and arrow treatment. Selecting one swaps the right-hand preview
+to its actual OS capture, factual description and full-resolution link. Keep
+the original three feature selections available and label their scenes as
+illustrative; label actual captures as development screenshots.
+
+Reuse the three approved October 2026 screenshot assets without retouching.
+Images are uncropped, responsive and linked to lossless originals. Keep the
+same preview width and screenshot aspect-ratio across selections. At tablet
+and mobile widths, use two groups of three selector rows above the preview.
+Support arrow/Home/End keyboard selection, explicit focus and real download
+destinations. Without JavaScript, offer full-resolution screenshot links.
+Additional screenshots use another selector row and matching data-keyed
+preview subsection; do not create empty future entries or duplicate galleries.
 
 ## Whitepaper Reading Page
 
