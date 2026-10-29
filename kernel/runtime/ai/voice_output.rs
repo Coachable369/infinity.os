@@ -20,6 +20,8 @@ static RESPONSE_QUEUED_NS: AtomicU64 = AtomicU64::new(0);
 static SPAN_QUEUED_NS: AtomicU64 = AtomicU64::new(0);
 static QUEUE_WAIT_NS: AtomicU64 = AtomicU64::new(0);
 static FIRST_PLAYBACK_NS: AtomicU64 = AtomicU64::new(0);
+static LAST_PLAYBACK_END_NS: AtomicU64 = AtomicU64::new(0);
+static PLAYBACK_START_NS: AtomicU64 = AtomicU64::new(0);
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
 static mut CAPABILITY: u64 = 0;
 static mut DEADLINE: u64 = 0;
@@ -176,6 +178,9 @@ extern "C" fn cancelled() -> i32 {
 // ------------------=
 unsafe fn worker() {
     let start = super::qwen::workers::clock_ns();
+    #[cfg(not(test))]
+    voice_trace::span(3, RESPONSE_QUEUED_NS.load(Ordering::Acquire), REQUEST_ID.load(Ordering::Acquire),
+        SPAN_QUEUED_NS.load(Ordering::Acquire), start, LENGTH as u64, 0);
     QUEUE_WAIT_NS.store(
         start.saturating_sub(SPAN_QUEUED_NS.load(Ordering::Acquire)),
         Ordering::Release,
@@ -185,6 +190,10 @@ unsafe fn worker() {
         trace(b"synthesis started");
     }
     let result = NativeSpeech.synthesize(&(&*(&raw const TEXT))[..LENGTH], &mut *(&raw mut PCM));
+    let synthesis_end = super::qwen::workers::clock_ns();
+    #[cfg(not(test))]
+    voice_trace::span(4, RESPONSE_QUEUED_NS.load(Ordering::Acquire), REQUEST_ID.load(Ordering::Acquire),
+        start, synthesis_end, result.unwrap_or(0) as u64, ERROR as u64);
     // This status is the native provider's fatal admission state, not a later
     // driver/device publication error that happens to share the numeric code.
     if ERROR == 7 {
@@ -207,6 +216,9 @@ unsafe fn worker() {
         );
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
+    #[cfg(not(test))]
+    voice_trace::span(5, RESPONSE_QUEUED_NS.load(Ordering::Acquire), REQUEST_ID.load(Ordering::Acquire),
+        synthesis_end, super::qwen::workers::clock_ns(), OUTPUT_SAMPLES as u64, ERROR as u64);
     trace(if result.is_ok() {
         b"synthesis completed"
     } else {
@@ -348,6 +360,8 @@ fn submit_mode(
             PLAYBACK_DRAINED = false;
             RESPONSE_QUEUED_NS.store(now, Ordering::Release);
             FIRST_PLAYBACK_NS.store(0, Ordering::Release);
+            LAST_PLAYBACK_END_NS.store(0, Ordering::Release);
+            PLAYBACK_START_NS.store(0, Ordering::Release);
             let next = STREAM_GENERATION
                 .load(Ordering::Acquire)
                 .wrapping_add(1)
@@ -410,6 +424,14 @@ pub fn can_prefetch() -> bool {
 // DESC: Records the first successful hardware start once per response, preserving it across resident batch rollover.
 // ------------------=
 fn record_playback_start() {
+    let now = super::qwen::workers::clock_ns();
+    let end = LAST_PLAYBACK_END_NS.swap(0, Ordering::AcqRel);
+    #[cfg(not(test))]
+    if end != 0 {
+        voice_trace::span(7, RESPONSE_QUEUED_NS.load(Ordering::Acquire), REQUEST_ID.load(Ordering::Acquire), end, now, 0, 0);
+    }
+    let _ = end;
+    PLAYBACK_START_NS.store(now, Ordering::Release);
     let _ = FIRST_PLAYBACK_NS.compare_exchange(
         0,
         super::qwen::workers::clock_ns(),
@@ -700,6 +722,12 @@ pub fn poll() {
             }
             if let Some(playback) = crate::drivers::audio::playback_state() {
                 if playback != PlaybackState::Playing {
+                    let now = super::qwen::workers::clock_ns();
+                    LAST_PLAYBACK_END_NS.store(now, Ordering::Release);
+                    #[cfg(not(test))]
+                    voice_trace::span(6, RESPONSE_QUEUED_NS.load(Ordering::Acquire), 0,
+                        PLAYBACK_START_NS.load(Ordering::Acquire), now, 0,
+                        u64::from(playback != PlaybackState::Complete));
                     PLAYING = false;
                     STREAM_OPEN = false;
                     if playback != PlaybackState::Complete {

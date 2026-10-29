@@ -38,6 +38,10 @@ def main():
     run("rustc", "--edition=2021", "--test", "kernel/runtime/ai/voice_timing.rs",
         "-o", str(output / "voice-timing-test"))
     run(str(output / "voice-timing-test"))
+    run("rustc", "--edition=2021", "--test", "tools/voice-trace-test.rs",
+        "-o", str(output / "voice-trace-test"))
+    run(str(output / "voice-trace-test"))
+    run("python3", "tools/voice-performance-test.py")
     run("clang", "-O3", "-ffp-contract=off", "-c", "kernel/runtime/ai/qwen/cpu_math.c",
         "-o", str(output / "qwen-worker-math.o"))
     run("rustc", "--edition=2021", "--test", "kernel/runtime/ai/qwen/workers.rs",

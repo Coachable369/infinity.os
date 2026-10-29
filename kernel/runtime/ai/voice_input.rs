@@ -13,6 +13,7 @@ static STATE: AtomicUsize = AtomicUsize::new(0);
 static ENGINE: AtomicUsize = AtomicUsize::new(0);
 static RECOVERY_WINDOW: AtomicU64 = AtomicU64::new(0);
 static RECOVERY_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
+static METRIC_JOB: AtomicU64 = AtomicU64::new(0);
 static PREPARE_DEADLINE: AtomicU64 = AtomicU64::new(0);
 const NATIVE_ENGINE_BUSY: i32 = 8;
 const WAITING_ENGINE: usize = 6;
@@ -43,6 +44,12 @@ fn trace(event: &[u8]) {
 // DESC: Keeps host recognizer harnesses independent of the native serial device.
 // ------------------=
 fn trace(_: &[u8]) {}
+
+// ------------------------=
+// FUNC: metric_job
+// DESC: Returns the accepted recognition timestamp for correlating worker records without user identifiers.
+// ------------------=
+pub fn metric_job() -> u64 { METRIC_JOB.load(Ordering::Acquire) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputState {
@@ -88,12 +95,15 @@ unsafe extern "C" {
 // DESC: Builds both resident speech contexts before conversational microphone admission.
 // ------------------=
 unsafe fn prepare_worker() {
+    let start = super::qwen::workers::clock_ns();
     let mut memory = 0usize;
     let error = infinity_kokoro_native_prepare_recognition(
         &mut memory,
         prepare_cancelled,
         core::ptr::null_mut(),
     );
+    #[cfg(not(test))]
+    voice_trace::span(8, start, 0, start, super::qwen::workers::clock_ns(), memory as u64, error as u64);
     if error == NATIVE_ENGINE_BUSY && prepare_cancelled(core::ptr::null_mut()) == 0 {
         let _ = ENGINE.compare_exchange(1, 4, Ordering::AcqRel, Ordering::Acquire);
         return;
@@ -280,6 +290,8 @@ unsafe fn worker() {
         trace(b"worker started");
     }
     let start = super::qwen::workers::clock_ns();
+    #[cfg(not(test))]
+    voice_trace::span(1, metric_job(), 0, metric_job(), start, SAMPLES as u64, 0);
     LENGTH = Whisper
         .recognize_pcm(
             &(&*(&raw const PCM))[..SAMPLES],
@@ -287,6 +299,8 @@ unsafe fn worker() {
             &mut *(&raw mut TEXT),
         )
         .unwrap_or(0);
+    #[cfg(not(test))]
+    voice_trace::span(2, metric_job(), 0, start, super::qwen::workers::clock_ns(), SAMPLES as u64, ERROR as u64);
     if ERROR == 7 {
         native_engine_fault();
     }
@@ -365,6 +379,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
     }
     unsafe {
         OWNER = owner;
+        METRIC_JOB.store(now, Ordering::Release);
         CAPABILITY = capability;
         DEADLINE = now.saturating_add(RECOGNITION_DEADLINE_SECONDS.saturating_mul(1_000_000_000));
         (&mut *(&raw mut PCM))[..pcm.len()].copy_from_slice(pcm);

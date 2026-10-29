@@ -114,6 +114,7 @@ static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 static mut TURN_TIMING: timing::Timeline = timing::Timeline::new();
 static mut TURN_TIMING_ACTIVE: bool = false;
 static mut LAST_TIMING_RECORD: (u64, u64) = (0, 0);
+static mut LAST_PERF_SECOND: u64 = 0;
 // One follow-up utterance may accumulate while its predecessor is decoded.
 // The existing Utterance owns at most ten seconds; there is no transcript queue.
 static mut UTTERANCE_STARTED_AT: u64 = 0;
@@ -165,11 +166,77 @@ pub fn timing_snapshot() -> timing::Timeline {
 // ------------------=
 unsafe fn report_timing() {
     let record = timing_snapshot().record();
-    let key = (record[1], record[2]);
-    if key != LAST_TIMING_RECORD && record[2] != 0 {
+    let detail = timing_snapshot().detail();
+    let key = (record[1], detail[2] | (detail[15] << 16) | ((STATE as u64) << 32));
+    let second = super::qwen::workers::clock_ns() / 5_000_000_000;
+    if record[2] != 0 && (key != LAST_TIMING_RECORD || (TURN_TIMING_ACTIVE && second != LAST_PERF_SECOND)) {
         LAST_TIMING_RECORD = key;
+        LAST_PERF_SECOND = second;
         #[cfg(not(test))]
-        voice_trace::timing(record);
+        {
+            voice_trace::timing(record);
+            voice_trace::numeric(b"[VOICE PHASES] ", &detail);
+            let submitted = timing_snapshot().at(Milestone::Submitted).is_some();
+            let speech = timing_snapshot().at(Milestone::SpeechQueued).is_some();
+            voice_trace::numeric(b"[VOICE LINKS] ", &[1, record[1], voice_input::metric_job(),
+                if submitted { CHAT_TURN } else { 0 },
+                if speech { voice_output::status().queued_ns } else { 0 }, STATE as u64]);
+            if timing_snapshot().at(Milestone::Submitted).is_some() {
+                super::with_ai_runtime(|ai| {
+                    if ai.chat.turn_id() != CHAT_TURN { return; }
+                    let m = &ai.qwen_metrics;
+                    voice_trace::numeric(b"[VOICE LLM] ", &[1, record[1], CHAT_TURN,
+                        m.load_ns, m.first_token_ns, m.first_visible_response_ns, m.total_response_ns,
+                        m.prefill_work_ns, m.decode_work_ns, m.max_slice_ns, m.max_pump_ns,
+                        m.reused_tokens as u64, m.prefill_tokens as u64, ai.qwen_tokens]);
+                });
+            }
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: performance_work
+// DESC: Measures owner-thread scheduling and framebuffer work separately from device capture/playback; logs only bounded snapshots.
+// ------------------=
+pub fn performance_work(phase: usize, start: u64, end: u64) {
+    unsafe { if TURN_TIMING_ACTIVE { (&mut *(&raw mut TURN_TIMING)).work(phase, start, end); } }
+}
+
+pub struct WorkPhase { phase: u64, turn: u64, start: u64 }
+impl WorkPhase {
+    // ------------------------=
+    // FUNC: begin
+    // DESC: Starts a content-free routing or prompt-preparation scope only for an active voice request.
+    // ------------------=
+    pub fn begin(phase: u64, voice: bool) -> Self {
+        Self { phase, turn: if voice && unsafe { TURN_TIMING_ACTIVE } { timing_snapshot().sequence } else { 0 },
+            start: super::qwen::workers::clock_ns() }
+    }
+}
+impl Drop for WorkPhase {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Records bounded work even on early return without acquiring runtime locks.
+    // ------------------=
+    fn drop(&mut self) {
+        #[cfg(not(test))]
+        if self.turn != 0 {
+            voice_trace::span(self.phase, self.turn, 0, self.start, super::qwen::workers::clock_ns(), 0, 0);
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: response_presented
+// DESC: Marks actual post-render visibility only for the active reply, never for a queued or empty response.
+// ------------------=
+pub fn response_presented() {
+    unsafe {
+        if TURN_TIMING_ACTIVE && REPLY_LENGTH != 0 && matches!(STATE, State::Thinking | State::Speaking) {
+            (&mut *(&raw mut TURN_TIMING)).observe(Milestone::FirstDisplay, super::qwen::workers::clock_ns());
+            report_timing();
+        }
     }
 }
 
@@ -1026,6 +1093,9 @@ unsafe fn refresh_reply() {
     if TURN_TIMING_ACTIVE && REPLY_LENGTH != 0 {
         (&mut *(&raw mut TURN_TIMING))
             .observe(Milestone::FirstText, super::qwen::workers::clock_ns());
+        if REPLY_COMPLETE {
+            (&mut *(&raw mut TURN_TIMING)).observe(Milestone::GenerationDone, super::qwen::workers::clock_ns());
+        }
     }
 }
 // ------------------------=
@@ -1516,6 +1586,9 @@ pub fn poll() -> bool {
                         if submitted {
                             report_timing();
                             (&mut *(&raw mut TURN_TIMING)).begin(UTTERANCE_ENDED_AT);
+                            if UTTERANCE_STARTED_AT != 0 {
+                                (&mut *(&raw mut TURN_TIMING)).observe(Milestone::CaptureStarted, UTTERANCE_STARTED_AT);
+                            }
                             TURN_TIMING_ACTIVE = true;
                         }
                         RECOGNITION_MODEL = super::with_ai_runtime(|ai| ai.chat.selected_model());
@@ -1565,6 +1638,7 @@ pub fn poll() -> bool {
             }
             State::Recognizing => match voice_input::status().state {
                 voice_input::InputState::Ready => {
+                    (&mut *(&raw mut TURN_TIMING)).observe(Milestone::RecognitionReady, super::qwen::workers::clock_ns());
                     let result = voice_input::take(OWNER, &mut *(&raw mut TRANSCRIPT));
                     let result_was_empty = matches!(&result, Ok(0));
                     let result_failed = result.is_err();

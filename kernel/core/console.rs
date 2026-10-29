@@ -14198,9 +14198,12 @@ pub fn reduced_motion() -> bool {
 // DESC: Advances every service pass but coalesces background scene damage to 30 Hz without delaying the separate input drain.
 // ------------------=
 pub fn poll_native_ai() {
+    let service_started = crate::runtime::ai::qwen::workers::clock_ns();
     let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
     poll_native_ai_inner();
     crate::bootstrap::animation_tick();
+    let render_started = crate::runtime::ai::qwen::workers::clock_ns();
+    crate::runtime::ai::voice_conversation::performance_work(0, service_started, render_started);
     let presentation = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) };
     let mut presented = false;
     if owner && unsafe { (&mut *(&raw mut SERVICE_FRAMES)).ready(
@@ -14219,9 +14222,16 @@ pub fn poll_native_ai() {
         runtime.ai_chat_allowed() && matches!(runtime.mode,
             ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher)) };
     if desktop && presented {
-        crate::runtime::ai::with_ai_runtime(|ai| {
-            if ai.app_turn_owner().is_none() { ai.record_first_visible_response(); }
+        let reply_visible = crate::runtime::ai::with_ai_runtime(|ai| {
+            let visible = ai.app_turn_owner().is_none() && ai.chat.enabled() && !ai.chat.minimized();
+            if visible { ai.record_first_visible_response(); }
+            visible
         });
+        if reply_visible { crate::runtime::ai::voice_conversation::response_presented(); }
+    }
+    if presented {
+        crate::runtime::ai::voice_conversation::performance_work(1, render_started,
+            crate::runtime::ai::qwen::workers::clock_ns());
     }
 }
 

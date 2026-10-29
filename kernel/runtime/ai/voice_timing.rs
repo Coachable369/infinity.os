@@ -11,14 +11,19 @@ pub enum Milestone {
     SpeechQueued,
     FirstAudio,
     Drained,
+    CaptureStarted,
+    RecognitionReady,
+    FirstDisplay,
+    GenerationDone,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timeline {
     pub sequence: u64,
     present: u64,
-    timestamps: [u64; 7],
+    timestamps: [u64; 11],
     microphone_ready_ns: Option<u64>,
+    work: [[u64; 3]; 2],
 }
 
 impl Timeline {
@@ -30,8 +35,9 @@ impl Timeline {
         Self {
             sequence: 0,
             present: 0,
-            timestamps: [0; 7],
+            timestamps: [0; 11],
             microphone_ready_ns: None,
+            work: [[0; 3]; 2],
         }
     }
 
@@ -44,6 +50,7 @@ impl Timeline {
         self.present = 0;
         self.timestamps.fill(0);
         self.microphone_ready_ns = None;
+        self.work = [[0; 3]; 2];
         self.observe(Milestone::Endpoint, endpoint_ns);
     }
 
@@ -110,7 +117,7 @@ impl Timeline {
     // DESC: Distinguishes a fully drained spoken turn from queued, text-only, failed or cancelled work.
     // ------------------=
     pub fn complete(&self) -> bool {
-        self.present == 0x7f && self.timestamps.windows(2).all(|pair| pair[0] <= pair[1])
+        self.present & 0x7f == 0x7f && self.timestamps[..7].windows(2).all(|pair| pair[0] <= pair[1])
     }
 
     // ------------------------=
@@ -121,15 +128,68 @@ impl Timeline {
         let mut result = [0; 10];
         result[0] = 1;
         result[1] = self.sequence;
-        result[2] = self.present;
-        result[3..].copy_from_slice(&self.timestamps);
+        result[2] = self.present & 0x7f;
+        result[3..].copy_from_slice(&self.timestamps[..7]);
         result
+    }
+
+    // ------------------------=
+    // FUNC: work
+    // DESC: Accumulates owner-thread service or presentation wall time without per-poll logging; excludes backwards clocks.
+    // ------------------=
+    pub fn work(&mut self, phase: usize, start: u64, end: u64) {
+        if self.sequence == 0 || phase >= 2 || start == 0 || end < start { return; }
+        let value = &mut self.work[phase];
+        value[0] = value[0].saturating_add(1);
+        value[1] = value[1].saturating_add(end - start);
+        value[2] = value[2].max(end - start);
+    }
+
+    // ------------------------=
+    // FUNC: detail
+    // DESC: Exports all phase milestones, rearm presence, and bounded service/render counters alongside the legacy record.
+    // ------------------=
+    pub fn detail(&self) -> [u64; 22] {
+        let mut values = [0; 22];
+        values[..3].copy_from_slice(&[1, self.sequence, self.present]);
+        values[3..14].copy_from_slice(&self.timestamps);
+        values[14] = self.microphone_ready_ns.unwrap_or(0);
+        values[15] = u64::from(self.microphone_ready_ns.is_some());
+        values[16..19].copy_from_slice(&self.work[0]);
+        values[19..22].copy_from_slice(&self.work[1]);
+        values
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ------------------------=
+    // FUNC: work_and_display_are_independent_of_audio
+    // DESC: Verifies bounded aggregation, first-presentation semantics, invalid clocks and fresh-turn isolation.
+    // ------------------=
+    #[test]
+    fn work_and_display_are_independent_of_audio() {
+        let mut timing = Timeline::new();
+        timing.begin(100);
+        timing.observe(Milestone::CaptureStarted, 50);
+        timing.observe(Milestone::FirstText, 200);
+        assert_eq!(timing.at(Milestone::FirstDisplay), None);
+        timing.observe(Milestone::FirstDisplay, 210);
+        timing.observe(Milestone::FirstDisplay, 250);
+        timing.work(0, 100, 120);
+        timing.work(0, 200, 210);
+        timing.work(1, 210, 215);
+        timing.work(0, 9, 8);
+        timing.work(3, 1, 100);
+        assert_eq!(&timing.detail()[16..], &[2, 30, 20, 1, 5, 5]);
+        assert_eq!(timing.elapsed(Milestone::FirstText, Milestone::FirstDisplay), Some(10));
+        assert_eq!(timing.at(Milestone::FirstAudio), None);
+        timing.begin(500);
+        assert_eq!(&timing.detail()[16..], &[0; 6]);
+        assert_eq!(timing.at(Milestone::FirstDisplay), None);
+    }
 
     #[test]
     // ------------------------=

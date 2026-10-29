@@ -1406,6 +1406,14 @@ fn turn_timing_tests(owner: runtime::execution::SecurityIdentity) {
     conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     assert!(conversation::timing_snapshot().at(Milestone::FirstText).is_some());
+    assert_eq!(conversation::timing_snapshot().at(Milestone::FirstDisplay), None);
+    conversation::response_presented();
+    let displayed = conversation::timing_snapshot().at(Milestone::FirstDisplay);
+    assert!(displayed.is_some());
+    conversation::performance_work(0, 1, 5);
+    conversation::performance_work(1, 5, 10);
+    let detail = conversation::timing_snapshot().detail();
+    assert_eq!(&detail[16..22], &[1, 4, 4, 1, 5, 5]);
     assert!(conversation::timing_snapshot().at(Milestone::SpeechQueued).is_some());
     assert!(!conversation::timing_snapshot().complete());
     NOW.fetch_add(200_000_000,Ordering::SeqCst);

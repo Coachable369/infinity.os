@@ -29,7 +29,6 @@ pub fn capture(now: u64, state: u64, threshold: u16, pcm: &[i16]) {
         crate::output::write(&record);
     }
 }
-
 // ------------------------=
 // FUNC: write
 // DESC: Adds the same monotonic nanosecond clock to each voice lifecycle record without allocation or runtime locks.
@@ -68,21 +67,38 @@ pub fn write(prefix: &[u8], event: &[u8], now: u64) {
 // DESC: Writes one versioned numeric timing record, without transcripts, PCM, allocation or runtime locks.
 // ------------------=
 pub fn timing(values: [u64; 10]) {
-    const PREFIX: &[u8] = b"[VOICE TIMING] ";
+    numeric(b"[VOICE TIMING] ", &values);
+}
+
+// ------------------------=
+// FUNC: numeric
+// DESC: Emits a bounded versioned numeric record in one serial write, never user content.
+// ------------------=
+pub fn numeric(prefix: &[u8], values: &[u64]) {
+    if prefix.len() > 24 || values.len() > 24 { return; }
     const HEX: &[u8] = b"0123456789abcdef";
-    let mut record = [0u8; PREFIX.len() + 10 * 17];
-    record[..PREFIX.len()].copy_from_slice(PREFIX);
-    let mut at = PREFIX.len();
-    for value in values {
-        for shift in (0..16).rev() {
+    let mut record = [0u8; 24 + 24 * 17];
+    record[..prefix.len()].copy_from_slice(prefix);
+    let mut at = prefix.len();
+    for &value in values {
+        let digits = ((64 - value.leading_zeros() as usize + 3) / 4).max(1);
+        for shift in (0..digits).rev() {
             record[at] = HEX[((value >> (shift * 4)) & 15) as usize];
             at += 1;
         }
         record[at] = b' ';
         at += 1;
     }
+    if at == prefix.len() { return; }
     record[at - 1] = b'\n';
-    unsafe {
-        crate::output::write(&record[..at]);
-    }
+    unsafe { crate::output::write(&record[..at]); }
+}
+
+// ------------------------=
+// FUNC: span
+// DESC: Records a correlated phase interval and work units; invalid clocks remain explicitly invalid.
+// ------------------=
+pub fn span(phase: u64, job: u64, part: u64, start: u64, end: u64, units: u64, status: u64) {
+    numeric(b"[VOICE SPAN] ", &[1, phase, job, part, start, end, units, status,
+        u64::from(start != 0 && end >= start)]);
 }
