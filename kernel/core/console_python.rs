@@ -584,10 +584,49 @@ fn exception_call<T:crate::runtime::native_memory::PageTable>(
 }
 
 // ------------------------=
+// FUNC: launch_infinitycode
+// DESC: Launches the bundled designer through the existing Python process with a private owned source and durable data grant.
+// ------------------=
+pub(super) fn launch_infinitycode(console: &mut ConsoleRuntime) {
+    let result = (|| -> Result<(), &'static [u8]> {
+        if !active(console) { return Err(b"InfinityCode: sign in first."); }
+        let home = crate::storage::provision_user_home(console.current_user.0)
+            .map_err(|_| b"InfinityCode: personal storage is unavailable.".as_slice())?;
+        let base = home.as_bytes();
+        let suffix = b"/documents/InfinityCode.py";
+        let mut path = [0u8; 95];
+        let length = base.len() + suffix.len();
+        if length > path.len() { return Err(b"InfinityCode: personal path is too long."); }
+        path[..base.len()].copy_from_slice(base);
+        path[base.len()..length].copy_from_slice(suffix);
+        let path = &path[..length];
+        let source = include_bytes!("../../sdk/python/examples/infinitycode.py");
+        match crate::storage::object_inspect_path(path) {
+            Ok(_) => {}, // Snapshot below rechecks ownership and exact bootstrap bytes.
+            Err(crate::storage::object::ObjectError::NotFound | crate::storage::object::ObjectError::NamespaceNotFound) => {
+                crate::storage::object_create_owned_note_at(b"InfinityCode.py", source, path,
+                    crate::storage::object::ObjectId(console.current_user.0))
+                    .map_err(|_| b"InfinityCode: cannot save its launch document.".as_slice())?;
+            },
+            Err(_) => return Err(b"InfinityCode: cannot inspect its launch document."),
+        }
+        unsafe { start(console, path, &[b"/system/python", path], Some(source)) }
+    })();
+    console.output.write_line(match result {
+        Ok(()) => b"Launching InfinityCode. Projects are saved in its private /data directory.",
+        Err(error) => error,
+    });
+}
+
+// ------------------------=
 // FUNC: command
 // DESC: Accepts native Python script commands and cancellation without running user code inside input dispatch.
 // ------------------=
 pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsafe {
+    if input.trim_ascii() == b"infinitycode" {
+        launch_infinitycode(console);
+        return true;
+    }
     if input == b"python-cancel" {
         let job = &mut *(&raw mut JOB);
         if job.owner == SecurityIdentity(console.current_session.0) {

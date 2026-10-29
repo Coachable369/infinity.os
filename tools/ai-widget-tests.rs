@@ -77,6 +77,13 @@ fn verify_menu() {
         let layout=SystemLayout::new(width,height);let s=layout.scale();
         for minimized in [false,true] {
             let g=layout.ai_chat_geometry(minimized);
+            let viewport=g.transcript_viewport(s);
+            if g.timeline.width>14*s as u32 && g.timeline.height>14*s as u32 {
+                assert!(viewport.x>g.timeline.x && viewport.y>g.timeline.y);
+                assert!(viewport.right()<g.timeline.right() && viewport.bottom()<g.timeline.bottom());
+                let scroll=layout.ai_chat_scroll_geometry(minimized,1000,usize::MAX);
+                assert_eq!(scroll.maximum_scroll,1000usize.saturating_sub(viewport.height as usize));
+            }
             let stop=Rect{x:g.status.right()-(30*layout.scale())as i32,width:(30*layout.scale())as u32,..g.status};
             for (rect,target) in [(stop,AiChatTarget::Status),(g.close,AiChatTarget::Close),(g.minimize,AiChatTarget::Minimize)] {
                 let p=Point{x:rect.x+rect.width as i32/2,y:rect.y+rect.height as i32/2};

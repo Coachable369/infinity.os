@@ -87,6 +87,8 @@ def frozen_library(source, arch):
                            ("_infinity_child_entry", "child_entry.py"),
                            ("_infinity_generated_run", "generated_run.py"),
                            ("infinity", "infinity.py"),
+                           ("infinitycode", "infinitycode.py"),
+                           ("infinitycode_model", "infinitycode_model.py"),
                            ("_infinity_platform", "platform.py")):
         names[name] = (name + ".py", (ROOT / "sdk/python" / filename).read_bytes())
     resources, metadata = {}, {}

@@ -113,7 +113,22 @@ pub fn pose(face:&Face)->Result<Pose,Error> {
     let nx=nose.x-(left.x+right.x)*0.5;let ny=nose.y-(left.y+right.y)*0.5;
     let yaw=(nx*dx+ny*dy)/distance;
     if yaw.abs()>0.5 {return Err(Error::Pose);}
-    Ok(if yaw< -0.12 {Pose::Left}else if yaw>0.12 {Pose::Right}else{Pose::Front})
+    // Camera RGB is not mirrored. A person's left turn moves their nose
+    // towards image-right; pose names follow the person, not the image axes.
+    Ok(if yaw>0.12 {Pose::Left}else if yaw< -0.12 {Pose::Right}else{Pose::Front})
+}
+
+// ------------------------=
+// FUNC: pose_uses_subject_coordinates
+// DESC: Checks unmirrored camera landmarks against the wizard's person-relative front and side instructions.
+// ------------------=
+#[test]
+fn pose_uses_subject_coordinates() {
+    for (nose_x,expected) in [(320.0,Pose::Front),(340.0,Pose::Left),(300.0,Pose::Right)] {
+        let face=Face {landmarks:[Point{x:270.0,y:180.0},Point{x:370.0,y:180.0},
+            Point{x:nose_x,y:230.0},Point{x:285.0,y:280.0},Point{x:355.0,y:280.0}],..Face::default()};
+        assert_eq!(pose(&face),Ok(expected));
+    }
 }
 
 // ------------------------=

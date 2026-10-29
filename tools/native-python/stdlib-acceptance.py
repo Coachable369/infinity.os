@@ -3,6 +3,15 @@ import sys
 assert sys.platform == "infinityos"
 assert sys.version_info[:2] == (3, 13)
 import _infinity_modules
+import infinitycode
+from infinitycode_model import Project, export_source
+
+# Verify the shipped IDE modules in the actual native interpreter, not host
+# imports. Interactive Tk behavior is checked separately in an installed OS.
+ide_project = Project()
+ide_project.add("Button")
+assert len(ide_project.data["elements"]) == 1
+compile(export_source(ide_project.data), "infinitycode-export.py", "exec")
 import abc, argparse, array, ast, base64, binascii, bisect
 import calendar, cmath, collections, contextlib, contextvars, copy, csv
 import dataclasses, datetime, decimal, difflib, enum, fnmatch, fractions

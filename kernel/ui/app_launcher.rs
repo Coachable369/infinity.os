@@ -79,6 +79,7 @@ pub enum LauncherAction {
     Home(usize),
     Settings(usize),
     TextEditor,
+    InfinityCode,
     CommandWindow,
     TaskManager,
     HolographicDesktop,
@@ -177,7 +178,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize + cfg!(feature = "native-python") as usize] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 4,
@@ -268,6 +269,12 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
         label: b"Infinity Browser",
         icon_role: 60,
         action: LauncherAction::Browser,
+    },
+    #[cfg(feature = "native-python")]
+    LauncherEntry {
+        label: b"InfinityCode",
+        icon_role: 49,
+        action: LauncherAction::InfinityCode,
     },
 ];
 

@@ -6940,10 +6940,11 @@ impl super::DisplayDevice {
             self.ai_widget_status_menu(geometry.status,crate::ui::ai_widget::current_menu(),voice_enabled,can_stop,scale);
             return;
         }
-        let timeline_left = geometry.timeline.x.max(0) as usize;
-        let timeline_top = geometry.timeline.y.max(0) as usize;
-        let timeline_width = geometry.timeline.width as usize;
-        let timeline_height = geometry.timeline.height as usize;
+        let viewport=geometry.transcript_viewport(scale);
+        let timeline_left = viewport.x.max(0) as usize;
+        let timeline_top = viewport.y.max(0) as usize;
+        let timeline_width = viewport.width as usize;
+        let timeline_height = viewport.height as usize;
         self.desktop_bound_surface(67,geometry.timeline);
         if timeline_width == 0 || timeline_height == 0 {
             crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_timeline_scroll_metrics(0));

@@ -485,6 +485,7 @@ impl AiRuntime {
             return false;
         };
         let mut budget = qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
+        let mut redraw = false;
         while budget.next(crate::ui::performance::monotonic_ns()) {
             let result = service.poll();
             let now = crate::ui::performance::monotonic_ns();
@@ -634,10 +635,10 @@ impl AiRuntime {
                 // The editor consumer requests presentation only when it has
                 // committed a paced buffer. Hidden source bytes alone do not
                 // invalidate the desktop; final/error paths above still do.
-                return update.redraw;
+                redraw |= update.redraw;
             }
         }
-        false
+        redraw
     }
 
     // ------------------------=

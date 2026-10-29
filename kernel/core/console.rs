@@ -5614,6 +5614,11 @@ impl ConsoleRuntime {
             }
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
+            LauncherAction::InfinityCode => {
+                self.open_command_window();
+                #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                python_commands::launch_infinitycode(self);
+            },
             LauncherAction::CommandWindow => self.open_command_window(),
             LauncherAction::TaskManager => self.open_task_manager(),
             LauncherAction::HolographicDesktop => self.holographic_open(),
@@ -14206,10 +14211,14 @@ pub fn poll_native_ai() {
     crate::runtime::ai::voice_conversation::performance_work(0, service_started, render_started);
     let presentation = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) };
     let mut presented = false;
-    let prefill=crate::runtime::ai::with_ai_runtime(|ai|ai.prefilling());
+    // Software painting competes with decode as well as prefill. Keep the
+    // source consumer running every poll, but budget background frames for
+    // the entire application generation lease. Input is independently painted.
+    let inference_work=crate::runtime::ai::with_ai_runtime(|ai|
+        ai.prefilling() || ai.app_turn_owner().is_some());
     if owner && unsafe { (&mut *(&raw mut SERVICE_FRAMES)).ready_for_work(
         presentation == crate::ui::input_batch::Presentation::Scene,
-        crate::ui::performance::monotonic_ns(), prefill) } {
+        crate::ui::performance::monotonic_ns(), inference_work) } {
         unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
             runtime.redraw(); diagnostics::publish(runtime); presented = true;
         } }

@@ -47,8 +47,8 @@ impl DisplayDevice {
                 Stage::Idle|Stage::Cancelled=>(b"The camera preview starts on this screen. Keep one person in the frame. Only Capture takes an enrollment photo.",b"Retry camera preview"),
                 Stage::Loading=>(b"Checking the camera, then preparing private recognition. The real preview appears below; enrollment photos are captured separately.",b"Preparing..."),
                 Stage::Photos(0)=>(b"Photo 1 of 3. Face the camera straight on. Use even lighting and keep your whole face visible.",b"Capture front view"),
-                Stage::Photos(1)=>(b"Photo 2 of 3. Turn your face slightly to your left. Keep your eyes visible and hold still.",b"Capture left view"),
-                Stage::Photos(_)=>(b"Photo 3 of 3. Turn slightly to your right. Avoid backlighting and motion blur.",b"Capture right view"),
+                Stage::Photos(1)=>(b"Photo 2 of 3. Turn slightly to YOUR left (nose towards the right of the preview). Keep both eyes visible; do not turn fully sideways.",b"Capture left view"),
+                Stage::Photos(_)=>(b"Photo 3 of 3. Turn slightly to YOUR right (nose towards the left of the preview). Keep both eyes visible and hold still.",b"Capture right view"),
                 Stage::Review=>(b"Three views accepted. Verify with three fresh comparisons, then save encrypted face templates and portraits to your account on this device.",b"Verify & save identity"),
                 Stage::Verifying(_)=>(b"Hold still and face the camera. Comparing three fresh captures against all enrolled views.",b"Verifying..."),
                 Stage::Passed=>(b"Facial identity saved and verified from storage. Front and angled side portraits are encrypted locally. Password login remains on.",b"Continue"),
@@ -107,7 +107,8 @@ impl DisplayDevice {
                         match state.photo_status(index) {
                             crate::runtime::face_setup::PhotoStatus::Checking=>b"Checking...",
                             crate::runtime::face_setup::PhotoStatus::Accepted=>b"Accepted",
-                            crate::runtime::face_setup::PhotoStatus::Pending=>b"Pending",
+                            crate::runtime::face_setup::PhotoStatus::Pending=>if state.rejection().is_some()
+                                && state.stage()==Stage::Photos(index as u8) {b"Retry required"}else{b"Pending"},
                         },
                         l.pixels*3/5,palette::SECONDARY,true,false);
                 }
@@ -128,14 +129,19 @@ impl DisplayDevice {
                     210|213=>b"The image is too dark or low contrast. Face a soft light source.",
                     211|212=>b"The face is overexposed or cropped. Reduce glare and keep the whole face visible.",
                     214=>b"The image is blurred. Hold still and check camera focus.",
+                    216 if state.stage()==Stage::Photos(1)=>b"Left view not accepted. Turn slightly to YOUR left: your nose should move right in the preview. Keep both eyes visible, then click Capture left view.",
+                    216 if state.stage()==Stage::Photos(2)=>b"Right view not accepted. Turn slightly to YOUR right: your nose should move left in the preview. Keep both eyes visible, then click Capture right view.",
                     216=>b"The face angle does not match the requested view. Follow the capture guidance.",
                     217|218=>b"The faces did not match consistently. Retry with the same person throughout.",
                     _=>b"The recognition worker could not complete. No enrollment or login change was saved.",
                 }}
                 else if !camera_available {b"Native camera capture is unavailable on this configuration. You can skip this optional check."}
                 else {b"Private, on-device enrollment. Facial sign-in defaults On in Settings. RGB matching cannot prevent photo or video replay. Password sign-in stays available."};
+            let note_color=if error || state.rejection().is_some() || matches!(state.stage(),Stage::Failed(_)) {
+                palette::ERROR
+            } else {palette::SECONDARY};
             self.access_text_wrapped(l.status.x as usize,l.status.y as usize,l.status.width as usize,note,
-                palette::SECONDARY.0,palette::SECONDARY.1,palette::SECONDARY.2,255,l.pixels*4/5,false);
+                note_color.0,note_color.1,note_color.2,255,l.pixels*4/5,false);
             for (r,label,id,primary) in [(l.back,b"Back" as &[u8],0,false),(l.skip,b"Skip" as &[u8],3,false),(l.primary,action,1,true)] {
                 self.access_button(r.x as usize,r.y as usize,r.width as usize,r.height as usize,label,primary,focus==id);
             }

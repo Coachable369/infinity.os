@@ -81,6 +81,19 @@ pub struct AiChatGeometry {
     pub close: Rect,
 }
 
+impl AiChatGeometry {
+    // ------------------------=
+    // FUNC: transcript_viewport
+    // DESC: Keeps scrolling content inside the authored field's border and inner glass gutter at every density.
+    // ------------------=
+    pub fn transcript_viewport(self, scale:usize)->Rect {
+        let inset=(7*scale.max(1)) as u32;
+        Rect{x:self.timeline.x+inset as i32,y:self.timeline.y+inset as i32,
+            width:self.timeline.width.saturating_sub(inset*2),
+            height:self.timeline.height.saturating_sub(inset*2)}
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AiChatScrollGeometry {
     pub track: Rect,
@@ -763,7 +776,7 @@ impl SystemLayout {
             5 * self.scale,
             track_height,
         );
-        let viewport_height = timeline.height as usize;
+        let viewport_height = self.ai_chat_geometry(minimized).transcript_viewport(self.scale).height as usize;
         let maximum_scroll = content_height.saturating_sub(viewport_height);
         let thumb_height = if maximum_scroll == 0 || content_height == 0 {
             track_height

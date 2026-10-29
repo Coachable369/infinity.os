@@ -29,12 +29,12 @@ impl ServiceFrames {
 
     // ------------------------=
     // FUNC: ready_for_work
-    // DESC: Limits decorative repaint duty during prompt prefill using observed frame cost; input and generated text retain normal scheduling.
+    // DESC: Budgets background repaint against measured frame cost during inference; source consumption and direct input are never throttled.
     // ------------------=
-    pub fn ready_for_work(&mut self, dirty: bool, now: Option<u64>, prefill: bool) -> bool {
+    pub fn ready_for_work(&mut self, dirty: bool, now: Option<u64>, inference_work: bool) -> bool {
         self.pending |= dirty;
         if !self.pending { return false; }
-        let interval = if prefill { self.render_ns.saturating_mul(4).clamp(33_333_333, 200_000_000) }
+        let interval = if inference_work { self.render_ns.saturating_mul(4).clamp(33_333_333, 200_000_000) }
             else { 33_333_333 };
         let due = match (self.last, now) {
             (Some(last), Some(now)) => now < last || now - last >= interval,
