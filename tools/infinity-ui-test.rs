@@ -411,14 +411,18 @@ fn desktop_ai_chat_layout_test() {
             (rect.y + rect.height as i32 / 2) * 1000 / 1080,
         )
     };
-    for (rect, target) in [
-        (geometry.model, AiChatTarget::Model),
-        (geometry.timeline, AiChatTarget::Timeline),
-        (geometry.composer, AiChatTarget::Composer),
-        (geometry.send, AiChatTarget::Send),
-        (geometry.minimize, AiChatTarget::Minimize),
-        (geometry.close, AiChatTarget::Close),
+    for (role, rect, target) in [
+        (66, geometry.model, AiChatTarget::Model),
+        (67, geometry.timeline, AiChatTarget::Timeline),
+        (68, geometry.composer, AiChatTarget::Composer),
+        (69, geometry.send, AiChatTarget::Send),
+        (70, geometry.minimize, AiChatTarget::Minimize),
+        (71, geometry.close, AiChatTarget::Close),
     ] {
+        if ui::desktop_template::bounds(3, role, 1920, 1080).is_none() {
+            assert_eq!((rect.width, rect.height), (0, 0));
+            continue;
+        }
         let (x, y) = normalized(rect);
         assert_eq!(layout.ai_chat_target(x, y, false), Some(target));
     }
