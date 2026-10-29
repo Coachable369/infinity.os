@@ -55,7 +55,22 @@ fn gravity_collections_render_circular_glass() {
     d.spatial_glass_action(600,330,260,56,b"New category",false);
     let primary = pixels[350*width+320];
     let secondary = pixels[350*width+620];
-    assert!(((primary >> 8) & 255) > ((secondary >> 8) & 255) + 80);
+    assert_ne!(primary, secondary);
+    // Spatial actions inherit the shared kit, not a fixed historical palette.
+    // Compare the text-free strip against the native button renderer itself.
+    for (x, primary_state) in [(300usize, true), (600, false)] {
+        let actual: Vec<u32> = (330..386).flat_map(|y|
+            pixels[y*width+x..y*width+x+24].iter().copied()).collect();
+        for y in 330..386 { pixels[y*width+x..y*width+x+260].fill(0x201005); }
+        d.app_button_surface(crate::ui::geometry::Rect {
+            x:x as i32,y:330,width:260,height:56,
+        }, primary_state, 0, false, d.ui_scale());
+        let expected: Vec<u32> = (330..386).flat_map(|y|
+            pixels[y*width+x..y*width+x+24].iter().copied()).collect();
+        assert_eq!(actual, expected);
+    }
+    d.spatial_glass_action(300,330,260,56,b"+ Add idea",true);
+    d.spatial_glass_action(600,330,260,56,b"New category",false);
     use std::io::Write;
     let mut file=std::io::BufWriter::new(std::fs::File::create("build/infinity-gravity-controls.ppm").unwrap());
     write!(file,"P6\n{width} {height}\n255\n").unwrap();

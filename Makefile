@@ -800,13 +800,13 @@ input-regression-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@rustc --edition=2021 --test tools/desktop-widgets-test.rs -o build/behavior-tests/desktop-widgets-test
 	@build/behavior-tests/desktop-widgets-test
 	@rustc --edition=2021 --test tools/minimized-shelf-test.rs -o build/behavior-tests/minimized-shelf-test
-	@build/behavior-tests/minimized-shelf-test
+	@build/behavior-tests/minimized-shelf-test --test-threads=1
 	@rustc --edition=2021 --test kernel/core/bootstrap/spatial_timing.rs -o build/behavior-tests/spatial-timing-test
 	@build/behavior-tests/spatial-timing-test
 	@rustc --edition=2021 --test kernel/core/bootstrap/spatial_surface.rs -o build/behavior-tests/spatial-surface-test
 	@build/behavior-tests/spatial-surface-test
 	@rustc --edition=2021 -A warnings --extern infinity_browser_core=build/behavior-tests/libinfinity_browser_core.rlib --test tools/active-painter-test.rs -o build/behavior-tests/active-painter-unit-test
-	@build/behavior-tests/active-painter-unit-test
+	@build/behavior-tests/active-painter-unit-test --test-threads=1
 	@rustc --edition=2021 --test tools/soft-stroke-test.rs -o build/behavior-tests/soft-stroke-test
 	@build/behavior-tests/soft-stroke-test
 	@rustc --edition=2021 --test tools/spatial-path-test.rs -o build/behavior-tests/spatial-path-test
