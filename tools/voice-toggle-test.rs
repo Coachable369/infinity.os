@@ -598,9 +598,9 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
     OUTPUT.store(1,Ordering::SeqCst);PLAYBACK_FRAMES.store(50,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::synchronized_reply_length(1,SHORT_RESPONSE.len()),0);
+    assert_eq!(conversation::visible_reply_length(1,SHORT_RESPONSE.len()),SHORT_RESPONSE.len());
     PLAYBACK_FRAMES.store(100,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::synchronized_reply_length(1,SHORT_RESPONSE.len()),3);
+    assert_eq!(conversation::visible_reply_length(1,SHORT_RESPONSE.len()),SHORT_RESPONSE.len());
     let captures=CAPTURES.load(Ordering::SeqCst);
     assert_eq!(captures,captures_before_reply);
     MODEL_READY.store(false,Ordering::SeqCst);

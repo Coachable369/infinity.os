@@ -1,6 +1,6 @@
 //! Bounded phrase buffering for cumulative, visible assistant text.
 const PROVIDER_LIMIT: usize = 160;
-const INITIAL_GRAPH_LIMIT: usize = 80;
+const PREFERRED_GRAPH_LIMIT: usize = 80;
 
 // ------------------------=
 // FUNC: playback_boundary
@@ -36,17 +36,17 @@ fn sentence_period(bytes: &[u8], at: usize) -> bool {
 // ------------------=
 pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
     // Kokoro splits a provider request into 80-byte graphs internally, but
-    // cannot publish PCM until every graph finishes. For the opening span,
+    // cannot publish PCM until every graph finishes. For each prepared span,
     // release a natural boundary within one graph instead of holding it for
     // a second graph. Keep short complete replies coalesced and never cut an
     // unfinished phrase just to meet this latency target.
-    if initial && bytes.len() > INITIAL_GRAPH_LIMIT {
+    if bytes.len() > PREFERRED_GRAPH_LIMIT {
         let mut boundary = 0;
         for i in 0..bytes.len().min(PROVIDER_LIMIT) {
             if !bytes.get(i + 1).is_some_and(u8::is_ascii_whitespace)
                 && !(complete && i + 1 == bytes.len()) { continue; }
             if playback_boundary(&bytes[..i + 1], false) {
-                if i + 1 > INITIAL_GRAPH_LIMIT {
+                if i + 1 > PREFERRED_GRAPH_LIMIT {
                     return if boundary != 0 { boundary } else { i + 1 };
                 }
                 // Avoid synthesizing a tiny standalone greeting when another
@@ -185,7 +185,7 @@ mod tests {
     fn lookahead_stays_within_one_native_graph() {
         let sentence=b"The queued followup phrase stays together, so playback does not stop and restart every few words.";
         let followup = super::next(sentence, true, false);
-        assert_eq!(followup, sentence.len());
+        assert_eq!(followup, b"The queued followup phrase stays together,".len());
         let first = super::next(sentence, true, true);
         assert_eq!(first, b"The queued followup phrase stays together,".len());
     }

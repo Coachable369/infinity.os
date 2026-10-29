@@ -6,6 +6,67 @@ pub enum Presentation {
     Scene,
 }
 
+/// Background invalidations may coalesce; input events and cursor motion must not.
+pub struct ServiceFrames {
+    pending: bool,
+    last: Option<u64>,
+}
+impl ServiceFrames {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Starts a background frame limiter without delaying its first update.
+    // ------------------=
+    pub const fn new() -> Self { Self { pending: false, last: None } }
+
+    // ------------------------=
+    // FUNC: ready
+    // DESC: Retains service damage until a 30 Hz deadline without throttling service execution or losing final updates.
+    // ------------------=
+    pub fn ready(&mut self, dirty: bool, now: Option<u64>) -> bool {
+        self.pending |= dirty;
+        if !self.pending { return false; }
+        let due = match (self.last, now) {
+            (Some(last), Some(now)) => now < last || now - last >= 33_333_333,
+            _ => true,
+        };
+        if due { self.pending = false; self.last = now; }
+        due
+    }
+
+    // ------------------------=
+    // FUNC: presented
+    // DESC: Starts the service-work interval after rendering finishes so a slow software frame cannot consume its own scheduling allowance.
+    // ------------------=
+    pub fn presented(&mut self, now: Option<u64>) { self.last = now; }
+}
+
+// ------------------------=
+// FUNC: background_frames_keep_services_running_and_flush_final_damage
+// DESC: Exercises two-millisecond service polls, verifies bounded actual paint count, and retains the final invalidation after generation stops.
+// ------------------=
+#[test]
+fn background_frames_keep_services_running_and_flush_final_damage() {
+    let mut frames = ServiceFrames::new();
+    let mut paints = 0;
+    let mut services = 0;
+    for i in 0..100 {
+        services += 1;
+        paints += usize::from(frames.ready(true, Some(i * 2_000_000)));
+    }
+    assert_eq!(services, 100);
+    assert_eq!(paints, 6);
+    assert!(frames.ready(false, Some(210_000_000)));
+    assert!(!frames.ready(false, Some(300_000_000)));
+    assert!(frames.ready(true, Some(1)));
+    assert!(frames.ready(true, None));
+    frames.presented(Some(400_000_000));
+    assert!(!frames.ready(true, Some(402_000_000)));
+    assert!(frames.ready(false, Some(434_000_000)));
+    let mut input = PresentationBatch::new();
+    assert!(input.request());
+    assert!(input.request_cursor(10, 20));
+}
+
 pub struct PresentationBatch {
     active: bool,
     pending: bool,

@@ -242,10 +242,12 @@ failed native speech job; it does not substitute a different voice.
 
 The conversation controller coalesces short sentences from cumulative visible
 LLM output. A complete answer of up to 80 bytes stays in one synthesis request.
-For longer answers, the initial span prefers the last natural sentence or clause
+For longer answers, each prepared span prefers the last natural sentence or clause
 boundary within 80 bytes, or the first natural boundary beyond that if necessary.
 This applies to both streamed and already-completed replies: a ready opening
-phrase must not wait for unrelated followup synthesis. Arbitrary word boundaries
+phrase must not wait for unrelated followup synthesis. The same bound limits
+prefetch work while the preceding phrase plays, avoiding two-graph lookahead
+jobs when a natural boundary is available inside one graph. Arbitrary word boundaries
 do not start playback. The native engine retains at most 80 bytes per inference graph and
 joins internal graph boundaries before returning PCM. This avoids running a
 separate graph for a greeting when the rest of its short answer is available.
@@ -259,6 +261,19 @@ initial-span selector on the same native paragraph fixtures. Compare its cases
 7 and 9 against an ordinary run for synthesis-to-first-playback preparation cost.
 This intentionally produces less PCM before playback; it is not a full-response
 throughput speedup, a PCM-parity comparison, or installed microphone-to-audio proof.
+
+The October 29 four-vCPU native ARM fixture reduced initial preparation from
+12.80/12.19 seconds to 5.83/5.92 seconds by publishing its first natural span
+instead of synthesizing the full paragraph first. Native engine bytes were
+identical. Evidence is retained in `builds/voice-start-20261029/`. The remaining
+text still requires synthesis; this result does not establish gap-free playback.
+
+Generated text is now visible independently of the speech DMA cursor. Background
+service invalidations coalesce to at most 30 Hz, with the service interval
+starting after a software frame finishes; microphone, inference and output
+polls continue on every loop. Device input and cursor presentation retain their
+immediate path. These scheduling checks are behavioral host tests, not a claim
+of measured installed microphone-to-response latency.
 
 Resident playback completion follows the HDA link cursor, not the expected
 wall-clock duration of the waveform. A separate silent DMA tail prevents an

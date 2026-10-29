@@ -14195,19 +14195,30 @@ pub fn reduced_motion() -> bool {
 
 // ------------------------=
 // FUNC: poll_native_ai
-// DESC: Advances services before decorative animation and coalesces both into one final repaint, without delaying the separate input drain.
+// DESC: Advances every service pass but coalesces background scene damage to 30 Hz without delaying the separate input drain.
 // ------------------=
 pub fn poll_native_ai() {
-    input_batch(|| {
-        poll_native_ai_inner();
-        crate::bootstrap::animation_tick();
-    });
+    let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
+    poll_native_ai_inner();
+    crate::bootstrap::animation_tick();
+    let presentation = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) };
+    let mut presented = false;
+    if owner && unsafe { (&mut *(&raw mut SERVICE_FRAMES)).ready(
+        presentation == crate::ui::input_batch::Presentation::Scene,
+        crate::ui::performance::monotonic_ns()) } {
+        unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
+            runtime.redraw(); diagnostics::publish(runtime); presented = true;
+        } }
+        unsafe { (&mut *(&raw mut SERVICE_FRAMES)).presented(crate::ui::performance::monotonic_ns()); }
+    } else if let crate::ui::input_batch::Presentation::Cursor { x, y } = presentation {
+        crate::bootstrap::system_ui_cursor(x, y);
+    }
     // The first-visible metric must be recorded after the deferred frame, not
     // while speech/inference are still mutating its presentation snapshot.
     let desktop = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
         runtime.ai_chat_allowed() && matches!(runtime.mode,
             ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher)) };
-    if desktop && !unsafe { (&*(&raw const INPUT_PRESENTATION)).active() } {
+    if desktop && presented {
         crate::runtime::ai::with_ai_runtime(|ai| {
             if ai.app_turn_owner().is_none() { ai.record_first_visible_response(); }
         });
@@ -14374,6 +14385,7 @@ pub fn native_gui_frames(render:impl FnMut(crate::ui::window::Window,crate::ui::
     {let _=render;}
 }
 static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate::ui::input_batch::PresentationBatch::new();
+static mut SERVICE_FRAMES: crate::ui::input_batch::ServiceFrames = crate::ui::input_batch::ServiceFrames::new();
 
 // ------------------------=
 // FUNC: input_batch

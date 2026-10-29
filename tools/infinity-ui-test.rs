@@ -384,7 +384,9 @@ fn desktop_ai_chat_layout_test() {
     assert!(geometry.panel.height > 300);
     assert!(geometry.panel.bottom() <= foreground.widgets.bottom());
     assert!(geometry.timeline.bottom() <= geometry.composer.y);
-    assert!(geometry.send.width >= 86);
+    let send = ui::desktop_template::element(3, 69).unwrap().frame;
+    assert_eq!(geometry.send.width as usize,
+        1920 * (send.x as usize + send.width as usize) / 1000 - 1920 * send.x as usize / 1000);
     let scroll = layout.ai_chat_scroll_geometry(
         false,
         geometry.timeline.height as usize * 3,
@@ -416,11 +418,15 @@ fn desktop_ai_chat_layout_test() {
         (geometry.send, AiChatTarget::Send),
         (geometry.minimize, AiChatTarget::Minimize),
         (geometry.close, AiChatTarget::Close),
-        (geometry.status, AiChatTarget::Status),
     ] {
         let (x, y) = normalized(rect);
         assert_eq!(layout.ai_chat_target(x, y, false), Some(target));
     }
+    let (status_x, status_y) = normalized(geometry.status);
+    assert_eq!(layout.ai_chat_target(status_x, status_y, false), None);
+    assert_eq!(layout.ai_chat_target(
+        (geometry.status.right() - 15) * 1000 / 1920, status_y, false),
+        Some(AiChatTarget::Status));
 
     let minimized = layout.ai_chat_geometry(true);
     assert!(minimized.panel.height < geometry.panel.height);
@@ -1692,7 +1698,9 @@ fn installed_system_hit_geometry_test() {
     );
 
     let hidpi = SystemLayout::new(2560, 1440);
-    assert_eq!(hidpi.top_bar_height(), 76);
+    let authored_bar = ui::desktop_template::element(1, 2).unwrap().frame;
+    assert_eq!(hidpi.top_bar_height(),
+        1440 * (authored_bar.y as usize + authored_bar.height as usize) / 1000);
     assert_eq!(
         hidpi.onboarding_target(0, 220, 810),
         Some(OnboardingTarget::Primary)

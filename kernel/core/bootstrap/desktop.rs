@@ -6970,7 +6970,7 @@ impl super::DisplayDevice {
                 let full_text = message.text();
                 let visible_length = if index + 1 == message_count
                     && message.role == crate::runtime::ai::chat::ChatRole::Assistant {
-                    crate::runtime::ai::voice_conversation::synchronized_reply_length(
+                    crate::runtime::ai::voice_conversation::visible_reply_length(
                         speech_turn, full_text.len())
                 } else { full_text.len() };
                 let visible_text = &full_text[..visible_length];
@@ -7002,7 +7002,7 @@ impl super::DisplayDevice {
                 let full_text = message.text();
                 let visible_length = if index + 1 == message_count
                     && message.role == crate::runtime::ai::chat::ChatRole::Assistant {
-                    crate::runtime::ai::voice_conversation::synchronized_reply_length(
+                    crate::runtime::ai::voice_conversation::visible_reply_length(
                         speech_turn, full_text.len())
                 } else { full_text.len() };
                 let visible_text = &full_text[..visible_length];

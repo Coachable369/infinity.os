@@ -525,17 +525,11 @@ pub fn waiting_for_pause() -> bool {
     unsafe { STATE == State::Listening && (&*(&raw const UTTERANCE)).state() == VadState::Limit }
 }
 // ------------------------=
-// FUNC: synchronized_reply_length
-// DESC: Limits the active assistant response to the word boundary reached by the real speech DMA cursor.
+// FUNC: visible_reply_length
+// DESC: Publishes generated text immediately; speech preparation and its DMA cursor never gate readable model output.
 // ------------------=
-pub fn synchronized_reply_length(turn: u64, full_length: usize) -> usize {
-    unsafe {
-        if turn != CHAT_TURN || !matches!(STATE, State::Thinking | State::Speaking) {
-            full_length
-        } else {
-            SYNC_VISIBLE_AT.min(full_length)
-        }
-    }
+pub fn visible_reply_length(_turn: u64, full_length: usize) -> usize {
+    full_length
 }
 // ------------------------=
 // FUNC: reset_listening_state
