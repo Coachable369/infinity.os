@@ -241,15 +241,24 @@ failed native speech job; it does not substitute a different voice.
 ## Conversational phrase playback and microphone interruption
 
 The conversation controller coalesces short sentences from cumulative visible
-LLM output. A complete short answer stays in one synthesis request; the first
-span of a longer streamed answer is released at a word boundary between 64 and
-80 bytes. The native engine retains at most 80 bytes per inference graph and
+LLM output. A complete answer of up to 80 bytes stays in one synthesis request.
+For longer answers, the initial span prefers the last natural sentence or clause
+boundary within 80 bytes, or the first natural boundary beyond that if necessary.
+This applies to both streamed and already-completed replies: a ready opening
+phrase must not wait for unrelated followup synthesis. Arbitrary word boundaries
+do not start playback. The native engine retains at most 80 bytes per inference graph and
 joins internal graph boundaries before returning PCM. This avoids running a
 separate graph for a greeting when the rest of its short answer is available.
 Prepared spans fill a resident DMA batch before playback starts. Answers longer
 than one batch retain the next prepared span for playback after the active batch
 finishes. Native synthesis is still slower than real time, so this buffering
 introduces latency; the resident-buffer contract does not claim immediate streaming.
+
+`probe/latency.py --opening-phrase --label opening` measures the production
+initial-span selector on the same native paragraph fixtures. Compare its cases
+7 and 9 against an ordinary run for synthesis-to-first-playback preparation cost.
+This intentionally produces less PCM before playback; it is not a full-response
+throughput speedup, a PCM-parity comparison, or installed microphone-to-audio proof.
 
 Resident playback completion follows the HDA link cursor, not the expected
 wall-clock duration of the waveform. A separate silent DMA tail prevents an

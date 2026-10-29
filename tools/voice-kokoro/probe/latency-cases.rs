@@ -146,6 +146,10 @@ unsafe fn speech_cases() {
             7 | 9 => b"Welcome to Infinity. Your assistant runs entirely on this computer. You can ask questions, work on your projects, and explore your ideas with a natural voice.",
             _ => b"Hi.",
         };
+        #[cfg(feature = "opening-phrase")]
+        let text = if case == 7 || case == 9 {
+            &text[..speech_chunk::next(text, true, true)]
+        } else { text };
         let (start, end, frequency): (u64, u64, u64);
         let mut frames = 0;
         if case == 4 {
@@ -190,3 +194,7 @@ unsafe fn speech_cases() {
     bytes(&(workers::parallel_completed() as u64).to_le_bytes());
     finish()
 }
+
+#[cfg(feature = "opening-phrase")]
+#[path = "../../../kernel/runtime/ai/speech_chunk.rs"]
+mod speech_chunk;

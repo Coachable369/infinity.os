@@ -1,5 +1,6 @@
 //! Bounded phrase buffering for cumulative, visible assistant text.
 const PROVIDER_LIMIT: usize = 160;
+const INITIAL_GRAPH_LIMIT: usize = 80;
 
 // ------------------------=
 // FUNC: playback_boundary
@@ -34,6 +35,27 @@ fn sentence_period(bytes: &[u8], at: usize) -> bool {
 // DESC: Releases natural sentence or clause boundaries, falling back to a whole-word split only at the native provider's hard bound.
 // ------------------=
 pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
+    // Kokoro splits a provider request into 80-byte graphs internally, but
+    // cannot publish PCM until every graph finishes. For the opening span,
+    // release a natural boundary within one graph instead of holding it for
+    // a second graph. Keep short complete replies coalesced and never cut an
+    // unfinished phrase just to meet this latency target.
+    if initial && bytes.len() > INITIAL_GRAPH_LIMIT {
+        let mut boundary = 0;
+        for i in 0..bytes.len().min(PROVIDER_LIMIT) {
+            if !bytes.get(i + 1).is_some_and(u8::is_ascii_whitespace)
+                && !(complete && i + 1 == bytes.len()) { continue; }
+            if playback_boundary(&bytes[..i + 1], false) {
+                if i + 1 > INITIAL_GRAPH_LIMIT {
+                    return if boundary != 0 { boundary } else { i + 1 };
+                }
+                // Avoid synthesizing a tiny standalone greeting when another
+                // complete phrase already fits in the first graph.
+                boundary = i + 1;
+            }
+        }
+        if boundary != 0 { return boundary; }
+    }
     // Coalesce available short sentences before dispatch. Sending "Hello!"
     // separately from the rest of a short answer needlessly runs two graphs.
     // Each bounded span still becomes resident before hardware playback.
@@ -165,7 +187,31 @@ mod tests {
         let followup = super::next(sentence, true, false);
         assert_eq!(followup, sentence.len());
         let first = super::next(sentence, true, true);
-        assert_eq!(first, sentence.len());
+        assert_eq!(first, b"The queued followup phrase stays together,".len());
+    }
+
+    // ------------------------=
+    // FUNC: opening_phrase_does_not_wait_for_second_graph
+    // DESC: Checks early natural-boundary publication for complete and streamed replies without losing any bytes.
+    // ------------------=
+    #[test]
+    fn opening_phrase_does_not_wait_for_second_graph() {
+        let opening = b"Your changes are saved.";
+        let reply = [opening.as_slice(), b" You can now continue working with the updated settings and all your existing applications."].concat();
+        for complete in [false, true] {
+            let count = super::next(&reply, complete, true);
+            assert_eq!(count, opening.len());
+            assert!(super::playback_boundary(&reply[..count], false));
+        }
+        let mut at = 0;
+        let mut delivered = Vec::new();
+        while at < reply.len() {
+            let count = super::next(&reply[at..], true, at == 0);
+            assert!(count > 0 && count <= 160);
+            delivered.extend_from_slice(&reply[at..at + count]);
+            at += count;
+        }
+        assert_eq!(delivered, reply);
     }
 
     // ------------------------=
@@ -222,7 +268,7 @@ mod tests {
         text.extend_from_slice(b" and the remaining work continues in the background.");
         assert_eq!(super::next(&text[..clause.len() + 1], false, true), clause.len());
         assert_eq!(super::next(&text[..clause.len() + 1], false, false), 0);
-        assert_eq!(super::next(&text, true, true), text.len());
+        assert_eq!(super::next(&text, true, true), clause.len());
         for abbreviation in [b"Dr.".as_slice(), b"Prof.", b"e.g.", b"A."] {
             let mut text = b"Please send the requested summary to ".to_vec();
             text.extend_from_slice(abbreviation);

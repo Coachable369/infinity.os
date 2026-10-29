@@ -161,7 +161,10 @@ def main():
     parser.add_argument("--baseline-object", type=Path, help="Measure a preserved pre-optimization object under build/ with the same firmware and ten PCM fixtures")
     parser.add_argument("--lifetime", action="store_true", help="Run shared-heap Whisper/Kokoro lifetime and quarantine acceptance")
     parser.add_argument("--profile", action="store_true", help="Capture explicitly instrumented diagnostic operation totals, not release latency")
+    parser.add_argument("--opening-phrase", action="store_true", help="Measure the production initial phrase instead of the full paragraph; not a full-response speedup")
     args = parser.parse_args()
+    if args.opening_phrase and (args.lifetime or args.profile or args.baseline_object):
+        parser.error("Opening phrase measurement requires the ordinary release engine")
     if args.lifetime and args.profile:
         parser.error("Lifetime and diagnostic profiling use distinct evidence formats")
     if args.baseline_object is not None and (args.serial or args.lifetime or args.profile):
@@ -190,6 +193,7 @@ path = ''' + json.dumps(str(source)) + '''
 crate-type = ["staticlib"]
 [features]
 baseline-math = []
+opening-phrase = []
 [profile.release]
 opt-level = 3
 panic = "abort"
@@ -202,7 +206,7 @@ lto = true
                        INFINITY_PROBE_HELPERS="1" if helpers_expected else "0")
     if fixture is not None:
         environment["INFINITY_STT_FIXTURE"] = str(fixture)
-    features = ("--features", "baseline-math") if baseline is not None else ()
+    features = ("--features", "baseline-math") if baseline is not None else (("--features", "opening-phrase") if args.opening_phrase else ())
     run("cargo", "build", "--quiet", "--manifest-path", cargo, "--release", "-Z", "build-std=core",
         "--target", "aarch64-unknown-none-softfloat", *features, env=environment)
     math_object = output / "worker-math.o"
@@ -266,6 +270,7 @@ lto = true
     with linked_native.open("rb") as image:
         native_hash = hashlib.file_digest(image, "sha256").hexdigest()
     evidence = dict(environment="firmware-loaded native ARM64 workers", installed_verified=False,
+                    opening_phrase_only=args.opening_phrase,
                     cpus=args.cpus, helpers_enabled=helpers_expected, online_workers=online,
                     helper_completions=helpers, cases=rows,
                     mixed_engine_lifetime=args.lifetime,
