@@ -563,6 +563,32 @@ class UpdateISOTests(unittest.TestCase):
             output.write(struct.pack("<I", 1))
         with self.assertRaises(ValueError):
             updater.verify_boot_catalog(iso, image)
+        with self.assertRaises(ValueError):
+            updater.release_repacked_image(iso, image)
+        self.assertTrue(image.exists())
+        # Restore the actual boot extent and exercise the staging lifecycle.
+        subprocess.run(["xorriso", "-as", "mkisofs", "-R", "-e", "efi.img", "-no-emul-boot", "-o", str(iso), str(tree)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        expected = updater.digest(iso)
+        updater.release_repacked_image(iso, image)
+        self.assertFalse(image.exists())
+        self.assertEqual(updater.digest(iso), expected)
+
+    # ------------------------=
+    # FUNC: test_staging_budget_accepts_reduced_peak_and_rejects_shortfall
+    # DESC: Exercises capacity boundaries with a sparse representative ISO and verifies preflight never mutates it.
+    # ------------------=
+    def test_staging_budget_accepts_reduced_peak_and_rejects_shortfall(self):
+        iso = self.work / "capacity.iso"
+        gib = 1024**3
+        with iso.open("wb") as output:
+            output.truncate(10 * gib)
+        before = updater.file_identity(iso)
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=38 * gib)):
+            self.assertEqual(updater.require_staging_space(iso), 38 * gib)
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=38 * gib - 1)):
+            with self.assertRaises(RuntimeError):
+                updater.require_staging_space(iso)
+        self.assertEqual(updater.file_identity(iso), before)
 
 
 if __name__ == "__main__":

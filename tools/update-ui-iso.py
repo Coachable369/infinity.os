@@ -510,6 +510,34 @@ def verify_boot_catalog(iso, efi):
 
 
 # ------------------------=
+# FUNC: require_staging_space
+# DESC: Budgets three concurrent media extents plus compiler growth without counting the already allocated original ISO.
+# ------------------=
+def require_staging_space(iso):
+    # Peak payload creation: editable live FAT + installed FAT + new shards.
+    # Peak final verification: candidate + extracted live FAT + installed FAT.
+    # release_repacked_image prevents a fourth extent during verification.
+    required = iso.stat().st_size * 3 + 8 * 1024**3
+    available = shutil.disk_usage(ROOT).free
+    if available < required:
+        gib = 1024**3
+        raise RuntimeError(
+            f"UI update needs {required / gib:.1f} GiB of staging space; "
+            f"{available / gib:.1f} GiB available (short by {(required - available) / gib:.1f} GiB). "
+            "The existing ISO has not been changed.")
+    return required
+
+
+# ------------------------=
+# FUNC: release_repacked_image
+# DESC: Checks the candidate boot extent before releasing disposable FAT staging; subsequent gates re-extract and validate actual candidate bytes.
+# ------------------=
+def release_repacked_image(candidate, live):
+    verify_boot_catalog(candidate, live)
+    live.unlink()
+
+
+# ------------------------=
 # FUNC: update_iso
 # DESC: Reuses existing media and native dependencies, rebuilding only UI-dependent kernels and install metadata before atomic publication.
 # ------------------=
@@ -528,9 +556,7 @@ def update_iso(iso, target):
     for executable in ("xorriso", "mtype", "mcopy", "mdir", "mdel", "mdeltree", "make", "cargo"):
         if not shutil.which(executable):
             raise RuntimeError(f"Required build tool is unavailable: {executable}")
-    required = iso.stat().st_size * 4 + 8 * 1024**3
-    if shutil.disk_usage(ROOT).free < required:
-        raise RuntimeError(f"UI update requires {required // 1024**3} GiB of free staging space")
+    require_staging_space(iso)
     event("progress", phase="Checking ISO and cached native components", progress=0.03)
     original = digest(iso)
     protected = {path: digest(path) for path in cached}
@@ -636,12 +662,12 @@ def update_iso(iso, target):
         run(["xorriso", "-indev", iso, "-outdev", candidate, "-boot_image", "any", "replay", "-map", live, "/efi.img", "-map", boot_file, f"/EFI/BOOT/{boot}"])
         # Final-media gates inspect the actual candidate, not only staging files.
         event("progress", phase="Verifying media kernels, model preservation and install parity", progress=0.88)
-        run([sys.executable, "tools/iso-kernel-freshness.py", candidate, live_kernel, installed_kernel])
         published_boot = work / boot
         run(["xorriso", "-osirrox", "on", "-indev", candidate, "-extract", f"/EFI/BOOT/{boot}", published_boot], stdout=subprocess.DEVNULL)
         if digest(published_boot) != digest(boot_file):
             raise RuntimeError("Published ISO bootloader differs from the current loader")
-        verify_boot_catalog(candidate, live)
+        release_repacked_image(candidate, live)
+        run([sys.executable, "tools/iso-kernel-freshness.py", candidate, live_kernel, installed_kernel])
         run([sys.executable, "tools/full-bundle-iso-test.py", candidate])
         run([sys.executable, "tools/audio-install-parity.py", candidate, target, installed_kernel])
         verify_unchanged(protected)
