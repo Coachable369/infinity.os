@@ -576,7 +576,7 @@ $(BUILD)/test-media/InfinityOS-x86_64.bootmedia: $(BUILD)/infinity-x86_64.img x8
 	rm -rf $(BUILD)/iso/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY $(BUILD)/iso/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
-	xorriso -as mkisofs -R -V INFINITYOS -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso
+	xorriso -as mkisofs -iso-level 3 -R -V INFINITYOS -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso
 	mv $@.partial $@
 
 x86_64: check-tools $(BUILD)/test-media/InfinityOS-x86_64.bootmedia
@@ -1029,7 +1029,7 @@ $(BUILD)/test-media/InfinityOS-aarch64.bootmedia: $(BUILD)/infinity-aarch64.img
 	rm -rf $(BUILD)/iso-aarch64/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY $(BUILD)/iso-aarch64/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
-	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64
+	xorriso -as mkisofs -iso-level 3 -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64
 	mv $@.partial $@
 
 $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/kernel-qemu.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(NODE_ASSETS)
@@ -1059,7 +1059,7 @@ $(BUILD)/test-media/InfinityOS-aarch64-qemu.bootmedia: $(BUILD)/infinity-aarch64
 	rm -rf $(BUILD)/iso-aarch64-qemu/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY $(BUILD)/iso-aarch64-qemu/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
-	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64-qemu
+	xorriso -as mkisofs -iso-level 3 -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64-qemu
 	mv $@.partial $@
 
 .PHONY: aarch64-bootstrap

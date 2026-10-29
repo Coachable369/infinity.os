@@ -115,9 +115,8 @@ fn main() {
 }
 #[path = "../kernel/ui/geometry.rs"]
 pub mod geometry;
-mod ui {
-    pub use crate::geometry;
-}
+#[path = "../kernel/ui/mod.rs"]
+mod ui;
 
 // ------------------------=
 // FUNC: shortcut_drag_and_persistence
