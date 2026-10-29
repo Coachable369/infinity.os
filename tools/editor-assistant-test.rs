@@ -1168,7 +1168,8 @@ fn generated_redraw_batching() {
         let update=panel.stream_model_output(2,&response[..end]);
         progressed+=usize::from(update.progressed);
         assert!(!update.redraw);
-        assert!(panel.stream.ready(&panel.argument[..panel.argument_len],Some(end as u64*1_000_000),false).is_none());
+        let now=1+end as u64*ai::generation_stream::FLUSH_INTERVAL_NS/(response.len() as u64+1);
+        assert!(panel.stream.ready(&panel.argument[..panel.argument_len],Some(now),false).is_none());
         assert_eq!(document.bytes().len(),first_length);
         assert_eq!(panel.pending,Action::None);
     }

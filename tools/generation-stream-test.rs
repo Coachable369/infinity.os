@@ -40,5 +40,5 @@ fn main() {
             assert!(growing.committed(range.end, Some(length as u64 * 1_000_000)));
         }
     }
-    assert_eq!(growing.flushes, 2);
+    assert_eq!(growing.flushes, 5);
 }

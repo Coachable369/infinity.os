@@ -1241,6 +1241,14 @@ impl AiRuntime {
         self.execution.audit(index)
     }
     // ------------------------=
+    // FUNC: prefilling
+    // DESC: Reports native prompt ingestion only, without slowing visible token delivery or changing inference ownership.
+    // ------------------=
+    pub fn prefilling(&self) -> bool {
+        self.qwen.as_ref().is_some_and(|service|service.busy() && service.progress().generated_tokens==0)
+    }
+
+    // ------------------------=
     // FUNC: poll_qwen
     // DESC: Advances local inference outside rendering and publishes model-produced text only.
     // ------------------=

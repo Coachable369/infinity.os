@@ -19,7 +19,7 @@ use rand_core::SeedableRng;
 static mut READ: [u8; 16640] = [0; 16640];
 static mut WRITE: [u8; 4096] = [0; 4096];
 static mut REQUEST: [u8; 512] = [0; 512];
-static mut RESPONSE: [u8; 1024 * 1024] = [0; 1024 * 1024];
+static mut RESPONSE: [u8; 4 * 1024 * 1024] = [0; 4 * 1024 * 1024];
 // ------------------------=
 // FUNC: exit
 // DESC: Reports structured guest success or failure without a log-string oracle.
@@ -231,7 +231,7 @@ pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
             now,
             if google {option_env!("HTTPS_TEST_HOST").unwrap_or("www.google.com")} else {"localhost"},
             port,
-            "/",
+            option_env!("HTTPS_TEST_PATH").unwrap_or("/"),
             Buffers {
                 read_record: unsafe { &mut *(&raw mut READ) },
                 write_record: unsafe { &mut *(&raw mut WRITE) },

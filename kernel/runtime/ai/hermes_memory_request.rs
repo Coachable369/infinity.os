@@ -39,6 +39,7 @@ pub fn respond(
         input,
         document.is_some_and(|profile| profile.enabled(b"learning_enabled")),
     );
+    let mut merged = [0u8; 1024];
     let (key, value, outcome) = match action {
         Action::None => return None,
         Action::Inspect => {
@@ -59,6 +60,24 @@ pub fn respond(
             });
         }
         Action::Set(key, value) => (key, value, Outcome::Saved),
+        Action::Fact(label, value) => {
+            let mut previous=[0u8;1024];
+            let length=match document.map(|d|d.get(b"facts",&mut previous)) {
+                Some(Ok(length))=>length,
+                _=>return Some(message(out,b"Your memory could not be read. Nothing was changed.",Outcome::Failed)),
+            };
+            let mut used=0;
+            for line in previous[..length].split(|b|*b==b'\n').filter(|l|!l.is_empty()) {
+                if line.split(|b|*b==b':').next().is_some_and(|key|key.eq_ignore_ascii_case(label)) {continue;}
+                if used+line.len()+1>merged.len() {return Some(message(out,b"Your memory is full. Nothing was changed.",Outcome::Failed));}
+                merged[used..used+line.len()].copy_from_slice(line);used+=line.len();merged[used]=b'\n';used+=1;
+            }
+            if used+label.len()+2+value.len()>merged.len() {return Some(message(out,b"Your memory is full. Nothing was changed.",Outcome::Failed));}
+            merged[used..used+label.len()].copy_from_slice(label);used+=label.len();
+            merged[used..used+2].copy_from_slice(b": ");used+=2;
+            merged[used..used+value.len()].copy_from_slice(value);used+=value.len();
+            (b"facts".as_slice(),&merged[..used],Outcome::Saved)
+        }
         Action::Forget(key) => {
             let value: &[u8] = match key {
                 b"wake_word" => b"Infinity",

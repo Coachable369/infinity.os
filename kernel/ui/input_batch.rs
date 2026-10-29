@@ -10,23 +10,34 @@ pub enum Presentation {
 pub struct ServiceFrames {
     pending: bool,
     last: Option<u64>,
+    render_ns: u64,
 }
 impl ServiceFrames {
     // ------------------------=
     // FUNC: new
     // DESC: Starts a background frame limiter without delaying its first update.
     // ------------------=
-    pub const fn new() -> Self { Self { pending: false, last: None } }
+    pub const fn new() -> Self { Self { pending: false, last: None, render_ns: 0 } }
 
     // ------------------------=
     // FUNC: ready
     // DESC: Retains service damage until a 30 Hz deadline without throttling service execution or losing final updates.
     // ------------------=
     pub fn ready(&mut self, dirty: bool, now: Option<u64>) -> bool {
+        self.ready_for_work(dirty, now, false)
+    }
+
+    // ------------------------=
+    // FUNC: ready_for_work
+    // DESC: Limits decorative repaint duty during prompt prefill using observed frame cost; input and generated text retain normal scheduling.
+    // ------------------=
+    pub fn ready_for_work(&mut self, dirty: bool, now: Option<u64>, prefill: bool) -> bool {
         self.pending |= dirty;
         if !self.pending { return false; }
+        let interval = if prefill { self.render_ns.saturating_mul(4).clamp(33_333_333, 200_000_000) }
+            else { 33_333_333 };
         let due = match (self.last, now) {
-            (Some(last), Some(now)) => now < last || now - last >= 33_333_333,
+            (Some(last), Some(now)) => now < last || now - last >= interval,
             _ => true,
         };
         if due { self.pending = false; self.last = now; }
@@ -37,7 +48,28 @@ impl ServiceFrames {
     // FUNC: presented
     // DESC: Starts the service-work interval after rendering finishes so a slow software frame cannot consume its own scheduling allowance.
     // ------------------=
-    pub fn presented(&mut self, now: Option<u64>) { self.last = now; }
+    pub fn presented(&mut self, now: Option<u64>) {
+        if let (Some(start),Some(end))=(self.last,now) {
+            if end>=start {self.render_ns=end-start;}
+        }
+        self.last = now;
+    }
+}
+
+// ------------------------=
+// FUNC: prefill_repaint_budget_preserves_text_and_pending_damage
+// DESC: Verifies expensive decorative frames yield inference time, then return to normal text scheduling.
+// ------------------=
+#[test]
+fn prefill_repaint_budget_preserves_text_and_pending_damage() {
+    let mut frames=ServiceFrames::new();
+    assert!(frames.ready_for_work(true,Some(0),true));
+    frames.presented(Some(50_000_000));
+    assert!(!frames.ready_for_work(true,Some(84_000_000),true));
+    assert!(!frames.ready_for_work(false,Some(249_000_000),true));
+    assert!(frames.ready_for_work(false,Some(250_000_000),true));
+    frames.presented(Some(300_000_000));
+    assert!(frames.ready_for_work(true,Some(334_000_000),false));
 }
 
 // ------------------------=

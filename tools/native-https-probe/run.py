@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # FUNC: run
 # DESC: Builds a test-only trust fixture, boots the native HTTPS client and asserts its binary guest outcome.
 # ------------------=
-def run(arch="x86_64", rsa=False, google=False, host=None):
+def run(arch="x86_64", rsa=False, google=False, host=None, path="/"):
     external = google or host is not None
     with tempfile.TemporaryDirectory(prefix="infinity-https-") as temporary:
         work = Path(temporary)
@@ -30,7 +30,7 @@ def run(arch="x86_64", rsa=False, google=False, host=None):
         listener = socket.socket(); listener.bind(("127.0.0.1", 0)); listener.listen(1); listener.settimeout(60)
         environment = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(ROOT / "build/native-https/cargo"),
             HTTPS_TEST_PORT=str(listener.getsockname()[1]), HTTPS_TEST_ROOT=str(der), HTTPS_TEST_TIME=str(int(time.time())),
-            HTTPS_TEST_GOOGLE="1" if external else "0", HTTPS_TEST_HOST=host or "www.google.com")
+            HTTPS_TEST_GOOGLE="1" if external else "0", HTTPS_TEST_HOST=host or "www.google.com", HTTPS_TEST_PATH=path)
         target = "aarch64-unknown-none" if arch == "aarch64" else "x86_64-unknown-none"
         linker = "linker/aarch64-qemu.ld" if arch == "aarch64" else "linker/x86_64.ld"
         subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target", target,
@@ -91,5 +91,6 @@ if __name__ == "__main__":
     parser.add_argument("--rsa", action="store_true")
     parser.add_argument("--google", action="store_true")
     parser.add_argument("--host", help="Public HTTPS host tested by the native guest with system trust roots")
+    parser.add_argument("--path", default="/", help="Exact HTTPS request target including any query")
     args = parser.parse_args()
-    run(args.arch, args.rsa, args.google, args.host)
+    run(args.arch, args.rsa, args.google, args.host, args.path)

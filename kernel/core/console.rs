@@ -14206,9 +14206,10 @@ pub fn poll_native_ai() {
     crate::runtime::ai::voice_conversation::performance_work(0, service_started, render_started);
     let presentation = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) };
     let mut presented = false;
-    if owner && unsafe { (&mut *(&raw mut SERVICE_FRAMES)).ready(
+    let prefill=crate::runtime::ai::with_ai_runtime(|ai|ai.prefilling());
+    if owner && unsafe { (&mut *(&raw mut SERVICE_FRAMES)).ready_for_work(
         presentation == crate::ui::input_batch::Presentation::Scene,
-        crate::ui::performance::monotonic_ns()) } {
+        crate::ui::performance::monotonic_ns(), prefill) } {
         unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
             runtime.redraw(); diagnostics::publish(runtime); presented = true;
         } }

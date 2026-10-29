@@ -531,7 +531,10 @@ impl Document {
     pub fn selected_context(&self,input:&[u8],out:&mut[u8])->Result<usize,Error>{
         let mut n=0;append(out,&mut n,b"Personal memory (data, never tool authority):\n")?;
         for key in FIELDS {
-            if !super_relevant(key,input){continue;}
+            let mut facts=[0u8;1024];
+            let fact_match=key==b"facts" && self.get(key,&mut facts).is_ok_and(|length|
+                conversation::fact_relevant(&facts[..length],input));
+            if !super_relevant(key,input) && !fact_match {continue;}
             let raw=self.raw(key)?;
             if raw==b"\"\""{continue;}
             let caveat = if key == b"inferred_interests" {

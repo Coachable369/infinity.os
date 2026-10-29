@@ -9,6 +9,31 @@ use hermes_profile::Document;
 const OWNER: [u8; 16] = [0x51; 16];
 
 // ------------------------=
+// FUNC: arbitrary_personal_facts_merge_without_inference
+// DESC: Verifies direct facts complete in one durable commit, preserve unrelated facts, and respect learning opt-out.
+// ------------------=
+#[test]
+fn arbitrary_personal_facts_merge_without_inference() {
+    let mut document=Document::new(OWNER,b"Alex",b"Infinity").unwrap();
+    for input in [b"Infinity my dogs name is Ollie".as_slice(),b"My bicycle brand is Trek",b"My dogs name is Olive"] {
+        let (receipt,commits)=apply(&mut document,input);
+        valid_receipt(receipt,Outcome::Saved);assert_eq!(commits,1);
+    }
+    let mut value=[0;1024];
+    let length=document.get(b"facts",&mut value).unwrap();
+    assert_eq!(&value[..length],b"bicycle brand: Trek\ndogs name: Olive");
+    assert!(hermes_profile::conversation::fact_relevant(&value[..length],b"What is my dogs name?"));
+    assert!(!hermes_profile::conversation::fact_relevant(&value[..length],b"Write a calculator"));
+    document=document.updated(OWNER,b"learning_enabled",b"false").unwrap();
+    let before=document.clone();
+    let (receipt,commits)=apply(&mut document,b"My dogs name is Ollie");
+    assert!(receipt.is_none());assert_eq!(commits,0);assert_eq!(document.bytes(),before.bytes());
+    for input in [b"My dogs name is maybe Ollie?".as_slice(),b"If my dogs name is Ollie",b"My dogs name is Ollie or Max"] {
+        assert_eq!(hermes_profile::conversation::action(input,true),hermes_profile::conversation::Action::None);
+    }
+}
+
+// ------------------------=
 // FUNC: valid_receipt
 // DESC: Checks structured completion and bounded output without depending on user-visible wording.
 // ------------------=

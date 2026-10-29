@@ -1,6 +1,6 @@
 //! Conservative conversational memory intents. Never learn from model output, quotations, or hypothetical text.
 #[derive(Debug,PartialEq,Eq)]
-pub enum Action<'a>{Inspect,Set(&'static[u8],&'a[u8]),Forget(&'static[u8]),None}
+pub enum Action<'a>{Inspect,Set(&'static[u8],&'a[u8]),Fact(&'a[u8], &'a[u8]),Forget(&'static[u8]),None}
 // ------------------------=
 // FUNC: prefix
 // DESC: Matches ASCII command grammar without changing the user's stored spelling.
@@ -32,7 +32,7 @@ pub fn field(name:&[u8])->Option<&'static[u8]>{
 // ------------------=
 pub fn action(input:&[u8],learn:bool)->Action<'_>{
     let mut input=input.trim_ascii();
-    input=prefix(input,b"Infinity,").unwrap_or(input);
+    input=prefix(input,b"Infinity,").or_else(||prefix(input,b"Infinity ")).unwrap_or(input);
     input=input.trim_ascii_end();
     let question=input.ends_with(b"?");
     input=input.strip_suffix(b"?").or_else(||input.strip_suffix(b".")).unwrap_or(input);
@@ -88,10 +88,29 @@ pub fn action(input:&[u8],learn:bool)->Action<'_>{
                 let value=prefix(&rest[at+4..],b"now ").unwrap_or(&rest[at+4..]).trim_ascii();
                 if !value.is_empty(){return Action::Set(key,value);}
             }
+            // Store direct nonempty personal assertions as data, not instructions.
+            // The receipt writer merges by label rather than replacing all facts.
+            let label=rest[..at].trim_ascii();
+            let value=rest[at+4..].trim_ascii();
+            if !label.is_empty() && label.len()<=64 && !value.is_empty() && value.len()<=256
+                && label.iter().all(|b|b.is_ascii_alphabetic()||matches!(*b,b' '|b'\''|b'-')) {
+                return Action::Fact(label,value);
+            }
         }
     }
     Action::None
 }
+// ------------------------=
+// FUNC: fact_relevant
+// DESC: Retrieves labelled facts by their subject without injecting unrelated facts into every prompt.
+// ------------------=
+pub fn fact_relevant(facts:&[u8], input:&[u8])->bool {
+    facts.split(|b|*b==b'\n').filter_map(|line|line.iter().position(|b|*b==b':').map(|end|&line[..end]))
+        .any(|label|label.split(|b|!b.is_ascii_alphabetic()).any(|word|
+            word.len()>=3 && ![b"name".as_slice(),b"the",b"my"].iter().any(|skip|word.eq_ignore_ascii_case(skip))
+            && input.windows(word.len()).any(|part|part.eq_ignore_ascii_case(word))))
+}
+
 // ------------------------=
 // FUNC: relevant
 // DESC: Selects personal context by task without disclosing unrelated address, contact, birthday, or preferences.

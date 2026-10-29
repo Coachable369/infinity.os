@@ -1,6 +1,6 @@
 //! Bounded source delivery shared by native generation and its editor consumer.
 pub const MAX_FLUSH_BYTES: usize = 256;
-pub const FLUSH_INTERVAL_NS: u64 = 75_000_000;
+pub const FLUSH_INTERVAL_NS: u64 = 16_000_000;
 pub const MAX_CONTINUATIONS: usize = 3;
 pub const CONTINUATION_HEADER: &[u8] = b"CONTINUE_SOURCE";
 const SOURCE_HEADER: &[u8] = b"REPLACE_COMPILE\n";
