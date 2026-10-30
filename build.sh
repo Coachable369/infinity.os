@@ -68,6 +68,8 @@ if [ "$machine" = qemu ] && [ "$target" != aarch64 ]; then
     exit 2
 fi
 if [ "$skip_tests" = true ]; then
+    # Propagate the explicit choice into nested native dependency builders.
+    export INFINITY_SKIP_TESTS=1
     # Re-enter only the script under the existing kit lock, not the lock owner.
     # Package mode refreshes the installed kernel/assets and retains parity and
     # checksum gates; it does not advertise regression-suite acceptance.
