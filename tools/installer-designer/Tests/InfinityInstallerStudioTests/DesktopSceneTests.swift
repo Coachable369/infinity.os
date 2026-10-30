@@ -9,7 +9,7 @@ final class DesktopSceneTests: XCTestCase {
     // ------------------=
     @MainActor func testDockMigrationAndPersistence() throws {
         var source = InstallerStudioDocument.factoryDesktop()
-        source.screens.removeAll { $0.elements.contains { $0.role == .desktopDock } }
+        source.screens.removeAll { $0.elements.contains { $0.role == .desktopDock || $0.role == .launcherSurface } }
         var custom = source.screens[1]; custom.id = 4; custom.title = "My Workspace"
         custom.elements.removeAll { $0.role.rawValue >= 49 }
         source.screens.append(custom)
@@ -56,7 +56,7 @@ final class DesktopSceneTests: XCTestCase {
             let image=try XCTUnwrap(frame.image())
             let png=try XCTUnwrap(NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:]))
             try png.write(to:try XCTUnwrap(store.projectRoot).appending(path:"builds/studio-desktop-\(scene).png"))
-            let i=try XCTUnwrap(store.desktopDocument.screens[scene-1].elements.firstIndex {$0.role == .console || $0.role == .desktopDock})
+            let i=try XCTUnwrap(store.desktopDocument.screens[scene-1].elements.firstIndex {$0.role == .console || $0.role == .desktopDock || $0.role == .launcherSurface})
             store.desktopDocument.screens[scene-1].elements[i].opacity=20
             let changed=try await runner.render(NativePreviewSnapshot.capture(store,width:1536,height:1024))
             XCTAssertNotEqual(frame.pixels,changed.pixels)

@@ -24,6 +24,26 @@ mod native_control_tests {
         assert_eq!(Command::decode(b"OS_FOCUS:infinitycode\nOS_CLOSE:browser"), None);
         assert_eq!(Command::explicit(b"do not close infinitycode"), None);
     }
+
+    // ------------------------=
+    // FUNC: native_launch_protocol_uses_catalog
+    // DESC: Ensures inferred and direct launch requests share the native catalog instead of treating built-in apps as generated projects.
+    // ------------------=
+    #[test]
+    fn native_launch_protocol_uses_catalog() {
+        for (index, entry) in crate::ui::app_launcher::LAUNCHER_APPS.iter().enumerate() {
+            let mut request = b"OS_LAUNCH:app:".to_vec();
+            request.extend_from_slice(entry.label);
+            assert_eq!(Command::decode(&request), Some(Command::LaunchEntry(index)));
+        }
+        let expected = Command::explicit(b"open infinitycode");
+        assert!(expected.is_some());
+        assert_eq!(Command::decode(b"OS_OPEN:infinitycode"), expected);
+        assert_eq!(Command::decode(b"OS_LAUNCH:app:infinitycode"), expected);
+        assert_eq!(Command::decode(b"OS_OPEN:My Calculator"),
+            Some(Command::LaunchGenerated(ApplicationName::parse(b"My Calculator").unwrap())));
+        assert_eq!(Command::decode(b"OS_OPEN:InfinityCode\nOS_CLOSE:browser"), None);
+    }
 }
 #[path = "../../ui/editor_compile_intent.rs"]
 mod editor_compile_intent;
@@ -281,7 +301,7 @@ impl Command {
             };
         }
         if let Some(entry) = bytes.strip_prefix(b"OS_LAUNCH:") {
-            if let Some(name)=entry.strip_prefix(b"app:"){return ApplicationName::parse(name).map(Self::LaunchGenerated);}
+            if let Some(name)=entry.strip_prefix(b"app:"){return Self::launch_named(name);}
             return match entry {
                 b"documents" => Some(Self::LaunchEntry(1)),
                 b"projects" => Some(Self::LaunchEntry(2)),
@@ -333,8 +353,18 @@ impl Command {
             b"OS_OPEN:task_manager" => Some(Self::TaskManager),
             b"OS_OPEN:launcher" => Some(Self::Launcher),
             b"OS_OPEN:ai_instruction_mappings" => Some(Self::AiInstructionMapping),
-            _ => None,
+            _ => bytes.strip_prefix(b"OS_OPEN:").and_then(Self::launch_named),
         }
+    }
+
+    // ------------------------=
+    // FUNC: launch_named
+    // DESC: Resolves a bounded application name through the installed catalog before consulting registered generated apps at authorized dispatch.
+    // ------------------=
+    fn launch_named(bytes: &[u8]) -> Option<Self> {
+        crate::ui::app_launcher::LAUNCHER_APPS.iter()
+            .position(|entry| entry.label.eq_ignore_ascii_case(bytes.trim_ascii()))
+            .map(Self::LaunchEntry).or_else(||ApplicationName::parse(bytes).map(Self::LaunchGenerated))
     }
 
     // ------------------------=
@@ -440,7 +470,7 @@ impl Command {
         // something useful". Reserve the arbitrary-name fast path for the
         // explicit launch verb; configured "open my app NAME" aliases still
         // resolve through AIKit without inference.
-        let named_launch = request.starts_with(b"launch ");
+        let named_launch = request.starts_with(b"launch ") || request.starts_with(b"open ");
         request = request
             .strip_prefix(b"open ")
             .or_else(|| request.strip_prefix(b"launch "))

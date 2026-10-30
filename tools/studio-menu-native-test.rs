@@ -8,17 +8,29 @@ use ui::installer_template::{InstallerTemplate,navigation::{Destination,Menu,Vie
 fn main(){
     let bytes=std::fs::read("builds/validation/studio-menu/navigation-fixture.iuit").unwrap();
     let template=InstallerTemplate::parse_desktop(&bytes).unwrap();
-    assert_eq!(template.screen_count(),5);
+    assert_eq!(template.screen_count(),6);
     let menu=template.navigation().unwrap();assert_eq!(menu.count,11);
     for i in 0..10 {assert_eq!(menu.destination(i),Some(Destination::System(i as u8)));}
-    assert_eq!(menu.destination(10),Some(Destination::Window(5)));
-    assert_eq!(template.element_count(5),Some(2));
+    assert_eq!(menu.destination(10),Some(Destination::Window(6)));
+    assert_eq!(template.element_count(6),Some(2));
     for (width,height) in [(1280,800),(1920,1080),(3840,2160)] {
+        let dock_bounds=ui::desktop_template::scene_bounds_in(template,4,width,height);
+        assert!(dock_bounds.x>0 && dock_bounds.y>0);
+        let layout=ui::system_layout::SystemLayout::new(width,height);
+        let launcher=layout.apply_launcher_template(layout.app_launcher_geometry(),template,5);
+        for (role,actual) in [(81,launcher.panel),(82,launcher.search),(83,launcher.close),
+            (84,launcher.grid_viewport),(86,launcher.scrollbar_track)] {
+            let element=(0..template.element_count(5).unwrap()).filter_map(|i|template.element_at(5,i))
+                .find(|e|e.role==role).unwrap();
+            assert_eq!(actual,ui::desktop_template::mapped(element,width,height,None));
+        }
+        assert!(launcher.grid_cell_width>0 && launcher.grid_row_height>0);
         for index in 0..8 {
             let element=(0..template.element_count(4).unwrap()).filter_map(|i|template.element_at(4,i))
                 .find(|e|e.role==73+index).unwrap();
             let rect=ui::desktop_template::mapped(element,width,height,None);
             let point=ui::geometry::Point{x:rect.x+rect.width as i32/2,y:rect.y+rect.height as i32/2};
+            assert!(dock_bounds.contains(point));
             assert_eq!(ui::desktop_template::dock_hit_in(template,4,point,width,height),Some(index as usize));
         }
         assert_eq!(ui::desktop_template::dock_hit_in(template,4,ui::geometry::Point{x:0,y:0},width,height),None);

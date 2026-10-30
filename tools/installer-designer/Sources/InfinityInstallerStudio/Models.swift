@@ -113,6 +113,8 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case desktopClose = 71
     case desktopDock = 72, dockLauncher = 73, dockFiles = 74, dockSettings = 75
     case dockAbout = 76, dockVoice = 77, dockSearch = 78, dockWidgets = 79, dockTrash = 80
+    case launcherSurface = 81, launcherSearch = 82, launcherClose = 83
+    case launcherGrid = 84, launcherCategories = 85, launcherScrollbar = 86
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -198,6 +200,12 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .dockSearch: "Dock: Search"
         case .dockWidgets: "Dock: Widgets"
         case .dockTrash: "Dock: Trash"
+        case .launcherSurface: "Launcher: Surface"
+        case .launcherSearch: "Launcher: Search"
+        case .launcherClose: "Launcher: Close"
+        case .launcherGrid: "Launcher: Application Grid"
+        case .launcherCategories: "Launcher: Categories"
+        case .launcherScrollbar: "Launcher: Scrollbar"
         }
     }
 

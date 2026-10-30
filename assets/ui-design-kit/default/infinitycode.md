@@ -25,3 +25,8 @@ Buttons, checkboxes and radios invoke it on activation; entries on Return;
 comboboxes on selection. Methods take no arguments and access named widgets
 through `controls`. Regeneration retains method bodies and rejects undefined
 bindings. Existing version-1 projects without handlers remain supported.
+
+Application lifecycle uses the shared native window service: voice/AI open,
+focus, close, minimize, maximize and restore resolve the authenticated user's
+owned window. Close requests pass through the IDE's unsaved-project confirmation;
+they do not terminate the Python process behind that confirmation.

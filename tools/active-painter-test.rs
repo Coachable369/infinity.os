@@ -19,7 +19,7 @@ mod storage {
 #[cfg(not(baseline))]
 #[path = "../kernel/core/bootstrap/primitives.rs"]
 mod primitives;
-use primitives::FontSize;
+use primitives::{FontSize, UI_FONT_CELL_HEIGHT};
 #[path="../kernel/core/bootstrap/installer_text_view.rs"] mod installer_text_view;
 #[path = "../kernel/core/bootstrap/personalization_view.rs"]
 mod personalization_view;
@@ -46,6 +46,12 @@ mod desktop {
     pub const AURORA_HARMONY_BASE_BMP:&[u8]=include_bytes!("../assets/icons/runtime/aurora-harmony-base.bmp");
     pub const AURORA_HARMONY_ACTIONS_BMP:&[u8]=include_bytes!("../assets/icons/runtime/aurora-harmony-actions.bmp");
 }
+#[path = "../kernel/core/bootstrap/launcher_view.rs"] mod launcher_view;
+#[path = "../kernel/core/bootstrap/launcher_icons.rs"] mod launcher_icons;
+const CRYSTAL_BLUE_GLASS_LAUNCHER_BMP: &[u8] = include_bytes!("../assets/icons/runtime/crystal-blue-glass-launcher-256.bmp");
+const LUMINOUS_OBSIDIAN_LAUNCHER_BMP: &[u8] = include_bytes!("../assets/icons/runtime/luminous-obsidian-launcher-256.bmp");
+const FROSTED_QUARTZ_LAUNCHER_BMP: &[u8] = include_bytes!("../assets/icons/runtime/frosted-quartz-launcher-256.bmp");
+const AURORA_HARMONY_LAUNCHER_BMP: &[u8] = include_bytes!("../assets/icons/runtime/aurora-harmony-launcher-256.bmp");
 #[cfg(baseline)]
 #[path = "../build/primitives-before.rs"]
 mod primitives;

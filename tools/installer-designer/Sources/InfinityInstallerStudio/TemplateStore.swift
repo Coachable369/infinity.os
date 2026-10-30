@@ -227,7 +227,7 @@ final class TemplateStore: ObservableObject {
         isoUpdater = ISOUpdateService(projectRoot: root)
         projectRoot = root
         desktopDocument = (root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/desktop-screens.infinityui")) }
-            .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryDesktop()).migratedForDesktopDock()
+            .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryDesktop()).migratedForDesktopDock().migratedForAppLauncher()
         loginDocument = (root.flatMap { try? Data(contentsOf: $0.appending(path: "assets/boot/login-screens.infinityui")) }
             .flatMap { try? JSONDecoder().decode(InstallerStudioDocument.self, from: $0) } ?? .factoryLogin()
         ).migratedForLoginMotion()

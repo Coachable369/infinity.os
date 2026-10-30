@@ -663,7 +663,7 @@ impl SystemLayout {
                 ai_top + ai_height - overview_top,
             ),
             dock: crate::ui::desktop_template::dock_scene().map(|scene|
-                crate::ui::desktop_template::bounds(scene,72,self.width,self.height).unwrap_or(rect(0,0,0,0))).unwrap_or(rect(
+                crate::ui::desktop_template::scene_bounds(scene,self.width,self.height)).unwrap_or(rect(
                 self.width.saturating_sub(dock_width) / 2,
                 dock_top,
                 dock_width,
@@ -1408,7 +1408,7 @@ impl SystemLayout {
         let scrollbar_width = (7 * self.scale).max(5);
         let category_left = panel_left + inset;
         let category_width = inner_width / 5;
-        AppLauncherGeometry {
+        let geometry = AppLauncherGeometry {
             panel,
             search,
             close: rect(
@@ -1437,7 +1437,41 @@ impl SystemLayout {
             category_top: panel_top + panel_height * 76 / 100,
             category_width,
             category_height: panel_height * 16 / 100,
+        };
+        if let Some(scene) = crate::ui::desktop_template::bound_scene(81) {
+            if let Some(template) = crate::ui::desktop_template::template() {
+                return self.apply_launcher_template(geometry,template,scene);
+            }
         }
+        geometry
+    }
+
+    // ------------------------=
+    // FUNC: apply_launcher_template
+    // DESC: Maps validated Studio launcher regions into the same native layout consumed by rendering and pointer interaction.
+    // ------------------=
+    pub fn apply_launcher_template(self, mut geometry:AppLauncherGeometry,
+        template:super::installer_template::InstallerTemplate<'_>, scene:u8)->AppLauncherGeometry {
+            let authored = |role| (0..template.element_count(scene).unwrap_or(0))
+                .filter_map(|index|template.element_at(scene,index))
+                .find(|e|e.role==role && !e.hidden && e.opacity>0)
+                .map(|e|crate::ui::desktop_template::mapped(e,self.width,self.height,None))
+                .unwrap_or(rect(0,0,0,0));
+            geometry.panel = authored(81);
+            geometry.search = authored(82);
+            geometry.close = authored(83);
+            geometry.grid_viewport = authored(84);
+            geometry.grid_left = geometry.grid_viewport.x.max(0) as usize;
+            geometry.grid_top = geometry.grid_viewport.y.max(0) as usize;
+            geometry.grid_cell_width = (geometry.grid_viewport.width as usize / 6).max(1);
+            geometry.grid_row_height = (geometry.grid_viewport.height as usize / 2).max(1);
+            let categories = authored(85);
+            geometry.category_left = categories.x.max(0) as usize;
+            geometry.category_top = categories.y.max(0) as usize;
+            geometry.category_width = (categories.width as usize / 5).max(1);
+            geometry.category_height = categories.height as usize;
+            geometry.scrollbar_track = authored(86);
+        geometry
     }
 
     // ------------------------=
@@ -1549,7 +1583,10 @@ impl SystemLayout {
         let dock_left = self.width.saturating_sub(dock_width) / 2;
         let dock_top = self.height.saturating_sub(dock_height + 10 * self.scale);
         let icon_gap = dock_width / super::app_launcher::DESKTOP_DOCK_ENTRIES.len();
-        if rect(dock_left, dock_top, icon_gap, dock_height).contains(point) {
+        let dock_toggle = if crate::ui::desktop_template::dock_scene().is_some() {
+            crate::ui::desktop_template::dock_hit(point,self.width,self.height)==Some(0)
+        } else { rect(dock_left, dock_top, icon_gap, dock_height).contains(point) };
+        if dock_toggle {
             return AppLauncherTarget::DockToggle;
         }
         let geometry = self.app_launcher_geometry();
@@ -1563,7 +1600,7 @@ impl SystemLayout {
             geometry.close.width as usize + close_padding * 2,
             geometry.close.height as usize + close_padding * 2,
         );
-        if close_target.contains(point) {
+        if geometry.close.width > 0 && geometry.close.height > 0 && close_target.contains(point) {
             return AppLauncherTarget::Close;
         }
         if geometry.search.contains(point) {
