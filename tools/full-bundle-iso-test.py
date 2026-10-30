@@ -9,6 +9,7 @@ import struct
 import sys
 import tempfile
 from kernel_layout import HeaderSink, validate as validate_kernel_layout
+from iso_fat import fat_image
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -243,14 +244,10 @@ def verify_iso(iso: Path) -> None:
     temporary_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="full-bundle-", dir=temporary_root) as directory:
         work = Path(directory)
-        live_esp = work / "live-efi.img"
+        # Read the actual candidate's FAT extent in place. Extracting it again
+        # duplicates the entire ISO while the installed image is reassembled.
+        live_esp = fat_image(iso)
         installed_esp = work / "installed-efi.img"
-        subprocess.run(
-            ["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract", "/efi.img", str(live_esp)],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
         reassemble_installed_esp(live_esp, installed_esp)
         verify_precision_artwork(live_esp, installed_esp, architecture, platform)
         verify_boot_loader(iso, live_esp, installed_esp, work)
