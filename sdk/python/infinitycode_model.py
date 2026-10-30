@@ -1,6 +1,8 @@
 """Versioned InfinityCode projects and deterministic native Tk source export."""
 import copy
 import json
+import ast
+import keyword
 
 KINDS = ("Label", "Button", "Entry", "Checkbutton", "Radiobutton", "Combobox")
 WIDTH, HEIGHT = 640, 420
@@ -44,7 +46,7 @@ def validate(project):
         if not isinstance(item, dict) or item.get("kind") not in KINDS:
             raise ValueError("Unknown control type")
         identifier = item.get("id")
-        if not isinstance(identifier, str) or not identifier.isidentifier() or identifier in identifiers:
+        if not isinstance(identifier, str) or not identifier.isidentifier() or keyword.iskeyword(identifier) or identifier in identifiers:
             raise ValueError("Control identifiers must be unique Python identifiers")
         identifiers.add(identifier)
         for key in ("x", "y", "width", "height"):
@@ -56,8 +58,15 @@ def validate(project):
             raise ValueError("Controls must fit inside the design surface")
         if not isinstance(item.get("text"), str) or len(item["text"]) > 256:
             raise ValueError("Control text is limited to 256 characters")
+        handler = item.get("handler", "")
+        if not isinstance(handler, str) or (handler and
+                (not handler.isidentifier() or keyword.iskeyword(handler) or item["kind"] == "Label")):
+            raise ValueError("Choose a valid method name for an interactive control")
     if not isinstance(project.get("source", ""), str) or len(project.get("source", "")) > 131072:
         raise ValueError("Python source is too large")
+    methods = project.get("methods", "")
+    if not isinstance(methods, str) or len(methods) > 131072:
+        raise ValueError("Method source is too large")
     return copy.deepcopy(project)
 
 # ------------------------=
@@ -84,7 +93,20 @@ def make_widget(parent, item):
 # DESC: Produces ordinary Python with safely quoted properties and stable named controls for user event handlers.
 # ------------------=
 def export_source(project):
-    elements = validate(project)["elements"]
+    project = validate(project)
+    elements = project["elements"]
+    methods = project.get("methods", "")
+    tree = ast.parse(methods)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    for item in elements:
+        handler = item.get("handler")
+        if handler:
+            if handler not in functions:
+                raise ValueError("Define the connected method: " + handler)
+            arguments = functions[handler].args
+            if len(arguments.posonlyargs) + len(arguments.args) > len(arguments.defaults) or any(
+                    default is None for default in arguments.kw_defaults):
+                raise ValueError("Connected methods must be callable without arguments: " + handler)
     lines = ["import tkinter as tk", "from tkinter import ttk", "",
              "root = tk.Tk()", "root.title('My Infinity app')",
              "root.geometry('640x420')", "root.configure(background='#090F26')",
@@ -103,8 +125,18 @@ def export_source(project):
             lines.append(f"controls[{name}].current(0)")
         geometry = ", ".join(f"{key}={item[key]}" for key in ("x", "y", "width", "height"))
         lines.append(f"controls[{name}].place({geometry})")
-    lines += ["", "# Attach handlers here, for example:",
-              "# controls['button1'].configure(command=on_click)", "root.mainloop()", ""]
+    lines += ["", methods, ""]
+    for item in elements:
+        handler = item.get("handler")
+        if not handler:
+            continue
+        name = repr(item["id"])
+        if item["kind"] in ("Button", "Checkbutton", "Radiobutton"):
+            lines.append(f"controls[{name}].configure(command={handler})")
+        else:
+            event = "<Return>" if item["kind"] == "Entry" else "<<ComboboxSelected>>"
+            lines.append(f"controls[{name}].bind({event!r}, lambda event: {handler}())")
+    lines += ["root.mainloop()", ""]
     return "\n".join(lines)
 
 class Project:
@@ -113,7 +145,7 @@ class Project:
     # DESC: Starts an empty bounded project and undo history.
     # ------------------=
     def __init__(self):
-        self.data = {"version": 1, "elements": [], "source": ""}
+        self.data = {"version": 1, "elements": [], "source": "", "methods": ""}
         self.undo_stack, self.redo_stack = [], []
 
     # ------------------------=

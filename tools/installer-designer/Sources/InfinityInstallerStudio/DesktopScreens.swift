@@ -25,8 +25,7 @@ extension InstallerStudioDocument {
             layers[0].imageFit = .fill
             if screen == 1 {
                 add("Navigation Glass", .panel, .console, 0, 0, 1000, 40)
-                add("Infinity Menu", .panel, .desktopBrand, 8, 4, 170, 32)
-                add("Infinity Emblem", .image, .image, 10, 5, 43, 30, "", "assets/desktop/infinity-topbar-icon-v2.bmp")
+                add("Infinity Emblem", .image, .desktopBrand, 10, 5, 43, 30, "", "assets/desktop/infinity-topbar-icon-v2.bmp")
                 add("Infinity Wordmark", .text, .body, 58, 7, 115, 26, "I N F I N I T Y O S")
                 add("Help Menu", .text, .desktopHelp, 380, 7, 60, 26, "Help")
                 add("Privacy Status", .text, .desktopPrivacy, 580, 7, 130, 26, "LOCAL | PRIVATE")
@@ -49,15 +48,15 @@ extension InstallerStudioDocument {
                     add("\(labels[i]) Value", .text, roles[i], 857, 130+i*45, 85, 28, values[i])
                 }
             } else {
-                add("AI Widget Glass", .panel, .console, 680, 390, 280, 508)
+                add("AI Widget Glass", .panel, .console, 680, 390, 280, 471)
                 add("AI Title", .text, .title, 697, 403, 155, 27, "INFINITY AI")
                 add("Minimize", .button, .desktopMinimize, 909, 400, 20, 28, "-")
                 add("Close", .button, .desktopClose, 934, 400, 20, 28, "x")
                 add("Voice Waveform", .panel, .desktopVoice, 692, 438, 256, 42)
                 add("Selected Model", .panel, .desktopModel, 692, 494, 256, 64, "Hermes 3 Llama 3.2 3B")
-                add("Conversation", .panel, .desktopTimeline, 692, 573, 256, 227)
-                add("Prompt Input", .panel, .desktopComposer, 692, 817, 210, 64)
-                add("Send", .button, .desktopSend, 912, 817, 36, 64, "↑")
+                add("Conversation", .panel, .desktopTimeline, 692, 573, 256, 190)
+                add("Prompt Input", .panel, .desktopComposer, 692, 780, 210, 64)
+                add("Send", .button, .desktopSend, 912, 780, 36, 64, "↑")
             }
             screens.append(InstallerScreenTemplate(id: screen,
                 title: ["Desktop Navigation", "System Overview Widget", "AI Voice Widget"][screen-1], elements: layers))

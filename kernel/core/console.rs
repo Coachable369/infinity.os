@@ -5615,7 +5615,9 @@ impl ConsoleRuntime {
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
             LauncherAction::InfinityCode => {
-                self.open_command_window();
+                // The IDE owns a native GUI window; launching it must not
+                // create or focus an unrelated terminal window.
+                self.close_app_launcher();
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 python_commands::launch_infinitycode(self);
             },
@@ -9164,7 +9166,7 @@ impl ConsoleRuntime {
                                 }
                             }
                             Some(DockAction::Settings) => self.open_settings(0),
-                            Some(DockAction::About) => self.open_settings(8),
+                            Some(DockAction::About) => self.open_settings(9),
                             Some(DockAction::AiVoice) => self.open_settings(3),
                             Some(DockAction::Appearance) => self.open_settings(1),
                             Some(DockAction::SpatialDesktop) => {

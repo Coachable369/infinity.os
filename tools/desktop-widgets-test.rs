@@ -10,6 +10,22 @@ mod geometry;
 use desktop_widgets::State;
 use geometry::Point;
 // ------------------------=
+// FUNC: visible_brand_opens_menu_and_ai_clears_dock
+// DESC: Exercises the packaged icon hit target and responsive widget footprint at supported display sizes.
+// ------------------=
+#[test]
+fn visible_brand_opens_menu_and_ai_clears_dock() {
+    for (width,height,scale) in [(1280,800,1),(1920,1080,1),(3840,2160,2)] {
+        let brand=desktop_template::bounds(1,49,width,height).unwrap();
+        assert_eq!(desktop_template::navigation_hit(Point{x:brand.x+brand.width as i32/2,
+            y:brand.y+brand.height as i32/2},width,height),Some(49));
+        let panel=State::new().rect(1,width,height,scale,false);
+        assert!(panel.bottom() <= height.saturating_sub(82*scale) as i32);
+        let composer=desktop_template::bounds(3,68,width,height).unwrap();
+        assert!(composer.bottom() <= panel.bottom());
+    }
+}
+// ------------------------=
 // FUNC: authored_defaults_match_preview_at_every_resolution
 // DESC: Ensures saved scene geometry is not silently shifted by runtime drag constraints.
 // ------------------=

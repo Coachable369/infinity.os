@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "sdk/python"))
@@ -13,6 +14,68 @@ from infinitycode_model import Project, KINDS, WIDTH, validate, export_source, c
 
 
 class ProjectTests(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_connected_methods_survive_regeneration
+    # DESC: Executes exported callbacks against a widget adapter and verifies control events mutate application state.
+    # ------------------=
+    def test_connected_methods_survive_regeneration(self):
+        from types import SimpleNamespace
+        class Widget:
+            # ------------------------=
+            # FUNC: __init__
+            # DESC: Records native widget configuration and event bindings without a display server.
+            # ------------------=
+            def __init__(self, *args, **kwargs):
+                self.options, self.events = kwargs, {}
+            # ------------------------=
+            # FUNC: configure
+            # DESC: Applies runtime property updates from a generated handler.
+            # ------------------=
+            def configure(self, *args, **kwargs):
+                self.options.update(kwargs)
+            # ------------------------=
+            # FUNC: bind
+            # DESC: Captures an event callback for dispatch by the behavioral harness.
+            # ------------------=
+            def bind(self, event, callback):
+                self.events[event] = callback
+            # ------------------------=
+            # FUNC: noop
+            # DESC: Accepts presentation calls irrelevant to event wiring.
+            # ------------------=
+            def noop(self, *args, **kwargs):
+                pass
+            title = geometry = theme_use = map = place = insert = current = mainloop = noop
+        ttk = SimpleNamespace(Style=Widget, **{kind: Widget for kind in KINDS})
+        tk = SimpleNamespace(Tk=Widget, ttk=ttk)
+        project = Project()
+        for kind in KINDS:
+            project.add(kind)
+            if kind != "Label":
+                project.data["elements"][-1]["handler"] = "activate"
+        methods = "def activate():\n    controls['label1'].configure(text='Activated')\n"
+        project.data["methods"] = methods
+        with patch.dict(sys.modules, {"tkinter": tk, "tkinter.ttk": ttk}):
+            namespace = {}
+            exec(compile(export_source(project.data), "export.py", "exec"), namespace)
+            controls = namespace["controls"]
+            for item in project.data["elements"][1:]:
+                widget = controls[item["id"]]
+                controls["label1"].configure(text="Before")
+                if widget.events:
+                    next(iter(widget.events.values()))(None)
+                else:
+                    widget.options["command"]()
+                self.assertEqual(controls["label1"].options["text"], "Activated")
+        self.assertEqual(project.data["methods"], methods)
+        project.data["methods"] = "def activate(required):\n    pass\n"
+        with self.assertRaises(ValueError):
+            export_source(project.data)
+        project.data["methods"] = methods
+        project.data["elements"][1]["handler"] = "missing_method"
+        with self.assertRaises(ValueError):
+            export_source(project.data)
+
     # ------------------------=
     # FUNC: test_workspace_bounds_respect_native_work_area
     # DESC: Exercises the startup window contract on small and large native displays without an illegal minimum size.

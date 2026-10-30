@@ -99,6 +99,15 @@ Automated tests must verify observable behavior and state transitions. They must
 - Static lint checks may enforce code style, but they must be explicitly labeled as lint and must never be reported as behavioral verification.
 - Existing text-oracle tests must be converted before they can be cited as evidence that a feature works.
 
+## Application AI and voice controls
+
+Every system and user application, including InfinityCode, must expose basic
+open, close, focus, minimize, maximize, and restore operations through the shared
+native application/window services and AI intent registry. Voice and typed AI
+requests must use the same authorized dispatch path. Closing must preserve each
+application's unsaved-work confirmation. Application acceptance must exercise
+these operations; a launcher entry alone does not satisfy this requirement.
+
 ## Function documentation
 
 Every function must have this comment header immediately above it:

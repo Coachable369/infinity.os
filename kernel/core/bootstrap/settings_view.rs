@@ -90,8 +90,8 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"", b""),
             ],
             _ => [
-                (b"InfinityOS", b"Development"),
-                (b"Architecture", b"Native"),
+                (b"InfinityOS", option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.1").as_bytes()),
+                (b"Architecture", if cfg!(target_arch="aarch64") { b"ARM64" } else { b"x86_64" }),
                 (b"Boot", b"Verified"),
                 (b"Identity Format", b"Version 1"),
                 (b"Icon Families", b"Installed theme registry"),

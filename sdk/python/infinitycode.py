@@ -46,7 +46,7 @@ class Studio:
         right.pack(side="right", fill="y")
         ttk.Label(right, text="PROPERTIES").pack(anchor="w", pady=8)
         self.fields = {}
-        for key in ("id", "text", "x", "y", "width", "height"):
+        for key in ("id", "text", "x", "y", "width", "height", "handler"):
             ttk.Label(right, text=key.capitalize()).pack(anchor="w", pady=(10, 3))
             field = ttk.Entry(right, width=20)
             field.pack(fill="x")
@@ -77,6 +77,16 @@ class Studio:
         horizontal.pack(side="bottom", fill="x")
         self.source.pack(fill="both", expand=True)
         self.source.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        methods_frame = ttk.Frame(self.tabs)
+        self.tabs.add(methods_frame, text="Event Methods")
+        ttk.Label(methods_frame, text="Define methods here; enter a method name in the control's Handler property.\n"
+                  "Methods take no arguments and access native widgets through controls['id'].").pack(anchor="w", padx=10, pady=10)
+        self.methods = tk.Text(methods_frame, undo=True, background="#090F26", foreground="#FFFFFF",
+                               insertbackground="#86C7FF", font=("Menlo", 12), wrap="none", borderwidth=0)
+        methods_scroll = ttk.Scrollbar(methods_frame, orient="vertical", command=self.methods.yview)
+        methods_scroll.pack(side="right", fill="y")
+        self.methods.pack(fill="both", expand=True)
+        self.methods.configure(yscrollcommand=methods_scroll.set)
         footer = ttk.Frame(root, padding=10)
         footer.pack(fill="x")
         self.path = ttk.Entry(footer, width=55)
@@ -111,6 +121,7 @@ class Studio:
     # ------------------=
     def sync_source(self):
         self.project.data["source"] = self.source.get("1.0", "end-1c")
+        self.project.data["methods"] = self.methods.get("1.0", "end-1c")
 
     # ------------------------=
     # FUNC: render
@@ -142,7 +153,7 @@ class Studio:
         for key, field in self.fields.items():
             field.delete(0, "end")
             if item:
-                field.insert(0, str(item[key]))
+                field.insert(0, str(item.get(key, "")))
         self.grip.place_forget()
         if item:
             index = self.project.data["elements"].index(item)
@@ -276,6 +287,8 @@ class Studio:
     def restore(self):
         self.source.delete("1.0", "end")
         self.source.insert("1.0", self.project.data["source"])
+        self.methods.delete("1.0", "end")
+        self.methods.insert("1.0", self.project.data.get("methods", ""))
         self.render()
 
     # ------------------------=
@@ -283,6 +296,7 @@ class Studio:
     # DESC: Explicitly regenerates standalone Python while confirming replacement of manual source edits.
     # ------------------=
     def generate(self):
+        self.sync_source()
         current = self.source.get("1.0", "end-1c")
         if current and current != self.generated and not messagebox.askyesno(
                 "Replace Python?", "Replace manually edited Python with the current designer layout? Save or export your edits first.", parent=self.root):
@@ -292,7 +306,7 @@ class Studio:
         self.source.insert("1.0", self.generated)
         self.sync_source()
         self.tabs.select(1)
-        self.status.set("Python generated · attach handlers using the controls dictionary")
+        self.status.set("Python generated · connected event methods included")
 
     # ------------------------=
     # FUNC: save
