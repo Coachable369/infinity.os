@@ -14215,7 +14215,8 @@ pub fn poll_native_ai() {
     // source consumer running every poll, but budget background frames for
     // the entire application generation lease. Input is independently painted.
     let inference_work=crate::runtime::ai::with_ai_runtime(|ai|
-        ai.prefilling() || ai.app_turn_owner().is_some());
+        ai.prefilling() || ai.app_turn_owner().is_some()
+            || ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Running);
     if owner && unsafe { (&mut *(&raw mut SERVICE_FRAMES)).ready_for_work(
         presentation == crate::ui::input_batch::Presentation::Scene,
         crate::ui::performance::monotonic_ns(), inference_work) } {

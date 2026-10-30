@@ -97,6 +97,12 @@ private struct StudioToolbar: View {
                 .labelStyle(.iconOnly).help("Redo")
                 .disabled(!store.canRedo)
             Divider().frame(height: 28)
+            if !store.editingUIKit && !store.editingMenu && store.selectedCollection == .desktop {
+                Button(action: store.editInfinityMenu) {
+                    Label("Infinity System Menu", systemImage: "list.bullet.indent")
+                }
+                .help("Edit the dropdown attached to the top-left Infinity icon")
+            }
             if store.editingUIKit {
                 Button(action: kit.chooseReplacementImage) {
                     Label("Upload Artwork…", systemImage: "photo.badge.plus")
@@ -200,6 +206,10 @@ private struct ScreenSidebar: View {
                 }
                 .id(ScreenCollection.login)
                 DisclosureGroup(isExpanded: $desktopExpanded) {
+                    Button(action: store.editInfinityMenu) {
+                        Label("Infinity System Menu", systemImage: "list.bullet.indent")
+                    }
+                    .help("Add, reorder and configure the top-left Infinity menu items and submenus")
                     screenRows(for: .desktop, screens: store.desktopDocument.screens)
                 } label: {
                     collectionHeader(.desktop)

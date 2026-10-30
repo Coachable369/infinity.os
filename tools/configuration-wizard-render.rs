@@ -787,6 +787,12 @@ fn boot_scene_clip_pixels() {
             for y in 0..h { for x in 0..w {
                 assert_eq!(clipped[y*w+x],if x>=left&&x<right&&y>=top&&y<bottom {full[y*w+x]}else{0x123456});
             }}
+            assert!(display(&mut full,w,h).boot_template_scene(bytes,screen,100,b"",2400));
+            clipped.fill(0x123456);
+            assert!(display(&mut clipped,w,h).restore_boot_template_region(bytes,screen,left,top,right-left,bottom-top));
+            for y in 0..h { for x in 0..w {
+                assert_eq!(clipped[y*w+x],if x>=left&&x<right&&y>=top&&y<bottom {full[y*w+x]}else{0x123456});
+            }}
         }
     }
 }

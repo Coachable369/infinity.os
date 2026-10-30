@@ -27,7 +27,7 @@ fn main() {
     let accepted = whole.push(&input);
     assert_eq!(accepted, RATE + RATE / 2 + END_SILENCE);
     let segment = whole.segment().unwrap();
-    assert_eq!(segment, Segment { start: RATE - RATE / 5, end: accepted });
+    assert_eq!(segment, Segment { start: RATE - RATE * 3 / 5, end: accepted });
     for chunk_size in [1, 17, 319, 320, 701, 4096] {
         let mut chunked = Detector::new(300);
         let consumed: usize = input.chunks(chunk_size).map(|c| chunked.push(c)).sum();

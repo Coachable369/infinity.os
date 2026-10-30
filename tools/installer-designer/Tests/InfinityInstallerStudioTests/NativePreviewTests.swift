@@ -585,6 +585,9 @@ final class NativePreviewTests: XCTestCase {
     // ------------------=
     @MainActor func testNativeServiceStatesAreBoundedAndVisiblyRendered() async throws {
         let store = TemplateStore(); store.projectRoot = root
+        // Test service substitution against a known fixture, not the user's
+        // editable installation screens (which may legitimately omit the map).
+        store.document = .factoryDefault()
         store.nativePreviewSimulation.enabled = false
         let runner = NativePreviewRunner()
         store.selectScreenCollection(.installation, screen: 5)

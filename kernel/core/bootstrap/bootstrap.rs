@@ -92,9 +92,16 @@ impl super::DisplayDevice {
     // FUNC: infinity_screen_position
     // DESC: Maps the particle phase onto the visible ribbon centerline, excluding canvas padding and reflection.
     // ------------------=
-    pub(super) fn infinity_screen_position(&self, phase: usize, bootstrap: bool) -> (i32, i32) {
+    pub(super) fn infinity_screen_position(&self, phase: usize, bootstrap: bool) -> Option<(i32, i32)> {
         let (left, top, width, height) = if bootstrap {
-            self.boot_emblem_geometry()
+            use crate::ui::installer_template::{InstallerTemplate, InstallerTemplateRole};
+            let template = InstallerTemplate::parse_boot(BOOT_TEMPLATE).ok()?;
+            let screen = if cfg!(feature = "installer") { 1 } else { 2 };
+            let element = (0..template.element_count(screen)?).filter_map(|index| template.layer_at(screen, index))
+                .find(|element| element.role == InstallerTemplateRole::Masthead as u8
+                    && element.kind == 2 && !element.hidden && element.opacity != 0)?;
+            let rect = crate::ui::installer_layout::scale_template_rect(element.frame, self.width, self.height);
+            (rect.left, rect.top, rect.width, rect.height)
         } else {
             self.console_emblem_geometry()
         };
@@ -105,10 +112,10 @@ impl super::DisplayDevice {
         // Old and new trail positions share this mapping during restoration.
         let source_x = 837 + px * 574 / 112;
         let source_y = 405 + py * 210 / 62;
-        (
+        Some((
             left as i32 + source_x * width as i32 / 1672,
             top as i32 + source_y * height as i32 / 941,
-        )
+        ))
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -331,19 +338,19 @@ impl super::DisplayDevice {
     // DESC: Restores artwork beneath a moving emblem particle before its next frame.
     // ------------------=
     pub(super) fn restore_emblem_particle(&mut self, x: i32, y: i32, radius: i32, bootstrap: bool) {
-        let (emblem_left, emblem_top, target_width, target_height) = if bootstrap {
-            self.boot_emblem_geometry()
-        } else {
-            self.console_emblem_geometry()
-        };
+        if bootstrap {
+            // Restore the authored scene, not the original compiled BMP. This
+            // preserves replacement images, transparency and overlapping layers.
+            self.restore_boot_template_region(BOOT_TEMPLATE, if cfg!(feature="installer") {1} else {2},
+                (x-radius-2).max(0) as usize, (y-radius-2).max(0) as usize,
+                (radius*2+5) as usize, (radius*2+5) as usize);
+            return;
+        }
+        let (emblem_left, emblem_top, target_width, target_height) = self.console_emblem_geometry();
         let left = (x - radius - 2).max(0) as usize;
         let top = (y - radius - 2).max(0) as usize;
         let size = (radius * 2 + 5) as usize;
-        if bootstrap {
-            self.paint_background_rect(left, top, size, size);
-        } else {
-            self.paint_console_background_rect(left, top, size, size);
-        }
+        self.paint_console_background_rect(left, top, size, size);
         let local_left = left.saturating_sub(emblem_left);
         let local_top = top.saturating_sub(emblem_top);
         let local_right = (left + size).saturating_sub(emblem_left).min(target_width);
@@ -1034,9 +1041,9 @@ impl ConsoleSurface {
             for stream in 0..3usize {
                 for trail in 0..6usize {
                     let old_phase = (self.particle_phase + stream * 128 + 384 - trail * 5) % 384;
-                    let (x, y) = self
+                    let Some((x, y)) = self
                         .display
-                        .infinity_screen_position(old_phase, self.bootstrap_scene);
+                        .infinity_screen_position(old_phase, self.bootstrap_scene) else { continue; };
                     let radius = ((7 - trail as i32) * scale / 2).max(scale);
                     let extent = if trail == 0 { radius * 3 } else { radius * 2 };
                     if y + extent + 2 < animation_clip {
@@ -1050,9 +1057,9 @@ impl ConsoleSurface {
         for stream in 0..3usize {
             for trail in 0..6usize {
                 let phase = (self.particle_phase + stream * 128 + 384 - trail * 5) % 384;
-                let (x, y) = self
+                let Some((x, y)) = self
                     .display
-                    .infinity_screen_position(phase, self.bootstrap_scene);
+                    .infinity_screen_position(phase, self.bootstrap_scene) else { continue; };
                 let radius = ((7 - trail as i32) * scale / 2).max(scale);
                 let intensity = (230usize.saturating_sub(trail * 31)) as u8;
                 let extent = if trail == 0 { radius * 3 } else { radius * 2 };

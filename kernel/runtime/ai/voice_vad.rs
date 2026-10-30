@@ -2,7 +2,9 @@
 pub const RATE: usize = 16_000;
 pub const FRAME: usize = 320;
 pub const MAX_SAMPLES: usize = RATE * 10;
-const PRE_ROLL: usize = RATE / 5;
+// Preserve a softly spoken wake prefix before the louder command crosses the
+// onset gate. This is retained audio, not additional endpoint wait time.
+const PRE_ROLL: usize = RATE * 3 / 5;
 const ONSET_FRAMES: usize = 3;
 const AMBIENT_FRAMES: usize = 9;
 // A normal hesitation between a product name and the rest of a command must

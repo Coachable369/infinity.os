@@ -43,6 +43,19 @@ final class BootSceneTests: XCTestCase {
             store.nativePreviewSimulation.bootPhase = 0
             let start = try await runner.render(NativePreviewSnapshot.capture(store, width: 640, height: 480))
             XCTAssertNotEqual(start.pixels, complete.pixels)
+            // The native animation binds to the layer role, never a filename
+            // or original BMP dimensions. Exercise different replacement art.
+            let emblem = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .masthead })
+            store.selectElement(emblem.id)
+            store.updateSelected { $0.imageAsset = "assets/desktop/infinity-topbar-icon-v2.bmp" }
+            store.nativePreviewSimulation.bootPhase = 2400
+            let replacement = try await runner.render(NativePreviewSnapshot.capture(store, width: 640, height: 480))
+            XCTAssertNotEqual(complete.pixels, replacement.pixels)
+            store.nativePreviewSimulation.bootPhase = 0
+            let replacementStart = try await runner.render(NativePreviewSnapshot.capture(store, width: 640, height: 480))
+            XCTAssertNotEqual(replacementStart.pixels, replacement.pixels)
+            XCTAssertEqual(start.pixels, replacementStart.pixels)
+            store.undo()
             store.nativePreviewSimulation.bootPhase = 2400
             store.nativePreviewSimulation.progress = 90
             let progressed = try await runner.render(NativePreviewSnapshot.capture(store, width: 640, height: 480))

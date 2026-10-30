@@ -8,6 +8,16 @@ THEME = dict(background="#101B3A", foreground="#FFFFFF", font=("Inter", 11),
              fieldbackground="#090F26", bordercolor="#86C7FF", lightcolor="#1A2E63", darkcolor="#090F26")
 
 # ------------------------=
+# FUNC: configure_workspace_bounds
+# DESC: Fits initial and minimum client bounds to the native window manager's available work area.
+# ------------------=
+def configure_workspace_bounds(root):
+    maximum_width, maximum_height = root.maxsize()
+    width, height = min(1180, maximum_width), min(760, maximum_height)
+    root.minsize(min(800, width), min(560, height))
+    root.geometry(f"{width}x{height}")
+
+# ------------------------=
 # FUNC: configure_theme
 # DESC: Uses identical widget styling in the designer and exported native Tk application.
 # ------------------=

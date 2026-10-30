@@ -4,7 +4,7 @@ import os
 import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
-from infinitycode_model import Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme
+from infinitycode_model import Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme, configure_workspace_bounds
 
 
 class Studio:
@@ -17,8 +17,7 @@ class Studio:
         self.selected, self.drag = None, None
         self.widgets, self.generated = {}, ""
         root.title("InfinityCode — Python & UI Designer")
-        root.geometry("1180x760")
-        root.minsize(1180, 650)
+        configure_workspace_bounds(root)
         root.configure(background="#090F26")
         style = configure_theme(root)
         style.map("TNotebook.Tab", background=[("selected", "#1A2E63")])

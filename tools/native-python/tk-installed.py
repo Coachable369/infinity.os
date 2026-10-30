@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -316,6 +317,35 @@ def durable_data(guest, python, pip, helper, fixtures):
 
 
 # ------------------------=
+# FUNC: infinitycode
+# DESC: Launches the installed IDE through its real command and verifies painted client pixels, input responsiveness and clean native teardown.
+# ------------------=
+def infinitycode(guest, native, python):
+    previous = python.snapshot(guest)[2]
+    guest.command("infinitycode")
+    state = wait(guest, python, lambda: gui(guest, native),
+                 lambda value: len(value["windows"]) == 1 and value["windows"][0]["visible"]
+                 and value["windows"][0]["width"] >= 600, timeout=150)
+    window = state["windows"][0]
+    capture = wait(guest, python, lambda: screenshot(guest, "infinitycode-open"),
+                   lambda image: sum(pixel(image, x, y) == (9, 15, 38)
+                       for y in range(max(0, window["y"]), min(image["height"], window["y"] + window["height"]), 4)
+                       for x in range(max(0, window["x"]), min(image["width"], window["x"] + window["width"]), 4)) > 1000,
+                   timeout=150)
+    colors = {pixel(capture, x, y)
+              for y in range(max(0, window["y"]), min(capture["height"], window["y"] + window["height"]), 3)
+              for x in range(max(0, window["x"]), min(capture["width"], window["x"] + window["width"]), 3)}
+    assert len(colors) > 12, len(colors)
+    before = guest.state()[2]
+    guest.key("tab")
+    assert guest.state()[2] > before
+    native.ui.click(guest, *close_point(guest, window))
+    receipt = finished(guest, python, previous)
+    wait(guest, python, lambda: gui(guest, native), lambda value: not value["windows"])
+    return dict(window=window, screenshot=capture["path"], colors=len(colors), exit=receipt)
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs unchanged media or reuses a stopped disposable installation, seeds source inputs and verifies native GUI behavior without a host GUI backend.
 # ------------------=
@@ -330,6 +360,8 @@ def main():
                         help="Require real Control+A selection replacement; media must include normalized native shortcut delivery")
     parser.add_argument("--durable-data", action="store_true",
                         help="Require real source-scoped persistent files and SQLite after cold boots; needs updated data-capable kernel")
+    parser.add_argument("--infinitycode-only", action="store_true",
+                        help="Exercise installed InfinityCode launch, drawing, input and clean close")
     args = parser.parse_args()
     iso = args.iso.resolve()
     assert iso.is_relative_to(ROOT) and iso.is_file()
@@ -350,7 +382,12 @@ def main():
             else:
                 assert digest == expected_digest, "Reused disk belongs to different installer media"
     else:
-        shutil.copyfile(iso, artifacts / "installer.iso")
+        # APFS clones preserve an independent immutable test input without
+        # reserving another complete model-bearing ISO on the same volume.
+        if sys.platform == "darwin":
+            subprocess.run(["cp", "-c", str(iso), str(artifacts / "installer.iso")], check=True)
+        else:
+            shutil.copyfile(iso, artifacts / "installer.iso")
         native.desktop.extract_media_kernels(iso, artifacts, args.arch)
     layout = pip.validate_media_layout(artifacts, args.arch)
     helper = ROOT / "build/tools/python-package-disk"
@@ -381,7 +418,24 @@ def main():
             guest.stop()
         subprocess.run(["python3", str(ROOT / "tools/update-installed-clone.py"), str(guest.disk),
                         str(artifacts / "installed-kernel.elf"), "--verify-only"], check=True)
-        proof["fixtures"] = pip.seed(guest, helper, fixtures, "tk")
+        if not args.infinitycode_only:
+            proof["fixtures"] = pip.seed(guest, helper, fixtures, "tk")
+        if args.infinitycode_only:
+            guest.boot(False)
+            guest.authenticate()
+            # The isolated launch probe uses the existing keyboard launcher;
+            # pointer delivery is checked separately after the IDE has drawn.
+            deadline = time.monotonic() + 45
+            while guest.state()[4] == 5 and time.monotonic() < deadline:
+                guest.key("slash")
+                time.sleep(1)
+            assert guest.state()[4] == 6, "Keyboard launcher did not become interactive"
+            guest.text("command")
+            guest.key("ret")
+            guest.wait(lambda state: state[4] == 5, "command window selected")
+            proof["infinitycode"] = infinitycode(guest, native, python)
+            proof["installed_acceptance"] = True
+            return
         pip.resume(guest)
         for name in ("tk-import.py", "tk-widget-contract.py"):
             proof["stages"].append(pip.execute(guest, python, "python /home/default/documents/tk/" + name))

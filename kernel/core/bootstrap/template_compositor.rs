@@ -29,6 +29,19 @@ pub(super) struct ConfigurationViewState<'a> {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: restore_boot_template_region
+    // DESC: Removes transient boot animation pixels by restoring the authored final scene within its exact damage rectangle.
+    // ------------------=
+    pub(crate) fn restore_boot_template_region(&mut self, bytes: &[u8], screen: u8,
+        left: usize, top: usize, width: usize, height: usize) -> bool {
+        let saved = self.render_clip;
+        self.intersect_render_clip(left, top, width, height);
+        let restored = self.boot_template_scene(bytes, screen, 100, b"", 2400);
+        self.render_clip = saved;
+        restored
+    }
+
+    // ------------------------=
     // FUNC: desktop_bound_surface
     // DESC: Paints a live widget control with its authored material, border, opacity and optional artwork.
     // ------------------=

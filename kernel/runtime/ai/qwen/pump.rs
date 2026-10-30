@@ -1,5 +1,9 @@
 //! Wall-clock-bounded inference scheduling, independent of firmware and models.
-pub const BUDGET_NS: u64 = 2_000_000;
+// Firmware input/network polling runs between pumps. A two-ms quantum spent
+// most of the observed prefill wall time outside inference (about 1.6 seconds
+// compute in 4.9 seconds to first token). Four ms amortizes that fixed overhead
+// while still yielding well inside a 16-ms interactive frame.
+pub const BUDGET_NS: u64 = 4_000_000;
 const CLOCKED_LIMIT: usize = 16_384;
 const FALLBACK_LIMIT: usize = 256;
 
@@ -51,12 +55,12 @@ mod tests {
     use super::*;
     // ------------------------=
     // FUNC: fast_worker_polls_use_available_deadline
-    // DESC: Verifies fast polls can cross the old cap but cannot cross the two millisecond deadline.
+    // DESC: Verifies fast polls can cross the old cap but cannot cross the four millisecond deadline.
     // ------------------=
     #[test]
     fn fast_worker_polls_use_available_deadline() {
         let mut budget = PumpBudget::new(Some(100));
-        for i in 0..2000 {
+        for i in 0..BUDGET_NS / 1000 {
             assert!(budget.next(Some(100 + i * 1000)));
         }
         assert!(!budget.next(Some(100 + BUDGET_NS)));

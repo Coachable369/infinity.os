@@ -92,6 +92,10 @@ struct ElementInspector: View {
                             textSection(element)
                         }
                         if element.kind == .image {
+                            if store.selectedCollection == .boot && element.role == .masthead {
+                                Text("Animated boot emblem · Replace Image preserves the native reveal animation. The effect follows this layer, not the image filename.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                             imageSection(element)
                         }
                         appearanceSection(element)

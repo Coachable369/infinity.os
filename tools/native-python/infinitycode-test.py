@@ -9,10 +9,43 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "sdk/python"))
-from infinitycode_model import Project, KINDS, WIDTH, validate, export_source
+from infinitycode_model import Project, KINDS, WIDTH, validate, export_source, configure_workspace_bounds
 
 
 class ProjectTests(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_workspace_bounds_respect_native_work_area
+    # DESC: Exercises the startup window contract on small and large native displays without an illegal minimum size.
+    # ------------------=
+    def test_workspace_bounds_respect_native_work_area(self):
+        class Window:
+            # ------------------------=
+            # FUNC: maxsize
+            # DESC: Returns the native work-area constraint for this test case.
+            # ------------------=
+            def maxsize(self):
+                return self.maximum
+            # ------------------------=
+            # FUNC: minsize
+            # DESC: Records the applied minimum dimensions.
+            # ------------------=
+            def minsize(self, width, height):
+                self.minimum = (width, height)
+            # ------------------------=
+            # FUNC: geometry
+            # DESC: Records requested client dimensions as structured values.
+            # ------------------=
+            def geometry(self, value):
+                self.size = tuple(map(int, value.split("x")))
+        for maximum in ((640, 480), (1000, 650), (1920, 1080)):
+            root = Window()
+            root.maximum = maximum
+            configure_workspace_bounds(root)
+            minimum = root.minimum
+            self.assertTrue(all(0 < size <= limit for size, limit in zip(minimum, maximum)))
+            geometry = root.size
+            self.assertTrue(all(low <= size <= limit for low, size, limit in zip(minimum, geometry, maximum)))
+
     # ------------------------=
     # FUNC: test_designer_interactions
     # DESC: Exercises actual selection, snapped move and resize, properties, undo, save, reload and Python export.
