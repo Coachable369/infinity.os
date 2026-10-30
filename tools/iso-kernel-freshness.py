@@ -7,10 +7,7 @@ import hashlib
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
-
-
-ROOT = Path(__file__).resolve().parent.parent
+from iso_fat import fat_image
 
 
 # ------------------------=
@@ -95,24 +92,15 @@ def compare_shards(image: Path, expected: Path) -> None:
 
 # ------------------------=
 # FUNC: verify_iso_kernels
-# DESC: Extracts the release EFI image and proves live and fresh-install kernel bytes match this invocation.
+# DESC: Reads the release EFI extent in place and proves live and fresh-install kernel bytes match this invocation.
 # ------------------=
 def verify_iso_kernels(iso: Path, live_kernel: Path, installed_kernel: Path) -> None:
     for artifact in (iso, live_kernel, installed_kernel):
         if not artifact.is_file() or artifact.stat().st_size == 0:
             raise RuntimeError(f"missing build artifact: {artifact}")
-    temporary_root = ROOT / "build" / "tmp"
-    temporary_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="kernel-freshness-", dir=temporary_root) as directory:
-        efi = Path(directory) / "efi.img"
-        subprocess.run(
-            ["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract", "/efi.img", str(efi)],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        compare_member(efi, "::/EFI/INFINITY/KERNEL.ELF", live_kernel)
-        compare_shards(efi, installed_kernel)
+    efi = fat_image(iso)
+    compare_member(efi, "::/EFI/INFINITY/KERNEL.ELF", live_kernel)
+    compare_shards(efi, installed_kernel)
 
 
 # ------------------------=
