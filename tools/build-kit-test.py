@@ -16,6 +16,35 @@ SPEC.loader.exec_module(build_kit)
 
 class BuildKitTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_arm_iso_wrapper
+    # DESC: Executes the public wrapper from another directory and verifies profile routing, exit propagation and argument rejection without building an ISO.
+    # ------------------=
+    def test_arm_iso_wrapper(self):
+        import tomllib
+        config = tomllib.loads((build_kit.PROJECT_ROOT / "build-kit.toml").read_text())
+        self.assertEqual(config["profiles"]["arm-iso"], {
+            "command": ["sh", "build.sh", "--skip-tests", "--target", "aarch64"],
+            "clean": False,
+        })
+        wrapper = self.root / "build-arm-iso.sh"
+        shutil.copy2(build_kit.PROJECT_ROOT / wrapper.name, wrapper)
+        receipt = self.root / "wrapper-args.json"
+        kit = self.root / "build-kit"
+        kit.write_text(
+            "#!" + sys.executable + "\nimport json, pathlib, sys\n"
+            "pathlib.Path(__file__).with_name('wrapper-args.json').write_text(json.dumps(sys.argv[1:]))\n"
+            "sys.exit(23)\n")
+        kit.chmod(0o755)
+        result = subprocess.run(["bash", str(wrapper)], cwd=self.root.parent, capture_output=True)
+        self.assertEqual(result.returncode, 23)
+        self.assertEqual(json.loads(receipt.read_text()), ["arm-iso"])
+        receipt.unlink()
+        for args, expected in [(["--help"], 0), (["--target", "x86_64"], 2)]:
+            result = subprocess.run(["bash", str(wrapper), *args], cwd=self.root.parent, capture_output=True)
+            self.assertEqual(result.returncode, expected)
+            self.assertFalse(receipt.exists())
+
+    # ------------------------=
     # FUNC: setUp
     # DESC: Creates an isolated project-shaped fixture beneath the managed repository build tree.
     # ------------------=

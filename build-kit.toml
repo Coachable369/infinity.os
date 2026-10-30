@@ -22,6 +22,10 @@ clean = true
 command = ["sh", "build.sh"]
 clean = false
 
+[profiles.arm-iso]
+command = ["sh", "build.sh", "--skip-tests", "--target", "aarch64"]
+clean = false
+
 [profiles.package-aarch64]
 command = ["sh", "build.sh", "--package-only", "--target", "aarch64"]
 clean = false
