@@ -27,10 +27,14 @@ fn editable_ai_dictionaries() {
         let mut buffer = [0u8; 16 * 1024];
         let (length, revision) = editor_objects::load(&mut store, owner, path, &mut buffer).unwrap();
         assert!(length > 0 && length + 1 <= buffer.len());
-        // JSON whitespace is a valid user edit without changing a native contract.
-        buffer[length] = b'\n';
-        let edited = buffer[..length + 1].to_vec();
+        // Exercise an editable document at the shared limit, retaining one
+        // editor terminator byte. JSON whitespace preserves every action.
+        buffer[length..].fill(b' ');
+        let edited = buffer[..buffer.len() - 1].to_vec();
         editor_objects::save(&mut store, owner, path, &edited, revision).unwrap();
+        let oversized = vec![b' '; storage::object::MAX_CONTENT + 1];
+        assert_eq!(editor_objects::save(&mut store, owner, path, &oversized, None),
+            Err(ObjectError::InsufficientCapacity));
         store = ObjectStore::mount(disk.clone(), 0).unwrap();
         let (length, _) = editor_objects::load(&mut store, owner, path, &mut buffer).unwrap();
         assert_eq!(&buffer[..length], edited.as_slice());

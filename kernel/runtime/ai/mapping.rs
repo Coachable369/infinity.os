@@ -4,7 +4,8 @@ use super::control::Command;
 
 pub const PATH: &[u8] = b"/system/ai/instruction-mappings.json";
 pub const REGISTRY_PATH: &[u8] = b"/system/service-registry.json";
-pub const MAX_BYTES: usize = 24 * 1024;
+// Keep editable dictionaries within both native Text Editor and ObjectStore limits.
+pub const MAX_BYTES: usize = 16 * 1024;
 pub const REGISTRY_DEFAULT: &[u8] = include_bytes!("../../../system/ai/service-registry.json");
 pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappings.json");
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";

@@ -36,13 +36,18 @@ mod native_control_tests {
             request.extend_from_slice(entry.label);
             assert_eq!(Command::decode(&request), Some(Command::LaunchEntry(index)));
         }
-        let expected = Command::explicit(b"open infinitycode");
+        let expected = Command::explicit(b"launch infinitycode");
         assert!(expected.is_some());
-        assert_eq!(Command::decode(b"OS_OPEN:infinitycode"), expected);
+        let catalog = crate::ui::app_launcher::LAUNCHER_APPS.iter()
+            .position(|entry| entry.label.eq_ignore_ascii_case(b"infinitycode"))
+            .map(Command::LaunchEntry);
+        assert_eq!(Command::decode(b"OS_OPEN:infinitycode"), catalog);
         assert_eq!(Command::decode(b"OS_LAUNCH:app:infinitycode"), expected);
-        assert_eq!(Command::decode(b"OS_OPEN:My Calculator"),
+        assert_eq!(Command::decode(b"OS_LAUNCH:app:My Calculator"),
             Some(Command::LaunchGenerated(ApplicationName::parse(b"My Calculator").unwrap())));
+        assert_eq!(Command::decode(b"OS_OPEN:My Calculator"), None);
         assert_eq!(Command::decode(b"OS_OPEN:InfinityCode\nOS_CLOSE:browser"), None);
+        assert_eq!(Command::explicit(b"open something useful"), None);
     }
 }
 #[path = "../../ui/editor_compile_intent.rs"]
@@ -353,7 +358,10 @@ impl Command {
             b"OS_OPEN:task_manager" => Some(Self::TaskManager),
             b"OS_OPEN:launcher" => Some(Self::Launcher),
             b"OS_OPEN:ai_instruction_mappings" => Some(Self::AiInstructionMapping),
-            _ => bytes.strip_prefix(b"OS_OPEN:").and_then(Self::launch_named),
+            _ => bytes.strip_prefix(b"OS_OPEN:").and_then(|name|
+                crate::ui::app_launcher::LAUNCHER_APPS.iter()
+                    .position(|entry| entry.label.eq_ignore_ascii_case(name))
+                    .map(Self::LaunchEntry)),
         }
     }
 
@@ -470,7 +478,7 @@ impl Command {
         // something useful". Reserve the arbitrary-name fast path for the
         // explicit launch verb; configured "open my app NAME" aliases still
         // resolve through AIKit without inference.
-        let named_launch = request.starts_with(b"launch ") || request.starts_with(b"open ");
+        let named_launch = request.starts_with(b"launch ");
         request = request
             .strip_prefix(b"open ")
             .or_else(|| request.strip_prefix(b"launch "))
