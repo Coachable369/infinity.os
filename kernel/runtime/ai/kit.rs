@@ -198,12 +198,15 @@ impl CapabilityDirectory {
 // DESC: Classifies an authoritative protocol target into its stable typed AIKit family.
 // ------------------=
 fn capability_family(target: &[u8]) -> Option<CapabilityFamily> {
-    let families: [(&[u8], CapabilityFamily); 11] = [
+    let families: [(&[u8], CapabilityFamily); 14] = [
         (b"OS_SETTING:", CapabilityFamily::Settings),
         (b"OS_OPEN:", CapabilityFamily::Open),
         (b"OS_LAUNCH:", CapabilityFamily::Launch),
         (b"OS_FOCUS:", CapabilityFamily::Focus),
         (b"OS_CLOSE:", CapabilityFamily::Close),
+        (b"OS_MINIMIZE:", CapabilityFamily::Context),
+        (b"OS_MAXIMIZE:", CapabilityFamily::Context),
+        (b"OS_RESTORE:", CapabilityFamily::Context),
         (b"OS_SETTINGS:", CapabilityFamily::Settings),
         (b"OS_SURFACE:", CapabilityFamily::Surface),
         (b"OS_MENU:", CapabilityFamily::Menu),

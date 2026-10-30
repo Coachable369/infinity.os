@@ -1252,7 +1252,11 @@ fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
                 if OUTPUT.load(Ordering::SeqCst) == 3 {
                     OUTPUT.store(1, Ordering::SeqCst);
                 }
+                // A delayed service pass can have seconds of muted input,
+                // substantially more than the controller's 4800-sample chunk.
+                MICROPHONE.lock().unwrap().extend([2200; 48_000]);
                 conversation::poll();
+                assert!(MICROPHONE.lock().unwrap().is_empty());
                 if OUTPUT.load(Ordering::SeqCst) == 1 {
                     assert!(!conversation::wake_armed());
                     assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);

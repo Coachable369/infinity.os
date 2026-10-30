@@ -1223,7 +1223,7 @@ fn aikit_contract() {
     assert_eq!(CapabilityDirectory::count(), mapping::CAPABILITY_TARGETS.len());
     assert_eq!(CapabilityDirectory::descriptor(0).unwrap().family, CapabilityFamily::Open);
     assert_eq!(CapabilityDirectory::descriptor(103).unwrap().family, CapabilityFamily::Clock);
-    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Settings);
+    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Context);
     assert!(CapabilityDirectory::descriptor(CapabilityDirectory::count()).is_none());
     assert!(CapabilityDirectory::contains(mapping::CAPABILITY_TARGETS[0]));
 
@@ -1343,7 +1343,7 @@ fn settings_mutation_contract() {
 fn instruction_mapping_contract() {
     use runtime::ai::{control::{Command,ContextRequest},mapping};
     assert!(mapping::validate(mapping::DEFAULT).is_ok());
-    assert_eq!(mapping::CAPABILITY_TARGETS.len(),113);
+    assert_eq!(mapping::CAPABILITY_TARGETS.len(),118);
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"set accent color to grey").unwrap(),
         Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
     let generated=Command::LaunchGenerated(runtime::ai::control::ApplicationName::parse(b"calculator").unwrap());

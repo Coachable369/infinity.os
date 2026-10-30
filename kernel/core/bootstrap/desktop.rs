@@ -7088,6 +7088,10 @@ impl super::DisplayDevice {
     // DESC: Renders the persistent foreground application dock and launcher state.
     // ------------------=
     fn desktop_dock(&mut self, scale: usize, launcher_open: bool) {
+        if let Some(scene) = crate::ui::desktop_template::dock_scene() {
+            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[]);
+            return;
+        }
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .desktop_foreground_geometry();
         let dock_width = geometry.dock.width as usize;

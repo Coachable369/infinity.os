@@ -83,6 +83,15 @@ pub enum InstallerTemplateRole {
     DesktopSend = 69,
     DesktopMinimize = 70,
     DesktopClose = 71,
+    DesktopDock = 72,
+    DockLauncher = 73,
+    DockFiles = 74,
+    DockSettings = 75,
+    DockAbout = 76,
+    DockVoice = 77,
+    DockSearch = 78,
+    DockWidgets = 79,
+    DockTrash = 80,
 }
 
 // ------------------------=
@@ -422,7 +431,7 @@ impl<'a> InstallerTemplate<'a> {
             let mut settings_row_label_count = 0u8;
             let mut settings_row_value_count = 0u8;
             let mut settings_disclosure_count = 0u8;
-            let mut desktop_roles=0u32;
+            let mut desktop_roles=0u64;
             for _ in 0..count {
                 let element = reader.element()?;
                 if (40..=48).contains(&element.role) && (!login || element.kind != 5)
@@ -430,8 +439,8 @@ impl<'a> InstallerTemplate<'a> {
                     return Err(InstallerTemplateError::InvalidElement);
                 }
                 if desktop && element.role>=49 {
-                    let valid=match screen {1=>(49..=59).contains(&element.role),2=>(60..=64).contains(&element.role),3=>(65..=71).contains(&element.role),_=>false};
-                    let bit=1u32<<(element.role-49);
+                    let valid=match screen {1=>(49..=59).contains(&element.role),2=>(60..=64).contains(&element.role),3=>(65..=71).contains(&element.role),_=>(72..=80).contains(&element.role)};
+                    let bit=1u64<<(element.role-49);
                     if !valid||desktop_roles&bit!=0 {return Err(InstallerTemplateError::InvalidElement);}
                     desktop_roles|=bit;
                 }
@@ -444,7 +453,7 @@ impl<'a> InstallerTemplate<'a> {
                 if requires_navigation && settings_row_child_role(element.role) {
                     return Err(InstallerTemplateError::InvalidElement);
                 }
-                if element.role == InstallerTemplateRole::Console as u8 {
+                if element.role == InstallerTemplateRole::Console as u8 || (desktop && element.role == InstallerTemplateRole::DesktopDock as u8) {
                     console_count = console_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::Content as u8 {
@@ -934,7 +943,7 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::DesktopClose as u8
+            || role > InstallerTemplateRole::DockTrash as u8
             || (role == InstallerTemplateRole::SceneBackground as u8 && (kind != 2 || self.version < 10))
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)

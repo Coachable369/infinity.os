@@ -1206,7 +1206,13 @@ unsafe fn drain_muted_capture() -> bool {
     if now >= RENEW_AT && !renew_capture_authority(now) {
         return false;
     }
-    let _ = crate::drivers::audio::read_capture(OWNER, &mut *(&raw mut RAW));
+    // Muted input has no consumer. Advance to the hardware boundary rather
+    // than consuming one RAW chunk: inference can delay service passes long
+    // enough for several chunks to accumulate. Retain DMA and its authority;
+    // contention retries on the next pass without blocking the UI thread.
+    if crate::drivers::audio::discard_capture_pending(OWNER) == Some(false) {
+        return false;
+    }
     (&mut *(&raw mut RAW)).fill(0);
     (&mut *(&raw mut MONO)).fill(0);
     LEVEL = 0;

@@ -126,7 +126,7 @@ enum TemplateValidator {
                 }
             }
             try validateSettingsActions(screen, collection: collection)
-            guard collection == .boot || collection == .login || screen.elements.contains(where: { $0.role == .console }) else {
+            guard collection == .boot || collection == .login || screen.elements.contains(where: { $0.role == .console || (collection == .desktop && $0.role == .desktopDock) }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
             }
             guard liveInputs.count <= 1 else {
@@ -137,8 +137,8 @@ enum TemplateValidator {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Authentication actions require login buttons")
                 }
                 if element.role.rawValue >= 49 {
-                    let allowed = screen.id == 1 ? 49...59 : screen.id == 2 ? 60...64 : 65...71
-                    guard collection == .desktop, screen.id <= 3, allowed.contains(Int(element.role.rawValue)) else {
+                    let allowed = screen.id == 1 ? 49...59 : screen.id == 2 ? 60...64 : screen.id == 3 ? 65...71 : 72...80
+                    guard collection == .desktop, allowed.contains(Int(element.role.rawValue)) else {
                         throw TemplateValidationIssue.invalidElement(screen.id, element.id, "This binding belongs to a different desktop scene")
                     }
                 }

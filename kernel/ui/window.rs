@@ -39,6 +39,9 @@ pub enum WindowState {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowControl { Focus, Close, Minimize, Maximize, Restore }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Window {
     pub id: WindowId,
     pub owner: ContextId,
@@ -513,6 +516,28 @@ impl WindowServer {
         let window = *self.mutate(caller, id)?;
         self.emit(WindowEventKind::CloseRequested, id, caller, window.bounds, window.bounds);
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: control_owned
+    // DESC: Applies a trusted owner's application control through ordinary window transitions, retaining modal and close-callback protections.
+    // ------------------=
+    pub fn control_owned(&mut self, caller: ContextId, id: WindowId, action: WindowControl,
+        work: Rect, display: Rect) -> Result<(), WindowError> {
+        self.mutate(caller, id)?;
+        if self.top_modal().is_some_and(|modal| modal.id != id) { return Err(WindowError::ModalBlocked); }
+        match action {
+            WindowControl::Close => self.request_close(caller, id),
+            WindowControl::Minimize => self.set_state(caller, id, WindowState::Minimized, work, display).map(|_| ()),
+            WindowControl::Maximize => self.set_state(caller, id, WindowState::Maximized, work, display).map(|_| ()),
+            WindowControl::Restore => self.set_state(caller, id, WindowState::Normal, work, display).map(|_| ()),
+            WindowControl::Focus => {
+                if self.inspect(id).is_some_and(|w| w.state == WindowState::Minimized) {
+                    self.set_state(caller, id, WindowState::Normal, work, display)?;
+                }
+                self.focus(id)
+            }
+        }
     }
 
     // ------------------------=

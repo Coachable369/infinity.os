@@ -98,7 +98,8 @@ final class MenuEditorTests: XCTestCase {
         store.projectRoot = root
         store.editInfinityMenu()
         let id = try XCTUnwrap(store.addMenuItem(action: .system, after: nil))
-        XCTAssertEqual(store.createMenuDestination(for: id, title: "Saved Workspace", window: false), 4)
+        let destination = store.desktopDocument.screens.count + 1
+        XCTAssertEqual(store.createMenuDestination(for: id, title: "Saved Workspace", window: false), destination)
         store.save()
         XCTAssertTrue(store.validationIssues.isEmpty)
         let source = try Data(contentsOf: root.appending(path: "assets/boot/desktop-screens.infinityui"))
@@ -140,7 +141,7 @@ final class MenuEditorTests: XCTestCase {
         let id = try XCTUnwrap(store.addMenuItem(action: .system, after: nil))
         let before = store.desktopDocument
         let screen = try XCTUnwrap(store.createMenuDestination(for: id, title: "Project Workspace", window: true))
-        XCTAssertEqual(screen, 4)
+        XCTAssertEqual(screen, before.screens.count + 1)
         XCTAssertEqual(store.menu.rows.last?.item.action, .window)
         XCTAssertEqual(store.menu.rows.last?.item.target, screen)
         let after = store.desktopDocument
@@ -164,10 +165,10 @@ final class MenuEditorTests: XCTestCase {
         store.redo()
         store.selectScreenCollection(.desktop, screen: screen)
         store.removeScreen()
-        XCTAssertEqual(store.desktopDocument.screens.count, 4)
+        XCTAssertEqual(store.desktopDocument.screens.count, before.screens.count + 1)
         store.mutateMenu("Remove link") { $0.remove(id) }
         store.removeScreen()
-        XCTAssertEqual(store.desktopDocument.screens.count, 3)
+        XCTAssertEqual(store.desktopDocument.screens.count, before.screens.count)
     }
     // ------------------------=
     // FUNC: testValidationAndLocking
@@ -213,14 +214,15 @@ final class MenuEditorTests: XCTestCase {
     // ------------------=
     @MainActor func testRemovingEarlierDestinationRemapsLinks() throws {
         let store = TemplateStore(); store.desktopDocument = .factoryDesktop()
+        let firstScreen = store.desktopDocument.screens.count + 1
         let first = try XCTUnwrap(store.addMenuItem(action: .system, after: nil))
-        XCTAssertEqual(store.createMenuDestination(for: first, title: "First", window: false), 4)
+        XCTAssertEqual(store.createMenuDestination(for: first, title: "First", window: false), firstScreen)
         let second = try XCTUnwrap(store.addMenuItem(action: .system, after: first))
-        XCTAssertEqual(store.createMenuDestination(for: second, title: "Second", window: true), 5)
+        XCTAssertEqual(store.createMenuDestination(for: second, title: "Second", window: true), firstScreen + 1)
         store.mutateMenu("Remove first") { $0.remove(first) }
-        store.selectScreenCollection(.desktop, screen: 4); store.removeScreen()
-        XCTAssertEqual(store.menu.rows.first { $0.id == second }?.item.target, 4)
-        XCTAssertEqual(store.desktopDocument.screens[3].title, "Second")
+        store.selectScreenCollection(.desktop, screen: firstScreen); store.removeScreen()
+        XCTAssertEqual(store.menu.rows.first { $0.id == second }?.item.target, firstScreen)
+        XCTAssertEqual(store.desktopDocument.screens[firstScreen - 1].title, "Second")
         try TemplateValidator.validate(store.desktopDocument, for: .desktop)
     }
 }

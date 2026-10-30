@@ -61,6 +61,34 @@ extension InstallerStudioDocument {
             screens.append(InstallerScreenTemplate(id: screen,
                 title: ["Desktop Navigation", "System Overview Widget", "AI Voice Widget"][screen-1], elements: layers))
         }
-        return InstallerStudioDocument(version: currentVersion, canvasWidth: 1000, canvasHeight: 1000, screens: screens)
+        return InstallerStudioDocument(version: currentVersion, canvasWidth: 1000, canvasHeight: 1000, screens: screens).migratedForDesktopDock()
+    }
+
+    // ------------------------=
+    // FUNC: migratedForDesktopDock
+    // DESC: Adds the native dock editor without changing authored navigation, widgets, menus or existing custom scenes.
+    // ------------------=
+    func migratedForDesktopDock() -> InstallerStudioDocument {
+        guard !screens.contains(where: { $0.elements.contains(where: { $0.role == .desktopDock }) }),
+              screens.count < Self.maximumScreenCount else { return self }
+        var result = self
+        var layers = [StudioElement.make(name: "Dock Glass", kind: .panel, role: .desktopDock,
+            frame: CanvasRect(x: 230, y: 914, width: 540, height: 72), zIndex: 0)]
+        let roles: [StudioElementRole] = [.dockLauncher,.dockFiles,.dockSettings,.dockAbout,.dockVoice,.dockSearch,.dockWidgets,.dockTrash]
+        let names = ["Applications","Files","Settings","About InfinityOS","AI Voice","Search","Widgets","Trash"]
+        let icons = ["assets/desktop/infinity-topbar-icon-v2.png", "assets/icons/crystal-blue-glass/64/base/02-folder.png",
+            "assets/icons/crystal-blue-glass/64/base/26-settings.png", "assets/icons/crystal-blue-glass/64/base/28-information.png",
+            "assets/icons/crystal-blue-glass/64/base/23-microphone.png", "assets/icons/crystal-blue-glass/64/base/27-search.png",
+            "assets/icons/crystal-blue-glass/64/base/19-computer.png", "assets/icons/crystal-blue-glass/64/base/10-trash-empty.png"]
+        for index in roles.indices {
+            var layer = StudioElement.make(name: names[index], kind: .image, role: roles[index],
+                frame: CanvasRect(x: 242 + index * 67, y: 924, width: 46, height: 46),
+                imageAsset: icons[index], zIndex: index + 1)
+            layer.imageFit = .fit; layer.locked = false
+            layers.append(layer)
+        }
+        result.screens.append(InstallerScreenTemplate(id: (screens.map(\.id).max() ?? 3) + 1,
+            title: "Desktop App Dock", elements: layers))
+        return result
     }
 }

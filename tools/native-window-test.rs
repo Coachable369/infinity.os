@@ -1,6 +1,6 @@
 #[path = "../kernel/ui/mod.rs"] mod ui;
 use ui::geometry::{Point, Rect};
-use ui::window::{ContextId, SurfaceId, WindowError, WindowServer, WindowState, ZOrderClass};
+use ui::window::{ContextId, SurfaceId, WindowControl, WindowError, WindowServer, WindowState, ZOrderClass};
 
 // ------------------------=
 // FUNC: main
@@ -15,6 +15,25 @@ fn main() {
     let first = server.create(owner, SurfaceId(1), bounds, ZOrderClass::Normal).unwrap();
     server.set_title(owner, first, "Café — native app").unwrap();
     assert_eq!(server.inspect(first).unwrap().title(), "Café — native app");
+    for action in [WindowControl::Focus, WindowControl::Close, WindowControl::Minimize,
+        WindowControl::Maximize, WindowControl::Restore] {
+        assert_eq!(server.control_owned(ContextId(99), first, action, area, area), Err(WindowError::AccessDenied));
+    }
+    server.control_owned(owner, first, WindowControl::Maximize, area, area).unwrap();
+    assert_eq!(server.inspect(first).unwrap().state, WindowState::Maximized);
+    server.control_owned(owner, first, WindowControl::Minimize, area, area).unwrap();
+    assert!(!server.inspect(first).unwrap().visible);
+    server.control_owned(owner, first, WindowControl::Focus, area, area).unwrap();
+    assert_eq!(server.focused(), Some(first));
+    server.control_owned(owner, first, WindowControl::Restore, area, area).unwrap();
+    assert_eq!(server.inspect(first).unwrap().state, WindowState::Normal);
+    server.control_owned(owner, first, WindowControl::Close, area, area).unwrap();
+    assert!(server.inspect(first).is_some()); // Close is a callback, never forced destruction.
+    let mut close_requested = false;
+    while let Some(event) = server.next_event() {
+        close_requested |= event.kind == ui::window::WindowEventKind::CloseRequested && event.window == first && event.owner == owner;
+    }
+    assert!(close_requested);
     assert_eq!(server.set_title(owner, first, "bad\nname"), Err(WindowError::InvalidTitle));
     assert_eq!(server.set_title(ContextId(99), first, "spoof"), Err(WindowError::AccessDenied));
     assert_eq!(server.inspect(first).unwrap().title(), "Café — native app");
@@ -39,6 +58,7 @@ fn main() {
     server.set_modal_parent(owner, modal, first).unwrap();
     assert_eq!(server.set_modal_parent(owner, modal, modal), Err(WindowError::InvalidBounds));
     assert_eq!(server.focus(first), Err(WindowError::ModalBlocked));
+    assert_eq!(server.control_owned(owner, first, WindowControl::Close, area, area), Err(WindowError::ModalBlocked));
     assert_eq!(server.capture_pointer(owner, first), Err(WindowError::ModalBlocked));
     server.focus(modal).unwrap();
     assert_eq!(server.hit_test(point), Some(modal));

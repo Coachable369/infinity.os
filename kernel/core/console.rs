@@ -2832,7 +2832,22 @@ impl ConsoleRuntime {
             },
             Command::Focus(app) => return self.dispatch_ai_window(app, false),
             Command::Close(app) => return self.dispatch_ai_window(app, true),
+            Command::NativeWindow(name, action) => {
+                let name = &name.bytes[..name.length];
+                if let Some(app) = crate::runtime::ai::control::App::named(name) {
+                    if self.dispatch_ai_window(app, false) != Some(true) { return Some(false); }
+                    let request = match action {
+                        crate::ui::window::WindowControl::Minimize => b"minimize".as_slice(),
+                        crate::ui::window::WindowControl::Maximize => b"maximize".as_slice(),
+                        crate::ui::window::WindowControl::Restore => b"restore".as_slice(),
+                        _ => return Some(false),
+                    };
+                    return Some(self.dispatch_context_request(request));
+                }
+                return Some(self.dispatch_native_window(Some(name), action).unwrap_or(false));
+            },
             Command::CloseActive => {
+                if let Some(result) = self.dispatch_native_window(None, crate::ui::window::WindowControl::Close) { return Some(result); }
                 if self.spatial.open {self.spatial_close();return Some(true);}
                 use crate::runtime::ai::control::App;
                 let app = if self.mode == ConsoleMode::AppLauncher { App::Launcher }
@@ -2873,6 +2888,34 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: dispatch_native_window
+    // DESC: Routes owned native Python windows or the existing C UIKit host through their ordinary lifecycle controls.
+    // ------------------=
+    fn dispatch_native_window(&mut self, name: Option<&[u8]>, action: crate::ui::window::WindowControl) -> Option<bool> {
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if let Some(result) = python_commands::gui_control(self, name, action) { return Some(result); }
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if compiler_commands::owns_uikit_window(self, name) {
+            use crate::ui::{window::WindowControl as W, app_launcher::minimized_shelf as S};
+            #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            python_commands::release_gui_keyboard();
+            match action {
+                W::Close => return Some(compiler_commands::close_uikit()),
+                W::Focus => self.window_action(S::COMMAND, S::Action::Restore),
+                W::Restore => {
+                    self.window_action(S::COMMAND, S::Action::Restore);
+                    if self.app_window_maximized { self.toggle_window_maximized(1); }
+                },
+                W::Maximize => self.window_action(S::COMMAND, S::Action::Maximize),
+                W::Minimize => { self.window_action(S::COMMAND, S::Action::Restore); self.minimize_desktop_app(); },
+            }
+            return Some(true);
+        }
+        let _ = (name, action);
+        None
+    }
+
+    // ------------------------=
     // FUNC: dispatch_ai_window
     // DESC: Finds an existing app without launching duplicates and preserves native unsaved-document prompts on close.
     // ------------------=
@@ -2900,6 +2943,8 @@ impl ConsoleRuntime {
             App::Launcher => return Some(false),
         };
         if !visible && shelf::current().mask & (1 << id) == 0 { return Some(false); }
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        python_commands::release_gui_keyboard();
         self.window_action(id, if close { shelf::Action::Close } else { shelf::Action::Restore });
         if close && self.editor_dialog == EditorDialog::Unsaved { return None; }
         Some(true)

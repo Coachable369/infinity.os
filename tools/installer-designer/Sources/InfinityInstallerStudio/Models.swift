@@ -111,6 +111,8 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case desktopSend = 69
     case desktopMinimize = 70
     case desktopClose = 71
+    case desktopDock = 72, dockLauncher = 73, dockFiles = 74, dockSettings = 75
+    case dockAbout = 76, dockVoice = 77, dockSearch = 78, dockWidgets = 79, dockTrash = 80
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -187,6 +189,15 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .desktopSend: "Desktop: Send"
         case .desktopMinimize: "Desktop: Minimize"
         case .desktopClose: "Desktop: Close"
+        case .desktopDock: "Dock: Surface"
+        case .dockLauncher: "Dock: Launcher"
+        case .dockFiles: "Dock: Files"
+        case .dockSettings: "Dock: Settings"
+        case .dockAbout: "Dock: About"
+        case .dockVoice: "Dock: Voice"
+        case .dockSearch: "Dock: Search"
+        case .dockWidgets: "Dock: Widgets"
+        case .dockTrash: "Dock: Trash"
         }
     }
 
@@ -411,7 +422,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
-        if self == .desktop { return role == .console ? 1 : 0 }
+        if self == .desktop { return role == .console && screenID <= 3 ? 1 : 0 }
         if self == .login { return [.input, .primaryButton].contains(role) ? 1 : 0 }
         if self == .boot { return role == .progressBar ? 1 : 0 }
         if self == .systemSettings {

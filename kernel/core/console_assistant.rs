@@ -119,6 +119,15 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn dispatch_context_request(&mut self, input:&[u8])->bool {
         if !self.ai_chat_allowed() {return false;}
+        let window_action = match input {
+            b"maximize" | b"maximize window" => Some(crate::ui::window::WindowControl::Maximize),
+            b"minimize" | b"minimize window" => Some(crate::ui::window::WindowControl::Minimize),
+            b"restore" | b"restore window" => Some(crate::ui::window::WindowControl::Restore),
+            _ => None,
+        };
+        if let Some(action) = window_action {
+            if let Some(result) = self.dispatch_native_window(None, action) { return result; }
+        }
         if let Some(update)=assistant::editor_compile_intent::update(input) {
             let Some(goal)=crate::runtime::ai::with_ai_runtime(|ai|ai.software_goal_for_request(input)) else{return false;};
             if self.editor_dialog!=EditorDialog::None {return false;}

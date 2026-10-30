@@ -40,6 +40,36 @@ pub fn element(scene:u8,role:u8)->Option<InstallerTemplateElement<'static>> {
 }
 
 // ------------------------=
+// FUNC: dock_scene
+// DESC: Locates the native-bound dock without reserving IDs already used by user-authored menu screens.
+// ------------------=
+pub fn dock_scene() -> Option<u8> {
+    let t = template()?;
+    (4..=32).find(|&scene| (0..t.element_count(scene).unwrap_or(0))
+        .filter_map(|index| t.element_at(scene, index)).any(|e| e.role == Role::DesktopDock as u8))
+}
+
+// ------------------------=
+// FUNC: dock_hit
+// DESC: Resolves visible dock bindings in authored stacking order, sharing image bounds with native painting.
+// ------------------=
+pub fn dock_hit(point: Point, width: usize, height: usize) -> Option<usize> {
+    let scene = dock_scene()?;
+    let t = template()?;
+    dock_hit_in(t,scene,point,width,height)
+}
+
+// ------------------------=
+// FUNC: dock_hit_in
+// DESC: Hit-tests a validated authored dock in either installed runtime or a Studio-produced acceptance fixture.
+// ------------------=
+pub fn dock_hit_in(t: InstallerTemplate<'_>, scene:u8, point:Point, width:usize, height:usize)->Option<usize> {
+    (0..t.element_count(scene)?).rev().filter_map(|index| t.layer_at(scene, index))
+        .find(|e| !e.hidden && e.opacity > 0 && (73..=80).contains(&e.role)
+            && mapped(*e, width, height, None).contains(point)).map(|e| (e.role - 73) as usize)
+}
+
+// ------------------------=
 // FUNC: bounds
 // DESC: Shares authored geometry between painting and hit targets, excluding hidden and transparent controls.
 // ------------------=

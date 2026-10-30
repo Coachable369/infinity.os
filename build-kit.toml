@@ -182,6 +182,11 @@ domain = "studio"
 command = ["swift", "test", "--scratch-path", "builds/.studio-work/swift", "--cache-path", "builds/.studio-work/cache/swiftpm", "--config-path", "builds/.studio-work/cache/swiftpm-config", "--security-path", "builds/.studio-work/cache/swiftpm-security", "--package-path", "tools/installer-designer", "--filter", "MenuEditorTests|DesktopSceneTests.testDesktopEditingRoundTrip|RuntimeTemplateCodecTests"]
 clean = false
 
+[profiles.studio-desktop-tests]
+domain = "studio"
+command = ["swift", "test", "--scratch-path", "builds/.studio-work/swift", "--cache-path", "builds/.studio-work/cache/swiftpm", "--config-path", "builds/.studio-work/cache/swiftpm-config", "--security-path", "builds/.studio-work/cache/swiftpm-security", "--package-path", "tools/installer-designer", "--filter", "DesktopSceneTests"]
+clean = false
+
 [profiles.studio-menu-native-tests]
 domain = "studio"
 command = ["sh", "tools/studio-menu-test.sh"]

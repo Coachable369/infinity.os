@@ -662,12 +662,13 @@ impl SystemLayout {
                 widget_width,
                 ai_top + ai_height - overview_top,
             ),
-            dock: rect(
+            dock: crate::ui::desktop_template::dock_scene().map(|scene|
+                crate::ui::desktop_template::bounds(scene,72,self.width,self.height).unwrap_or(rect(0,0,0,0))).unwrap_or(rect(
                 self.width.saturating_sub(dock_width) / 2,
                 dock_top,
                 dock_width,
                 dock_height,
-            ),
+            )),
         }
     }
 
@@ -1347,6 +1348,9 @@ impl SystemLayout {
             }
         }
 
+        if crate::ui::desktop_template::dock_scene().is_some() {
+            return crate::ui::desktop_template::dock_hit(point,self.width,self.height).map(DesktopTarget::Dock);
+        }
         let dock_width = self.width * 54 / 100;
         let dock_height = 72 * self.scale;
         let dock_left = self.width.saturating_sub(dock_width) / 2;

@@ -644,6 +644,11 @@
     {
       "id": "os.clock.timeZone",
       "target": "OS_CLOCK:zone:{argument}"
-    }
+    },
+    {"id":"os.app.focus.named","target":"OS_FOCUS:{argument}"},
+    {"id":"os.app.close.named","target":"OS_CLOSE:{argument}"},
+    {"id":"os.app.minimize.named","target":"OS_MINIMIZE:{argument}"},
+    {"id":"os.app.maximize.named","target":"OS_MAXIMIZE:{argument}"},
+    {"id":"os.app.restore.named","target":"OS_RESTORE:{argument}"}
   ]
 }

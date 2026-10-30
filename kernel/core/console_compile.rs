@@ -1088,3 +1088,18 @@ pub(super) fn activate_uikit(x:u32,y:u32,width:u32,height:u32)->bool {
 pub(super) fn close_uikit()->bool {
     crate::ui::native_uikit::request_close()
 }
+
+// ------------------------=
+// FUNC: owns_uikit_window
+// DESC: Resolves the current C application's window name only for its authenticated live session, without trusting model-supplied ownership.
+// ------------------=
+pub(super) fn owns_uikit_window(console: &ConsoleRuntime, name: Option<&[u8]>) -> bool {
+    if !active(console) { return false; }
+    unsafe {
+        if !APP_ACTIVE || !(&*(&raw const APP)).as_ref()
+            .is_some_and(|(owner,_)| *owner == SecurityIdentity(console.current_session.0)) { return false; }
+    }
+    let presentation = crate::ui::native_uikit::presentation();
+    presentation.active && name.map(|name| presentation.title[..presentation.title_length].eq_ignore_ascii_case(name))
+        .unwrap_or(console.desktop_app == DesktopAppKind::CommandWindow && console.command_window.visible)
+}

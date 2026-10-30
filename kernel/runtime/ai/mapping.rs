@@ -4,13 +4,13 @@ use super::control::Command;
 
 pub const PATH: &[u8] = b"/system/ai/instruction-mappings.json";
 pub const REGISTRY_PATH: &[u8] = b"/system/service-registry.json";
-pub const MAX_BYTES: usize = 16 * 1024;
+pub const MAX_BYTES: usize = 24 * 1024;
 pub const REGISTRY_DEFAULT: &[u8] = include_bytes!("../../../system/ai/service-registry.json");
 pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappings.json");
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 256;
-pub const CAPABILITY_TARGETS: [&[u8]; 113] = [
+pub const CAPABILITY_TARGETS: [&[u8]; 118] = [
     b"OS_OPEN:text_editor",
     b"OS_OPEN:file_navigator",
     b"OS_OPEN:browser",
@@ -124,6 +124,11 @@ pub const CAPABILITY_TARGETS: [&[u8]; 113] = [
     b"OS_SETTING:speech:{argument}",
     b"OS_SETTING:theme:{argument}",
     b"OS_SETTING:world:{argument}",
+    b"OS_FOCUS:{argument}",
+    b"OS_CLOSE:{argument}",
+    b"OS_MINIMIZE:{argument}",
+    b"OS_MAXIMIZE:{argument}",
+    b"OS_RESTORE:{argument}",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

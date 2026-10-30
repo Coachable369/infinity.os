@@ -965,3 +965,42 @@ pub(super) fn gui_input(console:&ConsoleRuntime,event:crate::ui::input::UiEvent<
         }).unwrap_or(false)
     }
 }
+
+// ------------------------=
+// FUNC: gui_control
+// DESC: Resolves one owned native app window by title or active focus and delivers ordinary modal-safe lifecycle events, never killing its task.
+// ------------------=
+pub(super) fn gui_control(console: &ConsoleRuntime, name: Option<&[u8]>, action: crate::ui::window::WindowControl) -> Option<bool> {
+    unsafe {
+        let job = &mut *(&raw mut JOB);
+        if job.task.is_none() || job.owner != SecurityIdentity(console.current_session.0) || !active(console) { return None; }
+        let owner = job.gui.context()?;
+        crate::runtime::with_runtime(|runtime| {
+            let mut selected = None;
+            for index in 0..runtime.ui.windows.count() {
+                let Some(window) = runtime.ui.windows.ordered_window(index) else { continue; };
+                if window.owner != owner { continue; }
+                let matches = if let Some(name) = name {
+                    let title = window.title();
+                    title.as_bytes().eq_ignore_ascii_case(name)
+                        || title.split(" — ").next().is_some_and(|base| base.as_bytes().eq_ignore_ascii_case(name))
+                } else { runtime.ui.windows.focused() == Some(window.id) && job.gui_keyboard };
+                if matches {
+                    if selected.is_some() { return Some(false); }
+                    selected = Some(window.id);
+                }
+            }
+            let id = selected?;
+            let display = crate::ui::geometry::Rect { x: 0, y: 0,
+                width: console.system.framebuffer_width as u32, height: console.system.framebuffer_height as u32 };
+            let scale = crate::ui::system_layout::SystemLayout::new(display.width as usize, display.height as usize).scale();
+            let work = crate::runtime::native_gui::client_work_area(display, scale);
+            let success = runtime.ui.windows.control_owned(owner, id, action, work, display).is_ok();
+            if success {
+                runtime.flush_window_events(crate::runtime::ai::qwen::workers::clock_ns(), id.0 as u64, id.0 as u64);
+                job.gui_keyboard = action != crate::ui::window::WindowControl::Minimize;
+            }
+            Some(success)
+        }).flatten()
+    }
+}

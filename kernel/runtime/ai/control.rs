@@ -1,4 +1,30 @@
 //! Bounded desktop tools. Model output is data until an authenticated UI dispatch.
+#[cfg(test)]
+mod native_control_tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: named_window_requests_preserve_target_and_action
+    // DESC: Verifies typed voice/text and model-protocol requests agree without accepting multi-command or executable arguments.
+    // ------------------=
+    #[test]
+    fn named_window_requests_preserve_target_and_action() {
+        use crate::ui::window::WindowControl as A;
+        for (text, protocol, action) in [
+            (b"focus infinitycode".as_slice(), b"OS_FOCUS:infinitycode".as_slice(), A::Focus),
+            (b"close infinitycode", b"OS_CLOSE:infinitycode", A::Close),
+            (b"minimize infinitycode", b"OS_MINIMIZE:infinitycode", A::Minimize),
+            (b"maximize infinitycode", b"OS_MAXIMIZE:infinitycode", A::Maximize),
+            (b"restore infinitycode", b"OS_RESTORE:infinitycode", A::Restore),
+        ] {
+            let expected = Some(Command::NativeWindow(ApplicationName::parse(b"infinitycode").unwrap(), action));
+            assert_eq!(Command::explicit(text), expected);
+            assert_eq!(Command::decode(protocol), expected);
+        }
+        assert_eq!(Command::decode(b"OS_CLOSE:infinitycode;shutdown"), None);
+        assert_eq!(Command::decode(b"OS_FOCUS:infinitycode\nOS_CLOSE:browser"), None);
+        assert_eq!(Command::explicit(b"do not close infinitycode"), None);
+    }
+}
 #[path = "../../ui/editor_compile_intent.rs"]
 mod editor_compile_intent;
 #[path = "setting_command.rs"]
@@ -19,6 +45,7 @@ pub enum Command {
     Focus(App),
     Close(App),
     CloseActive,
+    NativeWindow(ApplicationName, crate::ui::window::WindowControl),
     SettingsSection(u8),
     Context(ContextRequest),
     Spatial,
@@ -205,11 +232,20 @@ impl Command {
         if bytes == b"OS_CLOSE:active" {
             return Some(Self::CloseActive);
         }
+        for (prefix, action) in [(b"OS_MINIMIZE:".as_slice(), crate::ui::window::WindowControl::Minimize),
+            (b"OS_MAXIMIZE:".as_slice(), crate::ui::window::WindowControl::Maximize),
+            (b"OS_RESTORE:".as_slice(), crate::ui::window::WindowControl::Restore)] {
+            if let Some(name) = bytes.strip_prefix(prefix) {
+                return ApplicationName::parse(name).map(|name| Self::NativeWindow(name, action));
+            }
+        }
         if let Some(name) = bytes.strip_prefix(b"OS_FOCUS:") {
-            return App::named(name).map(Self::Focus);
+            return App::named(name).map(Self::Focus).or_else(|| ApplicationName::parse(name)
+                .map(|name| Self::NativeWindow(name, crate::ui::window::WindowControl::Focus)));
         }
         if let Some(name) = bytes.strip_prefix(b"OS_CLOSE:") {
-            return App::named(name).map(Self::Close);
+            return App::named(name).map(Self::Close).or_else(|| ApplicationName::parse(name)
+                .map(|name| Self::NativeWindow(name, crate::ui::window::WindowControl::Close)));
         }
         if let Some(command) = bytes.strip_prefix(b"OS_CONTEXT:") {
             // Source mutation authority must originate in the user's direct request, not model output.
@@ -376,19 +412,29 @@ impl Command {
             return Some(Self::CloseActive);
         }
         if let Some(name) = request.strip_prefix(b"close ") {
-            return App::named(name).map(Self::Close);
+            return App::named(name).map(Self::Close).or_else(|| ApplicationName::parse(name)
+                .map(|name| Self::NativeWindow(name, crate::ui::window::WindowControl::Close)));
         }
         if let Some(name) = request
             .strip_prefix(b"focus on ")
             .or_else(|| request.strip_prefix(b"focus "))
         {
-            return App::named(name).map(Self::Focus);
+            return App::named(name).map(Self::Focus).or_else(|| ApplicationName::parse(name)
+                .map(|name| Self::NativeWindow(name, crate::ui::window::WindowControl::Focus)));
         }
         if let Some(name) = request.strip_prefix(b"bring ").and_then(|s| {
             s.strip_suffix(b" to front")
                 .or_else(|| s.strip_suffix(b" to the front"))
         }) {
-            return App::named(name).map(Self::Focus);
+            return App::named(name).map(Self::Focus).or_else(|| ApplicationName::parse(name)
+                .map(|name| Self::NativeWindow(name, crate::ui::window::WindowControl::Focus)));
+        }
+        for (prefix, action) in [(b"minimize ".as_slice(), crate::ui::window::WindowControl::Minimize),
+            (b"maximize ".as_slice(), crate::ui::window::WindowControl::Maximize),
+            (b"restore ".as_slice(), crate::ui::window::WindowControl::Restore)] {
+            if let Some(name) = request.strip_prefix(prefix) {
+                return ApplicationName::parse(name).map(|name| Self::NativeWindow(name, action));
+            }
         }
         // Unqualified "open ..." also introduces questions such as "open
         // something useful". Reserve the arbitrary-name fast path for the
@@ -488,6 +534,7 @@ impl Command {
             Self::AiInstructionMapping => b"Opened the editable AI instruction mapping in Text Editor.",
             Self::Focus(_) => b"Brought the app to the front.",
             Self::Close(_) | Self::CloseActive => b"Closed the app.",
+            Self::NativeWindow(_, _) => b"Requested the window action through the application's native controls. Complete any save dialog it opens.",
             Self::Context(request) if editor_compile_intent::create_application(&request.bytes[..request.length]) =>
                 b"Opened Text Editor to create your application. Source will be saved in Documents, validated by its native toolchain and launched if validation succeeds.",
             Self::Context(request) if editor_compile_intent::update(&request.bytes[..request.length]).is_some() =>
@@ -515,6 +562,9 @@ pub fn protocol_output(bytes: &[u8]) -> bool {
         b"OS_OPEN:".as_slice(),
         b"OS_FOCUS:",
         b"OS_CLOSE:",
+        b"OS_MINIMIZE:",
+        b"OS_MAXIMIZE:",
+        b"OS_RESTORE:",
         b"OS_CONTEXT:",
         b"OS_SETTINGS:",
         b"OS_SURFACE:",
