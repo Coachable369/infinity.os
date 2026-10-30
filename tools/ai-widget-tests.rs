@@ -87,7 +87,14 @@ fn verify_menu() {
             let stop=Rect{x:g.status.right()-(30*layout.scale())as i32,width:(30*layout.scale())as u32,..g.status};
             for (rect,target) in [(stop,AiChatTarget::Status),(g.close,AiChatTarget::Close),(g.minimize,AiChatTarget::Minimize)] {
                 let p=Point{x:rect.x+rect.width as i32/2,y:rect.y+rect.height as i32/2};
-                assert_eq!(layout.ai_chat_target(p.x*1000/width as i32,p.y*1000/height as i32,minimized),Some(target));
+                let hit=layout.ai_chat_target(p.x*1000/width as i32,p.y*1000/height as i32,minimized);
+                // Studio permits removing decorative/native controls. An absent
+                // control has an empty rectangle and must not remain clickable.
+                if rect.width == 0 || rect.height == 0 {
+                    assert_ne!(hit,Some(target));
+                } else {
+                    assert_eq!(hit,Some(target));
+                }
             }
             assert!(g.status.right()<=g.panel.right() && g.status.bottom()<=g.header.bottom());
             assert!(!g.status.intersects(g.close));
