@@ -570,9 +570,39 @@ fn main() {
         assert_eq!(installer_layout::installer_date_time_target_in(&template,i32::from(r.x+r.width)-1,y),
             Some(DateTarget::Field{focus,part:None,adjustment:1}));
     }
-    let map=template.element(5,InstallerTemplateRole::TimeZoneMap).unwrap().frame;
-    assert!(matches!(installer_layout::installer_date_time_target_in(&template,i32::from(map.x+map.width/2),i32::from(map.y+map.height/2)),
-        Some(DateTarget::Map{longitude:-1..=1})));
+    // The map is optional artwork, unlike the date/time input bindings. Keep
+    // exercising its hit behavior even when the authored design removes it.
+    let mut map_fixture=FACTORY_TEMPLATE.to_vec();
+    if template.element(5,InstallerTemplateRole::TimeZoneMap).is_none() {
+        let mut cursor=8usize;
+        let mut inserted=false;
+        for _ in 0..u16::from_le_bytes([map_fixture[6],map_fixture[7]]) {
+            let screen=map_fixture[cursor];cursor+=1;
+            cursor+=1+usize::from(map_fixture[cursor]);
+            let count=little_u16(&map_fixture,&mut cursor);
+            for _ in 0..count {
+                let (role,kind)=skip_element(&map_fixture,&mut cursor);
+                if screen==5 && !inserted && role==InstallerTemplateRole::SceneBackground as u8 {
+                    map_fixture[kind+1]=InstallerTemplateRole::TimeZoneMap as u8;
+                    map_fixture[kind+3]&=!2;
+                    // Place the fixture above the authored fields so their
+                    // intentional input priority cannot cover its center.
+                    for (offset,value) in [(6,0u16),(8,0),(10,1000),(12,100)] {
+                        map_fixture[kind+offset..kind+offset+2].copy_from_slice(&value.to_le_bytes());
+                    }
+                    let version=u16::from_le_bytes([map_fixture[4],map_fixture[5]]);
+                    let crop_end=cursor-if version>=8 {ACTION_EXTENSION_BYTES}else{0}-if version>=12 {3}else{0};
+                    map_fixture[crop_end-4..crop_end].fill(0);
+                    inserted=true;
+                }
+            }
+        }
+        assert!(inserted);
+    }
+    let map_template=InstallerTemplate::parse(&map_fixture).unwrap();
+    let map=map_template.element(5,InstallerTemplateRole::TimeZoneMap).unwrap().frame;
+    let map_hit=installer_layout::installer_date_time_target_in(&map_template,i32::from(map.x+map.width/2),i32::from(map.y+map.height/2));
+    assert!(matches!(map_hit,Some(DateTarget::Map{longitude:-1..=1})),"map center: {map_hit:?}, frame: {map:?}");
     assert_eq!(installer_layout::installer_date_time_target_in(&template,-1,-1),None);
     let mut moved=FACTORY_TEMPLATE.to_vec();
     let mut cursor=8usize;
@@ -724,10 +754,7 @@ fn main() {
         let badge = template
             .element(5, InstallerTemplateRole::OffsetBadge)
             .expect("UTC offset badge must be a saved semantic control");
-        let map = template
-            .element(5, InstallerTemplateRole::TimeZoneMap)
-            .expect("time-zone map must be a saved semantic layer");
-        assert!(!date.hidden && !time.hidden && !zone.hidden && !badge.hidden && !map.hidden);
+        assert!(!date.hidden && !time.hidden && !zone.hidden && !badge.hidden);
     }
 
     let configuration =

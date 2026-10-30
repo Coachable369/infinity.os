@@ -347,14 +347,12 @@ pub fn installer_wizard_layout(
 ) -> InstallerWizardLayout {
     if let Ok(template) = InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES) {
         if let (
-            Some(masthead),
             Some(panel),
             Some(content),
             Some(back),
             Some(primary),
             Some(footer),
         ) = (
-            template.element(screen, InstallerTemplateRole::Masthead),
             template.element(screen, InstallerTemplateRole::Console),
             template.element(screen, InstallerTemplateRole::Content),
             template.element(screen, InstallerTemplateRole::BackButton),
@@ -362,7 +360,12 @@ pub fn installer_wizard_layout(
             template.element(screen, InstallerTemplateRole::Footer),
         ) {
             return InstallerWizardLayout {
-                masthead: scale_template_rect(masthead.frame, display_width, display_height),
+                // Optional artwork must not invalidate the authored geometry
+                // of functional controls when it is removed in Studio.
+                masthead: template.element(screen, InstallerTemplateRole::Masthead)
+                    .filter(|element| !element.hidden && element.opacity > 0)
+                    .map(|element| scale_template_rect(element.frame, display_width, display_height))
+                    .unwrap_or(InstallerRect { left: 0, top: 0, width: 0, height: 0 }),
                 panel: scale_template_rect(panel.frame, display_width, display_height),
                 content: scale_template_rect(content.frame, display_width, display_height),
                 navigation_rail: InstallerRect {
