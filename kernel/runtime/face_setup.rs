@@ -132,7 +132,7 @@ impl Setup {
         }
         if report.phase==wire::REJECTED {
             if self.control.command!=wire::CAPTURE || self.stage!=Stage::Photos(report.photos as u8)
-                || report.comparisons!=0 || !matches!(report.error,105|204..=214|216..=218) {return Err(Error::Protocol);}
+                || report.comparisons!=0 || !matches!(report.error,105|204..=214|216..=218|222) {return Err(Error::Protocol);}
             for byte in &mut self.photos[report.photos as usize] {unsafe {core::ptr::write_volatile(byte,0);}}
             self.capture_preview=false;
             if report.error==105 {self.erase_preview();}

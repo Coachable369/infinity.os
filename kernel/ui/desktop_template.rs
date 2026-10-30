@@ -17,7 +17,12 @@ pub fn template() -> Option<InstallerTemplate<'static>> {
     #[cfg(not(studio_native_preview))]
     let bytes=BYTES;
     if VALIDATED.state.load(Ordering::Acquire)==2 {return unsafe{*VALIDATED.value.get()};}
-    if VALIDATED.state.compare_exchange(0,1,Ordering::Acquire,Ordering::Relaxed).is_err(){return None;}
+    if VALIDATED.state.compare_exchange(0,1,Ordering::Acquire,Ordering::Relaxed).is_err(){
+        // A concurrent initializer is not a missing/invalid desktop document.
+        // Publish once; other readers must observe that same parsed generation.
+        while VALIDATED.state.load(Ordering::Acquire)!=2 {core::hint::spin_loop();}
+        return unsafe{*VALIDATED.value.get()};
+    }
     let value=InstallerTemplate::parse_desktop(bytes).ok();
     unsafe{*VALIDATED.value.get()=value;}
     VALIDATED.state.store(2,Ordering::Release);

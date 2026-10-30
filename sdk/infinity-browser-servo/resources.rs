@@ -9,7 +9,9 @@ mod resource_order;
 #[path="compression.rs"] mod compression;
 #[path="image_download.rs"] mod image_download;
 
-pub const MAX_BODY: usize = 4 * 1024 * 1024;
+// Match the native HTTPS wire allocation; decoded expansion remains bounded
+// independently so gzip cannot consume unbounded browser memory.
+pub const MAX_BODY: usize = 16 * 1024 * 1024;
 const MAX_REQUESTS: usize = 512;
 const TIMEOUT_NS: u64 = 120_000_000_000;
 

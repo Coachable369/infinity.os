@@ -18,7 +18,9 @@ use core::{
 };
 
 pub const BODY: usize = crate::http_transport::https::MAX_RESPONSE_BODY;
-const BROWSER_BODY: usize = 4 * 1024 * 1024;
+// Browser assets use the same bounded transport allocation as other native
+// clients. A smaller slice silently rejected large scripts and images midway.
+const BROWSER_BODY: usize = BODY;
 const HEAD: usize = 8192;
 static BODY_LOANED: AtomicBool = AtomicBool::new(false);
 static mut BODY_STORAGE: [u8; BODY] = [0; BODY];

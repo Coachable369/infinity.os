@@ -274,7 +274,7 @@ fn preview_and_capture_timeouts_preserve_progress_without_auto_acceptance() {
 #[test]
 fn quality_rejection_requests_same_view_and_removes_candidate() {
     let mut setup=start();
-    for (attempt,error) in [214,216].into_iter().enumerate() {
+    for (attempt,error) in [214,216,222].into_iter().enumerate() {
         let now=102+attempt as u64*10;
         setup.capture(now).unwrap();deliver_photo(&mut setup,now+1,77);
         assert_eq!(setup.photo_status(0),PhotoStatus::Checking);

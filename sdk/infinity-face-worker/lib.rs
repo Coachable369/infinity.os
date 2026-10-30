@@ -60,7 +60,7 @@ fn visit(command:u64)->bool {
 // ------------------=
 fn report(c:&p::Control,phase:u32,error:u32,state:Option<State>) {
     let phase=if phase==p::FAILED && c.command==p::CAPTURE && matches!(state,Some(State::Photos(_)))
-        && matches!(error,105|204..=214|216..=218) {p::REJECTED}else{phase};
+        && matches!(error,105|204..=214|216..=218|222) {p::REJECTED}else{phase};
     let (photos,comparisons)=match state {Some(State::Photos(n))=>(n as u32,0),Some(State::Verifying(n))=>(3,n as u32),
         Some(State::ReadyToVerify)=>(3,0),Some(State::Verified)=>(3,3),_=>(0,0)};
     let r=p::Report::new(c.command_id,phase,error,photos,comparisons);
@@ -241,7 +241,7 @@ unsafe fn work()->Result<(),u32> {
                     let code=match error {
                         R::Quality(error)=>200+error as u32,
                         R::Image(V::NoFace)=>206,R::Image(V::MultipleFaces|V::Crowded)=>207,
-                        R::Image(V::Pose)=>216,R::Image(V::Landmarks)=>212,
+                        R::Image(V::Pose)=>216,R::Image(V::Landmarks)=>222,
                         R::Cancelled=>105,_=>110,
                     };
                     report(&c,p::FAILED,code,Some(e.state()));break;

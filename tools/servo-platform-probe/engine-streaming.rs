@@ -177,6 +177,11 @@ fn verify_gzip(engine:&Servo)->bool {
     use std::io::Write;
     for streamed in [false,true] {
         let mut encoder=flate2::write::GzEncoder::new(std::vec::Vec::new(),flate2::Compression::default());
+        // A valid resource beyond the former 4 MiB decoded ceiling must reach
+        // the real engine in both whole-response and streamed delivery modes.
+        if encoder.write_all(b"<!--").is_err()
+            || encoder.write_all(&std::vec![b' ';5*1024*1024]).is_err()
+            || encoder.write_all(b"-->").is_err() {return false;}
         if encoder.write_all(b"<!doctype html><html><head><style>body{margin:0;background:rgb(20,220,30)}</style></head><body>Compressed native page</body></html>").is_err() {return false;}
         let Ok(body)=encoder.finish() else {return false;};
         let Ok(session)=session::Session::new(engine,CompressedProvider{stage:0,body,streamed},super::super::monotonic,256,192) else {return false;};

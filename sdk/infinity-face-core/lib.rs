@@ -28,7 +28,7 @@ pub enum Error {
     InvalidPolicy, InvalidName, WrongState, WrongCapture, StaleFrame, TooSoon,
     NoFace, MultipleFaces, TooSmall, InvalidPixels, TooDark, TooBright, Clipped,
     LowContrast, Blurred, InvalidEmbedding, WrongPose, DifferentPerson,
-    NoMatch, Cancelled, Expired, AttemptsExhausted,
+    NoMatch, Cancelled, Expired, AttemptsExhausted, UnusableLandmarks,
 }
 
 /// Experimental comparison thresholds must be supplied by the evaluated model
@@ -84,28 +84,57 @@ pub struct Enrollment {
 // ------------------=
 pub fn quality(pixels: &[u8], min_laplacian_variance: u32) -> Result<(), Error> {
     if pixels.len() != CROP_SIDE * CROP_SIDE { return Err(Error::InvalidPixels); }
-    let n = pixels.len() as i64;
+    // SFace alignment includes hair and background around the facial landmarks.
+    // Evaluate the landmark region, not a bright window or dark wall beside a
+    // turned face. The same region and thresholds apply to enrollment and login.
+    const LEFT: usize = 24;
+    const RIGHT: usize = 88;
+    const TOP: usize = 32;
+    const BOTTOM: usize = 104;
+    let n = ((RIGHT-LEFT)*(BOTTOM-TOP)) as i64;
     let mut sum = 0i64;
     let mut squares = 0i64;
     let mut clipped = 0;
-    for &p in pixels { let v = i64::from(p); sum += v; squares += v*v; clipped += usize::from(p < 8 || p > 247); }
+    for y in TOP..BOTTOM { for x in LEFT..RIGHT {
+        let p=pixels[y*CROP_SIDE+x];
+        let v = i64::from(p); sum += v; squares += v*v; clipped += usize::from(p < 8 || p > 247);
+    }}
     if sum < 40*n { return Err(Error::TooDark); }
     if sum > 215*n { return Err(Error::TooBright); }
-    if clipped * 5 > pixels.len() { return Err(Error::Clipped); }
+    if clipped * 5 > n as usize { return Err(Error::Clipped); }
     if squares*n - sum*sum < 144*n*n { return Err(Error::LowContrast); }
     let mut lap_sum = 0i64;
     let mut lap_squares = 0i64;
-    for y in 1..CROP_SIDE-1 { for x in 1..CROP_SIDE-1 {
+    for y in TOP+1..BOTTOM-1 { for x in LEFT+1..RIGHT-1 {
         let at = y*CROP_SIDE+x;
         let l = i64::from(pixels[at-1])+i64::from(pixels[at+1])
             +i64::from(pixels[at-CROP_SIDE])+i64::from(pixels[at+CROP_SIDE])-4*i64::from(pixels[at]);
         lap_sum += l; lap_squares += l*l;
     }}
-    let count = ((CROP_SIDE-2)*(CROP_SIDE-2)) as i64;
+    let count = ((RIGHT-LEFT-2)*(BOTTOM-TOP-2)) as i64;
     if lap_squares*count-lap_sum*lap_sum < i64::from(min_laplacian_variance)*count*count {
         return Err(Error::Blurred);
     }
     Ok(())
+}
+
+// ------------------------=
+// FUNC: quality_excludes_background_but_rejects_unusable_faces
+// DESC: Checks that background clipping cannot reject detailed facial pixels and that actual face defects remain rejected.
+// ------------------=
+#[test]
+fn quality_excludes_background_but_rejects_unusable_faces() {
+    for background in [0,255] {
+        let mut crop=[background;CROP_SIDE*CROP_SIDE];
+        for y in 32..104 {for x in 24..88 {crop[y*CROP_SIDE+x]=if (x+y)%2==0 {80}else{180};}}
+        assert_eq!(quality(&crop,100),Ok(()));
+    }
+    assert_eq!(quality(&[0;CROP_SIDE*CROP_SIDE],100),Err(Error::TooDark));
+    assert_eq!(quality(&[255;CROP_SIDE*CROP_SIDE],100),Err(Error::TooBright));
+    assert_eq!(quality(&[120;CROP_SIDE*CROP_SIDE],100),Err(Error::LowContrast));
+    let mut smooth=[0;CROP_SIDE*CROP_SIDE];
+    for y in 0..CROP_SIDE {for x in 0..CROP_SIDE {smooth[y*CROP_SIDE+x]=(50+x) as u8;}}
+    assert_eq!(quality(&smooth,100),Err(Error::Blurred));
 }
 
 // ------------------------=
