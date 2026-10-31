@@ -180,7 +180,7 @@ final class EclipseAccessTests: XCTestCase {
         let encoded = try RuntimeTemplateCodec.encode(document, assetRoot: root)
         XCTAssertEqual(encoded, try RuntimeTemplateCodec.encode(document))
         XCTAssertEqual(try RuntimeTemplateCodec.decode(encoded, collection: .configuration), document)
-        for screen in document.screens {
+        for screen in document.screens.prefix(8) {
             let images = screen.elements.filter { $0.kind == .image }
             XCTAssertEqual(images.count, 2)
             let wordmark = try XCTUnwrap(images.first { $0.role == .image })

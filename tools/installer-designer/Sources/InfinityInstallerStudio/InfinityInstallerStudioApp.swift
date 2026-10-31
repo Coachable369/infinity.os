@@ -58,6 +58,9 @@ struct InfinityInstallerStudioApp: App {
                 if source.lastPathComponent == "login-screens.infinityui" {
                     document = document.migratedForLoginMotion()
                 }
+                if source.lastPathComponent == "configuration-screens.infinityui" {
+                    document = document.migratedForFacialEnrollment()
+                }
                 let collection: ScreenCollection = if source.lastPathComponent == "boot-screens.infinityui" {
                     .boot
                 } else if source.lastPathComponent == "desktop-screens.infinityui" {

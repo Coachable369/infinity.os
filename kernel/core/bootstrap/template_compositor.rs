@@ -470,7 +470,7 @@ impl DisplayDevice {
     // FUNC: access_template_control_with_focus
     // DESC: Shares the native control painter while allowing authentication's typed action focus without changing button styles.
     // ------------------=
-    fn access_template_control_with_focus(&mut self, element: InstallerTemplateElement<'_>,
+    pub(super) fn access_template_control_with_focus(&mut self, element: InstallerTemplateElement<'_>,
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>, progress:(usize,usize), focus_override: Option<bool>) {
         self.with_template_typography(element, |display| display.access_template_control_styled(element, navigation, progress, focus_override));
     }

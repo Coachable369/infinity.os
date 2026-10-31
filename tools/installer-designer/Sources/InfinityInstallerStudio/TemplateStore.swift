@@ -237,7 +237,7 @@ final class TemplateStore: ObservableObject {
             try? Data(contentsOf: root.appending(path: "assets/boot/configuration-screens.infinityui"))
         }.flatMap { data in
             try? JSONDecoder().decode(InstallerStudioDocument.self, from: data)
-        }
+        }.map { $0.migratedForFacialEnrollment() }
         configurationDocument = if let configuration,
                                    (try? TemplateValidator.validate(configuration, for: .configuration)) != nil {
             configuration
@@ -517,6 +517,10 @@ final class TemplateStore: ObservableObject {
         case .desktop: InstallerStudioDocument.factoryDesktop()
         }
         var screen = selectedScreen ?? factory.screens[0]
+        // A new ordinary wizard page must not inherit enrollment-only live bindings.
+        if selectedCollection == .configuration && screen.id == 9 {
+            screen = factory.screens[0]
+        }
         screen.title = "New Screen"
         screen.elements = clonedElements(screen.elements)
         activeDocument.screens.insert(screen, at: insertion)

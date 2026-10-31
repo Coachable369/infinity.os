@@ -10,6 +10,19 @@ pub enum Error {
 pub struct Cursor { offset: usize }
 impl Cursor {
     // ------------------------=
+    // FUNC: complete
+    // DESC: Checks only unconsumed chunk framing during streaming, compacting the body once at completion.
+    // ------------------=
+    pub fn complete(&self, bytes: &mut [u8], framing: Body, eof: bool) -> Result<Option<usize>, Error> {
+        if framing == Body::Chunked {
+            let pending = bytes.get(self.offset..).ok_or(Error::Invalid)?;
+            if chunk_end(pending)?.is_none() {
+                return if eof { Err(Error::Truncated) } else { Ok(None) };
+            }
+        }
+        complete(bytes, framing, eof)
+    }
+    // ------------------------=
     // FUNC: next
     // DESC: Exposes each authenticated payload byte once, withholding chunk data until its framing is validated.
     // ------------------=
@@ -43,6 +56,35 @@ impl Cursor {
 #[cfg(test)]
 mod streaming_tests {
     use super::*;
+    // ------------------------=
+    // FUNC: incremental_completion_preserves_payload_and_trailer_validation
+    // DESC: Exercises many fragmented chunks, malformed trailers, and EOF through the production streaming completion path.
+    // ------------------=
+    #[test]
+    fn incremental_completion_preserves_payload_and_trailer_validation() {
+        let mut wire = b"1\r\nx\r\n".repeat(4096);
+        wire.extend_from_slice(b"0\r\nX-Trace: yes\r\n\r\n");
+        let mut cursor = Cursor::default();
+        let mut received = std::vec::Vec::new();
+        for n in 0..=wire.len() {
+            while let Some(chunk) = cursor.next(&wire[..n], Body::Chunked).unwrap() {
+                received.extend_from_slice(chunk);
+            }
+            let result = cursor.complete(&mut wire[..n], Body::Chunked, false).unwrap();
+            if n < wire.len() { assert_eq!(result, None); }
+            else { assert_eq!(result, Some(4096)); }
+        }
+        assert_eq!(received, std::vec![b'x'; 4096]);
+        assert_eq!(&wire[..4096], received.as_slice());
+        for mut bad in [b"1\r\nx\r\n0\r\nContent-Length: 1\r\n\r\n".to_vec(),
+                        b"1\r\nx\r\n0\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec()] {
+            let mut cursor = Cursor::default();
+            assert_eq!(cursor.next(&bad, Body::Chunked).unwrap(), Some(&b"x"[..]));
+            assert_eq!(cursor.complete(&mut bad, Body::Chunked, false), Err(Error::Invalid));
+        }
+        let mut truncated = *b"1\r\n";
+        assert_eq!(Cursor::default().complete(&mut truncated, Body::Chunked, true), Err(Error::Truncated));
+    }
     // ------------------------=
     // FUNC: fragmented_payload_is_delivered_once_before_completion
     // DESC: Verifies early fixed-length and validated chunk payloads, exact concatenation, and malformed framing rejection.

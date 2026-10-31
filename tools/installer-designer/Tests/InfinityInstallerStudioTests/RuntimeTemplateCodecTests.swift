@@ -892,15 +892,15 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         XCTAssertEqual(configuration.screens.map(\.title), [
             "Welcome", "Node Name", "Profile Name", "Display Name", "Password",
-            "Privacy & Appearance", "Network", "Ready",
+            "Privacy & Appearance", "Network", "Ready", "Facial Recognition",
         ])
-        XCTAssertEqual(configuration.screens.map(\.id), Array(1...8))
+        XCTAssertEqual(configuration.screens.map(\.id), Array(1...9))
         for screen in configuration.screens {
             XCTAssertEqual(screen.elements.filter { $0.role == .backButton && $0.locked }.count, 1)
             XCTAssertEqual(screen.elements.filter { $0.role == .primaryButton && $0.locked }.count, 1)
             XCTAssertTrue(screen.elements.filter { $0.kind != .button }.allSatisfy { !$0.locked })
             let progress = screen.elements.filter { $0.role == .progressSegment }
-            XCTAssertEqual(progress.count, 8)
+            XCTAssertEqual(progress.count, screen.id == 9 ? 0 : 8)
             XCTAssertTrue(progress.allSatisfy {
                 $0.kind == .panel && $0.frame.height == 20 && $0.text.isEmpty
             })
@@ -913,13 +913,13 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             configuration.screens.filter { screen in
                 screen.elements.contains { $0.role == .input && !$0.hidden }
             }.map(\.id),
-            [2, 3, 4, 5]
+            [2, 3, 4, 5, 9]
         )
         XCTAssertEqual(
             configuration.screens.flatMap { screen in
                 screen.elements.filter { $0.role == .input && !$0.hidden }.map(\.inputVariable)
             },
-            [.machineNodeName, .profileName, .displayName, .password]
+            [.machineNodeName, .profileName, .displayName, .password, .facialProfileName]
         )
         XCTAssertNoThrow(try TemplateValidator.validate(configuration))
         XCTAssertEqual(
@@ -935,7 +935,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     func testConfigurationFactoryUsesCanonicalUIKitGeometryAndTheme() throws {
         let configuration = InstallerStudioDocument.factoryConfiguration()
 
-        for screen in configuration.screens {
+        for screen in configuration.screens.prefix(8) {
             let card = try XCTUnwrap(screen.elements.first { $0.role == .console })
             let content = try XCTUnwrap(screen.elements.first { $0.role == .content })
             let title = try XCTUnwrap(screen.elements.first { $0.role == .title })
@@ -965,7 +965,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         XCTAssertEqual(welcomeBack.opacity, 0)
         XCTAssertEqual(welcomeBack.frame, welcomePrimary.frame)
 
-        for screen in configuration.screens[1...] {
+        for screen in configuration.screens[1...7] {
             let back = try XCTUnwrap(screen.elements.first { $0.role == .backButton })
             let primary = try XCTUnwrap(screen.elements.first { $0.role == .primaryButton })
             XCTAssertEqual(primary.frame.x - (back.frame.x + back.frame.width), 8)
@@ -1095,7 +1095,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         XCTAssertEqual(store.selectedCollection, .configuration)
         XCTAssertEqual(store.document, installerBefore)
-        XCTAssertEqual(store.configurationDocument.screens.count, 9)
+        XCTAssertEqual(store.configurationDocument.screens.count, 10)
         XCTAssertTrue(store.configurationDocument.screens.contains { $0.title == "Recovery Options" })
         XCTAssertTrue(store.configurationDocument.screens[2].elements.contains {
             $0.role == .title && $0.text == "Choose a local profile"

@@ -208,7 +208,7 @@ pub async fn request_streaming<S: Read + Write, R: rand_core::CryptoRngCore>(
                     core::task::Poll::Ready(())
                 } else { core::task::Poll::Pending }).await;
             }
-            if let Some(length) = body::complete(
+            if let Some(length) = cursor.complete(
                 &mut buffers.response[head.bytes..used],
                 head.body,
                 count == 0,

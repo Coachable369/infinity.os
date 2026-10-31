@@ -8,6 +8,25 @@ impl Layout {
     // DESC: Keeps 4:3 camera pixels and generous shared gutters within the existing configuration content frame.
     // ------------------=
     pub fn new(width:usize,height:usize)->Self {
+        let mut layout=Self::fallback(width,height);
+        if let Ok(template)=super::installer_template::InstallerTemplate::parse(super::installer_layout::CONFIGURATION_TEMPLATE_BYTES) {
+            if template.element_count(9).is_some() {
+                for (id,target) in [(b"facePanel" as &[u8],&mut layout.card),(b"faceTitle",&mut layout.title),
+                    (b"faceGuidance",&mut layout.guidance),(b"faceName",&mut layout.field),
+                    (b"facePreview",&mut layout.preview),(b"faceMesh",&mut layout.mask),
+                    (b"faceStatus",&mut layout.status),(b"faceBack",&mut layout.back),
+                    (b"faceSkip",&mut layout.skip),(b"facePrimary",&mut layout.primary)] {
+                    *target=binding(&template,id,width,height).unwrap_or(Rect{x:0,y:0,width:0,height:0});
+                }
+            }
+        }
+        layout
+    }
+    // ------------------------=
+    // FUNC: fallback
+    // DESC: Retains layout compatibility for configuration documents predating the authored facial screen.
+    // ------------------=
+    fn fallback(width:usize,height:usize)->Self {
         let unit=|value:usize|(value*height/1000).max(1);
         let left=width*8/100;let top=height*16/100;
         let w=width*84/100;let h=height*70/100;let gutter=unit(32);
@@ -35,4 +54,19 @@ impl Layout {
         [(self.back,0),(self.primary,1),(self.field,2),(self.skip,3)].into_iter()
             .find_map(|(rect,id)|rect.contains(point).then_some(id))
     }
+}
+
+// ------------------------=
+// FUNC: binding
+// DESC: Resolves visible authored face bounds for painting, camera damage, animation and pointer routing.
+// ------------------=
+pub fn binding(template:&super::installer_template::InstallerTemplate<'_>,id:&[u8],width:usize,height:usize)->Option<Rect> {
+    for index in 0..template.element_count(9)? {
+        let e=template.element_at(9,index)?;
+        if e.code_identifier==id && !e.hidden && e.opacity>0 {
+            let r=super::installer_layout::scale_template_rect(e.frame,width,height);
+            return Some(Rect{x:r.left as i32,y:r.top as i32,width:r.width as u32,height:r.height as u32});
+        }
+    }
+    None
 }

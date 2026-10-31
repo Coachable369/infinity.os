@@ -315,11 +315,17 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             return Err("Native boot scene rejected the template".into());
         }
     } else if kind==1 {
+        if screen==9 {
+            if !target.face_template_frame(bytes,b"Everyday",focus,false,&crate::runtime::face_setup::Setup::new(),true) {
+                return Err("Native facial enrollment scene rejected the template".into());
+            }
+        } else {
         let network=if screen==7 {Some(onboarding_network_view::NetworkViewState{selected:0,connected:true,
             wired_detail:b"Connected link detected",wireless_detail:b"No wireless adapter detected"})}else{None};
         if !target.configuration_template_scene_data(bytes,usize::from(screen-1),focus,
             template_compositor::ConfigurationViewState{input:b"",masked:false,validation_error:false,network}) {
             return Err("Native configuration composition rejected the scene".into());
+        }
         }
     } else if !settings_rendered && !target.template_scene_data_with_date_time(bytes,screen,navigation,true,false,live_details,
         if state.simulated {Some((usize::from(state.percent),b"Simulated installation progress"))}else{None},kind==1,kind==2,date_time) {

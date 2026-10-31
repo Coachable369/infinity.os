@@ -288,7 +288,7 @@ struct ElementInspector: View {
 
     private var availableInputVariables: [StudioInputVariable] {
         store.selectedCollection == .configuration
-            ? [.machineNodeName, .profileName, .displayName, .password]
+            ? [.machineNodeName, .profileName, .displayName, .password, .facialProfileName]
             : [.none]
     }
 

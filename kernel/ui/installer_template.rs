@@ -251,6 +251,7 @@ pub enum InstallerTemplateVariable {
     ProfileName = 2,
     DisplayName = 3,
     Password = 4,
+    FacialProfileName = 5,
 }
 
 // ------------------------=
@@ -951,7 +952,7 @@ impl<'a> Reader<'a> {
         if !(1..=6).contains(&kind)
             || role > InstallerTemplateRole::LauncherScrollbar as u8
             || (role == InstallerTemplateRole::SceneBackground as u8 && (kind != 2 || self.version < 10))
-            || input_variable > InstallerTemplateVariable::Password as u8
+            || input_variable > InstallerTemplateVariable::FacialProfileName as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
             || (role == InstallerTemplateRole::ProgressHero as u8 && kind != 2)

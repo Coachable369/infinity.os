@@ -342,6 +342,7 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
     case profileName = "user.profile_name"
     case displayName = "user.display_name"
     case password = "credential.password"
+    case facialProfileName = "credential.facial_profile_name"
 
     var id: String { rawValue }
     var title: String {
@@ -351,6 +352,7 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
         case .profileName: "Profile Name"
         case .displayName: "Display Name"
         case .password: "Password"
+        case .facialProfileName: "Facial Profile Name"
         }
     }
     var isSecure: Bool { self == .password }
@@ -361,6 +363,7 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
         case .profileName: 2
         case .displayName: 3
         case .password: 4
+        case .facialProfileName: 5
         }
     }
 
@@ -375,6 +378,7 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
         case 2: self = .profileName
         case 3: self = .displayName
         case 4: self = .password
+        case 5: self = .facialProfileName
         default: return nil
         }
     }
@@ -409,7 +413,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         case .login: 1
         case .boot: 2
         case .installation: 11
-        case .configuration: 8
+        case .configuration: 9
         case .systemSettings: 11
         case .desktop: 3
         }
@@ -420,7 +424,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Resolves the fixed InfinityOS runtime workflow represented by one template document.
     // ------------------=
     static func runtimeCollection(screenCount: Int) -> ScreenCollection? {
-        if screenCount == ScreenCollection.configuration.requiredScreenCount { return .configuration }
+        if screenCount == 8 || screenCount == ScreenCollection.configuration.requiredScreenCount { return .configuration }
         if screenCount == ScreenCollection.installation.requiredScreenCount { return .installation }
         return nil
     }
@@ -430,6 +434,9 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if self == .configuration && screenID == 9 {
+            return [.console, .title, .body, .input, .backButton, .primaryButton].contains(role) ? 1 : 0
+        }
         if self == .desktop { return role == .console && screenID <= 3 ? 1 : 0 }
         if self == .login { return [.input, .primaryButton].contains(role) ? 1 : 0 }
         if self == .boot { return role == .progressBar ? 1 : 0 }
@@ -906,7 +913,7 @@ struct InstallerStudioDocument: Codable, Hashable {
 
     // ------------------------=
     // FUNC: factoryConfiguration
-    // DESC: Builds the eight-screen post-install configuration document used by the real first-boot flow.
+    // DESC: Builds configuration screens and the separately bound facial enrollment step.
     // ------------------=
     static func factoryConfiguration() -> InstallerStudioDocument {
         let names = [
@@ -951,7 +958,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             version: currentVersion,
             canvasWidth: 1000,
             canvasHeight: 1000,
-            screens: screens
+            screens: screens + [facialEnrollmentScreen()]
         )
     }
 
