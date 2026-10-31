@@ -59,8 +59,10 @@ fn visit(command:u64)->bool {
 // DESC: Reports UI progress only; the wire record has no authentication result or credential field.
 // ------------------=
 fn report(c:&p::Control,phase:u32,error:u32,state:Option<State>) {
-    let phase=if phase==p::FAILED && c.command==p::CAPTURE && matches!(state,Some(State::Photos(_)))
-        && matches!(error,105|204..=214|216..=218|222) {p::REJECTED}else{phase};
+    let recoverable=matches!(error,105|204..=214|216..=218|222);
+    let retry_capture=c.command==p::CAPTURE && matches!(state,Some(State::Photos(_)));
+    let retry_verification=c.command==p::VERIFY && matches!(state,Some(State::Verifying(_)));
+    let phase=if phase==p::FAILED && recoverable && (retry_capture||retry_verification) {p::REJECTED}else{phase};
     let (photos,comparisons)=match state {Some(State::Photos(n))=>(n as u32,0),Some(State::Verifying(n))=>(3,n as u32),
         Some(State::ReadyToVerify)=>(3,0),Some(State::Verified)=>(3,3),_=>(0,0)};
     let r=p::Report::new(c.command_id,phase,error,photos,comparisons);
@@ -214,7 +216,7 @@ unsafe fn work()->Result<(),u32> {
             || (c.command==p::VERIFY && !matches!(e.state(),State::ReadyToVerify|State::Verifying(_))) {
             report(&c,p::FAILED,108,Some(e.state()));continue;
         }
-        if c.command==p::VERIFY && e.state()==State::ReadyToVerify {
+        if c.command==p::VERIFY {
             if let Err(error)=e.begin_verification(binding(&c),clock()?) {report(&c,p::FAILED,200+error as u32,Some(e.state()));continue;}
         }
         let frames=if let State::Verifying(n)=e.state() {3u8.saturating_sub(n)}else{1};

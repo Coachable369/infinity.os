@@ -230,7 +230,7 @@ impl Enrollment {
     // ------------------=
     pub fn begin_verification(&mut self, binding: Binding, now_ms: u64) -> Result<(), Error> {
         self.tick(now_ms)?;
-        if self.state != State::ReadyToVerify { return Err(Error::WrongState); }
+        if !matches!(self.state,State::ReadyToVerify|State::Verifying(_)) { return Err(Error::WrongState); }
         if binding.account != self.binding.account || binding.worker != self.binding.worker
             || binding.model != self.binding.model || binding.lease == 0 || binding.lease == self.binding.lease {
             return Err(Error::WrongCapture);

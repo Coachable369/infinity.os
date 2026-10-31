@@ -27,7 +27,7 @@ class Studio:
         toolbar.pack(fill="x")
         ttk.Label(toolbar, text="InfinityCode   /   PYTHON", font=("Inter", 15, "bold")).pack(side="left", padx=(0, 20))
         for title, command in (("Open", self.load), ("Save", self.save), ("Undo", self.undo),
-                               ("Redo", self.redo), ("Generate Python", self.generate), ("Export .py", self.export)):
+                               ("Redo", self.redo), ("Check Python", self.check_python), ("Generate Python", self.generate), ("Export .py", self.export)):
             ttk.Button(toolbar, text=title, command=lambda action=command: self.perform(action)).pack(side="left", padx=3)
         workspace = ttk.Frame(root, padding=10)
         workspace.pack(fill="both", expand=True)
@@ -52,6 +52,7 @@ class Studio:
             field.pack(fill="x")
             self.fields[key] = field
         ttk.Button(right, text="Apply properties", command=lambda: self.perform(self.apply)).pack(fill="x", pady=16)
+        ttk.Button(right, text="Go to handler", command=lambda: self.perform(self.goto_handler)).pack(fill="x", pady=3)
         self.snap = tk.BooleanVar(root, True)
         ttk.Checkbutton(right, text="Snap · 10 px", variable=self.snap).pack(anchor="w")
         ttk.Label(right, text="Drag to move.\nCorner grip resizes.\nCanvas: 640 × 420").pack(anchor="w", pady=16)
@@ -87,6 +88,9 @@ class Studio:
         methods_scroll.pack(side="right", fill="y")
         self.methods.pack(fill="both", expand=True)
         self.methods.configure(yscrollcommand=methods_scroll.set)
+        for editor in (self.source,self.methods):
+            editor.tag_configure("diagnostic", background="#602D42", foreground="#FFFFFF")
+            editor.bind("<Control-Return>",lambda event:self.check_python())
         footer = ttk.Frame(root, padding=10)
         footer.pack(fill="x")
         self.path = ttk.Entry(footer, width=55)
@@ -96,6 +100,46 @@ class Studio:
         ttk.Label(footer, textvariable=self.status).pack(side="left", padx=12)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.saved = copy.deepcopy(self.project.data)
+
+    # ------------------------=
+    # FUNC: check_python
+    # DESC: Checks source and event methods without execution and navigates to the first precise syntax diagnostic.
+    # ------------------=
+    def check_python(self):
+        for editor,tab,label in ((self.source,1,"Python"),(self.methods,2,"Event Methods")):
+            editor.tag_remove("diagnostic","1.0","end")
+            try:
+                compile(editor.get("1.0","end-1c"),label,"exec")
+            except SyntaxError as error:
+                line=max(1,error.lineno or 1)
+                index=f"{line}.{max(0,(error.offset or 1)-1)}"
+                self.tabs.select(tab);editor.mark_set("insert",index)
+                editor.tag_add("diagnostic",f"{line}.0",f"{line}.end")
+                editor.see(index);editor.focus_set()
+                self.status.set(f"{label}:{line}:{error.offset or 1} — {error.msg}")
+                return "break"
+        self.status.set("Python and event methods: no syntax errors · not executed")
+        return "break"
+
+    # ------------------------=
+    # FUNC: goto_handler
+    # DESC: Navigates to an existing connected method using Python syntax rather than ambiguous text matching.
+    # ------------------=
+    def goto_handler(self):
+        import ast
+        name=self.fields["handler"].get().strip()
+        if not name:
+            self.status.set("Select a control with a connected handler first")
+            return
+        tree=ast.parse(self.methods.get("1.0","end-1c"))
+        for node in tree.body:
+            if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name==name:
+                index=f"{node.lineno}.0"
+                self.tabs.select(2);self.methods.mark_set("insert",index)
+                self.methods.see(index);self.methods.focus_set()
+                self.status.set("Event method: "+name)
+                return
+        self.status.set("No event method defined: "+name)
 
     # ------------------------=
     # FUNC: perform

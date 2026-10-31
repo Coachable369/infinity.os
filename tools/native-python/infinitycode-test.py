@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "sdk/python"))
@@ -14,6 +14,35 @@ from infinitycode_model import Project, KINDS, WIDTH, validate, export_source, c
 
 
 class ProjectTests(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_editor_diagnostics_and_handler_navigation
+    # DESC: Exercises source validation and method navigation with widget doubles, including exact error selection and no execution.
+    # ------------------=
+    def test_editor_diagnostics_and_handler_navigation(self):
+        import importlib.util
+        from types import SimpleNamespace
+        tk=SimpleNamespace(ttk=SimpleNamespace(),messagebox=SimpleNamespace())
+        spec=importlib.util.spec_from_file_location("infinitycode_diagnostic_test",ROOT/"sdk/python/infinitycode.py")
+        module=importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules,{"tkinter":tk,"tkinter.ttk":tk.ttk,"tkinter.messagebox":tk.messagebox}):
+            spec.loader.exec_module(module)
+        editor=module.Studio.__new__(module.Studio)
+        editor.source=MagicMock();editor.methods=MagicMock()
+        editor.tabs=MagicMock();editor.status=MagicMock()
+        editor.source.get.return_value="x = 1\ndef broken(:\n    pass\n"
+        editor.methods.get.return_value="def activate():\n    pass\n"
+        editor.check_python()
+        editor.tabs.select.assert_called_with(1)
+        editor.source.tag_add.assert_called_with("diagnostic","2.0","2.end")
+        editor.source.get.return_value="raise RuntimeError('must not execute')\n"
+        editor.check_python()
+        editor.fields={"handler":MagicMock()}
+        editor.fields["handler"].get.return_value="activate"
+        editor.goto_handler()
+        editor.tabs.select.assert_called_with(2)
+        editor.methods.mark_set.assert_called_with("insert","1.0")
+        editor.methods.focus_set.assert_called_once()
+
     # ------------------------=
     # FUNC: test_connected_methods_survive_regeneration
     # DESC: Executes exported callbacks against a widget adapter and verifies control events mutate application state.

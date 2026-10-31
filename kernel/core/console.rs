@@ -14328,7 +14328,10 @@ fn poll_native_ai_inner() {
         let before=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection(),s.checking_photo()));
         if crate::runtime::face_setup_host::poll(visible) {
             let after=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection(),s.checking_photo()));
-            if visible && before==after {crate::bootstrap::face_preview_present();}
+            if visible && crate::runtime::face_setup_host::view(|s|s.saved()) {
+                runtime.system_step=8;runtime.system_focus=1;runtime.reset_input();runtime.redraw();
+            }
+            else if visible && before==after {crate::bootstrap::face_preview_present();}
             else {runtime.redraw();}
         }
     }}

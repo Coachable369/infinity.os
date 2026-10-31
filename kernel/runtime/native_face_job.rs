@@ -149,7 +149,8 @@ impl Job {
     // ------------------=
     pub fn cancel(&mut self) {
         self.proof=None;
-        self.setup.cancel();crate::drivers::camera::cancel(self.owner);
+        if !matches!(self.setup.stage(),Stage::Failed(_)) {self.setup.cancel();}
+        crate::drivers::camera::cancel(self.owner);
         crate::drivers::camera::revoke_setup(self.owner);self.camera_open=false;
     }
     // ------------------------=

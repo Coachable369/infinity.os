@@ -3,6 +3,18 @@
 mod native_control_tests {
     use super::*;
     // ------------------------=
+    // FUNC: model_application_labels_resolve_like_canonical_identifiers
+    // DESC: Keeps semantic model output on the same built-in dispatch path regardless of display-name capitalization.
+    // ------------------=
+    #[test]
+    fn model_application_labels_resolve_like_canonical_identifiers() {
+        for name in [b"File Navigator".as_slice(),b" file_navigator ",b"THE FILE NAVIGATOR"] {
+            assert_eq!(App::named(name),Some(App::FileNavigator));
+        }
+        assert_eq!(Command::decode(b"OS_CLOSE:File Navigator"),Some(Command::Close(App::FileNavigator)));
+        assert_eq!(App::named(b"File Navigator\nOS_CLOSE:browser"),None);
+    }
+    // ------------------------=
     // FUNC: named_window_requests_preserve_target_and_action
     // DESC: Verifies typed voice/text and model-protocol requests agree without accepting multi-command or executable arguments.
     // ------------------=
@@ -222,6 +234,11 @@ impl App {
     // DESC: Maps complete app names and protocol identifiers to existing windows without arbitrary arguments.
     // ------------------=
     pub fn named(name: &[u8]) -> Option<Self> {
+        let name=name.trim_ascii();
+        let mut normalized=[0u8;64];
+        if name.len()>normalized.len() {return None;}
+        for (out,input) in normalized.iter_mut().zip(name) {*out=input.to_ascii_lowercase();}
+        let name=&normalized[..name.len()];
         match name.strip_prefix(b"the ").unwrap_or(name) {
             b"text_editor" | b"text editor" | b"editor" | b"code editor" => Some(Self::TextEditor),
             b"file_navigator" | b"file navigator" | b"file manager" | b"files" => {

@@ -140,6 +140,48 @@ fn sequential_photos_then_fresh_verification() {
     setup.finish_save(true);assert!(setup.saved());assert!(setup.enrollment().is_none());
 }
 // ------------------------=
+// FUNC: verification_progress_renews_only_the_command_budget
+// DESC: Gives each verified comparison a bounded processing interval without extending the enrollment session.
+// ------------------=
+#[test]
+fn verification_progress_renews_only_the_command_budget() {
+    let mut setup=start();
+    for count in 0..3 {
+        setup.capture(102+count).unwrap();
+        let command=setup.control().command_id;
+        deliver_photo(&mut setup,103+count,31);
+        setup.accept(p::Report::new(command,if count==2 {p::REVIEW}else{p::READY},0,count as u32+1,0),104+count).unwrap();
+    }
+    setup.verify(110).unwrap();let command=setup.control().command_id;
+    setup.accept(p::Report::new(command,p::VERIFYING,0,3,1),50_000).unwrap();
+    assert_eq!(setup.tick(70_000),Ok(()));
+    setup.accept(p::Report::new(command,p::PROCESSING,0,3,1),100_000).unwrap();
+    assert_eq!(setup.tick(110_000),Err(Error::Expired));
+    assert_eq!(setup.stage(),Stage::Failed(115));
+}
+// ------------------------=
+// FUNC: verification_rejection_keeps_enrollment_views_for_retry
+// DESC: Keeps three accepted photos on a recoverable comparison rejection and requires a new command and lease for retry.
+// ------------------=
+#[test]
+fn verification_rejection_keeps_enrollment_views_for_retry() {
+    let mut setup=start();
+    for count in 0..3 {
+        setup.capture(102+count).unwrap();let command=setup.control().command_id;
+        deliver_photo(&mut setup,103+count,31);
+        setup.accept(p::Report::new(command,if count==2 {p::REVIEW}else{p::READY},0,count as u32+1,0),104+count).unwrap();
+    }
+    setup.verify(110).unwrap();let old=setup.control();
+    setup.accept(p::Report::new(old.command_id,p::VERIFYING,0,3,1),111).unwrap();
+    setup.accept(p::Report::new(old.command_id,p::REJECTED,214,3,1),112).unwrap();
+    assert_eq!(setup.stage(),Stage::Review);assert!(!setup.pending());
+    assert_eq!(setup.rejection(),Some(214));assert!(!setup.saved());
+    for n in 0..3 {assert_eq!(setup.photo_status(n),face_setup::PhotoStatus::Accepted);}
+    setup.verify(113).unwrap();assert!(setup.control().lease>old.lease);
+    assert!(setup.control().command_id>old.command_id);assert_eq!(setup.rejection(),None);
+    assert_eq!(setup.accept(p::Report::new(old.command_id,p::PASSED,0,3,3),114),Err(Error::Stale));
+}
+// ------------------------=
 // FUNC: stale_and_cancelled_reports_cannot_complete
 // DESC: Rejects replayed and cancelled commands without mutating verified progress.
 // ------------------=

@@ -104,6 +104,7 @@ impl Setup {
         self.tick(now)?;
         if self.pending {return Err(Error::Busy);}
         if self.stage!=Stage::Review {return Err(Error::WrongStage);}
+        self.rejection=None;
         self.control.lease=self.control.lease.checked_add(1).ok_or(Error::Invalid)?;
         self.stage=Stage::Verifying(0);self.erase_preview();self.issue(wire::VERIFY,now)
     }
@@ -131,6 +132,12 @@ impl Setup {
             self.rejection=Some(report.error);self.erase_preview();return Ok(());
         }
         if report.phase==wire::REJECTED {
+            if self.control.command==wire::VERIFY && matches!(self.stage,Stage::Verifying(_))
+                && report.photos==3 && report.comparisons<=2
+                && matches!(report.error,105|204..=214|216..=218|222) {
+                self.stage=Stage::Review;self.rejection=Some(report.error);self.pending=false;
+                self.erase_enrollment();return Ok(());
+            }
             if self.control.command!=wire::CAPTURE || self.stage!=Stage::Photos(report.photos as u8)
                 || report.comparisons!=0 || !matches!(report.error,105|204..=214|216..=218|222) {return Err(Error::Protocol);}
             for byte in &mut self.photos[report.photos as usize] {unsafe {core::ptr::write_volatile(byte,0);}}
@@ -146,7 +153,8 @@ impl Setup {
         let terminal=match (self.control.command,report.phase,self.stage) {
             (wire::LOGIN,wire::PROCESSING,Stage::Verifying(n)) if report.photos==3 && report.comparisons==n as u32 => false,
             (wire::LOGIN,wire::VERIFYING,Stage::Verifying(n)) if n<2 && report.photos==3 && report.comparisons==n as u32+1 => {
-                self.stage=Stage::Verifying(n+1);false
+                self.stage=Stage::Verifying(n+1);
+                self.command_deadline=now.saturating_add(COMMAND_MS).min(self.deadline);false
             }
             (wire::LOGIN,wire::PASSED,Stage::Verifying(2)) if report.photos==3 && report.comparisons==3 => {
                 self.stage=Stage::Passed;self.erase_enrollment();true
@@ -167,7 +175,8 @@ impl Setup {
             }
             (wire::VERIFY,wire::PROCESSING,Stage::Verifying(n)) if report.photos==3 && report.comparisons==n as u32 => false,
             (wire::VERIFY,wire::VERIFYING,Stage::Verifying(n)) if n<2 && report.photos==3 && report.comparisons==n as u32+1 => {
-                self.stage=Stage::Verifying(n+1);false
+                self.stage=Stage::Verifying(n+1);
+                self.command_deadline=now.saturating_add(COMMAND_MS).min(self.deadline);false
             }
             (wire::VERIFY,wire::PASSED,Stage::Verifying(2)) if report.photos==3 && report.comparisons==3
                 && self.enrollment_written==wire::ENROLLMENT_BYTES => {
