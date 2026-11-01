@@ -30,7 +30,7 @@ extension InstallerStudioDocument {
                 text: text, locked: role == .backButton || role == .primaryButton,
                 zIndex: elements.count)
             item.id = UUID(uuidString: String(format: "FAC10000-0000-4000-8000-%012X", elements.count + 1))!
-            item.fontSize = role == .title ? 32 : 20
+            item.fontSize = role == .title ? 32 : (kind == .button ? 24 : 20)
             if identifier == "faceName" { item.inputVariable = .facialProfileName }
             elements.append(item)
         }
@@ -39,12 +39,12 @@ extension InstallerStudioDocument {
         add("Capture Guidance", "faceGuidance", .text, .body, 98, 270, 400, 140)
         add("Face Name / Retake", "faceName", .panel, .input, 98, 415, 400, 56)
         add("Live Camera", "facePreview", .panel, .decoration, 98, 505, 120, 160)
-        add("Camera Label", "facePreviewLabel", .text, .decoration, 98, 477, 120, 24, "Live camera preview")
+        add("Camera Label", "facePreviewLabel", .text, .decoration, 98, 477, 220, 24, "Live camera preview")
         for (index, label) in ["Front", "Left", "Right"].enumerated() {
             let x = 232 + index * 90
             add("\(label) Photo", "facePhoto\(index)", .panel, .decoration, x, 505, 76, 101)
-            add("\(label) Label", "facePhotoLabel\(index)", .text, .decoration, x, 616, 76, 22, label)
-            add("\(label) Status", "facePhotoStatus\(index)", .text, .decoration, x, 646, 76, 22)
+            add("\(label) Label", "facePhotoLabel\(index)", .text, .decoration, x, 616, 76, 24, label)
+            add("\(label) Status", "facePhotoStatus\(index)", .text, .decoration, x, 646, 76, 24)
         }
         add("Rotating Face · Live Animation", "faceMesh", .panel, .decoration, 530, 260, 360, 480)
         add("Status / Errors", "faceStatus", .text, .decoration, 98, 670, 400, 80)

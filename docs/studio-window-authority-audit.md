@@ -96,3 +96,16 @@ segment extent and permissions, not arbitrary high-address data.
 
 The linker blocker is resolved. Release packaging and installed visual acceptance
 are still separate outstanding gates; these focused results do not publish ISOs.
+
+### Incremental handoff after verification
+
+The subsequent clean build (`20261101T174101854611Z-24987`) passed kernel linking
+but stopped at the generated facial-screen label's typography bounds. The
+factory camera label now has sufficient width, photo labels have sufficient
+line height, and default buttons use the kit's 24-unit readable type. Existing
+authored screen records are not migrated or overwritten by this correction.
+The configuration geometry check at five viewport sizes, native font checks,
+and sixteen access-surface tests passed in
+`builds/manifests/20261101T224318662395Z-15511.json`.
+The user authorized incremental completion with focused verification; broad
+regressions are deferred, not reported as a passing full suite.
