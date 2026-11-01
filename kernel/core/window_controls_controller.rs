@@ -110,6 +110,12 @@ impl ConsoleRuntime {
         let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
         let point=Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,
             y:self.system.framebuffer_height as i32*self.pointer_y/1000};
+        let preview=crate::ui::file_preview::current();
+        if preview.open {
+            let rect=preview.close_rect();
+            return controls::publish((!preview.menu && rect.contains(point))
+                .then_some(controls::Highlight{rect,pressed:self.pointer_buttons&1!=0}));
+        }
         let stack=crate::ui::desktop_stack::current();
         let (editor,command,tasks)=self.desktop_app_windows();
         let app=|state:DesktopAppWindowState|layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized);
