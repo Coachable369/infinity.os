@@ -114,3 +114,20 @@ Studio's focused migration and production-pixel tests passed in
 `builds/studio-facial-preview.png` was visually reviewed for label fit and spacing.
 The signed Studio package was refreshed in
 `builds/manifests/20261101T224419106644Z-15851.json`.
+
+### Published local test artifacts
+
+Incremental completion passed with no cleanup of retained products:
+`builds/manifests/20261101T224441297037Z-15967.json`, source revision
+`f58a71acdd57eb6baee224b6feecadf071d8a8fe`. Both images passed current-kernel,
+live/installed UI bytes, full model bundle, Precision artwork, native compiler,
+Python payload, speech/loader parity and SHA-256 verification.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `builds/InfinityOS-aarch64.iso` | `1d911263d4c413f7a2e078929d46789ec38e53215a3a3dfb70c395f0c1e97d4b` |
+| `builds/InfinityOS-x86_64.iso` | `bc2cedc518cb13261dfc3e83237cf71879ff532df280b8ec1b861519d0f749e3` |
+
+These are verified local test ISOs, not a passing full regression release or
+proof of installed-window visual acceptance. No existing user VM was restarted
+or updated. The fresh-installed all-window/theme-round-trip audit remains open.
