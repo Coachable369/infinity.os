@@ -109,3 +109,8 @@ and sixteen access-surface tests passed in
 `builds/manifests/20261101T224318662395Z-15511.json`.
 The user authorized incremental completion with focused verification; broad
 regressions are deferred, not reported as a passing full suite.
+Studio's focused migration and production-pixel tests passed in
+`builds/manifests/20261101T224552513571Z-16218.json`; the generated
+`builds/studio-facial-preview.png` was visually reviewed for label fit and spacing.
+The signed Studio package was refreshed in
+`builds/manifests/20261101T224419106644Z-15851.json`.
