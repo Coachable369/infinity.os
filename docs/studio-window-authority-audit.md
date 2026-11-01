@@ -17,7 +17,7 @@ installed system. Never claim an installed screenshot reflects an unpublished bu
 | Settings, every section | retained application compositor | shared controls and attached tab; explicit Studio content overrides preserved |
 | Infinity Browser | retained application compositor | shared control atlas inside existing hit targets; same attached tab, not a separate circular button |
 | InfinityCode and Python/Tk application windows | native GUI compositor | shared controls; authenticated, window-bound assistant with native lifecycle dispatch |
-| File Preview | shared Precision frame | read-only transient preview; no separate application assistant |
+| File Preview | shared Precision frame and close-control atlas | read-only transient preview; no separate application assistant |
 | Editor open/save and unsaved-work dialogs | shared Precision frame | modal actions, no independent assistant or lifecycle controls |
 | System permission / confirmation sheets | shared Precision frame or panel | trusted modal actions; no assistant allowed to intercept approval |
 | Launcher, desktop widgets, menus, dock | Studio desktop templates and shared panel recipes | shell surfaces, not application windows; authored desktop controls |

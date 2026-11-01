@@ -17,8 +17,10 @@ impl super::DisplayDevice {
         self.glass_window_substrate(v.rect,true);
         let mut title=v.rect;title.x+=20*s as i32;title.y+=16*s as i32;title.width=title.width.saturating_sub(80*s as u32);title.height=24*s as u32;
         self.app_label(title,crate::runtime::object_navigation::namespace_basename(&v.path[..v.path_len]),(232,241,250),true,s);
-        let c=v.close_rect();let cx=c.x+c.width as i32/2;let cy=c.y+c.height as i32/2;let d=5*s as i32;
-        self.line(cx-d,cy-d,cx+d,cy+d,ar,ag,ab);self.line(cx-d,cy+d,cx+d,cy-d,ar,ag,ab);
+        let c=v.close_rect();let size=26*s;
+        self.window_control_state((c.x+(c.width as i32-size as i32)/2).max(0) as usize,
+            (c.y+(c.height as i32-size as i32)/2).max(0) as usize,size,2,false,
+            crate::ui::app_launcher::window_controls::state(c));
         self.fill_rect(x+16*s,y+48*s,w.saturating_sub(32*s),1,ar/2,ag/2,ab/2);
         let body=v.body();
         match v.kind {
