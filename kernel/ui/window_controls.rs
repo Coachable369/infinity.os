@@ -97,12 +97,17 @@ pub fn pixel(
     );
     let mut lum = 0u32;
     let mut alpha = 0u32;
+    #[cfg(studio_native_preview)]
+    let image = crate::studio_native_render::asset_override(b"window-controls-v1.rgba")
+        .filter(|bytes| bytes.len() == IMAGE.len()).unwrap_or(IMAGE);
+    #[cfg(not(studio_native_preview))]
+    let image = IMAGE;
     for sy in y0..y1 {
         for sx in x0..x1 {
             let at = (state.min(2) * SIDE * SIDE + sy * SIDE + sx) * 4;
-            let a = IMAGE[at + 3] as u32;
+            let a = image[at + 3] as u32;
             alpha += a;
-            lum += IMAGE[at] as u32 * a;
+            lum += image[at] as u32 * a;
         }
     }
     if alpha == 0 {

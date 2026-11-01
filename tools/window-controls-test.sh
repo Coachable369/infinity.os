@@ -9,3 +9,4 @@ build/behavior-tests/minimized-shelf-test
 rustc --edition=2021 -A warnings tools/active-painter-test.rs -o build/behavior-tests/window-controls-painter
 build/behavior-tests/window-controls-painter --window-controls-only
 sh tools/infinity-ui-test.sh
+sh tools/window-skin-authority-test.sh

@@ -137,6 +137,12 @@ struct NativePreviewSnapshot: Equatable, Sendable {
         }
         let backgroundURL = try UIKitAssetCatalog.resolvedURL(backgroundOverride?.source ?? backgroundPath, root: root)
         var assets: [NativePreviewAsset] = []
+        for name in ["ai-window-tab-v1.rgba", "window-controls-v1.rgba"] {
+            guard let bytes = store.uiKit.previewAtlas(target: "assets/ui-design-kit/default/" + name) else {
+                throw NativePreviewIssue.invalid("The native window artwork cannot be read: " + name)
+            }
+            assets.append(NativePreviewAsset(names: [name], bytes: bytes))
+        }
         var replacementSources: [String: String] = [:]
         for replacement in store.uiKit.document.overrides where replacement.format != "rgba" {
             replacementSources[replacement.target] = replacement.source

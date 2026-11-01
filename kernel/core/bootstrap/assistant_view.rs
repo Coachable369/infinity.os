@@ -143,14 +143,7 @@ impl super::DisplayDevice {
         }
         let t = g.toggle;
         let pulse = if panel.hovered { assistant::glow_intensity(panel.glow_phase) } else { 48 };
-        if id==0 {
-            let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
-            for y in 0..t.height {for x in 0..t.width {
-                let (r,g,b,a)=infinity_browser_core::skin::pill_pixel(t.width,t.height,x,y,primary,accent,panel.hovered);
-                if a!=0 {self.blend_color(t.x+x as i32,t.y+y as i32,r,g,b,a);}
-            }}
-            self.app_ai_mark(inset(t,8*s));
-        }else{self.assistant_tab_glass(t, g.tab_left, pulse, s);}
+        self.assistant_tab_glass(t, g.tab_left, pulse, s);
         self.render_clip = clip;
     }
 
@@ -158,7 +151,7 @@ impl super::DisplayDevice {
     // FUNC: assistant_tab_glass
     // DESC: Paints the shared UIKIT fin with an attached straight root, rounded shoulders and antialiased luminous rim.
     // ------------------=
-    fn assistant_tab_glass(&mut self, tab: Rect, left: bool, pulse: u8, s: usize) {
+    pub(super) fn assistant_tab_glass(&mut self, tab: Rect, left: bool, pulse: u8, s: usize) {
         let halo=4*s as i32;
         for y in -halo..tab.height as i32+halo {
             for x in -halo..tab.width as i32+halo {

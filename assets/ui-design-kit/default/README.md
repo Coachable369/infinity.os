@@ -49,8 +49,10 @@ The shared kernel embeds the sprite, so live and installed rendering use identic
 
 ## Browser tabs and Downloads
 
-The approved full-window [browser chrome](browser-chrome-v5.md) governs navigation,
-window controls, URL-field surfaces and the browser-specific assistant button.
+The approved full-window [browser chrome](browser-chrome-v5.md) governs navigation
+and URL-field surfaces. Window controls and the attached AI tab use the same
+Studio-owned artwork and geometry as other OS application windows; there is no
+browser-specific assistant button.
 
 Use [Soft shoulder tabs](browser-tabs-soft-v4.md) and its generated reference
 board; [Browser v2](browser-tabs-downloads-v2.md) governs Downloads.

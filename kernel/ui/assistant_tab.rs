@@ -31,13 +31,18 @@ pub fn pixel(
     let y1 = ((y + 1) * HEIGHT / height as usize).max(y0 + 1).min(HEIGHT);
     let mut channels = [0u32; 3];
     let mut alpha = 0u32;
+    #[cfg(studio_native_preview)]
+    let image = crate::studio_native_render::asset_override(b"ai-window-tab-v1.rgba")
+        .filter(|bytes| bytes.len() == IMAGE.len()).unwrap_or(IMAGE);
+    #[cfg(not(studio_native_preview))]
+    let image = IMAGE;
     for sy in y0..y1 {
         for sx in x0..x1 {
             let at = (sy * WIDTH + sx) * 4;
-            let a = IMAGE[at + 3] as u32;
+            let a = image[at + 3] as u32;
             alpha += a;
             for c in 0..3 {
-                channels[c] += IMAGE[at + c] as u32 * a;
+                channels[c] += image[at + c] as u32 * a;
             }
         }
     }

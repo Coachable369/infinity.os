@@ -139,6 +139,10 @@ pub(crate) fn run()->Result<(),String> {
             precision=Some(values.len());
         }else if base==b"eclipse-access-glyphs-v1.rgba" {
             if data.len()!=16*64*64*4 {return Err("Invalid native glyph atlas dimensions".into());}
+        }else if base==b"ai-window-tab-v1.rgba" {
+            if data.len()!=112*416*4 {return Err("Invalid assistant artwork dimensions".into());}
+        }else if base==b"window-controls-v1.rgba" {
+            if data.len()!=3*96*96*4 {return Err("Invalid window control artwork dimensions".into());}
         }else if base==b"uikit-styles.bin" {
             if crate::ui::panel_recipe::decode_styles(&data).is_none() {return Err("Invalid native style payload".into());}
         }else if base==b"uikit-tokens.bin" {

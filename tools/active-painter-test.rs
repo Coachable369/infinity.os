@@ -604,6 +604,7 @@ fn window_substrate_pixel_regression() { window_substrate_pixels(); }
 // DESC: Exercises the production presentation wrapper for every app cache, clipped content updates, activation, translation and uncached fallback.
 // ------------------=
 fn universal_window_frame_pixels() {
+    uniform_assistant_pixels();
     use ui::geometry::Rect;
     ui::desktop_effects::reset();
     let (width,height)=(320,220);
@@ -671,6 +672,36 @@ fn universal_window_frame_pixels() {
     assert!(!retained_windows::application_paint_active(false));
     assert!(retained_windows::application_paint_active(true));
     retained_windows::invalidate();
+}
+
+// ------------------------=
+// FUNC: uniform_assistant_pixels
+// DESC: Compares complete production assistant pixels for browser, shell and native app owners, in collapsed and expanded states.
+// ------------------=
+fn uniform_assistant_pixels() {
+    let (width,height)=(1000,700);
+    let rect=ui::geometry::Rect{x:60,y:50,width:820,height:580};
+    for expanded in [false,true] {
+        let mut reference=None;
+        for owner in [0,1,2,3,4,5,10,11,12,ui::app_assistant::NATIVE_OWNER] {
+            ui::app_assistant::reset();
+            let mut panel=ui::app_assistant::Panel::new();panel.expanded=expanded;
+            ui::app_assistant::write(owner,panel);
+            let mut pixels=vec![0x261009u32;width*height];
+            let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+                render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+            display.glass_window_substrate(rect,true);
+            display.precision_window_frame(rect,true,1);
+            display.window_assistant(owner,rect,1);
+            if let Some(expected)=&reference {assert_eq!(&pixels,expected);}else{reference=Some(pixels.clone());}
+            if owner==ui::app_assistant::NATIVE_OWNER {
+                let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();
+                for pixel in pixels {ppm.extend_from_slice(&[pixel as u8,(pixel>>8)as u8,(pixel>>16)as u8]);}
+                std::fs::write(format!("build/window-assistant-{}.ppm",if expanded {"expanded"}else{"collapsed"}),ppm).unwrap();
+            }
+        }
+    }
+    ui::app_assistant::reset();
 }
 
 // ------------------------=

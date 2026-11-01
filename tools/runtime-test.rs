@@ -590,17 +590,18 @@ fn native_scene_damage(mut window: ui::window::Window) {
     let mut scene=SceneDamage::new();
     let mut windows=[None;8]; windows[0]=Some(window);
     let initial=scene.update(&windows,display,1).unwrap();
-    assert_eq!(initial,Rect{x:97,y:103,width:326,height:290});
+    assert_eq!(initial,Rect{x:97,y:103,width:353,height:290});
     assert_eq!(scene.update(&windows,display,1),None);
     window.bounds.x=-280; windows[0]=Some(window);
     let moved=scene.update(&windows,display,1).unwrap();
-    assert_eq!(moved,Rect{x:0,y:103,width:423,height:290});
+    assert_eq!(moved,Rect{x:0,y:103,width:450,height:290});
     window.bounds.width=500; windows[0]=Some(window);
-    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:0,y:103,width:223,height:290});
+    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:0,y:103,width:250,height:290});
     window.state=WindowState::Minimized;window.visible=false;windows[0]=Some(window);
     assert!(scene.update(&windows,display,1).unwrap().contains(Point{x:220,y:390}));
-    let minimized=scene.update(&[None;8],display,1).unwrap();
-    assert_eq!(minimized,Rect{x:0,y:103,width:223,height:50});
+    // Minimized clients have no title or adorner; removing an already hidden
+    // window must not invent a second desktop damage rectangle.
+    assert_eq!(scene.update(&[None;8],display,1),None);
     assert_eq!(scene.update(&[None;8],display,1),None);
     window.state=WindowState::Normal;window.visible=true;window.bounds.x=100;windows[0]=Some(window);
     scene.update(&windows,display,1).unwrap();
@@ -611,8 +612,8 @@ fn native_scene_damage(mut window: ui::window::Window) {
     let mut other=window;other.id=ui::window::WindowId(window.id.0+1);other.bounds.x=250;
     windows[1]=Some(other);scene.update(&windows,display,1).unwrap();
     windows.swap(0,1);
-    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:97,y:103,width:656,height:290});
-    assert_eq!(scene.update(&[None;8],display,1).unwrap(),Rect{x:97,y:103,width:656,height:290});
+    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:97,y:103,width:683,height:290});
+    assert_eq!(scene.update(&[None;8],display,1).unwrap(),Rect{x:97,y:103,width:683,height:290});
 }
 
 // ------------------------=
@@ -672,6 +673,17 @@ fn native_gui_lifecycle<T: runtime::native_memory::PageTable>() {
     runtime.ui.windows.resize_window(owner,id,320,200,area).unwrap();
     let title=runtime::native_gui::title_bounds(*runtime.ui.windows.inspect(id).unwrap(),1);
     let title_point=Point{x:title.x+20,y:title.y+20};
+    let bounds=runtime::native_gui::assistant_bounds(*runtime.ui.windows.inspect(id).unwrap(),1).unwrap();
+    let tab=ui::app_assistant::geometry_in_viewport(bounds,area.width as usize,1,false).toggle;
+    let tab_point=Point{x:tab.x+tab.width as i32/2,y:tab.y+tab.height as i32/2};
+    assert_eq!(gui.desktop_pointer(&mut runtime,tab_point,PointerPhase::Down,1,area,1,3),(true,Some(id)));
+    gui.desktop_pointer(&mut runtime,tab_point,PointerPhase::Up,1,area,1,3);
+    assert_eq!(gui.assistant_target(),Some(id));
+    assert!(ui::app_assistant::expanded(ui::app_assistant::NATIVE_OWNER));
+    assert_eq!(runtime.ui.windows.inspect(id).unwrap().bounds,Rect{x:120,y:160,width:320,height:200});
+    gui.desktop_pointer(&mut runtime,tab_point,PointerPhase::Down,1,area,1,3);
+    gui.desktop_pointer(&mut runtime,tab_point,PointerPhase::Up,1,area,1,3);
+    assert!(!ui::app_assistant::expanded(ui::app_assistant::NATIVE_OWNER));
     assert_eq!(gui.desktop_pointer(&mut runtime,title_point,PointerPhase::Down,1,area,1,3),(true,Some(id)));
     let moved=Point{x:title_point.x+70,y:title_point.y+30};
     assert_eq!(gui.desktop_pointer(&mut runtime,moved,PointerPhase::Move,1,area,1,4),(true,Some(id)));

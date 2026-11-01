@@ -1,19 +1,21 @@
 # Browser chrome — approved full-window reference
 
 Target: `browser-chrome-v5-reference.png`, approved generated preview. Reuse
-soft-shoulder tabs, native Inter, stroke icons and the existing assistant star.
+soft-shoulder tabs, native Inter and navigation stroke icons. The universal
+Studio window chrome contract supersedes this reference's window controls and
+assistant star: use the shared control atlas and attached assistant tab.
 URL text, tab text, and page content are explicitly outside this change.
 
 Correction checklist:
-- Plain minimize/maximize/close strokes, not boxed desktop control artwork.
+- Shared Studio-authored minimize/maximize/close artwork, centered in the existing hit targets.
 - Continuous dark themed tab/menu/navigation surfaces with subtle separators.
 - Smooth antialiased pill URL field with subtle inset gradient and focus border.
 - Back, forward, reload, address, Downloads, Settings in that order. Navigation
   submits through Enter; no redundant standalone Go arrow.
 - Quiet border and focus colors derived from OS Primary and Accent.
 - Favorites hidden by default; existing saved visibility preference preserved.
-- External circular assistant star near the browser's top-right, with matching
-  input/damage bounds; other applications keep their established assistant fin.
+- Shared attached assistant tab with matching input/damage bounds, identical to
+  other application windows.
 - Preserve all actual menu actions, URL editing/selection, history, tab controls,
   downloads, saved settings and page pixels. No new framework or raster chrome.
 

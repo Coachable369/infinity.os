@@ -795,6 +795,8 @@ input-regression-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --test tools/window-controls-test.rs -o build/behavior-tests/window-controls-test
 	@build/behavior-tests/window-controls-test --test-threads=1
+	@rustc --edition=2021 -A warnings --cfg studio_native_preview tools/window-skin-authority-test.rs -o build/behavior-tests/window-skin-authority-test
+	@build/behavior-tests/window-skin-authority-test
 	@rustc --edition=2021 -A warnings --test tools/personalization-test.rs -o build/behavior-tests/personalization-test
 	@build/behavior-tests/personalization-test --test-threads=1
 	@rustc --edition=2021 --test tools/desktop-widgets-test.rs -o build/behavior-tests/desktop-widgets-test

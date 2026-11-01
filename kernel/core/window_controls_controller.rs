@@ -139,9 +139,7 @@ impl ConsoleRuntime {
                     let scale=layout.scale().max(1).min((g.window.width as usize/760).max(1));
                     if let Some(b)=infinity_browser_core::layout::Layout::new(g.window.width,g.window.height,scale as u32) {
                         buttons=[b.minimize,b.maximize,b.close].map(|r| {
-                            let size=r.width.min(r.height);
-                            Rect{x:g.window.x+r.x+((r.width-size)/2) as i32,
-                                y:g.window.y+r.y+((r.height-size)/2) as i32,width:size,height:size}
+                            Rect{x:g.window.x+r.x,y:g.window.y+r.y,width:r.width,height:r.height}
                         });
                     }
                 }

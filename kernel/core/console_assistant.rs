@@ -83,6 +83,8 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn assistant_owner_alive(&self,id:usize)->bool {
         if !matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {return false;}
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if id==assistant::NATIVE_OWNER {return python_commands::gui_assistant_owner(self).is_some();}
         use crate::ui::app_launcher::minimized_shelf as shelf;
         let mask=shelf::current().mask;
         match id {
@@ -267,6 +269,8 @@ impl ConsoleRuntime {
             return Some((12,assistant::spatial_window(self.system.framebuffer_width,self.system.framebuffer_height)));
         }
         if self.mode==ConsoleMode::AppLauncher {return Some((11,l.app_launcher_geometry().panel));}
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if let Some(bounds)=python_commands::gui_assistant_owner(self) {return Some((assistant::NATIVE_OWNER,bounds));}
         if self.mode == ConsoleMode::Settings {
             return Some((4, l.settings_window_geometry(self.settings_window).window));
         }
@@ -732,6 +736,18 @@ impl ConsoleRuntime {
             return false;
         }
         let mut success = true;
+        if id==assistant::NATIVE_OWNER {
+            use crate::ui::window::WindowControl;
+            let control=match action {Action::Close=>WindowControl::Close,Action::Maximize=>WindowControl::Maximize,
+                Action::Minimize=>WindowControl::Minimize,Action::Restore=>WindowControl::Restore,_=>return false};
+            #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            {success=python_commands::gui_control(self,None,control)==Some(true);}
+            #[cfg(not(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
+            {let _=control;success=false;}
+            panel.focused=false;panel.expanded=false;
+            panel.reply(if success {b"Window action requested."}else{b"The application could not accept that window action."});
+            assistant::write(id,panel);return success;
+        }
         match action {
             Action::NativeApproval if id==1 => {
                 let result=if panel.argument_len==8 {

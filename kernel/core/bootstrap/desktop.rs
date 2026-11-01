@@ -69,6 +69,14 @@ impl DisplayDevice {
         }
         let bounds=if window.visible {window.bounds.union(title)}else{title};
         self.precision_window_frame(bounds,active,scale);
+        if let Some(bounds)=crate::runtime::native_gui::assistant_bounds(window,scale) {
+            if active {
+                self.window_assistant(crate::ui::app_assistant::NATIVE_OWNER,bounds,scale);
+            } else {
+                let geometry=crate::ui::app_assistant::geometry_in_viewport(bounds,self.width,scale,false);
+                self.assistant_tab_glass(geometry.toggle,geometry.tab_left,48,scale);
+            }
+        }
     }
 }
 

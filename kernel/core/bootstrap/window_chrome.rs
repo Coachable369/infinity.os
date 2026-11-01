@@ -15,6 +15,15 @@ impl super::DisplayDevice {
         use crate::ui::app_launcher::window_controls as controls;
         let rect=crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:size as u32,height:size as u32};
         let state=controls::state(rect);
+        self.window_control_state(x,y,size,index,maximized,state);
+    }
+
+    // ------------------------=
+    // FUNC: window_control_state
+    // DESC: Shares Studio's authored control pixels when an application retains a larger accessible hit rectangle.
+    // ------------------=
+    pub(super) fn window_control_state(&mut self,x:usize,y:usize,size:usize,index:usize,maximized:bool,state:usize) {
+        use crate::ui::app_launcher::window_controls as controls;
         let primary=self.active_primary_rgb();
         let accent=self.active_accent_rgb();
         let unit = (size / 20).max(1);

@@ -6285,7 +6285,9 @@ impl ConsoleRuntime {
                 self.onboarding_secret[..self.onboarding_secret_length]
                     .copy_from_slice(&self.command[..self.onboarding_secret_length]);
             }
-            InstallerTemplateVariable::None => return false,
+            // Enrollment consumes its profile label in input_face_setup;
+            // it must not overwrite the account profile or password fields.
+            InstallerTemplateVariable::FacialProfileName | InstallerTemplateVariable::None => return false,
         }
         true
     }
@@ -7618,6 +7620,8 @@ impl ConsoleRuntime {
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
         if self.authored_menu_scroll(vertical){return true;}
+        if self.assistant_owner().is_some_and(|(id,_)|id==crate::ui::app_assistant::NATIVE_OWNER)
+            && self.scroll_window_assistant(vertical) {self.redraw();return true;}
         if self.native_gui_event(crate::ui::input::UiEvent::Pointer {
             position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},
             phase:crate::ui::input::PointerPhase::Scroll,button:0},vertical as i32) {self.session_idle.note_activity();return true;}
@@ -8264,6 +8268,13 @@ impl ConsoleRuntime {
             if dismissed {self.advance_desktop_effects();self.redraw();return;}
         }
         if self.clipboard_menu_pointer(clicked,right_clicked) {self.redraw();return;}
+        if let Some((id,bounds))=self.assistant_owner().filter(|(id,_)|*id==crate::ui::app_assistant::NATIVE_OWNER) {
+            let scale=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale();
+            let geometry=crate::ui::app_assistant::geometry_for_owner(id,bounds,self.system.framebuffer_width,scale,true);
+            let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,
+                y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+            if geometry.panel.contains(point) && self.pointer_window_assistant(clicked) {self.redraw();return;}
+        }
         let mut native_handled = false;
         for (mask,button) in [(1u8,1u8),(2,3),(4,2)] {
             if (prior_buttons ^ buttons) & mask != 0 {

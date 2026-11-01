@@ -29,7 +29,10 @@ impl SceneDamage {
         for (index, window) in windows.iter().enumerate() {
             if let Some(window) = window.filter(|w| w.state != WindowState::Withdrawn) {
                 let title = title_bounds(window, scale);
-                let bounds = if window.visible { window.bounds.union(title) } else { title };
+                let mut bounds = if window.visible { window.bounds.union(title) } else { title };
+                if let Some(frame)=assistant_bounds(window,scale) {
+                    bounds=bounds.union(crate::ui::app_assistant::geometry_in_viewport(frame,display.width as usize,scale,false).toggle);
+                }
                 if bounds.width > 0 && bounds.height > 0 {
                     let pad = (3 * scale.max(1)) as i32;
                     let footprint = Rect { x: bounds.x.saturating_sub(pad), y: bounds.y.saturating_sub(pad),
@@ -50,7 +53,7 @@ impl SceneDamage {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ChromePart { Title, Control(usize), Resize { left: bool, right: bool, top: bool, bottom: bool } }
+enum ChromePart { Title, Assistant, Control(usize), Resize { left: bool, right: bool, top: bool, bottom: bool } }
 #[derive(Clone, Copy)]
 struct ChromeDrag { window: WindowId, part: ChromePart, start: Point, bounds: Rect }
 
@@ -61,6 +64,18 @@ struct ChromeDrag { window: WindowId, part: ChromePart, start: Point, bounds: Re
 pub fn title_bounds(window: Window, scale: usize) -> Rect {
     let height = if matches!(window.state,WindowState::Fullscreen|WindowState::Withdrawn|WindowState::Minimized) { 0 } else { 44 * scale.max(1) as u32 };
     Rect { x: window.bounds.x, y: window.bounds.y.saturating_sub(height as i32), width: window.bounds.width, height }
+}
+
+// ------------------------=
+// FUNC: assistant_bounds
+// DESC: Gives ordinary native applications the shared Studio adorner while excluding secure, modal, hidden and fullscreen surfaces.
+// ------------------=
+pub fn assistant_bounds(window: Window, scale: usize) -> Option<Rect> {
+    use crate::ui::window::ZOrderClass;
+    (window.visible && matches!(window.state,WindowState::Normal|WindowState::Maximized)
+        && window.modal_parent.is_none()
+        && matches!(window.z_class,ZOrderClass::Normal|ZOrderClass::Floating))
+        .then(||window.bounds.union(title_bounds(window,scale)))
 }
 
 // ------------------------=
@@ -106,6 +121,7 @@ pub struct Gui {
     revision: u64,
     hover: Option<WindowId>,
     chrome_drag: Option<ChromeDrag>,
+    assistant_target: Option<WindowId>,
 }
 
 impl Gui {
@@ -115,8 +131,13 @@ impl Gui {
     // ------------------=
     pub const fn new() -> Self {
         Self { surfaces: NativeSurfaces::new(), owner: None,
-            grants: [None; MAX_GRANTS], leases: [None; MAX_LEASES], revision: 0, hover: None, chrome_drag: None }
+            grants: [None; MAX_GRANTS], leases: [None; MAX_LEASES], revision: 0, hover: None, chrome_drag: None, assistant_target: None }
     }
+    // ------------------------=
+    // FUNC: assistant_target
+    // DESC: Binds the native assistant to the explicitly selected window, preventing focus changes from retargeting pending actions.
+    // ------------------=
+    pub fn assistant_target(&self) -> Option<WindowId> { self.assistant_target }
     // ------------------------=
     // FUNC: revision
     // DESC: Exposes committed mutation revisions so the desktop can request a repaint without polling pixel contents.
@@ -176,6 +197,10 @@ impl Gui {
         let mut hit = None;
         for index in (0..runtime.ui.windows.count()).rev() {
             let Some(window) = runtime.ui.windows.ordered_window(index).copied().filter(|w| w.owner == owner) else { continue; };
+            if assistant_bounds(window,scale).is_some_and(|bounds|
+                crate::ui::app_assistant::geometry_in_viewport(bounds,display.width as usize,scale,false).toggle.contains(point)) {
+                hit=Some((window,Some(ChromePart::Assistant)));break;
+            }
             if let Some(part) = chrome_hit(window, point, scale) { hit = Some((window, Some(part))); break; }
             if window.visible && window.bounds.contains(point) { hit = Some((window, None)); break; }
         }
@@ -206,7 +231,7 @@ impl Gui {
                         }
                         let _ = runtime.ui.windows.resize_window(owner,drag.window,width,height,work);
                     }
-                    ChromePart::Control(_) => {},
+                    ChromePart::Control(_) | ChromePart::Assistant => {},
                 }
                 self.revision = self.revision.wrapping_add(1);
                 runtime.flush_window_events(now,drag.window.0 as u64,drag.window.0 as u64);
@@ -214,6 +239,13 @@ impl Gui {
             if matches!(phase,P::Up|P::Cancel) {
                 self.chrome_drag = None;
                 if phase == P::Up && hit.is_some_and(|(w,part)|w.id==drag.window&&part==Some(drag.part)) {
+                    if drag.part == ChromePart::Assistant {
+                        use crate::ui::app_assistant as assistant;
+                        let mut panel=if self.assistant_target==Some(drag.window) {assistant::read(assistant::NATIVE_OWNER)}else{assistant::Panel::new()};
+                        self.assistant_target=Some(drag.window);
+                        panel.expanded=!panel.expanded;panel.focused=panel.expanded;
+                        assistant::write(assistant::NATIVE_OWNER,panel);
+                    }
                     if let ChromePart::Control(index) = drag.part {
                         let current = runtime.ui.windows.inspect(drag.window).unwrap().state;
                         if index == 2 { let _ = runtime.ui.windows.request_close(owner,drag.window); }
@@ -365,6 +397,8 @@ impl Gui {
     // DESC: Stops input, destroys context-owned windows/pixels and retires nondelegable grants after task execution has stopped.
     // ------------------=
     pub fn close(&mut self, runtime: &mut InfinityRuntime, memory: &mut NativeMemory) {
+        self.assistant_target=None;
+        crate::ui::app_assistant::write(crate::ui::app_assistant::NATIVE_OWNER,crate::ui::app_assistant::Panel::new());
         if let Some((caller, owner)) = self.owner {
             for lease in &mut self.leases { if let Some((id,_)) = lease.take() { let _ = runtime.events.unsubscribe_owned(caller, id); } }
             self.surfaces.context_failed(runtime, memory, owner);

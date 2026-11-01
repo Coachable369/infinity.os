@@ -78,7 +78,12 @@ impl DisplayDevice {
         self.fill_rect(left+1,top+48*scale,window.width as usize-2,layout.content.y as usize-48*scale,r,g,b);
         self.fill_rect(left+1,top+80*scale,window.width as usize-2,scale,r+14,g+14,b+14);
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
-            self.browser_glyph(offset(r),7+index,true,scale);
+            let r=offset(r);
+            let size=(26*scale).min(r.width as usize).min(r.height as usize);
+            let hit=crate::ui::geometry::Rect{x:r.x,y:r.y,width:r.width,height:r.height};
+            let x=r.x+(r.width as i32-size as i32)/2;let y=r.y+(r.height as i32-size as i32)/2;
+            if x>=0 && y>=0 {self.window_control_state(x as usize,y as usize,size,index,state.maximized,
+                crate::ui::app_launcher::window_controls::state(hit));}
         }
         for index in 0..tab_count {
             let Some((tab,close))=layout.tab(index,tab_count) else {continue;};

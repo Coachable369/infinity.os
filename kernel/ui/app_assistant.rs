@@ -15,6 +15,7 @@ pub mod python_generation_context;
 #[path = "application_acceptance.rs"]
 pub mod application_acceptance;
 pub const PANEL_SLOTS: usize = 16;
+pub const NATIVE_OWNER: usize = 13;
 pub const TAB_WIDTH: usize = 28;
 pub const TAB_HEIGHT: usize = 104;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +52,7 @@ pub fn help(owner: usize) -> &'static [u8] {
         5..=10=>b"File Navigator: find FILENAME searches this folder tree; open folder /absolute/path; list view; grid view; refresh. Window: maximize, restore, minimize, close. Deletion and file mutation use the native controls.",
         11=>b"App Launcher: search apps WORDS filters the catalog. Open APP launches a named app. Close dismisses the launcher. Reordering uses drag and drop.",
         12=>b"Spatial surfaces: next item, previous item, open selected, zoom in, zoom out, close. Gravity Wall: add idea or new category opens the native editor; finish with its Save button. Open world shift or open holographic desktop switches surfaces.",
+        NATIVE_OWNER=>b"Native application: maximize, restore, minimize, close. Close requests the application's normal unsaved-work confirmation. Other application actions use its registered AI controls.",
         _=>b"Open APP, open Settings category, open spatial desktop, open holographic desktop, open world shift, open calendar. Other controls on this surface are not yet connected to AI.",
     }
 }
@@ -108,8 +110,8 @@ pub fn supports(owner: usize, action: Action) -> bool {
     match action {
         Action::None => false,
         Action::NativeApproval => owner == 1,
-        Action::Close => owner <= 12,
-        Action::Maximize | Action::Restore | Action::Minimize => owner <= 10,
+        Action::Close => owner <= 12 || owner == NATIVE_OWNER,
+        Action::Maximize | Action::Restore | Action::Minimize => owner <= 10 || owner == NATIVE_OWNER,
         Action::Refresh => matches!(owner, 0 | 3) || navigator,
         Action::SearchWeb | Action::NavigateWeb | Action::NewTab | Action::CloseTab => owner == 0,
         Action::Back | Action::Forward => owner == 0 || navigator,
@@ -1366,18 +1368,10 @@ pub fn geometry_in_viewport(
 
 // ------------------------=
 // FUNC: geometry_for_owner
-// DESC: Shares the browser's compact external assistant button between paint, input and window activation.
+// DESC: Applies the Studio-owned attached tab geometry uniformly to every application owner and hit target.
 // ------------------=
-pub fn geometry_for_owner(owner:usize,window:Rect,viewport_width:usize,scale:usize,expanded:bool)->Geometry {
-    let mut g=geometry_in_viewport(window,viewport_width,scale,expanded);
-    if owner==0 {
-        let s=scale.max(1) as u32;let size=32*s;let gap=8*s as i32;
-        let right=window.right()+gap;
-        g.tab_left=right+size as i32>viewport_width as i32 && window.x>=size as i32+gap;
-        g.toggle=Rect{x:if g.tab_left {window.x-gap-size as i32}else{right.min((viewport_width as i32-size as i32).max(0))},
-            y:window.y+if !g.tab_left && right+size as i32>viewport_width as i32 {48*s as i32}else{12*s as i32},width:size,height:size};
-    }
-    g
+pub fn geometry_for_owner(_owner:usize,window:Rect,viewport_width:usize,scale:usize,expanded:bool)->Geometry {
+    geometry_in_viewport(window,viewport_width,scale,expanded)
 }
 
 // ------------------------=

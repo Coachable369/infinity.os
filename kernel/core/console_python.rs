@@ -927,6 +927,11 @@ pub(super) fn gui_frames(mut render: impl FnMut(crate::ui::window::Window,crate:
         let _ = crate::runtime::with_runtime(|runtime| {
             publish_gui(runtime,&job.gui);
             let Some(owner)=job.gui.context() else{return;};
+            if runtime.ui.windows.focused()!=job.gui.assistant_target() {
+                let mut panel=crate::ui::app_assistant::read(crate::ui::app_assistant::NATIVE_OWNER);
+                panel.expanded=false;panel.focused=false;panel.pending=crate::ui::app_assistant::Action::None;
+                crate::ui::app_assistant::write(crate::ui::app_assistant::NATIVE_OWNER,panel);
+            }
             for index in 0..runtime.ui.windows.count() {
                 if let Some(window) = runtime.ui.windows.ordered_window(index).filter(|w|w.owner==owner) {
                     if let Some(frame) = job.gui.surfaces.frame(runtime,window.surface) {
@@ -950,7 +955,8 @@ pub(super) fn gui_input(console:&ConsoleRuntime,event:crate::ui::input::UiEvent<
         if job.task.is_none() || job.owner!=SecurityIdentity(console.current_session.0) || !active(console) { return false; }
         let Some(owner)=job.gui.context() else {return false;};
         let now=crate::runtime::ai::qwen::workers::clock_ns();
-        crate::runtime::with_runtime(|runtime|{
+        let previous_target=job.gui.assistant_target();
+        let handled=crate::runtime::with_runtime(|runtime|{
             if let crate::ui::input::UiEvent::Pointer{position,phase,button}=event {
                 let display=crate::ui::geometry::Rect{x:0,y:0,width:console.system.framebuffer_width as u32,height:console.system.framebuffer_height as u32};
                 let scale=crate::ui::system_layout::SystemLayout::new(display.width as usize,display.height as usize).scale();
@@ -960,9 +966,36 @@ pub(super) fn gui_input(console:&ConsoleRuntime,event:crate::ui::input::UiEvent<
                 }
                 if chrome{return true;}
                 if target.is_none(){return false;}
-            }else if !job.gui_keyboard{return false;}
+            }else if !job.gui_keyboard || crate::ui::app_assistant::read(crate::ui::app_assistant::NATIVE_OWNER).focused{return false;}
             runtime.native_input(event,0,scroll_y,now)
-        }).unwrap_or(false)
+        }).unwrap_or(false);
+        if previous_target!=job.gui.assistant_target() {
+            // Never deliver a former window's turn to a newly selected native window.
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                if ai.app_turn_owner()==Some(crate::ui::app_assistant::NATIVE_OWNER) {ai.cancel_app_turn();}
+            });
+        }
+        handled
+    }
+}
+
+// ------------------------=
+// FUNC: gui_assistant_owner
+// DESC: Resolves the authenticated focused application window without exposing its client pixels or entering another app context.
+// ------------------=
+pub(super) fn gui_assistant_owner(console:&ConsoleRuntime)->Option<crate::ui::geometry::Rect> {
+    unsafe {
+        let job=&*(&raw const JOB);
+        if job.task.is_none() || job.owner!=SecurityIdentity(console.current_session.0) || !active(console) {return None;}
+        let owner=job.gui.context()?;
+        let scale=crate::ui::system_layout::SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height).scale();
+        crate::runtime::with_runtime(|runtime| {
+            let focused=runtime.ui.windows.focused()?;
+            if job.gui.assistant_target()!=Some(focused) || !crate::ui::app_assistant::expanded(crate::ui::app_assistant::NATIVE_OWNER) {return None;}
+            let window=*runtime.ui.windows.inspect(focused)?;
+            if window.owner!=owner {return None;}
+            crate::runtime::native_gui::assistant_bounds(window,scale)
+        }).flatten()
     }
 }
 
@@ -984,7 +1017,9 @@ pub(super) fn gui_control(console: &ConsoleRuntime, name: Option<&[u8]>, action:
                     let title = window.title();
                     title.as_bytes().eq_ignore_ascii_case(name)
                         || title.split(" — ").next().is_some_and(|base| base.as_bytes().eq_ignore_ascii_case(name))
-                } else { runtime.ui.windows.focused() == Some(window.id) && job.gui_keyboard };
+                } else { runtime.ui.windows.focused() == Some(window.id) && (job.gui_keyboard
+                    || (job.gui.assistant_target()==Some(window.id)
+                        && crate::ui::app_assistant::expanded(crate::ui::app_assistant::NATIVE_OWNER))) };
                 if matches {
                     if selected.is_some() { return Some(false); }
                     selected = Some(window.id);
