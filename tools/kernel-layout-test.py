@@ -27,19 +27,22 @@ class LayoutTests(unittest.TestCase):
     # ------------------=
     def test_x86_high_arenas(self):
         ranges = [(0x4000000, 0x70000000), (0x100000000, 0x60000000),
-                  (0x160000000, 0x20000000)]
+                  (0x160000000, 0x20000000), (0x180000000, 0x1fa5000)]
         self.assertEqual(validate(image(ranges, 62)),
                          [(start, start + size) for start, size in ranges])
         for invalid in ([(0x4000000, 0x90000000)],
                         [(0x160000000, 0x20001000)],
+                        [(0x180000000, 0x1fa6000)],
+                        [(0x180001000, 0x1fa5000)],
                         [(0x4000000, 8192), (0x4001000, 4096)]):
             with self.assertRaises(ValueError):
                 validate(image(invalid, 62))
-        for field, value in ((68, 7), (96, 4096)):
-            header = image([(0x160000000, 0x20000000)], 62)
-            struct.pack_into("<I", header, field, value)
-            with self.assertRaises(ValueError):
-                validate(header)
+        for arena in ranges[1:]:
+            for field, value in ((68, 7), (96, 4096)):
+                header = image([arena], 62)
+                struct.pack_into("<I", header, field, value)
+                with self.assertRaises(ValueError):
+                    validate(header)
 
     # ------------------------=
     # FUNC: test_old_arm_layout_rejected

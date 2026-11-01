@@ -232,6 +232,25 @@ void EFIAPI infinity_ap_callback(void *context) { (void)context; abort(); }
 // ------------------=
 int main(void) {
     test_segment_loading();
+    /* The dedicated login cache follows the existing high arenas. The loader
+       must reserve all three without claiming the low/high physical hole. */
+    Elf64ProgramHeader backdrop_segments[4] = {
+        {.type=PT_LOAD,.vaddr=0x4000000,.paddr=0x4000000,.memsz=0x70000000},
+        {.type=PT_LOAD,.vaddr=0x100000000,.paddr=0x100000000,.memsz=0x60000000},
+        {.type=PT_LOAD,.vaddr=0x160000000,.paddr=0x160000000,.memsz=0x20000000},
+        {.type=PT_LOAD,.vaddr=0x180000000,.paddr=0x180000000,.memsz=0x1fa5000},
+    };
+    uint64_t backdrop_ranges[64][2]; size_t backdrop_count=0;
+    assert(kernel_segment_ranges(backdrop_segments,4,512,backdrop_ranges,&backdrop_count));
+    assert(backdrop_count==2 && backdrop_ranges[1][0]==0x100000000 &&
+           backdrop_ranges[1][1]==0x181fa5000);
+    EFI_BOOT_SERVICES backdrop_boot={0};
+    backdrop_boot.allocate_pages=test_segment_allocate;
+    backdrop_boot.free_pages=test_segment_free;
+    segment_calls=segment_frees=segment_fail=0;
+    assert(reserve_kernel_segments(&backdrop_boot,backdrop_ranges,backdrop_count));
+    assert(segment_calls==2 && segment_frees==0 &&
+           segment_addresses[1]==0x100000000 && segment_pages[1]==0x81fa5);
     assert(!installed_kernel_size_valid(sizeof(Elf64Header)-1));
     assert(installed_kernel_size_valid(sizeof(Elf64Header)));
     assert(installed_kernel_size_valid(UINT64_C(802)*1024*1024));

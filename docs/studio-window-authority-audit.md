@@ -74,3 +74,25 @@ their evidence is recorded.
   bytes. Do not treat existing published ISOs as containing this cycle.
 - Fresh-installed visual acceptance, including a Studio theme round-trip,
   remains pending. Host pixel tests and compilation do not replace that check.
+
+### Authorized release-blocker correction
+
+The login-wave cache now occupies a dedicated zero-initialized, non-executable
+x86_64 load segment at `0x180000000..0x181fa5000`, accessed through an absolute
+address adapter. ARM and host placement remain native; the complete 3840x2160
+cache and animation behavior are retained. Packaging accepts only that exact
+segment extent and permissions, not arbitrary high-address data.
+
+- x86_64 installed kernel linked successfully:
+  `builds/manifests/20261101T173811043393Z-24617.json`.
+- Actual ELF load ranges validated; ordinary data ends at `0x7fd3ae70`
+  (2,904,464 bytes below the ceiling):
+  `builds/manifests/20261101T174028247137Z-24952.json`.
+- Loader reservation and rollback tests passed, including the new arena:
+  `builds/manifests/20261101T174005302183Z-24900.json`.
+- Animation, permissions, reduced motion and production pixel/damage checks
+  passed at 1024x768, 1920x1080 and 2560x1080:
+  `builds/manifests/20261101T173747474606Z-24539.json`.
+
+The linker blocker is resolved. Release packaging and installed visual acceptance
+are still separate outstanding gates; these focused results do not publish ISOs.
