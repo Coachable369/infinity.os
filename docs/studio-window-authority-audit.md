@@ -56,3 +56,21 @@ panels in a fresh installed VM without the ISO attached, including a saved Studi
 theme change. Verify Studio preview, packaged bytes and those installed pixels
 agree. Runtime visual acceptance and new release packaging remain pending until
 their evidence is recorded.
+
+## Evidence recorded 2026-11-01
+
+- Shared atlas/control/assistant pixel checks passed:
+  `builds/manifests/20261101T162445308088Z-8702.json`.
+- Native lifecycle and damage checks passed with both address-space adapters:
+  `builds/manifests/20261101T162045077111Z-7473.json`.
+- Studio's 185 tests passed; signed package rebuilt:
+  `builds/manifests/20261101T163022245194Z-9851.json` and
+  `builds/manifests/20261101T164752203385Z-74905.json`.
+- Clean dual-architecture release did **not** complete:
+  `builds/manifests/20261101T163529049711Z-10349.json`.
+  x86_64 installed-kernel linking exceeded the ordinary-data address ceiling.
+  The diagnostic link map places the end of BSS at `0x81cdee70`, beyond
+  `0x80000000`; a concurrently added login-wave cache occupies `0x1fa4038`
+  bytes. Do not treat existing published ISOs as containing this cycle.
+- Fresh-installed visual acceptance, including a Studio theme round-trip,
+  remains pending. Host pixel tests and compilation do not replace that check.
