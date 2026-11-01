@@ -2,6 +2,8 @@
 
 #[path = "reveal.rs"]
 mod boot_reveal;
+#[path = "login_wave_backdrop.rs"]
+mod login_wave_backdrop;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::desktop::ONBOARDING_BMP;
@@ -122,7 +124,52 @@ impl DisplayDevice {
             } else {
                 self.template_element(element, template.asset(element.image_asset), None);
             }
+            if element.role == InstallerTemplateRole::SceneBackground as u8 {
+                login_wave_backdrop::capture(self,bytes);
+                self.login_wave_layer(element);
+            }
         }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: login_wave_layer
+    // DESC: Composites native sine ribbons immediately above the saved wallpaper and below authored controls.
+    // ------------------=
+    fn login_wave_layer(&mut self, element: InstallerTemplateElement<'_>) {
+        let rect = scale_template_rect(element.frame, self.width, self.height);
+        let old = self.render_clip;
+        self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+        let Some(clip) = self.render_clip else { return; };
+        let local = (clip.left.saturating_sub(rect.left), clip.top.saturating_sub(rect.top),
+            clip.right.saturating_sub(rect.left), clip.bottom.saturating_sub(rect.top));
+        crate::ui::login_waves::paint(crate::ui::login_waves::current(), rect.width, rect.height, local,
+            |x,y,(r,g,b),alpha| self.blend_color_unchecked(x + rect.left, y + rect.top, r,g,b,
+                (u16::from(alpha) * u16::from(element.opacity) / 100) as u8));
+        self.mark_dirty_rect(clip.left, clip.top, clip.right.saturating_sub(clip.left), clip.bottom.saturating_sub(clip.top));
+        self.render_clip = old;
+    }
+
+    // ------------------------=
+    // FUNC: repaint_login_waves
+    // DESC: Restores exposed wallpaper only; never advances or repaints the independent success hero or controls.
+    // ------------------=
+    pub(super) fn repaint_login_waves(&mut self) -> bool {
+        let bytes = crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES;
+        let Ok(template) = InstallerTemplate::parse_login(bytes) else { return false; };
+        let (regions, count) = crate::ui::installer_layout::login_wave_regions(&template, self.width, self.height);
+        let Some(background)=template.element(1,InstallerTemplateRole::SceneBackground) else {return false;};
+        let old = self.render_clip;
+        for rect in &regions[..count] {
+            self.render_clip = old;
+            self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+            if login_wave_backdrop::restore(self,bytes) {
+                self.login_wave_layer(background);
+            } else {
+                self.login_template_scene_motion(bytes, b"", b"", usize::MAX, None);
+            }
+        }
+        self.render_clip = old;
         true
     }
 

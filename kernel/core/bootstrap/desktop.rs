@@ -6783,11 +6783,24 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: system_login_animation
-    // DESC: Reuses the authored ripple under the resting orb, restoring only bounded water pixels and never erasing the access wordmark or controls.
+    // DESC: Animates authorized audio ribbons behind the authored login foreground while preserving the existing resting-orb choreography.
     // ------------------=
     pub(super) fn system_login_animation(&mut self, phase: usize) {
-        if self.skin_visual_mode() != 0 || crate::console::reduced_motion() { return; }
+        if self.skin_visual_mode() != 0 { return; }
         let elapsed = crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000;
+        let reduced = crate::console::reduced_motion();
+        let previous = crate::ui::login_waves::current();
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        let peak = crate::runtime::ai::voice_conversation::login_meter_peak();
+        #[cfg(not(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
+        let peak = None;
+        let frame = crate::ui::login_waves::advance(previous, elapsed as u32, peak, reduced);
+        crate::ui::login_waves::publish(frame);
+        if reduced {
+            if previous != frame { self.repaint_login_waves(); }
+            return;
+        }
+        self.repaint_login_waves();
         if self.repaint_login_motion(crate::ui::authentication_motion::idle_presentation(elapsed, false)) { return; }
         if !crate::ui::installer_layout::login_uses_legacy_animation(
             crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES,

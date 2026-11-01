@@ -196,6 +196,11 @@ domain = "studio"
 command = ["sh", "tools/studio-menu-test.sh"]
 clean = false
 
+[profiles.studio-login-wave-tests]
+domain = "studio"
+command = ["sh", "tools/login-waves-test.sh"]
+clean = false
+
 [profiles.studio-menu-kernel-check]
 domain = "studio"
 command = ["env", "RUSTC_BOOTSTRAP=1", "cargo", "check", "--offline", "--release", "-Z", "build-std=core", "--features", "native-browser"]

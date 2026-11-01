@@ -7,7 +7,7 @@ use super::installer_template::{
 
 pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/installer-screens.iuit");
-pub const LOGIN_TEMPLATE_BYTES: &[u8] = include_bytes!("../../assets/boot/login-screens.iuit");
+pub static LOGIN_TEMPLATE_BYTES: &[u8] = include_bytes!("../../assets/boot/login-screens.iuit");
 
 // ------------------------=
 // FUNC: login_uses_legacy_animation
@@ -35,6 +35,47 @@ pub fn login_animation_regions(template: &InstallerTemplate<'_>, width: usize, h
     for index in 0..template.element_count(1).unwrap_or(0) {
         let Some(element) = template.layer_at(1, index) else { continue; };
         if super::installer_template::login_action(&element).is_none() { continue; }
+        let cut = scale_template_rect(element.frame, width, height);
+        let mut next = [empty; 64];
+        let mut used = 0;
+        for region in &regions[..count] {
+            let l = region.left.max(cut.left);
+            let t = region.top.max(cut.top);
+            let r = (region.left + region.width).min(cut.left + cut.width);
+            let b = (region.top + region.height).min(cut.top + cut.height);
+            let pieces = if l < r && t < b {
+                [InstallerRect { height: t - region.top, ..*region },
+                 InstallerRect { top: b, height: region.top + region.height - b, ..*region },
+                 InstallerRect { top: t, height: b - t, width: l - region.left, ..*region },
+                 InstallerRect { left: r, top: t, width: region.left + region.width - r, height: b - t }]
+            } else { [*region, empty, empty, empty] };
+            for piece in pieces {
+                if piece.width == 0 || piece.height == 0 { continue; }
+                if used == next.len() { return ([empty; 64], 0); }
+                next[used] = piece; used += 1;
+            }
+        }
+        regions = next; count = used;
+    }
+    (regions, count)
+}
+
+// ------------------------=
+// FUNC: login_wave_regions
+// DESC: Clips ribbons away from all foreground, including the independently animated success hero.
+// ------------------=
+pub fn login_wave_regions(template: &InstallerTemplate<'_>, width: usize, height: usize)
+    -> ([InstallerRect; 64], usize) {
+    let empty = InstallerRect { left: 0, top: 0, width: 0, height: 0 };
+    let mut regions = [empty; 64];
+    let Some(background) = template.element(1, InstallerTemplateRole::SceneBackground) else { return (regions, 0); };
+    if background.hidden || background.opacity == 0 { return (regions, 0); }
+    let rect = scale_template_rect(background.frame, width, height);
+    regions[0] = InstallerRect { top: rect.top + rect.height / 5, height: rect.height * 7 / 10, ..rect };
+    let mut count = 1;
+    for index in 0..template.element_count(1).unwrap_or(0) {
+        let Some(element) = template.layer_at(1, index) else { continue; };
+        if element.hidden || element.opacity == 0 || element.z_index <= background.z_index { continue; }
         let cut = scale_template_rect(element.frame, width, height);
         let mut next = [empty; 64];
         let mut used = 0;

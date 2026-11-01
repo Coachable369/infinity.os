@@ -94,6 +94,7 @@ pub fn capture(owner: crate::runtime::execution::SecurityIdentity, capability: u
                         device.stop_capture(); LOCK.store(false, Ordering::Release); return false;
                     };
                     (&mut *(&raw mut INPUT)).clear();
+                    OBSERVER_PEAK.store(0, Ordering::Relaxed);
                     INPUT_STATUS = CaptureStatus { state: CaptureState::Recording, sample_rate: device.sample_rate, frames: 0, peak: 0 };
                     INPUT_LAST_POLL = started; INPUT_UNTIL = started.saturating_add(3_000_000_000); INPUT_LEASE = lease;
                     LAST_HARDWARE_POLL = None; true
@@ -129,12 +130,27 @@ pub fn capture_status() -> Option<CaptureStatus> {
 }
 
 static METER_PEAK: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static OBSERVER_PEAK: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 // ------------------------=
 // FUNC: take_meter_peak
 // DESC: Consumes only microphone amplitude since the previous visual frame, never recorded samples.
 // ------------------=
 pub fn take_meter_peak() -> u16 {
     METER_PEAK.swap(0, Ordering::Relaxed).min(32768) as u16
+}
+// ------------------------=
+// FUNC: take_meter_peak_for
+// DESC: Returns independent visual amplitude for the authorized owner without consuming PCM, the existing meter, or opening hardware.
+// ------------------=
+pub fn take_meter_peak_for(owner: crate::runtime::execution::SecurityIdentity) -> Option<u16> {
+    let now = crate::ui::performance::monotonic_ns()?;
+    if LOCK.swap(true, Ordering::Acquire) { return None; }
+    let authorized = unsafe { INPUT_STATUS.state == CaptureState::Recording
+        && INPUT_LEASE.filter(|lease| lease.owner == owner).is_some_and(|lease|
+            crate::runtime::with_runtime(|r| lease.valid(&r.capabilities, now / 1_000_000_000)).unwrap_or(false)) };
+    let peak = authorized.then(|| OBSERVER_PEAK.swap(0, Ordering::Relaxed).min(32768) as u16);
+    LOCK.store(false, Ordering::Release);
+    peak
 }
 // ------------------------=
 // FUNC: renew_capture
@@ -210,6 +226,7 @@ pub fn discard_capture_pending(owner: crate::runtime::execution::SecurityIdentit
 // DESC: Stops hardware and erases private audio before retiring the one-shot microphone lease; lock must be held.
 // ------------------=
 unsafe fn finish_capture(device: &mut hda::Hda, state: CaptureState) {
+    OBSERVER_PEAK.store(0, Ordering::Relaxed);
     crate::output::write(match state {
         CaptureState::Idle => b"[AUDIO] capture finished idle\n",
         CaptureState::Recording => b"[AUDIO] capture finished recording\n",
@@ -700,6 +717,7 @@ pub fn poll() {
                             let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
                             INPUT_STATUS.peak = INPUT_STATUS.peak.max(peak);
                             METER_PEAK.fetch_max(peak as u32, Ordering::Relaxed);
+                            OBSERVER_PEAK.fetch_max(peak as u32, Ordering::Relaxed);
                             if (&mut *(&raw mut INPUT)).push_stereo(samples).is_err() { finish_capture(device, CaptureState::Overrun); }
                             else if n >= INPUT_UNTIL { finish_capture(device, CaptureState::Complete); }
                         }

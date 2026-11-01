@@ -374,6 +374,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 // ------------------=
 #[cfg(not(studio_native_preview))]
 fn main() {
+    if std::env::args().any(|arg|arg=="--login-waves-only") {configuration_wizard_render::login_wave_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--face-enrollment-only") {configuration_wizard_render::verify_face();return;}
     if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}

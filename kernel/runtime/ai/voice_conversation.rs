@@ -75,6 +75,18 @@ pub(crate) fn sync_login_listener(account:Option<crate::runtime::identity::Stabl
     } else {STATE=State::Starting;}
 }}
 static mut INPUT_CAP: u64 = 0;
+
+// ------------------------=
+// FUNC: login_meter_peak
+// DESC: Exposes amplitude from the existing authorized login listener, without changing capture or wake-word recognition.
+// ------------------=
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+pub(crate) fn login_meter_peak() -> Option<u16> {
+    if unsafe { OWNER != LOGIN_OWNER || LOGIN_USER.is_none() || INPUT_CAP == 0 } || !active_owner(LOGIN_OWNER) {
+        return None;
+    }
+    crate::drivers::audio::take_meter_peak_for(LOGIN_OWNER)
+}
 static mut RECOGNIZE_CAP: u64 = 0;
 static mut RENEW_AT: u64 = 0;
 static mut CAPABILITY_REPLACE_AT: u64 = 0;

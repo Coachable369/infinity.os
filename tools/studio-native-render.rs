@@ -111,6 +111,8 @@ pub(crate) fn run()->Result<(),String> {
             "--scroll"=>state.scroll=value.parse().map_err(|_|"Invalid preview scroll")?,
             "--control-focus"=>state.control=value.parse().map_err(|_|"Invalid preview control")?,
             "--phase-ms"=>phase=Some(value.parse::<u64>().map_err(|_|"Invalid animation phase")?.min(60000)),
+            "--wave-time-ms"=>state.wave_time=value.parse().map_err(|_|"Invalid wave time")?,
+            "--wave-level"=>state.wave_level=value.parse().map_err(|_|"Invalid wave level")?,
             "--atlas"|"--styles"|"--glyphs"|"--tokens"=>{
                 let name=match option.as_str(){"--atlas"=>"eclipse-precision-v1.rgba","--styles"=>"uikit-styles.bin","--tokens"=>"uikit-tokens.bin",_=>"eclipse-access-glyphs-v1.rgba"};
                 assets.push((name.to_owned(),PathBuf::from(value)));
@@ -124,7 +126,7 @@ pub(crate) fn run()->Result<(),String> {
     }
     if width==0 || height==0 || width>3840 || height>2160 || focus>2 {return Err("Preview viewport or focus exceeds native bounds".into());}
     if state.percent>100 || state.zone>11 || !(2..=4).contains(&state.date_focus) || state.date_part>4
-        || state.expanded.is_some_and(|index|index>127) || state.scroll>10000 || state.control>255 {
+        || state.expanded.is_some_and(|index|index>127) || state.scroll>10000 || state.control>255 || state.wave_level>1000 {
         return Err("Simulated service state exceeds native bounds".into());
     }
     let bytes=read_bounded(&template.ok_or("Missing template path")?,&root,512*1024*1024)?;

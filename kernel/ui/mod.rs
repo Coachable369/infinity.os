@@ -11,6 +11,7 @@ pub mod app_launcher;
 pub mod app_menu;
 pub mod async_model;
 pub mod authentication_motion;
+pub mod login_waves;
 pub mod bitmap;
 pub mod clipboard;
 pub mod compositor;

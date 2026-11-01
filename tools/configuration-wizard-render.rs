@@ -1,5 +1,6 @@
 //! Host framebuffer proof of the actual authored first-boot compositor and native Inter painters.
 use super::{DisplayDevice, Region};
+#[path="login-waves-render-test.rs"] pub(super) mod login_wave_tests;
 use super::primitives::FontSize;
 use crate::ui::{geometry::Rect, installer_layout::{CONFIGURATION_TEMPLATE_BYTES, scale_template_rect},
     installer_template::{InstallerTemplate, InstallerTemplateRole as Role},
@@ -143,6 +144,7 @@ fn verify_face_capture_feedback() {
 pub(crate) struct DraftServiceState {
     pub simulated:bool,pub confirmation:bool,pub percent:u8,pub zone:u8,pub date_focus:u8,pub date_part:u8,
     pub expanded:Option<usize>,pub scroll:usize,pub control:usize,
+    pub wave_time: u32, pub wave_level: u16,
 }
 impl Default for DraftServiceState {
     // ------------------------=
@@ -150,7 +152,7 @@ impl Default for DraftServiceState {
     // DESC: Defines explicitly simulated service values; preview rendering never reads or changes clock, identity or installation services.
     // ------------------=
     fn default()->Self {Self{simulated:false,confirmation:false,percent:42,zone:3,date_focus:2,date_part:0,
-        expanded:None,scroll:0,control:0}}
+        expanded:None,scroll:0,control:0,wave_time:0,wave_level:0}}
 }
 
 // ------------------------=
@@ -306,6 +308,7 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             target.paint_app_launcher(target.ui_scale(),b"",0);
         }
     } else if kind==4 {
+        crate::ui::login_waves::publish(crate::ui::login_waves::Frame { time_ms:state.wave_time, level:state.wave_level });
         if !target.login_template_scene_motion(bytes, b"Select an account", b"", focus,
             Some(crate::ui::authentication_motion::presentation_at(phase.unwrap_or(0).min(2400) as u16))) {
             return Err("Native login scene rejected the template".into());

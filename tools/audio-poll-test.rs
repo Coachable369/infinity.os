@@ -306,6 +306,41 @@ fn actual_adapter_time_cadence_and_authority() {
     CLOCK_VALID.store(false, Ordering::SeqCst); audio::poll();
     assert_eq!(audio::playback_state(), Some(PlaybackState::Denied));
     discard_capture_boundary_tests();
+    visual_meter_isolation();
+}
+
+// ------------------------=
+// FUNC: visual_meter_isolation
+// DESC: Proves waveform observation preserves existing meter peaks, PCM, hardware lifetime and immediate capability revocation.
+// ------------------=
+fn visual_meter_isolation() {
+    assert_eq!(audio::take_meter_peak_for(OWNER), None);
+    let cap = capture(30_000_000_000);
+    audio::take_meter_peak();
+    assert_eq!(audio::take_meter_peak_for(OWNER), Some(0));
+    let starts = CAPTURE_STARTS.load(Ordering::SeqCst);
+    let stops = CAPTURE_STOPS.load(Ordering::SeqCst);
+    audio::poll();
+    assert_eq!(audio::take_meter_peak_for(execution::SecurityIdentity([2;16])), None);
+    let peak = audio::take_meter_peak_for(OWNER).unwrap();
+    assert!(peak > 0);
+    assert_eq!(audio::take_meter_peak(), peak);
+    assert_eq!(audio::take_meter_peak_for(OWNER), Some(0));
+    let mut pcm = [0;48];
+    assert_eq!(audio::read_capture(OWNER,&mut pcm), 48);
+    assert_eq!(pcm, core::array::from_fn(|i|i as i16));
+    assert_eq!(CAPTURE_STARTS.load(Ordering::SeqCst), starts);
+    assert_eq!(CAPTURE_STOPS.load(Ordering::SeqCst), stops);
+    CLOCK_VALID.store(false, Ordering::SeqCst);
+    assert_eq!(audio::take_meter_peak_for(OWNER), None);
+    CLOCK_VALID.store(true, Ordering::SeqCst);
+    runtime::with_runtime(|r|r.capabilities.revoke(cap).unwrap());
+    assert_eq!(audio::take_meter_peak_for(OWNER), None);
+    assert!(audio::stop_capture(OWNER));
+    capture(31_000_000_000);
+    assert_eq!(audio::take_meter_peak_for(OWNER), Some(0));
+    assert!(audio::stop_capture(OWNER));
+    assert_eq!(audio::take_meter_peak_for(OWNER), None);
 }
 
 // ------------------------=
