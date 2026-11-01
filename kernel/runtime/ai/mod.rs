@@ -261,7 +261,7 @@ impl AiRuntime {
         id: usize,
         input: &[u8],
     ) -> Result<RequestRoute, &'static [u8]> {
-        if id >= 13 {
+        if id > crate::ui::app_assistant::NATIVE_OWNER {
             return Err(b"Unknown application context.");
         }
         if input.is_empty() { return Err(b"An application request is required."); }

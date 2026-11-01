@@ -1185,11 +1185,12 @@ fn shared_request_ingress_contract() {
     assert_eq!(attached.intelligence_plan(1,owner).unwrap().state,state);
     attached.poll_qwen();
     assert_eq!(attached.take_control(owner,true),Some(expected));
-    for origin in [RequestOrigin::DesktopChat, RequestOrigin::Voice, RequestOrigin::Application(2)] {
+    for origin in [RequestOrigin::DesktopChat, RequestOrigin::Voice, RequestOrigin::Application(2),
+        RequestOrigin::Application(ui::app_assistant::NATIVE_OWNER)] {
         let mut ai = AiRuntime::new();
         ai.bind_chat_owner(owner);
-        if origin == RequestOrigin::Application(2) {
-            assert_eq!(ai.route_application_request(2, b"show my files"), Ok(RequestRoute::Control(Command::FileNavigator)));
+        if let RequestOrigin::Application(id) = origin {
+            assert_eq!(ai.route_application_request(id, b"show my files"), Ok(RequestRoute::Control(Command::FileNavigator)));
         } else {
             for byte in b"show my files" { assert!(ai.chat.push_input(*byte)); }
             assert!(if origin == RequestOrigin::Voice { ai.submit_voice_chat() } else { ai.submit_chat() });
@@ -1207,7 +1208,7 @@ fn shared_request_ingress_contract() {
     }
     let mut ai = AiRuntime::new();
     ai.bind_chat_owner(owner);
-    assert!(ai.route_application_request(13, b"open settings").is_err());
+    assert!(ai.route_application_request(ui::app_assistant::NATIVE_OWNER+1, b"open settings").is_err());
     assert!(ai.route_application_request(2, b"open settings").is_ok());
     assert_eq!(ai.take_control(owner, false), None);
     assert!(!ai.control_pending());
