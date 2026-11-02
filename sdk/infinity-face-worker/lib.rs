@@ -91,7 +91,6 @@ impl Arena {
         for offset in (0..data.len()).step_by(64*1024) {
             let n=(data.len()-offset).min(64*1024);
             if call(p::MODEL_READ,[id,offset as u64,data.as_mut_ptr().add(offset) as u64,n as u64,0,0])!=n as i64 {return Err(103);}
-            call(0x1001,[0;6]);
         }
         Ok(data)
     }
@@ -153,10 +152,14 @@ unsafe fn work()->Result<(),u32> {
     if !matches!(initial.command,p::BEGIN|p::LOGIN) {return Err(108);}
     let encoded=arena.bytes(1_228_800)?;let rgb=arena.bytes(640*480*3)?;let decode=arena.bytes(8*1024*1024)?;
     let mut stream=Stream::default();
-    let (length,_,_)=capture(initial.command_id,encoded,&mut stream,false)?;
-    jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
-    if initial.command==p::BEGIN {preview(initial.command_id,rgb)?;}
-    capture::stop(&mut stream);
+    if initial.command==p::LOGIN {
+        capture::open(initial.command_id,&mut stream)?;
+    } else {
+        let (length,_,_)=capture(initial.command_id,encoded,&mut stream,false)?;
+        jpeg::decode(&encoded[..length],rgb,decode).map_err(|_|109u32)?;
+        preview(initial.command_id,rgb)?;
+        capture::stop(&mut stream);
+    }
     let detector=arena.model(1)?;let recognizer=arena.model(2)?;
     let engine=Recognizer::new(detector,recognizer).map_err(|_|106u32)?;
     let floats=arena.bytes(engine.arena_len().checked_mul(4).ok_or(102u32)?)?;
@@ -236,7 +239,7 @@ unsafe fn work()->Result<(),u32> {
             if c.command==p::CAPTURE {
                 if let Err(error)=preview(c.command_id,rgb) {report(&c,p::FAILED,error,Some(e.state()));break;}
             }
-            capture::stop(&mut stream);
+            if c.command!=p::LOGIN {capture::stop(&mut stream);}
             let recognition=match engine.recognize(rgb,floats,scratch,||visit(c.command_id)) {
                 Ok(v)=>v,Err(error)=>{
                     use infinity_face_core::{recognition::Error as R,vision::Error as V};
@@ -261,7 +264,7 @@ unsafe fn work()->Result<(),u32> {
             }
         }
         for byte in encoded.iter_mut().chain(rgb.iter_mut()) {core::ptr::write_volatile(byte,0);}
-        if c.command==p::LOGIN {scratch.clear();return Ok(());}
+        if c.command==p::LOGIN {capture::stop(&mut stream);scratch.clear();return Ok(());}
     }
 }
 // ------------------------=

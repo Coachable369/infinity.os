@@ -1216,7 +1216,10 @@ impl ConsoleRuntime {
         if matches!(self.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
             let time=crate::ui::performance::monotonic_ns();
             let key=(self.mode as u32)*65536+(self.system_step as u32)*256+self.system_focus as u32;
-            crate::bootstrap::access_animation_tick(key,time.unwrap_or(0)/1_000_000,
+            let animate=if self.mode!=ConsoleMode::Onboarding && !crate::ui::installer_layout::login_uses_legacy_animation(crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES) {
+                crate::bootstrap::login_access_animation_tick
+            } else {crate::bootstrap::access_animation_tick};
+            animate(key,time.unwrap_or(0)/1_000_000,
                 self.pointer_pressed,self.spatial.state.reduced_motion || time.is_none());
         } else {
             crate::bootstrap::access_animation_leave();
@@ -14666,7 +14669,10 @@ pub fn ui_animation_tick() -> bool {
         if matches!(runtime.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
             let time = crate::ui::performance::monotonic_ns();
             let key = (runtime.mode as u32)*65536 + (runtime.system_step as u32)*256 + runtime.system_focus as u32;
-            if crate::bootstrap::access_animation_tick(key, time.unwrap_or(0)/1_000_000,
+            let animate=if runtime.mode!=ConsoleMode::Onboarding && !crate::ui::installer_layout::login_uses_legacy_animation(crate::ui::installer_layout::LOGIN_TEMPLATE_BYTES) {
+                crate::bootstrap::login_access_animation_tick
+            } else {crate::bootstrap::access_animation_tick};
+            if animate(key, time.unwrap_or(0)/1_000_000,
                 runtime.pointer_pressed, runtime.spatial.state.reduced_motion || time.is_none()) {
                 runtime.redraw();
                 return true;

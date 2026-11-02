@@ -110,6 +110,18 @@ pub fn animate(key: u32, now_ms: u64, pressed: bool, reduced: bool) -> bool {
 }
 
 // ------------------------=
+// FUNC: animate_login
+// DESC: Animates authored login controls without invalidating the entire scene for the unused legacy panel's breathing rim.
+// ------------------=
+pub fn animate_login(key:u32,now_ms:u64,pressed:bool,reduced:bool)->bool {
+    unsafe {
+        let changed=(&mut *(&raw mut MOTION)).advance(key,now_ms/16*16,pressed,reduced);
+        DIRTY|=changed;
+        changed
+    }
+}
+
+// ------------------------=
 // FUNC: take_dirty
 // DESC: Consumes one bounded access-control repaint request on the UI thread.
 // ------------------=

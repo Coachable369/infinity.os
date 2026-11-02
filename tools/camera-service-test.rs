@@ -137,6 +137,13 @@ fn transport_contract(jpeg:&[u8],tables:&mut impl runtime::native_memory::PageTa
     let seq=u64::from_le_bytes(meta[..8].try_into().unwrap());
     assert_eq!(transport.dispatch(&read,owner,&caps,0,[seq,0,address,4,0,0],tables),Ok(4));
     let mut bytes=[0;4];copy_from_user(tables,address,&mut bytes).unwrap();assert_eq!(bytes,jpeg[..4]);
+    for i in 2..102 {transport.tick(&caps,0,i,&mut scratch);}
+    assert_eq!(c.borrow().polls,1,"unread/pinned snapshots must not trigger USB polling");
+    for offset in (0..jpeg.len()).step_by(MAX_READ_BYTES) {
+        let count=(jpeg.len()-offset).min(MAX_READ_BYTES);
+        transport.dispatch(&read,owner,&caps,0,[seq,offset as u64,address,count as u64,0,0],tables).unwrap();
+    }
+    assert_eq!(transport.dispatch(&read,owner,&caps,0,[0,0,0,0,address,0],tables),Err(Error::Unavailable));
     c.borrow_mut().disconnected=true;
     transport.tick(&caps,0,2,&mut scratch);assert_eq!(transport.state(),State::Stopping);
     assert_eq!(transport.dispatch(&read,owner,&caps,0,[0,0,0,0,address,0],tables),Err(Error::Unavailable));

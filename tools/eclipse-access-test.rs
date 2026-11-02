@@ -5,6 +5,23 @@
 mod access_style;
 #[path = "../kernel/core/bootstrap/access_scale.rs"]
 mod access_scale;
+
+// ------------------------=
+// FUNC: authored_login_settles_without_legacy_panel_redraws
+// DESC: Verifies idle authored login schedules no invisible panel animation, while focus and press changes remain animated.
+// ------------------=
+#[test]
+fn authored_login_settles_without_legacy_panel_redraws() {
+    assert!(access_style::animate_login(0x50000,0,false,false));
+    access_style::animate_login(0x50000,160,false,false);
+    access_style::take_dirty();
+    for now in (176..6576).step_by(16) {
+        assert!(!access_style::animate_login(0x50000,now,false,false));
+        assert!(!access_style::take_dirty());
+    }
+    assert!(access_style::animate_login(0x50001,6600,false,false));
+    assert!(access_style::animate_login(0x50001,6616,true,false));
+}
 #[path = "../kernel/core/bootstrap/access_view.rs"]
 mod access_view;
 #[path = "../kernel/core/bootstrap/panel_view.rs"]

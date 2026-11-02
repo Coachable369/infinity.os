@@ -56,6 +56,24 @@ fn preview_then_photo_preserves_exposure() {
     assert!(photo.1>preview.1+1);assert!(pixels.iter().all(|v|*v==128));
     CAMERA.with(|c|{let c=c.borrow();assert_eq!(c.starts,1);assert_eq!(c.stops,0);assert!(!c.pinned);});
 }
+
+// ------------------------=
+// FUNC: login_keeps_exposure_between_comparisons
+// DESC: Three fresh comparison photos reuse one settled stream and remove repeated warmup without admitting an old frame.
+// ------------------=
+#[test]
+fn login_keeps_exposure_between_comparisons() {
+    reset();let mut stream=capture::Stream::default();let mut pixels=[0;8192];
+    capture::open(1,&mut stream).unwrap();
+    let first=capture::capture(1,&mut pixels,&mut stream,false).unwrap();
+    let second=capture::capture(1,&mut pixels,&mut stream,false).unwrap();
+    let third=capture::capture(1,&mut pixels,&mut stream,false).unwrap();
+    assert!(second.1>first.1 && third.1>second.1);
+    assert!(third.2-first.2<1000);
+    assert!(pixels.iter().all(|v|*v==128));
+    capture::stop(&mut stream);
+    CAMERA.with(|c|{let c=c.borrow();assert_eq!(c.starts,1);assert_eq!(c.stops,1);});
+}
 // ------------------------=
 // FUNC: lease_renewal_settles_again
 // DESC: Verifies bounded lease renewal cannot return a dark first frame.

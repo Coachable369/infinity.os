@@ -60,6 +60,7 @@ use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
 pub use self::access_style::animate as access_animation_tick;
+pub use self::access_style::animate_login as login_access_animation_tick;
 pub use self::access_style::leave_scene as access_animation_leave;
 pub use self::crash::show_fatal_crash;
 pub use self::desktop::{system_ui_authentication_success, system_ui_authentication_opacity, system_ui_cursor, system_ui_editor_blink,

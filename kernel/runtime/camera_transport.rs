@@ -29,7 +29,7 @@ pub trait Driver {
 }
 pub struct Transport<'a,D:Driver> {
     camera: Camera<'a>, driver:D, state:State, attempts:u8,
-    stop_attempts:u8, start_steps:u8, reconnect_after_stop:bool, next_ms:u64,
+    stop_attempts:u8, start_steps:u8, reconnect_after_stop:bool, next_ms:u64, frame_requested:bool,
 }
 impl<'a,D:Driver> Transport<'a,D> {
     // ------------------------=
@@ -38,7 +38,7 @@ impl<'a,D:Driver> Transport<'a,D> {
     // ------------------=
     pub fn new(storage:&'a mut [u8],driver:D)->Result<Self,Error> {
         Ok(Self{camera:Camera::new(storage)?,driver,state:State::Idle,attempts:0,
-            stop_attempts:0,start_steps:0,reconnect_after_stop:false,next_ms:0})
+            stop_attempts:0,start_steps:0,reconnect_after_stop:false,next_ms:0,frame_requested:false})
     }
     // ------------------------=
     // FUNC: state
@@ -67,7 +67,7 @@ impl<'a,D:Driver> Transport<'a,D> {
                 if args!=[0;6] {return Err(Error::Invalid);}
                 if self.state!=State::Idle {return Err(Error::Busy);}
                 self.camera.start(message,caller,caps,now_seconds)?;
-                self.attempts=0;self.start_steps=0;self.next_ms=0;self.state=State::Reconnecting;Ok(0)
+                self.attempts=0;self.start_steps=0;self.next_ms=0;self.frame_requested=true;self.state=State::Reconnecting;Ok(0)
             }
             op if op==OperationId::CameraCaptureStop as u32 => {
                 if args!=[0;6] {return Err(Error::Invalid);}
@@ -80,7 +80,9 @@ impl<'a,D:Driver> Transport<'a,D> {
                 if args[3]==0 {
                     if args[..4]!=[0;4] {return Err(Error::Invalid);}
                     check_user_range(tables,args[4],16,true).map_err(|_|Error::Memory)?;
-                    let (sequence,length)=self.camera.metadata(caller,message.header.capability_ref,caps,now_seconds)?;
+                    let metadata=self.camera.metadata(caller,message.header.capability_ref,caps,now_seconds);
+                    if metadata==Err(Error::Unavailable) {self.frame_requested=true;}
+                    let (sequence,length)=metadata?;
                     let mut bytes=[0;16];bytes[..8].copy_from_slice(&sequence.to_le_bytes());
                     bytes[8..].copy_from_slice(&(length as u64).to_le_bytes());
                     copy_to_user(tables,args[4],&bytes).map_err(|_|Error::Memory)?;Ok(16)
@@ -114,11 +116,15 @@ impl<'a,D:Driver> Transport<'a,D> {
                 }
             }
             State::Streaming => {
+                // Keep exposure running while inference uses its copied photo,
+                // but do not spend USB waits repeatedly replacing unread pixels.
+                if !self.frame_requested {return;}
                 if scratch.len()!=super::MAX_FRAME_BYTES {self.cancel();return;}
                 match self.driver.poll(scratch) {
                     Transfer::Pending=>{},
                     Transfer::Frame(length)=>{
                         if length>scratch.len() || self.camera.publish(&scratch[..length],caps,now_seconds).is_err() {self.cancel();}
+                        self.frame_requested=false;
                     }
                     Transfer::Disconnected=>{
                         // Drop stale bytes while preserving the lease only for bounded reconnect.

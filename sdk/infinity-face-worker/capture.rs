@@ -13,6 +13,21 @@ pub fn stop(stream:&mut Stream) {
 }
 
 // ------------------------=
+// FUNC: open
+// DESC: Starts the authorized stream before model preparation without taking a redundant verification photo.
+// ------------------=
+pub fn open(command:u64,stream:&mut Stream)->Result<(),u32> {
+    let begin=clock()?;
+    while stream.opened.is_none() {
+        let status=call(0x1260,[0;6]);
+        if status==0 {stream.opened=Some(clock()?);return Ok(());}
+        if status!= -11 && status!= -16 {return Err(104);}
+        if clock()?.saturating_sub(begin)>5000 || !visit(command) {return Err(105);}
+    }
+    Ok(())
+}
+
+// ------------------------=
 // FUNC: capture
 // DESC: Drains startup frames for exposure settling and captures a fresh pinned frame without restarting a healthy preview stream.
 // ------------------=
@@ -23,12 +38,7 @@ pub fn capture(command:u64,encoded:&mut [u8],stream:&mut Stream,live:bool)->Resu
         call(0x1262,[0;6]);*stream=Stream::default();
     }
     let result=(|| {
-        while stream.opened.is_none() {
-            let status=call(0x1260,[0;6]);
-            if status==0 {stream.opened=Some(clock()?);break;}
-            if status!= -11 && status!= -16 {return Err(104);}
-            if clock()?.saturating_sub(begin)>5000 || !visit(command) {return Err(105);}
-        }
+        open(command,stream)?;
         // The first frame available on a photo request may predate the click.
         let mut after_click=live;
         loop {

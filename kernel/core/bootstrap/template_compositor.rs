@@ -106,7 +106,7 @@ impl DisplayDevice {
             // wallpaper. Do not decode/scale that image on every hero frame.
             // Only reuse when it is the first layer, so lower authored layers
             // can never be accidentally restored over or counted twice.
-            if index == 0 && self.render_clip.is_some()
+            if index == 0
                 && element.role == InstallerTemplateRole::SceneBackground as u8
                 && login_wave_backdrop::restore(self, bytes) {
                 self.login_wave_layer(element);

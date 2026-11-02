@@ -21,6 +21,9 @@ Kit gap: no continuous audio-reactive ribbon component existed.
   Both hero and wave damage restore the cached static wallpaper rather than
   decoding it on each animation frame. Eight single-pass filaments replace
   twelve broad trail passes to bound per-frame blend work.
+  Authored login controls settle independently of the unused legacy panel
+  breathing timer; invisible legacy effects must never force whole-scene redraws.
+  Full repaint requests also reuse the same wallpaper snapshot.
   Audio peaks are observed independently from the existing desktop visualizer.
 - Reduced motion: fixed, quiet ribbons. Revoked/missing audio: immediate return to
   idle amplitude; no stale peak persists between accounts or capture sessions.

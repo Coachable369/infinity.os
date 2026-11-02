@@ -24,6 +24,11 @@ pub(crate) fn verify() {
             std::fs::write(output.join(format!("{width}-{name}.ppm")),ppm).unwrap();
         }
         let moved = frames[0].iter().zip(&frames[1]).filter(|(a,b)|a!=b).count();
+        login_waves::publish(Frame{time_ms:4000,level:0});
+        let started=std::time::Instant::now();
+        assert!(target.login_template_scene(bytes,b"Jonathan",b"private password",1));
+        assert_eq!(pixels,frames[0],"cached full-scene repaint must preserve authored pixels");
+        println!("{width}x{height}: cached full login repaint {:?}",started.elapsed());
         let reacted = frames[0].iter().zip(&frames[2]).filter(|(a,b)|a!=b).count();
         assert!(moved>width*10 && reacted>width*10);
         pixels.copy_from_slice(&frames[0]);
