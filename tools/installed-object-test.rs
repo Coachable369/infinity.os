@@ -73,9 +73,9 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 fn profile_models(bytes: &[u8]) -> Option<Vec<(u8, bool)>> {
     if bytes.len() < 4096 || &bytes[..8] != b"INFIDN1\0" { return None; }
     let version = u16::from_le_bytes(bytes[8..10].try_into().ok()?);
-    // Identity versions 1/2/3 contain the same eight 160-byte user records.
+    // Identity versions 1/2/3/4 contain the same eight 160-byte user records.
     // Reject future layouts rather than interpreting unknown private fields.
-    if !matches!((version, bytes.len()), (1, 4096) | (2, 5632) | (3, 10768))
+    if !matches!((version, bytes.len()), (1, 4096) | (2, 5632) | (3, 10768) | (4, 12960))
         || u16::from_le_bytes(bytes[10..12].try_into().ok()?) as usize != bytes.len() { return None; }
     let checksum = bytes[..bytes.len()-4].iter().fold(0x811c9dc5u32,
         |sum, byte| (sum ^ *byte as u32).wrapping_mul(0x01000193));
@@ -101,7 +101,7 @@ fn inspect_profile_models<D: BlockDevice>(store: &mut ObjectStore<D>) {
     let size = store.metadata(object).unwrap().logical_size as usize;
     assert!(size <= 16 * 1024);
     let mut bytes = vec![0; size];
-    assert_eq!(store.read(object, None, &mut bytes).unwrap(), size);
+    assert_eq!(store.read_identity_state(object, &mut bytes).unwrap(), size);
     let models = profile_models(&bytes).expect("valid versioned identity preferences");
     let records: Vec<_> = models.iter().map(|(index, enabled)|
         format!("{{\"chat_model_index\":{index},\"chat_enabled\":{enabled}}}")).collect();
@@ -114,7 +114,7 @@ fn inspect_profile_models<D: BlockDevice>(store: &mut ObjectStore<D>) {
 // ------------------=
 #[test]
 fn profile_model_projection_validates_envelope() {
-    for (version, size) in [(1u16, 4096usize), (2, 5632), (3, 10768)] {
+    for (version, size) in [(1u16, 4096usize), (2, 5632), (3, 10768), (4, 12960)] {
         let mut bytes = vec![0u8; size];
         bytes[..8].copy_from_slice(b"INFIDN1\0");
         bytes[8..10].copy_from_slice(&version.to_le_bytes());

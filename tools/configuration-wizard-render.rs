@@ -263,6 +263,13 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
     }else{None};
     let navigation=if date_time.is_some() {Some((usize::from(state.date_focus),true,None))}else{navigation};
     let mut settings_rendered=false;
+    if kind==2 && state.simulated && screen==3 {
+        let window=settings_preview_window(&template,screen,state)?;
+        target.render_accounts_view(window,target.ui_scale(),&crate::accounts_native_render_tests::fixture());
+        let geometry=crate::ui::system_layout::SystemLayout::new(width,height).settings_window_geometry_for_section(window,2);
+        target.precision_window_frame(geometry.window,true,target.ui_scale());
+        settings_rendered=true;
+    }
     if kind==2 && state.simulated && crate::settings_view::supports_basic_section(usize::from(screen-1)) {
         let window=settings_preview_window(&template,screen,state)?;
         let layout=crate::ui::system_layout::SystemLayout::new(width,height);

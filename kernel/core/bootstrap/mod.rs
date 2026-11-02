@@ -9,6 +9,7 @@ mod desktop_menu_view;
 pub use self::desktop::system_ui_settings_changed;
 mod desktop_controls;
 mod settings_view;
+mod accounts_view;
 mod settings_dashboard_view;
 mod access_style;
 mod access_scale;

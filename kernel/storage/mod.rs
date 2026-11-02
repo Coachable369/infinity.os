@@ -866,7 +866,18 @@ pub fn intelligence_state_commit(owner:[u8;16],session:[u8;16],content:&[u8])->R
 // DESC: Loads the native identity object without exposing filesystem semantics.
 // ------------------=
 pub fn identity_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
-    object_read_path(b"/system/identity/state", None, out).map(|(_, length)| length)
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    {
+        with_store(|store| {
+            let id = store.resolve(b"/system/identity/state")?;
+            store.read_identity_state(id, out)
+        })
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = out;
+        Err(object::ObjectError::SpaceUnavailable)
+    }
 }
 
 // ------------------------=
@@ -874,7 +885,28 @@ pub fn identity_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError>
 // DESC: Transactionally commits the next version of authoritative identity state.
 // ------------------=
 pub fn identity_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
-    checkpoint_state(b"/system/identity/state", content)
+    account_state_commit(content, None)
+}
+
+// ------------------------=
+// FUNC: account_state_commit
+// DESC: Atomically saves account administration and optional new personal folders without a nested runtime lookup.
+// ------------------=
+pub(crate) fn account_state_commit(
+    content: &[u8],
+    new_home: Option<([u8; 16], &[u8])>,
+) -> Result<u32, object::ObjectError> {
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    {
+        with_store(|store| store.checkpoint_identity(
+            content, new_home.map(|(owner, name)| (object::ObjectId(owner), name)),
+        ))
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = (content, new_home);
+        Err(object::ObjectError::SpaceUnavailable)
+    }
 }
 
 // ------------------------=

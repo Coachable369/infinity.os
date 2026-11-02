@@ -11,6 +11,18 @@ path = "../face-vault-test.rs"
 cc = "1"
 
 [[bin]]
+name = "accounts-test"
+path = "../accounts-test.rs"
+
+[[bin]]
+name = "accounts-storage-test"
+path = "../accounts-storage-test.rs"
+
+[[bin]]
+name = "accounts-cli-test"
+path = "../accounts-cli-test.rs"
+
+[[bin]]
 name = "settings-reboot-test"
 path = "../settings-reboot-test.rs"
 

@@ -1146,10 +1146,17 @@ impl InfinityRuntime {
                 OperationId::ProfileRead as u32,
                 OperationId::ProfileUpdate as u32,
                 OperationId::PersonalSpaceRead as u32,
-                0,
-                0,
+                OperationId::IdentitySetEnabled as u32,
+                OperationId::IdentityResetPassword as u32,
+                OperationId::GroupCreate as u32,
+                OperationId::GroupRead as u32,
+                OperationId::GroupList as u32,
+                OperationId::GroupUpdate as u32,
+                OperationId::GroupDelete as u32,
+                OperationId::GroupAddMember as u32,
+                OperationId::GroupRemoveMember as u32,
             ],
-            10,
+            19,
             RestartPolicy::BoundedRetry { maximum: 3 },
             Criticality::Important,
         ))?;
@@ -3226,6 +3233,7 @@ pub fn storage_initialized() {
                         *length,
                         identity::LEGACY_IDENTITY_STATE_BYTES
                             | identity::V2_IDENTITY_STATE_BYTES
+                            | identity::V3_IDENTITY_STATE_BYTES
                             | identity::IDENTITY_STATE_BYTES
                     )
                 })
@@ -3320,7 +3328,7 @@ pub fn persist_shell_profile_state() -> bool {
 // DESC: Commits completed setup before desktop entry; restores retryable state on a failed durable write.
 // ------------------=
 pub fn complete_onboarding_durable() -> bool {
-    let Some(before) = with_runtime(|r| r.identity.encode()) else {
+    let Some(before) = with_runtime(|r| r.identity.account_checkpoint()) else {
         return false;
     };
     if !with_runtime(|r| r.identity.complete_onboarding().is_ok()).unwrap_or(false) {
@@ -3329,9 +3337,7 @@ pub fn complete_onboarding_durable() -> bool {
     if persist_identity_state() {
         return true;
     }
-    if let Ok(state) = identity::IdentitySystem::decode(&before) {
-        with_runtime(|r| r.identity = state);
-    }
+    with_runtime(|r| r.identity.restore_account_checkpoint(before));
     false
 }
 
@@ -3340,40 +3346,79 @@ pub fn complete_onboarding_durable() -> bool {
 // DESC: Commits authoritative identity state as a versioned native object.
 // ------------------=
 pub fn persist_identity_state() -> bool {
+    if runtime_ref().identity.account_storage_uncertain() { return false; }
     #[cfg(target_os = "none")]
     {
         let encoded = runtime_ref().identity.encode();
-        if crate::storage::identity_state_commit(&encoded).is_err() {
+        if let Err(error) = crate::storage::identity_state_commit(&encoded) {
+            if error == crate::storage::object::ObjectError::CommitUncertain {
+                runtime_mut().identity.latch_account_storage_uncertain();
+            }
             return false;
         }
-        // State is authoritative and commits before its notification. A missed
-        // event is therefore recoverable through Identity.Read.
-        let runtime = runtime_mut();
-        if let (Some(source), Some(capability)) = (
-            runtime.service_identity(SERVICE_IDENTITY),
-            runtime.identity_event_cap,
-        ) {
-            let generation = runtime.identity.generation();
-            let _ = runtime.events.publish(
-                EventClass::Record,
-                RoutingDomain::Session,
-                EVENT_IDENTITY_STATE_CHANGED,
-                source,
-                0,
-                generation,
-                generation,
-                &generation.to_le_bytes(),
-                220,
-                generation,
-                &runtime.capabilities,
-                capability,
-            );
-        }
+        publish_identity_commit(runtime_mut());
         return true;
     }
     #[cfg(not(target_os = "none"))]
     {
         true
+    }
+}
+
+// ------------------------=
+// FUNC: manage_accounts
+// DESC: Shares one authenticated, atomic account mutation boundary between native Settings and Console.
+// ------------------=
+pub fn manage_accounts(
+    session: identity::StableId,
+    request: identity::AccountRequest<'_>,
+) -> Result<identity::AccountResult, identity::IdentityError> {
+    let creating_user = matches!(&request, identity::AccountRequest::CreateUser { .. });
+    with_runtime(|runtime| {
+        let result = runtime.identity.manage_accounts_durable(session, request, |encoded, result| {
+            #[cfg(target_os = "none")]
+            {
+                let home = match result {
+                    identity::AccountResult::User(ref user) if creating_user =>
+                        Some((user.id.0, user.display_name.as_bytes())),
+                    _ => None,
+                };
+                crate::storage::account_state_commit(encoded, home).map(|_| ()).map_err(|error| {
+                    use crate::storage::object::ObjectError;
+                    match error {
+                        ObjectError::NameConflict => identity::IdentityError::Conflict,
+                        ObjectError::InsufficientCapacity => identity::IdentityError::Full,
+                        ObjectError::InvalidObject => identity::IdentityError::InvalidInput,
+                        ObjectError::CommitUncertain => identity::IdentityError::CommitUncertain,
+                        _ => identity::IdentityError::InvalidState,
+                    }
+                })
+            }
+            #[cfg(not(target_os = "none"))]
+            {
+                let _ = (encoded, result, creating_user);
+                Ok(())
+            }
+        })?;
+        publish_identity_commit(runtime);
+        Ok(result)
+    }).unwrap_or(Err(identity::IdentityError::InvalidState))
+}
+
+// ------------------------=
+// FUNC: publish_identity_commit
+// DESC: Announces only committed identity generations; readers can recover a missed event by rereading state.
+// ------------------=
+fn publish_identity_commit(runtime: &mut InfinityRuntime) {
+    if let (Some(source), Some(capability)) = (
+        runtime.service_identity(SERVICE_IDENTITY), runtime.identity_event_cap,
+    ) {
+        let generation = runtime.identity.generation();
+        let _ = runtime.events.publish(
+            EventClass::Record, RoutingDomain::Session, EVENT_IDENTITY_STATE_CHANGED,
+            source, 0, generation, generation, &generation.to_le_bytes(),
+            220, generation, &runtime.capabilities, capability,
+        );
     }
 }
 

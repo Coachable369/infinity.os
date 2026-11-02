@@ -54,6 +54,7 @@ pub mod redraw;
 pub mod scene;
 pub mod session_state;
 pub mod settings_cards;
+pub mod accounts;
 pub mod settings_template;
 pub mod skin;
 pub mod spatial;

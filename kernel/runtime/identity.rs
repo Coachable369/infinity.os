@@ -6,14 +6,20 @@ use crate::ui::session_state::{
     DesktopSessionLayout, PersistentDesktopLayoutStore, DESKTOP_LAYOUT_STATE_BYTES,
 };
 
+#[path = "identity/accounts.rs"]
+mod accounts;
+pub use accounts::*;
+
 pub const MAX_USERS: usize = 8;
 pub const MAX_CREDENTIALS: usize = 12;
 pub const MAX_SESSIONS: usize = 8;
 pub const LEGACY_IDENTITY_STATE_BYTES: usize = 4096;
 pub const V2_IDENTITY_STATE_BYTES: usize = LEGACY_IDENTITY_STATE_BYTES + DESKTOP_LAYOUT_STATE_BYTES;
 pub const USER_AI_MEMORY_OFFSET: usize = V2_IDENTITY_STATE_BYTES - 4;
-pub const IDENTITY_STATE_BYTES: usize = USER_AI_MEMORY_OFFSET + AI_MEMORY_STATE_BYTES + 4;
-pub const IDENTITY_FORMAT_VERSION: u16 = 3;
+pub const V3_IDENTITY_STATE_BYTES: usize = USER_AI_MEMORY_OFFSET + AI_MEMORY_STATE_BYTES + 4;
+pub const ACCOUNTS_STATE_OFFSET: usize = V3_IDENTITY_STATE_BYTES - 4;
+pub const IDENTITY_STATE_BYTES: usize = ACCOUNTS_STATE_OFFSET + ACCOUNTS_STATE_BYTES + 4;
+pub const IDENTITY_FORMAT_VERSION: u16 = 4;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
@@ -319,9 +325,12 @@ pub enum IdentityError {
     InvalidState,
     CorruptState,
     PersonalSpaceUnavailable,
+    CommitUncertain,
 }
 
+#[derive(Clone)]
 pub struct IdentitySystem {
+    storage_uncertain: bool,
     machine: Option<MachineIdentity>,
     users: [Option<UserIdentity>; MAX_USERS],
     credentials: [Option<Credential>; MAX_CREDENTIALS],
@@ -338,6 +347,8 @@ pub struct IdentitySystem {
     background_blur: u8,
     desktop_layouts: PersistentDesktopLayoutStore,
     ai_memories: [AiMemory; MAX_USERS],
+    groups: [Option<GroupIdentity>; MAX_GROUPS],
+    memberships: [u8; MAX_GROUPS],
 }
 
 impl IdentitySystem {
@@ -347,6 +358,7 @@ impl IdentitySystem {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            storage_uncertain: false,
             machine: None,
             users: [None; MAX_USERS],
             credentials: [None; MAX_CREDENTIALS],
@@ -363,6 +375,8 @@ impl IdentitySystem {
             background_blur: DEFAULT_BACKGROUND_BLUR,
             desktop_layouts: PersistentDesktopLayoutStore::new(),
             ai_memories: [AiMemory::new(); MAX_USERS],
+            groups: initial_groups(),
+            memberships: [0; MAX_GROUPS],
         }
     }
 
@@ -519,6 +533,7 @@ impl IdentitySystem {
         now: u64,
     ) -> Result<UserIdentity, IdentityError> {
         validate_handle(handle)?;
+        let display_name = ShortText::new(display_name)?;
         if self
             .users
             .iter()
@@ -537,7 +552,7 @@ impl IdentitySystem {
         let personal = self.allocate_id(0x53);
         let user = UserIdentity {
             id: user_id,
-            display_name: ShortText::new(display_name)?,
+            display_name,
             handle: ShortText::new(handle)?,
             created: now,
             state: UserState::Active,
@@ -575,6 +590,9 @@ impl IdentitySystem {
             owner: user_id,
             space: personal,
         });
+        if self.user_count() == 1 {
+            self.memberships[0] |= 1 << slot;
+        }
         self.commit();
         Ok(user)
     }
@@ -626,7 +644,7 @@ impl IdentitySystem {
         display_name: &[u8],
         administrator: bool,
     ) -> Result<UserIdentity, IdentityError> {
-        if actor != id && !administrator {
+        if actor != id && !(administrator && self.is_administrator(actor)) {
             return Err(IdentityError::AccessDenied);
         }
         let text = ShortText::new(display_name)?;
@@ -652,9 +670,10 @@ impl IdentitySystem {
         id: StableId,
         administrator: bool,
     ) -> Result<(), IdentityError> {
-        if actor == id || !administrator {
+        if actor == id || !administrator || !self.is_administrator(actor) {
             return Err(IdentityError::AccessDenied);
         }
+        self.ensure_removable_administrator(id)?;
         let user = self
             .users
             .iter_mut()
@@ -758,6 +777,7 @@ impl IdentitySystem {
         id: StableId,
         administrator: bool,
     ) -> Result<(), IdentityError> {
+        let administrator = administrator && self.is_administrator(actor);
         let credential = self
             .credentials
             .iter_mut()
@@ -783,6 +803,12 @@ impl IdentitySystem {
         secret: &[u8],
         now: u64,
     ) -> Result<(), IdentityError> {
+        if self.storage_uncertain {
+            return Err(IdentityError::CommitUncertain);
+        }
+        if !self.user(user).is_some_and(|user| user.state == UserState::Active) {
+            return Err(IdentityError::InvalidCredential);
+        }
         let credential = self
             .credentials
             .iter_mut()
@@ -826,6 +852,7 @@ impl IdentitySystem {
     // DESC: Creates the ordinary least-authority session only after a credential verifier has succeeded.
     // ------------------=
     fn create_verified_session(&mut self,user:StableId,now:u64)->Result<Session,IdentityError> {
+        if self.storage_uncertain { return Err(IdentityError::CommitUncertain); }
         let machine = self.machine.ok_or(IdentityError::InvalidState)?;
         let identity = self
             .user(user)
@@ -834,15 +861,9 @@ impl IdentitySystem {
         let slot = self
             .sessions
             .iter()
-            .position(Option::is_none)
+            .position(|session| session.is_none_or(|session| session.state == SessionState::Closed))
             .ok_or(IdentityError::Full)?;
-        let is_owner = self
-            .users
-            .iter()
-            .flatten()
-            .find(|candidate| candidate.state == UserState::Active)
-            .map(|candidate| candidate.id == user)
-            .unwrap_or(false);
+        let is_owner = self.is_administrator(user);
         let session = Session {
             id: self.allocate_id(0x4e),
             user,
@@ -1439,6 +1460,7 @@ impl IdentitySystem {
             let at = USER_AI_MEMORY_OFFSET + 16 + index * AI_MEMORY_SLOT_BYTES;
             let _ = self.ai_memories[index].encode_into(&mut out[at..at + AI_MEMORY_SLOT_BYTES]);
         }
+        self.encode_accounts(&mut out[ACCOUNTS_STATE_OFFSET..IDENTITY_STATE_BYTES - 4]);
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
         put32(&mut out, IDENTITY_STATE_BYTES - 4, checksum);
         out
@@ -1451,13 +1473,14 @@ impl IdentitySystem {
     pub fn decode(bytes: &[u8]) -> Result<Self, IdentityError> {
         if !matches!(
             bytes.len(),
-            LEGACY_IDENTITY_STATE_BYTES | V2_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES
+            LEGACY_IDENTITY_STATE_BYTES | V2_IDENTITY_STATE_BYTES | V3_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES
         ) {
             return Err(IdentityError::CorruptState);
         }
         let version = get16(bytes, 8);
         let valid_shape = (version == 1 && bytes.len() == LEGACY_IDENTITY_STATE_BYTES)
             || (version == 2 && bytes.len() == V2_IDENTITY_STATE_BYTES)
+            || (version == 3 && bytes.len() == V3_IDENTITY_STATE_BYTES)
             || (version == IDENTITY_FORMAT_VERSION && bytes.len() == IDENTITY_STATE_BYTES);
         if &bytes[..8] != b"INFIDN1\0"
             || !valid_shape
@@ -1558,6 +1581,14 @@ impl IdentitySystem {
                         .ok_or(IdentityError::CorruptState)?;
             }
         }
+        if version >= 4 {
+            state.decode_accounts(&bytes[ACCOUNTS_STATE_OFFSET..IDENTITY_STATE_BYTES - 4])?;
+        } else if let Some(slot) = state.users.iter().position(|user| {
+            user.is_some_and(|user| user.state == UserState::Active)
+        }) {
+            state.memberships[0] = 1 << slot;
+        }
+        state.validate_accounts()?;
         Ok(state)
     }
 

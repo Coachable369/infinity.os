@@ -279,6 +279,8 @@ cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
 CARGO_TARGET_DIR=build/behavior-harness cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin browser-entropy-test
 sh tools/font-library-test.sh
 
+make accounts-test
+
 echo "==> Building InfinityOS for x86_64 and AArch64"
 
 # The legacy BIOS loader must place its complete 32-bit payload below the

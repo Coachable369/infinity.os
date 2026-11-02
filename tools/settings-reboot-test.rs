@@ -77,9 +77,14 @@ fn main() {
         .unwrap();
     let key = b"/system/identity/state";
     let id = store.resolve(key).unwrap();
+    assert_eq!(store.write(id, &identity.encode()), Err(storage::object::ObjectError::Unauthorized));
+    // Reproduce global version-table pressure using a public scratch object;
+    // generic writes to the actual identity checkpoint are forbidden.
+    let pressure = store.create(b"settings-history-pressure", storage::object::ObjectType::Metadata,
+        storage::object::Space::Personal, b"fixture").unwrap();
     let mut exhausted = false;
     for _ in 0..64 {
-        if store.write(id, &identity.encode()) == Err(storage::object::ObjectError::InsufficientCapacity) {
+        if store.write(pressure, &[0x5a; IDENTITY_STATE_BYTES]) == Err(storage::object::ObjectError::InsufficientCapacity) {
             exhausted = true;
             break;
         }
@@ -90,19 +95,19 @@ fn main() {
     for i in 0..200 {
         identity.update_speech_output(user.id, user.id, i % 2 == 0).unwrap();
         identity.update_user_theme(user.id,user.id,b"saved-theme").unwrap();
-        store.checkpoint(key, &identity.encode()).unwrap();
+        store.checkpoint_identity(&identity.encode(), None).unwrap();
     }
     drop(store);
     let file = OpenOptions::new().read(true).open(&path).unwrap();
     let mut read_only = ObjectStore::mount(Disk(file,sectors),0).unwrap();
     identity.update_speech_output(user.id,user.id,true).unwrap();
-    assert!(read_only.checkpoint(key,&identity.encode()).is_err());
+    assert!(read_only.checkpoint_identity(&identity.encode(), None).is_err());
     drop(read_only);
     let file = OpenOptions::new().read(true).write(true).open(&path).unwrap();
     let mut store = ObjectStore::mount(Disk(file,sectors),0).unwrap();
     let id = store.resolve(key).unwrap();
     let mut bytes = [0u8;IDENTITY_STATE_BYTES];
-    assert_eq!(store.read(id,None,&mut bytes).unwrap(),bytes.len());
+    assert_eq!(store.read_identity_state(id,&mut bytes).unwrap(),bytes.len());
     let mut restored = IdentitySystem::decode(&bytes).unwrap();
     assert_eq!(restored.onboarding_state(), OnboardingState::Complete);
     assert_eq!(restored.voice_profile(user.id).unwrap().output_voice, 4);
@@ -112,12 +117,12 @@ fn main() {
     assert_eq!(restored.voice_profile(user.id).unwrap().wake_word, WakeWord::Computer);
     restored.create_session(user.id,b"fixture-only-password",4).unwrap();
     restored.update_voice_profile(user.id,user.id,false,VoiceActivation::Disabled).unwrap();
-    store.checkpoint(key,&restored.encode()).unwrap();
+    store.checkpoint_identity(&restored.encode(), None).unwrap();
     drop(store);
     let file = OpenOptions::new().read(true).write(true).open(&path).unwrap();
     let mut store = ObjectStore::mount(Disk(file,sectors),0).unwrap();
     let id = store.resolve(key).unwrap();
-    store.read(id,None,&mut bytes).unwrap();
+    store.read_identity_state(id,&mut bytes).unwrap();
     let restored = IdentitySystem::decode(&bytes).unwrap();
     assert_eq!(restored.onboarding_state(),OnboardingState::Complete);
     assert!(!restored.voice_profile(user.id).unwrap().enabled);

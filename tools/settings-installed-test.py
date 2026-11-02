@@ -79,6 +79,38 @@ def verify_artifacts():
                 assert binary.find(template) >= 0, (architecture, name)
 
 # ------------------------=
+# FUNC: review_accounts
+# DESC: Visits the dedicated account tabs through exported production controls without treating them as generic disclosures.
+# ------------------=
+def review_accounts(guest):
+    original = native.read(guest, "INFINITY_ACCOUNTS_DIAGNOSTIC_SNAPSHOT", 768)
+    assert original[:2] == (0x494e464143435431, 1)
+    assert original[3] == 1 and original[15] == 1
+    for tab, target in ((1, 2), (0, 1)):
+        state = native.read(guest, "INFINITY_ACCOUNTS_DIAGNOSTIC_SNAPSHOT", 768)
+        assert state[12] <= 64
+        controls = [state[160 + index * 8:168 + index * 8] for index in range(state[12])
+                    if state[160 + index * 8:162 + index * 8] == (target, 0)]
+        assert len(controls) == 1
+        _, _, x, y, width, height, enabled, visible = controls[0]
+        screen = guest.state()
+        assert enabled == visible == 1 and width > 0 and height > 0
+        assert x + width <= screen[11] and y + height <= screen[12]
+        helpers.click(guest, x + width // 2, y + height // 2)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            state = native.read(guest, "INFINITY_ACCOUNTS_DIAGNOSTIC_SNAPSHOT", 768)
+            if state[3] == 1 and state[4] == tab and state[2] > original[2]:
+                break
+            time.sleep(.1)
+        else:
+            raise AssertionError(("account tab did not activate", tab))
+        assert state[5] == 0 and state[15] == 1
+        assert state[8:10] == original[8:10] and state[32:160] == original[32:160]
+        guest.screenshot(f"settings-category-02-accounts-tab-{tab}")
+
+
+# ------------------------=
 # FUNC: review_sections
 # DESC: Visits every real Settings category through pointer input and captures the production rendered result.
 # ------------------=
@@ -91,7 +123,9 @@ def review_sections(guest):
         assert state[13] >= state[9] and state[13] + state[15] <= state[9] + state[11]
         assert state[14] >= state[10] and state[14] + state[16] <= state[10] + state[12]
         guest.screenshot(f"settings-category-{section:02d}")
-        if section not in (0, 1, 3, 6, 7, 10):
+        if section == 2:
+            review_accounts(guest)
+        elif section not in (0, 1, 3, 6, 7, 10):
             disclosure(guest, 0, True)
             guest.screenshot(f"settings-category-{section:02d}-expanded")
             disclosure(guest, 0, False)

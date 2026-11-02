@@ -32,8 +32,10 @@ mod personalization_view;
 #[path="configuration-wizard-render.rs"] mod configuration_wizard_render;
 #[path="../kernel/core/bootstrap/desktop_controls.rs"] mod desktop_controls;
 #[path="../kernel/core/bootstrap/settings_view.rs"] mod settings_view;
+#[path="../kernel/core/bootstrap/accounts_view.rs"] mod accounts_view;
 #[path="../kernel/core/bootstrap/settings_dashboard_view.rs"] mod settings_dashboard_view;
 #[path="settings-native-render-tests.rs"] mod settings_native_render_tests;
+#[path="accounts-native-render-tests.rs"] mod accounts_native_render_tests;
 // The exact same packaged semantic atlases used by the OS, not a host icon substitute.
 mod desktop {
     pub const NODE_TRUST_TOPOLOGY_BMP:&[u8]=include_bytes!("../assets/mesh/infinity-node-trust-topology-v1.bmp");
@@ -155,12 +157,12 @@ impl DisplayDevice {
     // FUNC: active_primary_rgb
     // DESC: Supplies the deterministic default primary tint for production chrome pixel tests.
     // ------------------=
-    fn active_primary_rgb(&self)->u32 { 0x0d2238 }
+    fn active_primary_rgb(&self)->u32 { if accounts_native_render_tests::DEFAULT_KIT.load(std::sync::atomic::Ordering::Relaxed){0x101b3a}else{0x0d2238} }
     // ------------------------=
     // FUNC: active_accent_rgb
     // DESC: Supplies the deterministic default accent tint for production chrome pixel tests.
     // ------------------=
-    fn active_accent_rgb(&self)->u32 { 0x38bdf8 }
+    fn active_accent_rgb(&self)->u32 { if accounts_native_render_tests::DEFAULT_KIT.load(std::sync::atomic::Ordering::Relaxed){0x3e6fff}else{0x38bdf8} }
     // ------------------------=
     // FUNC: active_accent_surface
     // DESC: Resolves fixture tints through the production semantic skin implementation used by application painters.

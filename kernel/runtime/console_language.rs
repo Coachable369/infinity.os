@@ -31,6 +31,9 @@ pub enum ValueType {
     OperationPlan,
     User,
     UserSet,
+    Group,
+    GroupSet,
+    MembershipSet,
     Machine,
     CredentialSet,
     Session,
@@ -80,6 +83,7 @@ pub enum ArgumentType {
     NamespacePath,
     Temporal,
     UserRef,
+    GroupRef,
     SessionRef,
     MachineRef,
     NetworkRef,
@@ -125,6 +129,7 @@ pub enum ReferenceKind {
     Namespace,
     User,
     Machine,
+    Group,
     Network,
     Node,
 }
@@ -161,6 +166,16 @@ pub struct OperationGraph<'a> {
 }
 
 impl OperationGraph<'_> {
+    // ------------------------=
+    // FUNC: executable_account_operation
+    // DESC: Admits one account operation to the authenticated backend; plans and pipelines cannot mutate accounts.
+    // ------------------=
+    pub fn executable_account_operation(&self) -> bool {
+        !self.plan_only && self.node_count == 1 && self.nodes[0].is_some_and(|node| {
+            matches!(node.schema.domain, b"user" | b"group" | b"identity")
+        })
+    }
+
     // ------------------------=
     // FUNC: executable_pool_mutation
     // DESC: Admits only implemented single-stage Pool mutations; execution still requires the authenticated IOP broker.
@@ -806,6 +821,21 @@ const DISPLAY_NAME_ARG: &[ArgumentSchema] = &[ArgumentSchema {
     value_type: ArgumentType::Text,
     required: true,
 }];
+const USER_UPDATE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"handle", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"display-name", value_type: ArgumentType::Text, required: false },
+];
+const GROUP_CREATE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"display-name", value_type: ArgumentType::Text, required: false },
+];
+const GROUP_UPDATE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"display-name", value_type: ArgumentType::Text, required: false },
+];
+const GROUP_MEMBER_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"user", value_type: ArgumentType::UserRef, required: true },
+];
 const MACHINE_NAME_ARG: &[ArgumentSchema] = &[ArgumentSchema {
     name: b"name",
     value_type: ArgumentType::Text,
@@ -978,6 +1008,10 @@ pub static DOMAINS: &[DomainSchema] = &[
     DomainSchema {
         name: b"user",
         description: b"Native user identities and Personal Space ownership",
+    },
+    DomainSchema {
+        name: b"group",
+        description: b"Native groups, administrators, and user memberships",
     },
     DomainSchema {
         name: b"identity",
@@ -1493,7 +1527,7 @@ pub static OPERATIONS: &[OperationSchema] = &[
         ValueType::Unit,
         ValueType::User,
         Some(ArgumentType::UserRef),
-        DISPLAY_NAME_ARG,
+        USER_UPDATE_ARGS,
         2,
         SideEffectClass::SecurityChange,
         b"user update user:1 display-name=\"Aurelius Prime\"",
@@ -1501,7 +1535,7 @@ pub static OPERATIONS: &[OperationSchema] = &[
     op(
         b"user",
         b"delete",
-        b"Deactivate a user while retaining audit identity",
+        b"Delete a user and revoke access; retain personal storage",
         OperationId::IdentityDelete,
         ValueType::Unit,
         ValueType::User,
@@ -1511,6 +1545,18 @@ pub static OPERATIONS: &[OperationSchema] = &[
         SideEffectClass::SecurityChange,
         b"user delete user:2",
     ),
+    op(b"user", b"enable", b"Enable user login", OperationId::IdentitySetEnabled, ValueType::Unit, ValueType::User, Some(ArgumentType::UserRef), NO_ARGS, 2, SideEffectClass::SecurityChange, b"user enable user:2"),
+    op(b"user", b"disable", b"Disable login and revoke sessions", OperationId::IdentitySetEnabled, ValueType::Unit, ValueType::User, Some(ArgumentType::UserRef), NO_ARGS, 2, SideEffectClass::SecurityChange, b"user disable user:2"),
+    op(b"user", b"password", b"Set a password through private masked entry and confirmation", OperationId::IdentityResetPassword, ValueType::Unit, ValueType::User, Some(ArgumentType::UserRef), NO_ARGS, 2, SideEffectClass::SecurityChange, b"user password user:2"),
+    op(b"user", b"groups", b"List a user's group memberships", OperationId::IdentityRead, ValueType::Unit, ValueType::MembershipSet, Some(ArgumentType::UserRef), NO_ARGS, 1, SideEffectClass::Query, b"user groups user:2"),
+    op(b"group", b"create", b"Create a group", OperationId::GroupCreate, ValueType::Unit, ValueType::Group, None, GROUP_CREATE_ARGS, 2, SideEffectClass::SecurityChange, b"group create name=design display-name=\"Design Team\""),
+    op(b"group", b"list", b"List groups", OperationId::GroupList, ValueType::Unit, ValueType::GroupSet, None, NO_ARGS, 1, SideEffectClass::Query, b"group list"),
+    op(b"group", b"read", b"Inspect a group and its members", OperationId::GroupRead, ValueType::Unit, ValueType::Group, Some(ArgumentType::GroupRef), NO_ARGS, 1, SideEffectClass::Query, b"group read group:design"),
+    op(b"group", b"update", b"Rename group name or display name", OperationId::GroupUpdate, ValueType::Unit, ValueType::Group, Some(ArgumentType::GroupRef), GROUP_UPDATE_ARGS, 2, SideEffectClass::SecurityChange, b"group update group:design display-name=\"Product Design\""),
+    op(b"group", b"delete", b"Delete a custom group and its memberships", OperationId::GroupDelete, ValueType::Unit, ValueType::Unit, Some(ArgumentType::GroupRef), NO_ARGS, 4, SideEffectClass::SecurityChange, b"group delete group:design"),
+    op(b"group", b"members", b"List a group's users", OperationId::GroupRead, ValueType::Unit, ValueType::MembershipSet, Some(ArgumentType::GroupRef), NO_ARGS, 1, SideEffectClass::Query, b"group members group:administrators"),
+    op(b"group", b"add", b"Add a user to a group", OperationId::GroupAddMember, ValueType::Unit, ValueType::MembershipSet, Some(ArgumentType::GroupRef), GROUP_MEMBER_ARGS, 2, SideEffectClass::SecurityChange, b"group add group:design user=user:2"),
+    op(b"group", b"remove", b"Remove a user from a group", OperationId::GroupRemoveMember, ValueType::Unit, ValueType::MembershipSet, Some(ArgumentType::GroupRef), GROUP_MEMBER_ARGS, 2, SideEffectClass::SecurityChange, b"group remove group:design user=user:2"),
     op(
         b"identity",
         b"read",
@@ -2423,6 +2469,8 @@ pub fn parse_reference(
         (ReferenceKind::Service, &value[8..])
     } else if value.starts_with(b"user:") {
         (ReferenceKind::User, &value[5..])
+    } else if value.starts_with(b"group:") {
+        (ReferenceKind::Group, &value[6..])
     } else if value.starts_with(b"session:") {
         (ReferenceKind::Session, &value[8..])
     } else if value.starts_with(b"machine:") {
@@ -2459,6 +2507,8 @@ pub fn parse_reference(
         (ReferenceKind::Collection, value)
     } else if matches!(expected, ArgumentType::UserRef) {
         (ReferenceKind::User, value)
+    } else if matches!(expected, ArgumentType::GroupRef) {
+        (ReferenceKind::Group, value)
     } else if matches!(expected, ArgumentType::SessionRef) {
         (ReferenceKind::Session, value)
     } else if matches!(expected, ArgumentType::MachineRef) {
@@ -2490,6 +2540,7 @@ pub fn parse_reference(
         ArgumentType::ServiceRef => matches!(kind, ReferenceKind::Service | ReferenceKind::Session),
         ArgumentType::NamespacePath => kind == ReferenceKind::Namespace,
         ArgumentType::UserRef => kind == ReferenceKind::User,
+        ArgumentType::GroupRef => kind == ReferenceKind::Group,
         ArgumentType::SessionRef => kind == ReferenceKind::Session,
         ArgumentType::MachineRef => kind == ReferenceKind::Machine,
         ArgumentType::NetworkRef => kind == ReferenceKind::Network,
@@ -2524,6 +2575,7 @@ fn validate_value(kind: ArgumentType, value: &[u8]) -> Result<(), ConsoleLanguag
         | ArgumentType::DeviceRef
         | ArgumentType::ServiceRef
         | ArgumentType::UserRef
+        | ArgumentType::GroupRef
         | ArgumentType::SessionRef
         | ArgumentType::MachineRef
         | ArgumentType::NetworkRef

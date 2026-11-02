@@ -31,6 +31,9 @@ static mut INFINITY_POOL_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
 static mut INFINITY_SETTINGS_DIAGNOSTIC_SNAPSHOT: [u64; 128] = [0; 128];
 #[used]
 #[no_mangle]
+static mut INFINITY_ACCOUNTS_DIAGNOSTIC_SNAPSHOT: [u64; 768] = [0; 768];
+#[used]
+#[no_mangle]
 static mut INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT: [u64; 64] = [0; 64];
 #[used]
 #[no_mangle]
@@ -261,6 +264,80 @@ fn words(target: &mut [u64], bytes: &[u8]) {
 }
 
 // ------------------------=
+// FUNC: account_target
+// DESC: Exposes stable non-secret control identifiers for read-only installed interaction verification.
+// ------------------=
+fn account_target(target: crate::ui::accounts::Target) -> (u64, u64) {
+    use crate::ui::accounts::Target;
+    match target {
+        Target::None => (0, 0), Target::Users => (1, 0), Target::Groups => (2, 0),
+        Target::New => (3, 0), Target::Back => (4, 0), Target::Row(index) => (5, index as u64),
+        Target::Rename => (6, 0), Target::Enabled => (7, 0), Target::Password => (8, 0),
+        Target::Delete => (9, 0), Target::Member(index) => (10, index as u64),
+        Target::Field(index) => (11, index as u64), Target::Save => (12, 0),
+        Target::Cancel => (13, 0), Target::Confirm => (14, 0), Target::ListUp => (15, 0),
+        Target::ListDown => (16, 0), Target::DetailUp => (17, 0), Target::DetailDown => (18, 0),
+    }
+}
+
+// ------------------------=
+// FUNC: publish_accounts
+// DESC: Publishes actual account control bounds and public identity state, never form values or credentials.
+// ------------------=
+fn publish_accounts(console: &ConsoleRuntime, generation: u64) {
+    let mut data = [0u64; 768];
+    data[0] = 0x494e464143435431;
+    data[1] = 1;
+    data[2] = generation;
+    data[767] = generation;
+    if console.mode == super::ConsoleMode::Settings && console.system_focus == 2 {
+        let view = crate::ui::accounts::current();
+        let layout = crate::ui::system_layout::SystemLayout::new(
+            console.system.framebuffer_width, console.system.framebuffer_height);
+        let geometry = layout.settings_window_geometry_for_section(console.settings_window, 2);
+        let controls = crate::ui::accounts::layout(geometry.viewport, &view.state, &view.data, layout.scale());
+        data[3] = 1;
+        data[4] = view.state.tab as u64;
+        data[5] = view.state.mode as u64;
+        data[6] = view.state.feedback as u64;
+        data[7] = view.data.administrator as u64;
+        data[8] = view.data.users_len as u64;
+        data[9] = view.data.groups_len as u64;
+        if let Some(id) = view.state.selected { words(&mut data[10..12], &id); }
+        data[12] = controls.count as u64;
+        let (focus, index) = account_target(view.state.focus);
+        data[13] = focus;
+        data[14] = index;
+        data[15] = view.data.available as u64;
+        for (base, entries) in [(32, &view.data.users), (96, &view.data.groups)] {
+            for (index, entry) in entries.iter().enumerate() {
+                let at = base + index * 4;
+                words(&mut data[at..at+2], &entry.id);
+                data[at+2] = entry.enabled as u64 | ((entry.admin as u64) << 1) | ((entry.builtin as u64) << 2);
+                data[at+3] = entry.members as u64;
+            }
+        }
+        for (index, control) in controls.controls[..controls.count].iter().enumerate() {
+            let at = 160 + index * 8;
+            let (code, argument) = account_target(control.target);
+            let rect = control.bounds.intersection(control.clip);
+            data[at..at+8].copy_from_slice(&[code, argument, rect.x as u64, rect.y as u64,
+                rect.width as u64, rect.height as u64, control.enabled as u64,
+                (rect == control.bounds) as u64]);
+        }
+    }
+    unsafe {
+        let pointer = (&raw mut INFINITY_ACCOUNTS_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(pointer.add(2), generation | 1);
+        for index in 0..768 {
+            if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); }
+        }
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2), generation);
+    }
+}
+
+// ------------------------=
 // FUNC: publish
 // DESC: Publishes bounded clock/input-completion state for an authorized debugger; no credentials or traffic keys are copied.
 // ------------------=
@@ -471,6 +548,7 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         let pointer = (&raw mut INFINITY_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
         let generation = core::ptr::read_volatile(pointer.add(2)).wrapping_add(2) & !1;
         publish_settings(console, generation);
+        publish_accounts(console, generation);
         publish_navigator(console, generation);
         publish_ai_widget(console, generation);
         core::ptr::write_volatile(pointer.add(2), generation | 1);

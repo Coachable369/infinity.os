@@ -319,6 +319,7 @@ pub enum ObjectError {
     SpaceUnavailable,
     Busy,
     Unauthorized,
+    CommitUncertain,
 }
 
 #[derive(Clone, Copy)]
@@ -487,6 +488,7 @@ pub struct ObjectStore<D: BlockDevice> {
     state: State,
     mounted_root: u8,
     in_transaction: bool,
+    commit_uncertain: bool,
     protected_allocation: [u8; ALLOCATION_BYTES],
     metadata_mutation_permit: Option<ObjectId>,
 }
@@ -565,6 +567,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             state,
             mounted_root: 0,
             in_transaction: false,
+            commit_uncertain: false,
             protected_allocation: [0; ALLOCATION_BYTES],
             metadata_mutation_permit: None,
         };
@@ -612,6 +615,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                             state,
                             mounted_root: slot,
                             in_transaction: false,
+                            commit_uncertain: false,
                             protected_allocation: [0; ALLOCATION_BYTES],
                             metadata_mutation_permit: None,
                         });
@@ -887,7 +891,12 @@ impl<D: BlockDevice> ObjectStore<D> {
             // Validate against the Object Store's real content ceiling so a valid
             // installed generation is not rejected after that transition.
             let mut content = [0u8; MAX_CONTENT];
-            let Ok(length) = self.read(id, None, &mut content) else {
+            let read = if path == b"/system/identity/state" {
+                self.read_identity_state(id, &mut content)
+            } else {
+                self.read(id, None, &mut content)
+            };
+            let Ok(length) = read else {
                 return false;
             };
             let offset = if magic == b"INFCMP01" { 16 } else { 0 };
@@ -1399,6 +1408,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.write_record(id, data)?;
             return Ok(id);
         }
+        self.allow_public_identity_access(source)?;
         let source_index = self.object_index(source)?;
         let source_record = self.state.objects[source_index];
         if source_record.tombstone {
@@ -1463,6 +1473,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::Unauthorized);
         }
         let id = self.resolve(path)?;
+        self.allow_public_identity_access(id)?;
         let metadata = self.metadata(id)?;
         if metadata.kind != ObjectType::NamespaceNode {
             return Err(ObjectError::InvalidObject);
@@ -1678,6 +1689,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     fn allow_public_spatial_access(&self, id: ObjectId) -> Result<(), ObjectError> {
         if sdk_package::get(id).is_some() { return Err(ObjectError::Unauthorized); }
+        self.allow_public_identity_access(id)?;
         let record = &self.state.objects[self.object_index(id)?];
         if &record.name[..record.name_len as usize]==b"@hermes-memory"
             || record.space == Space::System as u8
@@ -1697,6 +1709,35 @@ impl<D: BlockDevice> ObjectStore<D> {
         } else {
             Ok(())
         }
+    }
+
+    // ------------------------=
+    // FUNC: is_identity_state
+    // DESC: Recognizes the private identity record by immutable type, system space and object name, regardless of aliases.
+    // ------------------=
+    fn is_identity_state(&self, id: ObjectId) -> Result<bool, ObjectError> {
+        if sdk_package::get(id).is_some() { return Ok(false); }
+        let record = &self.state.objects[self.object_index(id)?];
+        Ok(record.space == Space::System as u8
+            && record.kind == ObjectType::IdentityData as u8
+            && &record.name[..record.name_len as usize] == b"identity-state")
+    }
+
+    // ------------------------=
+    // FUNC: allow_public_identity_access
+    // DESC: Rejects generic access to identity credentials and account authority without restricting unrelated objects.
+    // ------------------=
+    fn allow_public_identity_access(&self, id: ObjectId) -> Result<(), ObjectError> {
+        if self.is_identity_state(id)? { Err(ObjectError::Unauthorized) } else { Ok(()) }
+    }
+
+    // ------------------------=
+    // FUNC: read_identity_state
+    // DESC: Reads current private identity bytes only through the trusted loader after validating exact object metadata.
+    // ------------------=
+    pub(crate) fn read_identity_state(&mut self, id: ObjectId, out: &mut [u8]) -> Result<usize, ObjectError> {
+        if !self.is_identity_state(id)? { return Err(ObjectError::Unauthorized); }
+        self.read_internal(id, None, out)
     }
 
     // ------------------------=
@@ -1745,6 +1786,72 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Creates display-name directories once; existing homes follow immutable identity through display-name edits.
     // ------------------=
     pub fn ensure_user_home(&mut self,owner:ObjectId,name:&[u8])->Result<user_home::Path,ObjectError>{
+        let home = self.user_home_path(owner, name)?;
+        let complete=[b"".as_slice(),b"documents",b"downloads"].iter().all(|child|{
+            let path=if child.is_empty(){Some(home)}else{home.child(child)};
+            path.is_some_and(|path|self.state.entries.iter().any(|e|e.used&&e.path()==path.as_bytes()
+                && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner==owner
+                    && self.state.objects[i].kind==ObjectType::NamespaceNode as u8)))
+        });
+        if complete{return Ok(home);}
+        let before=self.begin()?;
+        let result=self.ensure_user_home_record(owner, home);
+        self.finish(before,result)
+    }
+
+    // ------------------------=
+    // FUNC: checkpoint_identity
+    // DESC: Commits an account record and its optional new personal folders in one native transaction.
+    // ------------------=
+    pub(crate) fn checkpoint_identity(
+        &mut self,
+        content: &[u8],
+        new_home: Option<(ObjectId, &[u8])>,
+    ) -> Result<u32, ObjectError> {
+        let identity = self.resolve(b"/system/identity/state")?;
+        if !self.is_identity_state(identity)? { return Err(ObjectError::Unauthorized); }
+        let home = match new_home {
+            Some((owner, name)) => Some((owner, self.account_home_path(owner, name)?)),
+            None => None,
+        };
+        let before = self.begin()?;
+        let result = (|| {
+            if let Some((owner, path)) = home {
+                self.ensure_user_home_record(owner, path)?;
+            }
+            self.replace_state_record(identity, content)
+        })();
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: account_home_path
+    // DESC: Keeps retained or same-name accounts separate by suffixing a conflicting new home with its immutable ID.
+    // ------------------=
+    fn account_home_path(&self, owner: ObjectId, name: &[u8]) -> Result<user_home::Path, ObjectError> {
+        match self.user_home_path(owner, name) {
+            Err(ObjectError::NameConflict) => {
+                let text = core::str::from_utf8(name).map_err(|_| ObjectError::InvalidObject)?;
+                let mut length = text.len().min(24);
+                while !text.is_char_boundary(length) { length -= 1; }
+                let mut unique = [0u8; 57];
+                unique[..length].copy_from_slice(&name[..length]);
+                unique[length] = b'.';
+                for (index, byte) in owner.0.iter().enumerate() {
+                    unique[length + 1 + index * 2] = b"0123456789abcdef"[(byte >> 4) as usize];
+                    unique[length + 2 + index * 2] = b"0123456789abcdef"[(byte & 15) as usize];
+                }
+                self.user_home_path(owner, &unique[..length + 33])
+            }
+            result => result,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: user_home_path
+    // DESC: Resolves an immutable owner's existing home or validates a proposed unoccupied directory.
+    // ------------------=
+    fn user_home_path(&self, owner: ObjectId, name: &[u8]) -> Result<user_home::Path, ObjectError> {
         if owner.0==[0;16]{return Err(ObjectError::Unauthorized);}
         let mut existing=None;
         for entry in self.state.entries.iter().filter(|e|e.used){
@@ -1761,15 +1868,14 @@ impl<D: BlockDevice> ObjectStore<D> {
             .ok_or(ObjectError::InvalidObject)?;
         if self.state.entries.iter().any(|e|e.used&&e.path()==home.as_bytes()
             && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner!=owner)){return Err(ObjectError::NameConflict);}
-        let complete=[b"".as_slice(),b"documents",b"downloads"].iter().all(|child|{
-            let path=if child.is_empty(){Some(home)}else{home.child(child)};
-            path.is_some_and(|path|self.state.entries.iter().any(|e|e.used&&e.path()==path.as_bytes()
-                && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner==owner
-                    && self.state.objects[i].kind==ObjectType::NamespaceNode as u8)))
-        });
-        if complete{return Ok(home);}
-        let before=self.begin()?;
-        let result=(||{
+        Ok(home)
+    }
+
+    // ------------------------=
+    // FUNC: ensure_user_home_record
+    // DESC: Materializes owner-scoped home directories inside a caller-owned storage transaction.
+    // ------------------=
+    fn ensure_user_home_record(&mut self, owner: ObjectId, home: user_home::Path) -> Result<user_home::Path, ObjectError> {
             for child in [b"".as_slice(),b"documents",b"downloads"]{
                 let path=if child.is_empty(){home}else{home.child(child).ok_or(ObjectError::InvalidObject)?};
                 if let Some(entry)=self.state.entries.iter().find(|e|e.used&&e.path()==path.as_bytes()){
@@ -1781,8 +1887,8 @@ impl<D: BlockDevice> ObjectStore<D> {
                 let id=self.create_record(label,ObjectType::NamespaceNode,Space::Personal)?;
                 let index=self.object_index(id)?;self.state.objects[index].owner=owner;
                 self.attach_record(path.as_bytes(),id)?;
-            }Ok(home)
-        })();self.finish(before,result)
+            }
+        Ok(home)
     }
 
     // ------------------------=
@@ -1926,6 +2032,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the attach operation.
     // ------------------=
     pub fn attach(&mut self, path: &[u8], id: ObjectId) -> Result<(), ObjectError> {
+        self.allow_public_identity_access(id)?;
         self.allow_package_namespace_mutation(id)?;
         let before = self.begin()?;
         let result = (|| {
@@ -2065,6 +2172,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                     continue;
                 }
                 let suffix = &path[from.len()..];
+                self.allow_public_identity_access(entry.target)?;
                 self.allow_package_namespace_mutation(entry.target)?;
                 if to.len() + suffix.len() > MAX_PATH {
                     return Err(ObjectError::InvalidPath);
@@ -2107,6 +2215,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn detach(&mut self, path: &[u8]) -> Result<(), ObjectError> {
         if sdk_package::owns(path) { return Err(ObjectError::Unauthorized); }
+        self.allow_public_identity_access(self.resolve(path)?)?;
         self.allow_package_namespace_mutation(self.resolve(path)?)?;
         let before = self.begin()?;
         let result = (|| {
@@ -2149,6 +2258,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Removes or invalidates remove path state.
     // ------------------=
     pub fn remove_path(&mut self, path: &[u8]) -> Result<ObjectId, ObjectError> {
+        self.allow_public_identity_access(self.resolve(path)?)?;
         self.allow_package_namespace_mutation(self.resolve(path)?)?;
         let before = self.begin()?;
         let result = (|| {
@@ -2573,6 +2683,9 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the begin operation.
     // ------------------=
     fn begin(&mut self) -> Result<State, ObjectError> {
+        if self.commit_uncertain {
+            return Err(ObjectError::CommitUncertain);
+        }
         if self.in_transaction {
             return Err(ObjectError::Busy);
         }
@@ -2708,6 +2821,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the commit operation.
     // ------------------=
     fn commit(&mut self) -> Result<(), ObjectError> {
+        if self.commit_uncertain { return Err(ObjectError::CommitUncertain); }
         let available = self
             .device
             .block_count()
@@ -2734,9 +2848,15 @@ impl<D: BlockDevice> ObjectStore<D> {
         } else {
             ROOT_A
         };
-        write_root(&mut self.device, self.store_lba, root, generation, bank)?;
+        if write_root(&mut self.device, self.store_lba, root, generation, bank).is_err() {
+            self.commit_uncertain = true;
+            return Err(ObjectError::CommitUncertain);
+        }
         if !self.device.flush() {
-            return Err(ObjectError::TransactionFailed);
+            // The root may already be durable. Do not permit a retry to overwrite
+            // either generation until a fresh mount has selected the disk state.
+            self.commit_uncertain = true;
+            return Err(ObjectError::CommitUncertain);
         }
         self.mounted_root ^= 1;
         Ok(())
@@ -2813,6 +2933,7 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
                     else { Err(ObjectError::Unauthorized) };
             }
             let record = &self.store.state.objects[self.store.object_index(reference.id)?];
+            self.store.allow_public_identity_access(reference.id)?;
             if record.space == Space::System as u8
                 && (record.kind == ObjectType::Metadata as u8
                     || record.name_len > 0 && record.name[0] == b'@')

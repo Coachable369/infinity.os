@@ -618,10 +618,87 @@ impl ObjectCapabilityPolicy for Deny {
 }
 
 // ------------------------=
+// FUNC: private_identity_state
+// DESC: Verifies identity secrecy, immutable namespace access, trusted loading and cold-mount persistence.
+// ------------------=
+fn private_identity_state(sectors: usize) {
+    use storage::object::{ObjectId, ObjectRef, ObjectReadRequest, ObjectMetadataUpdateRequest, ContentType};
+    let disk = MemoryDisk::new(sectors);
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0xa9; 16]).unwrap();
+    let path = b"/system/identity/state";
+    let id = store.resolve(path).unwrap();
+    let mut state = [0xa7u8; 4096];
+    state[..8].copy_from_slice(b"INFIDN1\0");
+    store.checkpoint_identity(&state, None).unwrap();
+    assert!(store.runtime_bootstrap_valid());
+    let mut out = [0u8; 4096];
+    assert_eq!(store.read_identity_state(id, &mut out), Ok(state.len()));
+    assert_eq!(out, state);
+    let generation = store.generation();
+    let version = store.current_version(id).unwrap();
+    for historical in [None, Some(version)] {
+        assert_eq!(store.read(id, historical, &mut out), Err(ObjectError::Unauthorized));
+    }
+    assert_eq!(store.write(id, b"overwrite"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.restore(id, version), Err(ObjectError::Unauthorized));
+    assert_eq!(store.remove(id), Err(ObjectError::Unauthorized));
+    assert_eq!(store.remove_path(path), Err(ObjectError::Unauthorized));
+    assert_eq!(store.destroy_explicit(id, true), Err(ObjectError::Unauthorized));
+    assert_eq!(store.delete_namespace(path), Err(ObjectError::Unauthorized));
+    assert_eq!(store.detach(path), Err(ObjectError::Unauthorized));
+    assert_eq!(store.attach(b"/home/default/identity-alias", id), Err(ObjectError::Unauthorized));
+    assert_eq!(store.move_entry(path, b"/home/default/moved-identity"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.move_entry(b"/system", b"/moved-system"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.copy_attached(id, b"/home/default/identity-copy"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.copy_path_attached(path, b"/home/default/identity-copy"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.update_metadata(ObjectMetadataUpdateRequest {
+        object: ObjectRef { id }, owner: ObjectId([9; 16]), content_type: ContentType::Utf8Text,
+        flags: 0, tags: b"public",
+    }), Err(ObjectError::Unauthorized));
+    let request = ObjectReadRequest { object: ObjectRef { id }, version: None, offset: 0, length: 0 };
+    assert_eq!(ObjectService::new(&mut store, &SdkReader).read(request, &mut out).err(), Some(ObjectError::Unauthorized));
+    let mut object_alias = b"/objects/".to_vec();
+    for byte in id.0 { object_alias.extend_from_slice(format!("{byte:02x}").as_bytes()); }
+    let alias_id = store.resolve(&object_alias).unwrap();
+    assert_eq!(alias_id, id);
+    assert_eq!(store.read(alias_id, None, &mut out), Err(ObjectError::Unauthorized));
+    assert_eq!(store.generation(), generation);
+    assert_eq!(store.resolve(path), Ok(id));
+    assert!(store.resolve(b"/home/default/identity-copy").is_err());
+    assert_eq!(store.read_identity_state(id, &mut out), Ok(state.len()));
+    assert_eq!(out, state);
+
+    // Matching only one or two metadata attributes cannot enter the trusted reader.
+    for (name, kind, space) in [
+        (b"wrong-name".as_slice(), ObjectType::IdentityData, Space::System),
+        (b"identity-state".as_slice(), ObjectType::Blob, Space::System),
+        (b"identity-state".as_slice(), ObjectType::IdentityData, Space::Personal),
+    ] {
+        let ordinary = store.create(name, kind, space, b"ordinary").unwrap();
+        assert_eq!(store.read_identity_state(ordinary, &mut out), Err(ObjectError::Unauthorized));
+        assert_eq!(store.read(ordinary, None, &mut out), Ok(8));
+        store.write(ordinary, b"updated").unwrap();
+    }
+    state[16] ^= 1;
+    store.checkpoint_identity(&state, None).unwrap();
+    drop(store);
+    let mut reopened = ObjectStore::mount(disk, 0).unwrap();
+    assert!(reopened.runtime_bootstrap_valid());
+    assert_eq!(reopened.resolve(path), Ok(id));
+    assert_eq!(reopened.read_identity_state(id, &mut out), Ok(state.len()));
+    assert_eq!(out, state);
+    assert_eq!(reopened.read(id, None, &mut out), Err(ObjectError::Unauthorized));
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg| arg == "--identity-state-only") {
+        private_identity_state(STORE_RELATIVE_LBA as usize + 32_768);
+        return;
+    }
     sdk_package_access();
     if std::env::args().any(|arg| arg == "--sdk-only") { return; }
     editable_ai_dictionaries();
@@ -639,6 +716,7 @@ fn main() {
         return;
     }
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    private_identity_state(test_sectors);
     clock_persistence();
     hermes_persistence();
     namespace_expansion();

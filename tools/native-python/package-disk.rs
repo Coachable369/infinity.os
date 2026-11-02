@@ -55,11 +55,11 @@ fn fixture_path(path: &str) -> std::path::PathBuf {
 fn first_owner(store: &mut ObjectStore<Disk>) -> ObjectId {
     let identity = store.resolve(b"/system/identity/state").unwrap();
     let length = store.metadata(identity).unwrap().logical_size as usize;
-    assert!([4096, 5632, 10768].contains(&length));
+    assert!([4096, 5632, 10768, 12960].contains(&length));
     let mut bytes = vec![0; length];
-    assert_eq!(store.read(identity, None, &mut bytes).unwrap(), length);
+    assert_eq!(store.read_identity_state(identity, &mut bytes).unwrap(), length);
     assert_eq!(&bytes[..8], b"INFIDN1\0");
-    assert!((1..=3).contains(&u16::from_le_bytes(bytes[8..10].try_into().unwrap())));
+    assert!((1..=4).contains(&u16::from_le_bytes(bytes[8..10].try_into().unwrap())));
     assert_eq!(u16::from_le_bytes(bytes[10..12].try_into().unwrap()) as usize, length);
     let checksum = bytes[..length - 4].iter().fold(0x811c9dc5u32, |sum, byte| (sum ^ *byte as u32).wrapping_mul(0x01000193));
     assert_eq!(u32::from_le_bytes(bytes[length - 4..].try_into().unwrap()), checksum);

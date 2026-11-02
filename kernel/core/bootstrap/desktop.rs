@@ -3923,6 +3923,11 @@ impl super::DisplayDevice {
         }
         let chrome=self.paint_settings_chrome(focus,settings_window,scale);
         let geometry=chrome.geometry;
+        if focus == 2 {
+            self.paint_accounts_body(geometry.viewport, scale, &crate::ui::accounts::current(), chrome);
+            self.render_clip = caller_clip;
+            return;
+        }
         let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
         let (primary_r,primary_g,primary_b)=chrome.primary;
         let (outline_r,outline_g,outline_b)=chrome.outline;

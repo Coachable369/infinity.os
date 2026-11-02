@@ -15,6 +15,10 @@ mod desktop_widgets_controller;
 mod app_shortcuts_controller;
 #[path = "console_clock.rs"]
 mod console_clock;
+#[path = "console_accounts.rs"]
+mod console_accounts;
+#[path = "console_accounts_cli.rs"]
+mod console_accounts_cli;
 #[path = "console_memory_editor.rs"]
 mod console_memory_editor;
 #[path = "installer_work.rs"]
@@ -512,6 +516,9 @@ struct ConsoleRuntime {
     authentication_tick_ns: Option<u64>,
     authentication_restore_locked_layout: bool,
     settings_editing: bool,
+    accounts: crate::ui::accounts::State,
+    accounts_secrets: console_accounts::Secrets,
+    account_password: console_accounts_cli::PasswordEntry,
     selected_node_id: Option<crate::runtime::node::types::NodeId>,
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     node_policy_offset: usize,
@@ -676,6 +683,9 @@ impl ConsoleRuntime {
             authentication_tick_ns: None,
             authentication_restore_locked_layout: false,
             settings_editing: false,
+            accounts: crate::ui::accounts::State::new(),
+            accounts_secrets: console_accounts::Secrets::new(),
+            account_password: console_accounts_cli::PasswordEntry::new(),
             selected_node_id: None,
             node_input_lease: None,
             node_policy_offset: 0,
@@ -1096,6 +1106,8 @@ impl ConsoleRuntime {
     // DESC: Renders show startup to the active display.
     // ------------------=
     fn show_startup(&mut self) {
+        self.accounts_cancel();
+        self.cancel_account_password();
         self.mode = ConsoleMode::Startup;
         self.reset_input();
         self.output.clear();
@@ -1213,6 +1225,7 @@ impl ConsoleRuntime {
     // DESC: Composes a committed scene; spatial refresh suppresses physical presentation until its overlay is complete.
     // ------------------=
     fn redraw_scene(&self) {
+        self.accounts_publish();
         if matches!(self.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
             let time=crate::ui::performance::monotonic_ns();
             let key=(self.mode as u32)*65536+(self.system_step as u32)*256+self.system_focus as u32;
@@ -1390,6 +1403,21 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        if self.accounts_focus_guard() { return; }
+        if self.mode == ConsoleMode::Settings && self.system_focus == 2 {
+            if let ConsoleKey::Shortcut(code)=key {
+                if crate::drivers::input::desktop_shortcuts::desktop_action(code,!self.current_session.is_zero(),true).is_some()
+                    || matches!(code,b'j'|b'i'|b'K'|0x80|0x81) {self.accounts_cancel();}
+            }
+        }
+        if self.account_password_input(key) { self.session_idle.note_activity(); self.redraw(); return; }
+        if self.mode == ConsoleMode::Settings && self.system_focus == 2
+            && (self.accounts.mode != crate::ui::accounts::Mode::Browse || matches!(key,ConsoleKey::Tab(_)))
+            && self.accounts_key(key) {
+            self.session_idle.note_activity();
+            self.redraw();
+            return;
+        }
         let mut peek_dismissed=false;
         crate::ui::desktop_effects::mutate(|effects| peek_dismissed=effects.dismiss_peek());
         if peek_dismissed {
@@ -2636,6 +2664,8 @@ impl ConsoleRuntime {
     // DESC: Enters the minimal authenticated graphical shell.
     // ------------------=
     fn enter_desktop(&mut self) {
+        self.accounts_cancel();
+        self.cancel_account_password();
         console_clock::load_settings();
         crate::output_text(b"[desktop] enter begin\n");
         self.reset_app_assistant_session();
@@ -3388,6 +3418,7 @@ impl ConsoleRuntime {
     // DESC: Guards dirty Text Editor closure and dismisses other active desktop applications immediately.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        self.cancel_account_password();
         if self.close_authored_destination() { self.redraw(); return; }
         if self.desktop_app==DesktopAppKind::CommandWindow && compiler_commands::close_uikit() {
             self.redraw();
@@ -3598,6 +3629,8 @@ impl ConsoleRuntime {
         if app == self.desktop_app {
             return;
         }
+        self.accounts_cancel();
+        self.cancel_account_password();
         self.store_active_app_window();
         self.desktop_app = app;
         self.load_active_app_window();
@@ -3899,6 +3932,8 @@ impl ConsoleRuntime {
     // DESC: Locks the active identity session only after retaining its complete desktop layout.
     // ------------------=
     fn lock_session_preserving_desktop(&mut self, inactive: bool) -> bool {
+        self.accounts_cancel();
+        self.cancel_account_password();
         self.cancel_personalization_drag();
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_close(); }
@@ -4011,6 +4046,8 @@ impl ConsoleRuntime {
         if id==stack.active && !(id==0 && navigator.is_some()) {return false;}
         self.title_clicks.cancel();
         if self.mode==ConsoleMode::Settings && self.settings_editing {return false;}
+        self.accounts_cancel();
+        self.cancel_account_password();
         self.store_active_app_window();
         if id==4 {self.mode=ConsoleMode::Settings;self.system_focus=stack.settings_section;}
         else {
@@ -4525,6 +4562,8 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        self.accounts_cancel();
+        self.cancel_account_password();
         self.cancel_personalization_drag();
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS, false);
         self.settings_open=true;
@@ -4597,6 +4636,7 @@ impl ConsoleRuntime {
     // DESC: Moves all Settings sections toward bounded logical scroll targets while leaving navigation focus unchanged.
     // ------------------=
     fn scroll_settings(&mut self, direction: i8) {
+        if self.system_focus == 2 { self.accounts_scroll(direction); return; }
         self.cancel_personalization_drag();
         let amount = crate::ui::input_preferences::current().wheel(direction);
         let distance = amount.unsigned_abs() as usize * 20;
@@ -5600,6 +5640,8 @@ impl ConsoleRuntime {
     // DESC: Opens one native top-bar menu and selects its first actionable row.
     // ------------------=
     fn open_shell_menu(&mut self, menu: usize) {
+        self.accounts_cancel();
+        self.cancel_account_password();
         if menu==0 {
             let mut view=crate::ui::installer_template::navigation::View::new();
             if let Some(menu)=crate::ui::desktop_template::menu(){view.selected=view.count(&menu).saturating_sub(1);view.step(&menu,true);}
@@ -5630,6 +5672,8 @@ impl ConsoleRuntime {
     // DESC: Opens the native installed application launcher with an empty live search query.
     // ------------------=
     fn open_app_launcher(&mut self) {
+        self.accounts_cancel();
+        self.cancel_account_password();
         self.store_active_app_window();
         self.refresh_generated_launcher();
         crate::ui::app_launcher::launcher_open();
@@ -5826,6 +5870,8 @@ impl ConsoleRuntime {
                 let _ = self.lock_session_preserving_desktop(false);
             }
             (0, 7) => {
+                self.accounts_cancel();
+                self.cancel_account_password();
                 let _ = self.persist_desktop_layout();
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime
@@ -6571,6 +6617,7 @@ impl ConsoleRuntime {
     // DESC: Navigates the top-bar menu and functional Settings pages using shared typed services.
     // ------------------=
     fn input_shell(&mut self, key: ConsoleKey) {
+        if self.account_password_input(key) || self.accounts_key(key) { return; }
         if self.settings_font_key(key) {return;}
         if self.mode == ConsoleMode::AppLauncher {
             if matches!(key, ConsoleKey::Escape) {
@@ -8227,6 +8274,7 @@ impl ConsoleRuntime {
     // DESC: Handles pointer interaction input or state transitions.
     // ------------------=
     fn pointer_interaction(&mut self, buttons: u8) {
+        if self.accounts_focus_guard() { return; }
         let previous_system_focus=self.system_focus;
         let buttons = crate::ui::input_preferences::current().buttons(buttons);
         if self.installer_work.busy() {
@@ -9480,6 +9528,10 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
+            if self.accounts_pointer(layout, clicked) {
+                if clicked { self.redraw(); }
+                return;
+            }
             if self.settings_font_pointer(layout, clicked) {
                 self.redraw();
                 return;
@@ -9714,6 +9766,7 @@ impl ConsoleRuntime {
                         return;
                     }
                     SettingsTarget::Section(index) if clicked => {
+                        self.accounts_cancel();
                         self.cancel_node_pairing_input();
                         self.system_focus = index;
                         self.settings_window.row_count = if matches!(index, 1 | 6 | 7 | 8 | 10) {
@@ -9860,6 +9913,7 @@ impl ConsoleRuntime {
     // DESC: Handles input console input or state transitions.
     // ------------------=
     fn input_console(&mut self, key: ConsoleKey) {
+        if self.account_password_input(key) { return; }
         if self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::CommandWindow&&crate::ui::installer_template::navigation::scene()!=0 {
             if matches!(key,ConsoleKey::Escape){self.close_desktop_app();}
             return;
@@ -9895,9 +9949,9 @@ impl ConsoleRuntime {
         }
         let command = self.command;
         let length = self.command_length;
-        let private=self.command_history.private() || infinity_enterprise_core::sensitive(&command[..length]);
+        let private=self.command_history.private() || infinity_enterprise_core::sensitive(&command[..length]) || console_accounts_cli::sensitive_command(&command[..length]);
         if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
-        if self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
+        if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
         if self.clock_command(&command[..length]) {self.reset_input();return;}
         if self.generated_application_command(&command[..length]) {self.reset_input();return;}
@@ -10661,7 +10715,7 @@ impl ConsoleRuntime {
                         .unwrap_or(false);
                 if graph.plan_only
                     || (graph.maximum_effect != SideEffectClass::Query
-                        && !executable_node_mutation && !graph.executable_pool_mutation())
+                        && !executable_node_mutation && !graph.executable_pool_mutation() && !graph.executable_account_operation())
                 {
                     self.output
                         .write_number(b"Operation plan stages: ", graph.node_count as u64);
@@ -10708,6 +10762,7 @@ impl ConsoleRuntime {
     ) -> bool {
         use crate::runtime::iop::OperationId;
         if node.schema.domain == b"pool" { return self.execute_pool_node(node); }
+        if matches!(node.schema.domain, b"user" | b"group" | b"identity") { return self.execute_identity_node(node); }
         match node.schema.operation {
             OperationId::SystemStatus => self.system_status(),
             OperationId::SystemInfo => self.system_info(),
@@ -11364,6 +11419,9 @@ impl ConsoleRuntime {
         &mut self,
         node: &crate::runtime::console_language::OperationNode<'_>,
     ) -> bool {
+        if matches!(node.schema.domain, b"user" | b"group" | b"identity") {
+            return self.execute_accounts_node(node);
+        }
         use crate::runtime::identity::{
             AiProviderPolicy, IdentityError, VoiceActivation, WakeWord,
         };
@@ -11390,102 +11448,6 @@ impl ConsoleRuntime {
         })
         .unwrap_or(false);
         let result: Result<(), IdentityError> = (|| match node.schema.operation {
-            OperationId::IdentityList => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.identity.user_count())
-                    .unwrap_or(0);
-                for index in 0..count {
-                    if let Some(user) =
-                        crate::runtime::with_runtime(|runtime| runtime.identity.user_nth(index))
-                            .flatten()
-                    {
-                        self.output.write_number(b"user:", user.id.short());
-                        self.output.write_segments(&[
-                            b"  ",
-                            user.display_name.as_bytes(),
-                            b"  @",
-                            user.handle.as_bytes(),
-                        ]);
-                    }
-                }
-                Ok(())
-            }
-            OperationId::IdentityRead => {
-                let user = target_number
-                    .and_then(|id| {
-                        crate::runtime::with_runtime(|runtime| runtime.identity.user_by_short(id))
-                            .flatten()
-                    })
-                    .or_else(|| {
-                        crate::runtime::with_runtime(|runtime| runtime.identity.user(actor))
-                            .flatten()
-                    })
-                    .ok_or(IdentityError::NotFound)?;
-                self.output.write_number(b"id: user:", user.id.short());
-                self.output
-                    .write_segments(&[b"name: ", user.display_name.as_bytes()]);
-                self.output
-                    .write_segments(&[b"handle: ", user.handle.as_bytes()]);
-                Ok(())
-            }
-            OperationId::IdentityCreate => {
-                if !administrator {
-                    Err(IdentityError::AccessDenied)
-                } else {
-                    let handle = argument(b"handle").ok_or(IdentityError::InvalidInput)?;
-                    let name = argument(b"display-name").ok_or(IdentityError::InvalidInput)?;
-                    let user = crate::runtime::with_runtime(|runtime| {
-                        runtime.identity.create_user(handle, name, 20)
-                    })
-                    .unwrap_or(Err(IdentityError::InvalidState))?;
-                    self.output
-                        .write_number(b"user created: user:", user.id.short());
-                    crate::storage::provision_user_home(user.id.0).map_err(|_|IdentityError::InvalidState)?;
-                    if crate::runtime::persist_identity_state() {
-                        Ok(())
-                    } else {
-                        Err(IdentityError::InvalidState)
-                    }
-                }
-            }
-            OperationId::IdentityUpdate => {
-                let id = target_number
-                    .and_then(|id| {
-                        crate::runtime::with_runtime(|runtime| runtime.identity.user_by_short(id))
-                            .flatten()
-                    })
-                    .map(|user| user.id)
-                    .ok_or(IdentityError::NotFound)?;
-                let name = argument(b"display-name").ok_or(IdentityError::InvalidInput)?;
-                crate::runtime::with_runtime(|runtime| {
-                    runtime
-                        .identity
-                        .update_user_name(actor, id, name, administrator)
-                })
-                .unwrap_or(Err(IdentityError::InvalidState))?;
-                if crate::runtime::persist_identity_state() {
-                    Ok(())
-                } else {
-                    Err(IdentityError::InvalidState)
-                }
-            }
-            OperationId::IdentityDelete => {
-                let id = target_number
-                    .and_then(|id| {
-                        crate::runtime::with_runtime(|runtime| runtime.identity.user_by_short(id))
-                            .flatten()
-                    })
-                    .map(|user| user.id)
-                    .ok_or(IdentityError::NotFound)?;
-                crate::runtime::with_runtime(|runtime| {
-                    runtime.identity.deactivate_user(actor, id, administrator)
-                })
-                .unwrap_or(Err(IdentityError::InvalidState))?;
-                if crate::runtime::persist_identity_state() {
-                    Ok(())
-                } else {
-                    Err(IdentityError::InvalidState)
-                }
-            }
             OperationId::MachineRead => {
                 let machine = crate::runtime::with_runtime(|runtime| runtime.identity.machine())
                     .flatten()
@@ -14118,6 +14080,9 @@ fn value_type_text(value: crate::runtime::console_language::ValueType) -> &'stat
         OperationPlan => b"OperationPlan",
         User => b"User",
         UserSet => b"UserSet",
+        Group => b"Group",
+        GroupSet => b"GroupSet",
+        MembershipSet => b"MembershipSet",
         Machine => b"Machine",
         CredentialSet => b"CredentialSet",
         Session => b"Session",
@@ -14212,6 +14177,7 @@ fn identity_error_text(error: crate::runtime::identity::IdentityError) -> &'stat
         InvalidState => b"INVALID STATE",
         CorruptState => b"CORRUPT STATE",
         PersonalSpaceUnavailable => b"PERSONAL SPACE UNAVAILABLE",
+        CommitUncertain => b"STORAGE COMMIT UNCERTAIN - RESTART REQUIRED",
     }
 }
 // ------------------------=
@@ -14244,6 +14210,7 @@ fn object_error_text(error: crate::storage::object::ObjectError) -> &'static [u8
         CorruptContent => b"CorruptContent",
         UnsupportedFormat => b"UnsupportedFormat",
         TransactionFailed => b"TransactionFailed",
+        CommitUncertain => b"StorageCommitUncertainRestartRequired",
         ChecksumMismatch => b"ChecksumMismatch",
         InvalidVersion => b"InvalidVersion",
         SpaceUnavailable => b"SpaceUnavailable",
@@ -14555,6 +14522,7 @@ pub fn input(key: ConsoleKey) {
         if let Some(runtime) = (*slot).as_mut() {
             if runtime.installer_work.busy() { return; }
             runtime.input(key);
+            runtime.accounts_focus_guard();
             // Publish after input and its presentation, not only on the coarse
             // firmware clock. Debugger latency then observes completed input
             // rather than time spent waiting for the next clock snapshot.
@@ -14580,6 +14548,7 @@ pub fn pointer_buttons(delta_x: i16, delta_y: i16, buttons: u8) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer(delta_x, delta_y, buttons);
+            runtime.accounts_focus_guard();
             if !(&*(&raw const INPUT_PRESENTATION)).active() { diagnostics::publish_pointer(runtime); }
         }
     }
@@ -14616,6 +14585,7 @@ pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer_absolute(x, y, buttons);
+            runtime.accounts_focus_guard();
             if !(&*(&raw const INPUT_PRESENTATION)).active() { diagnostics::publish_pointer(runtime); }
         }
     }
@@ -14777,6 +14747,7 @@ pub fn clock_tick() {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
+            if runtime.accounts_focus_guard() { return; }
             diagnostics::publish(runtime);
             runtime.synchronize_workplace();
             if !matches!(

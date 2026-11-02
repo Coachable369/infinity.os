@@ -18,7 +18,7 @@ pub(super) struct SettingsChrome {
 // FUNC: supports_basic_section
 // DESC: Identifies sections whose complete native body consumes an explicit value snapshot.
 // ------------------=
-pub(super) const fn supports_basic_section(section:usize)->bool {matches!(section,0|2|3|4|5|9|10)}
+pub(super) const fn supports_basic_section(section:usize)->bool {matches!(section,0|3|4|5|9|10)}
 // ------------------------=
 // FUNC: basic_settings_rows
 // DESC: Resolves the same labels and live values for OS snapshots and explicit preview fixtures.
@@ -38,16 +38,6 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"Region", b"United States"),
                 (b"System Generation", b"Active"),
                 (b"Updates", b"Generation based"),
-                (b"", b""),
-                (b"", b""),
-                (b"", b""),
-            ],
-            2 => [
-                (b"Current User", b"Active"),
-                (b"Credential", b"Password"),
-                (b"Session", b"Authenticated"),
-                (b"Personal Space", b"Private"),
-                (b"Profile", b"Persistent"),
                 (b"", b""),
                 (b"", b""),
                 (b"", b""),
@@ -187,7 +177,7 @@ impl DisplayDevice {
         let sections: [&[u8]; 11] = [
             b"General",
             b"Themes & Skins",
-            b"Users & Accounts",
+            b"Users & Groups",
             b"AI & Voice",
             b"Privacy & Security",
             b"Devices",

@@ -41,7 +41,7 @@ pub(super) fn verify() {
     let mut frames=0;
     for(width,height)in[(1280,800),(1600,1000)]{
         let layout=SystemLayout::new(width,height);
-        for section in [0,2,3,4,5,9,10]{
+        for section in [0,3,4,5,9,10]{
             assert!(supports_basic_section(section));let state=state(section);let geometry=layout.settings_window_geometry_for_section(state,section);
             let (whole,ok)=frame(width,height,section,state,snapshot(),None);assert!(ok);assert!(whole.iter().any(|p|*p!=0x00182739));
             let clip=Region{left:geometry.window.x.max(0)as usize+40,top:geometry.window.y.max(0)as usize+20,right:geometry.window.right().max(0)as usize-20,bottom:geometry.window.bottom().max(0)as usize-20};
@@ -69,7 +69,7 @@ pub(super) fn verify() {
         let policy_row=layout.settings_row_geometry_for_section(state,0,section).summary;
         assert!(policy_row.contains(Point{x:bounds.x,y:bounds.y}));
         assert!(policy_row.contains(Point{x:bounds.right()-1,y:bounds.bottom()-1}));
-        for unsupported in [1,6,7,8]{let(pixels,ok)=frame(width,height,unsupported,state,snapshot(),None);assert!(!ok);assert!(pixels.iter().all(|p|*p==0x00182739));}
+        for unsupported in [1,2,6,7,8]{let(pixels,ok)=frame(width,height,unsupported,state,snapshot(),None);assert!(!ok);assert!(pixels.iter().all(|p|*p==0x00182739));}
     }
     authored_style_pixels();
     let layout = SystemLayout::new(1280, 800);
@@ -88,6 +88,7 @@ pub(super) fn verify() {
     std::fs::write("build/voice-settings-proof.ppm", ppm).unwrap();
     authored_action_pixels();
     action_scene_pixels();
+    crate::accounts_native_render_tests::verify();
     dashboard_frames();
     println!("Native Settings production painter proof: {frames} frames, state damage, clip parity, layer geometry and authored typography/material PASS");
 }

@@ -800,7 +800,7 @@ impl AiRuntime {
             let change_accent = accent.is_some_and(|rgb|
                 runtime.identity.user_profile(owner).is_some_and(|profile| profile.accent_rgb != rgb));
             if !change_wake && !change_accent { return None; }
-            let before = runtime.identity.encode();
+            let before = runtime.identity.account_checkpoint();
             if change_wake { let _ = runtime.identity.update_wake_word(owner, owner, wake); }
             if let Some(rgb) = accent.filter(|_|change_accent) {
                 let _ = runtime.identity.update_user_accent(owner, owner, rgb);
@@ -810,9 +810,7 @@ impl AiRuntime {
         if let Some(before) = before {
             if !crate::runtime::persist_identity_state() {
                 // Keep a repeated request retryable after a failed identity checkpoint.
-                if let Ok(identity) = crate::runtime::identity::IdentitySystem::decode(&before) {
-                    crate::runtime::with_runtime(|runtime| runtime.identity = identity);
-                }
+                crate::runtime::with_runtime(|runtime| runtime.identity.restore_account_checkpoint(before));
             }
         }
         if let Some(rgb) = accent {
