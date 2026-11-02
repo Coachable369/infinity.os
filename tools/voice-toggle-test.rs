@@ -9,6 +9,7 @@ static RENEW_FAILURES: AtomicUsize = AtomicUsize::new(0);
 static RENEWALS: AtomicUsize = AtomicUsize::new(0);
 static DISCARD_BUSY: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
+static SESSION_OWNER: AtomicUsize = AtomicUsize::new(1);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
 static PREPARE_FAILED: AtomicBool = AtomicBool::new(false);
@@ -113,7 +114,7 @@ mod runtime {
         // FUNC: session_nth
         // DESC: Supplies the active owner or a locked session for revocation testing.
         // ------------------=
-        pub fn session_nth(&self,_:usize)->Option<identity::Session>{Some(identity::Session{id:execution::SecurityIdentity([1;16]),user:execution::SecurityIdentity([2;16]),state:if crate::ACTIVE.load(crate::Ordering::SeqCst){identity::SessionState::Active}else{identity::SessionState::Locked}})}
+        pub fn session_nth(&self,_:usize)->Option<identity::Session>{Some(identity::Session{id:execution::SecurityIdentity([crate::SESSION_OWNER.load(crate::Ordering::SeqCst) as u8;16]),user:execution::SecurityIdentity([2;16]),state:if crate::ACTIVE.load(crate::Ordering::SeqCst){identity::SessionState::Active}else{identity::SessionState::Locked}})}
         // ------------------------=
         // FUNC: ai_profile
         // DESC: Supplies the spoken-reply preference for the production conversation controller.
@@ -827,6 +828,54 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     background_generation_listening_tests(owner);
     calibrated_instruction_tail_tests(owner);
     recognition_failure_recovery_tests(owner);
+    desktop_autostart_handoff_tests(owner);
+}
+
+// ------------------------=
+// FUNC: desktop_autostart_handoff_tests
+// DESC: Preserves desktop startup across prior-owner drain, without reopening manual mute or accepting a revoked session.
+// ------------------=
+fn desktop_autostart_handoff_tests(owner:runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    let desktop=runtime::execution::SecurityIdentity([3;16]);
+    for revoked in [false,true] {
+        assert!(conversation::start(owner));
+        BUSY.store(true,Ordering::SeqCst);
+        assert!(conversation::stop(owner));
+        SESSION_OWNER.store(3,Ordering::SeqCst);
+        let captures=CAPTURES.load(Ordering::SeqCst);
+        let mut deadline=10;
+        for now in [10,250_000_010,500_000_010] {
+            assert_eq!(conversation::autostart(desktop,&mut deadline,now),None);
+            assert_eq!(deadline,now+250_000_000);
+            conversation::poll();
+            assert_eq!(conversation::state().0,State::Stopping);
+            assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+        }
+        BUSY.store(false,Ordering::SeqCst);
+        conversation::poll();
+        assert_eq!(conversation::state().0,State::Off);
+        ACTIVE.store(!revoked,Ordering::SeqCst);
+        let due=deadline;
+        assert_eq!(conversation::autostart(desktop,&mut deadline,due),Some(!revoked));
+        assert_eq!(deadline,u64::MAX);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+usize::from(!revoked));
+        if !revoked {
+            assert_eq!(conversation::state().0,State::Listening);
+            BUSY.store(true,Ordering::SeqCst);
+            assert!(conversation::stop(desktop));
+            let mut pending=0;
+            assert_eq!(conversation::autostart(desktop,&mut pending,due+1),None);
+            assert_eq!(pending,u64::MAX);
+            BUSY.store(false,Ordering::SeqCst);
+            conversation::poll();
+            assert_eq!(conversation::autostart(desktop,&mut pending,due+1_000_000_000),None);
+            assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
+        }
+        assert_eq!(conversation::state().0,State::Off);
+        ACTIVE.store(true,Ordering::SeqCst);
+        SESSION_OWNER.store(1,Ordering::SeqCst);
+    }
 }
 
 // ------------------------=

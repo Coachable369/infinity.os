@@ -800,10 +800,16 @@ pub fn start(owner: SecurityIdentity) -> bool {
 
 // ------------------------=
 // FUNC: autostart
-// DESC: Retries transient cold-start dependencies; a successful start, fatal error or manual stop consumes the schedule.
+// DESC: Retains startup while a prior login owner drains; successful start, fatal error or same-owner manual stop consumes the schedule.
 // ------------------=
 pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Option<bool> {
     if *deadline == u64::MAX || now < *deadline {
+        return None;
+    }
+    // Login capture shuts down asynchronously. Its cancellation is not a mute
+    // request for the newly authenticated desktop session.
+    if unsafe { STATE == State::Stopping && OWNER != owner } {
+        *deadline = now.saturating_add(250_000_000);
         return None;
     }
     *deadline = u64::MAX;
