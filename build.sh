@@ -103,7 +103,6 @@ if [ "$package_only" = true ]; then
     fi
     sh tools/build-hermes.sh --target "$target"
     python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
-    python3 tools/sdk-parity.py "build/$target/kernel.elf" "build/$target/installed-kernel.elf"
     if python3 -c 'import sys, tomllib; sys.exit("native-python" not in tomllib.load(open("Cargo.toml", "rb"))["features"]["default"])'; then
         python3 tools/native-python/parity.py --arch "$target" --iso "$output_dir/InfinityOS-$target.iso"
     fi
