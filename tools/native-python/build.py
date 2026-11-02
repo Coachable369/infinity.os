@@ -87,6 +87,8 @@ def frozen_library(source, arch):
                            ("_infinity_child_entry", "child_entry.py"),
                            ("_infinity_generated_run", "generated_run.py"),
                            ("infinity", "infinity.py"),
+                           ("infinity_log", "infinity_log.py"),
+                           ("infinity_network", "infinity_network.py"),
                            ("infinitycode", "infinitycode.py"),
                            ("infinitycode_model", "infinitycode_model.py"),
                            ("_infinity_platform", "platform.py")):

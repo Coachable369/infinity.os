@@ -8,7 +8,7 @@ mod workflow;
 #[path = "../runtime/generated_app_recovery.rs"]
 mod recovery;
 #[path = "console_python_network.rs"]
-mod network;
+pub(super) mod network;
 #[path = "console_python_extensions.rs"]
 mod extensions;
 #[path = "console_python_child.rs"]

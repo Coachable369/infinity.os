@@ -39,6 +39,7 @@ static mut REPLY_TARGET: ReplyTarget = ReplyTarget::Assistant;
 static mut EDITOR_DIAGNOSTICS:assistant::compiler_diagnostics::Receipt=assistant::compiler_diagnostics::Receipt::new();
 static mut APP: Option<(SecurityIdentity,crate::runtime::native_app_task::Task)> = None;
 static mut APP_ACTIVE: bool = false;
+static mut APP_NETWORK: super::console_python::network::Network = super::console_python::network::Network::new();
 static mut APP_SOURCE_PATH:[u8;95]=[0;95];
 static mut APP_SOURCE_PATH_LENGTH:usize=0;
 static mut APP_BYTES:[u8;256*1024]=[0;256*1024];
@@ -570,6 +571,12 @@ pub(super) fn command(console:&mut ConsoleRuntime,input:&[u8])->bool {unsafe {
     let path=match command{
         Command::Compile(path)=>path,
         Command::Run(path)=>{launch(console,path);return true;},
+        Command::RunNetwork(path)=>{
+            if APP_ACTIVE { console.output.write_line(b"Stop the current application before granting network access."); return true; }
+            launch(console,path);
+            if APP_ACTIVE { (&mut *(&raw mut APP_NETWORK)).reset(SecurityIdentity(console.current_session.0),true); }
+            return true;
+        },
         Command::Status=>{
             let owner=SecurityIdentity(console.current_session.0);
             console.output.write_line(match job::status(owner){
@@ -783,6 +790,7 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
         Ok(task)=>{
             let _=crate::runtime::ai::application_host::attach(console.current_user.0,console.current_session.0);
             APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
+            (&mut *(&raw mut APP_NETWORK)).reset(owner,false);
             APP_RECOVERY=None;
             app_io_receipt(true,0,0);
             APP_SOURCE_PATH_LENGTH=0;
@@ -841,6 +849,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if authorized && (&*(&raw const APP_INPUT)).waiting {return;}
     if !authorized {crate::drivers::camera::cancel(*owner);}
     let state=task.poll(crate::runtime::ai::qwen::workers::clock_ns(),authorized,|caller,tables,op,args| {
+        if let Some(result)=(&mut *(&raw mut APP_NETWORK)).syscall(tables,op,args) {return result;}
         if (0x1260..=0x1262).contains(&op) {return crate::drivers::camera::dispatch(caller,tables,op,args);}
         if op==0x1003 {
             if args[1]>1024 {app_io_receipt(false,3,1);return -22;}
@@ -895,6 +904,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if state==State::Runnable{return;}
     let ui_was_active=crate::ui::native_uikit::presentation().active;
     let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;APP_SOURCE_PATH_LENGTH=0;
+    (&mut *(&raw mut APP_NETWORK)).close();
     crate::drivers::camera::cancel(owner);
     let recovery=core::ptr::addr_of_mut!(APP_RECOVERY).replace(None);
     crate::runtime::ai::application_host::detach();

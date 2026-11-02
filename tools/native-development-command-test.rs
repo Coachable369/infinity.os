@@ -13,6 +13,10 @@ fn main() {
     assert_eq!(native_development::parse(b"cc-status"), Some(Command::Status));
     assert_eq!(native_development::parse(b" cc-cancel  "), Some(Command::Cancel));
     assert_eq!(native_development::parse(b"cc"), None);
+    assert_eq!(native_development::parse(b"run --allow-network /home/a.elf"), Some(Command::RunNetwork(b"/home/a.elf")));
+    assert_eq!(native_development::parse(b"run --allow-network a.elf"), None);
+    assert_eq!(native_development::parse(b"run --allow-network /home/a.elf extra"), None);
+    assert_eq!(native_development::parse(b"run --allow-network "), None);
     assert_eq!(native_development::parse(b"cc /home/default/a.c extra"), None);
     assert_eq!(native_development::parse(b"compile /home/default/a.c"), None);
     assert_eq!(native_development::parse(b"cc-status extra"), None);

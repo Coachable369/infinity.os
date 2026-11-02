@@ -294,6 +294,8 @@ unsafe fn advance(owner: SecurityIdentity, authorized: bool, now: u64) -> bool {
             path: b"/sdk/infinity/camera.h",
             bytes: super::native_compiler_task::CAMERA,
         },
+        File { path: b"/sdk/infinity/log.h", bytes: super::native_compiler_task::LOG },
+        File { path: b"/sdk/infinity/network.h", bytes: super::native_compiler_task::NETWORK },
         File {
             path: b"/sdk/infinity/syscall.h",
             bytes: super::native_compiler_task::SYSCALL,

@@ -4,6 +4,7 @@
 pub enum Command<'a> {
     Compile(&'a [u8]),
     Run(&'a [u8]),
+    RunNetwork(&'a [u8]),
     Status,
     Cancel,
 }
@@ -29,6 +30,8 @@ pub fn parse(input: &[u8]) -> Option<Command<'_>> {
         .position(|byte| !byte.is_ascii_whitespace())
         .unwrap_or(tail.len());
     let path = &tail[path_start..];
+    let online = verb == b"run" && path.starts_with(b"--allow-network ");
+    let path = if online { &path[b"--allow-network ".len()..] } else {path};
     if matches!(verb, b"cc-status" | b"cc-cancel") {
         if !path.is_empty() {
             return None;
@@ -47,6 +50,8 @@ pub fn parse(input: &[u8]) -> Option<Command<'_>> {
         return None;
     }
     match verb {
+        b"run" if online && path.starts_with(b"/") => Some(Command::RunNetwork(path)),
+        b"run" if online => None,
         b"cc" => Some(Command::Compile(path)),
         b"run" => Some(Command::Run(path)),
         _ => None,

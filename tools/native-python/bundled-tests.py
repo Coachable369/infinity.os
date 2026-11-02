@@ -4,6 +4,17 @@ import io
 import json
 import importlib.metadata as metadata
 from _infinity_inventory import INVENTORY
+from infinity_log import log, INFO
+from infinity_network import connect
+sdk_sink = io.StringIO()
+log(INFO, "native-sdk", "record\nwith newline", sdk_sink)
+assert json.loads(sdk_sink.getvalue()) == dict(version=1, level=1, component="native-sdk", message="record\nwith newline")
+try:
+    connect("example.com", 0)
+except ValueError:
+    pass
+else:
+    raise AssertionError("invalid port accepted")
 
 for name, version in INVENTORY["bundled_distributions"].items():
     assert metadata.version(name) == version, name

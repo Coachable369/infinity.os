@@ -25,6 +25,8 @@ the SDK; it never overwrites your copies.
 | AIKit | Local AI interaction contract, typed action header, capabilities and security guidance |
 | AudioKit | PCM/WAV quick start, tested tone-generation example, format reference and explicit native binding limitations |
 | CameraKit | Authorized camera quick start, paged capture API reference and error/lifecycle guidance |
+| LogKit | Bounded JSON diagnostics in native Python and C, with console delivery and error handling |
+| NetworkKit | Authorized native IPv4 TCP/DNS/TLS client APIs and examples in both languages |
 | Examples | C and Python applications using the real native APIs |
 | manifest.json | Package version, source mappings, byte counts and SHA-256 checksums |
 
@@ -51,6 +53,14 @@ services. SDK assets are immutable package resources and consume no personal
 document slots. Large binary resources are intended for image viewers/export,
 not Text Editor. Copying individual text examples is supported; recursive SDK
 folder copying is not supported by the bounded object store.
+
+## One SDK for developers and AI
+
+Python and C applications use native OS services, not an emulation layer or host
+GUI framework. `AIKit/NativeAppGuide.txt` is also embedded in the OS application
+generation prompt. It points to these same references, documents actual supported
+APIs and prohibits invented APIs or self-granted permissions. Code generation is
+not proof of execution: compile/validate, run and check observable results.
 
 ## Release and licensing
 
