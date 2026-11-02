@@ -3,6 +3,13 @@ use super::identity::StableId;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum StartError { Busy, CameraUnavailable, Disabled, EnrollmentUnavailable, WorkerUnavailable }
 // ------------------------=
+// FUNC: account_selection
+// DESC: Resolves the signed-out identity to a login picker index instead of reusing an unrelated Settings or onboarding page index.
+// ------------------=
+pub fn account_selection(account:StableId,count:usize,mut candidate:impl FnMut(usize)->Option<StableId>)->usize {
+    (0..count).find(|&index|candidate(index)==Some(account)).unwrap_or(0)
+}
+// ------------------------=
 // FUNC: greeting
 // DESC: Accepts only the two exact login greetings, ignoring case and terminal punctuation; never accepts arbitrary OS commands.
 // ------------------=

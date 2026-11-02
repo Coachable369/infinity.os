@@ -1,16 +1,28 @@
 //! BSP-owned setup bridge. Models, worker and notices are identical in live and
 //! installed kernels; no writable model path or user-selected executable exists.
 use super::{native_face_job::Job,face_setup::{Setup,Stage,Error},identity::StableId,execution::SecurityIdentity};
-#[cfg(target_arch="aarch64")]
+#[cfg(all(not(test),target_arch="aarch64"))]
 static WORKER:&[u8]=include_bytes!("../../build/face/aarch64/face-worker.elf");
-#[cfg(target_arch="x86_64")]
+#[cfg(all(not(test),target_arch="x86_64"))]
 static WORKER:&[u8]=include_bytes!("../../build/face/x86_64/face-worker.elf");
+#[cfg(not(test))]
 static DETECTOR:&[u8]=include_bytes!("../../build/face/models/yunet.iface");
+#[cfg(not(test))]
 static RECOGNIZER:&[u8]=include_bytes!("../../build/face/models/sface.iface");
+// Coordinator tests inject a launch boundary and never execute these markers.
+#[cfg(test)]
+static WORKER:&[u8]=&[0;64];
+#[cfg(test)]
+static DETECTOR:&[u8]=&[1;64];
+#[cfg(test)]
+static RECOGNIZER:&[u8]=&[2;64];
+#[cfg(not(test))]
 #[used]
 static YUNET_LICENSE:&[u8]=include_bytes!("../../model-cache/face/licenses/YuNet-LICENSE");
+#[cfg(not(test))]
 #[used]
 static SFACE_LICENSE:&[u8]=include_bytes!("../../model-cache/face/licenses/SFace-LICENSE");
+#[cfg(not(test))]
 #[used]
 static JPEG_NOTICE:&[u8]=include_bytes!("../../build/face/native-deps/stb_image.h");
 static mut JOB:Job=Job::new();

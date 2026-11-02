@@ -5832,6 +5832,9 @@ impl ConsoleRuntime {
                 self.current_session = crate::runtime::identity::StableId::zero();
                 self.reset_app_assistant_session();
                 self.mode = ConsoleMode::Authentication;
+                self.system_step=crate::runtime::with_runtime(|runtime|
+                    crate::runtime::face_login::account_selection(self.current_user,runtime.identity.user_count(),
+                        |index|runtime.identity.user_nth(index).map(|user|user.id))).unwrap_or(0);
                 self.system_focus = 0;
                 self.reset_input();
                 crate::output_text(b"[session] signed out; authentication surface ready\n");
