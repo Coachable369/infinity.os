@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "root": "/InfintySDK",
+  "instructions": "AGENTS.md",
+  "examples": [
+    {
+      "id": "python-counter",
+      "language": "python",
+      "source": "Examples/Python/counter.py",
+      "instructions": "Examples/Python/AGENTS.md",
+      "capabilities": [
+        "ui",
+        "ai-actions"
+      ],
+      "reference": "AIKit/QuickStart.md",
+      "permission": "none",
+      "expected": "Click and AI actions update the displayed counter once."
+    },
+    {
+      "id": "c-counter",
+      "language": "c",
+      "source": "Examples/C/counter.c",
+      "instructions": "Examples/C/AGENTS.md",
+      "capabilities": [
+        "ui",
+        "ai-actions"
+      ],
+      "reference": "AIKit/QuickStart.md",
+      "permission": "none",
+      "expected": "Click and AI actions update the displayed counter once."
+    },
+    {
+      "id": "c-calculator",
+      "language": "c",
+      "source": "Examples/C/calculator.c",
+      "instructions": "Examples/C/AGENTS.md",
+      "capabilities": [
+        "ui",
+        "arithmetic"
+      ],
+      "reference": "UIKit/QuickStart.md",
+      "permission": "none",
+      "expected": "Arithmetic operations display validated results."
+    },
+    {
+      "id": "python-hello",
+      "language": "python",
+      "source": "Examples/Python/hello.py",
+      "instructions": "Examples/Python/AGENTS.md",
+      "capabilities": [
+        "console"
+      ],
+      "reference": "APIKit/GettingStarted.md",
+      "permission": "none",
+      "expected": "Program prints its greeting and exits."
+    },
+    {
+      "id": "c-hello",
+      "language": "c",
+      "source": "Examples/C/hello.c",
+      "instructions": "Examples/C/AGENTS.md",
+      "capabilities": [
+        "console"
+      ],
+      "reference": "APIKit/GettingStarted.md",
+      "permission": "none",
+      "expected": "Program prints its greeting and exits."
+    },
+    {
+      "id": "python-log",
+      "language": "python",
+      "source": "Examples/Python/logging_demo.py",
+      "instructions": "Examples/Python/AGENTS.md",
+      "capabilities": [
+        "logging"
+      ],
+      "reference": "LogKit/README.md",
+      "permission": "none",
+      "expected": "Console receives parseable structured JSON records."
+    },
+    {
+      "id": "c-log",
+      "language": "c",
+      "source": "Examples/C/logging_demo.c",
+      "instructions": "Examples/C/AGENTS.md",
+      "capabilities": [
+        "logging"
+      ],
+      "reference": "LogKit/README.md",
+      "permission": "none",
+      "expected": "Console receives parseable structured JSON records."
+    },
+    {
+      "id": "python-network",
+      "language": "python",
+      "source": "Examples/Python/network_head.py",
+      "instructions": "Examples/Python/AGENTS.md",
+      "capabilities": [
+        "tcp",
+        "tls"
+      ],
+      "reference": "NetworkKit/README.md",
+      "permission": "network",
+      "expected": "Authorized TLS HEAD request returns bounded response bytes."
+    },
+    {
+      "id": "c-network",
+      "language": "c",
+      "source": "Examples/C/network_head.c",
+      "instructions": "Examples/C/AGENTS.md",
+      "capabilities": [
+        "tcp",
+        "tls"
+      ],
+      "reference": "NetworkKit/README.md",
+      "permission": "network",
+      "expected": "Authorized TLS HEAD request returns bounded response bytes."
+    },
+    {
+      "id": "python-audio",
+      "language": "python",
+      "source": "Examples/Python/audio_tone.py",
+      "instructions": "Examples/Python/AGENTS.md",
+      "capabilities": [
+        "wav-generation"
+      ],
+      "reference": "AudioKit/README.md",
+      "permission": "none",
+      "expected": "A valid bounded PCM WAV file is written."
+    },
+    {
+      "id": "c-camera",
+      "language": "c",
+      "source": "Examples/C/camera.c",
+      "instructions": "Examples/C/AGENTS.md",
+      "capabilities": [
+        "camera"
+      ],
+      "reference": "CameraKit/README.md",
+      "permission": "camera",
+      "expected": "Authorized camera snapshot completes without leaking resources."
+    }
+  ]
+}

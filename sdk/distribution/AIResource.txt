@@ -1,3 +1,3 @@
-SDK authority: /InfintySDK/README.md, manifest.json and each Kit's guide/examples. Never invent APIs or bypass consent.
+SDK: /InfintySDK/AGENTS.md, Examples/catalog.json and Kit guides. Read relevant examples; never invent APIs or bypass consent.
 LogKit: Python infinity_log.log(INFO,"app","event"); C <infinity/log.h> infinity_log(INFINITY_LOG_INFO,"app","event"). Console JSON, not durable storage. No secrets.
 NetworkKit: Python infinity_network.connect(host,443,tls=True); sendall/recv/close. C <infinity/network.h>: open/command/poll/receive/close; yield, bound waits, handle short I/O. IPv4 TCP clients only; verified TLS. Requires explicit --allow-network. Close on failure. No UDP/IPv6/server sockets.

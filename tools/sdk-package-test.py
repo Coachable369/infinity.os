@@ -25,6 +25,24 @@ def main():
             assert data == (ROOT / record["source"]).read_bytes()
             assert data == (ROOT / "build/tests/sdk-export" / record["path"]).read_bytes()
         assert set(tar.getnames()) == expected
+        catalog = json.load(tar.extractfile("InfintySDK/Examples/catalog.json"))
+        assert catalog["version"] == 1 and catalog["root"] == manifest["root"]
+        assert "InfintySDK/" + catalog["instructions"] in expected
+        identities = set()
+        languages = set()
+        for example in catalog["examples"]:
+            assert example["id"] not in identities
+            identities.add(example["id"])
+            languages.add(example["language"])
+            assert example["language"] in ("python", "c")
+            assert example["permission"] in ("none", "camera", "network")
+            assert example["capabilities"] and example["expected"]
+            for field in ("source", "instructions", "reference"):
+                assert "InfintySDK/" + example[field] in expected
+                assert tar.extractfile("InfintySDK/" + example[field]).read()
+            assert example["source"].endswith(".py" if example["language"] == "python" else ".c")
+        assert languages == {"python", "c"}
+        assert len(identities) == 11
     print(f"PASS: {len(manifest['files'])} runtime/archive/source byte parity checks")
 
 if __name__ == "__main__":

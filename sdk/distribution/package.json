@@ -2,6 +2,11 @@
   "version": "1.0.0",
   "root": "/InfintySDK",
   "files": {
+    "AGENTS.md": "sdk/distribution/Agents.md",
+    "Examples/README.md": "sdk/distribution/Examples.md",
+    "Examples/catalog.json": "sdk/distribution/examples.json",
+    "Examples/Python/AGENTS.md": "sdk/distribution/PythonAgents.md",
+    "Examples/C/AGENTS.md": "sdk/distribution/CAgents.md",
     "README.md": "sdk/distribution/README.md",
     "AIKit/NativeAppGuide.txt": "sdk/distribution/AIResource.txt",
     "LogKit/README.md": "sdk/distribution/LogKit.md",

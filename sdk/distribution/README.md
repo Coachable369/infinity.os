@@ -10,6 +10,11 @@ the SDK; it never overwrites your copies.
 
 ## Start here
 
+For command/prompt-driven development, read `AGENTS.md`, then the relevant
+language's `Examples/Python/AGENTS.md` or `Examples/C/AGENTS.md`. Use
+`Examples/catalog.json` to select reusable examples by capability and language;
+`Examples/README.md` explains adaptation and acceptance criteria.
+
 1. Read `APIKit/GettingStarted.md`.
 2. Copy `Examples/Python/counter.py` into your Documents folder.
 3. Open the copy in Text Editor and select Run. Python's `infinity` module is
