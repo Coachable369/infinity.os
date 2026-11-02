@@ -11,7 +11,9 @@ fn exact_requests_and_offsets() {
     for text in [b"Infinity what time is it?".as_slice(), b"Infinity, what time is it?", b"What is the current time?"] {
         assert_eq!(Request::parse(text), Some(Request::Read));
     }
-    for text in [b"Set time zone to CST".as_slice(), b"set my time zone to CST", b"change the time zone to UTC minus 06:00"] {
+    for text in [b"Set time zone to CST".as_slice(), b"set my time zone to CST", b"change the time zone to UTC minus 06:00",
+        b"Infinity, could you please update my timezone to CST?", b"switch the system timezone to CST please",
+        b"adjust my time zone to Central Standard Time", b"change my timezone to CST"] {
         assert_eq!(Request::parse(text), Some(Request::SetZone(-360)));
     }
     assert_eq!(Request::parse(b"Set the time to 3:27 PM"), Some(Request::SetTime { hour: 15, minute: 27, second: 0 }));

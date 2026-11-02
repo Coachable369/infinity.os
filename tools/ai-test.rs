@@ -862,6 +862,9 @@ fn clock_request_ingress_contract() {
     for voice in [false, true] {
         for (input, expected) in [(b"What time is it?".as_slice(), Request::Read),
             (b"Set time zone to CST", Request::SetZone(-360)),
+            (b"Infinity, could you please update my timezone to CST?", Request::SetZone(-360)),
+            (b"Change my timezone to CDT", Request::SetZone(-300)),
+            (b"Adjust the system time zone to UTC plus 05:30", Request::SetZone(330)),
             (b"Set the time to 3:30 PM", Request::SetTime { hour: 15, minute: 30, second: 0 })] {
             let mut ai = Box::new(AiRuntime::new());
             ai.bind_chat_owner(owner);
@@ -879,6 +882,16 @@ fn clock_request_ingress_contract() {
         }
     }
     let mut ai = Box::new(AiRuntime::new()); ai.bind_chat_owner(owner);
+    for input in [b"Infinity, please update my accent color to grey".as_slice(),
+        b"Could you adjust the theme to purple please?"] {
+        let mut settings_ai=Box::new(AiRuntime::new());
+        settings_ai.bind_chat_owner(owner);
+        settings_ai.load_hermes_memory([0x72;16],Some(Document::new(owner,b"Alex",b"Infinity").unwrap()));
+        assert!(settings_ai.personal_memory_reply(input,&mut [0;8192]).is_none());
+        assert!(matches!(settings_ai.route_application_request(2,input),Ok(RequestRoute::Control(Command::Setting(_)))));
+        assert!(matches!(settings_ai.take_control(owner,true),Some(Command::Setting(_))));
+        assert_eq!(settings_ai.take_control(owner,true),None);
+    }
     assert_eq!(ai.route_application_request(2, b"Set my time zone to CST"),
         Ok(RequestRoute::Control(Command::Clock(Request::SetZone(-360)))));
     assert_eq!(ai.take_control([0x73; 16], true), None);

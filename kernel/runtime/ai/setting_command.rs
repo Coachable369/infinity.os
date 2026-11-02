@@ -54,13 +54,13 @@ impl Request {
     pub fn spoken(input:&[u8])->Option<Self> {
         let mut input=input.trim_ascii();
         while input.last().is_some_and(|b|matches!(b,b'.'|b'!'|b'?')) {input=&input[..input.len()-1];}
-        for prefix in [b"can you ".as_slice(),b"could you ",b"would you ",b"please "] {
+        for prefix in [b"infinity, ".as_slice(),b"infinity ",b"please ",b"can you ",b"could you ",b"would you ",b"please "] {
             if input.get(..prefix.len()).is_some_and(|s|s.eq_ignore_ascii_case(prefix)){input=&input[prefix.len()..];}
         }
         for suffix in [b", please".as_slice(),b" please"] {
             if input.len()>=suffix.len() && input[input.len()-suffix.len()..].eq_ignore_ascii_case(suffix){input=&input[..input.len()-suffix.len()];}
         }
-        let verb=[b"set ".as_slice(),b"change ",b"switch ",b"rename ",b"turn "]
+        let verb=[b"set ".as_slice(),b"change ",b"update ",b"adjust ",b"switch ",b"rename ",b"turn "]
             .into_iter().find(|p|input.get(..p.len()).is_some_and(|s|s.eq_ignore_ascii_case(p)))?;
         input=&input[verb.len()..];
         for prefix in [b"the ".as_slice(),b"my "] {

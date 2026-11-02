@@ -146,6 +146,11 @@ impl Request {
         for wake in [b"infinity, ".as_slice(), b"computer, ", b"infinity ", b"computer ", b"please "] {
             text = text.strip_prefix(wake).unwrap_or(text);
         }
+        for polite in [b"could you ".as_slice(),b"can you ",b"would you "] {
+            text=text.strip_prefix(polite).unwrap_or(text);
+        }
+        text=text.strip_prefix(b"please ").unwrap_or(text);
+        text=text.strip_suffix(b", please").or_else(||text.strip_suffix(b" please")).unwrap_or(text);
         if [b"what time is it".as_slice(), b"what is the time", b"what's the time", b"what is the current time",
             b"tell me the time", b"tell me what time it is", b"read the time", b"current time", b"clock"].contains(&text) {
             return Some(Self::Read);
@@ -154,6 +159,17 @@ impl Request {
             b"change the time zone to ", b"set timezone to ", b"change timezone to ",
             b"set my time zone to ", b"set my timezone to ", b"clock zone "] {
             if let Some(value) = text.strip_prefix(prefix) { return Some(parse_zone(value).map(Self::SetZone).unwrap_or(Self::InvalidZone)); }
+        }
+        for verb in [b"set ".as_slice(),b"change ",b"update ",b"switch ",b"adjust "] {
+            if let Some(mut rest)=text.strip_prefix(verb) {
+                for qualifier in [b"the ".as_slice(),b"my ",b"system ",b"computer's ",b"computer "] {
+                    rest=rest.strip_prefix(qualifier).unwrap_or(rest);
+                }
+                if let Some(value)=rest.strip_prefix(b"time zone ").or_else(||rest.strip_prefix(b"timezone ")) {
+                    let value=value.strip_prefix(b"to ").or_else(||value.strip_prefix(b"as ")).unwrap_or(value);
+                    return Some(parse_zone(value).map(Self::SetZone).unwrap_or(Self::InvalidZone));
+                }
+            }
         }
         for prefix in [b"set time to ".as_slice(), b"set the time to ", b"change time to ", b"change the time to ", b"clock set "] {
             if let Some(value) = text.strip_prefix(prefix) { return Some(parse_time(value).unwrap_or(Self::InvalidTime)); }

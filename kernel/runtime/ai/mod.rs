@@ -197,10 +197,11 @@ impl AiRuntime {
             return Err(b"The local model is busy. Wait for the current reply, then retry.");
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
-        if clock::Request::parse(input).is_none() && hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None{
-            return Ok(RequestRoute::Inference(InferenceMode::Conversation));
-        }
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
+        if matches!(route, RequestRoute::Inference(_))
+            && hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None {
+            route = RequestRoute::Inference(InferenceMode::Conversation);
+        }
         let software_goal=crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
         if let (RequestRoute::Control(command), false) = (route, software_goal) {
             self.execution
@@ -832,7 +833,7 @@ impl AiRuntime {
     pub fn personal_memory_reply(&mut self, input: &[u8], reply: &mut [u8; 8192])
         -> Option<hermes_memory_request::Receipt>
     {
-        if clock::Request::parse(input).is_some() {return None;}
+        if self.instruction_mapping.resolve(input).or_else(||control::Command::explicit(input)).is_some() {return None;}
         if !self.chat.enabled() || self.execution.busy() || self.app_owner.is_some()
             || self.qwen.as_ref().is_some_and(|service| service.busy()) {
             return None;
@@ -1001,7 +1002,8 @@ impl AiRuntime {
                 teaching[10+key.len()..10+key.len()+value.len()].copy_from_slice(value);
                 &teaching[..10+key.len()+value.len()]
             } else {&input[..length]};
-            if let Some(receipt) = self.personal_memory_reply(request, &mut reply) {
+            if let Some(receipt) = (route == RequestRoute::Inference(InferenceMode::Conversation))
+                .then(||self.personal_memory_reply(request, &mut reply)).flatten() {
                 self.chat.begin_native_turn();
                 self.chat.update_native_response(&reply[..receipt.length]);
                 // Failed writes are factual spoken receipts too, not inference failures.
