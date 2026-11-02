@@ -23,8 +23,17 @@ the SDK; it never overwrites your copies.
 | UIKit | The OS's authoritative Eclipse Precision specification, component catalog, style payload, atlas, reference artwork and public UI headers |
 | APIKit | Native C headers, Python module, API reference and development guide |
 | AIKit | Local AI interaction contract, typed action header, capabilities and security guidance |
+| AudioKit | PCM/WAV quick start, tested tone-generation example, format reference and explicit native binding limitations |
+| CameraKit | Authorized camera quick start, paged capture API reference and error/lifecycle guidance |
 | Examples | C and Python applications using the real native APIs |
 | manifest.json | Package version, source mappings, byte counts and SHA-256 checksums |
+
+Each kit has a starting guide and reference: `APIKit/GettingStarted.md` and
+`APIKit/Reference.md`; `UIKit/QuickStart.md` and its shared specifications;
+`AIKit/QuickStart.md` and `AIKit/Integration.md`; `AudioKit/README.md`; and
+`CameraKit/README.md`. Runnable examples are under `Examples/C` and
+`Examples/Python`. Guides distinguish public app APIs from internal OS services
+and list expected outcomes, permission requirements and troubleshooting steps.
 
 The archive distribution has the same relative paths and bytes as the installed
 SDK. `./build-kit sdk-package` creates `builds/InfintySDK.tar.gz` and its checksum.
