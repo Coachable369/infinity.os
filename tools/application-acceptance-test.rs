@@ -55,6 +55,9 @@ fn supported_creation_contexts_fit() {
         assert_eq!(contract.request,request);
         let mut output=[0;6144];
         let capacity=output.len()-if panel.source_language==SourceLanguage::Python {512} else {0};
-        assert!(panel.generation_prompt(true,b"",&mut output[..capacity]).is_some());
+        let mut measured=[0;16384];
+        let required=panel.generation_prompt(true,b"",&mut measured).unwrap();
+        assert!(panel.generation_prompt(true,b"",&mut output[..capacity]).is_some(),
+            "request {:?}: required {required}, capacity {capacity}", core::str::from_utf8(request));
     }
 }
