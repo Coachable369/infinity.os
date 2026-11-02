@@ -122,7 +122,7 @@ fn seed_inputs(store: &mut ObjectStore<Disk>, directory: &Path, owner: ObjectId,
             id
         } else {
             assert!(matches!(phase, "install" | "online" | "tls" | "tk" | "bundled"), "Later phases may only reuse fixture objects");
-            let used = (0..storage::object::NAMESPACE_CAPACITY).filter(|i| store.namespace_entry(*i).is_some()).count();
+            let used = store.persistent_namespace_count();
             assert!(used + (names.len() - index) + usize::from(revision.is_none()) <= storage::object::NAMESPACE_CAPACITY,
                 "Fixture capacity: used={used}, requested={}, archive={}, capacity={}",
                 names.len() - index, usize::from(revision.is_none()), storage::object::NAMESPACE_CAPACITY);

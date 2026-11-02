@@ -47,6 +47,7 @@ if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
 fi
 test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
 test "${TMPDIR:-}" = "$temporary_dir"
+python3 tools/package-sdk.py
 
 target=all
 package_only=false
@@ -102,6 +103,7 @@ if [ "$package_only" = true ]; then
     fi
     sh tools/build-hermes.sh --target "$target"
     python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
+    python3 tools/sdk-parity.py "build/$target/kernel.elf" "build/$target/installed-kernel.elf"
     if python3 -c 'import sys, tomllib; sys.exit("native-python" not in tomllib.load(open("Cargo.toml", "rb"))["features"]["default"])'; then
         python3 tools/native-python/parity.py --arch "$target" --iso "$output_dir/InfinityOS-$target.iso"
     fi
@@ -255,6 +257,7 @@ if [ "$target" != all ]; then
     python3 tools/browser-artwork-parity.py
     python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
     python3 tools/native-compiler-parity-test.py --arch "$target"
+    python3 tools/sdk-parity.py "build/$target/kernel.elf" "build/$target/installed-kernel.elf"
     python3 tools/native-python/parity.py --arch "$target"
     echo "InfinityOS $target full-bundle ISO is ready in $output_dir"
     exit 0
@@ -340,6 +343,7 @@ make installer-template-test
 make milestone-7x-test
 make ai-test
 make object-test
+sh tools/sdk-test.sh
 make fabric-test
 make network-test
 make network-wire-test
@@ -365,6 +369,7 @@ sh tools/build-hermes.sh --target x86_64
 sh tools/build-hermes.sh
 python3 tools/browser-artwork-parity.py
 python3 tools/design-kit-parity.py --kernel build/aarch64/installed-kernel.elf --kernel build/x86_64/installed-kernel.elf
+python3 tools/sdk-parity.py build/aarch64/kernel.elf build/aarch64/installed-kernel.elf build/x86_64/kernel.elf build/x86_64/installed-kernel.elf
 
 # Build targets publish directly into builds; there is no second installer copy.
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"

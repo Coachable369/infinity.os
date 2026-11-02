@@ -10096,7 +10096,7 @@ impl ConsoleRuntime {
                 self.output.write_line(b"..");
                 shown = crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT;
             }
-            for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
+            for index in 0..crate::storage::object::PUBLIC_NAMESPACE_CAPACITY {
                 let entry = match crate::storage::namespace_list_nth(prefix, index) {
                     Ok(Some(entry)) => entry,
                     _ => break,
@@ -10293,7 +10293,7 @@ impl ConsoleRuntime {
                 } else {
                     source
                 };
-                for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
+                for index in 0..crate::storage::object::PUBLIC_NAMESPACE_CAPACITY {
                     let Ok(Some(entry)) = crate::storage::namespace_list_nth(path, index) else {
                         break;
                     };
@@ -10413,7 +10413,7 @@ impl ConsoleRuntime {
                 Err(error) => self.storage_error(error),
             },
             b"list" => {
-                for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
+                for index in 0..crate::storage::object::PUBLIC_NAMESPACE_CAPACITY {
                     let Ok(Some(entry)) = crate::storage::namespace_list_nth(b"/trash", index)
                     else {
                         break;
@@ -13151,7 +13151,7 @@ impl ConsoleRuntime {
             };
             let mut path = [0u8; 95];
             let mut shown = 0;
-            for index in 0..crate::storage::object::NAMESPACE_CAPACITY {
+            for index in 0..crate::storage::object::PUBLIC_NAMESPACE_CAPACITY {
                 if let Some((n, _)) = storage::namespace_entry(index, &mut path) {
                     if path[..n].starts_with(prefix) {
                         self.output.write_line(&path[..n]);

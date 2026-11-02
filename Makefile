@@ -77,6 +77,10 @@ FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 KERNEL_SOURCES += assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
 KERNEL_SOURCES += $(wildcard sdk/c/include/*.h sdk/c/include/infinity/*.h sdk/c/compiler-headers/*.h)
 KERNEL_SOURCES += sdk/c/examples/camera_capture.c
+SDK_SOURCES := $(shell find sdk/distribution sdk/c/include sdk/c/examples sdk/python/examples -type f) sdk/python/infinity.py docs/intelligence-kit.md $(wildcard assets/ui-design-kit/*.json assets/ui-design-kit/*.infinityui assets/ui-design-kit/default/*) tools/package-sdk.py
+build/sdk/catalog.rs: $(SDK_SOURCES)
+	python3 tools/package-sdk.py
+KERNEL_SOURCES += build/sdk/catalog.rs $(SDK_SOURCES)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
 	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
@@ -608,7 +612,7 @@ component-manifest-test:
 	@rustc --edition=2021 -C opt-level=2 -A warnings tools/component-manifest-test.rs -o build/behavior-tests/component-manifest-test
 	@build/behavior-tests/component-manifest-test
 
-object-test namespace-test crash-recovery-test:
+object-test namespace-test crash-recovery-test: build/sdk/catalog.rs
 	@tools/object-store-test.sh
 
 object-vm-test:

@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "root": "/InfintySDK",
+  "files": {
+    "README.md": "sdk/distribution/README.md",
+    "LICENSES.md": "sdk/distribution/LICENSES.md",
+    "APIKit/GettingStarted.md": "sdk/distribution/GettingStarted.md",
+    "APIKit/Python/infinity.py": "sdk/python/infinity.py",
+    "UIKit/README.md": "sdk/distribution/UIKit.md",
+    "UIKit/EclipsePrecision.md": "assets/ui-design-kit/default/eclipse-precision-v1.md",
+    "UIKit/Controls.md": "assets/ui-design-kit/default/controls.md",
+    "UIKit/reference.png": "assets/ui-design-kit/default/eclipse-precision-v1-reference.png",
+    "UIKit/atlas.rgba": "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
+    "UIKit/styles.bin": "assets/ui-design-kit/default/uikit-styles.bin",
+    "UIKit/catalog.json": "assets/ui-design-kit/uikit-catalog.json",
+    "UIKit/uikit.infinityui": "assets/ui-design-kit/uikit.infinityui",
+    "AIKit/Integration.md": "sdk/distribution/AIIntegration.md",
+    "AIKit/Architecture.md": "docs/intelligence-kit.md",
+    "AIKit/interaction.h": "sdk/c/include/infinity/interaction.h",
+    "Examples/Python/counter.py": "sdk/python/examples/generation_counter.py",
+    "Examples/Python/hello.py": "sdk/python/examples/hello.py",
+    "Examples/C/counter.c": "sdk/c/examples/generation-counter.c",
+    "Examples/C/calculator.c": "sdk/c/examples/calculator-ui.c",
+    "Examples/C/hello.c": "sdk/c/examples/hello.c",
+    "Examples/C/camera.c": "sdk/c/examples/camera_capture.c"
+  },
+  "trees": {
+    "APIKit/C/include": "sdk/c/include"
+  }
+}

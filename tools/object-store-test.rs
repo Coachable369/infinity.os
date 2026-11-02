@@ -14,6 +14,90 @@ mod hermes_memory_store;
 #[path="../kernel/storage/editor_objects.rs"]
 mod editor_objects;
 
+struct SdkReader;
+impl storage::object::ObjectCapabilityPolicy for SdkReader {
+    // ------------------------=
+    // FUNC: authorize
+    // DESC: Grants only reads for the SDK capability-boundary regression test.
+    // ------------------=
+    fn authorize(&self, operation: storage::object::ObjectOperation, _: Option<storage::object::ObjectRef>) -> bool {
+        matches!(operation, storage::object::ObjectOperation::Read)
+    }
+}
+
+// ------------------------=
+// FUNC: sdk_package_access
+// DESC: Exercises installed SDK discovery, owner-independent reads, readonly protection, copying and remount byte parity.
+// ------------------=
+fn sdk_package_access() {
+    use storage::object::{ObjectId, ObjectReadRequest};
+    let sectors = STORE_RELATIVE_LBA as usize + 32768;
+    let disk = MemoryDisk::new(sectors);
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0xa7; 16]).unwrap();
+    let generation = store.generation();
+    let slots = store.persistent_namespace_count();
+    let root = store.resolve(b"/InfintySDK").unwrap();
+    assert_eq!(store.metadata(root).unwrap().kind, ObjectType::NamespaceNode);
+    let entries: Vec<_> = (0..256).map_while(|i| store.namespace_list_nth(b"/InfintySDK", i)).collect();
+    assert!(entries.len() > 40 && entries.len() < 180);
+    for entry in entries {
+        let path = &entry.path[..entry.path_len as usize];
+        let id = store.resolve(path).unwrap();
+        assert_eq!(id, entry.object.id);
+        assert!(store.object_exists(id));
+        let metadata = store.metadata(id).unwrap();
+        if metadata.kind == ObjectType::NamespaceNode { continue; }
+        let mut bytes = vec![0; metadata.logical_size as usize];
+        assert_eq!(store.read(id, None, &mut bytes).unwrap(), bytes.len());
+        assert_eq!(store.read(id, Some(2), &mut bytes), Err(ObjectError::InvalidVersion));
+        let relative = std::str::from_utf8(&path[b"/InfintySDK/".len()..]).unwrap();
+        let export = std::path::Path::new("build/tests/sdk-export").join(relative);
+        std::fs::create_dir_all(export.parent().unwrap()).unwrap();
+        std::fs::write(export, &bytes).unwrap();
+        let mut chunk = [0; 127];
+        let offset = bytes.len().saturating_sub(chunk.len());
+        let request = ObjectReadRequest { object: entry.object, version: None,
+            offset: offset as u32, length: chunk.len() as u32 };
+        let result = ObjectService::new(&mut store, &SdkReader).read(request, &mut chunk).unwrap();
+        assert_eq!(result.logical_size as usize, bytes.len());
+        assert_eq!(&chunk[..bytes.len() - offset], &bytes[offset..]);
+        assert_eq!(store.write(id, b"changed"), Err(ObjectError::Unauthorized));
+        assert_eq!(store.remove(id), Err(ObjectError::Unauthorized));
+        assert_eq!(store.detach(path), Err(ObjectError::Unauthorized));
+    }
+    assert_eq!(store.generation(), generation);
+    assert_eq!(store.persistent_namespace_count(), slots);
+    let example = b"/InfintySDK/Examples/Python/counter.py";
+    for owner in [ObjectId([1; 16]), ObjectId([2; 16])] {
+        let mut bytes = [0; 16384];
+        let (length, _) = editor_objects::load(&mut store, owner, example, &mut bytes).unwrap();
+        assert_eq!(&bytes[..length], include_bytes!("../sdk/python/examples/generation_counter.py"));
+        assert!(editor_objects::save(&mut store, owner, example, b"changed", None).is_err());
+    }
+    let copy = store.copy_path_attached(example, b"/home/default/documents/counter.py").unwrap();
+    store.write(copy, b"print(42)\n").unwrap();
+    let owner = ObjectId([0x31; 16]);
+    let home = store.ensure_user_home(owner, b"SDK Developer").unwrap();
+    let documents = home.child(b"documents").unwrap();
+    let destination = documents.child(b"counter.py").unwrap();
+    let owned_copy = store.copy_path_attached(example, destination.as_bytes()).unwrap();
+    assert_eq!(store.metadata(owned_copy).unwrap().owner, owner);
+    assert!(editor_objects::load(&mut store, ObjectId([0x32; 16]), destination.as_bytes(), &mut [0; 16384]).is_err());
+    assert_eq!(store.move_entry(b"/home/default/documents/counter.py", b"/InfintySDK/new.py"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.copy_path_attached(b"/InfintySDK/Examples", b"/home/default/examples"), Err(ObjectError::UnsupportedFormat));
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    assert_eq!(store.resolve(b"/InfintySDK").unwrap(), root);
+    let mut bytes = [0; 16384];
+    let original = store.resolve(example).unwrap();
+    let length = store.read(original, None, &mut bytes).unwrap();
+    assert_eq!(&bytes[..length], include_bytes!("../sdk/python/examples/generation_counter.py"));
+    let length = store.read(copy, None, &mut bytes).unwrap();
+    assert_eq!(&bytes[..length], b"print(42)\n");
+    assert_eq!(store.metadata(owned_copy).unwrap().owner, owner);
+    println!("PASS: immutable SDK namespace, two-user access, paged reads, editable copy and installed remount");
+}
+
 // ------------------------=
 // FUNC: editable_ai_dictionaries
 // DESC: Saves both installed AI JSON documents through the production editor adapter and verifies edits after remount.
@@ -538,6 +622,8 @@ impl ObjectCapabilityPolicy for Deny {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    sdk_package_access();
+    if std::env::args().any(|arg| arg == "--sdk-only") { return; }
     editable_ai_dictionaries();
     if std::env::args().any(|arg|arg=="--clock-only"){clock_persistence();return;}
     if std::env::args().any(|arg|arg=="--hermes-memory-only"){hermes_persistence();return;}
@@ -1009,7 +1095,7 @@ fn namespace_expansion() {
     let disk=MemoryDisk::new(sectors);
     let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x74;16]).unwrap();
     let id=store.create_attached(b"source",ObjectType::Text,Space::Personal,b"preserve",b"/home/default/source").unwrap();
-    let count=(0..storage::object::NAMESPACE_CAPACITY).filter(|i|store.namespace_entry(*i).is_some()).count();
+    let count=store.persistent_namespace_count();
     for i in count..32 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
     drop(store);
     for sector in 0..80 {
@@ -1022,7 +1108,7 @@ fn namespace_expansion() {
         let backing=MemoryDisk(Rc::new(RefCell::new(baseline.clone())),Rc::new(Cell::new(None)));
         let failing=FailingDisk::new(backing.clone());
         let mut store=ObjectStore::mount(failing.clone(),0).unwrap();
-        assert_eq!((0..44).filter(|i|store.namespace_entry(*i).is_some()).count(),32);
+        assert_eq!(store.persistent_namespace_count(),32);
         let generation=store.generation();failing.arm(cut);
         let result=store.attach(b"/home/default/expanded",id);failing.disarm();drop(store);
         let mut recovered=ObjectStore::mount(backing,0).unwrap();
@@ -1036,7 +1122,7 @@ fn namespace_expansion() {
     assert_eq!(store.attach(b"/home/default/overflow",id),Err(ObjectError::InsufficientCapacity));
     assert_eq!(store.generation(),generation);drop(store);
     let mut store=ObjectStore::mount(disk,0).unwrap();
-    assert_eq!((0..45).filter(|i|store.namespace_entry(*i).is_some()).count(),44);
+    assert_eq!(store.persistent_namespace_count(),44);
     for i in 32..44 {assert_eq!(store.resolve(format!("/home/default/alias{i}").as_bytes()).unwrap(),id);}
     let mut bytes=[0;16];let n=store.read(id,None,&mut bytes).unwrap();assert_eq!(&bytes[..n],b"preserve");
 }

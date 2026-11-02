@@ -2,6 +2,8 @@
 //! no Rust layout is ever written to persistent media.
 
 use super::organization;
+#[path = "sdk_package.rs"]
+mod sdk_package;
 #[path="user_home.rs"]
 pub mod user_home;
 use super::{BlockDevice, DateTimeConfiguration};
@@ -54,6 +56,7 @@ const MAX_VERSIONS: usize = 64;
 // The six unused sectors between the root pair and BANK_A provide three
 // additional namespace sectors per bank, without moving existing content.
 pub const NAMESPACE_CAPACITY: usize = 44;
+pub const PUBLIC_NAMESPACE_CAPACITY: usize = NAMESPACE_CAPACITY + sdk_package::ENTRIES.len();
 const MAX_ENTRIES: usize = NAMESPACE_CAPACITY;
 const MAX_RELATIONSHIPS: usize = 16;
 const MAX_PATH: usize = 95;
@@ -1367,6 +1370,19 @@ impl<D: BlockDevice> ObjectStore<D> {
             .next()
             .unwrap_or(&[]);
         let id = self.copy_record(source, name)?;
+        if sdk_package::get(source).is_some() {
+            let parent_end = destination.iter().rposition(|byte| *byte == b'/').ok_or(ObjectError::InvalidPath)?;
+            if let Ok(parent) = self.resolve(&destination[..parent_end]) {
+                let metadata = self.metadata(parent)?;
+                if metadata.kind != ObjectType::NamespaceNode || metadata.space != Space::Personal {
+                    return Err(ObjectError::Unauthorized);
+                }
+                let index = self.object_index(id)?;
+                self.state.objects[index].owner = metadata.owner;
+            } else {
+                return Err(ObjectError::NamespaceNotFound);
+            }
+        }
         self.attach_record(destination, id)?;
         Ok(id)
     }
@@ -1376,6 +1392,13 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Creates a distinct application record sharing verified immutable backing, independently from any namespace attachment.
     // ------------------=
     fn copy_record(&mut self, source: ObjectId, name: &[u8]) -> Result<ObjectId, ObjectError> {
+        if let Some(entry) = sdk_package::get(source) {
+            let data = entry.data.ok_or(ObjectError::UnsupportedFormat)?;
+            if data.len() > MAX_CONTENT { return Err(ObjectError::InsufficientCapacity); }
+            let id = self.create_record(name, sdk_package::metadata(entry).kind, Space::Personal)?;
+            self.write_record(id, data)?;
+            return Ok(id);
+        }
         let source_index = self.object_index(source)?;
         let source_record = self.state.objects[source_index];
         if source_record.tombstone {
@@ -1642,6 +1665,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         version: Option<u32>,
         out: &mut [u8],
     ) -> Result<usize, ObjectError> {
+        if let Some(entry) = sdk_package::get(id) {
+            return sdk_package::read(entry, version, out);
+        }
         self.allow_public_spatial_access(id)?;
         self.read_internal(id, version, out)
     }
@@ -1651,6 +1677,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Keeps private shell checkpoints out of generic object operations, including aliases.
     // ------------------=
     fn allow_public_spatial_access(&self, id: ObjectId) -> Result<(), ObjectError> {
+        if sdk_package::get(id).is_some() { return Err(ObjectError::Unauthorized); }
         let record = &self.state.objects[self.object_index(id)?];
         if &record.name[..record.name_len as usize]==b"@hermes-memory"
             || record.space == Space::System as u8
@@ -1958,6 +1985,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Writes or updates attach record data.
     // ------------------=
     fn attach_record(&mut self, path: &[u8], id: ObjectId) -> Result<(), ObjectError> {
+        if sdk_package::owns(path) { return Err(ObjectError::Unauthorized); }
         validate_path(path)?;
         if self
             .state
@@ -1989,8 +2017,12 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the resolve operation.
     // ------------------=
     pub fn resolve(&self, path: &[u8]) -> Result<ObjectId, ObjectError> {
+        if sdk_package::owns(path) {
+            return sdk_package::resolve(path).ok_or(ObjectError::NamespaceNotFound);
+        }
         if path.starts_with(b"/objects/") {
             let id = parse_id(&path[9..]).ok_or(ObjectError::InvalidPath)?;
+            if sdk_package::get(id).is_some() { return Ok(id); }
             let slot = self.object_index(id)?;
             if self.state.objects[slot].tombstone {
                 return Err(ObjectError::NotFound);
@@ -2010,6 +2042,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the move entry operation.
     // ------------------=
     pub fn move_entry(&mut self, from: &[u8], to: &[u8]) -> Result<(), ObjectError> {
+        if sdk_package::owns(from) || sdk_package::owns(to) { return Err(ObjectError::Unauthorized); }
         let before = self.begin()?;
         let result = (|| {
             validate_path(from)?;
@@ -2073,6 +2106,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the detach operation.
     // ------------------=
     pub fn detach(&mut self, path: &[u8]) -> Result<(), ObjectError> {
+        if sdk_package::owns(path) { return Err(ObjectError::Unauthorized); }
         self.allow_package_namespace_mutation(self.resolve(path)?)?;
         let before = self.begin()?;
         let result = (|| {
@@ -2170,6 +2204,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the metadata operation.
     // ------------------=
     pub fn metadata(&self, id: ObjectId) -> Result<ObjectMetadata, ObjectError> {
+        if let Some(entry) = sdk_package::get(id) { return Ok(sdk_package::metadata(entry)); }
         let i = self.object_index(id)?;
         let o = self.state.objects[i];
         Ok(ObjectMetadata {
@@ -2369,6 +2404,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the history count operation.
     // ------------------=
     pub fn history_count(&self, id: ObjectId) -> usize {
+        if sdk_package::get(id).is_some() { return 1; }
         self.state
             .versions
             .iter()
@@ -2380,6 +2416,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the history version nth operation.
     // ------------------=
     pub fn history_version_nth(&self, id: ObjectId, index: usize) -> Option<(u32, bool)> {
+        if sdk_package::get(id).is_some() { return (index == 0).then_some((1, true)); }
         let current = self.current_version(id).ok()?;
         self.state
             .versions
@@ -2393,6 +2430,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the namespace refs operation.
     // ------------------=
     pub fn namespace_refs(&self, id: ObjectId) -> usize {
+        if sdk_package::get(id).is_some() { return 1; }
         self.state
             .entries
             .iter()
@@ -2405,6 +2443,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Returns one authorized human Namespace reference for a stable ObjectId.
     // ------------------=
     pub fn namespace_ref_nth(&self, id: ObjectId, index: usize) -> Option<&[u8]> {
+        if let Some(entry) = sdk_package::get(id) { return (index == 0).then_some(entry.path); }
         self.state
             .entries
             .iter()
@@ -2461,6 +2500,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the object exists operation.
     // ------------------=
     pub fn object_exists(&self, id: ObjectId) -> bool {
+        if sdk_package::get(id).is_some() { return true; }
         self.object_index(id)
             .map(|slot| !self.state.objects[slot].tombstone)
             .unwrap_or(false)
@@ -2470,6 +2510,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the current version operation.
     // ------------------=
     pub fn current_version(&self, id: ObjectId) -> Result<u32, ObjectError> {
+        if sdk_package::get(id).is_some() { return Ok(1); }
         Ok(self.state.objects[self.object_index(id)?].current_version)
     }
     // ------------------------=
@@ -2477,6 +2518,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the current size operation.
     // ------------------=
     pub fn current_size(&self, id: ObjectId) -> Result<u32, ObjectError> {
+        if let Some(entry) = sdk_package::get(id) { return Ok(entry.data.map_or(0, |data| data.len() as u32)); }
         let version = self.current_version(id)?;
         self.state
             .versions
@@ -2494,23 +2536,35 @@ impl<D: BlockDevice> ObjectStore<D> {
             .entries
             .iter()
             .filter(|e| e.used)
-            .nth(index)
             .map(|e| (e.path(), e.target))
+            .chain(sdk_package::ENTRIES.iter().map(|entry| (entry.path, entry.id)))
+            .nth(index)
+    }
+
+    // ------------------------=
+    // FUNC: persistent_namespace_count
+    // DESC: Reports disk-backed namespace usage independently of immutable package overlays.
+    // ------------------=
+    pub fn persistent_namespace_count(&self) -> usize {
+        self.state.entries.iter().filter(|entry| entry.used).count()
     }
     // ------------------------=
     // FUNC: namespace_list_nth
     // DESC: Implements the namespace list nth operation.
     // ------------------=
     pub fn namespace_list_nth(&self, prefix: &[u8], index: usize) -> Option<NamespaceListResult> {
-        self.state
-            .entries
-            .iter()
-            .filter(|e| e.used && e.path().starts_with(prefix))
+        (0..self.state.entries.iter().filter(|entry| entry.used).count() + sdk_package::ENTRIES.len())
+            .filter_map(|i| self.namespace_entry(i))
+            .filter(|(path, _)| path.starts_with(prefix))
             .nth(index)
-            .map(|e| NamespaceListResult {
-                path: e.path,
-                path_len: e.path_len,
-                object: ObjectRef { id: e.target },
+            .map(|(path, id)| {
+                let mut stored = [0; MAX_PATH];
+                stored[..path.len()].copy_from_slice(path);
+                NamespaceListResult {
+                path: stored,
+                path_len: path.len() as u8,
+                object: ObjectRef { id },
+                }
             })
     }
 
@@ -2753,6 +2807,11 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
         object: Option<ObjectRef>,
     ) -> Result<(), ObjectError> {
         if let Some(reference) = object {
+            if sdk_package::get(reference.id).is_some() {
+                return if matches!(operation, ObjectOperation::Read | ObjectOperation::Query | ObjectOperation::History)
+                    && self.policy.authorize(operation, object) { Ok(()) }
+                    else { Err(ObjectError::Unauthorized) };
+            }
             let record = &self.store.state.objects[self.store.object_index(reference.id)?];
             if record.space == Space::System as u8
                 && (record.kind == ObjectType::Metadata as u8
@@ -2792,6 +2851,18 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
         out: &mut [u8],
     ) -> Result<ObjectReadResult, ObjectError> {
         self.allow(ObjectOperation::Read, Some(r.object))?;
+        if let Some(entry) = sdk_package::get(r.object.id) {
+            if r.version.is_some_and(|v| v != 1) { return Err(ObjectError::InvalidVersion); }
+            let data = entry.data.ok_or(ObjectError::UnsupportedFormat)?;
+            let start = r.offset as usize;
+            if start > data.len() { return Err(ObjectError::InvalidObject); }
+            let count = if r.length == 0 { data.len() - start }
+                else { (r.length as usize).min(data.len() - start) };
+            if count > out.len() { return Err(ObjectError::InsufficientCapacity); }
+            out[..count].copy_from_slice(&data[start..start + count]);
+            return Ok(ObjectReadResult { object: r.object, version: 1,
+                logical_size: data.len() as u32, content_crc: entry.crc });
+        }
         let mut full = [0u8; MAX_CONTENT];
         let size = self.store.read(r.object.id, r.version, &mut full)?;
         let start = r.offset as usize;
