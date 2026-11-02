@@ -7,8 +7,7 @@ use crate::runtime::{execution::SecurityIdentity, native_compiler_task::Task,
 mod workflow;
 #[path = "../runtime/generated_app_recovery.rs"]
 mod recovery;
-#[path = "console_python_network.rs"]
-pub(super) mod network;
+use super::native_network as network;
 #[path = "console_python_extensions.rs"]
 mod extensions;
 #[path = "console_python_child.rs"]

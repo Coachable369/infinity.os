@@ -75,6 +75,9 @@ mod assistant_commands;
 mod source_commands;
 #[path = "console_python_libraries.rs"]
 mod python_libraries;
+#[cfg(all(any(feature="native-compiler",feature="native-python"),target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+#[path="console_python_network.rs"]
+mod native_network;
 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 #[path="console_compile.rs"]
 mod compiler_commands;
