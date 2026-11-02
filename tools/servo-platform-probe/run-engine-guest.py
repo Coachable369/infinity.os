@@ -61,7 +61,10 @@ def main():
               "-object","filter-dump,id=packets,netdev=browser,file="+str(output / "browser-network.pcap")]
              if options.network_probe else []))
     try:
-        process.wait(timeout=options.load_timeout_seconds+120 if options.network_probe else (90 if options.page_probe else 45))
+        # Account for each bounded zoom transition as well as initial loading.
+        process.wait(timeout=options.load_timeout_seconds+6*60+120 if environment.get("INFINITY_BROWSER_NETWORK_ZOOM")=="1" else
+                     600 if environment.get("INFINITY_BROWSER_ZOOM_STRESS")=="1" else
+                     options.load_timeout_seconds+120 if options.network_probe else (90 if options.page_probe else 45))
     except subprocess.TimeoutExpired:
         timed_out=True
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
@@ -93,6 +96,10 @@ def main():
     network_passed = [9,2,16,1] in records
     if options.network_probe:
         passed = passed and network_passed
+    network_zoom_passed = all([9,2,0x602,(index << 32) | percent] in records
+                              for index,percent in enumerate((110,125,150,100,80,100)))
+    if environment.get("INFINITY_BROWSER_NETWORK_ZOOM")=="1":
+        passed = passed and network_zoom_passed
     diagnostics={str(kind):b"".join(struct.pack("<Q",r[3]) for r in records if r[:3]==[9,4,kind]).rstrip(b"\0").decode(errors="replace") for kind in (6,7)}
     pixel_kind, dimension_kind = (10,60) if any(r[:3]==[9,2,60] for r in records) else ((8,59) if any(r[:3]==[9,2,59] for r in records) else (5,36))
     dimensions=next((r[3] for r in records if r[:3]==[9,2,dimension_kind]),None)
@@ -112,8 +119,10 @@ def main():
     report["network_failure_recovery_verified"] = all([9,2,52,step] in records for step in (1,2,3))
     report["renderer_failure_recovery_verified"] = [9,2,53,1] in records
     report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,9))
+    report["root_scrollbars_verified"] = all([9,2,61,step] in records for step in range(1,6))
     report["opaque_iframe_checkbox_click_zoom_scroll_verified"] = [9,2,40,11] in records
     report["external_https_verified"] = network_passed
+    report["external_page_zoom_verified"] = network_zoom_passed
     report["load_completed"] = [9,2,32,1] in records if options.network_probe else None
     report["requested_url"] = environment.get("INFINITY_BROWSER_PROBE_URL", "https://www.google.com/") if options.network_probe else None
     report["network_only"] = options.network_only

@@ -388,6 +388,8 @@ pub struct Presentation {
     pub find_open: bool,
     pub find_text: [u8; 256],
     pub find_length: usize,
+    pub find_editor: infinity_browser_core::text_field::Field<256>,
+    pub find_revision: u64,
     pub find_result: u32,
     pub find_token: u32,
     pub chrome_menu: u8,
@@ -467,6 +469,8 @@ static mut PRESENTATION: Presentation = Presentation {
     find_open: false,
     find_text: [0; 256],
     find_length: 0,
+    find_editor: infinity_browser_core::text_field::Field::new(),
+    find_revision: 0,
     find_result: 0,
     find_token: 0,
     chrome_menu: 0,
@@ -565,6 +569,7 @@ impl Presentation {
                 ^ ((self.chrome_menu as u64) << 30)
                 ^ ((self.menu_focus as u64) << 28)
                 ^ (self.find_token as u64).rotate_left(11)
+                ^ self.find_revision.rotate_left(23)
                 ^ (self.find_result as u64).rotate_left(37),
             loading: self.loading,
             busy: self.input_busy,
@@ -626,6 +631,7 @@ pub fn find_presentation(open: bool, text: &[u8], result: u32) -> u32 {
         v.find_open = open;
         v.find_length = text.len().min(256);
         v.find_text[..v.find_length].copy_from_slice(&text[..v.find_length]);
+        v.find_editor.set(&text[..v.find_length]);
         v.find_result = result;
         v.find_token = v.find_token.wrapping_add(1);
         v.revision = v.revision.wrapping_add(1);
@@ -634,6 +640,38 @@ pub fn find_presentation(open: bool, text: &[u8], result: u32) -> u32 {
 }
 #[no_mangle]
 pub static INFINITY_BROWSER_FIND: AtomicU32 = AtomicU32::new(0);
+// ------------------------=
+// FUNC: edit_find
+// DESC: Publishes native find selection and editing state without losing its undo history.
+// ------------------=
+pub fn edit_find(field: infinity_browser_core::text_field::Field<256>) {
+    unsafe {
+        let v=&mut *(&raw mut PRESENTATION);
+        v.find_editor=field;
+        v.find_revision=v.find_revision.wrapping_add(1);
+        v.find_length=field.text().len();
+        v.find_text.fill(0);
+        v.find_text[..v.find_length].copy_from_slice(field.text());
+        v.revision=v.revision.wrapping_add(1);
+    }
+}
+// ------------------------=
+// FUNC: native_fields_session
+// DESC: Revokes native drafts and undo/redo snapshots at the existing workplace session boundary.
+// ------------------=
+pub fn native_fields_session(session:[u8;16],active:bool) {
+    unsafe {
+        let v=&mut *(&raw mut PRESENTATION);
+        let address=(&mut *(&raw mut ADDRESS_EDITOR)).bind(session,active);
+        let find=v.find_editor.bind(session,active);
+        if !address && !find {return;}
+        v.edit.fill(0);v.edit_length=0;v.caret=0;v.address_selected=false;v.address_focused=false;
+        v.find_text.fill(0);v.find_length=0;v.find_open=false;v.find_result=0;
+        v.find_token=v.find_token.wrapping_add(1);v.find_revision=v.find_revision.wrapping_add(1);
+        v.revision=v.revision.wrapping_add(1);
+        INFINITY_BROWSER_FIND.store(0,Ordering::Release);
+    }
+}
 #[no_mangle]
 pub static INFINITY_BROWSER_ACTIVE_TAB: AtomicU32 = AtomicU32::new(0);
 // ------------------------=
@@ -881,6 +919,7 @@ pub fn focus_address(focused: bool) {
             view.address_selected = false;
         }
         if focused != view.address_focused {
+            (&mut *(&raw mut ADDRESS_EDITOR)).clear();
             view.address_focused = focused;
             view.revision = view.revision.wrapping_add(1);
         }
@@ -901,88 +940,58 @@ pub fn select_address() {
     }
 }
 
+static mut ADDRESS_EDITOR: infinity_browser_core::text_field::Field<2048> = infinity_browser_core::text_field::Field::new();
+
 // ------------------------=
-// FUNC: edit_address
-// DESC: Applies native bounded insertion, deletion and caret navigation to the address draft.
+// FUNC: with_address_editor
+// DESC: Applies native field edits while preserving existing omnibox focus and presentation semantics.
 // ------------------=
-pub fn edit_address(key: crate::ui::text_input::TextEditKey) {
+fn with_address_editor(edit: impl FnOnce(&mut infinity_browser_core::text_field::Field<2048>)->bool) -> bool {
     unsafe {
-        use crate::ui::text_input::{self as text, TextEditKey as K};
-        let view = &mut *(&raw mut PRESENTATION);
-        if !view.address_focused {
-            return;
-        }
-        if view.address_selected {
-            match key {
-                K::Character(c) if c.is_ascii_graphic() || c == b' ' => {
-                    view.edit_length = 0;
-                    view.caret = 0;
-                }
-                K::Backspace | K::Delete => {
-                    view.edit_length = 0;
-                    view.caret = 0;
-                    view.address_selected = false;
-                    view.revision = view.revision.wrapping_add(1);
-                    return;
-                }
-                K::Left | K::Home | K::Right | K::End => {
-                    view.caret = if matches!(key, K::Left | K::Home) {
-                        0
-                    } else {
-                        view.edit_length
-                    };
-                    view.address_selected = false;
-                    view.revision = view.revision.wrapping_add(1);
-                    return;
-                }
-                _ => return,
-            }
-            view.address_selected = false;
-        }
-        let changed = match key {
-            K::Character(c) => {
-                text::insert_ascii(&mut view.edit, &mut view.edit_length, &mut view.caret, c)
-            }
-            K::Backspace => text::backspace(&mut view.edit, &mut view.edit_length, &mut view.caret),
-            K::Delete => text::delete(&mut view.edit, &mut view.edit_length, &mut view.caret),
-            K::Left => text::move_caret(&mut view.caret, view.edit_length, -1),
-            K::Right => text::move_caret(&mut view.caret, view.edit_length, 1),
-            K::Home => text::move_caret(&mut view.caret, view.edit_length, -2),
-            K::End => text::move_caret(&mut view.caret, view.edit_length, 2),
-        };
-        if changed {
-            view.revision = view.revision.wrapping_add(1);
-        }
+        let view=&mut *(&raw mut PRESENTATION);
+        if !view.address_focused {return false;}
+        let field=&mut *(&raw mut ADDRESS_EDITOR);
+        field.set(&view.edit[..view.edit_length]);
+        field.position(view.caret,if view.address_selected {0}else{view.caret});
+        if !edit(field) {return false;}
+        view.edit.fill(0);view.edit_length=field.text().len();
+        view.edit[..view.edit_length].copy_from_slice(field.text());
+        view.caret=field.caret();
+        let (a,b)=field.selection();view.address_selected=a!=b;
+        view.revision=view.revision.wrapping_add(1);true
     }
 }
 
 // ------------------------=
+// FUNC: edit_address
+// DESC: Applies bounded selection-aware editing and caret movement to the native address draft.
+// ------------------=
+pub fn edit_address(key: crate::ui::text_input::TextEditKey) {
+    use crate::ui::text_input::TextEditKey as K;
+    use infinity_browser_core::text_field::Key as F;
+    let key=match key {
+        K::Character(c)=>F::Character(c),K::Backspace=>F::Backspace,K::Delete=>F::Delete,
+        K::Left=>F::Move(-1,false),K::Right=>F::Move(1,false),
+        K::Home=>F::Move(-2,false),K::End=>F::Move(2,false),
+    };
+    with_address_editor(|field|field.key(key));
+}
+
+// ------------------------=
+// FUNC: address_history
+// DESC: Keeps native address undo and redo local to the focused omnibox rather than forwarding to the page.
+// ------------------=
+pub fn address_history(redo: bool) {
+    use infinity_browser_core::text_field::Key;
+    with_address_editor(|field|field.key(if redo {Key::Redo}else{Key::Undo}));
+}
+
+// ------------------------=
 // FUNC: paste_address
-// DESC: Atomically replaces the selected address or inserts safe clipboard text at its caret.
+// DESC: Replaces selected text or inserts a complete safe clipboard line as one reversible edit.
 // ------------------=
 pub fn paste_address(bytes: &[u8]) -> bool {
-    unsafe {
-        let view = &mut *(&raw mut PRESENTATION);
-        if !view.address_focused {
-            return false;
-        }
-        let mut draft = view.edit;
-        let mut n = if view.address_selected {
-            0
-        } else {
-            view.edit_length
-        };
-        let mut caret = if view.address_selected { 0 } else { view.caret };
-        if !crate::ui::text_input::paste_ascii(&mut draft, &mut n, &mut caret, bytes) {
-            return false;
-        }
-        view.edit = draft;
-        view.edit_length = n;
-        view.caret = caret;
-        view.address_selected = false;
-        view.revision = view.revision.wrapping_add(1);
-        true
-    }
+    with_address_editor(|field|field.replace(bytes))
 }
 
 // ------------------------=

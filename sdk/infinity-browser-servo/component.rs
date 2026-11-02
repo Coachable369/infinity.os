@@ -383,7 +383,8 @@ fn dispatch(view:&mut session::Session<Network>,command:&abi::Command)->Result<(
             let key=if command.flags&abi::KEY_NAMED!=0 { servo::Key::Named(match command.a {
                 1=>servo::NamedKey::Enter,2=>servo::NamedKey::Tab,3=>servo::NamedKey::Backspace,4=>servo::NamedKey::Delete,
                 5=>servo::NamedKey::ArrowLeft,6=>servo::NamedKey::ArrowRight,7=>servo::NamedKey::ArrowUp,8=>servo::NamedKey::ArrowDown,
-                9=>servo::NamedKey::Home,10=>servo::NamedKey::End,11=>servo::NamedKey::Escape,_=>return Err(())
+                9=>servo::NamedKey::Home,10=>servo::NamedKey::End,11=>servo::NamedKey::Escape,
+                12=>servo::NamedKey::PageUp,13=>servo::NamedKey::PageDown,_=>return Err(())
             })} else { servo::Key::Character(char::from_u32(command.a).ok_or(())?.to_string()) };
             let mut event=servo::KeyboardEvent::from_state_and_key(
                 if command.flags&abi::KEY_DOWN!=0 {servo::KeyState::Down}else{servo::KeyState::Up},key);

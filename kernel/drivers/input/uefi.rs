@@ -3,35 +3,13 @@ use super::{
     InputAction, InputEvent, InputSource, InputStatus, PointerCapabilities, PointerEvent,
 };
 use crate::boot_info::BootInfo;
-
-#[repr(C)]
-struct InputKey {
-    scan_code: u16,
-    unicode_character: u16,
-}
+use super::firmware_keyboard::{InputKey,KeyData,SimpleTextInputEx,Exposure};
 
 #[repr(C)]
 struct SimpleTextInput {
     reset: usize,
     read_key_stroke: unsafe extern "C" fn(*mut SimpleTextInput, *mut InputKey) -> u64,
     wait_for_key: usize,
-}
-
-#[repr(C)]
-struct KeyData {
-    key: InputKey,
-    shift_state: u32,
-    toggle_state: u8,
-}
-
-#[repr(C)]
-struct SimpleTextInputEx {
-    reset: usize,
-    read_key_stroke: unsafe extern "efiapi" fn(*mut SimpleTextInputEx, *mut KeyData) -> u64,
-    wait_for_key: usize,
-    set_state: usize,
-    register_notify: usize,
-    unregister_notify: usize,
 }
 
 #[repr(C)]
@@ -122,10 +100,11 @@ struct UsbIo {
 
 static mut INPUT: *mut SimpleTextInput = core::ptr::null_mut();
 static mut INPUT_EX: *mut SimpleTextInputEx = core::ptr::null_mut();
+static mut KEY_EXPOSURE: Exposure = Exposure::new();
 static mut POINTER: *mut SimplePointer = core::ptr::null_mut();
 static mut ABSOLUTE_POINTER: *mut AbsolutePointer = core::ptr::null_mut();
 static mut POINTERS: *mut FirmwarePointers = core::ptr::null_mut();
-static mut USB_KEYS: [u8; 6] = [0; 6];
+static mut USB_KEYS: [[u8; 6]; MAX_POINTER_PROTOCOLS] = [[0; 6]; MAX_POINTER_PROTOCOLS];
 static mut USB_MOUSE_BUTTONS: [u8; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
 static mut USB_MOUSE_ABSOLUTE_X: [u16; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
 static mut USB_MOUSE_ABSOLUTE_Y: [u16; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
@@ -251,6 +230,11 @@ type SyncInterruptTransfer =
 // ------------------=
 pub fn initialize(info: &BootInfo) -> InputStatus {
     unsafe {
+        KEY_EXPOSURE=Exposure::new();
+        INPUT=core::ptr::null_mut();
+        INPUT_EX=core::ptr::null_mut();
+        USB_KEYS=[[0;6];MAX_POINTER_PROTOCOLS];
+        USE_DIRECT_USB_KEYBOARD=false;
         POINTER_BUTTONS = pointer::PointerButtonArbiter::new();
         USB_MOUSE_BUTTONS = [0; MAX_POINTER_PROTOCOLS];
     }
@@ -371,6 +355,9 @@ fn poll_devices() {
             && unsafe { POINTERS.as_ref() }
                 .map(|pointers| pointers.usb_keyboard_count != 0)
                 .unwrap_or(false);
+        let keyboard_count=if direct_keyboard {unsafe {POINTERS.as_ref()}.map(|p|p.usb_keyboard_count as usize).unwrap_or(0).min(MAX_POINTER_PROTOCOLS)}else{0};
+        for index in keyboard_count..MAX_POINTER_PROTOCOLS {reset_usb_keyboard(index);}
+        if direct_keyboard || input_ex.is_null() {super::modifiers::firmware_report(0);}
         if !direct_keyboard && (!input_ex.is_null() || !input.is_null()) {
             for _ in 0..32 {
             let mut data = KeyData {
@@ -380,7 +367,10 @@ fn poll_devices() {
             };
             let status = unsafe {
                 if !input_ex.is_null() {
-                    ((*input_ex).read_key_stroke)(input_ex, &mut data)
+                    let sample=super::firmware_keyboard::poll(input_ex,&mut *(&raw mut KEY_EXPOSURE));
+                    data=sample.data;
+                    super::modifiers::firmware_report(sample.modifiers);
+                    sample.status
                 } else {
                     ((*input).read_key_stroke)(input, &mut data.key)
                 }
@@ -398,6 +388,11 @@ fn poll_devices() {
         }
         let pointers = unsafe { POINTERS };
         if let Some(pointers) = unsafe { pointers.as_mut() } {
+            if direct_keyboard {
+                for index in 0..keyboard_count {
+                    poll_usb_keyboard(index,pointers.usb_keyboard[index],pointers.usb_keyboard_endpoint[index]);
+                }
+            }
             unsafe {
                 ABSOLUTE_UPDATED_THIS_POLL = false;
                 RELATIVE_UPDATED_THIS_POLL = false;
@@ -452,14 +447,6 @@ fn poll_devices() {
                             pointers.usb_mouse_absolute[index] != 0,
                         );
                     }
-                }
-            }
-            if unsafe { USE_DIRECT_USB_KEYBOARD } {
-                for index in 0..(pointers.usb_keyboard_count as usize).min(MAX_POINTER_PROTOCOLS) {
-                    poll_usb_keyboard(
-                        pointers.usb_keyboard[index],
-                        pointers.usb_keyboard_endpoint[index],
-                    );
                 }
             }
         } else {
@@ -733,19 +720,21 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
 // FUNC: poll_usb_keyboard
 // DESC: Implements the poll usb keyboard operation.
 // ------------------=
-fn poll_usb_keyboard(usb: *mut UsbIo, endpoint: u8) {
+fn poll_usb_keyboard(index: usize, usb: *mut UsbIo, endpoint: u8) {
     if usb.is_null() || endpoint == 0 {
+        reset_usb_keyboard(index);
         return;
     }
     let address = unsafe { (*usb).sync_interrupt_transfer };
     if address == 0 {
+        reset_usb_keyboard(index);
         return;
     }
     let transfer: SyncInterruptTransfer = unsafe { core::mem::transmute(address) };
     let mut report = [0u8; 8];
     let mut length = report.len();
     let mut usb_status = 0u32;
-    if unsafe {
+    let status=unsafe {
         transfer(
             usb,
             endpoint,
@@ -754,16 +743,22 @@ fn poll_usb_keyboard(usb: *mut UsbIo, endpoint: u8) {
             1,
             &mut usb_status,
         )
-    } != 0
-        || length < 8
-    {
+    };
+    if super::modifiers::usb_fault(status,usb_status) {
+        reset_usb_keyboard(index);
+        return;
+    }
+    if status!=0 {return;}
+    if length<8 {
+        reset_usb_keyboard(index);
         return;
     }
     let current = [
         report[2], report[3], report[4], report[5], report[6], report[7],
     ];
-    let previous = unsafe { USB_KEYS };
+    let previous = unsafe { USB_KEYS[index] };
     let modifiers = super::desktop_shortcuts::hid_modifiers(report[0]);
+    super::modifiers::usb_report(index,report[0]);
     for &usage in &current {
         if usage != 0 && !previous.contains(&usage) {
             dispatch(InputEvent {
@@ -789,7 +784,20 @@ fn poll_usb_keyboard(usb: *mut UsbIo, endpoint: u8) {
         }
     }
     unsafe {
-        USB_KEYS = current;
+        USB_KEYS[index] = current;
+    }
+}
+
+// ------------------------=
+// FUNC: reset_usb_keyboard
+// DESC: Releases repeat keys and modifiers on removal or source reset without affecting other keyboards.
+// ------------------=
+fn reset_usb_keyboard(index: usize) {
+    super::modifiers::usb_reset(index);
+    let previous=unsafe {core::mem::replace(&mut USB_KEYS[index],[0;6])};
+    for usage in previous {
+        if usage!=0 {dispatch(InputEvent {source:InputSource::Keyboard,action:InputAction::Released,
+            code:u16::from(usage),modifiers:0,delta_x:0,delta_y:0});}
     }
 }
 

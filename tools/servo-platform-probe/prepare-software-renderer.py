@@ -54,7 +54,10 @@ pub use native_software_context::SoftwareRenderingContext;
                 #[cfg(not(all(target_os = "none", infinity_native)))]
                 enable_dithering: true,
 ''')
-    (servo / relative).write_text(source)
+    scrollbar_spec = importlib.util.spec_from_file_location("scrollbar_staging", Path(__file__).with_name("prepare-scrollbars.py"))
+    scrollbar_staging = importlib.util.module_from_spec(scrollbar_spec)
+    scrollbar_spec.loader.exec_module(scrollbar_staging)
+    (servo / relative).write_text(scrollbar_staging.patch_painter(source))
     relative = "components/shared/paint/Cargo.toml"
     source = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     source += '\n[target.\'cfg(target_os = "none")\'.dependencies.swgl]\nversion = "=0.70.0"\n'

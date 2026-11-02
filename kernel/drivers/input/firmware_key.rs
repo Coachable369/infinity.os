@@ -9,11 +9,11 @@ pub fn decode(scan: u16, character: u16, shift_state: u32) -> Option<ConsoleKey>
     let valid = shift_state & 0x8000_0000 != 0;
     let shift = valid && shift_state & 3 != 0;
     let control = valid && shift_state & 0xcc != 0;
-    if let Some(code) = super::desktop_shortcuts::spatial_chord(
-        scan == 0 && character == 9,
-        valid && shift_state & 0xc0 != 0,
-        shift,
-    ) {
+    let usage = match scan { 0 if character == 9 => 0x2b, 3 => 0x4f, 4 => 0x50, 9 => 0x4b, 10 => 0x4e, 0x0f => 0x3e, _ => 0 };
+    let modifiers = u8::from(shift) | (u8::from(valid && shift_state & 12 != 0) << 1)
+        | (u8::from(valid && shift_state & 0xc0 != 0) << 2)
+        | (u8::from(valid && shift_state & 0x30 != 0) << 3);
+    if let Some(code) = super::desktop_shortcuts::application_chord(usage, modifiers) {
         return Some(ConsoleKey::Shortcut(code));
     }
     if control && scan == 0 {

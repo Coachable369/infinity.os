@@ -22,10 +22,15 @@ pub mod page_status;
 pub mod settings;
 pub mod welcome;
 pub mod zoom;
+pub mod shortcuts;
+pub mod text_field;
 pub mod resource_order;
 #[cfg(test)]
 #[path = "../servo-std/profiler_window.rs"]
 mod profiler_window;
+#[cfg(test)]
+#[path = "../../tools/browser-scrollbars-test.rs"]
+mod scrollbar_tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Navigation(u64);

@@ -20,6 +20,8 @@ mod streaming;
 mod request;
 #[path = "engine-recovery.rs"]
 mod recovery;
+#[path = "engine-scrollbars.rs"]
+mod scrollbars;
 #[cfg(infinity_network_probe)]
 #[path = "../../sdk/infinity-browser-servo/native_https.rs"]
 mod native_https;
@@ -347,7 +349,7 @@ fn javascript_true(engine: &Servo, view: &WebView, repaint: &Cell<bool>, script:
 // DESC: Pumps actual engine work with a bounded deadline and cooperative scheduler yields.
 // ------------------=
 fn spin_until(engine: &Servo, view: &WebView, repaint: &Cell<bool>, done: &Cell<u8>) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(if option_env!("INFINITY_BROWSER_ZOOM_STRESS")==Some("1") {60}else{10});
     while matches!(done.get(), 0 | 3) && Instant::now() < deadline {
         engine.spin_event_loop();
         if repaint.replace(false) { view.paint(); }
@@ -427,6 +429,9 @@ fn verify_gradients(engine:&Servo)->bool {
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_SCROLLBARS_ONLY")==Some("1") {
+        return if scrollbars::verify(engine) {0} else {61};
+    }
     if option_env!("INFINITY_BROWSER_GRADIENT_ONLY")==Some("1") {
         return if verify_gradients(engine) {0} else {54};
     }
@@ -452,6 +457,7 @@ pub fn verify(engine: &Servo) -> u64 {
     if option_env!("INFINITY_BROWSER_NETWORK_ONLY")==Some("1") {
         return if network::verify(engine) {0} else {20};
     }
+    if !scrollbars::verify(engine) {return 61;}
     if !verify_gradients(engine) {return 54;}
     if !streaming::verify(engine) {return 41;}
     if !request::verify(engine) {return 46;}

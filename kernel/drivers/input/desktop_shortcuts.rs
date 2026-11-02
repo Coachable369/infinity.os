@@ -1,6 +1,31 @@
 //! Reserved Ctrl+Shift desktop workflows shared by all keyboard transports.
 pub const SPATIAL_NEXT: u8 = 0x80;
 pub const SPATIAL_PREVIOUS: u8 = 0x81;
+pub const TAB_NEXT: u8 = 0x82;
+pub const TAB_PREVIOUS: u8 = 0x83;
+pub const PAGE_UP: u8 = 0x84;
+pub const PAGE_DOWN: u8 = 0x85;
+pub const RELOAD: u8 = 0x86;
+
+// ------------------------=
+// FUNC: application_chord
+// DESC: Preserves browser tab, page and reload keys without changing Command-Tab desktop navigation.
+// ------------------=
+pub fn application_chord(usage: u16, modifiers: u8) -> Option<u8> {
+    let reverse = modifiers & 1 != 0;
+    match usage {
+        0x50 if modifiers & 8 != 0 => Some(b'['),
+        0x4f if modifiers & 8 != 0 => Some(b']'),
+        0x2b if modifiers & 4 != 0 => spatial_chord(true, true, reverse),
+        0x2b if modifiers & 2 != 0 => Some(if reverse { TAB_PREVIOUS } else { TAB_NEXT }),
+        0x4b if modifiers & 6 != 0 => Some(TAB_PREVIOUS),
+        0x4e if modifiers & 6 != 0 => Some(TAB_NEXT),
+        0x4b => Some(PAGE_UP),
+        0x4e => Some(PAGE_DOWN),
+        0x3e => Some(RELOAD),
+        _ => None,
+    }
+}
 
 // ------------------------=
 // FUNC: switcher_request
@@ -26,12 +51,13 @@ pub fn switcher_request(
 
 // ------------------------=
 // FUNC: hid_modifiers
-// DESC: Preserves Shift, Control and either Command/Super key from USB HID reports.
+// DESC: Preserves Shift, Control, Command/Super and Alt from USB HID reports.
 // ------------------=
 pub fn hid_modifiers(bits: u8) -> u8 {
     u8::from(bits & 0x22 != 0)
         | (u8::from(bits & 0x11 != 0) << 1)
         | (u8::from(bits & 0x88 != 0) << 2)
+        | (u8::from(bits & 0x44 != 0) << 3)
 }
 
 // ------------------------=

@@ -219,6 +219,9 @@ fn key_code(scan: u8) -> u16 {
         0x0d => 0x2e,
         0x0e => 0x2a,
         0x3b => 0x3a,
+        0x3f => 0x3e,
+        0x4e => 0x57,
+        0x4a => 0x56,
         0x1a => 0x2f,
         0x1b => 0x30,
         0x2b => 0x31,
@@ -323,6 +326,7 @@ pub fn run() -> ! {
 // ------------------=
 fn dispatch_keyboard(value: u8, shift: &mut bool, control: &mut bool, command: &mut u8, extended: &mut bool) {
     if value == 0xe0 { *extended = true; return; }
+    super::modifiers::ps2_transition(value, *extended);
     let scan = value & 0x7f;
     if *extended && matches!(scan, 0x5b | 0x5c) {
         let bit = if scan == 0x5b { 1 } else { 2 };
@@ -338,5 +342,5 @@ fn dispatch_keyboard(value: u8, shift: &mut bool, control: &mut bool, command: &
     *extended = false;
     dispatch(InputEvent { source: InputSource::Keyboard,
         action: if value & 0x80 == 0 { InputAction::Pressed } else { InputAction::Released },
-        code, modifiers: *shift as u8 | ((*control as u8)<<1) | (u8::from(*command != 0)<<2), delta_x: 0, delta_y: 0 });
+        code, modifiers: super::modifiers::held(), delta_x: 0, delta_y: 0 });
 }

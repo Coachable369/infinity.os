@@ -335,6 +335,8 @@ pub(super) fn close() {unsafe {
 // ------------------=
 pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     let settings=crate::runtime::browser::presentation();
+    use infinity_browser_core::shortcuts::{self,Action};
+    let action=if let ConsoleKey::Shortcut(code)=key {shortcuts::resolve(code)}else{None};
     if let ConsoleKey::Shortcut(value @ (b'+'|b'='|b'-'|b'_'|b'0'))=key {
         let mut command=abi::Command::empty();command.kind=abi::ZOOM;
         command.x=match value {b'+'|b'='=>1,b'-'|b'_'=>-1,_=>0};
@@ -352,26 +354,38 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         }return;
     }
     if matches!(key,ConsoleKey::Shortcut(b'f'|b'F')) {open_find();return;}
-    if settings.find_open {
-        let mut text=settings.find_text;let mut length=settings.find_length;
+    if settings.find_open && !action.is_some_and(shortcuts::bypasses_field) {
+        use infinity_browser_core::text_field::Key as K;
+        let mut field=settings.find_editor;
+        let before=field;
         match key {
             ConsoleKey::Escape=>{crate::runtime::browser::find_presentation(false,&[],0);find_page(console,0);return;},
-            ConsoleKey::Shortcut(b'c'|b'x')=>{
-                if console.copy_workplace_text(&text[..length]) && matches!(key,ConsoleKey::Shortcut(b'x')) {length=0;}
+            ConsoleKey::Tab(_)=>{crate::runtime::browser::find_presentation(false,&[],0);find_page(console,0);return;},
+            ConsoleKey::Shortcut(b'a'|b'A')=>{field.key(K::SelectAll);},
+            ConsoleKey::Shortcut(b'z')=>{field.key(K::Undo);},
+            ConsoleKey::Shortcut(b'y'|b'Y'|b'Z')=>{field.key(K::Redo);},
+            ConsoleKey::Shortcut(b'c'|b'C'|b'x'|b'X')=>{
+                let (a,b)=field.selection();
+                if a!=b && console.copy_workplace_text(&field.text()[a..b]) && matches!(key,ConsoleKey::Shortcut(b'x'|b'X')) {field.replace(&[]);}
             },
-            ConsoleKey::Shortcut(b'v')=>{
+            ConsoleKey::Shortcut(b'v'|b'V')=>{
                 let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
-                if let Ok(n)=console.read_workplace_text(&mut bytes) {
-                    let mut caret=length;crate::ui::text_input::paste_ascii(&mut text,&mut length,&mut caret,&bytes[..n]);
-                }
+                if let Ok(n)=console.read_workplace_text(&mut bytes) {field.replace(&bytes[..n]);}
             },
             ConsoleKey::Enter|ConsoleKey::Down=>{find_page(console,1);return;},
             ConsoleKey::Up=>{find_page(console,-1);return;},
-            ConsoleKey::Backspace=>length=length.saturating_sub(1),
-            ConsoleKey::Character(c) if (32..=126).contains(&c) && length<text.len()=>{text[length]=c;length+=1;},
+            ConsoleKey::Backspace=>{field.key(K::Backspace);},
+            ConsoleKey::Delete=>{field.key(K::Delete);},
+            ConsoleKey::Left=>{field.key(K::Move(-1,false));},
+            ConsoleKey::Right=>{field.key(K::Move(1,false));},
+            ConsoleKey::Home=>{field.key(K::Move(-2,false));},
+            ConsoleKey::End=>{field.key(K::Move(2,false));},
+            ConsoleKey::SelectMove(d)=>{field.key(K::Move(match d {-3=>-2,3=>2,-1=>-1,1=>1,_=>0},true));},
+            ConsoleKey::Character(c)=>{field.key(K::Character(c));},
             _=>return,
         }
-        crate::runtime::browser::find_presentation(true,&text[..length],0);find_page(console,0);return;
+        crate::runtime::browser::edit_find(field);
+        if before.text()!=field.text() {find_page(console,0);}return;
     }
     if settings.settings_open {
         if matches!(key,ConsoleKey::Escape) {settings_action(console,6);}
@@ -385,6 +399,10 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         return;
     }
     if let ConsoleKey::Shortcut(value)=key {
+        let value=if let Some(Action::Edit(code))=action {code}else{value.to_ascii_lowercase()};
+        if settings.address_focused && matches!(value,b'z'|b'y') {
+            crate::runtime::browser::address_history(value==b'y');return;
+        }
         if settings.address_focused && matches!(value,b'c'|b'x'|b'v') {
             if value==b'v' {
                 let mut bytes=[0;crate::ui::clipboard::MAX_CLIPBOARD_BYTES];
@@ -400,6 +418,18 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
             if !allowed {return;}
         }
         let mut command=abi::Command::empty();
+        if let Some(Action::Tab(reverse))=action {
+            let Some(active)=settings.tabs[..settings.tab_count].iter().position(|tab|tab.id==settings.active_tab) else{return;};
+            let Some(index)=shortcuts::adjacent_tab(active,settings.tab_count,reverse) else{return;};
+            command.kind=abi::TAB_SELECT;command.a=settings.tabs[index].id;
+            if enqueue(console,command) {poll(console);}return;
+        }
+        if let Some(Action::Page(named))=action {
+            if !settings.address_focused && !settings.welcome_open {
+                command.kind=abi::KEY;command.flags=abi::KEY_DOWN|abi::KEY_NAMED;command.a=named;
+                send_key(console,command);
+            }return;
+        }
         match value {
             b'['=>{command.kind=abi::BACK;},
             b']'=>{command.kind=abi::FORWARD;},
@@ -408,7 +438,7 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
                 if index>=settings.tab_count {return;}
                 command.kind=abi::TAB_SELECT;command.a=settings.tabs[index].id;
             },
-            b'r'|b'R'=>{command.kind=abi::RELOAD;},
+            b'r'|0x86=>{command.kind=abi::RELOAD;},
             b'd'|b'D'=>{toggle_favorite(console);return;},
             b't'|b'T'=>{new_tab(console);return;},
             b'w'|b'W'=>{
@@ -416,7 +446,10 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
                 if view.tab_count<=1 {console.close_desktop_app();return;}
                 command.kind=abi::TAB_CLOSE;command.a=view.active_tab;
             },
-            b'l'|b'L'=>{crate::runtime::browser::select_address();return;},
+            b'l'|b'L'=>{
+                if settings.find_open {crate::runtime::browser::find_presentation(false,&[],0);find_page(console,0);}
+                crate::runtime::browser::select_address();return;
+            },
             b'a'|b'A' if crate::runtime::browser::presentation().address_focused=>{
                 crate::runtime::browser::select_address();return;
             },
@@ -618,6 +651,8 @@ fn open_find() {
     crate::runtime::browser::settings_presentation(v.settings,false,v.settings_notice,false);
     crate::runtime::browser::focus_address(false);
     crate::runtime::browser::find_presentation(true,&v.find_text[..v.find_length],0);
+    let mut field=v.find_editor;field.key(infinity_browser_core::text_field::Key::SelectAll);
+    crate::runtime::browser::edit_find(field);
 }
 
 // ------------------------=
@@ -769,6 +804,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
 // ------------------=
 pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
     let view=crate::runtime::browser::presentation();
+    if view.permission!=0 {return true;}
     if view.chrome_menu!=0 {return true;}
     if view.settings_open {
         let (height,scale)=settings_dimensions(console);
@@ -797,8 +833,8 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     if view.download_state!=0 && layout.download_card.local(x,y).is_some(){return true;}
     let Some((x,y))=layout.content.local(x,y) else{return false;};
-    let mut command=abi::Command::empty();command.kind=abi::SCROLL;
-    command.x=x as i32;command.y=y as i32;command.b=(i32::from(vertical)*48) as u32;
+    let Some(command)=infinity_browser_core::shortcuts::wheel_command(vertical,
+        crate::drivers::input::modifiers::held(),x as i32,y as i32) else{return false;};
     unsafe {
         let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
         if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}

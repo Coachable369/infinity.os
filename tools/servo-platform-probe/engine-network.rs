@@ -154,7 +154,9 @@ pub fn verify(engine: &servo::Servo) -> bool {
         longest_network=longest_network.max(paint_start.saturating_sub(network_start));
         if repaint.replace(false) {view.paint();}
         longest_paint=longest_paint.max(super::super::monotonic().saturating_sub(paint_start));
-        if observed.get()==1 && loaded.get()!=0 {break;}
+        // A usable streaming page need not finish background requests before
+        // accepting zoom/input. The supplied DOM predicate is the readiness gate.
+        if observed.get()==1 {break;}
         if observed.get()!=3 && Instant::now()>=next_assertion {
             observed.set(3);
             let result=observed.clone();
@@ -207,6 +209,45 @@ pub fn verify(engine: &servo::Servo) -> bool {
                     && image.pixels().any(|pixel| pixel.0!=image.get_pixel(0,0).0)
             });
         passed=pixels && passed;
+    }
+    if passed && option_env!("INFINITY_BROWSER_NETWORK_ZOOM")==Some("1") {
+        let done=Rc::new(Cell::new(0));let result=done.clone();
+        view.evaluate_javascript("(()=>{const marker=document.createElement('div');marker.id='infinityZoomProbe';marker.style.cssText='all:initial;display:block!important;position:fixed!important;left:0!important;top:0!important;width:80px!important;height:16px!important;background:rgb(0,255,0)!important;z-index:2147483647!important;pointer-events:none!important';document.body.appendChild(marker);return marker.getBoundingClientRect().width===80;})()",move |value| {
+            result.set(if matches!(value,Ok(servo::JSValue::Boolean(true))) {1}else{2});
+        });
+        if !wait_for_callback(engine,&view,&repaint,&resources,&done) {
+            super::super::record(2,0x604,done.get() as u64);
+            resources.close();return false;
+        }
+        'zooms: for (index, zoom) in [1.1f32,1.25,1.5,1.0,0.8,1.0].into_iter().enumerate() {
+            view.set_page_zoom(zoom);
+            let deadline=Instant::now()+Duration::from_secs(60);
+            loop {
+                let done=Rc::new(Cell::new(0));let result=done.clone();
+                view.evaluate_javascript("document.getElementById('infinityZoomProbe').getBoundingClientRect().width===80",move |value| {
+                    result.set(if matches!(value,Ok(servo::JSValue::Boolean(true))) {1}else{2});
+                });
+                if wait_for_callback(engine,&view,&repaint,&resources,&done) {
+                    let pixels=Rc::new(Cell::new(0));let result=pixels.clone();
+                    view.take_screenshot(None,move |image| {
+                        let valid=image.is_ok_and(|image| {
+                            let width=image.enumerate_pixels().filter(|(_,y,pixel)|*y==2 && pixel.0==[0,255,0,255]).count();
+                            image.width()==800 && image.height()==600 && width.abs_diff((80.0*zoom).round() as usize)<=1
+                        });
+                        result.set(if valid {1}else{2});
+                    });
+                    if wait_for_callback(engine,&view,&repaint,&resources,&pixels) {break;}
+                    done.set(if pixels.get()==0 {3}else{4});
+                }
+                if Instant::now()>=deadline {
+                    super::super::record(2,0x603,((index as u64)<<32)|done.get() as u64);
+                    passed=false;break 'zooms;
+                }
+            }
+            view.paint();
+            if context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(800,600).into())).is_none() {passed=false;break;}
+            super::super::record(2,0x602,((index as u64)<<32)|((zoom*100.0).round() as u64));
+        }
     }
     resources.close();
     let (rx,tx,drops)=nic.borrow_mut().statistics();

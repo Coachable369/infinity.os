@@ -5,6 +5,8 @@ cd "$(dirname "$0")/.."
 mkdir -p build/behavior-tests
 rustc --edition 2021 tools/firmware-key-test.rs -o build/behavior-tests/firmware-key-test
 build/behavior-tests/firmware-key-test
+rustc --edition 2021 --test tools/servo-platform-probe/native-layout-stack.rs -o build/behavior-tests/browser-layout-stack-test
+build/behavior-tests/browser-layout-stack-test
 rustc --edition 2021 --test kernel/ui/input_batch.rs -o build/behavior-tests/input-batch-test
 build/behavior-tests/input-batch-test
 rustc --edition 2021 --test kernel/drivers/input/buffer.rs -o build/behavior-tests/input-buffer-test

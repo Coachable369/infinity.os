@@ -58,6 +58,10 @@ def main():
                         "LIBCLANG_PATH": "/opt/homebrew/opt/llvm/lib",
                         "__CARGO_TESTS_ONLY_SRC_ROOT": str(root / "build/servo-rust-src/library"),
                         "RUSTFLAGS": "--cfg infinity_native --check-cfg=cfg(infinity_native) --check-cfg=cfg(infinity_certificate_test)"})
+    # Native debug-codegen layout jobs also run on Stylo's pool. The upstream
+    # 512 KiB default overflows on Google results and corrupts adjacent stacks.
+    # Use Stylo's supported setting on both targets, retaining parallel layout.
+    environment["SERVO_STYLE_THREAD_STACK_SIZE_KB"] = "4096"
     # Native VFS and mutex callbacks are mandatory at linkage/initialization.
     # Do not select SQLite's Unix filesystem or pthread backend for this target.
     environment["LIBSQLITE3_FLAGS"] = "-DSQLITE_OS_OTHER=1 -DSQLITE_MUTEX_APPDEF=1 -DSQLITE_OMIT_LOAD_EXTENSION=1"

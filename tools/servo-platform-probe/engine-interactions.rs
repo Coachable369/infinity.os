@@ -1,4 +1,5 @@
 use super::*;
+include!("engine-zoom.rs");
 
 // ------------------------=
 // FUNC: clipboard_read
@@ -153,6 +154,9 @@ pub fn verify(engine:&Servo)->bool {
     view.show();view.set_focused(true);
     system_clipboard::with_shared(|c|c.session([1;16],true));
     if !spin_until(engine,&view,&repaint,&loaded){return false;}
+    if option_env!("INFINITY_BROWSER_ZOOM_STRESS")==Some("1") {
+        return zoom_stress(engine,&view,&repaint);
+    }
     if option_env!("INFINITY_BROWSER_IFRAME_ONLY")==Some("1") {
         return iframe_checkbox(engine,&view,&repaint,&input);
     }

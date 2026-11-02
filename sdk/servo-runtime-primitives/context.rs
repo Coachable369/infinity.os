@@ -6,6 +6,16 @@ pub struct Context { words: [u64; 24] }
 
 impl Context {
     // ------------------------=
+    // FUNC: diagnostic_resume
+    // DESC: Copies saved resume registers without following stack pointers; a running context may contain an older suspension.
+    // ------------------=
+    pub(crate) fn diagnostic_resume(&self) -> (usize, Option<usize>) {
+        #[cfg(target_arch = "aarch64")]
+        { (self.words[12] as usize, Some(self.words[11] as usize)) }
+        #[cfg(target_arch = "x86_64")]
+        { (self.words[0] as usize, None) }
+    }
+    // ------------------------=
     // FUNC: initialize_argument
     // DESC: Starts a native entry with one pointer-sized argument using an ABI-specific trampoline.
     // ------------------=

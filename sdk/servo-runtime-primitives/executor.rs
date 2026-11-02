@@ -210,6 +210,17 @@ impl<const N: usize> Executor<N> {
     // ------------------=
     pub unsafe fn contains(&self, id: u64) -> bool { (*self.inner.get()).threads.iter().any(|t| t.id == id && t.state != State::Vacant) }
     // ------------------------=
+    // FUNC: diagnostic_context
+    // DESC: Copies a live thread's saved resume registers and current-selection flag without switching or borrowing its stack.
+    // ------------------=
+    pub(crate) unsafe fn diagnostic_context(&self, id: u64) -> Option<(usize, Option<usize>, bool)> {
+        if option_env!("INFINITY_BROWSER_STACK_DIAGNOSTICS") != Some("1") { return None; }
+        let inner = &*self.inner.get();
+        let index = inner.threads.iter().position(|t| t.id == id && t.state != State::Vacant)?;
+        let (sp, lr) = inner.threads[index].context.diagnostic_resume();
+        Some((sp, lr, inner.current == Some(index)))
+    }
+    // ------------------------=
     // FUNC: key_create
     // DESC: Allocates a process-local TLS key with optional bounded exit teardown.
     // ------------------=

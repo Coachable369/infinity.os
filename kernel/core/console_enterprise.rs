@@ -232,6 +232,8 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn synchronize_workplace(&mut self) {
         let active=self.workplace_authorized(false);
+        #[cfg(feature="native-browser")]
+        crate::runtime::browser::native_fields_session(self.current_session.0,active);
         if !active {self.authored_host=None;crate::ui::installer_template::navigation::set_scene(0);crate::ui::installer_template::navigation::publish(crate::ui::installer_template::navigation::View::new());}
         crate::ui::user_wallpaper::session(self.current_user.0,active);
         let preview=crate::ui::file_preview::current();

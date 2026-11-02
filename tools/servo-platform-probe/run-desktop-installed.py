@@ -78,6 +78,232 @@ def interaction_url():
     return "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
 
 # ------------------------=
+# FUNC: input_regression_url
+# DESC: Serves a real overflowing page whose marker geometry and input-driven colors expose actual browser behavior.
+# ------------------=
+def input_regression_url():
+    document=b'''<body style="margin:0;height:200vh;width:200vw;background:#123456"><input value=seed oninput="document.body.style.background=this.value=='z'?'#0f0':'#f0f'"><div style="width:100px;height:40px;background:#f0b020"></div>'''
+    url="https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
+    assert len("browser "+url)<512
+    return url
+
+# ------------------------=
+# FUNC: pixel_bounds
+# DESC: Measures a solid fixture color in the real framebuffer without reading page text or injecting script.
+# ------------------=
+def pixel_bounds(frame, color, region=None):
+    width,height,pixels=frame
+    color=bytes(color)
+    x,y,w,h=region or (0,0,width,height)
+    assert 0<=x and 0<=y and x+w<=width and y+h<=height
+    locations=[row*width+column for row in range(y,y+h) for column in range(x,x+w)
+               if pixels[(row*width+column)*3:(row*width+column)*3+3]==color]
+    if not locations:return None
+    left=min(at%width for at in locations)
+    top=min(at//width for at in locations)
+    return left,top,max(at%width for at in locations)-left+1,max(at//width for at in locations)-top+1
+
+# ------------------------=
+# FUNC: marker_bounds
+# DESC: Measures only the fixture viewport so unrelated desktop artwork cannot satisfy a marker assertion.
+# ------------------=
+def marker_bounds(frame,page):
+    left,top,right,bottom=page
+    return pixel_bounds(frame,(240,176,32),(left,top,right-left+1,bottom-top+1))
+
+# ------------------------=
+# FUNC: input_health
+# DESC: Requires a running emulator, responsive guest and healthy real browser engine throughout input acceptance.
+# ------------------=
+def input_health(guest,counters):
+    assert guest.process.poll() is None, "Guest exited during browser input"
+    state={name:int.from_bytes(guest.memory(*counters[name]),"little")
+           for name in ("STATE","FAILURE","FRAME_REVISION","PAGE_ERROR","NETWORK_FAILURE")}
+    assert state["STATE"]==2 and state["FAILURE"]==state["PAGE_ERROR"]==state["NETWORK_FAILURE"]==0,state
+    assert guest.state() is not None
+    return state
+
+# ------------------------=
+# FUNC: wait_marker
+# DESC: Waits for a measured layout transition while checking the engine has not crashed or rejected the page.
+# ------------------=
+def wait_marker(guest,counters,page,label,predicate):
+    deadline=time.monotonic()+60
+    actual=None
+    while time.monotonic()<deadline:
+        input_health(guest,counters)
+        actual=marker_bounds(read_pixels(guest.screenshot(label)),page)
+        if actual is not None and predicate(actual):return actual
+        time.sleep(.15)
+    raise AssertionError({"marker_stage":label,"actual_bounds":actual})
+
+# ------------------------=
+# FUNC: modifier_wheel
+# DESC: Waits for modifier admission and the wheel's observed effect before release, without synthesizing pinch state.
+# ------------------=
+def modifier_wheel(guest,modifier,button,observe):
+    key={"type":"qcode","data":modifier}
+    before=guest.wait(lambda state:True,"modifier-wheel input context",timeout=30)
+    try:
+        guest.qmp("input-send-event",{"events":[{"type":"key","data":{"down":True,"key":key}}]})
+        guest.wait(lambda state:state[2]>=before[2]+4,"held modifier guest-loop progress",timeout=30)
+        for down in (True,False):
+            guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":button,"down":down}}]})
+        result=observe()
+        before_release=guest.wait(lambda state:True,"modifier-wheel completed context",timeout=30)
+    finally:
+        guest.qmp("input-send-event",{"events":[{"type":"key","data":{"down":False,"key":key}}]})
+    guest.wait(lambda state:state[2]>=before_release[2]+4,"modifier release guest-loop progress",timeout=30)
+    return result
+
+# ------------------------=
+# FUNC: verify_page_select_all
+# DESC: Requires Command or Control select-all to replace the entire input and execute a real DOM color change.
+# ------------------=
+def verify_page_select_all(guest,counters,modifier,page,label):
+    left,top,right,bottom=page
+    marker=wait_marker(guest,counters,page,label+"-ready",lambda value:value[2]>=99)
+    guest.click(left+24,top+max(4,(marker[1]-top)//2))
+    guest.key("end")
+    guest.key("x")
+    wait_color(guest,label+"-append",right-40,min(bottom-30,top+160),(255,0,255))
+    guest.key(modifier,"a")
+    guest.key("z")
+    wait_color(guest,label+"-replace",right-40,min(bottom-30,top+160),(0,255,0))
+    return input_health(guest,counters)
+
+# ------------------------=
+# FUNC: verify_input_zoom
+# DESC: Exercises real modifier zoom keys and wheel zoom, then proves page editing remains responsive after repetition.
+# ------------------=
+def verify_input_zoom(guest,counters,receipt,page):
+    baseline=wait_marker(guest,counters,page,"input-marker-baseline",lambda value:99<=value[2]<=101)
+    result={"completed":False,"baseline_bounds":baseline,"operations":[],"page_select_all":[],"modifier_wheel":[]}
+    receipt["input_regression"]=result
+    for modifier in ("meta_l","meta_r","ctrl"):
+        guest.key(modifier,"0")
+        previous=wait_marker(guest,counters,page,"input-zoom-reset",lambda value:abs(value[2]-baseline[2])<=1)
+        for index,keys in enumerate((("equal",),("shift","equal"),("minus",),("0",))):
+            before=input_health(guest,counters)
+            guest.key(modifier,*keys)
+            if keys==("0",):
+                wanted=lambda value:abs(value[2]-baseline[2])<=1
+            elif keys==("minus",):
+                wanted=lambda value:value[2]<previous[2]-2
+            else:
+                wanted=lambda value:value[2]>previous[2]+2
+            current=wait_marker(guest,counters,page,f"input-zoom-{modifier}-{index}",wanted)
+            after=input_health(guest,counters)
+            assert after["FRAME_REVISION"]>before["FRAME_REVISION"]
+            result["operations"].append({"modifier":modifier,"keys":keys,"bounds":current,"engine":after})
+            previous=current
+        for repeat in range(3):
+            guest.key(modifier,"equal")
+            enlarged=wait_marker(guest,counters,page,"input-zoom-repeated-in",lambda value:value[2]>baseline[2]+2)
+            guest.key(modifier,"minus")
+            restored=wait_marker(guest,counters,page,"input-zoom-repeated-out",lambda value:abs(value[2]-baseline[2])<=1)
+            result["operations"].append({"modifier":modifier,"repeat":repeat,"in":enlarged,"out":restored})
+        result["page_select_all"].append({"modifier":modifier,"engine":verify_page_select_all(
+            guest,counters,modifier,page,"input-select-all-"+modifier)})
+        guest.click(page[0]+200,page[1]+130)
+        enlarged=modifier_wheel(guest,modifier,"wheel-up",lambda:wait_marker(
+            guest,counters,page,"input-wheel-in-"+modifier,lambda value:value[2]>baseline[2]+2))
+        restored=modifier_wheel(guest,modifier,"wheel-down",lambda:wait_marker(
+            guest,counters,page,"input-wheel-out-"+modifier,lambda value:abs(value[2]-baseline[2])<=1))
+        assert abs(restored[0]-baseline[0])<=1 and abs(restored[1]-baseline[1])<=1
+        result["modifier_wheel"].append({"modifier":modifier,"in":enlarged,"out":restored})
+    result["responsive_after_repetition"]=verify_page_select_all(guest,counters,"meta_l",page,"input-final-responsive")
+    result["physical_pinch_exercised"]=False
+
+# ------------------------=
+# FUNC: scrollbar_geometry
+# DESC: Requires the documented idle rail and thumb pixels at both overflowing page edges before any hover.
+# ------------------=
+def scrollbar_geometry(frame,page):
+    width,height,pixels=frame
+    left,top,right,bottom=page
+    vertical=pixel_bounds(frame,(108,137,174),(right+1,top,min(56,width-right-1),bottom-top+1))
+    horizontal=pixel_bounds(frame,(108,137,174),(left,bottom+1,right-left+1,min(56,height-bottom-1)))
+    assert vertical is not None and horizontal is not None, {"vertical":vertical,"horizontal":horizontal}
+    assert vertical[2]%8==0 and horizontal[3]==vertical[2]
+    scale=vertical[2]//8
+    assert 1<=scale<=4
+    rails={"vertical":{"track":(right+1,top,14*scale,bottom-top+1),"thumb":vertical},
+           "horizontal":{"track":(left,bottom+1,right-left+1,14*scale),"thumb":horizontal}}
+    for axis,rail in rails.items():
+        x,y,w,h=rail["track"]
+        tx,ty,tw,th=rail["thumb"]
+        assert x<=tx and y<=ty and tx+tw<=x+w and ty+th<=y+h
+        assert (tx==x+3*scale and tw==8*scale) if axis=="vertical" else (ty==y+3*scale and th==8*scale)
+        for fraction in (.1,.5,.9):
+            sx,sy=(x+scale,y+int(h*fraction)) if axis=="vertical" else (x+int(w*fraction),y+scale)
+            at=(sy*width+sx)*3
+            assert pixels[at:at+3]==bytes((16,27,58)),(axis,sx,sy)
+    return rails
+
+# ------------------------=
+# FUNC: wait_scrollbars
+# DESC: Waits for idle production scrollbar pixels and a caller-selected geometry change with the pointer off the rails.
+# ------------------=
+def wait_scrollbars(guest,counters,page,label,predicate):
+    guest.click(page[0]+200,page[1]+140,press=False)
+    deadline=time.monotonic()+30
+    last=None
+    while time.monotonic()<deadline:
+        input_health(guest,counters)
+        frame=read_pixels(guest.screenshot(label))
+        try:
+            rails=scrollbar_geometry(frame,page)
+            if predicate(rails,frame):return rails
+            last=rails
+        except AssertionError as error:
+            last=str(error)
+        time.sleep(.15)
+    raise AssertionError({"scrollbar_stage":label,"observed":last})
+
+# ------------------------=
+# FUNC: drag_scrollbar
+# DESC: Drags the visible thumb using genuine mouse motion and paired primary-button transitions.
+# ------------------=
+def drag_scrollbar(guest,rail,axis,to_end):
+    x,y,w,h=rail["thumb"]
+    guest.click(x+w//2,y+h//2,press=False)
+    try:
+        guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":"left","down":True}}]})
+        guest.wait(lambda state:state[15]&1==1,"scrollbar drag pressed",timeout=30)
+        tx,ty,tw,th=rail["track"]
+        target=(tx+tw//2,ty+th-2 if to_end else ty+2) if axis=="vertical" else (
+            tx+tw-2 if to_end else tx+2,ty+th//2)
+        guest.click(*target,press=False)
+    finally:
+        guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":"left","down":False}}]})
+    guest.wait(lambda state:state[15]&1==0,"scrollbar drag released",timeout=30)
+
+# ------------------------=
+# FUNC: verify_scrollbars
+# DESC: Proves always-visible rails, thumb movement and actual document scrolling on both axes, including return to origin.
+# ------------------=
+def verify_scrollbars(guest,counters,receipt,page):
+    origin=wait_marker(guest,counters,page,"input-scroll-origin",lambda value:99<=value[2]<=101)
+    initial=wait_scrollbars(guest,counters,page,"input-scrollbars-idle",lambda rails,frame:True)
+    result={"idle":initial,"drags":[]}
+    receipt["input_regression"]["scrollbars"]=result
+    for axis,index in (("vertical",1),("horizontal",0)):
+        before=wait_scrollbars(guest,counters,page,"input-scrollbar-before",lambda rails,frame:True)
+        drag_scrollbar(guest,before[axis],axis,True)
+        moved=wait_scrollbars(guest,counters,page,"input-scrollbar-end-"+axis,
+            lambda rails,frame:rails[axis]["thumb"][index]>before[axis]["thumb"][index]+8
+            and marker_bounds(frame,page) is None)
+        assert moved[axis]["track"]==before[axis]["track"]
+        assert all(abs(a-b)<=2 for a,b in zip(moved[axis]["thumb"][2:],before[axis]["thumb"][2:]))
+        drag_scrollbar(guest,moved[axis],axis,False)
+        restored=wait_scrollbars(guest,counters,page,"input-scrollbar-origin-"+axis,
+            lambda rails,frame:abs(rails[axis]["thumb"][index]-before[axis]["thumb"][index])<=2
+            and marker_bounds(frame,page)==origin)
+        result["drags"].append({"axis":axis,"end":moved[axis],"restored":restored[axis]})
+    result["responsive_after_drag"]=verify_page_select_all(guest,counters,"meta_l",page,"input-after-drag")
+
+# ------------------------=
 # FUNC: gradient_url
 # DESC: Serves native gradient acceptance through real HTTPS within the Console URL capacity.
 # ------------------=
@@ -348,6 +574,7 @@ def main():
     parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog under the user's existing Network Settings policy")
     parser.add_argument("--open-url", action="store_true", help="Verify the OS default web association under the user's existing Network Settings policy")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
+    parser.add_argument("--input-regression", action="store_true", help="Verify real Cmd/Ctrl zoom, modifier-wheel, page select-all and visible draggable scrollbars")
     parser.add_argument("--workplace", action="store_true", help="Exercise installed cross-app clipboard and native workplace commands")
     parser.add_argument("--workplace-menu", action="store_true", help="Verify clipboard context actions on an existing workplace test disk")
     parser.add_argument("--clipboard-ui", action="store_true", help="Verify Command select-all and native text context-menu actions")
@@ -369,6 +596,12 @@ def main():
     parser.add_argument("--gradients",action="store_true",help="Check installed linear/radial gradient pixels and a real reload request")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
+    if args.input_regression and any((args.url,args.interaction,args.navigation,args.download,
+        args.launcher,args.open_url,args.workplace,args.workplace_menu,args.clipboard_ui,
+        args.workplace_resume_storage,args.tabs,args.invalid_tls,args.lifecycle,args.measure,
+        args.address,args.favorites,args.footer,args.favorites_overflow,args.favorites_label,
+        args.settings,args.chrome,args.find_view,args.welcome,args.gradients,args.reopen)):
+        parser.error("Input regression uses its own fixture and is a separate bounded run")
     if args.gradients:
         if args.url or args.interaction or args.navigation or args.download:
             parser.error("Gradient acceptance uses its own HTTPS fixture")
@@ -428,10 +661,10 @@ def main():
     # This bounds the harness only; it does not relax any installed-byte checks.
     guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
     # Full-bundle x86 media caches installer shards before firmware exit under TCG.
-    guest.boot_timeout_seconds=300 if args.arch=="x86_64" else 120
+    guest.boot_timeout_seconds=600 if args.input_regression else 300 if args.arch=="x86_64" else 120
     # PS/2 emulation cannot reliably ingest the rapid four-key batches while
     # the 2048px x86 desktop is painting. Acknowledge each key on that target.
-    guest.fast_commands = (args.interaction or args.workplace or args.workplace_menu) and args.arch != "x86_64"
+    guest.fast_commands = (args.interaction or args.input_regression or args.workplace or args.workplace_menu) and args.arch != "x86_64"
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
     receipt = dict(architecture=args.arch,acceleration=args.accel,installed=reuse, browser_iso_parity=False, browser_interactive=False)
     if args.iso: receipt["source_iso"]=str(args.iso.resolve())
@@ -499,6 +732,7 @@ def main():
             guest.launch("command", 5)
             guest.command("browser authorize confirm=true")
             command="browser " + ("https://expired-isrgrootx1.letsencrypt.org/" if args.invalid_tls else interaction_url() if args.interaction else "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B" if args.lifecycle else "https://httpbingo.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dnative-browser-test.txt&Content-Type=text%2Fplain" if args.download else "https://example.com/")
+            if args.input_regression: command="browser "+input_regression_url()
             if args.navigation: command="browser "+navigation_urls()[0]
             if args.url: command="browser "+args.url
             if args.measure:
@@ -619,6 +853,15 @@ def main():
             assert values["NETWORK_FAILURE"] == 9, receipt
             assert values["NETWORK_COMPLETED"] == 0 and values["PAGE_ERROR"] != 0, receipt
             receipt["expired_certificate_rejected_before_http"] = True
+        if args.input_regression:
+            page=page_color_bounds(guest)
+            guest.width,guest.height,_=read_pixels(guest.screenshot("input-regression-display"))
+            with acceptance_case(receipt,"default-scrollbar-pixels"):
+                receipt["default_scrollbars"]=wait_scrollbars(guest,counters,page,
+                    "input-scrollbars-before-interaction",lambda rails,frame:True)
+            verify_input_zoom(guest,counters,receipt,page)
+            verify_scrollbars(guest,counters,receipt,page)
+            receipt["input_regression"]["completed"]=True
         if args.interaction:
             left,top,right,bottom=page_color_bounds(guest)
             check_x,check_y=right-32,min(bottom-32,top+210)

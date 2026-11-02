@@ -2,6 +2,8 @@
 use core::{mem::MaybeUninit, sync::atomic::{AtomicUsize, Ordering}};
 use infinity_servo_runtime_primitives::native::{Runtime, Hooks};
 use std::{sync::{Arc, Mutex, Condvar}, time::Duration, thread, vec::Vec};
+#[path = "../native-layout-stack.rs"]
+mod native_layout_stack;
 #[repr(align(16777216))]
 struct Heap([u8; 16777216]);
 static mut HEAP: Heap = Heap([0; 16777216]);
@@ -134,6 +136,7 @@ pub fn run() {
         verify_c_sync(8, unsafe { infinity_c_sqlite_test() });
     }
     stack_bounds_roundtrip();
+    layout_stack_budget_roundtrip();
     #[cfg(feature = "async-probe")]
     entropy_roundtrip();
     #[cfg(feature = "socket-probe")]
@@ -165,6 +168,20 @@ pub fn run() {
     let (_guard, outcome) = pair.1.wait_timeout(locked, Duration::from_millis(1)).unwrap();
     assert!(outcome.timed_out());
     assert_eq!(thread::available_parallelism().unwrap().get(), 1);
+}
+
+// ------------------------=
+// FUNC: layout_stack_budget_roundtrip
+// DESC: Checks real native leases on small and adequate stacks without descending into or deliberately overflowing either.
+// ------------------=
+fn layout_stack_budget_roundtrip() {
+    thread::Builder::new().stack_size(64 * 1024).spawn(|| {
+        assert_eq!(native_layout_stack::check_current(), Err(native_layout_stack::BudgetError::Insufficient));
+    }).unwrap().join().unwrap();
+    thread::Builder::new().stack_size(4 * 1024 * 1024).spawn(|| {
+        assert_eq!(native_layout_stack::check_current(), Ok(()));
+        native_layout_stack::require();
+    }).unwrap().join().unwrap();
 }
 // ------------------------=
 // FUNC: allocation_fairness

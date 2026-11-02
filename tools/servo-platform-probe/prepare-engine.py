@@ -301,6 +301,14 @@ mod platform {
 
 
     clipboard_overlay.apply(servo)
+    scrollbar_spec = importlib.util.spec_from_file_location("scrollbar_overlay", Path(__file__).with_name("prepare-scrollbars.py"))
+    scrollbar_overlay = importlib.util.module_from_spec(scrollbar_spec)
+    scrollbar_spec.loader.exec_module(scrollbar_overlay)
+    scrollbar_overlay.apply(servo)
+    stack_spec = importlib.util.spec_from_file_location("layout_stack_overlay", Path(__file__).with_name("prepare-layout-stack.py"))
+    stack_overlay = importlib.util.module_from_spec(stack_spec)
+    stack_spec.loader.exec_module(stack_overlay)
+    stack_overlay.apply(servo)
 
 
 if __name__ == "__main__":

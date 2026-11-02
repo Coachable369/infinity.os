@@ -1450,7 +1450,10 @@ impl ConsoleRuntime {
         self.session_idle.note_activity();
         self.caret_visible = true;
         if let Some(reverse) = crate::drivers::input::desktop_shortcuts::switcher_request(
-            matches!(key,ConsoleKey::Tab(true)) && self.mode != ConsoleMode::AppLauncher,
+            matches!(key,ConsoleKey::Tab(true)) && self.mode != ConsoleMode::AppLauncher
+                && !(cfg!(feature="native-browser") && self.mode==ConsoleMode::Desktop
+                    && self.desktop_app==DesktopAppKind::Browser && self.ai_chat_focus==0
+                    && !self.spatial.open && !crate::ui::app_assistant::read(0).focused),
             if let ConsoleKey::Shortcut(code)=key {Some(code)} else {None},
             !self.current_session.is_zero(),
             matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher),

@@ -269,8 +269,19 @@ impl DisplayDevice {
             let r=offset(layout.find_control(0));
             self.browser_surface(Viewport{x:content.x,y:content.y,width:content.width,height:40*scale as u32},skin::button(false,skin::Interaction::Normal));
             self.browser_surface(r,skin::button(false,skin::Interaction::Hovered));
-            self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+9*scale as i32,width:r.width.saturating_sub(150*scale as u32),..r},
-                if view.find_length==0 {b"Find on page..."}else{&view.find_text[..view.find_length]},14*scale,true);
+            let text=view.find_editor.text();
+            let available=(r.width as usize).saturating_sub(150*scale);
+            let caret=view.find_editor.caret();
+            let mut start=0;
+            while start<caret && browser_text_width(&text[start..caret],14*scale)>available.saturating_sub(3) {start+=1;}
+            let (a,b)=view.find_editor.selection();
+            let left=browser_text_width(&text[start..a.max(start)],14*scale).min(available);
+            let right=browser_text_width(&text[start..b.max(start)],14*scale).min(available);
+            if a!=b {self.fill_rect(r.x as usize+12*scale+left,r.y as usize+7*scale,right.saturating_sub(left),18*scale,18,91,132);}
+            self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+9*scale as i32,width:available as u32,..r},
+                if text.is_empty() {b"Find on page..."}else{&text[start..]},14*scale,false);
+            if a==b {let x=browser_text_width(&text[start..caret],14*scale).min(available);
+                self.fill_rect(r.x as usize+12*scale+x,r.y as usize+7*scale,scale,18*scale,134,158,255);}
             let mut count=[0u8;32];let mut n=0;
             if view.find_result==u32::MAX {count[..12].copy_from_slice(b"Search error");n=12;}
             else {for (i,value) in [view.find_result>>16,view.find_result&65535].iter().enumerate() {

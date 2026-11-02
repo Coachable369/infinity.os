@@ -5,6 +5,13 @@ use core::{alloc::Layout, ptr::{self, NonNull}, sync::atomic::{AtomicPtr, Atomic
 use crate::{arena::Arena, executor::Executor, wait::Outcome, Destructor};
 pub const MAX_THREADS: usize = 64;
 const LIMIT: usize = MAX_THREADS;
+pub const STACK_DIAGNOSTIC_PATTERN: u8 = 0xa5;
+pub struct StackDiagnostic {
+    pub id: u64, pub name: [u8; 32], pub low: usize, pub high: usize,
+    // Flags: 1 = validated disjoint range, 2 = watermark scanned, 4 = current worker.
+    pub flags: u64, pub untouched: usize, pub bottom_changed: usize,
+    pub saved_sp: usize, pub saved_lr: Option<usize>,
+}
 pub struct Hooks {
     pub cpu: fn() -> u64,
     pub monotonic: fn() -> u64,
@@ -66,6 +73,62 @@ impl Runtime {
     pub unsafe fn diagnostic_thread_name(id:u64)->[u8;32] {
         let p=active(); if p.is_null(){return [0;32];}
         (*p).records.iter().find(|record|record.id==id).map_or([0;32],|record|record.name)
+    }
+    // ------------------------=
+    // FUNC: diagnostic_stacks
+    // DESC: Visits every live worker with allocation-free, grant-bounded stack watermark and saved-context evidence.
+    // ------------------=
+    /// Caller must supply the actual readable heap grant on its serialized owner CPU.
+    /// The visitor must not allocate, schedule, mutate the runtime, or unwind.
+    /// Paint measures overwritten bytes, not historical SP; matching bytes can hide writes.
+    pub unsafe fn diagnostic_stacks(low: usize, high: usize, visit: fn(usize, StackDiagnostic)) -> usize {
+        if option_env!("INFINITY_BROWSER_STACK_DIAGNOSTICS") != Some("1") || low >= high { return 0; }
+        let p = active(); if p.is_null() { return 0; }
+        let mut count = 0;
+        for slot in 0..LIMIT {
+            let entry = (*p).records[slot];
+            if entry.id == 0 { continue; }
+            let Some((saved_sp, saved_lr, current)) = (*p).executor.diagnostic_context(entry.id) else { continue; };
+            let start = entry.pointer as usize;
+            let end = start.checked_add(entry.size);
+            let mut snapshot = StackDiagnostic {
+                id: entry.id, name: entry.name, low: start, high: end.unwrap_or(0),
+                flags: if current { 4 } else { 0 }, untouched: 0, bottom_changed: 0,
+                saved_sp, saved_lr,
+            };
+            // Corrupt or overlapping records must never authorize a memory read.
+            let valid = end.is_some_and(|end| start >= low && end <= high && start < end)
+                && start & 15 == 0
+                && !(*p).records.iter().enumerate().any(|(other_slot, other)| {
+                    other_slot != slot && other.id != 0 && (other.pointer as usize) < snapshot.high
+                        && (other.pointer as usize).checked_add(other.size).is_none_or(|end| end > start)
+                });
+            if valid {
+                snapshot.flags |= 1;
+                let pattern = u64::from_ne_bytes([STACK_DIAGNOSTIC_PATTERN; 8]);
+                let mut untouched = 0;
+                while entry.size - untouched >= 8
+                    && entry.pointer.add(untouched).cast::<u64>().read_volatile() == pattern {
+                    untouched += 8;
+                }
+                while untouched < entry.size && entry.pointer.add(untouched).read_volatile() == STACK_DIAGNOSTIC_PATTERN {
+                    untouched += 1;
+                }
+                snapshot.untouched = untouched;
+                for offset in 0..entry.size.min(64) {
+                    snapshot.bottom_changed += usize::from(entry.pointer.add(offset).read_volatile() != STACK_DIAGNOSTIC_PATTERN);
+                }
+                // x86 saves its return address on the stack, not in Context words.
+                if snapshot.saved_lr.is_none() && saved_sp >= start && saved_sp & 7 == 0
+                    && saved_sp.checked_add(8).is_some_and(|end| end <= snapshot.high) {
+                    snapshot.saved_lr = Some((saved_sp as *const u64).read_volatile() as usize);
+                }
+                snapshot.flags |= 2;
+            }
+            visit(slot, snapshot);
+            count += 1;
+        }
+        count
     }
 }
 // ------------------------=
@@ -225,6 +288,9 @@ pub unsafe extern "C" fn infinity_std_thread_create(size: usize, callback: exter
     let size = size.max(16384);
     let Ok(layout) = Layout::from_size_align(size, 16) else { return 22; };
     let Some(pointer) = (*p).arena.allocate(layout) else { return 12; };
+    if option_env!("INFINITY_BROWSER_STACK_DIAGNOSTICS") == Some("1") {
+        pointer.as_ptr().write_bytes(STACK_DIAGNOSTIC_PATTERN, size);
+    }
     match (*p).executor.spawn(core::slice::from_raw_parts_mut(pointer.as_ptr(), size), entry, index) {
         Ok(thread) => {
             (*p).records[index] = Record { id: thread, pointer: pointer.as_ptr(), size, entry: Some(callback), data, ..EMPTY };
