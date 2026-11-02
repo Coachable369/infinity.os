@@ -20,22 +20,27 @@ static mut LOGIN_JOB:Job=Job::new();
 static mut LOGIN_ACCOUNT:Option<StableId>=None;
 static mut LOGIN_AFTER:u64=0;
 static mut LOGIN_FAILED:bool=false;
+static mut LOGIN_START_ERROR:Option<super::face_login::StartError>=None;
 
 // ------------------------=
 // FUNC: start_login
 // DESC: Starts an explicit pre-session comparison with a global retry interval and immutable packaged worker/models.
 // ------------------=
 pub fn start_login(account:StableId)->bool {unsafe {
-    LOGIN_FAILED=true;
+    use super::face_login::StartError;
+    if let Some(active)=LOGIN_ACCOUNT {return active==account;}
+    LOGIN_FAILED=true;LOGIN_START_ERROR=None;
     let now=super::ai::qwen::workers::clock_ns();
-    if now<LOGIN_AFTER || LOGIN_ACCOUNT.is_some() || !available() {return false;}
-    LOGIN_AFTER=now.saturating_add(15_000_000_000);
-    let Some((_,controller))=super::native_compile_job::platform() else{return false;};
+    if now<LOGIN_AFTER {LOGIN_START_ERROR=Some(StartError::Busy);return false;}
+    if !crate::drivers::camera::available() {LOGIN_START_ERROR=Some(StartError::CameraUnavailable);return false;}
+    let Some((_,controller))=super::native_compile_job::platform() else{LOGIN_START_ERROR=Some(StartError::WorkerUnavailable);return false;};
     let Some(generation)=GENERATION.checked_add(1) else{return false;};GENERATION=generation;
     let mut owner=*b"FACELOG\0\0\0\0\0\0\0\0\0";owner[8..].copy_from_slice(&generation.to_le_bytes());
     let mut digest=[0;32];digest.copy_from_slice(&RECOGNIZER[8..40]);
-    if (&mut *core::ptr::addr_of_mut!(LOGIN_JOB)).start_login(WORKER,[DETECTOR,RECOGNIZER],SecurityIdentity(owner),generation,account,digest,now,
-        super::native_memory::memory_mut(),controller).is_err() {return false;}
+    if let Err(error)=(&mut *core::ptr::addr_of_mut!(LOGIN_JOB)).start_login(WORKER,[DETECTOR,RECOGNIZER],SecurityIdentity(owner),generation,account,digest,now,
+        super::native_memory::memory_mut(),controller) {LOGIN_START_ERROR=Some(error);return false;}
+    // Rate-limit real comparisons, not camera/device/startup failures.
+    LOGIN_AFTER=now.saturating_add(15_000_000_000);
     LOGIN_ACCOUNT=Some(account);LOGIN_FAILED=false;true
 }}
 // ------------------------=
@@ -64,7 +69,15 @@ pub fn login_busy()->bool {unsafe {(*core::ptr::addr_of!(LOGIN_ACCOUNT)).is_some
 // DESC: Gives visible pending/retry feedback without exposing account existence, embeddings or comparison scores.
 // ------------------=
 pub fn login_caption()->&'static [u8] {
+    use super::face_login::StartError;
     if login_busy() {b"Look at the camera - comparing..."}
+    else if let Some(error)=unsafe {LOGIN_START_ERROR} {match error {
+        StartError::Busy=>b"Please wait - facial sign-in is resetting",
+        StartError::CameraUnavailable=>b"Camera unavailable - connect and retry",
+        StartError::Disabled=>b"Facial sign-in disabled in Settings",
+        StartError::EnrollmentUnavailable=>b"Face not enrolled - sign in with password",
+        StartError::WorkerUnavailable=>b"Face service unavailable - retry",
+    }}
     else if unsafe {LOGIN_FAILED} {b"Not verified - Retry Facial Sign-in"}
     else {b"Sign In with Facial Recognition"}
 }

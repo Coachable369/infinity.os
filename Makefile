@@ -861,6 +861,8 @@ test: face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-
 .PHONY: face-login-test
 face-login-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings --test tools/face-login-host-test.rs -o build/behavior-tests/face-login-host-test
+	@build/behavior-tests/face-login-host-test
 	@rustc --edition=2021 -A warnings --test tools/face-login-test.rs -o build/behavior-tests/face-login-test
 	@build/behavior-tests/face-login-test
 	@rustc --edition=2021 -A warnings --test tools/face-setup-test.rs -o build/behavior-tests/face-setup-test

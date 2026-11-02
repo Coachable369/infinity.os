@@ -6471,8 +6471,15 @@ impl ConsoleRuntime {
                     let account=if self.mode==ConsoleMode::Locked {Some(self.current_user)}else{
                         crate::runtime::with_runtime(|r|r.identity.user_nth(self.system_step).map(|u|u.id)).flatten()};
                     let started=account.is_some_and(crate::runtime::face_setup_host::start_login);
-                    crate::output_text(if started {b"[authentication] Look at the camera. Comparing your enrolled face.\n"}
-                        else {b"[authentication] Facial sign-in unavailable or cooling down. Use your password.\n"});
+                    // Face state is not credential text. Invalidate the access
+                    // scene so its button feedback is painted even when focus
+                    // and password contents have not changed.
+                    crate::bootstrap::system_ui_settings_changed();
+                    self.redraw();
+                    crate::output_text(b"[authentication] ");
+                    crate::output_text(if started {b"Look at the camera. Comparing your enrolled face."}
+                        else {crate::runtime::face_setup_host::login_caption()});
+                    crate::output_text(b"\n");
                 }
                 return;
             }
@@ -14327,7 +14334,9 @@ fn poll_native_ai_inner() {
                 }
             }
         }
-        if was_busy!=crate::runtime::face_setup_host::login_busy() {runtime.redraw();}
+        if was_busy!=crate::runtime::face_setup_host::login_busy() {
+            crate::bootstrap::system_ui_settings_changed();runtime.redraw();
+        }
         if visible && runtime.command_length==0 {
             runtime.command[..8].copy_from_slice(b"Everyday");runtime.command_length=8;
         }

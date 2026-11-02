@@ -60,6 +60,7 @@ pub(crate) fn verify() {
         // Wave-only updates cannot repaint any hero pixels. Existing choreography
         // owns that rectangle and must still reproduce each original keyframe.
         let (hero_regions,hero_count)=installer_layout::login_animation_regions(&template,width,height);
+        let mut hero_cost = std::time::Duration::ZERO;
         for wave in &regions[..count] { for hero in &hero_regions[..hero_count] {
             assert!(wave.left+wave.width<=hero.left || hero.left+hero.width<=wave.left
                 || wave.top+wave.height<=hero.top || hero.top+hero.height<=wave.top);
@@ -77,13 +78,16 @@ pub(crate) fn verify() {
             assert!(target.login_template_scene_motion(bytes,b"Jonathan",b"private password",1,Some(motion)));
             let expected=pixels.clone();
             pixels.copy_from_slice(&original);
+            let started=std::time::Instant::now();
             assert!(target.repaint_login_motion(motion));
+            hero_cost = hero_cost.max(started.elapsed());
             for r in &hero_regions[..hero_count] {for y in r.top..r.top+r.height {
                 let row=y*width+r.left;
                 assert_eq!(&pixels[row..row+r.width],&expected[row..row+r.width]);
             }}
             login_waves::publish(Frame{time_ms:4000,level:1000});
         }
+        println!("{width}x{height}: maximum hero repaint {hero_cost:?}");
         let mut still=None;
         for time in [0,1000,4000,24000] {
             login_waves::publish(login_waves::advance(login_waves::current(),time,Some(16000),true));

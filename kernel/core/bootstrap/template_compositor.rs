@@ -102,6 +102,16 @@ impl DisplayDevice {
         for index in 0..count {
             let Some(mut element) = template.layer_at(1, index) else { return false; };
             if element.hidden || element.opacity == 0 { continue; }
+            // The independently animated hero also needs the exact static
+            // wallpaper. Do not decode/scale that image on every hero frame.
+            // Only reuse when it is the first layer, so lower authored layers
+            // can never be accidentally restored over or counted twice.
+            if index == 0 && self.render_clip.is_some()
+                && element.role == InstallerTemplateRole::SceneBackground as u8
+                && login_wave_backdrop::restore(self, bytes) {
+                self.login_wave_layer(element);
+                continue;
+            }
             let action = crate::ui::installer_template::login_action(&element);
             if action == Some(0) { element.text = account; }
             if action == Some(3) {

@@ -2,7 +2,8 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 static PRESENTATION: AtomicU64 = AtomicU64::new(0);
-pub const PERIOD_MS: u32 = 24_000;
+pub const PERIOD_MS: u32 = 12_000;
+pub const RIBBON_COUNT: usize = 8;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Frame { pub time_ms: u32, pub level: u16 }
@@ -57,18 +58,18 @@ pub fn sine(phase: i32) -> i32 {
 
 // ------------------------=
 // FUNC: ordinate
-// DESC: Places three long sine ribbons and their delayed trails inside the wallpaper's central blue wave band.
+// DESC: Places eight phase-separated flowing lines inside the wallpaper band using continuous subpixel coordinates.
 // ------------------=
 pub fn ordinate(frame: Frame, ribbon: usize, trail: u32, x: usize, width: usize, height: usize) -> i32 {
     let time = (frame.time_ms % PERIOD_MS + PERIOD_MS - trail * 110 % PERIOD_MS) % PERIOD_MS;
     let phase = (u64::from(time) * 4096 / u64::from(PERIOD_MS)) as i32;
     let x = (x.min(width) * 4096 / width.max(1)) as i32;
-    let (center, amplitude, offset, speed) = match ribbon {
-        0 => (420, 92, 200, 1),
-        1 => (485, 72, 1680, -1),
-        _ => (730, 75, 600, 1),
-    };
-    let excursion = amplitude + i32::from(frame.level) * 72 / 1000;
+    let lane = (ribbon % RIBBON_COUNT) as i32;
+    let center = 380 + lane * 46;
+    let amplitude = 42 + lane % 3 * 8;
+    let offset = 200 + lane * 310;
+    let speed = if lane % 2 == 0 { 1 } else { -1 };
+    let excursion = amplitude + i32::from(frame.level) * 55 / 1000;
     let y = center * 1024 + sine(x * 3 / 5 + phase * speed + offset) * excursion
         + sine(x + phase * 2 + offset) * 15;
     (y as i64 * height as i64 * 256 / 1_024_000) as i32
@@ -82,13 +83,15 @@ pub fn paint(frame: Frame, width: usize, height: usize, clip: (usize, usize, usi
     mut pixel: impl FnMut(usize, usize, (u8, u8, u8), u8)) {
     if width == 0 || height == 0 { return; }
     let scale = (height * 256 / 941).max(128) as i32;
-    for ribbon in (0..3).rev() {
-        let color = if ribbon == 1 { (54, 132, 255) } else { (64, 210, 255) };
-        for trail in (0..4).rev() {
+    for ribbon in (0..RIBBON_COUNT).rev() {
+        let color = if ribbon % 2 == 1 { (54, 132, 255) } else { (64, 210, 255) };
+        // One antialiased filament replaces four overlapping history passes.
+        // This increases visible line count while reducing geometry and blends.
+        for trail in 0..1 {
             for x in clip.0.min(width)..clip.2.min(width) {
                 let y = ordinate(frame, ribbon, trail, x, width, height);
-                let radius = if trail == 0 { 8 * scale } else { 2 * scale };
-                let body = if trail == 0 { 24 * scale } else { 0 };
+                let radius = 4 * scale;
+                let body = 3 * scale;
                 let top = ((y - radius) / 256).max(clip.1 as i32).max(0) as usize;
                 let bottom = ((y + radius + body) / 256 + 1).max(0) as usize;
                 for py in top..bottom.min(clip.3).min(height) {
@@ -114,6 +117,32 @@ pub fn paint(frame: Frame, width: usize, height: usize, clip: (usize, usize, usi
 mod tests {
     use super::*;
     // ------------------------=
+    // FUNC: eight_lines_are_distinct_and_temporally_continuous
+    // DESC: Checks every idle line moves at 60 Hz without a whole-pixel phase jump at cycle boundaries.
+    // ------------------=
+    #[test]
+    fn eight_lines_are_distinct_and_temporally_continuous() {
+        for time_ms in (0..PERIOD_MS).step_by(16) {
+            let frame = Frame { time_ms, level: 0 };
+            let next = Frame { time_ms: time_ms + 16, ..frame };
+            for line in 0..RIBBON_COUNT {
+                let mut moved = 0;
+                let mut separation = 0;
+                for x in (0..1920).step_by(64) {
+                    let y = ordinate(frame,line,0,x,1920,1080);
+                    let delta = (ordinate(next,line,0,x,1920,1080)-y).abs();
+                    assert!(delta < 512);
+                    moved += delta;
+                    if line + 1 < RIBBON_COUNT {
+                        separation += (y - ordinate(frame,line+1,0,x,1920,1080)).abs();
+                    }
+                }
+                assert!(moved > 0);
+                if line + 1 < RIBBON_COUNT { assert!(separation > 0); }
+            }
+        }
+    }
+    // ------------------------=
     // FUNC: envelope_permission_and_motion
     // DESC: Exercises attack, release, silence, denial, clock wrap and reduced-motion state transitions.
     // ------------------=
@@ -137,7 +166,7 @@ mod tests {
     fn ribbons_move_and_react_with_bounded_pixels() {
         assert_eq!(sine(0), 0); assert_eq!(sine(1024), 1024); assert_eq!(sine(3072), -1024);
         for p in 0..4096 { assert!((sine(p + 1) - sine(p)).abs() <= 3); }
-        for ribbon in 0..3 { for trail in 0..4 {
+        for ribbon in 0..RIBBON_COUNT { for trail in 0..1 {
             let last=Frame{time_ms:PERIOD_MS-1,level:1000};
             let first=Frame{time_ms:PERIOD_MS,level:1000};
             for x in (0..1920).step_by(32) {

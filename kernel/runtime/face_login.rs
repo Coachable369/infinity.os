@@ -1,5 +1,7 @@
 //! One-use kernel proof. Neither applications nor the face worker can construct it.
 use super::identity::StableId;
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum StartError { Busy, CameraUnavailable, Disabled, EnrollmentUnavailable, WorkerUnavailable }
 // ------------------------=
 // FUNC: greeting
 // DESC: Accepts only the two exact login greetings, ignoring case and terminal punctuation; never accepts arbitrary OS commands.

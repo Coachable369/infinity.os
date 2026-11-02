@@ -164,16 +164,20 @@ impl Job {
     // DESC: Authenticates the account/model-bound encrypted enrollment before granting the fixed worker pre-session camera access.
     // ------------------=
     pub unsafe fn start_login(&mut self,image:&[u8],models:[&'static [u8];2],owner:SecurityIdentity,worker:u64,
-        account:super::identity::StableId,digest:[u8;32],now:u64,memory:&mut NativeMemory,controller:cpu::Controller)->Result<(),MemoryError> {
-        if self.task.is_some() {return Err(MemoryError::AccessDenied);}
-        let key=zeroize::Zeroizing::new(super::with_runtime(|r|r.nodes.face_vault_key(&account.0)).flatten().ok_or(MemoryError::AccessDenied)?);
+        account:super::identity::StableId,digest:[u8;32],now:u64,memory:&mut NativeMemory,controller:cpu::Controller)->Result<(),super::face_login::StartError> {
+        use super::face_login::StartError;
+        if self.task.is_some() {return Err(StartError::Busy);}
+        if !super::with_runtime(|r|r.identity.user_profile(account).is_some_and(|p|p.face_login_enabled)).unwrap_or(false) {
+            return Err(StartError::Disabled);
+        }
+        let key=zeroize::Zeroizing::new(super::with_runtime(|r|r.nodes.face_vault_key(&account.0)).flatten().ok_or(StartError::EnrollmentUnavailable)?);
         let mut record=zeroize::Zeroizing::new([0;super::face_vault::BYTES]);
-        if crate::storage::face_identity_load(account.0,&mut *record)!=Ok(record.len()) {return Err(MemoryError::AccessDenied);}
-        let plain=super::face_vault::open(&key,account.0,digest,&*record).ok_or(MemoryError::AccessDenied)?;
-        if !crate::drivers::camera::authorize_face_login(owner,account) {return Err(MemoryError::AccessDenied);}
+        if crate::storage::face_identity_load(account.0,&mut *record)!=Ok(record.len()) {return Err(StartError::EnrollmentUnavailable);}
+        let plain=super::face_vault::open(&key,account.0,digest,&*record).ok_or(StartError::EnrollmentUnavailable)?;
+        if !crate::drivers::camera::authorize_face_login(owner,account) {return Err(StartError::CameraUnavailable);}
         let result=self.start(image,models,owner,worker,worker,digest,"Login",Some(&plain[super::face_vault::HEADER..super::face_vault::BYTES-16]),now,memory,controller);
         if result.is_ok() {self.account=account;}else{crate::drivers::camera::revoke_setup(owner);}
-        result
+        result.map_err(|_|StartError::WorkerUnavailable)
     }
     // ------------------------=
     // FUNC: take_login_proof
