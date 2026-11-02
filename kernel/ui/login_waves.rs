@@ -35,9 +35,9 @@ pub fn advance(previous: Frame, now_ms: u32, peak: Option<u16>, reduced: bool) -
     let level = match peak {
         None => 0,
         Some(peak) => {
-            let target = (u32::from(peak.saturating_sub(160)) * 1000 / 6000).min(1000) as i32;
+            let target = (u32::from(peak.saturating_sub(160)) * 1000 / 2400).min(1000) as i32;
             let old = i32::from(previous.level.min(1000));
-            let tau = if target > old { 40 } else { 300 };
+            let tau = if target > old { 12 } else { 180 };
             (old + (target - old) * dt as i32 / (tau + dt as i32)).clamp(0, 1000) as u16
         }
     };
@@ -69,7 +69,7 @@ pub fn ordinate(frame: Frame, ribbon: usize, trail: u32, x: usize, width: usize,
     let amplitude = 42 + lane % 3 * 8;
     let offset = 200 + lane * 310;
     let speed = if lane % 2 == 0 { 1 } else { -1 };
-    let excursion = amplitude + i32::from(frame.level) * 55 / 1000;
+    let excursion = amplitude + i32::from(frame.level) * 105 / 1000;
     let y = center * 1024 + sine(x * 3 / 5 + phase * speed + offset) * excursion
         + sine(x + phase * 2 + offset) * 15;
     (y as i64 * height as i64 * 256 / 1_024_000) as i32
@@ -156,7 +156,11 @@ mod tests {
         assert_eq!(advance(decay, 192, None, false).level, 0);
         assert_eq!(advance(decay, 192, Some(8000), true), Frame::default());
         assert_eq!(advance(Frame::default(), 10, Some(100), false).level, 0);
-        assert!(advance(Frame {time_ms: u32::MAX - 5, level: 0}, 10, Some(8000), false).level < 300);
+        let wrapped = advance(Frame {time_ms: u32::MAX - 5, level: 0}, 10, Some(8000), false);
+        assert!(wrapped.level > 500 && wrapped.level < 650);
+        let speech = advance(Frame::default(), 16, Some(1600), false);
+        assert!(speech.level >= 340);
+        assert!(advance(speech, 32, Some(1600), false).level >= 480);
     }
     // ------------------------=
     // FUNC: ribbons_move_and_react_with_bounded_pixels

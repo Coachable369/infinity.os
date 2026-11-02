@@ -68,6 +68,22 @@ fn report(c:&p::Control,phase:u32,error:u32,state:Option<State>) {
     let r=p::Report::new(c.command_id,phase,error,photos,comparisons);
     call(p::REPORT_WRITE,[&r as *const _ as u64,size_of::<p::Report>() as u64,0,0,0,0]);
 }
+// ------------------------=
+// FUNC: retry_login
+// DESC: Retries only bounded transient frame-quality failures; cancellation, identity mismatches and service faults remain terminal.
+// ------------------=
+fn retry_login(c:&p::Control,e:&mut Enrollment,code:u32,attempt:usize)->bool {
+    use infinity_face_core::Error as E;
+    let error=match code {
+        204=>E::StaleFrame,205=>E::TooSoon,206=>E::NoFace,207=>E::MultipleFaces,
+        208=>E::TooSmall,210=>E::TooDark,211=>E::TooBright,212=>E::Clipped,
+        213=>E::LowContrast,214=>E::Blurred,216=>E::WrongPose,222=>E::UnusableLandmarks,
+        _=>return false,
+    };
+    if c.command!=p::LOGIN || !clock().is_ok_and(|now|e.retry_login_capture(error,attempt,now)) {return false;}
+    report(c,p::REJECTED,code,Some(e.state()));
+    true
+}
 struct Arena {used:usize}
 impl Arena {
     // ------------------------=
@@ -222,8 +238,8 @@ unsafe fn work()->Result<(),u32> {
         if c.command==p::VERIFY {
             if let Err(error)=e.begin_verification(binding(&c),clock()?) {report(&c,p::FAILED,200+error as u32,Some(e.state()));continue;}
         }
-        let frames=if let State::Verifying(n)=e.state() {3u8.saturating_sub(n)}else{1};
-        for _ in 0..frames {
+        let frames=if c.command==p::LOGIN {6}else if let State::Verifying(n)=e.state() {3u8.saturating_sub(n)}else{1};
+        for attempt in 0..frames {
             report(&c,p::PROCESSING,0,Some(e.state()));
             let (length,sequence,captured)=match capture(c.command_id,encoded,&mut stream,false) {
                 Ok(v)=>v,Err(error)=>{
@@ -233,7 +249,10 @@ unsafe fn work()->Result<(),u32> {
             };
             let admission=match e.admit_frame(binding(&c),sequence,captured,clock()?) {
                 Ok(receipt)=>receipt,
-                Err(error)=>{report(&c,p::FAILED,200+error as u32,Some(e.state()));break;}
+                Err(error)=>{
+                    if retry_login(&c,e,200+error as u32,attempt as usize) {continue;}
+                    report(&c,p::FAILED,200+error as u32,Some(e.state()));break;
+                }
             };
             if jpeg::decode(&encoded[..length],rgb,decode).is_err() {report(&c,p::FAILED,109,Some(e.state()));break;}
             if c.command==p::CAPTURE {
@@ -249,6 +268,7 @@ unsafe fn work()->Result<(),u32> {
                         R::Image(V::Pose)=>216,R::Image(V::Landmarks)=>222,
                         R::Cancelled=>105,_=>110,
                     };
+                    if retry_login(&c,e,code,attempt as usize) {continue;}
                     report(&c,p::FAILED,code,Some(e.state()));break;
                 }
             };
@@ -259,8 +279,15 @@ unsafe fn work()->Result<(),u32> {
                         if let Err(error)=export_enrollment(c.command_id,e) {report(&c,p::FAILED,error,Some(state));break;}
                     }
                     report(&c,match state {State::ReadyToVerify=>p::REVIEW,State::Verified=>p::PASSED,State::Verifying(_)=>p::VERIFYING,_=>p::READY},0,Some(state));
+                    if state==State::Verified {break;}
+                    if c.command==p::LOGIN && attempt+1==frames {
+                        report(&c,p::FAILED,221,Some(state));break;
+                    }
                 },
-                Err(error)=>{report(&c,p::FAILED,200+error as u32,Some(e.state()));break;}
+                Err(error)=>{
+                    if retry_login(&c,e,200+error as u32,attempt as usize) {continue;}
+                    report(&c,p::FAILED,200+error as u32,Some(e.state()));break;
+                }
             }
         }
         for byte in encoded.iter_mut().chain(rgb.iter_mut()) {core::ptr::write_volatile(byte,0);}

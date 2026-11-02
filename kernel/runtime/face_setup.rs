@@ -38,6 +38,7 @@ pub struct Setup {
     photos: [[u8; PHOTO_WIDTH * PHOTO_HEIGHT * 3]; 3],
     photo_ready: [bool; 3],
     capture_preview: bool,
+    login_retries: u8,
 }
 impl Setup {
     // ------------------------=
@@ -66,7 +67,7 @@ impl Setup {
         Self {control:wire::Control::empty(),stage:Stage::Idle,pending:false,started:0,
             deadline:0,command_deadline:0,preview:[0;PREVIEW_BYTES],staging:[0;PREVIEW_BYTES],preview_revision:0,preview_written:0,preview_ready:false,
             enrollment:[0;wire::ENROLLMENT_BYTES],enrollment_written:0,saved:false,rejection:None,
-            photos:[[0; PHOTO_WIDTH * PHOTO_HEIGHT * 3];3],photo_ready:[false;3],capture_preview:false}
+            photos:[[0; PHOTO_WIDTH * PHOTO_HEIGHT * 3];3],photo_ready:[false;3],capture_preview:false,login_retries:0}
     }
     // ------------------------=
     // FUNC: begin
@@ -78,7 +79,7 @@ impl Setup {
             || name.chars().any(char::is_control) {return Err(Error::Invalid);}
         self.erase_preview();
         self.erase_photos();
-        self.erase_enrollment();self.saved=false;self.rejection=None;
+        self.erase_enrollment();self.saved=false;self.rejection=None;self.login_retries=0;
         self.control=wire::Control::empty();
         self.control.worker=worker;self.control.account=account;self.control.model=model;
         self.control.lease=1;self.control.name_len=name.len() as u32;
@@ -132,6 +133,14 @@ impl Setup {
             self.rejection=Some(report.error);self.erase_preview();return Ok(());
         }
         if report.phase==wire::REJECTED {
+            if self.control.command==wire::LOGIN && matches!(self.stage,Stage::Verifying(_))
+                && report.photos==3 && report.comparisons==0 && self.login_retries<5
+                && matches!(report.error,204..=208|210..=214|216|222) {
+                self.login_retries+=1;self.stage=Stage::Verifying(0);self.rejection=Some(report.error);
+                // Keep the original command deadline: retries cannot buy more
+                // camera authority or extend the login attempt indefinitely.
+                return Ok(());
+            }
             if self.control.command==wire::VERIFY && matches!(self.stage,Stage::Verifying(_))
                 && report.photos==3 && report.comparisons<=2
                 && matches!(report.error,105|204..=214|216..=218|222) {

@@ -4,6 +4,27 @@ mod face_setup;
 use face_setup::{Setup,Stage,Error,PhotoStatus,wire as p};
 
 // ------------------------=
+// FUNC: login_quality_retry_keeps_authority_but_resets_comparisons
+// DESC: Exercises worker retry reports, rejected mismatch retries, bounded retry counts and fresh three-comparison success.
+// ------------------=
+#[test]
+fn login_quality_retry_keeps_authority_but_resets_comparisons() {
+    let mut setup=Setup::new();setup.begin_login(7,[3;32],&[1;p::ENROLLMENT_BYTES],100).unwrap();
+    let id=setup.control().command_id;
+    setup.accept(p::Report::new(id,p::VERIFYING,0,3,1),101).unwrap();
+    setup.accept(p::Report::new(id,p::REJECTED,214,3,0),102).unwrap();
+    assert_eq!(setup.stage(),Stage::Verifying(0));assert!(setup.login_template().is_some());
+    assert_eq!(setup.accept(p::Report::new(id,p::VERIFYING,0,3,2),103),Err(Error::Protocol));
+    assert_eq!(setup.accept(p::Report::new(id,p::REJECTED,218,3,0),104),Err(Error::Protocol));
+    for n in 1..=3 {setup.accept(p::Report::new(id,if n==3 {p::PASSED}else{p::VERIFYING},0,3,n),105+n as u64).unwrap();}
+    assert_eq!(setup.stage(),Stage::Passed);
+    setup.cancel();setup.begin_login(8,[3;32],&[1;p::ENROLLMENT_BYTES],200).unwrap();
+    let id=setup.control().command_id;
+    for n in 0..5 {setup.accept(p::Report::new(id,p::REJECTED,206,3,0),201+n).unwrap();}
+    assert_eq!(setup.accept(p::Report::new(id,p::REJECTED,206,3,0),210),Err(Error::Protocol));
+}
+
+// ------------------------=
 // FUNC: login_cannot_skip_comparisons_or_export_enrollment
 // DESC: Tests the private login command independently from enrollment, including stale reports, early success and payload erasure.
 // ------------------=

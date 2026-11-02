@@ -3,6 +3,31 @@
 use super::*;
 
 // ------------------------=
+// FUNC: login_quality_retries_are_bounded_and_require_three_new_matches
+// DESC: A rejected camera frame resets progress, cannot extend time or retry mismatches, and never grants authentication itself.
+// ------------------=
+#[test]
+fn login_quality_retries_are_bounded_and_require_three_new_matches() {
+    let mut e=enrollment();collect(&mut e);e.begin_verification(binding(2),1500).unwrap();
+    let crop=pixels();let v=vector(0);
+    assert_eq!(e.observe(&observation(2,4,2000,Pose::Front,&crop,&v),2000),Ok(State::Verifying(1)));
+    assert!(e.retry_login_capture(Error::Blurred,1,2100));
+    assert_eq!(e.state(),State::Verifying(0));
+    assert!(!e.retry_login_capture(Error::NoMatch,2,2200));
+    assert!(!e.retry_login_capture(Error::WrongCapture,2,2200));
+    assert!(!e.retry_login_capture(Error::Blurred,5,2200));
+    for index in 0..3u64 {
+        let now=2500+index*500;
+        assert_eq!(e.observe(&observation(2,5+index,now,Pose::Front,&crop,&v),now),
+            Ok(if index==2 {State::Verified}else{State::Verifying(index as u8+1)}));
+    }
+    assert!(!e.retry_login_capture(Error::Blurred,1,4000));
+    let mut expired=enrollment();collect(&mut expired);expired.begin_verification(binding(2),1500).unwrap();
+    assert!(!expired.retry_login_capture(Error::Blurred,1,TIMEOUT_MS+1500));
+    assert_eq!(expired.state(),State::Expired);
+}
+
+// ------------------------=
 // FUNC: fresh_frames_survive_bounded_slow_recognition
 // DESC: Completes enrollment and three fresh comparisons despite bounded inference latency exceeding the capture-age limit.
 // ------------------=

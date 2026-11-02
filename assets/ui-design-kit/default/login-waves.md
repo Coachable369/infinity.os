@@ -10,7 +10,10 @@ Kit gap: no continuous audio-reactive ribbon component existed.
   reference's hierarchy; antialiased edges and restrained glow provide depth, not equalizer bars.
 - Idle: continuous 12-second phase drift, no flashing, snapping or stopping at silence.
 - Audio: authorized login-listener amplitude increases excursion and light visibly;
-  approximately 40 ms attack and 300 ms release avoid twitching between syllables.
+  12 ms attack and 180 ms release respond promptly to syllables. The 160-count
+  noise floor is retained; full excursion occurs at 2560-count input peaks.
+  Audio adds up to 10.5% of screen height to the existing fine-line excursion;
+  foreground clipping and the original cyan/cobalt styling are unchanged.
   No new microphone lease, recording, recognition path or permission is introduced.
 - Paint behind the existing authored foreground. Animation damage excludes every
   visible foreground layer, including text, password controls, panels and branding.

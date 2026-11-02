@@ -252,6 +252,20 @@ impl Enrollment {
         result
     }
     // ------------------------=
+    // FUNC: retry_login_capture
+    // DESC: Allows at most six login frames, restarting consecutive comparisons after image-quality failure without relaxing identity or time checks.
+    // ------------------=
+    pub fn retry_login_capture(&mut self,error:Error,attempt:usize,now_ms:u64)->bool {
+        if attempt>=5 || self.tick(now_ms).is_err() || !matches!(self.state,State::Verifying(_)) {
+            return false;
+        }
+        if !matches!(error,Error::StaleFrame|Error::TooSoon|Error::NoFace|Error::MultipleFaces
+            |Error::TooSmall|Error::TooDark|Error::TooBright|Error::Clipped|Error::LowContrast
+            |Error::Blurred|Error::WrongPose|Error::UnusableLandmarks) {return false;}
+        self.state=State::Verifying(0);
+        true
+    }
+    // ------------------------=
     // FUNC: admit_frame
     // DESC: Checks actual capture freshness before inference without granting recognition or login success.
     // ------------------=

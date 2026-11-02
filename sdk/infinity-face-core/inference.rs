@@ -19,6 +19,15 @@ fn word(bytes: &[u8], at: usize) -> Result<usize, Error> {
 }
 impl<'a> Model<'a> {
     // ------------------------=
+    // FUNC: output_tensor
+    // DESC: Supplies checked output dimensions to the graph equivalence harness.
+    // ------------------=
+    #[cfg(test)]
+    pub fn output_tensor(&self,index:usize)->Result<Tensor,Error> {
+        if index>=self.outputs {return Err(Error::Bounds);}
+        self.tensor(word(self.bytes,self.output_start+index*4)?)
+    }
+    // ------------------------=
     // FUNC: kind
     // DESC: Identifies the pinned graph role after parsing, so detector and recognizer assets cannot be swapped accidentally.
     // ------------------=
@@ -128,6 +137,61 @@ impl<'a,'m> Execution<'a,'m> {
     // DESC: Evaluates at most a bounded number of output scalars; native process preemption additionally bounds large dot products.
     // ------------------=
     pub fn step(&mut self,budget:usize)->Result<bool,Error> {
+        self.step_inner(budget, true)
+    }
+    // ------------------------=
+    // FUNC: step_reference
+    // DESC: Exposes the original scalar executor only to numerical equivalence harnesses.
+    // ------------------=
+    #[cfg(test)]
+    pub fn step_reference(&mut self,budget:usize)->Result<bool,Error> {
+        self.step_inner(budget, false)
+    }
+    // ------------------------=
+    // FUNC: pointwise
+    // DESC: Reuses each 1x1 convolution weight across contiguous pixels while preserving scalar accumulation order and finite checks.
+    // ------------------=
+    fn pointwise(&mut self,arity:usize,t:[Tensor;5],out:Tensor,p:[usize;8],count:usize)->Result<bool,Error> {
+        let a=t[0];
+        if arity<2 || arity>3 || a.rank!=4 || out.rank!=4 || a.storage!=0
+            || a.shape[0]!=1 || out.shape[0]!=1 || p[..6]!=[1,1,1,1,0,0]
+            || p[6]==0 || a.shape[2..]!=out.shape[2..] || a.offset+a.len>out.offset {
+            return Ok(false);
+        }
+        let ic=a.shape[1];let oc=out.shape[1];let group=p[6];
+        if ic%group!=0 || oc%group!=0 || t[1].shape!=[oc,ic/group,1,1] {return Err(Error::Shape);}
+        // Constants must not alias the output while we accumulate in place.
+        if t[1].storage!=1 || (arity==3 && t[2].storage!=1) {return Ok(false);}
+        let model=self.model;
+        let (before,after)=self.arena.split_at_mut(out.offset);
+        let input=before.get(a.offset..a.offset+a.len).ok_or(Error::Bounds)?;
+        let output=after.get_mut(..out.len).ok_or(Error::Bounds)?;
+        let plane=a.shape[2]*a.shape[3];let channels=ic/group;
+        let mut at=self.element;let end=at+count;
+        while at<end {
+            let c=at/plane;let pos=at%plane;let n=(plane-pos).min(end-at);
+            let bias=if arity==3 {model.read(before,t[2],c)?}else{0.0};
+            let dst=&mut output[at..at+n];dst.fill(bias);
+            let first=(c/(oc/group))*channels;
+            for k in 0..channels {
+                let weight=model.read(before,t[1],c*channels+k)?;
+                let start=(first+k)*plane+pos;
+                for (sum,&v) in dst.iter_mut().zip(&input[start..start+n]) {
+                    if !v.is_finite() {return Err(Error::Numeric);}
+                    *sum+=v*weight;
+                }
+            }
+            if dst.iter().any(|v|!v.is_finite()) {return Err(Error::Numeric);}
+            at+=n;
+        }
+        self.element=end;
+        Ok(true)
+    }
+    // ------------------------=
+    // FUNC: step_inner
+    // DESC: Runs bounded batches with an optional numerically equivalent contiguous convolution kernel.
+    // ------------------=
+    fn step_inner(&mut self,budget:usize,fast:bool)->Result<bool,Error> {
         if self.cancelled {return Err(Error::Cancelled);}
         if budget==0 || budget>4096 {return Err(Error::Bounds);}
         let mut remaining=budget;
@@ -142,7 +206,8 @@ impl<'a,'m> Execution<'a,'m> {
             let mut p=[0usize;8];
             for (i,v) in p.iter_mut().enumerate() {*v=word(self.model.bytes,at+32+i*4)?;}
             let count=remaining.min(out.len-self.element);
-            for _ in 0..count {
+            let completed=fast && op==1 && self.pointwise(arity,ins,out,p,count)?;
+            for _ in 0..if completed {0}else{count} {
                 let value=self.scalar(op,arity,ins,out,p,self.element)?;
                 if !value.is_finite() {return Err(Error::Numeric);}
                 self.arena[out.offset+self.element]=value;
