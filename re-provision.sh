@@ -8,7 +8,8 @@ iso_input=$(select_install_iso "$project_root" "${2:-}")
 memory_mb=${INFINITY_VM_MEMORY_MB:-22480}
 cpu_count=${INFINITY_VM_CPU_COUNT:-8}
 disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
-vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
+. "$project_root/tools/resolve-vboxmanage.sh"
+vboxmanage=
 trace_root=${INFINITY_VM_TRACE_ROOT:-$project_root/build/vm-logs}
 webcam_selection=${INFINITY_VM_WEBCAM:-facetime}
 webcam_device=
@@ -324,7 +325,7 @@ verify_vm() {
     printf '  State:     powered off\n'
 }
 
-command -v "$vboxmanage" >/dev/null 2>&1 || die "VBoxManage was not found. Install VirtualBox first."
+vboxmanage=$(resolve_vboxmanage "${INFINITY_VBOXMANAGE:-}") || die "VBoxManage was not found in PATH or /Applications/VirtualBox.app. Set INFINITY_VBOXMANAGE to its executable path, or install VirtualBox."
 test "$(uname -m)" = "arm64" || die "This reprovisioner is restricted to an ARM64 Mac host."
 
 case "$vm_name" in

@@ -32,6 +32,7 @@ create_fake_host_commands() {
     mkdir -p "$test_root/tools" "$test_root/builds"
     cp "$project_root/re-provision.sh" "$test_root/re-provision.sh"
     cp "$project_root/tools/select-install-iso.sh" "$test_root/tools/"
+    cp "$project_root/tools/resolve-vboxmanage.sh" "$test_root/tools/"
 }
 
 # ------------------------=

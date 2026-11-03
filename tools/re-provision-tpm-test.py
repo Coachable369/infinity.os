@@ -25,6 +25,7 @@ def main():
         (work / "builds").mkdir()
         shutil.copyfile(root / "re-provision.sh", work / "re-provision.sh")
         shutil.copyfile(root / "tools/select-install-iso.sh", work / "tools/select-install-iso.sh")
+        shutil.copyfile(root / "tools/resolve-vboxmanage.sh", work / "tools/resolve-vboxmanage.sh")
         iso = work / "builds/test.iso"
         # The VirtualBox/file fixtures model ISO structure; the real selector
         # still requires a nonempty artifact before any destructive operation.
