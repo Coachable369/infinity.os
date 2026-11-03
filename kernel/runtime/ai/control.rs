@@ -638,9 +638,15 @@ pub fn protocol_output(bytes: &[u8]) -> bool {
 // DESC: Conservatively prevents conversation, negated, quoted, or explanatory requests from executing model-proposed tools.
 // ------------------=
 pub fn veto_action(input: &[u8]) -> bool {
-    let conversational = [b"hello".as_slice(), b"hi", b"hello, how are you?",
-        b"how are you?", b"how are you today?", b"thank you", b"thanks"]
-        .iter().any(|greeting| input.trim_ascii().eq_ignore_ascii_case(greeting));
+    // ASR adds sentence punctuation. It must not turn the same greeting into
+    // a cold, hundreds-of-tokens tool-directory request.
+    let mut greeting = input.trim_ascii();
+    while greeting.last().is_some_and(|b| matches!(b, b'.' | b'!' | b'?')) {
+        greeting = greeting[..greeting.len()-1].trim_ascii_end();
+    }
+    let conversational = [b"hello".as_slice(), b"hi", b"hello, how are you",
+        b"how are you", b"how are you today", b"thank you", b"thanks"]
+        .iter().any(|candidate| greeting.eq_ignore_ascii_case(candidate));
     conversational || input.trim_ascii().is_empty()
         || input.contains(&b'"')
         || input.contains(&b'`')

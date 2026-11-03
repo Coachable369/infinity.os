@@ -19,6 +19,10 @@ pub struct Service {
     completed: bool,
     stop_reason: StopReason,
     desktop_context: bool,
+    turn_start: usize,
+    turn_desktop_context: bool,
+    personal_context: [u8; 1536],
+    personal_context_len: usize,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
     pub allocated_bytes: usize,
@@ -203,11 +207,36 @@ impl Service {
             completed: false,
             stop_reason: StopReason::None,
             desktop_context: false,
+            turn_start: 0,
+            turn_desktop_context: false,
+            personal_context: [0; 1536],
+            personal_context_len: 0,
             reused_tokens: 0,
             prefill_tokens: 0,
             allocated_bytes: bytes.len() + arena.len() + core::mem::size_of::<Self>(),
             worker_start: [0; 3],
         })
+    }
+    // ------------------------=
+    // FUNC: submit_personal
+    // DESC: Inserts selected personal facts only when changed; identical facts remain in the retained KV history instead of being prefetched every turn.
+    // ------------------=
+    pub fn submit_personal(&mut self, text: &[u8], context: &[u8], tools: Option<&[u8]>) -> Result<(), Error> {
+        if context.len() > self.personal_context.len() { return Err(Error::Overflow); }
+        let changed = context != &self.personal_context[..self.personal_context_len];
+        let mut prompt = [0u8; 8192];
+        let input = if changed && !context.is_empty() {
+            let end = context.len().checked_add(text.len()).ok_or(Error::Overflow)?;
+            if end > prompt.len() { return Err(Error::Overflow); }
+            prompt[..context.len()].copy_from_slice(context);
+            prompt[context.len()..end].copy_from_slice(text);
+            &prompt[..end]
+        } else { text };
+        match tools { Some(prefix) => self.submit_desktop(input, prefix)?, None => self.submit(input)? }
+        self.personal_context.fill(0);
+        self.personal_context[..context.len()].copy_from_slice(context);
+        self.personal_context_len = context.len();
+        Ok(())
     }
     // ------------------------=
     // FUNC: submit_desktop
@@ -253,6 +282,8 @@ impl Service {
         self.engine.profile = super::metrics::Profile::new();
         self.worker_start = super::workers::kernel_profile_ns();
         let previous = self.prompt_count;
+        self.turn_start = previous;
+        self.turn_desktop_context = self.desktop_context;
         let result = self.append_turn(text).and_then(|()| {
             if submission_fits(self.prompt_count,kind) {Ok(())} else {Err(Error::Overflow)}
         });
@@ -350,6 +381,14 @@ impl Service {
     // DESC: Stops the active job without emitting a fabricated response.
     // ------------------=
     pub fn cancel(&mut self) {
+        if self.busy {
+            self.prompt[self.turn_start..self.prompt_count].fill(0);
+            self.prompt_count = self.turn_start;
+            self.desktop_context = self.turn_desktop_context;
+            self.engine.rewind_prefix(self.turn_start);
+            self.personal_context.fill(0);
+            self.personal_context_len = 0;
+        }
         self.completed = false;
         self.stop_reason = StopReason::Cancelled;
         self.engine.cancel();
@@ -362,6 +401,8 @@ impl Service {
     pub fn clear_conversation(&mut self) {
         self.cancel();
         self.prompt.fill(0);
+        self.personal_context.fill(0);
+        self.personal_context_len = 0;
         self.desktop_context = false;
         self.prompt_count = 0;
         self.output.fill(0);

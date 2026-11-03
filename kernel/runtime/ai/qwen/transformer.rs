@@ -268,6 +268,16 @@ impl<'a, 'b> Engine<'a, 'b> {
         self.cancelled = false;
     }
     // ------------------------=
+    // FUNC: rewind_prefix
+    // DESC: Drops an interrupted turn while retaining only previously committed KV positions.
+    // ------------------=
+    pub fn rewind_prefix(&mut self, position: usize) {
+        super::workers::discard();
+        self.position = self.position.min(position);
+        self.active = false;
+        self.cancelled = false;
+    }
+    // ------------------------=
     // FUNC: cancel
     // DESC: Cancels the next bounded work slice without performing further tensor work.
     // ------------------=

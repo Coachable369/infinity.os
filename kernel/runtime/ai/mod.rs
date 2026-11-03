@@ -1077,11 +1077,9 @@ impl AiRuntime {
             let context=intelligence::personal_memory_context(profile,input,&mut augmented[..1536]);
             #[cfg(not(target_os="none"))]
             let context=profile.selected_context(input,&mut augmented[..1536]);
-            let Ok(mut n)=context else{return false;};
-            augmented[n..n+input.len()].copy_from_slice(input);n+=input.len();
+            let Ok(n)=context else{return false;};
             n
         }else{0};
-        let input = if augmented_len > 0 { &augmented[..augmented_len] } else { input };
         #[cfg(target_os="none")]
         let prompt_phase = voice_conversation::WorkPhase::begin(12, origin == RequestOrigin::Voice);
         let mut directory_prompt = [0u8; 6144];
@@ -1094,9 +1092,9 @@ impl AiRuntime {
         directory_prompt[split..start].copy_from_slice(world_guidance);
         let directory_length = self.instruction_mapping.inference_directory(&mut directory_prompt[start..]).unwrap_or(0);
         let submitted = if route == RequestRoute::Inference(InferenceMode::Conversation) {
-            service.submit(input)
+            service.submit_personal(input, &augmented[..augmented_len], None)
         } else {
-            service.submit_desktop(input, &directory_prompt[..start + directory_length])
+            service.submit_personal(input, &augmented[..augmented_len], Some(&directory_prompt[..start + directory_length]))
         };
         #[cfg(target_os="none")]
         drop(prompt_phase);
@@ -1271,6 +1269,9 @@ impl AiRuntime {
         if self.intelligence_goal.is_none() && self.chat.generation_state==chat::GenerationState::Running
             && self.chat_deadline_ns.zip(crate::ui::performance::monotonic_ns()).is_some_and(|(end,now)|now>=end) {
             if let Some(service)=self.qwen.as_mut(){service.cancel();}
+            self.inference_request = None;
+            self.memory_inquiries.cancel();
+            self.qwen_metrics.finish(crate::ui::performance::monotonic_ns());
             self.chat_deadline_ns=None;
             self.chat.update_native_response(b"The response timed out. Please retry or ask for a shorter answer.");
             self.chat.generation_state=chat::GenerationState::Complete;

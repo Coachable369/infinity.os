@@ -24,6 +24,15 @@ fn main() {
     assert!(service.busy());
     service.cancel();
     assert!(!service.busy());
+    assert!(service.acceptance_context().0.is_empty());
+    for _ in 0..3 {
+        service.submit_desktop(b"Hello.", b"A cancelled tool directory must not accumulate in history. ").unwrap();
+        assert!(service.acceptance_context().1);
+        for _ in 0..20 { service.poll().unwrap(); }
+        service.cancel();
+        assert!(service.acceptance_context().0.is_empty());
+        assert!(!service.acceptance_context().1);
+    }
     service.clear_conversation();
     let workers = std::env::var("HERMES_TEST_WORKERS")
         .ok()

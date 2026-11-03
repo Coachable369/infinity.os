@@ -859,6 +859,9 @@ fn memory_app_inspection_contract(ai: &mut AiRuntime) {
 fn clock_request_ingress_contract() {
     use runtime::ai::{clock::Request, control::Command, hermes_profile::Document};
     let owner = [0x71; 16];
+    for input in [b"Hello".as_slice(), b"Hello.", b"HELLO!", b"Hi?", b"Thanks...", b"How are you?"] {
+        assert_eq!(runtime::ai::kit::InferenceBroker::route(input), InferenceMode::Conversation);
+    }
     // Previously unknown phrasing reaches semantic inference, and a completed
     // typed proposal retains the initiating caller through native dispatch.
     for origin in [RequestOrigin::Voice, RequestOrigin::DesktopChat] {
@@ -1051,6 +1054,7 @@ fn memory_native_turn(ai: &mut AiRuntime, case: &str, prompt: &[u8], voice: bool
     }
     if case == "warm_same_profile" {
         assert!(reused > 0, "Reloading identical memory must preserve the completed KV prefix");
+        if assert_routing { assert!(prefill < 20, "Unchanged personal facts must not be repeated on every greeting"); }
     } else {
         assert_eq!(reused, 0, "New or changed personal memory must not reuse stale KV history");
     }
