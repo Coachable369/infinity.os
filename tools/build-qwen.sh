@@ -111,13 +111,15 @@ if test "$(cat build/browser-mode)" = 1; then
     payload_features=streamed-payload,native-browser
     set -- --strip-debug --undefined=infinity_browser_private_infinity_browser_run "build/servo-platform-probe/browser-private-$arch.o"
 fi
-RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target "$triple" --features "$payload_features"
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T "$linker_script" -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o "$@"
+# Build-kit serializes this shared Cargo cache. Cargo tracks the freshly generated
+# payload manifest and target/features; do not recompile every dependency into a
+# disposable staging directory on every packaging attempt.
+RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=build/cargo cargo build --release -Z build-std=core --target "$triple" --features "$payload_features"
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T "$linker_script" -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF build/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o "$@"
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
 python3 tools/voice-kokoro/install-parity.py "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 build/tools/cursor-install-parity "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 cp build/$arch/$boot ${payload_build}/live/EFI/BOOT/
-rm -r -- "${payload_build}/cargo"
 iso_size=$(python3 tools/iso-staging.py size "${payload_build}/live")
 python3 tools/iso-staging.py check "$payload_build" 1073741824
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
@@ -136,6 +138,9 @@ test ! -d "${payload_build}/live" || rm -r -- "${payload_build}/live"
 # image out of the canonical filename used by provisioning.
 python3 tools/iso-staging.py check "$(dirname "$installer_output")" "$((iso_size + 1073741824))"
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "$installer_output.partial" ${payload_build}/iso
+# The candidate now owns the EFI bytes. All following gates read the candidate,
+# so release this run's duplicate before reconstructing the installed ESP.
+rm -- "${payload_build}/iso/efi.img"
 python3 tools/iso-kernel-freshness.py \
     "$installer_output.partial" \
     "${payload_build}/current-live-kernel.elf" \
