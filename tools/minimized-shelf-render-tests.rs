@@ -272,33 +272,6 @@ impl DisplayDevice {
             .accent_surface(surface)
             .channels()
     }
-    // ------------------------=
-    // FUNC: launcher_icon
-    // DESC: Draws the same installed high-resolution atlas cells as the production launcher.
-    // ------------------=
-    fn launcher_icon(&mut self, x: usize, y: usize, role: usize, size: usize) -> bool {
-        let roles = [0usize, 1, 4, 8, 9, 10, 12, 19, 23, 25, 26, 28, 32, 49];
-        let Some(cell) = roles.iter().position(|r| *r == role) else {
-            return self.paint_bitmap_alpha_atlas_cell(
-                include_bytes!("../assets/icons/runtime/aurora-harmony-base.bmp"),
-                5,
-                9,
-                role,
-                x.saturating_sub(size / 2),
-                y.saturating_sub(size / 2),
-                size,
-            );
-        };
-        self.paint_bitmap_alpha_atlas_cell(
-            include_bytes!("../assets/icons/runtime/aurora-harmony-launcher-256.bmp"),
-            4,
-            4,
-            cell,
-            x.saturating_sub(size / 2),
-            y.saturating_sub(size / 2),
-            size,
-        )
-    }
 }
 
 #[test]
