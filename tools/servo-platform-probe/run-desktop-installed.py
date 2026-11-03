@@ -22,6 +22,16 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------=
+# FUNC: copy_artifact
+# DESC: Keeps independent acceptance artifacts while avoiding duplicate multi-gigabyte staging on APFS.
+# ------------------=
+def copy_artifact(source, destination):
+    if os.uname().sysname == "Darwin":
+        subprocess.run(["cp", "-c", str(source), str(destination)], check=True)
+    else:
+        shutil.copyfile(source, destination)
+
+# ------------------------=
 # FUNC: acceptance_case
 # DESC: Records independent behavioral failures without skipping later checks; transport and infrastructure exceptions remain fatal.
 # ------------------=
@@ -565,6 +575,7 @@ def main():
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--resume-onboarding",action="store_true",help="Resume a completed disposable installation, reverify against its original ISO and finish onboarding")
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
+    parser.add_argument("--boot-only", action="store_true", help="Verify a fresh installation reaches detached-media onboarding, without running browser acceptance")
     parser.add_argument("--iso", type=Path, help="Test this repository-local ISO instead of the architecture's internal boot media")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--configure-network", action="store_true", help="Retry installed Network Settings configuration on a reused disposable disk")
@@ -627,6 +638,8 @@ def main():
     if args.interaction and (args.download or args.launcher or args.navigation):
         parser.error("Interaction acceptance is a separate bounded run")
     reuse = args.reuse_installed is not None
+    if args.boot_only and (reuse or not args.iso_parity):
+        parser.error("Boot-only acceptance requires a fresh unmodified ISO installation")
     if args.resume_onboarding and (not reuse or args.update_kernel):
         parser.error("Onboarding resume requires a reused disk without a kernel update")
     if args.arch=="x86_64" and not (reuse or args.iso_parity):
@@ -648,7 +661,7 @@ def main():
         (args.iso.resolve() if args.iso else "build/test-media/InfinityOS-x86_64.bootmedia" if args.arch=="x86_64" else "build/test-media/InfinityOS-aarch64-qemu.bootmedia", "installer.iso"),
         ("build/x86_64/kernel.elf" if args.arch=="x86_64" else "build/aarch64/kernel-qemu.elf", "kernel.elf"),
         ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
-        shutil.copyfile(ROOT / source, artifacts / name)
+        copy_artifact(ROOT / source, artifacts / name)
     media_kernels=extract_media_kernels(artifacts/"installer.iso",artifacts,args.arch) if args.iso_parity or args.resume_onboarding else None
     if args.update_kernel:
         shutil.copyfile(args.update_kernel.resolve(), artifacts / "installed-kernel.elf")
@@ -678,6 +691,10 @@ def main():
                 subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
                     str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)
                 receipt["browser_iso_parity"]=True
+            if args.boot_only:
+                receipt["detached_onboarding_verified"] = True
+                print(json.dumps(dict(work=str(work), **receipt)), flush=True)
+                return
         if args.resume_onboarding:
             subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
                 str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)

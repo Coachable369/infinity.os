@@ -1,5 +1,5 @@
 pub const SERIAL_ENABLED: u64 = 1;
-pub const VIRTUALBOX_UART: u64 = 1 << 6;
+pub const VIRTUALBOX_UART: u64 = 1 << 7;
 pub const QEMU_PL011_BASE: usize = 0x0900_0000;
 pub const VIRTUALBOX_PL011_BASE: usize = 0xffdd_f000;
 

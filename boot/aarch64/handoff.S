@@ -1,6 +1,37 @@
 .text
 .p2align 2
 .globl infinity_handoff
+.globl infinity_sync_code
+
+// ------------------------=
+// FUNC: infinity_sync_code
+// DESC: Publishes ELF text copied through the data cache before any CPU fetches it as instructions.
+// ------------------=
+infinity_sync_code:
+    mrs x4, ctr_el0
+    ubfx x5, x4, #16, #4
+    mov x6, #4
+    lsl x5, x6, x5
+    sub x7, x5, #1
+    bic x2, x0, x7
+.Lclean_code:
+    dc cvau, x2
+    add x2, x2, x5
+    cmp x2, x1
+    b.lo .Lclean_code
+    dsb ish
+    and x4, x4, #15
+    lsl x5, x6, x4
+    sub x7, x5, #1
+    bic x2, x0, x7
+.Linvalidate_code:
+    ic ivau, x2
+    add x2, x2, x5
+    cmp x2, x1
+    b.lo .Linvalidate_code
+    dsb ish
+    isb
+    ret
 
 // UEFI AArch64 and the Rust AAPCS64 kernel ABI both receive arguments in x0-x3:
 //   x0 = BootInfo*, x1 = ELF entry, x2 = stack top, x3 = reserved

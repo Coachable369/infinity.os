@@ -74,6 +74,16 @@ static void psci_finish(void *arg) {
 // DESC: Exercises both MP incoming stack modes and the production PSCI entry without replacing either implementation.
 // ------------------=
 void test_main(void) {
+    /* Exercise the same publication path used for loaded ELF instructions. */
+    extern void infinity_sync_code(uint64_t start, uint64_t end);
+    static volatile uint32_t code[2] __attribute__((aligned(64)));
+    code[0] = 0x52800540; /* mov w0, #42 */
+    code[1] = 0xd65f03c0; /* ret */
+    infinity_sync_code((uintptr_t)code, (uintptr_t)code + sizeof(code));
+    require(((unsigned (*)(void))(uintptr_t)code)() == 42);
+    code[0] = 0x52800360; /* mov w0, #27 */
+    infinity_sync_code((uintptr_t)code, (uintptr_t)code + sizeof(code));
+    require(((unsigned (*)(void))(uintptr_t)code)() == 27);
     InfinityApContext *c = &psci_contexts[0];
     c->stack = (uintptr_t)native_stack + sizeof(native_stack);
     c->exception_stack = (uintptr_t)emergency_stack + sizeof(emergency_stack);

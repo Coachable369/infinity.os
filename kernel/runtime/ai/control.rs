@@ -638,49 +638,10 @@ pub fn protocol_output(bytes: &[u8]) -> bool {
 // DESC: Conservatively prevents conversation, negated, quoted, or explanatory requests from executing model-proposed tools.
 // ------------------=
 pub fn veto_action(input: &[u8]) -> bool {
-    let action = input.split(|b| !b.is_ascii_alphabetic()).any(|word| {
-        [
-            b"open".as_slice(),
-            b"launch",
-            b"start",
-            b"bring",
-            b"focus",
-            b"close",
-            b"dismiss",
-            b"show",
-            b"take",
-            b"navigate",
-            b"switch",
-            b"set",
-            b"change",
-            b"update",
-            b"adjust",
-            b"enable",
-            b"disable",
-            b"rename",
-            b"turn",
-            b"restore",
-            b"activate",
-            b"search",
-            b"find",
-            b"insert",
-            b"type",
-            b"maximize",
-            b"minimize",
-            b"zoom",
-            b"save",
-            b"undo",
-            b"redo",
-            b"refresh",
-            b"create",
-            b"new",
-            b"next",
-            b"previous",
-        ]
-        .iter()
-        .any(|verb| word.eq_ignore_ascii_case(verb))
-    });
-    !action
+    let conversational = [b"hello".as_slice(), b"hi", b"hello, how are you?",
+        b"how are you?", b"how are you today?", b"thank you", b"thanks"]
+        .iter().any(|greeting| input.trim_ascii().eq_ignore_ascii_case(greeting));
+    conversational || input.trim_ascii().is_empty()
         || input.contains(&b'"')
         || input.contains(&b'`')
         || input

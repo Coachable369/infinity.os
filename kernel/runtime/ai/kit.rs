@@ -28,6 +28,38 @@ pub struct RequestApi {
     next_correlation_id: u64,
 }
 
+/// Single-use provenance for a user-requested semantic tool inference. A model
+/// response alone is never an authority source, nor is retrieved app context.
+#[derive(Clone, Copy)]
+pub struct InferenceRequest {
+    owner: [u8; 16],
+    origin: RequestOrigin,
+    correlation_id: u64,
+}
+
+impl InferenceRequest {
+    // ------------------------=
+    // FUNC: admit
+    // DESC: Retains authority only for a direct user's bounded desktop inference turn.
+    // ------------------=
+    pub fn admit(request: &RequestEnvelope<'_>, route: RequestRoute) -> Option<Self> {
+        (route == RequestRoute::Inference(InferenceMode::DesktopTools)
+            && matches!(request.origin, RequestOrigin::DesktopChat | RequestOrigin::Voice)
+            && !control::veto_action(request.input))
+            .then_some(Self { owner: request.owner, origin: request.origin,
+                correlation_id: request.correlation_id })
+    }
+
+    // ------------------------=
+    // FUNC: resolve
+    // DESC: Binds a decoded registered command to its initiating user; native dispatch still validates permissions and arguments.
+    // ------------------=
+    pub fn resolve(self, command: control::Command, owner: [u8; 16]) -> Option<ExecutionRequest> {
+        (self.owner == owner).then_some(ExecutionRequest { command, owner,
+            origin: self.origin, correlation_id: self.correlation_id })
+    }
+}
+
 impl RequestApi {
     // ------------------------=
     // FUNC: new

@@ -11,6 +11,11 @@ fn main() {
     assert_eq!(output_platform::serial_base(0), None);
     assert_eq!(output_platform::serial_base(output_platform::SERIAL_ENABLED),
         Some(output_platform::QEMU_PL011_BASE));
+    // Extended keyboard support must not redirect the UART to VirtualBox MMIO.
+    assert_eq!(output_platform::serial_base(output_platform::SERIAL_ENABLED | 64),
+        Some(output_platform::QEMU_PL011_BASE));
+    assert_eq!(output_platform::serial_base(output_platform::SERIAL_ENABLED | 64
+        | output_platform::VIRTUALBOX_UART), Some(output_platform::VIRTUALBOX_PL011_BASE));
     assert_eq!(output_platform::serial_base(
         output_platform::SERIAL_ENABLED | output_platform::VIRTUALBOX_UART),
         Some(output_platform::VIRTUALBOX_PL011_BASE));

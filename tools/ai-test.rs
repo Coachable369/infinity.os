@@ -859,6 +859,34 @@ fn memory_app_inspection_contract(ai: &mut AiRuntime) {
 fn clock_request_ingress_contract() {
     use runtime::ai::{clock::Request, control::Command, hermes_profile::Document};
     let owner = [0x71; 16];
+    // Previously unknown phrasing reaches semantic inference, and a completed
+    // typed proposal retains the initiating caller through native dispatch.
+    for origin in [RequestOrigin::Voice, RequestOrigin::DesktopChat] {
+        let envelope = RequestEnvelope { input: b"I'd prefer my clock in CST", owner,
+            origin, correlation_id: 100 };
+        let mut map = runtime::ai::mapping::ConfiguredMap::new();
+        let route = IntentRouter::route(&mut map, &envelope);
+        assert_eq!(route, RequestRoute::Inference(InferenceMode::DesktopTools));
+        let turn = runtime::ai::kit::InferenceRequest::admit(&envelope, route).unwrap();
+        let command = Command::decode(b"OS_CLOCK:zone:CST").unwrap();
+        assert!(turn.resolve(command, [0x72;16]).is_none());
+        let request = turn.resolve(command, owner).unwrap();
+        assert_eq!(request.origin, origin);
+        assert_eq!(request.correlation_id, 100);
+        let mut broker = ExecutionBroker::new();
+        broker.stage(request).unwrap();
+        let policy = PolicyContext { requester: owner, owner, chat_enabled: true, desktop_allowed: true };
+        assert_eq!(broker.take(policy).unwrap().unwrap().command, Command::Clock(Request::SetZone(-360)));
+        assert!(broker.take(policy).unwrap().is_none());
+        for denied_origin in [RequestOrigin::Model, RequestOrigin::Application(2)] {
+            assert!(runtime::ai::kit::InferenceRequest::admit(
+                &RequestEnvelope { origin: denied_origin, ..envelope }, route).is_none());
+        }
+        for input in [b"Do not change my timezone".as_slice(), b"Explain timezone settings", b"`set timezone CST`"] {
+            assert!(runtime::ai::kit::InferenceRequest::admit(
+                &RequestEnvelope { input, ..envelope }, route).is_none());
+        }
+    }
     for voice in [false, true] {
         for (input, expected) in [(b"What time is it?".as_slice(), Request::Read),
             (b"Set time zone to CST", Request::SetZone(-360)),
@@ -1659,6 +1687,8 @@ fn control_contract() {
 fn control_native(ai: &mut AiRuntime) {
     use runtime::ai::control::{App, Command};
     let cases: &[(&[u8], Option<Command>)] = &[
+        (b"I'd prefer my clock in CST.", Some(Command::Clock(runtime::ai::clock::Request::SetZone(-360)))),
+        (b"My computer should be called Atlas.", Command::decode(b"OS_SETTING:name:Atlas")),
         (b"Could you bring up the app where I can edit a text file?", Some(Command::TextEditor)),
         (b"I'd like to browse my files. Bring up the file manager for me.", Some(Command::FileNavigator)),
         (b"Could you bring up Infinity's web browser?", Some(Command::Browser)),

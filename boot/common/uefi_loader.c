@@ -1071,6 +1071,12 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
                    (size_t)segments[i].filesz);
     }
     loaded.entry = header->entry;
+#if defined(INFINITY_AARCH64)
+    /* UEFI keeps the MMU/caches enabled. Copied ELF instructions must become
+       coherent before branching, including a cold installed-generation boot. */
+    extern void infinity_sync_code(uint64_t start, uint64_t end);
+    infinity_sync_code(loaded.text_low, loaded.text_high);
+#endif
     loaded.low = low;
     loaded.high = high;
     if (loaded.text_low == UINT64_MAX) loaded.text_low = 0;
@@ -1607,7 +1613,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->firmware_revision = system->header.revision;
     info->boot_flags = starts_with_edk(system->firmware_vendor) ? 1 : 0;
 #if defined(INFINITY_AARCH64)
-    if (acpi_serial_base(system) == UINT64_C(0xffddf000)) info->boot_flags |= UINT64_C(1) << 6;
+    /* Bit 6 belongs to EFI_SIMPLE_TEXT_INPUT_EX, not UART selection. */
+    if (acpi_serial_base(system) == UINT64_C(0xffddf000)) info->boot_flags |= UINT64_C(1) << 7;
 #endif
     if (booted_installed_generation) info->boot_flags |= 32;
     info->framebuffer_address = 0;
