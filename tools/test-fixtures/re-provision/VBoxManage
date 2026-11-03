@@ -6,6 +6,11 @@ shift
 
 case "$command_name" in
     list)
+        if test "${1:-}" = webcams; then
+            test "${TEST_CAMERA_MISSING:-0}" != 1 || exit 0
+            printf 'Video Input Devices: 2\n.1 "Other Camera"\nother-camera-id\n.2 "FaceTime HD Camera"\nfacetime-camera-id\n'
+            exit 0
+        fi
         test "${1:-}" = systemproperties || exit 2
         printf 'Default machine folder: %s\n' "${TEST_VM_DIRECTORY%/*}"
         ;;
@@ -20,7 +25,7 @@ case "$command_name" in
             if test -f "$TEST_STATE_PATH/power-state"; then
                 power_state=$(sed -n '1p' "$TEST_STATE_PATH/power-state")
             fi
-            test "$vm_state" != new || power_state=poweroff
+            if test "$vm_state" = new && test ! -f "$TEST_STATE_PATH/power-state"; then power_state=poweroff; fi
             printf 'VMState="%s"\n' "$power_state"
             printf 'CfgFile="%s/infinityos-4.vbox"\n' "$TEST_VM_DIRECTORY"
             if test "$vm_state" = new; then
@@ -61,11 +66,19 @@ case "$command_name" in
         printf 'old\n' > "$TEST_STATE_PATH/vm-state"
         ;;
     createvm)
+        rm -f "$TEST_STATE_PATH/power-state"
         mkdir -p "$TEST_VM_DIRECTORY"
         : > "$TEST_VM_DIRECTORY/infinityos-4.vbox"
         printf 'new\n' > "$TEST_STATE_PATH/vm-state"
         ;;
     controlvm)
+        if test "${2:-}" = webcam; then
+            test "$(cat "$TEST_STATE_PATH/power-state")" = running || exit 1
+            test "$3" = attach || exit 2
+            test "${TEST_CAMERA_FAILURE:-0}" != 1 || exit 1
+            printf '%s\n' "$4" > "$TEST_STATE_PATH/camera-attached"
+            exit 0
+        fi
         : > "$TEST_STATE_PATH/poweroff-attempted"
         case "${TEST_INITIAL_STATE:-poweroff}" in
             running|paused) ;;
@@ -74,6 +87,9 @@ case "$command_name" in
         test "${TEST_STOP_FAILURE:-0}" != 1 || exit 1
         printf 'poweroff\n' > "$TEST_STATE_PATH/power-state"
         test "${TEST_STOP_RACE:-0}" != 1 || exit 1
+        ;;
+    startvm)
+        printf 'running\n' > "$TEST_STATE_PATH/power-state"
         ;;
     discardstate)
         test "${TEST_INITIAL_STATE:-poweroff}" = saved || exit 1

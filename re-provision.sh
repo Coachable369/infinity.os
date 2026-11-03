@@ -10,6 +10,8 @@ cpu_count=${INFINITY_VM_CPU_COUNT:-8}
 disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
 vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
 trace_root=${INFINITY_VM_TRACE_ROOT:-$project_root/build/vm-logs}
+webcam_selection=${INFINITY_VM_WEBCAM:-facetime}
+webcam_device=
 
 # ------------------------=
 # FUNC: die
@@ -18,6 +20,45 @@ trace_root=${INFINITY_VM_TRACE_ROOT:-$project_root/build/vm-logs}
 die() {
     printf 'ERROR: %s\n' "$1" >&2
     exit 1
+}
+
+# ------------------------=
+# FUNC: select_webcam
+# DESC: Resolve FaceTime before deleting anything; off preserves powered-off provisioning and an explicit identifier selects another camera.
+# ------------------=
+select_webcam() {
+    case "$webcam_selection" in
+        off) return 0 ;;
+        facetime)
+            camera_inventory=$("$vboxmanage" list webcams) || die "Could not enumerate host webcams. Check VirtualBox camera permissions and Extension Pack."
+            webcam_device=$(printf '%s\n' "$camera_inventory" | awk '
+                /^[.][0-9]+[[:space:]]/ && tolower($0) ~ /facetime/ {
+                    if (getline > 0) { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }
+                }')
+            test -n "$webcam_device" || die "FaceTime camera not found. No VM was changed. Use INFINITY_VM_WEBCAM=off to provision without it, or specify a webcam identifier."
+            ;;
+        *) webcam_device=$webcam_selection ;;
+    esac
+}
+
+# ------------------------=
+# FUNC: start_with_webcam
+# DESC: Start the verified replacement VM and attach the selected camera, reporting permission failures instead of silently omitting it.
+# ------------------=
+start_with_webcam() {
+    test -n "$webcam_device" || return 0
+    "$vboxmanage" startvm "$vm_name" --type gui || die "Could not start '$vm_name' for webcam attachment."
+    camera_attempt=0
+    while test "$camera_attempt" -lt 5; do
+        if camera_result=$("$vboxmanage" controlvm "$vm_name" webcam attach "$webcam_device" 2>&1); then
+            printf '  State:     running\n  Webcam:    %s (attached)\n' "$webcam_device"
+            return 0
+        fi
+        camera_attempt=$((camera_attempt + 1))
+        test "$camera_attempt" -ge 5 || sleep 1
+    done
+    printf '%s\n' "$camera_result" >&2
+    die "VM is running, but camera attachment failed. Allow VirtualBox camera access in macOS Privacy & Security and check the Extension Pack; the new VM has been preserved."
 }
 
 # ------------------------=
@@ -300,8 +341,10 @@ printf 'InfinityOS ARM64 VirtualBox reprovisioning\n'
 printf '  VM:  %s\n' "$vm_name"
 printf '  ISO: %s\n' "$iso_path"
 
+select_webcam
 prepare_trace_log
 delete_existing_vm
 recover_unregistered_vm
 create_arm64_vm
 verify_vm
+start_with_webcam
