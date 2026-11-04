@@ -33,7 +33,7 @@ def validate(header, platform="virtualbox"):
         if machine == 62 and end > 0x80000000:
             if (physical, memsz) not in ((0x100000000, 0x60000000),
                                          (0x160000000, 0x20000000),
-                                         (0x180000000, 0x1fa5000)):
+                                         (0x180000000, 0x3f49000)):
                 raise ValueError("x86 load range exceeds relative-addressing range")
             if filesz != 0 or flags != 6:
                 raise ValueError("x86 high arena must be zero-initialized non-executable memory")

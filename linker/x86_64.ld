@@ -26,9 +26,9 @@ SECTIONS
     ASSERT(. < 0x80000000, "x86 ordinary kernel data exceeds relative-addressing range")
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) { *(.speech_heap) } :speech
     .browser_heap 0x160000000 (NOLOAD) : ALIGN(0x1000) { *(.browser_heap) } :browser
-    .login_backdrop 0x180000000 (NOLOAD) : ALIGN(0x1000) { *(.login_backdrop) } :backdrop
-    ASSERT(SIZEOF(.login_backdrop) == 0 || SIZEOF(.login_backdrop) == 0x1fa5000,
-           "x86 login backdrop must retain its page-aligned 4K cache")
+    .login_backdrop 0x180000000 (NOLOAD) : ALIGN(0x1000) { *(.login_backdrop) *(.launcher_stage) } :backdrop
+    ASSERT(SIZEOF(.login_backdrop) == 0 || SIZEOF(.login_backdrop) == 0x3f49000,
+           "x86 display arena must retain both complete 4K caches")
     ASSERT(SIZEOF(.browser_heap) == 0 || SIZEOF(.browser_heap) == 0x20000000,
            "x86 browser arena must retain its complete 512 MiB allocation")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) }

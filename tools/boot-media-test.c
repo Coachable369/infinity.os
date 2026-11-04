@@ -16,6 +16,14 @@ static uint64_t image_ceiling = UINT64_MAX;
 static uint64_t segment_addresses[4], segment_freed[4];
 static size_t segment_pages[4], segment_freed_pages[4];
 static unsigned segment_calls, segment_frees, segment_fail;
+static uint64_t synchronized_start, synchronized_end;
+// ------------------------=
+// FUNC: infinity_sync_code
+// DESC: Records the loader's instruction-cache synchronization range without executing native firmware assembly on the host.
+// ------------------=
+void infinity_sync_code(uint64_t start, uint64_t end) {
+    synchronized_start = start; synchronized_end = end;
+}
 // ------------------------=
 // FUNC: test_segment_allocate
 // DESC: Records independent fixed-address segment reservations and injects a later allocation failure.
@@ -98,6 +106,9 @@ static void test_segment_loading(void) {
     EFI_SYSTEM_TABLE system = {0}; system.boot_services = &boot;
     InfinityLoadedKernel loaded = load_elf(&system, image, sizeof(image));
     assert(loaded.entry == header->entry && segment_calls == 2 && !segment_frees);
+#if defined(INFINITY_AARCH64)
+    assert(synchronized_start == loaded.text_low && synchronized_end == loaded.text_high);
+#endif
     for (size_t i = 0; i < 7*PAGE_SIZE; ++i) {
         uint8_t expected = 0xa5;
         if ((i >= PAGE_SIZE && i < 2*PAGE_SIZE) || (i >= 4*PAGE_SIZE && i < 6*PAGE_SIZE)) expected = 0;
@@ -238,19 +249,19 @@ int main(void) {
         {.type=PT_LOAD,.vaddr=0x4000000,.paddr=0x4000000,.memsz=0x70000000},
         {.type=PT_LOAD,.vaddr=0x100000000,.paddr=0x100000000,.memsz=0x60000000},
         {.type=PT_LOAD,.vaddr=0x160000000,.paddr=0x160000000,.memsz=0x20000000},
-        {.type=PT_LOAD,.vaddr=0x180000000,.paddr=0x180000000,.memsz=0x1fa5000},
+        {.type=PT_LOAD,.vaddr=0x180000000,.paddr=0x180000000,.memsz=0x3f49000},
     };
     uint64_t backdrop_ranges[64][2]; size_t backdrop_count=0;
     assert(kernel_segment_ranges(backdrop_segments,4,512,backdrop_ranges,&backdrop_count));
     assert(backdrop_count==2 && backdrop_ranges[1][0]==0x100000000 &&
-           backdrop_ranges[1][1]==0x181fa5000);
+           backdrop_ranges[1][1]==0x183f49000);
     EFI_BOOT_SERVICES backdrop_boot={0};
     backdrop_boot.allocate_pages=test_segment_allocate;
     backdrop_boot.free_pages=test_segment_free;
     segment_calls=segment_frees=segment_fail=0;
     assert(reserve_kernel_segments(&backdrop_boot,backdrop_ranges,backdrop_count));
     assert(segment_calls==2 && segment_frees==0 &&
-           segment_addresses[1]==0x100000000 && segment_pages[1]==0x81fa5);
+           segment_addresses[1]==0x100000000 && segment_pages[1]==0x83f49);
     assert(!installed_kernel_size_valid(sizeof(Elf64Header)-1));
     assert(installed_kernel_size_valid(sizeof(Elf64Header)));
     assert(installed_kernel_size_valid(UINT64_C(802)*1024*1024));

@@ -5,8 +5,26 @@ mod spatial_surface;
 const PIXELS: usize = 3840 * 2160;
 static mut BACKDROP: [u32; PIXELS] = [0; PIXELS];
 static mut SIZE: (usize, usize, usize) = (0, 0, 0);
+#[cfg_attr(all(target_os="none",target_arch="x86_64"),link_section=".launcher_stage")]
 static mut STAGE: [u32; PIXELS] = [0; PIXELS];
 static mut STAGE_SIZE: (usize, usize, usize) = (0, 0, 0);
+
+// ------------------------=
+// FUNC: stage_storage
+// DESC: Addresses the zeroed high x86 display arena without signed relative-address overflow; other targets retain native storage.
+// ------------------=
+fn stage_storage() -> *mut [u32; PIXELS] {
+    #[cfg(all(target_os="none",target_arch="x86_64"))]
+    unsafe {
+        let address: usize;
+        core::arch::asm!("movabs {address}, offset {arena}",
+            address=out(reg) address, arena=sym STAGE,
+            options(nomem,nostack,preserves_flags));
+        address as *mut [u32; PIXELS]
+    }
+    #[cfg(not(all(target_os="none",target_arch="x86_64")))]
+    { &raw mut STAGE }
+}
 
 // ------------------------=
 // FUNC: compose_spatial
@@ -32,7 +50,7 @@ pub(super) fn compose_spatial(
         spatial_surface::compose(
             scene,
             if isolated {
-                &*(&raw const STAGE)
+                &*stage_storage()
             } else {
                 &*(&raw const BACKDROP)
             },
@@ -100,6 +118,7 @@ fn capture_stage_pixels(display: &DisplayDevice, clean: bool, tinted: bool) {
         } else {
             (&raw const BACKDROP).cast::<u32>()
         };
+        let stage = stage_storage();
         for y in 0..display.height {
             let rows = [y.saturating_sub(8), y, (y + 8).min(display.height - 1)];
             // The next pixel reuses sixteen columns. Only one new three-tap
@@ -126,7 +145,7 @@ fn capture_stage_pixels(display: &DisplayDevice, clean: bool, tinted: bool) {
                     };
                     pixel |= channel << (i * 8);
                 }
-                (*(&raw mut STAGE))[y * display.stride + x] = pixel;
+                (*stage)[y * display.stride + x] = pixel;
             }
         }
         STAGE_SIZE = SIZE;
@@ -146,7 +165,7 @@ pub(super) fn restore_stage(display: &mut DisplayDevice) -> bool {
             for y in region.top..region.bottom {
                 let offset = y * display.stride + region.left;
                 core::ptr::copy_nonoverlapping(
-                    (&raw const STAGE).cast::<u32>().add(offset),
+                    stage_storage().cast::<u32>().add(offset),
                     display.buffer.add(offset),
                     region.right - region.left,
                 );
