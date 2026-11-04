@@ -134,8 +134,27 @@ impl IdentitySystem {
         request: AccountRequest<'_>,
         persist: impl FnOnce(&[u8], AccountResult) -> Result<(), IdentityError>,
     ) -> Result<AccountResult, IdentityError> {
+        self.manage_accounts_enrolled_durable(session, request, None, persist)
+    }
+
+    // ------------------------=
+    // FUNC: manage_accounts_enrolled_durable
+    // DESC: Includes an optional generated SSH credential in the same rollback and persistence boundary as account creation.
+    // ------------------=
+    pub fn manage_accounts_enrolled_durable(
+        &mut self, session: StableId, request: AccountRequest<'_>, key: Option<[u8; 32]>,
+        persist: impl FnOnce(&[u8], AccountResult) -> Result<(), IdentityError>,
+    ) -> Result<AccountResult, IdentityError> {
+        if key.is_some() && !matches!(request, AccountRequest::CreateUser { .. }) {
+            return Err(IdentityError::InvalidInput);
+        }
         let checkpoint = self.account_checkpoint();
-        let result = match self.manage_accounts(session, request) {
+        let result = match self.manage_accounts(session, request).and_then(|result| {
+            if let (Some(key), AccountResult::User(user)) = (key, result) {
+                self.enroll_generated_ssh_key(user.id, key, user.created)?;
+            }
+            Ok(result)
+        }) {
             Ok(result) => result,
             Err(error) => {
                 self.restore_account_checkpoint(checkpoint);

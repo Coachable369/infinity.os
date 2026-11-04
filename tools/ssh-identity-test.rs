@@ -18,6 +18,7 @@ fn output_text(_: &[u8]) {}
 // DESC: Verifies durable native SSH credentials, authorization, rollback, revocation and zero local-session creation.
 // ------------------=
 fn main() {
+    generated_account_capacity();
     let mut identity = IdentitySystem::new();
     identity.begin_onboarding().unwrap();
     identity.create_machine(b"SSH acceptance", 0xaa64, 1, 1).unwrap();
@@ -63,4 +64,43 @@ fn main() {
     assert_eq!(restored.manage_ssh_key_durable(fresh.id, owner.id, key, false, 18, |_| Err(IdentityError::CommitUncertain)), Err(IdentityError::CommitUncertain));
     assert!(restored.account_storage_uncertain());
     assert_eq!(restored.ssh_key_owner(b"owner", &key), None);
+}
+
+// ------------------------=
+// FUNC: generated_account_capacity
+// DESC: Keeps all eight account slots usable with password plus generated SSH credentials, including cold decoding and rollback.
+// ------------------=
+fn generated_account_capacity() {
+    let mut identity = IdentitySystem::new();
+    identity.begin_onboarding().unwrap();
+    identity.create_machine(b"Capacity", 0xaa64, 1, 1).unwrap();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[51; 32]).verifying_key().to_bytes();
+    assert_eq!(identity.create_onboarding_user_durable(b"owner", b"Owner", 2, key, |_, _| Err(IdentityError::InvalidState)), Err(IdentityError::InvalidState));
+    assert_eq!(identity.user_count(), 0);
+    let owner = identity.create_onboarding_user_durable(b"owner", b"Owner", 2, key, |_, _| Ok(())).unwrap();
+    assert!(!identity.has_password_credential(owner.id));
+    identity.create_password(owner.id, b"owner password", 3).unwrap();
+    identity.complete_onboarding().unwrap();
+    let session = identity.create_session(owner.id, b"owner password", 4).unwrap();
+    let mut old = identity.encode()[..V5_IDENTITY_STATE_BYTES].to_vec();
+    old[8..10].copy_from_slice(&5u16.to_le_bytes());
+    old[10..12].copy_from_slice(&(V5_IDENTITY_STATE_BYTES as u16).to_le_bytes());
+    let end = old.len() - 4;
+    let mut checksum = 0x811c9dc5u32;
+    for byte in &old[..end] { checksum = (checksum ^ *byte as u32).wrapping_mul(0x01000193); }
+    old[end..].copy_from_slice(&checksum.to_le_bytes());
+    let restored = IdentitySystem::decode(&old).unwrap();
+    assert_eq!(restored.ssh_key_owner(b"owner", &key), Some(owner.id));
+    for index in 1..MAX_USERS {
+        let name = [b'u', b'0' + index as u8];
+        let key = ed25519_dalek::SigningKey::from_bytes(&[51 + index as u8; 32]).verifying_key().to_bytes();
+        let AccountResult::User(user) = identity.manage_accounts_enrolled_durable(session.id,
+            AccountRequest::CreateUser { handle: &name, display_name: &name, password: b"member password", now: 5 },
+            Some(key), |_, _| Ok(())).unwrap() else { panic!() };
+        let mut restored = IdentitySystem::decode(&identity.encode()).unwrap();
+        assert_eq!(restored.ssh_key_owner(&name, &key), Some(user.id));
+        restored.authenticate(user.id, b"member password", 6).unwrap();
+    }
+    assert_eq!(identity.user_count(), MAX_USERS);
+    assert_eq!((0..MAX_CREDENTIALS).filter_map(|i| identity.credential_nth(i)).count(), MAX_USERS * 2);
 }

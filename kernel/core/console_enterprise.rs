@@ -232,6 +232,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn synchronize_workplace(&mut self) {
         let active=self.workplace_authorized(false);
+        crate::ui::terminal_edit::session(self.current_session.0);
         #[cfg(feature="native-browser")]
         crate::runtime::browser::native_fields_session(self.current_session.0,active);
         if !active {self.authored_host=None;crate::ui::installer_template::navigation::set_scene(0);crate::ui::installer_template::navigation::publish(crate::ui::installer_template::navigation::View::new());}

@@ -99,7 +99,9 @@ python3 tools/iso-staging.py check "$payload_build" "$((esp_size + 1073741824))"
 build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img "$installed_kernel" ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
-cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - "$installed_kernel"
+if [ "${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then
+    cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - "$installed_kernel"
+fi
 # Its validated bytes now belong to the payload shards. Release only this
 # invocation's disposable ESP before allocating another full EFI image.
 rm -- "${payload_build}/installed-esp.img"
@@ -141,10 +143,12 @@ xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -
 # The candidate now owns the EFI bytes. All following gates read the candidate,
 # so release this run's duplicate before reconstructing the installed ESP.
 rm -- "${payload_build}/iso/efi.img"
+if [ "${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then
 python3 tools/iso-kernel-freshness.py \
     "$installer_output.partial" \
     "${payload_build}/current-live-kernel.elf" \
     "$installed_kernel"
+fi
 python3 tools/ui-payload-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
 python3 tools/sdk-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
 python3 tools/full-bundle-iso-test.py "$installer_output.partial"

@@ -508,3 +508,5 @@ pub fn presentation_diagnostics() -> Option<DisplayPresentDiagnostics> {
             .map(|console| console.display.diagnostics())
     }
 }
+
+mod terminal_edit_view;

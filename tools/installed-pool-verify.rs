@@ -10,6 +10,7 @@ use storage::{BlockDevice, object::{ObjectStore, crc32}};
 #[path="installed-pool-lifecycle.rs"] mod lifecycle;
 #[path="installed-pool-reclamation.rs"] mod reclamation;
 #[path="installed-pool-upload-replay.rs"] mod upload_replay;
+#[path="ssh-installed-export.rs"] mod ssh_export;
 // ------------------------=
 // FUNC: output_text
 // DESC: Suppresses runtime human diagnostics from the structured verifier output.
@@ -93,6 +94,10 @@ fn hex<const N: usize>(s: &str) -> Result<[u8;N], &'static str> {
 // ------------------=
 fn run() -> Result<String,String> {
     let a: Vec<String> = std::env::args().collect();
+    if a.get(1).is_some_and(|s| s == "--ssh-account-key") {
+        if a.len() != 6 || a[2] != "--vm-stopped" { return Err("usage: installed-pool-verify --ssh-account-key --vm-stopped RAW HANDLE OUTPUT".into()); }
+        return ssh_export::run(&a[3], &a[4], &a[5]);
+    }
     if a.get(1).is_some_and(|s|s=="--replay-upload-in-memory") {
         if a.len()!=4||a[2]!="--vm-paused"{return Err("usage: installed-pool-verify --replay-upload-in-memory --vm-paused RAW".into())}
         return upload_replay::run(a[3].clone());

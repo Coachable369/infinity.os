@@ -16,6 +16,7 @@ fn face_guidance(state:&crate::runtime::face_setup::Setup)->(&'static [u8],&'sta
         Stage::Review=>(b"Three views accepted. Verify with three fresh comparisons, then save encrypted face templates and portraits to your account on this device.",b"Verify & save identity"),
         Stage::Verifying(_)=>(b"Hold still and face the camera. Comparing three fresh captures against all enrolled views.",b"Verifying..."),
         Stage::Passed=>(b"Facial identity saved and verified from storage. Front and angled side portraits are encrypted locally. Password login remains on.",b"Continue"),
+        Stage::Failed(112|116|117)=>(b"Your captures were accepted, but encrypted storage did not complete. See the storage error below before retrying.",b"Retry enrollment"),
         Stage::Failed(_)=>(b"The camera check did not complete. Check camera access, lighting, focus and pose. Retry starts a clean enrollment.",b"Retry camera check"),
     };
     let (guidance,action)=if state.pending() && matches!(state.stage(),Stage::Photos(_)) {
@@ -41,6 +42,8 @@ fn face_notice(state:&crate::runtime::face_setup::Setup,error:bool,camera_availa
             111|220=>b"The enrollment session expired. Retry when you are ready.",
             114=>b"Recognition models took too long to prepare. No identity was saved. Retry camera setup.",
             115=>b"Face analysis took too long. No identity was saved. Retry camera setup.",
+            116=>b"The identity store is full. Free storage before retrying facial enrollment.",
+            117=>b"Storage could not confirm the save. Restart before retrying; no enrollment success is claimed.",
             112=>b"The encrypted identity could not be saved and read back. Check storage and retry. No successful enrollment is being claimed.",
             204|205=>b"That frame was too old or captured too soon. Earlier accepted views are kept. Hold still and capture this view again.",
             206=>b"No face detected. Center your face and improve the lighting.",

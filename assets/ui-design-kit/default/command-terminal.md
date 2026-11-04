@@ -35,3 +35,13 @@ Live and installed systems use the same embedded implementation and font pixels.
 Exercise typed state transitions, bounded geometry, production-rendered pixels
 at compact/normal/HiDPI sizes, native execution, and fresh-install packaging.
 Do not present screenshots alone as command-execution or installed-VM proof.
+
+## Terminal editor (`edit`)
+
+Reuse the existing Command Window frame and selected packaged editor monospace
+font. The document is an unframed text grid in the content rectangle, with a
+filename/modified indicator above and two compact status/shortcut rows below.
+Selection and caret use the same editor scheme colors. Search and go-to-line
+prompts replace the status row; unsaved exit presents Save/Discard/Cancel there.
+No new imagery, icon family, outer border or separate command input is introduced.
+The viewport wraps and follows the document caret when the window resizes.

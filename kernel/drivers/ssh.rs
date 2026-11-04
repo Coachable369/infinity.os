@@ -195,6 +195,14 @@ pub fn host_fingerprint() -> Option<[u8; 50]> {
 }
 
 // ------------------------=
+// FUNC: generate_user_key
+// DESC: Generates an independent account key from the validated native SSH entropy source, even when the listener is disabled.
+// ------------------=
+pub(crate) fn generate_user_key() -> Result<infinity_ssh::userkey::UserKeyPair, Failure> {
+    infinity_ssh::userkey::UserKeyPair::generate(super::ssh_entropy::fill)
+}
+
+// ------------------------=
 // FUNC: manage_key
 // DESC: Persists local account-key administration through IdentitySystem; authentication remains a separate protocol operation.
 // ------------------=

@@ -2309,6 +2309,7 @@ impl super::DisplayDevice {
             self.render_native_uikit(geometry.content,scale);
             return;
         }
+        if screen==8 && self.terminal_edit_view(geometry.content,scale) {return;}
         if screen == 10 {
             self.render_task_manager_dashboard(
                 geometry,

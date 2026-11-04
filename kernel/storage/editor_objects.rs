@@ -15,6 +15,9 @@ pub(crate) fn load<D: BlockDevice>(store: &mut ObjectStore<D>, owner: ObjectId,
     match store.read(id, None, out) {
         Ok(length) => Ok((length, None)),
         Err(ObjectError::Unauthorized) => {
+            if let Ok(length) = store.read_user_ssh_key(id, owner, out) {
+                return Ok((length, None));
+            }
             let mut bytes = [0; MAX_BYTES];
             let length = store.read_hermes_memory(id, owner, &mut bytes)?;
             Document::parse(&bytes[..length], owner.0).map_err(|_| ObjectError::CorruptContent)?;

@@ -18,7 +18,7 @@
 #define EFI_ALL_HANDLES 0
 #define PAGE_SIZE 4096u
 #define PAGE_MASK (PAGE_SIZE - 1u)
-#define KERNEL_STACK_PAGES 256u
+#define KERNEL_STACK_PAGES 512u
 #define IDENTITY_MAP_GIB 64u
 #define PT_LOAD 1u
 #if defined(INFINITY_AARCH64)
@@ -1591,9 +1591,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     serial_write("[BOOT] kernel loaded\n");
 
     uint64_t stack_base = UINT32_MAX;
-    /* Signed Pool transactions nest bounded metadata, mutation and verification
-       records. The optimized active call chain exceeds 568 KiB; reserve a fixed
-       1 MiB on both architectures. Lightweight startup dispatch stays separate
+    /* Optimized kernel entry plus Console initialization requires 1,096,880
+       bytes before nested rendering/storage calls. Reserve a fixed 2 MiB on
+       both architectures, also covering bounded account transactions.
+       Lightweight startup dispatch stays separate
        so idle polls do not reserve transaction-sized frames. */
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, KERNEL_STACK_PAGES, &stack_base) != EFI_SUCCESS)
         fail(system, L"ERROR: stack allocation failed\r\n", "ERROR: stack allocation failed\n");

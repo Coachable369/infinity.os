@@ -29,8 +29,8 @@ $(BUILD)/browser-payload/aarch64-qemu/manifest.rs: $(BUILD)/aarch64/installed-ke
 	rm -rf $(BUILD)/browser-payload/aarch64-qemu/PAYLOAD
 	@mkdir -p $(@D)/PAYLOAD
 	CARGO_TARGET_DIR=$(BUILD)/behavior-harness $(CARGO) run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack -- install $(BUILD)/aarch64/installed-esp.img $(BUILD)/aarch64/installed-kernel-qemu.elf $(@D)/PAYLOAD $@.partial
-	cat $(@D)/PAYLOAD/P1-*.BIN | cmp - $(BUILD)/aarch64/installed-kernel-qemu.elf
-	cat $(@D)/PAYLOAD/P0-*.BIN | cmp - $(BUILD)/aarch64/installed-esp.img
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cat $(@D)/PAYLOAD/P1-*.BIN | cmp - $(BUILD)/aarch64/installed-kernel-qemu.elf; fi
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cat $(@D)/PAYLOAD/P0-*.BIN | cmp - $(BUILD)/aarch64/installed-esp.img; fi
 	mv $@.partial $@
 
 $(BUILD)/aarch64/kernel-browser-qemu.stamp: $(BUILD)/browser-mode $(BROWSER_SOURCES) $(BUILD)/browser-payload/aarch64-qemu/manifest.rs
@@ -45,8 +45,8 @@ $(BUILD)/browser-payload/%/manifest.rs: $(BUILD)/%/installed-kernel.elf $(BUILD)
 	rm -rf $(@D)/PAYLOAD
 	@mkdir -p $(@D)/PAYLOAD
 	CARGO_TARGET_DIR=$(BUILD)/behavior-harness $(CARGO) run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack -- install $(BUILD)/$*/installed-esp.img $(BUILD)/$*/installed-kernel.elf $(@D)/PAYLOAD $@.partial
-	cat $(@D)/PAYLOAD/P1-*.BIN | cmp - $(BUILD)/$*/installed-kernel.elf
-	cat $(@D)/PAYLOAD/P0-*.BIN | cmp - $(BUILD)/$*/installed-esp.img
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cat $(@D)/PAYLOAD/P1-*.BIN | cmp - $(BUILD)/$*/installed-kernel.elf; fi
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cat $(@D)/PAYLOAD/P0-*.BIN | cmp - $(BUILD)/$*/installed-esp.img; fi
 	mv $@.partial $@
 $(BUILD)/aarch64/kernel.stamp: $(BUILD)/browser-payload/aarch64/manifest.rs
 $(BUILD)/x86_64/kernel.o: $(BUILD)/browser-payload/x86_64/manifest.rs

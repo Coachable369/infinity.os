@@ -13,15 +13,18 @@ pub use accounts::*;
 mod ssh_keys;
 
 pub const MAX_USERS: usize = 8;
-pub const MAX_CREDENTIALS: usize = 12;
+const LEGACY_MAX_CREDENTIALS: usize = 12;
+pub const MAX_CREDENTIALS: usize = 24;
 pub const MAX_SESSIONS: usize = 8;
 pub const LEGACY_IDENTITY_STATE_BYTES: usize = 4096;
 pub const V2_IDENTITY_STATE_BYTES: usize = LEGACY_IDENTITY_STATE_BYTES + DESKTOP_LAYOUT_STATE_BYTES;
 pub const USER_AI_MEMORY_OFFSET: usize = V2_IDENTITY_STATE_BYTES - 4;
 pub const V3_IDENTITY_STATE_BYTES: usize = USER_AI_MEMORY_OFFSET + AI_MEMORY_STATE_BYTES + 4;
 pub const ACCOUNTS_STATE_OFFSET: usize = V3_IDENTITY_STATE_BYTES - 4;
-pub const IDENTITY_STATE_BYTES: usize = ACCOUNTS_STATE_OFFSET + ACCOUNTS_STATE_BYTES + 4;
-pub const IDENTITY_FORMAT_VERSION: u16 = 5;
+pub const V5_IDENTITY_STATE_BYTES: usize = ACCOUNTS_STATE_OFFSET + ACCOUNTS_STATE_BYTES + 4;
+const EXTRA_CREDENTIALS_OFFSET: usize = V5_IDENTITY_STATE_BYTES - 4;
+pub const IDENTITY_STATE_BYTES: usize = EXTRA_CREDENTIALS_OFFSET + (MAX_CREDENTIALS - LEGACY_MAX_CREDENTIALS) * 120 + 4;
+pub const IDENTITY_FORMAT_VERSION: u16 = 6;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
@@ -776,6 +779,15 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: has_password_credential
+    // DESC: Distinguishes password enrollment from SSH keys during first-run setup.
+    // ------------------=
+    pub fn has_password_credential(&self, owner: StableId) -> bool {
+        self.credentials.iter().flatten().any(|c| c.descriptor.owner == owner
+            && c.descriptor.state == CredentialState::Active && c.descriptor.kind == CredentialType::Password)
+    }
+
+    // ------------------------=
     // FUNC: revoke_credential
     // DESC: Revokes credential authority while retaining its non-secret audit descriptor.
     // ------------------=
@@ -1444,7 +1456,7 @@ impl IdentitySystem {
         }
         for (index, credential) in self.credentials.iter().enumerate() {
             if let Some(value) = credential {
-                write_credential(&mut out, 1440 + index * 120, *value);
+                write_credential(&mut out, credential_offset(index), *value);
             }
         }
         for (index, profile) in self.profiles.iter().enumerate() {
@@ -1471,7 +1483,7 @@ impl IdentitySystem {
             let at = USER_AI_MEMORY_OFFSET + 16 + index * AI_MEMORY_SLOT_BYTES;
             let _ = self.ai_memories[index].encode_into(&mut out[at..at + AI_MEMORY_SLOT_BYTES]);
         }
-        self.encode_accounts(&mut out[ACCOUNTS_STATE_OFFSET..IDENTITY_STATE_BYTES - 4]);
+        self.encode_accounts(&mut out[ACCOUNTS_STATE_OFFSET..V5_IDENTITY_STATE_BYTES - 4]);
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
         put32(&mut out, IDENTITY_STATE_BYTES - 4, checksum);
         out
@@ -1484,7 +1496,7 @@ impl IdentitySystem {
     pub fn decode(bytes: &[u8]) -> Result<Self, IdentityError> {
         if !matches!(
             bytes.len(),
-            LEGACY_IDENTITY_STATE_BYTES | V2_IDENTITY_STATE_BYTES | V3_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES
+            LEGACY_IDENTITY_STATE_BYTES | V2_IDENTITY_STATE_BYTES | V3_IDENTITY_STATE_BYTES | V5_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES
         ) {
             return Err(IdentityError::CorruptState);
         }
@@ -1492,7 +1504,8 @@ impl IdentitySystem {
         let valid_shape = (version == 1 && bytes.len() == LEGACY_IDENTITY_STATE_BYTES)
             || (version == 2 && bytes.len() == V2_IDENTITY_STATE_BYTES)
             || (version == 3 && bytes.len() == V3_IDENTITY_STATE_BYTES)
-            || ((version == 4 || version == IDENTITY_FORMAT_VERSION) && bytes.len() == IDENTITY_STATE_BYTES);
+            || ((version == 4 || version == 5) && bytes.len() == V5_IDENTITY_STATE_BYTES)
+            || (version == IDENTITY_FORMAT_VERSION && bytes.len() == IDENTITY_STATE_BYTES);
         if &bytes[..8] != b"INFIDN1\0"
             || !valid_shape
             || get16(bytes, 10) as usize != bytes.len()
@@ -1563,8 +1576,8 @@ impl IdentitySystem {
                 });
             }
         }
-        for index in 0..MAX_CREDENTIALS {
-            let offset = 1440 + index * 120;
+        for index in 0..if version >= 6 { MAX_CREDENTIALS } else { LEGACY_MAX_CREDENTIALS } {
+            let offset = credential_offset(index);
             if bytes[offset] != 0 {
                 let credential = read_credential(bytes, offset)?;
                 if version < 5 && credential.descriptor.kind == CredentialType::SshEd25519 {
@@ -1597,7 +1610,7 @@ impl IdentitySystem {
             }
         }
         if version >= 4 {
-            state.decode_accounts(&bytes[ACCOUNTS_STATE_OFFSET..IDENTITY_STATE_BYTES - 4])?;
+            state.decode_accounts(&bytes[ACCOUNTS_STATE_OFFSET..V5_IDENTITY_STATE_BYTES - 4])?;
         } else if let Some(slot) = state.users.iter().position(|user| {
             user.is_some_and(|user| user.state == UserState::Active)
         }) {
@@ -2100,6 +2113,15 @@ fn read_user(
         },
     };
     Ok((user, profile, ai, voice))
+}
+
+// ------------------------=
+// FUNC: credential_offset
+// DESC: Preserves legacy credential offsets and stores additional account keys in the version-six extension.
+// ------------------=
+fn credential_offset(index: usize) -> usize {
+    if index < LEGACY_MAX_CREDENTIALS { 1440 + index * 120 }
+    else { EXTRA_CREDENTIALS_OFFSET + (index - LEGACY_MAX_CREDENTIALS) * 120 }
 }
 
 // ------------------------=

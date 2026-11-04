@@ -161,6 +161,18 @@ const EMPTY_SNAPSHOT: Snapshot = Snapshot {
 
 impl TextDocument {
     // ------------------------=
+    // FUNC: erase_private
+    // DESC: Scrubs the document and every undo/redo snapshot on terminal session handoff.
+    // ------------------=
+    pub fn erase_private(&mut self) {
+        for byte in self.bytes.iter_mut().chain(self.saved_bytes.iter_mut()) {unsafe{core::ptr::write_volatile(byte,0);}}
+        for snapshot in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            for byte in &mut snapshot.bytes {unsafe{core::ptr::write_volatile(byte,0);}}
+            snapshot.length=0;snapshot.cursor=0;snapshot.revision=0;
+        }
+        self.clear();
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Creates an empty saved native text document.
     // ------------------=

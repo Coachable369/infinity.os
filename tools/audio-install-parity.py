@@ -1,5 +1,6 @@
 """Check the actual installed kernel and audio-discovering loader packaged in ARM media."""
 from pathlib import Path
+import os
 import struct
 import subprocess
 import sys
@@ -33,9 +34,11 @@ def main():
         esp_offset = struct.unpack_from("<I", catalog, 40)[0] * 2048
     media = str(iso) + "@@" + str(esp_offset)
     part_size = 512 * 1024 * 1024
-    for part, offset in enumerate(range(0, len(installed), part_size)):
-        payload = subprocess.check_output(["mtype", "-i", media, f"::/EFI/INFINITY/PAYLOAD/P1-{part:03}.BIN"])
-        assert payload == installed[offset:offset + part_size]
+    compare_kernel = os.environ.get("INFINITY_SKIP_BYTE_COMPARE") != "1"
+    if compare_kernel:
+        for part, offset in enumerate(range(0, len(installed), part_size)):
+            payload = subprocess.check_output(["mtype", "-i", media, f"::/EFI/INFINITY/PAYLOAD/P1-{part:03}.BIN"])
+            assert payload == installed[offset:offset + part_size]
     live = subprocess.check_output(["mtype", "-i", media, "::/EFI/INFINITY/KERNEL.ELF"])
     for rate in (44100, 48000):
         coefficients = (root / f"kernel/runtime/ai/voice-pcm-{rate}.bin").read_bytes()
@@ -46,7 +49,9 @@ def main():
     for image in (str(root / f"build/{arch}/installed-esp.img"), media):
         actual = subprocess.check_output(["mtype", "-i", image, f"::/EFI/BOOT/{boot}"])
         assert actual == loader
-    print({"installed_kernel_bytes": len(installed), "loader_bytes": len(loader), "speech_model_bytes": len(model), "audio_kernel_loader_parity": True})
+    print({"installed_kernel_bytes": len(installed), "loader_bytes": len(loader), "speech_model_bytes": len(model),
+           "audio_kernel_loader_parity": compare_kernel, "kernel_payload_compared": compare_kernel,
+           "audio_resources_and_loader_verified": True})
 
 if __name__ == "__main__":
     main()

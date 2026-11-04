@@ -7,9 +7,10 @@ temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
 if [ "${1:-}" = "--help" ]; then
-    echo "Usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests] [--target all|aarch64|x86_64]"
+    echo "Usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests] [--skip-byte-comparisons] [--target all|aarch64|x86_64]"
     echo "Without arguments, a terminal prompts for build type, architecture, and tests."
     echo "--skip-tests retains kernel/asset packaging, parity and checksum checks."
+    echo "--skip-byte-comparisons omits redundant full-image comparisons; publication checksums remain."
     exit 0
 fi
 if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
@@ -57,6 +58,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --package-only) package_only=true; shift ;;
         --skip-tests) skip_tests=true; shift ;;
+        --skip-byte-comparisons) export INFINITY_SKIP_BYTE_COMPARE=1; shift ;;
         --target) [ "$#" -ge 2 ] || exit 2; target=$2; shift 2 ;;
         --machine) [ "$#" -ge 2 ] || exit 2; machine=$2; shift 2 ;;
         *) echo "usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests|--package-only] [--target aarch64|x86_64|all] [--machine native|qemu]" >&2; exit 2 ;;

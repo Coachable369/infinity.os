@@ -792,6 +792,11 @@ pub fn object_read_path(
 pub(crate) fn editor_read_path(owner: [u8; 16], session: [u8; 16], path: &[u8], out: &mut [u8])
     -> Result<(usize, editor_objects::MemoryRevision), object::ObjectError> {
     let _ = browser_favorites_path(owner, session)?;
+    let local = crate::runtime::with_runtime(|runtime| (0..crate::runtime::identity::MAX_SESSIONS)
+        .filter_map(|i| runtime.identity.session_nth(i)).any(|s| s.id.0 == session && s.user.0 == owner
+            && s.origin == crate::runtime::identity::SessionOrigin::Local
+            && s.state == crate::runtime::identity::SessionState::Active)).unwrap_or(false);
+    if !local { return Err(object::ObjectError::Unauthorized); }
     #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
     { with_store(|store| editor_objects::load(store, object::ObjectId(owner), path, out)) }
     #[cfg(target_arch="x86")]
@@ -898,15 +903,24 @@ pub(crate) fn account_state_commit(
     content: &[u8],
     new_home: Option<([u8; 16], &[u8])>,
 ) -> Result<u32, object::ObjectError> {
+    account_state_commit_enrolled(content, new_home, None)
+}
+
+// ------------------------=
+// FUNC: account_state_commit_enrolled
+// DESC: Includes generated owner key files in the same storage commit as account identity and home creation.
+// ------------------=
+pub(crate) fn account_state_commit_enrolled(content: &[u8], new_home: Option<([u8; 16], &[u8])>,
+    ssh_files: Option<(&[u8], &[u8])>) -> Result<u32, object::ObjectError> {
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
-        with_store(|store| store.checkpoint_identity(
-            content, new_home.map(|(owner, name)| (object::ObjectId(owner), name)),
+        with_store(|store| store.checkpoint_identity_enrolled(
+            content, new_home.map(|(owner, name)| (object::ObjectId(owner), name)), ssh_files,
         ))
     }
     #[cfg(target_arch = "x86")]
     {
-        let _ = (content, new_home);
+        let _ = (content, new_home, ssh_files);
         Err(object::ObjectError::SpaceUnavailable)
     }
 }

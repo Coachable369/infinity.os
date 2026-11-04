@@ -101,7 +101,7 @@ impl Job {
         }).unwrap_or(State::Runnable);
         if !self.login && self.setup.stage()==Stage::Passed && !self.setup.saved() {
             let saved=self.save_identity(now_ns);
-            self.setup.finish_save(saved);
+            self.setup.finish_save_result(saved);
             crate::drivers::camera::cancel(owner);crate::drivers::camera::revoke_setup(owner);
             self.camera_open=false;
         }
@@ -123,25 +123,29 @@ impl Job {
     // FUNC: save_identity
     // DESC: Binds verified data to the password-authorized full account ID, encrypts before persistence and verifies decrypted durable readback.
     // ------------------=
-    fn save_identity(&self,now_ns:u64)->bool {
-        if !crate::drivers::camera::setup_authorized(self.owner,self.account) {return false;}
-        let Some(payload)=self.setup.enrollment() else{return false;};
+    fn save_identity(&self,now_ns:u64)->Result<(),u32> {
+        if !crate::drivers::camera::setup_authorized(self.owner,self.account) {return Err(112);}
+        let Some(payload)=self.setup.enrollment() else{return Err(112);};
         let Some(key)=super::with_runtime(|runtime| {
             runtime.identity.user(self.account)?;
             runtime.nodes.face_vault_key(&self.account.0)
-        }).flatten() else{return false;};
+        }).flatten() else{return Err(112);};
         // The existing boot-seeded native entropy service is shared, but vault
         // keys and authenticated record contexts remain domain-separated.
-        let Some(seed)=(unsafe {super::native_python_entropy::next(&self.account.0)}) else{return false;};
+        let Some(seed)=(unsafe {super::native_python_entropy::next(&self.account.0)}) else{return Err(112);};
         let seed=zeroize::Zeroizing::new(seed);
         let mut nonce=[0;12];nonce.copy_from_slice(&seed[..12]);
         let control=self.setup.control();
-        let Some(record)=super::face_vault::seal(&key,self.account.0,&control,nonce,now_ns,payload) else{return false;};
-        if crate::storage::face_identity_commit(self.account.0,&*record).is_err() {return false;}
+        let Some(record)=super::face_vault::seal(&key,self.account.0,&control,nonce,now_ns,payload) else{return Err(112);};
+        crate::storage::face_identity_commit(self.account.0,&*record).map_err(|error|match error {
+            crate::storage::object::ObjectError::InsufficientCapacity=>116u32,
+            crate::storage::object::ObjectError::CommitUncertain=>117,
+            _=>112,
+        })?;
         let mut readback=zeroize::Zeroizing::new([0;super::face_vault::BYTES]);
-        if crate::storage::face_identity_load(self.account.0,&mut *readback)!=Ok(super::face_vault::BYTES) {return false;}
-        let Some(plain)=super::face_vault::open(&key,self.account.0,control.model,&*readback) else{return false;};
-        plain[super::face_vault::HEADER..super::face_vault::BYTES-16]==*payload
+        if crate::storage::face_identity_load(self.account.0,&mut *readback)!=Ok(super::face_vault::BYTES) {return Err(112);}
+        let Some(plain)=super::face_vault::open(&key,self.account.0,control.model,&*readback) else{return Err(112);};
+        if plain[super::face_vault::HEADER..super::face_vault::BYTES-16]==*payload {Ok(())}else{Err(112)}
     }
     // ------------------------=
     // FUNC: cancel

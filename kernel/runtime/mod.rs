@@ -18,6 +18,7 @@ pub mod compute;
 pub mod compute_operator;
 pub mod console_language;
 pub mod console_execution;
+pub mod console_help;
 pub mod console_terminal;
 pub mod event;
 pub mod execution;
@@ -3238,6 +3239,7 @@ pub fn storage_initialized() {
                         identity::LEGACY_IDENTITY_STATE_BYTES
                             | identity::V2_IDENTITY_STATE_BYTES
                             | identity::V3_IDENTITY_STATE_BYTES
+                            | identity::V5_IDENTITY_STATE_BYTES
                             | identity::IDENTITY_STATE_BYTES
                     )
                 })
@@ -3378,8 +3380,16 @@ pub fn manage_accounts(
     request: identity::AccountRequest<'_>,
 ) -> Result<identity::AccountResult, identity::IdentityError> {
     let creating_user = matches!(&request, identity::AccountRequest::CreateUser { .. });
+    #[cfg(target_os = "none")]
+    let keys = if creating_user {
+        Some(crate::drivers::ssh::generate_user_key().map_err(|_| identity::IdentityError::InvalidCredential)?)
+    } else { None };
+    #[cfg(target_os = "none")]
+    let public_key = keys.as_ref().map(|keys| keys.public_key());
+    #[cfg(not(target_os = "none"))]
+    let public_key = None;
     with_runtime(|runtime| {
-        let result = runtime.identity.manage_accounts_durable(session, request, |encoded, result| {
+        let result = runtime.identity.manage_accounts_enrolled_durable(session, request, public_key, |encoded, result| {
             #[cfg(target_os = "none")]
             {
                 let home = match result {
@@ -3387,7 +3397,8 @@ pub fn manage_accounts(
                         Some((user.id.0, user.display_name.as_bytes())),
                     _ => None,
                 };
-                crate::storage::account_state_commit(encoded, home).map(|_| ()).map_err(|error| {
+                crate::storage::account_state_commit_enrolled(encoded, home,
+                    keys.as_ref().map(|keys| (keys.private_file(), keys.public_file()))).map(|_| ()).map_err(|error| {
                     use crate::storage::object::ObjectError;
                     match error {
                         ObjectError::NameConflict => identity::IdentityError::Conflict,
@@ -3407,6 +3418,30 @@ pub fn manage_accounts(
         publish_identity_commit(runtime);
         Ok(result)
     }).unwrap_or(Err(identity::IdentityError::InvalidState))
+}
+
+// ------------------------=
+// FUNC: create_onboarding_user
+// DESC: Provisions the initial user's identity, registered SSH key and owner-private key files through one durable transaction.
+// ------------------=
+pub fn create_onboarding_user(handle: &[u8], name: &[u8], now: u64) -> Result<identity::UserIdentity, identity::IdentityError> {
+    #[cfg(target_os = "none")]
+    {
+        let keys = crate::drivers::ssh::generate_user_key().map_err(|_| identity::IdentityError::InvalidCredential)?;
+        with_runtime(|runtime| {
+            let user = runtime.identity.create_onboarding_user_durable(handle, name, now, keys.public_key(), |encoded, user| {
+                crate::storage::account_state_commit_enrolled(encoded, Some((user.id.0, user.display_name.as_bytes())),
+                    Some((keys.private_file(), keys.public_file()))).map(|_| ()).map_err(|error| match error {
+                        crate::storage::object::ObjectError::CommitUncertain => identity::IdentityError::CommitUncertain,
+                        _ => identity::IdentityError::InvalidState,
+                    })
+            })?;
+            publish_identity_commit(runtime);
+            Ok(user)
+        }).unwrap_or(Err(identity::IdentityError::InvalidState))
+    }
+    #[cfg(not(target_os = "none"))]
+    { let _ = (handle, name, now); Err(identity::IdentityError::InvalidState) }
 }
 
 // ------------------------=

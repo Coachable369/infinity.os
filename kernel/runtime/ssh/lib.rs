@@ -4,6 +4,7 @@
 use sunset::{ChanFail, Event, PubKey, Runner, ServEvent, Server, SignKey};
 pub mod hostkey;
 pub mod management;
+pub mod userkey;
 
 pub const PACKET_BUFFER: usize = 35_000;
 pub const MAX_CONNECTIONS: usize = 4;

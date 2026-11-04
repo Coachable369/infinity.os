@@ -29,6 +29,11 @@ impl<const N: usize> Bytes<N> {
     // ------------------=
     pub fn bytes(&self) -> &[u8] { &self.data[..self.length] }
     // ------------------------=
+    // FUNC: truncated
+    // DESC: Exposes output backpressure so callers never report a partial catalog as complete.
+    // ------------------=
+    pub fn truncated(&self)->bool {self.overflow}
+    // ------------------------=
     // FUNC: write
     // DESC: Bounds every write and marks truncation as an execution failure.
     // ------------------=
@@ -108,6 +113,7 @@ pub fn supported(operation: OperationId) -> bool {
 // DESC: Lets graphical Console retain all other existing handlers while sharing exactly these parsed operations.
 // ------------------=
 pub fn handles(command: &[u8]) -> bool {
+    if super::console_help::requested(command) { return true; }
     match language::parse(command) {
         Ok(ParseOutcome::Help(_, _)) => true,
         Ok(ParseOutcome::Graph(graph)) => graph.node_count == 1 && !graph.plan_only && graph.assignment.is_none()
@@ -122,6 +128,11 @@ pub fn handles(command: &[u8]) -> bool {
 pub fn execute(runtime: &mut InfinityRuntime, user: StableId, session: StableId, command: &[u8], now: u64) -> Outcome {
     if !runtime.identity.console_session_authorized(session, user) { return Outcome::failure(Diagnostic::Denied); }
     let mut result = Outcome::new();
+    if super::console_help::requested(command) {
+        if !super::console_help::render(command, &mut result.stdout) { result.status=2; result.diagnostic=Diagnostic::Syntax; }
+        if result.stdout.truncated(){result.status=75;result.diagnostic=Diagnostic::Capacity;result.stderr.write_line(b"Result exceeds the output budget. Narrow the help topic or search.");}
+        return result;
+    }
     let parsed = match language::parse(command) { Ok(parsed) => parsed, Err(_) => return Outcome::failure(Diagnostic::Syntax) };
     match parsed {
         ParseOutcome::Help(domain, operation) => render_help(&mut result.stdout, domain, operation),
@@ -243,6 +254,12 @@ pub fn render_help(output: &mut Bytes<OUTPUT_BYTES>, domain: Option<&language::D
                     output
                         .write_segments(&[operation.domain, b" ", operation.action]);
                     output.write_line(operation.description);
+                    if operation.target.is_some() { output.write_line(b"Target: typed reference (see example)"); }
+                    for argument in operation.arguments {
+                        output.write_segments(&[b"  ",argument.name,if argument.required {b"=<value> (required)"}else{b"=<value> (optional)"}]);
+                    }
+                    output.write_number(b"Required capability: ",operation.capability);
+                    output.write_line(if operation.side_effect==language::SideEffectClass::Query {b"Effect: read only"}else{b"Effect: changes state; native authorization applies"});
                     output
                         .write_segments(&[b"Result type: ", value_type_text(operation.output)]);
                     output
@@ -262,16 +279,8 @@ pub fn render_help(output: &mut Bytes<OUTPUT_BYTES>, domain: Option<&language::D
                         ]);
                     }
                 } else {
-                    output
-                        .write_line(b"Infinity Console: DOMAIN ACTION [TARGET] [key=value]");
-                    output.write_line(
-                        b"Use |> for typed composition; use plan before meaningful changes.",
-                    );
-                    output.write_line(
-                        b"Domains: system device storage object namespace project collection",
-                    );
-                    output
-                        .write_line(b"service runtime task capability event ai model agent voice");
+                    for domain in language::DOMAINS { output.write_segments(&[domain.name,b" - ",domain.description]); }
+                    output.write_line(b"Use help commands, help DOMAIN ACTION, or help search WORD.");
                 }
 }
 
@@ -342,4 +351,12 @@ pub fn value_type_text(value: crate::runtime::console_language::ValueType) -> &'
 pub fn render_nodes(output: &mut Bytes<OUTPUT_BYTES>, bytes: &[u8]) {
     for id in bytes.chunks_exact(32) { output.write_hex(b"Identity: ", id); }
     if bytes.is_empty() { output.write_line(b"No records."); }
+}
+
+impl<const N: usize> core::fmt::Write for Bytes<N> {
+    // ------------------------=
+    // FUNC: write_str
+    // DESC: Adapts bounded native output to allocation-free structured formatting.
+    // ------------------=
+    fn write_str(&mut self,text:&str)->core::fmt::Result {self.write(text.as_bytes());if self.overflow{Err(core::fmt::Error)}else{Ok(())}}
 }

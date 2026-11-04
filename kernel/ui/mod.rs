@@ -146,3 +146,5 @@ impl InfinityUiRuntime {
     }
 }
 pub mod font_library;
+
+pub mod terminal_edit;

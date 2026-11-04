@@ -36,7 +36,9 @@ queued before native authority is retired, and the transport remains alive to fl
 
 SSH defaults to enabled on port 22 with two connection slots when no saved
 configuration exists. A saved disabled setting remains disabled. Public-key
-authentication is still required; enabling the listener does not enroll keys.
+authentication is still required. New accounts automatically receive an Ed25519
+key pair and public-key registration during first-run setup, Settings creation,
+and Console creation. Existing accounts and their keys are not silently modified.
 An authorized local Console can use:
 
 ```
@@ -58,9 +60,8 @@ The final clean release was stopped at the user's request to avoid repeated
 full byte-for-byte comparisons. Final ISO packaging is unfinished; older ISOs
 are not claimed as current. The subsequent default-on change passed the focused
 SSH suite in `builds/manifests/20261104T141255435598Z-71923.json`; it has not yet
-been verified on an installed guest. Automatic account-creation enrollment is
-pending the choice of importing a client public key versus generating and
-exporting a new key pair.
+been verified on an installed guest. Automatic account-creation enrollment has since been implemented; current
+release and installed acceptance results are recorded below.
 
 ### Behavioral host checks
 
@@ -147,3 +148,58 @@ outcomes. All guest provisioning goes through the local graphical Console.
 Submilestone 2 implementation is available with ARM installed evidence. Full
 cross-architecture acceptance remains blocked by x86_64 installation. No
 Submilestone 3 work has been performed or authorized.
+
+## Automatic account-key provisioning
+
+New accounts receive `~/.ssh/id_ed25519` and `~/.ssh/id_ed25519.pub`. Home labels
+follow the existing native home resolver; immutable user IDs enforce ownership.
+The private file uses the standard [OpenSSH key format](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.key).
+It is unencrypted file content protected by native owner access, not an offline
+disk-encryption guarantee. Temporary generation buffers are zeroized. The key is
+independent of the account password and SSH host key.
+
+Identity, key registration, home directories and both key files commit in one
+native storage transaction. Failure restores identity state; ambiguous commits
+invalidate authentication until reboot. Missing entropy prevents creation rather
+than substituting a fixed key. Generic object reads, versions, copies, aliases,
+writes and removal cannot access these key objects. The owner's authenticated
+local editor can read the current files; remote Console authority cannot.
+
+To connect from another machine, the owner must deliberately copy the private
+key to that SSH client and restrict its local permissions (for macOS OpenSSH,
+`chmod 600 PATH_TO_KEY`), then use `ssh -i PATH_TO_KEY USER@HOST`. Merely generating
+a key on InfinityOS does not install it on the remote client. Native SSH remains
+public-key-only and retains the Submilestone 2 capability ceiling.
+
+Identity format 6 preserves earlier offsets and appends twelve credential slots,
+allowing all eight identity slots to hold passwords and SSH credentials. Formats
+1–5 remain readable. Object-store capacity continues to be bounded; insufficient
+space fails the entire provisioning transaction. Renaming or signing in does not
+regenerate keys. Key revocation does not delete the owner's retained key files. Password reset
+retains the existing policy of revoking previous credentials, including SSH
+registrations; it does not silently replace the saved key pair.
+
+Focused SSH tests passed in `20261104T142513349151Z-79012.json`, including real
+OpenSSH private-key parsing, eight-account credential capacity, version-5 migration,
+owner isolation, disk-write rollback and cold-remount registration. The existing
+accounts suite passed in `20261104T142605885459Z-79110.json`, including legacy
+migration and 200 durable checkpoints. ARM incremental packaging passed in `20261104T173641203499Z-27640.json`.
+The corrected ARM test image installed and completed onboarding on detached-media
+boots. The subsequent Settings account automation stopped on clipped form controls;
+Settings/Console creation and SSH authentication with generated account files have
+not completed installed acceptance. The user elected to do SSH runtime testing.
+
+Per the user's instruction, this handoff uses build-kit's incremental packaging
+with `--skip-byte-comparisons`. This explicit option omits full kernel/image copy
+comparisons and the duplicate full-kernel freshness scan. Structural packaging
+checks, targeted behavioral tests and release checksum publication remain. It is
+not a full clean release/parity claim. Default builds retain their comparisons.
+
+The first account-enrollment installed run (`build/ssh-account-installed-01`)
+stopped before onboarding with corrupted stack data and a firmware assertion.
+Inspection of its actual ARM executable showed 380032 bytes in kernel entry plus
+716848 in Console initialization: 1096880 bytes before nested work, exceeding the
+loader's 1048576-byte reservation. The shared loader now reserves 2097152 bytes.
+`builds/validation/ssh-account-stack-overflow.json` records the addresses and
+measurements. Corrected installed boot and initial onboarding succeeded; the full multi-account
+acceptance remains incomplete as described above.

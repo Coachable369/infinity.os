@@ -1,3 +1,7 @@
+#[path="console_utilities.rs"]
+mod console_utilities;
+#[path="console_terminal_edit.rs"]
+mod console_terminal_edit;
 #[path = "window_workflows.rs"]
 mod window_workflows;
 #[path = "file_preview_controller.rs"]
@@ -1434,6 +1438,8 @@ impl ConsoleRuntime {
             if matches!(key,ConsoleKey::Escape) {return;}
         }
         self.synchronize_workplace();
+        if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::CommandWindow
+            && self.ai_chat_focus==0 && self.terminal_edit_key(key) {self.session_idle.note_activity();self.redraw();return;}
         if self.preview_key(key) {self.redraw();return;}
         if self.clipboard_menu_key(key) {self.redraw();return;}
         if self.native_gui_key(key) {self.session_idle.note_activity();return;}
@@ -3429,6 +3435,7 @@ impl ConsoleRuntime {
     // DESC: Guards dirty Text Editor closure and dismisses other active desktop applications immediately.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        if self.desktop_app==DesktopAppKind::CommandWindow && self.terminal_edit_close() {crate::ui::terminal_edit::mutate(|s|s.closing_window=true);self.redraw();return;}
         self.cancel_account_password();
         if self.close_authored_destination() { self.redraw(); return; }
         if self.desktop_app==DesktopAppKind::CommandWindow && compiler_commands::close_uikit() {
@@ -6388,14 +6395,12 @@ impl ConsoleRuntime {
             && self.onboarding_handle_length > 0
             && self.onboarding_name_length > 0
         {
-            let created = crate::runtime::with_runtime(|runtime| {
-                runtime.identity.create_user(
+            let created = crate::runtime::create_onboarding_user(
                     &self.onboarding_handle[..self.onboarding_handle_length],
                     &self.onboarding_name[..self.onboarding_name_length],
                     2,
-                )
-            });
-            let Some(Ok(user)) = created else {
+                );
+            let Ok(user) = created else {
                 return false;
             };
             self.current_user = user.id;
@@ -6403,7 +6408,7 @@ impl ConsoleRuntime {
         if !self.current_user.is_zero() && crate::storage::provision_user_home(self.current_user.0).is_err(){return false;}
         if !self.current_user.is_zero() && self.onboarding_secret_length >= 8 {
             let credential = crate::runtime::with_runtime(|runtime| {
-                if runtime.identity.has_active_credential(self.current_user) {
+                if runtime.identity.has_password_credential(self.current_user) {
                     runtime
                         .identity
                         .authenticate(
@@ -9924,6 +9929,7 @@ impl ConsoleRuntime {
     // DESC: Handles input console input or state transitions.
     // ------------------=
     fn input_console(&mut self, key: ConsoleKey) {
+        if self.terminal_edit_key(key) || self.pager_key(key) {return;}
         if self.account_password_input(key) { return; }
         if self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::CommandWindow&&crate::ui::installer_template::navigation::scene()!=0 {
             if matches!(key,ConsoleKey::Escape){self.close_desktop_app();}
@@ -9965,6 +9971,7 @@ impl ConsoleRuntime {
         if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         #[cfg(all(target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if self.ssh_command(&command[..length]) {self.reset_input();return;}
+        if self.utility_command(&command[..length]) {self.reset_input();return;}
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
         if self.clock_command(&command[..length]) {self.reset_input();return;}
         if self.generated_application_command(&command[..length]) {self.reset_input();return;}
@@ -10158,37 +10165,7 @@ impl ConsoleRuntime {
             }
             return true;
         }
-        if first == b"list" {
-            let mut prefix = self.navigation_context.path();
-            let mut tree = false;
-            if command_word(command, 1) == Some(b"tree") {
-                tree = true;
-                if let Some(path) = command_word(command, 2) {
-                    prefix = path;
-                }
-            } else if let Some(path) = command_word(command, 1) {
-                prefix = path;
-            }
-            let mut shown = 0usize;
-            if !tree {
-                self.output.write_line(b".");
-                self.output.write_line(b"..");
-                shown = crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT;
-            }
-            for index in 0..crate::storage::object::PUBLIC_NAMESPACE_CAPACITY {
-                let entry = match crate::storage::namespace_list_nth(prefix, index) {
-                    Ok(Some(entry)) => entry,
-                    _ => break,
-                };
-                let path = &entry.path[..entry.path_len as usize];
-                if tree || immediate_namespace_child(prefix, path) {
-                    self.output.write_line(path);
-                    shown += 1;
-                }
-            }
-            self.output.write_number(b"Objects shown: ", shown as u64);
-            return true;
-        }
+        if matches!(first,b"list"|b"ls"|b"dir"|b"commands") {return self.utility_command(command);}
         if matches!(
             first,
             b"examine" | b"resolve" | b"versions" | b"references" | b"relationships"

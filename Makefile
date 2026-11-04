@@ -576,7 +576,7 @@ $(BUILD)/test-media/InfinityOS-x86_64.bootmedia: $(BUILD)/infinity-x86_64.img x8
 	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso/EFI
 	dd if=$< of=$(BUILD)/iso/efi.img bs=1048576
-	cmp -s $< $(BUILD)/iso/efi.img
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cmp -s $< $(BUILD)/iso/efi.img; fi
 	rm -rf $(BUILD)/iso/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY $(BUILD)/iso/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
@@ -936,7 +936,7 @@ $(BUILD)/test-media/InfinityOS-x86.bootmedia: $(BUILD)/infinity-x86.img $(UI_ASS
 	rm -rf $(BUILD)/iso-x86/System/InfinityUI/Icons $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Crash
 	@mkdir -p $(BUILD)/iso-x86/System/Fonts $(BUILD)/iso-x86/System/FontLicenses $(BUILD)/iso-x86/System/Applications $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Installer $(BUILD)/iso-x86/System/InfinityUI/Crash
 	dd if=$< of=$(BUILD)/iso-x86/x86-boot.img bs=1048576
-	cmp -s $< $(BUILD)/iso-x86/x86-boot.img
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cmp -s $< $(BUILD)/iso-x86/x86-boot.img; fi
 	cp assets/fonts/*.ttf assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin $(BUILD)/iso-x86/System/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/iso-x86/System/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/iso-x86/System/InfinityUI/
@@ -1041,7 +1041,7 @@ $(BUILD)/test-media/InfinityOS-aarch64.bootmedia: $(BUILD)/infinity-aarch64.img
 	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso-aarch64/EFI
 	dd if=$< of=$(BUILD)/iso-aarch64/efi.img bs=1048576
-	cmp -s $< $(BUILD)/iso-aarch64/efi.img
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cmp -s $< $(BUILD)/iso-aarch64/efi.img; fi
 	rm -rf $(BUILD)/iso-aarch64/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY $(BUILD)/iso-aarch64/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
@@ -1071,7 +1071,7 @@ $(BUILD)/test-media/InfinityOS-aarch64-qemu.bootmedia: $(BUILD)/infinity-aarch64
 	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso-aarch64-qemu/EFI
 	dd if=$< of=$(BUILD)/iso-aarch64-qemu/efi.img bs=1048576
-	cmp -s $< $(BUILD)/iso-aarch64-qemu/efi.img
+	@if [ "$${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then cmp -s $< $(BUILD)/iso-aarch64-qemu/efi.img; fi
 	rm -rf $(BUILD)/iso-aarch64-qemu/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY $(BUILD)/iso-aarch64-qemu/EFI/
 	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }

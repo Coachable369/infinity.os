@@ -57,8 +57,9 @@ const MAX_OBJECTS: usize = OBJECT_TABLE_SECTORS * OBJECTS_PER_SECTOR;
 // Content still begins at sector 80; no existing payload is relocated.
 const MAX_VERSIONS: usize = 64;
 // The six unused sectors between the root pair and BANK_A provide three
-// additional namespace sectors per bank, without moving existing content.
-pub const NAMESPACE_CAPACITY: usize = 44;
+// additional namespace sectors per bank. Format 8 also uses the four sectors
+// already reserved by allocation-map block rounding, without moving content.
+pub const NAMESPACE_CAPACITY: usize = 52;
 pub const PUBLIC_NAMESPACE_CAPACITY: usize = NAMESPACE_CAPACITY + sdk_package::ENTRIES.len();
 const MAX_ENTRIES: usize = NAMESPACE_CAPACITY;
 const MAX_RELATIONSHIPS: usize = 16;
@@ -79,7 +80,10 @@ const ALLOCATION_EXTENSION_A: u64 =
     CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
 const ALLOCATION_EXTENSION_B: u64 =
     ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
-pub const FORMAT_VERSION: u32 = 7;
+pub const FORMAT_VERSION: u32 = 8;
+// New namespace sectors must stay within the blocks already reserved in v6/v7.
+const _: () = assert!((2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS)).div_ceil(8) * 8
+    >= 2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) + 4);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
 pub struct ObjectId(pub [u8; 16]);
@@ -1108,8 +1112,8 @@ impl<D: BlockDevice> ObjectStore<D> {
             kind: kind as u8,
             space: space as u8,
             current_version: 0,
-            created: self.state.generation + 1,
-            modified: self.state.generation + 1,
+            created: object_timestamp(self.state.generation + 1),
+            modified: object_timestamp(self.state.generation + 1),
             name_len: name.len() as u8,
             name: stored,
             owner: ObjectId([0; 16]),
@@ -1274,7 +1278,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 target: metadata,
                 kind: RelationshipType::References as u16,
                 flags: 0,
-                created: self.state.generation + 1,
+                created: object_timestamp(self.state.generation + 1),
             };
             self.attach_record(path, id)?;
             Ok(id)
@@ -1521,7 +1525,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 entry.used = false;
             }
             self.state.objects[object].tombstone = true;
-            self.state.objects[object].modified = self.state.generation + 1;
+            self.state.objects[object].modified = object_timestamp(self.state.generation + 1);
             Ok(())
         })();
         self.finish(before, result)
@@ -1665,7 +1669,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             generation: self.state.generation + 1,
         };
         self.state.objects[object].current_version = version;
-        self.state.objects[object].modified = self.state.generation + 1;
+        self.state.objects[object].modified = object_timestamp(self.state.generation + 1);
         Ok(version)
     }
 
@@ -1694,7 +1698,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         if sdk_package::get(id).is_some() { return Err(ObjectError::Unauthorized); }
         self.allow_public_identity_access(id)?;
         let record = &self.state.objects[self.object_index(id)?];
-        if &record.name[..record.name_len as usize]==b"@hermes-memory"
+        if &record.name[..record.name_len as usize] == b"@hermes-memory"
             || record.space == Space::System as u8
             && matches!(
                 &record.name[..record.name_len as usize],
@@ -1733,7 +1737,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     fn allow_public_identity_access(&self, id: ObjectId) -> Result<(), ObjectError> {
         let record = &self.state.objects[self.object_index(id)?];
         let name = &record.name[..record.name_len as usize];
-        if self.is_identity_state(id)? || record.space == Space::System as u8
+        if self.is_identity_state(id)? || matches!(name, b"@ssh-user-private" | b"@ssh-user-public" | b"@ssh-user-directory")
+            || record.space == Space::System as u8
             && matches!(name, b"@ssh-host-key" | b"@ssh-config") {
             Err(ObjectError::Unauthorized)
         } else { Ok(()) }
@@ -1816,6 +1821,18 @@ impl<D: BlockDevice> ObjectStore<D> {
         content: &[u8],
         new_home: Option<(ObjectId, &[u8])>,
     ) -> Result<u32, ObjectError> {
+        self.checkpoint_identity_enrolled(content, new_home, None)
+    }
+
+    // ------------------------=
+    // FUNC: checkpoint_identity_enrolled
+    // DESC: Atomically publishes identity, home, generated key files and their immutable owner metadata.
+    // ------------------=
+    pub(crate) fn checkpoint_identity_enrolled(
+        &mut self, content: &[u8], new_home: Option<(ObjectId, &[u8])>,
+        ssh_files: Option<(&[u8], &[u8])>,
+    ) -> Result<u32, ObjectError> {
+        if ssh_files.is_some() && new_home.is_none() { return Err(ObjectError::InvalidObject); }
         let identity = self.resolve(b"/system/identity/state")?;
         if !self.is_identity_state(identity)? { return Err(ObjectError::Unauthorized); }
         let home = match new_home {
@@ -1826,6 +1843,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         let result = (|| {
             if let Some((owner, path)) = home {
                 self.ensure_user_home_record(owner, path)?;
+                if let Some((private, public)) = ssh_files {
+                    self.create_user_ssh_records(owner, path, private, public)?;
+                }
             }
             self.replace_state_record(identity, content)
         })();
@@ -2252,7 +2272,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             }
             let slot = self.object_index(id)?;
             self.state.objects[slot].tombstone = true;
-            self.state.objects[slot].modified = self.state.generation + 1;
+            self.state.objects[slot].modified = object_timestamp(self.state.generation + 1);
             Ok(())
         })();
         self.finish(before, result)
@@ -2281,7 +2301,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             if !self.state.entries.iter().any(|x| x.used && x.target == id) {
                 let object = self.object_index(id)?;
                 self.state.objects[object].tombstone = true;
-                self.state.objects[object].modified = self.state.generation + 1;
+                self.state.objects[object].modified = object_timestamp(self.state.generation + 1);
             }
             Ok(id)
         })();
@@ -2311,7 +2331,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             record.flags = request.flags;
             record.tags = tags;
             record.tags_len = request.tags.len() as u8;
-            record.modified = self.state.generation + 1;
+            record.modified = object_timestamp(self.state.generation + 1);
             Ok(())
         })();
         self.finish(before, result)
@@ -2381,7 +2401,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 target: request.target.id,
                 kind: request.kind as u16,
                 flags: request.flags,
-                created: self.state.generation + 1,
+                created: object_timestamp(self.state.generation + 1),
             };
             Ok(())
         })();
@@ -3317,7 +3337,7 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
 // DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
 // ------------------=
 const fn supported_format(version: u32) -> bool {
-    matches!(version, 4 | 5 | 6 | FORMAT_VERSION)
+    matches!(version, 4 | 5 | 6 | 7 | FORMAT_VERSION)
 }
 // ------------------------=
 // FUNC: set_bit
@@ -3396,8 +3416,12 @@ fn version_sector(bank: u64, sector: usize) -> u64 {
 fn namespace_sector(bank: u64, sector: usize) -> u64 {
     if sector < 8 {
         bank + 15 + sector as u64
-    } else {
+    } else if sector < 11 {
         2 + if bank == BANK_A { 0 } else { 3 } + (sector - 8) as u64
+    } else {
+        // Four sectors already reserved by the allocation-map block rounding.
+        ALLOCATION_EXTENSION_B + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64
+            + if bank == BANK_A { 0 } else { 2 } + (sector - 11) as u64
     }
 }
 
@@ -3564,7 +3588,7 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
         }
     }
-    for sector in 0..if format >= 7 { MAX_ENTRIES / 4 } else { 8 } {
+    for sector in 0..if format >= 8 { MAX_ENTRIES / 4 } else if format == 7 { 11 } else { 8 } {
         let s = read(d, c + namespace_sector(bank, sector))?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {
@@ -4082,4 +4106,16 @@ pub fn device_identity<D: BlockDevice>(device: &mut D) -> Option<[u8; 16]> {
     } else {
         Some(identity)
     }
+}
+
+// ------------------------=
+// FUNC: object_timestamp
+// DESC: Tags trusted UTC seconds separately from legacy transaction generations without changing record layout.
+// ------------------=
+fn object_timestamp(generation: u64) -> u64 {
+    #[cfg(target_os="none")]
+    if let Some(ns) = crate::runtime::ai::clock::SYSTEM.utc_nanoseconds(crate::runtime::ai::qwen::workers::clock_ns()) {
+        return (1u64 << 63) | (ns / 1_000_000_000);
+    }
+    generation
 }

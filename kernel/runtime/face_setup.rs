@@ -320,6 +320,14 @@ impl Setup {
         self.erase_enrollment();
     }
     // ------------------------=
+    // FUNC: finish_save_result
+    // DESC: Preserves typed storage failure details after authenticated readback while keeping enrollment fail-closed.
+    // ------------------=
+    pub(crate) fn finish_save_result(&mut self,result:Result<(),u32>) {
+        self.finish_save(result.is_ok());
+        if let Err(code)=result {self.stage=Stage::Failed(code);}
+    }
+    // ------------------------=
     // FUNC: saved
     // DESC: Distinguishes a persisted enrollment from a worker comparison result.
     // ------------------=

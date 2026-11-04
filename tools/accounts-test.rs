@@ -306,9 +306,10 @@ fn migration_and_corruption() {
     identity.manage_accounts(session.id, AccountRequest::AddMember { group: group.id, user: member.id }).unwrap();
     identity.update_user_desktop_layout(member.id, member.id, layout()).unwrap();
     let encoded = identity.encode();
-    assert_eq!(encoded.len(), 12_960);
-    let mut version_four = encoded;
+    assert_eq!(encoded.len(), IDENTITY_STATE_BYTES);
+    let mut version_four = encoded[..V5_IDENTITY_STATE_BYTES].to_vec();
     version_four[8..10].copy_from_slice(&4u16.to_le_bytes());
+    version_four[10..12].copy_from_slice(&(V5_IDENTITY_STATE_BYTES as u16).to_le_bytes());
     repair_checksum(&mut version_four);
     let migrated = IdentitySystem::decode(&version_four).unwrap();
     assert_eq!(migrated.group(group.id), Some(group));

@@ -3,6 +3,36 @@ use super::*;
 use core::cell::Cell;
 use sunset::{CliEvent, Client};
 
+// ------------------------=
+// FUNC: generated_account_key_is_openssh_compatible
+// DESC: Verifies fail-closed entropy, independent keys and actual macOS OpenSSH decoding of generated private material.
+// ------------------=
+#[test]
+fn generated_account_key_is_openssh_compatible() {
+    use std::{fs, os::unix::fs::OpenOptionsExt, io::Write, process::Command};
+    use base64ct::{Base64, Encoding};
+    assert!(matches!(userkey::UserKeyPair::generate(|_| false), Err(Failure::EntropyUnavailable)));
+    let keys = userkey::UserKeyPair::generate(|bytes| { bytes.fill(41); true }).unwrap();
+    let other = userkey::UserKeyPair::generate(|bytes| { bytes.fill(42); true }).unwrap();
+    assert_ne!(keys.public_key(), other.public_key());
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../build/ssh-key-format-test");
+    fs::create_dir_all(&root).unwrap();
+    let path = root.join("id_ed25519");
+    let mut file = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path).unwrap();
+    file.write_all(keys.private_file()).unwrap(); drop(file);
+    let output = Command::new("/usr/bin/ssh-keygen").arg("-y").arg("-f").arg(&path).output().unwrap();
+    fs::remove_file(&path).unwrap();
+    assert!(output.status.success());
+    let text = core::str::from_utf8(&output.stdout).unwrap();
+    let mut blob = [0; 51];
+    let decoded = Base64::decode(text.split_ascii_whitespace().nth(1).unwrap(), &mut blob).unwrap();
+    assert_eq!(decoded.len(), 51);
+    assert_eq!(decoded[19..], keys.public_key());
+    let text = core::str::from_utf8(keys.public_file()).unwrap();
+    let mut file_blob = [0; 51];
+    assert_eq!(Base64::decode(text.split_ascii_whitespace().nth(1).unwrap(), &mut file_blob).unwrap(), decoded);
+}
+
 struct Authority { enabled: Cell<bool>, key: [u8; 32] }
 impl IdentityAuthority for Authority {
     // ------------------------=
