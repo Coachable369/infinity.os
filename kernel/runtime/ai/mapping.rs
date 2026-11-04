@@ -762,11 +762,32 @@ impl ConfiguredMap {
     // DESC: Projects validated installed targets into model context; editable prose cannot grant execution authority.
     // ------------------=
     pub fn inference_directory(&self, out: &mut [u8]) -> Option<usize> {
+        self.inference_directory_subset(out, false)
+    }
+    // ------------------------=
+    // FUNC: conversation_directory
+    // DESC: Provides registered everyday controls for the resident conversation prefix; other tools remain available through deferred discovery.
+    // ------------------=
+    pub fn conversation_directory(&self, out: &mut [u8]) -> Option<usize> {
+        self.inference_directory_subset(out, true)
+    }
+    // ------------------------=
+    // FUNC: inference_directory_subset
+    // DESC: Projects only validated native targets; compact context never grants additional execution authority.
+    // ------------------=
+    fn inference_directory_subset(&self, out: &mut [u8], everyday: bool) -> Option<usize> {
         let (_, covered) = walk(&self.bytes[..self.length], None).ok()?;
         let mut length = 0;
         for (index, target) in CAPABILITY_TARGETS.iter().enumerate() {
             // Older maps inherit additive native capabilities, exactly as alias resolution does.
             if !covered[index] && index < 103 { continue; }
+            if everyday && !(target.starts_with(b"OS_OPEN:") || target.starts_with(b"OS_CLOCK:")
+                || target.starts_with(b"OS_SETTING:") || *target == b"OS_CLOSE:active"
+                || (target.ends_with(ARGUMENT) && (target.starts_with(b"OS_FOCUS:")
+                    || target.starts_with(b"OS_CLOSE:") || target.starts_with(b"OS_MINIMIZE:")
+                    || target.starts_with(b"OS_MAXIMIZE:") || target.starts_with(b"OS_RESTORE:")))) {
+                continue;
+            }
             let end = length + target.len() + 1;
             let destination = out.get_mut(length..end)?;
             destination[..target.len()].copy_from_slice(target);

@@ -162,7 +162,11 @@ def main():
     parser.add_argument("--lifetime", action="store_true", help="Run shared-heap Whisper/Kokoro lifetime and quarantine acceptance")
     parser.add_argument("--profile", action="store_true", help="Capture explicitly instrumented diagnostic operation totals, not release latency")
     parser.add_argument("--opening-phrase", action="store_true", help="Measure the production initial phrase instead of the full paragraph; not a full-response speedup")
+    parser.add_argument("--matrix-load", action="store_true", help="Continuously execute native Q4 matrices concurrently with synthesis")
+    parser.add_argument("--no-speech-priority", action="store_true", help="Controlled comparison without speech worker reservation")
     args = parser.parse_args()
+    if args.matrix_load and (args.lifetime or args.cpus != 8):
+        parser.error("Concurrent matrix acceptance requires the eight-CPU ordinary probe")
     if args.opening_phrase and (args.lifetime or args.profile or args.baseline_object):
         parser.error("Opening phrase measurement requires the ordinary release engine")
     if args.lifetime and args.profile:
@@ -194,6 +198,8 @@ crate-type = ["staticlib"]
 [features]
 baseline-math = []
 opening-phrase = []
+matrix-load = []
+no-speech-priority = []
 [profile.release]
 opt-level = 3
 panic = "abort"
@@ -206,7 +212,9 @@ lto = true
                        INFINITY_PROBE_HELPERS="1" if helpers_expected else "0")
     if fixture is not None:
         environment["INFINITY_STT_FIXTURE"] = str(fixture)
-    features = ("--features", "baseline-math") if baseline is not None else (("--features", "opening-phrase") if args.opening_phrase else ())
+    enabled = (["baseline-math"] if baseline is not None else []) + (["opening-phrase"] if args.opening_phrase else [])
+    enabled += (["matrix-load"] if args.matrix_load else []) + (["no-speech-priority"] if args.no_speech_priority else [])
+    features = ("--features", ",".join(enabled)) if enabled else ()
     run("cargo", "build", "--quiet", "--manifest-path", cargo, "--release", "-Z", "build-std=core",
         "--target", "aarch64-unknown-none-softfloat", *features, env=environment)
     math_object = output / "worker-math.o"
@@ -244,7 +252,10 @@ lto = true
     payload = data.split(marker, 1)[1]
     online, = struct.unpack_from("<Q", payload)
     helpers, = struct.unpack_from("<Q", payload, len(payload) - 8)
-    binary = payload[8:-8]
+    matrix_jobs = struct.unpack_from("<Q", payload, len(payload) - 16)[0] if args.matrix_load else 0
+    if args.matrix_load and not matrix_jobs:
+        raise ValueError("Concurrent matrix workload did not complete")
+    binary = payload[8:-16 if args.matrix_load else -8]
     cases = decode_lifetime(binary) if args.lifetime else latency.decode(binary, allow_profile=args.profile)[0]
     profile = None
     if args.profile:
@@ -271,6 +282,7 @@ lto = true
         native_hash = hashlib.file_digest(image, "sha256").hexdigest()
     evidence = dict(environment="firmware-loaded native ARM64 workers", installed_verified=False,
                     opening_phrase_only=args.opening_phrase,
+                    concurrent_matrix_jobs=matrix_jobs, speech_priority=not args.no_speech_priority,
                     cpus=args.cpus, helpers_enabled=helpers_expected, online_workers=online,
                     helper_completions=helpers, cases=rows,
                     mixed_engine_lifetime=args.lifetime,

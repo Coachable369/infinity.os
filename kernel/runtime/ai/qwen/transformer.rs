@@ -285,6 +285,22 @@ impl<'a, 'b> Engine<'a, 'b> {
         super::workers::discard();
         self.cancelled = true;
     }
+
+    // ------------------------=
+    // FUNC: constrained_token
+    // DESC: Chooses the highest-scoring permitted token from existing logits without repeating inference.
+    // ------------------=
+    pub fn constrained_token(&self, mut permitted: impl FnMut(u32) -> bool) -> Option<u32> {
+        let mut best = None;
+        let mut score = f32::NEG_INFINITY;
+        for (index, value) in self.logits[..self.weights.vocabulary].iter().enumerate() {
+            if value.is_finite() && *value > score && permitted(index as u32) {
+                best = Some(index as u32);
+                score = *value;
+            }
+        }
+        best
+    }
     // ------------------------=
     // FUNC: resume_prefix
     // DESC: Discards an unfinished token while retaining only fully computed KV positions.

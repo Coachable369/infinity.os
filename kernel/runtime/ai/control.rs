@@ -1,7 +1,53 @@
 //! Bounded desktop tools. Model output is data until an authenticated UI dispatch.
+// ------------------------=
+// FUNC: protocol_prefix
+// DESC: Restricts generated tool syntax to registered commands; final decoding and authorization remain mandatory.
+// ------------------=
+pub fn protocol_prefix(bytes: &[u8]) -> bool {
+    let bytes = bytes.trim_ascii();
+    if bytes.contains(&b'\n') || bytes.contains(&b'\r') { return false; }
+    if b"OS_TOOLS".starts_with(bytes) || bytes == b"OS_TOOLS" { return true; }
+    super::mapping::CAPABILITY_TARGETS.iter().any(|target| {
+        if let Some(prefix) = target.strip_suffix(b"{argument}") {
+            prefix.starts_with(bytes) || (bytes.starts_with(prefix)
+                && bytes[prefix.len()..].iter().all(|byte| *byte >= 32))
+        } else {
+            target.starts_with(bytes) || *target == bytes
+        }
+    })
+}
+
+// ------------------------=
+// FUNC: protocol_allows
+// DESC: Supplies the inference engine a syntax-only filter while keeping native dispatch outside the model service.
+// ------------------=
+pub fn protocol_allows(bytes: &[u8], complete: bool) -> bool {
+    if complete { bytes.trim_ascii() == b"OS_TOOLS" || (!bytes.trim_ascii().ends_with(b":")
+        && Command::decode(bytes.trim_ascii()).is_some()) }
+    else { protocol_prefix(bytes) }
+}
+
 #[cfg(test)]
 mod native_control_tests {
     use super::*;
+    // ------------------------=
+    // FUNC: tool_grammar_preserves_registered_commands
+    // DESC: Exercises incremental tool prefixes, dynamic arguments, completion, and malformed multi-action rejection.
+    // ------------------=
+    #[test]
+    fn tool_grammar_preserves_registered_commands() {
+        for command in [b"OS_OPEN:task_manager".as_slice(), b"OS_CLOCK:zone:UTC", b"OS_SETTING:name:Jonathan", b"OS_TOOLS"] {
+            for length in 0..=command.len() { assert!(protocol_prefix(&command[..length])); }
+            assert!(command == b"OS_TOOLS" || Command::decode(command).is_some());
+        }
+        for invalid in [b"OS_TASK_MANAGER".as_slice(), b"OS_OPEN:unknown", b"OS_CLOSE:browser\nOS_OPEN:settings"] {
+            assert!(!protocol_prefix(invalid));
+        }
+        assert!(protocol_allows(b"OS_OPEN:", false));
+        assert!(!protocol_allows(b"OS_OPEN:", true));
+        assert!(protocol_allows(b"OS_OPEN:task_manager", true));
+        assert!(!protocol_allows(b"OS_SETTING:name:", true));
+    }
     // ------------------------=
     // FUNC: model_application_labels_resolve_like_canonical_identifiers
     // DESC: Keeps semantic model output on the same built-in dispatch path regardless of display-name capitalization.
@@ -614,6 +660,7 @@ impl Command {
 pub fn protocol_output(bytes: &[u8]) -> bool {
     let bytes = bytes.trim_ascii();
     [
+        b"OS_TOOLS".as_slice(),
         b"OS_OPEN:".as_slice(),
         b"OS_FOCUS:",
         b"OS_CLOSE:",

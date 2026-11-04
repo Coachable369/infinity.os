@@ -394,7 +394,7 @@ fn submit_mode(
         STATE.store(1, Ordering::Release);
         // Inference can temporarily occupy every AP. Keep one bounded job
         // queued and retry on poll rather than dropping a streaming reply.
-        DISPATCHED = super::qwen::workers::background(worker);
+        DISPATCHED = super::qwen::workers::background_speech(worker);
         trace(if DISPATCHED {
             b"job dispatched"
         } else {
@@ -771,7 +771,7 @@ pub fn poll() {
                 STATE.store(6, Ordering::Release);
                 retire();
             } else {
-                DISPATCHED = super::qwen::workers::background(worker);
+                DISPATCHED = super::qwen::workers::background_speech(worker);
             }
             return;
         }

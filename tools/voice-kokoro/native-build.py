@@ -92,6 +92,29 @@ def main():
         replacement = ROOT / "tools/voice-kokoro/overrides" / source.name
         if replacement.exists():
             source = replacement
+        if source.name == "binary-ops.cpp":
+            original = source.read_text()
+            anchor = "        if (is_src1_contiguous_rows) {"
+            if original.count(anchor) != 1:
+                raise RuntimeError("Unreviewed scalar broadcast boundary")
+            # A scalar per row is common in normalization and style conditioning.
+            # Hoist its load and conversion so the compiler can vectorize the row
+            # instead of executing a runtime-sized one-element inner loop.
+            scalar = """        if (ne10 == 1 &&
+            (reinterpret_cast<uintptr_t>(src1_ptr) + sizeof(src1_t) <= reinterpret_cast<uintptr_t>(dst_ptr) ||
+             reinterpret_cast<uintptr_t>(src1_ptr) >= reinterpret_cast<uintptr_t>(dst_ptr) + ne00 * sizeof(dst_t))) {
+            constexpr auto to0 = type_conversion_table<src0_t>::to_f32;
+            constexpr auto to1 = type_conversion_table<src1_t>::to_f32;
+            constexpr auto from = type_conversion_table<dst_t>::from_f32;
+            const float scalar = to1(*src1_ptr);
+            for (int64_t column = 0; column < ne00; ++column) {
+                dst_ptr[column] = from(op(to0(src0_ptr[column]), scalar));
+            }
+            continue;
+        }
+"""
+            source = output / "binary-ops.cpp"
+            source.write_text(original.replace(anchor, scalar + anchor))
         if source.name == "ops.cpp":
             original = source.read_text()
             anchor = "static void ggml_compute_forward_im2col_f16("
@@ -104,6 +127,25 @@ def main():
                 raise RuntimeError("Unreviewed half convolution dispatch boundary")
             original = original.replace(dispatch,
                 "                if (!native_im2col1d_f16(params, dst))\n" + dispatch)
+            norm = "void ggml_compute_forward_norm("
+            norm_dispatch = "                ggml_compute_forward_norm_f32(params, dst);"
+            if original.count(norm) != 1 or original.count(norm_dispatch) != 1:
+                raise RuntimeError("Unreviewed normalization boundary")
+            original = original.replace(norm,
+                '#include "' + str(ROOT / "tools/voice-kokoro/norm-parallel.h") + '"\n\n' + norm)
+            original = original.replace(norm_dispatch,
+                "                if (!native_norm_parallel(params, dst))\n" + norm_dispatch)
+            transpose = "static void ggml_compute_forward_conv_transpose_1d_f16_f32("
+            if original.count(transpose) != 1:
+                raise RuntimeError("Unreviewed transpose convolution boundary")
+            original = original.replace(transpose,
+                '#include "' + str(ROOT / "tools/voice-kokoro/transpose-parallel.h") + '"\n\n' + transpose)
+            for value_type in ("ggml_fp16_t", "float"):
+                prepared = value_type + " * const wdata_src = wdata + nk;"
+                if original.count(prepared) != 1:
+                    raise RuntimeError("Unreviewed transpose workspace boundary")
+                original = original.replace(prepared, prepared +
+                    "\n    if (native_transpose_parallel(params, dst, wdata, wdata_src)) return;")
             source = output / "ops.cpp"
             source.write_text(original + '\n#include "' + str(ROOT / "tools/voice-kokoro/im2col1d-test.h") + '"\n')
         if source.name == "ggml-cpu.c":

@@ -238,6 +238,11 @@ mod qwen { pub mod workers {
         if crate::WORKER_BUSY.load(crate::Ordering::SeqCst) { return false; }
         unsafe { crate::TASK = Some(task); } true
     }
+    // ------------------------=
+    // FUNC: background_speech
+    // DESC: Uses the same deterministic admission seam; worker priority is verified by the real scheduler tests.
+    // ------------------=
+    pub unsafe fn background_speech(task: unsafe fn()) -> bool { background(task) }
 } }
 #[path = "../kernel/runtime/ai/voice_output.rs"] mod voice_output;
 // ------------------------=

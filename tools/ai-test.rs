@@ -3,6 +3,8 @@
 mod runtime;
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
+#[path = "../kernel/runtime/ai/speech_chunk.rs"]
+mod measured_speech_chunk;
 
 // ------------------------=
 // FUNC: output_text
@@ -1055,14 +1057,20 @@ fn memory_native_turn(ai: &mut AiRuntime, case: &str, prompt: &[u8], voice: bool
     if case == "warm_same_profile" {
         assert!(reused > 0, "Reloading identical memory must preserve the completed KV prefix");
         if assert_routing { assert!(prefill < 20, "Unchanged personal facts must not be repeated on every greeting"); }
+    } else if std::env::var_os("HERMES_MEMORY_PRIME").is_some() {
+        assert!(reused > 0, "Idle preparation must retain completed KV positions");
     } else {
         assert_eq!(reused, 0, "New or changed personal memory must not reuse stale KV history");
     }
     let mut first_token_ns = None;
+    let mut first_speakable_ns = None;
+    let maximum_tokens = std::env::var("HERMES_MEMORY_MAX_TOKENS").ok()
+        .map(|value| value.parse::<u64>().unwrap()).unwrap_or(48);
+    assert!((1..=512).contains(&maximum_tokens));
     let mut token_times_ns = Vec::new();
     let mut observed_tokens = 0;
     while ai.chat.generation_state == GenerationState::Running
-        && ai.qwen_tokens < 48 && started.elapsed().as_secs() < 240 {
+        && ai.qwen_tokens < maximum_tokens && started.elapsed().as_secs() < 240 {
         ai.poll_qwen();
         if ai.qwen_tokens > observed_tokens {
             assert_eq!(ai.qwen_tokens, observed_tokens + 1);
@@ -1071,24 +1079,56 @@ fn memory_native_turn(ai: &mut AiRuntime, case: &str, prompt: &[u8], voice: bool
             first_token_ns.get_or_insert(elapsed);
             token_times_ns.push(elapsed);
         }
+        let output = ai.acceptance_native_output();
+        let complete = ai.chat.generation_state == GenerationState::Complete;
+        let count = measured_speech_chunk::next(output, complete, true);
+        if count > 0 && measured_speech_chunk::playback_boundary(&output[..count], complete) {
+            first_speakable_ns.get_or_insert(started.elapsed().as_nanos());
+        }
     }
     let observed_ns = started.elapsed().as_nanos();
     let complete = ai.chat.generation_state == GenerationState::Complete;
     let boundary = if complete { "complete" }
-        else if ai.qwen_tokens >= 48 { "token_limit" }
+        else if ai.qwen_tokens >= maximum_tokens { "token_limit" }
         else if started.elapsed().as_secs() >= 240 { "deadline" }
         else { "generation_failure" };
     if complete {
         assert!(observed_tokens > 0 && !ai.acceptance_native_output().is_empty());
     }
     let receipt = format!(
-        "{{\"case\":\"{case}\",\"origin\":\"{}\",\"workers\":{workers},\"prompt_bytes\":{:?},\"prompt_tokens\":{prompt_tokens},\"prefill_tokens\":{prefill},\"reused_tokens\":{reused},\"desktop_context\":{desktop_context},\"admission_ns\":{admission_ns},\"first_token_ns\":{},\"complete_ns\":{},\"observed_ns\":{observed_ns},\"complete\":{complete},\"boundary\":\"{boundary}\",\"tokens\":{},\"token_times_ns\":{:?},\"output_bytes\":{:?}}}",
+        "{{\"case\":\"{case}\",\"origin\":\"{}\",\"workers\":{workers},\"prompt_bytes\":{:?},\"prompt_tokens\":{prompt_tokens},\"prefill_tokens\":{prefill},\"reused_tokens\":{reused},\"desktop_context\":{desktop_context},\"admission_ns\":{admission_ns},\"first_token_ns\":{},\"first_speakable_ns\":{},\"complete_ns\":{},\"observed_ns\":{observed_ns},\"complete\":{complete},\"boundary\":\"{boundary}\",\"tokens\":{},\"token_times_ns\":{:?},\"output_bytes\":{:?}}}",
         if voice { "recognized_voice_transcript" } else { "typed_text" },
         prompt, first_token_ns.map_or("null".into(), |value| value.to_string()),
+        first_speakable_ns.map_or("null".into(), |value| value.to_string()),
         if complete { observed_ns.to_string() } else { "null".into() },
         ai.qwen_tokens, token_times_ns, ai.acceptance_native_output());
     if ai.chat.generation_state == GenerationState::Running { ai.cancel_chat(); }
     (receipt, complete)
+}
+
+// ------------------------=
+// FUNC: memory_prime_interrupt_contract
+// DESC: Verifies idle model work publishes nothing, yields to a voice turn, and cannot survive an authenticated owner change.
+// ------------------=
+fn memory_prime_interrupt_contract(ai: &mut AiRuntime) {
+    let owner = [0x71; 16];
+    ai.bind_chat_owner(owner);
+    ai.load_hermes_memory([0x72; 16], Some(runtime::ai::hermes_profile::Document::new(
+        owner, b"Casey", b"Infinity").unwrap()));
+    ai.prime_desktop_context();
+    assert!(ai.acceptance_native_priming());
+    assert_eq!(ai.chat.message_count(), 0);
+    assert!(ai.acceptance_native_output().is_empty());
+    for byte in b"What is your name?" { assert!(ai.chat.push_input(*byte)); }
+    assert!(ai.submit_voice_chat());
+    assert!(!ai.acceptance_native_priming());
+    assert_eq!(ai.chat.generation_state, GenerationState::Running);
+    assert!(ai.cancel_chat());
+    ai.bind_chat_owner([0x73; 16]);
+    assert_eq!(ai.acceptance_native_context(), Some((&[][..], false)));
+    assert!(!ai.acceptance_native_priming());
+    assert_eq!(ai.chat.message_count(), 0);
+    runtime::ai::qwen::workers::drain();
 }
 
 // ------------------------=
@@ -1141,16 +1181,29 @@ fn memory_native() {
         } else if case == "changed_profile" {
             ai.load_hermes_memory(session, Some(profile.updated(owner, b"user_name", b"Sam").unwrap()));
         }
+        if std::env::var_os("HERMES_MEMORY_PRIME").is_some() {
+            let start = Instant::now();
+            loop {
+                ai.prime_desktop_context();
+                let (tokens, _) = ai.acceptance_native_context().unwrap();
+                if !tokens.is_empty() && !ai.acceptance_native_priming() { break; }
+                assert!(start.elapsed().as_secs() < 120);
+            }
+            println!("idle_prepare_ns={}", start.elapsed().as_nanos());
+        }
         let (receipt, complete) = memory_native_turn(&mut ai, case, prompt.as_bytes(),
             voice, workers, assert_routing);
         println!("{receipt}");
         receipts.push(receipt);
         all_complete &= complete;
+        if !complete || std::env::var_os("HERMES_MEMORY_COLD_ONLY").is_some() { break; }
     }
+    if std::env::var_os("HERMES_MEMORY_PRIME").is_some() { memory_prime_interrupt_contract(&mut ai); }
     unsafe { runtime::ai::qwen::workers::stop_host_workers(); }
     for thread in threads { thread.join().unwrap(); }
     let receipt = format!(
-        "{{\"schema\":1,\"boundary\":\"native host transcript submission to text generation; excludes model load, speech recognition, durable memory storage, audio and installed presentation\",\"model\":\"Hermes-3-Llama-3.2-3B.Q4_K_M\",\"maximum_tokens\":48,\"deadline_seconds\":240,\"all_complete\":{all_complete},\"routing_asserted\":{assert_routing},\"turns\":[{}]}}\n",
+        "{{\"schema\":1,\"boundary\":\"native host transcript submission to text generation; excludes model load, speech recognition, durable memory storage, audio and installed presentation\",\"model\":\"Hermes-3-Llama-3.2-3B.Q4_K_M\",\"maximum_tokens\":{},\"deadline_seconds\":240,\"all_complete\":{all_complete},\"routing_asserted\":{assert_routing},\"turns\":[{}]}}\n",
+        std::env::var("HERMES_MEMORY_MAX_TOKENS").unwrap_or_else(|_| "48".into()),
         receipts.join(","));
     if let Some(path) = report {
         std::fs::OpenOptions::new().write(true).create_new(true).open(path).unwrap()
@@ -1371,6 +1424,14 @@ fn settings_mutation_contract() {
     let targets: Vec<&[u8]> = directory[..length].split(|byte| *byte == b'\n').filter(|line| !line.is_empty()).collect();
     assert_eq!(targets, mapping::CAPABILITY_TARGETS.to_vec());
     assert_eq!(configured.inference_directory(&mut [0; 1]), None);
+    let length = configured.conversation_directory(&mut directory).unwrap();
+    let commands: Vec<_> = directory[..length].split(|byte| *byte == b'\n')
+        .filter_map(Command::decode).collect();
+    assert!(commands.contains(&Command::TextEditor));
+    assert!(commands.contains(&Command::FileNavigator));
+    assert!(commands.contains(&Command::CloseActive));
+    assert!(commands.contains(&Command::Clock(runtime::ai::clock::Request::Read)));
+    assert_eq!(configured.conversation_directory(&mut [0; 1]), None);
     assert_eq!(mapping::validate_registry(mapping::REGISTRY_DEFAULT), Ok(()));
     assert!(mapping::validate_registry(b"{}").is_err());
     let invalid = String::from_utf8(mapping::REGISTRY_DEFAULT.to_vec()).unwrap().replace("OS_SETTING:name:{argument}", "OS_SETTING:erase:{argument}");
@@ -1475,8 +1536,11 @@ fn app_native() {
     let arena = Box::leak(vec![0u128; 1280 * 1024 * 1024 / 16].into_boxed_slice());
     let arena = unsafe { std::slice::from_raw_parts_mut(arena.as_mut_ptr().cast::<u8>(), arena.len() * 16) };
     assert!(ai.load_hermes(weights, arena));
-    let threads: Vec<_> = (0..4).map(|i| std::thread::spawn(move || unsafe { runtime::ai::qwen::workers::run_host_worker(i) })).collect();
-    while runtime::ai::qwen::workers::online() != 4 { std::thread::yield_now(); }
+    let workers = std::env::var("HERMES_CONTROL_WORKERS").ok()
+        .map(|value| value.parse::<usize>().unwrap()).unwrap_or(4);
+    assert!((1..=16).contains(&workers));
+    let threads: Vec<_> = (0..workers).map(|i| std::thread::spawn(move || unsafe { runtime::ai::qwen::workers::run_host_worker(i) })).collect();
+    while runtime::ai::qwen::workers::online() != workers { std::thread::yield_now(); }
     if std::env::args().any(|arg| arg == "--control-native") {
         control_native(&mut ai);
         unsafe { runtime::ai::qwen::workers::stop_host_workers(); }
@@ -1725,12 +1789,16 @@ fn control_native(ai: &mut AiRuntime) {
                 actual = Some(command);
                 ai.finish_control(command, true);
             }
-            assert!(start.elapsed().as_secs() < 180, "control inference deadline");
+            assert!(start.elapsed().as_secs() < 180, "control inference deadline: prefill={}, tokens={}, output={}",
+                ai.qwen_metrics.prefill_tokens, ai.qwen_tokens, String::from_utf8_lossy(ai.acceptance_native_output()));
         }
-        assert_eq!(actual, *expected, "case {index}: {}", String::from_utf8_lossy(ai.acceptance_native_output()));
+        assert_eq!(actual, *expected, "case {index}, prefill={}, elapsed_ms={}: {}",
+            ai.qwen_metrics.prefill_tokens, start.elapsed().as_millis(), String::from_utf8_lossy(ai.acceptance_native_output()));
         assert_eq!(ai.chat.generation_state, GenerationState::Complete);
         assert_eq!(ai.take_control(owner, true), None);
-        println!("control case {index} passed: {actual:?}");
+        assert_eq!(ai.qwen_metrics.prefill_tokens, initial_prefill,
+            "Everyday actions must not reload the complete registry");
+        println!("control case {index} passed: {actual:?}; prefill={initial_prefill}; elapsed_ms={}", start.elapsed().as_millis());
         assert!(ai.chat.selected_model_ready());
     }
     let owner = [cases.len() as u8;16];

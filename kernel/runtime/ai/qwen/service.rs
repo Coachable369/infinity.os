@@ -16,9 +16,11 @@ pub struct Service {
     output_count: usize,
     generated: usize,
     busy: bool,
+    priming: bool,
     completed: bool,
     stop_reason: StopReason,
     desktop_context: bool,
+    tool_grammar: Option<fn(&[u8], bool) -> bool>,
     turn_start: usize,
     turn_desktop_context: bool,
     personal_context: [u8; 1536],
@@ -81,6 +83,7 @@ impl Service {
     // DESC: Retains idle desktop tokens while an isolated app turn temporarily borrows this model's cache.
     // ------------------=
     pub fn suspend_conversation(&mut self) -> Option<Conversation> {
+        self.interrupt_priming();
         if self.busy {
             return None;
         }
@@ -204,9 +207,11 @@ impl Service {
             output_count: 0,
             generated: 0,
             busy: false,
+            priming: false,
             completed: false,
             stop_reason: StopReason::None,
             desktop_context: false,
+            tool_grammar: None,
             turn_start: 0,
             turn_desktop_context: false,
             personal_context: [0; 1536],
@@ -216,6 +221,13 @@ impl Service {
             allocated_bytes: bytes.len() + arena.len() + core::mem::size_of::<Self>(),
             worker_start: [0; 3],
         })
+    }
+    // ------------------------=
+    // FUNC: set_tool_grammar
+    // DESC: Attaches the owner's registered protocol grammar without coupling inference to desktop services.
+    // ------------------=
+    pub fn set_tool_grammar(&mut self, grammar: fn(&[u8], bool) -> bool) {
+        self.tool_grammar = Some(grammar);
     }
     // ------------------------=
     // FUNC: submit_personal
@@ -273,6 +285,7 @@ impl Service {
     // DESC: Admits a typed inference purpose only when its complete tokenized prompt leaves the required output budget.
     // ------------------=
     pub fn submit_with_kind(&mut self, text: &[u8],kind:SubmissionKind) -> Result<(), Error> {
+        self.interrupt_priming();
         if self.busy || text.is_empty() {
             return Err(Error::Unsupported);
         }
@@ -393,6 +406,7 @@ impl Service {
         self.stop_reason = StopReason::Cancelled;
         self.engine.cancel();
         self.busy = false;
+        self.priming = false;
     }
     // ------------------------=
     // FUNC: clear_conversation
@@ -414,7 +428,54 @@ impl Service {
     // DESC: Reports whether bounded inference work remains queued.
     // ------------------=
     pub fn busy(&self) -> bool {
-        self.busy
+        self.busy && !self.priming
+    }
+    // ------------------------=
+    // FUNC: priming
+    // DESC: Reports optional idle prefix work which never blocks a submitted user turn.
+    // ------------------=
+    pub fn priming(&self) -> bool { self.priming }
+    // ------------------------=
+    // FUNC: needs_desktop_prime
+    // DESC: Avoids rebuilding personal context on idle ticks once token history exists.
+    // ------------------=
+    pub fn needs_desktop_prime(&self) -> bool { self.hermes && !self.busy && self.prompt_count == 0 }
+    // ------------------------=
+    // FUNC: interrupt_priming
+    // DESC: Stops idle work at its last complete KV position while retaining the trusted prefix tokens.
+    // ------------------=
+    fn interrupt_priming(&mut self) {
+        if self.priming {
+            self.engine.resume_prefix();
+            self.priming = false;
+            self.busy = false;
+        }
+    }
+    // ------------------------=
+    // FUNC: prime_desktop
+    // DESC: Prefills stable authenticated context in cooperative idle slices without predicting or publishing a response.
+    // ------------------=
+    pub fn prime_desktop(&mut self, guidance: &[u8], context: &[u8]) -> Result<bool, Error> {
+        if !self.hermes || self.busy || self.prompt_count != 0 { return Ok(false); }
+        if context.len() > self.personal_context.len() { return Err(Error::Overflow); }
+        let guidance = core::str::from_utf8(guidance).map_err(|_| Error::Format)?;
+        let facts = core::str::from_utf8(context).map_err(|_| Error::Format)?;
+        let encoded = self.control(b"<|im_start|>").and_then(|()| self.text("system\n"))
+            .and_then(|()| self.text(guidance)).and_then(|()| self.text(facts));
+        if let Err(error) = encoded { self.prompt_count = 0; return Err(error); }
+        if let Err(error) = self.engine.begin_with_prediction(self.prompt[0], false) {
+            self.clear_conversation();
+            return Err(error);
+        }
+        self.consumed = 1;
+        self.turn_start = 0;
+        self.turn_desktop_context = false;
+        self.desktop_context = true;
+        self.personal_context[..context.len()].copy_from_slice(context);
+        self.personal_context_len = context.len();
+        self.priming = true;
+        self.busy = true;
+        Ok(true)
     }
     // ------------------------=
     // FUNC: completed
@@ -474,12 +535,17 @@ impl Service {
         if !self.busy {
             return Ok(false);
         }
-        let next = match self.engine.step()? {
+        let mut next = match self.engine.step()? {
             Progress::Token(next) => next,
             Progress::Prefilled => {
+                if self.priming && self.consumed == self.prompt_count {
+                    self.priming = false;
+                    self.busy = false;
+                    return Ok(false);
+                }
                 self.engine.begin_with_prediction(
                     self.prompt[self.consumed],
-                    self.consumed + 1 == self.prompt_count,
+                    !self.priming && self.consumed + 1 == self.prompt_count,
                 )?;
                 self.consumed += 1;
                 return Ok(false);
@@ -490,6 +556,35 @@ impl Service {
             self.engine.begin(self.prompt[self.consumed])?;
             self.consumed += 1;
             return Ok(false);
+        }
+        // Constrain only an actual tool record, never ordinary conversational text.
+        // The model chooses the action; the registry supplies its executable syntax.
+        if let Some(grammar) = self.tool_grammar.filter(|_| self.desktop_context) {
+            let mut candidate = [0u8; 1024];
+            let length = self.tokenizer.decode(next, &mut candidate).unwrap_or(0);
+            let current = &self.output[..self.output_count];
+            let mut record = [0u8; 2048];
+            if current.len() + length <= record.len() {
+                record[..current.len()].copy_from_slice(current);
+                record[current.len()..current.len() + length].copy_from_slice(&candidate[..length]);
+                if record[..current.len() + length].trim_ascii_start().starts_with(b"OS_") {
+                    let end = if self.hermes { 128039 } else { 2 };
+                    let tokenizer = &self.tokenizer;
+                    let mut permitted = |token| {
+                        if token == end {
+                            return grammar(current, true);
+                        }
+                        let Ok(count) = tokenizer.decode(token, &mut candidate) else { return false; };
+                        if count == 0 || current.len() + count > record.len() { return false; }
+                        record[current.len()..current.len() + count].copy_from_slice(&candidate[..count]);
+                        let combined = record[..current.len() + count].trim_ascii_start();
+                        combined.starts_with(b"OS_") && grammar(combined, false)
+                    };
+                    if !permitted(next) {
+                        next = self.engine.constrained_token(permitted).ok_or(Error::Format)?;
+                    }
+                }
+            }
         }
         if (self.ministral && next == 2)
             || (self.hermes && next == 128039)

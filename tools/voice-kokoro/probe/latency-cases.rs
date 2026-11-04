@@ -111,9 +111,32 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: &boot_info::BootInfo) -> ! 
         assert!(workers::clock_ns().saturating_sub(start) < 3_000_000_000);
         core::hint::spin_loop();
     }
+    #[cfg(feature = "no-speech-priority")]
     assert!(workers::background(speech_cases));
+    #[cfg(not(feature = "no-speech-priority"))]
+    assert!(workers::background_speech(speech_cases));
+    #[cfg(feature = "matrix-load")]
+    loop {
+        static DATA: [u8; 3072 * 12 * 144] = [0; 3072 * 12 * 144];
+        let input = [0.125f32; 3072];
+        let mut output = [f32::NAN; 3072];
+        let mut cursor = 0;
+        loop {
+            match workers::rows(12, &DATA, &input, &mut output, &mut cursor) {
+                Some(true) => break,
+                Some(false) => core::hint::spin_loop(),
+                None => panic!("Matrix load must use native workers"),
+            }
+        }
+        assert!(output.iter().all(|value| *value == 0.0));
+        MATRIX_JOBS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+    #[cfg(not(feature = "matrix-load"))]
     loop { core::arch::asm!("wfe", options(nomem, nostack)); }
 }
+
+#[cfg(feature = "matrix-load")]
+static MATRIX_JOBS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 // ------------------------=
 // FUNC: cancel
@@ -191,6 +214,12 @@ unsafe fn speech_cases() {
     #[cfg(not(feature = "baseline-math"))]
     assert_eq!(native_verify_matrix_tiles(), 392);
     bytes(&0u64.to_le_bytes()); // Firmware-owned stack: use standalone canary probe for its bound.
+    #[cfg(feature = "matrix-load")]
+    {
+        let jobs = MATRIX_JOBS.load(core::sync::atomic::Ordering::Relaxed);
+        assert!(jobs > 0);
+        bytes(&jobs.to_le_bytes());
+    }
     bytes(&(workers::parallel_completed() as u64).to_le_bytes());
     finish()
 }

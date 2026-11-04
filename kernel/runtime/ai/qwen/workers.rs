@@ -14,7 +14,7 @@ const MATRIX_ROWS: usize = 131072;
 const CHUNK_ROWS: usize = 32;
 const RESERVED: usize = 5;
 const PURE_MATH: usize = 6;
-const MAX_PURE_HELPERS: usize = 3;
+const MAX_PURE_HELPERS: usize = 5;
 static NEXT_ROW: AtomicUsize = AtomicUsize::new(0);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 // Exclusive row ranges are assigned by NEXT_ROW; BSP reads only after all APs
@@ -39,6 +39,7 @@ struct PureJob {
 }
 struct Slot {
     state: AtomicUsize,
+    speech: AtomicBool,
     job: UnsafeCell<Job>,
 }
 // SAFETY: state release/acquire transfers exclusive access to each job buffer.
@@ -51,6 +52,7 @@ impl Slot {
     const fn new() -> Self {
         Self {
             state: AtomicUsize::new(0),
+            speech: AtomicBool::new(false),
             job: UnsafeCell::new(Job {
                 background: None,
                 pure: core::ptr::null(),
@@ -179,7 +181,7 @@ pub fn profile_ms() -> (u64, u64) {
 static mut PENDING: (usize, usize, bool) = (0, 0, false);
 // BSP-owned single waiting task. Matrix collection releases its inputs before
 // dispatching this task, so streaming inference cannot repeatedly win every AP.
-static mut WAITING_BACKGROUND: Option<unsafe fn()> = None;
+static mut WAITING_BACKGROUND: Option<(unsafe fn(), bool)> = None;
 
 // ------------------------=
 // FUNC: online
@@ -244,6 +246,23 @@ pub unsafe fn stop_host_workers() {
 /// A task may use infinity_speech_parallel only for its separately documented
 /// allocation-free pure-math contract.
 pub unsafe fn background(task: unsafe fn()) -> bool {
+    background_with_priority(task, false)
+}
+
+// ------------------------=
+// FUNC: background_speech
+// DESC: Admits a speech task whose active mailbox reserves helper capacity against concurrent LLM matrices.
+// ------------------=
+/// Safety: same BSP ownership and bounded callback contract as background.
+pub unsafe fn background_speech(task: unsafe fn()) -> bool {
+    background_with_priority(task, true)
+}
+
+// ------------------------=
+// FUNC: background_with_priority
+// DESC: Publishes priority with the job lease and retains it if a matrix-boundary handoff is needed.
+// ------------------=
+unsafe fn background_with_priority(task: unsafe fn(), speech: bool) -> bool {
     if WAITING_BACKGROUND.is_some() {
         return false;
     }
@@ -256,6 +275,7 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
                 .is_ok()
         {
             (*slot.job.get()).background = Some(task);
+            slot.speech.store(speech, Ordering::Relaxed);
             slot.state.store(4, Ordering::Release);
             #[cfg(not(target_os = "none"))]
             wake_host(index);
@@ -265,7 +285,7 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
         }
     }
     if PENDING.0 != 0 {
-        WAITING_BACKGROUND = Some(task);
+        WAITING_BACKGROUND = Some((task, speech));
         return true;
     }
     false
@@ -273,7 +293,7 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
 
 // ------------------------=
 // FUNC: infinity_speech_parallel
-// DESC: Borrows up to three idle APs for one allocation-free callback and joins them before returning.
+// DESC: Borrows up to five idle APs for one allocation-free callback and joins them before returning.
 // ------------------=
 /// Safety: called off the BSP by a bounded native job. The callback owns an
 /// atomic work queue and writes only disjoint output; it may not allocate, use
@@ -293,9 +313,14 @@ pub unsafe extern "C" fn infinity_speech_parallel(
     };
     let ready = READY.load(Ordering::Acquire);
     let reserved = ready.trailing_zeros() as usize;
+    // Larger cohorts retain room for matrix progress and another native service,
+    // even when the speech owner itself occupies the reserved first AP.
+    let helper_limit = if ready.count_ones() >= 6 {
+        MAX_PURE_HELPERS.min(ready.count_ones() as usize - 3)
+    } else { MAX_PURE_HELPERS };
     let mut helpers = 0;
     for (index, slot) in SLOTS.iter().enumerate() {
-        if helpers == MAX_PURE_HELPERS {
+        if helpers == helper_limit {
             break;
         }
         if index == reserved
@@ -336,9 +361,9 @@ pub unsafe extern "C" fn infinity_speech_parallel(
 // DESC: Gives an accepted latency-sensitive task the first freed AP at a matrix boundary.
 // ------------------=
 unsafe fn dispatch_waiting_background() {
-    if let Some(task) = WAITING_BACKGROUND.take() {
-        if !background(task) {
-            WAITING_BACKGROUND = Some(task);
+    if let Some((task, speech)) = WAITING_BACKGROUND.take() {
+        if !background_with_priority(task, speech) {
+            WAITING_BACKGROUND = Some((task, speech));
         }
     }
 }
@@ -501,6 +526,7 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                     task();
                 }
                 (*slot.job.get()).background = None;
+                slot.speech.store(false, Ordering::Release);
                 slot.state.store(0, Ordering::Release);
             }
             PURE_MATH => {
@@ -591,14 +617,19 @@ pub unsafe fn rows(
         // Keep one AP available for the permanent browser worker and latency-sensitive
         // speech jobs. A single-AP target still makes forward progress through the
         // existing matrix-boundary handoff.
-        let mut reserve = idle > 1;
+        let speech_active = SLOTS.iter().any(|slot| slot.state.load(Ordering::Acquire) == 4
+            && slot.speech.load(Ordering::Acquire));
+        // During speech, retain two additional helper APs for the next tensor
+        // operation rather than letting every LLM matrix reclaim them. Always
+        // leave at least one idle AP available to inference on smaller targets.
+        let mut reserve = idle.saturating_sub(1).min(if speech_active { 3 } else { 1 });
         let mut mask: usize = 0;
         for (i, slot) in SLOTS.iter().enumerate() {
             if ready & (1 << i) == 0 || slot.state.load(Ordering::Acquire) != 0 {
                 continue;
             }
-            if reserve {
-                reserve = false;
+            if reserve != 0 {
+                reserve -= 1;
                 continue;
             }
             if slot
@@ -718,7 +749,7 @@ mod tests {
     // FUNC: await_condition
     // DESC: Bounds behavioral test coordination without sleeps or production timeout changes.
     // ------------------=
-    fn await_condition(condition: impl Fn() -> bool) {
+    fn await_condition(mut condition: impl FnMut() -> bool) {
         let started = std::time::Instant::now();
         while !condition() {
             assert!(started.elapsed().as_secs() < 5);
@@ -752,6 +783,36 @@ mod tests {
             thread.join().unwrap();
         }
         assert_eq!(online(), 0);
+    }
+    // ------------------------=
+    // FUNC: speech_reserves_helpers_only_for_its_active_lease
+    // DESC: Verifies concurrent inference completes with speech capacity reserved and recovers the full cohort when the speech task retires.
+    // ------------------=
+    #[test]
+    fn speech_reserves_helpers_only_for_its_active_lease() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let threads = start_fixture_workers(6);
+        BACKGROUND_RELEASE.store(false, Ordering::Release);
+        BACKGROUND_STARTED.store(false, Ordering::Release);
+        assert!(unsafe { background_speech(held_background) });
+        await_condition(|| BACKGROUND_STARTED.load(Ordering::Acquire));
+        let data = vec![0u8; 256 * 144];
+        let input = vec![0.125f32; 256];
+        let mut output = vec![f32::NAN; 256];
+        let mut cursor = 0;
+        assert_eq!(unsafe { rows(12, &data, &input, &mut output, &mut cursor) }, Some(false));
+        assert_eq!(unsafe { PENDING.0.count_ones() }, 2);
+        await_condition(|| unsafe { rows(12, &data, &input, &mut output, &mut cursor) } == Some(true));
+        assert!(output.iter().all(|value| *value == 0.0));
+        BACKGROUND_RELEASE.store(true, Ordering::Release);
+        await_condition(|| SLOTS.iter().all(|slot| slot.state.load(Ordering::Acquire) == 0));
+        assert!(SLOTS.iter().all(|slot| !slot.speech.load(Ordering::Acquire)));
+        output.fill(f32::NAN);
+        assert_eq!(unsafe { rows(12, &data, &input, &mut output, &mut cursor) }, Some(false));
+        assert_eq!(unsafe { PENDING.0.count_ones() }, 5);
+        await_condition(|| unsafe { rows(12, &data, &input, &mut output, &mut cursor) } == Some(true));
+        assert!(output.iter().all(|value| *value == 0.0));
+        finish_fixture_workers(threads);
     }
     // ------------------------=
     // FUNC: pure_helpers_preserve_ownership_and_quiesce
