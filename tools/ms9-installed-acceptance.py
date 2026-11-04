@@ -262,7 +262,7 @@ class Guest:
     # ------------------=
     def text(self, value):
         aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash"}
-        shifted = {":": "semicolon", "?": "slash", "%": "5", "&": "7", "_": "minus"}
+        shifted = {"@": "2", ":": "semicolon", "?": "slash", "%": "5", "&": "7", "_": "minus"}
         initial = self.state()
         fast = self.fast_commands and initial is not None and initial[4] == 5 and initial[71] != 0
         if fast:

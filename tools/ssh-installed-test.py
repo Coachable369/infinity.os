@@ -244,6 +244,39 @@ def exercise(guest, work):
             "public_host_key": base64.b64encode(original_key).decode(), "pointer_latency_seconds": latency}
 
 
+
+
+# ------------------------=
+# FUNC: client_text
+# DESC: Types into the private SSH prompt using actual keyboard input, without expecting or exposing local command-history text.
+# ------------------=
+def client_text(guest, value):
+    for character in value:
+        if character.isupper():
+            guest.key("shift", character.lower())
+        else:
+            guest.key("spc" if character == " " else character)
+
+
+# ------------------------=
+# FUNC: client_state
+# DESC: Reads two matching samples of the client state/counter ABI, which has no publication sequence fields.
+# ------------------=
+def client_state(guest):
+    address, size = native.base.symbol(guest.work.parent / "artifacts/installed-kernel.elf",
+                                       "INFINITY_SSH_CLIENT_SNAPSHOT")
+    assert size == 64
+    previous = guest.memory(address, size)
+    for _ in range(20):
+        current = guest.memory(address, size)
+        if current == previous:
+            state = struct.unpack("<8Q", current)
+            assert state[:2] == (0x494e46535348434c, 1)
+            return state
+        previous = current
+    raise AssertionError("Client counters did not stabilize")
+
+
 # ------------------------=
 # FUNC: exercise_password_client
 # DESC: Verifies native password login and guest-originated SSH using real input and binary diagnostic state.
@@ -274,24 +307,24 @@ def exercise_password_client(guest, work):
     def wait_client(expected):
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
-            value = native.read(guest, "INFINITY_SSH_CLIENT_SNAPSHOT", 8)
+            value = client_state(guest)
             assert value[:2] == (0x494e46535348434c, 1)
             if value[2] == expected:
                 return value
             time.sleep(.1)
         raise AssertionError({"client_state": value, "expected": expected})
     wait_client(2)
-    guest.text("y")
+    guest.key("y")
     wait_client(3)
-    guest.text("MeshProof901")
+    client_text(guest, "MeshProof901")
     guest.key("ret")
     connected = wait_client(5)
     before = console_state(guest)
-    guest.text("system status")
+    client_text(guest, "system status")
     guest.key("ret")
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        current = native.read(guest, "INFINITY_SSH_CLIENT_SNAPSHOT", 8)
+        current = client_state(guest)
         if current[3] > connected[3] and current[4] >= 14 and console_state(guest)[3] > before[3]:
             break
         time.sleep(.1)
@@ -601,18 +634,23 @@ def main():
     parser.add_argument("--regressions", action="store_true")
     parser.add_argument("--resume-regressions", action="store_true",
                         help="Retry only regressions on this harness's unchanged, verified fresh installation")
+    parser.add_argument("--resume-password-client", action="store_true",
+                        help="Retry password-client checks on this harness's unchanged verified installation")
     args = parser.parse_args()
+    resuming = args.resume_regressions or args.resume_password_client
     work, media = args.work.resolve(), args.iso.resolve()
-    if not __debug__ or not work.is_relative_to(ROOT / "build") or work == ROOT / "build" or (work.exists() != args.resume_regressions):
+    if not __debug__ or not work.is_relative_to(ROOT / "build") or work == ROOT / "build" or (work.exists() != resuming):
         parser.error("Use assertions and a nonexistent work directory strictly inside build/")
     if not media.is_relative_to(ROOT) or not media.is_file():
         parser.error("ISO must be an existing repository-local installer")
     if args.resume_regressions and not args.regressions:
         parser.error("Regression resumption requires --regressions")
-    work.mkdir(parents=True, exist_ok=args.resume_regressions)
+    if args.resume_password_client and (args.resume_regressions or args.regressions):
+        parser.error("Resume one acceptance group at a time")
+    work.mkdir(parents=True, exist_ok=resuming)
     artifacts = work / "artifacts"
-    artifacts.mkdir(exist_ok=args.resume_regressions)
-    if args.resume_regressions:
+    artifacts.mkdir(exist_ok=resuming)
+    if resuming:
         previous = json.loads((work / "result.json").read_text())
         assert previous["architecture"] == args.arch
         for image in (media, artifacts / "installer.iso"):
@@ -625,7 +663,7 @@ def main():
     else:
         media_hash = accounts.archive_media(media, artifacts / "installer.iso")
         packaged = native.desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
-    guest = Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=args.resume_regressions,
+    guest = Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=resuming,
                   width=1920, height=1080, memory_mb=12288)
     guest.console_test = args.console
     guest.password_client = args.password_client
@@ -643,15 +681,17 @@ def main():
     with socket.socket() as reserve:
         reserve.bind(("127.0.0.1", 0))
         guest.ssh_port = reserve.getsockname()[1]
-    report_path = work / ("regressions-result.json" if args.resume_regressions else "result.json")
+    report_path = work / ("password-client-result.json" if args.resume_password_client else
+                          "regressions-result.json" if args.resume_regressions else "result.json")
     try:
-        if args.resume_regressions:
+        if resuming:
             guest.ssh_port = int((work / "known_hosts").read_text().split("]:", 1)[1].split()[0])
             installed = accounts.verify_disk(guest)
             guest.boot(False)
             guest.authenticate()
             wait_state(guest, lambda s: s[3:5] == (1, 1))
-            results = {"regressions": exercise_regressions(guest, work)}
+            results = ({"password_client": exercise_password_client(guest, work)} if args.resume_password_client
+                       else {"regressions": exercise_regressions(guest, work)})
             results["disabled"] = finish_provisioning(guest, work)
         else:
             guest.install()
