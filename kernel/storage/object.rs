@@ -2134,6 +2134,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             .state
             .entries
             .iter()
+            .take(namespace_capacity(&self.state))
             .position(|x| !x.used)
             .ok_or(ObjectError::InsufficientCapacity)?;
         let mut stored = [0u8; MAX_PATH];
@@ -3410,6 +3411,14 @@ fn version_sector(bank: u64, sector: usize) -> u64 {
 }
 
 // ------------------------=
+// FUNC: namespace_capacity
+// DESC: Uses extended slots only when the scalable allocation metadata reservation exists; compact stores retain their original in-bank capacity.
+// ------------------=
+fn namespace_capacity(state: &State) -> usize {
+    if state.total_blocks as usize > LEGACY_ALLOCATION_BLOCKS { MAX_ENTRIES } else { 44 }
+}
+
+// ------------------------=
 // FUNC: namespace_sector
 // DESC: Keeps the original namespace offsets and places bank-owned extensions in unused pre-bank metadata sectors.
 // ------------------=
@@ -3500,7 +3509,7 @@ fn write_bank<D: BlockDevice>(
         finish_sector(&mut s);
         write(d, c + version_sector(bank, sector), &s)?;
     }
-    for sector in 0..MAX_ENTRIES / 4 {
+    for sector in 0..namespace_capacity(state) / 4 {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFONSP2");
         put32(&mut s, 8, FORMAT_VERSION);
@@ -3588,7 +3597,7 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
         }
     }
-    for sector in 0..if format >= 8 { MAX_ENTRIES / 4 } else if format == 7 { 11 } else { 8 } {
+    for sector in 0..if format >= 8 { namespace_capacity(&state) / 4 } else if format == 7 { 11 } else { 8 } {
         let s = read(d, c + namespace_sector(bank, sector))?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {

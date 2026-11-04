@@ -6,7 +6,7 @@ use std::{cell::{Cell, RefCell}, collections::BTreeMap, rc::Rc};
 use storage::{BlockDevice, object::{ObjectStore, ObjectType, ObjectError, Space, STORE_RELATIVE_LBA, SSH_SERVICE_OWNER}};
 const SECTORS: u64 = STORE_RELATIVE_LBA + 32768;
 #[derive(Clone)]
-struct Disk(Rc<RefCell<BTreeMap<u64, [u8; 512]>>>, Rc<Cell<Option<usize>>>);
+struct Disk(Rc<RefCell<BTreeMap<u64, [u8; 512]>>>, Rc<Cell<Option<usize>>>, u64);
 // ------------------------=
 // FUNC: output_text
 // DESC: Supplies diagnostics without using text output as test evidence.
@@ -17,13 +17,13 @@ impl BlockDevice for Disk {
     // FUNC: block_count
     // DESC: Supplies fixed-capacity native sector storage.
     // ------------------=
-    fn block_count(&self) -> u64 { SECTORS }
+    fn block_count(&self) -> u64 { self.2 }
     // ------------------------=
     // FUNC: read_sector
     // DESC: Reads persisted sparse sectors through the production BlockDevice contract.
     // ------------------=
     fn read_sector(&mut self, lba: u64, out: &mut [u8; 512]) -> bool {
-        if lba >= SECTORS { return false; }
+        if lba >= self.2 { return false; }
         *out = self.0.borrow().get(&lba).copied().unwrap_or([0; 512]); true
     }
     // ------------------------=
@@ -31,7 +31,7 @@ impl BlockDevice for Disk {
     // DESC: Records native sector writes for cold-remount verification.
     // ------------------=
     fn write_sector(&mut self, lba: u64, bytes: &[u8; 512]) -> bool {
-        if lba >= SECTORS { return false; }
+        if lba >= self.2 { return false; }
         if let Some(left) = self.1.get() {
             if left == 0 { return false; }
             self.1.set(Some(left - 1));
@@ -49,7 +49,7 @@ impl BlockDevice for Disk {
 // DESC: Exercises service-private host-key persistence on the real object store, generic access denial and independent remount.
 // ------------------=
 fn main() {
-    let disk = Disk(Rc::new(RefCell::new(BTreeMap::new())), Rc::new(Cell::new(None)));
+    let disk = Disk(Rc::new(RefCell::new(BTreeMap::new())), Rc::new(Cell::new(None)), SECTORS);
     let mut store = ObjectStore::format(disk.clone(), 0, SECTORS, [0x73; 16]).unwrap();
     let path = b"/system/security/ssh/host-key";
     assert_eq!(store.resolve(path), Err(ObjectError::NamespaceNotFound));
@@ -66,7 +66,7 @@ fn main() {
     assert_eq!(store.read_ssh_private(id, b"@ssh-host-key", &mut out), Ok(74));
     assert_eq!(out, bytes);
     drop(store);
-    let cold = Disk(Rc::new(RefCell::new(disk.0.borrow().clone())), Rc::new(Cell::new(None)));
+    let cold = Disk(Rc::new(RefCell::new(disk.0.borrow().clone())), Rc::new(Cell::new(None)), SECTORS);
     let mut store = ObjectStore::mount(cold, 0).unwrap();
     assert_eq!(store.resolve(path), Ok(id));
     assert_eq!(store.read_ssh_private(id, b"@ssh-host-key", &mut out), Ok(74));
@@ -97,7 +97,7 @@ fn storage_error(error: ObjectError) -> runtime::identity::IdentityError {
 fn account_key_transactions() {
     use runtime::identity::{IdentitySystem, IdentityError, AccountRequest, AccountResult, IDENTITY_STATE_BYTES};
     use storage::object::ObjectId;
-    let disk = Disk(Rc::new(RefCell::new(BTreeMap::new())), Rc::new(Cell::new(None)));
+    let disk = Disk(Rc::new(RefCell::new(BTreeMap::new())), Rc::new(Cell::new(None)), SECTORS);
     let mut store = ObjectStore::format(disk.clone(), 0, SECTORS, [0x74; 16]).unwrap();
     let mut identity = IdentitySystem::new();
     identity.begin_onboarding().unwrap();
@@ -177,8 +177,8 @@ fn account_key_transactions() {
 // DESC: Migrates a full v7 namespace, commits a face-sized object beyond its old limit, and checks cold readback without comparing whole disks.
 // ------------------=
 fn enrollment_namespace_capacity() {
-    let disk=Disk(Rc::new(RefCell::new(BTreeMap::new())),Rc::new(Cell::new(None)));
-    let mut store=ObjectStore::format(disk.clone(),0,SECTORS,[0x75;16]).unwrap();
+    let disk=Disk(Rc::new(RefCell::new(BTreeMap::new())),Rc::new(Cell::new(None)), STORE_RELATIVE_LBA+262144);
+    let mut store=ObjectStore::format(disk.clone(),0,disk.2,[0x75;16]).unwrap();
     let source=store.create_attached(b"marker",ObjectType::Text,Space::Personal,b"retained",b"/marker").unwrap();
     let mut index=0;
     while store.persistent_namespace_count()<44 {

@@ -44,7 +44,8 @@ An installed account with generated SSH files filled all 44 v7 namespace slots,
 preventing the encrypted enrollment record from being attached. Format v8 adds
 8 slots using four sectors already reserved by allocation bitmap rounding. Both
 metadata banks keep independent extension sectors. Existing object extents and
-v4-v7 namespace locations remain unchanged; old formats are readable and the
+v4-v7 namespace locations remain unchanged. Compact stores without the scalable
+allocation-map reservation retain their original 44-slot limit; old formats are readable and the
 next atomic checkpoint publishes v8. The object and version limits remain
 bounded. Capacity and uncertain-commit errors now have distinct enrollment
 messages; successful capture is no longer described as a camera failure when
