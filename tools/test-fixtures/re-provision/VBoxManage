@@ -39,6 +39,9 @@ case "$command_name" in
                 printf 'uart1="%s"\n' "$(sed -n '1p' "$TEST_STATE_PATH/uart")"
                 printf 'uartmode1="file,%s"\n' "$(sed -n '1p' "$TEST_STATE_PATH/uart-log")"
                 printf 'dvd="%s"\n' "$TEST_ISO_PATH"
+                if test -f "$TEST_STATE_PATH/ssh-forward"; then
+                    printf 'Forwarding(0)="%s"\n' "$(cat "$TEST_STATE_PATH/ssh-forward")"
+                fi
             fi
         else
             mouse_mode=$(sed -n '1p' "$TEST_STATE_PATH/mouse")
@@ -130,6 +133,10 @@ case "$command_name" in
     modifyvm)
         while test "$#" -gt 0; do
             case "$1" in
+                --natpf1)
+                    shift
+                    printf '%s\n' "$1" > "$TEST_STATE_PATH/ssh-forward"
+                    ;;
                 --tpm-type)
                     shift
                     test "$1" = 2.0 || exit 3

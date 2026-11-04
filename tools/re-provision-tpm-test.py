@@ -39,6 +39,8 @@ def main():
         result = subprocess.run(["sh", str(work / "re-provision.sh"), "infinityos-4", str(iso)],
             env=environment, capture_output=True, timeout=20)
         assert result.returncode == 0, result.stderr.decode(errors="replace")
+        forward = (state / "ssh-forward").read_text().strip().split(",")
+        assert forward == ["infinity-ssh", "tcp", "127.0.0.1", "22222", "", "22"]
         assert int((state / "tpm-version").read_text()) == 200
         assert int((state / "memory").read_text()) == 22480
         assert (state / "--boot1").read_text().strip() == "disk"

@@ -245,6 +245,7 @@ create_arm64_vm() {
         --boot3 none \
         --boot4 none \
         --nic1 nat \
+        --natpf1 "infinity-ssh,tcp,127.0.0.1,22222,,22" \
         --nictype1 82540EM \
         --cable-connected1 on \
         --usb off \
@@ -300,6 +301,8 @@ verify_vm() {
     final_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable)
     final_human_info=$("$vboxmanage" showvminfo "$vm_name")
 
+    ssh_forward=$(printf '%s\n' "$final_info" | sed -n 's/^Forwarding([0-9][0-9]*)="\(infinity-ssh,[^"]*\)"$/\1/p')
+    test "$ssh_forward" = 'infinity-ssh,tcp,127.0.0.1,22222,,22' || die "The localhost SSH forwarding rule is missing or incorrect."
     printf '%s\n' "$final_info" | grep -Fq 'platformArchitecture="ARM"' || die "The replacement VM is not ARM64."
     printf '%s\n' "$final_info" | grep -Fq 'ostype="Other/Unknown (ARM 64-bit)"' || die "The replacement VM has the wrong guest type."
     printf '%s\n' "$final_info" | grep -Fq "memory=$memory_mb" || die "The replacement VM has the wrong memory allocation."
@@ -322,6 +325,8 @@ verify_vm() {
     printf '  Disk:      %s MB, blank VDI\n' "$disk_size_mb"
     printf '  ISO:       %s\n' "$iso_path"
     printf '  Trace:     %s\n' "$trace_log"
+    printf '  SSH:       ssh -p 22222 YOUR_INFINITY_USERNAME@127.0.0.1\n'
+    printf '             Requires SSH enabled in InfinityOS and a registered public key.\n'
     printf '  State:     powered off\n'
 }
 
