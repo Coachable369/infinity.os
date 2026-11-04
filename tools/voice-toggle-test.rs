@@ -829,6 +829,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     calibrated_instruction_tail_tests(owner);
     recognition_failure_recovery_tests(owner);
     desktop_autostart_handoff_tests(owner);
+    empty_capture_and_calibration_contention_tests(owner);
 }
 
 // ------------------------=
@@ -2078,4 +2079,36 @@ fn transcript_handoff_tests(owner: runtime::execution::SecurityIdentity) {
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
     RECOVERY_ALLOWED.store(false,Ordering::SeqCst);
+}
+
+// ------------------------=
+// FUNC: empty_capture_and_calibration_contention_tests
+// DESC: Exercises bounded zero-sample DMA recovery and calibration continuity across output-lock contention.
+// ------------------=
+fn empty_capture_and_calibration_contention_tests(owner:runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    MODEL_READY.store(true,Ordering::SeqCst);CHAT_READY.store(true,Ordering::SeqCst);
+    NOW.fetch_add(1_000_000_000,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().clear();
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    MICROPHONE.lock().unwrap().clear();
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    NOW.fetch_add(3_000_000_001,Ordering::SeqCst);conversation::poll();conversation::poll();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
+    assert_eq!(conversation::state().0,State::Listening);
+    MICROPHONE.lock().unwrap().clear();
+    MICROPHONE.lock().unwrap().extend([500;4000]);drain_microphone();
+    CALIBRATION_PLAYBACK.store(2,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([4000;640]);drain_microphone();
+    assert!(conversation::calibrating());
+    CALIBRATION_PLAYBACK.store(0,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([500;4000]);drain_microphone();
+    assert!(!conversation::calibrating());
+    assert_eq!(conversation::microphone_threshold(),Some(1000));
+    conversation::stop(owner);conversation::poll();
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    NOW.fetch_add(10_000_000_000,Ordering::SeqCst);conversation::poll();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
 }

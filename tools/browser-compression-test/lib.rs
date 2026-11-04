@@ -103,6 +103,28 @@ pub trait Provider {
     }
     #[test]
     // ------------------------=
+    // FUNC: streaming_decode_before_completion
+    // DESC: Proves early exact output, member boundaries, trailer validation and cumulative limits after draining chunks.
+    // ------------------=
+    fn streaming_decode_before_completion() {
+        let original=vec![b'x';100000];let packed=encode(&original);
+        let mut decoder=StreamingGzip::new(original.len());
+        let mut output=Vec::new();
+        for chunk in packed[..packed.len()-8].chunks(3) {output.extend(decoder.push(chunk).unwrap());}
+        assert!(!output.is_empty());
+        output.extend(decoder.push(&packed[packed.len()-8..]).unwrap());
+        output.extend(decoder.finish().unwrap());assert_eq!(output,original);
+        let mut decoder=StreamingGzip::new(10);
+        assert_eq!(decoder.push(&encode(b"first")).unwrap(),b"first");
+        assert!(decoder.push(&encode(b"second")).is_err());
+        let mut decoder=StreamingGzip::new(original.len());
+        decoder.push(&packed[..packed.len()-1]).unwrap();assert!(decoder.finish().is_err());
+        let mut corrupt=packed.clone();let n=corrupt.len();corrupt[n-8]^=1;
+        let mut decoder=StreamingGzip::new(original.len());
+        assert!(decoder.push(&corrupt).and_then(|_|decoder.finish()).is_err());
+    }
+    #[test]
+    // ------------------------=
     // FUNC: bounded_complete_decode
     // DESC: Verifies exact bytes, expansion bounds, truncated streams and CRC rejection.
     // ------------------=

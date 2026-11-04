@@ -14244,7 +14244,7 @@ pub fn reduced_motion() -> bool {
 
 // ------------------------=
 // FUNC: poll_native_ai
-// DESC: Advances every service pass but coalesces background scene damage to 30 Hz without delaying the separate input drain.
+// DESC: Advances every service pass but coalesces background scene damage to 60 Hz without delaying the separate input drain.
 // ------------------=
 pub fn poll_native_ai() {
     let service_started = crate::runtime::ai::qwen::workers::clock_ns();
@@ -14659,7 +14659,8 @@ pub fn ui_animation_tick() -> bool {
         {
             let view=crate::runtime::browser::presentation();
             let loading=runtime.mode==ConsoleMode::Desktop && runtime.browser_window_state().visible
-                && view.loading && view.error==0;
+                && view.error==0 && view.load_feedback.waiting(
+                    crate::runtime::ai::qwen::workers::clock_ns(),view.frame_revision,view.loading,view.input_busy);
             if crate::ui::cursor::animate_busy(loading,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000) {
                 crate::bootstrap::system_ui_cursor(runtime.pointer_x,runtime.pointer_y);
             }

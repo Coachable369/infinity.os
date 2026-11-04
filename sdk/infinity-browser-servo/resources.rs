@@ -26,7 +26,7 @@ struct Stream {
     url:std::string::String,
     load: servo::InterceptedWebResourceLoad,
     attachment: Option<(download::Metadata, Vec<u8>)>,
-    encoded: Option<Vec<u8>>,
+    encoded: Option<compression::StreamingGzip>,
 }
 
 pub trait Provider {
@@ -209,21 +209,31 @@ impl<P: Provider> Resources<P> {
                 Ok(None) => { state.stream = Some(stream); return false; },
                 Ok(Some(Event::Data(bytes))) if bytes.len() <= MAX_BODY.saturating_sub(stream.size) => {
                     stream.size += bytes.len();
-                    if let Some(body)=&mut stream.encoded {body.extend_from_slice(&bytes);}
-                    else if let Some((_, body)) = &mut stream.attachment { body.extend_from_slice(&bytes); }
-                    else { stream.load.send_body_data(bytes); }
+                    let decoded = if let Some(decoder)=&mut stream.encoded {
+                        match decoder.push(&bytes) {
+                            Ok(decoded)=>decoded,
+                            Err(())=>{
+                                state.provider.cancel(stream.id);
+                                state.provider.resource_failure(&stream.url,3);
+                                if stream.document {state.failed_document=true;state.provider.document_failed();}
+                                stream.load.fail();return true;
+                            }
+                        }
+                    } else {bytes};
+                    if let Some((_, body)) = &mut stream.attachment { body.extend_from_slice(&decoded); }
+                    else if !decoded.is_empty() { stream.load.send_body_data(decoded); }
                     state.stream = Some(stream); return true;
                 },
                 Ok(Some(Event::Done)) => {
                     progressed = true;
                     state.provider.cancel(stream.id);
                     if let Some(encoded)=stream.encoded.take() {
-                        let Ok(decoded)=compression::decode(&encoded,MAX_BODY) else {
+                        let Ok(decoded)=encoded.finish() else {
                             state.provider.resource_failure(&stream.url,3);
                             if stream.document {state.failed_document=true;state.provider.document_failed();}
                             stream.load.fail();return true;
                         };
-                        if let Some((_,body))=&mut stream.attachment {*body=decoded;}
+                        if let Some((_,body))=&mut stream.attachment {body.extend_from_slice(&decoded);}
                         else {stream.load.send_body_data(decoded);}
                     }
                     if let Some((metadata, body)) = stream.attachment {
@@ -326,7 +336,7 @@ impl<P: Provider> Resources<P> {
                 }
                 let url=pending.load.request().url.as_str().to_owned();
                 state.stream = Some(Stream { id, deadline: pending.deadline, document, size: 0,url,
-                    load: pending.load.intercept(response), attachment, encoded:compressed.then(Vec::new) });
+                    load: pending.load.intercept(response), attachment, encoded:compressed.then(||compression::StreamingGzip::new(MAX_BODY)) });
                 return true;
             }
             state.provider.cancel(id);

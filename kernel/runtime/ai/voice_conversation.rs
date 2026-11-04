@@ -121,6 +121,7 @@ static mut REOPEN_FAILURE: u8 = 0;
 static mut CAPTURE_FRAME_SEEN: bool = false;
 static mut CAPTURE_EMPTY_SINCE: u64 = 0;
 static mut CAPTURE_EMPTY_REPORTED: bool = false;
+static mut CAPTURE_EMPTY_RETRIES: u8 = 0;
 static mut CAPTURE_BOUNDARY_PENDING: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 static mut TURN_TIMING: timing::Timeline = timing::Timeline::new();
@@ -548,6 +549,7 @@ unsafe fn clear_captured_turn() {
 // DESC: Promotes bounded audio captured during recognition without reopening DMA or resetting its resampler.
 // ------------------=
 unsafe fn resume_captured_turn() {
+    CAPTURE_EMPTY_SINCE = super::qwen::workers::clock_ns();
     STATE = State::Listening;
     LEVEL = 0;
     RECOGNITION_CONTEXT_VALID = false;
@@ -715,6 +717,7 @@ unsafe fn reopen_capture() -> bool {
     if !(&mut *(&raw mut RESAMPLER)).configure(rate) {
         REOPEN_FAILURE = 3;
         crate::drivers::audio::stop_capture(OWNER);
+        retire(INPUT_CAP);
         INPUT_CAP = 0;
         return false;
     }
@@ -770,6 +773,7 @@ pub fn start(owner: SecurityIdentity) -> bool {
         let speech_ready = voice_input::prepare();
         OWNER = owner;
         NOISE_FLOOR = voice_noise_floor::NoiseFloor::new();
+        CAPTURE_EMPTY_RETRIES = 0;
         CONTINUOUS = true;
         clear_wake_command();
         RESTART_LISTENING = false;
@@ -1354,12 +1358,30 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     }
     let count = crate::drivers::audio::read_capture(OWNER, &mut *(&raw mut RAW));
     if count == 0 {
+        if STATE != State::Listening {
+            CAPTURE_EMPTY_SINCE = now;
+            return true;
+        }
         if !CAPTURE_EMPTY_REPORTED && now.saturating_sub(CAPTURE_EMPTY_SINCE) >= 1_000_000_000 {
             trace(b"capture recording but no samples 1s");
             CAPTURE_EMPTY_REPORTED = true;
         }
+        // A host ADC can report Recording without ever advancing DMA. Do
+        // not leave the widget permanently listening to an empty stream.
+        if CONTINUOUS && now.saturating_sub(CAPTURE_EMPTY_SINCE) >= 3_000_000_000 {
+            if CAPTURE_EMPTY_RETRIES >= 2 { return false; }
+            CAPTURE_EMPTY_RETRIES += 1;
+            crate::drivers::audio::stop_capture(OWNER);
+            retire(INPUT_CAP);
+            INPUT_CAP = 0;
+            REOPEN_AT = now;
+            REOPEN_DEADLINE = now.saturating_add(2_000_000_000);
+            clear_captured_turn();
+            trace(b"empty microphone stream recovery");
+        }
         return true;
     }
+    CAPTURE_EMPTY_RETRIES = 0;
     if !CAPTURE_FRAME_SEEN {
         trace(b"capture samples received");
         CAPTURE_FRAME_SEEN = true;
@@ -1385,8 +1407,8 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     if !(&*(&raw const NOISE_FLOOR)).ready() {
         // Login audio is output, not an ambient microphone baseline. Keep the
         // DMA drained and the veil visible until the real output cursor stops.
-        if crate::drivers::audio::playback_state()
-            .is_some_and(|state| state != crate::runtime::audio::PlaybackState::Playing)
+        let playback = crate::drivers::audio::playback_state();
+        if playback.as_ref().is_some_and(|state| *state != crate::runtime::audio::PlaybackState::Playing)
         {
             let consumed = (&mut *(&raw mut NOISE_FLOOR)).push(&(&*(&raw const MONO))[..n]);
             if (&*(&raw const NOISE_FLOOR)).ready() {
@@ -1401,7 +1423,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
                     &(&*(&raw const MONO))[..n],
                 );
             }
-        } else {
+        } else if playback == Some(crate::runtime::audio::PlaybackState::Playing) {
             NOISE_FLOOR = voice_noise_floor::NoiseFloor::new();
         }
         (&mut *(&raw mut RAW)).fill(0);

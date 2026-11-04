@@ -55,3 +55,42 @@ impl Status {
         assert_eq!(current(2,0,false,0,false,true),Status::Corrupt);
     }
 }
+
+
+#[derive(Clone, Copy)]
+pub struct LoadFeedback { started: u64, frame: u64 }
+impl LoadFeedback {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Initializes pointer feedback without implying a document has loaded.
+    // ------------------=
+    pub const fn new() -> Self { Self { started: 0, frame: 0 } }
+    // ------------------------=
+    // FUNC: begin
+    // DESC: Records the visible frame boundary at navigation admission.
+    // ------------------=
+    pub fn begin(&mut self, now: u64, frame: u64) { self.started=now; self.frame=frame; }
+    // ------------------------=
+    // FUNC: waiting
+    // DESC: Shows transient pointer feedback only until new pixels arrive or two seconds elapse; footer completion remains engine-owned.
+    // ------------------=
+    pub fn waiting(&self, now: u64, frame: u64, loading: bool, input_busy: bool) -> bool {
+        input_busy || (loading && frame==self.frame && now.saturating_sub(self.started)<2_000_000_000)
+    }
+}
+#[test]
+// ------------------------=
+// FUNC: progressive_page_does_not_hold_pointer_hostage
+// DESC: Keeps load status honest while releasing the pointer on first paint, timeout, or completion.
+// ------------------=
+fn progressive_page_does_not_hold_pointer_hostage() {
+    let mut feedback=LoadFeedback::new();feedback.begin(10,7);
+    assert!(feedback.waiting(11,7,true,false));
+    assert!(!feedback.waiting(12,8,true,false));
+    assert!(!feedback.waiting(2_000_000_010,7,true,false));
+    assert!(!feedback.waiting(13,7,false,false));
+    assert!(feedback.waiting(14,8,false,true));
+    assert_eq!(current(0,0,false,0,true,true),Status::Loading);
+    feedback.begin(3_000_000_000,8);
+    assert!(feedback.waiting(3_000_000_001,8,true,false));
+}

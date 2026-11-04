@@ -167,7 +167,7 @@ pub fn prepare() -> bool {
             {
                 return false;
             }
-            if !super::qwen::workers::background(prepare_worker) {
+            if !super::qwen::workers::background_speech(prepare_worker) {
                 let _ = ENGINE.compare_exchange(1, 4, Ordering::AcqRel, Ordering::Acquire);
             }
             false
@@ -231,7 +231,7 @@ pub fn recover_engine() -> bool {
         ERROR = 0;
         CANCEL.store(false, Ordering::Release);
         STATE.store(0, Ordering::Release);
-        if !super::qwen::workers::background(recovery_worker) {
+        if !super::qwen::workers::background_speech(recovery_worker) {
             ENGINE.store(3, Ordering::Release);
             return false;
         }
@@ -520,7 +520,7 @@ pub fn poll() {
             && ENGINE.load(Ordering::Acquire) != 1
         {
             STATE.store(1, Ordering::Release);
-            if !super::qwen::workers::background(worker) {
+            if !super::qwen::workers::background_speech(worker) {
                 STATE.store(WAITING_ENGINE, Ordering::Release);
             }
         }

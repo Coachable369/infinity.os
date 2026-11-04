@@ -27,3 +27,52 @@ pub fn decode(bytes:&[u8],limit:usize)->Result<Vec<u8>,()> {
 pub fn remove_wire_encoding(headers:&mut Vec<(String,String)>) {
     headers.retain(|(name,_)|!name.eq_ignore_ascii_case("content-encoding") && !name.eq_ignore_ascii_case("content-length"));
 }
+
+
+struct BoundedOutput { bytes: Vec<u8>, total: usize, limit: usize }
+impl std::io::Write for BoundedOutput {
+    // ------------------------=
+    // FUNC: write
+    // DESC: Bounds cumulative decompressed bytes even after earlier chunks have been delivered.
+    // ------------------=
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > self.limit.saturating_sub(self.total) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "gzip expansion limit"));
+        }
+        self.bytes.extend_from_slice(bytes); self.total += bytes.len(); Ok(bytes.len())
+    }
+    // ------------------------=
+    // FUNC: flush
+    // DESC: Keeps decoded output in its bounded memory sink without external IO.
+    // ------------------=
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
+pub struct StreamingGzip { decoder: flate2::write::MultiGzDecoder<BoundedOutput> }
+impl StreamingGzip {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates a bounded incremental gzip decoder for early HTML and dependency discovery.
+    // ------------------=
+    pub fn new(limit: usize) -> Self {
+        Self { decoder: flate2::write::MultiGzDecoder::new(BoundedOutput { bytes: Vec::new(), total: 0, limit }) }
+    }
+    // ------------------------=
+    // FUNC: push
+    // DESC: Decodes an authenticated transport chunk without waiting for the entire response body.
+    // ------------------=
+    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<u8>, ()> {
+        use std::io::Write;
+        self.decoder.write_all(bytes).map_err(|_| ())?;
+        self.decoder.flush().map_err(|_| ())?;
+        Ok(core::mem::take(&mut self.decoder.get_mut().bytes))
+    }
+    // ------------------------=
+    // FUNC: finish
+    // DESC: Requires a complete gzip trailer and checksum before publishing resource completion.
+    // ------------------=
+    pub fn finish(mut self) -> Result<Vec<u8>, ()> {
+        self.decoder.try_finish().map_err(|_| ())?;
+        Ok(core::mem::take(&mut self.decoder.get_mut().bytes))
+    }
+}

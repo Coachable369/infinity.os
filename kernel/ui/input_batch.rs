@@ -21,7 +21,7 @@ impl ServiceFrames {
 
     // ------------------------=
     // FUNC: ready
-    // DESC: Retains service damage until a 30 Hz deadline without throttling service execution or losing final updates.
+    // DESC: Retains service damage until a 60 Hz deadline without throttling service execution or losing final updates.
     // ------------------=
     pub fn ready(&mut self, dirty: bool, now: Option<u64>) -> bool {
         self.ready_for_work(dirty, now, false)
@@ -34,8 +34,8 @@ impl ServiceFrames {
     pub fn ready_for_work(&mut self, dirty: bool, now: Option<u64>, inference_work: bool) -> bool {
         self.pending |= dirty;
         if !self.pending { return false; }
-        let interval = if inference_work { self.render_ns.saturating_mul(4).clamp(33_333_333, 200_000_000) }
-            else { 33_333_333 };
+        let interval = if inference_work { self.render_ns.saturating_mul(5).clamp(33_333_333, 250_000_000) }
+            else { 16_666_667 };
         let due = match (self.last, now) {
             (Some(last), Some(now)) => now < last || now - last >= interval,
             _ => true,
@@ -46,13 +46,12 @@ impl ServiceFrames {
 
     // ------------------------=
     // FUNC: presented
-    // DESC: Starts the service-work interval after rendering finishes so a slow software frame cannot consume its own scheduling allowance.
+    // DESC: Measures paint cost without adding another frame interval after rendering; inference retains a separate proportional CPU budget.
     // ------------------=
     pub fn presented(&mut self, now: Option<u64>) {
         if let (Some(start),Some(end))=(self.last,now) {
             if end>=start {self.render_ns=end-start;}
         }
-        self.last = now;
     }
 }
 
@@ -86,14 +85,16 @@ fn background_frames_keep_services_running_and_flush_final_damage() {
         paints += usize::from(frames.ready(true, Some(i * 2_000_000)));
     }
     assert_eq!(services, 100);
-    assert_eq!(paints, 6);
-    assert!(frames.ready(false, Some(210_000_000)));
+    assert_eq!(paints, 12);
+    assert!(!frames.ready(true, Some(200_000_000)));
+    assert!(frames.ready(false, Some(216_000_000)));
     assert!(!frames.ready(false, Some(300_000_000)));
     assert!(frames.ready(true, Some(1)));
     assert!(frames.ready(true, None));
-    frames.presented(Some(400_000_000));
-    assert!(!frames.ready(true, Some(402_000_000)));
-    assert!(frames.ready(false, Some(434_000_000)));
+    assert!(frames.ready(true, Some(400_000_000)));
+    frames.presented(Some(410_000_000));
+    assert!(!frames.ready(true, Some(412_000_000)));
+    assert!(frames.ready(false, Some(417_000_000)));
     let mut input = PresentationBatch::new();
     assert!(input.request());
     assert!(input.request_cursor(10, 20));
@@ -298,4 +299,20 @@ fn drain_budget_bounds_work_without_dropping_relative_samples() {
     assert_eq!(presentations, 3);
     assert_eq!(queue.next(), None);
     assert_eq!(drain::<()>(0, || panic!("zero budget must not read"), |_| {}), 0);
+}
+
+// ------------------------=
+// FUNC: render_cost_is_inside_frame_period
+// DESC: Verifies a ten-millisecond paint leaves only the remaining cadence budget and overruns do not add another delay.
+// ------------------=
+#[test]
+fn render_cost_is_inside_frame_period() {
+    let mut frames=ServiceFrames::new();
+    assert!(frames.ready(true,Some(0)));
+    frames.presented(Some(10_000_000));
+    assert!(!frames.ready(true,Some(16_000_000)));
+    assert!(frames.ready(false,Some(16_666_667)));
+    frames.presented(Some(40_000_000));
+    assert!(frames.ready(true,Some(40_000_001)));
+    assert!(!frames.ready(false,Some(90_000_000)));
 }

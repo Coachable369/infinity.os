@@ -431,6 +431,7 @@ pub struct Presentation {
     pub title: [u8; 256],
     pub title_length: usize,
     pub loading: bool,
+    pub load_feedback: infinity_browser_core::page_status::LoadFeedback,
     pub input_busy: bool,
     pub history: u32,
     pub error: u32,
@@ -506,6 +507,7 @@ static mut PRESENTATION: Presentation = Presentation {
     address_selected: false,
     title_length: 0,
     loading: false,
+    load_feedback: infinity_browser_core::page_status::LoadFeedback::new(),
     input_busy: false,
     history: 0,
     error: 0,
@@ -840,6 +842,7 @@ pub fn launch_presentation(url: &[u8], error: Option<infinity_browser_core::star
         view.address[..view.address_length].copy_from_slice(&url[..view.address_length]);
         view.error = error.map_or(0, |error| error as u32);
         view.loading = error.is_none();
+        view.load_feedback.begin(super::ai::qwen::workers::clock_ns(), FRAME_REVISION.load(Ordering::Acquire));
         view.revision = view.revision.wrapping_add(1);
         INFINITY_BROWSER_DISPLAY_ADDRESS_HASH.store(
             view.address[..view.address_length]
@@ -1091,6 +1094,9 @@ pub fn poll_presentation() -> bool {
                     }
                 }
                 abi::EVENT_LOAD => {
+                    if event.value==0 && !view.loading {
+                        view.load_feedback.begin(super::ai::qwen::workers::clock_ns(), frame);
+                    }
                     view.loading = event.value == 0;
                     if view.loading {
                         view.error = 0;
