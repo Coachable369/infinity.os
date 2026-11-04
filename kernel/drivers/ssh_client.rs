@@ -52,9 +52,11 @@ impl sockets::Authority for Policy<'_> {
         if !self.caps.iter().zip(TYPES).all(|(id, kind)| runtime.capabilities.validate(*id, owner, kind, 0, 1, 0, self.now).is_ok()) { return false; }
         let local = net::Endpoint { address: net::IpAddress::V4(self.link.address), port: PORT };
         let remote = net::Endpoint { address: net::IpAddress::V4(peer.address), port: peer.port };
+        // The explicit local SSH command and owner-scoped capabilities above
+        // satisfy Ask; a persistent Deny remains authoritative.
         [net::Direction::Inbound, net::Direction::Outbound].iter().all(|direction|
             matches!(runtime.network.policy.evaluate(net::Subject::Context(owner), *direction, Some(2), local, remote,
-                net::TransportProtocol::Stream, self.now).action, net::PolicyAction::Allow | net::PolicyAction::AuditOnly))
+                net::TransportProtocol::Stream, self.now).action, net::PolicyAction::Allow | net::PolicyAction::AuditOnly | net::PolicyAction::Ask))
     }
 }
 // ------------------------=
