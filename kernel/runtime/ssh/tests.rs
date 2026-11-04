@@ -103,11 +103,11 @@ fn authenticated_transport_rejects_channels_and_observes_revocation() {
 }
 // ------------------------=
 // FUNC: deadlines_configuration_and_bad_input_are_terminal
-// DESC: Proves default-off policy, quota validation, hard handshake expiry and terminal parser failure.
+// DESC: Proves default-on policy, quota validation, hard handshake expiry and terminal parser failure.
 // ------------------=
 #[test]
 fn deadlines_configuration_and_bad_input_are_terminal() {
-    assert!(!Configuration::default().enabled);
+    assert_eq!(Configuration::default(), Configuration { enabled: true, port: 22, max_connections: 2 });
     assert!(Configuration { enabled: true, port: 0, max_connections: 1 }.validate().is_err());
     assert!(Configuration { enabled: true, port: 22, max_connections: 5 }.validate().is_err());
     let host = key(1);
@@ -210,7 +210,7 @@ fn local_management_parsing_is_bounded() {
     use management::{parse, Command};
     assert_eq!(parse(b"ssh status"), Ok(Command::Status));
     assert_eq!(parse(b"ssh enable 2222 4"), Ok(Command::Configure(Configuration { enabled: true, port: 2222, max_connections: 4 })));
-    assert_eq!(parse(b"ssh disable"), Ok(Command::Configure(Configuration::default())));
+    assert_eq!(parse(b"ssh disable"), Ok(Command::Configure(Configuration { enabled: false, port: 22, max_connections: 2 })));
     for bad in [b"ssh enable 49152".as_slice(), b"ssh enable 0", b"ssh enable 2222 5", b"ssh enable 65536",
         b"ssh status extra", b"ssh key add alice ssh-rsa AAAA", b"ssh key add alice ssh-ed25519 AAAA", b"ssh enable 22 -1"] {
         assert_eq!(parse(bad), Err(Failure::Configuration));

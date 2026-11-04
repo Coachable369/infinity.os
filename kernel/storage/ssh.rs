@@ -35,7 +35,7 @@ impl HostKeyStorage for HostStore {
 
 // ------------------------=
 // FUNC: load_configuration
-// DESC: Restores only validated native listener configuration; new installations remain disabled.
+// DESC: Restores validated listener configuration; defaults on only when no explicit configuration exists.
 // ------------------=
 pub(crate) fn load_configuration() -> Result<Configuration, Failure> {
     with_store(|store| {

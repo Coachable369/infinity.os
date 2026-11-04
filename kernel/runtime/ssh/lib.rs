@@ -20,9 +20,9 @@ pub struct Configuration {
 impl Default for Configuration {
     // ------------------------=
     // FUNC: default
-    // DESC: Keeps inbound SSH disabled until explicitly provisioned locally.
+    // DESC: Starts bounded public-key-only SSH by default; persisted administrator choices override this policy.
     // ------------------=
-    fn default() -> Self { Self { enabled: false, port: 22, max_connections: 2 } }
+    fn default() -> Self { Self { enabled: true, port: 22, max_connections: 2 } }
 }
 impl Configuration {
     // ------------------------=

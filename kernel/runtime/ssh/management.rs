@@ -18,7 +18,7 @@ pub fn parse(command: &[u8]) -> Result<Command<'_>, Failure> {
     if words.next() != Some(b"ssh".as_slice()) { return Err(Failure::Configuration); }
     let operation = match words.next() {
         Some(b"status") => Command::Status,
-        Some(b"disable") => Command::Configure(Configuration::default()),
+        Some(b"disable") => Command::Configure(Configuration { enabled: false, ..Configuration::default() }),
         Some(b"enable") => {
             let port = words.next().map(number).transpose()?.unwrap_or(22);
             let max_connections = words.next().map(number).transpose()?.unwrap_or(2);

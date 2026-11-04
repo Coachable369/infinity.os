@@ -34,7 +34,10 @@ queued before native authority is retired, and the transport remains alive to fl
 
 ## Local provisioning
 
-SSH remains disabled by default. An authorized local Console can use:
+SSH defaults to enabled on port 22 with two connection slots when no saved
+configuration exists. A saved disabled setting remains disabled. Public-key
+authentication is still required; enabling the listener does not enroll keys.
+An authorized local Console can use:
 
 ```
 ssh key add USER ssh-ed25519 BASE64_PUBLIC_KEY
@@ -48,83 +51,99 @@ Use a standard client with the registered native handle. `ssh USER@HOST` opens
 an interactive native Console; `ssh USER@HOST "system status"` requests native exec.
 Verify the host fingerprint through a trusted local path before accepting it.
 
-## Acceptance checklist
+## Verification and release
 
-- [x] Host transport: signed authentication, rejection, AEAD policy and deadlines.
-- [x] Host encrypted exec: distinct stdout/stderr and numeric exit status 37.
-- [x] Host encrypted shell: PTY allocation, resize and terminal input delivery.
-- [x] Host native executor: shared operations, authorization, revocation, IOP cleanup.
-- [x] Host terminal: independent history, editing, CRLF, interruption, bounded output.
-- [x] Native ARM64 and x86_64 no_std compilation checks.
-- [ ] Final corrected release compilation, fresh installer parity and checksums.
-- [x] Installed ISO-detached ARM64: real OpenSSH shell/exec/resize/isolation/cleanup.
-- [ ] Installed ISO-detached x86_64: same acceptance.
-- [x] ARM64 installed host-key persistence, malformed traffic and connection-limit checks.
-- [x] ARM64 installed graphical Console/network/audio regression evidence.
+Native implementation commit: `d98403e8` (mainline).
+The final clean release was stopped at the user's request to avoid repeated
+full byte-for-byte comparisons. Final ISO packaging is unfinished; older ISOs
+are not claimed as current. The subsequent default-on change passed the focused
+SSH suite in `builds/manifests/20261104T141255435598Z-71923.json`; it has not yet
+been verified on an installed guest. Automatic account-creation enrollment is
+pending the choice of importing a client public key versus generating and
+exporting a new key pair.
 
-Host SSH suite: `builds/manifests/20261104T085031730369Z-69470.json`.
-Seven encrypted transport tests: `20261104T085725726235Z-70342.json`.
-Account regression suite: `20261104T085510914200Z-70007.json`.
-Clean full release: `20261104T085744555933Z-70456.json` (4970.192 seconds).
-Pre-correction ISOs and SHA256 (do not contain the channel-completion fix):
+### Behavioral host checks
 
-- `builds/InfinityOS-aarch64.iso`: `b07126369c564afc85a7f47b8b662505846764156ca759680198e5becdf8a372`
-- `builds/InfinityOS-x86_64.iso`: `2209ce3967306006564eee41d8cb4b0760f636aadd5195a394c59396fad39536`
+The focused SSH suite passed in
+`builds/manifests/20261104T105747072725Z-94219.json`: seven encrypted transport
+tests, three listener tests, and native identity, storage, executor and terminal
+harnesses. Coverage includes signed authentication, AEAD policy, deadlines,
+stdout/stderr separation, numeric exit status, explicit EOF/close, PTY input and
+resize, independent histories, revocation and capability cleanup. Both native
+no_std architecture checks passed. Account migration and durable checkpoint
+regression passed in `20261104T085510914200Z-70007.json`.
 
-Installed ARM run `build/ssh-arm-installed-02/result.json` verified four
-media-detached boots and transport acceptance, then timed out on the first exec
-request. The application had released its channel handle without sending protocol
-EOF and close. A strengthened encrypted regression test reproduced this failure;
-the corrected implementation and focused SSH suite passed in
-`builds/manifests/20261104T105747072725Z-94219.json`.
+### ARM64 installed acceptance
 
-Corrected ARM test media passed packaging and parity in
-`builds/manifests/20261104T105830989622Z-94542.json`. The fresh installed run
-`build/ssh-arm-installed-03/console-result.json` passed all four exec commands,
-status/stream separation, denial with status 126, independent interactive sessions,
-history, resize, interruption and clean disconnect. No remote sessions remained.
-`network-result.json` also verifies concurrent outbound HTTPS response bytes.
-The broader AI-widget helper initially failed because Console occluded its pointer
-target, then expected an obsolete status-menu action. No widget code changed.
-The focused SSH regression instead exercises composer input, generation admission,
-Escape cancellation and recovery, editor preservation, concurrent HTTPS and actual
-native speech PCM. Regression-only resumption validates both
-media hashes and installed kernel bytes before boot; it never updates the disk
-offline or patches guest memory. The original failed receipt remains preserved.
-`build/ssh-arm-installed-03/regressions-result.json` passed, with manifest
-`builds/manifests/20261104T113351270727Z-98856.json`. All 31 concurrent exec requests
-succeeded (54–192 ms observed), cancellation took 0.213 s, speech produced 338940
-nonzero captured samples, and revocation/disable left zero connections and grants.
-These are observed timings, not a comparative performance benchmark. Corrected
-release packaging and x86_64 installed acceptance remain pending.
+macOS OpenSSH authenticated against an unchanged fresh installation with installer
+media detached. Durable evidence is under
+`builds/validation/ssh-submilestone-2/aarch64/ssh-arm-installed-03/`:
 
-Durable ARM evidence is archived under
-`builds/validation/ssh-submilestone-2/aarch64/ssh-arm-installed-03/`, including
-`console-result.json`, `regressions-result.json`, `transport-progress.json`,
-interactive terminal captures and native audio. Earlier failed receipts are
-retained alongside their diagnostic images. Disposable disk and media copies
-were removed only after evidence archival.
+- `transport-progress.json`: public-key success and rejection, non-AEAD rejection,
+  bounded connections, malformed clients, silent-client timeout, clean disconnect
+  and persistent host identity across reboot.
+- `console-result.json`: interactive Console; exec of `help`, `system status`,
+  `node list`, `ai status`; stdout and stderr separation; successful status 0;
+  unauthorized operation status 126; two independent sessions and histories;
+  resize; Ctrl-C status 130 and reuse; Ctrl-D termination; zero remote sessions.
+- `regressions-result.json`: outbound HTTPS status/body hash; graphical AI input,
+  generation admission, Escape cancellation and recovery; unchanged editor text;
+  native speech with 338940 nonzero PCM samples during concurrent SSH requests;
+  credential revocation and listener shutdown with zero active connections/grants.
 
-The first x86_64 attempt reset before the installer became ready. The preserved
-earlier ISO reproduced a guest-initiated reset at 302 seconds under the identical
-TCG configuration (`20261104T115604068065Z-3266.json`). The shared loader's existing
-watchdog-disable call has been moved to entry, before full payload preparation,
-as a minimal prerequisite for installed verification. This follows UEFI's
-[image watchdog contract](https://uefi.org/specs/UEFI/2.10/07_Services_Boot_Services.html#efi-boot-services-setwatchdogtimer).
-The corrected image passed the live installer boot gate. Its first installation
-attempt exposed a shared harness bug: the final completion wait ignored the
-configured installation deadline and always stopped at 300 seconds. The helper
-now honors the configured bound (one hour for x86 TCG disk installation).
-Fresh installed x86_64 SSH acceptance and final release generation remain pending.
+All 31 concurrent exec requests succeeded (54–192 ms observed); AI cancellation
+was observed at 0.213 seconds. These are observations, not comparative performance
+benchmarks. Microphone recognition was not tested. The final successful regression
+manifest is `builds/manifests/20261104T113351270727Z-98856.json`.
 
-Installed harness: run `./build-kit run python3 tools/ssh-installed-test.py
-build/UNIQUE-DIRECTORY --arch ARCH --iso builds/MATCHING.iso --console --regressions`.
-It creates a disposable installation, checks media-detached boots, uses macOS
-OpenSSH, and asserts typed guest snapshots and client protocol outcomes. It does
-not patch installed code, identity state or guest memory. Regression mode compares
-outbound HTTPS response bytes against a host reference, exercises graphical AI
-input/cancellation during concurrent SSH queries, and verifies actual native speech
-playback using emulated HDA PCM. These checks do not establish microphone recognition
-or a performance comparison with an earlier release.
+The original failed receipt is retained: an initial broad widget helper hit an
+occluded pointer target, then expected an obsolete menu action. Focused regression
+resumption verified media hashes and installed kernel bytes before testing the
+unchanged disk. No guest memory, credentials or installed executables were patched.
+The earlier native exec failure was real: Sunset released the channel handle
+without protocol EOF/close. The fixed encrypted regression requires both events,
+and the installed Console run passed after the correction.
 
-Status: implementation under verification; not accepted or ready for Submilestone 3.
+### x86_64 installed blocker
+
+Compilation, packaging and the live interactive installer boot passed. Installed
+SSH acceptance did **not** pass: after the full one-hour installation deadline,
+the installer remained at stage 7, 67%, verifying boot assets. Read-only disk
+inspection confirmed the generation was not activated. No media-detached installed
+boot or SSH success is claimed for this architecture.
+
+Evidence is preserved under
+`builds/validation/ssh-submilestone-2/x86_64/ssh-x86-installed-03/`, including the
+failed receipt, disk, exact installer media and executables. The failing manifest
+is `builds/manifests/20261104T122855244124Z-7020.json`. The captured instruction
+address maps to the installer's ATA `read_blocks` path; this identifies the observed
+location, not a proven storage root cause. Screenshot:
+`builds/validation/ssh-x86-installer-timeout.png`.
+
+Two narrow prerequisites were corrected during verification: the loader's existing
+firmware watchdog-disable call now runs before payload preparation, and the shared
+installer harness honors its configured completion deadline instead of always
+stopping at 300 seconds. A preserved pre-SSH ISO reproduced the five-minute firmware
+reset; the updated loader passed live boot. No unrelated storage redesign or
+offline generation activation was attempted.
+
+## Reproduce
+
+Run the installed harness only through the build kit:
+
+```
+./build-kit run python3 tools/ssh-installed-test.py build/UNIQUE-DIRECTORY \
+  --arch ARCH --iso PATH-TO-MATCHING-MEDIA --console --regressions
+```
+
+ARM QEMU requires media produced by `./build-kit package-aarch64-qemu`, located at
+`build/test-media/InfinityOS-aarch64-qemu-models.bootmedia`. The canonical ARM ISO
+uses the VirtualBox layout. The harness creates a disposable installation, attests
+media-detached boot, uses macOS OpenSSH and asserts typed guest state and protocol
+outcomes. All guest provisioning goes through the local graphical Console.
+
+## Readiness
+
+Submilestone 2 implementation is available with ARM installed evidence. Full
+cross-architecture acceptance remains blocked by x86_64 installation. No
+Submilestone 3 work has been performed or authorized.

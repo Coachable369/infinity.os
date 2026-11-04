@@ -214,7 +214,7 @@ pub fn manage_key(session: StableId, name: &[u8], key: [u8; 32], revoke: bool) -
 
 // ------------------------=
 // FUNC: initialize
-// DESC: Restores the default-off native service only after entropy and installed object storage are available.
+// DESC: Starts the configured native service only after entropy and installed object storage are available.
 // ------------------=
 pub(super) fn initialize(info: &crate::boot_info::BootInfo) {
     let Some(_guard) = lock() else { return; };

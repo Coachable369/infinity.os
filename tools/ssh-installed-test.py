@@ -151,20 +151,20 @@ def disconnect(work, port, handle):
 
 # ------------------------=
 # FUNC: exercise
-# DESC: Verifies authentication, rejection, AEAD policy, limits, malformed input, cleanup, reboot persistence and default-off behavior.
+# DESC: Verifies default-on public-key-only access, authentication, AEAD policy, limits, cleanup and reboot persistence.
 # ------------------=
 def exercise(guest, work):
     port = guest.ssh_port
-    initial = state(guest)
-    assert initial[3:5] == (0, 0) and initial[6] == 0 and initial[13] == 0
+    initial = wait_state(guest, lambda s: s[3:5] == (1, 1) and s[6] == 0 and s[13] == 4)
     for name in ("client", "unregistered"):
         subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(work / name)], check=True, timeout=10)
-    public = (work / "client.pub").read_text().split()
-    command(guest, "ssh key add ms9node01 " + " ".join(public[:2]))
-    command(guest, "ssh enable 22 2")
-    wait_state(guest, lambda s: s[3:5] == (1, 1) and s[13] == 4)
     original_key, known_hosts = keyscan(port)
     (work / "known_hosts").write_bytes(known_hosts)
+    wait_state(guest, lambda s: s[6] == 0)
+    rejected = subprocess.run(client(work, port, extra=("-N",)), capture_output=True, timeout=20)
+    assert rejected.returncode == 255
+    public = (work / "client.pub").read_text().split()
+    command(guest, "ssh key add ms9node01 " + " ".join(public[:2]))
     wait_state(guest, lambda s: s[6] == 0)
     first = master(work, port, 1)
     second = None
