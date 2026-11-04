@@ -543,7 +543,7 @@ unsafe fn prepare_connection(owner: SecurityIdentity, connect: CapabilityId, sen
     if require_time && time == 0 { return Err(Failure::Unavailable); }
     let rng = (&mut *(&raw mut RNG)).as_mut().ok_or(Failure::Unavailable)?;
     let mut seed = [0; 32]; rng.fill_bytes(&mut seed);
-    let port = 49152 + (rng.next_u32() % 16384) as u16;
+    let port = 49152 + (rng.next_u32() % 16383) as u16;
     let (config, auth) = crate::runtime::with_runtime(|runtime| {
         let n = &runtime.network;
         let interface = n.interfaces.interface(2)?;

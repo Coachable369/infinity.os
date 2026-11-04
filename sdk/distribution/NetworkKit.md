@@ -72,3 +72,18 @@ certificates. Never send credentials over plaintext TCP.
 SDK tests exercise public wrapper arguments, rejection and error propagation;
 existing transport tests cover the native socket/TLS state machine. An external
 website's availability and installed NIC behavior require separate runtime tests.
+
+## Native SSH terminal
+
+Command Window supports `ssh user@host [-p port]` for an outbound, password-authenticated
+line-mode shell. Verify the Ed25519 host fingerprint, approve with Y, then use
+the private password prompt. Escape disconnects. This is a local user terminal
+command, not a Python/C SSH API or permission for generated apps to handle credentials.
+It does not support full-screen VT applications, SFTP, forwarding, or remote key
+authentication. Host trust is confirmed per connection.
+
+Inbound SSH accepts the existing native account password or a registered key.
+Remote sessions are query-only and cannot acquire the local desktop session.
+For the default test VM, connect from the host with
+`ssh -p 22222 YOUR_USER@127.0.0.1`. Never place passwords in generated commands,
+source code, logs, or application arguments.

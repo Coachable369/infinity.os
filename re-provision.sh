@@ -326,7 +326,7 @@ verify_vm() {
     printf '  ISO:       %s\n' "$iso_path"
     printf '  Trace:     %s\n' "$trace_log"
     printf '  SSH:       ssh -p 22222 YOUR_INFINITY_USERNAME@127.0.0.1\n'
-    printf '             Requires SSH enabled in InfinityOS and a registered public key.\n'
+    printf '             Requires SSH enabled in InfinityOS and your account password or a registered public key.\n'
     printf '  State:     powered off\n'
 }
 

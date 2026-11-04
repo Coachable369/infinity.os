@@ -111,6 +111,28 @@ impl<'a> Runner<'a, client::Client> {
         Ok(())
     }
 
+    // ------------------------=
+    // FUNC: answer_password
+    // DESC: Resumes a deferred native password prompt only while that event is pending.
+    // ------------------=
+    pub fn answer_password(&mut self, password: &str) -> Result<()> {
+        if !matches!(self.resume_event, DispatchEvent::CliEvent(CliEventId::Password)) {
+            return Err(error::BadUsage.build());
+        }
+        self.resume_clipassword(Some(password))
+    }
+
+    // ------------------------=
+    // FUNC: answer_hostkey
+    // DESC: Resumes an explicit host verification decision without bypassing event-state validation.
+    // ------------------=
+    pub fn answer_hostkey(&mut self, accept: bool) -> Result<()> {
+        if !matches!(self.resume_event, DispatchEvent::CliEvent(CliEventId::Hostkey)) {
+            return Err(error::BadUsage.build());
+        }
+        self.resume_checkhostkey(accept)
+    }
+
     pub(crate) fn resume_clipassword(
         &mut self,
         password: Option<&str>,

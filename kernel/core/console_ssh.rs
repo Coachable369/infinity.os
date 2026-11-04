@@ -9,6 +9,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn ssh_command(&mut self, command: &[u8]) -> bool {
         if command != b"ssh" && !command.starts_with(b"ssh ") { return false; }
+        if self.ssh_connect_command(command) { return true; }
         match management::parse(command) {
             Ok(Command::Status) => {
                 if let Some(status) = crate::drivers::ssh::status() {
@@ -24,7 +25,7 @@ impl ConsoleRuntime {
                 }
             }
             Ok(Command::Configure(config)) => match crate::drivers::ssh::configure(self.current_session, config) {
-                Ok(()) => self.output.write_line(if config.enabled { b"SSH configuration saved. Public-key authentication; native Console help, system status, node list and ai status." }
+                Ok(()) => self.output.write_line(if config.enabled { b"SSH configuration saved. Password or public-key authentication; native Console help, system status, node list and ai status." }
                     else { b"SSH disabled; connections and network grants released." }),
                 Err(_) => self.output.write_line(b"SSH configuration failed. An active local administrator, protected storage and validated entropy are required."),
             },

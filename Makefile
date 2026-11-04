@@ -75,6 +75,7 @@ AUTHENTICATION_MOTION_ASSETS := assets/desktop/infinity-auth-success-stage-v1.bm
 KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) $(AUTHENTICATION_MOTION_ASSETS) $(SYSTEM_SOUND_ASSETS) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt) assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
 KERNEL_SOURCES += assets/fonts/InfinityUI-library.bin assets/fonts/InfinityEditor-library.bin
+KERNEL_SOURCES += $(shell find third_party/sunset-0.6.0/src -type f -name '*.rs') third_party/sunset-0.6.0/Cargo.toml
 KERNEL_SOURCES += $(wildcard sdk/c/include/*.h sdk/c/include/infinity/*.h sdk/c/compiler-headers/*.h)
 KERNEL_SOURCES += sdk/c/examples/camera_capture.c
 SDK_SOURCES := $(shell find sdk/distribution sdk/c/include sdk/c/examples sdk/python/examples -type f) sdk/python/infinity.py sdk/python/infinity_log.py sdk/python/infinity_network.py docs/intelligence-kit.md $(wildcard assets/ui-design-kit/*.json assets/ui-design-kit/*.infinityui assets/ui-design-kit/default/*) tools/package-sdk.py

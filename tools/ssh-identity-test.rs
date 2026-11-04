@@ -19,6 +19,7 @@ fn output_text(_: &[u8]) {}
 // ------------------=
 fn main() {
     generated_account_capacity();
+    password_authentication();
     let mut identity = IdentitySystem::new();
     identity.begin_onboarding().unwrap();
     identity.create_machine(b"SSH acceptance", 0xaa64, 1, 1).unwrap();
@@ -103,4 +104,39 @@ fn generated_account_capacity() {
     }
     assert_eq!(identity.user_count(), MAX_USERS);
     assert_eq!((0..MAX_CREDENTIALS).filter_map(|i| identity.credential_nth(i)).count(), MAX_USERS * 2);
+}
+
+// ------------------------=
+// FUNC: password_authentication
+// DESC: Verifies account-password throttling, remote permission ceilings, persistence and revocation.
+// ------------------=
+fn password_authentication() {
+    let mut identity = IdentitySystem::new();
+    identity.begin_onboarding().unwrap();
+    identity.create_machine(b"Password SSH", 0xaa64, 1, 1).unwrap();
+    let user = identity.create_user(b"Jonathan", b"Jonathan", 2).unwrap();
+    let credential = identity.create_password(user.id, b"native password", 3).unwrap();
+    identity.complete_onboarding().unwrap();
+    let mut identity = IdentitySystem::decode(&identity.encode()).unwrap();
+    assert!(identity.authenticate_ssh_password(b"missing", b"native password", 10).is_err());
+    for now in 10..13 {
+        assert_eq!(identity.authenticate_ssh_password(b"Jonathan", b"incorrect", now), Err(IdentityError::InvalidCredential));
+    }
+    assert_eq!(identity.authenticate_ssh_password(b"Jonathan", b"native password", 13), Err(IdentityError::RateLimited));
+    assert!(identity.create_session(user.id, b"native password", 10).is_ok());
+    let proof = identity.authenticate_ssh_password(b"Jonathan", b"native password", 2012).unwrap();
+    assert_eq!(proof, (user.id, credential.id));
+    let remote = identity.create_ssh_password_session(proof.0, proof.1, 3).unwrap();
+    assert_eq!(remote.origin, SessionOrigin::Ssh);
+    assert_eq!(remote.capabilities, SESSION_REMOTE_QUERY);
+    assert_eq!(remote.remote_key, None);
+    assert_eq!(remote.remote_password, Some(credential.id));
+    assert!(identity.console_session_authorized(remote.id, user.id));
+    assert!(identity.accounts(remote.id).is_err());
+    let local = identity.create_session(user.id, b"native password", 2013).unwrap();
+    identity.manage_accounts(local.id, AccountRequest::ResetPassword { user: user.id, password: b"changed password", now: 2014 }).unwrap();
+    assert!(!identity.ssh_password_active(user.id, credential.id));
+    assert!(!identity.console_session_authorized(remote.id, user.id));
+    assert!(identity.authenticate_ssh_password(b"Jonathan", b"native password", 2015).is_err());
+    assert!(identity.authenticate_ssh_password(b"Jonathan", b"changed password", 2016).is_ok());
 }

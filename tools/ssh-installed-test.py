@@ -235,11 +235,73 @@ def exercise(guest, work):
     console_result = exercise_console(guest, work) if guest.console_test else None
     if console_result is not None:
         (work / "console-result.json").write_text(json.dumps(console_result, indent=2) + "\n")
+    if guest.password_client:
+        (work / "password-client-result.json").write_text(json.dumps(exercise_password_client(guest, work), indent=2) + "\n")
     regressions = exercise_regressions(guest, work) if guest.regressions else None
     disabled = finish_provisioning(guest, work)
     return {"initial": initial, "full": full, "clean": clean, "disabled": disabled, "console": console_result, "regressions": regressions,
             "peak_protocol_nanoseconds": clean[15], "protocol_steps": clean[16],
             "public_host_key": base64.b64encode(original_key).decode(), "pointer_latency_seconds": latency}
+
+
+# ------------------------=
+# FUNC: exercise_password_client
+# DESC: Verifies native password login and guest-originated SSH using real input and binary diagnostic state.
+# ------------------=
+def exercise_password_client(guest, work):
+    askpass = work / "fixture-askpass.sh"
+    askpass.write_text("#!/bin/sh\nprintf '%s\\n' 'MeshProof901'\n")
+    askpass.chmod(0o700)
+    before = console_state(guest)
+    environment = dict(os.environ, SSH_ASKPASS=str(askpass), SSH_ASKPASS_REQUIRE="force", DISPLAY="infinity-test")
+    try:
+        result = subprocess.run(["/usr/bin/ssh", "-p", str(guest.ssh_port),
+            "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={work / 'known_hosts'}",
+            "-o", "PreferredAuthentications=password", "-o", "PubkeyAuthentication=no",
+            "-o", "NumberOfPasswordPrompts=1", "-o", "ConnectTimeout=15",
+            "ms9node01@127.0.0.1", "system status"], env=environment,
+            stdin=subprocess.DEVNULL, capture_output=True, start_new_session=True, timeout=30)
+        assert result.returncode == 0, {"ssh_exit": result.returncode}
+    finally:
+        askpass.unlink(missing_ok=True)
+    assert console_state(guest)[3] > before[3]
+    wait_state(guest, lambda s: s[6] == 0)
+    command(guest, f"ssh ms9node01@10.0.2.2 -p {guest.ssh_port}")
+    # ------------------------=
+    # FUNC: wait_client
+    # DESC: Waits for typed native-client transitions without parsing terminal text.
+    # ------------------=
+    def wait_client(expected):
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline:
+            value = native.read(guest, "INFINITY_SSH_CLIENT_SNAPSHOT", 8)
+            assert value[:2] == (0x494e46535348434c, 1)
+            if value[2] == expected:
+                return value
+            time.sleep(.1)
+        raise AssertionError({"client_state": value, "expected": expected})
+    wait_client(2)
+    guest.text("y")
+    wait_client(3)
+    guest.text("MeshProof901")
+    guest.key("ret")
+    connected = wait_client(5)
+    before = console_state(guest)
+    guest.text("system status")
+    guest.key("ret")
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        current = native.read(guest, "INFINITY_SSH_CLIENT_SNAPSHOT", 8)
+        if current[3] > connected[3] and current[4] >= 14 and console_state(guest)[3] > before[3]:
+            break
+        time.sleep(.1)
+    else:
+        raise AssertionError({"client_io": current})
+    guest.screenshot("ssh-outbound-password-shell")
+    guest.key("esc")
+    wait_client(0)
+    return {"inbound_password": True, "outbound_password": True, "native_remote_command": True,
+            "client_snapshot": current, "iso_attached": False}
 
 
 # ------------------------=
@@ -535,6 +597,7 @@ def main():
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=Path, required=True)
     parser.add_argument("--console", action="store_true")
+    parser.add_argument("--password-client", action="store_true")
     parser.add_argument("--regressions", action="store_true")
     parser.add_argument("--resume-regressions", action="store_true",
                         help="Retry only regressions on this harness's unchanged, verified fresh installation")
@@ -565,6 +628,7 @@ def main():
     guest = Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=args.resume_regressions,
                   width=1920, height=1080, memory_mb=12288)
     guest.console_test = args.console
+    guest.password_client = args.password_client
     guest.regressions = args.regressions
     if args.regressions:
         guest.audio_capture = guest.work / "ssh-audio.wav"

@@ -70,6 +70,7 @@ pub fn poll() {
                     pump(nic, now / 1_000_000_000);
                     super::https::poll(nic, now / 1_000_000);
                     super::ssh::poll(nic, now / 1_000_000);
+                    super::ssh_client::poll(nic, now / 1_000_000);
                 }
                 crate::runtime::poll_node_transport(now / 1_000_000_000);
             }
@@ -164,6 +165,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
                 let _ = network.wire.ingest(&frame[..length], now);
                 super::https::ingest(&frame[..length]);
                 super::ssh::ingest(&frame[..length]);
+                super::ssh_client::ingest(&frame[..length]);
             }
         }
         for _ in 0..4 {

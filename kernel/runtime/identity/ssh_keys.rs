@@ -125,7 +125,7 @@ impl IdentitySystem {
         }
         let slot = self.sessions.iter().position(|s| s.is_none_or(|s| s.state == SessionState::Closed)).ok_or(IdentityError::Full)?;
         let machine = self.machine.ok_or(IdentityError::InvalidState)?.id;
-        let session = Session { origin: SessionOrigin::Ssh, remote_key: Some(key), id: self.allocate_id(0x4e), user, machine,
+        let session = Session { origin: SessionOrigin::Ssh, remote_key: Some(key), remote_password: None, id: self.allocate_id(0x4e), user, machine,
             created: now, state: SessionState::Active, capabilities: SESSION_REMOTE_QUERY,
             personal_space: StableId::zero(), ai_context: StableId::zero() };
         self.sessions[slot] = Some(session);
@@ -139,6 +139,7 @@ impl IdentitySystem {
         if self.storage_uncertain || !self.user(user).is_some_and(|u| u.state == UserState::Active) { return false; }
         self.sessions.iter().flatten().any(|s| s.id == session && s.user == user && s.state == SessionState::Active
             && match s.origin { SessionOrigin::Local => s.capabilities & SESSION_DISPLAY_INPUT != 0,
-                SessionOrigin::Ssh => s.capabilities == SESSION_REMOTE_QUERY && s.remote_key.is_some_and(|key| self.ssh_key_active(user, &key)) })
+                SessionOrigin::Ssh => s.capabilities == SESSION_REMOTE_QUERY && (s.remote_key.is_some_and(|key| self.ssh_key_active(user, &key))
+                    || s.remote_password.is_some_and(|id| self.ssh_password_active(user, id))) })
     }
 }

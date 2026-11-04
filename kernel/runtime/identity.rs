@@ -11,6 +11,7 @@ mod accounts;
 pub use accounts::*;
 #[path = "identity/ssh_keys.rs"]
 mod ssh_keys;
+mod ssh_password;
 
 pub const MAX_USERS: usize = 8;
 const LEGACY_MAX_CREDENTIALS: usize = 12;
@@ -314,6 +315,7 @@ pub enum SessionOrigin { Local, Ssh }
 pub struct Session {
     pub origin: SessionOrigin,
     pub(crate) remote_key: Option<[u8; 32]>,
+    pub(crate) remote_password: Option<StableId>,
     pub id: StableId,
     pub user: StableId,
     pub machine: StableId,
@@ -344,6 +346,7 @@ pub struct IdentitySystem {
     storage_uncertain: bool,
     machine: Option<MachineIdentity>,
     users: [Option<UserIdentity>; MAX_USERS],
+    ssh_password_throttle: [(u8, u64); MAX_USERS],
     credentials: [Option<Credential>; MAX_CREDENTIALS],
     profiles: [Option<UserProfile>; MAX_USERS],
     ai_profiles: [Option<AiProfile>; MAX_USERS],
@@ -372,6 +375,7 @@ impl IdentitySystem {
             storage_uncertain: false,
             machine: None,
             users: [None; MAX_USERS],
+            ssh_password_throttle: [(0, 0); MAX_USERS],
             credentials: [None; MAX_CREDENTIALS],
             profiles: [None; MAX_USERS],
             ai_profiles: [None; MAX_USERS],
@@ -887,7 +891,7 @@ impl IdentitySystem {
         let is_owner = self.is_administrator(user);
         let session = Session {
             origin: SessionOrigin::Local,
-            remote_key: None,
+            remote_key: None, remote_password: None,
             id: self.allocate_id(0x4e),
             user,
             machine: machine.id,

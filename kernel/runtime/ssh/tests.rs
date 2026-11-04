@@ -41,7 +41,7 @@ impl IdentityAuthority for Authority {
     // ------------------=
     fn authorized_key(&self, name: &[u8], key: &[u8; 32]) -> Option<Principal> {
         (self.enabled.get() && name == b"alice" && key == &self.key)
-            .then_some(Principal { user: [7; 16], public_key: *key })
+            .then_some(Principal { user: [7; 16], public_key: *key, password_credential: None })
     }
     // ------------------------=
     // FUNC: still_authorized
@@ -115,7 +115,7 @@ fn authenticated_transport_rejects_channels_and_observes_revocation() {
     }
     assert!(client_authenticated);
     assert_eq!(server.phase(), Phase::Authenticated);
-    assert_eq!(server.principal(), Some(Principal { user: [7; 16], public_key: authority.key }));
+    assert_eq!(server.principal(), Some(Principal { user: [7; 16], public_key: authority.key, password_credential: None }));
     let channel = client.open_client_session().unwrap();
     let mut denied = false;
     for now in 1000..1100 {

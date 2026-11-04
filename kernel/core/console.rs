@@ -26,6 +26,8 @@ mod console_accounts_cli;
 #[cfg(all(target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 #[path = "console_ssh.rs"]
 mod console_ssh;
+#[path="console_ssh_client.rs"]
+mod console_ssh_client;
 #[path = "console_memory_editor.rs"]
 mod console_memory_editor;
 #[path = "installer_work.rs"]
@@ -529,6 +531,7 @@ struct ConsoleRuntime {
     accounts: crate::ui::accounts::State,
     accounts_secrets: console_accounts::Secrets,
     account_password: console_accounts_cli::PasswordEntry,
+    ssh_terminal: console_ssh_client::Terminal,
     selected_node_id: Option<crate::runtime::node::types::NodeId>,
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     node_policy_offset: usize,
@@ -698,6 +701,7 @@ impl ConsoleRuntime {
             accounts: crate::ui::accounts::State::new(),
             accounts_secrets: console_accounts::Secrets::new(),
             account_password: console_accounts_cli::PasswordEntry::new(),
+            ssh_terminal: console_ssh_client::Terminal::new(),
             selected_node_id: None,
             node_input_lease: None,
             node_policy_offset: 0,
@@ -1422,6 +1426,7 @@ impl ConsoleRuntime {
                     || matches!(code,b'j'|b'i'|b'K'|0x80|0x81) {self.accounts_cancel();}
             }
         }
+        if self.ssh_terminal_input(key) { self.session_idle.note_activity(); self.redraw(); return; }
         if self.account_password_input(key) { self.session_idle.note_activity(); self.redraw(); return; }
         if self.mode == ConsoleMode::Settings && self.system_focus == 2
             && (self.accounts.mode != crate::ui::accounts::Mode::Browse || matches!(key,ConsoleKey::Tab(_)))
@@ -14175,6 +14180,8 @@ pub fn poll_native_ai() {
 // DESC: Advances bounded native service work without blocking each state transition on its own framebuffer repaint.
 // ------------------=
 fn poll_native_ai_inner() {
+    #[cfg(target_os="none")]
+    unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() { runtime.ssh_terminal_poll(); } }
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
         let visible=runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7;

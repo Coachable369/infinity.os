@@ -42,7 +42,7 @@ pub struct Status {
     pub peak_protocol_ns: u64, pub protocol_steps: u64,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Link { address: [u8; 4], prefix: u8, mac: [u8; 6], gateway: Option<[u8; 4]>, generation: u64 }
+pub(super) struct Link { pub address: [u8; 4], pub prefix: u8, pub mac: [u8; 6], pub gateway: Option<[u8; 4]>, pub generation: u64 }
 struct Session { tcp: sockets::Handle, ssh: Transport<'static>, native: Option<crate::runtime::identity::Session>,
     terminal: crate::runtime::console_terminal::Terminal, failure: Option<Failure>, completed: u64, last_operation: u64 }
 #[no_mangle]
@@ -121,7 +121,7 @@ unsafe fn publish_status() {
 fn lock() -> Option<Guard> { (!BUSY.swap(true, Ordering::Acquire)).then_some(Guard) }
 
 struct Policy<'a> {
-    caps: &'a CapabilityManager, identity: &'a IdentitySystem, network: RefCell<&'a mut PolicyEngine>,
+    caps: &'a CapabilityManager, identity: RefCell<&'a mut IdentitySystem>, network: RefCell<&'a mut PolicyEngine>,
     grants: [u64; 4], local: sockets::Endpoint, now: u64,
 }
 impl Policy<'_> {
@@ -167,13 +167,21 @@ impl IdentityAuthority for Policy<'_> {
     // DESC: Resolves offers through IdentitySystem without creating local or administrative sessions.
     // ------------------=
     fn authorized_key(&self, name: &[u8], key: &[u8; 32]) -> Option<Principal> {
-        self.identity.ssh_key_owner(name, key).map(|user| Principal { user: user.0, public_key: *key })
+        self.identity.borrow().ssh_key_owner(name, key).map(|user| Principal { user: user.0, public_key: *key, password_credential: None })
     }
     // ------------------------=
     // FUNC: still_authorized
     // DESC: Immediately reflects disabled accounts and revoked credentials in established SSH transports.
     // ------------------=
-    fn still_authorized(&self, principal: Principal) -> bool { self.identity.ssh_key_active(StableId(principal.user), &principal.public_key) }
+    fn still_authorized(&self, principal: Principal) -> bool { self.identity.borrow().still_authorized(principal) }
+    // ------------------------=
+    // FUNC: authorized_password
+    // DESC: Verifies the existing account password with native throttling and no plaintext retention.
+    // ------------------=
+    fn authorized_password(&self, name: &[u8], password: &[u8], now: u64) -> Option<Principal> {
+        self.identity.borrow_mut().authenticate_ssh_password(name, password, now).ok()
+            .map(|(user, credential)| Principal { user: user.0, public_key: [0; 32], password_credential: Some(credential.0) })
+    }
 }
 
 // ------------------------=
@@ -345,7 +353,7 @@ unsafe fn stop() {
 // FUNC: link
 // DESC: Requires a live configured NIC and preferred unexpired address; profile changes invalidate all prior sockets.
 // ------------------=
-fn link(runtime: &crate::runtime::InfinityRuntime, now: u64) -> Option<Link> {
+pub(super) fn link(runtime: &crate::runtime::InfinityRuntime, now: u64) -> Option<Link> {
     let network = &runtime.network;
     if !network.profiles.active()?.interfaces_enabled { return None; }
     let interface = network.interfaces.interface(2)?;
@@ -400,7 +408,7 @@ pub(super) fn ingest(frame: &[u8]) {
 // FUNC: tcp_endpoint
 // DESC: Classifies bounded unfragmented IPv4 TCP frames; smoltcp subsequently verifies lengths and checksums.
 // ------------------=
-fn tcp_endpoint(frame: &[u8], address: [u8; 4], port: u16, inbound: bool) -> Option<sockets::Endpoint> {
+pub(super) fn tcp_endpoint(frame: &[u8], address: [u8; 4], port: u16, inbound: bool) -> Option<sockets::Endpoint> {
     if frame.len() < 54 || frame[12..14] != [8, 0] || frame[14] >> 4 != 4 || frame[23] != 6
         || u16::from_be_bytes([frame[20], frame[21]]) & 0x3fff != 0 { return None; }
     let header = (frame[14] as usize & 15) * 4;
@@ -431,7 +439,7 @@ pub(super) fn poll(nic: &mut super::e1000::E1000, now: u64) {
                     return;
                 }
             }
-            let policy = Policy { caps: &runtime.capabilities, identity: &runtime.identity, network: RefCell::new(&mut runtime.network.policy),
+            let policy = Policy { caps: &runtime.capabilities, identity: RefCell::new(&mut runtime.identity), network: RefCell::new(&mut runtime.network.policy),
                 grants: GRANTS, local: sockets::Endpoint { address: current.address, port: CONFIG.port }, now: now / 1000 };
             if !policy.valid() { clear_connections(); STATUS.last_failure = Some(Failure::PermissionDenied); return; }
             let state = (&mut *(&raw mut STATE)).as_mut().unwrap();
@@ -564,13 +572,18 @@ impl IdentityAuthority for IdentitySystem {
     // DESC: Uses the same native credential lookup as the transport policy.
     // ------------------=
     fn authorized_key(&self, name: &[u8], key: &[u8; 32]) -> Option<Principal> {
-        self.ssh_key_owner(name, key).map(|user| Principal { user: user.0, public_key: *key })
+        self.ssh_key_owner(name, key).map(|user| Principal { user: user.0, public_key: *key, password_credential: None })
     }
     // ------------------------=
     // FUNC: still_authorized
     // DESC: Revalidates key and account state before channel data crosses the service boundary.
     // ------------------=
-    fn still_authorized(&self, principal: Principal) -> bool { self.ssh_key_active(StableId(principal.user), &principal.public_key) }
+    fn still_authorized(&self, principal: Principal) -> bool {
+        match principal.password_credential {
+            Some(id) => self.ssh_password_active(StableId(principal.user), StableId(id)),
+            None => self.ssh_key_active(StableId(principal.user), &principal.public_key),
+        }
+    }
 }
 // ------------------------=
 // FUNC: service_console
@@ -595,8 +608,10 @@ fn console_step(session: &mut Session, runtime: &mut crate::runtime::InfinityRun
     use crate::runtime::console_execution::{self, Outcome, Diagnostic as ConsoleDiagnostic};
     let Some(principal) = session.ssh.principal() else { return Ok(()); };
     if session.native.is_none() {
-        session.native = Some(runtime.identity.create_ssh_session(StableId(principal.user), principal.public_key, now / 1000)
-            .map_err(|_| Failure::PermissionDenied)?);
+        session.native = Some(match principal.password_credential {
+            Some(id) => runtime.identity.create_ssh_password_session(StableId(principal.user), StableId(id), now / 1000),
+            None => runtime.identity.create_ssh_session(StableId(principal.user), principal.public_key, now / 1000),
+        }.map_err(|_| Failure::PermissionDenied)?);
         session.ssh.authorize_console()?;
     }
     let native = session.native.unwrap();

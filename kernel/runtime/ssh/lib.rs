@@ -5,6 +5,7 @@ use sunset::{ChanFail, Event, PubKey, Runner, ServEvent, Server, SignKey};
 pub mod hostkey;
 pub mod management;
 pub mod userkey;
+pub mod client;
 
 pub const PACKET_BUFFER: usize = 35_000;
 pub const MAX_CONNECTIONS: usize = 4;
@@ -21,7 +22,7 @@ pub struct Configuration {
 impl Default for Configuration {
     // ------------------------=
     // FUNC: default
-    // DESC: Starts bounded public-key-only SSH by default; persisted administrator choices override this policy.
+    // DESC: Starts bounded authenticated SSH by default; persisted administrator choices override this policy.
     // ------------------=
     fn default() -> Self { Self { enabled: true, port: 22, max_connections: 2 } }
 }
@@ -40,7 +41,7 @@ impl Configuration {
 
 /// An identity reference, not a capability, desktop session, or authorization token.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Principal { pub user: [u8; 16], pub public_key: [u8; 32] }
+pub struct Principal { pub user: [u8; 16], pub public_key: [u8; 32], pub password_credential: Option<[u8; 16]> }
 
 pub trait IdentityAuthority {
     // ------------------------=
@@ -48,6 +49,11 @@ pub trait IdentityAuthority {
     // DESC: Resolves a currently active native user and registered Ed25519 key without granting capabilities.
     // ------------------=
     fn authorized_key(&self, username: &[u8], key: &[u8; 32]) -> Option<Principal>;
+    // ------------------------=
+    // FUNC: authorized_password
+    // DESC: Checks a native password without granting desktop or administrative authority.
+    // ------------------=
+    fn authorized_password(&self, _username: &[u8], _password: &[u8], _now: u64) -> Option<Principal> { None }
     // ------------------------=
     // FUNC: still_authorized
     // DESC: Rechecks account and key revocation throughout an authenticated connection.
@@ -234,7 +240,7 @@ impl<'a> Transport<'a> {
     }
     // ------------------------=
     // FUNC: event
-    // DESC: Handles Sunset decisions without password login, anonymous success, or native session creation.
+    // DESC: Handles Sunset decisions without anonymous success or native session creation.
     // ------------------=
     fn event(&mut self, authority: &impl IdentityAuthority, host_key: &SignKey, now: u64) -> Result<Diagnostic, Failure> {
         let protocol = protocol_failure;
@@ -246,15 +252,25 @@ impl<'a> Transport<'a> {
                 Ok(Diagnostic::Progress)
             }
             Event::Serv(ServEvent::FirstAuth(mut event)) => {
-                event.set_auth_methods(false, true).map_err(protocol)?;
+                event.set_auth_methods(true, true).map_err(protocol)?;
                 event.reject().map_err(protocol)?;
                 Ok(Diagnostic::Progress)
             }
             Event::Serv(ServEvent::PasswordAuth(event)) => {
-                event.reject().map_err(protocol)?;
                 self.attempts = self.attempts.saturating_add(1);
-                if self.attempts >= MAX_AUTH_ATTEMPTS { return Err(Failure::AuthenticationLimit); }
-                Ok(Diagnostic::AuthenticationRejected)
+                if self.attempts > MAX_AUTH_ATTEMPTS { return Err(Failure::AuthenticationLimit); }
+                self.candidate = match (event.username(), event.password()) {
+                    (Ok(name), Ok(password)) if !password.is_empty() && password.len() <= 72 =>
+                        authority.authorized_password(name.as_bytes(), password.as_bytes(), now),
+                    _ => None,
+                };
+                if self.candidate.is_some() {
+                    event.allow().map_err(protocol)?;
+                    Ok(Diagnostic::Progress)
+                } else {
+                    event.reject().map_err(protocol)?;
+                    Ok(Diagnostic::AuthenticationRejected)
+                }
             }
             Event::Serv(ServEvent::PubkeyAuth(event)) => {
                 self.attempts = self.attempts.saturating_add(1);
@@ -353,3 +369,6 @@ fn protocol_failure(error: sunset::Error) -> Failure {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod client_tests;
