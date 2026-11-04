@@ -1,0 +1,13 @@
+[package]
+name = "infinity-ssh"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+sunset = { path = "../../../third_party/sunset-0.6.0", default-features = false, features = ["larger"] }
+zeroize = { version = "1.8.1", default-features = false }
+base64ct = { version = "1.8", default-features = false }
+sha2 = { version = "0.11", default-features = false }

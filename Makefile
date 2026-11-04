@@ -860,7 +860,11 @@ test-mouse-menu: x86_64 aarch64
 	@tools/mouse-menu-test.sh x86_64
 	@tools/mouse-menu-test.sh aarch64
 
-test: accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+test: ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+
+.PHONY: ssh-test
+ssh-test:
+	@sh tools/ssh-test.sh
 
 .PHONY: accounts-test
 accounts-test:

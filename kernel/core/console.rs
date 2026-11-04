@@ -19,6 +19,9 @@ mod console_clock;
 mod console_accounts;
 #[path = "console_accounts_cli.rs"]
 mod console_accounts_cli;
+#[cfg(all(target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+#[path = "console_ssh.rs"]
+mod console_ssh;
 #[path = "console_memory_editor.rs"]
 mod console_memory_editor;
 #[path = "installer_work.rs"]
@@ -625,6 +628,8 @@ impl ConsoleRuntime {
     // DESC: Creates and initializes a new instance.
     // ------------------=
     fn new(system: SystemSnapshot) -> Self {
+        crate::runtime::with_runtime(|runtime| runtime.console_environment = crate::runtime::console_execution::Environment {
+            architecture: system.architecture, ready_devices: system.ready_device_count() as u8 });
         console_clock::load_settings();
         let installer_date_time = firmware_date_time(system.firmware_runtime_services);
         let installer_choice = time_zone_index(installer_date_time.utc_offset_minutes);
@@ -9958,6 +9963,8 @@ impl ConsoleRuntime {
         let private=self.command_history.private() || infinity_enterprise_core::sensitive(&command[..length]) || console_accounts_cli::sensitive_command(&command[..length]);
         if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
+        #[cfg(all(target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if self.ssh_command(&command[..length]) {self.reset_input();return;}
         if self.execute_workplace(&command[..length]) {self.reset_input();return;}
         if self.clock_command(&command[..length]) {self.reset_input();return;}
         if self.generated_application_command(&command[..length]) {self.reset_input();return;}
@@ -10049,6 +10056,18 @@ impl ConsoleRuntime {
             if self.execute_native_navigation_command(resolution.canonical.as_bytes()) {
                 self.reset_input();
                 return;
+            }
+        }
+        if self.current_session != crate::runtime::identity::StableId::zero()
+            && crate::runtime::console_execution::handles(&command[..length]) {
+            let now = crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000_000;
+            let outcome = crate::runtime::with_runtime(|runtime| crate::runtime::console_execution::execute(
+                runtime, self.current_user, self.current_session, &command[..length], now));
+            if let Some(outcome) = outcome {
+                for bytes in [outcome.stdout.bytes(), outcome.stderr.bytes()] {
+                    for line in bytes.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
+                }
+                self.reset_input(); return;
             }
         }
         if self.execute_language_command(&command[..length]) {
@@ -10677,41 +10696,9 @@ impl ConsoleRuntime {
                 self.output.write_segments(&[b"  ", operation.example]);
             }
             ParseOutcome::Help(domain, operation) => {
-                crate::output_text(b"[operation] help\n");
-                if let Some(operation) = operation {
-                    self.output
-                        .write_segments(&[operation.domain, b" ", operation.action]);
-                    self.output.write_line(operation.description);
-                    self.output
-                        .write_segments(&[b"Result type: ", value_type_text(operation.output)]);
-                    self.output
-                        .write_segments(&[b"Example: ", operation.example]);
-                } else if let Some(domain) = domain {
-                    self.output
-                        .write_segments(&[domain.name, b" - ", domain.description]);
-                    for operation in console_language::OPERATIONS
-                        .iter()
-                        .filter(|item| item.domain == domain.name)
-                    {
-                        self.output.write_segments(&[
-                            b"  ",
-                            operation.action,
-                            b" - ",
-                            operation.description,
-                        ]);
-                    }
-                } else {
-                    self.output
-                        .write_line(b"Infinity Console: DOMAIN ACTION [TARGET] [key=value]");
-                    self.output.write_line(
-                        b"Use |> for typed composition; use plan before meaningful changes.",
-                    );
-                    self.output.write_line(
-                        b"Domains: system device storage object namespace project collection",
-                    );
-                    self.output
-                        .write_line(b"service runtime task capability event ai model agent voice");
-                }
+                let mut output = crate::runtime::console_execution::Bytes::new();
+                crate::runtime::console_execution::render_help(&mut output, domain, operation);
+                for line in output.bytes().split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
             }
             ParseOutcome::Graph(graph) => {
                 crate::output_text(b"[console] typed operation graph validated\n");
@@ -10938,8 +10925,9 @@ impl ConsoleRuntime {
                     }
                 }
                 OperationId::NodeList | OperationId::NodeDomainList => {
-                    for id in bytes[..length].chunks_exact(32) { self.output.write_hex(b"Identity: ", id); }
-                    if length == 0 { self.output.write_line(b"No records."); }
+                    let mut output = crate::runtime::console_execution::Bytes::new();
+                    crate::runtime::console_execution::render_nodes(&mut output, &bytes[..length]);
+                    for line in output.bytes().split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
                 }
                 OperationId::NodeSessionList => {
                     for row in bytes[..length].chunks_exact(40) { self.output.write_hex(b"Peer: ", &row[..32]); self.output.write_number(b"Session: ", u64::from_le_bytes(row[32..40].try_into().unwrap())); }
@@ -11950,18 +11938,10 @@ impl ConsoleRuntime {
     // DESC: Implements the system status operation.
     // ------------------=
     fn system_status(&mut self) {
-        crate::output_text(b"[operation] system.status\n");
-        self.output.write_line(b"InfinityOS System Status");
-        self.output
-            .write_segments(&[b"Architecture: ", self.system.architecture]);
-        self.output.write_line(b"Kernel: online");
-        self.output.write_line(b"Drivers: online");
-        self.output.write_line(b"Intent Runtime: online");
-        self.output.write_segments(&[
-            b"Ready devices: ",
-            &[b'0' + self.system.ready_device_count() as u8],
-            b"/3",
-        ]);
+        let mut output = crate::runtime::console_execution::Bytes::new();
+        crate::runtime::console_execution::render_system(&mut output, crate::runtime::console_execution::Environment {
+            architecture: self.system.architecture, ready_devices: self.system.ready_device_count() as u8 });
+        for line in output.bytes().split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
     }
 
     // ------------------------=
@@ -12825,35 +12805,9 @@ impl ConsoleRuntime {
             return true;
         }
         if command == b"ai status" {
-            crate::output_text(b"[operation] AI.Status\n");
-            crate::runtime::ai::with_ai_runtime(|ai| {
-                self.output.write_line(if ai.initialized() {
-                    b"Infinity AI Service: ready"
-                } else {
-                    b"Infinity AI Service: degraded"
-                });
-                self.output.write_line(b"Default policy: local-only");
-                self.output.write_line(b"CPU backend: TESTED");
-                self.output.write_line(b"GPU/NPU backends: UNSUPPORTED");
-                self.output
-                    .write_number(b"Inference queue depth: ", ai.queue_depth() as u64);
-                self.output
-                    .write_number(b"Completed inference: ", ai.inference_count());
-                self.output
-                    .write_number(b"Inference failures: ", ai.inference_failures());
-                self.output.write_number(b"Native Qwen output tokens: ",ai.qwen_tokens);
-                self.output.write_number(b"Native Qwen decode milliseconds: ",ai.qwen_decode_ns/1_000_000);
-                self.output.write_number(b"Model load milliseconds: ",ai.qwen_metrics.load_ns/1_000_000);
-                self.output.write_number(b"First token milliseconds: ",ai.qwen_metrics.first_token_ns/1_000_000);
-                self.output.write_number(b"Prefill compute milliseconds: ",ai.qwen_metrics.prefill_work_ns/1_000_000);
-                self.output.write_number(b"Decode compute milliseconds: ",ai.qwen_metrics.decode_work_ns/1_000_000);
-                self.output.write_number(b"Maximum slice microseconds: ",ai.qwen_metrics.max_slice_ns/1_000);
-                self.output.write_number(b"Maximum AI pump microseconds: ",ai.qwen_metrics.max_pump_ns/1_000);
-                self.output.write_number(b"Cached prompt tokens: ",ai.qwen_metrics.reused_tokens as u64);
-                self.output.write_number(b"Online inference workers: ",crate::runtime::ai::qwen::workers::online() as u64);
-                self.output.write_number(b"Completed worker jobs: ",crate::runtime::ai::qwen::workers::completed() as u64);
-                self.output.write_number(b"New prompt tokens: ",ai.qwen_metrics.prefill_tokens as u64);
-            });
+            let mut output = crate::runtime::console_execution::Bytes::new();
+            crate::runtime::console_execution::render_ai(&mut output);
+            for line in output.bytes().split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
             return true;
         }
         if command == b"model list" {
@@ -14063,58 +14017,7 @@ fn language_error_text(
 // DESC: Returns the human projection of a typed operation result identity.
 // ------------------=
 fn value_type_text(value: crate::runtime::console_language::ValueType) -> &'static [u8] {
-    use crate::runtime::console_language::ValueType::*;
-    match value {
-        Unit => b"Unit",
-        SystemStatus => b"SystemStatus",
-        DeviceSet => b"DeviceSet",
-        StorageStatus => b"StorageStatus",
-        Object => b"Object",
-        ObjectSet => b"ObjectSet",
-        NamespaceResult => b"NamespaceResult",
-        Project => b"Project",
-        ProjectSet => b"ProjectSet",
-        Collection => b"Collection",
-        CollectionSet => b"CollectionSet",
-        ServiceSet => b"ServiceSet",
-        RuntimeContextSet => b"RuntimeContextSet",
-        CapabilitySet => b"CapabilitySet",
-        EventSet => b"EventSet",
-        ModelSet => b"ModelSet",
-        AgentSet => b"AgentSet",
-        VoiceStatus => b"VoiceStatus",
-        OperationPlan => b"OperationPlan",
-        User => b"User",
-        UserSet => b"UserSet",
-        Group => b"Group",
-        GroupSet => b"GroupSet",
-        MembershipSet => b"MembershipSet",
-        Machine => b"Machine",
-        CredentialSet => b"CredentialSet",
-        Session => b"Session",
-        SessionSet => b"SessionSet",
-        Profile => b"Profile",
-        PersonalSpace => b"PersonalSpace",
-        Settings => b"Settings",
-        SkinSet => b"SkinSet",
-        UiTree => b"UiTree",
-        WindowSet => b"WindowSet",
-        ClipboardData => b"ClipboardData",
-        NetworkStatus => b"NetworkStatus",
-        NetworkInterfaceSet => b"NetworkInterfaceSet",
-        NetworkAddressSet => b"NetworkAddressSet",
-        NetworkRouteSet => b"NetworkRouteSet",
-        NetworkConnectionSet => b"NetworkConnectionSet",
-        NetworkPolicySet => b"NetworkPolicySet",
-        NetworkProfileSet => b"NetworkProfileSet",
-        NetworkDiagnostics => b"NetworkDiagnostics",
-        ServiceDiscoverySet => b"ServiceDiscoverySet",
-        NodeSet => b"NodeSet",
-        NodeSessionSet => b"NodeSessionSet",
-        NodePolicy => b"NodePolicy",
-        NodeAuditSet => b"NodeAuditSet",
-        MeshDomainSet => b"MeshDomainSet",
-    }
+    crate::runtime::console_execution::value_type_text(value)
 }
 
 // ------------------------=

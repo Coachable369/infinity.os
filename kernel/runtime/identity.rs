@@ -9,6 +9,8 @@ use crate::ui::session_state::{
 #[path = "identity/accounts.rs"]
 mod accounts;
 pub use accounts::*;
+#[path = "identity/ssh_keys.rs"]
+mod ssh_keys;
 
 pub const MAX_USERS: usize = 8;
 pub const MAX_CREDENTIALS: usize = 12;
@@ -19,7 +21,7 @@ pub const USER_AI_MEMORY_OFFSET: usize = V2_IDENTITY_STATE_BYTES - 4;
 pub const V3_IDENTITY_STATE_BYTES: usize = USER_AI_MEMORY_OFFSET + AI_MEMORY_STATE_BYTES + 4;
 pub const ACCOUNTS_STATE_OFFSET: usize = V3_IDENTITY_STATE_BYTES - 4;
 pub const IDENTITY_STATE_BYTES: usize = ACCOUNTS_STATE_OFFSET + ACCOUNTS_STATE_BYTES + 4;
-pub const IDENTITY_FORMAT_VERSION: u16 = 4;
+pub const IDENTITY_FORMAT_VERSION: u16 = 5;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
@@ -141,6 +143,7 @@ pub enum CredentialType {
     Biometric = 4,
     Passkey = 5,
     Recovery = 6,
+    SshEd25519 = 7,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -301,8 +304,13 @@ pub struct PersonalSpaceOwnership {
     pub space: StableId,
 }
 
+pub const SESSION_REMOTE_QUERY: u64 = 1 << 32;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SessionOrigin { Local, Ssh }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Session {
+    pub origin: SessionOrigin,
+    pub(crate) remote_key: Option<[u8; 32]>,
     pub id: StableId,
     pub user: StableId,
     pub machine: StableId,
@@ -813,7 +821,8 @@ impl IdentitySystem {
             .credentials
             .iter_mut()
             .flatten()
-            .find(|c| c.descriptor.owner == user && c.descriptor.state == CredentialState::Active)
+            .find(|c| c.descriptor.owner == user && c.descriptor.state == CredentialState::Active
+                && matches!(c.descriptor.kind, CredentialType::Password | CredentialType::Pin))
             .ok_or(IdentityError::InvalidCredential)?;
         if now < credential.retry_after {
             return Err(IdentityError::RateLimited);
@@ -865,6 +874,8 @@ impl IdentitySystem {
             .ok_or(IdentityError::Full)?;
         let is_owner = self.is_administrator(user);
         let session = Session {
+            origin: SessionOrigin::Local,
+            remote_key: None,
             id: self.allocate_id(0x4e),
             user,
             machine: machine.id,
@@ -1481,7 +1492,7 @@ impl IdentitySystem {
         let valid_shape = (version == 1 && bytes.len() == LEGACY_IDENTITY_STATE_BYTES)
             || (version == 2 && bytes.len() == V2_IDENTITY_STATE_BYTES)
             || (version == 3 && bytes.len() == V3_IDENTITY_STATE_BYTES)
-            || (version == IDENTITY_FORMAT_VERSION && bytes.len() == IDENTITY_STATE_BYTES);
+            || ((version == 4 || version == IDENTITY_FORMAT_VERSION) && bytes.len() == IDENTITY_STATE_BYTES);
         if &bytes[..8] != b"INFIDN1\0"
             || !valid_shape
             || get16(bytes, 10) as usize != bytes.len()
@@ -1555,7 +1566,11 @@ impl IdentitySystem {
         for index in 0..MAX_CREDENTIALS {
             let offset = 1440 + index * 120;
             if bytes[offset] != 0 {
-                state.credentials[index] = Some(read_credential(bytes, offset)?);
+                let credential = read_credential(bytes, offset)?;
+                if version < 5 && credential.descriptor.kind == CredentialType::SshEd25519 {
+                    return Err(IdentityError::CorruptState);
+                }
+                state.credentials[index] = Some(credential);
             }
         }
         if version >= 2 {
@@ -2114,23 +2129,33 @@ fn read_credential(input: &[u8], at: usize) -> Result<Credential, IdentityError>
     let mut verifier = [0u8; 32];
     verifier.copy_from_slice(&input[at + 68..at + 100]);
     let iterations = get32(input, at + 100);
-    if iterations < 1000 {
+    let kind = match input[at + 1] {
+        1 => CredentialType::Password,
+        2 => CredentialType::Pin,
+        7 => CredentialType::SshEd25519,
+        _ => return Err(IdentityError::CorruptState),
+    };
+    let state = match input[at + 2] {
+        1 => CredentialState::Active,
+        2 => CredentialState::Revoked,
+        _ => return Err(IdentityError::CorruptState),
+    };
+    if kind == CredentialType::SshEd25519 {
+        if iterations != 0 || salt != [0; 16] { return Err(IdentityError::CorruptState); }
+        if state == CredentialState::Active {
+            let key = ed25519_dalek::VerifyingKey::from_bytes(&verifier)
+                .map_err(|_| IdentityError::CorruptState)?;
+            if key.is_weak() { return Err(IdentityError::CorruptState); }
+        } else if verifier != [0; 32] { return Err(IdentityError::CorruptState); }
+    } else if iterations < 1000 {
         return Err(IdentityError::CorruptState);
     }
     Ok(Credential {
         descriptor: CredentialDescriptor {
             id: read_id(input, at + 4),
             owner: read_id(input, at + 20),
-            kind: if input[at + 1] == 1 {
-                CredentialType::Password
-            } else {
-                CredentialType::Pin
-            },
-            state: if input[at + 2] == 1 {
-                CredentialState::Active
-            } else {
-                CredentialState::Revoked
-            },
+            kind,
+            state,
             created: get64(input, at + 36),
             last_used: get64(input, at + 44),
         },

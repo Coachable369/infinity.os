@@ -9,6 +9,8 @@ mod install_identity;
 pub mod layout;
 pub mod payload;
 pub mod object;
+#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+pub(crate) mod ssh;
 mod hermes_memory_store;
 pub(crate) mod editor_objects;
 mod interactive_device;

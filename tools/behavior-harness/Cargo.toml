@@ -7,6 +7,14 @@ edition = "2021"
 name = "face-vault-test"
 path = "../face-vault-test.rs"
 
+[[bin]]
+name = "ssh-identity-test"
+path = "../ssh-identity-test.rs"
+
+[[bin]]
+name = "ssh-storage-test"
+path = "../ssh-storage-test.rs"
+
 [build-dependencies]
 cc = "1"
 
@@ -59,6 +67,7 @@ name = "hermes-install-parity"
 path = "../hermes-install-parity.rs"
 
 [dependencies]
+infinity-enterprise-core = { path = "../../sdk/infinity-enterprise-core" }
 infinity-http = { path = "../../kernel/runtime/http" }
 libm = { version = "0.2", default-features = false }
 chacha20poly1305 = { version = "0.11.0", default-features = false }
@@ -187,3 +196,7 @@ path = "../browser-entropy-test.rs"
 [[bin]]
 name = "intelligence-kit-test"
 path = "../intelligence-kit-test.rs"
+
+[[bin]]
+name = "ssh-console-test"
+path = "../ssh-console-test.rs"

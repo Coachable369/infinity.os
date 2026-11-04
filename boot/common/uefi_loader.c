@@ -1559,6 +1559,11 @@ static void gather_firmware_audio(EFI_SYSTEM_TABLE *system, InfinityBootInfo *in
 // ------------------=
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     serial_initialize();
+    /* Full System Generation validation and payload preparation can exceed the
+     * firmware image watchdog under emulation. Disable it before that work,
+     * also preserving the ARM firmware bridges after kernel handoff. */
+    if (system->boot_services->set_watchdog_timer)
+        system->boot_services->set_watchdog_timer(0, 0, 0, NULL);
     firmware_write(system, L"InfinityOS bootstrap\r\n");
     serial_write("InfinityOS bootstrap\n[BOOT] firmware entry\n");
 
@@ -1689,12 +1694,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
 #endif
     gather_firmware_network(system, info);
     gather_firmware_audio(system, info);
-
-    /* AArch64 retains selected firmware services for its input bridge. Disable
-     * the standard five-minute image watchdog before transferring control so a
-     * healthy installed system is not reset after 300 seconds. */
-    if (system->boot_services->set_watchdog_timer)
-        system->boot_services->set_watchdog_timer(0, 0, 0, NULL);
 
     size_t map_size = 0, descriptor_size = 0;
     uint64_t map_key = 0;

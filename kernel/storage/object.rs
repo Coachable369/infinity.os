@@ -21,6 +21,9 @@ mod reserved_pair;
 mod python_packages;
 #[path = "object_clock.rs"]
 mod clock_configuration;
+#[path = "object_ssh.rs"]
+mod ssh_private;
+pub(crate) use ssh_private::SSH_SERVICE_OWNER;
 pub use python_packages::{PythonPackageRevision, PythonDataRevision, PythonLibraryCatalog,
     format_python_library_context, PYTHON_LIBRARY_CONTEXT_BYTES};
 
@@ -1728,7 +1731,12 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Rejects generic access to identity credentials and account authority without restricting unrelated objects.
     // ------------------=
     fn allow_public_identity_access(&self, id: ObjectId) -> Result<(), ObjectError> {
-        if self.is_identity_state(id)? { Err(ObjectError::Unauthorized) } else { Ok(()) }
+        let record = &self.state.objects[self.object_index(id)?];
+        let name = &record.name[..record.name_len as usize];
+        if self.is_identity_state(id)? || record.space == Space::System as u8
+            && matches!(name, b"@ssh-host-key" | b"@ssh-config") {
+            Err(ObjectError::Unauthorized)
+        } else { Ok(()) }
     }
 
     // ------------------------=

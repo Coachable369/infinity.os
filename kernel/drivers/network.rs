@@ -16,6 +16,8 @@ pub fn initialize(_info: &crate::boot_info::BootInfo) {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     super::https::initialize(_info);
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    super::ssh::initialize(_info);
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     unsafe {
         if BUSY.swap(true, Ordering::Acquire) {
             return;
@@ -67,6 +69,7 @@ pub fn poll() {
                 if let Some(nic) = (&mut *(&raw mut NIC)).as_mut() {
                     pump(nic, now / 1_000_000_000);
                     super::https::poll(nic, now / 1_000_000);
+                    super::ssh::poll(nic, now / 1_000_000);
                 }
                 crate::runtime::poll_node_transport(now / 1_000_000_000);
             }
@@ -160,6 +163,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
                 unsafe { super::network_dhcp::ingest(&frame[..length]); }
                 let _ = network.wire.ingest(&frame[..length], now);
                 super::https::ingest(&frame[..length]);
+                super::ssh::ingest(&frame[..length]);
             }
         }
         for _ in 0..4 {

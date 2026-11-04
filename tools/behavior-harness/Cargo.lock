@@ -509,6 +509,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "infinity-enterprise-core"
+version = "0.1.0"
+dependencies = [
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "infinity-http"
 version = "0.1.0"
 dependencies = [
@@ -537,6 +544,7 @@ dependencies = [
  "chacha20poly1305",
  "ed25519-dalek",
  "hkdf 0.13.0",
+ "infinity-enterprise-core",
  "infinity-http",
  "libm",
  "sha2 0.11.0",

@@ -9,6 +9,8 @@ use smoltcp::{
     wire::{EthernetAddress, IpCidr, IpEndpoint, Ipv4Address},
 };
 use crate::transport::Readiness;
+#[path = "listener.rs"]
+pub mod listener;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Protocol { Tcp, Udp }
@@ -36,6 +38,7 @@ struct Slot {
     protocol: Protocol,
     generation: u64,
     live: bool,
+    inbound: bool,
     grant: u64,
     remote: Endpoint,
     local_port: u16,
@@ -82,7 +85,7 @@ impl<'a, const N: usize> Reactor<'a, N> {
     fn reserve(&mut self, socket: impl smoltcp::socket::AnySocket<'a>, protocol: Protocol) -> Result<(), Error> {
         let index = self.slots[..self.capacity].iter().position(Option::is_none).ok_or(Error::Capacity)?;
         let socket = self.sockets.add(socket);
-        self.slots[index] = Some(Slot { socket, protocol, generation: 0, live: false, grant: 0,
+        self.slots[index] = Some(Slot { socket, protocol, generation: 0, live: false, inbound: false, grant: 0,
             remote: Endpoint { address: [0; 4], port: 0 }, local_port: 0,
             deadline: Instant::from_millis(0), failure: None, fin: false, write_closed: false });
         Ok(())
@@ -140,6 +143,7 @@ impl<'a, const N: usize> Reactor<'a, N> {
         }
         slot.generation += 1;
         slot.live = true;
+        slot.inbound = false;
         slot.grant = grant;
         slot.remote = remote;
         slot.local_port = local_port;

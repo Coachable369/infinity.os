@@ -307,6 +307,14 @@ fn migration_and_corruption() {
     identity.update_user_desktop_layout(member.id, member.id, layout()).unwrap();
     let encoded = identity.encode();
     assert_eq!(encoded.len(), 12_960);
+    let mut version_four = encoded;
+    version_four[8..10].copy_from_slice(&4u16.to_le_bytes());
+    repair_checksum(&mut version_four);
+    let migrated = IdentitySystem::decode(&version_four).unwrap();
+    assert_eq!(migrated.group(group.id), Some(group));
+    assert!(migrated.is_group_member(group.id, member.id));
+    assert!(migrated.is_administrator(owner.id));
+    assert!(!migrated.is_administrator(member.id));
     for (version, length) in [(1u16, LEGACY_IDENTITY_STATE_BYTES), (2, V2_IDENTITY_STATE_BYTES), (3, V3_IDENTITY_STATE_BYTES)] {
         let mut bytes = encoded[..length].to_vec();
         bytes[8..10].copy_from_slice(&version.to_le_bytes());

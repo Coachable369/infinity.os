@@ -17,6 +17,8 @@ pub mod capability;
 pub mod compute;
 pub mod compute_operator;
 pub mod console_language;
+pub mod console_execution;
+pub mod console_terminal;
 pub mod event;
 pub mod execution;
 #[cfg(all(
@@ -291,6 +293,7 @@ pub enum UiOperationError {
     Window(crate::ui::window::WindowError),
 }
 pub struct InfinityRuntime {
+    pub console_environment: console_execution::Environment,
     pub storage_last_observation: Option<iop::storage_protocol::StorageOperationV1>,
     storage_handler: Option<iop::storage_protocol::StorageHandler>,
     storage_event_cap: [Option<u64>; 4],
@@ -438,6 +441,7 @@ impl InfinityRuntime {
     // ------------------=
     pub const fn new(live_profile: bool) -> Self {
         Self {
+            console_environment: console_execution::Environment::new(),
             storage_last_observation: None,
             storage_handler: None,
             storage_event_cap: [None; 4],

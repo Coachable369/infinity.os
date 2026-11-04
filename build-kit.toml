@@ -62,6 +62,10 @@ clean = false
 command = ["make", "test"]
 clean = false
 
+[profiles.ssh-tests]
+command = ["sh", "tools/ssh-test.sh"]
+clean = false
+
 [profiles.accounts-tests]
 command = ["sh", "tools/accounts-test.sh"]
 clean = false

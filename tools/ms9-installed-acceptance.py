@@ -354,7 +354,7 @@ class Guest:
                 assert state[5] != 9, {"installer_failed_at_step": step, "state": state}
                 return state[5] > step
             self.wait(advanced, f"advance {step}", getattr(self,"install_timeout_seconds",900) if step == 6 else 300)
-        self.wait(lambda state: state[5] == 8, "installation completed", 300)
+        self.wait(lambda state: state[5] == 8, "installation completed", getattr(self,"install_timeout_seconds",300))
         self.screenshot("installed-complete")
         self.stop()
         self.boot(False)
