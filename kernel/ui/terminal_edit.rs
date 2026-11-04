@@ -1,10 +1,12 @@
 //! Local terminal editor presentation, reusing the native document engine and font kit.
 use super::text_editor::TextDocument;
+// Opaque object bytes plus the version fence; UI never owns storage authority.
+pub type Revision = Option<([u8;16],u32)>;
 pub struct State {
     pub active:bool, pub closing_window:bool, pub owner:[u8;16], pub document:TextDocument,
     pub path:[u8;96], pub path_len:usize, pub top:usize,
-    pub revision:Option<(crate::storage::object::ObjectId,u32)>,
-    pub memory:Option<(crate::storage::object::ObjectId,u32)>,
+    pub revision:Revision,
+    pub memory:Revision,
     pub prompt:u8, pub query:[u8;96], pub query_len:usize,
     pub cut:[u8;4096], pub cut_len:usize, pub notice:&'static [u8],
 }

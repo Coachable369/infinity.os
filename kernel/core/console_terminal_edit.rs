@@ -18,10 +18,10 @@ impl ConsoleRuntime {
             Err(crate::storage::object::ObjectError::NotFound|crate::storage::object::ObjectError::NamespaceNotFound)=>(0,None,true),
             Err(error)=>{self.storage_error(error);return;}
         };
-        let revision=if new{None}else{crate::storage::object_inspect_path(path.as_bytes()).ok().map(|(m,_)|(m.object.id,m.current_version))};
+        let revision=if new{None}else{crate::storage::object_inspect_path(path.as_bytes()).ok().map(|(m,_)|(m.object.id.0,m.current_version))};
         if !edit::mutate(|s|s.document.open(&bytes[..len])){bytes.fill(0);self.output.write_line(b"edit supports ASCII text up to 16 KiB; this file was not changed.");return;}
         bytes.fill(0);self.open_command_window();crate::bootstrap::system_ui_settings_changed();
-        edit::mutate(|s|{s.active=true;s.closing_window=false;s.path.fill(0);s.path_len=path.as_bytes().len();s.path[..s.path_len].copy_from_slice(path.as_bytes());s.document.set_cursor(0);s.top=0;s.revision=revision;s.memory=memory;s.prompt=0;s.notice=if new{b"New file - Ctrl+S to create"}else{b"Ctrl+S Save   Ctrl+X Exit   Ctrl+W Find   Ctrl+G Go to line"};});
+        edit::mutate(|s|{s.active=true;s.closing_window=false;s.path.fill(0);s.path_len=path.as_bytes().len();s.path[..s.path_len].copy_from_slice(path.as_bytes());s.document.set_cursor(0);s.top=0;s.revision=revision;s.memory=memory.map(|(id,version)|(id.0,version));s.prompt=0;s.notice=if new{b"New file - Ctrl+S to create"}else{b"Ctrl+S Save   Ctrl+X Exit   Ctrl+W Find   Ctrl+G Go to line"};});
     }
     // ------------------------=
     // FUNC: save_terminal_edit
@@ -31,10 +31,10 @@ impl ConsoleRuntime {
         if !self.workplace_authorized(true){edit::mutate(|s|s.notice=b"Save denied: session is not writable.");return false;}
         edit::mutate(|s|{
             let path=&s.path[..s.path_len];
-            let current=crate::storage::object_inspect_path(path).ok().map(|(m,_)|(m.object.id,m.current_version));
+            let current=crate::storage::object_inspect_path(path).ok().map(|(m,_)|(m.object.id.0,m.current_version));
             if current!=s.revision {s.notice=b"File changed externally. Save cancelled; reopen to avoid overwriting.";return false;}
             let result=if current.is_some() {
-                crate::storage::editor_write_path(self.current_user.0,self.current_session.0,path,s.document.bytes(),s.memory)
+                crate::storage::editor_write_path(self.current_user.0,self.current_session.0,path,s.document.bytes(),s.memory.map(|(id,version)|(crate::storage::object::ObjectId(id),version)))
             }else{
                 let slash=path.iter().rposition(|b|*b==b'/').unwrap_or(0);
                 let parent=if slash==0{b"/".as_slice()}else{&path[..slash]};
@@ -42,7 +42,7 @@ impl ConsoleRuntime {
                 if !allowed{s.notice=b"Create denied: choose an existing writable Personal folder.";return false;}
                 crate::storage::object_create_owned_note_at(&path[slash+1..],s.document.bytes(),path,crate::storage::object::ObjectId(self.current_user.0)).map(|_|None)
             };
-            match result {Ok(memory)=>{s.memory=memory;s.revision=crate::storage::object_inspect_path(path).ok().map(|(m,_)|(m.object.id,m.current_version));s.document.save();s.notice=b"Saved";true},Err(_)=>{s.notice=b"Save failed: check permissions, available storage and file type.";false}}
+            match result {Ok(memory)=>{s.memory=memory.map(|(id,version)|(id.0,version));s.revision=crate::storage::object_inspect_path(path).ok().map(|(m,_)|(m.object.id.0,m.current_version));s.document.save();s.notice=b"Saved";true},Err(_)=>{s.notice=b"Save failed: check permissions, available storage and file type.";false}}
         })
     }
     // ------------------------=
