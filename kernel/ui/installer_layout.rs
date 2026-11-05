@@ -71,7 +71,11 @@ pub fn login_wave_regions(template: &InstallerTemplate<'_>, width: usize, height
     let Some(background) = template.element(1, InstallerTemplateRole::SceneBackground) else { return (regions, 0); };
     if background.hidden || background.opacity == 0 { return (regions, 0); }
     let rect = scale_template_rect(background.frame, width, height);
-    regions[0] = InstallerRect { top: rect.top + rect.height / 5, height: rect.height * 7 / 10, ..rect };
+    // All eight traces, at maximum speech excursion, fit inside 43.6–70.9%
+    // of the authored backdrop. Include glow and rounding on compact displays.
+    let top=(rect.height*43/100).saturating_sub(8);
+    let bottom=(rect.height*72/100+8).min(rect.height);
+    regions[0] = InstallerRect { top: rect.top+top, height: bottom-top, ..rect };
     let mut count = 1;
     for index in 0..template.element_count(1).unwrap_or(0) {
         let Some(element) = template.layer_at(1, index) else { continue; };
