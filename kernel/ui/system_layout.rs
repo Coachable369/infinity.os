@@ -2358,6 +2358,7 @@ impl SystemLayout {
             if let Some((console, _, _, _)) = authored {
                 use crate::ui::installer_template::InstallerTemplateRole;
                 let mut last_bottom = viewport_top;
+                let first=crate::ui::settings_template::role_at(section,InstallerTemplateRole::Metadata,0);
                 for index in 0..state.row_count.clamp(1, 8) {
                     let Some(row) = crate::ui::settings_template::role_at(
                         section,
@@ -2366,8 +2367,10 @@ impl SystemLayout {
                     ) else {
                         break;
                     };
-                    let mapped = map(row.frame, console);
-                    last_bottom = last_bottom.max(mapped.bottom().max(0) as usize);
+                    if let Some(first)=first {
+                        let start=viewport_top.max(map(first.frame,console).y.max(0) as usize);
+                        last_bottom=last_bottom.max(start + (usize::from(row.frame.y.saturating_sub(first.frame.y))+usize::from(row.frame.height))*800*self.scale/1000);
+                    }
                 }
                 let detail = state
                     .expanded_row
@@ -2525,7 +2528,9 @@ impl SystemLayout {
                 let hero_offset = usize::from(section == 1)
                     * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14)
                     * self.scale;
-                let row_top = map_y(row.frame.y);
+                let first=crate::ui::settings_template::role_at(section,InstallerTemplateRole::Metadata,0).unwrap_or(row);
+                let first_top=map_y(first.frame.y);
+                let row_top=first_top.max(window.viewport.y.max(0) as usize) + usize::from(row.frame.y.saturating_sub(first.frame.y))*800*self.scale/1000;
                 let summary_top = row_top as i32 + hero_offset as i32 + prior_detail as i32
                     - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
                 let mut summary = rect(
@@ -2533,9 +2538,10 @@ impl SystemLayout {
                     summary_top.max(0) as usize,
                     row.frame.width as usize * outer.width as usize
                         / console.frame.width.max(1) as usize,
-                    row.frame.height as usize * outer.height as usize / console.frame.height.max(1) as usize,
+                    row.frame.height as usize * 800*self.scale/1000,
                 );
                 summary.y = summary_top;
+                summary.width = summary.width.min(window.viewport.right().saturating_sub(summary.x).max(0) as u32);
                 return SettingsRowGeometry {
                     summary,
                     detail: Rect {
@@ -2677,6 +2683,32 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_choice_item
+    // DESC: Uses one anchored item rectangle for the native list painter and pointer dispatch.
+    // ------------------=
+    pub fn settings_choice_item(self,state:SettingsWindowState,section:usize,row:usize,index:usize)->Rect {
+        let detail=self.settings_row_geometry_for_section(state,row,section).detail;
+        let field=self.settings_field_bounds(state,section,row);
+        let height=(crate::ui::controls::choices::ITEM_HEIGHT*self.scale) as u32;
+        Rect{x:field.x,width:field.width,y:detail.y+(index as i32)*(height as i32),height}
+    }
+
+    // ------------------------=
+    // FUNC: settings_field_bounds
+    // DESC: Anchors the field to the authored trailing edge and keeps its design size when the window grows.
+    // ------------------=
+    pub fn settings_field_bounds(self,state:SettingsWindowState,section:usize,row:usize)->Rect {
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        let summary=self.settings_row_geometry_for_section(state,row,section).summary;
+        let area=self.settings_row_element_geometry(state,section,row,Role::SettingsRowValue)
+            .unwrap_or(crate::ui::settings_cards::content(summary,self.scale).value);
+        let element=crate::ui::settings_template::role_at(section,Role::SettingsRowValue,row);
+        let width=element.map_or(320,|e|u32::from(e.frame.width)*1280/1000+16)*self.scale as u32;
+        let width=width.min(summary.width.saturating_sub((120*self.scale) as u32));
+        let height=(36*self.scale as u32).min(summary.height);
+        Rect{x:area.right()+(8*self.scale)as i32-width as i32,y:summary.y+(summary.height-height)as i32/2,width,height}
+    }
+    // ------------------------=
     // FUNC: settings_row_element_geometry
     // DESC: Carries an authored row child with its summary through expansion and scrolling, preserving Studio offsets.
     // ------------------=
@@ -2698,7 +2730,10 @@ impl SystemLayout {
             index,
         )?;
         child.x += row.x - anchor.x;
-        child.y += row.y - anchor.y;
+        let row_frame=crate::ui::settings_template::role_at(section,crate::ui::installer_template::InstallerTemplateRole::Metadata,index)?.frame;
+        let frame=crate::ui::settings_template::role_at(section,role,index)?.frame;
+        child.y=row.y+(i32::from(frame.y)-i32::from(row_frame.y))*800*self.scale as i32/1000;
+        child.height=u32::from(frame.height)*800*self.scale as u32/1000;
         Some(child)
     }
 
@@ -3573,7 +3608,9 @@ impl SystemLayout {
 // FUNC: settings_detail_height
 // DESC: Returns the logical inline well height needed by each Settings row's real controls or explanation.
 // ------------------=
-const fn settings_detail_height(index: usize, section: usize) -> usize {
+fn settings_detail_height(index: usize, section: usize) -> usize {
+    let options=crate::ui::controls::choices::count(section,index);
+    if options>0 {return options*crate::ui::controls::choices::ITEM_HEIGHT;}
     if crate::ui::installer_template::settings_action_for_row(section, index).is_some() {
         return 128;
     }

@@ -640,6 +640,9 @@ struct ConsoleRuntime {
     locked_desktop_layout: LockedDesktopState,
 }
 
+#[path="settings_choice_input.rs"]
+mod settings_choice_input;
+
 impl ConsoleRuntime {
     // ------------------------=
     // FUNC: new
@@ -4672,6 +4675,7 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        crate::ui::controls::choices::close();
         if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_SETTINGS) {return;}
         self.accounts_cancel();
         self.cancel_account_password();
@@ -5614,6 +5618,12 @@ impl ConsoleRuntime {
             (0, 0) => {
                 self.settings_editing = true;
                 self.reset_input();
+                if let Some(machine)=crate::runtime::with_runtime(|r|r.identity.machine()).flatten() {
+                    let name=machine.display_name.as_bytes();
+                    self.command_length=name.len().min(self.command.len());
+                    self.command[..self.command_length].copy_from_slice(&name[..self.command_length]);
+                    self.command_cursor=self.command_length;
+                }
             }
             (1, 0) => {
                 let light = crate::runtime::with_runtime(|runtime| runtime.ui.skins.active().id
@@ -5699,11 +5709,13 @@ impl ConsoleRuntime {
         if row >= self.settings_window.row_count { return; }
         use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
         match settings_row_interaction(self.system_focus,row) {
-            I::Cycle | I::Toggle if self.system_focus==10 || (self.system_focus==4 && row==4) => {
+            I::Cycle => self.show_settings_choices(row),
+            I::Details if self.system_focus == 10 && row == 7 => self.toggle_settings_row(row),
+            I::Toggle if self.system_focus==10 || (self.system_focus==4 && row==4) => {
                 self.toggle_settings_row(row);
                 self.settings_window.expanded_row=None;
             }
-            I::Cycle | I::Toggle | I::Select => self.activate_settings_content_row(row),
+            I::Toggle | I::Select => self.activate_settings_content_row(row),
             I::Edit => {
                 self.settings_window.expanded_row=Some(row);
                 self.activate_settings_content_row(row);
@@ -5721,6 +5733,23 @@ impl ConsoleRuntime {
         let rows=self.settings_window.row_count;
         let focus=self.settings_window.control_focus;
         let row=focus.checked_sub(BASE).filter(|&row|row<rows);
+        if let Some(open)=self.settings_window.expanded_row {
+            use crate::ui::controls::choices;
+            let count=choices::count(self.system_focus,open);
+            if count>0 {
+                let current=choices::focus();
+                match key {
+                    ConsoleKey::Escape|ConsoleKey::Tab(_)=>self.dismiss_settings_choices(),
+                    ConsoleKey::Enter|ConsoleKey::Character(b' ')=>self.commit_settings_choice(open,current),
+                    ConsoleKey::Up|ConsoleKey::Down|ConsoleKey::Home|ConsoleKey::End=>{
+                        choices::highlight(match key {ConsoleKey::Up=>current.saturating_sub(1),ConsoleKey::Down=>current+1,ConsoleKey::Home=>0,_=>count-1});
+                        self.reveal_settings_choice(open);
+                    }
+                    _=>{}
+                }
+                return true;
+            }
+        }
         let next=match key {
             ConsoleKey::Tab(backwards)=>settings_tab_focus(focus,rows,backwards),
             ConsoleKey::Right if row.is_none()=>BASE,
@@ -9847,6 +9876,27 @@ impl ConsoleRuntime {
                     }
                     self.redraw();
                     return;
+                }
+            }
+            if clicked {
+                if let Some(row)=self.settings_window.expanded_row {
+                    let count=crate::ui::controls::choices::count(self.system_focus,row);
+                    if count>0 {
+                        let point=layout.point(self.pointer_x,self.pointer_y);
+                        if layout.settings_window_geometry_for_section(self.settings_window,self.system_focus).viewport.contains(point) {
+                            if let Some(index)=(0..count).find(|&i|layout.settings_choice_item(self.settings_window,self.system_focus,row,i).contains(point)){
+                                self.commit_settings_choice(row,index);
+                                self.redraw();
+                                return;
+                            }
+                        }
+                        let target=layout.settings_target_for_section(self.pointer_x,self.pointer_y,self.settings_window,self.system_focus);
+                        if !matches!(target,Some(SettingsTarget::ScrollThumb | SettingsTarget::ScrollPage(_))) {
+                            self.dismiss_settings_choices();
+                            self.redraw();
+                            return;
+                        }
+                    }
                 }
             }
             if clicked && self.system_focus == 7 {

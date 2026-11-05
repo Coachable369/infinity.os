@@ -104,6 +104,24 @@ impl Preferences {
         }
     }
     // ------------------------=
+    // FUNC: choice_index
+    // DESC: Maps a persisted input preference to its bounded menu position.
+    // ------------------=
+    pub fn choice_index(self,row:usize)->usize {
+        (match row {0=>self.speed-1,1=>self.scroll-1,2=>self.natural as u8,3=>self.left_handed as u8,
+            4=>self.acceleration as u8,5=>self.delay,6=>self.rate,_=>0}) as usize
+    }
+    // ------------------------=
+    // FUNC: select_choice
+    // DESC: Changes only the requested input preference when its selected index is valid.
+    // ------------------=
+    pub fn select_choice(&mut self,row:usize,index:usize){
+        match row {0 if index<10=>self.speed=index as u8+1,1 if index<10=>self.scroll=index as u8+1,
+            2 if index<2=>self.natural=index!=0,3 if index<2=>self.left_handed=index!=0,
+            4 if index<2=>self.acceleration=index!=0,5 if index<4=>self.delay=index as u8,
+            6 if index<4=>self.rate=index as u8,_=>{}}
+    }
+    // ------------------------=
     // FUNC: value
     // DESC: Returns the real active value, not a placeholder setting label.
     // ------------------=

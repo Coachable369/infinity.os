@@ -4,44 +4,27 @@ use crate::ui::{geometry::Rect,panel_recipe::{self,Surface,Material,SurfaceStyle
 
 impl DisplayDevice {
     // ------------------------=
-    // FUNC: precision_checkbox
-    // DESC: Composes a shared field and the kit's antialiased check glyph for boolean controls without inventing a new border or state artwork.
+    // FUNC: precision_toggle
+    // DESC: Composes the Precision track and circular knob at opposite ends for the two boolean states.
     // ------------------=
-    pub(super) fn precision_checkbox(&mut self, rect: Rect, checked: bool, enabled: bool, mut material: Material) {
+    pub(super) fn precision_toggle(&mut self, rect: Rect, checked: bool, enabled: bool, mut material: Material) {
         if !enabled {
             material.opacity /= 2;
             material.edge_opacity /= 2;
             material.focus = 0;
         }
-        self.precision_surface(rect, Surface::Field, material);
-        if !checked { return; }
-        const ATLAS: &[u8; 16*64*64*4] = include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba");
-        #[cfg(studio_native_preview)]
-        let atlas=crate::studio_native_render::asset_override(b"eclipse-access-glyphs-v1.rgba").unwrap_or(ATLAS);
-        #[cfg(not(studio_native_preview))]
-        let atlas=ATLAS;
-        let inset = (3 * material.scale.max(1)).min(rect.width.min(rect.height) as usize / 4);
-        let width = rect.width as usize - inset * 2;
-        let height = rect.height as usize - inset * 2;
-        if width == 0 || height == 0 { return; }
-        let left = rect.x as i64 + inset as i64;
-        let top = rect.y as i64 + inset as i64;
-        let start_x = left.max(0) as usize;
-        let start_y = top.max(0) as usize;
-        let right = (left + width as i64).max(0) as usize;
-        let bottom = (top + height as i64).max(0) as usize;
-        let Some(clip) = self.clipped_render_region(start_x,start_y,right.saturating_sub(start_x),bottom.saturating_sub(start_y)) else { return; };
-        for y in clip.top..clip.bottom { for x in clip.left..clip.right {
-            let sx = (x as i64 - left) as usize;
-            let sy = (y as i64 - top) as usize;
-            let (x0,y0) = (sx*64/width,sy*64/height);
-            let (x1,y1) = ((((sx+1)*64/width).max(x0+1)).min(64),(((sy+1)*64/height).max(y0+1)).min(64));
-            let mut alpha = 0u32;
-            for ay in y0..y1 { for ax in x0..x1 { alpha += u32::from(atlas[(15*64*64+ay*64+ax)*4+3]); } }
-            let alpha = (alpha/((x1-x0)*(y1-y0)) as u32) as u8;
-            self.blend_color_unchecked(x,y,255,255,255,if enabled {alpha}else{alpha/2});
-        } }
-        self.mark_dirty_rect(clip.left,clip.top,clip.right-clip.left,clip.bottom-clip.top);
+        let diameter=rect.height.min(rect.width);
+        if diameter < 4 { return; }
+        let edge = if checked {material.edge} else {(78,102,129)};
+        let track=Material{fill:if checked {edge}else{material.fill},edge,..material};
+        let style=panel_recipe::template_style(Surface::Secondary,0,2,(diameter/2).min(40) as u8);
+        self.precision_surface_styled(rect,Surface::Secondary,track,style);
+        let inset=(2*material.scale.max(1)) as u32;
+        let size=diameter.saturating_sub(2*inset);
+        let thumb=Rect{x:if checked {rect.right()-(size+inset)as i32}else{rect.x+inset as i32},
+            y:rect.y+(rect.height-size)as i32/2,width:size,height:size};
+        self.precision_surface(thumb,if checked{Surface::Current}else{Surface::Inactive},Material{fill:(212,227,245),edge,..material});
+
     }
 
     // ------------------------=

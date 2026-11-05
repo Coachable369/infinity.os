@@ -471,7 +471,7 @@ fn control_pixels() {
             let render=|selected,enabled,clip| {
                 let mut display=DisplayDevice::new(120,120);display.clip=clip;
                 if radio {display.precision_radio(rect,selected,enabled,material(scale));}
-                else {display.precision_checkbox(rect,selected,enabled,material(scale));}
+                else {display.precision_toggle(rect,selected,enabled,material(scale));}
                 display.pixels
             };
             let off=render(false,true,None);let on=render(true,true,None);

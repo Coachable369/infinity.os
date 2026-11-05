@@ -94,6 +94,30 @@ impl super::DisplayDevice {
         self.render_clip = old_clip;
     }
     // ------------------------=
+    // FUNC: app_input_surface
+    // DESC: Draws native text inputs with the current Studio-authored Node Name material, border, and corners.
+    // ------------------=
+    pub(crate) fn app_input_surface(&mut self,rect:Rect,focused:bool,scale:usize) {
+        use crate::ui::{installer_template::{InstallerTemplate,InstallerTemplateRole},panel_recipe::{self,Surface,Material}};
+        use core::sync::atomic::{AtomicU32,Ordering};
+        static FILL:AtomicU32=AtomicU32::new(0);
+        static EDGE:AtomicU32=AtomicU32::new(0);
+        static RECIPE:AtomicU32=AtomicU32::new(0);
+        let mut recipe=RECIPE.load(Ordering::Acquire);
+        if recipe==0 {
+        let field=InstallerTemplate::parse(crate::ui::installer_layout::CONFIGURATION_TEMPLATE_BYTES)
+            .ok().and_then(|doc|doc.element(2,InstallerTemplateRole::Input));
+        let (fill,edge,params)=field.map(|e|(e.fill,e.border,[e.surface_material,e.corner_style,e.corner_radius,1]))
+            .unwrap_or(([9,15,38,245],[134,199,255,255],[0,0,10,1]));
+        FILL.store(u32::from_le_bytes(fill),Ordering::Relaxed);EDGE.store(u32::from_le_bytes(edge),Ordering::Relaxed);
+        recipe=u32::from_le_bytes(params);RECIPE.store(recipe,Ordering::Release);
+        }
+        let fill=FILL.load(Ordering::Relaxed).to_le_bytes();let edge=EDGE.load(Ordering::Relaxed).to_le_bytes();
+        let [material,corners,radius,_]=recipe.to_le_bytes();let style=panel_recipe::template_style(Surface::Field,material,corners,radius);
+        self.precision_surface_styled(rect,Surface::Field,Material{fill:(fill[0],fill[1],fill[2]),edge:(edge[0],edge[1],edge[2]),
+            opacity:fill[3],edge_opacity:edge[3],focus:if focused{220}else{0},pressed:false,scale},style);
+    }
+    // ------------------------=
     // FUNC: app_choice_field
     // DESC: Paints a themed choice with a dedicated indicator well and returns the nonoverlapping label bounds.
     // ------------------=

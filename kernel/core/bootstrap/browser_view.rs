@@ -432,14 +432,10 @@ impl DisplayDevice {
     }
     // ------------------------=
     // FUNC: browser_address_surface
-    // DESC: Paints the approved continuous antialiased pill using current OS theme colors.
+    // DESC: Uses the same Node Name input recipe as the rest of the desktop.
     // ------------------=
     fn browser_address_surface(&mut self,r:Viewport,focused:bool) {
-        let primary=self.active_primary_rgb();let accent=self.active_accent_rgb();
-        for y in 0..r.height {for x in 0..r.width {
-            let (red,green,blue,alpha)=skin::pill_pixel(r.width,r.height,x,y,primary,accent,focused);
-            if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
-        }}
+        self.app_input_surface(crate::ui::geometry::Rect{x:r.x,y:r.y,width:r.width,height:r.height},focused,self.ui_scale());
     }
     // ------------------------=
     // FUNC: browser_glyph

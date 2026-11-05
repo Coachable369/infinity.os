@@ -280,7 +280,10 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
                 let bounds=crate::ui::system_layout::SystemLayout::new(width,height).settings_row_element_geometry(window,section,row,Role::SettingsDisclosure).unwrap_or(geometry.summary);
                 target.precision_radio(crate::ui::geometry::Rect{height:bounds.width,..bounds},false,false,Material{fill:chrome.primary,edge:chrome.outline,opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
             }
-            if window.expanded_row==Some(row) {target.paint_settings_detail_description(section,row,geometry.detail,scale,window);}
+            if window.expanded_row==Some(row) {
+                if section==1 && matches!(row,2|3) { target.settings_color_picker(window,scale,row==2); }
+                else { target.paint_settings_detail_description(section,row,geometry.detail,scale,window); }
+            }
         }
         target.render_clip=old;
         target.render_settings_overflow_chrome(chrome.geometry,window,scale,chrome.outline);
@@ -303,7 +306,7 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
         crate::ui::app_launcher::window_controls::publish(interaction);
         let preview_value:&[u8]=if screen==5{b"15 minutes"}else if screen==6{b"1920 x 1080"}else{b"Preview machine"};
         settings_rendered=target.render_basic_settings_view(usize::from(screen-1),preview_value,window,target.ui_scale(),
-            crate::settings_view::BasicSettingsSnapshot{local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
+            crate::settings_view::BasicSettingsSnapshot{audio_input:true,audio_output:true,local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
                 voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,
                 preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:15,timeout_maximum:120});
         crate::ui::app_launcher::window_controls::publish(None);

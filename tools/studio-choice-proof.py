@@ -13,12 +13,12 @@ APP = ROOT / "builds/InfinityOS Installer Studio.app/Contents/MacOS/InfinityStud
 # FUNC: render
 # DESC: Renders a complete Devices frame using the packaged renderer with a given keyboard focus.
 # ------------------=
-def render(name, focus):
+def render(name, focus, screen=6, extra=()):
     path = OUT / f"{name}.rgba"
     subprocess.run([APP, "--simulate-services", "--template", "assets/boot/settings-screens.iuit",
                     "--atlas", "assets/ui-design-kit/default/eclipse-precision-v1.rgba",
-                    "--kind", "settings", "--screen", "6", "--width", "1280", "--height", "800",
-                    "--control-focus", str(focus), "--output", path], cwd=ROOT, check=True)
+                    "--kind", "settings", "--screen", str(screen), "--width", "1280", "--height", "800",
+                    "--control-focus", str(focus), *extra, "--output", path], cwd=ROOT, check=True)
     frame = Image.frombytes("RGBA", (1280, 800), path.read_bytes()).convert("RGB")
     frame.save(OUT / f"{name}.png")
     return frame
@@ -32,14 +32,19 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     normal = render("devices", 0)
     focused = render("devices-focused", 128)
+    render("general-node-field", 0, 1)
+    render("accent-picker", 0, 2, ("--expanded-row", "3"))
     geometry = json.loads((OUT / "devices.geometry.json").read_text())
     value = next(e for e in geometry if e["id"] == "53595354-0006-002a-8000-000000000001")
     x, y, w, h = (value[k] for k in ("x", "y", "width", "height"))
+    row = next(e for e in geometry if e["id"] == "53595354-0006-0028-8000-000000000001")
+    h = min(36, row["height"])
+    y = row["y"] + (row["height"] - h) // 2
     for frame in (normal, focused):
         # Exclude the surface border and indicator well; measure the light text ink.
-        ink = frame.crop((x, y-3, x+w-40, y+h+3)).convert("L").point(lambda v: 255 if v > 135 else 0).getbbox()
+        ink = frame.crop((x+12, y+2, x+w-40, y+h-2)).convert("L").point(lambda v: 255 if v > 135 else 0).getbbox()
         assert ink is not None
-        top_gap, bottom_gap = ink[1], h+6-ink[3]
+        top_gap, bottom_gap = ink[1], h-4-ink[3]
         assert abs(top_gap-bottom_gap) <= 2, (top_gap, bottom_gap)
     changed = ImageChops.difference(normal, focused).getbbox()
     assert changed, "Expected visible keyboard focus on the display selector"

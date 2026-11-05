@@ -84,7 +84,7 @@ impl DisplayDevice {
     pub(super) fn ai_widget_composer(&mut self, field: Rect, text: &[u8], cursor: usize,
         caret: Option<(bool,usize)>, scale: usize, accent: (u8,u8,u8)) {
         if field.width==0||field.height==0{return;}
-        self.desktop_bound_surface(68,field);
+        self.app_input_surface(field,caret.is_some(),scale);
         let inner = Rect { x: field.x + (12 * scale) as i32, y: field.y + (5 * scale) as i32,
             width: field.width.saturating_sub((24 * scale) as u32),
             height: field.height.saturating_sub((10 * scale) as u32) };

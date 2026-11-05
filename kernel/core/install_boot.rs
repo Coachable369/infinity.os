@@ -242,6 +242,24 @@ impl DisplayModes {
     pub fn cycle(&mut self,runtime:u64) {
         if runtime==0||self.count<2{return;}
         let i=self.modes[..self.count].iter().position(|m|*m==self.selected).map(|n|(n+1)%self.count).unwrap_or(0);
+        self.select(runtime, i);
+    }
+    // ------------------------=
+    // FUNC: detected
+    // DESC: Exposes only firmware-reported resolutions for the Settings list.
+    // ------------------=
+    pub fn detected(&self) -> &[[u32; 2]] { &self.modes[..self.count] }
+    // ------------------------=
+    // FUNC: selected
+    // DESC: Returns the current persistent display preference.
+    // ------------------=
+    pub fn selected(&self) -> [u32; 2] { self.selected }
+    // ------------------------=
+    // FUNC: select
+    // DESC: Commits the explicitly chosen mode without cycling through intermediate resolutions.
+    // ------------------=
+    pub fn select(&mut self, runtime: u64, i: usize) {
+        if runtime == 0 || i >= self.count || self.modes[i] == self.selected {return;}
         type Set=unsafe extern "efiapi" fn(*const u16,*const u8,u32,usize,*const u8)->usize;
         let ok=unsafe {let p=*((runtime as usize+24)as *const usize).add(8);p!=0 && core::mem::transmute::<usize,Set>(p)(Self::PREF.as_ptr(),Self::GUID.as_ptr(),7,8,self.modes[i].as_ptr().cast())==0};
         self.failed=!ok;if ok{self.selected=self.modes[i];}

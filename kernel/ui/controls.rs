@@ -2,7 +2,7 @@
 //! controls propose changes and never treat a painted state as committed state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Value {
-    Checkbox(bool),
+    Toggle(bool),
     Radio { selected: usize, count: usize },
     Choice { selected: usize, count: usize },
     Expander(bool),
@@ -37,13 +37,13 @@ pub fn settings_tab_focus(focus: usize, rows: usize, backwards: bool) -> usize {
 pub fn transition(value: Value, input: Input, enabled: bool) -> Option<Value> {
     if !enabled { return None; }
     let result = match (value, input) {
-        (Value::Checkbox(on), Input::Activate) => Value::Checkbox(!on),
+        (Value::Toggle(on), Input::Activate) => Value::Toggle(!on),
         (Value::Expander(open), Input::Activate) => Value::Expander(!open),
         (Value::Expander(_), Input::Collapse) => Value::Expander(false),
         (Value::Radio { selected, count }, event) | (Value::Choice { selected, count }, event) => {
             if count == 0 || selected >= count { return None; }
             let next = match event {
-                Input::Activate | Input::Next => if selected + 1 == count { 0 } else { selected + 1 },
+                Input::Next => if selected + 1 == count { 0 } else { selected + 1 },
                 Input::Previous => if selected == 0 { count - 1 } else { selected - 1 },
                 Input::Select(index) if index < count => index,
                 _ => return None,
@@ -63,7 +63,7 @@ pub fn transition(value: Value, input: Input, enabled: bool) -> Option<Value> {
 // DESC: Resolves a circular selector through the same bounded interaction contract used by UIKit controls.
 // ------------------=
 pub fn next_choice(selected: usize, count: usize) -> Option<usize> {
-    match transition(Value::Choice { selected, count }, Input::Activate, true)? {
+    match transition(Value::Choice { selected, count }, Input::Next, true)? {
         Value::Choice { selected, .. } => Some(selected), _ => None,
     }
 }
@@ -77,8 +77,8 @@ mod tests {
     // ------------------=
     #[test]
     fn activation_and_bounds() {
-        assert_eq!(transition(Value::Checkbox(false), Input::Activate, true), Some(Value::Checkbox(true)));
-        assert_eq!(transition(Value::Checkbox(true), Input::Activate, false), None);
+        assert_eq!(transition(Value::Toggle(false), Input::Activate, true), Some(Value::Toggle(true)));
+        assert_eq!(transition(Value::Toggle(true), Input::Activate, false), None);
         assert_eq!(transition(Value::Expander(true), Input::Collapse, true), Some(Value::Expander(false)));
         assert_eq!(transition(Value::Expander(false), Input::Collapse, true), None);
         for count in 1..=32 {
@@ -112,3 +112,6 @@ mod tests {
         }
     }
 }
+
+#[path = "settings_choices.rs"]
+pub mod choices;

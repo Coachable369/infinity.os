@@ -4,6 +4,7 @@ use super::primitives::UI_FONT_CELL_HEIGHT;
 use crate::ui::system_layout::{SettingsWindowState,SettingsWindowGeometry,SettingsRowGeometry};
 #[derive(Clone,Copy)]
 pub(super) struct BasicSettingsSnapshot<'a> {
+ pub audio_input:bool,pub audio_output:bool,
  pub face_login_enabled:bool,
  pub local_only:bool,
  pub output_voice:&'a[u8],
@@ -73,8 +74,8 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"Display resolution", input),
                 (b"Keyboard", b"Ready"),
                 (b"Pointer", crate::ui::personalization::CURSOR_NAMES[preferences.cursor_style as usize]),
-                (b"Audio Input", b"Unavailable"),
-                (b"Audio Output", b"Unavailable"),
+                (b"Audio Input", if snapshot.audio_input {b"Ready"} else {b"Unavailable"}),
+                (b"Audio Output", if snapshot.audio_output {b"Ready"} else {b"Unavailable"}),
                 (b"", b""),
                 (b"", b""),
                 (b"", b""),
@@ -92,6 +93,125 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
  }
 }
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: settings_color_picker
+    // DESC: Renders a live Primary or Accent HSV picker from shared hit-test geometry.
+    // ------------------=
+    pub(crate) fn settings_color_picker(
+        &mut self,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+        primary: bool,
+    ) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let geometry = if primary {
+            layout.settings_primary_geometry(settings_window)
+        } else {
+            layout.settings_accent_geometry(settings_window)
+        };
+        let current = if primary {
+            self.active_primary_rgb()
+        } else {
+            self.active_accent_rgb()
+        };
+        let (hue, saturation, value) = crate::ui::skin::rgb_to_hsv(current);
+        let columns = 32usize;
+        let rows = 12usize;
+        let cell_width = (geometry.spectrum.width as usize / columns).max(1);
+        let cell_height = (geometry.spectrum.height as usize / rows).max(1);
+        for row in 0..rows {
+            for column in 0..columns {
+                let sample_saturation = (column * 255 / (columns - 1)) as u8;
+                let sample_value = 255u8.saturating_sub((row * 255 / (rows - 1)) as u8);
+                let rgb = crate::ui::skin::hsv_to_rgb(hue, sample_saturation, sample_value);
+                self.fill_rect(
+                    geometry.spectrum.x.max(0) as usize + column * cell_width,
+                    geometry.spectrum.y.max(0) as usize + row * cell_height,
+                    if column + 1 == columns {
+                        geometry.spectrum.width as usize - column * cell_width
+                    } else {
+                        cell_width
+                    },
+                    if row + 1 == rows {
+                        geometry.spectrum.height as usize - row * cell_height
+                    } else {
+                        cell_height
+                    },
+                    ((rgb >> 16) & 0xff) as u8,
+                    ((rgb >> 8) & 0xff) as u8,
+                    (rgb & 0xff) as u8,
+                );
+            }
+        }
+        let hue_steps = 18usize;
+        let hue_height = (geometry.hue.height as usize / hue_steps).max(1);
+        for step in 0..hue_steps {
+            let sample_hue = (step * 359 / (hue_steps - 1)) as u16;
+            let rgb = crate::ui::skin::hsv_to_rgb(sample_hue, 255, 255);
+            self.fill_rect(
+                geometry.hue.x.max(0) as usize,
+                geometry.hue.y.max(0) as usize + step * hue_height,
+                geometry.hue.width as usize,
+                if step + 1 == hue_steps {
+                    geometry.hue.height as usize - step * hue_height
+                } else {
+                    hue_height
+                },
+                ((rgb >> 16) & 0xff) as u8,
+                ((rgb >> 8) & 0xff) as u8,
+                (rgb & 0xff) as u8,
+            );
+        }
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.outline_rounded_rect(
+            geometry.spectrum.x.max(0) as usize,
+            geometry.spectrum.y.max(0) as usize,
+            geometry.spectrum.width as usize,
+            geometry.spectrum.height as usize,
+            8 * scale,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
+        self.outline_rounded_rect(
+            geometry.hue.x.max(0) as usize,
+            geometry.hue.y.max(0) as usize,
+            geometry.hue.width as usize,
+            geometry.hue.height as usize,
+            7 * scale,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
+        let marker_x = geometry.spectrum.x.max(0) as usize
+            + saturation as usize * geometry.spectrum.width as usize / 255;
+        let marker_y = geometry.spectrum.y.max(0) as usize
+            + (255usize.saturating_sub(value as usize)) * geometry.spectrum.height as usize / 255;
+        self.outline_rounded_rect(
+            marker_x.saturating_sub(5 * scale),
+            marker_y.saturating_sub(5 * scale),
+            10 * scale,
+            10 * scale,
+            5 * scale,
+            255,
+            255,
+            255,
+        );
+        let hue_marker_y =
+            geometry.hue.y.max(0) as usize + hue as usize * geometry.hue.height as usize / 359;
+        self.fill_rect(
+            (geometry.hue.x.max(0) as usize).saturating_sub(3 * scale),
+            hue_marker_y.saturating_sub(scale),
+            geometry.hue.width as usize + 6 * scale,
+            2 * scale,
+            255,
+            255,
+            255,
+        );
+    }
+
+
     // ------------------------=
     // FUNC: paint_settings_chrome
     // DESC: Paints authored window, navigation and headings through native geometry and fonts.
@@ -368,23 +488,22 @@ impl DisplayDevice {
         let label_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowLabel).unwrap_or(card.label);
         let mut value_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowValue).unwrap_or(card.value);
         let interaction = settings_row_interaction(focus, index);
-        let control = Rect { x: value_bounds.x - (8 * scale) as i32, y: value_bounds.y - (5 * scale) as i32,
-            width: value_bounds.width + (16 * scale) as u32, height: value_bounds.height + (10 * scale) as u32 };
+        let control = layout.settings_field_bounds(settings_window,focus,index);
         match interaction {
             I::Cycle => {
                 let label_area = self.app_choice_field(control, keyboard_focus, scale);
                 value_bounds = label_area;
             }
-            I::Edit => self.precision_surface(control, crate::ui::panel_recipe::Surface::Field, Material {
-                fill: (pr/2, pg/2, pb/2), edge: chrome.outline, opacity: alpha(230), edge_opacity: 155,
-                focus: if keyboard_focus {255} else {0}, pressed: false, scale,
-            }),
-            I::Toggle => value_bounds.width = value_bounds.width.saturating_sub((30 * scale) as u32),
+            I::Edit => {
+                self.app_input_surface(control,keyboard_focus,scale);
+                value_bounds=Rect{x:control.x+(12*scale)as i32,width:control.width.saturating_sub((24*scale)as u32),..control};
+            }
+            I::Toggle => value_bounds.width = value_bounds.width.saturating_sub((48 * scale) as u32),
             _ => {}
         }
         self.paint_settings_bound_text(authored_label,label_bounds,label,(190,205,217),true,false);
         let align_right = !matches!(interaction, I::Cycle | I::Edit);
-        if matches!(interaction, I::Cycle) && authored_value.is_some() {
+        if matches!(interaction, I::Cycle | I::Edit) && authored_value.is_some() {
             let element = authored_value.unwrap();
             if !element.hidden && element.opacity > 0 {
                 let pixels = (element.font_size as usize * self.height / 1000).clamp(1, 256);
@@ -407,7 +526,8 @@ impl DisplayDevice {
                     let pixels=(element.font_size as usize*self.height/1000).clamp(1,256);
                     let x=value_bounds.x.max(0)as usize+self.template_text_width(&value[..caret.min(value.len())],pixels,false);
                     let old=self.render_clip;self.intersect_render_clip(value_bounds.x.max(0)as usize,value_bounds.y.max(0)as usize,value_bounds.width as usize,value_bounds.height as usize);
-                    self.fill_rect(x,value_bounds.y.max(0)as usize,scale.max(1),pixels.min(value_bounds.height as usize),112,221,255);self.render_clip=old;
+                    let y=value_bounds.y+(value_bounds.height.saturating_sub(pixels as u32)/2) as i32;
+                    self.fill_rect(x,y.max(0)as usize,scale.max(1),pixels.min(value_bounds.height as usize),112,221,255);self.render_clip=old;
                 }
             }else{self.text_field_caret(value_bounds.x.max(0)as usize,value_bounds.y.max(0)as usize,value_bounds.height as usize,value,true,1);}
         }
@@ -420,6 +540,28 @@ impl DisplayDevice {
             }
         }
         row
+    }
+    // ------------------------=
+    // FUNC: paint_settings_choices
+    // DESC: Paints each selectable option with the same geometry the pointer and keyboard use.
+    // ------------------=
+    pub(crate) fn paint_settings_choices(&mut self,state:SettingsWindowState,section:usize,row:usize,scale:usize,chrome:SettingsChrome)->bool {
+        use crate::ui::controls::choices;
+        let count=choices::count(section,row);
+        if count==0 {return false;}
+        let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+        let first=layout.settings_choice_item(state,section,row,0);
+        self.app_dropdown_panel(crate::ui::geometry::Rect{height:first.height*count as u32,..first},scale);
+        for index in 0..count {
+            let item=layout.settings_choice_item(state,section,row,index);
+            if !item.intersects(chrome.geometry.viewport){continue;}
+            let mut text=[0;48];let n=choices::label(index,&mut text);
+            self.app_dropdown_row(item,choices::focus()==index,scale);
+            let inset=(12*scale) as u32;
+            self.app_label(crate::ui::geometry::Rect{x:item.x+inset as i32,width:item.width.saturating_sub(inset*2),..item},
+                &text[..n],(225,236,248),false,scale);
+        }
+        true
     }
     // ------------------------=
     // FUNC: paint_settings_child_description
@@ -644,6 +786,7 @@ impl DisplayDevice {
                 (3,4)|(4,1)=>Some(snapshot.voice_enabled),
                 (3,6)=>Some(snapshot.speech_enabled),
                 (4,4)=>Some(snapshot.face_login_enabled),
+                (10,4)=>Some(snapshot.preferences.acceleration),
                 _=>None,
             };
             if let Some(enabled)=toggle {
@@ -651,11 +794,12 @@ impl DisplayDevice {
                 let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
                 let value=layout.settings_row_element_geometry(state,focus,index,Role::SettingsRowValue)
                     .unwrap_or(crate::ui::settings_cards::content(row.summary,scale).value);
-                let indicator=Rect{x:value.right()-(20*scale)as i32,y:value.y+(value.height as i32-(20*scale)as i32)/2,width:(20*scale)as u32,height:(20*scale)as u32};
-                self.precision_checkbox(indicator,enabled,true,
+                let indicator=Rect{x:value.right()-(38*scale)as i32,y:value.y+(value.height as i32-(20*scale)as i32)/2,width:(38*scale)as u32,height:(20*scale)as u32};
+                self.precision_toggle(indicator,enabled,true,
                     Material{fill:chrome.primary,edge:chrome.outline,opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
             }
             if state.expanded_row==Some(index)&&row.detail.intersects(g.viewport){
+                if self.paint_settings_choices(state,focus,index,scale,chrome){continue;}
                 let(r,g,b)=chrome.primary;let(er,eg,eb)=chrome.outline;
                 let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
                 if let Some(surface)=layout.settings_row_child_geometry(state,focus,index,crate::ui::installer_template::InstallerTemplateRole::SettingsDetailSurface,0,1) {

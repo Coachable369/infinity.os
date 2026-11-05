@@ -273,7 +273,7 @@ impl DisplayDevice {
                 height: c.bounds.height.saturating_sub((26 * s) as u32),
                 ..c.bounds
             };
-            self.precision_surface(field, Surface::Field, material);
+            self.app_input_surface(field, focused, s);
             let mask = [b'*'; 72];
             let text = match index {
                 0 => view.state.name.as_bytes(),
@@ -351,19 +351,19 @@ impl DisplayDevice {
             if focused {
                 self.precision_surface(c.bounds, Surface::Secondary, material);
             }
-            self.precision_checkbox(
+            self.precision_toggle(
                 Rect {
                     x: c.bounds.x + (8 * s) as i32,
                     y: c.bounds.y + (10 * s) as i32,
-                    width: (20 * s) as u32,
+                    width: (38 * s) as u32,
                     height: (20 * s) as u32,
                 },
                 checked,
                 c.enabled,
                 material,
             );
-            label.x += (28 * s) as i32;
-            label.width = label.width.saturating_sub((28 * s) as u32);
+            label.x += (50 * s) as i32;
+            label.width = label.width.saturating_sub((50 * s) as u32);
             self.app_label(label, text, color, false, s);
         } else {
             if selected || focused || !matches!(c.target, Target::Row(_)) {

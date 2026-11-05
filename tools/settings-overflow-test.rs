@@ -274,20 +274,17 @@ fn expected_authored_row_child(
     child: ui::installer_template::InstallerTemplateRect,
     window: ui::geometry::Rect,
     live_row: ui::geometry::Rect,
+    scale: usize,
 ) -> ui::geometry::Rect {
     let x = |value: u16| {
         i64::from(value.saturating_sub(console.x)) * i64::from(window.width)
             / i64::from(console.width)
     };
-    let y = |value: u16| {
-        i64::from(value.saturating_sub(console.y)) * i64::from(window.height)
-            / i64::from(console.height)
-    };
     ui::geometry::Rect {
         x: live_row.x + (x(child.x) - x(anchor.x)) as i32,
-        y: live_row.y + (y(child.y) - y(anchor.y)) as i32,
+        y: live_row.y + (i32::from(child.y)-i32::from(anchor.y))*800*scale as i32/1000,
         width: (u64::from(child.width) * u64::from(window.width) / u64::from(console.width)) as u32,
-        height: (u64::from(child.height) * u64::from(window.height) / u64::from(console.height)) as u32,
+        height: u32::from(child.height)*800*scale as u32/1000,
     }
 }
 
@@ -362,7 +359,7 @@ fn verify_authored_row_flow() {
                             let child = layout.settings_row_element_geometry(state, section, index, role).unwrap();
                             let base_child = layout.settings_row_element_geometry(collapsed, section, index, role).unwrap();
                             let authored_child = ui::settings_template::role_at(section, role, index).unwrap();
-                            let expected = expected_authored_row_child(console, authored_row, authored_child.frame, window.window, row);
+                            let expected = expected_authored_row_child(console, authored_row, authored_child.frame, window.window, row,layout.scale());
                             assert_eq!(child, expected);
                             assert_eq!(layout.settings_element_geometry(state, section, authored_child.id), Some(expected));
                             assert_eq!(child.y - row.y, base_child.y - base_row.y);

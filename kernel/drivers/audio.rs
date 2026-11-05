@@ -9,6 +9,8 @@ const HARDWARE_POLL_INTERVAL_NS: u64 = 1_000_000;
 static mut LAST_HARDWARE_POLL: Option<u64> = None;
 static CAPTURE_OPEN_FAILURE: AtomicUsize = AtomicUsize::new(0);
 static mut DMA: hda::Dma = hda::Dma::new();
+static INPUT_PRESENT: AtomicBool = AtomicBool::new(false);
+static OUTPUT_PRESENT: AtomicBool = AtomicBool::new(false);
 static mut DEVICE: Option<hda::Hda> = None;
 static mut UNTIL: u64 = 0;
 static mut PLAYBACK_STARTED_AT: u64 = 0;
@@ -57,9 +59,7 @@ fn clear_capture_open_failure() { CAPTURE_OPEN_FAILURE.store(0, Ordering::Releas
 // DESC: Reports a real discovered hardware input route without opening the microphone.
 // ------------------=
 pub fn capture_available() -> bool {
-    if LOCK.swap(true, Ordering::Acquire) { return false; }
-    let ready = unsafe { (&*(&raw const DEVICE)).as_ref().map(|d| d.capture_available()).unwrap_or(false) };
-    LOCK.store(false, Ordering::Release); ready
+    INPUT_PRESENT.load(Ordering::Acquire)
 }
 // ------------------------=
 // FUNC: capture
@@ -265,6 +265,9 @@ pub fn initialize(info: &crate::boot_info::BootInfo) {
     if info.boot_reserved == 0 || LOCK.swap(true, Ordering::Acquire) { return; }
     unsafe {
         DEVICE = hda::Hda::initialize(info.boot_reserved as usize, &raw mut DMA).ok();
+        let device = (&*(&raw const DEVICE)).as_ref();
+        INPUT_PRESENT.store(device.is_some_and(|d| d.capture_available()), Ordering::Release);
+        OUTPUT_PRESENT.store(device.is_some(), Ordering::Release);
         LAST_HARDWARE_POLL = None;
     }
     LOCK.store(false, Ordering::Release);
@@ -274,9 +277,7 @@ pub fn initialize(info: &crate::boot_info::BootInfo) {
 // DESC: Returns actual successful controller and output-route initialization.
 // ------------------=
 pub fn available() -> bool {
-    if LOCK.swap(true, Ordering::Acquire) { return false; }
-    let ready = unsafe { (&*(&raw const DEVICE)).is_some() };
-    LOCK.store(false, Ordering::Release); ready
+    OUTPUT_PRESENT.load(Ordering::Acquire)
 }
 // ------------------------=
 // FUNC: playback_rate

@@ -1005,8 +1005,7 @@ impl super::DisplayDevice {
         input: &[u8],
         focused: bool,
     ) {
-        self.access_surface(x, y, width, height, AccessSurface::Field, access::BACKGROUND,
-            access::BORDER, 255, focused);
+        self.app_input_surface(crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:width as u32,height:height as u32},focused,self.ui_scale());
         self.access_icon(x + height / 2, y + height / 2, 5, height / 3, focused);
         let previous_clip = self.render_clip;
         self.intersect_render_clip(x + height, y + 2,
@@ -3792,8 +3791,8 @@ impl super::DisplayDevice {
                     (b"Display", b"Ready"),
                     (b"Keyboard", b"Ready"),
                     (b"Pointer", b"Ready"),
-                    (b"Audio Input", b"Unavailable"),
-                    (b"Audio Output", b"Unavailable"),
+                    (b"Audio Input", if crate::drivers::audio::capture_available() {b"Ready"} else {b"Unavailable"}),
+                    (b"Audio Output", if crate::drivers::audio::available() {b"Ready"} else {b"Unavailable"}),
                 ],
                 6 => [
                     (b"Connectivity", connectivity),
@@ -4049,7 +4048,7 @@ impl super::DisplayDevice {
         let output_voice = crate::runtime::identity::OUTPUT_VOICE_NAMES[voice_profile.map(|p| p.output_voice as usize).unwrap_or(0).min(4)];
         let local_only=voice_profile.and_then(|v|crate::runtime::with_runtime(|r|r.identity.ai_profile(v.user)).flatten())
             .map(|p|p.provider_policy==crate::runtime::identity::AiProviderPolicy::LocalOnly).unwrap_or(true);
-        let basic_state=super::settings_view::BasicSettingsSnapshot{local_only,output_voice,chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
+        let basic_state=super::settings_view::BasicSettingsSnapshot{audio_input:crate::drivers::audio::capture_available(),audio_output:crate::drivers::audio::available(),local_only,output_voice,chat_enabled,chat_model,voice_enabled,wake_word,speech_enabled,preferences,
             face_login_enabled:voice_profile.is_some_and(|v|crate::runtime::with_runtime(|r|r.identity.user_profile(v.user).is_some_and(|p|p.face_login_enabled)).unwrap_or(false)),
             timeout_minutes:parse_leading_u8(input).unwrap_or(crate::runtime::identity::DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES),
             timeout_maximum:crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES};
@@ -4118,6 +4117,7 @@ impl super::DisplayDevice {
             if settings_window.expanded_row == Some(index)
                 && row.detail.intersects(geometry.viewport)
             {
+                if self.paint_settings_choices(settings_window,focus,index,scale,chrome){continue;}
                 let detail_left = row.detail.x.max(0) as usize;
                 let detail_top = row.detail.y.max(0) as usize;
                 let detail_width = row.detail.width as usize;
@@ -4371,124 +4371,6 @@ impl super::DisplayDevice {
         self.settings_slider(settings_window, scale, index, value, maximum, 1);
     }
 
-
-    // ------------------------=
-    // FUNC: settings_color_picker
-    // DESC: Renders a live Primary or Accent HSV picker from shared hit-test geometry.
-    // ------------------=
-    fn settings_color_picker(
-        &mut self,
-        settings_window: crate::ui::system_layout::SettingsWindowState,
-        scale: usize,
-        primary: bool,
-    ) {
-        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
-        let geometry = if primary {
-            layout.settings_primary_geometry(settings_window)
-        } else {
-            layout.settings_accent_geometry(settings_window)
-        };
-        let current = if primary {
-            self.active_primary_rgb()
-        } else {
-            self.active_accent_rgb()
-        };
-        let (hue, saturation, value) = crate::ui::skin::rgb_to_hsv(current);
-        let columns = 32usize;
-        let rows = 12usize;
-        let cell_width = (geometry.spectrum.width as usize / columns).max(1);
-        let cell_height = (geometry.spectrum.height as usize / rows).max(1);
-        for row in 0..rows {
-            for column in 0..columns {
-                let sample_saturation = (column * 255 / (columns - 1)) as u8;
-                let sample_value = 255u8.saturating_sub((row * 255 / (rows - 1)) as u8);
-                let rgb = crate::ui::skin::hsv_to_rgb(hue, sample_saturation, sample_value);
-                self.fill_rect(
-                    geometry.spectrum.x.max(0) as usize + column * cell_width,
-                    geometry.spectrum.y.max(0) as usize + row * cell_height,
-                    if column + 1 == columns {
-                        geometry.spectrum.width as usize - column * cell_width
-                    } else {
-                        cell_width
-                    },
-                    if row + 1 == rows {
-                        geometry.spectrum.height as usize - row * cell_height
-                    } else {
-                        cell_height
-                    },
-                    ((rgb >> 16) & 0xff) as u8,
-                    ((rgb >> 8) & 0xff) as u8,
-                    (rgb & 0xff) as u8,
-                );
-            }
-        }
-        let hue_steps = 18usize;
-        let hue_height = (geometry.hue.height as usize / hue_steps).max(1);
-        for step in 0..hue_steps {
-            let sample_hue = (step * 359 / (hue_steps - 1)) as u16;
-            let rgb = crate::ui::skin::hsv_to_rgb(sample_hue, 255, 255);
-            self.fill_rect(
-                geometry.hue.x.max(0) as usize,
-                geometry.hue.y.max(0) as usize + step * hue_height,
-                geometry.hue.width as usize,
-                if step + 1 == hue_steps {
-                    geometry.hue.height as usize - step * hue_height
-                } else {
-                    hue_height
-                },
-                ((rgb >> 16) & 0xff) as u8,
-                ((rgb >> 8) & 0xff) as u8,
-                (rgb & 0xff) as u8,
-            );
-        }
-        let (outline_r, outline_g, outline_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        self.outline_rounded_rect(
-            geometry.spectrum.x.max(0) as usize,
-            geometry.spectrum.y.max(0) as usize,
-            geometry.spectrum.width as usize,
-            geometry.spectrum.height as usize,
-            8 * scale,
-            outline_r,
-            outline_g,
-            outline_b,
-        );
-        self.outline_rounded_rect(
-            geometry.hue.x.max(0) as usize,
-            geometry.hue.y.max(0) as usize,
-            geometry.hue.width as usize,
-            geometry.hue.height as usize,
-            7 * scale,
-            outline_r,
-            outline_g,
-            outline_b,
-        );
-        let marker_x = geometry.spectrum.x.max(0) as usize
-            + saturation as usize * geometry.spectrum.width as usize / 255;
-        let marker_y = geometry.spectrum.y.max(0) as usize
-            + (255usize.saturating_sub(value as usize)) * geometry.spectrum.height as usize / 255;
-        self.outline_rounded_rect(
-            marker_x.saturating_sub(5 * scale),
-            marker_y.saturating_sub(5 * scale),
-            10 * scale,
-            10 * scale,
-            5 * scale,
-            255,
-            255,
-            255,
-        );
-        let hue_marker_y =
-            geometry.hue.y.max(0) as usize + hue as usize * geometry.hue.height as usize / 359;
-        self.fill_rect(
-            (geometry.hue.x.max(0) as usize).saturating_sub(3 * scale),
-            hue_marker_y.saturating_sub(scale),
-            geometry.hue.width as usize + 6 * scale,
-            2 * scale,
-            255,
-            255,
-            255,
-        );
-    }
 
     // ------------------------=
     // FUNC: onboarding_glass_panel

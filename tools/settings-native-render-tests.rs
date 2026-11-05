@@ -7,7 +7,7 @@ use crate::ui::{geometry::{Rect,Point},system_layout::{SettingsWindowState,Syste
 // FUNC: snapshot
 // DESC: Defines explicit preview values without emulating any runtime service.
 // ------------------=
-fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
+fn snapshot()->BasicSettingsSnapshot<'static> {BasicSettingsSnapshot{audio_input:true,audio_output:true,local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,preferences:crate::ui::input_preferences::Preferences::defaults(),timeout_minutes:5,timeout_maximum:120}}
 // ------------------------=
 // FUNC: state
 // DESC: Builds bounded native Settings window geometry for a selected section and viewport.
@@ -71,6 +71,24 @@ pub(super) fn verify() {
         assert!(policy_row.contains(Point{x:bounds.right()-1,y:bounds.bottom()-1}));
         for unsupported in [1,2,6,7,8]{let(pixels,ok)=frame(width,height,unsupported,state,snapshot(),None);assert!(!ok);assert!(pixels.iter().all(|p|*p==0x00182739));}
     }
+    let layout=SystemLayout::new(1920,1080);
+    let a=state(3);let b=SettingsWindowState{width:980,height:960,..a};
+    let fa=layout.settings_field_bounds(a,3,7);let fb=layout.settings_field_bounds(b,3,7);
+    assert_eq!((fa.width,fa.height),(fb.width,fb.height));
+    use crate::ui::controls::choices;
+    choices::open(3,7,5,2,|i,label|{label[0]=b'A'+i as u8;});
+    assert_eq!(choices::focus(),2);
+    let open=SettingsWindowState{expanded_row:Some(7),..a};
+    let item=layout.settings_choice_item(open,3,7,3);
+    assert_eq!(item.y,layout.settings_choice_item(open,3,7,2).bottom());
+    choices::highlight(3);
+    let mut label=[0;48];assert_eq!(choices::label(choices::focus(),&mut label),1);
+    assert_eq!(label[0],b'D');choices::close();assert_eq!(choices::count(3,7),0);
+    let a=state(5);
+    let mut values=snapshot();let(before,_)=frame(1280,800,5,a,values,None);
+    values.audio_input=false;let(mic_off,_)=frame(1280,800,5,a,values,None);
+    values.audio_output=false;let(both_off,_)=frame(1280,800,5,a,values,None);
+    assert!(damage(&before,&mic_off,1280).1>0 && damage(&mic_off,&both_off,1280).1>0);
     authored_style_pixels();
     let layout = SystemLayout::new(1280, 800);
     let mut voice_state = state(3);
