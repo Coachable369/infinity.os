@@ -657,8 +657,8 @@ def click_native_element(guest, identifier):
     # Shared DesktopAppWindowGeometry reserves 48 title, 42 toolbar, 12 top
     # content inset, and 16 left/right/bottom units at the current UI scale.
     content = (x + 16*scale, y + 102*scale, width - 32*scale, height - 118*scale)
-    target_x = content[0] + (element["x"]*2 + element["width"]) * content[2] // (state["width"]*2)
-    target_y = content[1] + (element["y"]*2 + element["height"]) * content[3] // (state["height"]*2)
+    target_x = content[0] + (element["x"]*2 + element["width"]) * scale // 2
+    target_y = content[1] + (element["y"]*2 + element["height"]) * scale // 2
     adaptive_click(guest, target_x, target_y)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:

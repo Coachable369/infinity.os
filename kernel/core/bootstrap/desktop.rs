@@ -2391,12 +2391,13 @@ impl super::DisplayDevice {
         let width=content.width as usize;let height=content.height as usize;
         self.app_card(content,self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline),scale);
-        let usable_width=width;let usable_height=height;
+        let previous_clip=self.render_clip;
+        self.intersect_render_clip(left,top,width,height);
         for element in presentation.elements.iter().flatten() {
-            let x=left+(element.x as usize).saturating_mul(usable_width)/presentation.width as usize;
-            let y=top+(element.y as usize).saturating_mul(usable_height)/presentation.height as usize;
-            let w=(element.width as usize).saturating_mul(usable_width)/presentation.width as usize;
-            let h=(element.height as usize).saturating_mul(usable_height)/presentation.height as usize;
+            let x=left+(element.x as usize).saturating_mul(scale);
+            let y=top+(element.y as usize).saturating_mul(scale);
+            let w=(element.width as usize).saturating_mul(scale);
+            let h=(element.height as usize).saturating_mul(scale);
             let label=&element.label[..element.label_length];
             match element.kind {
                 crate::ui::native_uikit::ElementKind::Label=>{
@@ -2422,6 +2423,7 @@ impl super::DisplayDevice {
                 }
             }
         }
+        self.render_clip=previous_clip;
     }
 
 

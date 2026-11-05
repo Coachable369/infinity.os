@@ -1139,11 +1139,10 @@ fn read_u32(bytes:&[u8],offset:usize)->u32 {
 // FUNC: activate_uikit
 // DESC: Sends one content-local pointer activation to the running native UI application.
 // ------------------=
-pub(super) fn activate_uikit(x:u32,y:u32,width:u32,height:u32)->bool {
+pub(super) fn activate_uikit(x:u32,y:u32,width:u32,height:u32,scale:u32)->bool {
     let presentation=crate::ui::native_uikit::presentation();
-    if !presentation.active||width==0||height==0{return false;}
-    crate::ui::native_uikit::activate(x.saturating_mul(presentation.width)/width,
-        y.saturating_mul(presentation.height)/height)
+    if !presentation.active||x>=width||y>=height||scale==0{return false;}
+    crate::ui::native_uikit::activate(x/scale,y/scale)
 }
 
 // ------------------------=

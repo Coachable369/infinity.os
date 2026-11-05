@@ -9051,7 +9051,7 @@ impl ConsoleRuntime {
                                     let local_x=pixel_x.saturating_sub(geometry.content.x).max(0) as u32;
                                     let local_y=pixel_y.saturating_sub(geometry.content.y).max(0) as u32;
                                     if compiler_commands::activate_uikit(local_x,local_y,
-                                        geometry.content.width,geometry.content.height) {self.redraw();}
+                                        geometry.content.width,geometry.content.height,layout.scale() as u32) {self.redraw();}
                                     return;
                                 }
                                 let scale = layout.scale();
