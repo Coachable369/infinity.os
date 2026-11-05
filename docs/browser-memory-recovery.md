@@ -23,7 +23,11 @@ classifies all writable ELF sections, rejects unsupported state, and renames the
 for the final kernel link. ARM64 (both machine layouts) and x86_64 use the same
 supervisor and include the same reset ranges in live and installed kernels.
 Constructor addresses are immutable and excluded; initialized data is checkpointed
-after relocation and before component initialization. Restart storage is bounded.
+after relocation and before component initialization. Restart storage is bounded:
+a shared 2 MiB entry stack, plus a 2 MiB checkpoint on ARM or 8 MiB on x86.
+The measured initialized state is 600856 bytes on ARM and 5245872 bytes on x86;
+the x86 component contains substantially larger initialized relocation tables.
+Final-link assertions prevent either image from exceeding its reservation.
 
 A fatal restart creates a fresh active page. Other open tabs, unsaved web forms,
 and ephemeral engine session state cannot be recovered from a failed heap.

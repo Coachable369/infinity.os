@@ -45,6 +45,6 @@ SECTIONS
            (infinity_browser_private_browser_data_end > infinity_browser_private_browser_data_start &&
             infinity_browser_private_browser_bss_end > infinity_browser_private_browser_bss_start),
            "native browser component lacks restartable state; rebuild it")
-    ASSERT(infinity_browser_private_browser_data_end - infinity_browser_private_browser_data_start <= 0x200000, "browser restart checkpoint capacity exceeded")
+    ASSERT(infinity_browser_private_browser_data_end - infinity_browser_private_browser_data_start <= 0x800000, "browser restart checkpoint capacity exceeded")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) }
 }

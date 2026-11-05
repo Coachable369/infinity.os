@@ -1,8 +1,11 @@
 //! Complete browser component restart; supervisor and native services remain live.
 use infinity_browser_core::{recovery::{Boundary, Image}, worker::Host};
 const STACK: usize = 2 * 1024 * 1024;
+// The x86 component carries larger initialized relocation tables. Keep this
+// bounded reservation in sync with each target linker's checkpoint assertion.
+const CHECKPOINT: usize = if cfg!(target_arch = "x86_64") { 8 * 1024 * 1024 } else { 2 * 1024 * 1024 };
 static mut BOUNDARY: Boundary<STACK> = Boundary::new();
-static mut IMAGE: Image<{2 * 1024 * 1024}> = Image::new();
+static mut IMAGE: Image<CHECKPOINT> = Image::new();
 unsafe extern "C" {
     static mut infinity_browser_private_browser_data_start: u8;
     static mut infinity_browser_private_browser_data_end: u8;
