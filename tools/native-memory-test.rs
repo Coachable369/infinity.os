@@ -96,6 +96,13 @@ fn main() {
     assert_eq!(NativeMemory::empty().initialize(u64::MAX - 4095, 8192), Err(MemoryError::AddressOverflow));
     let initial_pages = memory.available_pages();
 
+    memory.monitor_limit(false, 11, PAGE_SIZE);
+    let charged = memory.allocate(1, 11).unwrap();
+    assert_eq!(memory.allocate(1, 11), Err(MemoryError::OutOfMemory));
+    let independent = memory.allocate(1, 12).unwrap();
+    memory.release(charged).unwrap();
+    memory.release(independent).unwrap();
+    memory.monitor_limit(false, 11, u64::MAX);
     let first = memory.allocate(3, 11).unwrap();
     let second = memory.allocate(2, 12).unwrap();
     assert!(first.physical_address + 3 * PAGE_SIZE <= second.physical_address ||

@@ -37,6 +37,8 @@ use runtime::task_manager::{
 // DESC: Verifies observable task monitoring, lifecycle, protection, and resource-control transitions.
 // ------------------=
 fn main() {
+    assert_eq!(runtime::task_manager::TaskManager::native_cooldown_ns(1000,25),3000);
+    assert_eq!(runtime::task_manager::TaskManager::native_cooldown_ns(1000,100),0);
     let mut execution = runtime::execution::ExecutionManager::new();
     let mut tasks = runtime::task_manager::TaskManager::new();
     let light = tasks.launch(&mut execution, IMAGE_TEXT_EDITOR).unwrap();

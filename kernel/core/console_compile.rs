@@ -40,6 +40,7 @@ static mut REPLY_TARGET: ReplyTarget = ReplyTarget::Assistant;
 static mut EDITOR_DIAGNOSTICS:assistant::compiler_diagnostics::Receipt=assistant::compiler_diagnostics::Receipt::new();
 static mut APP: Option<(SecurityIdentity,crate::runtime::native_app_task::Task)> = None;
 static mut MONITOR_SAMPLE_NS:u64=0;
+static mut MONITOR_RESUME_NS:u64=0;
 static mut APP_MONITOR:Option<crate::runtime::execution::ContextHandle>=None;
 static mut APP_ACTIVE: bool = false;
 static mut APP_NETWORK: super::native_network::Network = super::native_network::Network::new();
@@ -824,7 +825,7 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
             APP_MONITOR=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_C,name).ok()).flatten();
             if APP_MONITOR.is_none(){let _=task.release(crate::runtime::native_memory::memory_mut());console.output.write_line(b"No process slot available.");return true;}
             let _=crate::runtime::ai::application_host::attach(console.current_user.0,console.current_session.0);
-            APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
+            MONITOR_RESUME_NS=0;APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
             (&mut *(&raw mut APP_NETWORK)).reset(owner,false);
             APP_RECOVERY=None;
             app_io_receipt(true,0,0);
@@ -881,11 +882,16 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     let Some((owner,task))=(&mut *(&raw mut APP)).as_mut() else{return;};
     let attached=crate::ui::editor_chrome::terminal::inspect(|state|state.attached) && console.assistant_owner_alive(2);
     let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&(console.assistant_owner_alive(1)||attached)&&!APP_CANCEL;
-    let status=APP_MONITOR.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|c.state)).flatten());
+    let monitor=APP_MONITOR.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|(c.state,c.budget))).flatten());
+    let status=monitor.map(|v|v.0);
     let authorized=authorized && status!=Some(crate::runtime::execution::ContextState::Stopped);
     if authorized && (status==Some(crate::runtime::execution::ContextState::Waiting)||(&*(&raw const APP_INPUT)).waiting) {return;}
     if !authorized {crate::drivers::camera::cancel(*owner);}
     let now=crate::runtime::ai::qwen::workers::clock_ns();
+    if let Some((_, budget))=monitor {
+        if authorized && budget.cpu_weight<100 && now<MONITOR_RESUME_NS{return;}
+        crate::runtime::native_memory::memory_mut().monitor_limit(false,2,budget.memory_limit);
+    }
     let state=task.poll(now,authorized,|caller,tables,op,args| {
         if let Some(result)=(&mut *(&raw mut APP_NETWORK)).syscall(tables,op,args) {return result;}
         if (0x1260..=0x1262).contains(&op) {return crate::drivers::camera::dispatch(caller,tables,op,args);}
@@ -921,6 +927,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if let Some(h)=APP_MONITOR{
         let timestamp=crate::runtime::ai::qwen::workers::clock_ns();
         let busy=timestamp.saturating_sub(now);
+        MONITOR_RESUME_NS=timestamp.saturating_add(crate::runtime::task_manager::TaskManager::native_cooldown_ns(busy,monitor.map_or(100,|v|v.1.cpu_weight)));
         let sample=timestamp.saturating_sub(MONITOR_SAMPLE_NS)>=1_000_000_000;
         let bytes=if sample{MONITOR_SAMPLE_NS=timestamp;Some(crate::runtime::native_memory::memory_mut().resident_bytes(2))}else{None};
         crate::runtime::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.timed=true;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
@@ -949,6 +956,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     if state==State::Runnable {INFINITY_NATIVE_APP_SNAPSHOT[6]=u64::from((&*(&raw const APP_INPUT)).waiting);}
     if state==State::Runnable{return;}
     let ui_was_active=crate::ui::native_uikit::presentation().active;
+    crate::runtime::native_memory::memory_mut().monitor_limit(false,2,u64::MAX);
     if let Some(h)=core::ptr::addr_of_mut!(APP_MONITOR).replace(None){crate::runtime::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=0;}});}
     let (owner,task)=core::ptr::addr_of_mut!(APP).replace(None).unwrap();APP_ACTIVE=false;APP_SOURCE_PATH_LENGTH=0;
     (&mut *(&raw mut APP_NETWORK)).close();

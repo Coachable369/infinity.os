@@ -55,6 +55,7 @@ struct Generated {
     workflow_revision: u64, staged:bool,
 }
 static mut MONITOR_SAMPLE_NS:u64=0;
+static mut MONITOR_RESUME_NS:u64=0;
 static mut JOB: Job = Job { monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
@@ -362,6 +363,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     }
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
     let name=path.rsplit(|b|*b==b'/').next().unwrap_or(path);
+    MONITOR_RESUME_NS=0;
     job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
     if job.monitor.is_none(){if job.application.take().is_some(){crate::runtime::ai::application_host::detach();}
         let _=job.task.take().unwrap().release(memory_mut());return Err(b"python: no process slot available.");}
@@ -772,10 +774,15 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let session_current=job.owner == SecurityIdentity(console.current_session.0) && job.package_owner == console.current_user.0 && active(console);
     let authorized = session_current&&job.generated.is_none_or(|generated|workflow::authorized(generated.phase,generated.launched,
         generated_current(console,generated),generated.user==console.current_user.0&&console.ai_chat_allowed()));
-    let state=job.monitor.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|c.state)).flatten());
+    let monitor=job.monitor.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|(c.state,c.budget))).flatten());
+    let state=monitor.map(|v|v.0);
     let authorized=authorized && state!=Some(crate::runtime::execution::ContextState::Stopped);
     if authorized && state==Some(crate::runtime::execution::ContextState::Waiting){return;}
     let now = crate::runtime::ai::qwen::workers::clock_ns();
+    if let Some((_, budget))=monitor {
+        if authorized && budget.cpu_weight<100 && now<MONITOR_RESUME_NS{return;}
+        memory_mut().monitor_limit(true,job.task.as_ref().unwrap().context_id(),budget.memory_limit);
+    }
     if job.child.running() {
         job.child.poll(now, authorized, memory_mut(), &mut job.filesystem, &mut job.network);
         return;
@@ -810,6 +817,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     if let Some(h)=job.monitor {
         let timestamp=crate::runtime::ai::qwen::workers::clock_ns();
         let busy=timestamp.saturating_sub(now);
+        MONITOR_RESUME_NS=timestamp.saturating_add(crate::runtime::task_manager::TaskManager::native_cooldown_ns(busy,monitor.map_or(100,|v|v.1.cpu_weight)));
         let sample=timestamp.saturating_sub(MONITOR_SAMPLE_NS)>=1_000_000_000;
         let bytes=if sample{MONITOR_SAMPLE_NS=timestamp;Some(memory_mut().resident_bytes(native_owner.0))}else{None};
         crate::runtime::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.timed=true;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
@@ -870,6 +878,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
             _ => b"Python process faulted; native runtime stopped it.",
         }); }
     }
+    memory_mut().monitor_limit(true,native_owner.0,u64::MAX);
     if let Some(h)=job.monitor.take(){crate::runtime::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=0;}});}
     let cleanup = job.task.take().unwrap().release(memory_mut()).is_ok();
     let _ = crate::runtime::with_runtime(|runtime|job.gui.close(runtime,memory_mut()));

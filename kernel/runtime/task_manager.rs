@@ -139,9 +139,22 @@ impl TaskManager {
         if !matches!(image,IMAGE_NATIVE_C|IMAGE_NATIVE_PYTHON){return Err(TaskManagerError::UnknownApplication);}
         let previous=(0..execution.count()).filter_map(|i|execution.nth(i)).find(|c|c.image_identity==image&&c.service_identity==0).map(|c|c.handle);
         let h=if let Some(h)=previous{if execution.get(h).is_some_and(|c|c.state!=ContextState::Stopped){return Err(TaskManagerError::InvalidState);}self.relaunch(execution,h)?;h}else{self.launch(execution,image)?};
+        if let Some(c)=execution.get_mut(h) {
+            c.budget.memory_limit=256*1024*1024; // Maximum addressable native frame pool.
+            c.budget.cpu_weight=100;
+        }
         let slot=&mut self.native_names[(image-IMAGE_NATIVE_C)as usize];slot.fill(0);
         let n=name.len().min(slot.len());slot[..n].copy_from_slice(&name[..n]);
         Ok(h)
+    }
+
+    // ------------------------=
+    // FUNC: native_cooldown_ns
+    // DESC: Spaces cooperative native slices by measured execution time when an operator reduces a task's CPU share.
+    // ------------------=
+    pub fn native_cooldown_ns(busy:u64,weight:u16)->u64 {
+        let share=u64::from(weight.clamp(1,100));
+        busy.saturating_mul(100-share)/share
     }
 
     // ------------------------=

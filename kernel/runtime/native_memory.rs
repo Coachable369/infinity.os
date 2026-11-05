@@ -46,6 +46,7 @@ pub struct NativeMemory {
     bitmap: [u64; BITMAP_WORDS],
     allocations: [Option<FrameAllocation>; MAX_ALLOCATIONS],
     next_allocation_id: u32,
+    monitored_limits: [Option<(u32, u64)>; 2],
 }
 
 impl NativeMemory {
@@ -60,6 +61,7 @@ impl NativeMemory {
             bitmap: [0; BITMAP_WORDS],
             allocations: [None; MAX_ALLOCATIONS],
             next_allocation_id: 1,
+            monitored_limits: [None; 2],
         }
     }
 
@@ -121,6 +123,9 @@ impl NativeMemory {
         if requested == 0 {
             return Err(MemoryError::InvalidPageCount);
         }
+        if self.monitored_limits.iter().flatten().any(|&(id, limit)| {
+            id == owner && self.resident_bytes(owner).saturating_add(u64::from(page_count)*PAGE_SIZE) > limit
+        }) { return Err(MemoryError::OutOfMemory); }
         let record = self
             .allocations
             .iter()
@@ -161,6 +166,13 @@ impl NativeMemory {
         Ok(())
     }
 
+    // ------------------------=
+    // FUNC: monitor_limit
+    // DESC: Applies a running native application's task budget to new frame reservations without evicting live mappings.
+    // ------------------=
+    pub fn monitor_limit(&mut self, python: bool, owner: u32, bytes: u64) {
+        self.monitored_limits[usize::from(python)] = (bytes < MAX_POOL_PAGES as u64 * PAGE_SIZE).then_some((owner,bytes));
+    }
     // ------------------------=
     // FUNC: resident_bytes
     // DESC: Totals pages currently owned by one native process including its mappings and page tables.
