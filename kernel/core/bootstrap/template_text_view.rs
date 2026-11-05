@@ -33,6 +33,26 @@ impl DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: template_centered_value_y
+    // DESC: Centers visible glyph ink inside a single-line choice field, excluding font atlas padding.
+    // ------------------=
+    pub(crate) fn template_centered_value_y(&self, bounds: crate::ui::geometry::Rect, text: &[u8], pixels: usize) -> i32 {
+        let (atlas, _, _) = template_face(self.template_family(None), false);
+        let mut rows = 0u32;
+        for &byte in text.iter().filter(|&&b| (33..=126).contains(&b)) {
+            let column = (byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
+            for y in 0..INSTALLER_FONT_CELL_HEIGHT {
+                let start = y * (95 * INSTALLER_FONT_CELL_WIDTH) + column;
+                if atlas[start..start + INSTALLER_FONT_CELL_WIDTH].iter().any(|&a| a >= 64) { rows |= 1 << y; }
+            }
+        }
+        if rows == 0 { return bounds.y; }
+        let center_twice = rows.trailing_zeros() as usize + (32 - rows.leading_zeros()) as usize;
+        bounds.y + (bounds.height as i32 - ((center_twice * pixels + INSTALLER_FONT_NATIVE_SIZE_PX / 2)
+            / INSTALLER_FONT_NATIVE_SIZE_PX) as i32).div_euclid(2)
+    }
+
+    // ------------------------=
     // FUNC: access_text_width
     // DESC: Measures Eclipse text with the immutable Inter family regardless of the signed-in desktop font preference.
     // ------------------=
@@ -109,7 +129,7 @@ impl DisplayDevice {
     // FUNC: template_text_signed
     // DESC: Preserves glyph positions when authored controls are partially outside the display or scrolling viewport.
     // ------------------=
-    pub(super) fn template_text_signed(&mut self, x: i32, y: i32, text: &[u8], red: u8,
+    pub(crate) fn template_text_signed(&mut self, x: i32, y: i32, text: &[u8], red: u8,
         green: u8, blue: u8, opacity: u8, pixels: usize, semibold: bool) {
         self.template_text_face_signed(i64::from(x), i64::from(y), text, red, green, blue, opacity, pixels, semibold, None);
     }

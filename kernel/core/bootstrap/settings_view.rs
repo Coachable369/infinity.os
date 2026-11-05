@@ -373,8 +373,7 @@ impl DisplayDevice {
         match interaction {
             I::Cycle => {
                 let label_area = self.app_choice_field(control, keyboard_focus, scale);
-                value_bounds.x = label_area.x;
-                value_bounds.width = label_area.width;
+                value_bounds = label_area;
             }
             I::Edit => self.precision_surface(control, crate::ui::panel_recipe::Surface::Field, Material {
                 fill: (pr/2, pg/2, pb/2), edge: chrome.outline, opacity: alpha(230), edge_opacity: 155,
@@ -385,7 +384,23 @@ impl DisplayDevice {
         }
         self.paint_settings_bound_text(authored_label,label_bounds,label,(190,205,217),true,false);
         let align_right = !matches!(interaction, I::Cycle | I::Edit);
-        self.paint_settings_bound_text(authored_value,value_bounds,value,(220,232,240),false,align_right);
+        if matches!(interaction, I::Cycle) && authored_value.is_some() {
+            let element = authored_value.unwrap();
+            if !element.hidden && element.opacity > 0 {
+                let pixels = (element.font_size as usize * self.height / 1000).clamp(1, 256);
+                let mut n = value.len();
+                while n > 0 && self.template_text_width(&value[..n], pixels, false) > value_bounds.width as usize { n -= 1; }
+                let old = self.render_clip;
+                self.intersect_render_clip(value_bounds.x.max(0) as usize, value_bounds.y.max(0) as usize,
+                    value_bounds.width as usize, value_bounds.height as usize);
+                let y = self.template_centered_value_y(value_bounds, &value[..n], pixels);
+                self.template_text_signed(value_bounds.x, y, &value[..n], element.fill[0], element.fill[1], element.fill[2],
+                    (u16::from(element.fill[3]) * u16::from(element.opacity) / 100) as u8, pixels, false);
+                self.render_clip = old;
+            }
+        } else {
+            self.paint_settings_bound_text(authored_value,value_bounds,value,(220,232,240),false,align_right);
+        }
         if focus==0&&index==0&&!authored_value.is_some_and(|e|e.hidden||e.opacity==0||e.fill[3]==0) {
             if let Some(element)=authored_value {
                 if let Some((true,caret))=crate::ui::text_input::caret(1){

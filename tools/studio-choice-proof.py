@@ -1,4 +1,5 @@
 """Render a Settings choice in the packaged Studio and verify bounded keyboard-focus damage."""
+import json
 from pathlib import Path
 import subprocess
 from PIL import Image, ImageChops
@@ -31,6 +32,15 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     normal = render("devices", 0)
     focused = render("devices-focused", 128)
+    geometry = json.loads((OUT / "devices.geometry.json").read_text())
+    value = next(e for e in geometry if e["id"] == "53595354-0006-002a-8000-000000000001")
+    x, y, w, h = (value[k] for k in ("x", "y", "width", "height"))
+    for frame in (normal, focused):
+        # Exclude the surface border and indicator well; measure the light text ink.
+        ink = frame.crop((x, y-3, x+w-40, y+h+3)).convert("L").point(lambda v: 255 if v > 135 else 0).getbbox()
+        assert ink is not None
+        top_gap, bottom_gap = ink[1], h+6-ink[3]
+        assert abs(top_gap-bottom_gap) <= 2, (top_gap, bottom_gap)
     changed = ImageChops.difference(normal, focused).getbbox()
     assert changed, "Expected visible keyboard focus on the display selector"
     left, top, right, bottom = changed
