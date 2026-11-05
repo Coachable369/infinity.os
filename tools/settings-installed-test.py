@@ -79,6 +79,37 @@ def verify_artifacts():
                 assert binary.find(template) >= 0, (architecture, name)
 
 # ------------------------=
+# FUNC: verify_live_resolution
+# DESC: Selects a different detected mode in the installed desktop and checks the actual QEMU scanout without rebooting.
+# ------------------=
+def verify_live_resolution(guest):
+    initial = tuple(guest.state()[11:13])
+    state = settings(guest)
+    helpers.click(guest, state[99], state[100])
+    wait_settings(guest, lambda s: s[3] == 1 and s[4] == 5)
+    for key in ("home", "end"):
+        disclosure(guest, 0, True)
+        guest.key(key)
+        guest.key("ret")
+        wait_settings(guest, lambda s: s[4] == 5 and s[5] == 0)
+        current = tuple(guest.state()[11:13])
+        if current == initial:
+            continue
+        # QMP's PPM header reports the emulated monitor size independently of the OS.
+        with guest.screenshot("settings-live-mode").open("rb") as stream:
+            assert stream.readline().strip() == b"P6"
+            size = stream.readline()
+            while size.startswith(b"#"):
+                size = stream.readline()
+            assert tuple(map(int, size.split())) == current
+        state = settings(guest)
+        helpers.click(guest, state[89], state[90])
+        wait_settings(guest, lambda s: s[3] == 1 and s[4] == 0)
+        return {"initial": initial, "active": current}
+    raise AssertionError(("no hardware mode switch; use a multimode adapter", initial))
+
+
+# ------------------------=
 # FUNC: review_accounts
 # DESC: Visits the dedicated account tabs through exported production controls without treating them as generic disclosures.
 # ------------------=
@@ -179,6 +210,7 @@ def main():
     parser.add_argument("work", type=pathlib.Path)
     parser.add_argument("--arch", choices=("x86_64", "aarch64"), default="x86_64")
     parser.add_argument("--iso", type=pathlib.Path)
+    parser.add_argument("--verify-resolution", action="store_true", help="Require live multimode scanout in the freshly installed guest")
     parser.add_argument("--review-existing", action="store_true")
     parser.add_argument("--resume-onboarding", action="store_true")
     parser.add_argument("--accel", choices=("hvf", "tcg"))
@@ -225,6 +257,9 @@ def main():
         identity = guest.onboard()
         guest.launch("settings", 8)
         state = wait_settings(guest, lambda s: s[3] == 1 and s[4] == 0 and s[5] == 0)
+        if args.verify_resolution:
+            result = verify_live_resolution(guest)
+            (work / "live-resolution.json").write_text(json.dumps(result))
         guest.screenshot("settings-general-collapsed")
         disclosure(guest, 1, True)
         guest.screenshot("settings-general-expanded")
