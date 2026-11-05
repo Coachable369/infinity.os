@@ -59,6 +59,10 @@ impl ConsoleRuntime {
         {
             return false;
         }
+        let mut state=widgets::current();
+        // An idle widget has no hover action. Avoid reconstructing every window's
+        // geometry and reading AI state for every mouse packet above a client.
+        if !clicked && !secondary && state.drag.is_none() && state.menu.is_none(){return false;}
         let (width, height) = (
             self.system.framebuffer_width,
             self.system.framebuffer_height,
@@ -69,7 +73,6 @@ impl ConsoleRuntime {
             x: self.pointer_x * width as i32 / 1000,
             y: self.pointer_y * height as i32 / 1000,
         };
-        let mut state = widgets::current();
         let minimized = crate::runtime::ai::with_ai_runtime(|r| r.chat.minimized());
         if state.drag.is_some() {
             let old = state;

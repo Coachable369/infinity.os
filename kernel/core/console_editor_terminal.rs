@@ -145,6 +145,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn pointer_editor_terminal(&mut self,clicked:bool,released:bool)->bool {
         if self.mode!=ConsoleMode::Desktop||self.desktop_app!=DesktopAppKind::TextEditor||self.editor_dialog!=EditorDialog::None{return false;}
+        if !clicked && !terminal::inspect(|s|s.dragging||s.scroll_dragging){return false;}
         let g=self.editor_terminal_layout();let state=terminal::read();let layout=self.editor_layout();
         let count=state.visual_count(state.viewport_columns);
         let p=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).point(self.pointer_x,self.pointer_y);
@@ -152,12 +153,12 @@ impl ConsoleRuntime {
             if released {terminal::mutate(|state|state.dragging=false);self.save_editor_terminal();}
             else {let height=((layout.status.y-p.y).max(0) as usize/layout.scale.max(1)).clamp(112,1024) as u16;
                 terminal::mutate(|state|state.preferences.height=height);}
-            self.redraw();return true;
+            self.present_continuous_motion(released);return true;
         }
         if state.scroll_dragging {
             if released{terminal::mutate(|state|state.scroll_dragging=false);}
             else{terminal::mutate(|next|next.scroll=g.drag_scroll(p.y,state.scroll_drag_offset,layout.scale,count));}
-            self.redraw();return true;
+            self.present_continuous_motion(released);return true;
         }
         if self.editor_tools.menu!=crate::ui::editor_chrome::Menu::None{return false;}
         if state.preferences.open&&g.splitter.contains(p)&&clicked{terminal::mutate(|state|state.dragging=true);return true;}

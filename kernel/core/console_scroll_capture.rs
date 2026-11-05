@@ -28,7 +28,7 @@ impl ConsoleRuntime {
             if !held||!enabled||minimized{self.ai_chat_scroll_grab=None;}
             self.present_continuous_motion(!held);return true;
         }
-        if self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::TextEditor&&crate::ui::editor_chrome::terminal::read().scroll_dragging {
+        if self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::TextEditor&&crate::ui::editor_chrome::terminal::inspect(|s|s.scroll_dragging) {
             return self.pointer_editor_terminal(false,released||!held);
         }
         if self.assistant_owner().is_some_and(|(id,_)|crate::ui::app_assistant::dragging(id)) {

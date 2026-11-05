@@ -8315,6 +8315,9 @@ impl ConsoleRuntime {
     // ------------------=
     fn pointer_interaction(&mut self, buttons: u8) {
         if self.accounts_focus_guard() { return; }
+        // Record motion even when a captured UI control consumes the event. A
+        // batched scene update takes precedence and paints this same position.
+        let _=input_cursor_presentation(self.pointer_x,self.pointer_y);
         let previous_system_focus=self.system_focus;
         let buttons = crate::ui::input_preferences::current().buttons(buttons);
         if self.installer_work.busy() {
