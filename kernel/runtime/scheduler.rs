@@ -11,6 +11,7 @@ pub struct Scheduler {
     cursor: usize,
     priority_phase: usize,
     idle_ticks: u64,
+    credits: [(u16, i64); super::execution::MAX_CONTEXTS],
 }
 
 impl Scheduler {
@@ -23,6 +24,7 @@ impl Scheduler {
             cursor: 0,
             priority_phase: 0,
             idle_ticks: 0,
+            credits: [(0, 0); super::execution::MAX_CONTEXTS],
         }
     }
     // ------------------------=
@@ -49,18 +51,34 @@ impl Scheduler {
         ];
         for class_offset in 0..CLASSES.len() {
             let priority = CLASSES[(self.priority_phase + class_offset) % CLASSES.len()];
-            for offset in 0..count {
-                let index = (self.cursor + offset) % count;
-                if let Some(context) = contexts.nth(index) {
-                    if context.state == ContextState::Runnable && context.priority == priority {
-                        let handle = context.handle;
-                        self.cursor = (index + 1) % count;
-                        self.priority_phase = (self.priority_phase + 1) % CLASSES.len();
-                        let _ = contexts.set_state(handle, ContextState::Running);
-                        let _ = contexts.account_cpu_tick(handle);
-                        return Some(handle);
-                    }
+            let mut selected = None;
+            let mut best = i64::MIN;
+            let mut first_distance = usize::MAX;
+            let mut total = 0;
+            for (slot, context) in contexts.slots() {
+                if context.priority != priority || context.state != ContextState::Runnable { continue; }
+                let credit = &mut self.credits[slot];
+                if credit.0 != context.handle.0 { *credit = (context.handle.0, 0); }
+                // Task Manager weights apply only to applications. System services retain equal shares in their class.
+                let weight = if context.service_identity == super::task_manager::APPLICATION_SERVICE_ID {
+                    i64::from(context.budget.cpu_weight.max(1))
+                } else { 100 };
+                credit.1 += weight;
+                total += weight;
+                let distance = (slot + super::execution::MAX_CONTEXTS - self.cursor) % super::execution::MAX_CONTEXTS;
+                if credit.1 > best || (credit.1 == best && distance < first_distance) {
+                    best = credit.1;
+                    first_distance = distance;
+                    selected = Some((slot, context.handle));
                 }
+            }
+            if let Some((slot, handle)) = selected {
+                self.credits[slot].1 -= total;
+                self.cursor = (slot + 1) % super::execution::MAX_CONTEXTS;
+                self.priority_phase = (self.priority_phase + 1) % CLASSES.len();
+                let _ = contexts.set_state(handle, ContextState::Running);
+                let _ = contexts.account_cpu_tick(handle);
+                return Some(handle);
             }
         }
         self.idle_ticks = self.idle_ticks.saturating_add(1);

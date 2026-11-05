@@ -37,6 +37,22 @@ use runtime::task_manager::{
 // DESC: Verifies observable task monitoring, lifecycle, protection, and resource-control transitions.
 // ------------------=
 fn main() {
+    let mut execution = runtime::execution::ExecutionManager::new();
+    let mut tasks = runtime::task_manager::TaskManager::new();
+    let light = tasks.launch(&mut execution, IMAGE_TEXT_EDITOR).unwrap();
+    let heavy = tasks.launch(&mut execution, IMAGE_FILE_NAVIGATOR).unwrap();
+    let mut budget = execution.get(light).unwrap().budget;
+    budget.cpu_weight = 25;
+    tasks.throttle(&mut execution, light, budget, PriorityClass::Normal).unwrap();
+    budget.cpu_weight = 75;
+    tasks.throttle(&mut execution, heavy, budget, PriorityClass::Normal).unwrap();
+    let mut scheduler = runtime::scheduler::Scheduler::new();
+    for _ in 0..400 {
+        let h = scheduler.next(&mut execution).unwrap();
+        scheduler.yield_context(&mut execution, h);
+    }
+    assert_eq!(execution.get(light).unwrap().usage.cpu_ticks, 100);
+    assert_eq!(execution.get(heavy).unwrap().usage.cpu_ticks, 300);
     let mut system = runtime::InfinityRuntime::new(false);
     system.define_bootstrap().unwrap();
     system.start_all(0);

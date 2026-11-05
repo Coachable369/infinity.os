@@ -1892,7 +1892,7 @@ impl ConsoleRuntime {
                         &mut runtime.execution,
                         task.handle,
                         budget,
-                        if action == 4 {task.priority} else {crate::runtime::execution::PriorityClass::Background},
+                        task.priority,
                     )
                     .ok()
             }

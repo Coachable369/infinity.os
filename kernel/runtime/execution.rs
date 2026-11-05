@@ -186,6 +186,13 @@ impl ExecutionManager {
         self.contexts.iter().flatten().nth(index)
     }
     // ------------------------=
+    // FUNC: slots
+    // DESC: Iterates stable execution slots for allocation-free scheduler accounting.
+    // ------------------=
+    pub fn slots(&self) -> impl Iterator<Item = (usize, &ExecutionContext)> {
+        self.contexts.iter().enumerate().filter_map(|(i, c)| c.as_ref().map(|c| (i, c)))
+    }
+    // ------------------------=
     // FUNC: set_state
     // DESC: Writes or updates set state data.
     // ------------------=
