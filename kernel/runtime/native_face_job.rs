@@ -57,7 +57,7 @@ impl Job {
         if let Some(payload)=payload {self.setup.begin_login(worker,digest,payload,now_ns/1_000_000)}
         else {self.setup.begin(worker,account,digest,name,now_ns/1_000_000)}.map_err(|_|MemoryError::InvalidAddress)?;
         self.deadline=now_ns.saturating_add(240_000_000_000);
-        let task=match Task::start_camera_worker(image,owner,7,memory,controller,self.deadline) {
+        let task=match Task::start_camera_worker(image,owner,7,memory,controller,self.deadline,(super::face_setup::wire::WORKER_HEAP_BYTES/4096) as u32) {
             Ok(task)=>task,Err(error)=>{self.setup.cancel();return Err(error);}
         };
         self.owner=owner;self.detector=models[0];self.recognizer=models[1];

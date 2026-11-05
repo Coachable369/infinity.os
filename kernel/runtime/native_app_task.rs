@@ -32,9 +32,9 @@ impl Task {
     // ------------------=
     pub(crate) unsafe fn start_camera_worker(
         bytes:&[u8],owner:SecurityIdentity,id:u32,memory:&mut NativeMemory,
-        controller:cpu::Controller,deadline:u64,
+        controller:cpu::Controller,deadline:u64,heap_pages:u32,
     )->Result<Self,MemoryError> {
-        Self::start_with_heap(bytes,owner,id,memory,controller,deadline,(super::face_setup::wire::WORKER_HEAP_BYTES/4096) as u32)
+        Self::start_with_heap(bytes,owner,id,memory,controller,deadline,heap_pages)
     }
     // ------------------------=
     // FUNC: start_with_heap
