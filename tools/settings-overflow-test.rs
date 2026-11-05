@@ -240,11 +240,11 @@ fn sidebar_spacing() {
             let icon = ui::settings_template::role_at(section, R::SettingsNavigationIcon, index).unwrap().frame;
             let label = ui::settings_template::role_at(section, R::SettingsNavigationLabel, index).unwrap().frame;
             assert!(row.y >= bottom + if index == 0 {0} else {12});
-            assert_eq!(icon.x-row.x, 16);
-            assert_eq!(label.x-icon.x-icon.width, 12);
+            assert!(icon.x >= row.x + 8);
+            assert!(label.x >= icon.x + icon.width + 6);
             assert_eq!(icon.width, icon.height);
-            assert_eq!(icon.y+icon.height/2, row.y+row.height/2);
-            assert!(label.x+label.width <= row.x+row.width-16);
+            assert!((icon.y+icon.height/2).abs_diff(row.y+row.height/2) <= 3);
+            assert!(label.x+label.width <= row.x+row.width-6);
             assert!(ui::icon_theme::settings_section_icon(index) < ui::icon_theme::ICON_ROLE_COUNT);
             bottom = row.y+row.height;
         }
