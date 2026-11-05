@@ -33,7 +33,7 @@ impl DisplayDevice {
     pub(super) fn command_terminal_view(&mut self,body:Rect,toolbar:Rect,scale:usize) {
         let g=terminal::inspect(|s|s.layout(body,toolbar,scale));terminal::mutate(|s|s.reflow(g.columns(),g.rows()));terminal::publish_snapshot();
         terminal::inspect(|s|{
-            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote {paint::content(&mut canvas,s,g,true);}
+            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote && !s.monitor {paint::content(&mut canvas,s,g,true);}
             if s.remote {canvas.fill(g.body,s.background_color());crate::ui::terminal_vt::inspect(|t|{
                 for y in 0..t.rows.min(g.rows()){for x in 0..t.columns.min(g.columns()){
                     let c=t.cells[y][x];let mut fg=c.fg;let mut bg=c.bg;if c.inverse{core::mem::swap(&mut fg,&mut bg);}if c.bold&&fg<8{fg+=8;}
@@ -42,6 +42,29 @@ impl DisplayDevice {
                 }}
                 if t.cursor_visible {canvas.fill(Rect{x:g.text.x+(t.x*g.cell)as i32,y:g.text.y+(t.y*g.line)as i32,width:2*scale as u32,height:g.line as u32},s.appearance.color(5));}
             });}
+            if s.monitor {
+                use core::fmt::Write;
+                canvas.fill(g.body,s.background_color());
+                ascii(&mut canvas,g,s.appearance,0,b"  PID   CPU    MEM KiB  STATUS    PROCESS");
+                let visible=g.rows().saturating_sub(3).max(1);
+                crate::runtime::with_runtime(|r|{
+                    let count=r.execution.count();let selected=s.monitor_row.min(count.saturating_sub(1));
+                    let start=selected/visible*visible;
+                    for i in start..count.min(start+visible) {
+                        let Some(t)=r.task_manager.task_nth(&r.execution,i) else{break};
+                        let mut line=crate::runtime::console_execution::Bytes::<160>::new();
+                        let _=write!(line,"{} {:4} {:3}% {:9}  {:8}  ",if i==selected{'>'}else{' '},t.handle.0,t.cpu_share_percent,t.usage.memory_bytes/1024,
+                            core::str::from_utf8(crate::console::context_state_text(t.state)).unwrap_or("?"));
+                        line.write(crate::console::task_name(r,&t));ascii(&mut canvas,g,s.appearance,i-start+1,line.bytes());
+                    }
+                    if g.rows()>=4 {if let Some(t)=r.task_manager.task_nth(&r.execution,selected) {
+                        let mut line=crate::runtime::console_execution::Bytes::<96>::new();
+                        let _=write!(line,"PID {}: CPU weight {}   Memory budget {} KiB",t.handle.0,t.budget.cpu_weight,t.budget.memory_limit/1024);
+                        ascii(&mut canvas,g,s.appearance,g.rows()-2,line.bytes());
+                    }}
+                });
+                ascii(&mut canvas,g,s.appearance,g.rows().saturating_sub(1),b"Arrows: select  P: pause  T: CPU  M: memory  K: end  R: relaunch  Q: quit");
+            }
             if s.help {
                 canvas.fill(g.body,s.background_color());
                 let entries=crate::runtime::console_help::COMMANDS;

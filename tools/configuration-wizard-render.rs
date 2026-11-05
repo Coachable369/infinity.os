@@ -277,7 +277,7 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             .filter(|action|action.visible&&action.clip.intersects(action.bounds)&&focus==1)
             .map(|action|crate::ui::app_launcher::window_controls::Highlight{rect:action.bounds,pressed});
         crate::ui::app_launcher::window_controls::publish(interaction);
-        let preview_value:&[u8]=if screen==5{b"15 minutes"}else{b"Preview machine"};
+        let preview_value:&[u8]=if screen==5{b"15 minutes"}else if screen==6{b"1920 x 1080"}else{b"Preview machine"};
         settings_rendered=target.render_basic_settings_view(usize::from(screen-1),preview_value,window,target.ui_scale(),
             crate::settings_view::BasicSettingsSnapshot{local_only:true,output_voice:b"Heart (female)",face_login_enabled:true,chat_enabled:true,chat_model:b"Hermes 3 Llama 3.2 3B",
                 voice_enabled:true,wake_word:b"Infinity",speech_enabled:true,

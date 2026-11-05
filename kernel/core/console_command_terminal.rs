@@ -63,6 +63,22 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn command_terminal_key(&mut self,key:ConsoleKey)->bool {
         if !self.command_terminal_visible()||crate::ui::terminal_edit::inspect(|s|s.active){return false;}
+        if let Some(row)=terminal::inspect(|s|s.monitor.then_some(s.monitor_row)) {
+            let count=crate::runtime::with_runtime(|r|r.execution.count()).unwrap_or(0);
+            let row=row.min(count.saturating_sub(1));
+            self.task_manager_selected=row;
+            match key {
+                ConsoleKey::Escape|ConsoleKey::Character(b'q')=>terminal::mutate(|s|s.monitor=false),
+                ConsoleKey::Up=>terminal::mutate(|s|s.monitor_row=row.saturating_sub(1)),
+                ConsoleKey::Down=>terminal::mutate(|s|s.monitor_row=(row+1).min(count.saturating_sub(1))),
+                ConsoleKey::Character(b'p')=>self.task_manager_action(2),
+                ConsoleKey::Character(b'k')=>self.task_manager_action(0),
+                ConsoleKey::Character(b't')=>self.task_manager_action(3),
+                ConsoleKey::Character(b'm')=>self.task_manager_action(4),
+                ConsoleKey::Character(b'r')=>self.task_manager_action(1), _=>{}
+            }
+            terminal::mutate(|s|s.changed());return true;
+        }
         if matches!(key,ConsoleKey::Shortcut(b',')){self.shell_menu=0;terminal::mutate(|s|{s.menu=Menu::Appearance;s.menu_row=0;s.setting_edit=false;s.changed();});return true;}
         if terminal::inspect(|s|s.menu!=Menu::None){
             if terminal::inspect(|s|matches!(s.menu_row,3|4)) {

@@ -381,7 +381,7 @@ impl DisplayDevice {
                 fill:(5,20,34),edge:(outline_r/2,outline_g/2,outline_b/2),opacity:226,
                 edge_opacity:255,focus:if active {255}else{0},pressed:false,scale});
             let label = authored.map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(page_labels[index]);
-            let available = (tab.width as usize).saturating_sub(24 * scale);
+            let available = (tab.width as usize).saturating_sub(6 * scale);
             let text_width = self.ui_text_width_weighted(label, 1, true).min(available);
             self.ui_text_elided_strong(
                 tab.x.max(0) as usize + (tab.width as usize - text_width) / 2,

@@ -126,9 +126,11 @@ def review_sections(guest):
         if section == 2:
             review_accounts(guest)
         elif section not in (0, 1, 3, 6, 7, 10):
-            disclosure(guest, 0, True)
+            # Display resolution cycles on click; exercise the keyboard detail row on Devices.
+            row = 1 if section == 5 else 0
+            disclosure(guest, row, True)
             guest.screenshot(f"settings-category-{section:02d}-expanded")
-            disclosure(guest, 0, False)
+            disclosure(guest, row, False)
         reviewed.append(section)
     return reviewed
 

@@ -49,6 +49,8 @@ pub struct ResourceBudget {
 pub struct ResourceUsage {
     pub memory_bytes: u64,
     pub cpu_ticks: u64,
+    pub busy_ns:u64,
+    pub timed:bool,
     pub queued_messages: u16,
     pub io_units: u64,
 }

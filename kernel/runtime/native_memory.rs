@@ -162,6 +162,13 @@ impl NativeMemory {
     }
 
     // ------------------------=
+    // FUNC: resident_bytes
+    // DESC: Totals pages currently owned by one native process including its mappings and page tables.
+    // ------------------=
+    pub fn resident_bytes(&self,owner:u32)->u64 {
+        self.allocations.iter().flatten().filter(|a|a.owner==owner).map(|a|u64::from(a.page_count)*PAGE_SIZE).sum()
+    }
+    // ------------------------=
     // FUNC: available_pages
     // DESC: Reports currently unowned pages in the reserved arena.
     // ------------------=

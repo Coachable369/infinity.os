@@ -1136,6 +1136,18 @@ static void gather_framebuffer(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info)
         graphics->set_mode(graphics, 0);
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode = graphics->mode;
     if (!mode || !mode->info) return;
+    /* Firmware variable layout shared with the installed Settings controller. */
+    EFI_GUID display_guid={0x494f5344,0x4750,0x4f4d,{0x97,0x41,0x62,0x11,0x60,0x24,0x85,0x19}};
+    CHAR16 preferred_name[]={'I','O','S','D','i','s','p','l','a','y',0};
+    CHAR16 modes_name[]={'I','O','S','M','o','d','e','s',0};
+    typedef EFI_STATUS (EFIAPI *GetVariable)(CHAR16*,EFI_GUID*,uint32_t*,size_t*,void*);
+    typedef EFI_STATUS (EFIAPI *SetVariable)(CHAR16*,EFI_GUID*,uint32_t,size_t,void*);
+    void **vars=system->runtime_services?(void**)((uint8_t*)system->runtime_services+24):NULL;
+    uint32_t preferred[2]={0}, catalog[32][2]={{0}};
+    size_t pref_size=sizeof(preferred),count=0;
+    uint32_t requested=INFINITY_VIDEO_INVALID;
+    if (!vars || !vars[6] || ((GetVariable)vars[6])(preferred_name,&display_guid,NULL,&pref_size,preferred)!=EFI_SUCCESS || pref_size!=sizeof(preferred))
+        preferred[0]=preferred[1]=0;
     uint32_t best_mode = mode->mode;
     uint64_t best_score = infinity_video_score(mode->info->horizontal_resolution,
         mode->info->vertical_resolution, mode->info->pixels_per_scan_line,
@@ -1149,11 +1161,20 @@ static void gather_framebuffer(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info)
                 uint64_t score = infinity_video_score(candidate_info->horizontal_resolution,
                     candidate_info->vertical_resolution, candidate_info->pixels_per_scan_line,
                     candidate_info->pixel_format, candidate_info->pixel_information);
+                if (score && (uint64_t)candidate_info->pixels_per_scan_line*candidate_info->vertical_resolution <= INFINITY_VIDEO_BUFFER_PIXELS) {
+                    uint32_t w=candidate_info->horizontal_resolution,h=candidate_info->vertical_resolution;
+                    size_t k=0;while(k<count && (catalog[k][0]!=w || catalog[k][1]!=h)) ++k;
+                    if(k==count && count<32){catalog[count][0]=w;catalog[count++][1]=h;}
+                    if(w==preferred[0] && h==preferred[1])requested=candidate;
+                }
                 if (score > best_score) { best_score = score; best_mode = candidate; }
             }
             if (candidate_info) system->boot_services->free_pool(candidate_info);
         }
-        if (best_mode != mode->mode) graphics->set_mode(graphics, best_mode);
+        if (vars && vars[8] && count) ((SetVariable)vars[8])(modes_name,&display_guid,6,count*sizeof(catalog[0]),catalog);
+        if(requested!=INFINITY_VIDEO_INVALID && (requested==mode->mode || graphics->set_mode(graphics,requested)==EFI_SUCCESS)) {
+            /* The selected scanout is already active. */
+        } else if (best_mode != mode->mode) graphics->set_mode(graphics, best_mode);
     }
     mode = graphics->mode;
     if (!mode || !mode->info || !infinity_video_score(mode->info->horizontal_resolution,

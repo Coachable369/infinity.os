@@ -6,6 +6,14 @@ const SCRATCH_PIXELS: usize = 3840 * 2160;
 // Six ordinary shell slots plus one persistent surface per navigator instance.
 const SLOTS: usize = 13;
 static mut DIRECT_PAINT: bool = false;
+static BUSY_NS:[core::sync::atomic::AtomicU64;SLOTS]=[const {core::sync::atomic::AtomicU64::new(0)};SLOTS];
+// ------------------------=
+// FUNC: surface_busy_ns
+// DESC: Reads the accumulated compositor work for one retained window slot.
+// ------------------=
+pub(crate) fn surface_busy_ns(slot:usize)->u64 {
+    BUSY_NS.get(slot).map(|n|n.load(core::sync::atomic::Ordering::Relaxed)).unwrap_or(0)
+}
 
 struct DirectPaint { previous: bool }
 impl DirectPaint {
@@ -83,6 +91,14 @@ static mut WINDOWS: [CachedWindow; SLOTS] = [CachedWindow {
 static mut SCRATCH: [u32; SCRATCH_PIXELS] = [0; SCRATCH_PIXELS];
 
 // ------------------------=
+// FUNC: surface_bytes
+// DESC: Reports the backing pixels occupied by one shell application, excluding shared scratch space.
+// ------------------=
+pub(crate) fn surface_bytes(slot:usize)->u64 {
+    unsafe{(&*(&raw const WINDOWS)).get(slot).filter(|w|w.has_pixels).map(|w|(w.width*w.height*4)as u64).unwrap_or(0)}
+}
+
+// ------------------------=
 // FUNC: invalidate
 // DESC: Invalidates native surfaces after content or appearance changes, not translations.
 // ------------------=
@@ -145,6 +161,8 @@ impl DisplayDevice {
         active: bool,
         paint: impl FnOnce(&mut Self),
     ) {
+        #[cfg(target_os="none")]
+        let before=crate::ui::performance::monotonic_ns();
         self.retained_window_at(slot, bounds, |target| {
             let previous=target.render_clip;
             // A retained surface is painted at a recoverable nonnegative source
@@ -162,6 +180,10 @@ impl DisplayDevice {
             crate::ui::geometry::Rect { x: bounds.0, y: bounds.1,
                 width: bounds.2 as u32, height: bounds.3 as u32 },
             active, self.ui_scale(), crate::ui::desktop_effects::opacity());
+        #[cfg(target_os="none")]
+        if let (Some(start),Some(end),Some(counter))=(before,crate::ui::performance::monotonic_ns(),BUSY_NS.get(slot)){
+            counter.fetch_add(end.saturating_sub(start),core::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     // ------------------------=

@@ -238,7 +238,7 @@ impl ConsoleRuntime {
         if !active {self.authored_host=None;crate::ui::installer_template::navigation::set_scene(0);crate::ui::installer_template::navigation::publish(crate::ui::installer_template::navigation::View::new());}
         crate::ui::user_wallpaper::session(self.current_user.0,active);
         let preview=crate::ui::file_preview::current();
-        if preview.open && (!active || preview.owner!=self.current_session.0) {crate::ui::file_preview::close();}
+        if preview.open && (!active || preview.owner!=self.current_session.0) {self.end_surface_task(crate::runtime::task_manager::IMAGE_PREVIEW);crate::ui::file_preview::close();}
         if self.workplace_session!=self.current_session.0 {
             crate::ui::file_preview::set_desktop_files([crate::ui::file_preview::EMPTY_FILE;16]);
             clipboard_menu::close();

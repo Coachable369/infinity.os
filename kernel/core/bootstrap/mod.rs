@@ -52,6 +52,7 @@ mod primitives;
 mod personalization_view;
 mod font_library_view;
 mod retained_windows;
+pub(crate) use retained_windows::{surface_bytes,surface_busy_ns};
 mod template_compositor;
 mod template_font;
 mod template_text_view;

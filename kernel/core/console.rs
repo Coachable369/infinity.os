@@ -545,6 +545,7 @@ struct ConsoleRuntime {
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     node_policy_offset: usize,
     settings_window: SettingsWindowState,
+    display_modes:crate::install_boot::DisplayModes,
     settings_open: bool,
     title_clicks: window_workflows::TitleClicks,
     shell_return_mode: ConsoleMode,
@@ -720,6 +721,7 @@ impl ConsoleRuntime {
             node_input_lease: None,
             node_policy_offset: 0,
             pool_view_revision: 0,
+            display_modes:crate::install_boot::DisplayModes::empty(),
             settings_open: false,
             title_clicks: window_workflows::TitleClicks::new(),
             shell_return_mode: ConsoleMode::Desktop,
@@ -1332,7 +1334,8 @@ impl ConsoleRuntime {
                 && !self.settings_editing
                 && !matches!(self.system_focus, 6 | 7)
             {
-                if self.system_focus == 4 {
+                if self.system_focus==5 {settings_value_length=self.display_modes.label(&mut settings_value);}
+                else if self.system_focus == 4 {
                     let minutes = self.user_no_activity_timeout_minutes();
                     settings_value_length = write_minutes_label(&mut settings_value, minutes);
                 } else if let Some(machine) =
@@ -1827,6 +1830,7 @@ impl ConsoleRuntime {
             ConsoleKey::Character(b'r' | b'R') => self.task_manager_action(1),
             ConsoleKey::Character(b' ') | ConsoleKey::Enter => self.task_manager_action(2),
             ConsoleKey::Character(b't' | b'T') => self.task_manager_action(3),
+            ConsoleKey::Character(b'm' | b'M') => self.task_manager_action(4),
             ConsoleKey::Character(b'l' | b'L') => {
                 let _ = self.open_file_navigator_window(b"/home/default");
             }
@@ -1848,6 +1852,11 @@ impl ConsoleRuntime {
         })
         .flatten();
         let Some(task) = task else { return };
+        if action==0 && task.image_identity==crate::runtime::task_manager::IMAGE_TEXT_EDITOR && !self.editor_document.is_saved() {
+            self.open_text_editor();self.request_editor_action(PendingDocumentAction::Close);return;
+        }
+        if action==1 && matches!(task.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON){return;}
+        if action==1 && (task.image_identity==crate::runtime::task_manager::IMAGE_PREVIEW||task.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE)<=32){return;}
         let changed = crate::runtime::with_runtime(|runtime| match action {
             0 => runtime
                 .task_manager
@@ -1867,18 +1876,23 @@ impl ConsoleRuntime {
                 .ok(),
             _ => {
                 let mut budget = task.budget;
-                budget.cpu_weight = match budget.cpu_weight {
+                if action == 4 {
+                    let limits = [4u64,8,16,32,64,128,256,512,1024].map(|mb|mb << 20);
+                    let mut eligible = limits.iter().copied().filter(|n| *n >= task.usage.memory_bytes);
+                    let Some(next) = eligible.clone().find(|n| *n > budget.memory_limit).or_else(|| eligible.next()) else {return None};
+                    budget.memory_limit = next;
+                } else {budget.cpu_weight = match budget.cpu_weight {
                     1..=24 => 100,
                     25..=99 => 25,
                     _ => 50,
-                };
+                };}
                 runtime
                     .task_manager
                     .throttle(
                         &mut runtime.execution,
                         task.handle,
                         budget,
-                        crate::runtime::execution::PriorityClass::Background,
+                        if action == 4 {task.priority} else {crate::runtime::execution::PriorityClass::Background},
                     )
                     .ok()
             }
@@ -1924,6 +1938,13 @@ impl ConsoleRuntime {
             crate::runtime::task_manager::IMAGE_TASK_MANAGER => {
                 self.task_manager_window.visible = false
             }
+            crate::runtime::task_manager::IMAGE_SETTINGS => {self.settings_open=false;if self.mode==ConsoleMode::Settings{self.mode=ConsoleMode::Desktop;} shelf::set(shelf::SETTINGS,false);}
+            crate::runtime::task_manager::IMAGE_BROWSER => {self.browser_window.visible=false;shelf::set(shelf::BROWSER,false);
+                #[cfg(feature="native-browser")] browser_controller::close();}
+            crate::runtime::task_manager::IMAGE_SPATIAL => self.spatial_close(),
+            crate::runtime::task_manager::IMAGE_LAUNCHER=>{if self.mode==ConsoleMode::AppLauncher{self.enter_desktop();}}
+            crate::runtime::task_manager::IMAGE_PREVIEW=>crate::ui::file_preview::close(),
+            image if image==crate::runtime::task_manager::IMAGE_SCENE_BASE+crate::ui::installer_template::navigation::scene() as u32=>{self.close_authored_destination();}
             _ => {}
         }
     }
@@ -1949,6 +1970,11 @@ impl ConsoleRuntime {
             crate::runtime::task_manager::IMAGE_TEXT_EDITOR => self.open_text_editor(),
             crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => self.open_command_window(),
             crate::runtime::task_manager::IMAGE_TASK_MANAGER => self.open_task_manager(),
+            crate::runtime::task_manager::IMAGE_SETTINGS=>self.open_settings(0),
+            #[cfg(feature="native-browser")]
+            crate::runtime::task_manager::IMAGE_BROWSER=>browser_controller::open_home(self),
+            crate::runtime::task_manager::IMAGE_SPATIAL=>self.holographic_open(),
+            crate::runtime::task_manager::IMAGE_LAUNCHER=>self.open_app_launcher(),
             _ => {}
         }
     }
@@ -2003,12 +2029,12 @@ impl ConsoleRuntime {
             if point_x >= toolbar_left + 10 * scale as i32
                 && point_x < toolbar_left + 10 * scale as i32 + menu_width
                 && point_y >= menu_top
-                && point_y < menu_top + (crate::ui::app_menu::panel_height(6,false)*scale) as i32
+                && point_y < menu_top + (crate::ui::app_menu::panel_height(7,false)*scale) as i32
             {
                 let action = ((point_y - menu_top
                     - (crate::ui::app_menu::PANEL_PADDING*scale) as i32)
                     / (crate::ui::app_menu::ROW_HEIGHT*scale) as i32)
-                    .clamp(0, 5) as u8;
+                    .clamp(0, 6) as u8;
                 self.shell_menu = 0;
                 match action {
                     0 => {
@@ -2018,6 +2044,7 @@ impl ConsoleRuntime {
                     2 => self.task_manager_action(2),
                     3 => self.task_manager_action(3),
                     4 => self.task_manager_action(0),
+                    6 => self.task_manager_action(4),
                     _ => self.refresh_task_manager_output(),
                 }
                 return true;
@@ -2117,7 +2144,7 @@ impl ConsoleRuntime {
             .write_line(b"ID  TASK                 STATE       CPU WEIGHT");
         let selected = self.task_manager_selected;
         crate::runtime::with_runtime(|runtime| {
-            runtime.task_manager.sample_cpu(&runtime.execution);
+
             let count = runtime.task_manager.task_count(&runtime.execution);
             self.task_manager_selected = selected.min(count.saturating_sub(1));
             self.task_manager_scroll = self.task_manager_selected.saturating_sub(3);
@@ -2133,7 +2160,7 @@ impl ConsoleRuntime {
                         },
                         &id,
                         b"  ",
-                        task_name(task.service_identity, task.image_identity),
+                        task_name(runtime,&task),
                         b"  ",
                         context_state_text(task.state),
                     ]);
@@ -3189,20 +3216,29 @@ impl ConsoleRuntime {
     // ------------------=
     fn ensure_app_task(&mut self, image_identity: u32) -> bool {
         crate::runtime::with_runtime(|runtime| {
-            let running = (0..runtime.execution.count()).any(|index| {
-                runtime
-                    .execution
-                    .nth(index)
-                    .map(|task| {
-                        task.image_identity == image_identity
-                            && task.state != crate::runtime::execution::ContextState::Stopped
-                    })
-                    .unwrap_or(false)
-            });
-            running || runtime
+            for index in 0..runtime.execution.count() {
+                if let Some(context)=runtime.execution.nth(index).filter(|c|c.image_identity==image_identity && c.service_identity==0) {
+                    if context.state!=crate::runtime::execution::ContextState::Stopped {return true;}
+                    let handle=context.handle;
+                    return runtime.task_manager.relaunch(&mut runtime.execution,handle).is_ok();
+                }
+            }
+            runtime
                     .task_manager
                     .launch(&mut runtime.execution, image_identity).is_ok()
         }).unwrap_or(false)
+    }
+
+    // ------------------------=
+    // FUNC: end_surface_task
+    // DESC: Stops the singleton context on window close; minimizing preserves its handle.
+    // ------------------=
+    fn end_surface_task(&self,image:u32) {
+        crate::runtime::with_runtime(|r|{
+            let handle=(0..r.execution.count()).filter_map(|i|r.execution.nth(i))
+                .find(|c|c.service_identity==0&&c.image_identity==image&&c.state!=crate::runtime::execution::ContextState::Stopped).map(|c|c.handle);
+            if let Some(h)=handle {let _=r.task_manager.end(&mut r.execution,h);}
+        });
     }
 
     // ------------------------=
@@ -3210,8 +3246,8 @@ impl ConsoleRuntime {
     // DESC: Opens the native multiline Text Editor as an authenticated desktop window.
     // ------------------=
     fn open_text_editor(&mut self) {
+        if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_TEXT_EDITOR) {return;}
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::EDITOR, false);
-        self.ensure_app_task(crate::runtime::task_manager::IMAGE_TEXT_EDITOR);
         if self.mode != ConsoleMode::Desktop {
             self.enter_desktop();
         }
@@ -3236,7 +3272,7 @@ impl ConsoleRuntime {
         }
         let restored = self.close_authored_destination();
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::COMMAND, false);
-        self.ensure_app_task(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW);
+        if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW){return;}
         if self.mode != ConsoleMode::Desktop {
             self.enter_desktop();
         }
@@ -3265,8 +3301,8 @@ impl ConsoleRuntime {
     // DESC: Opens the live graphical Task Manager and registers its application context.
     // ------------------=
     fn open_task_manager(&mut self) {
+        if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_TASK_MANAGER) {return;}
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::TASKS, false);
-        self.ensure_app_task(crate::runtime::task_manager::IMAGE_TASK_MANAGER);
         if self.mode != ConsoleMode::Desktop {
             self.enter_desktop();
         }
@@ -3360,14 +3396,22 @@ impl ConsoleRuntime {
         let path=if path==b"/home/default/downloads"{downloads.as_slice()}else{path};
         self.checkpoint_active_file_navigator();
         let launched = crate::runtime::with_runtime(|runtime| {
-            let handle = runtime
-                .task_manager
-                .launch(
-                    &mut runtime.execution,
-                    crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR,
-                )
-                .ok()?;
-            let index = runtime.file_navigators.launch(path, handle.0).ok()?;
+            use crate::runtime::{execution::ContextState, task_manager::IMAGE_FILE_NAVIGATOR};
+            if runtime.file_navigators.count() == crate::runtime::object_navigation::MAX_FILE_NAVIGATOR_INSTANCES {return None;}
+            let stopped = (0..runtime.execution.count()).filter_map(|i| runtime.execution.nth(i))
+                .find(|c| c.image_identity == IMAGE_FILE_NAVIGATOR && c.state == ContextState::Stopped)
+                .map(|c| c.handle);
+            let handle = if let Some(h) = stopped {
+                runtime.task_manager.relaunch(&mut runtime.execution,h).ok()?;h
+            } else { runtime.task_manager.launch(&mut runtime.execution, IMAGE_FILE_NAVIGATOR).ok()? };
+            let index = match runtime.file_navigators.launch(path, handle.0) {
+                Ok(index) => index,
+                Err(_) => {
+                    if stopped.is_some(){let _=runtime.task_manager.end(&mut runtime.execution,handle);}
+                    else{let _=runtime.execution.destroy(handle);}
+                    return None;
+                }
+            };
             let window = runtime.file_navigators.window(index)?;
             runtime.file_navigator = Some(window.state);
             Some(window)
@@ -3500,6 +3544,13 @@ impl ConsoleRuntime {
         if self.desktop_app==DesktopAppKind::Browser {browser_controller::close();}
         if let Some(id) = self.shelf_app_id() { crate::ui::app_launcher::minimized_shelf::set(id, false); }
         self.store_active_app_window();
+        use crate::runtime::task_manager as tm;
+        match self.desktop_app {
+            DesktopAppKind::TextEditor=>self.end_surface_task(tm::IMAGE_TEXT_EDITOR),
+            DesktopAppKind::CommandWindow=>self.end_surface_task(tm::IMAGE_COMMAND_WINDOW),
+            DesktopAppKind::TaskManager=>self.end_surface_task(tm::IMAGE_TASK_MANAGER),
+            DesktopAppKind::Browser=>self.end_surface_task(tm::IMAGE_BROWSER), _=>{}
+        }
         if self.desktop_app == DesktopAppKind::CommandWindow {
             self.command_window_suspended = false;
         }
@@ -4621,10 +4672,12 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_SETTINGS) {return;}
         self.accounts_cancel();
         self.cancel_account_password();
         self.cancel_personalization_drag();
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS, false);
+        self.display_modes=crate::install_boot::DisplayModes::load(self.system.firmware_runtime_services,[self.system.framebuffer_width as u32,self.system.framebuffer_height as u32]);
         self.settings_open=true;
         self.cancel_node_pairing_input();
         self.store_active_app_window();
@@ -5622,6 +5675,7 @@ impl ConsoleRuntime {
                     crate::bootstrap::system_ui_settings_changed();
                 }
             }
+            (5,0)=>self.display_modes.cycle(self.system.firmware_runtime_services),
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
@@ -5731,6 +5785,7 @@ impl ConsoleRuntime {
     // DESC: Opens the native installed application launcher with an empty live search query.
     // ------------------=
     fn open_app_launcher(&mut self) {
+        if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_LAUNCHER) {return;}
         // Voice/typed intents do not pass through the pointer or keyboard input
         // boundary. Finish the retained world arrival before painting a new
         // surface, or its next frame can overwrite the launcher contents.
@@ -9897,6 +9952,7 @@ impl ConsoleRuntime {
                     }
                     SettingsTarget::WindowControl(control @ (0 | 2)) if clicked => {
                         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS, control == 0);
+                        if control==2{self.end_surface_task(crate::runtime::task_manager::IMAGE_SETTINGS);}
                         self.settings_open=false;
                         self.enter_desktop();
                         let _ = self.checkpoint_desktop_layout();
@@ -10007,6 +10063,9 @@ impl ConsoleRuntime {
     fn execute_input(&mut self) {
         self.publish_command_terminal();
         let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
+        if self.command_terminal_visible() && !self.ssh_terminal.active && self.command[..self.command_length].trim_ascii()==b"top" {
+            crate::ui::command_terminal::mutate(|s|{s.monitor=true;s.monitor_row=0;s.changed();});self.reset_input();return;
+        }
         if self.command_terminal_visible() && self.command[..self.command_length]==*b"help" {
             crate::ui::command_terminal::mutate(|s|{s.help=true;s.help_detail=false;s.help_selected=0;s.changed();});self.reset_input();return;
         }
@@ -12331,7 +12390,7 @@ impl ConsoleRuntime {
                             .write_number(b"Task handle: ", task.handle.0 as u64);
                         self.output.write_segments(&[
                             b"  ",
-                            task_name(task.service_identity, task.image_identity),
+                            task_name(runtime,&task),
                             b"  ",
                             context_state_text(task.state),
                         ]);
@@ -12357,7 +12416,7 @@ impl ConsoleRuntime {
                     Ok(task) => {
                         self.output.write_segments(&[
                             b"Name: ",
-                            task_name(task.service_identity, task.image_identity),
+                            task_name(runtime,&task),
                         ]);
                         self.output
                             .write_segments(&[b"State: ", context_state_text(task.state)]);
@@ -12433,6 +12492,12 @@ impl ConsoleRuntime {
                         .ok()
                 })
                 .flatten();
+                if task.is_some_and(|t|action==1 && (matches!(t.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON|crate::runtime::task_manager::IMAGE_PREVIEW)||t.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE)<=32)){
+                    self.output.write_line(b"Open this application normally to start a new process.");return true;
+                }
+                if action==0 && task.is_some_and(|t|t.image_identity==crate::runtime::task_manager::IMAGE_TEXT_EDITOR)&&!self.editor_document.is_saved(){
+                    self.open_text_editor();self.request_editor_action(PendingDocumentAction::Close);return true;
+                }
                 let result = crate::runtime::with_runtime(|runtime| match action {
                     0 => runtime.task_manager.end(&mut runtime.execution, handle),
                     1 => runtime
@@ -13819,6 +13884,28 @@ fn service_name(id: u32) -> &'static [u8] {
         SERVICE_VOICE => b"voice",
         SERVICE_AGENT => b"agent",
         SERVICE_ORGANIZATION => b"organization",
+        SERVICE_IDENTITY => b"identity",
+        SERVICE_AUTHENTICATION => b"authentication",
+        SERVICE_SESSION => b"session",
+        SERVICE_SETTINGS => b"settings",
+        SERVICE_ONBOARDING => b"onboarding",
+        SERVICE_SHELL => b"shell",
+        SERVICE_FONT => b"font",
+        SERVICE_INFINITY_UI => b"infinity-ui",
+        SERVICE_SKIN_REGISTRY => b"skin-registry",
+        SERVICE_WINDOW_SERVER => b"window-server",
+        SERVICE_CLIPBOARD => b"clipboard",
+        SERVICE_NETWORK => b"network",
+        SERVICE_NETWORK_POLICY => b"network-policy",
+        SERVICE_NETWORK_TRANSPORT => b"network-transport",
+        SERVICE_NETWORK_DISCOVERY => b"network-discovery",
+        SERVICE_CRYPTO => b"crypto",
+        SERVICE_NODE_IDENTITY => b"node-identity",
+        SERVICE_NODE_DISCOVERY => b"node-discovery",
+        SERVICE_NODE_TRUST => b"node-trust",
+        SERVICE_MESH => b"mesh",
+        SERVICE_NODE_AUDIT => b"node-audit",
+        SERVICE_REPLICA_STORAGE => b"replica-storage",
         _ => b"unknown",
     }
 }
@@ -13859,25 +13946,20 @@ fn task_image_id(name: &[u8]) -> Option<u32> {
 // FUNC: task_name
 // DESC: Maps typed service or application identities to a stable presentation label.
 // ------------------=
-fn task_name(service: u32, image: u32) -> &'static [u8] {
-    use crate::runtime::task_manager::*;
-    if service != APPLICATION_SERVICE_ID {
-        return service_name(service);
+pub(crate) fn task_name<'a>(runtime:&'a crate::runtime::InfinityRuntime, task:&crate::runtime::task_manager::TaskSnapshot)->&'a [u8] {
+    if task.service_identity!=0 {return service_name(task.service_identity);}
+    let scene=task.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE);
+    if (1..=32).contains(&scene) {
+        if let Some(name)=crate::ui::desktop_template::template().and_then(|t|t.screen_title(scene as u8)){return name;}
     }
-    match image {
-        IMAGE_FILE_NAVIGATOR => b"File Navigator",
-        IMAGE_TEXT_EDITOR => b"Text Editor",
-        IMAGE_COMMAND_WINDOW => b"Command Window",
-        IMAGE_TASK_MANAGER => b"Task Manager",
-        _ => b"Unknown Application",
-    }
+    runtime.task_manager.application_name(task.image_identity)
 }
 
 // ------------------------=
 // FUNC: context_state_text
 // DESC: Projects typed execution state into Task Manager and console presentation.
 // ------------------=
-fn context_state_text(state: crate::runtime::execution::ContextState) -> &'static [u8] {
+pub(crate) fn context_state_text(state: crate::runtime::execution::ContextState) -> &'static [u8] {
     use crate::runtime::execution::ContextState::*;
     match state {
         Defined => b"Defined",
@@ -14706,7 +14788,7 @@ pub fn clock_tick() {
                     | ConsoleMode::AppLauncher
                     | ConsoleMode::SystemMenu
                     | ConsoleMode::Settings
-            ) {
+            ) && !(runtime.mode==ConsoleMode::Console && crate::ui::command_terminal::inspect(|s|s.monitor)) {
                 return;
             }
             if runtime.text_input_focused() {
@@ -14730,6 +14812,7 @@ pub fn clock_tick() {
             }
             let next = firmware_date_time(runtime.system.firmware_runtime_services);
             if runtime.mode == ConsoleMode::Desktop
+                && !runtime.task_manager_window.visible && !crate::ui::command_terminal::inspect(|s|s.monitor)
                 && !runtime.spatial.open && !runtime.spatial.arriving
                 && runtime.desktop_app == DesktopAppKind::TextEditor
                 && runtime.editor_dialog == EditorDialog::None
@@ -14744,8 +14827,28 @@ pub fn clock_tick() {
                     runtime.editor_document.bytes(), runtime.editor_scroll_row, next);
                 return;
             }
+            use crate::runtime::task_manager as tm;
+            if runtime.mode!=ConsoleMode::AppLauncher {runtime.end_surface_task(tm::IMAGE_LAUNCHER);}
             let task_manager_live = runtime.mode == ConsoleMode::Desktop
                 && runtime.desktop_app == DesktopAppKind::TaskManager;
+            let top_live=runtime.command_terminal_visible() && crate::ui::command_terminal::inspect(|s|s.monitor);
+            if (task_manager_live||top_live) && next!=runtime.desktop_clock {
+                crate::runtime::with_runtime(|r|{
+                    for index in 0..r.execution.count(){
+                        let Some(c)=r.execution.nth(index)else{continue;};let h=c.handle;
+                        if c.state==crate::runtime::execution::ContextState::Stopped{continue;}
+                        let slot=match c.image_identity{
+                            tm::IMAGE_COMMAND_WINDOW=>1,tm::IMAGE_TEXT_EDITOR=>2,tm::IMAGE_TASK_MANAGER=>3,
+                            tm::IMAGE_SETTINGS=>4,tm::IMAGE_LAUNCHER=>5,tm::IMAGE_BROWSER=>12,
+                            tm::IMAGE_FILE_NAVIGATOR=>{let Some(i)=(0..6).find(|i|r.file_navigators.window(*i).is_some_and(|w|w.task_handle==h.0))else{continue;};6+i},
+                            _=>continue};
+                        let bytes=crate::bootstrap::surface_bytes(slot);
+                        if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=bytes;c.usage.timed=true;c.usage.busy_ns=crate::bootstrap::surface_busy_ns(slot);}
+                    }
+                    r.task_manager.sample_live_cpu(&r.execution,crate::ui::performance::monotonic_ns().unwrap_or(0));
+                });
+                if top_live {crate::ui::command_terminal::mutate(|s|s.changed());}
+            }
             if task_manager_live {
                 runtime.refresh_task_manager_output();
             }

@@ -189,7 +189,7 @@ pub const fn settings_row_interaction(section:usize,row:usize)->SettingsRowInter
     use SettingsRowInteraction::*;
     match (section,row) {
         (0,0)=>Edit,
-        (1,0..=5)|(3,0|2|5|7)|(4,3)|(10,0..=7)=>Cycle,
+        (1,0..=5)|(3,0|2|5|7)|(4,3)|(5,0)|(10,0..=7)=>Cycle,
         (3,1|4|6)|(4,1|4)=>Toggle,
         (8,5..=7)=>Select,
         _=>Details,

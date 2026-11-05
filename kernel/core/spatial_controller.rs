@@ -664,6 +664,7 @@ impl ConsoleRuntime {
         self.spatial.focus = 0;
         self.spatial_previews();
         self.redraw();
+        if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_SPATIAL){return;}
         self.spatial.open = true;
         self.spatial.notice = if switcher {
             b"Choose a window. Inspect its live surface, then return to work."
@@ -701,6 +702,7 @@ impl ConsoleRuntime {
         if let Some((_, _, _, old)) = self.spatial.drag.take() {
             self.spatial.state = old;
         }
+        self.end_surface_task(crate::runtime::task_manager::IMAGE_SPATIAL);
         self.spatial.open = false;
         self.spatial.selection.cancel();
         self.spatial.ghost = None;

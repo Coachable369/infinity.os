@@ -314,7 +314,7 @@ impl ConsoleRuntime {
                 self.settings_window.maximized = true;
             }
             if action == Action::Close {
-                self.settings_open = false;
+                self.end_surface_task(crate::runtime::task_manager::IMAGE_SETTINGS);self.settings_open = false;
                 self.enter_desktop();
             }
         } else {

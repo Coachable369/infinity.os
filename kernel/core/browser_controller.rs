@@ -121,6 +121,7 @@ fn toggle_favorite(console:&ConsoleRuntime) {unsafe {
 // ------------------=
 pub(super) fn open_home(console:&mut ConsoleRuntime) {
     if !favorites_sync(console) {return;}
+    if !console.ensure_app_task(crate::runtime::task_manager::IMAGE_BROWSER){return;}
     let resume=console.browser_window.visible || unsafe {(&*(&raw const LAUNCH)).as_ref()
         .is_some_and(|l|l.stage<3 && l.owner==SecurityIdentity(console.current_session.0))};
     if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
@@ -151,6 +152,7 @@ fn welcome_action(index:usize) {
 // DESC: Opens the browser immediately under the signed-in user's Network Settings policy.
 // ------------------=
 pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
+    if url.len()>2048 || !console.ensure_app_task(crate::runtime::task_manager::IMAGE_BROWSER){return;}
     crate::runtime::browser::welcome_presentation(false,0,0);
     crate::runtime::browser::chrome_menu_presentation(0,0);
     favorites_sync(console);
@@ -281,6 +283,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
         crate::runtime::browser::permission_presentation(2);
         console.output.write_line(b"Browser access unavailable. Check your session and Network Settings.");return true;
     };
+    if !console.ensure_app_task(crate::runtime::task_manager::IMAGE_BROWSER){return true;}
     let size=viewport(console);
     let restarting=matches!(crate::runtime::browser::status().0,3|4);
     let result=match size {

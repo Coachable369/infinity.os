@@ -62,6 +62,7 @@ impl ConsoleRuntime {
             if index==1 {self.toggle_window_maximized(4);}
             else {
                 crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS,index==0);
+                if index==2{self.end_surface_task(crate::runtime::task_manager::IMAGE_SETTINGS);}
                 self.settings_open=false; self.enter_desktop();
                 let _=self.checkpoint_desktop_layout();
             }

@@ -70,7 +70,7 @@ pub(super) fn basic_settings_rows<'a>(focus:usize,input:&'a[u8],snapshot:BasicSe
                 (b"", b""),
             ],
             5 => [
-                (b"Display", b"Ready"),
+                (b"Display resolution", input),
                 (b"Keyboard", b"Ready"),
                 (b"Pointer", crate::ui::personalization::CURSOR_NAMES[preferences.cursor_style as usize]),
                 (b"Audio Input", b"Unavailable"),
@@ -255,7 +255,13 @@ impl DisplayDevice {
         self.paint_settings_bound_text(authored_title,title_bounds,authored_title.map(|e|e.text).filter(|t|!t.is_empty()).unwrap_or(sections[focus.min(10)]),(238,244,249),true,false);
         if focus!=8 {
             let bounds=authored_body.and_then(|e|layout.settings_element_geometry(settings_window,focus,e.id)).unwrap_or(crate::ui::geometry::Rect{x:content_x as i32,y:(content_y+if focus==7{64}else{36}*scale)as i32,width:geometry.content.width,height:(28*scale)as u32});
-            self.paint_settings_bound_text(authored_body,bounds,authored_body.map(|e|e.text).filter(|t|!t.is_empty()).unwrap_or(if focus==10{b"Click a row to change its value. Changes apply immediately."}else{b"Open a row to view its controls and configuration details."}),(143,160,176),false,false);
+            self.paint_settings_bound_text(authored_body,bounds,authored_body.map(|e|e.text).filter(|t|!t.is_empty()).unwrap_or([
+                b"Manage this computer and its system generation.".as_slice(),b"Personalize the appearance of your workspace.",
+                b"Manage accounts, groups and access.",b"Choose how Infinity listens and speaks.",
+                b"Manage permissions and sign-in protection.",b"Configure your display and connected devices.",
+                b"Inspect connections and configure network profiles.",b"Manage trusted nodes and shared resources.",
+                b"Review stored objects and placement policies.",b"Inspect your system and its capabilities.",b"Adjust keyboard and pointer behavior."
+            ][focus.min(10)]),(143,160,176),false,false);
         }
         SettingsChrome{geometry,primary:(primary_r,primary_g,primary_b),outline:(outline_r,outline_g,outline_b),selection:(selection_r,selection_g,selection_b),opacity:background_opacity}
     }
@@ -302,18 +308,9 @@ impl DisplayDevice {
         let alpha=|n:u8|(u16::from(n)*u16::from(chrome.opacity)/100)as u8;
         self.settings_template_surface(row.summary,authored_row.map(|mut e|{e.fill[3]=alpha(e.fill[3]);e}),Material{fill:(pr/2,pg.saturating_mul(3)/4,pb.saturating_mul(3)/4),edge:if expanded||keyboard_focus{(er,eg,eb)}else{(er/2,eg/2,eb/2)},opacity:alpha(218),edge_opacity:255,focus:if keyboard_focus{255}else{0},pressed:false,scale});
         let card=crate::ui::settings_cards::content(row.summary,scale);
-        self.fill_rounded_rect_alpha(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,4,20,34,alpha(150));
-        self.outline_rounded_rect(card.icon.x.max(0)as usize,card.icon.y.max(0)as usize,card.icon.width as usize,card.icon.height as usize,9*scale,35,64,84);
-        let _=self.themed_icon((card.icon.x+card.icon.width as i32/2).max(0)as usize,(card.icon.y+card.icon.height as i32/2).max(0)as usize,crate::ui::icon_theme::settings_section_icon(focus),(28*scale).min(card.icon.width as usize));
         use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
-        let native_description=match settings_row_interaction(focus,index) {
-            I::Cycle if focus==3 && index==7=>b"Click to cycle through five voices".as_slice(),
-            I::Cycle=>b"Click to cycle through available choices".as_slice(),
-            I::Toggle=>b"Click to turn this setting on or off".as_slice(),
-            I::Select=>b"Select this policy for the current object".as_slice(),
-            I::Edit=>b"Click to edit this value".as_slice(),
-            I::Details=>crate::ui::settings_cards::description(focus,index),
-        };
+        let native_description=if focus==5&&index==0{b"Choose a detected size for the next restart.".as_slice()}
+            else{crate::ui::settings_cards::description(focus,index)};
         if let Some(description)=layout.settings_row_child_geometry(settings_window,focus,index,Role::SettingsSummaryDescription,0,1) {
             self.paint_settings_child_description(description,native_description,(141,174,198));
         } else {

@@ -70,6 +70,22 @@ fn main() {
     ).unwrap();
     let custom = system.task_manager.launch(&mut system.execution, 0xb001).unwrap();
     assert_eq!(system.task_manager.inspect(&system.execution, custom).unwrap().image_identity, 0xb001);
+    assert_eq!(system.task_manager.application_name(0xb001), b"Markdown Studio");
+    let image=runtime::task_manager::IMAGE_NATIVE_PYTHON;
+    let h=system.task_manager.native_start(&mut system.execution,image,b"InfinityCode").unwrap();
+    assert_eq!(system.task_manager.application_name(image),b"InfinityCode");
+    assert!(system.task_manager.native_start(&mut system.execution,image,b"other").is_err());
+    system.task_manager.end(&mut system.execution,h).unwrap();
+    assert_eq!(system.task_manager.native_start(&mut system.execution,image,b"Notes").unwrap(),h);
+    assert_eq!(system.task_manager.application_name(image),b"Notes");
+    system.execution.get_mut(h).unwrap().usage.timed=true;
+    system.task_manager.sample_live_cpu(&system.execution,1_000_000_000);
+    system.execution.get_mut(h).unwrap().usage.busy_ns=250_000_000;
+    system.task_manager.sample_live_cpu(&system.execution,2_000_000_000);
+    assert_eq!(system.task_manager.inspect(&system.execution,h).unwrap().cpu_share_percent,25);
+    system.task_manager.sample_live_cpu(&system.execution,3_000_000_000);
+    assert_eq!(system.task_manager.inspect(&system.execution,h).unwrap().cpu_share_percent,0);
+    system.execution.destroy(h).unwrap();
     assert_ne!(files, editor);
     assert_ne!(editor, manager);
     assert_eq!(

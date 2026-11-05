@@ -2813,7 +2813,8 @@ impl super::DisplayDevice {
                 if active { accent_b } else { 41 },
                 if active { 155 } else { 210 },
             );
-            let app = Self::task_manager_task_name(task.service_identity, task.image_identity);
+            let mut name=[0u8;96];
+            let len=crate::runtime::with_runtime(|r|{let src=crate::console::task_name(r,&task);let n=src.len().min(name.len());name[..n].copy_from_slice(&src[..n]);n}).unwrap_or(0);let app=&name[..len];
             self.ui_text_strong(
                 left + 30 * scale,
                 row_top + 11 * scale,
@@ -2936,13 +2937,14 @@ impl super::DisplayDevice {
         let left = geometry.toolbar.x.max(0) as usize + 10 * scale;
         let top = geometry.toolbar.bottom().max(0) as usize - 2 * scale;
         let width = 232 * scale;
-        let labels: [&[u8]; 6] = [
+        let labels: [&[u8]; 7] = [
             b"Launch File Navigator",
             b"Relaunch Selected",
             b"Pause / Resume",
-            b"Throttle Selected",
+            b"Cycle CPU Weight",
             b"End Selected Task",
             b"Refresh Now",
+            b"Cycle Memory Budget",
         ];
         let panel = crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,
             height:(crate::ui::app_menu::panel_height(labels.len(),false)*scale)as u32};
@@ -3021,21 +3023,6 @@ impl super::DisplayDevice {
         output[..length].copy_from_slice(&digits[..length]);
         output[length] = b'%';
         (output, length + 1)
-    }
-
-    // ------------------------=
-    // FUNC: task_manager_task_name
-    // DESC: Resolves stable task identities to concise first-class display names.
-    // ------------------=
-    fn task_manager_task_name(service: u32, image: u32) -> &'static [u8] {
-        match image {
-            crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR => b"File Navigator",
-            crate::runtime::task_manager::IMAGE_TEXT_EDITOR => b"Text Editor",
-            crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => b"Command Window",
-            crate::runtime::task_manager::IMAGE_TASK_MANAGER => b"Task Manager",
-            _ if service != 0 => b"System Service",
-            _ => b"Application",
-        }
     }
 
     // ------------------------=

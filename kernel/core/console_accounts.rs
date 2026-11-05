@@ -244,7 +244,7 @@ impl ConsoleRuntime {
         });
         self.current_session = StableId::zero();
         self.current_user = StableId::zero();
-        self.settings_open = false;
+        self.end_surface_task(crate::runtime::task_manager::IMAGE_SETTINGS);self.settings_open = false;
         self.settings_editing = false;
         self.desktop_app = DesktopAppKind::None;
         self.mode = ConsoleMode::Authentication;

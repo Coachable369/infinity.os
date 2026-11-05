@@ -8,6 +8,14 @@ pub const IMAGE_FILE_NAVIGATOR: u32 = 0xa001;
 pub const IMAGE_TEXT_EDITOR: u32 = 0xa002;
 pub const IMAGE_COMMAND_WINDOW: u32 = 0xa003;
 pub const IMAGE_TASK_MANAGER: u32 = 0xa004;
+pub const IMAGE_BROWSER: u32 = 0xa005;
+pub const IMAGE_SETTINGS: u32 = 0xa006;
+pub const IMAGE_SPATIAL: u32 = 0xa007;
+pub const IMAGE_LAUNCHER:u32=0xa00a;
+pub const IMAGE_PREVIEW:u32=0xa00b;
+pub const IMAGE_SCENE_BASE:u32=0xa100;
+pub const IMAGE_NATIVE_C:u32=0xa008;
+pub const IMAGE_NATIVE_PYTHON:u32=0xa009;
 pub const DEFAULT_APP_MEMORY_LIMIT: u64 = 8 * 1024 * 1024;
 pub const FILE_NAVIGATOR_INSTALLED_BYTES: u64 = 224 * 1024;
 pub const TEXT_EDITOR_INSTALLED_BYTES: u64 = 176 * 1024;
@@ -43,6 +51,10 @@ pub struct TaskManager {
     previous_handles: [u16; super::execution::MAX_CONTEXTS],
     previous_ticks: [u64; super::execution::MAX_CONTEXTS],
     cpu_share_percent: [u8; super::execution::MAX_CONTEXTS],
+    sample_time_ns:u64,
+    previous_busy_ns:[u64;super::execution::MAX_CONTEXTS],
+    native_names:[[u8;64];2],
+    installed_names: [[u8; 64]; MAX_CUSTOM_APPLICATION_IMAGES],
     installed_application_images: [u32; MAX_CUSTOM_APPLICATION_IMAGES],
 }
 
@@ -56,6 +68,9 @@ impl TaskManager {
             previous_handles: [0; super::execution::MAX_CONTEXTS],
             previous_ticks: [0; super::execution::MAX_CONTEXTS],
             cpu_share_percent: [0; super::execution::MAX_CONTEXTS],
+            sample_time_ns:0,previous_busy_ns:[0;super::execution::MAX_CONTEXTS],
+            native_names:[[0;64];2],
+            installed_names: [[0; 64]; MAX_CUSTOM_APPLICATION_IMAGES],
             installed_application_images: [0; MAX_CUSTOM_APPLICATION_IMAGES],
         }
     }
@@ -72,7 +87,7 @@ impl TaskManager {
             return Err(TaskManagerError::UnknownApplication);
         }
         if is_application_image(image_identity)
-            || self.installed_application_images.contains(&image_identity)
+            || (image_identity != 0 && self.installed_application_images.contains(&image_identity))
         {
             return Ok(());
         }
@@ -86,12 +101,56 @@ impl TaskManager {
     }
 
     // ------------------------=
+    // FUNC: register_named_image
+    // DESC: Records the manifest name alongside its scheduler image identity.
+    // ------------------=
+    pub fn register_named_image(&mut self, image:u32, name:&[u8])->Result<(),TaskManagerError>{
+        self.register_application_image(image)?;
+        if let Some(index)=self.installed_application_images.iter().position(|id|*id==image) {
+            let slot=&mut self.installed_names[index];slot.fill(0);
+            let n=name.len().min(slot.len());slot[..n].copy_from_slice(&name[..n]);
+        }
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: application_name
+    // DESC: Resolves the same process label for GUI and terminal clients.
+    // ------------------=
+    pub fn application_name(&self,image:u32)->&[u8] {
+        match image {
+            IMAGE_FILE_NAVIGATOR=>b"File Navigator", IMAGE_TEXT_EDITOR=>b"Text Editor",
+            IMAGE_COMMAND_WINDOW=>b"Command Window",IMAGE_TASK_MANAGER=>b"Task Manager",
+            IMAGE_BROWSER=>b"Infinity Browser", IMAGE_SETTINGS=>b"System Settings",
+            IMAGE_LAUNCHER=>b"App Launcher",IMAGE_PREVIEW=>b"File Preview",
+            IMAGE_SPATIAL=>b"Spatial Desktop",
+            IMAGE_NATIVE_C|IMAGE_NATIVE_PYTHON=>self.native_names[(image-IMAGE_NATIVE_C)as usize].split(|b|*b==0).next().unwrap_or_default(),
+            _=>self.installed_application_images.iter().position(|id|*id==image && image!=0)
+                .map(|i|self.installed_names[i].split(|c|*c==0).next().unwrap_or_default())
+                .filter(|s|!s.is_empty()).unwrap_or(b"Application"),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: native_start
+    // DESC: Attaches the actual native execution host to a reusable scheduler row for this process.
+    // ------------------=
+    pub fn native_start(&mut self,execution:&mut ExecutionManager,image:u32,name:&[u8])->Result<ContextHandle,TaskManagerError>{
+        if !matches!(image,IMAGE_NATIVE_C|IMAGE_NATIVE_PYTHON){return Err(TaskManagerError::UnknownApplication);}
+        let previous=(0..execution.count()).filter_map(|i|execution.nth(i)).find(|c|c.image_identity==image&&c.service_identity==0).map(|c|c.handle);
+        let h=if let Some(h)=previous{if execution.get(h).is_some_and(|c|c.state!=ContextState::Stopped){return Err(TaskManagerError::InvalidState);}self.relaunch(execution,h)?;h}else{self.launch(execution,image)?};
+        let slot=&mut self.native_names[(image-IMAGE_NATIVE_C)as usize];slot.fill(0);
+        let n=name.len().min(slot.len());slot[..n].copy_from_slice(&name[..n]);
+        Ok(h)
+    }
+
+    // ------------------------=
     // FUNC: has_application_image
     // DESC: Reports whether a built-in or registered custom application image is installed.
     // ------------------=
     pub fn has_application_image(&self, image_identity: u32) -> bool {
         is_application_image(image_identity)
-            || self.installed_application_images.contains(&image_identity)
+            || (image_identity != 0 && self.installed_application_images.contains(&image_identity))
     }
 
     // ------------------------=
@@ -199,6 +258,25 @@ impl TaskManager {
     }
 
     // ------------------------=
+    // FUNC: sample_live_cpu
+    // DESC: Reports measured window and executable busy time as a percentage of one CPU over the actual sample interval.
+    // ------------------=
+    pub fn sample_live_cpu(&mut self,execution:&ExecutionManager,now:u64) {
+        self.sample_cpu(execution);
+        let elapsed=now.saturating_sub(self.sample_time_ns);
+        for index in 0..execution.count() {
+            let Some(c)=execution.nth(index)else{continue;};
+            if !c.usage.timed {continue;}
+            let busy=c.usage.busy_ns.saturating_sub(self.previous_busy_ns[index]);
+            self.cpu_share_percent[index]=if self.sample_time_ns!=0 && elapsed>0 && c.state!=ContextState::Stopped {
+                busy.saturating_mul(100).saturating_div(elapsed).min(100) as u8
+            } else {0};
+            self.previous_busy_ns[index]=c.usage.busy_ns;
+        }
+        self.sample_time_ns=now;
+    }
+
+    // ------------------------=
     // FUNC: launch
     // DESC: Creates a runnable isolated context for one installed application image.
     // ------------------=
@@ -257,7 +335,8 @@ impl TaskManager {
         require_application(execution, handle)?;
         execution
             .set_state(handle, ContextState::Stopped)
-            .map_err(TaskManagerError::Runtime)
+            .map_err(TaskManagerError::Runtime)?;
+        execution.account_memory(handle, 0).map_err(TaskManagerError::Runtime)
     }
 
     // ------------------------=
@@ -378,9 +457,9 @@ fn require_application(
 // DESC: Validates one installed native application image identity.
 // ------------------=
 pub const fn is_application_image(image: u32) -> bool {
-    matches!(
+    (image>IMAGE_SCENE_BASE && image<=IMAGE_SCENE_BASE+32) || matches!(
         image,
-        IMAGE_FILE_NAVIGATOR | IMAGE_TEXT_EDITOR | IMAGE_COMMAND_WINDOW | IMAGE_TASK_MANAGER
+        IMAGE_FILE_NAVIGATOR | IMAGE_TEXT_EDITOR | IMAGE_COMMAND_WINDOW | IMAGE_TASK_MANAGER | IMAGE_BROWSER | IMAGE_SETTINGS | IMAGE_SPATIAL | IMAGE_NATIVE_C | IMAGE_NATIVE_PYTHON | IMAGE_LAUNCHER | IMAGE_PREVIEW
     )
 }
 

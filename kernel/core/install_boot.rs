@@ -202,3 +202,102 @@ mod tests {
         ));
     }
 }
+
+/// Detected GOP dimensions and the user's persistent next-boot selection.
+#[derive(Clone,Copy)]
+pub struct DisplayModes {
+    modes:[[u32;2];32], count:usize, selected:[u32;2], active:[u32;2], failed:bool,
+}
+impl DisplayModes {
+    const GUID:[u8;16]=[0x44,0x53,0x4f,0x49,0x50,0x47,0x4d,0x4f,0x97,0x41,0x62,0x11,0x60,0x24,0x85,0x19];
+    const MODES:[u16;9]=[73,79,83,77,111,100,101,115,0];
+    const PREF:[u16;11]=[73,79,83,68,105,115,112,108,97,121,0];
+    // ------------------------=
+    // FUNC: empty
+    // DESC: Starts with no firmware claims or pending changes.
+    // ------------------=
+    pub const fn empty()->Self{Self{modes:[[0;2];32],count:0,selected:[0;2],active:[0;2],failed:false}}
+    // ------------------------=
+    // FUNC: load
+    // DESC: Reads only the validated mode list exported by the current bootloader.
+    // ------------------=
+    pub fn load(runtime:u64,active:[u32;2])->Self {
+        let mut s=Self::empty();s.active=active;s.selected=active;
+        if runtime==0{return s;}
+        type Get=unsafe extern "efiapi" fn(*const u16,*const u8,*mut u32,*mut usize,*mut u8)->usize;
+        unsafe{
+            let ptr=*((runtime as usize+24)as *const usize).add(6);
+            if ptr==0{return s;}let get:Get=core::mem::transmute(ptr);
+            let mut size=core::mem::size_of_val(&s.modes);
+            if get(Self::MODES.as_ptr(),Self::GUID.as_ptr(),core::ptr::null_mut(),&mut size,s.modes.as_mut_ptr().cast())!=0 || size>256 || size%8!=0{return s;}
+            s.count=size/8;s.modes[..s.count].sort_unstable();
+            let mut pref=[0u32;2];size=8;
+            if get(Self::PREF.as_ptr(),Self::GUID.as_ptr(),core::ptr::null_mut(),&mut size,pref.as_mut_ptr().cast())==0 && size==8 && s.modes[..s.count].contains(&pref){s.selected=pref;}
+        }s
+    }
+    // ------------------------=
+    // FUNC: cycle
+    // DESC: Saves a detected mode, updating the displayed preference only on a successful firmware write.
+    // ------------------=
+    pub fn cycle(&mut self,runtime:u64) {
+        if runtime==0||self.count<2{return;}
+        let i=self.modes[..self.count].iter().position(|m|*m==self.selected).map(|n|(n+1)%self.count).unwrap_or(0);
+        type Set=unsafe extern "efiapi" fn(*const u16,*const u8,u32,usize,*const u8)->usize;
+        let ok=unsafe {let p=*((runtime as usize+24)as *const usize).add(8);p!=0 && core::mem::transmute::<usize,Set>(p)(Self::PREF.as_ptr(),Self::GUID.as_ptr(),7,8,self.modes[i].as_ptr().cast())==0};
+        self.failed=!ok;if ok{self.selected=self.modes[i];}
+    }
+    // ------------------------=
+    // FUNC: label
+    // DESC: Distinguishes actual scanout, a pending restart, and rejected writes.
+    // ------------------=
+    pub fn label(&self,out:&mut[u8;48])->usize {
+        let mut n=0;
+        for v in [self.selected[0],self.selected[1]]{
+            if n!=0{for b in b" x "{out[n]=*b;n+=1;}}
+            let mut d=[0u8;10];let mut at=10;let mut x=v;loop{at-=1;d[at]=b'0'+(x%10)as u8;x/=10;if x==0{break;}}
+            out[n..n+10-at].copy_from_slice(&d[at..]);n+=10-at;
+        }
+        let suffix:&[u8]=if self.failed{b" (save failed)"}else if self.active!=self.selected{b" (restart)"}else if self.count<2{b" (only mode)"}else{b""};
+        out[n..n+suffix.len()].copy_from_slice(suffix);n+suffix.len()
+    }
+}
+
+#[cfg(test)]
+mod display_mode_tests {
+    use super::DisplayModes as Modes;
+    use std::sync::Mutex;
+    static PREFERENCE: Mutex<[u32;2]> = Mutex::new([0;2]);
+    // ------------------------=
+    // FUNC: get
+    // DESC: Supplies detected dimensions and the persistent preference through the firmware ABI.
+    // ------------------=
+    unsafe extern "efiapi" fn get(name:*const u16,guid:*const u8,_:*mut u32,size:*mut usize,out:*mut u8)->usize {
+        if core::slice::from_raw_parts(guid,16)!=Modes::GUID {return 1;}
+        let pref=*PREFERENCE.lock().unwrap();
+        let data:&[u32]=if *name.add(3)==77 {&[1920,1080,1280,720]}else{&pref};
+        let n=core::mem::size_of_val(data);if *size<n{return 1;}
+        core::ptr::copy_nonoverlapping(data.as_ptr().cast(),out,n);*size=n;0
+    }
+    // ------------------------=
+    // FUNC: set
+    // DESC: Emulates a firmware that accepts one saved preference and rejects its replacement.
+    // ------------------=
+    unsafe extern "efiapi" fn set(name:*const u16,guid:*const u8,attr:u32,size:usize,data:*const u8)->usize {
+        if core::slice::from_raw_parts(name,11)!=Modes::PREF || core::slice::from_raw_parts(guid,16)!=Modes::GUID || attr!=7 || size!=8{return 1;}
+        let mut pref=PREFERENCE.lock().unwrap();if *pref!=[0;2]{return 1;}
+        *pref=(data as *const [u32;2]).read_unaligned();0
+    }
+    // ------------------------=
+    // FUNC: selection_survives_reload_and_failed_write
+    // DESC: Exercises discovery, preference persistence, restart activation and rejection without changing the active scanout.
+    // ------------------=
+    #[test]
+    fn selection_survives_reload_and_failed_write(){
+        let mut table=[0usize;12];table[9]=get as *const () as usize;table[11]=set as *const () as usize;
+        let rt=table.as_ptr() as u64;let mut modes=Modes::load(rt,[1920,1080]);
+        assert_eq!(modes.count,2);modes.cycle(rt);
+        assert_eq!(modes.selected,[1280,720]);assert_eq!(modes.active,[1920,1080]);
+        let mut restarted=Modes::load(rt,[1280,720]);assert_eq!(restarted.selected,restarted.active);
+        restarted.cycle(rt);assert!(restarted.failed);assert_eq!(restarted.selected,[1280,720]);
+    }
+}

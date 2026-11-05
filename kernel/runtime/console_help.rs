@@ -4,6 +4,7 @@ pub struct Entry { pub name: &'static [u8], pub usage: &'static [u8], pub descri
 macro_rules! entry { ($n:literal,$u:literal,$d:literal) => { Entry{name:$n,usage:$u,description:$d} }; }
 pub static COMMANDS: &[Entry] = &[
     entry!(b"help",b"help [commands|DOMAIN|DOMAIN ACTION|COMMAND|search WORD]",b"Explore the registered command catalog. Enter/Space advances local pages; Esc ends paging."),
+    entry!(b"top",b"top",b"Live local process monitor: use arrows to select, p to pause or resume, k to end, r to relaunch a built-in app, q to return."),
     entry!(b"ipconfig",b"ipconfig [--all]",b"All native interfaces, link state, MAC, MTU, IP/prefix, gateway, DNS and traffic counters. Read only."),
     entry!(b"list",b"list [-l|--long] [-a|--all] [-R|--tree] [PATH]",b"List namespace entries. ls and dir are aliases. Long output includes owner, size, type, version and timestamps. Legacy timestamps are reported as unavailable, never invented."),
     entry!(b"ls",b"ls [-laR] [PATH]",b"Alias for list; identical options and permissions."),

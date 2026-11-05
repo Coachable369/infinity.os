@@ -371,9 +371,13 @@ impl InfinityRuntime {
             if task_manager::is_application_image(image) {
                 return Err(application_association::AssociationError::InvalidManifest);
             }
-            self.task_manager
-                .register_application_image(image)
+            let mut tasks = self.task_manager;
+            tasks
+                .register_named_image(image,handler.display_name.bytes())
                 .map_err(|_| application_association::AssociationError::ApplicationUnavailable)?;
+            self.associations.install(handler)?;
+            self.task_manager = tasks;
+            return Ok(());
         }
         self.associations.install(handler)
     }

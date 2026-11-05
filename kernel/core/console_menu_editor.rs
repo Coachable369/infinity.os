@@ -43,7 +43,9 @@ impl ConsoleRuntime {
             }
             Destination::Screen(id)|Destination::Window(id)=>{
                 if crate::ui::native_uikit::presentation().active {self.close_shell_menu();return;}
-                if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW){return;}
+                let previous=navigation::scene();
+                if !self.ensure_app_task(crate::runtime::task_manager::IMAGE_SCENE_BASE+u32::from(id)){return;}
+                if previous!=0 && previous!=id{self.end_surface_task(crate::runtime::task_manager::IMAGE_SCENE_BASE+u32::from(previous));}
                 self.close_shell_menu();self.store_active_app_window();self.mode=ConsoleMode::Desktop;
                 if self.authored_host.is_none() { self.authored_host=Some((self.command_window,self.command_window_suspended)); }
                 self.desktop_app=DesktopAppKind::CommandWindow;self.command_window.visible=true;
@@ -65,6 +67,7 @@ impl ConsoleRuntime {
     pub(super) fn close_authored_destination(&mut self)->bool {
         if self.desktop_app!=DesktopAppKind::CommandWindow || navigation::scene()==0 {return false;}
         let Some((window,suspended))=self.authored_host.take()else{return false;};
+        self.end_surface_task(crate::runtime::task_manager::IMAGE_SCENE_BASE+u32::from(navigation::scene()));
         navigation::set_scene(0);self.command_window=window;self.command_window_suspended=suspended;
         self.load_active_app_window();
         if !window.visible {self.desktop_app=DesktopAppKind::None;}

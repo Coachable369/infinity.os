@@ -23,6 +23,7 @@ impl Snapshot {
     const EMPTY: Self = Self { path: [0; 95], path_len: 0, bytes: [0; LIMIT], len: 0, object: [0; 16], version: 0 };
 }
 struct Job {
+    monitor:Option<crate::runtime::execution::ContextHandle>,
     task: Option<Task>, owner: SecurityIdentity,
     files: [Snapshot; 8], count: usize,
     output: [u8; 32768], errors: [u8; 8192],
@@ -53,7 +54,8 @@ struct Generated {
     request: u64, phase: workflow::Phase, launch: bool, launched: bool, context: u64,
     workflow_revision: u64, staged:bool,
 }
-static mut JOB: Job = Job { task: None, owner: SecurityIdentity([0; 16]),
+static mut MONITOR_SAMPLE_NS:u64=0;
+static mut JOB: Job = Job { monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
     filesystem: Vfs::new(), data: app_data::Data::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false,
@@ -358,6 +360,11 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
             Err(_)=>{let _=job.task.take().unwrap().release(memory_mut());return Err(b"python: application authority could not be attached.");}
         }
     }
+    let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
+    let name=path.rsplit(|b|*b==b'/').next().unwrap_or(path);
+    job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
+    if job.monitor.is_none(){if job.application.take().is_some(){crate::runtime::ai::application_host::detach();}
+        let _=job.task.take().unwrap().release(memory_mut());return Err(b"python: no process slot available.");}
     publish(1, 0, 0, 0, job.initial_pages, memory_mut().available_pages() as u64);
     Ok(())
 }
@@ -765,6 +772,9 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let session_current=job.owner == SecurityIdentity(console.current_session.0) && job.package_owner == console.current_user.0 && active(console);
     let authorized = session_current&&job.generated.is_none_or(|generated|workflow::authorized(generated.phase,generated.launched,
         generated_current(console,generated),generated.user==console.current_user.0&&console.ai_chat_allowed()));
+    let state=job.monitor.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|c.state)).flatten());
+    let authorized=authorized && state!=Some(crate::runtime::execution::ContextState::Stopped);
+    if authorized && state==Some(crate::runtime::execution::ContextState::Waiting){return;}
     let now = crate::runtime::ai::qwen::workers::clock_ns();
     if job.child.running() {
         job.child.poll(now, authorized, memory_mut(), &mut job.filesystem, &mut job.network);
@@ -797,6 +807,13 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
                 }))
             .or_else(||job.network.syscall(tables, operation, arguments))
             .or_else(|| job.data.syscall(&mut job.filesystem, &mut job.archive, tables, operation, arguments)));
+    if let Some(h)=job.monitor {
+        let timestamp=crate::runtime::ai::qwen::workers::clock_ns();
+        let busy=timestamp.saturating_sub(now);
+        let sample=timestamp.saturating_sub(MONITOR_SAMPLE_NS)>=1_000_000_000;
+        let bytes=if sample{MONITOR_SAMPLE_NS=timestamp;Some(memory_mut().resident_bytes(native_owner.0))}else{None};
+        crate::runtime::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.timed=true;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
+    }
     let progress=task.result_lengths(b"",&mut job.output,&mut job.errors);
     if job.generated.is_some_and(|g|g.phase==workflow::Phase::Run) {
         if let (Some((_,stderr,_)),Some(snapshot))=(progress,job.recovery.as_mut()) {
@@ -853,6 +870,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
             _ => b"Python process faulted; native runtime stopped it.",
         }); }
     }
+    if let Some(h)=job.monitor.take(){crate::runtime::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=0;}});}
     let cleanup = job.task.take().unwrap().release(memory_mut()).is_ok();
     let _ = crate::runtime::with_runtime(|runtime|job.gui.close(runtime,memory_mut()));
     job.gui_keyboard = false;

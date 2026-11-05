@@ -98,7 +98,7 @@ pub fn description(section: usize, row: usize) -> &'static [u8] {
             b"Select to toggle facial sign-in",
         ],
         5 => &[
-            b"Observed display availability",
+            b"Select a detected size. Restart to apply.",
             b"Keyboard input availability",
             b"Choose your pointer appearance",
             b"Observed recording availability",

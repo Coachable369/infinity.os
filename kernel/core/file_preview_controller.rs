@@ -13,6 +13,12 @@ fn inflate_preview(input:&[u8],output:&mut [u8])->bool {
 }
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: close_preview_task
+    // DESC: Releases the preview document and stops its process together.
+    // ------------------=
+    fn close_preview_task(&self){preview::close();self.end_surface_task(crate::runtime::task_manager::IMAGE_PREVIEW);}
+
+    // ------------------------=
     // FUNC: refresh_desktop_preview_files
     // DESC: Projects authorized regular files in the existing Desktop namespace into bounded native tiles.
     // ------------------=
@@ -37,7 +43,7 @@ impl ConsoleRuntime {
     // DESC: Shares authenticated decoding between read-only preview and wallpaper selection.
     // ------------------=
     fn load_preview_file(&mut self,path:&[u8],show:bool) {
-        preview::close();
+        self.close_preview_task();
         if !self.workplace_authorized(false) {self.output.write_line(b"Preview requires an authorized session.");return;}
         let path=if path.starts_with(b"/"){crate::runtime::object_navigation::normalize_absolute_path(path)}
             else{crate::runtime::object_navigation::join_path(self.navigation_context.path(),path)};
@@ -65,7 +71,7 @@ impl ConsoleRuntime {
         }
         state.open=show;
         if show&&!matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) {self.open_command_window();}
-        preview::publish(state);self.reflow_preview();if show{self.redraw();}
+        if show && !self.ensure_app_task(crate::runtime::task_manager::IMAGE_PREVIEW){return;}preview::publish(state);self.reflow_preview();if show{self.redraw();}
     }
     // ------------------------=
     // FUNC: set_desktop_wallpaper
@@ -74,9 +80,9 @@ impl ConsoleRuntime {
     pub(super) fn set_desktop_wallpaper(&mut self,path:&[u8],save:bool){
         if !self.workplace_authorized(save){return;}
         self.load_preview_file(path,false);let state=preview::current();
-        if !matches!(state.kind,Kind::Bitmap|Kind::Png){if save{self.preview_file(path);}else{preview::close();}return;}
+        if !matches!(state.kind,Kind::Bitmap|Kind::Png){if save{self.preview_file(path);}else{self.close_preview_task();}return;}
         if save&&crate::storage::wallpaper_preference(self.current_user.0,self.current_session.0,Some(&state.path[..state.path_len])).is_err(){
-            self.output.write_line(b"Wallpaper could not be saved. The previous wallpaper is unchanged.");preview::close();return;
+            self.output.write_line(b"Wallpaper could not be saved. The previous wallpaper is unchanged.");self.close_preview_task();return;
         }
         let owner=self.current_user.0;
         // Bound the retained cache to 1920x1080 while preserving source proportions.
@@ -86,7 +92,7 @@ impl ConsoleRuntime {
         };
         if state.kind==Kind::Bitmap{preview::content(|b|{if let Some(b)=crate::ui::bitmap::RuntimeBitmap::parse(b){install(b.width(),b.height(),&mut|x,y|b.rgba(x,y));}});}
         else{preview::png(|p,raw|{install(p.width,p.height,&mut|x,y|p.rgba(raw,x,y));});}
-        preview::close();if save{self.redraw();}
+        self.close_preview_task();if save{self.redraw();}
     }
     // ------------------------=
     // FUNC: restore_desktop_wallpaper
@@ -106,8 +112,8 @@ impl ConsoleRuntime {
     // DESC: Handles preview-only navigation without changing or saving the underlying file.
     // ------------------=
     pub(super) fn preview_key(&mut self,key:ConsoleKey)->bool {let mut p=preview::current();if !p.open{return false;}
-        if !self.workplace_authorized(false)||p.owner!=self.current_session.0 {preview::close();return false;}
-        match key {ConsoleKey::Escape=>preview::close(),ConsoleKey::Up=>{p.scroll_by(-1);preview::publish(p);},
+        if !self.workplace_authorized(false)||p.owner!=self.current_session.0 {self.close_preview_task();return false;}
+        match key {ConsoleKey::Escape=>self.close_preview_task(),ConsoleKey::Up=>{p.scroll_by(-1);preview::publish(p);},
             ConsoleKey::Down=>{p.scroll_by(1);preview::publish(p);},ConsoleKey::Home=>{p.scroll=0;preview::publish(p);},
             ConsoleKey::End=>{p.scroll=p.lines;p.scroll_by(0);preview::publish(p);},
             ConsoleKey::Enter if p.menu=>self.preview_file(&p.path[..p.path_len]),_=>{}}
@@ -119,10 +125,10 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn preview_pointer(&mut self,clicked:bool,left:bool)->bool {
         let mut v=preview::current();if !v.open{return false;}
-        if !self.workplace_authorized(false)||v.owner!=self.current_session.0 {preview::close();return false;}
+        if !self.workplace_authorized(false)||v.owner!=self.current_session.0 {self.close_preview_task();return false;}
         let p=Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,y:self.system.framebuffer_height as i32*self.pointer_y/1000};
-        if v.menu {if clicked {if v.rect.contains(p){if p.y>=v.rect.y+36*v.scale as i32&&crate::ui::user_wallpaper::image_path(&v.path[..v.path_len]){self.set_desktop_wallpaper(&v.path[..v.path_len],true);}else{self.preview_file(&v.path[..v.path_len]);}}else{preview::close();}}return true;}
-        if clicked && v.close_rect().contains(p) {preview::close();return true;}
+        if v.menu {if clicked {if v.rect.contains(p){if p.y>=v.rect.y+36*v.scale as i32&&crate::ui::user_wallpaper::image_path(&v.path[..v.path_len]){self.set_desktop_wallpaper(&v.path[..v.path_len],true);}else{self.preview_file(&v.path[..v.path_len]);}}else{self.close_preview_task();}}return true;}
+        if clicked && v.close_rect().contains(p) {self.close_preview_task();return true;}
         if let Some((origin,r,edge))=v.drag {
             if left {let dx=p.x-origin.x;let dy=p.y-origin.y;
                 if edge==8 {v.scroll_to_pointer(p,origin.y);}
