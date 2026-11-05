@@ -191,12 +191,11 @@ fn context_limit_continuation_boundary(ai:&mut AiRuntime) {
     let owner=[1;16];
     assistant::reset();
     ai.chat.clear_input();
-    assert!(ai.chat.paste_input(b"Hello."));
-    assert!(ai.submit_chat());
-    assert!(ai.cancel_chat());
+    // Seed the real desktop prefix without generating or cancelling a chat turn.
+    ai.prime_desktop_context();
     let (tokens,desktop)=ai.acceptance_native_context().unwrap();
     let saved_tokens=tokens.to_vec();
-    assert!(!saved_tokens.is_empty());
+    assert_eq!(!saved_tokens.is_empty(),ai.chat.selected_model()==runtime::ai::chat::HERMES_MODEL_ID);
     for oversized in [false,true] {
         let request=b"create a graphical notes app in Python";
         let route=ai.route_application_request(2,request).unwrap();
