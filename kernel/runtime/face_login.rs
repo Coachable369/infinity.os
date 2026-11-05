@@ -15,7 +15,7 @@ pub fn account_selection(account:StableId,count:usize,mut candidate:impl FnMut(u
 // ------------------=
 pub fn greeting(bytes:&[u8])->bool {
     let Ok(text)=core::str::from_utf8(bytes) else{return false;};
-    let mut words=text.trim_matches(|c:char|c.is_whitespace()||matches!(c,'.'|'!'|'?')).split_whitespace();
+    let mut words=text.split_whitespace().map(|word|word.trim_matches(|c:char|c.is_ascii_punctuation()));
     let (Some(a),Some(b),None)=(words.next(),words.next(),words.next()) else{return false;};
     (a.eq_ignore_ascii_case("hello")&&b.eq_ignore_ascii_case("infinity")) || (a.eq_ignore_ascii_case("infinity")&&b.eq_ignore_ascii_case("hello"))
 }

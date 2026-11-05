@@ -2738,6 +2738,10 @@ impl ConsoleRuntime {
     // DESC: Gates input and starts the shared sign-in or resume success choreography before desktop entry.
     // ------------------=
     fn begin_authentication_success(&mut self, restore_locked_layout: bool) {
+        crate::output_text(b"[login] verified; releasing login voice capture\n");
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        crate::runtime::ai::voice_conversation::sync_login_listener(None);
+        crate::output_text(b"[login] login voice released; starting success animation\n");
         self.authentication_restore_locked_layout = restore_locked_layout;
         let _ = crate::system_sounds::play_login_resident();
         self.authentication_tick_ns = crate::ui::performance::monotonic_ns();
@@ -2749,12 +2753,14 @@ impl ConsoleRuntime {
     // DESC: Commits the authenticated desktop only after the final water-ripple keyframe.
     // ------------------=
     fn finish_authentication_success(&mut self) {
+        crate::output_text(b"[login] success animation complete; entering desktop\n");
         let restore_locked_layout = core::mem::replace(
             &mut self.authentication_restore_locked_layout,
             false,
         );
         self.authentication_tick_ns = None;
         self.enter_desktop();
+        crate::output_text(b"[login] desktop entered; restoring layout\n");
         if restore_locked_layout {
             if let Some(layout) = self.locked_desktop_layout.restore() {
                 self.restore_desktop_layout(layout);
@@ -2762,6 +2768,7 @@ impl ConsoleRuntime {
         } else {
             let _ = self.restore_persisted_desktop_layout();
         }
+        crate::output_text(b"[login] desktop layout restored\n");
     }
 
     // ------------------------=
@@ -14189,7 +14196,8 @@ fn poll_native_ai_inner() {
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
         let visible=runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7;
-        let login_page=matches!(runtime.mode,ConsoleMode::Authentication|ConsoleMode::Locked);
+        let login_page=matches!(runtime.mode,ConsoleMode::Authentication|ConsoleMode::Locked)
+            && !runtime.authentication_success.active();
         let selected=if !login_page {None}else if runtime.mode==ConsoleMode::Locked {Some(runtime.current_user)}else{
             crate::runtime::with_runtime(|r|r.identity.user_nth(runtime.system_step).map(|u|u.id)).flatten()};
         let was_busy=crate::runtime::face_setup_host::login_busy();
