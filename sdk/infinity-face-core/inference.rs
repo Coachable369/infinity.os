@@ -188,6 +188,39 @@ impl<'a,'m> Execution<'a,'m> {
         Ok(true)
     }
     // ------------------------=
+    // FUNC: spatial_row
+    // DESC: Reuses each convolution weight across one output row, preserving scalar channel and kernel accumulation order.
+    // ------------------=
+    fn spatial_row(&mut self,arity:usize,t:[Tensor;5],out:Tensor,p:[usize;8],count:usize)->Result<bool,Error> {
+        let a=t[0];let [kh,kw,sy,sx,py,px,group,_]=p;
+        if !(2..=3).contains(&arity)||a.rank!=4||out.rank!=4||a.storage!=0||t[1].storage!=1
+            ||(arity==3&&t[2].storage!=1)||a.shape[0]!=1||out.shape[0]!=1
+            ||a.offset+a.len>out.offset||group==0||p[..4].contains(&0)||p[..6].iter().any(|&v|v>4096){return Ok(false);}
+        let [_,ic,ih,iw]=a.shape;let [_,oc,oh,ow]=out.shape;
+        if ic%group!=0||oc%group!=0||t[1].shape!=[oc,ic/group,kh,kw]{return Err(Error::Shape);}
+        let (before,after)=self.arena.split_at_mut(out.offset);let input=&before[a.offset..a.offset+a.len];
+        let channels=ic/group;let end=self.element+count;
+        while self.element<end {
+            let at=self.element;let row=at/ow;let x=at%ow;let n=(ow-x).min(end-at);let c=row/oh;let y=row%oh;
+            let dst=&mut after[at..at+n];dst.fill(if arity==3 {self.model.read(before,t[2],c)?}else{0.0});
+            for k in 0..channels {for ky in 0..kh {
+                let yy=y*sy+ky;if yy<py||yy-py>=ih {continue;}
+                let base=(((c/(oc/group))*channels+k)*ih+yy-py)*iw;
+                for kx in 0..kw {
+                    let left=px.saturating_sub(kx).div_ceil(sx).max(x);
+                    let right=(px+iw).saturating_sub(kx).div_ceil(sx).min(x+n);
+                    if left>=right {continue;}
+                    let weight=self.model.read(before,t[1],((c*channels+k)*kh+ky)*kw+kx)?;
+                    let mut ix=base+left*sx+kx-px;
+                    for sum in &mut dst[left-x..right-x] {*sum+=input[ix]*weight;ix+=sx;}
+                }
+            }}
+            if dst.iter().any(|v|!v.is_finite()){return Err(Error::Numeric);}
+            self.element+=n;
+        }
+        Ok(true)
+    }
+    // ------------------------=
     // FUNC: step_inner
     // DESC: Runs bounded batches with an optional numerically equivalent contiguous convolution kernel.
     // ------------------=
@@ -206,7 +239,7 @@ impl<'a,'m> Execution<'a,'m> {
             let mut p=[0usize;8];
             for (i,v) in p.iter_mut().enumerate() {*v=word(self.model.bytes,at+32+i*4)?;}
             let count=remaining.min(out.len-self.element);
-            let completed=fast && op==1 && self.pointwise(arity,ins,out,p,count)?;
+            let completed=fast && op==1 && (self.pointwise(arity,ins,out,p,count)? || self.spatial_row(arity,ins,out,p,count)?);
             for _ in 0..if completed {0}else{count} {
                 let value=self.scalar(op,arity,ins,out,p,self.element)?;
                 if !value.is_finite() {return Err(Error::Numeric);}

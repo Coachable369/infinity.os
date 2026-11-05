@@ -6,7 +6,7 @@ use core::{mem::size_of,panic::PanicInfo};
 mod capture;
 use capture::{capture,Stream};
 const HEAP_BASE:usize=0x200000000;
-const HEAP_BYTES:usize=192*1024*1024;
+const HEAP_BYTES:usize=p::WORKER_HEAP_BYTES;
 
 // ------------------------=
 // FUNC: call
@@ -241,7 +241,7 @@ unsafe fn work()->Result<(),u32> {
         let frames=if c.command==p::LOGIN {6}else if let State::Verifying(n)=e.state() {3u8.saturating_sub(n)}else{1};
         for attempt in 0..frames {
             report(&c,p::PROCESSING,0,Some(e.state()));
-            let (length,sequence,captured)=match capture(c.command_id,encoded,&mut stream,false) {
+            let (length,sequence,captured)=match capture::photo(c.command_id,encoded,&mut stream,c.command==p::LOGIN) {
                 Ok(v)=>v,Err(error)=>{
                     preview_paused=error==105;
                     report(&c,p::FAILED,error,Some(e.state()));break;

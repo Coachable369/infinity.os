@@ -32,6 +32,20 @@ pub fn open(command:u64,stream:&mut Stream)->Result<(),u32> {
 // DESC: Drains startup frames for exposure settling and captures a fresh pinned frame without restarting a healthy preview stream.
 // ------------------=
 pub fn capture(command:u64,encoded:&mut [u8],stream:&mut Stream,live:bool)->Result<(usize,u64,u64),u32> {
+    read(command,encoded,stream,live,false)
+}
+// ------------------------=
+// FUNC: photo
+// DESC: Counts camera warmup during model preparation only for an explicitly started login stream.
+// ------------------=
+pub fn photo(command:u64,encoded:&mut [u8],stream:&mut Stream,login:bool)->Result<(usize,u64,u64),u32> {
+    read(command,encoded,stream,false,login)
+}
+// ------------------------=
+// FUNC: read
+// DESC: Discards pre-request frames and admits fresh pixels once the camera has settled.
+// ------------------=
+fn read(command:u64,encoded:&mut [u8],stream:&mut Stream,live:bool,login:bool)->Result<(usize,u64,u64),u32> {
     let begin=clock()?;
     // Renew before the existing bounded camera lease expires, never per click.
     if stream.opened.is_some_and(|opened|begin.saturating_sub(opened)>=8000) {
@@ -63,7 +77,8 @@ pub fn capture(command:u64,encoded:&mut [u8],stream:&mut Stream,live:bool)->Resu
             let first=*stream.first_frame.get_or_insert(now);
             let fresh=meta[0]!=stream.sequence;
             stream.sequence=meta[0];
-            let settled=now.saturating_sub(first)>=2000;
+            let settled=if login {now.saturating_sub(stream.opened.unwrap_or(first))>=2000}
+                else {now.saturating_sub(first)>=2000};
             if fresh && after_click && settled {return Ok((length,meta[0],now));}
             after_click=true;
         }

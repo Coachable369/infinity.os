@@ -531,6 +531,7 @@ struct ConsoleRuntime {
     voice_autostart_after_ns: u64,
     login_welcome: u8,
     login_welcome_deadline: u64,
+    login_welcome_retry_ns: u64,
     ai_chat_scroll_grab: Option<i32>,
     authentication_success: crate::ui::authentication_motion::Timeline,
     authentication_tick_ns: Option<u64>,
@@ -705,6 +706,7 @@ impl ConsoleRuntime {
             voice_autostart_after_ns: 0,
             login_welcome: 0,
             login_welcome_deadline: 0,
+            login_welcome_retry_ns: 0,
             ai_chat_scroll_grab: None,
             authentication_success: crate::ui::authentication_motion::Timeline::new(),
             authentication_tick_ns: None,
@@ -2791,8 +2793,7 @@ impl ConsoleRuntime {
         } else {
             let _ = self.restore_persisted_desktop_layout();
         }
-        self.login_welcome=1;
-        self.login_welcome_deadline=crate::runtime::ai::qwen::workers::clock_ns().saturating_add(12_000_000_000);
+        self.schedule_login_welcome();
         crate::output_text(b"[login] desktop layout restored\n");
     }
 
@@ -6287,6 +6288,7 @@ impl ConsoleRuntime {
                     b"[onboarding] complete\n[session] authenticated session active\n",
                 );
                 self.enter_desktop();
+                self.schedule_login_welcome();
                 return;
             }
         }
@@ -14233,7 +14235,7 @@ fn poll_native_ai_inner() {
         let selected=if !login_page {None}else if runtime.mode==ConsoleMode::Locked {Some(runtime.current_user)}else{
             crate::runtime::with_runtime(|r|r.identity.user_nth(runtime.system_step).map(|u|u.id)).flatten()};
         let was_busy=crate::runtime::face_setup_host::login_busy();
-        crate::runtime::ai::voice_conversation::sync_login_listener(selected);
+        crate::runtime::ai::voice_conversation::sync_login_listener(if was_busy {None}else{selected});
         if let Some(proof)=crate::runtime::face_setup_host::poll_login(selected) {
             if let Some(account)=selected {
                 let locked=(runtime.mode==ConsoleMode::Locked).then_some(runtime.current_session);

@@ -54,3 +54,6 @@ impl Report {
         Self {version:VERSION,phase,error,photos,comparisons,reserved:0,command_id}
     }
 }
+
+/// Private camera worker limit for the pinned detector, recognizer, activation arena and RGB/JPEG scratch.
+pub const WORKER_HEAP_BYTES:usize=112*1024*1024;

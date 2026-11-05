@@ -65,13 +65,14 @@ pub fn ordinate(frame: Frame, ribbon: usize, trail: u32, x: usize, width: usize,
     let phase = (u64::from(time) * 4096 / u64::from(PERIOD_MS)) as i32;
     let x = (x.min(width) * 4096 / width.max(1)) as i32;
     let lane = (ribbon % RIBBON_COUNT) as i32;
-    let center = 380 + lane * 46;
-    let amplitude = 42 + lane % 3 * 8;
-    let offset = 200 + lane * 310;
-    let speed = if lane % 2 == 0 { 1 } else { -1 };
-    let excursion = amplitude + i32::from(frame.level) * 105 / 1000;
-    let y = center * 1024 + sine(x * 3 / 5 + phase * speed + offset) * excursion
-        + sine(x + phase * 2 + offset) * 15;
+    // One continuous trace with eight close filaments. A fourth-power envelope
+    // concentrates microphone energy into crests instead of moving whole lanes.
+    let center = 555 + lane * 5;
+    let carrier = sine(x + phase + lane * 12);
+    let pulse = sine(x * 2 - phase + 768).abs();
+    let pulse = pulse * pulse / 1024;
+    let spike = sine(x * 7 + phase + lane * 12) * (pulse * pulse / 1024) / 1024;
+    let y = center * 1024 + carrier * 15 + spike * (i32::from(frame.level)*104/1000);
     (y as i64 * height as i64 * 256 / 1_024_000) as i32
 }
 

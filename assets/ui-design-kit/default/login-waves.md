@@ -5,14 +5,14 @@ Reference: the authored Glossy Blue Infinity Wave Wallpaper in the login documen
 Reuse that supplied artwork, not a replacement wallpaper or a new icon family.
 Kit gap: no continuous audio-reactive ribbon component existed.
 
-- Eight fine, phase-separated sine ribbons follow the wallpaper's horizontal flow.
+- Eight closely spaced, parallel sine filaments follow the wallpaper's horizontal flow.
   Cobalt glass bodies, cyan edges and thin ice-white highlights retain the
   reference's hierarchy; antialiased edges and restrained glow provide depth, not equalizer bars.
 - Idle: continuous 12-second phase drift, no flashing, snapping or stopping at silence.
 - Audio: authorized login-listener amplitude increases excursion and light visibly;
   12 ms attack and 180 ms release respond promptly to syllables. The 160-count
   noise floor is retained; full excursion occurs at 2560-count input peaks.
-  Audio adds up to 10.5% of screen height to the existing fine-line excursion;
+  Speech forms localized peaks along the shared trace instead of making the filaments cross in opposite directions. Audio adds up to 10.4% of screen height to the existing fine-line excursion;
   foreground clipping and the original cyan/cobalt styling are unchanged.
   No new microphone lease, recording, recognition path or permission is introduced.
 - Paint behind the existing authored foreground. Animation damage excludes every

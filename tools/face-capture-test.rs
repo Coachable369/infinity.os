@@ -65,9 +65,13 @@ fn preview_then_photo_preserves_exposure() {
 fn login_keeps_exposure_between_comparisons() {
     reset();let mut stream=capture::Stream::default();let mut pixels=[0;8192];
     capture::open(1,&mut stream).unwrap();
-    let first=capture::capture(1,&mut pixels,&mut stream,false).unwrap();
-    let second=capture::capture(1,&mut pixels,&mut stream,false).unwrap();
-    let third=capture::capture(1,&mut pixels,&mut stream,false).unwrap();
+    // Model preparation runs with the sensor already open.
+    CAMERA.with(|c|c.borrow_mut().now+=2100);
+    let ready=clock().unwrap();
+    let first=capture::photo(1,&mut pixels,&mut stream,true).unwrap();
+    assert!(first.2-ready<500);assert!(pixels.iter().all(|v|*v==128));
+    let second=capture::photo(1,&mut pixels,&mut stream,true).unwrap();
+    let third=capture::photo(1,&mut pixels,&mut stream,true).unwrap();
     assert!(second.1>first.1 && third.1>second.1);
     assert!(third.2-first.2<1000);
     assert!(pixels.iter().all(|v|*v==128));
