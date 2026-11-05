@@ -15,5 +15,10 @@ fn main(){
     assert_eq!(scroll::offset(-10000,20,200,40,10,1600),0);
     assert_eq!(scroll::offset(100,20,40,40,10,1600),0);
     let mut prior=0;for y in 30..=190{let at=scroll::offset(y,20,200,40,10,1600);assert!(at>=prior);prior=at;}
+    let window=(100,40,640,400);
+    assert!(scroll::file_rail(window,1,3,60,0).is_none());
+    let grid=scroll::file_rail(window,1,12,60,usize::MAX).unwrap();
+    assert_eq!(grid.maximum,470);assert_eq!(grid.thumb_y+grid.thumb_height as i32,grid.y+grid.height as i32);
+    assert_eq!(scroll::offset(grid.thumb_y+3,grid.y,grid.height,grid.thumb_height,3,grid.maximum),grid.maximum);
     println!("Session intent, greeting isolation and scrollbar capture geometry passed");
 }

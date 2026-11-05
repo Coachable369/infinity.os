@@ -577,6 +577,7 @@ struct ConsoleRuntime {
     home_window_restore_width: i32,
     home_window_restore_height: i32,
     home_window_dragging: bool,
+    navigator_rail_drag:Option<(crate::ui::scroll_capture::FileRail,i32)>,
     home_window_resizing: Option<usize>,
     home_window_drag_offset_x: i32,
     home_window_drag_offset_y: i32,
@@ -760,6 +761,7 @@ impl ConsoleRuntime {
             home_window_restore_width: 780,
             home_window_restore_height: 660,
             home_window_dragging: false,
+            navigator_rail_drag:None,
             home_window_resizing: None,
             home_window_drag_offset_x: 0,
             home_window_drag_offset_y: 0,
@@ -4602,13 +4604,13 @@ impl ConsoleRuntime {
         }
         let count = navigator_child_count(state.active_namespace_ref.as_bytes());
         let index = if state.view_mode == crate::runtime::object_navigation::ViewMode::List {
-            state.scroll_offset / (34 * scale) + point_y.saturating_sub(grid_y) / (34 * scale)
+            (state.scroll_offset + point_y.saturating_sub(grid_y)) / (34 * scale)
         } else {
             let gap = width.saturating_sub(sidebar + 55 * scale) / 4;
             let tile_step = (self.system.framebuffer_height as usize / 23).max(34) + 40 * scale;
             let column = ((point_x - grid_x) / gap.max(1)).min(3);
-            let row = (point_y - grid_y) / tile_step.max(1);
-            state.scroll_offset / tile_step.max(1) * 4 + row * 4 + column
+            let row = (state.scroll_offset+point_y-grid_y) / tile_step.max(1);
+            row * 4 + column
         };
         (index < count).then_some(index)
     }
@@ -7831,7 +7833,7 @@ impl ConsoleRuntime {
                 runtime.file_navigator.as_mut().map(|navigator| {
                     navigator.scroll_by(
                         crate::ui::input_preferences::current().wheel(vertical) as isize * 12,
-                        total,
+                        if state.view_mode==crate::runtime::object_navigation::ViewMode::List{total}else{total.div_ceil(4)},
                         viewport,
                         extent,
                     );
@@ -9118,6 +9120,7 @@ impl ConsoleRuntime {
                 return;
             } else if clicked {
                 let target = self.desktop_target(layout);
+                if matches!(target,Some(DesktopTarget::HomeContent|DesktopTarget::HomeItem(_))) && self.start_navigator_rail(layout){return;}
                 if target != Some(DesktopTarget::HomeTitle) {self.title_clicks.cancel();}
                 if !matches!(
                     target,

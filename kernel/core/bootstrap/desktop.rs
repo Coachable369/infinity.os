@@ -5762,12 +5762,14 @@ impl super::DisplayDevice {
         } else {
             tile_step
         };
-        let (first, end) = crate::runtime::object_navigation::FileNavigatorState::visible_range(
-            child_count,
-            scroll_offset,
-            viewport,
-            extent,
-        );
+        let columns=if navigator_list_view{1}else{4};
+        let rows=child_count.div_ceil(columns);
+        let offset=scroll_offset.min(rows.saturating_mul(extent).saturating_sub(viewport));
+        let (start_row,end_row)=crate::runtime::object_navigation::FileNavigatorState::visible_range(rows,offset,viewport,extent);
+        let (first,end)=(start_row*columns,(end_row*columns).min(child_count));
+        let content_clip=self.render_clip;
+        self.intersect_render_clip(browser_left+sidebar_w,grid_y.saturating_sub(8*scale),browser_width.saturating_sub(sidebar_w),viewport+8*scale);
+        let grid_y=grid_y.saturating_sub(offset%extent.max(1));
         for index in first..end {
             let navigation_name: Option<&[u8]> = match index {
                 0 => Some(b"."),
@@ -5926,6 +5928,11 @@ impl super::DisplayDevice {
                     );
                 }
             }
+        }
+        self.render_clip=content_clip;
+        if let Some(rail)=crate::ui::scroll_capture::file_rail((browser_left,browser_top,browser_width,browser_height),scale,rows,extent,offset){
+            self.fill_rounded_rect_alpha(rail.x as usize,rail.y as usize,rail.width as usize,rail.height as usize,4*scale,16,27,58,220);
+            self.fill_rounded_rect_alpha(rail.x as usize+2*scale,rail.thumb_y as usize,rail.width as usize-4*scale,rail.thumb_height as usize,4*scale,108,137,174,255);
         }
         let status_top = browser_top + browser_height.saturating_sub(24 * scale);
         self.fill_rect_alpha(
