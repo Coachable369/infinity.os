@@ -572,6 +572,9 @@ impl DisplayDevice {
             if element.role==InstallerTemplateRole::PrimaryButton as u8 {Surface::Primary}else{Surface::Secondary}
         } else if element.role==InstallerTemplateRole::Input as u8 {Surface::Field}else{Surface::Panel};
         let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
+        let (opacity,border_opacity)=if element.kind==5 {
+            crate::ui::panel_recipe::button_opacity(style,element.fill[3],element.border[3],element.opacity)
+        }else{(opacity,border_opacity)};
         if element.role==InstallerTemplateRole::Console as u8 {
             self.access_frost_panel_styled(rect.left,rect.top,rect.width,rect.height,fill,border,opacity,border_opacity,style);
         } else if kind==Surface::Field {
@@ -1015,12 +1018,12 @@ impl DisplayDevice {
         use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface}};
         let kind=if primary {Surface::Primary}else{Surface::Secondary};
         let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
+        let (button_fill,button_edge)=crate::ui::panel_recipe::button_opacity(style,element.fill[3],element.border[3],element.opacity);
         self.precision_surface_styled(Rect{..rect},
             kind,Material{
                 fill:(element.fill[0],element.fill[1],element.fill[2]),
                 edge:(element.border[0],element.border[1],element.border[2]),
-                opacity:(element.fill[3] as u16*opacity/100) as u8,
-                edge_opacity:(element.border[3] as u16*opacity/100) as u8,
+                opacity:button_fill,edge_opacity:button_edge,
                 focus:if focused {
                     if element.role==InstallerTemplateRole::SettingsRowAction as u8 {100}
                     else {super::access_style::focus_amount()}

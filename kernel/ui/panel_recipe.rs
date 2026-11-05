@@ -88,6 +88,15 @@ pub fn template_style(kind: Surface, material: u8, corners: u8, radius: u8) -> S
     style
 }
 
+// ------------------------=
+// FUNC: button_opacity
+// DESC: Applies the layer fade once; a shared tint supplies its own alpha in the surface sampler.
+// ------------------=
+pub fn button_opacity(style:SurfaceStyle,fill:u8,border:u8,layer:u8)->(u8,u8) {
+    let compose=|alpha:u8|(u16::from(alpha)*u16::from(layer)/100)as u8;
+    (compose(if style.fill.is_some(){255}else{fill}),compose(if style.border.is_some(){255}else{border}))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Material {
     pub fill: Rgb,

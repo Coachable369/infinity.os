@@ -730,11 +730,12 @@ fn authored_button_pixels(bytes:&[u8],screens:u8) {
                 // every user-authored button to remain factory blue.
                 use crate::ui::panel_recipe::{self,Surface,Material};
                 let kind=if role==Role::PrimaryButton {Surface::Primary}else{Surface::Secondary};
+                let style=panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
                 let (red,green,blue,alpha)=panel_recipe::pixel_styled(kind,r.width,r.height,r.width/2,r.height/2,
                     Material{fill:(element.fill[0],element.fill[1],element.fill[2]),
                         edge:(element.border[0],element.border[1],element.border[2]),
-                        opacity:(u16::from(element.fill[3])*u16::from(element.opacity)/100)as u8,
-                        edge_opacity:(u16::from(element.border[3])*u16::from(element.opacity)/100)as u8,
+                        opacity:(u16::from(if style.fill.is_some(){255}else{element.fill[3]})*u16::from(element.opacity)/100)as u8,
+                        edge_opacity:(u16::from(if style.border.is_some(){255}else{element.border[3]})*u16::from(element.opacity)/100)as u8,
                         focus:255,pressed,scale},
                     panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius));
                 let channel=|c:u8|u32::from(c)*u32::from(alpha)/255;
