@@ -101,7 +101,9 @@ impl State {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<(Self, [u8; LAUNCHER_APPS.len()])> {
         let legacy = bytes.len() == LEGACY_STATE_BYTES && &bytes[..4] == b"IAP1";
-        let current = matches!(bytes.len(), 94) || bytes.len() == STATE_BYTES;
+        // IAP2 contains five bytes per registered app and nine bytes of framing.
+        // New entries append to the permutation without moving saved shortcuts.
+        let current = (94..=STATE_BYTES).contains(&bytes.len()) && (bytes.len()-9)%5==0;
         let current = current && bytes.get(..4) == Some(b"IAP2");
         let checksum_at = bytes.len().checked_sub(4)?;
         if (!legacy && !current)

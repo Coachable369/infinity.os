@@ -174,6 +174,19 @@ fn shortcut_drag_and_persistence() {
     assert_eq!(previous_state.positions[0],[400,500]);
     assert_eq!(&previous_order[..17],&order[..17]);
     assert!(previous_state.positions[17..].iter().all(|p|*p==[0,0]));
+    for count in 18..LAUNCHER_APPS.len() {
+        let mut old=vec![0u8;9+count*5];
+        old[..4].copy_from_slice(b"IAP2");
+        for i in 0..count {old[4+i]=(count-1-i) as u8;}
+        let pos=5+count;
+        old[pos..pos+2].copy_from_slice(&400u16.to_le_bytes());
+        old[pos+2..pos+4].copy_from_slice(&500u16.to_le_bytes());
+        let end=old.len()-4;let checksum=legacy_checksum(&old[..end]);old[end..].copy_from_slice(&checksum.to_le_bytes());
+        let (migrated,order)=State::decode(&old).unwrap();
+        assert_eq!(migrated.positions[0],[400,500]);
+        assert_eq!(&order[..count],&old[4..4+count]);
+        assert_eq!(order[count] as usize,count);
+    }
     shortcuts::publish(s);
     let _ = shortcuts::take_damage(1920, 1080);
     s.begin(6, 400, 500, true);
