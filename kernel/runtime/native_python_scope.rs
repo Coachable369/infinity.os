@@ -2,7 +2,7 @@
 
 // ------------------------=
 // FUNC: readable
-// DESC: Allows owned objects and the active shared Documents compatibility namespace, never foreign-owned or system objects.
+// DESC: Allows owned personal data, legacy shared Documents and the four immutable system scripts only.
 // ------------------=
 pub fn readable(owner: [u8; 16], user: [u8; 16], personal: bool, path: &[u8]) -> bool {
     user != [0; 16] && ((personal && (owner == user ||

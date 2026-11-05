@@ -1,12 +1,13 @@
 """figlet [-f standard|small] [-o FILE] TEXT -- full-width FIGfont rendering."""
 import argparse
+import os
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("-f", "--font", choices=("standard", "small"), default="standard")
 p.add_argument("-o", "--output")
 p.add_argument("text", nargs="+")
 a = p.parse_args()
-with open("/System/" + a.font + ".flf", encoding="latin-1") as stream:
+with open(os.path.join(os.path.dirname(__file__), a.font + ".flf"), encoding="latin-1") as stream:
     header = stream.readline().split()
     if not header[0].startswith("flf2a"):
         raise ValueError("Not a FIGfont")
@@ -17,7 +18,8 @@ with open("/System/" + a.font + ".flf", encoding="latin-1") as stream:
     for code in range(32, 127):
         rows = [stream.readline().rstrip("\r\n") for _ in range(height)]
         mark = rows[0][-1]
-        glyphs[chr(code)] = [r.rstrip(mark).replace(hardblank, " ") for r in rows]
+        glyphs[chr(code)] = [r.removesuffix(mark * (2 if i == height - 1 else 1)).replace(hardblank, " ")
+                             for i, r in enumerate(rows)]
 banner = "\n".join("".join(glyphs.get(c, glyphs["?"])[i] for c in " ".join(a.text)).rstrip()
                    for i in range(height)) + "\n"
 if a.output:
