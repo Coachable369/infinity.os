@@ -1322,7 +1322,7 @@ fn aikit_contract() {
     assert_eq!(CapabilityDirectory::count(), mapping::CAPABILITY_TARGETS.len());
     assert_eq!(CapabilityDirectory::descriptor(0).unwrap().family, CapabilityFamily::Open);
     assert_eq!(CapabilityDirectory::descriptor(103).unwrap().family, CapabilityFamily::Clock);
-    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Context);
+    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Shell);
     assert!(CapabilityDirectory::descriptor(CapabilityDirectory::count()).is_none());
     assert!(CapabilityDirectory::contains(mapping::CAPABILITY_TARGETS[0]));
 
@@ -1510,6 +1510,8 @@ fn instruction_mapping_contract() {
     }
     legacy.push_str("]}");
     assert_eq!(mapping::validate(legacy.as_bytes()),Ok(()));
+    assert_eq!(mapping::resolve_installed(legacy.as_bytes(), b"log me out").unwrap(),
+        Some(Command::Shell(runtime::ai::control::ShellAction::Logout)));
     assert_eq!(mapping::resolve_installed(legacy.as_bytes(),b"set accent color to grey").unwrap(),
         Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
     let incomplete=br#"{"schema":"infinityos.ai-instruction-map","version":1,"actions":[{"id":"os.app.open.editor","scope":"os","target":"OS_OPEN:text_editor","aliases":["paint code"]}]}"#;

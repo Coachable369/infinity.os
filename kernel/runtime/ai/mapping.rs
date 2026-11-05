@@ -10,7 +10,7 @@ pub const REGISTRY_DEFAULT: &[u8] = include_bytes!("../../../system/ai/service-r
 pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappings.json");
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
-const MAX_ALIASES: usize = 256;
+const MAX_ALIASES: usize = 512;
 pub const CAPABILITY_TARGETS: [&[u8]; 119] = [
     b"OS_OPEN:text_editor",
     b"OS_OPEN:file_navigator",
@@ -63,7 +63,6 @@ pub const CAPABILITY_TARGETS: [&[u8]; 119] = [
     b"OS_MENU:account",
     b"OS_MENU:calendar",
     b"OS_MENU:help",
-    b"OS_SHELL:logout",
     b"OS_SHELL:snap_left",
     b"OS_SHELL:snap_right",
     b"OS_SHELL:center",
@@ -131,6 +130,7 @@ pub const CAPABILITY_TARGETS: [&[u8]; 119] = [
     b"OS_MINIMIZE:{argument}",
     b"OS_MAXIMIZE:{argument}",
     b"OS_RESTORE:{argument}",
+    b"OS_SHELL:logout",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1068,7 +1068,17 @@ impl AiRuntime {
             self.active_native = self.chat.selected_model();
         }
         let mut conversation_prefix = [0u8; 3072];
-        let Some(prefix_length) = self.conversation_prefix(&mut conversation_prefix) else { return false; };
+        // Only tool-enabled inference consumes the capability directory.
+        let prefix_length = if route == RequestRoute::Inference(InferenceMode::Conversation) {
+            0
+        } else {
+            let Some(length) = self.conversation_prefix(&mut conversation_prefix) else {
+                self.inference_request = None;
+                self.chat.generation_state = chat::GenerationState::Failed;
+                return false;
+            };
+            length
+        };
         let Some(service) = self.qwen.as_mut() else {
             return false;
         };
