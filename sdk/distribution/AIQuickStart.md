@@ -2,7 +2,7 @@
 
 ## Run a complete integration
 
-Copy `/InfintySDK/Examples/Python/counter.py` to Documents and run it in Text
+Copy `/InfinitySDK/Examples/Python/counter.py` to Documents and run it in Text
 Editor. With the window open, use the desktop AI widget to ask Infinity to
 increase the counter. The application offers `counter.increase` and
 `counter.decrease`; equivalent wording is interpreted by the OS, not matched

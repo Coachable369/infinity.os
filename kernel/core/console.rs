@@ -1,5 +1,6 @@
 #[path="console_command_terminal.rs"]
 mod command_terminal_controller;
+#[path="console_shell_tools.rs"] mod shell_tools;
 #[path="console_session_actions.rs"] mod session_actions;
 #[path="console_scroll_capture.rs"] mod scroll_capture;
 #[path="console_utilities.rs"]
@@ -488,6 +489,7 @@ struct ConsoleRuntime {
     command_length: usize,
     command_cursor: usize,
     command_history: infinity_enterprise_core::History,
+    shell_path: crate::runtime::object_navigation::ByteText<240>,
     workplace_session: [u8;16],
     workplace_result: [u64;8],
     caret_visible: bool,
@@ -662,6 +664,7 @@ impl ConsoleRuntime {
             command_length: 0,
             command_cursor: 0,
             command_history: infinity_enterprise_core::History::new(),
+            shell_path: shell_tools::default_path(),
             workplace_session: [0;16],
             workplace_result: [0;8],
             caret_visible: true,
@@ -3290,9 +3293,7 @@ impl ConsoleRuntime {
             let _terminal_capture=crate::ui::command_terminal::Capture::new(true);
             self.reset_input();
             self.output.clear();
-            self.output.write_line(b"Infinity Command Window");
-            self.output
-                .write_line(b"Type help or describe what you want.");
+            self.print_motd();
         }
         self.command_window_suspended = false;
         crate::output_text(b"[ui] desktop command window opened\n");
@@ -10120,7 +10121,7 @@ impl ConsoleRuntime {
     fn execute_input(&mut self) {
         self.publish_command_terminal();
         let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
-        if self.command_terminal_visible() && !self.ssh_terminal.active && self.command[..self.command_length].trim_ascii()==b"top" {
+        if self.command_terminal_visible() && !self.ssh_terminal.active && self.command[..self.command_length].trim_ascii().eq_ignore_ascii_case(b"top") {
             crate::ui::command_terminal::mutate(|s|{s.monitor=true;s.monitor_row=0;s.changed();});self.reset_input();return;
         }
         if self.command_terminal_visible() && self.command[..self.command_length]==*b"help" {
@@ -10135,6 +10136,11 @@ impl ConsoleRuntime {
         let private=self.command_history.private() || infinity_enterprise_core::sensitive(&command[..length]) || console_accounts_cli::sensitive_command(&command[..length]);
         if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
+        if self.shell_environment(&command[..length]) {self.reset_input();return;}
+        if command_word(&command[..length],0).is_some_and(|w|w.eq_ignore_ascii_case(b"cd"))
+            && self.workplace_authorized(false) {
+            self.execute_native_navigation_command(&command[..length]);self.reset_input();return;
+        }
         #[cfg(all(target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if self.ssh_command(&command[..length]) {self.reset_input();return;}
         if self.utility_command(&command[..length]) {self.reset_input();return;}
@@ -10259,6 +10265,8 @@ impl ConsoleRuntime {
             self.reset_input();
             return;
         }
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if python_commands::path_command(self,&command[..length]) {self.reset_input();return;}
         let input = core::str::from_utf8(&command[..length]).unwrap_or("");
         let context = self.context();
         match self.intent.resolve(input, &context) {
@@ -10318,7 +10326,7 @@ impl ConsoleRuntime {
             self.output.write_line(self.navigation_context.path());
             return true;
         }
-        if matches!(first, b"idir" | b"cd") {
+        if first.eq_ignore_ascii_case(b"cd") || first==b"idir" {
             let target = command_tail(command, 1).unwrap_or(b"home");
             let result = self.navigation_context.navigate(target, |path| {
                 crate::storage::namespace_resolve(path).is_ok()

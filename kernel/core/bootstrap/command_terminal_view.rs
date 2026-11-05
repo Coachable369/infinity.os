@@ -45,17 +45,28 @@ impl DisplayDevice {
             if s.monitor {
                 use core::fmt::Write;
                 canvas.fill(g.body,s.background_color());
-                ascii(&mut canvas,g,s.appearance,0,b"  PID   CPU    MEM KiB  STATUS    PROCESS");
-                let visible=g.rows().saturating_sub(3).max(1);
+                colored(&mut canvas,g,s.appearance,1,b"  PID   CPU    MEM KiB  STATUS    PROCESS",ansi_color(14));
+                let visible=g.rows().saturating_sub(4).max(1);
                 crate::runtime::with_runtime(|r|{
                     let count=r.execution.count();let selected=s.monitor_row.min(count.saturating_sub(1));
+                    let mut runnable=0;let mut waiting=0;
+                    for i in 0..count {if let Some(t)=r.execution.nth(i) {
+                        use crate::runtime::execution::ContextState::*;
+                        match t.state {Running|Runnable=>runnable+=1,Waiting=>waiting+=1,_=>{}}
+                    }}
+                    let mut summary=crate::runtime::console_execution::Bytes::<120>::new();
+                    let _=write!(summary,"TOP   Tasks: {}   Running/ready: {}   Waiting: {}",count,runnable,waiting);
+                    colored(&mut canvas,g,s.appearance,0,summary.bytes(),s.appearance.color(5));
                     let start=selected/visible*visible;
                     for i in start..count.min(start+visible) {
                         let Some(t)=r.task_manager.task_nth(&r.execution,i) else{break};
                         let mut line=crate::runtime::console_execution::Bytes::<160>::new();
                         let _=write!(line,"{} {:4} {:3}% {:9}  {:8}  ",if i==selected{'>'}else{' '},t.handle.0,t.cpu_share_percent,t.usage.memory_bytes/1024,
                             core::str::from_utf8(crate::console::context_state_text(t.state)).unwrap_or("?"));
-                        line.write(crate::console::task_name(r,&t));ascii(&mut canvas,g,s.appearance,i-start+1,line.bytes());
+                        line.write(crate::console::task_name(r,&t));
+                        let color=if i==selected{14}else if t.cpu_share_percent>=80{9}else if t.cpu_share_percent>=40{11}
+                            else if t.cpu_share_percent!=0{10}else{7};
+                        colored(&mut canvas,g,s.appearance,i-start+2,line.bytes(),ansi_color(color));
                     }
                     if g.rows()>=4 {if let Some(t)=r.task_manager.task_nth(&r.execution,selected) {
                         let mut line=crate::runtime::console_execution::Bytes::<96>::new();
@@ -120,7 +131,15 @@ impl DisplayDevice {
 // DESC: Paints a clipped ASCII menu row on the actual terminal grid.
 // ------------------=
 fn ascii(canvas:&mut impl Canvas,g:Layout,p:Preferences,row:usize,bytes:&[u8]) {
-    if row>=g.rows(){return;}for(i,&b)in bytes.iter().take(g.columns()).enumerate(){canvas.glyph(g.text.x+(i*g.cell)as i32,g.text.y+(row*g.line)as i32,b,g.scale,p,p.color(4));}
+    colored(canvas,g,p,row,bytes,p.color(4));
+}
+
+// ------------------------=
+// FUNC: colored
+// DESC: Draws one bounded monitor row with semantic load coloring on the terminal's current font grid.
+// ------------------=
+fn colored(canvas:&mut impl Canvas,g:Layout,p:Preferences,row:usize,bytes:&[u8],color:(u8,u8,u8)) {
+    if row>=g.rows(){return;}for(i,&b)in bytes.iter().take(g.columns()).enumerate(){canvas.glyph(g.text.x+(i*g.cell)as i32,g.text.y+(row*g.line)as i32,b,g.scale,p,color);}
 }
 
 // ------------------------=

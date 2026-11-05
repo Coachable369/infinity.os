@@ -79,6 +79,7 @@ KERNEL_SOURCES += $(shell find third_party/sunset-0.6.0/src -type f -name '*.rs'
 KERNEL_SOURCES += $(wildcard sdk/c/include/*.h sdk/c/include/infinity/*.h sdk/c/compiler-headers/*.h)
 KERNEL_SOURCES += sdk/c/examples/camera_capture.c
 SDK_SOURCES := $(shell find sdk/distribution sdk/c/include sdk/c/examples sdk/python/examples -type f) sdk/python/infinity.py sdk/python/infinity_log.py sdk/python/infinity_network.py docs/intelligence-kit.md $(wildcard assets/ui-design-kit/*.json assets/ui-design-kit/*.infinityui assets/ui-design-kit/default/*) tools/package-sdk.py
+SDK_SOURCES += $(wildcard sdk/system/*)
 build/sdk/catalog.rs: $(SDK_SOURCES)
 	python3 tools/package-sdk.py
 KERNEL_SOURCES += build/sdk/catalog.rs $(SDK_SOURCES)

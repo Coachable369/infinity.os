@@ -1,6 +1,6 @@
 # CameraKit — quick start and reference
 
-Copy `/InfintySDK/Examples/C/camera.c` to Documents and run from Text Editor in
+Copy `/InfinitySDK/Examples/C/camera.c` to Documents and run from Text Editor in
 a session authorized to use the camera. The sample starts capture, waits while
 yielding, reads one JPEG in bounded pages, verifies its boundaries and reports
 byte count and checksum. It stops capture and clears its temporary buffer.

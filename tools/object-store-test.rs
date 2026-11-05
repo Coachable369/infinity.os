@@ -36,9 +36,9 @@ fn sdk_package_access() {
     let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0xa7; 16]).unwrap();
     let generation = store.generation();
     let slots = store.persistent_namespace_count();
-    let root = store.resolve(b"/InfintySDK").unwrap();
+    let root = store.resolve(b"/InfinitySDK").unwrap();
     assert_eq!(store.metadata(root).unwrap().kind, ObjectType::NamespaceNode);
-    let entries: Vec<_> = (0..256).map_while(|i| store.namespace_list_nth(b"/InfintySDK", i)).collect();
+    let entries: Vec<_> = (0..256).map_while(|i| store.namespace_list_nth(b"/InfinitySDK", i)).collect();
     assert!(entries.len() > 40 && entries.len() < 180);
     for entry in entries {
         let path = &entry.path[..entry.path_len as usize];
@@ -50,7 +50,7 @@ fn sdk_package_access() {
         let mut bytes = vec![0; metadata.logical_size as usize];
         assert_eq!(store.read(id, None, &mut bytes).unwrap(), bytes.len());
         assert_eq!(store.read(id, Some(2), &mut bytes), Err(ObjectError::InvalidVersion));
-        let relative = std::str::from_utf8(&path[b"/InfintySDK/".len()..]).unwrap();
+        let relative = std::str::from_utf8(&path[b"/InfinitySDK/".len()..]).unwrap();
         let export = std::path::Path::new("build/tests/sdk-export").join(relative);
         std::fs::create_dir_all(export.parent().unwrap()).unwrap();
         std::fs::write(export, &bytes).unwrap();
@@ -67,7 +67,7 @@ fn sdk_package_access() {
     }
     assert_eq!(store.generation(), generation);
     assert_eq!(store.persistent_namespace_count(), slots);
-    let example = b"/InfintySDK/Examples/Python/counter.py";
+    let example = b"/InfinitySDK/Examples/Python/counter.py";
     for owner in [ObjectId([1; 16]), ObjectId([2; 16])] {
         let mut bytes = [0; 16384];
         let (length, _) = editor_objects::load(&mut store, owner, example, &mut bytes).unwrap();
@@ -83,11 +83,27 @@ fn sdk_package_access() {
     let owned_copy = store.copy_path_attached(example, destination.as_bytes()).unwrap();
     assert_eq!(store.metadata(owned_copy).unwrap().owner, owner);
     assert!(editor_objects::load(&mut store, ObjectId([0x32; 16]), destination.as_bytes(), &mut [0; 16384]).is_err());
-    assert_eq!(store.move_entry(b"/home/default/documents/counter.py", b"/InfintySDK/new.py"), Err(ObjectError::Unauthorized));
-    assert_eq!(store.copy_path_attached(b"/InfintySDK/Examples", b"/home/default/examples"), Err(ObjectError::UnsupportedFormat));
+    assert_eq!(store.move_entry(b"/home/default/documents/counter.py", b"/InfinitySDK/new.py"), Err(ObjectError::Unauthorized));
+    assert_eq!(store.copy_path_attached(b"/InfinitySDK/Examples", b"/home/default/examples"), Err(ObjectError::UnsupportedFormat));
+    assert!(store.resolve(b"/InfintySDK").is_err());
+    assert_eq!(store.metadata(store.resolve(b"/System").unwrap()).unwrap().kind,ObjectType::NamespaceNode);
+    for (path, expected) in [
+        (b"/System/grep.py".as_slice(), include_bytes!("../sdk/system/grep.py").as_slice()),
+        (b"/System/sed.py",include_bytes!("../sdk/system/sed.py").as_slice()),
+        (b"/System/awk.py",include_bytes!("../sdk/system/awk.py").as_slice()),
+        (b"/System/figlet.py",include_bytes!("../sdk/system/figlet.py").as_slice()),
+        (b"/System/standard.flf",include_bytes!("../sdk/system/standard.flf").as_slice()),
+        (b"/System/small.flf",include_bytes!("../sdk/system/small.flf").as_slice()),
+    ] {
+        let id=store.resolve(path).unwrap();let mut data=vec![0;expected.len()];
+        assert_eq!(store.read(id,None,&mut data).unwrap(),expected.len());
+        assert_eq!(&data,expected);assert!(store.write(id,b"changed").is_err());
+    }
+    let motd=store.resolve(b"/System/motd").unwrap();store.write(motd,b"Welcome\nback").unwrap();
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
-    assert_eq!(store.resolve(b"/InfintySDK").unwrap(), root);
+    let mut message=[0;12];let n=store.read(motd,None,&mut message).unwrap();assert_eq!(&message[..n],b"Welcome\nback");
+    assert_eq!(store.resolve(b"/InfinitySDK").unwrap(), root);
     let mut bytes = [0; 16384];
     let original = store.resolve(example).unwrap();
     let length = store.read(original, None, &mut bytes).unwrap();

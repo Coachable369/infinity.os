@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # DESC: Derives a stable, collision-checked SDK object identity from its public path.
 # ------------------=
 def object_id(path):
-    return b"IFSDK001" + hashlib.sha256(path.encode()).digest()[:8]
+    # Keep durable references valid across the SDK's public namespace rename.
+    identity_key = path.replace("/InfinitySDK", "/InfintySDK", 1) if path.startswith("/InfinitySDK") else path
+    return b"IFSDK001" + hashlib.sha256(identity_key.encode()).digest()[:8]
 
 # ------------------------=
 # FUNC: catalog
@@ -85,21 +87,41 @@ def main():
         is_text = data is not None and PurePosixPath(path).suffix in (".md", ".json", ".infinityui", ".py", ".c", ".h")
         crc = zlib.crc32(data) if data is not None else 0
         lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: {value}, text: {str(is_text).lower()}, crc: {crc} }},')
+    # Built-in shell resources use the same immutable object service, but do not
+    # belong in the downloadable SDK or consume writable namespace slots.
+    root_id = ",".join(map(str, object_id("/System")))
+    lines.append(f'    Entry {{ path: b"/System", id: ObjectId([{root_id}]), data: None, text: false, crc: 0 }},')
+    for asset in sorted((ROOT / "sdk/system").iterdir()):
+        path = "/System/" + asset.name
+        ident = ",".join(map(str, object_id(path)))
+        text = str(asset.suffix in (".py", ".txt")).lower()
+        lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: Some(include_bytes!("../../sdk/system/{asset.name}")), text: {text}, crc: {zlib.crc32(asset.read_bytes())} }},')
     lines.append("];")
     write_changed(ROOT / "build/sdk/manifest.json", payloads["manifest.json"])
     write_changed(ROOT / "build/sdk/catalog.rs", ("\n".join(lines) + "\n").encode())
-    archive = ROOT / "builds/InfintySDK.tar.gz"
+    archive = ROOT / "builds/InfinitySDK.tar.gz"
     archive.parent.mkdir(exist_ok=True)
     temporary = archive.with_suffix(".tmp")
     with temporary.open("wb") as stream, gzip.GzipFile(filename="", fileobj=stream, mode="wb", mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode="w") as tar:
             for relative, data in sorted(payloads.items()):
-                info = tarfile.TarInfo("InfintySDK/" + relative)
+                info = tarfile.TarInfo("InfinitySDK/" + relative)
                 info.size, info.mode, info.mtime = len(data), 0o644, 0
                 tar.addfile(info, io.BytesIO(data))
     temporary.replace(archive)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     write_changed(archive.with_suffix(archive.suffix + ".sha256"), f"{digest}  {archive.name}\n".encode())
+    # Retire only the packager's identifiable old generated archive, never an
+    # arbitrary file stored under that name. Do so after publishing its successor.
+    legacy = archive.with_name("InfintySDK.tar.gz")
+    if legacy.is_file() and not legacy.is_symlink():
+        with tarfile.open(legacy, "r:gz") as old:
+            if json.load(old.extractfile("InfintySDK/manifest.json")).get("root") != "/InfintySDK":
+                raise ValueError("Unrecognized legacy SDK archive; not removed")
+        legacy.unlink()
+        receipt = legacy.with_suffix(".gz.sha256")
+        if receipt.is_file() and not receipt.is_symlink() and receipt.read_text().strip().endswith("  InfintySDK.tar.gz"):
+            receipt.unlink()
     print(f"SDK {manifest['version']}: {len(payloads)} files, {len(entries)} namespace entries; {archive}")
 
 if __name__ == "__main__":

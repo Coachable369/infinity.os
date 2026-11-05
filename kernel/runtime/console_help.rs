@@ -3,6 +3,12 @@ use super::{console_language as language, console_execution::{Bytes, OUTPUT_BYTE
 pub struct Entry { pub name: &'static [u8], pub usage: &'static [u8], pub description: &'static [u8] }
 macro_rules! entry { ($n:literal,$u:literal,$d:literal) => { Entry{name:$n,usage:$u,description:$d} }; }
 pub static COMMANDS: &[Entry] = &[
+    entry!(b"PATH",b"PATH | PATH=$PATH;/another/directory",b"Show or replace this session's semicolon-separated script search directories. Default: /System."),
+    entry!(b"motd",b"motd | motd set MESSAGE",b"Read /System/motd, or customize the terminal greeting as an administrator."),
+    entry!(b"grep",b"grep [-in] PATTERN [FILE ...]",b"Print matching lines; -i ignores case, -n includes line numbers. Without files, read stdin."),
+    entry!(b"sed",b"sed 's/pattern/replacement/g' [FILE ...]",b"Print transformed lines. Omit g to replace only the first match on each line."),
+    entry!(b"awk",b"awk [-F SEP] '{print $1,$2}' [FILE ...]",b"Print numbered fields, the whole record ($0), NR or NF."),
+    entry!(b"figlet",b"figlet [-f standard|small] [-o FILE] TEXT",b"Render ASCII letters using a packaged FIGfont. -o creates a new personal text object."),
     entry!(b"help",b"help [commands|DOMAIN|DOMAIN ACTION|COMMAND|search WORD]",b"Explore the registered command catalog. Enter/Space advances local pages; Esc ends paging."),
     entry!(b"top",b"top",b"Live local process monitor: use arrows to select, p to pause or resume, k to end, r to relaunch a built-in app, q to return."),
     entry!(b"ipconfig",b"ipconfig [--all]",b"All native interfaces, link state, MAC, MTU, IP/prefix, gateway, DNS and traffic counters. Read only."),

@@ -6,7 +6,7 @@ speaker or text-to-speech binding that the application SDK does not yet expose.
 
 ## Quick start: generate a real WAV
 
-Copy `/InfintySDK/Examples/Python/audio_tone.py` to Documents, open it in Text
+Copy `/InfinitySDK/Examples/Python/audio_tone.py` to Documents, open it in Text
 Editor and press Run. The script writes `infinity-tone.wav` in its working
 directory and prints that path. It generates a 0.5-second, 440 Hz, mono, 16-bit
 PCM WAV at 16 kHz using only Python's standard library. No pip packages, network

@@ -6,14 +6,14 @@ bounded startup selector, interactive Infinity Console, and typed Intent Runtime
 
 ## Application SDK
 
-Every installed system exposes the shared, read-only `/InfintySDK` package to
+Every installed system exposes the shared, read-only `/InfinitySDK` package to
 all signed-in users. Start with its README and APIKit guide; copy examples into
 your Documents folder to edit and run them. UIKit uses the OS's authoritative
 Eclipse Precision assets and renderer. AIKit documents local-LLM action
 integration through the native application interaction API.
 
 Package an external copy with `./build-kit sdk-package`; verify it with
-`./build-kit sdk-tests`. The archive is `builds/InfintySDK.tar.gz`, with a SHA-256
+`./build-kit sdk-tests`. The archive is `builds/InfinitySDK.tar.gz`, with a SHA-256
 sidecar. See [SDK guide](sdk/distribution/README.md) and the versioned source
 catalog at `sdk/distribution/package.json`.
 

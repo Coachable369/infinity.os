@@ -1,6 +1,6 @@
 # UIKit quick start
 
-1. Copy `/InfintySDK/Examples/Python/counter.py` to your Documents folder.
+1. Copy `/InfinitySDK/Examples/Python/counter.py` to your Documents folder.
 2. Open it in Text Editor and press Run. A native Counter window appears with
    a display and two buttons. Click + and -; the value changes by one each time.
 3. Stop the app. Change the title in `ui.window`, save and run again. Change a
@@ -8,7 +8,7 @@
 4. Keep IDs 1 and 2 linked to their existing handler actions. Closing the window
    must exit the event loop; it must not leave a background busy loop.
 
-The equivalent C example is `/InfintySDK/Examples/C/counter.c`. The calculator
+The equivalent C example is `/InfinitySDK/Examples/C/counter.c`. The calculator
 example adds a larger grid of controls. These use the same OS renderer and
 current theme as system applications; they do not recreate the theme in Python.
 

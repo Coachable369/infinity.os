@@ -2,7 +2,7 @@
 
 ## Python quick start
 
-Copy `/InfintySDK/Examples/Python/counter.py` to your Documents folder, open the
+Copy `/InfinitySDK/Examples/Python/counter.py` to your Documents folder, open the
 copy in Text Editor, and press Run. Stop terminates the running program; Restart
 runs the saved script again. Keep your program's editable source in your own
 workspace, not in the SDK. `import infinity` binds to native OS services.
@@ -14,7 +14,7 @@ acknowledgements are not forgotten. Return true only when an action was applied.
 
 ## C quick start
 
-Copy `/InfintySDK/Examples/C/counter.c` into Documents and open it in Text Editor.
+Copy `/InfinitySDK/Examples/C/counter.c` into Documents and open it in Text Editor.
 Run uses the installed native compiler/linker and application lifecycle service.
 Use `<infinity/app.h>` for the grid application helper; its implementation and
 dependencies are included in APIKit. The installed compiler supplies its native

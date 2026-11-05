@@ -819,6 +819,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.attach_record(b"/system/settings/shell/profiles", shell_profiles)?;
         // Seed only while formatting a new store, never while mounting an
         // existing one: the example is an ordinary, user-owned document.
+        let motd=self.create_record(b"motd",ObjectType::Text,Space::System)?;
+        self.write_record(motd,b"Infinity Command Window\nType help or describe what you want.")?;
+        self.attach_record(b"/System/motd",motd)?;
         let hello = self.create_record(b"hello.c", ObjectType::Text, Space::Personal)?;
         self.write_record(hello, include_bytes!("../../sdk/c/examples/hello.c"))?;
         self.attach_record(b"/home/default/documents/hello.c", hello)?;

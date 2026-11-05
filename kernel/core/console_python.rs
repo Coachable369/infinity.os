@@ -23,6 +23,7 @@ impl Snapshot {
     const EMPTY: Self = Self { path: [0; 95], path_len: 0, bytes: [0; LIMIT], len: 0, object: [0; 16], version: 0 };
 }
 struct Job {
+    tool_export: Option<crate::runtime::object_navigation::ByteText<96>>,
     monitor:Option<crate::runtime::execution::ContextHandle>,
     task: Option<Task>, owner: SecurityIdentity,
     files: [Snapshot; 8], count: usize,
@@ -56,7 +57,7 @@ struct Generated {
 }
 static mut MONITOR_SAMPLE_NS:u64=0;
 static mut MONITOR_RESUME_NS:u64=0;
-static mut JOB: Job = Job { monitor:None, task: None, owner: SecurityIdentity([0; 16]),
+static mut JOB: Job = Job { tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
     filesystem: Vfs::new(), data: app_data::Data::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false,
@@ -168,6 +169,7 @@ fn snapshot(target: &mut Snapshot, path: &[u8], user: [u8; 16]) -> Result<(), &'
 // DESC: Starts each invocation from the current user's committed archive with no inherited staged writes or previous-user files.
 // ------------------=
 fn prepare_packages(console: &ConsoleRuntime, job: &mut Job, writable: bool) -> Result<(), &'static [u8]> {
+    job.tool_export=None;
     job.network.reset(SecurityIdentity(console.current_session.0), false);
     job.extensions.clear();
     job.child.clear();
@@ -293,6 +295,10 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
     if let Some(bytes)=candidate {if bytes.len()>LIMIT{return Err(b"Repair exceeds Python source limit.");}
         job.files[0].bytes[..bytes.len()].copy_from_slice(bytes);job.files[0].len=bytes.len();}
     job.count = 1;
+    if crate::runtime::native_python_scope::system_script(path) {
+        job.filesystem.mount_readonly(path,&job.files[0].bytes[..job.files[0].len]).map_err(|_|b"Cannot mount system tool.".as_slice())?;
+        return start_system_tool(console,job,path,arguments);
+    }
     let slash = path.iter().rposition(|b| *b == b'/').unwrap_or(0);
     let directory = if slash == 0 { b"/".as_slice() } else { &path[..slash] };
     for index in 0..256 {
@@ -317,13 +323,111 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
 }
 
 // ------------------------=
+// FUNC: export_allowed
+// DESC: Restricts new output to an active user's personal directory and never replaces existing objects.
+// ------------------=
+fn export_allowed(console:&ConsoleRuntime,path:&[u8])->bool {
+    if !console.workplace_authorized(true)||path.len()>95||crate::storage::namespace_resolve(path).is_ok(){return false;}
+    let Ok(parent)=crate::runtime::object_navigation::parent_path(path) else{return false;};
+    crate::storage::object_inspect_path(parent.as_bytes()).is_ok_and(|(m,_)|
+        m.kind==crate::storage::object::ObjectType::NamespaceNode && m.space==crate::storage::object::Space::Personal &&
+        (m.owner.0==console.current_user.0 || m.owner.0==[0;16] && parent.as_bytes()==b"/home/default/documents"))
+}
+
+// ------------------------=
+// FUNC: start_system_tool
+// DESC: Mounts only named, authorized object snapshots and publishes FIGlet output only after successful execution.
+// ------------------=
+unsafe fn start_system_tool(console:&ConsoleRuntime,job:&mut Job,path:&[u8],arguments:&[&[u8]])->Result<(),&'static [u8]> {
+    use crate::runtime::object_navigation::ByteText;
+    let mut names=[ByteText::<96>::empty();32];let mut argv=[b"".as_slice();32];
+    if arguments.len()>argv.len(){return Err(b"Too many arguments.");}
+    argv[..arguments.len()].copy_from_slice(arguments);
+    if path==b"/System/figlet.py" {
+        for font in [b"/System/standard.flf".as_slice(),b"/System/small.flf"] {
+            let (_,n)=crate::storage::object_read_path(font,None,&mut job.archive).map_err(|_|b"Missing FIGfont.".as_slice())?;
+            job.filesystem.mount_readonly(font,&job.archive[..n]).map_err(|_|b"Cannot mount FIGfont.".as_slice())?;
+        }
+        let mut i=2;
+        while i<arguments.len() {
+            if arguments[i]==b"--"{break;}
+            if matches!(arguments[i],b"-o"|b"--output"){
+                let dest=arguments.get(i+1).and_then(|p|console.utility_path(p)).filter(|p|export_allowed(console,p.as_bytes()))
+                    .ok_or(b"Use -o with a new file in your personal directory.".as_slice())?;
+                job.tool_export=Some(dest);argv[i+1]=b"/tmp/figlet.txt";i+=2;
+            } else if let Some(file)=arguments[i].strip_prefix(b"--output=").or_else(||arguments[i].strip_prefix(b"-o").filter(|p|!p.is_empty())){
+                let dest=console.utility_path(file).filter(|p|export_allowed(console,p.as_bytes()))
+                    .ok_or(b"Output must be a new file in your personal directory.".as_slice())?;
+                job.tool_export=Some(dest);argv[i]=b"--output=/tmp/figlet.txt";i+=1;
+            } else {i+=1;}
+        }
+    }else{
+        let mut program=false;let mut skip_separator=false;let mut options=true;
+        for (i,&word) in arguments.iter().enumerate().skip(2){
+            if skip_separator{skip_separator=false;continue;}
+            if options && word==b"--"{options=false;continue;}
+            if options && path==b"/System/awk.py" && word==b"-F"{skip_separator=true;continue;}
+            if options && word.starts_with(b"-") && word!=b"-"{continue;}
+            if !program{program=true;continue;}
+            if word==b"-"{continue;}
+            let name=console.utility_path(word).ok_or(b"Invalid input filename.".as_slice())?;
+            let (m,_)=crate::storage::object_inspect_path(name.as_bytes()).map_err(|_|b"Input file not found.".as_slice())?;
+            if !crate::runtime::native_python_scope::readable(m.owner.0,console.current_user.0,
+                m.space==crate::storage::object::Space::Personal,name.as_bytes()) && name.as_bytes()!=b"/System/motd" {return Err(b"Input file is not readable by this user.");}
+            if job.filesystem.read(name.as_bytes()).is_err() {
+                let (id,n)=crate::storage::object_read_path(name.as_bytes(),Some(m.current_version),&mut job.archive)
+                    .map_err(|_|b"Input file exceeds snapshot limit or is unavailable.".as_slice())?;
+                if id!=m.object.id{return Err(b"Input changed; retry.");}
+                job.filesystem.mount_readonly(name.as_bytes(),&job.archive[..n]).map_err(|_|b"Input exceeds Python mount quota.".as_slice())?;
+            }
+            names[i]=name;
+        }
+        for (i,name) in names.iter().enumerate().take(arguments.len()){
+            if !name.as_bytes().is_empty(){argv[i]=name.as_bytes();}
+        }
+    }
+    start_task(console,job,&argv[..arguments.len()])
+}
+
+// ------------------------=
+// FUNC: path_command
+// DESC: Invokes a PATH-resolved Python program with bounded quoted arguments without spawning a host shell.
+// ------------------=
+pub(super) fn path_command(console:&mut ConsoleRuntime,line:&[u8])->bool {
+    let line=line.trim_ascii();
+    let end=line.iter().position(u8::is_ascii_whitespace).unwrap_or(line.len());
+    let Some(path)=console.shell_script(&line[..end]) else{return false;};
+    let mut bytes=[0;super::COMMAND_CAPACITY];let mut spans=[(0,0);30];let mut count=0;
+    let mut cursor=end;let mut n=0;
+    while cursor<line.len(){
+        if line[cursor].is_ascii_whitespace(){cursor+=1;continue;}
+        if count==spans.len(){console.output.write_line(b"Too many arguments.");return true;}
+        let first=n;let mut quote=0;
+        while cursor<line.len(){
+            let b=line[cursor];cursor+=1;
+            if quote==0 && b.is_ascii_whitespace(){break;}
+            if quote==0 && matches!(b,39|34){quote=b;continue;}
+            if quote==b{quote=0;continue;}
+            if b==92 && quote==0 && cursor<line.len(){bytes[n]=line[cursor];cursor+=1;}
+            else{bytes[n]=b;}n+=1;
+        }
+        if quote!=0{console.output.write_line(b"Unclosed quote.");return true;}
+        spans[count]=(first,n);count+=1;
+    }
+    let mut args=[b"".as_slice();32];args[0]=b"/system/python";args[1]=path.as_bytes();
+    for (i,&(a,b)) in spans[..count].iter().enumerate(){args[i+2]=&bytes[a..b];}
+    if let Err(e)=unsafe{start(console,path.as_bytes(),&args[..count+2],None)} {console.output.write_line(e);}
+    true
+}
+
+// ------------------------=
 // FUNC: start_task
 // DESC: Admits one native CPython process with a unique process identity while retaining immutable input snapshots between validation and launch.
 // ------------------=
 unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]]) -> Result<(), &'static [u8]> {
     let generated_run=arguments.get(1)==Some(&b"-m".as_slice())
         && arguments.get(2)==Some(&b"_infinity_generated_run".as_slice());
-    let application=!job.pip&&!arguments.contains(&b"-c".as_slice())
+    let application=!job.pip&&!arguments.get(1).is_some_and(|p|crate::runtime::native_python_scope::system_script(p))&&!arguments.contains(&b"-c".as_slice())
         && !arguments.get(1).is_some_and(|arg|matches!(*arg,b"--version"|b"-V"|b"--help"|b"-h"));
     if application&&crate::runtime::ai::application_host::context().is_some(){return Err(b"python: another native application is running; stop it before launching this app.");}
     if application && job.count > 0 && arguments.get(if generated_run {3}else{1}).copied() == Some(&job.files[0].path[..job.files[0].path_len]) {
@@ -881,6 +985,16 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     memory_mut().monitor_limit(true,native_owner.0,u64::MAX);
     if let Some(h)=job.monitor.take(){crate::runtime::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=0;}});}
     let cleanup = job.task.take().unwrap().release(memory_mut()).is_ok();
+    if let Some(path)=job.tool_export.take() {
+        if authorized && cleanup && result==State::Exited(0) {
+            let saved=export_allowed(console,path.as_bytes()) && job.filesystem.read(b"/tmp/figlet.txt").ok().is_some_and(|bytes|{
+                let name=path.as_bytes().rsplit(|b|*b==b'/').next().unwrap_or(&[]);
+                crate::storage::object_create_owned_note_at(name,bytes,path.as_bytes(),crate::storage::object::ObjectId(console.current_user.0)).is_ok()
+            });
+            if saved {console.output.write_segments(&[b"Saved ",path.as_bytes()]);}
+            else {console.output.write_line(b"Could not create output object; existing files are never overwritten.");}
+        }
+    }
     let _ = crate::runtime::with_runtime(|runtime|job.gui.close(runtime,memory_mut()));
     job.gui_keyboard = false;
     if let Some(owned)=job.application.take(){

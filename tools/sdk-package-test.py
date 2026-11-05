@@ -12,12 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 # DESC: Validates every released file and compares runtime-exported bytes to archive members.
 # ------------------=
 def main():
-    with tarfile.open(ROOT / "builds/InfintySDK.tar.gz") as tar:
-        manifest = json.load(tar.extractfile("InfintySDK/manifest.json"))
-        assert manifest["root"] == "/InfintySDK"
-        expected = {"InfintySDK/manifest.json"}
+    with tarfile.open(ROOT / "builds/InfinitySDK.tar.gz") as tar:
+        manifest = json.load(tar.extractfile("InfinitySDK/manifest.json"))
+        assert manifest["root"] == "/InfinitySDK"
+        expected = {"InfinitySDK/manifest.json"}
         for record in manifest["files"]:
-            name = "InfintySDK/" + record["path"]
+            name = "InfinitySDK/" + record["path"]
             expected.add(name)
             data = tar.extractfile(name).read()
             assert len(data) == record["size"]
@@ -25,9 +25,9 @@ def main():
             assert data == (ROOT / record["source"]).read_bytes()
             assert data == (ROOT / "build/tests/sdk-export" / record["path"]).read_bytes()
         assert set(tar.getnames()) == expected
-        catalog = json.load(tar.extractfile("InfintySDK/Examples/catalog.json"))
+        catalog = json.load(tar.extractfile("InfinitySDK/Examples/catalog.json"))
         assert catalog["version"] == 1 and catalog["root"] == manifest["root"]
-        assert "InfintySDK/" + catalog["instructions"] in expected
+        assert "InfinitySDK/" + catalog["instructions"] in expected
         identities = set()
         languages = set()
         for example in catalog["examples"]:
@@ -38,8 +38,8 @@ def main():
             assert example["permission"] in ("none", "camera", "network")
             assert example["capabilities"] and example["expected"]
             for field in ("source", "instructions", "reference"):
-                assert "InfintySDK/" + example[field] in expected
-                assert tar.extractfile("InfintySDK/" + example[field]).read()
+                assert "InfinitySDK/" + example[field] in expected
+                assert tar.extractfile("InfinitySDK/" + example[field]).read()
             assert example["source"].endswith(".py" if example["language"] == "python" else ".c")
         assert languages == {"python", "c"}
         assert len(identities) == 11

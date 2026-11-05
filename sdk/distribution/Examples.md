@@ -1,7 +1,7 @@
 # Examples for intent-driven development
 
 `catalog.json` is the machine-readable selection index. Paths are relative to
-`/InfintySDK`. Read root and language `AGENTS.md` instructions before adapting
+`/InfinitySDK`. Read root and language `AGENTS.md` instructions before adapting
 an example. Copy files into your workspace; never modify the installed SDK.
 
 | Request or task | Starting point | Adaptation and acceptance |

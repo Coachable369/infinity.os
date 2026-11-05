@@ -1,7 +1,7 @@
 # Python application agent instructions
 
-Read `/InfintySDK/AGENTS.md` first. Start from a relevant Python entry in
-`/InfintySDK/Examples/catalog.json`; copy it into the user's workspace.
+Read `/InfinitySDK/AGENTS.md` first. Start from a relevant Python entry in
+`/InfinitySDK/Examples/catalog.json`; copy it into the user's workspace.
 
 - Use the native `infinity` module for UIKit and AI actions. Read its reference
   before choosing controls. Prefer bundled standard-library modules; do not

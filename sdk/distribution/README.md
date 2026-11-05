@@ -2,7 +2,7 @@
 
 Native application development for InfinityOS — SDK version 1.0.0.
 
-Open `/InfintySDK` in File Navigator on either ARM64 or x86_64. This spelling
+Open `/InfinitySDK` in File Navigator on either ARM64 or x86_64. This spelling
 is the public installation path. The SDK is available to every signed-in user,
 read-only and versioned with the operating system. Copy individual examples to
 your Documents folder before editing or running them. Updating the OS updates
@@ -43,7 +43,7 @@ Each kit has a starting guide and reference: `APIKit/GettingStarted.md` and
 and list expected outcomes, permission requirements and troubleshooting steps.
 
 The archive distribution has the same relative paths and bytes as the installed
-SDK. `./build-kit sdk-package` creates `builds/InfintySDK.tar.gz` and its checksum.
+SDK. `./build-kit sdk-package` creates `builds/InfinitySDK.tar.gz` and its checksum.
 The source catalog is `sdk/distribution/package.json`; copied documentation is
 not a second implementation of UIKit. Native applications use the installed OS
 renderer, fonts and current theme rather than drawing their own window chrome.

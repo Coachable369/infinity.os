@@ -15,4 +15,7 @@ fn main() {
     assert!(!scope::readable(user, user, false, path));
     assert!(!scope::readable([0; 16], user, true, b"/system/private"));
     assert!(!scope::readable([0; 16], user, true, b"/home/default/documents-other/hello.py"));
+    assert!(scope::readable([0;16],user,false,b"/System/figlet.py"));
+    assert!(!scope::readable([0;16],user,false,b"/System/private.py"));
+    assert!(!scope::readable([2;16],user,false,b"/System/grep.py"));
 }

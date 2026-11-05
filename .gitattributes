@@ -1,1 +1,2 @@
 third_party/patches/**/*.patch -whitespace
+sdk/system/*.flf binary

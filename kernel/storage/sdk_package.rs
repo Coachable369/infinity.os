@@ -16,7 +16,8 @@ include!("../../build/sdk/catalog.rs");
 // DESC: Reserves the complete SDK subtree against persistent namespace shadowing.
 // ------------------=
 pub fn owns(path: &[u8]) -> bool {
-    path == b"/InfintySDK" || path.starts_with(b"/InfintySDK/")
+    path == b"/InfinitySDK" || path.starts_with(b"/InfinitySDK/")
+        || path==b"/System" || (path.starts_with(b"/System/") && resolve(path).is_some())
 }
 
 // ------------------------=

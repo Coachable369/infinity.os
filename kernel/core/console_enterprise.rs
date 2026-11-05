@@ -240,6 +240,7 @@ impl ConsoleRuntime {
         let preview=crate::ui::file_preview::current();
         if preview.open && (!active || preview.owner!=self.current_session.0) {self.end_surface_task(crate::runtime::task_manager::IMAGE_PREVIEW);crate::ui::file_preview::close();}
         if self.workplace_session!=self.current_session.0 {
+            self.shell_path=super::shell_tools::default_path();
             crate::ui::file_preview::set_desktop_files([crate::ui::file_preview::EMPTY_FILE;16]);
             clipboard_menu::close();
             self.command_history=work::History::new();self.workplace_session=self.current_session.0;
@@ -328,7 +329,25 @@ impl ConsoleRuntime {
                 }
             },
             ConsoleKey::Tab(false)=>{
+                if self.complete_shell_path() {return true;}
+                let _capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
                 let mut c=work::Completion::new(&self.command[..self.command_length]);
+                if !self.command[..self.command_length].contains(&b' ') {
+                    for dir in self.shell_path.as_bytes().split(|&b|b==b';').filter(|dir|!dir.is_empty()){
+                        let Some(path)=self.utility_path(dir) else{continue;};
+                        for i in 0..crate::storage::object::PUBLIC_NAMESPACE_CAPACITY {
+                            let Ok(Some(item))=crate::storage::namespace_list_nth(path.as_bytes(),i) else{break;};
+                            let full=&item.path[..item.path_len as usize];
+                            if !crate::runtime::object_navigation::is_immediate_namespace_child(path.as_bytes(),full){continue;}
+                            let Some(name)=full.rsplit(|&b|b==b'/').next().and_then(|n|n.strip_suffix(b".py")) else{continue;};
+                            if name.starts_with(&self.command[..self.command_length]) && crate::storage::object_inspect_path(full)
+                                .is_ok_and(|(m,_)|crate::runtime::native_python_scope::readable(m.owner.0,self.current_user.0,
+                                m.space==crate::storage::object::Space::Personal,full)){
+                                c.offer(name);self.output.write_line(name);
+                            }
+                        }
+                    }
+                }
                 for command in work::COMMANDS {c.offer(command);}
                 for op in crate::runtime::console_language::OPERATIONS {
                     let mut name=[0;work::INPUT];let n=op.domain.len();let m=op.action.len();

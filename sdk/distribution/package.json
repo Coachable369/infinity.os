@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "root": "/InfintySDK",
+  "root": "/InfinitySDK",
   "files": {
     "AGENTS.md": "sdk/distribution/Agents.md",
     "Examples/README.md": "sdk/distribution/Examples.md",

@@ -1,7 +1,7 @@
 # C application agent instructions
 
-Read `/InfintySDK/AGENTS.md` first. Select a C example from
-`/InfintySDK/Examples/catalog.json` and inspect its referenced headers.
+Read `/InfinitySDK/AGENTS.md` first. Select a C example from
+`/InfinitySDK/Examples/catalog.json` and inspect its referenced headers.
 
 - Use `<infinity/app.h>` for grid applications or documented UIKit/interaction
   APIs for custom layout. Do not redefine SDK types or helper functions.

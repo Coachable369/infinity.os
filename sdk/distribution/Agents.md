@@ -1,6 +1,6 @@
 # InfinityOS application development agents
 
-These instructions govern applications developed using `/InfintySDK`, not the
+These instructions govern applications developed using `/InfinitySDK`, not the
 OS repository's build process. Read this file, then the relevant language's
 `Examples/Python/AGENTS.md` or `Examples/C/AGENTS.md`. The SDK is read-only;
 copy source into the user's workspace before editing. Never edit SDK originals.
