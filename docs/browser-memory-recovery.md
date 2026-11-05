@@ -35,11 +35,29 @@ Verification entrypoints:
 - `./build-kit browser-core-tests`: state/error projections and private-image restore.
 - `./build-kit run python3 tools/servo-platform-probe/run-component-guest.py --recovery`:
   actual component allocation aborts, two fresh starts, navigation and pixels.
-- `./build-kit run python3 tools/servo-platform-probe/run-memory-guest.py --std-probe`:
+- `./build-kit browser-native-memory-tests`:
   native allocation accounting, alignment, realloc failure/preservation and reclamation.
-- `./build-kit run make https-service-test`: cancellation/loan draining and stale-handle isolation.
+- `./build-kit https-service-tests`: cancellation/loan draining and stale-handle isolation.
 - Installed browser harness `--memory-recovery`: real oversized canvas allocations,
   followed by new-address navigation and rendering on a detached installed system.
 
 These entrypoints describe coverage; individual execution receipts determine what
 has actually passed. ISO packaging alone is not installed-system evidence.
+
+Recorded results (2026-11-04):
+- Core behavioral checks passed: `builds/manifests/20261105T001446843298Z-84263.json`.
+- ARM native component recovery passed: `builds/manifests/20261105T002603924161Z-85907.json`;
+  complete receipt in `builds/validation/browser-component-recovery-03.log`.
+  Two real allocation aborts returned failure 4, each followed by a fresh engine.
+  The third engine navigated to a different rendered page and shut down normally.
+  Reserved memory did not grow across the two failed generations.
+- The separate broad component scenario stopped at its tab-selection-after-download
+  expectation before reaching memory recovery. It is not passing regression evidence.
+- ARM freestanding allocation checks passed:
+  `builds/manifests/20261105T005501137613Z-36725.json`. Alignment, exact large-block
+  reservation, realloc preservation/failure, and complete reclamation were exercised.
+- Native network actor lifecycle checks passed:
+  `builds/manifests/20261105T005556421577Z-36996.json`. Cancelled loans drain before
+  restart and stale handles cannot cancel a subsequent request.
+- Native component execution is not installed-desktop acceptance. Installed recovery
+  remains pending.
