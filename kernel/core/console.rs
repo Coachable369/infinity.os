@@ -2049,11 +2049,17 @@ impl ConsoleRuntime {
         );
         let point_x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
         let point_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
-        let performance_left = geometry.window.x + 220 * scale;
+        let terminal_header=self.command_terminal_visible() && !crate::ui::terminal_edit::inspect(|s|s.active);
+        let header=crate::ui::command_terminal::Layout::header_menus(geometry.toolbar,scale as usize)[2];
+        let label_left=if terminal_header {header.x} else {geometry.window.x+220*scale};
+        let label_width=if terminal_header {header.width as i32} else {110*scale};
+        let performance_left=if terminal_header {
+            crate::ui::command_terminal::Layout::performance_panel_left(geometry.toolbar,scale as usize)
+        } else {label_left};
         if point_y >= geometry.window.y
             && point_y < geometry.window.y + 42 * scale
-            && point_x >= performance_left
-            && point_x < performance_left + 110 * scale
+            && point_x >= label_left
+            && point_x < label_left + label_width
         {
             self.shell_menu = if self.shell_menu == 20 { 0 } else { 20 };
             return true;

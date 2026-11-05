@@ -4,12 +4,18 @@ use super::editor_tools::preferences::Preferences;
 pub const ROWS: usize = 256;
 pub const COLS: usize = 1024;
 pub const INPUT: usize = 512;
+pub const BACKGROUNDS: &[(&[u8], (u8,u8,u8))] = &[
+    (b"Scheme default", (0,0,0)), (b"Black", (0,0,0)),
+    (b"Midnight", (9,15,38)), (b"Graphite", (32,33,36)),
+    (b"Deep teal", (8,33,36)), (b"Plum", (34,20,42)),
+];
+pub const PREFERENCE_ROWS: usize = 8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Position { pub row: u64, pub column: usize }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Menu { None, Appearance, Schemes, Fonts, Sizes, Clipboard }
 pub struct State {
-    pub row_override:usize,pub column_override:usize,pub opacity:u8,
+    pub row_override:usize,pub column_override:usize,pub opacity:u8,pub background:u8,
     pub help:bool,pub help_detail:bool,pub help_selected:usize,
     pub remote:bool,pub setting_value:usize,pub setting_edit:bool,
     lines: [[u8; COLS]; ROWS], lengths: [usize; ROWS],
@@ -30,7 +36,7 @@ impl State {
     // DESC: Initializes bounded storage without heap allocation or host services.
     // ------------------=
     pub const fn new() -> Self {
-        Self { row_override:0,column_override:0,opacity:255,help:false,help_detail:false,help_selected:0,remote:false,setting_value:0,setting_edit:false,lines:[[0;COLS];ROWS],lengths:[0;ROWS],first:0,count:0,stream_open:false,stream_cursor:0,escape:0,
+        Self { row_override:0,column_override:0,opacity:255,background:0,help:false,help_detail:false,help_selected:0,remote:false,setting_value:0,setting_edit:false,lines:[[0;COLS];ROWS],lengths:[0;ROWS],first:0,count:0,stream_open:false,stream_cursor:0,escape:0,
             owner:[0;16],authorized:false,capture:false,appearance:Preferences{scheme:1,font:2,size:3},revision:0,
             input:[0;INPUT],input_length:0,cursor:0,prompt:[0;256],prompt_length:0,
             scroll:0,columns:80,rows:24,selection:None,dragging:false,scroll_drag:false,grab:0,
@@ -59,7 +65,7 @@ impl State {
         if self.owner==owner && self.authorized==active {return false;}
         self.clear();self.owner=owner;self.authorized=active;self.capture=false;
         self.input.fill(0);self.input_length=0;self.cursor=0;self.prompt.fill(0);self.prompt_length=0;
-        self.help=false;self.remote=false;self.setting_edit=false;self.row_override=0;self.column_override=0;self.opacity=255;
+        self.help=false;self.remote=false;self.setting_edit=false;self.row_override=0;self.column_override=0;self.opacity=255;self.background=0;
         self.search=false;self.query.fill(0);self.query_length=0;self.menu=Menu::None;self.notice=b"";
         self.appearance=Preferences{scheme:1,font:2,size:3};self.click_position=None;self.clicks=0;
         active
@@ -253,10 +259,17 @@ impl State {
         self.changed();
     }
     // ------------------------=
+    // FUNC: background_color
+    // DESC: Resolves the terminal surface independently of its text and ANSI colors.
+    // ------------------=
+    pub fn background_color(&self)->(u8,u8,u8) {
+        if self.background == 0 {self.appearance.color(0)} else {BACKGROUNDS[self.background as usize].1}
+    }
+    // ------------------------=
     // FUNC: menu_count
     // DESC: Exposes only real executable menu entries.
     // ------------------=
-    pub fn menu_count(&self)->usize {match self.menu {Menu::None=>0,Menu::Appearance=>7,Menu::Schemes=>10,Menu::Fonts=>4,Menu::Sizes=>9,Menu::Clipboard=>5}}
+    pub fn menu_count(&self)->usize {match self.menu {Menu::None=>0,Menu::Appearance=>PREFERENCE_ROWS,Menu::Schemes=>10,Menu::Fonts=>4,Menu::Sizes=>9,Menu::Clipboard=>5}}
 }
 
 #[derive(Clone, Copy)]
@@ -279,6 +292,30 @@ impl Layout {
         let field=Rect{x:body.x+pad as i32,y:close.y,width:(previous.x-body.x-pad as i32-8*s as i32).max(0)as u32,height:close.height};
         let track=Rect{x:body.right()-10*s as i32,y:text.y,width:6*s as u32,height:text.height};
         Self{body,text,status,toolbar,appearance,find,clipboard,field,previous,next,close,track,cell,line,scale:s}
+    }
+    // ------------------------=
+    // FUNC: header_menus
+    // DESC: Shares File, Preferences and Performance label bounds between painting and pointer routing.
+    // ------------------=
+    pub fn header_menus(toolbar:Rect, scale:usize)->[Rect;3] {
+        let s=scale.max(1) as u32;
+        let end=toolbar.width.saturating_sub(112*s);
+        let start=end.saturating_sub(244*s).clamp(54*s,168*s).min(end);
+        let available=end-start;
+        let mut left=toolbar.x+start as i32;
+        [48u32,98,98].map(|nominal| {
+            let width=nominal*(available.min(244*s))/244;
+            let rect=Rect{x:left,y:toolbar.y-(48*s) as i32,width,height:48*s};
+            left+=width as i32;
+            rect
+        })
+    }
+    // ------------------------=
+    // FUNC: performance_panel_left
+    // DESC: Keeps the Performance menu within the window when its label is near the controls.
+    // ------------------=
+    pub fn performance_panel_left(toolbar:Rect,scale:usize)->i32 {
+        Self::header_menus(toolbar,scale)[2].x.min(toolbar.right()-(232*scale) as i32).max(toolbar.x)
     }
     // ------------------------=
     // FUNC: columns
@@ -313,10 +350,12 @@ impl Layout {
     // DESC: Bounds menus to the window and caps row height on short viewports.
     // ------------------=
     pub fn menu_rect(self,state:&State)->(Rect,usize) {
-        let row=(30*self.scale).min(self.body.height as usize/state.menu_count().max(1)).max(1);
+        let top=self.toolbar.y;
+        let available=(self.body.bottom()-top).max(1) as usize;
+        let row=(30*self.scale).min(available/state.menu_count().max(1)).max(1);
         let width=(236*self.scale).min(self.body.width as usize);
-        let x=if state.menu==Menu::Clipboard{self.clipboard.x}else{self.appearance.x};
-        (Rect{x:x.min(self.body.right()-width as i32).max(self.body.x),y:self.body.y,width:width as u32,height:(row*state.menu_count())as u32},row)
+        let x=if state.menu==Menu::Clipboard{self.clipboard.x}else{Self::header_menus(self.toolbar,self.scale)[1].x};
+        (Rect{x:x.min(self.body.right()-width as i32).max(self.body.x),y:top,width:width as u32,height:(row*state.menu_count())as u32},row)
     }
 }
 static mut STATE: State=State::new();
@@ -364,23 +403,33 @@ impl State {
     pub fn settings(&self)->[u8;16] {
         let mut b=[0;16];b[..8].copy_from_slice(&self.appearance.encode());
         b[8..10].copy_from_slice(&(self.row_override as u16).to_le_bytes());
-        b[10..12].copy_from_slice(&(self.column_override as u16).to_le_bytes());b[12]=self.opacity;b[13]=1;b
+        b[10..12].copy_from_slice(&(self.column_override as u16).to_le_bytes());b[12]=self.opacity;b[13]=2;b[14]=self.background;b
     }
     // ------------------------=
     // FUNC: restore_settings
     // DESC: Validates bounded geometry and version before applying a stored preference record atomically.
     // ------------------=
     pub fn restore_settings(&mut self,b:&[u8])->bool {
-        if b.len()!=16||b[13..]!=[1,0,0]||b[12]<64{return false;}
+        if b.len()!=16 || b[12]<64 || b[15]!=0 {return false;}
+        let background=match (b[13],b[14]) {
+            (1,0)=>0,
+            (2,index) if (index as usize)<BACKGROUNDS.len()=>index,
+            _=>return false,
+        };
         let Some(p)=Preferences::decode(&b[..8])else{return false;};
         let rows=u16::from_le_bytes([b[8],b[9]])as usize;let cols=u16::from_le_bytes([b[10],b[11]])as usize;
-        if rows>96||cols>320{return false;}self.appearance=p;self.row_override=rows;self.column_override=cols;self.opacity=b[12];self.changed();true
+        if rows>96||cols>320{return false;}self.appearance=p;self.row_override=rows;self.column_override=cols;self.opacity=b[12];self.background=background;self.changed();true
     }
     // ------------------------=
     // FUNC: layout
     // DESC: Applies explicit grid limits within the available viewport; zero means measured automatic sizing.
     // ------------------=
     pub fn layout(&self,body:Rect,toolbar:Rect,scale:usize)->Layout {
+        let mut body=body;
+        if toolbar.height>0 && body.y>=toolbar.bottom() {
+            body.y-=toolbar.height as i32;
+            body.height+=toolbar.height;
+        }
         let mut g=Layout::new(body,toolbar,scale,self.appearance,self.search);
         if self.row_override!=0 {g.text.height=g.text.height.min((self.row_override*g.line)as u32);}
         if self.column_override!=0 {g.text.width=g.text.width.min((self.column_override*g.cell)as u32);}

@@ -14,7 +14,9 @@ the packaged InfinityEditor monospace library. No new icon or artwork is needed.
   row. Font advance and actual glyph height plus four pixels determine the grid.
 - The namespace prompt and editable command are the final logical transcript
   row, wrapping on the same grid as output. No bottom input field or nested card.
-- Quiet toolbar: appearance menu, generated search icon, clipboard menu. A
+- Title bar: File, Preferences and Performance in order. Preferences opens a
+  Precision dropdown directly below its label. The transcript uses the space
+  beneath the title bar. A
   restrained footer reports namespace and scroll position, never fake status.
 - Selection uses the selected scheme's selection color; search hits use its
   accent. Caret is a narrow high-contrast bar at the actual insertion position.
@@ -51,7 +53,8 @@ The viewport wraps and follows the document caret when the window resizes.
 
 Preferences uses the existing Precision menu surface. Up/Down selects the row;
 Left/Right adjusts, and Escape closes. Rows/Columns accept numeric typing and
-Enter to commit (0 restores automatic sizing). Background opacity never fades
+Enter to commit (0 restores automatic sizing). Background cycles between the scheme color and named dark surfaces independently
+of the font, scheme and opacity. Background opacity never fades
 text or compositor controls. Saved settings are isolated per user.
 
 SSH requests a VT100 pseudo-terminal, forwards keys immediately, and updates its

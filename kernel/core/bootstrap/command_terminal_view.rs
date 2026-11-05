@@ -28,8 +28,8 @@ impl DisplayDevice {
     pub(super) fn command_terminal_view(&mut self,body:Rect,toolbar:Rect,scale:usize) {
         let g=terminal::inspect(|s|s.layout(body,toolbar,scale));terminal::mutate(|s|s.reflow(g.columns(),g.rows()));terminal::publish_snapshot();
         terminal::inspect(|s|{
-            let mut canvas=Surface{display:self,body,opacity:s.opacity};if !s.remote {paint::content(&mut canvas,s,g,true);}
-            if s.remote {canvas.fill(body,s.appearance.color(0));crate::ui::terminal_vt::inspect(|t|{
+            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote {paint::content(&mut canvas,s,g,true);}
+            if s.remote {canvas.fill(g.body,s.background_color());crate::ui::terminal_vt::inspect(|t|{
                 for y in 0..t.rows.min(g.rows()){for x in 0..t.columns.min(g.columns()){
                     let c=t.cells[y][x];let mut fg=c.fg;let mut bg=c.bg;if c.inverse{core::mem::swap(&mut fg,&mut bg);}if c.bold&&fg<8{fg+=8;}
                     let r=Rect{x:g.text.x+(x*g.cell)as i32,y:g.text.y+(y*g.line)as i32,width:g.cell as u32,height:g.line as u32};
@@ -38,7 +38,7 @@ impl DisplayDevice {
                 if t.cursor_visible {canvas.fill(Rect{x:g.text.x+(t.x*g.cell)as i32,y:g.text.y+(t.y*g.line)as i32,width:2*scale as u32,height:g.line as u32},s.appearance.color(5));}
             });}
             if s.help {
-                canvas.fill(body,s.appearance.color(0));
+                canvas.fill(g.body,s.background_color());
                 let entries=crate::runtime::console_help::COMMANDS;
                 let e=&entries[s.help_selected.min(entries.len()-1)];
                 if s.help_detail {
@@ -59,8 +59,6 @@ impl DisplayDevice {
                 }
             }
         });
-        self.app_button_surface(g.appearance,false,0,false,scale);
-        self.app_label(g.appearance,b"Preferences",(225,240,249),false,scale);
         terminal::inspect(|s|{
             let mut status=[0u8;128];let mut text=crate::runtime::console_execution::Bytes::<128>::new();
             use core::fmt::Write;let _=write!(text,"{} columns x {} rows  |  {}",s.columns,s.rows,if s.remote{"SSH  Ctrl+] disconnect"}else{"Ctrl+, preferences"});
@@ -68,9 +66,9 @@ impl DisplayDevice {
             let n=text.bytes().len();status[..n].copy_from_slice(text.bytes());
             self.app_label(g.status,&status[..n],s.appearance.color(8),false,scale);
             if s.menu!=Menu::None {
-                let (rect,row)=g.menu_rect(s);self.app_card(rect,(16,27,58),(134,199,255),scale);
-                for i in 0..7 {let r=Rect{x:rect.x+6*scale as i32,y:rect.y+(i*row)as i32,width:rect.width.saturating_sub(12*scale as u32),height:row as u32};
-                    if i==s.menu_row{self.fill_rect_alpha(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize,62,111,255,100);}
+                let (rect,row)=g.menu_rect(s);self.app_dropdown_panel(rect,scale);
+                for i in 0..terminal::PREFERENCE_ROWS {let r=Rect{x:rect.x+6*scale as i32,y:rect.y+(i*row)as i32,width:rect.width.saturating_sub(12*scale as u32),height:row as u32};
+                    self.app_dropdown_row(r,i==s.menu_row,scale);
                     let mut b=crate::runtime::console_execution::Bytes::<128>::new();
                     match i {
                         0=>{b.write(b"Font: ");b.write(preferences::FONTS[s.appearance.font as usize]);},
@@ -79,8 +77,9 @@ impl DisplayDevice {
                         3=>{if s.setting_edit&&s.menu_row==3{let _=write!(b,"Rows: [{}] Enter",s.setting_value);}else if s.row_override==0{b.write(b"Rows: Auto");}else{let _=write!(b,"Rows: {}",s.row_override);}},
                         4=>{if s.setting_edit&&s.menu_row==4{let _=write!(b,"Columns: [{}] Enter",s.setting_value);}else if s.column_override==0{b.write(b"Columns: Auto");}else{let _=write!(b,"Columns: {}",s.column_override);}},
                         5=>{let _=write!(b,"Opacity: {}%",(s.opacity as usize*100+127)/255);},
+                        6=>{b.write(b"Background: ");b.write(terminal::BACKGROUNDS[s.background as usize].0);},
                         _=>b.write(b"Restore defaults"),
-                    }self.app_label(r,b.bytes(),(235,242,250),false,scale);
+                    }self.app_menu_label(Rect{x:r.x+6*scale as i32,width:r.width.saturating_sub(12*scale as u32),..r},b.bytes(),(235,242,250),scale);
                 }
             }
         });

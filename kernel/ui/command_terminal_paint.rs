@@ -28,7 +28,7 @@ pub fn raster_glyph(p:Preferences,b:u8,scale:usize,mut pixel:impl FnMut(usize,us
 // DESC: Paints soft-wrapped output, selections, search hits and the live inline prompt on one continuous grid.
 // ------------------=
 pub fn content(canvas:&mut impl Canvas,s:&State,g:Layout,caret:bool) {
-    let p=s.appearance;canvas.fill(g.body,p.color(0));
+    let p=s.appearance;canvas.fill(g.body,s.background_color());
     for visual in 0..g.rows() {
         let Some(start)=s.visual(s.top()+visual)else{break;};
         let y=g.text.y+(visual*g.line)as i32;

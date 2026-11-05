@@ -30,9 +30,26 @@ fn main(){
     let g=s.layout(body,toolbar,1);assert!(g.rows()>20);s.reflow(g.columns(),g.rows());
     for _ in 0..100{s.line(b"long retained output");}assert_eq!(s.count,100);assert!(s.max_scroll()>0);
     s.scroll_by(20);let anchor=s.visual(s.top()).unwrap();s.reflow(60,20);assert_eq!(s.visual(s.top()).unwrap().row,anchor.row);
-    s.row_override=18;s.column_override=65;s.opacity=190;let b=s.settings();let mut other=Box::new(State::new());assert!(other.restore_settings(&b));assert_eq!(other.settings(),b);
+    s.row_override=18;s.column_override=65;s.opacity=190;s.background=2;let b=s.settings();let mut other=Box::new(State::new());assert!(other.restore_settings(&b));assert_eq!(other.settings(),b);
     let g=s.layout(body,toolbar,1);assert_eq!((g.columns(),g.rows()),(65,18));let mut bad=b;bad[8]=255;assert!(!other.restore_settings(&bad));assert_eq!(other.settings(),b);
-    s.session([2;16],true);assert_eq!(s.count,0);assert_eq!(s.input_length,0);assert_eq!(s.opacity,255);
+    bad=b;bad[14]=255;assert!(!other.restore_settings(&bad));assert_eq!(other.settings(),b);
+    let mut legacy=b;legacy[13..].copy_from_slice(&[1,0,0]);assert!(other.restore_settings(&legacy));
+    assert_eq!(other.background,0);assert_eq!(other.opacity,190);assert_eq!(other.appearance,s.appearance);
+    for scale in [1,2] {
+        for width in [340,500,900] {
+            let bar=Rect{x:12,y:100*scale,width:width*scale as u32,height:42*scale as u32};
+            let headers=ui::command_terminal::Layout::header_menus(bar,scale as usize);
+            assert!(headers[0].right()<=headers[1].x && headers[1].right()<=headers[2].x);
+            assert!(headers[2].right()<=bar.right()-112*scale);
+            let content=Rect{x:bar.x+16*scale,y:bar.bottom()+12*scale,width:bar.width-32*scale as u32,height:220*scale as u32};
+            let layout=s.layout(content,bar,scale as usize);
+            s.menu=ui::command_terminal::Menu::Appearance;
+            let (panel,row)=layout.menu_rect(&s);
+            assert_eq!(panel.y,headers[1].bottom());assert!(panel.x>=bar.x && panel.right()<=bar.right());
+            assert_eq!(panel.height as usize,row*8);
+        }
+    }
+    s.session([2;16],true);assert_eq!(s.count,0);assert_eq!(s.input_length,0);assert_eq!(s.opacity,255);assert_eq!(s.background,0);
     s.append(b"Hello\rJ\n");assert_eq!(s.byte(Position{row:s.first,column:0}),b'J');
     let mut t=Box::new(Terminal::new());t.resize(10,5);t.feed(b"hello\r\nworld");assert_eq!((t.x,t.y),(5,1));
     t.feed(b"\x1b[");t.feed(b"2;3H\x1b[31mX");assert_eq!(t.cells[1][2].byte,b'X');assert_eq!(t.cells[1][2].fg,1);
@@ -70,7 +87,10 @@ fn render(){
     for scale in [1,2]{let mut s=State::new();s.session([1;16],true);for n in 0..22{s.line(format!("{:02}  Native Command Window | ASCII: +-----+  [] {{}} /home/alice",n+1).as_bytes());}s.publish(b"/home/alice",b"ssh fixture@remote",18);
         let body=Rect{x:0,y:0,width:1000*scale,height:700*scale};let g=s.layout(body,Rect::default(),scale as usize);s.reflow(g.columns(),g.rows());
         let mut image=Image{pixels:vec![0;body.width as usize*body.height as usize*3],width:body.width as usize,height:body.height as usize};ui::command_terminal_paint::content(&mut image,&s,g,true);
-        let bg=s.appearance.color(0);let mut ink_rows=0;
+        s.background=2;
+        ui::command_terminal_paint::content(&mut image,&s,g,true);
+        let bg=s.background_color();assert_eq!(bg,(9,15,38));assert_eq!(&image.pixels[..3],&[9,15,38]);
+        let mut ink_rows=0;
         for row in 0..g.rows(){let y=g.text.y as usize+row*g.line;let ink=(y..y+g.line).any(|y|(g.text.x as usize..g.text.right()as usize).any(|x|{let i=(y*image.width+x)*3;image.pixels[i..i+3]!=[bg.0,bg.1,bg.2]}));if ink{ink_rows+=1;}}
         assert!(ink_rows>6);let path=format!("build/command-terminal-{scale}x.ppm");let mut file=std::fs::File::create(path).unwrap();write!(file,"P6\n{} {}\n255\n",image.width,image.height).unwrap();file.write_all(&image.pixels).unwrap();
     }

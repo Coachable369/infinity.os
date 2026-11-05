@@ -2084,6 +2084,10 @@ impl super::DisplayDevice {
             }
             return;
         }
+        let terminal_header = screen==8 && crate::ui::installer_template::navigation::scene()==0
+            && !crate::ui::native_uikit::presentation().active && !crate::ui::terminal_edit::inspect(|s|s.active)
+            && crate::ui::command_terminal::inspect(|s|s.authorized);
+        let menus=crate::ui::command_terminal::Layout::header_menus(geometry.toolbar,scale);
         if !content_only {
             let (header_r, header_g, header_b) =
                 self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
@@ -2133,13 +2137,22 @@ impl super::DisplayDevice {
             self.ui_text_elided_strong(
                 left + 54 * scale,
                 top + 16 * scale,
-                if authored_window { width.saturating_sub(210 * scale) } else { 108 * scale },
+                if authored_window { width.saturating_sub(210 * scale) } else if terminal_header { (menus[0].x as usize).saturating_sub(left+58*scale).min(108*scale) } else { 108 * scale },
                 window_title,
                 231,
                 243,
                 250,
             );
-            if !authored_window { self.ui_text(
+            if terminal_header {
+                let prefs_open=crate::ui::command_terminal::inspect(|s|s.menu!=crate::ui::command_terminal::Menu::None);
+                for (index,(rect,label)) in menus.into_iter().zip([b"File".as_slice(),b"Preferences",b"Performance"]).enumerate() {
+                    if (index==1 && prefs_open) || (index==2 && app_menu==20) {
+                        self.app_dropdown_row(crate::ui::geometry::Rect{y:rect.y+8*scale as i32,height:32*scale as u32,..rect},true,scale);
+                    }
+                    let inset=6*scale as u32;
+                    self.app_menu_label(crate::ui::geometry::Rect{x:rect.x+inset as i32,width:rect.width.saturating_sub(inset),..rect},label,(221,233,241),scale);
+                }
+            } else if !authored_window { self.ui_text(
                 left + 174 * scale,
                 top + 16 * scale,
                 b"File",
@@ -2310,7 +2323,7 @@ impl super::DisplayDevice {
             return;
         }
         if screen==8 && self.terminal_edit_view(geometry.content,scale) {return;}
-        if screen==8 && crate::ui::command_terminal::inspect(|s|s.authorized) {self.command_terminal_view(geometry.content,geometry.toolbar,scale);if app_menu==20{self.desktop_native_performance_menu(left,top,screen,scale);}return;}
+        if screen==8 && crate::ui::command_terminal::inspect(|s|s.authorized) {self.command_terminal_view(geometry.content,geometry.toolbar,scale);if app_menu==20{self.desktop_native_performance_menu(crate::ui::command_terminal::Layout::performance_panel_left(geometry.toolbar,scale).max(0) as usize,top,screen,scale);}return;}
         if screen == 10 {
             self.render_task_manager_dashboard(
                 geometry,
@@ -2367,7 +2380,7 @@ impl super::DisplayDevice {
             );
         }
         if app_menu == 20 {
-            self.desktop_native_performance_menu(left, top, screen, scale);
+            self.desktop_native_performance_menu(left+220*scale, top, screen, scale);
         }
     }
 
@@ -2531,12 +2544,11 @@ impl super::DisplayDevice {
     // ------------------=
     fn desktop_native_performance_menu(
         &mut self,
-        left: usize,
+        menu_left: usize,
         top: usize,
         screen: u8,
         scale: usize,
     ) {
-        let menu_left = left + 220 * scale;
         let menu_top = top + 42 * scale;
         let menu_width = 232 * scale;
         self.app_dropdown_panel(crate::ui::geometry::Rect{x:menu_left as i32,y:menu_top as i32,

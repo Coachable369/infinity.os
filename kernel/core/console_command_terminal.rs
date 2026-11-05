@@ -53,7 +53,8 @@ impl ConsoleRuntime {
             3=>s.row_override=if s.row_override==0&&delta>0{24}else{(s.row_override as isize+delta).clamp(0,96)as usize},
             4=>s.column_override=if s.column_override==0&&delta>0{80}else{(s.column_override as isize+delta).clamp(0,320)as usize},
             5=>s.opacity=(s.opacity as isize+delta*13).clamp(64,255)as u8,
-            _=>{s.appearance=crate::ui::editor_tools::preferences::Preferences{scheme:1,font:2,size:3};s.row_override=0;s.column_override=0;s.opacity=255;}
+            6=>s.background=(s.background as isize+delta).rem_euclid(terminal::BACKGROUNDS.len() as isize) as u8,
+            _=>{s.background=0;s.appearance=crate::ui::editor_tools::preferences::Preferences{scheme:1,font:2,size:3};s.row_override=0;s.column_override=0;s.opacity=255;}
         }s.changed();});self.command_terminal_save();
     }
     // ------------------------=
@@ -62,7 +63,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn command_terminal_key(&mut self,key:ConsoleKey)->bool {
         if !self.command_terminal_visible()||crate::ui::terminal_edit::inspect(|s|s.active){return false;}
-        if matches!(key,ConsoleKey::Shortcut(b',')){terminal::mutate(|s|{s.menu=Menu::Appearance;s.menu_row=0;});return true;}
+        if matches!(key,ConsoleKey::Shortcut(b',')){self.shell_menu=0;terminal::mutate(|s|{s.menu=Menu::Appearance;s.menu_row=0;s.setting_edit=false;s.changed();});return true;}
         if terminal::inspect(|s|s.menu!=Menu::None){
             if terminal::inspect(|s|matches!(s.menu_row,3|4)) {
                 if let ConsoleKey::Character(b'0'..=b'9')=key {
@@ -76,8 +77,8 @@ impl ConsoleRuntime {
             }
             match key {
                 ConsoleKey::Escape=>terminal::mutate(|s|s.menu=Menu::None),
-                ConsoleKey::Up=>terminal::mutate(|s|s.menu_row=(s.menu_row+6)%7),
-                ConsoleKey::Down|ConsoleKey::Tab(false)=>terminal::mutate(|s|s.menu_row=(s.menu_row+1)%7),
+                ConsoleKey::Up=>terminal::mutate(|s|s.menu_row=(s.menu_row+terminal::PREFERENCE_ROWS-1)%terminal::PREFERENCE_ROWS),
+                ConsoleKey::Down|ConsoleKey::Tab(false)=>terminal::mutate(|s|s.menu_row=(s.menu_row+1)%terminal::PREFERENCE_ROWS),
                 ConsoleKey::Left=>self.command_terminal_adjust(-1),
                 ConsoleKey::Right|ConsoleKey::Enter=>self.command_terminal_adjust(1),
                 ConsoleKey::Character(b'0')=>{terminal::mutate(|s|{if s.menu_row==3{s.row_override=0;}if s.menu_row==4{s.column_override=0;}});self.command_terminal_save();}
@@ -112,12 +113,14 @@ impl ConsoleRuntime {
     pub(super) fn command_terminal_pointer(&mut self,clicked:bool,held:bool)->bool {
         if !self.command_terminal_visible()||crate::ui::terminal_edit::inspect(|s|s.active)||self.app_window_dragging{return false;}
         let l=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);let point=l.point(self.pointer_x,self.pointer_y);let g=self.command_terminal_layout();
-        if clicked&&g.appearance.contains(point){terminal::mutate(|s|{s.menu=if s.menu==Menu::None{Menu::Appearance}else{Menu::None};s.menu_row=0;});return true;}
+        let headers=Layout::header_menus(g.toolbar,g.scale);
+        if clicked&&headers[1].contains(point){self.shell_menu=0;terminal::mutate(|s|{s.menu=if s.menu==Menu::None{Menu::Appearance}else{Menu::None};s.menu_row=0;s.setting_edit=false;s.changed();});return true;}
         if terminal::inspect(|s|s.menu!=Menu::None)&&clicked {
             let (rect,row)=terminal::inspect(|s|g.menu_rect(s));
-            if rect.contains(point){terminal::mutate(|s|{s.menu_row=((point.y-rect.y)as usize/row).min(6);s.setting_edit=false;});self.command_terminal_adjust(1);}
-            else{terminal::mutate(|s|s.menu=Menu::None);}return true;
+            if rect.contains(point){terminal::mutate(|s|{s.menu_row=((point.y-rect.y)as usize/row).min(terminal::PREFERENCE_ROWS-1);s.setting_edit=false;});self.command_terminal_adjust(1);}
+            else{terminal::mutate(|s|{s.menu=Menu::None;s.setting_edit=false;s.changed();});return false;}return true;
         }
+        if self.shell_menu==20{return false;}
         if clicked&&g.text.contains(point){terminal::mutate(|s|{let at=g.at(point,s);s.selection=Some((at,at));s.dragging=true;s.changed();});return true;}
         if terminal::inspect(|s|s.dragging){terminal::mutate(|s|{if held{let at=g.at(point,s);if let Some((start,_))=s.selection{s.selection=Some((start,at));}}else{s.dragging=false;}s.changed();});return true;}false
     }
