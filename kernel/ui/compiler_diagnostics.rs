@@ -106,3 +106,33 @@ pub fn prioritize(input:&[u8],output:&mut [u8])->Projection {
     // already carries the full failed source and diagnostic location records.
     result
 }
+
+// ------------------------=
+// FUNC: source_lines
+// DESC: Resolves Clang file:line:column and Python traceback line numbers against the exact failed candidate.
+// ------------------=
+pub fn source_lines(diagnostics:&[u8],source:&[u8],output:&mut [u8])->usize {
+    let mut written=0;
+    let mut seen=[0usize;8];let mut count=0;
+    for record in diagnostics.split(|&b|b==b'\n'){
+        if count==seen.len(){break;}
+        let Ok(text)=core::str::from_utf8(record)else{continue;};
+        let python=text.split_once(", line ").and_then(|(_,n)|n.split(|c:char|!c.is_ascii_digit()).next()?.parse::<usize>().ok());
+        let clang=text.split_once(": error:").or_else(||text.split_once(": fatal error:")).and_then(|(location,_)|{
+            let mut fields=location.rsplit(':');fields.next()?.trim().parse::<usize>().ok()?;fields.next()?.trim().parse::<usize>().ok()
+        });
+        let Some(n)=python.or(clang)else{continue;};
+        if n==0||seen[..count].contains(&n){continue;}
+        let Some(line)=source.split(|&b|b==b'\n').nth(n-1)else{continue;};
+        let mut digits=[0u8;20];let mut start=digits.len();let mut v=n;
+        while v!=0{start-=1;digits[start]=b'0'+(v%10)as u8;v/=10;}
+        let room=output.len()-written;
+        if room<digits.len()-start+4{break;}
+        let len=line.len().min(192).min(room-(digits.len()-start+3));
+        for part in [&digits[start..],b": ",&line[..len],b"\n"]{
+            output[written..written+part.len()].copy_from_slice(part);written+=part.len();
+        }
+        seen[count]=n;count+=1;
+    }
+    written
+}

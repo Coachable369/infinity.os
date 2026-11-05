@@ -265,6 +265,11 @@ fn context_limit_continuation_boundary(ai:&mut AiRuntime) {
 // ------------------=
 fn repair_diagnostic_priority() {
     use ui::app_assistant::{compiler_diagnostics,Panel,GenerationStatus};
+    let mut excerpts=[0;64];
+    let n=compiler_diagnostics::source_lines(b"file.c:2:5: error: syntax\nfile.c:2:9: error: duplicate",b"first\nsecond\nthird",&mut excerpts);
+    assert_eq!(&excerpts[..n],b"2: second\n");
+    let n=compiler_diagnostics::source_lines(b"  File \"program.py\", line 3",b"first\nsecond\nthird",&mut excerpts);
+    assert_eq!(&excerpts[..n],b"3: third\n");
     let mut diagnostics=Vec::new();
     for _ in 0..5 {diagnostics.extend_from_slice(b"source.c:24:3: warning: ");diagnostics.extend_from_slice(&[b'w';300]);diagnostics.push(b'\n');}
     diagnostics.extend_from_slice(b"source.c:42:3: error: invalid argument count\n header.h:84:1: note: declared here\nsource.c:75:4: error: invalid operand types\n");

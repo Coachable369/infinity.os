@@ -33,7 +33,7 @@ impl DisplayDevice {
             132,
         );
         self.app_card_alpha(geometry.panel,(16,27,58),(134,199,255),230,scale);
-        self.launcher_close_control(geometry.close);
+        self.kit_close_control(geometry.close);
 
         }
 

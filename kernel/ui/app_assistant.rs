@@ -220,6 +220,7 @@ pub struct Panel {
     pub argument_len: usize,
     pub document_revision: u64,
     pub repair_attempts: u8,
+    pub failed_candidate_hash: u64,
     pub runtime_repair: bool,
     pub runtime_repair_noop: bool,
     pub repair_diagnostics: [u8; 1024],
@@ -336,7 +337,9 @@ impl Panel {
         self.repair_attempts += 1;
         self.repair_diagnostics_len = compiler_diagnostics::prioritize(diagnostics,&mut self.repair_diagnostics).bytes;
         self.document_revision = current_revision;
-        self.reset_delivery();
+        // Keep the exact failed candidate through construction of the next diagnostic prompt.
+        self.failed_candidate_hash=fingerprint(self.argument[..self.argument_len].trim_ascii_end(),0,None);
+        self.stream=generation_stream::Stream::new();self.pending=Action::None;
         self.generation = GenerationStatus::Queued;
         true
     }
@@ -522,7 +525,12 @@ impl Panel {
         if length > output.len() { return None; }
         let mut offset = 0;
         for part in parts { output[offset..offset+part.len()].copy_from_slice(part); offset += part.len(); }
-        Some(length)
+        let label=b"\nReferenced lines in this candidate (line: source):\n";
+        if output.len()-offset>label.len()+32 {
+            let n=compiler_diagnostics::source_lines(&self.repair_diagnostics[..self.repair_diagnostics_len],source,&mut output[offset+label.len()..]);
+            if n>0{output[offset..offset+label.len()].copy_from_slice(label);offset+=label.len()+n;}
+        }
+        Some(offset)
     }
     // ------------------------=
     // FUNC: propose_contextual
@@ -764,6 +772,7 @@ impl Panel {
             argument_len: 0,
             document_revision: 0,
             repair_attempts: 0,
+            failed_candidate_hash: 0,
             runtime_repair: false,
             runtime_repair_noop: false,
             repair_diagnostics: [0; 1024],

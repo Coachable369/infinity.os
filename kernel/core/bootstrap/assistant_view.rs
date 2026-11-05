@@ -69,7 +69,7 @@ impl super::DisplayDevice {
                 58,
                 85,
             );
-            self.app_button(g.close, b"x", false, s);
+            self.kit_close_control(g.close);
             let body_clip=self.render_clip;
             self.intersect_render_clip(g.body.x.max(0) as usize,g.body.y.max(0) as usize,g.body.width as usize,g.body.height as usize);
             let intro = if panel.response_len>0 {&panel.response[..panel.response_len]}

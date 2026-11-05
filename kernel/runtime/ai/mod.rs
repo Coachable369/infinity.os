@@ -1040,14 +1040,7 @@ impl AiRuntime {
         if let RequestRoute::Goal(id) = route {
             self.chat.begin_native_turn();
             let plan = self.intelligence.inspect(id, self.chat_owner);
-            let message = if plan
-                .is_some_and(|plan| plan.state == intelligence::PlanState::AwaitingApproval)
-            {
-                b"I created a bounded plan. One or more sensitive steps require your approval before execution.".as_slice()
-            } else {
-                b"I created a bounded plan using installed InfinityOS capabilities. Execution will continue asynchronously and report verified progress.".as_slice()
-            };
-            self.chat.update_native_response(message);
+            if let Some(plan)=plan {self.chat.update_native_response(plan_text(plan).bytes());}
             self.chat.generation_state = chat::GenerationState::Complete;
             return true;
         }
@@ -2045,8 +2038,7 @@ impl AiRuntime {
                 self.chat.update_native_response(message);self.chat.generation_state=chat::GenerationState::Complete;self.intelligence_goal=None;
             },
             intelligence::PlanState::Failed=>{self.cancel_app_turn();self.stop_application_agent();self.chat.update_native_response(b"The goal stopped at a failed or unavailable step. Completed verified steps were preserved.");self.chat.generation_state=chat::GenerationState::Failed;self.intelligence_goal=None;},
-            intelligence::PlanState::AwaitingApproval=>self.chat.update_native_response(b"The plan is ready, but a sensitive step requires your explicit approval."),
-            intelligence::PlanState::Executing=>self.chat.update_native_response(b"The plan is running through authorized native InfinityOS services."),
+            intelligence::PlanState::AwaitingApproval|intelligence::PlanState::Executing=>if let Some(plan)=self.intelligence.inspect(id,owner){self.chat.update_native_response(plan_text(plan).bytes());},
             _=>{},
         }true
     }
@@ -2234,4 +2226,18 @@ mod inquiry_tests {
         let mut value=[0;128];
         assert_eq!(ai.hermes_memory.as_ref().unwrap().get(b"interests",&mut value),Ok(0));
     }
+}
+
+// ------------------------=
+// FUNC: plan_text
+// DESC: Shows the actual authorized task sequence, including its current execution state.
+// ------------------=
+fn plan_text(plan:&intelligence::Plan)->crate::runtime::console_execution::Bytes<1024> {
+    use core::fmt::Write;
+    let mut out=crate::runtime::console_execution::Bytes::new();
+    out.write(if plan.state==intelligence::PlanState::AwaitingApproval{b"Plan (approval required):"}else{b"Plan:"});
+    for (i,task) in plan.tasks.iter().flatten().enumerate(){
+        let _=write!(out,"\n{}. ",i+1);out.write(task.description.as_bytes());let _=write!(out," ({:?})",task.state);
+    }
+    out
 }

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#[path="../kernel/ui/scroll_capture.rs"]pub mod scroll_capture;
 #[path="../kernel/ui/geometry.rs"]pub mod geometry;
 #[path="../kernel/ui/editor_preferences.rs"]pub mod preferences;
 #[path="../kernel/ui/command_terminal.rs"]pub mod command_terminal;
@@ -26,9 +27,15 @@ fn main(){
     }
     assert_eq!(font_pixels.len(),4);
     s.session([1;16],true);s.publish(b"/home/alice",b"status",6);
+    let local=s.prompt_length;s.publish_draft(b"/home/alice",b"",0,false);assert_eq!((s.prompt_length,s.input_length,s.cursor),(0,0,0));
+    s.publish(b"/home/alice",b"status",6);assert_eq!((s.prompt_length,s.cursor),(local,6));
     let body=Rect{x:0,y:40,width:1000,height:700};let toolbar=Rect{x:0,y:0,width:1000,height:40};
     let g=s.layout(body,toolbar,1);assert!(g.rows()>20);s.reflow(g.columns(),g.rows());
     for _ in 0..100{s.line(b"long retained output");}assert_eq!(s.count,100);assert!(s.max_scroll()>0);
+    let thumb=g.thumb(&s);let grab=geometry::Point{x:thumb.x,y:thumb.y+5};
+    assert!(g.track_pointer(&mut s,grab,true,true));assert_eq!(s.scroll,0);
+    assert!(g.track_pointer(&mut s,geometry::Point{x:-100,y:-100},false,true));assert_eq!(s.scroll,s.max_scroll());
+    assert!(g.track_pointer(&mut s,geometry::Point{x:-100,y:g.track.bottom()+50},false,false));assert_eq!(s.scroll,0);assert!(!s.scroll_drag);
     s.scroll_by(20);let anchor=s.visual(s.top()).unwrap();s.reflow(60,20);assert_eq!(s.visual(s.top()).unwrap().row,anchor.row);
     s.row_override=18;s.column_override=65;s.opacity=190;s.background=2;let b=s.settings();let mut other=Box::new(State::new());assert!(other.restore_settings(&b));assert_eq!(other.settings(),b);
     let g=s.layout(body,toolbar,1);assert_eq!((g.columns(),g.rows()),(65,18));let mut bad=b;bad[8]=255;assert!(!other.restore_settings(&bad));assert_eq!(other.settings(),b);

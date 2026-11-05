@@ -7,6 +7,11 @@ pub trait Canvas {
     // ------------------=
     fn fill(&mut self,r:Rect,color:(u8,u8,u8));
     // ------------------------=
+    // FUNC: rail
+    // DESC: Paints the terminal rail, allowing the display backend to antialias its caps.
+    // ------------------=
+    fn rail(&mut self,r:Rect,color:(u8,u8,u8)){self.fill(r,color);}
+    // ------------------------=
     // FUNC: glyph
     // DESC: Paints one packaged antialiased monospace glyph.
     // ------------------=
@@ -29,8 +34,9 @@ pub fn raster_glyph(p:Preferences,b:u8,scale:usize,mut pixel:impl FnMut(usize,us
 // ------------------=
 pub fn content(canvas:&mut impl Canvas,s:&State,g:Layout,caret:bool) {
     let p=s.appearance;canvas.fill(g.body,s.background_color());
+    let top=s.top();
     for visual in 0..g.rows() {
-        let Some(start)=s.visual(s.top()+visual)else{break;};
+        let Some(start)=s.visual(top+visual)else{break;};
         let y=g.text.y+(visual*g.line)as i32;
         for cell in 0..g.columns() {
             let at=Position{row:start.row,column:start.column+cell};
@@ -47,5 +53,5 @@ pub fn content(canvas:&mut impl Canvas,s:&State,g:Layout,caret:bool) {
             }
         }
     }
-    if s.max_scroll()>0 {canvas.fill(g.track,p.color(1));canvas.fill(g.thumb(s),p.color(8));}
+    if s.max_scroll()>0 {canvas.rail(g.track,p.color(1));canvas.rail(g.thumb(s),if s.scroll_drag{p.color(5)}else{p.color(6)});}
 }

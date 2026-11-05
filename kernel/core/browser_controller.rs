@@ -874,8 +874,6 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
 // DESC: Translates desktop pointer packets to web coordinates and preserves captured releases outside the page.
 // ------------------=
 pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->bool {
-    if crate::runtime::browser::presentation().settings_open || crate::runtime::browser::presentation().welcome_open {return false;}
-    if crate::runtime::browser::presentation().permission!=0 {return false;}
     let captured=unsafe {(&*(&raw const POINTER)).captured()};
     if capture_only && !captured {return false;}
     let state=console.browser_window_state();
@@ -884,10 +882,10 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
     let view=crate::runtime::browser::presentation();
+    if view.settings_open || view.welcome_open || view.permission!=0 {return false;}
     let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_tab_count(view.tab_count).with_favorites(view.settings.favorites).with_download_list(if view.download_state==5{view.downloads_count}else{0})) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
-    let view=crate::runtime::browser::presentation();
     let mut hover=(0,false);
     if view.chrome_menu!=0 {
         for index in 0..if view.chrome_menu==4 {view.tab_count}else{3} {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
@@ -906,7 +904,7 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
         view.favorite_offset+index<view.favorite_count && layout.favorite_item(*index).is_some_and(|r|r.local(x,y).is_some()))}else{None};
     crate::runtime::browser::hover_favorite(favorite_hover.map(|i|view.favorite_offset+i).unwrap_or(usize::MAX));
     if !captured && layout.content.local(x,y).is_none() {return false;}
-    if !captured && crate::runtime::browser::presentation().download_state!=0 && layout.download_card.local(x,y).is_some() {return false;}
+    if !captured && view.download_state!=0 && layout.download_card.local(x,y).is_some() {return false;}
     unsafe {
         let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
         if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
@@ -915,7 +913,8 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
         crate::runtime::browser::input_pressure(!accepted);
     }
     if buttons&7!=0 {crate::runtime::browser::focus_address(false);}
-    poll(console);true
+    // The regular browser service tick drains INPUT; pointer packets need no service poll.
+    true
 }
 
 // ------------------------=

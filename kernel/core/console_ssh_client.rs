@@ -7,7 +7,7 @@ use infinity_ssh::client::State;
 
 pub(super) struct Terminal {
     session: StableId,
-    active: bool,
+    pub(super) active: bool,
     shown: Option<State>,
     secret: [u8; 1024],
     length: usize,

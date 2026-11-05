@@ -132,7 +132,9 @@ impl ConsoleRuntime {
                     if edge&2!=0 {v.rect.width=(r.width as i32+dx).clamp(minw,(self.system.framebuffer_width as i32-r.x).max(minw)) as u32;}
                     if edge&4!=0 {v.rect.height=(r.height as i32+dy).clamp(minh,(self.system.framebuffer_height as i32-r.y).max(minh)) as u32;}
                 }
-            }else{v.drag=None;}preview::publish(v);self.reflow_preview();return true;
+            }else{v.drag=None;}
+            let resized=v.rect.width!=preview::current().rect.width || v.rect.height!=preview::current().rect.height;
+            preview::publish(v);if resized{self.reflow_preview();}return true;
         }
         if clicked && v.rect.contains(p) {let s=v.scale as i32;let edge=if p.x<v.rect.x+8*s {1}else if p.x>=v.rect.right()-8*s{2}else{0} | if p.y>=v.rect.bottom()-8*s{4}else{0};
             if v.lines>v.rows() && (Rect{x:v.track().x-5*s,width:v.track().width+10*s as u32,..v.track()}).contains(p) {

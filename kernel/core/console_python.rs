@@ -51,7 +51,7 @@ struct Job {
 struct Generated {
     goal: Option<u64>, user: [u8; 16], source: [u8; 16], revision: u64,
     request: u64, phase: workflow::Phase, launch: bool, launched: bool, context: u64,
-    workflow_revision: u64,
+    workflow_revision: u64, staged:bool,
 }
 static mut JOB: Job = Job { task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
@@ -272,6 +272,13 @@ unsafe fn start_pip(console: &ConsoleRuntime, arguments: &[&[u8]]) -> Result<(),
 // DESC: Captures script-local imports and launches one isolated, cancellable native CPython process.
 // ------------------=
 unsafe fn start(console: &ConsoleRuntime, path: &[u8], arguments: &[&[u8]], expected_source: Option<&[u8]>) -> Result<(), &'static [u8]> {
+    start_snapshot(console,path,arguments,expected_source,None)
+}
+// ------------------------=
+// FUNC: start_snapshot
+// DESC: Mounts an authorized private source snapshot with an optional repair overlay for validation.
+// ------------------=
+unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],expected_source:Option<&[u8]>,candidate:Option<&[u8]>)->Result<(),&'static [u8]> {
     let job = &mut *(&raw mut JOB);
     if job.task.is_some() { return Err(b"python: a script is already running; use python-cancel."); }
     if !active(console) { return Err(b"python: an authenticated session is required."); }
@@ -280,6 +287,8 @@ unsafe fn start(console: &ConsoleRuntime, path: &[u8], arguments: &[&[u8]], expe
     if expected_source.is_some_and(|source| source != &job.files[0].bytes[..job.files[0].len]) {
         return Err(b"python: saved source changed before validation; no code was executed.");
     }
+    if let Some(bytes)=candidate {if bytes.len()>LIMIT{return Err(b"Repair exceeds Python source limit.");}
+        job.files[0].bytes[..bytes.len()].copy_from_slice(bytes);job.files[0].len=bytes.len();}
     job.count = 1;
     let slash = path.iter().rposition(|b| *b == b'/').unwrap_or(0);
     let directory = if slash == 0 { b"/".as_slice() } else { &path[..slash] };
@@ -369,14 +378,16 @@ pub(super) fn generated(console: &mut ConsoleRuntime, path: &[u8], goal: Option<
         .map_err(|_| b"python: saved source is unavailable.".as_slice())?;
     let panel = crate::ui::app_assistant::read(2);
     if panel.workflow_goal != goal { return Err(b"python: the source request was replaced."); }
-    let generated = Generated { goal, user: console.current_user.0, source: metadata.object.id.0,
+    let staged=panel.repair_attempts>0;
+    if staged && !panel.source_binding_matches(metadata.object.id.0,metadata.current_version){return Err(b"The saved source changed.");}
+    let generated = Generated { staged,goal, user: console.current_user.0, source: metadata.object.id.0,
         revision: console.assistant_revision(),
         request: crate::ui::app_assistant::fingerprint(&panel.request[..panel.request_len], 0, None),
         phase: workflow::Phase::Validate, launch:launch&&panel.permits_generated_launch(), launched:false, context:0,
         workflow_revision:crate::runtime::ai::with_ai_runtime(|ai|ai.software_execution(console.current_user.0)
             .filter(|execution|Some(execution.goal)==goal).map_or(0,|execution|execution.source_revision)) };
     unsafe {
-        start(console, path, &[b"/system/python", b"-c", workflow::VALIDATE_GENERATED_APPLICATION, path], Some(console.editor_document.bytes()))?;
+        start_snapshot(console, path, &[b"/system/python", b"-c", workflow::VALIDATE_GENERATED_APPLICATION, path], Some(console.editor_document.bytes()),if staged{Some(&panel.argument[..panel.argument_len])}else{None})?;
         (&mut *(&raw mut JOB)).generated = Some(generated);
         (&mut *(&raw mut JOB)).recovery = recovery::Snapshot::new(recovery::Binding {
             user:console.current_user.0, session:console.current_session.0,
@@ -425,11 +436,24 @@ fn generated_event(generated: Generated, event: Event) {
 // ------------------=
 unsafe fn finish_generated(console: &mut ConsoleRuntime, job: &mut Job, generated: Generated,
     result: State, reclaimed: bool, execution: Option<u32>, error_length: usize) -> bool {
+    let mut generated=generated;
     use crate::ui::app_assistant as assistant;
     let mut panel = assistant::read(2);
     let exit = match result { State::Exited(code) => Some(code), _ => None };
     if generated.phase==workflow::Phase::Validate&&exit==Some(0)&&reclaimed{
         let source=&job.files[0];let path=&source.path[..source.path_len];
+        if generated.staged {
+            if !super::compiler_commands::publish_verified_repair(console,&mut panel,generated.revision,assistant::fingerprint(&source.bytes[..source.len],0,None)){
+                generated_event(generated,Event::Failed{code:2});panel.generation=assistant::GenerationStatus::Failed;
+                panel.reply(b"Repair validation finished, but the source changed. Nothing was launched.");assistant::write(2,panel);return false;
+            }
+            generated.revision=panel.document_revision;generated.staged=false;
+            generated.workflow_revision=crate::runtime::ai::with_ai_runtime(|ai|ai.software_execution(console.current_user.0).filter(|e|Some(e.goal)==generated.goal).map_or(0,|e|e.source_revision));
+            if let Some((object,version))=panel.source_binding{
+                job.recovery=recovery::Snapshot::new(recovery::Binding{user:console.current_user.0,session:console.current_session.0,editor_revision:generated.revision,goal:generated.goal,source_object:object,source_version:version,workflow_source_revision:generated.workflow_revision,context:0},&source.bytes[..source.len],&panel.request[..panel.request_len],path);
+            }
+            assistant::write(2,panel);
+        }
         if let Err(error)=console.register_created_application(path,path,assistant::fingerprint(&source.bytes[..source.len],0,None)){console.output.write_line(error);}
     }
     match workflow::outcome(generated.phase, exit, reclaimed, generated.launch, execution) {

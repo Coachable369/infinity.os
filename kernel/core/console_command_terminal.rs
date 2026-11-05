@@ -20,7 +20,7 @@ impl ConsoleRuntime {
         if revoke {crate::ui::terminal_vt::mutate(|t|t.reset());}
         let load=terminal::mutate(|s|s.session(self.current_session.0,active));
         if load {crate::ui::terminal_vt::mutate(|t|t.reset());if let Ok(bytes)=crate::storage::command_terminal_preferences(self.current_user.0,self.current_session.0,None){terminal::mutate(|s|s.restore_settings(&bytes));}}
-        if active {terminal::mutate(|s|s.publish(self.navigation_context.path(),&self.command[..self.command_length],self.command_cursor));}
+        if active {terminal::mutate(|s|s.publish_draft(self.navigation_context.path(),&self.command[..self.command_length],self.command_cursor,!self.ssh_terminal.active));}
         terminal::publish_snapshot();
     }
     // ------------------------=
@@ -111,6 +111,7 @@ impl ConsoleRuntime {
     // DESC: Opens the shared preferences menu, selects rows, and selects transcript text without intercepting window controls.
     // ------------------=
     pub(super) fn command_terminal_pointer(&mut self,clicked:bool,held:bool)->bool {
+        if !clicked && !terminal::inspect(|s|s.scroll_drag||s.dragging){return false;}
         if !self.command_terminal_visible()||crate::ui::terminal_edit::inspect(|s|s.active)||self.app_window_dragging{return false;}
         let l=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);let point=l.point(self.pointer_x,self.pointer_y);let g=self.command_terminal_layout();
         let headers=Layout::header_menus(g.toolbar,g.scale);
@@ -121,6 +122,7 @@ impl ConsoleRuntime {
             else{terminal::mutate(|s|{s.menu=Menu::None;s.setting_edit=false;s.changed();});return false;}return true;
         }
         if self.shell_menu==20{return false;}
+        if terminal::mutate(|s|g.track_pointer(s,point,clicked,held)){return true;}
         if clicked&&g.text.contains(point){terminal::mutate(|s|{let at=g.at(point,s);s.selection=Some((at,at));s.dragging=true;s.changed();});return true;}
         if terminal::inspect(|s|s.dragging){terminal::mutate(|s|{if held{let at=g.at(point,s);if let Some((start,_))=s.selection{s.selection=Some((start,at));}}else{s.dragging=false;}s.changed();});return true;}false
     }

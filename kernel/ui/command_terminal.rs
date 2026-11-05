@@ -141,9 +141,17 @@ impl State {
     // DESC: Synchronizes the authoritative command draft and namespace without repainting unchanged frames.
     // ------------------=
     pub fn publish(&mut self,path:&[u8],input:&[u8],cursor:usize) {
+        self.publish_draft(path,input,cursor,true);
+    }
+    // ------------------------=
+    // FUNC: publish_draft
+    // DESC: Publishes the local prefix only while the local shell owns the terminal.
+    // ------------------=
+    pub fn publish_draft(&mut self,path:&[u8],input:&[u8],cursor:usize,local:bool) {
         let mut prompt=[0;256];let lead=b"infinity ";prompt[..lead.len()].copy_from_slice(lead);
         let n=path.len().min(256-lead.len()-3);prompt[lead.len()..lead.len()+n].copy_from_slice(&path[..n]);
         let length=lead.len()+n+3;prompt[length-3..length].copy_from_slice(b" % ");
+        let length=if local{length}else{0};
         let input=&input[..input.len().min(INPUT)];let cursor=cursor.min(input.len());
         if self.prompt[..self.prompt_length]!=prompt[..length]||self.input[..self.input_length]!=*input||self.cursor!=cursor {
             self.prompt=prompt;self.prompt_length=length;self.input.fill(0);self.input[..input.len()].copy_from_slice(input);
@@ -335,6 +343,21 @@ impl Layout {
         let r=((p.y-self.text.y).max(0)as usize/self.line.max(1)).min(self.rows()-1);
         let mut pos=state.visual(state.top()+r).unwrap_or(Position{row:state.end(),column:state.length(state.end())});
         pos.column=(pos.column+((p.x-self.text.x).max(0)as usize+self.cell/2)/self.cell.max(1)).min(state.length(pos.row));pos
+    }
+    // ------------------------=
+    // FUNC: track_pointer
+    // DESC: Captures the thumb's grab point and follows the pointer to either endpoint even outside the rail.
+    // ------------------=
+    pub fn track_pointer(self,state:&mut State,point:Point,pressed:bool,held:bool)->bool {
+        if !state.scroll_drag {
+            let hit=Rect{x:self.track.x-3*self.scale as i32,width:self.track.width+6*self.scale as u32,..self.track};
+            if !pressed||!hit.contains(point)||state.remote||state.help||state.max_scroll()==0{return false;}
+            let thumb=self.thumb(state);
+            state.grab=if point.y>=thumb.y&&point.y<thumb.bottom(){point.y-thumb.y}else{thumb.height as i32/2};
+        }
+        let max=state.max_scroll();let next=max-super::scroll_capture::offset(point.y,self.track.y,self.track.height,self.thumb(state).height,state.grab,max);
+        if state.scroll_drag!=held || next!=state.scroll{state.scroll_drag=held;state.scroll=next;state.changed();}
+        true
     }
     // ------------------------=
     // FUNC: thumb

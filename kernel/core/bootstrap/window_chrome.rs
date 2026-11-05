@@ -1,10 +1,10 @@
 //! Shared native glass window controls; geometry remains owned by SystemLayout.
 impl super::DisplayDevice {
     // ------------------------=
-    // FUNC: launcher_close_control
-    // DESC: Centers the shared circular Close artwork inside the authored launcher's unchanged pointer target.
+    // FUNC: kit_close_control
+    // DESC: Centers the shared circular Close artwork inside the control's existing pointer target.
     // ------------------=
-    pub(super) fn launcher_close_control(&mut self, rect:crate::ui::geometry::Rect) {
+    pub(super) fn kit_close_control(&mut self, rect:crate::ui::geometry::Rect) {
         let size=rect.width.min(rect.height).min((26*self.ui_scale().max(1)) as u32);
         if size==0 {return;}
         self.window_control_state((rect.x+(rect.width-size) as i32/2).max(0) as usize,

@@ -422,10 +422,9 @@ impl ConsoleRuntime {
             {
                 if !self.pointer_pressed {panel.scroll_drag=false;} else {
                     let thumb=assistant::scroll_thumb(geometry,panel.scroll,panel.scroll_max);
-                    let travel=geometry.scrollbar.height.saturating_sub(thumb.height).max(1);
-                    panel.scroll=((p.y-geometry.scrollbar.y-panel.scroll_grab as i32).max(0) as u64*panel.scroll_max as u64/travel as u64).min(panel.scroll_max as u64) as u32;
+                    panel.scroll=crate::ui::scroll_capture::offset(p.y,geometry.scrollbar.y,geometry.scrollbar.height,thumb.height,panel.scroll_grab as i32,panel.scroll_max as usize) as u32;
                 }
-                assistant::write(id,panel);self.redraw();return true;
+                assistant::write(id,panel);self.present_continuous_motion(!self.pointer_pressed);return true;
             }
         }
         if !clicked {
@@ -622,7 +621,7 @@ impl ConsoleRuntime {
                 let capacity = prompt.len() - if python { super::python_libraries::CONTEXT_BYTES } else { 0 };
                 let prompt_length=if panel.repair_diagnostics_len>0
                     || assistant::editor_compile_intent::repair(&panel.request[..panel.request_len]).is_some() {
-                    panel.compiler_repair_prompt(self.editor_document.bytes(),&mut prompt[..capacity])
+                    panel.compiler_repair_prompt(if panel.argument_len>0 && panel.repair_attempts>0 {&panel.argument[..panel.argument_len]}else{self.editor_document.bytes()},&mut prompt[..capacity])
                 } else if assistant::editor_compile_intent::update(&panel.request[..panel.request_len]).is_some() {
                     panel.update_prompt(self.editor_document.bytes(),&mut prompt[..capacity])
                 } else {panel.generation_prompt(true,b"",&mut prompt[..capacity])};
@@ -630,7 +629,7 @@ impl ConsoleRuntime {
                     &panel.request[..panel.request_len]) } else { Some(n) });
                 if let Some(n)=prompt_length {
                     match crate::runtime::ai::with_ai_runtime(|ai|ai.submit_app_source(2,&prompt[..n])) {
-                        Ok(())=>{panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating source locally...");
+                        Ok(())=>{panel.reset_delivery();panel.generation=assistant::GenerationStatus::Running;panel.reply(b"Generating source locally...");
                             compiler_commands::generation_progress(self,compiler_commands::VoiceStep::Generating);},
                         Err(message)=>{panel.generation=assistant::GenerationStatus::Failed;panel.reply(message);},
                     }
@@ -686,6 +685,30 @@ impl ConsoleRuntime {
         let now=crate::ui::performance::monotonic_ns();
         // Existing documents remain usable and unchanged while the replacement
         // is being generated. Completion applies one minimal-span transaction.
+        #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if panel.repair_attempts>0 {
+            if !panel.apply_generated_compile_requested(){return false;}
+            let candidate=panel.argument[..panel.argument_len].trim_ascii_end();
+            let repeated=candidate==self.editor_document.bytes().trim_ascii_end() || assistant::fingerprint(candidate,0,None)==panel.failed_candidate_hash;
+            panel.pending=Action::None;panel.stream.replaced(panel.argument_len,now);
+            if repeated {
+                panel.generation=assistant::GenerationStatus::Failed;
+                panel.reply(b"The proposed repair repeats failing source. The editor is unchanged; review the compiler diagnostics.");
+            }else{
+                let launch=panel.permits_generated_launch();
+                assistant::write(2,panel);
+                let result=if panel.effective_language()==assistant::editor_compile_intent::SourceLanguage::Python {
+                    #[cfg(feature="native-python")]
+                    {let path=self.editor_document_path;let n=self.editor_document_path_length;python_commands::generated(self,&path[..n],panel.workflow_goal,launch).is_ok()}
+                    #[cfg(not(feature="native-python"))]
+                    {false}
+                }else{compiler_commands::save_generated_and_build(self,launch).is_ok()};
+                if result {panel.reply(b"Checking the proposed repair privately before updating the editor.");}
+                else {panel.generation=assistant::GenerationStatus::Failed;panel.reply(b"The repair could not start validation. The editor is unchanged.");}
+            }
+            if panel.generation==assistant::GenerationStatus::Failed{if let Some(goal)=panel.workflow_goal{crate::runtime::ai::with_ai_runtime(|ai|ai.record_software_event(goal,self.current_user.0,crate::runtime::ai::intelligence::software::Event::Failed{code:2}));}}
+            assistant::write(2,panel);return true;
+        }
         if panel.preserves_existing_source() {
             let revision = self.assistant_revision();
             let previous = panel.generation;

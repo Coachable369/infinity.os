@@ -15,6 +15,11 @@ impl Canvas for Surface<'_> {
         }
         self.display.fill_rect_alpha(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize,c.0,c.1,c.2,if r==self.body{self.opacity}else{255});}
     // ------------------------=
+    // FUNC: rail
+    // DESC: Uses the same rounded rail treatment as Settings.
+    // ------------------=
+    fn rail(&mut self,r:Rect,c:(u8,u8,u8)){self.display.fill_rounded_rect_alpha(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize,r.width as usize/2,c.0,c.1,c.2,235);}
+    // ------------------------=
     // FUNC: glyph
     // DESC: Draws packaged monospace raster pixels at their measured grid advance.
     // ------------------=
@@ -64,6 +69,8 @@ impl DisplayDevice {
             use core::fmt::Write;let _=write!(text,"{} columns x {} rows  |  {}",s.columns,s.rows,if s.remote{"SSH  Ctrl+] disconnect"}else{"Ctrl+, preferences"});
             if !s.notice.is_empty(){text.write(b" | ");text.write(s.notice);}
             let n=text.bytes().len();status[..n].copy_from_slice(text.bytes());
+            let (r,gc,b)=s.background_color();
+            self.fill_rect(g.status.x.max(0) as usize,g.status.y.max(0) as usize,g.status.width as usize,g.status.height as usize,r.saturating_add(20),gc.saturating_add(20),b.saturating_add(20));
             self.app_label(g.status,&status[..n],s.appearance.color(8),false,scale);
             if s.menu!=Menu::None {
                 let (rect,row)=g.menu_rect(s);self.app_dropdown_panel(rect,scale);

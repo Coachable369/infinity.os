@@ -22,6 +22,7 @@ struct Lease {
     interaction_objective:[u8;512],
     interaction_length:usize,
     generated:bool,
+    staged:bool,
     document_revision:u64,
     request:[u8;1024],
     request_length:usize,
@@ -235,6 +236,22 @@ pub(super) fn save_generated_source(console:&mut ConsoleRuntime)->Result<([u8;95
 }
 
 // ------------------------=
+// FUNC: publish_verified_repair
+// DESC: Commits only the exact validated proposal while its original editor, session, and saved object version still match.
+// ------------------=
+pub(super) fn publish_verified_repair(console:&mut ConsoleRuntime,panel:&mut assistant::Panel,revision:u64,hash:u64)->bool {
+    if revision!=console.assistant_revision() || panel.generation!=assistant::GenerationStatus::Complete ||
+        panel.document_revision!=revision || assistant::fingerprint(&panel.argument[..panel.argument_len],0,None)!=hash ||
+        !console.ai_chat_allowed() || !console.assistant_owner_alive(2){return false;}
+    let path=&console.editor_document_path[..console.editor_document_path_length];
+    let Ok((meta,_))=crate::storage::object_inspect_path(path)else{return false;};
+    if meta.owner.0!=console.current_user.0 || !panel.source_binding_matches(meta.object.id.0,meta.current_version){return false;}
+    if !panel.edit_document(assistant::Action::ReplaceCompile,&mut console.editor_document){return false;}
+    if save_generated_source(console).is_err(){let _=console.editor_document.undo();return false;}
+    panel.source_binding=assistant::read(2).source_binding;panel.document_revision=console.assistant_revision();true
+}
+
+// ------------------------=
 // FUNC: save_generated_and_build
 // DESC: Compiles the saved source snapshot and allows relaunch only for the exact explicitly updated running application.
 // ------------------=
@@ -249,17 +266,18 @@ pub(super) fn save_generated_and_build(console:&mut ConsoleRuntime,launch_result
         (&*(&raw const APP)).as_ref().is_some_and(|(owner,_)|*owner==SecurityIdentity(console.current_session.0))) {
         return Err(StartError::Busy);
     }
-    let (path,length)=save_generated_source(console)?;
+    let staged=request_panel.repair_attempts>0;
+    let (path,length)=if staged{let n=console.editor_document_path_length;let mut p=[0u8;95];if n==0||n>p.len(){return Err(StartError::SaveFailed);}p[..n].copy_from_slice(&console.editor_document_path[..n]);(p,n)}else{save_generated_source(console)?};
     {
         let snapshot:&ConsoleRuntime=console;
-        start_source(snapshot,snapshot.editor_document.bytes(),&path[..length],ReplyTarget::Assistant,true)?;
+        start_source(snapshot,if staged{&request_panel.argument[..request_panel.argument_len]}else{snapshot.editor_document.bytes()},&path[..length],ReplyTarget::Assistant,true)?;
     }
     open_build_transcript(console,&path[..length],28);
     if let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() {
         lease.launch=launch_result && request_panel.permits_generated_launch();
         let panel=assistant::read(2);
         let request=&panel.request[..panel.request_len];
-        lease.generated=true;
+        lease.generated=true;lease.staged=staged;
         lease.software_goal=software_goal;
         lease.request[..request.len()].copy_from_slice(request);lease.request_length=request.len();
         COMPILE_RECOVERY=panel.source_binding.and_then(|(source_object,source_version)| {
@@ -322,7 +340,7 @@ unsafe fn start_source(console:&ConsoleRuntime,source:&[u8],source_path:&[u8],re
     COMPILE_RECOVERY=None;
     REPLY_TARGET=reply;LEASE=Some(Lease { owner,capability,name,source_length,
         launch:false,compile_output_reported:false,interaction_objective:[0;512],interaction_length:0,
-        generated:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0,software_goal:None,
+        generated:false,staged:false,document_revision:console.assistant_revision(),request:[0;1024],request_length:0,software_goal:None,
         source_path:{let mut path=[0;95];let length=source_path.len().min(path.len());path[..length].copy_from_slice(&source_path[..length]);path},
         source_path_length:source_path.len().min(95),source_fingerprint:assistant::fingerprint(source,0,None) });
     if reply==ReplyTarget::Assistant {(&mut *(&raw mut EDITOR_DIAGNOSTICS)).record(owner.0,console.assistant_revision(),b"");}
@@ -650,6 +668,18 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
                     if status==job::Status::Failed {diagnostics} else {b""});
             }
             if status==job::Status::Complete {
+                if lease.staged {
+                    if !allowed || !publish_verified_repair(console,&mut panel,lease.document_revision,lease.source_fingerprint){
+                        panel.generation=assistant::GenerationStatus::Failed;panel.reply(b"The editor or saved source changed. The repaired executable was not published.");return;
+                    }
+                    lease.document_revision=panel.document_revision;
+                    if let Some(snapshot)=(&mut *(&raw mut COMPILE_RECOVERY)).as_mut(){
+                        let mut binding=snapshot.binding;binding.editor_revision=lease.document_revision;
+                        if let Some((object,version))=panel.source_binding{binding.source_object=object;binding.source_version=version;}
+                        binding.workflow_source_revision=crate::runtime::ai::with_ai_runtime(|ai|ai.software_execution(console.current_user.0).filter(|e|Some(e.goal)==lease.software_goal).map_or(0,|e|e.source_revision));
+                        COMPILE_RECOVERY=generated_app_recovery::Snapshot::new(binding,console.editor_document.bytes(),&lease.request[..lease.request_length],&lease.source_path[..lease.source_path_length]);
+                    }
+                }
                 report_stage_output(console,b"Linker output",diagnostics,_truncated,&lease.source_path[..lease.source_path_length]);
                 let prefix=b"/home/default/";
                 let mut path=[0;95];path[..prefix.len()].copy_from_slice(prefix);

@@ -106,10 +106,9 @@ impl super::DisplayDevice {
     // FUNC: app_dropdown_row
     // DESC: Draws a compact selected application-menu row using the reusable cyan glass focus state.
     // ------------------=
-    pub(super) fn app_dropdown_row(&mut self, row: Rect, selected: bool, scale: usize) {
-        if selected { self.app_card(row,
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection),
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Focus), scale); }
+    pub(super) fn app_dropdown_row(&mut self, row: Rect, selected: bool, _scale: usize) {
+        if selected { let (r,g,b)=self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+            self.fill_rect(row.x.max(0) as usize,row.y.max(0) as usize,row.width as usize,row.height as usize,r,g,b); }
     }
     // ------------------------=
     // FUNC: app_text_width

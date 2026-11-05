@@ -8355,9 +8355,9 @@ impl ConsoleRuntime {
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
         if self.continue_scroll_capture(left_button,released){return;}
-        if self.command_terminal_pointer(clicked,left_button) {self.redraw();return;}
+        if self.command_terminal_pointer(clicked,left_button) {self.present_continuous_motion(clicked||released);return;}
         let preview_before=crate::ui::file_preview::current();
-        if self.preview_pointer(clicked,left_button) {if preview_before!=crate::ui::file_preview::current(){self.redraw();}return;}
+        if self.preview_pointer(clicked,left_button) {if preview_before!=crate::ui::file_preview::current(){self.present_continuous_motion(clicked||released);}else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}return;}
         if right_clicked && self.desktop_preview_menu() {self.redraw();return;}
         let window_controls_changed=self.publish_window_controls();
         if window_controls_changed {self.redraw();}
@@ -8396,7 +8396,7 @@ impl ConsoleRuntime {
             return;
         }
         #[cfg(feature="native-browser")]
-        if browser_controller::pointer(self,buttons,true) {return;}
+        if browser_controller::pointer(self,buttons,true) {crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);return;}
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -8814,7 +8814,7 @@ impl ConsoleRuntime {
                 return;
             } else if self.desktop_app != DesktopAppKind::None {
                 #[cfg(feature="native-browser")]
-                if self.desktop_app==DesktopAppKind::Browser && browser_controller::pointer(self,buttons,false) {return;}
+                if self.desktop_app==DesktopAppKind::Browser && browser_controller::pointer(self,buttons,false) {crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);return;}
                 if clicked {
                     #[cfg(feature="native-browser")]
                     if self.desktop_app==DesktopAppKind::Browser && browser_controller::chrome_pointer(self) {
