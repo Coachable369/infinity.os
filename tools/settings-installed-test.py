@@ -126,7 +126,7 @@ def review_sections(guest):
         if section == 2:
             review_accounts(guest)
         elif section not in (0, 1, 3, 6, 7, 10):
-            # Display resolution cycles on click; exercise the keyboard detail row on Devices.
+            # Display resolution is a choice; exercise the keyboard detail row on Devices.
             row = 1 if section == 5 else 0
             disclosure(guest, row, True)
             guest.screenshot(f"settings-category-{section:02d}-expanded")
@@ -136,7 +136,7 @@ def review_sections(guest):
 
 # ------------------------=
 # FUNC: verify_voice_controls
-# DESC: Uses native keyboard reveal and real pointer clicks to verify five circular voices and a reversible speech checkbox.
+# DESC: Checks cancellation and explicit selection of each voice, then toggles speech off and back on.
 # ------------------=
 def verify_voice_controls(guest):
     state = settings(guest)
@@ -146,12 +146,21 @@ def verify_voice_controls(guest):
     guest.key("end")
     state = wait_settings(guest, lambda s: s[118] == 135)
     original = state[115]
+    guest.key("ret")
+    wait_settings(guest, lambda s: s[115] == original and s[5] == 8)
+    guest.key("down")
+    guest.key("esc")
+    state = wait_settings(guest, lambda s: s[115] == original and s[5] == 0)
     for step in range(1, 6):
-        x, y, w, h = state[81:85]
-        vx, vy, vw, vh = state[13:17]
-        assert vx <= x and y >= vy and y + h <= vy + vh
-        helpers.click(guest, x + w // 2, y + h // 2)
-        state = wait_settings(guest, lambda s: s[115] == (original + step) % 5 and s[5] == 0)
+        previous = state[115]
+        target = (original + step) % 5
+        guest.key("ret")
+        wait_settings(guest, lambda s: s[115] == previous and s[5] == 8)
+        guest.key("home")
+        for _ in range(target):
+            guest.key("down")
+        guest.key("ret")
+        state = wait_settings(guest, lambda s: s[115] == target and s[5] == 0)
     guest.key("up")
     state = wait_settings(guest, lambda s: s[118] == 134)
     original_speech = state[119]
