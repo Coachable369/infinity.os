@@ -197,7 +197,7 @@ fn settings_preview_window(template:&InstallerTemplate<'_>,screen:u8,state:Draft
 // ------------------=
 #[cfg(studio_native_preview)]
 pub(crate) fn draft_geometry(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usize,state:DraftServiceState)->Result<String,String> {
-    if kind!=2 || !state.simulated || !(crate::settings_view::supports_basic_section(usize::from(screen-1)) || matches!(screen,7|8)) {
+    if kind!=2 || !state.simulated || !(crate::settings_view::supports_basic_section(usize::from(screen-1)) || matches!(screen,2|3|7|8|9)) {
         return Ok("[]".into());
     }
     let template=InstallerTemplate::parse_settings(bytes).map_err(|_|"Invalid Settings template")?;
@@ -263,6 +263,30 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
     }else{None};
     let navigation=if date_time.is_some() {Some((usize::from(state.date_focus),true,None))}else{navigation};
     let mut settings_rendered=false;
+    if kind==2 && state.simulated && matches!(screen,2|9) {
+        let section=usize::from(screen-1);
+        let window=settings_preview_window(&template,screen,state)?;
+        let scale=target.ui_scale();
+        let chrome=target.paint_settings_chrome(section,window,scale);
+        let viewport=chrome.geometry.viewport;
+        let old=target.render_clip;
+        target.intersect_render_clip(viewport.x.max(0)as usize,viewport.y.max(0)as usize,viewport.width as usize,viewport.height as usize);
+        if screen==2 {target.paint_settings_worldshift(window,scale);}
+        for row in 0..window.row_count {
+            let label=crate::ui::settings_template::role_at(section,Role::SettingsRowLabel,row).map_or(&[][..],|e|e.text);
+            let value=crate::ui::settings_template::role_at(section,Role::SettingsRowValue,row).map_or(&[][..],|e|e.text);
+            let geometry=target.paint_settings_row_summary(section,row,label,value,window,scale,chrome);
+            if screen==9 && row>=5 {
+                let bounds=crate::ui::system_layout::SystemLayout::new(width,height).settings_row_element_geometry(window,section,row,Role::SettingsDisclosure).unwrap_or(geometry.summary);
+                target.precision_radio(crate::ui::geometry::Rect{height:bounds.width,..bounds},false,false,Material{fill:chrome.primary,edge:chrome.outline,opacity:255,edge_opacity:255,focus:0,pressed:false,scale});
+            }
+            if window.expanded_row==Some(row) {target.paint_settings_detail_description(section,row,geometry.detail,scale,window);}
+        }
+        target.render_clip=old;
+        target.render_settings_overflow_chrome(chrome.geometry,window,scale,chrome.outline);
+        target.precision_window_frame(chrome.geometry.window,true,scale);
+        settings_rendered=true;
+    }
     if kind==2 && state.simulated && screen==3 {
         let window=settings_preview_window(&template,screen,state)?;
         target.render_accounts_view(window,target.ui_scale(),&crate::accounts_native_render_tests::fixture());

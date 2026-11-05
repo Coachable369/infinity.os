@@ -130,9 +130,6 @@ pub(super) const ONBOARDING_BMP: &[u8] =
 pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-topbar-icon-v2.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(super) const WORLD_SHIFT_HERO_BMP: &[u8] =
-    include_bytes!("../../../assets/desktop/worldshift-hero-v1.bmp");
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const NODE_TRUST_TOPOLOGY_BMP: &[u8] =
     include_bytes!("../../../assets/mesh/infinity-node-trust-topology-v1.bmp");
 #[cfg(all(
@@ -4101,56 +4098,7 @@ impl super::DisplayDevice {
             geometry.viewport.width as usize,
             geometry.viewport.height as usize,
         );
-        if focus == 1 {
-            let hero = layout.settings_world_shift_hero_geometry(settings_window);
-            let hero_left = hero.x.max(0) as usize;
-            let hero_top = hero.y.max(0) as usize;
-            let hero_width = hero.width as usize;
-            let hero_height = hero.height as usize;
-            self.paint_bitmap_cover_box(
-                WORLD_SHIFT_HERO_BMP,
-                hero_left,
-                hero_top,
-                hero_width,
-                hero_height,
-            );
-            // Continuous scrim: retain the artwork without a hard vertical
-            // seam through the hero. Cache ownership remains with the window.
-            for column in 0..hero_width {
-                let alpha = 230usize.saturating_sub(column * 210 / hero_width.max(1));
-                self.fill_rect_alpha(hero_left + column, hero_top, 1, hero_height,
-                    2, 12, 28, alpha as u8);
-            }
-            self.precision_surface(hero,crate::ui::panel_recipe::Surface::Panel,
-                crate::ui::panel_recipe::Material { fill:(2,12,28),edge:(117,218,255),
-                    opacity:0,edge_opacity:255,focus:0,pressed:false,scale });
-            self.ui_text_strong(
-                hero_left + 24 * scale,
-                hero_top + 30 * scale,
-                b"WORLD SHIFT",
-                235,
-                250,
-                255,
-                1,
-            );
-            self.ui_text_elided_strong(
-                hero_left + 24 * scale,
-                hero_top + 62 * scale,
-                hero_width * 48 / 100,
-                b"Move your complete workspace between living worlds.",
-                190,
-                224,
-                243,
-            );
-            self.spatial_glass_action(
-                hero_left + 24 * scale,
-                hero_top + hero_height.saturating_sub(56 * scale),
-                176 * scale,
-                38 * scale,
-                b"Open World Shift",
-                true,
-            );
-        }
+        if focus == 1 {self.paint_settings_worldshift(settings_window,scale);}
         for (index, (label, value)) in rows
             .iter()
             .take(settings_window.row_count.clamp(1, 8))

@@ -253,7 +253,7 @@ impl DisplayDevice {
         );
         let title_bounds=authored_title.and_then(|e|layout.settings_element_geometry(settings_window,focus,e.id)).unwrap_or(crate::ui::geometry::Rect{x:content_x as i32,y:content_y as i32,width:geometry.content.width,height:(56*scale)as u32});
         self.paint_settings_bound_text(authored_title,title_bounds,authored_title.map(|e|e.text).filter(|t|!t.is_empty()).unwrap_or(sections[focus.min(10)]),(238,244,249),true,false);
-        if focus!=8 {
+        {
             let bounds=authored_body.and_then(|e|layout.settings_element_geometry(settings_window,focus,e.id)).unwrap_or(crate::ui::geometry::Rect{x:content_x as i32,y:(content_y+if focus==7{64}else{36}*scale)as i32,width:geometry.content.width,height:(28*scale)as u32});
             self.paint_settings_bound_text(authored_body,bounds,authored_body.map(|e|e.text).filter(|t|!t.is_empty()).unwrap_or([
                 b"Manage this computer and its system generation.".as_slice(),b"Personalize the appearance of your workspace.",
@@ -290,6 +290,56 @@ impl DisplayDevice {
         self.render_clip=old;width
     }
     // ------------------------=
+    // FUNC: paint_settings_worldshift
+    // DESC: Draws the same Appearance artwork and UIKit action in Studio and the installed Settings window.
+    // ------------------=
+    pub(super) fn paint_settings_worldshift(&mut self,settings_window:SettingsWindowState,scale:usize){
+        let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+            let hero = layout.settings_world_shift_hero_geometry(settings_window);
+            let hero_left = hero.x.max(0) as usize;
+            let hero_top = hero.y.max(0) as usize;
+            let hero_width = hero.width as usize;
+            let hero_height = hero.height as usize;
+            self.paint_bitmap_cover_box(
+                include_bytes!("../../../assets/desktop/worldshift-hero-v1.bmp"),
+                hero_left,
+                hero_top,
+                hero_width,
+                hero_height,
+            );
+            // Continuous scrim: retain the artwork without a hard vertical
+            // seam through the hero. Cache ownership remains with the window.
+            for column in 0..hero_width {
+                let alpha = 230usize.saturating_sub(column * 210 / hero_width.max(1));
+                self.fill_rect_alpha(hero_left + column, hero_top, 1, hero_height,
+                    2, 12, 28, alpha as u8);
+            }
+            self.precision_surface(hero,crate::ui::panel_recipe::Surface::Panel,
+                crate::ui::panel_recipe::Material { fill:(2,12,28),edge:(117,218,255),
+                    opacity:0,edge_opacity:255,focus:0,pressed:false,scale });
+            self.ui_text_strong(
+                hero_left + 24 * scale,
+                hero_top + 30 * scale,
+                b"WORLD SHIFT",
+                235,
+                250,
+                255,
+                1,
+            );
+            self.ui_text_elided_strong(
+                hero_left + 24 * scale,
+                hero_top + 62 * scale,
+                hero_width * 48 / 100,
+                b"Move your complete workspace between living worlds.",
+                190,
+                224,
+                243,
+            );
+            let action=crate::ui::geometry::Rect{x:(hero_left+24*scale)as i32,y:(hero_top+hero_height.saturating_sub(56*scale))as i32,width:(176*scale)as u32,height:(38*scale)as u32};
+            self.app_button_surface(action,true,0,false,scale);
+            self.ui_text_elided_strong(action.x as usize+8*scale,action.y as usize+6*scale,action.width as usize-16*scale,b"Open World Shift",235,250,255);
+    }
+    // ------------------------=
     // FUNC: paint_settings_row_summary
     // DESC: Paints authored row materials, child positions, native text and disclosure using shared runtime geometry.
     // ------------------=
@@ -313,16 +363,18 @@ impl DisplayDevice {
             else{crate::ui::settings_cards::description(focus,index)};
         if let Some(description)=layout.settings_row_child_geometry(settings_window,focus,index,Role::SettingsSummaryDescription,0,1) {
             self.paint_settings_child_description(description,native_description,(141,174,198));
-        } else {
-            self.ui_text_elided_strong(card.description.x.max(0)as usize,card.description.y.max(0)as usize,card.description.width as usize,native_description,141,174,198);
         }
         let label=if focus==1&&index==6{label}else{authored_label.filter(|e|e.caption_mode==1).map(|e|e.text).filter(|text|!text.is_empty()).unwrap_or(label)};
         let label_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowLabel).unwrap_or(card.label);
         let mut value_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowValue).unwrap_or(card.value);
-        if matches!(settings_row_interaction(focus,index),I::Cycle|I::Toggle) {
+        if matches!(settings_row_interaction(focus,index),I::Cycle|I::Toggle|I::Edit) {
             let control=Rect{x:value_bounds.x-(8*scale)as i32,y:value_bounds.y-(5*scale)as i32,
                 width:value_bounds.width+(16*scale)as u32,height:value_bounds.height+(10*scale)as u32};
-            self.app_button_surface(control,false,0,false,scale);
+            if settings_row_interaction(focus,index)==I::Edit {
+                self.precision_surface(control,crate::ui::panel_recipe::Surface::Field,Material{
+                    fill:(pr/2,pg/2,pb/2),edge:chrome.outline,opacity:alpha(230),edge_opacity:155,
+                    focus:if keyboard_focus{255}else{0},pressed:false,scale});
+            } else { self.app_button_surface(control,false,0,false,scale); }
             value_bounds.width=value_bounds.width.saturating_sub((20*scale)as u32);
             let affordance=Rect{x:control.right()-(24*scale)as i32,y:control.y,width:(20*scale)as u32,height:control.height};
             if settings_row_interaction(focus,index)==I::Cycle {

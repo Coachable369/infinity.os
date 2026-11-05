@@ -2366,18 +2366,8 @@ impl SystemLayout {
                     ) else {
                         break;
                     };
-                    let first = crate::ui::settings_template::role_at(
-                        section,
-                        InstallerTemplateRole::Metadata,
-                        0,
-                    )
-                    .unwrap();
-                    let base = map(first.frame, console).y.max(0) as usize;
                     let mapped = map(row.frame, console);
-                    last_bottom = last_bottom.max(
-                        (mapped.y.max(0) as usize).max(base + index * 84 * self.scale)
-                            + (mapped.height as usize).max(72 * self.scale),
-                    );
+                    last_bottom = last_bottom.max(mapped.bottom().max(0) as usize);
                 }
                 let detail = state
                     .expanded_row
@@ -2535,14 +2525,7 @@ impl SystemLayout {
                 let hero_offset = usize::from(section == 1)
                     * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14)
                     * self.scale;
-                let first = crate::ui::settings_template::role_at(
-                    section,
-                    InstallerTemplateRole::Metadata,
-                    0,
-                )
-                .unwrap();
-                let row_top =
-                    map_y(row.frame.y).max(map_y(first.frame.y) + index * 84 * self.scale);
+                let row_top = map_y(row.frame.y);
                 let summary_top = row_top as i32 + hero_offset as i32 + prior_detail as i32
                     - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
                 let mut summary = rect(
@@ -2550,9 +2533,7 @@ impl SystemLayout {
                     summary_top.max(0) as usize,
                     row.frame.width as usize * outer.width as usize
                         / console.frame.width.max(1) as usize,
-                    (row.frame.height as usize * outer.height as usize
-                        / console.frame.height.max(1) as usize)
-                        .max(72 * self.scale),
+                    row.frame.height as usize * outer.height as usize / console.frame.height.max(1) as usize,
                 );
                 summary.y = summary_top;
                 return SettingsRowGeometry {
