@@ -165,7 +165,13 @@ struct InfinityInstallerStudioApp: App {
     var body: some Scene {
         WindowGroup("Infinity Studio") {
             StudioRootView(store: store)
-                .onAppear { applicationDelegate.store = store }
+                .onAppear {
+                    if applicationDelegate.store == nil, CommandLine.arguments.contains("--show-settings-devices") {
+                        UserDefaults.standard.set(true, forKey: "studio.sidebar.settings")
+                        store.selectScreenCollection(.systemSettings, screen: 6)
+                    }
+                    applicationDelegate.store = store
+                }
                 .frame(minWidth: 1040, minHeight: 640)
                 .preferredColorScheme(.dark)
         }

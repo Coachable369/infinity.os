@@ -38,6 +38,7 @@ rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$binary_dir/InfinityInstallerStudio" "$contents_dir/MacOS/InfinityInstallerStudio"
 cp "$studio_work/behavior-tests/infinity-studio-native-renderer" "$contents_dir/MacOS/InfinityStudioNativeRenderer"
+cp "$repo_dir/assets/boot/settings-screens.infinityui" "$contents_dir/Resources/settings-screens.infinityui"
 cp "$script_dir/Info.plist" "$contents_dir/Info.plist"
 
 resource_bundle="$binary_dir/InfinityInstallerStudio_InfinityInstallerStudio.bundle"

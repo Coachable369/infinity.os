@@ -967,6 +967,13 @@ struct InstallerStudioDocument: Codable, Hashable {
     // DESC: Builds the eleven editable section canvases consumed by the logged-in System Settings app.
     // ------------------=
     static func factorySystemSettings() -> InstallerStudioDocument {
+        // A packaged editor resets to the same authored screens as its OS build.
+        if let url = Bundle.main.url(forResource: "settings-screens", withExtension: "infinityui"),
+           let data = try? Data(contentsOf: url),
+           let authored = try? JSONDecoder().decode(Self.self, from: data),
+           (try? TemplateValidator.validate(authored, for: .systemSettings)) != nil {
+            return authored
+        }
         let sections = [
             "General", "Themes & Skins", "Users & Accounts", "AI & Voice",
             "Privacy & Security", "Devices", "Network", "Nodes & Mesh",
@@ -991,7 +998,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             ["Current User", "Credential", "Session", "Personal Space", "Profile"],
             ["AI Provider", "Desktop AI Chat", "Chat Model", "Remote Processing", "Voice", "Wake Word", "Spoken Replies", "AI Voice"],
             ["Ambient Authority", "Microphone", "Remote AI", "No Activity Timeout", "Trusted UI"],
-            ["Display", "Keyboard", "Pointer", "Audio Input", "Audio Output"],
+            ["Display resolution", "Keyboard", "Pointer", "Audio Input", "Audio Output"],
             ["Connectivity", "Profiles", "Interfaces & Topology", "Application & Service Access", "DNS / Resolution", "Routes", "Connections", "Diagnostics"],
             ["Trusted Nodes", "Pair Node", "Mesh Health", "Access Policy", "Security Audit"],
             ["Infinity Pool", "Capacity", "Nodes", "Selected Object", "Replica Location", "Temporary", "Protected", "Critical"],
@@ -1004,7 +1011,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             ["Active", "Password", "Authenticated", "Private", "Persistent"],
             ["Local only", "Enabled", "Local Model", "Off", "Granted", "Infinity", "Enabled", "Heart (female)"],
             ["Denied", "Not granted", "Denied", "15 minutes", "Active"],
-            ["Ready", "Ready", "Ready", "Unavailable", "Unavailable"],
+            ["1920 x 1080", "Ready", "Ready", "Unavailable", "Unavailable"],
             ["Offline", "5 operational modes", "Inspect", "Deny by default", "Bounded cache", "Deterministic", "Owner protected", "Observed counters"],
             ["Observed", "Explicit trust", "Authenticated", "Active", "Capability scoped"],
             ["Healthy", "Measured bytes", "Online / observed", "None", "No placement", "Target: 1 verified node", "Target: 2 verified nodes", "Target: 3 verified nodes"],
