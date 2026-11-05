@@ -5695,6 +5695,10 @@ impl ConsoleRuntime {
     // DESC: Opens the native installed application launcher with an empty live search query.
     // ------------------=
     fn open_app_launcher(&mut self) {
+        // Voice/typed intents do not pass through the pointer or keyboard input
+        // boundary. Finish the retained world arrival before painting a new
+        // surface, or its next frame can overwrite the launcher contents.
+        self.spatial_finish_arrival();
         self.accounts_cancel();
         self.cancel_account_password();
         self.store_active_app_window();
