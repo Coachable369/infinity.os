@@ -76,6 +76,20 @@ class Player:
         else:
             root.after(1, self.library)
 
+        self.root.after(160, self.open_request)
+
+    # ------------------------=
+    # FUNC: open_request
+    # DESC: Accepts a double-click handoff from File Navigator while this player window is already open.
+    # ------------------=
+    def open_request(self):
+        path = codec.io(7, b"", 0)
+        if path:
+            if getattr(self, "picker", None) and self.picker.winfo_exists():
+                self.picker.destroy()
+            self.open(path)
+        self.root.after(160, self.open_request)
+
     # ------------------------=
     # FUNC: button
     # DESC: Creates a keyboard-accessible transport control.

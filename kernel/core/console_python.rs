@@ -24,6 +24,7 @@ impl Snapshot {
     const EMPTY: Self = Self { path: [0; 95], path_len: 0, bytes: [0; LIMIT], len: 0, object: [0; 16], version: 0 };
 }
 struct Job {
+    media_open: Option<crate::runtime::object_navigation::ByteText<96>>,
     tool_export: Option<crate::runtime::object_navigation::ByteText<96>>,
     monitor:Option<crate::runtime::execution::ContextHandle>,
     task: Option<Task>, owner: SecurityIdentity,
@@ -58,7 +59,7 @@ struct Generated {
 }
 static mut MONITOR_SAMPLE_NS:u64=0;
 static mut MONITOR_RESUME_NS:u64=0;
-static mut JOB: Job = Job { tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
+static mut JOB: Job = Job { media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
     filesystem: Vfs::new(), data: app_data::Data::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false,
@@ -731,6 +732,22 @@ fn exception_call<T:crate::runtime::native_memory::PageTable>(
 // DESC: Starts the immutable player with an optional selected object for immediate playback.
 // ------------------=
 pub(super) fn launch_media(console:&mut ConsoleRuntime,path:Option<&[u8]>)->bool {
+    if !active(console){return false;}
+    let running=unsafe{
+        let job=&mut *(&raw mut JOB);
+        if job.task.is_some() && job.owner.0==console.current_session.0 &&
+            job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER {
+            if let Some(path)=path {
+                let Ok(name)=crate::runtime::object_navigation::ByteText::new(path) else{return false;};
+                job.media_open=Some(name);
+            }
+            true
+        }else{false}
+    };
+    if running {
+        let _=gui_control(console,Some(b"Media Player"),crate::ui::window::WindowControl::Focus);
+        return true;
+    }
     let argv=[b"/system/python".as_slice(),media::PLAYER,path.unwrap_or_default()];
     let result=unsafe{start(console,media::PLAYER,&argv[..if path.is_some(){3}else{2}],Some(include_bytes!("../../sdk/system/media-player.py")))};
     if let Err(msg)=result{console.output.write_line(msg);return false;}true
@@ -925,7 +942,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let result = task.poll_with_services(now, authorized, memory_mut(),
         b"", &files[..file_count], &mut job.output, &mut job.errors,
         |memory, tables, operation, arguments| crate::runtime::with_runtime(|runtime|job.gui.dispatch(runtime,memory,tables,job.owner,native_owner,gui_allowed,operation,arguments,work,display,now)).flatten()
-            .or_else(||media::dispatch(gui_allowed && job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER,console.current_user.0,console.current_session.0,&mut job.archive,tables,operation,arguments))
+            .or_else(||media::dispatch(gui_allowed && job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER,console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
             .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
             .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
             .or_else(||terminal_read(&mut job.input,tables,operation,arguments))
@@ -1069,7 +1086,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     job.generated = None;
     job.recovery=None;job.exception=None;
     job.count = 0;
-    job.pip = false; job.archive.fill(0); job.filesystem.reset(false); job.extensions.clear(); job.child.clear();
+    job.media_open=None;job.pip = false; job.archive.fill(0); job.filesystem.reset(false); job.extensions.clear(); job.child.clear();
     job.data = app_data::Data::new();
     console.redraw();
 }}

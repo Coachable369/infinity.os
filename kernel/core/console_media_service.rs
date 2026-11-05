@@ -56,11 +56,12 @@ pub fn dispatch<T: PageTable>(
     user: [u8; 16],
     session: [u8; 16],
     scratch: &mut [u8],
+    pending: &mut Option<crate::runtime::object_navigation::ByteText<96>>,
     tables: &mut T,
     op: u64,
     a: [u64; 6],
 ) -> Option<i64> {
-    if !(0x12e0..=0x12e6).contains(&op) {
+    if !(0x12e0..=0x12e7).contains(&op) {
         return None;
     }
     if !allowed {
@@ -198,6 +199,18 @@ pub fn dispatch<T: PageTable>(
             } else {
                 -11
             }
+        }
+        0x12e7 => {
+            let Some(name) = pending.as_ref() else {
+                return Some(0);
+            };
+            let path = name.as_bytes();
+            let len = path.len();
+            if a[1] < len as u64 || copy_to_user(tables, a[0], path).is_err() {
+                return Some(-14);
+            }
+            *pending = None;
+            len as i64
         }
         _ => {
             use crate::ui::panel_recipe::{self, Material, Surface};

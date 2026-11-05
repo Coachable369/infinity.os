@@ -301,6 +301,13 @@ static PyObject *media_io(PyObject *self, PyObject *args) {
                         "Media file unavailable or exceeds the object-store media limit");
         return NULL;
     }
+    if (op == 7) {
+        char path[96];
+        rc = infinity_system_call(0x12e7,(uintptr_t)path,sizeof(path),0,0,0,0);
+        PyBuffer_Release(&buf);
+        if (rc <= 0 || rc > 95) Py_RETURN_NONE;
+        return PyUnicode_DecodeUTF8(path,rc,"strict");
+    }
     if (op == 6) {
         static const char header[] = "P6\n96 34\n255\n";
         PyObject *out = PyBytes_FromStringAndSize(NULL, sizeof(header) - 1 + 96 * 34 * 3);
