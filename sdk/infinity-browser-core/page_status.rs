@@ -2,7 +2,16 @@
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 #[repr(u32)]
 pub enum Status {Ready,Loading,Complete,Blocked,Busy,StartFailed,NavigationFailed,RenderFailed,ResourceFailed,
-    EntropyMissing,ClockMissing,StartupFailed,SaveFailed,Corrupt,Unavailable,Full,Invalid}
+    EntropyMissing,ClockMissing,StartupFailed,SaveFailed,Corrupt,Unavailable,Full,Invalid,EngineMemory,EngineStopped}
+pub const ENGINE_MEMORY: u32 = 0x200;
+pub const ENGINE_STOPPED: u32 = 0x201;
+// ------------------------=
+// FUNC: engine_error
+// DESC: Separates worker termination from page/resource error numbers so memory exhaustion never masquerades as TLS failure.
+// ------------------=
+pub fn engine_error(failure: u32) -> u32 {
+    match failure { 0 => 0, 4 => ENGINE_MEMORY, _ => ENGINE_STOPPED }
+}
 // ------------------------=
 // FUNC: current
 // DESC: Gives durable storage and page failures precedence over completion notifications.
@@ -12,7 +21,7 @@ pub fn current(favorite_error:u8,permission:u8,busy:bool,error:u32,loading:bool,
     if favorite_error!=0 {return match favorite_error {1=>SaveFailed,2=>Corrupt,3=>Unavailable,4=>Full,_=>Invalid};}
     if permission!=0 {return Blocked;}if busy {return Busy;}
     if error!=0 {return match error {1=>StartFailed,2=>NavigationFailed,3=>RenderFailed,4=>ResourceFailed,
-        0x102=>EntropyMissing,0x103=>ClockMissing,_=>StartupFailed};}
+        0x102=>EntropyMissing,0x103=>ClockMissing,ENGINE_MEMORY=>EngineMemory,ENGINE_STOPPED=>EngineStopped,_=>StartupFailed};}
     if loading {Loading}else if has_page {Complete}else{Ready}
 }
 impl Status {
@@ -30,6 +39,8 @@ impl Status {
         Self::ResourceFailed=>b"Unable to load this page. Check the address, connection and site certificate; then reload.",
         Self::EntropyMissing=>b"Secure randomness unavailable. Enable firmware RNG or TPM 2.0 and restart.",
         Self::ClockMissing=>b"Trusted clock unavailable. Correct the firmware time and retry.",
+        Self::EngineMemory=>b"Browser ran out of memory. Reload or enter another address to restart it.",
+        Self::EngineStopped=>b"Browser engine stopped. Reload or enter another address to restart it.",
         Self::StartupFailed=>b"Browser unavailable. See the page above for recovery instructions.",
         Self::SaveFailed=>b"Favorite not saved. Storage commit failed; click the star to retry.",
         Self::Corrupt=>b"Favorites data is invalid. Existing saved data has not been overwritten.",
@@ -45,6 +56,9 @@ impl Status {
     // DESC: Exercises navigation completion, denial, storage failure and successful retry projections.
     // ------------------=
     #[test] fn loading_failure_and_recovery_precedence() {
+        assert_eq!(current(0,0,false,engine_error(4),false,true),Status::EngineMemory);
+        assert_eq!(current(0,0,false,engine_error(3),false,true),Status::EngineStopped);
+        assert_eq!(engine_error(0),0);
         assert_eq!(current(0,0,false,0,false,false),Status::Ready);
         assert_eq!(current(0,0,false,0,true,true),Status::Loading);
         assert_eq!(current(0,0,false,4,true,true),Status::ResourceFailed);

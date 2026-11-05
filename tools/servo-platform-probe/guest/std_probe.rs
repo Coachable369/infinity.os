@@ -309,6 +309,26 @@ fn allocation_roundtrip() { unsafe {
         pointer.write_bytes(0x5a, 97);
         infinity_std_deallocate(pointer, 97, align);
     }
+    // Power-of-two browser surfaces must not reserve twice their payload for a header.
+    for align in [16, 4096, 2 * 1024 * 1024] {
+        let size = 2 * 1024 * 1024;
+        let pointer = infinity_std_allocate(size, align);
+        assert!(!pointer.is_null()); assert_eq!(pointer as usize % align, 0);
+        assert_eq!(Runtime::allocated() - baseline, size);
+        assert_eq!(infinity_std_usable_size(pointer), size);
+        pointer.write_bytes(0x5a, size);
+        infinity_std_deallocate(pointer, size, align);
+        assert_eq!(Runtime::allocated(), baseline);
+    }
+    let surface = infinity_c_malloc(1024 * 1024);
+    assert!(!surface.is_null()); surface.write_bytes(0x42, 1024 * 1024);
+    assert_eq!(Runtime::allocated() - baseline, 1024 * 1024);
+    let larger = infinity_c_realloc(surface, 2 * 1024 * 1024);
+    assert!(!larger.is_null()); assert_eq!(Runtime::allocated() - baseline, 2 * 1024 * 1024);
+    assert!(core::slice::from_raw_parts(larger, 1024 * 1024).iter().all(|b| *b == 0x42));
+    assert!(infinity_c_realloc(larger, usize::MAX).is_null());
+    assert_eq!(infinity_std_usable_size(larger), 2 * 1024 * 1024);
+    infinity_c_free(larger); assert_eq!(Runtime::allocated(), baseline);
     let original = infinity_c_malloc(33);
     assert!(!original.is_null());
     assert_eq!(original as usize % 16, 0);

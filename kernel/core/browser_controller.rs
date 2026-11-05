@@ -282,6 +282,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
         console.output.write_line(b"Browser access unavailable. Check your session and Network Settings.");return true;
     };
     let size=viewport(console);
+    let restarting=matches!(crate::runtime::browser::status().0,3|4);
     let result=match size {
         Some((w,h)) if infinity_browser_core::startup::valid_viewport(w,h)=>unsafe {crate::runtime::browser::start(owner,caps)},
         _=>Err(infinity_browser_core::startup::Error::Viewport),
@@ -297,13 +298,16 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
     launch.url[..url.len()].copy_from_slice(url);
     unsafe {
         if let Some(previous)=(&*(&raw const LAUNCH)).as_ref() {
-            if previous.owner==owner && previous.stage!=0 {
+            if !restarting && previous.owner==owner && previous.stage!=0 {
                 // OPEN was already accepted. Preserve its last sent viewport so
                 // a new navigation cannot accidentally suppress a pending resize.
                 launch.stage=1;launch.size=previous.size;
             }
         }
-        if launch.stage==0 {(&mut *(&raw mut INPUT)).clear();POINTER=infinity_browser_core::pointer::Pointer::new();}
+        if launch.stage==0 {
+            (&mut *(&raw mut INPUT)).clear();POINTER=infinity_browser_core::pointer::Pointer::new();
+            if restarting {NEW_TABS=0;CANCEL_ACK=0;DOWNLOAD=None;IMAGE_AUTO_SAVE=false;crate::runtime::browser::discard_download();crate::runtime::browser::download_presentation(&[],0);}
+        }
         LAUNCH=Some(launch);
     }
     if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
@@ -561,6 +565,27 @@ fn send_key(console:&mut ConsoleRuntime,mut down:abi::Command) {
 // DESC: Admits a native chrome operation only into its authenticated active engine lifetime.
 // ------------------=
 fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
+    if command.kind==abi::RELOAD && matches!(crate::runtime::browser::status().0,3|4) {
+        let Some(launch)=(&mut *core::ptr::addr_of_mut!(LAUNCH)).as_mut() else{return false;};
+        let owner=SecurityIdentity(console.current_session.0);
+        if launch.owner!=owner {return false;}
+        let now=crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000_000;
+        let caps=crate::runtime::with_runtime(|runtime| {
+            if !(0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i|runtime.identity.session_nth(i))
+                .any(|session|session.id==console.current_session && session.user==console.current_user
+                    && session.state==crate::runtime::identity::SessionState::Active) {return None;}
+            runtime.network.browser_authority(&mut runtime.capabilities,owner,true,now)
+        }).flatten();
+        let Some(caps)=caps else {crate::runtime::browser::permission_presentation(2);return false;};
+        if crate::runtime::browser::start(owner,caps).is_err() {return false;}
+        let view=crate::runtime::browser::presentation();
+        launch.length=view.address_length;launch.url[..launch.length].copy_from_slice(&view.address[..launch.length]);
+        launch.stage=0;INPUT.clear();POINTER=infinity_browser_core::pointer::Pointer::new();NEW_TABS=0;CANCEL_ACK=0;DOWNLOAD=None;IMAGE_AUTO_SAVE=false;
+        crate::runtime::browser::discard_download();
+        crate::runtime::browser::download_presentation(&[],0);
+        crate::runtime::browser::launch_presentation(&launch.url[..launch.length],None);
+        return true;
+    }
     let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
     if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
     let accepted=(&mut *(&raw mut INPUT)).push_reserved(&[command],3);
@@ -585,7 +610,8 @@ fn navigate_address(console:&mut ConsoleRuntime) {
         view.settings.search_prefix(),&mut command.text) else{return;};
     command.length=length as u32;
     let retained=unsafe {
-        if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut().filter(|launch|
+        if matches!(crate::runtime::browser::status().0,3|4) {false}
+        else if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut().filter(|launch|
             launch.owner==SecurityIdentity(console.current_session.0) && launch.stage<3) {
             launch.url[..length].copy_from_slice(&command.text[..length]);
             launch.length=length;

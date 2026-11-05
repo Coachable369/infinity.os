@@ -19,6 +19,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trace",action="store_true",help="Enable targeted diagnostics and selector regression")
     parser.add_argument("--reuse-engine",action="store_true",help="Fixture-only iteration against the existing linked engine; does not verify engine source changes")
+    parser.add_argument("--recovery",action="store_true",help="Require two real allocator aborts followed by complete fresh engine lifecycle/pixel recovery")
     options=parser.parse_args()
     if options.reuse_engine and options.trace:
         parser.error("Trace changes require engine rebuilding")
@@ -34,6 +35,7 @@ def main():
     subprocess.run(["rustc", "--edition=2021", "--target", "aarch64-unknown-none", "-C", "panic=abort",
         "-C", "linker=/opt/homebrew/opt/lld/bin/ld.lld", "-C", "link-arg=" + report["object"],
         "-C", "link-arg=-T" + str(Path(__file__).with_name("engine-boot.ld")),
+        *(["--cfg", "browser_recovery_probe"] if options.recovery else []),
         *native, "-L", "dependency=" + str(root / "build/cargo/aarch64-unknown-none/debug/deps"),
         str(Path(__file__).with_name("component-boot.rs")), "-o", str(image)], check=True)
     result = output / "component-boot.bin"
@@ -46,7 +48,7 @@ def main():
     timeout = False
     registers = None
     try:
-        process.wait(timeout=90)
+        process.wait(timeout=240 if options.recovery else 90)
     except subprocess.TimeoutExpired:
         timeout = True
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -70,10 +72,13 @@ def main():
     data = result.read_bytes()
     records = [list(struct.unpack("<3Q", data[i:i+24])) for i in range(0, len(data)-23, 24)]
     passed = not timeout and bool(records) and records[-1] == [9, 0, 4]
+    recovery = [row[2] for row in records if row[1] == 13]
+    if options.recovery:
+        passed = passed and recovery == [4, (1 << 32) | 4, 2 << 32]
     diagnostic = b"".join(struct.pack("<Q", row[2]) for row in records if row[1] == 4).decode(errors="replace")
     report = {"passed": passed, "records": [row for row in records if row[1] != 4],
               "diagnostic": diagnostic, "registers":registers, "timeout": timeout, "installed_os": False,
-              "reused_engine": options.reuse_engine}
+              "reused_engine": options.reuse_engine, "recovery_generations": recovery}
     (output / "component-boot.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
     return 0 if passed else 1

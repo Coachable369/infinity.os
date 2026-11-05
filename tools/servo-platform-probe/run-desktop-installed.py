@@ -464,6 +464,40 @@ def browser_symbols(elf):
     assert required.issubset(result), {"missing_counters":sorted(required-set(result))}
     return result
 
+# ------------------------=
+# FUNC: verify_memory_recovery
+# DESC: Drives real oversized canvas allocations and requires subsequent address-bar navigation to render in the installed desktop.
+# ------------------=
+def verify_memory_recovery(guest, counters, receipt):
+    html = b"<!doctype html><body><script>let held=[];for(let n=0;n<32;n++){let c=document.createElement('canvas');c.width=c.height=4096;c.getContext('2d').fillRect(0,0,4096,4096);held.push(c);document.body.append(c);}</script>"
+    url = "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=" + quote(base64.b64encode(html).decode(), safe="")
+    target_hash = 0xcbf29ce484222325
+    for byte in b"https://example.com/":
+        target_hash = ((target_hash ^ byte) * 0x100000001b3) & ((1 << 64) - 1)
+    receipt["memory_recovery"] = []
+    for cycle in range(2):
+        guest.key("ctrl", "l"); browser_text(guest, url); guest.key("ret")
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            values = {name: int.from_bytes(guest.memory(*location), "little") for name, location in counters.items()}
+            if values["STATE"] == 3 and values["PAGE_ERROR"] in (0x200, 0x201):
+                break
+            time.sleep(.25)
+        assert values["STATE"] == 3 and values["FAILURE"] in (3, 4), values
+        guest.screenshot(f"browser-memory-failure-{cycle}")
+        before = values["FRAME_REVISION"]
+        guest.key("ctrl", "l"); browser_text(guest, "https://example.com/"); guest.key("ret")
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            recovered = {name: int.from_bytes(guest.memory(*location), "little") for name, location in counters.items()}
+            if recovered["STATE"] == 2 and recovered["FAILURE"] == recovered["PAGE_ERROR"] == recovered["LOADING"] == 0 and recovered["FRAME_REVISION"] > before:
+                break
+            time.sleep(.25)
+        assert recovered["STATE"] == 2 and recovered["FAILURE"] == recovered["PAGE_ERROR"] == recovered["LOADING"] == 0, recovered
+        assert recovered["FRAME_REVISION"] > before and recovered["LOCATION_HASH"] == target_hash, recovered
+        wait_color(guest, f"browser-memory-recovered-{cycle}", 400, 500, (238, 238, 238))
+        receipt["memory_recovery"].append({"failure": values, "recovered": recovered})
+
 class Guest(base.Guest):
     # ------------------------=
     # FUNC: click
@@ -603,6 +637,7 @@ def main():
     parser.add_argument("--chrome",action="store_true",help="Check File/Settings menus, URL gear and attached AI panel")
     parser.add_argument("--find-view",action="store_true",help="Search real page text and switch open tabs through View")
     parser.add_argument("--welcome",action="store_true",help="Verify the local welcome, native settings, keyboard actions and real address navigation")
+    parser.add_argument("--memory-recovery",action="store_true",help="Exercise actual engine exhaustion and address-bar recovery twice on the installed desktop")
     parser.add_argument("--url",help="Require successful installed loading of this real HTTPS destination")
     parser.add_argument("--gradients",action="store_true",help="Check installed linear/radial gradient pixels and a real reload request")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
@@ -821,6 +856,9 @@ def main():
         assert values["STATE"] == 2 and values["FAILURE"] == 0 and values["FRAME_REVISION"] >= 2, receipt
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
+        if args.memory_recovery:
+            verify_memory_recovery(guest, counters, receipt)
+            return
         if args.url:
             assert values["PAGE_ERROR"]==0 and values["NETWORK_FAILURE"]==0 and values["NETWORK_COMPLETED"]>0 and values["LOADING"]==0, receipt
             receipt["requested_url_loaded"]=args.url

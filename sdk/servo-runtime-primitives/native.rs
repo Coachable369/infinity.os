@@ -5,6 +5,8 @@ use core::{alloc::Layout, ptr::{self, NonNull}, sync::atomic::{AtomicPtr, Atomic
 use crate::{arena::Arena, executor::Executor, wait::Outcome, Destructor};
 pub const MAX_THREADS: usize = 64;
 const LIMIT: usize = MAX_THREADS;
+const LARGE_ALLOCATION: usize = 1024 * 1024;
+const LARGE_SLOTS: usize = 256;
 pub const STACK_DIAGNOSTIC_PATTERN: u8 = 0xa5;
 pub struct StackDiagnostic {
     pub id: u64, pub name: [u8; 32], pub low: usize, pub high: usize,
@@ -27,6 +29,7 @@ pub struct Runtime {
     executor: Executor<LIMIT>, arena: Arena<'static>, hooks: Hooks, cpu: u64,
     records: [Record; LIMIT], root_error: i32, root_c_error: i32, root_wait: usize, root_woken: bool,
     allocation_checks: u32, allocation_slice_start: u64,
+    large: [Option<AllocationHeader>; LARGE_SLOTS],
 }
 static ACTIVE: AtomicPtr<Runtime> = AtomicPtr::new(ptr::null_mut());
 impl Runtime {
@@ -38,7 +41,7 @@ impl Runtime {
         let allocation_slice_start = (hooks.monotonic)();
         Some(Self { executor: Executor::new(), arena: Arena::new(bytes)?, cpu: (hooks.cpu)(), hooks,
             records: [EMPTY; LIMIT], root_error: 0, root_c_error: 0, root_wait: 0, root_woken: false,
-            allocation_checks: 0, allocation_slice_start })
+            allocation_checks: 0, allocation_slice_start, large: [None; LARGE_SLOTS] })
     }
     // ------------------------=
     // FUNC: install
@@ -194,6 +197,16 @@ extern "C" fn entry(index: usize) { unsafe {
 pub unsafe extern "C" fn infinity_std_allocate(size: usize, align: usize) -> *mut u8 {
     let p = active(); if p.is_null() { return ptr::null_mut(); }
     let Ok(payload) = Layout::from_size_align(size, align) else { return ptr::null_mut(); };
+    // Inline headers turn a power-of-two surface into a block twice its size.
+    // Bounded out-of-band records keep large payloads in their natural class.
+    if size >= LARGE_ALLOCATION {
+        if let Some(index) = (*p).large.iter().position(Option::is_none) {
+            let Some(base) = (*p).arena.allocate(payload) else { return ptr::null_mut(); };
+            (*p).large[index] = Some(AllocationHeader { base: base.as_ptr(), layout: payload, payload });
+            allocation_safepoint(p);
+            return base.as_ptr();
+        }
+    }
     let Ok((layout, offset)) = Layout::new::<AllocationHeader>().extend(payload) else { return ptr::null_mut(); };
     let Some(base) = (*p).arena.allocate(layout) else { return ptr::null_mut(); };
     let result = base.as_ptr().add(offset);
@@ -205,14 +218,32 @@ pub unsafe extern "C" fn infinity_std_allocate(size: usize, align: usize) -> *mu
 #[derive(Clone, Copy)]
 struct AllocationHeader { base: *mut u8, layout: Layout, payload: Layout }
 // ------------------------=
+// FUNC: large_slot
+// DESC: Looks up only naturally megabyte-aligned payloads, leaving small allocation/free paths constant-time.
+// ------------------=
+unsafe fn large_slot(p: *mut Runtime, pointer: *mut u8) -> Option<usize> {
+    if pointer as usize & (LARGE_ALLOCATION - 1) != 0 { return None; }
+    (*p).large.iter().position(|slot| slot.is_some_and(|header| header.base == pointer))
+}
+// ------------------------=
+// FUNC: allocation_header
+// DESC: Reads the original payload layout from its bounded side record or inline allocation header.
+// ------------------=
+unsafe fn allocation_header(p: *mut Runtime, pointer: *mut u8) -> AllocationHeader {
+    if let Some(index) = large_slot(p, pointer) { return (*p).large[index].unwrap(); }
+    pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned()
+}
+
+// ------------------------=
 // FUNC: infinity_std_deallocate
 // DESC: Returns a live allocation with its original layout on the owning CPU.
 // ------------------=
 #[no_mangle]
 pub unsafe extern "C" fn infinity_std_deallocate(pointer: *mut u8, size: usize, align: usize) {
     let p = active(); assert!(!p.is_null());
-    let header = pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned();
+    let header = allocation_header(p, pointer);
     assert_eq!(header.payload, Layout::from_size_align(size, align).expect("layout"));
+    if let Some(index) = large_slot(p, pointer) { (*p).large[index] = None; }
     (*p).arena.release(NonNull::new(header.base).expect("allocation"), header.layout);
     allocation_safepoint(p);
 }
@@ -224,7 +255,7 @@ pub unsafe extern "C" fn infinity_std_deallocate(pointer: *mut u8, size: usize, 
 #[no_mangle]
 pub unsafe extern "C" fn infinity_std_usable_size(pointer: *mut u8) -> usize {
     if pointer.is_null() || active().is_null() { return 0; }
-    pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned().payload.size()
+    allocation_header(active(), pointer).payload.size()
 }
 // ------------------------=
 // FUNC: infinity_c_malloc
@@ -242,7 +273,7 @@ pub unsafe extern "C" fn infinity_c_malloc(size: usize) -> *mut u8 {
 pub unsafe extern "C" fn infinity_c_free(pointer: *mut u8) {
     if pointer.is_null() { return; }
     assert!(!active().is_null());
-    let header = pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned();
+    let header = allocation_header(active(), pointer);
     infinity_std_deallocate(pointer, header.payload.size(), header.payload.align());
 }
 // ------------------------=

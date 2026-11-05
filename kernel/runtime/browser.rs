@@ -12,9 +12,11 @@ use core::{
 use infinity_browser_core::{frames::Frames, mailbox::Mailbox, worker as abi};
 #[path = "browser_entropy.rs"]
 mod browser_entropy;
+#[path = "browser_recovery.rs"]
+mod browser_recovery;
 static RANDOM_SEEDS: browser_entropy::Seeds = browser_entropy::Seeds::new();
 const HEAP_BYTES: usize = 512 * 1024 * 1024;
-// A page-aligned 512 MiB grant always contains a 256 MiB aligned buddy arena.
+// The bounded page-aligned grant is partitioned into reclaimable buddy roots.
 // It occupies loader-owned BSS, not installer payload bytes or the framebuffer.
 #[repr(C, align(4096))]
 struct Heap([u8; HEAP_BYTES]);
@@ -301,15 +303,11 @@ pub unsafe fn start(
     if owner.0 == [0; 16] {
         return Err(Error::Session);
     }
-    if STATE.load(Ordering::Acquire) != 0 {
-        if !matches!(STATE.load(Ordering::Acquire), 1 | 2) {
-            return Err(Error::Worker);
-        }
+    let previous = STATE.load(Ordering::Acquire);
+    if matches!(previous, 1 | 2) {
         return if owned_by(owner) && crate::drivers::browser_network::renew(owner, caps) {
             Ok(())
-        } else {
-            Err(Error::Network)
-        };
+        } else { Err(Error::Network) };
     }
     let info = BOOT.load(Ordering::Acquire).as_ref().ok_or(Error::Boot)?;
     if super::ai::qwen::workers::online() == 0 {
@@ -319,7 +317,8 @@ pub unsafe fn start(
         info.firmware_entropy_valid == 1,
         crate::console::certificate_time(info.firmware_runtime_services),
     )?;
-    if !crate::drivers::browser_network::configure(owner, caps) {
+    if !(previous != 0 && owned_by(owner) && crate::drivers::browser_network::renew(owner, caps))
+        && !crate::drivers::browser_network::configure(owner, caps) {
         return Err(Error::Network);
     }
     let seed = RANDOM_SEEDS
@@ -335,8 +334,18 @@ pub unsafe fn start(
         u64::from_le_bytes(owner.0[8..].try_into().unwrap()),
         Ordering::Release,
     );
+    // The old worker has returned to its supervisor before publishing terminal
+    // state. Discard its queued UI commands/events; no pointer loans survive.
+    while COMMANDS.try_take().ok().flatten().is_some() {}
+    while EVENTS.try_take().ok().flatten().is_some() {}
+    FAILURE.store(0, Ordering::Release);
+    INFINITY_BROWSER_PEAK.store(0, Ordering::Release);
+    INFINITY_BROWSER_FAILED_ALLOCATION.store(0, Ordering::Release);
+    ACTIVE_TAB.store(0, Ordering::Release);
+    PRESENTATION.tabs = [EMPTY_TAB; 8]; PRESENTATION.tab_count = 0; PRESENTATION.active_tab = 0;
+    DISPATCH = startup::Dispatch::new();
     STATE.store(1, Ordering::Release);
-    (&mut *(&raw mut DISPATCH)).poll(|| super::ai::qwen::workers::background(worker));
+    dispatch_ready();
     Ok(())
 }
 // ------------------------=
@@ -1018,7 +1027,7 @@ pub fn input_pressure(full: bool) {
 pub fn poll_presentation() -> bool {
     unsafe {
         if STATE.load(Ordering::Acquire) == 1 {
-            (&mut *(&raw mut DISPATCH)).poll(|| super::ai::qwen::workers::background(worker));
+            dispatch_ready();
         }
         let view = &mut *(&raw mut PRESENTATION);
         let frame = FRAME_REVISION.load(Ordering::Acquire);
@@ -1164,7 +1173,7 @@ pub fn poll_presentation() -> bool {
             }
             changed = true;
         }
-        let error = FAILURE.load(Ordering::Acquire);
+        let error = infinity_browser_core::page_status::engine_error(FAILURE.load(Ordering::Acquire));
         if error != view.error && error != 0 {
             view.error = error;
             view.loading = false;
@@ -1194,13 +1203,20 @@ pub fn poll_presentation() -> bool {
 // DESC: Enters the privately linked component on its sole native owner CPU.
 // ------------------=
 unsafe fn worker() {
-    extern "C" {
-        fn infinity_browser_private_infinity_browser_run(host: *mut abi::Host) -> u32;
-    }
     STATE.store(2, Ordering::Release);
-    let result = infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
+    let result = browser_recovery::enter(core::ptr::addr_of_mut!(HOST));
+    crate::drivers::browser_network::cancel_all();
     FAILURE.store(result, Ordering::Release);
     STATE.store(if result == 0 { 4 } else { 3 }, Ordering::Release);
+}
+// ------------------------=
+// FUNC: dispatch_ready
+// DESC: Waits for BSP cancellation acknowledgements before reusing private engine memory or starting fresh requests.
+// ------------------=
+unsafe fn dispatch_ready() {
+    if crate::drivers::browser_network::quiescent() {
+        (&mut *core::ptr::addr_of_mut!(DISPATCH)).poll(|| super::ai::qwen::workers::background(worker));
+    }
 }
 // ------------------------=
 // FUNC: cpu
@@ -1420,13 +1436,10 @@ unsafe extern "C" fn cancel(_: *mut c_void, id: u64) {
 }
 // ------------------------=
 // FUNC: fatal
-// DESC: Quarantines a failed engine CPU; the desktop can still display failure and close its native window.
+// DESC: Abandons the failed engine stack; the supervisor publishes stopped state only after every private continuation is unreachable.
 // ------------------=
 unsafe extern "C" fn fatal(_: *mut c_void, code: u32) -> ! {
     crate::drivers::browser_network::cancel_all();
     FAILURE.store(code, Ordering::Release);
-    STATE.store(3, Ordering::Release);
-    loop {
-        core::hint::spin_loop();
-    }
+    browser_recovery::leave(code)
 }

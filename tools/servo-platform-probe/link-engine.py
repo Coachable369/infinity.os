@@ -5,6 +5,8 @@ import subprocess
 import json
 import argparse
 import tempfile
+import shlex
+from component_state import state_sections
 
 # ------------------------=
 # FUNC: main
@@ -157,8 +159,16 @@ def main():
             if result.returncode:
                 return result.returncode
             private = output / ("browser-private-" + arch + ".o")
-            subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy",
+            sections = state_sections(native)
+            arguments = output / ("browser-state-" + arch + ".args")
+            arguments.write_text("\n".join(shlex.quote(
+                "--rename-section=" + name + "=.browser_state_" + ("bss" if bss else "data") + "." + str(index))
+                for index, (name, bss, _, _) in enumerate(sections)) + "\n")
+            subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy", "@" + str(arguments),
                 "--prefix-symbols=infinity_browser_private_", str(native), str(private)], check=True)
+            mapped = state_sections(private)
+            if len(mapped) != len(sections) or any(not name.startswith(".browser_state_") for name, _, _, _ in mapped):
+                raise SystemExit("Incomplete browser restart state mapping")
         undefined = subprocess.check_output(["/opt/homebrew/opt/llvm/bin/llvm-nm", "--undefined-only", str(private)], text=True)
         report = {"target": triple, "object": str(private), "undefined": undefined, "executed": False}
         (output / ("component-" + arch + ".json")).write_text(json.dumps(report, indent=2) + "\n")

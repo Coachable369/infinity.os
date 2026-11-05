@@ -250,10 +250,17 @@ fn main() {
         bridge::cancel(current);bridge::pump();assert_eq!(bridge::poll(current,&mut reply),2);
         let active=bridge::begin(b"https://example.test/",&[]);bridge::pump();
         let pending=bridge::begin(b"https://example.test/next",&[]);
+        assert!(!bridge::quiescent());
         bridge::cancel_all();
+        assert!(!bridge::quiescent());
         assert_eq!(bridge::poll(active,&mut reply),2);
         assert_eq!(bridge::poll(pending,&mut reply),2);
-        bridge::pump();assert!(bridge::configure(owner,caps));
+        bridge::pump();assert!(bridge::quiescent());assert!(bridge::configure(owner,caps));
+        let restarted=bridge::begin(b"https://example.test/after-restart",&[]);
+        assert_ne!(restarted,0);assert_ne!(restarted,active);assert_ne!(restarted,pending);
+        bridge::cancel(active);bridge::cancel(pending);bridge::pump();
+        assert_eq!(bridge::poll(restarted,&mut reply),0);
+        bridge::cancel_all();bridge::pump();assert!(bridge::quiescent());
     }
     let session = runtime::with_runtime(|r| r.identity.session_nth(0).unwrap()).unwrap();
     let mut command_console = ConsoleRuntime {

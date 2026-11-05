@@ -1,7 +1,15 @@
 #![no_std]
 #![no_main]
-#[path="../../sdk/infinity-browser-core/worker.rs"] mod abi;
-use abi as worker;
+#[path="../../sdk/infinity-browser-core/worker.rs"] pub mod abi;
+pub use abi as worker;
+#[cfg(browser_recovery_probe)]
+extern crate self as infinity_browser_core;
+#[cfg(browser_recovery_probe)]
+#[path="../../sdk/infinity-browser-core/recovery.rs"] pub mod recovery;
+#[cfg(browser_recovery_probe)]
+#[path="../../kernel/runtime/browser_recovery.rs"] mod recovery_host;
+#[cfg(browser_recovery_probe)]
+static mut INJECT_OOM:bool=false;
 #[path="../../sdk/infinity-browser-core/input_queue.rs"] mod input_queue;
 #[path="../../sdk/infinity-browser-core/pointer.rs"] mod pointer;
 #[path="../../sdk/infinity-browser-core/frames.rs"] mod frames;
@@ -122,10 +130,43 @@ unsafe extern "C" fn entropy(_: *mut c_void,bytes:*mut u8,length:usize)->u32 {
 // ------------------=
 unsafe extern "C" fn idle(_: *mut c_void) {core::hint::spin_loop();}
 // ------------------------=
+// FUNC: recovery_command
+// DESC: Isolates fatal restart acceptance from unrelated UI scenarios, requiring actual old/new document pixels and real allocation exhaustion.
+// ------------------=
+#[cfg(browser_recovery_probe)]
+unsafe fn recovery_command(out:*mut abi::Command)->u32 {
+    if let Some(frame)=PIXELS.acquire(1) {
+        let expected=if STEP==2 {[12,34,56,255]}else{[70,80,90,255]};
+        if matches!(STEP,2|4) && frame.bytes().chunks_exact(4).all(|pixel|pixel==expected) {
+            FRAMES+=1;STEP+=1;
+        }
+    }
+    let mut value=abi::Command::empty();
+    match STEP {
+        0=>{value.kind=abi::OPEN;value.a=128;value.b=128;STEP=1;},
+        1=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/";value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=2;},
+        3 if INJECT_OOM=>{
+            unsafe extern "C" {
+                fn infinity_browser_private_infinity_std_allocate(size:usize,align:usize)->*mut u8;
+                fn infinity_browser_private_infinity_browser_abort()->!;
+            }
+            if !infinity_browser_private_infinity_std_allocate(512*1024*1024,16).is_null() {finish(1,499);}
+            infinity_browser_private_infinity_browser_abort();
+        },
+        3=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/second-tab";value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=4;},
+        5=>{value.kind=abi::SHUTDOWN;STEP=27;},
+        _=>return 0,
+    }
+    out.write(value);1
+}
+
+// ------------------------=
 // FUNC: command
 // DESC: Drives open, immediate navigation, resize, close and reopen through the real ABI.
 // ------------------=
 unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
+    #[cfg(browser_recovery_probe)]
+    return recovery_command(out);
     if (&mut *(&raw mut INPUT)).drain(1,|value|{out.write(value);true})==1 {return 1;}
     if let Some(frame)=PIXELS.acquire(1) {
         let (width,height)=frame.size();
@@ -272,7 +313,10 @@ unsafe extern "C" fn cancel(_: *mut c_void,_:u64) {RELEASES+=1;}
 // FUNC: fatal
 // DESC: Converts unrecoverable component failure to a structured fixture failure.
 // ------------------=
-unsafe extern "C" fn fatal(_: *mut c_void,code:u32)->! {finish(1,300+code as u64)}
+unsafe extern "C" fn fatal(_: *mut c_void,code:u32)->! {
+    #[cfg(browser_recovery_probe)] { recovery_host::leave(code) }
+    #[cfg(not(browser_recovery_probe))] { finish(1,300+code as u64) }
+}
 // ------------------------=
 // FUNC: component_boot
 // DESC: Executes the actual privately linked engine through its production C ABI.
@@ -283,7 +327,22 @@ pub unsafe extern "C" fn component_boot()->! {
     HOST.version=0;
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
+    #[cfg(browser_recovery_probe)] {
+        for generation in 0..3 {
+            INJECT_OOM=generation<2;
+            STEP=0;FRAMES=0;RELEASES=0;NEXT_ID=0;REDIRECT_ID=0;DOWNLOAD_ID=0;HISTORY=0;LOCATION=0;
+            LOAD_STARTS=0;LOAD_COMPLETE=false;SECOND_TAB=0;ACTIVE_TAB=0;TAB_PROOF=0;SECOND_REQUEST=0;
+            INPUT.clear();
+            let result=recovery_host::enter(core::ptr::addr_of_mut!(HOST));
+            if result!=if INJECT_OOM {4}else{0} || STEP!=if INJECT_OOM {3}else{27}
+                || FRAMES!=if INJECT_OOM {1}else{2} || u64::from(RELEASES)!=NEXT_ID {finish(1,500+result as u64);}
+            record(13,((generation as u64)<<32)|u64::from(result));
+        }
+        finish(0,4)
+    }
+    #[cfg(not(browser_recovery_probe))]
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
+    #[cfg(not(browser_recovery_probe))]
     if result!=0 || STEP!=27 || TAB_PROOF!=7 || DOWNLOAD_ID==0 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<5 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }

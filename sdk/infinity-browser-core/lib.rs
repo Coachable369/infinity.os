@@ -17,6 +17,7 @@ pub mod omnibox;
 pub mod damage;
 pub mod tab_style;
 pub mod startup;
+pub mod recovery;
 pub mod favorites;
 pub mod page_status;
 pub mod settings;

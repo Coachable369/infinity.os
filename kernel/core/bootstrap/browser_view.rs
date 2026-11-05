@@ -193,6 +193,8 @@ impl DisplayDevice {
         } else if view.error!=0 {
             use infinity_browser_core::startup::Error;
             let detail:&[u8]=match view.error {
+                infinity_browser_core::page_status::ENGINE_MEMORY=>b"This page exceeded the browser memory budget. Reload or enter another address to start a fresh engine.",
+                infinity_browser_core::page_status::ENGINE_STOPPED=>b"The browser engine stopped. Reload or enter another address to start a fresh engine.",
                 value if value==Error::Entropy as u32=>b"Secure randomness unavailable. Enable firmware RNG or TPM 2.0, then restart InfinityOS.",
                 value if value==Error::Clock as u32=>b"Trusted firmware time unavailable. Check the firmware clock, then retry.",
                 value if value==Error::Viewport as u32=>b"This viewport is unsupported. Restore the browser window, then reload.",

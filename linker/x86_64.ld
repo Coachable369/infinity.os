@@ -21,8 +21,18 @@ SECTIONS
     .init_array : ALIGN(8) { KEEP(*(.init_array .init_array.*)) } :data
     .fini_array : ALIGN(8) { KEEP(*(.fini_array .fini_array.*)) } :data
     .got : ALIGN(0x1000) { *(.got .got.*) } :data
-    .data : ALIGN(0x1000) { *(.data .data.* .ldata .ldata.*) } :data
-    .bss : ALIGN(0x1000) { *(.bss .bss.* .lbss .lbss.*) *(COMMON) } :data
+    .data : ALIGN(0x1000) { *(.data .data.* .ldata .ldata.*)
+        . = ALIGN(4096);
+        infinity_browser_private_browser_data_start = .;
+        *(.browser_state_data.*)
+        infinity_browser_private_browser_data_end = .;
+    } :data
+    .bss : ALIGN(0x1000) { *(.bss .bss.* .lbss .lbss.*) *(COMMON)
+        . = ALIGN(4096);
+        infinity_browser_private_browser_bss_start = .;
+        *(.browser_state_bss.*)
+        infinity_browser_private_browser_bss_end = .;
+    } :data
     ASSERT(. < 0x80000000, "x86 ordinary kernel data exceeds relative-addressing range")
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) { *(.speech_heap) } :speech
     .browser_heap 0x160000000 (NOLOAD) : ALIGN(0x1000) { *(.browser_heap) } :browser
@@ -31,5 +41,10 @@ SECTIONS
            "x86 display arena must retain both complete 4K caches")
     ASSERT(SIZEOF(.browser_heap) == 0 || SIZEOF(.browser_heap) == 0x20000000,
            "x86 browser arena must retain its complete 512 MiB allocation")
+    ASSERT(!DEFINED(infinity_browser_private_infinity_browser_run) ||
+           (infinity_browser_private_browser_data_end > infinity_browser_private_browser_data_start &&
+            infinity_browser_private_browser_bss_end > infinity_browser_private_browser_bss_start),
+           "native browser component lacks restartable state; rebuild it")
+    ASSERT(infinity_browser_private_browser_data_end - infinity_browser_private_browser_data_start <= 0x200000, "browser restart checkpoint capacity exceeded")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) }
 }

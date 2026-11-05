@@ -54,6 +54,14 @@ fn transport_ready()->bool {
 }
 
 // ------------------------=
+// FUNC: quiescent
+// DESC: Confirms all previous engine request loans have been reclaimed by the BSP before worker restart.
+// ------------------=
+/// BSP only, while the engine producer is stopped.
+pub unsafe fn quiescent() -> bool {
+    CURRENT.is_none() && SLOTS.iter().all(|slot| slot.state.load(Ordering::Acquire) == FREE)
+}
+// ------------------------=
 // FUNC: configure
 // DESC: Installs only caller-supplied authority between sessions; never mints or broadens capabilities.
 // ------------------=
