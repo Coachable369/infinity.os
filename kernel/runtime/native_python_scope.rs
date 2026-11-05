@@ -15,5 +15,5 @@ pub fn readable(owner: [u8; 16], user: [u8; 16], personal: bool, path: &[u8]) ->
 // DESC: Allows only the immutable bundled utility entry points, not arbitrary system objects.
 // ------------------=
 pub fn system_script(path:&[u8])->bool {
-    matches!(path,b"/System/awk.py"|b"/System/sed.py"|b"/System/grep.py"|b"/System/figlet.py")
+    matches!(path,b"/System/media-player.py"|b"/System/awk.py"|b"/System/sed.py"|b"/System/grep.py"|b"/System/figlet.py")
 }

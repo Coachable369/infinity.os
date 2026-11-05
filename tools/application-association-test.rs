@@ -24,6 +24,15 @@ fn main() {
     assert!(registry.resolve(ContentKind::Namespace, b"json").unwrap().launch
         != LaunchAdapter::TextEditor);
 
+    #[cfg(feature="native-python")]
+    for extension in [b"MP3".as_slice(),b"MP4",b"wav",b"m4a",b"flac",b"mov"] {
+        let handler=registry.resolve(ContentKind::Binary,extension).unwrap();
+        assert_eq!(handler.launch,LaunchAdapter::MediaPlayer);
+        assert_eq!(registry.resolve(ContentKind::Utf8Text,extension),Ok(handler));
+        assert!(!handler.supports(ContentKind::Namespace,extension));
+        let request=registry.stage_open(handler,b"/home/member/downloads/clip",ContentKind::Binary,extension).unwrap();
+        assert_eq!(registry.take_open_request(handler.identity.bytes()), Some(request));
+    }
     let mut custom = ApplicationHandler::new(
         b"app.example.markdown-studio", b"Markdown Studio", LaunchAdapter::InstalledApplication(0xb001),
     ).expect("custom handler");

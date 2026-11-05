@@ -83,6 +83,7 @@ fn seed_inputs(store: &mut ObjectStore<Disk>, directory: &Path, owner: ObjectId,
         "upgrade" => ["infinity_test_base-1.0.0-py3-none-any.whl", "infinity_test_app-1.1.0-py3-none-any.whl", "upgraded.py", "absent.py"],
         "online" => ["online.py", "online-absent.py", "online-denied.py", "online-metadata.py"],
         "tls" => ["stdlib-tls.py", "stdlib-tls-denied.py", "stdlib-tls-hostname.py", "stdlib-sqlite.py"],
+        "media" => ["clip.mp4", "clip.mp4", "clip.mp4", "clip.mp4"],
         "tk" => ["tk-acceptance.py", "tk-import.py", "tk-window-cycle.py", "tk-widget-contract.py"],
         "data" => ["data-acceptance.py", "data-isolation.py", "tk-import.py", "tk-widget-contract.py"],
         "bundled" => ["bundled-tests.py", "infinity_test_base-1.0.0-py3-none-any.whl",
@@ -98,7 +99,7 @@ fn seed_inputs(store: &mut ObjectStore<Disk>, directory: &Path, owner: ObjectId,
     };
     // Reuse the no-longer-needed dependency wheel slot for the import script
     // after installation; keep one free namespace entry for the owned archive.
-    let names = if matches!(phase, "bundled" | "bundled-import") { &names[..3] } else { &names[..] };
+    let names = if phase=="media" {&names[..1]} else if matches!(phase, "bundled" | "bundled-import") { &names[..3] } else { &names[..] };
     let mut previous = vec![0; package_limits::ARCHIVE_BYTES];
     let (revision, length) = store.read_python_packages(owner, &mut previous).unwrap();
     previous.truncate(length);
@@ -121,12 +122,12 @@ fn seed_inputs(store: &mut ObjectStore<Disk>, directory: &Path, owner: ObjectId,
             store.replace_state(id, &bytes).unwrap();
             id
         } else {
-            assert!(matches!(phase, "install" | "online" | "tls" | "tk" | "bundled"), "Later phases may only reuse fixture objects");
+            assert!(matches!(phase, "install" | "online" | "tls" | "tk" | "bundled" | "media"), "Later phases may only reuse fixture objects");
             let used = store.persistent_namespace_count();
             assert!(used + (names.len() - index) + usize::from(revision.is_none()) <= storage::object::NAMESPACE_CAPACITY,
                 "Fixture capacity: used={used}, requested={}, archive={}, capacity={}",
                 names.len() - index, usize::from(revision.is_none()), storage::object::NAMESPACE_CAPACITY);
-            store.create_owned_attached(label.as_bytes(), ObjectType::Text, Space::Personal, &bytes, path.as_bytes(), owner).unwrap()
+            store.create_owned_attached(label.as_bytes(), if phase=="media"{ObjectType::Blob}else{ObjectType::Text}, Space::Personal, &bytes, path.as_bytes(), owner).unwrap()
         };
         let mut actual = vec![0; bytes.len()];
         assert_eq!(store.read(object, None, &mut actual).unwrap(), bytes.len());

@@ -42,6 +42,7 @@ impl ContentKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LaunchAdapter {
     TextEditor,
+    MediaPlayer,
     FileNavigator,
     InstalledApplication(u32),
 }
@@ -188,6 +189,9 @@ impl ApplicationHandler {
     // DESC: Determines compatibility from the authoritative object content type and optional filename extension.
     // ------------------=
     pub fn supports(&self, content_type: ContentKind, extension: &[u8]) -> bool {
+        if self.launch==LaunchAdapter::MediaPlayer && !matches!(content_type,ContentKind::Binary|ContentKind::Metadata|ContentKind::Utf8Text){
+            return false;
+        }
         let type_match = self.content_mask & (1u8 << ((content_type as u8).saturating_sub(1))) != 0;
         let extension = normalized_extension(extension).unwrap_or(&[]);
         let extension_match = !extension.is_empty()
@@ -324,11 +328,19 @@ impl Registry {
             content_mask: 1u8 << ((ContentKind::Namespace as u8) - 1),
             extensions: [BoundedText::empty(); MAX_HANDLER_EXTENSIONS],
         };
+        let media = ApplicationHandler {
+            identity: BoundedText::literal(b"app.infinity.media-player"),
+            display_name: BoundedText::literal(b"Media Player"),
+            launch: LaunchAdapter::MediaPlayer, content_mask: 0,
+            extensions: [BoundedText::literal(b"mp3"),BoundedText::literal(b"mp4"),
+                BoundedText::literal(b"wav"),BoundedText::literal(b"m4a"),
+                BoundedText::literal(b"mov"),BoundedText::literal(b"flac")],
+        };
         Self {
             handlers: [
                 Some(text),
                 Some(files),
-                None,
+                if cfg!(feature="native-python"){Some(media)}else{None},
                 None,
                 None,
                 None,
@@ -414,6 +426,10 @@ impl Registry {
             }) {
                 return Ok(*handler);
             }
+        }
+        if matches!(content_type, ContentKind::Binary | ContentKind::Utf8Text | ContentKind::Metadata) {
+            if let Some(media)=self.handlers.iter().flatten().find(|h|h.launch==LaunchAdapter::MediaPlayer
+                && h.supports(content_type,extension)){return Ok(*media);}
         }
         self.compatible_nth(content_type, extension, 0)
             .ok_or(AssociationError::IncompatibleApplication)

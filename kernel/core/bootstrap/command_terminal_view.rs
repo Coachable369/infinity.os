@@ -33,7 +33,7 @@ impl DisplayDevice {
     pub(super) fn command_terminal_view(&mut self,body:Rect,toolbar:Rect,scale:usize) {
         let g=terminal::inspect(|s|s.layout(body,toolbar,scale));terminal::mutate(|s|s.reflow(g.columns(),g.rows()));terminal::publish_snapshot();
         terminal::inspect(|s|{
-            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote && !s.monitor {paint::content(&mut canvas,s,g,true);}
+            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote && !s.monitor && !s.disk.active {paint::content(&mut canvas,s,g,true);}
             if s.remote {canvas.fill(g.body,s.background_color());crate::ui::terminal_vt::inspect(|t|{
                 for y in 0..t.rows.min(g.rows()){for x in 0..t.columns.min(g.columns()){
                     let c=t.cells[y][x];let mut fg=c.fg;let mut bg=c.bg;if c.inverse{core::mem::swap(&mut fg,&mut bg);}if c.bold&&fg<8{fg+=8;}
@@ -42,6 +42,7 @@ impl DisplayDevice {
                 }}
                 if t.cursor_visible {canvas.fill(Rect{x:g.text.x+(t.x*g.cell)as i32,y:g.text.y+(t.y*g.line)as i32,width:2*scale as u32,height:g.line as u32},s.appearance.color(5));}
             });}
+            if s.disk.active { disk_paint(&mut canvas,g,s); }
             if s.monitor {
                 use core::fmt::Write;
                 canvas.fill(g.body,s.background_color());
@@ -147,3 +148,58 @@ fn colored(canvas:&mut impl Canvas,g:Layout,p:Preferences,row:usize,bytes:&[u8],
 // DESC: Resolves the standard sixteen ANSI colors independently of terminal background opacity.
 // ------------------=
 fn ansi_color(index:u8)->(u8,u8,u8){const C:[u32;16]=[0x000000,0xcd3131,0x0dbc79,0xe5e510,0x2472c8,0xbc3fbc,0x11a8cd,0xe5e5e5,0x666666,0xf14c4c,0x23d18b,0xf5f543,0x3b8eea,0xd670d6,0x29b8db,0xffffff];let c=C[index.min(15)as usize];((c>>16)as u8,(c>>8)as u8,c as u8)}
+
+// ------------------------=
+// FUNC: disk_paint
+// DESC: Paints measured partition and file usage, selection, and cleanup controls on the current terminal grid.
+// ------------------=
+fn disk_paint(canvas:&mut impl Canvas,g:Layout,s:&terminal::State) {
+use core::fmt::Write;
+                let v=&s.disk;
+                canvas.fill(g.body,s.background_color());
+                let mut header=crate::runtime::console_execution::Bytes::<160>::new();
+                if v.depth==0 {let _=write!(header,"DISK   |   System disk   {} MiB   |   GPT partitions",v.capacity/1048576);}
+                else {header.write(b"DISK / ");header.write(v.partition.label());let _=write!(header,"   {} MiB   |   LBA {}",v.partition.bytes/1048576,v.partition.first);}
+                colored(canvas,g,s.appearance,0,header.bytes(),ansi_color(14));
+                ascii(canvas,g,s.appearance,1,if v.depth==0 {b"   PARTITION SHARE            SIZE       NAME"}else if v.partition.container{b"   RELATIVE FILE SIZE         SIZE       PERSONAL FILE (largest first)"}else{b"   RELATIVE FILE SIZE         SIZE       FILE (read-only)"});
+                let chart=g.rows()>=9 && !v.inspect && v.depth==0 && v.capacity>0;
+                if chart {
+                    let columns=g.columns().saturating_sub(2).min(120);
+                    let mut left=0; let mut bytes=0u128;
+                    for (index,row) in v.rows[..v.count].iter().enumerate(){
+                        bytes+=u128::from(row.bytes);
+                        let right=((bytes*columns as u128)/u128::from(v.capacity)).min(columns as u128) as usize;
+                        for col in left..right{canvas.glyph(g.text.x+((col+1)*g.cell)as i32,g.text.y+2*g.line as i32,
+                            b'#',g.scale,s.appearance,ansi_color([14,12,13,10,11][index%5]));}
+                        left=right;
+                    }
+                    for col in left..columns{canvas.glyph(g.text.x+((col+1)*g.cell)as i32,g.text.y+2*g.line as i32,
+                        b'.',g.scale,s.appearance,ansi_color(8));}
+                }
+                let visible=g.rows().saturating_sub(5+usize::from(chart)).max(1);
+                let base=v.selected/visible*visible;
+                let max=if v.depth==0{v.capacity}else{v.rows.first().map_or(0,|r|r.bytes)}.max(1);
+                if v.inspect && v.selected<v.count {
+                    let row=v.rows[v.selected];colored(canvas,g,s.appearance,3,row.label(),ansi_color(14));
+                    let mut info=crate::runtime::console_execution::Bytes::<160>::new();
+                    let _=write!(info,"Logical size: {} bytes  |  {}",row.bytes,if v.partition.container{"Personal file"}else{"Read-only filesystem"});
+                    ascii(canvas,g,s.appearance,4,info.bytes());
+                } else {for i in base..v.count.min(base+visible) {
+                    let row=v.rows[i];let mut line=crate::runtime::console_execution::Bytes::<160>::new();
+                    line.write(if i==v.selected{b"> ["}else{b"  ["});
+                    let bars=(u128::from(row.bytes)*16/u128::from(max)).min(16) as usize;
+                    line.write(&[b'#';16][..bars]);line.write(&[b'.';16][..16-bars]);
+                    let _=write!(line,"] {:>10} KiB  ",row.bytes.div_ceil(1024));line.write(row.label());
+                    colored(canvas,g,s.appearance,i-base+2+usize::from(chart),line.bytes(),ansi_color(if i==v.selected{14}else{7}));
+                }
+                }
+                if v.depth==1 && v.partition.container {
+                    let mut usage=crate::runtime::console_execution::Bytes::<96>::new();
+                    let _=write!(usage,"Pool allocation: {} MiB used",v.used/1048576);
+                    ascii(canvas,g,s.appearance,g.rows().saturating_sub(3),usage.bytes());
+                }
+                colored(canvas,g,s.appearance,g.rows().saturating_sub(2),if v.confirm {
+                    if v.rows[v.selected].label().starts_with(b"/trash/"){b"Permanently delete selected file? Y confirms."}else{b"Move selected file to Trash? Y confirms."}
+                }else{v.message},ansi_color(11));
+                ascii(canvas,g,s.appearance,g.rows().saturating_sub(1),b"Up/Down select   Enter inspect   Left back   D clean   U restore   R refresh   Q quit");
+}

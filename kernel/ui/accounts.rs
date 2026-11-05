@@ -509,13 +509,13 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             } else {
                 body.x + (list_width + gap) as i32
             },
-            y: body.y + (36 * s) as i32,
+            y: body.y + (52 * s) as i32,
             width: if narrow {
                 body.width
             } else {
                 body.width.saturating_sub(list_width + gap)
             },
-            height: body.height.saturating_sub(36 * s + bar + gap),
+            height: body.height.saturating_sub(52 * s + bar + gap),
         }
     } else {
         Rect::default()
@@ -533,41 +533,35 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
         },
         title: Rect {
             y: body.y,
-            height: 36 * s,
+            height: 52 * s,
             ..details
         },
         narrow,
         list_max: 0,
         detail_max: 0,
     };
-    let segment = viewport.width.saturating_sub(gap * 2) / 3;
-    for (i, target) in [
-        Target::Users,
-        Target::Groups,
-        if narrow && show_detail {
-            Target::Back
-        } else {
-            Target::New
-        },
-    ]
-    .iter()
-    .copied()
-    .enumerate()
-    {
-        out.add(
-            target,
-            Rect {
-                x: viewport.x + (i as u32 * (segment + gap)) as i32,
-                y: viewport.y,
-                width: segment,
-                height: bar.min(header_h),
-            },
-            viewport,
-            state.mode == Mode::Browse && (target != Target::New || data.administrator),
-        );
+    // Keep the directory controls with the directory on wide screens.
+    let third = if narrow && show_detail { Target::Back } else { Target::New };
+    let compact = narrow && show_detail;
+    let strip = if narrow { viewport.width } else { list_width };
+    let segment = if compact { strip.saturating_sub(2 * gap) / 3 }
+        else { strip.saturating_sub(gap) / 2 };
+    for (i, target) in [Target::Users, Target::Groups].into_iter().enumerate() {
+        out.add(target, Rect { x: viewport.x + (i as u32 * (segment + gap)) as i32,
+            y: viewport.y, width: segment, height: bar.min(header_h) }, viewport,
+            state.mode == Mode::Browse);
     }
+    let toolbar = if compact {
+        Rect { x: viewport.x + (2 * (segment + gap)) as i32, y: viewport.y,
+            width: segment, height: bar.min(header_h) }
+    } else {
+        Rect { x: list.x, y: body.bottom() - bar as i32,
+            width: (72 * s).min(list.width), height: bar }
+    };
+    out.add(third, toolbar, viewport, state.mode == Mode::Browse
+        && (third != Target::New || data.administrator));
     if list.width > 0 {
-        let row_h = 44 * s;
+        let row_h = 52 * s;
         out.list_max =
             (data.entries(state.tab).len() as u32 * row_h).saturating_sub(list.height) as usize;
         let scroll = state.list_scroll.min(out.list_max);
@@ -578,32 +572,25 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
                     x: list.x,
                     y: list.y + (i as u32 * row_h) as i32 - scroll as i32,
                     width: list.width,
-                    height: 40 * s,
+                    height: 50 * s,
                 },
                 list,
                 state.mode == Mode::Browse,
             );
         }
-        for (i, target) in [Target::ListUp, Target::ListDown]
-            .iter()
-            .copied()
-            .enumerate()
-        {
-            out.add(
-                target,
-                Rect {
-                    x: list.x + (i as u32 * (list.width / 2 + gap / 2)) as i32,
-                    y: body.bottom() - bar as i32,
-                    width: list.width.saturating_sub(gap) / 2,
-                    height: bar,
-                },
-                viewport,
-                if i == 0 {
-                    scroll > 0
-                } else {
-                    scroll < out.list_max
-                },
-            );
+        let remove = Rect { x: toolbar.right() + gap as i32, y: toolbar.y,
+            width: (36*s).min(list.width.saturating_sub(toolbar.width + gap)), height: toolbar.height };
+        let selected = state.selected_entry(data);
+        out.add(Target::Delete, remove, viewport, state.mode == Mode::Browse && data.administrator &&
+            selected.is_some_and(|e|!e.builtin && (state.tab==Tab::Groups || e.id!=data.actor)));
+        if out.list_max > 0 {
+            let start = remove.right() + gap as i32;
+            let step = list.right().saturating_sub(start).max(0) as u32 / 2;
+            for (i, target) in [Target::ListUp, Target::ListDown].into_iter().enumerate() {
+                out.add(target, Rect { x: start + (i as u32 * step) as i32,
+                    y: body.bottom() - bar as i32, width: step, height: bar }, viewport,
+                    if i == 0 { scroll > 0 } else { scroll < out.list_max });
+            }
         }
     }
     if show_detail {
@@ -647,6 +634,7 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
                                 || entry.is_some_and(|e| e.id != data.actor)),
                     ),
                 ] {
+                    if target == Target::Delete && list.width > 0 { continue; }
                     if state.tab == Tab::Groups
                         && matches!(target, Target::Password | Target::Enabled)
                     {
@@ -668,35 +656,25 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
                 }
             }
         }
-        let mut total = 0;
-        for target in &targets[..n] {
-            total += if matches!(target, Target::Field(_)) {
-                68 * s
-            } else {
-                44 * s
-            };
-        }
-        out.detail_max = total.saturating_sub(details.height) as usize;
-        let mut y = details.y - state.detail_scroll.min(out.detail_max) as i32;
+        let paired = details.width >= 320*s && targets[..n].starts_with(&[Target::Rename,Target::Password]);
+        let row_height = |target| if matches!(target,Target::Field(_)) {68*s} else {44*s};
+        let mut total:u32=targets[..n].iter().map(|&t|row_height(t)).sum();
+        if paired {total-=44*s;}
+        if targets[..n].contains(&Target::Member(0)) {total+=32*s;}
+        out.detail_max=total.saturating_sub(details.height) as usize;
+        let mut y=details.y-state.detail_scroll.min(out.detail_max) as i32;
         for i in 0..n {
-            let h = if matches!(targets[i], Target::Field(_)) {
-                68 * s
-            } else {
-                44 * s
-            };
-            out.add(
-                targets[i],
-                Rect {
-                    x: details.x,
-                    y,
-                    width: details.width,
-                    height: h - 4 * s,
-                },
-                details,
-                enabled[i],
-            );
-            y += h as i32;
+            let t=targets[i];
+            if t==Target::Member(0){y+=(32*s) as i32;}
+            let h=row_height(t);
+            let action_width=(details.width.saturating_sub(gap)/2).min(160*s);
+            let width=if matches!(t,Target::Rename|Target::Password|Target::Delete) {action_width}
+                else {details.width.min(450*s)};
+            let x=details.x+if paired && i==1 {(action_width+gap) as i32}else{0};
+            out.add(t,Rect{x,y,width,height:h-4*s},details,enabled[i]);
+            if !paired || i!=0 {y+=h as i32;}
         }
+        if out.detail_max > 0 {
         for (i, target) in [Target::DetailUp, Target::DetailDown]
             .iter()
             .copied()
@@ -705,9 +683,9 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             out.add(
                 target,
                 Rect {
-                    x: details.x + (i as u32 * (details.width / 2 + gap / 2)) as i32,
+                    x: details.x + (i as u32 * (44*s+gap)) as i32,
                     y: body.bottom() - bar as i32,
-                    width: details.width.saturating_sub(gap) / 2,
+                    width: (44*s).min(details.width/2),
                     height: bar,
                 },
                 viewport,
@@ -718,6 +696,7 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
                 },
             );
         }
+    }
     }
     if state.mode != Mode::Browse {
         let left = if details.width > 0 {

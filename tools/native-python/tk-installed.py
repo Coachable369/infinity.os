@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -346,6 +347,53 @@ def infinitycode(guest, native, python):
 
 
 # ------------------------=
+# FUNC: media_player
+# DESC: Double-clicks a real MP4 in File Navigator and measures decoded red video pixels in the new native window.
+# ------------------=
+def media_player(guest, native, python):
+    docs=module("media_documents",ROOT/"tools/documents-installed-test.py")
+    docs.helpers.click=native.adaptive_click
+    docs.base.symbol=native.base.symbol
+    state=docs.documents(guest)
+    path=b"/home/default/documents/clip.mp4"
+    for row in range(state[15]):
+        x,y,w,h=state[4:8]
+        scale=state[8]
+        point=(x+w*27//100+55*scale,y+(168+row*34)*scale)
+        native.adaptive_click(guest,*point,button="right")
+        state=docs.wait_navigator(guest,lambda v:v[17] and v[16]==row+2)
+        match=state[27]==zlib.crc32(path)
+        guest.key("esc")
+        docs.wait_navigator(guest,lambda v:not v[17])
+        if match:break
+    else:raise AssertionError("Media fixture missing from Documents")
+    previous=python.snapshot(guest)[2]
+    px,py=point
+    width,height=guest.state()[11:13]
+    a=lambda name,value:{"type":"abs","data":{"axis":name,"value":value}}
+    button=lambda down:{"type":"btn","data":{"button":"left","down":down}}
+    # Send both clicks in guest input order, without unrelated pointer movement.
+    for _ in range(2):
+        guest.qmp("input-send-event",{"events":[a("x",round(px*32767/(width-1))),a("y",round(py*32767/(height-1))),button(True)]})
+        time.sleep(.07)
+        guest.qmp("input-send-event",{"events":[button(False)]})
+        time.sleep(.08)
+    windows=wait(guest,python,lambda:gui(guest,native),lambda v:any(w["visible"] for w in v["windows"]),150)
+    window=next(w for w in windows["windows"] if w["visible"])
+    def red_frame(image):
+        count=0
+        for y in range(max(0,window["y"]),min(image["height"],window["y"]+window["height"]),2):
+            for x in range(max(0,window["x"]),min(image["width"],window["x"]+window["width"]),2):
+                r,g,b=pixel(image,x,y)
+                count+=r>200 and g<32 and b<32
+        return count>=140
+    capture=wait(guest,python,lambda:screenshot(guest,"playing-mp4"),red_frame,120)
+    native.ui.click(guest,*close_point(guest,window))
+    receipt=finished(guest,python,previous)
+    return dict(double_click=True,video_frame=capture["path"],window=window,exit=receipt)
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs unchanged media or reuses a stopped disposable installation, seeds source inputs and verifies native GUI behavior without a host GUI backend.
 # ------------------=
@@ -360,6 +408,7 @@ def main():
                         help="Require real Control+A selection replacement; media must include normalized native shortcut delivery")
     parser.add_argument("--durable-data", action="store_true",
                         help="Require real source-scoped persistent files and SQLite after cold boots; needs updated data-capable kernel")
+    parser.add_argument("--media-player-only", action="store_true", help="Verify automatic MP4 opening and playback")
     parser.add_argument("--infinitycode-only", action="store_true",
                         help="Exercise installed InfinityCode launch, drawing, input and clean close")
     args = parser.parse_args()
@@ -418,6 +467,15 @@ def main():
             guest.stop()
         subprocess.run(["python3", str(ROOT / "tools/update-installed-clone.py"), str(guest.disk),
                         str(artifacts / "installed-kernel.elf"), "--verify-only"], check=True)
+        if args.media_player_only:
+            shutil.copyfile(ROOT/"tools/native-python/media-fixtures/clip.mp4",fixtures/"clip.mp4")
+            proof["fixtures"]=pip.seed(guest,helper,fixtures,"media")
+            guest.audio_capture=destination/"speaker.wav"
+            guest.boot(False)
+            guest.authenticate()
+            proof["media_player"]=media_player(guest,native,python)
+            proof["installed_acceptance"]=True
+            return
         if not args.infinitycode_only:
             proof["fixtures"] = pip.seed(guest, helper, fixtures, "tk")
         if args.infinitycode_only:

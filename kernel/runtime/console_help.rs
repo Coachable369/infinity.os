@@ -10,6 +10,7 @@ pub static COMMANDS: &[Entry] = &[
     entry!(b"awk",b"awk [-F SEP] '{print $1,$2}' [FILE ...]",b"Print numbered fields, the whole record ($0), NR or NF."),
     entry!(b"figlet",b"figlet [-f standard|small] [-o FILE] TEXT",b"Render ASCII letters using a packaged FIGfont. -o creates a new personal text object."),
     entry!(b"help",b"help [commands|DOMAIN|DOMAIN ACTION|COMMAND|search WORD]",b"Explore the registered command catalog. Enter/Space advances local pages; Esc ends paging."),
+    entry!(b"disk",b"disk",b"Explore the system disk and partitions. Enter inspects a partition, arrows select. D moves your file to Trash or deletes a selected Trash entry after confirmation. U restores a selected Trash file. R refreshes; Q exits."),
     entry!(b"top",b"top",b"Live local process monitor: use arrows to select, p to pause or resume, k to end, r to relaunch a built-in app, q to return."),
     entry!(b"ipconfig",b"ipconfig [--all]",b"All native interfaces, link state, MAC, MTU, IP/prefix, gateway, DNS and traffic counters. Read only."),
     entry!(b"list",b"list [-l|--long] [-a|--all] [-R|--tree] [PATH]",b"List namespace entries. ls and dir are aliases. Long output includes owner, size, type, version and timestamps. Legacy timestamps are reported as unavailable, never invented."),

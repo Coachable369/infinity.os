@@ -439,7 +439,7 @@ $(BUILD)/face/x86_64/face-worker.elf: $(NATIVE_FACE_SOURCES)
 $(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: $(BUILD)/face/aarch64/face-worker.elf
 $(BUILD)/x86_64/installed-kernel.o $(BUILD)/x86_64/kernel.o: $(BUILD)/face/x86_64/face-worker.elf
 $(BUILD)/aarch64/loader.obj $(BUILD)/x86_64/loader.obj: boot/common/uefi_camera.h
-NATIVE_PYTHON_SOURCES := tools/native-python/build.py tools/native-python/bundled_packages.py tools/native-python/dependencies.py tools/native-python/tcl_sources.py tools/native-python/tcl_build.py tools/native-python/tk_build.py tools/native-python/ffi_build.py tools/native-python/module_inventory.py tools/native-python/extension.c tools/native-python/library.c tools/native-python/ffi-library.c $(shell find sdk/python sdk/compiler -type f)
+NATIVE_PYTHON_SOURCES := tools/native-python/media_build.py tools/native-python/build.py tools/native-python/bundled_packages.py tools/native-python/dependencies.py tools/native-python/tcl_sources.py tools/native-python/tcl_build.py tools/native-python/tk_build.py tools/native-python/ffi_build.py tools/native-python/module_inventory.py tools/native-python/extension.c tools/native-python/library.c tools/native-python/ffi-library.c $(shell find sdk/python sdk/compiler -type f)
 
 builds/toolchains/aarch64/python.elf: $(NATIVE_PYTHON_SOURCES)
 	python3 tools/native-python/build.py aarch64

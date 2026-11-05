@@ -63,6 +63,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn command_terminal_key(&mut self,key:ConsoleKey)->bool {
         if !self.command_terminal_visible()||crate::ui::terminal_edit::inspect(|s|s.active){return false;}
+        if self.disk_key(key) {return true;}
         if let Some(row)=terminal::inspect(|s|s.monitor.then_some(s.monitor_row)) {
             let count=crate::runtime::with_runtime(|r|r.execution.count()).unwrap_or(0);
             let row=row.min(count.saturating_sub(1));

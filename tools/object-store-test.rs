@@ -707,10 +707,50 @@ fn private_identity_state(sectors: usize) {
 }
 
 // ------------------------=
+// FUNC: disk_inspector
+// DESC: Checks GPT extent sizes and FAT file listings against independently constructed sectors; inspection must never mutate any of them.
+// ------------------=
+fn disk_inspector() {
+    let sectors=STORE_RELATIVE_LBA+32768;
+    let disk=SparseDisk {sectors,bytes:Default::default()};
+    let mut store=ObjectStore::format(disk.clone(),0,sectors,[0x48;16]).unwrap();
+    let mut header=[0u8;512];header[..8].copy_from_slice(b"EFI PART");
+    header[12..16].copy_from_slice(&92u32.to_le_bytes());
+    header[24..32].copy_from_slice(&1u64.to_le_bytes());
+    header[32..40].copy_from_slice(&(sectors-1).to_le_bytes());
+    header[56..72].fill(0x47);header[72..80].copy_from_slice(&2u64.to_le_bytes());
+    header[80..84].copy_from_slice(&4u32.to_le_bytes());header[84..88].copy_from_slice(&128u32.to_le_bytes());
+    let mut table=[0u8;512];table[..16].fill(1);table[16..32].fill(2);
+    table[32..40].copy_from_slice(&2048u64.to_le_bytes());
+    table[40..48].copy_from_slice(&10239u64.to_le_bytes());
+    for (dst,c) in table[56..62].chunks_exact_mut(2).zip(b"EFI"){dst[0]=*c;}
+    header[88..92].copy_from_slice(&storage::object::crc32(&table).to_le_bytes());
+    let crc=storage::object::crc32(&header[..92]);header[16..20].copy_from_slice(&crc.to_le_bytes());
+    let mut boot=[0;512];boot[510..].copy_from_slice(&[0x55,0xaa]);boot[11..13].copy_from_slice(&512u16.to_le_bytes());
+    boot[13]=1;boot[14]=1;boot[16]=1;boot[17]=16;boot[19..21].copy_from_slice(&8192u16.to_le_bytes());
+    boot[22]=32;
+    let mut directory=[0;512];directory[..11].copy_from_slice(b"BOOT    EFI");directory[11]=32;
+    directory[28..32].copy_from_slice(&4321u32.to_le_bytes());
+    for (lba,sector) in [(1,header),(2,table),(2048,boot),(2081,directory)]{disk.bytes.borrow_mut().insert(lba,sector);}
+    let initial=disk.bytes.borrow().clone();
+    let mut rows=vec![];
+    assert_eq!(store.visit_partitions(|name,first,size,mount|rows.push((name.to_vec(),first,size,mount))).unwrap(),sectors*512);
+    assert_eq!(rows,vec![(b"EFI".to_vec(),2048,8192*512,false)]);
+    let mut files=vec![];
+    store.visit_partition_files(rows[0].1,rows[0].2,|path,size|files.push((path.to_vec(),size))).unwrap();
+    assert_eq!(files,vec![(b"/BOOT.EFI".to_vec(),4321)]);
+    assert_eq!(&initial,&*disk.bytes.borrow());
+    disk.bytes.borrow_mut().get_mut(&2).unwrap()[0]^=1;
+    assert_eq!(store.visit_partitions(|_,_,_,_|{}), Err(ObjectError::ChecksumMismatch));
+    assert!(store.visit_partition_files(sectors-1,8192*512,|_,_|panic!()).is_err());
+}
+// ------------------------=
 // FUNC: main
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    disk_inspector();
+    if std::env::args().any(|arg|arg=="--disk-only") { return; }
     if std::env::args().any(|arg| arg == "--identity-state-only") {
         private_identity_state(STORE_RELATIVE_LBA as usize + 32_768);
         return;
@@ -1212,12 +1252,21 @@ fn namespace_expansion() {
     }
     let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
     for i in 32..44 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
+    drop(store);
+    // A compact v8 bank has no header-resident entries.
+    for sector in 0..80 {
+        let at=STORE_RELATIVE_LBA as usize+sector;
+        if disk.0.borrow()[at][..4]==*b"INFO" {disk.set_version_and_rechecksum(at,8);}
+    }
+    let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
+    assert_eq!(store.persistent_namespace_count(),44);
+    for i in 44..48 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
     let generation=store.generation();
     assert_eq!(store.attach(b"/home/default/overflow",id),Err(ObjectError::InsufficientCapacity));
     assert_eq!(store.generation(),generation);drop(store);
     let mut store=ObjectStore::mount(disk,0).unwrap();
-    assert_eq!(store.persistent_namespace_count(),44);
-    for i in 32..44 {assert_eq!(store.resolve(format!("/home/default/alias{i}").as_bytes()).unwrap(),id);}
+    assert_eq!(store.persistent_namespace_count(),48);
+    for i in 32..48 {assert_eq!(store.resolve(format!("/home/default/alias{i}").as_bytes()).unwrap(),id);}
     let mut bytes=[0;16];let n=store.read(id,None,&mut bytes).unwrap();assert_eq!(&bytes[..n],b"preserve");
 }
 

@@ -96,6 +96,10 @@ impl DisplayDevice {
         );
         let s = scale.max(1);
         let layout = accounts::layout(viewport, &view.state, &view.data, s);
+        if layout.list.width > 0 {
+            self.precision_surface(layout.list, Surface::Panel, Material { fill: chrome.selection,
+                edge: chrome.outline, opacity: 105, edge_opacity: 125, focus: 0, pressed: false, scale: s });
+        }
         let entry = view.state.selected_entry(&view.data);
         if layout.details.width > 0 {
             let title: &[u8] = match view.state.mode {
@@ -111,7 +115,16 @@ impl DisplayDevice {
                 Mode::Delete => b"Confirm deletion",
                 Mode::Browse => entry.map(|e| e.name.as_bytes()).unwrap_or(b""),
             };
-            self.app_label(layout.title, title, (255, 255, 255), true, s);
+            if view.state.mode==Mode::Browse {
+                let size=(36*s).min(layout.title.width as usize);
+                self.themed_icon(layout.title.x.max(0)as usize+size/2,layout.title.y.max(0)as usize+24*s,
+                    crate::ui::icon_theme::settings_section_icon(2),size);
+                let inset=(size+8*s) as u32;
+                let heading=Rect{x:layout.title.x+inset as i32,width:layout.title.width.saturating_sub(inset),
+                    height:(26*s)as u32,..layout.title};
+                self.app_label(heading,title,(255,255,255),true,s);
+                if let Some(e)=entry { self.app_label(Rect{y:heading.bottom(),..heading},e.handle.as_bytes(),(174,197,221),false,s); }
+            }else{self.app_label(layout.title, title, (255, 255, 255), true, s);}
         }
         if view.data.entries(view.state.tab).is_empty() && layout.list.width > 0 {
             self.app_label(
@@ -129,6 +142,14 @@ impl DisplayDevice {
                 s,
             );
         }
+        if let Some(control)=layout.controls[..layout.count].iter().find(|c|c.target==Target::Member(0)) {
+            let heading=Rect{x:control.bounds.x,y:control.bounds.y-(30*s)as i32,width:control.bounds.width,height:(28*s)as u32};
+            let previous=self.render_clip;
+            self.intersect_render_clip(layout.details.x.max(0)as usize,layout.details.y.max(0)as usize,
+                layout.details.width as usize,layout.details.height as usize);
+            self.app_label(heading,if view.state.tab==Tab::Users{b"Group membership"}else{b"Group members"},
+                (174,197,221),true,s);self.render_clip=previous;
+        }
         for c in &layout.controls[..layout.count] {
             self.paint_account_control(*c, view, s, chrome);
         }
@@ -143,27 +164,6 @@ impl DisplayDevice {
             } else {
                 b"Delete this group and its memberships?"
             };
-        }
-        if view.state.mode == Mode::Browse
-            && view.state.feedback == Feedback::None
-            && view.data.available
-        {
-            if let Some(e) = entry {
-                first = e.handle.as_bytes();
-                second = if view.state.tab == Tab::Groups {
-                    if e.builtin {
-                        b"System group"
-                    } else {
-                        b"Custom group"
-                    }
-                } else if !e.enabled {
-                    b"Disabled account"
-                } else if e.admin {
-                    b"Administrator"
-                } else {
-                    b"Standard user"
-                };
-            }
         }
         let color = if matches!(
             view.state.feedback,
@@ -245,6 +245,26 @@ impl DisplayDevice {
         label.x += (10 * s) as i32;
         label.width = label.width.saturating_sub((20 * s) as u32);
         let entry = view.state.selected_entry(&view.data);
+        if let Target::Row(i) = c.target {
+            let item = &view.data.entries(view.state.tab)[i];
+            if selected || focused { self.precision_surface(c.bounds, Surface::Primary, material); }
+            let icon = (28 * s).min(c.bounds.width as usize / 3);
+            let _ = self.themed_icon(c.bounds.x.max(0) as usize + 20*s,
+                c.bounds.y.max(0) as usize + c.bounds.height as usize / 2,
+                crate::ui::icon_theme::settings_section_icon(2), icon);
+            let inset = (42*s) as u32;
+            let half = c.bounds.height/2;
+            let name = Rect { x: c.bounds.x + inset as i32, width: c.bounds.width.saturating_sub(inset),
+                height: half, ..c.bounds };
+            self.app_label(name, item.name.as_bytes(), color, true, s);
+            let role: &[u8] = if view.state.tab == Tab::Groups {
+                if item.builtin { b"System group" } else { b"Group" }
+            } else if !item.enabled { b"Disabled" } else if item.admin { b"Administrator" }
+            else { b"Standard user" };
+            self.app_label(Rect { y: name.y + half as i32, ..name }, role, (174,197,221), false, s);
+            self.render_clip = old;
+            return;
+        }
         if let Target::Field(index) = c.target {
             let title: &[u8] = match index {
                 0 => b"Display name",
@@ -380,11 +400,12 @@ impl DisplayDevice {
             let text: &[u8] = match c.target {
                 Target::Users => b"Users",
                 Target::Groups => b"Groups",
-                Target::New => b"New",
+                Target::New => b"+ Add",
                 Target::Back => b"Back",
                 Target::Row(i) => view.data.entries(view.state.tab)[i].name.as_bytes(),
                 Target::Rename => b"Edit names",
-                Target::Password => b"Set / reset password",
+                Target::Password => b"Change password",
+                Target::Delete if c.bounds.width <= 36 * s as u32 => b"-",
                 Target::Delete => b"Delete",
                 Target::Save => b"Save",
                 Target::Cancel => b"Cancel",

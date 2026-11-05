@@ -5,6 +5,7 @@ use crate::runtime::{execution::SecurityIdentity, native_compiler_task::Task,
     native_python_packages::{Vfs, MAX_ARCHIVE, admit_pip, PipMode, PolicyError}};
 #[path = "../runtime/native_python_workflow.rs"]
 mod workflow;
+#[path="console_media_service.rs"] mod media;
 #[path = "../runtime/generated_app_recovery.rs"]
 mod recovery;
 use super::native_network as network;
@@ -343,6 +344,12 @@ unsafe fn start_system_tool(console:&ConsoleRuntime,job:&mut Job,path:&[u8],argu
     let mut names=[ByteText::<96>::empty();32];let mut argv=[b"".as_slice();32];
     if arguments.len()>argv.len(){return Err(b"Too many arguments.");}
     argv[..arguments.len()].copy_from_slice(arguments);
+    if path==media::PLAYER {
+        let cover=b"/System/media-cover.png";
+        let (_,n)=crate::storage::object_read_path(cover,None,&mut job.archive).map_err(|_|b"Player artwork unavailable.".as_slice())?;
+        job.filesystem.mount_readonly(cover,&job.archive[..n]).map_err(|_|b"Cannot mount player artwork.".as_slice())?;
+        return start_task(console,job,arguments);
+    }
     if path==b"/System/figlet.py" {
         for font in [b"/System/standard.flf".as_slice(),b"/System/small.flf"] {
             let (_,n)=crate::storage::object_read_path(font,None,&mut job.archive).map_err(|_|b"Missing FIGfont.".as_slice())?;
@@ -466,7 +473,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
         }
     }
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
-    let name=path.rsplit(|b|*b==b'/').next().unwrap_or(path);
+    let name=if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
     MONITOR_RESUME_NS=0;
     job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
     if job.monitor.is_none(){if job.application.take().is_some(){crate::runtime::ai::application_host::detach();}
@@ -720,6 +727,16 @@ fn exception_call<T:crate::runtime::native_memory::PageTable>(
 }
 
 // ------------------------=
+// FUNC: launch_media
+// DESC: Starts the immutable player with an optional selected object for immediate playback.
+// ------------------=
+pub(super) fn launch_media(console:&mut ConsoleRuntime,path:Option<&[u8]>)->bool {
+    let argv=[b"/system/python".as_slice(),media::PLAYER,path.unwrap_or_default()];
+    let result=unsafe{start(console,media::PLAYER,&argv[..if path.is_some(){3}else{2}],Some(include_bytes!("../../sdk/system/media-player.py")))};
+    if let Err(msg)=result{console.output.write_line(msg);return false;}true
+}
+
+// ------------------------=
 // FUNC: launch_infinitycode
 // DESC: Launches the bundled designer through the existing Python process with a private owned source and durable data grant.
 // ------------------=
@@ -908,6 +925,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let result = task.poll_with_services(now, authorized, memory_mut(),
         b"", &files[..file_count], &mut job.output, &mut job.errors,
         |memory, tables, operation, arguments| crate::runtime::with_runtime(|runtime|job.gui.dispatch(runtime,memory,tables,job.owner,native_owner,gui_allowed,operation,arguments,work,display,now)).flatten()
+            .or_else(||media::dispatch(gui_allowed && job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER,console.current_user.0,console.current_session.0,&mut job.archive,tables,operation,arguments))
             .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
             .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
             .or_else(||terminal_read(&mut job.input,tables,operation,arguments))
@@ -984,6 +1002,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     }
     memory_mut().monitor_limit(true,native_owner.0,u64::MAX);
     if let Some(h)=job.monitor.take(){crate::runtime::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=0;}});}
+    if job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER{media::stop(job.owner.0);}
     let cleanup = job.task.take().unwrap().release(memory_mut()).is_ok();
     if let Some(path)=job.tool_export.take() {
         if authorized && cleanup && result==State::Exited(0) {

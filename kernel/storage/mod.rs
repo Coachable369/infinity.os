@@ -1739,6 +1739,26 @@ pub fn object_remove_path(path: &[u8]) -> Result<object::ObjectId, object::Objec
     }
 }
 // ------------------------=
+// FUNC: visit_partitions
+// DESC: Enumerates the mounted system disk's GPT without reopening or modifying it.
+// ------------------=
+pub fn visit_partitions(visit: impl FnMut(&[u8],u64,u64,bool)) -> Result<u64,object::ObjectError> {
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    { with_store(|s|s.visit_partitions(visit)) }
+    #[cfg(target_arch="x86")]
+    { let _=visit; Err(object::ObjectError::SpaceUnavailable) }
+}
+// ------------------------=
+// FUNC: visit_partition_files
+// DESC: Lists files on the selected foreign partition without exposing mutation APIs.
+// ------------------=
+pub fn visit_partition_files(first:u64,bytes:u64,file:impl FnMut(&[u8],u64))->Result<(),object::ObjectError>{
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    { with_store(|s|s.visit_partition_files(first,bytes,file)) }
+    #[cfg(target_arch="x86")]
+    { let _=(first,bytes,file);Err(object::ObjectError::SpaceUnavailable) }
+}
+// ------------------------=
 // FUNC: storage_usage
 // DESC: Implements the storage usage operation.
 // ------------------=

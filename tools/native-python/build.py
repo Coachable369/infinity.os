@@ -161,7 +161,8 @@ def frozen_library(source, arch):
 def arithmetic_sources():
     destination = ROOT / "third_party/python/compiler-rt" / LLVM_REVISION
     destination.mkdir(parents=True, exist_ok=True)
-    pending = ["trunctfdf2.c", "extenddftf2.c"]
+    units = ["trunctfdf2.c", "extenddftf2.c", "addtf3.c", "multf3.c", "floatunsitf.c", "fp_mode.c"]
+    pending = list(units)
     visited = set()
     while pending:
         name = pending.pop()
@@ -183,7 +184,7 @@ def arithmetic_sources():
     if not license_path.exists():
         with urllib.request.urlopen(f"https://raw.githubusercontent.com/llvm/llvm-project/{LLVM_REVISION}/compiler-rt/LICENSE.TXT", timeout=60) as response:
             license_path.write_bytes(response.read())
-    return [destination / name for name in ("trunctfdf2.c", "extenddftf2.c")], license_path
+    return [destination / name for name in units], license_path
 
 # ------------------------=
 # FUNC: run
@@ -260,8 +261,10 @@ def main():
     # Reuse the checksum-pinned Tcl distribution's complete SQLite amalgamation.
     sqlite = tcl_sources()["tcl"] / "pkgs/sqlite3.53.0/compat/sqlite3"
     tkinter = python_support(arch,newlib,compression,source)
+    from media_build import codec_libraries
+    media_source, media_archives = codec_libraries(arch, LLVM, newlib)
     ctypes = ffi_support(arch, LLVM, newlib, source)
-    includes = [out, bzip2, sqlite, lzma_include, ROOT / "sdk/python/include", source / "Include", source / "Include/internal", source,
+    includes = [out, ROOT / "build/media-source" / arch, media_source, bzip2, sqlite, lzma_include, ROOT / "sdk/python/include", source / "Include", source / "Include/internal", source,
                 source / "Modules/_hacl/include", source / "Modules/expat", compression,
                 ROOT / "sdk/compiler/include", newlib / "targ-include", newlib,
                 ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include", *tkinter["includes"], *ctypes["includes"]]
@@ -328,6 +331,8 @@ def main():
     for name, units in extra_modules.items():
         modules.append(name)
         sources += [source / "Modules" / unit for unit in units]
+    modules.append("_infinity_media")
+    sources.append(ROOT / "sdk/python/media.c")
     modules.append("_infinity_https")
     sources.append(ROOT / "sdk/python/https.c")
     modules.append("_infinity_app")
@@ -411,7 +416,7 @@ def main():
         print("\n".join(failures[:2])[:12000])
         raise SystemExit(f"{len(failures)} failed units; see {out / 'errors.log'}")
     link = ["/opt/homebrew/opt/lld/bin/ld.lld", "-static", "--error-limit=0", "--image-base=0x100000000", "-z", "max-page-size=4096",
-        "-e", "infinity_compiler_entry", *results, *tkinter["objects"], "--start-group", lzma_archive, ctypes["archive"],
+        "-e", "infinity_compiler_entry", *results, *tkinter["objects"], "--start-group", *media_archives, lzma_archive, ctypes["archive"],
         newlib / "libc.a", newlib / "libm.a", "--end-group", "-o", out / "python.elf"]
     result = subprocess.run([str(x) for x in link], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (out / "link.log").write_bytes(result.stdout)
@@ -431,7 +436,7 @@ def main():
         temporary = package / (name + ".partial")
         shutil.copyfile(out / name, temporary)
         temporary.replace(package / name)
-    notices = [(source / "LICENSE").read_bytes(), b"\n\nLLVM compiler runtime:\n", arithmetic_license.read_bytes(),
+    notices = [(source / "LICENSE").read_bytes(), b"\nFFmpeg 7.1.3 decoder libraries (LGPL 2.1 or later):\n", (media_source / "COPYING.LGPLv2.1").read_bytes(), b"\n\nLLVM compiler runtime:\n", arithmetic_license.read_bytes(),
                b"\n\nzlib:\n", (compression / "zlib.h").read_bytes().split(b"#ifndef", 1)[0],
                b"\n\nBundled Expat:\n", (source / "Modules/expat/COPYING").read_bytes(),
                b"\n\nbzip2:\n", (bzip2 / "LICENSE").read_bytes(),

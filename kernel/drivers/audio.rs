@@ -541,6 +541,16 @@ pub fn play_resident_system_cue(
     started
 }
 // ------------------------=
+// FUNC: media_output_available
+// DESC: Prevents a media chunk from replacing speech while another service is filling its output queue.
+// ------------------=
+pub fn media_output_available()->bool {
+    if LOCK.swap(true,Ordering::Acquire){return false;}
+    let ready=unsafe { !INFINITY_ACTIVE && (&*(&raw const LEASE)).is_none()
+        && (&*(&raw const DEVICE)).as_ref().is_some_and(|d|!d.playing) };
+    LOCK.store(false,Ordering::Release);ready
+}
+// ------------------------=
 // FUNC: playback_state
 // DESC: Exposes the authoritative native output state without exposing speech samples.
 // ------------------=

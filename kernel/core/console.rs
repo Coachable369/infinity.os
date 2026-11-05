@@ -1,5 +1,6 @@
 #[path="console_command_terminal.rs"]
 mod command_terminal_controller;
+#[path="console_disk.rs"] mod console_disk;
 #[path="console_shell_tools.rs"] mod shell_tools;
 #[path="console_session_actions.rs"] mod session_actions;
 #[path="console_scroll_capture.rs"] mod scroll_capture;
@@ -2560,6 +2561,12 @@ impl ConsoleRuntime {
             return;
         }
         let launched = match handler.launch {
+            LaunchAdapter::MediaPlayer => {
+                #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                { python_commands::launch_media(self,Some(path)) }
+                #[cfg(not(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))))]
+                { false }
+            }
             LaunchAdapter::TextEditor => {
                 self.open_text_editor_path(path)
             }
@@ -5869,6 +5876,11 @@ impl ConsoleRuntime {
             }
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
+            LauncherAction::MediaPlayer => {
+                self.close_app_launcher();
+                #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                python_commands::launch_media(self,None);
+            }
             LauncherAction::InfinityCode => {
                 // The IDE owns a native GUI window; launching it must not
                 // create or focus an unrelated terminal window.
@@ -8108,7 +8120,7 @@ impl ConsoleRuntime {
                     target = match handler.launch {
                         LaunchAdapter::TextEditor => OpenTarget::TextEditor,
                         LaunchAdapter::FileNavigator => OpenTarget::FileNavigator,
-                        LaunchAdapter::InstalledApplication(_) => OpenTarget::Unsupported,
+                        LaunchAdapter::MediaPlayer | LaunchAdapter::InstalledApplication(_) => OpenTarget::Unsupported,
                     };
                 }
                 count += 1;
@@ -10121,6 +10133,10 @@ impl ConsoleRuntime {
     fn execute_input(&mut self) {
         self.publish_command_terminal();
         let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
+        if self.command_terminal_visible() && !self.ssh_terminal.active && self.workplace_authorized(false)
+            && self.command[..self.command_length].trim_ascii().eq_ignore_ascii_case(b"disk") {
+            self.disk_open(); self.reset_input(); return;
+        }
         if self.command_terminal_visible() && !self.ssh_terminal.active && self.command[..self.command_length].trim_ascii().eq_ignore_ascii_case(b"top") {
             crate::ui::command_terminal::mutate(|s|{s.monitor=true;s.monitor_row=0;s.changed();});self.reset_input();return;
         }

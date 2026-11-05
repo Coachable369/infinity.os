@@ -80,7 +80,7 @@ const ALLOCATION_EXTENSION_A: u64 =
     CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
 const ALLOCATION_EXTENSION_B: u64 =
     ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
-pub const FORMAT_VERSION: u32 = 8;
+pub const FORMAT_VERSION: u32 = 9;
 // New namespace sectors must stay within the blocks already reserved in v6/v7.
 const _: () = assert!((2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS)).div_ceil(8) * 8
     >= 2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) + 4);
@@ -500,7 +500,54 @@ pub struct ObjectStore<D: BlockDevice> {
     metadata_mutation_permit: Option<ObjectId>,
 }
 
+#[path="disk_directory.rs"] mod disk_directory;
+
 impl<D: BlockDevice> ObjectStore<D> {
+    // ------------------------=
+    // FUNC: visit_partition_files
+    // DESC: Reads foreign FAT file sizes strictly inside a previously inspected partition.
+    // ------------------=
+    pub fn visit_partition_files(&mut self,first:u64,bytes:u64,file:impl FnMut(&[u8],u64))->Result<(),ObjectError> {
+        disk_directory::visit(&mut self.device,first,bytes,file)
+    }
+    // ------------------------=
+    // FUNC: visit_partitions
+    // DESC: Reads bounded GPT extents from the mounted device without issuing writes.
+    // ------------------=
+    pub fn visit_partitions(&mut self, mut visit:impl FnMut(&[u8],u64,u64,bool)) -> Result<u64,ObjectError> {
+        let device=&mut self.device;
+        let blocks=device.block_count();
+        if device_identity(device).is_none() { return Err(ObjectError::CorruptMetadata); }
+        let mut sector=[0;512];
+        if !device.read_sector(1,&mut sector) {return Err(ObjectError::SpaceUnavailable);}
+        let start=get64(&sector,72);
+        let count=get32(&sector,80) as usize;
+        let expected_crc=get32(&sector,88);
+        let mut table_crc=0xffff_ffff;
+        if count==0 || count>128 || get32(&sector,84)!=128 || start.checked_add(count.div_ceil(4) as u64).is_none_or(|end|end>blocks) {
+            return Err(ObjectError::UnsupportedFormat);
+        }
+        for i in 0..count {
+            if i%4==0 {
+                if !device.read_sector(start+(i/4)as u64,&mut sector){return Err(ObjectError::CorruptMetadata);}
+                table_crc=crc32_extend(table_crc,&sector[..(count-i).min(4)*128]);
+            }
+            let offset=i%4*128;
+            let entry=&sector[offset..offset+128];
+            if entry[..16]==[0;16] {continue;}
+            let first=get64(entry,32); let last=get64(entry,40);
+            if first==0 || last<first || last>=blocks {return Err(ObjectError::CorruptMetadata);}
+            let mut name=[0;36];let mut n=0;
+            for pair in entry[56..128].chunks_exact(2) {
+                let unit=u16::from_le_bytes([pair[0],pair[1]]);
+                if unit==0 {break;} name[n]=if (32..127).contains(&unit){unit as u8}else{b'?'}; n+=1;
+            }
+            let container=entry[..16]==[0x69,0x66,0x6e,0x49,0x69,0x6e,0x79,0x74,0x53,0x54,0x4f,0x52,0x41,0x47,0x45,0x31];
+            visit(if n==0 {b"Unnamed partition"}else{&name[..n]},first,(last-first+1).saturating_mul(512),container);
+        }
+        if !table_crc!=expected_crc {return Err(ObjectError::ChecksumMismatch);}
+        Ok(blocks.saturating_mul(512))
+    }
     // ------------------------=
     // FUNC: format
     // DESC: Implements the format operation.
@@ -3341,7 +3388,7 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
 // DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
 // ------------------=
 const fn supported_format(version: u32) -> bool {
-    matches!(version, 4 | 5 | 6 | 7 | FORMAT_VERSION)
+    matches!(version, 4 | 5 | 6 | 7 | 8 | FORMAT_VERSION)
 }
 // ------------------------=
 // FUNC: set_bit
@@ -3418,7 +3465,7 @@ fn version_sector(bank: u64, sector: usize) -> u64 {
 // DESC: Uses extended slots only when the scalable allocation metadata reservation exists; compact stores retain their original in-bank capacity.
 // ------------------=
 fn namespace_capacity(state: &State) -> usize {
-    if state.total_blocks as usize > LEGACY_ALLOCATION_BLOCKS { MAX_ENTRIES } else { 44 }
+    if state.total_blocks as usize > LEGACY_ALLOCATION_BLOCKS { MAX_ENTRIES } else { 48 }
 }
 
 // ------------------------=
@@ -3460,6 +3507,11 @@ fn write_bank<D: BlockDevice>(
         LEGACY_ALLOCATION_BYTES
     };
     put32(&mut h, 36, allocation_bytes as u32);
+    // Compact disks cannot address the large-disk extension sectors. Four
+    // complete namespace records fit in the unused checksummed bank header.
+    if allocation_bytes == LEGACY_ALLOCATION_BYTES {
+        for i in 0..4 { encode_entry(&state.entries[44+i], &mut h, 40+i*116); }
+    }
     finish_sector(&mut h);
     write(d, base, &h)?;
     let allocation_sectors =
@@ -3512,7 +3564,7 @@ fn write_bank<D: BlockDevice>(
         finish_sector(&mut s);
         write(d, c + version_sector(bank, sector), &s)?;
     }
-    for sector in 0..namespace_capacity(state) / 4 {
+    for sector in 0..if allocation_bytes==LEGACY_ALLOCATION_BYTES {11} else {MAX_ENTRIES/4} {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFONSP2");
         put32(&mut s, 8, FORMAT_VERSION);
@@ -3600,7 +3652,10 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
         }
     }
-    for sector in 0..if format >= 8 { namespace_capacity(&state) / 4 } else if format == 7 { 11 } else { 8 } {
+    if format >= 9 && allocation_bytes == LEGACY_ALLOCATION_BYTES {
+        for i in 0..4 { state.entries[44+i] = decode_entry(&h,40+i*116)?; }
+    }
+    for sector in 0..if format >= 8 && allocation_bytes!=LEGACY_ALLOCATION_BYTES {MAX_ENTRIES/4} else if format >= 8 {11} else if format == 7 { 11 } else { 8 } {
         let s = read(d, c + namespace_sector(bank, sector))?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {
@@ -3983,15 +4038,19 @@ fn valid_sector(s: &[u8; 512]) -> bool {
 // FUNC: crc32
 // DESC: Calculates and returns crc32.
 // ------------------=
-pub fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffff;
+pub fn crc32(data: &[u8]) -> u32 { !crc32_extend(0xffff_ffff,data) }
+// ------------------------=
+// FUNC: crc32_extend
+// DESC: Continues a CRC-32 over discontiguous disk sectors without staging an entire partition table.
+// ------------------=
+fn crc32_extend(mut crc:u32,data:&[u8])->u32 {
     for byte in data {
         crc ^= *byte as u32;
         for _ in 0..8 {
             crc = (crc >> 1) ^ if crc & 1 != 0 { 0xedb8_8320 } else { 0 }
         }
     }
-    !crc
+    crc
 }
 // ------------------------=
 // FUNC: put16
