@@ -1452,8 +1452,7 @@ impl SystemLayout {
     // ------------------=
     pub fn apply_launcher_template(self, mut geometry:AppLauncherGeometry,
         template:super::installer_template::InstallerTemplate<'_>, scene:u8)->AppLauncherGeometry {
-            let authored = |role| (0..template.element_count(scene).unwrap_or(0))
-                .filter_map(|index|template.element_at(scene,index))
+            let authored = |role| template.elements(scene).into_iter().flatten()
                 .find(|e|e.role==role && !e.hidden && e.opacity>0)
                 .map(|e|crate::ui::desktop_template::mapped(e,self.width,self.height,None))
                 .unwrap_or(rect(0,0,0,0));

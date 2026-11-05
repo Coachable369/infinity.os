@@ -920,10 +920,10 @@ impl ConsoleRuntime {
                 AppLauncherTarget::Search
             ),
             ConsoleMode::Desktop => {
-                let chat = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat);
-                if chat.enabled()
+                let (enabled,minimized) = crate::runtime::ai::with_ai_runtime(|runtime| (runtime.chat.enabled(),runtime.chat.minimized()));
+                if enabled
                     && matches!(
-                        layout.ai_chat_target(self.pointer_x, self.pointer_y, chat.minimized()),
+                        layout.ai_chat_target(self.pointer_x, self.pointer_y, minimized),
                         Some(AiChatTarget::Composer)
                     )
                 {
@@ -8388,7 +8388,13 @@ impl ConsoleRuntime {
         }
         native_handled |= self.native_gui_event(crate::ui::input::UiEvent::Pointer {
             position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},phase:crate::ui::input::PointerPhase::Move,button:0},0);
-        if native_handled { self.session_idle.note_activity(); return; }
+        if native_handled {
+            self.session_idle.note_activity();
+            // Native clients consume motion asynchronously; the shell cursor
+            // must advance even when the client has no new frame to present.
+            crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);
+            return;
+        }
         #[cfg(feature="native-browser")]
         if browser_controller::pointer(self,buttons,true) {return;}
         self.spatial_finish_arrival();
@@ -9913,7 +9919,7 @@ impl ConsoleRuntime {
             && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
         {
             self.publish_text_input_presentation();
-            if desktop_polish_changed || window_controls_changed {
+            if desktop_polish_changed && !window_controls_changed {
                 self.redraw();
             } else {
                 crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);

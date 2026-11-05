@@ -33,48 +33,7 @@ impl DisplayDevice {
             132,
         );
         self.app_card_alpha(geometry.panel,(16,27,58),(134,199,255),230,scale);
-        let close_left = geometry.close.x.max(0) as usize;
-        let close_top = geometry.close.y.max(0) as usize;
-        let close_size = geometry.close.width as usize;
-        self.fill_rounded_rect_alpha(
-            close_left,
-            close_top,
-            close_size,
-            geometry.close.height as usize,
-            7 * scale,
-            12,
-            30,
-            47,
-            238,
-        );
-        self.outline_rounded_rect(
-            close_left,
-            close_top,
-            close_size,
-            geometry.close.height as usize,
-            7 * scale,
-            75,
-            111,
-            137,
-        );
-        let center_x = close_left + close_size / 2;
-        let center_y = close_top + geometry.close.height as usize / 2;
-        self.icon_line(
-            (center_x - 5 * scale) as i32,
-            (center_y - 5 * scale) as i32,
-            (center_x + 5 * scale) as i32,
-            (center_y + 5 * scale) as i32,
-            (201, 224, 239),
-            close_size,
-        );
-        self.icon_line(
-            (center_x + 5 * scale) as i32,
-            (center_y - 5 * scale) as i32,
-            (center_x - 5 * scale) as i32,
-            (center_y + 5 * scale) as i32,
-            (201, 224, 239),
-            close_size,
-        );
+        self.launcher_close_control(geometry.close);
 
         }
 

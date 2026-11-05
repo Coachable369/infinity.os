@@ -77,8 +77,10 @@ impl DisplayDevice {
             let r=crate::ui::desktop_template::mapped(e,self.width,self.height,translation);
             let old=self.render_clip;
             self.intersect_render_clip(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize);
-            self.template_element_in_rect(e,template.asset(e.image_asset),None,
-                crate::ui::installer_layout::InstallerRect{left:r.x.max(0)as usize,top:r.y.max(0)as usize,width:r.width as usize,height:r.height as usize});
+            if e.role==InstallerTemplateRole::LauncherClose as u8 {
+                self.launcher_close_control(r);
+            } else {self.template_element_in_rect(e,template.asset(e.image_asset),None,
+                crate::ui::installer_layout::InstallerRect{left:r.x.max(0)as usize,top:r.y.max(0)as usize,width:r.width as usize,height:r.height as usize});}
             self.render_clip=old;
         }
         true

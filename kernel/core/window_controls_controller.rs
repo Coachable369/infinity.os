@@ -100,6 +100,12 @@ impl ConsoleRuntime {
     // DESC: Publishes only an uncovered title control or authored Settings action, respecting modal and drag capture.
     // ------------------=
     pub(super) fn publish_window_controls(&self)->bool {
+        if self.mode==ConsoleMode::AppLauncher && !self.spatial.open {
+            let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
+            let point=layout.point(self.pointer_x,self.pointer_y);
+            let rect=layout.app_launcher_geometry().close;
+            return controls::publish(rect.contains(point).then_some(controls::Highlight{rect,pressed:self.pointer_pressed}));
+        }
         if !matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) || self.spatial.open
             || self.editor_dialog!=EditorDialog::None || self.app_window_dragging
             || self.home_window_dragging || self.settings_window_dragging

@@ -6,6 +6,9 @@ struct Validated {state:AtomicU8,value:UnsafeCell<Option<InstallerTemplate<'stat
 // Only the initializer writes; acquire readers observe immutable generation data.
 unsafe impl Sync for Validated {}
 static VALIDATED:Validated=Validated{state:AtomicU8::new(0),value:UnsafeCell::new(None)};
+// Scene bindings belong to the same immutable document as VALIDATED.
+// Zero is unknown, 1..32 are scene IDs, and 255 is a known absent binding.
+static BOUND_SCENES:[AtomicU8;256]=[const { AtomicU8::new(0) };256];
 
 // ------------------------=
 // FUNC: template
@@ -41,7 +44,7 @@ pub fn menu()->Option<super::installer_template::navigation::Menu<'static>> {tem
 // ------------------=
 pub fn element(scene:u8,role:u8)->Option<InstallerTemplateElement<'static>> {
     let t=template()?;
-    (0..t.element_count(scene)?).filter_map(|i|t.element_at(scene,i)).find(|e|e.role==role)
+    t.elements(scene)?.find(|e|e.role==role)
 }
 
 // ------------------------=
@@ -57,9 +60,12 @@ pub fn dock_scene() -> Option<u8> {
 // DESC: Finds an authored native surface by binding rather than a mutable scene index or title.
 // ------------------=
 pub fn bound_scene(role:u8) -> Option<u8> {
+    let entry=&BOUND_SCENES[usize::from(role)];
+    match entry.load(Ordering::Relaxed) {0=>{},255=>return None,id=>return Some(id)}
     let t = template()?;
-    (4..=32).find(|&scene| (0..t.element_count(scene).unwrap_or(0))
-        .filter_map(|index| t.element_at(scene, index)).any(|e| e.role == role))
+    let found=(4..=32).find(|&scene| t.elements(scene).is_some_and(|mut layers|layers.any(|e|e.role==role)));
+    entry.store(found.unwrap_or(255),Ordering::Relaxed);
+    found
 }
 
 // ------------------------=
@@ -96,9 +102,9 @@ pub fn scene_bounds_in(t:InstallerTemplate<'_>,scene:u8,width:usize,height:usize
 // DESC: Hit-tests a validated authored dock in either installed runtime or a Studio-produced acceptance fixture.
 // ------------------=
 pub fn dock_hit_in(t: InstallerTemplate<'_>, scene:u8, point:Point, width:usize, height:usize)->Option<usize> {
-    (0..t.element_count(scene)?).rev().filter_map(|index| t.layer_at(scene, index))
-        .find(|e| !e.hidden && e.opacity > 0 && (73..=80).contains(&e.role)
-            && mapped(*e, width, height, None).contains(point)).map(|e| (e.role - 73) as usize)
+    t.elements(scene)?.filter(|e| !e.hidden && e.opacity > 0 && (73..=80).contains(&e.role)
+            && mapped(*e, width, height, None).contains(point))
+        .max_by_key(|e|(e.z_index,e.id)).map(|e| (e.role - 73) as usize)
 }
 
 // ------------------------=
@@ -127,7 +133,6 @@ pub fn mapped(e:InstallerTemplateElement<'_>,width:usize,height:usize,translatio
 // ------------------=
 pub fn navigation_hit(point:Point,width:usize,height:usize)->Option<u8> {
     let t=template()?;
-    (0..t.element_count(1)?).rev().filter_map(|i|t.layer_at(1,i))
-        .find(|e|!e.hidden&&e.opacity>0&&(49..=59).contains(&e.role)&&e.role!=Role::DesktopPrivacy as u8
-            &&mapped(*e,width,height,None).contains(point)).map(|e|e.role)
+    t.elements(1)?.filter(|e|!e.hidden&&e.opacity>0&&(49..=59).contains(&e.role)&&e.role!=Role::DesktopPrivacy as u8
+            &&mapped(*e,width,height,None).contains(point)).max_by_key(|e|(e.z_index,e.id)).map(|e|e.role)
 }

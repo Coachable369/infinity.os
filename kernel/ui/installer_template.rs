@@ -756,6 +756,23 @@ impl<'a> InstallerTemplate<'a> {
     }
 
     // ------------------------=
+    // FUNC: elements
+    // DESC: Streams a scene's saved layers in document order with one forward read for native hit testing.
+    // ------------------=
+    pub fn elements(&self, scene:u8)->Option<impl Iterator<Item=InstallerTemplateElement<'a>> + 'a> {
+        let mut reader=Reader::new(self.data);
+        reader.take(8).ok()?;
+        for _ in 0..self.screen_count {
+            let id=reader.u8().ok()?;
+            reader.short_string().ok()?;
+            let count=reader.u16().ok()?;
+            if id==scene {return Some((0..count).map_while(move |_|reader.element().ok()));}
+            for _ in 0..count {reader.element().ok()?;}
+        }
+        None
+    }
+
+    // ------------------------=
     // FUNC: element_at
     // DESC: Returns one saved screen layer by document order without allocation.
     // ------------------=
