@@ -63,8 +63,20 @@ Recorded results (2026-11-04):
 - Native network actor lifecycle checks passed:
   `builds/manifests/20261105T005556421577Z-36996.json`. Cancelled loans drain before
   restart and stale handles cannot cancel a subsequent request.
-- Native component execution is not installed-desktop acceptance. Installed recovery
-  remains pending.
+- Installed ARM QEMU verification completed an unmodified installation, detached
+  boot, account configuration/login, and real HTTPS rendering. Offline full-kernel
+  comparisons were intentionally skipped. Preserved receipts and screenshots:
+  `builds/validation/browser-recovery/`.
+- Installed memory recovery remains **unverified**. The first two attempts did not
+  navigate away from the initial page; their engine state remained healthy with
+  no allocation failure. A final attempt to submit the stress URL through Console
+  timed out opening the launcher while the browser retained focus. These failed
+  preconditions do not demonstrate recovery or establish its failure.
+  Attempt manifests: `20261105T015131009583Z-24407`,
+  `20261105T020315843323Z-35017`, `20261105T021347446531Z-47134`.
+  Failed fixture retry experiments were archived and removed rather than being
+  represented as working acceptance coverage. Correction loops stopped here.
+- x86 installed execution and the user's VirtualBox reproduction were not verified.
 
 Installer handoff:
 - `builds/InfinityOS-aarch64.iso` (10435837952 bytes), SHA-256
