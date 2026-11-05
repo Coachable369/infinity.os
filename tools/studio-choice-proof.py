@@ -33,7 +33,13 @@ def main():
     normal = render("devices", 0)
     focused = render("devices-focused", 128)
     render("general-node-field", 0, 1)
-    render("accent-picker", 0, 2, ("--expanded-row", "3"))
+    picker = render("accent-picker", 0, 2, ("--expanded-row", "3", "--scroll", "160"))
+    layers = json.loads((OUT / "accent-picker.geometry.json").read_text())
+    row = next(e for e in layers if e["id"] == "53595354-0002-0034-8000-000000000001")
+    # Sample the standalone hue strip in the fourth row's expanded picker.
+    hue = picker.crop((row["x"] + row["width"] - 28, row["y"] + row["height"] + 16,
+                       row["x"] + row["width"] - 27, row["y"] + row["height"] + 94))
+    assert len({rgb for rgb in hue.getdata() if max(rgb) - min(rgb) > 128}) >= 12
     geometry = json.loads((OUT / "devices.geometry.json").read_text())
     value = next(e for e in geometry if e["id"] == "53595354-0006-002a-8000-000000000001")
     x, y, w, h = (value[k] for k in ("x", "y", "width", "height"))
