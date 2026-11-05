@@ -45,6 +45,7 @@ static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
 static mut LOGIN_USER:Option<[u8;16]>=None;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 static mut LOGIN_RETRY_AT:u64=0;
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 const LOGIN_OWNER:SecurityIdentity=SecurityIdentity(*b"FACEWAKE\0\0\0\0\0\0\0\0");
 
 // ------------------------=
@@ -816,10 +817,14 @@ pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Optio
         return None;
     }
     *deadline = u64::MAX;
-    if state().0 != State::Off {
+    if !matches!(state().0, State::Off | State::Failed) {
         return None;
     }
     let started = start(owner);
+    if !started && state().0 == State::Failed && active_user(owner).is_some() {
+        *deadline = now.saturating_add(5_000_000_000);
+        return Some(false);
+    }
     if !started
         && state().0 == State::Off
         && active_user(owner).is_some()
@@ -1407,7 +1412,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         // Login audio is output, not an ambient microphone baseline. Keep the
         // DMA drained and the veil visible until the real output cursor stops.
         let playback = crate::drivers::audio::playback_state();
-        if playback != Some(crate::runtime::audio::PlaybackState::Playing)
+        if playback.as_ref().is_some_and(|state| *state != crate::runtime::audio::PlaybackState::Playing)
         {
             let consumed = (&mut *(&raw mut NOISE_FLOOR)).push(&(&*(&raw const MONO))[..n]);
             if (&*(&raw const NOISE_FLOOR)).ready() {
@@ -1677,13 +1682,6 @@ pub fn poll() -> bool {
                     }
                     VadState::Limit => {
                         clear_wake_command();
-                        // Recalibrate after an overlong noise burst instead of leaving
-                        // desktop voice blocked waiting for absolute room silence.
-                        // The discarded audio cannot authorize the next command.
-                        if CONTINUOUS && OWNER != LOGIN_OWNER {
-                            clear_captured_turn();
-                            NOISE_FLOOR=voice_noise_floor::NoiseFloor::new();
-                        }
                     }
                     _ => {}
                 }
