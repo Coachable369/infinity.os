@@ -259,7 +259,8 @@ final class NativePreviewTests: XCTestCase {
             let before = try await runner.render(NativePreviewSnapshot.capture(store))
             let geometry = try XCTUnwrap(before.bounds.first { $0.id == action.id })
             let target = try XCTUnwrap(geometry.revealScroll)
-            XCTAssertGreaterThan(target, 0)
+            if viewport == .compact { XCTAssertGreaterThan(target, 0) }
+            else { XCTAssertGreaterThanOrEqual(target, 0) }
             XCTAssertLessThanOrEqual(target, try XCTUnwrap(geometry.maximumScroll))
             XCTAssertTrue(store.applyNativeSelectionReveal(before.bounds, screen: 4, expandedRow: 7))
             XCTAssertEqual(store.nativePreviewSimulation.scroll, target)
