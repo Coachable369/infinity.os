@@ -23,6 +23,33 @@ mod pci_svga {
     use super::super::svga::{Bus, Scanout, Svga};
     use crate::boot_info::BootInfo;
 
+    // QEMU standard VGA exposes flat 16-bit DISPI registers at BAR2 + 0x500.
+    // Bind only the adapter whose linear framebuffer is the active boot scanout.
+    static mut DISPI: Option<(usize,usize,u32)> = None;
+
+    // ------------------------=
+    // FUNC: dispi_mode
+    // DESC: Switches a firmware-enabled standard VGA scanout and rolls back if its registers reject the geometry.
+    // ------------------=
+    unsafe fn dispi_mode(w:u32,h:u32)->Option<(usize,usize,u32)> {
+        let (registers,frame,format)=DISPI?;
+        let base=registers as *mut u16;
+        let read=|i:usize|core::ptr::read_volatile(base.add(i));
+        let write=|i:usize,v:u16|core::ptr::write_volatile(base.add(i),v);
+        let pixels=u64::from(w)*u64::from(h);
+        if w==0 || h==0 || w>u16::MAX as u32 || h>u16::MAX as u32 || pixels>3840*2160 ||
+            pixels*4>u64::from(read(10))*65536 || frame as u64+pixels*4>1u64<<32 {return None;}
+        let old=[read(1),read(2),read(3),read(4),read(6),read(8),read(9)];
+        write(4,0);write(1,w as u16);write(2,h as u16);write(3,32);write(4,old[3]|0x41);
+        write(6,w as u16);write(8,0);write(9,0);
+        if read(1)!=w as u16 || read(2)!=h as u16 || read(3)!=32 || read(6)!=w as u16 ||
+            read(8)!=0 || read(9)!=0 || u32::from(read(7))<h {
+            write(4,0);write(1,old[0]);write(2,old[1]);write(3,old[2]);write(4,old[3]);
+            write(6,old[4]);write(8,old[5]);write(9,old[6]);return None;
+        }
+        Some((frame,w as usize,format))
+    }
+
     struct Hardware {
         port: u16,
         fifo: *mut u32,
@@ -114,6 +141,18 @@ mod pci_svga {
                     };
                     for function in 0..functions {
                         let address = base | function << 8;
+                        if config(address,0)==0x11111234 && config(address,8)>>24==3 && config(address,4)&2!=0 {
+                            let fb=config(address,16);let regs=config(address,24);
+                            if fb&7==0 && u64::from(fb&!15)==info.framebuffer_address && regs&7==0 && regs&!15!=0 {
+                                let base=((regs&!15)as usize+0x500)as *const u16;
+                                let read=|i|core::ptr::read_volatile(base.add(i));
+                                if (0xb0c0..=0xb0c5).contains(&read(0)) && read(4)&0x41==0x41 && read(3)==32 &&
+                                    u32::from(read(1))==info.framebuffer_width && u32::from(read(2))==info.framebuffer_height {
+                                    DISPI=Some((base as usize,info.framebuffer_address as usize,info.framebuffer_format));
+                                }
+                            }
+                            continue;
+                        }
                         if config(address, 0) != 0x040515ad || config(address, 8) >> 24 != 3 {
                             continue;
                         }
@@ -168,7 +207,7 @@ mod pci_svga {
     // DESC: Switches the bound SVGA II adapter after checking limits, VRAM and framebuffer layout.
     // ------------------=
     pub(super) fn change_mode(w:u32,h:u32)->Option<(usize,usize,u32)> {
-        let (bus,driver)=unsafe{(&mut *(&raw mut ACTIVE)).as_mut()?};
+        let Some((bus,driver))=(unsafe{(&mut *(&raw mut ACTIVE)).as_mut()}) else { return unsafe{dispi_mode(w,h)}; };
         if w==0 || h==0 || w>bus.read_register(4) || h>bus.read_register(5) {return None;}
         let prev=[bus.read_register(2),bus.read_register(3)];
         let size=bus.read_register(15) as u64;
