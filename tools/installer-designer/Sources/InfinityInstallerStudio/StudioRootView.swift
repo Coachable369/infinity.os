@@ -133,7 +133,7 @@ private struct StudioToolbar: View {
                 }
             Toggle(isOn: $store.showGrid) { Label("Grid", systemImage: "grid") }
             Toggle(isOn: $store.snapEnabled) { Label("Snap", systemImage: "magnet") }
-            Picker("Grid", selection: $store.gridSize) {
+            InfinityStudioChoice("Grid", selection: $store.gridSize) {
                 Text("5").tag(5)
                 Text("10").tag(10)
                 Text("20").tag(20)

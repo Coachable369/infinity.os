@@ -174,7 +174,7 @@ struct ElementInspector: View {
             }
             TextField("Layer name", text: stringBinding(\.name))
                 .disabled(element.locked)
-            Picker("Role", selection: enumBinding(\.role, fallback: element.role)) {
+            InfinityStudioChoice("Role", selection: enumBinding(\.role, fallback: element.role)) {
                 ForEach(StudioElementRole.allCases) { role in Text(role.title).tag(role) }
             }
             .disabled(element.locked || element.kind == .button)
@@ -238,7 +238,7 @@ struct ElementInspector: View {
         GroupBox(element.role == .settingsRowAction ? "Native Settings Action" : "Native Settings Child") {
             VStack(alignment: .leading, spacing: 8) {
                 let rows = store.selectedScreen?.elements.filter { $0.role == .metadata } ?? []
-                Picker("Parent row", selection: Binding<UUID?>(
+                InfinityStudioChoice("Parent row", selection: Binding<UUID?>(
                     get: { store.selectedElement?.parentRowID },
                     set: { if let parent = $0 { store.reparentSelectedSettingsChild(parent) } })) {
                     ForEach(SettingsChildContract.rows(role: element.role, screenID: store.selectedScreenID), id: \.self) { row in
@@ -250,7 +250,7 @@ struct ElementInspector: View {
                 Text("Changing parents exchanges same-role bindings; all required controls remain available.")
                     .font(.caption).foregroundStyle(.secondary)
                 if element.role.hasNativeCaption {
-                Picker("Caption", selection: Binding(
+                InfinityStudioChoice("Caption", selection: Binding(
                     get: { store.selectedElement?.actionCaptionMode ?? .native },
                     set: { value in store.updateSelected("Caption mode updated") { $0.actionCaptionMode = value } })) {
                     ForEach(SettingsActionCaptionMode.allCases) { mode in Text(mode.title).tag(mode) }
@@ -270,7 +270,7 @@ struct ElementInspector: View {
     private func variableSection(_ element: StudioElement) -> some View {
         GroupBox("Data Binding") {
             VStack(alignment: .leading, spacing: 8) {
-                Picker("Variable", selection: inputVariableBinding(fallback: element.inputVariable)) {
+                InfinityStudioChoice("Variable", selection: inputVariableBinding(fallback: element.inputVariable)) {
                     ForEach(availableInputVariables) { variable in
                         Text(variable.title).tag(variable)
                     }
@@ -322,7 +322,7 @@ struct ElementInspector: View {
                     ColorPicker("Caption color", selection: colorBinding(\.captionColor, fallback: element.captionColor), supportsOpacity: true)
                 }
                 if element.kind == .text || element.kind == .button {
-                Picker("Font family", selection: Binding(
+                InfinityStudioChoice("Font family", selection: Binding(
                     get: { store.selectedElement?.fontFamily ?? element.fontFamily },
                     set: { value in store.updateSelected("Font updated") { $0.fontFamily = value } }
                 )) {
@@ -378,7 +378,7 @@ struct ElementInspector: View {
                     .disabled(element.crop == .none)
                 }
                 Divider()
-                Picker("Image sizing", selection: Binding(
+                InfinityStudioChoice("Image sizing", selection: Binding(
                     get: { store.selectedElement?.imageFit ?? .legacy },
                     set: { fit in store.updateSelected("Image sizing updated") { $0.imageFit = fit } }
                 )) {
@@ -421,7 +421,7 @@ struct ElementInspector: View {
         GroupBox("Appearance") {
             VStack(spacing: 9) {
                 if element.kind == .panel || element.kind == .console || element.kind == .button || element.kind == .progressBar {
-                    Picker("Surface", selection: Binding(
+                    InfinityStudioChoice("Surface", selection: Binding(
                         get: { store.selectedElement?.surfaceMaterial ?? element.surfaceMaterial },
                         set: { value in store.updateSelected { $0.surfaceMaterial = value } })) {
                         Text("Use UIKit style").tag(UIKitSurfaceMaterial.authored)
@@ -429,7 +429,7 @@ struct ElementInspector: View {
                         Text("Matte").tag(UIKitSurfaceMaterial.matte)
                         Text("Flat").tag(UIKitSurfaceMaterial.flat)
                     }
-                    Picker("Corners", selection: Binding(
+                    InfinityStudioChoice("Corners", selection: Binding(
                         get: { store.selectedElement?.surfaceCorners ?? element.surfaceCorners },
                         set: { value in store.updateSelected { $0.surfaceCorners = value } })) {
                         Text("Use UIKit style").tag(UIKitCornerStyle.authored)
@@ -586,7 +586,7 @@ struct ElementInspector: View {
     // ------------------=
     private func tokenPicker(_ title: String, keyPath: WritableKeyPath<StudioElement, UIKitColorRole?>,
                              fallback: UIKitColorRole?) -> some View {
-        Picker(title, selection: Binding<UIKitColorRole?>(
+        InfinityStudioChoice(title, selection: Binding<UIKitColorRole?>(
             get: { store.selectedElement.map { $0[keyPath: keyPath] } ?? fallback },
             set: { value in store.updateSelected("Theme color binding changed") { $0[keyPath: keyPath] = value } })) {
             Text("Custom color").tag(Optional<UIKitColorRole>.none)

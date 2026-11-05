@@ -262,3 +262,8 @@ clean = false
 [profiles.browser-check-x86_64]
 command = ["env", "RUSTC_BOOTSTRAP=1", "cargo", "check", "--release", "-Z", "build-std=core", "--target", "x86_64-unknown-none", "--features", "native-browser"]
 clean = false
+
+[profiles.studio-choice-proof]
+domain = "studio"
+command = ["python3", "tools/studio-choice-proof.py"]
+clean = false

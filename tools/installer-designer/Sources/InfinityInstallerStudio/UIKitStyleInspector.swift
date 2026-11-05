@@ -9,17 +9,17 @@ struct UIKitStyleInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("SURFACE RECIPE").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Picker("Component", selection: $store.selectedSurface) {
+            InfinityStudioChoice("Component", selection: $store.selectedSurface) {
                 ForEach(0..<Self.titles.count, id: \.self) { index in
                     Text(Self.titles[index]).tag(index)
                 }
             }
-            Picker("Material", selection: binding(\.material)) {
+            InfinityStudioChoice("Material", selection: binding(\.material)) {
                 Text("Approved artwork").tag(UIKitSurfaceMaterial.authored)
                 Text("Glass").tag(UIKitSurfaceMaterial.glass)
                 Text("Matte").tag(UIKitSurfaceMaterial.matte)
             }.disabled(store.selectedSurface == 0)
-            Picker("Corners", selection: binding(\.corners)) {
+            InfinityStudioChoice("Corners", selection: binding(\.corners)) {
                 Text("Approved artwork").tag(UIKitCornerStyle.authored)
                 Text("Square").tag(UIKitCornerStyle.square)
                 if store.selectedSurface >= 2 { Text("Rounded").tag(UIKitCornerStyle.rounded) }

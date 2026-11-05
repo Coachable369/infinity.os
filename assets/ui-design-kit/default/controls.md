@@ -23,3 +23,10 @@ transitions. `panel_view.rs` owns checkbox/radio composition. Settings retains
 its native service bindings and shared authored row geometry.
 
 This catalog does not imply every Settings section has completed migration.
+
+The Precision choice field uses a left-aligned value and a separate trailing
+chevron well. Its text, inset, and indicator share one geometry calculation so
+long values cannot paint underneath the indicator. The field uses the kit's
+Secondary surface and focus state. Boolean controls use a separate trailing
+checkbox. Open menus use a Panel surface and an inset, image-backed selection
+row. Row highlighting changes paint only and preserves the full hit target.

@@ -154,13 +154,13 @@ private struct MenuItemInspector: View {
                         Toggle("Enabled", isOn: binding(\.enabled, fallback: item.enabled))
                         Toggle("Checked", isOn: binding(\.checked, fallback: item.checked))
                     }
-                    Picker("Action", selection: Binding(get: { self.item?.action ?? .system }, set: { store.changeMenuAction(id, to: $0) })) {
+                    InfinityStudioChoice("Action", selection: Binding(get: { self.item?.action ?? .system }, set: { store.changeMenuAction(id, to: $0) })) {
                         ForEach(StudioMenuAction.allCases) { action in Text(action.title).tag(action) }
                     }
                 }
                 if ![.separator, .submenu].contains(item.action) {
                     Section("Destination") {
-                        Picker("Target", selection: binding(\.target, fallback: item.target)) {
+                        InfinityStudioChoice("Target", selection: binding(\.target, fallback: item.target)) {
                             switch item.action {
                             case .system:
                                 ForEach(StudioMenuAction.systemTitles.indices, id: \.self) { Text(StudioMenuAction.systemTitles[$0]).tag($0) }

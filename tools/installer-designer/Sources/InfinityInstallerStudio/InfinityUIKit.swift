@@ -244,3 +244,50 @@ struct InfinityStudioButtonStyle: ButtonStyle {
         return pressed ? base.opacity(0.72) : base
     }
 }
+
+/// A Studio selector uses the platform option menu for selection, keyboard input and accessibility.
+struct InfinityStudioChoice<Selection: Hashable, Options: View>: View {
+    let title: String
+    let showsTitle: Bool
+    @Binding var selection: Selection
+    let options: Options
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+
+    // ------------------------=
+    // FUNC: init
+    // DESC: Preserves the picker's original typed options and selection binding in a shared inspector field.
+    // ------------------=
+    init(_ title: String, selection: Binding<Selection>, showsTitle: Bool = true, @ViewBuilder content: () -> Options) {
+        self.title = title
+        self.showsTitle = showsTitle
+        self._selection = selection
+        self.options = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if showsTitle { Text(title).foregroundStyle(InfinityUIKit.Palette.nativeTextSecondary) }
+            Picker(title, selection: $selection) { options }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 9)
+                .frame(minHeight: 28)
+                .background(
+                    LinearGradient(colors: [InfinityUIKit.Palette.nativePanelRaised, InfinityUIKit.Palette.field.color],
+                                   startPoint: .top, endPoint: .bottom),
+                    in: RoundedRectangle(cornerRadius: 5)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(InfinityUIKit.Palette.nativeBorder.opacity(hovering && enabled ? 0.85 : 0.38))
+                        .allowsHitTesting(false)
+                }
+                .onHover { hovering = $0 }
+                .accessibilityLabel(Text(title))
+        }
+        .font(.callout)
+        .opacity(enabled ? 1 : 0.55)
+    }
+}

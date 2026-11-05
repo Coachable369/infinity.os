@@ -367,36 +367,42 @@ impl DisplayDevice {
         let label=if focus==1&&index==6{label}else{authored_label.filter(|e|e.caption_mode==1).map(|e|e.text).filter(|text|!text.is_empty()).unwrap_or(label)};
         let label_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowLabel).unwrap_or(card.label);
         let mut value_bounds=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsRowValue).unwrap_or(card.value);
-        if matches!(settings_row_interaction(focus,index),I::Cycle|I::Toggle|I::Edit) {
-            let control=Rect{x:value_bounds.x-(8*scale)as i32,y:value_bounds.y-(5*scale)as i32,
-                width:value_bounds.width+(16*scale)as u32,height:value_bounds.height+(10*scale)as u32};
-            if settings_row_interaction(focus,index)==I::Edit {
-                self.precision_surface(control,crate::ui::panel_recipe::Surface::Field,Material{
-                    fill:(pr/2,pg/2,pb/2),edge:chrome.outline,opacity:alpha(230),edge_opacity:155,
-                    focus:if keyboard_focus{255}else{0},pressed:false,scale});
-            } else { self.app_button_surface(control,false,0,false,scale); }
-            value_bounds.width=value_bounds.width.saturating_sub((20*scale)as u32);
-            let affordance=Rect{x:control.right()-(24*scale)as i32,y:control.y,width:(20*scale)as u32,height:control.height};
-            if settings_row_interaction(focus,index)==I::Cycle {
-                self.app_disclosure(affordance,false,(134,199,255),scale);
+        let interaction = settings_row_interaction(focus, index);
+        let control = Rect { x: value_bounds.x - (8 * scale) as i32, y: value_bounds.y - (5 * scale) as i32,
+            width: value_bounds.width + (16 * scale) as u32, height: value_bounds.height + (10 * scale) as u32 };
+        match interaction {
+            I::Cycle => {
+                let label_area = self.app_choice_field(control, keyboard_focus, scale);
+                value_bounds.x = label_area.x;
+                value_bounds.width = label_area.width;
             }
+            I::Edit => self.precision_surface(control, crate::ui::panel_recipe::Surface::Field, Material {
+                fill: (pr/2, pg/2, pb/2), edge: chrome.outline, opacity: alpha(230), edge_opacity: 155,
+                focus: if keyboard_focus {255} else {0}, pressed: false, scale,
+            }),
+            I::Toggle => value_bounds.width = value_bounds.width.saturating_sub((30 * scale) as u32),
+            _ => {}
         }
         self.paint_settings_bound_text(authored_label,label_bounds,label,(190,205,217),true,false);
-        let advance=self.paint_settings_bound_text(authored_value,value_bounds,value,(220,232,240),false,true);
+        let align_right = !matches!(interaction, I::Cycle | I::Edit);
+        self.paint_settings_bound_text(authored_value,value_bounds,value,(220,232,240),false,align_right);
         if focus==0&&index==0&&!authored_value.is_some_and(|e|e.hidden||e.opacity==0||e.fill[3]==0) {
             if let Some(element)=authored_value {
                 if let Some((true,caret))=crate::ui::text_input::caret(1){
                     let pixels=(element.font_size as usize*self.height/1000).clamp(1,256);
-                    let x=value_bounds.x.max(0)as usize+(value_bounds.width as usize).saturating_sub(advance)+self.template_text_width(&value[..caret.min(value.len())],pixels,false);
+                    let x=value_bounds.x.max(0)as usize+self.template_text_width(&value[..caret.min(value.len())],pixels,false);
                     let old=self.render_clip;self.intersect_render_clip(value_bounds.x.max(0)as usize,value_bounds.y.max(0)as usize,value_bounds.width as usize,value_bounds.height as usize);
                     self.fill_rect(x,value_bounds.y.max(0)as usize,scale.max(1),pixels.min(value_bounds.height as usize),112,221,255);self.render_clip=old;
                 }
-            }else{self.text_field_caret(value_bounds.x.max(0)as usize+(value_bounds.width as usize).saturating_sub(advance),value_bounds.y.max(0)as usize,value_bounds.height as usize,value,true,1);}
+            }else{self.text_field_caret(value_bounds.x.max(0)as usize,value_bounds.y.max(0)as usize,value_bounds.height as usize,value,true,1);}
         }
         let disclosure=layout.settings_row_element_geometry(settings_window,focus,index,Role::SettingsDisclosure).unwrap_or(Rect{x:row.summary.right()-(30*scale)as i32,y:row.summary.y+(20*scale)as i32,width:(20*scale)as u32,height:(32*scale)as u32});
-        let text=if expanded{b"v".as_slice()}else{authored_disclosure.map(|e|e.text).filter(|v|!v.is_empty()).unwrap_or(b">")};
-        if matches!(settings_row_interaction(focus,index),I::Details|I::Edit) {
-            self.paint_settings_bound_text(authored_disclosure,disclosure,text,(109,220,255),true,false);
+        if interaction == I::Details && !authored_disclosure.is_some_and(|e|e.hidden || e.opacity==0 || e.fill[3]==0) {
+            if let Some(custom) = authored_disclosure.filter(|e|e.caption_mode == 1 && !e.text.is_empty() && e.text != b">") {
+                self.paint_settings_bound_text(Some(custom), disclosure, custom.text, chrome.outline, true, false);
+            } else {
+                self.app_disclosure(disclosure, expanded, chrome.outline, scale);
+            }
         }
         row
     }

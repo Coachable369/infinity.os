@@ -94,21 +94,52 @@ impl super::DisplayDevice {
         self.render_clip = old_clip;
     }
     // ------------------------=
+    // FUNC: app_choice_field
+    // DESC: Paints a themed choice with a dedicated indicator well and returns the nonoverlapping label bounds.
+    // ------------------=
+    pub(super) fn app_choice_field(&mut self, bounds: Rect, focused: bool, scale: usize) -> Rect {
+        let unit = scale.max(1) as u32;
+        let well_width = (32 * unit).min(bounds.width / 3);
+        let inset = (10 * unit).min(bounds.width / 6);
+        self.app_button_surface(bounds, false, if focused { 220 } else { 0 }, false, scale);
+        let well = Rect { x: bounds.right() - well_width as i32, width: well_width, ..bounds };
+        let edge = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        if well_width >= 14 * unit && bounds.height >= 16 * unit {
+            let margin = bounds.height / 4;
+            self.fill_rect_alpha(well.x.max(0) as usize, (well.y + margin as i32).max(0) as usize,
+                unit as usize, (bounds.height - 2 * margin) as usize, edge.0, edge.1, edge.2, 95);
+            self.app_disclosure(well, true, edge, scale);
+        }
+        Rect { x: bounds.x + inset as i32, width: bounds.width.saturating_sub(well_width + inset * 2), ..bounds }
+    }
+
+    // ------------------------=
     // FUNC: app_dropdown_panel
     // DESC: Draws the shared smoked-navy application dropdown surface and restrained cyan border.
     // ------------------=
     pub(super) fn app_dropdown_panel(&mut self, panel: Rect, scale: usize) {
-        self.app_card(panel,
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline), scale);
+        use crate::ui::{panel_recipe::{Material, Surface}, skin::AccentSurface};
+        self.precision_surface(panel, Surface::Panel, Material {
+            fill: self.active_accent_surface(AccentSurface::Widget),
+            edge: self.active_accent_surface(AccentSurface::WindowOutline),
+            opacity: 252, edge_opacity: 175, focus: 0, pressed: false, scale,
+        });
     }
     // ------------------------=
     // FUNC: app_dropdown_row
     // DESC: Draws a compact selected application-menu row using the reusable cyan glass focus state.
     // ------------------=
-    pub(super) fn app_dropdown_row(&mut self, row: Rect, selected: bool, _scale: usize) {
-        if selected { let (r,g,b)=self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-            self.fill_rect(row.x.max(0) as usize,row.y.max(0) as usize,row.width as usize,row.height as usize,r,g,b); }
+    pub(super) fn app_dropdown_row(&mut self, row: Rect, selected: bool, scale: usize) {
+        if !selected || row.width < 6 || row.height < 4 { return; }
+        use crate::ui::{panel_recipe::{Surface, Material}, skin::AccentSurface};
+        let inset = (2 * scale.max(1) as u32).min(row.width / 4);
+        let plate = Rect { x: row.x + inset as i32, y: row.y + 1,
+            width: row.width - 2 * inset, height: row.height - 2 };
+        self.precision_surface(plate, Surface::Secondary, Material {
+            fill: self.active_accent_surface(AccentSurface::Selection),
+            edge: self.active_accent_surface(AccentSurface::WindowOutline),
+            opacity: 232, edge_opacity: 150, focus: 145, pressed: false, scale,
+        });
     }
     // ------------------------=
     // FUNC: app_text_width

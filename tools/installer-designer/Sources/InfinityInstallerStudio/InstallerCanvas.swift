@@ -184,10 +184,10 @@ struct InstallerCanvas: View {
                 Button("Retry") { nativePreview.schedule(store) }
             }
             if nativePreview.phase != .failed {
-                Picker("Viewport", selection: $store.canvasViewport) {
+                InfinityStudioChoice("Viewport", selection: $store.canvasViewport, showsTitle: false) {
                     ForEach(NativePreviewViewport.allCases) { viewport in Text(viewport.rawValue).tag(viewport) }
                 }.labelsHidden().frame(width: 142)
-                Picker("Control state", selection: $store.nativePreviewState) {
+                InfinityStudioChoice("Control state", selection: $store.nativePreviewState, showsTitle: false) {
                     ForEach(NativePreviewControlState.allCases) { state in
                         Text(state.rawValue).tag(state).disabled(!state.isSupported(in: store.selectedCollection))
                     }
@@ -236,16 +236,16 @@ struct InstallerCanvas: View {
             switch store.selectedScreenID {
             case 5:
                 HStack(spacing: 8) {
-                    Picker("Time zone", selection: $store.nativePreviewSimulation.timeZone) {
+                    InfinityStudioChoice("Time zone", selection: $store.nativePreviewSimulation.timeZone) {
                         ForEach(Array(["UTC", "Pacific", "Mountain", "Central", "Eastern", "Atlantic", "GMT", "Europe", "India", "Singapore", "Japan", "Australia"].enumerated()), id: \.offset) { index, name in
                             Text(name).tag(index)
                         }
                     }.frame(width: 170)
-                    Picker("Field", selection: $store.nativePreviewSimulation.dateFocus) {
+                    InfinityStudioChoice("Field", selection: $store.nativePreviewSimulation.dateFocus) {
                         Text("Date").tag(2); Text("Time").tag(3); Text("Zone").tag(4)
                     }.frame(width: 110)
                     if store.nativePreviewSimulation.dateFocus != 4 {
-                        Picker("Part", selection: Binding(get: {
+                        InfinityStudioChoice("Part", selection: Binding(get: {
                             store.nativePreviewSimulation.resolved(collection: .installation, screen: 5, rows: 0).datePart
                         }, set: { store.nativePreviewSimulation.datePart = $0 })) {
                             if store.nativePreviewSimulation.dateFocus == 2 {

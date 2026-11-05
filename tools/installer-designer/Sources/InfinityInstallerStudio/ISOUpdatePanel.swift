@@ -17,7 +17,7 @@ struct ISOUpdatePanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Picker("Architecture", selection: $updater.target) {
+                InfinityStudioChoice("Architecture", selection: $updater.target) {
                     Text("ARM64").tag(ISOArchitecture.aarch64)
                     Text("x86_64").tag(ISOArchitecture.x86_64)
                 }.frame(width: 180).disabled(updater.isRunning)
