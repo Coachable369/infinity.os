@@ -65,3 +65,17 @@ Recorded results (2026-11-04):
   restart and stale handles cannot cancel a subsequent request.
 - Native component execution is not installed-desktop acceptance. Installed recovery
   remains pending.
+
+Installer handoff:
+- `builds/InfinityOS-aarch64.iso` (10435837952 bytes), SHA-256
+  `b217ed530b9e9e498b43a28a2307d2d0e529295a8afb9124aa49010d48dd1685`.
+  ARM packaging, payload parity and checksum verification completed in
+  `builds/manifests/20261105T005808555389Z-38216.json`; that combined run subsequently
+  failed at the x86 checkpoint bound, so its overall result is correctly failed.
+- `builds/InfinityOS-x86_64.iso` (10368731136 bytes), SHA-256
+  `54e4213644ecd9478fa85f062475dd48ad315aecceb27a19676cb9ccf1508449`.
+  After the x86-only reservation correction, packaging, parity and checksums passed:
+  `builds/manifests/20261105T012244210067Z-81601.json`.
+- Both images retain compiled products from the clean build attempt. Broad regression
+  tests and redundant full-image comparisons were omitted; this is an incremental
+  handoff, not a claim that the full clean release profile passed.

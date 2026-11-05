@@ -1,8 +1,8 @@
 """Exercise the integrated browser in a disposable installed native desktop.
 
 Default diagnostic runs use an offline experimental kernel update. Only
---iso-parity installs matching browser media unchanged and verifies the exact
-installed kernel before its media-detached boot.
+--iso-parity installs matching browser media unchanged. Offline exact-kernel
+comparison is optional; media-detached boot and runtime checks remain mandatory.
 """
 import importlib.util
 import argparse
@@ -609,6 +609,7 @@ def main():
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--resume-onboarding",action="store_true",help="Resume a completed disposable installation, reverify against its original ISO and finish onboarding")
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
+    parser.add_argument("--skip-byte-comparisons", action="store_true", help="Keep unmodified ISO installation and detached boot checks; omit redundant offline full-kernel comparison")
     parser.add_argument("--boot-only", action="store_true", help="Verify a fresh installation reaches detached-media onboarding, without running browser acceptance")
     parser.add_argument("--iso", type=Path, help="Test this repository-local ISO instead of the architecture's internal boot media")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
@@ -642,6 +643,8 @@ def main():
     parser.add_argument("--gradients",action="store_true",help="Check installed linear/radial gradient pixels and a real reload request")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
+    if args.skip_byte_comparisons and not (args.iso_parity or args.resume_onboarding):
+        parser.error("Skipping offline comparisons requires unmodified ISO installation or onboarding resume")
     if args.input_regression and any((args.url,args.interaction,args.navigation,args.download,
         args.launcher,args.open_url,args.workplace,args.workplace_menu,args.clipboard_ui,
         args.workplace_resume_storage,args.tabs,args.invalid_tls,args.lifecycle,args.measure,
@@ -693,9 +696,10 @@ def main():
     if not reuse:
         artifacts.mkdir(parents=True)
     for source, name in ([] if reuse else [
-        (args.iso.resolve() if args.iso else "build/test-media/InfinityOS-x86_64.bootmedia" if args.arch=="x86_64" else "build/test-media/InfinityOS-aarch64-qemu.bootmedia", "installer.iso"),
+        (args.iso.resolve() if args.iso else "build/test-media/InfinityOS-x86_64.bootmedia" if args.arch=="x86_64" else "build/test-media/InfinityOS-aarch64-qemu.bootmedia", "installer.iso")
+        ] + ([] if args.iso_parity else [
         ("build/x86_64/kernel.elf" if args.arch=="x86_64" else "build/aarch64/kernel-qemu.elf", "kernel.elf"),
-        ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
+        ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")])):
         copy_artifact(ROOT / source, artifacts / name)
     media_kernels=extract_media_kernels(artifacts/"installer.iso",artifacts,args.arch) if args.iso_parity or args.resume_onboarding else None
     if args.update_kernel:
@@ -722,18 +726,23 @@ def main():
             guest.install()
             receipt["installed"] = True
             guest.stop()
-            if args.iso_parity:
+            if args.iso_parity and not args.skip_byte_comparisons:
                 subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
                     str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)
                 receipt["browser_iso_parity"]=True
+            if args.iso_parity:
+                receipt["unmodified_iso_installation"]=True
+                receipt["offline_kernel_byte_comparison"]=not args.skip_byte_comparisons
             if args.boot_only:
                 receipt["detached_onboarding_verified"] = True
                 print(json.dumps(dict(work=str(work), **receipt)), flush=True)
                 return
         if args.resume_onboarding:
-            subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
-                str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)
-            receipt["browser_iso_parity"]=True
+            if not args.skip_byte_comparisons:
+                subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
+                    str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)
+                receipt["browser_iso_parity"]=True
+            receipt["offline_kernel_byte_comparison"]=not args.skip_byte_comparisons
             receipt["resumed_completed_installation"]=True
             guest.onboard()
         elif reuse:
