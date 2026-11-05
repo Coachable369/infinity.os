@@ -178,6 +178,9 @@ make install-boot-handoff-test
 cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
 cargo test --manifest-path tools/file-preview-harness/Cargo.toml
 cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin browser-entropy-test
+make aarch64-bootstrap
+sh tools/build-hermes.sh --target aarch64
+python3 tools/full-bundle-iso-test.py builds/InfinityOS-aarch64.iso
 [optional legacy smoke media] make x86
 make build/test-media/InfinityOS-x86_64.bootmedia
 make aarch64-bootstrap
@@ -209,8 +212,8 @@ python3 tools/native-application-case-test.py
 make crash-screen-test component-manifest-test settings-color-test installer-template-test milestone-7x-test ai-test object-test fabric-test network-test network-wire-test http-transport-test https-service-test native-https-test native-https-arm-test native-https-rsa-test native-tls-test milestone-9-test milestone-9-service-test performance-test resource-policy-test
 tools/ui-install-parity-test.sh build/infinity-x86_64.img build/infinity-aarch64.img build/infinity-aarch64-qemu.img build/x86_64/installed-esp.img build/aarch64/installed-esp.img
 make input-regression-test app-launcher-interaction-test
-sh tools/build-hermes.sh --target x86_64
 sh tools/build-hermes.sh --target aarch64
+sh tools/build-hermes.sh --target x86_64
 python3 tools/full-bundle-iso-test.py builds/InfinityOS-x86_64.iso builds/InfinityOS-aarch64.iso
 python3 tools/browser-artwork-parity.py
 tools/guard-virtualbox-arm64-input.sh
@@ -283,13 +286,28 @@ sh tools/font-library-test.sh
 make ssh-test
 make accounts-test
 
-echo "==> Building InfinityOS for x86_64 and AArch64"
+echo "==> Building InfinityOS for AArch64 first, then x86_64"
 
 # The legacy BIOS loader must place its complete 32-bit payload below the
 # conventional-memory/video boundary. The current graphical kernel is larger
 # than that physical window, so legacy x86 is opt-in until its staged loader is
 # implemented. Never let that unsupported target prevent Studio users from
 # producing the supported UEFI images.
+# Publish a verified ARM installer before spending time on the second architecture.
+make aarch64-bootstrap
+sh tools/build-hermes.sh --target aarch64
+python3 tools/full-bundle-iso-test.py "$output_dir/InfinityOS-aarch64.iso"
+(cd "$output_dir" && shasum -a 256 InfinityOS-aarch64.iso > InfinityOS-aarch64.iso.sha256)
+(cd "$output_dir" && shasum -a 256 -c InfinityOS-aarch64.iso.sha256)
+# Keep the shared checksum index usable while x86_64 is still building.
+(
+    cd "$output_dir"
+    cp InfinityOS-aarch64.iso.sha256 SHA256SUMS.arm-first
+    if [ -f SHA256SUMS ]; then
+        awk '$2 != "InfinityOS-aarch64.iso"' SHA256SUMS >> SHA256SUMS.arm-first
+    fi
+    mv SHA256SUMS.arm-first SHA256SUMS
+)
 legacy_x86_built=false
 if [ "${INFINITY_BUILD_LEGACY_X86:-0}" = "1" ]; then
     echo "==> Building opt-in legacy BIOS x86 image"
@@ -369,8 +387,8 @@ tools/ui-install-parity-test.sh \
     build/aarch64/installed-esp.img
 make input-regression-test
 make app-launcher-interaction-test
+sh tools/build-hermes.sh --target aarch64
 sh tools/build-hermes.sh --target x86_64
-sh tools/build-hermes.sh
 python3 tools/browser-artwork-parity.py
 python3 tools/design-kit-parity.py --kernel build/aarch64/installed-kernel.elf --kernel build/x86_64/installed-kernel.elf
 python3 tools/sdk-parity.py build/aarch64/kernel.elf build/aarch64/installed-kernel.elf build/x86_64/kernel.elf build/x86_64/installed-kernel.elf

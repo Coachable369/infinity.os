@@ -40,13 +40,14 @@ fn password_client_round_trip_and_revocation() {
     let mut wire = [std::vec::Vec::new(), std::vec::Vec::new()];
     let (mut host_checked, mut supplied, mut shell, mut sent, mut replied) = (false, 0, false, false, false);
     let mut received = std::vec::Vec::new();
+    let mut pty=None;client.resize(91,37).unwrap();
     for now in 0..2000 {
         wire[0].extend_from_slice(client.output()); let n = client.output().len(); client.consume_output(n).unwrap();
         wire[1].extend_from_slice(server.output(&authority, now).unwrap()); let n = server.output(&authority, now).unwrap().len(); server.consume_output(n).unwrap();
         let n = server.input(&wire[0][..wire[0].len().min(37)], &authority, now).unwrap(); wire[0].drain(..n);
         let n = client.input(&wire[1][..wire[1].len().min(41)]).unwrap(); wire[1].drain(..n);
         if server.progress(&authority, &host, now).unwrap() == Diagnostic::Authenticated { server.authorize_console().unwrap(); }
-        if let Some(ConsoleRequest::Shell) = server.take_console_request() { shell = true; }
+        match server.take_console_request(){Some(ConsoleRequest::Shell)=>shell=true,Some(ConsoleRequest::Pty{columns,rows})=>pty=Some((columns,rows)),_=>()}
         match client.progress(now).unwrap() {
             State::HostKey(key) => {
                 assert_eq!(key, expected); assert_eq!(authority.attempts.get(), 0);
@@ -69,7 +70,7 @@ fn password_client_round_trip_and_revocation() {
         let mut bytes = [0; 16]; let n = client.read(&mut bytes, false).unwrap(); received.extend_from_slice(&bytes[..n]);
         if received.len() == 5 { break; }
     }
-    assert!(shell && sent && replied); assert_eq!(received, b"pong\n"); assert_eq!(supplied, 2);
+    assert_eq!(pty,Some((91,37)));assert!(shell && sent && replied); assert_eq!(received, b"pong\n"); assert_eq!(supplied, 2);
     assert_eq!(authority.attempts.get(), 2);
     authority.active.set(false);
     assert_eq!(server.progress(&authority, &host, 2100), Err(Failure::Revoked));

@@ -510,3 +510,5 @@ pub fn presentation_diagnostics() -> Option<DisplayPresentDiagnostics> {
 }
 
 mod terminal_edit_view;
+
+mod command_terminal_view;

@@ -7,8 +7,9 @@ the packaged InfinityEditor monospace library. No new icon or artwork is needed.
 ## Visual contract
 
 - Compositor-owned active/inactive frame and existing window controls unchanged.
-- Unframed terminal interior, default Charcoal, fourteen-pixel JetBrains Mono.
-  Four packaged monospace faces, nine exact raster sizes and ten existing schemes.
+- Unframed terminal interior, default Charcoal, fourteen-pixel IBM Plex Mono.
+  IBM Plex Mono, JetBrains Mono, Fira Code and Inconsolata are installed by
+  default with their OFL licenses. Nine exact raster sizes and ten existing schemes.
 - Eighteen logical pixels of horizontal breathing room, twelve above the first
   row. Font advance and actual glyph height plus four pixels determine the grid.
 - The namespace prompt and editable command are the final logical transcript
@@ -45,3 +46,17 @@ Selection and caret use the same editor scheme colors. Search and go-to-line
 prompts replace the status row; unsaved exit presents Save/Discard/Cancel there.
 No new imagery, icon family, outer border or separate command input is introduced.
 The viewport wraps and follows the document caret when the window resizes.
+
+## Preferences and remote terminals
+
+Preferences uses the existing Precision menu surface. Up/Down selects the row;
+Left/Right adjusts, and Escape closes. Rows/Columns accept numeric typing and
+Enter to commit (0 restores automatic sizing). Background opacity never fades
+text or compositor controls. Saved settings are isolated per user.
+
+SSH requests a VT100 pseudo-terminal, forwards keys immediately, and updates its
+window size. Ctrl+] disconnects; Escape, Ctrl+C, arrows and Tab go to the remote
+process. Remote ANSI cursor, erase, scroll-region, rendition and alternate-screen
+operations stay inside the terminal grid. No remote escape may alter OS settings.
+SF Mono Terminal Regular is not bundled: Apple distributes it under restrictions
+that do not grant redistribution in InfinityOS. No substitute is labeled SF Mono.

@@ -36,6 +36,12 @@ mod native_control_tests {
     // ------------------=
     #[test]
     fn tool_grammar_preserves_registered_commands() {
+        assert_eq!(Command::decode(b"OS_SHELL:logout"),Some(Command::Shell(ShellAction::Logout)));
+        for phrase in [b"logout".as_slice(),b"please log me out"] {
+            assert_eq!(Command::explicit(phrase),Some(Command::Shell(ShellAction::Logout)));
+        }
+        assert_ne!(Command::explicit(b"please do not log me out"),Some(Command::Shell(ShellAction::Logout)));
+        assert!(protocol_allows(b"OS_SHELL:logout",true));
         for command in [b"OS_OPEN:task_manager".as_slice(), b"OS_CLOCK:zone:UTC", b"OS_SETTING:name:Jonathan", b"OS_TOOLS"] {
             for length in 0..=command.len() { assert!(protocol_prefix(&command[..length])); }
             assert!(command == b"OS_TOOLS" || Command::decode(command).is_some());
@@ -142,6 +148,7 @@ pub enum Command {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShellAction {
+    Logout,
     SnapLeft,
     SnapRight,
     Center,
@@ -396,6 +403,7 @@ impl Command {
         }
         if let Some(action) = bytes.strip_prefix(b"OS_SHELL:") {
             return match action {
+                b"logout" => Some(Self::Shell(ShellAction::Logout)),
                 b"snap_left" => Some(Self::Shell(ShellAction::SnapLeft)),
                 b"snap_right" => Some(Self::Shell(ShellAction::SnapRight)),
                 b"center" => Some(Self::Shell(ShellAction::Center)),
@@ -443,6 +451,7 @@ impl Command {
     // DESC: Resolves unambiguous launch requests even while model weights are loading; other phrasing uses inference.
     // ------------------=
     pub fn explicit(input: &[u8]) -> Option<Self> {
+        if super::session_request::logout(input){return Some(Self::Shell(ShellAction::Logout));}
         if let Some(request)=setting_command::Request::spoken(input) {return Some(Self::Setting(request));}
         if let Some(request) = super::clock::Request::parse(input) { return Some(Self::Clock(request)); }
         for (name, action) in [
@@ -618,12 +627,14 @@ impl Command {
             return match self {
                 Self::Setting(setting_command::Request::Invalid)=>b"That setting value is not supported. Check the name, color, or numeric range in Settings and try again.",
                 Self::Setting(_)=>b"The setting change could not be saved and verified. Check your signed-in permissions and system storage, then try again.",
+                Self::Shell(ShellAction::Logout)=>b"Could not sign out. Save unsaved work and finish any open settings edit, then try again.",
                 Self::Clock(_)=>b"The clock request could not be completed. Check the time or time zone and your signed-in permissions.",
                 _=>b"The OS could not complete that action. The app may not be open, or a dialog needs attention.",
             };
         }
         match self {
             Self::Setting(_) => b"The setting was saved and applied.",
+            Self::Shell(ShellAction::Logout) => b"Signed out.",
             Self::Clock(_) => b"The system clock request completed through the native clock service.",
             Self::TextEditor => b"Opened Text Editor.",
             Self::FileNavigator => b"Opened File Navigator.",

@@ -298,3 +298,9 @@ fn drive(actor: &mut Actor, policy: &Policy<'_>, nic: &mut super::e1000::E1000, 
     }
     Ok(())
 }
+
+// ------------------------=
+// FUNC: resize
+// DESC: Applies terminal geometry only through the owning authenticated client's authority.
+// ------------------=
+pub fn resize(session:StableId,columns:u32,rows:u32)->Result<(),Failure>{access(session,|ssh|ssh.resize(columns,rows))}

@@ -125,7 +125,7 @@ impl ConsoleRuntime {
         if clicked && v.close_rect().contains(p) {preview::close();return true;}
         if let Some((origin,r,edge))=v.drag {
             if left {let dx=p.x-origin.x;let dy=p.y-origin.y;
-                if edge==8 {v.scroll_to_pointer(p);}
+                if edge==8 {v.scroll_to_pointer(p,origin.y);}
                 else if edge==0 {v.rect.x=(r.x+dx).clamp(0,(self.system.framebuffer_width as i32-r.width as i32).max(0));v.rect.y=(r.y+dy).clamp(0,(self.system.framebuffer_height as i32-r.height as i32).max(0));}
                 else {let minw=(320*v.scale).min(self.system.framebuffer_width) as i32;let minh=(240*v.scale).min(self.system.framebuffer_height) as i32;
                     if edge&1!=0 {v.rect.x=(r.x+dx).clamp(0,(r.right()-minw).max(0));v.rect.width=(r.right()-v.rect.x) as u32;}
@@ -135,7 +135,11 @@ impl ConsoleRuntime {
             }else{v.drag=None;}preview::publish(v);self.reflow_preview();return true;
         }
         if clicked && v.rect.contains(p) {let s=v.scale as i32;let edge=if p.x<v.rect.x+8*s {1}else if p.x>=v.rect.right()-8*s{2}else{0} | if p.y>=v.rect.bottom()-8*s{4}else{0};
-            if v.track().contains(p) {v.scroll_to_pointer(p);v.drag=Some((p,v.rect,8));}
+            if v.lines>v.rows() && (Rect{x:v.track().x-5*s,width:v.track().width+10*s as u32,..v.track()}).contains(p) {
+                let thumb=v.thumb();
+                if p.y>=thumb.y&&p.y<thumb.bottom(){v.drag=Some((Point{x:p.x,y:p.y-thumb.y},v.rect,8));}
+                else{v.scroll_by(if p.y<thumb.y{-(v.rows() as isize)}else{v.rows() as isize});}
+            }
             else if edge!=0 || p.y<v.rect.y+48*s {v.drag=Some((p,v.rect,edge));}
             preview::publish(v);
         }true

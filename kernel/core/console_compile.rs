@@ -886,6 +886,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         APP_UI_REVISION=ui_revision;console.redraw();
     }
     if APP_OUTPUT_LENGTH>0 {
+        crate::ui::command_terminal::mutate(|s|{if s.authorized{s.append(&(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH]);}});
         crate::ui::editor_chrome::terminal::mutate(|terminal|terminal.append(&(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH]));
         for &byte in &(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH] {
             if byte==b'\r'{continue;}

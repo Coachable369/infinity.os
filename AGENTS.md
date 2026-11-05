@@ -49,6 +49,10 @@ entrypoint requires adding a named profile to `build-kit.toml` or invoking it
 through `build-kit run`. No build may write project data outside
 `/opt/codebase/infinity.os`.
 
+Always prioritize ARM64 installer builds. When producing both architectures,
+build, verify and publish the ARM ISO before starting x86_64 packaging. Retain
+the normal parity and checksum gates for each architecture.
+
 ## Cycle handoff: usable installer ISOs
 
 After each implementation cycle, produce updated ARM64 and x86_64 installer ISOs

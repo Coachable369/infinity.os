@@ -8,6 +8,7 @@ pub mod broker;
 pub mod chat;
 pub mod clock;
 pub mod control;
+pub mod session_request;
 pub mod generation;
 pub mod intelligence;
 pub mod intent;

@@ -4,7 +4,8 @@
 #[path="../kernel/ui/preview_png.rs"] pub mod preview_png;
 #[path="../kernel/ui/file_preview.rs"] pub mod file_preview;
 #[path="../kernel/ui/user_wallpaper.rs"] pub mod user_wallpaper;
-pub mod ui {pub use crate::{geometry,bitmap,preview_png,file_preview,user_wallpaper};}
+#[path="../kernel/ui/scroll_capture.rs"] pub mod scroll_capture;
+pub mod ui {pub use crate::{geometry,bitmap,preview_png,file_preview,user_wallpaper,scroll_capture};}
 pub mod runtime {pub mod object_navigation {
     // ------------------------=
     // FUNC: namespace_basename
@@ -12,12 +13,11 @@ pub mod runtime {pub mod object_navigation {
     // ------------------=
     pub fn namespace_basename(path:&[u8])->&[u8]{path.rsplit(|b|*b==b'/').next().unwrap_or(path)}
 }}
-#[path="file-preview-proof.rs"] mod proof;
 // ------------------------=
 // FUNC: main
 // DESC: Keeps this target runnable while acceptance cases execute through cargo test.
 // ------------------=
-fn main() {proof::render();}
+fn main() {}
 #[cfg(test)] mod tests {
 use super::*;
 #[test]
@@ -91,7 +91,12 @@ fn text_wrapping_and_scroll(){let mut rows=Vec::new();file_preview::text_rows("a
     assert_eq!(rows,vec![b"abc".to_vec(),"é".as_bytes().to_vec(),vec![],b"end".to_vec()]);
     for (w,h,s) in [(640,480,1),(1920,1080,2),(3840,2160,3)]{let mut p=file_preview::Preview::new();p.place(w,h,s);
         assert!(p.rect.contains(geometry::Point{x:p.body().x,y:p.body().y}));assert!(p.body().bottom()<p.rect.bottom());
-        p.lines=500;p.scroll_by(usize::MAX as isize);p.scroll_to_pointer(geometry::Point{x:0,y:i32::MAX});assert_eq!(p.scroll,500-p.rows());
+        p.lines=500;
+        p.scroll=0;let thumb=p.thumb();let grab=(thumb.height/2) as i32;
+        p.scroll_to_pointer(geometry::Point{x:0,y:thumb.y+grab},grab);assert_eq!(p.scroll,0);
+        let travel=p.track().height-thumb.height;
+        p.scroll_to_pointer(geometry::Point{x:-500,y:thumb.y+grab+travel as i32},grab);assert_eq!(p.scroll,500-p.rows());
+        p.scroll_by(usize::MAX as isize);p.scroll_to_pointer(geometry::Point{x:0,y:i32::MAX},0);assert_eq!(p.scroll,500-p.rows());
         p.scroll_by(-10000);assert_eq!(p.scroll,0);
     }
     assert_eq!(file_preview::classify(b"%PDF-1.7"),file_preview::Kind::Unsupported);

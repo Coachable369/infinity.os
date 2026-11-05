@@ -719,6 +719,7 @@ fn terminal_read<T:crate::runtime::native_memory::PageTable>(input:&mut crate::r
 // DESC: Publishes newly produced bytes while the native Python process is still running, with no replay at completion.
 // ------------------=
 fn report_stream(console:&mut ConsoleRuntime,bytes:&[u8]) {
+    crate::ui::command_terminal::mutate(|s|{if s.authorized{s.append(bytes);}});
     crate::ui::editor_chrome::terminal::mutate(|state|state.append(bytes));
     for line in bytes.split(|b|*b==b'\n').filter(|line|!line.is_empty()) {
         // Keep the standalone command viewport current without mirroring the same bytes twice into the dock.

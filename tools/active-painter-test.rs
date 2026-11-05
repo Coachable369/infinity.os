@@ -5,7 +5,17 @@
 #[path = "../kernel/runtime/font_preferences.rs"] pub mod font_preferences;
 #[path = "../kernel/runtime/font.rs"] pub mod font;
 #[path="../kernel/runtime/face_setup.rs"] pub mod face_setup;
-mod runtime { pub use super::{font_faces,font_preferences,font,face_setup}; }
+mod runtime { pub use super::{font_faces,font_preferences,font,face_setup};
+    pub mod object_navigation {
+        // ------------------------=
+        // FUNC: namespace_basename
+        // DESC: Supplies path transport to the production preview painter.
+        // ------------------=
+        pub fn namespace_basename(path:&[u8])->&[u8]{path.rsplit(|b|*b==b'/').next().unwrap_or(path)}
+    }
+}
+#[path="../kernel/core/bootstrap/file_preview_view.rs"] mod file_preview_view;
+#[path="file-preview-proof.rs"] mod file_preview_proof;
 // Transport-only fixture: the production date/time painter reads these values;
 // this harness neither simulates nor claims to verify storage/clock behavior.
 mod storage {
@@ -396,9 +406,11 @@ fn main() {
     if std::env::args().any(|arg|arg=="--window-clipping-only") {
         retained_surface_test();retained_left_edge_test();signed_active_outline_test();return;
     }
+    if std::env::args().any(|arg|arg=="--file-preview-only") {file_preview_proof::render();return;}
     if std::env::args().any(|arg|arg=="--window-controls-only") {
         window_controls_test();window_control_states_proof();return;
     }
+    file_preview_proof::render();
     settings_native_render_tests::verify();
     configuration_wizard_render::verify();
     window_substrate_pixels();
@@ -1141,6 +1153,14 @@ fn window_control_states_proof() {
             d.window_control(x,y,48,index,maximized);
             assert_eq!(pixels[y*width+x],0x001a0b05);
         }
+    }
+    for column in 0..4 {
+        let states:Vec<Vec<u32>>=(0..3).map(|state| {
+            let mut cell=Vec::new();
+            for y in 20+state*72..68+state*72 {cell.extend_from_slice(&pixels[y*width+32+column*120..y*width+80+column*120]);}
+            cell
+        }).collect();
+        assert_ne!(states[0],states[1]);assert_ne!(states[1],states[2]);assert_ne!(states[0],states[2]);
     }
     controls::publish(None);let _=controls::take_damage();
     let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();

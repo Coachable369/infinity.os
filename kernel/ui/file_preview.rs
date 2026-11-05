@@ -92,7 +92,17 @@ impl Preview {
     // FUNC: scroll_to_pointer
     // DESC: Converts a rail drag to a bounded scroll position.
     // ------------------=
-    pub fn scroll_to_pointer(&mut self,p:Point) {let t=self.track();self.scroll=(p.y-t.y).max(0) as usize*self.lines.saturating_sub(self.rows())/(t.height as usize).max(1);self.scroll_by(0);}
+    pub fn scroll_to_pointer(&mut self,p:Point,grab:i32) {let t=self.track();self.scroll=crate::ui::scroll_capture::offset(p.y,t.y,t.height,self.thumb().height,grab,self.lines.saturating_sub(self.rows()));}
+    // ------------------------=
+    // FUNC: thumb
+    // DESC: Shares painted thumb bounds with pointer capture, retaining the original grab offset.
+    // ------------------=
+    pub fn thumb(&self)->Rect {
+        let t=self.track();let height=(t.height as usize*self.rows()/self.lines.max(1)).max(20*self.scale).min(t.height as usize);
+        let maximum=self.lines.saturating_sub(self.rows());
+        let top=self.scroll.min(maximum)*(t.height as usize-height)/maximum.max(1);
+        Rect{y:t.y+top as i32,height:height as u32,..t}
+    }
 }
 // ------------------------=
 // FUNC: classify

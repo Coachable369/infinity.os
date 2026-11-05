@@ -9,6 +9,9 @@ pub struct Position { pub row: u64, pub column: usize }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Menu { None, Appearance, Schemes, Fonts, Sizes, Clipboard }
 pub struct State {
+    pub row_override:usize,pub column_override:usize,pub opacity:u8,
+    pub help:bool,pub help_detail:bool,pub help_selected:usize,
+    pub remote:bool,pub setting_value:usize,pub setting_edit:bool,
     lines: [[u8; COLS]; ROWS], lengths: [usize; ROWS],
     pub first: u64, pub count: usize, stream_open: bool, stream_cursor: usize, escape: u8,
     pub owner: [u8;16], pub authorized: bool, pub capture: bool,
@@ -27,8 +30,8 @@ impl State {
     // DESC: Initializes bounded storage without heap allocation or host services.
     // ------------------=
     pub const fn new() -> Self {
-        Self { lines:[[0;COLS];ROWS],lengths:[0;ROWS],first:0,count:0,stream_open:false,stream_cursor:0,escape:0,
-            owner:[0;16],authorized:false,capture:false,appearance:Preferences{scheme:1,font:0,size:3},revision:0,
+        Self { row_override:0,column_override:0,opacity:255,help:false,help_detail:false,help_selected:0,remote:false,setting_value:0,setting_edit:false,lines:[[0;COLS];ROWS],lengths:[0;ROWS],first:0,count:0,stream_open:false,stream_cursor:0,escape:0,
+            owner:[0;16],authorized:false,capture:false,appearance:Preferences{scheme:1,font:2,size:3},revision:0,
             input:[0;INPUT],input_length:0,cursor:0,prompt:[0;256],prompt_length:0,
             scroll:0,columns:80,rows:24,selection:None,dragging:false,scroll_drag:false,grab:0,
             search:false,query:[0;64],query_length:0,found:None,menu:Menu::None,menu_row:0,notice:b"",
@@ -56,8 +59,9 @@ impl State {
         if self.owner==owner && self.authorized==active {return false;}
         self.clear();self.owner=owner;self.authorized=active;self.capture=false;
         self.input.fill(0);self.input_length=0;self.cursor=0;self.prompt.fill(0);self.prompt_length=0;
+        self.help=false;self.remote=false;self.setting_edit=false;self.row_override=0;self.column_override=0;self.opacity=255;
         self.search=false;self.query.fill(0);self.query_length=0;self.menu=Menu::None;self.notice=b"";
-        self.appearance=Preferences{scheme:1,font:0,size:3};self.click_position=None;self.clicks=0;
+        self.appearance=Preferences{scheme:1,font:2,size:3};self.click_position=None;self.clicks=0;
         active
     }
     // ------------------------=
@@ -252,7 +256,7 @@ impl State {
     // FUNC: menu_count
     // DESC: Exposes only real executable menu entries.
     // ------------------=
-    pub fn menu_count(&self)->usize {match self.menu {Menu::None=>0,Menu::Appearance=>3,Menu::Schemes=>10,Menu::Fonts=>4,Menu::Sizes=>9,Menu::Clipboard=>5}}
+    pub fn menu_count(&self)->usize {match self.menu {Menu::None=>0,Menu::Appearance=>7,Menu::Schemes=>10,Menu::Fonts=>4,Menu::Sizes=>9,Menu::Clipboard=>5}}
 }
 
 #[derive(Clone, Copy)]
@@ -351,3 +355,46 @@ pub fn output(bytes:&[u8]) {mutate(|s|{if s.capture&&s.authorized{s.line(bytes);
 // DESC: Captures already-authorized asynchronous native process output without replaying it.
 // ------------------=
 pub fn stream(bytes:&[u8]) {mutate(|s|{if s.capture&&s.authorized{s.append(bytes);}});}
+
+impl State {
+    // ------------------------=
+    // FUNC: settings
+    // DESC: Encodes only public per-user preferences, never the terminal transcript or credentials.
+    // ------------------=
+    pub fn settings(&self)->[u8;16] {
+        let mut b=[0;16];b[..8].copy_from_slice(&self.appearance.encode());
+        b[8..10].copy_from_slice(&(self.row_override as u16).to_le_bytes());
+        b[10..12].copy_from_slice(&(self.column_override as u16).to_le_bytes());b[12]=self.opacity;b[13]=1;b
+    }
+    // ------------------------=
+    // FUNC: restore_settings
+    // DESC: Validates bounded geometry and version before applying a stored preference record atomically.
+    // ------------------=
+    pub fn restore_settings(&mut self,b:&[u8])->bool {
+        if b.len()!=16||b[13..]!=[1,0,0]||b[12]<64{return false;}
+        let Some(p)=Preferences::decode(&b[..8])else{return false;};
+        let rows=u16::from_le_bytes([b[8],b[9]])as usize;let cols=u16::from_le_bytes([b[10],b[11]])as usize;
+        if rows>96||cols>320{return false;}self.appearance=p;self.row_override=rows;self.column_override=cols;self.opacity=b[12];self.changed();true
+    }
+    // ------------------------=
+    // FUNC: layout
+    // DESC: Applies explicit grid limits within the available viewport; zero means measured automatic sizing.
+    // ------------------=
+    pub fn layout(&self,body:Rect,toolbar:Rect,scale:usize)->Layout {
+        let mut g=Layout::new(body,toolbar,scale,self.appearance,self.search);
+        if self.row_override!=0 {g.text.height=g.text.height.min((self.row_override*g.line)as u32);}
+        if self.column_override!=0 {g.text.width=g.text.width.min((self.column_override*g.cell)as u32);}
+        g.text.height=g.text.height.min((96*g.line)as u32);g.text.width=g.text.width.min((320*g.cell)as u32);g
+    }
+}
+
+#[no_mangle]
+pub static mut INFINITY_COMMAND_TERMINAL_SNAPSHOT:[u64;16]=[0;16];
+// ------------------------=
+// FUNC: publish_snapshot
+// DESC: Exposes coherent non-content terminal geometry and UI state for installed behavioral verification.
+// ------------------=
+pub fn publish_snapshot(){
+    let values=inspect(|s|[0x494e465454593031,1,0,s.authorized as u64,s.columns as u64,s.rows as u64,s.count as u64,s.remote as u64,s.menu as u64,s.help as u64,s.help_detail as u64,s.help_selected as u64,s.appearance.font as u64,s.appearance.size as u64,s.opacity as u64,0]);
+    unsafe{let p=&mut *core::ptr::addr_of_mut!(INFINITY_COMMAND_TERMINAL_SNAPSHOT);let seq=(p[2].wrapping_add(2))&!1;p[2]=seq|1;p[15]=seq|1;core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);p[..2].copy_from_slice(&values[..2]);p[3..15].copy_from_slice(&values[3..15]);core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);p[15]=seq;p[2]=seq;}
+}

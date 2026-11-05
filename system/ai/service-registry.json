@@ -193,6 +193,7 @@
     "completion": "Persist authoritative settings and refresh live UI before reporting success"
   },
   "endpoints": [
+    {"id":"os.session.logout","target":"OS_SHELL:logout","description":"End the current authenticated session; sign out or log me out. Unsaved work must be saved first."},
     {
       "id": "os.setting.name",
       "target": "OS_SETTING:name:{argument}"

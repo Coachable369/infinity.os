@@ -10,7 +10,7 @@ from PIL import Image
 def main():
     assert os.environ.get("INFINITY_BUILD_KIT_ACTIVE"), "Use ./build-kit run"
     kit = Path(__file__).resolve().parents[1] / "assets/ui-design-kit/default"
-    source = Image.open(kit / "window-controls-v1.png").convert("RGBA")
+    source = Image.open(kit / "window-controls-circular-v2.png").convert("RGBA")
     cells = []
     for index in range(3):
         cell = source.crop((index * source.width // 3, 0,

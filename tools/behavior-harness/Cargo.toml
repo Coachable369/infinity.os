@@ -201,3 +201,7 @@ path = "../intelligence-kit-test.rs"
 [[bin]]
 name = "ssh-console-test"
 path = "../ssh-console-test.rs"
+
+[[bin]]
+name = "ssh-interactive-client-test"
+path = "../ssh-interactive-client-test.rs"

@@ -107,8 +107,7 @@ impl ConsoleRuntime {
         match index {
             0=>self.open_settings(9),1=>self.open_settings(0),2=>self.open_settings(2),3=>self.open_settings(3),4=>self.open_settings(6),5=>self.open_settings(4),
             6=>{let _=self.lock_session_preserving_desktop(false);},
-            7=>{let _=self.persist_desktop_layout();let _=crate::runtime::with_runtime(|r|r.identity.end_session(self.current_session,self.current_user));
-                self.current_session=crate::runtime::identity::StableId::zero();self.reset_app_assistant_session();self.mode=ConsoleMode::Authentication;self.system_focus=0;self.reset_input();},
+            7=>{let _=self.sign_out_session();},
             8=>self.open_shell_menu(17),9=>self.open_shell_menu(18),_=>{}
         }
     }

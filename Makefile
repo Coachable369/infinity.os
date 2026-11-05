@@ -861,7 +861,7 @@ test-mouse-menu: x86_64 aarch64
 	@tools/mouse-menu-test.sh x86_64
 	@tools/mouse-menu-test.sh aarch64
 
-test: ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+test: desktop-session-test command-terminal-test ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
 
 .PHONY: ssh-test
 ssh-test:
@@ -1102,3 +1102,12 @@ assets/fonts/InfinityUI-library.bin: tools/build-font-library.py kernel/runtime/
 
 assets/fonts/InfinityEditor-library.bin: tools/build-editor-fonts.py $(wildcard assets/fonts/*.ttf)
 	python3 tools/build-editor-fonts.py
+
+.PHONY: command-terminal-test
+command-terminal-test:
+	@sh tools/command-terminal-test.sh
+
+.PHONY: desktop-session-test
+desktop-session-test:
+	@rustc --edition=2021 tools/desktop-session-interaction-test.rs -o build/desktop-session-interaction-test
+	@build/desktop-session-interaction-test

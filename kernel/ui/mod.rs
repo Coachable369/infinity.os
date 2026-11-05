@@ -148,3 +148,9 @@ impl InfinityUiRuntime {
 pub mod font_library;
 
 pub mod terminal_edit;
+
+pub mod command_terminal;
+pub mod scroll_capture;
+pub mod command_terminal_paint;
+
+pub mod terminal_vt;

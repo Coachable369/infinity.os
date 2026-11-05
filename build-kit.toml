@@ -239,6 +239,14 @@ clean = false
 command = ["sh", "-c", "rustc --edition=2021 --test tools/desktop-effects-test.rs -o build/desktop-effects-test && build/desktop-effects-test && rustc --edition=2021 --test tools/desktop-polish-test.rs -o build/desktop-polish-test && build/desktop-polish-test --test-threads=1 && rustc --edition=2021 --test tools/spatial-retained-test.rs -o build/spatial-retained-test && build/spatial-retained-test --test-threads=1"]
 clean = false
 
+[profiles.desktop-session-tests]
+command = ["sh", "-c", "rustc --edition=2021 tools/desktop-session-interaction-test.rs -o build/desktop-session-interaction-test && build/desktop-session-interaction-test"]
+clean = false
+
+[profiles.command-terminal-tests]
+command = ["sh", "tools/command-terminal-test.sh"]
+clean = false
+
 [profiles.browser-native-memory-tests]
 command = ["python3", "tools/servo-platform-probe/run-memory-guest.py", "--std-probe"]
 clean = false

@@ -237,9 +237,10 @@ def exercise(guest, work):
         (work / "console-result.json").write_text(json.dumps(console_result, indent=2) + "\n")
     if guest.password_client:
         (work / "password-client-result.json").write_text(json.dumps(exercise_password_client(guest, work), indent=2) + "\n")
+    interactive = exercise_interactive_terminal(guest, work) if guest.interactive else None
     regressions = exercise_regressions(guest, work) if guest.regressions else None
     disabled = finish_provisioning(guest, work)
-    return {"initial": initial, "full": full, "clean": clean, "disabled": disabled, "console": console_result, "regressions": regressions,
+    return {"initial": initial, "full": full, "clean": clean, "disabled": disabled, "console": console_result, "regressions": regressions, "interactive_terminal": interactive,
             "peak_protocol_nanoseconds": clean[15], "protocol_steps": clean[16],
             "public_host_key": base64.b64encode(original_key).decode(), "pointer_latency_seconds": latency}
 
@@ -251,11 +252,15 @@ def exercise(guest, work):
 # DESC: Types into the private SSH prompt using actual keyboard input, without expecting or exposing local command-history text.
 # ------------------=
 def client_text(guest, value):
+    aliases={" ":"spc","-":"minus",".":"dot","/":"slash","=":"equal"}
+    shifted={">":"dot","<":"comma","_":"minus",":":"semicolon","@":"2"}
     for character in value:
-        if character.isupper():
+        if character in shifted:
+            guest.key("shift",shifted[character])
+        elif character.isupper():
             guest.key("shift", character.lower())
         else:
-            guest.key("spc" if character == " " else character)
+            guest.key(aliases.get(character,character))
 
 
 # ------------------------=
@@ -331,10 +336,82 @@ def exercise_password_client(guest, work):
     else:
         raise AssertionError({"client_io": current})
     guest.screenshot("ssh-outbound-password-shell")
-    guest.key("esc")
+    guest.key("ctrl", "bracket_right")
     wait_client(0)
     return {"inbound_password": True, "outbound_password": True, "native_remote_command": True,
             "client_snapshot": current, "iso_attached": False}
+
+
+# ------------------------=
+# FUNC: exercise_interactive_terminal
+# DESC: Verifies actual installed keyboard help/preferences and external PTY shell execution with filesystem side effects.
+# ------------------=
+def exercise_interactive_terminal(guest,work):
+    # ------------------------=
+    # FUNC: tty
+    # DESC: Reads the non-secret terminal state published by the production renderer.
+    # ------------------=
+    def tty():
+        result=native.read(guest,"INFINITY_COMMAND_TERMINAL_SNAPSHOT",16)
+        assert result[:2]==(0x494e465454593031,1)
+        return result
+    # ------------------------=
+    # FUNC: wait
+    # DESC: Waits for a structured state transition without interpreting command output text.
+    # ------------------=
+    def wait(predicate):
+        deadline=time.monotonic()+45
+        while time.monotonic()<deadline:
+            if predicate(): return
+            time.sleep(.05)
+        raise AssertionError({"terminal":tty(),"client":client_state(guest)})
+    command(guest,"help")
+    wait(lambda:tty()[9]==1)
+    assert tty()[5]>6
+    guest.key("down");guest.key("ret")
+    wait(lambda:tty()[10:12]==(1,1))
+    guest.screenshot("terminal-help-detail")
+    guest.key("esc");wait(lambda:tty()[9:11]==(1,0))
+    guest.key("esc");wait(lambda:tty()[9]==0)
+    guest.key("ctrl","comma");wait(lambda:tty()[8]!=0)
+    font=tty()[12];guest.key("right");wait(lambda:tty()[12]==(font+1)%4)
+    guest.screenshot("terminal-preferences")
+    guest.key("esc");wait(lambda:tty()[8]==0)
+    command(guest,"help commands")
+    wait(lambda:tty()[6]>6)
+    guest.screenshot("terminal-scrollback")
+    fixture=work/"external-pty";fixture.mkdir()
+    port=22444
+    log=(fixture/"server.log").open("wb")
+    server=subprocess.Popen([str(ROOT/"build/ssh-pty-env/bin/python"),str(ROOT/"tools/ssh-pty-server.py"),str(fixture),"--port",str(port)],stdout=log,stderr=subprocess.STDOUT)
+    try:
+        wait(lambda:(fixture/"ready.json").exists())
+        command(guest,f"ssh fixture@10.0.2.2 -p {port}")
+        wait(lambda:client_state(guest)[2]==2)
+        # This server's generated key belongs exclusively to this disposable fixture.
+        guest.key("y");wait(lambda:client_state(guest)[2]==3)
+        client_text(guest,"TerminalProof901");guest.key("ret")
+        wait(lambda:client_state(guest)[2]==5 and tty()[7]==1)
+        wait(lambda:json.loads((fixture/"pty-events.json").read_text())["shell"] if (fixture/"pty-events.json").exists() else False)
+        guest.screenshot("terminal-external-shell-prompt")
+        client_text(guest,"printf proof > accepted");guest.key("ret")
+        wait(lambda:(fixture/"accepted").exists())
+        assert (fixture/"accepted").read_bytes()==b"proof"
+        client_text(guest,"printf arrow > arrow-proox");guest.key("backspace");guest.key("f");guest.key("ret")
+        wait(lambda:(fixture/"arrow-proof").exists())
+        assert (fixture/"arrow-proof").read_bytes()==b"arrow"
+        client_text(guest,"sleep 30");guest.key("ret");time.sleep(.5);guest.key("ctrl","c")
+        client_text(guest,"printf resumed > interrupt-proof");guest.key("ret")
+        wait(lambda:(fixture/"interrupt-proof").exists())
+        assert (fixture/"interrupt-proof").read_bytes()==b"resumed"
+        guest.screenshot("terminal-external-shell-execution")
+        guest.key("ctrl","bracket_right");wait(lambda:client_state(guest)[2]==0 and tty()[7]==0)
+        state=json.loads((fixture/"pty-events.json").read_text())
+        assert state["password"] and state["pty"] and state["shell"]
+        return {"dynamic_rows":True,"help_navigation":True,"preferences":True,"external_shell":True,"editing":True,"interrupt":True,"pty":state}
+    finally:
+        if server.poll() is None:server.terminate()
+        server.wait(timeout=15);log.close()
 
 
 # ------------------------=
@@ -631,6 +708,7 @@ def main():
     parser.add_argument("--iso", type=Path, required=True)
     parser.add_argument("--console", action="store_true")
     parser.add_argument("--password-client", action="store_true")
+    parser.add_argument("--interactive", action="store_true",help="Verify Command Window UI and external real-shell PTY")
     parser.add_argument("--regressions", action="store_true")
     parser.add_argument("--resume-regressions", action="store_true",
                         help="Retry only regressions on this harness's unchanged, verified fresh installation")
@@ -667,6 +745,7 @@ def main():
                   width=1920, height=1080, memory_mb=12288)
     guest.console_test = args.console
     guest.password_client = args.password_client
+    guest.interactive = args.interactive
     guest.regressions = args.regressions
     if args.regressions:
         guest.audio_capture = guest.work / "ssh-audio.wav"

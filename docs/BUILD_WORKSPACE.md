@@ -24,6 +24,10 @@ build runs under the same locking, environment, and evidence rules.
 subordinate tools. Build tooling must not write project state to system
 temporary directories.
 
+Always prioritize ARM64 installer builds. When producing both architectures,
+build, verify and publish the ARM ISO before starting x86_64 packaging. Retain
+the normal parity and checksum gates for each architecture.
+
 Use these commands:
 
 - `./build.sh` or `./build-kit incremental` — normal dependency-aware build

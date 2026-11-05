@@ -36,8 +36,7 @@ impl super::DisplayDevice {
                     if i>=v.scroll && i<v.scroll+v.rows() {let row=crate::ui::geometry::Rect{x:body.x,y:body.y+((i-v.scroll)*24*s) as i32,width:body.width,height:(24*s) as u32};
                         self.app_label(row,line,(211,225,237),false,s);}
                 });});
-                if v.lines>v.rows() {let t=v.track();let th=(t.height as usize*v.rows()/v.lines).max(20*s).min(t.height as usize);
-                    let top=t.y as usize+v.scroll*(t.height as usize-th)/v.lines.saturating_sub(v.rows()).max(1);
+                if v.lines>v.rows() {let t=v.track();let thumb=v.thumb();let th=thumb.height as usize;let top=thumb.y as usize;
                     self.fill_rounded_rect_alpha(t.x as usize,t.y as usize,t.width as usize,t.height as usize,4*s,3,16,28,255);
                     self.fill_rounded_rect_alpha(t.x as usize,top,t.width as usize,th,4*s,ar,ag,ab,230);
                 }

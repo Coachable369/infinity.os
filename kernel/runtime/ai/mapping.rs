@@ -11,7 +11,7 @@ pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappin
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 256;
-pub const CAPABILITY_TARGETS: [&[u8]; 118] = [
+pub const CAPABILITY_TARGETS: [&[u8]; 119] = [
     b"OS_OPEN:text_editor",
     b"OS_OPEN:file_navigator",
     b"OS_OPEN:browser",
@@ -63,6 +63,7 @@ pub const CAPABILITY_TARGETS: [&[u8]; 118] = [
     b"OS_MENU:account",
     b"OS_MENU:calendar",
     b"OS_MENU:help",
+    b"OS_SHELL:logout",
     b"OS_SHELL:snap_left",
     b"OS_SHELL:snap_right",
     b"OS_SHELL:center",

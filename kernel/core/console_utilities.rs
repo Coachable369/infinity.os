@@ -10,6 +10,7 @@ impl ConsoleRuntime {
     // DESC: Retains one bounded result privately and displays its first page without losing earlier rows.
     // ------------------=
     pub(super) fn page_output(&mut self,bytes:&[u8]) {
+        if self.command_terminal_visible(){crate::ui::command_terminal::mutate(|s|s.append(bytes));return;}
         unsafe {let p=&mut *core::ptr::addr_of_mut!(PAGE);p.data.fill(0);p.len=bytes.len().min(OUTPUT_BYTES);p.data[..p.len].copy_from_slice(&bytes[..p.len]);p.at=0;p.owner=self.current_session.0;}
         self.next_output_page();
     }

@@ -1450,7 +1450,7 @@ fn settings_mutation_contract() {
 fn instruction_mapping_contract() {
     use runtime::ai::{control::{Command,ContextRequest},mapping};
     assert!(mapping::validate(mapping::DEFAULT).is_ok());
-    assert_eq!(mapping::CAPABILITY_TARGETS.len(),118);
+    assert_eq!(mapping::CAPABILITY_TARGETS.len(),119);
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"set accent color to grey").unwrap(),
         Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
     let generated=Command::LaunchGenerated(runtime::ai::control::ApplicationName::parse(b"calculator").unwrap());

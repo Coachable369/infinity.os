@@ -1,3 +1,7 @@
+#[path="console_command_terminal.rs"]
+mod command_terminal_controller;
+#[path="console_session_actions.rs"] mod session_actions;
+#[path="console_scroll_capture.rs"] mod scroll_capture;
 #[path="console_utilities.rs"]
 mod console_utilities;
 #[path="console_terminal_edit.rs"]
@@ -381,6 +385,7 @@ impl ConsoleOutput {
     // DESC: Writes or updates write line data.
     // ------------------=
     fn write_line(&mut self, line: &[u8]) {
+        crate::ui::command_terminal::output(line);
         if !line.is_empty(){crate::ui::editor_chrome::terminal::mutate(|state|{if state.line_open{state.append(b"\n");}state.append(line);state.append(b"\n");});}
         if self.count == OUTPUT_ROWS {
             for row in 1..OUTPUT_ROWS {
@@ -402,13 +407,13 @@ impl ConsoleOutput {
     // DESC: Writes or updates write segments data.
     // ------------------=
     fn write_segments(&mut self, segments: &[&[u8]]) {
-        let mut line = [0u8; LINE_CAPACITY];
+        let mut line = [0u8; 1024];
         let mut length = 0;
         for segment in segments {
-            let copied = segment.len().min(LINE_CAPACITY - length);
+            let copied = segment.len().min(line.len() - length);
             line[length..length + copied].copy_from_slice(&segment[..copied]);
             length += copied;
-            if length == LINE_CAPACITY {
+            if length == line.len() {
                 break;
             }
         }
@@ -524,6 +529,9 @@ struct ConsoleRuntime {
     current_user: crate::runtime::identity::StableId,
     current_session: crate::runtime::identity::StableId,
     voice_autostart_after_ns: u64,
+    login_welcome: u8,
+    login_welcome_deadline: u64,
+    ai_chat_scroll_grab: Option<i32>,
     authentication_success: crate::ui::authentication_motion::Timeline,
     authentication_tick_ns: Option<u64>,
     authentication_restore_locked_layout: bool,
@@ -694,6 +702,9 @@ impl ConsoleRuntime {
             current_user: crate::runtime::identity::StableId::zero(),
             current_session: crate::runtime::identity::StableId::zero(),
             voice_autostart_after_ns: 0,
+            login_welcome: 0,
+            login_welcome_deadline: 0,
+            ai_chat_scroll_grab: None,
             authentication_success: crate::ui::authentication_motion::Timeline::new(),
             authentication_tick_ns: None,
             authentication_restore_locked_layout: false,
@@ -1241,6 +1252,7 @@ impl ConsoleRuntime {
     // DESC: Composes a committed scene; spatial refresh suppresses physical presentation until its overlay is complete.
     // ------------------=
     fn redraw_scene(&self) {
+        self.publish_command_terminal();
         self.accounts_publish();
         if matches!(self.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
             let time=crate::ui::performance::monotonic_ns();
@@ -1419,6 +1431,8 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        self.publish_command_terminal();
+        let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
         if self.accounts_focus_guard() { return; }
         if self.mode == ConsoleMode::Settings && self.system_focus == 2 {
             if let ConsoleKey::Shortcut(code)=key {
@@ -1426,6 +1440,7 @@ impl ConsoleRuntime {
                     || matches!(code,b'j'|b'i'|b'K'|0x80|0x81) {self.accounts_cancel();}
             }
         }
+        if self.command_terminal_key(key) {self.redraw();return;}
         if self.ssh_terminal_input(key) { self.session_idle.note_activity(); self.redraw(); return; }
         if self.account_password_input(key) { self.session_idle.note_activity(); self.redraw(); return; }
         if self.mode == ConsoleMode::Settings && self.system_focus == 2
@@ -2768,6 +2783,8 @@ impl ConsoleRuntime {
         } else {
             let _ = self.restore_persisted_desktop_layout();
         }
+        self.login_welcome=1;
+        self.login_welcome_deadline=crate::runtime::ai::qwen::workers::clock_ns().saturating_add(12_000_000_000);
         crate::output_text(b"[login] desktop layout restored\n");
     }
 
@@ -2862,6 +2879,7 @@ impl ConsoleRuntime {
                 use crate::runtime::ai::control::ShellAction as S;
                 use crate::drivers::input::desktop_shortcuts::DesktopAction as D;
                 match action {
+                    S::Logout=>return Some(self.sign_out_session()),
                     S::PreviousMonth|S::NextMonth|S::Today=>{
                         crate::ui::status_menu::navigate(match action {S::PreviousMonth=>-1,S::NextMonth=>1,_=>0});self.open_shell_menu(15);
                     },
@@ -3220,6 +3238,8 @@ impl ConsoleRuntime {
         self.app_window_dragging = false;
         self.app_window_resizing = None;
         if !self.command_window_suspended && !restored {
+            self.publish_command_terminal();
+            let _terminal_capture=crate::ui::command_terminal::Capture::new(true);
             self.reset_input();
             self.output.clear();
             self.output.write_line(b"Infinity Command Window");
@@ -5903,25 +5923,7 @@ impl ConsoleRuntime {
             (0, 6) => {
                 let _ = self.lock_session_preserving_desktop(false);
             }
-            (0, 7) => {
-                self.accounts_cancel();
-                self.cancel_account_password();
-                let _ = self.persist_desktop_layout();
-                let _ = crate::runtime::with_runtime(|runtime| {
-                    runtime
-                        .identity
-                        .end_session(self.current_session, self.current_user)
-                });
-                self.current_session = crate::runtime::identity::StableId::zero();
-                self.reset_app_assistant_session();
-                self.mode = ConsoleMode::Authentication;
-                self.system_step=crate::runtime::with_runtime(|runtime|
-                    crate::runtime::face_login::account_selection(self.current_user,runtime.identity.user_count(),
-                        |index|runtime.identity.user_nth(index).map(|user|user.id))).unwrap_or(0);
-                self.system_focus = 0;
-                self.reset_input();
-                crate::output_text(b"[session] signed out; authentication surface ready\n");
-            }
+            (0, 7) => { let _ = self.sign_out_session(); }
             (0, 8) => {
                 self.open_shell_menu(17);
             }
@@ -7717,7 +7719,7 @@ impl ConsoleRuntime {
         if self.native_gui_event(crate::ui::input::UiEvent::Pointer {
             position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},
             phase:crate::ui::input::PointerPhase::Scroll,button:0},vertical as i32) {self.session_idle.note_activity();return true;}
-        if self.scroll_editor_terminal(vertical){return true;}
+        if self.scroll_command_terminal(vertical)||self.scroll_editor_terminal(vertical){return true;}
         let mut preview=crate::ui::file_preview::current();
         if preview.open && self.workplace_authorized(false) && preview.owner==self.current_session.0 {
             preview.scroll_by(-(vertical as isize)*3);crate::ui::file_preview::publish(preview);self.redraw();return true;
@@ -8346,6 +8348,8 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        if self.continue_scroll_capture(left_button,released){return;}
+        if self.command_terminal_pointer(clicked,left_button) {self.redraw();return;}
         let preview_before=crate::ui::file_preview::current();
         if self.preview_pointer(clicked,left_button) {if preview_before!=crate::ui::file_preview::current(){self.redraw();}return;}
         if right_clicked && self.desktop_preview_menu() {self.redraw();return;}
@@ -8637,11 +8641,15 @@ impl ConsoleRuntime {
                             });
                             let scrollbar = layout.ai_chat_scroll_geometry(
                                 false,
-                                maximum.saturating_add(timeline.height as usize),
+                                maximum.saturating_add(layout.ai_chat_geometry(false).transcript_viewport(layout.scale()).height as usize),
                                 offset,
                             );
                             let point = layout.point(self.pointer_x, self.pointer_y);
-                            if maximum != 0 && scrollbar.track.contains(point) {
+                            let rail=crate::ui::geometry::Rect{x:scrollbar.track.x-5*layout.scale() as i32,width:scrollbar.track.width+10*layout.scale() as u32,..scrollbar.track};
+                            if maximum != 0 && rail.contains(point) {
+                                if point.y>=scrollbar.thumb.y&&point.y<scrollbar.thumb.bottom(){
+                                    self.ai_chat_scroll_grab=Some(point.y-scrollbar.thumb.y);self.redraw();return;
+                                }
                                 let direction = if point.y < scrollbar.thumb.y { -1 } else { 1 };
                                 let distance = direction
                                     * (timeline.height as isize * 4 / 5).max(1);
@@ -9945,7 +9953,7 @@ impl ConsoleRuntime {
     // DESC: Handles input console input or state transitions.
     // ------------------=
     fn input_console(&mut self, key: ConsoleKey) {
-        if self.terminal_edit_key(key) || self.pager_key(key) {return;}
+        if self.terminal_edit_key(key) || self.command_terminal_key(key) || self.pager_key(key) {return;}
         if self.account_password_input(key) { return; }
         if self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::CommandWindow&&crate::ui::installer_template::navigation::scene()!=0 {
             if matches!(key,ConsoleKey::Escape){self.close_desktop_app();}
@@ -9977,6 +9985,12 @@ impl ConsoleRuntime {
     // DESC: Implements the execute input operation.
     // ------------------=
     fn execute_input(&mut self) {
+        self.publish_command_terminal();
+        let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
+        if self.command_terminal_visible() && self.command[..self.command_length]==*b"help" {
+            crate::ui::command_terminal::mutate(|s|{s.help=true;s.help_detail=false;s.help_selected=0;s.changed();});self.reset_input();return;
+        }
+        if self.command_terminal_visible() && self.command[..self.command_length]==*b"clear" {crate::ui::command_terminal::mutate(|s|s.clear());self.output.clear();self.reset_input();return;}
         if self.command_length == 0 {
             return;
         }
@@ -14242,7 +14256,8 @@ fn poll_native_ai_inner() {
     #[cfg(target_os = "none")]
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
         let now = crate::runtime::ai::qwen::workers::clock_ns();
-        if runtime.mode == ConsoleMode::Desktop && now >= runtime.voice_autostart_after_ns {
+        let welcome_busy=runtime.poll_login_welcome(now);
+        if !welcome_busy && runtime.mode == ConsoleMode::Desktop && now >= runtime.voice_autostart_after_ns {
             let auto = crate::runtime::with_runtime(|r| r.identity.voice_profile(runtime.current_user)
                 .is_some_and(|p| p.enabled && p.activation != crate::runtime::identity::VoiceActivation::Disabled))
                 .unwrap_or(false);
@@ -14301,6 +14316,12 @@ fn poll_native_ai_inner() {
         let command = crate::runtime::ai::with_ai_runtime(|ai| ai.take_control(runtime.current_user.0, desktop_allowed && origin_allowed));
         if let Some(command) = command {
             let success = runtime.dispatch_ai_control(command);
+            if success == Some(true) && matches!(command, crate::runtime::ai::control::Command::Shell(crate::runtime::ai::control::ShellAction::Logout)) {
+                // The session is revoked: do not enqueue a reply under an empty identity.
+                crate::runtime::ai::with_ai_runtime(|ai| { ai.cancel_chat(); });
+                runtime.redraw();
+                return;
+            }
             crate::runtime::ai::with_ai_runtime(|ai| {
                 if let Some(success) = success { ai.finish_control(command, success); }
                 else {

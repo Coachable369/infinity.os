@@ -13,6 +13,7 @@ pub struct Connection<'a> {
     channel: Option<ChanHandle>,
     deadline: u64,
     password_attempts: u8,
+    columns:u32,rows:u32,
 }
 
 impl<'a> Connection<'a> {
@@ -27,7 +28,7 @@ impl<'a> Connection<'a> {
         let mut name = [0; 128]; name[..username.len()].copy_from_slice(username.as_bytes());
         Ok(Self { runner: Runner::new_client(input, output), state: State::Connecting,
             username: name, username_len: username.len(), channel: None,
-            deadline: now.saturating_add(HANDSHAKE_MS), password_attempts: 0 })
+            deadline: now.saturating_add(HANDSHAKE_MS), password_attempts: 0,columns:80,rows:24 })
     }
     // ------------------------=
     // FUNC: state
@@ -102,6 +103,7 @@ impl<'a> Connection<'a> {
             }
             Event::Cli(CliEvent::Authenticated) => { open = true; self.state = State::Opening; }
             Event::Cli(CliEvent::SessionOpened(mut event)) => {
+                event.pty(sunset::Pty{term:"vt100".try_into().map_err(|_|Failure::Configuration)?,cols:self.columns,rows:self.rows,width:0,height:0,modes:Default::default()}).map_err(protocol_failure)?;
                 event.shell().map_err(protocol_failure)?; self.state = State::Connected;
             }
             Event::Cli(CliEvent::SessionExit(sunset::CliSessionExit::Status(code))) => self.state = State::Exited(code),
@@ -130,5 +132,18 @@ impl<'a> Connection<'a> {
     pub fn write(&mut self, bytes: &[u8]) -> Result<usize, Failure> {
         if self.state != State::Connected { return Err(Failure::PermissionDenied); }
         self.runner.write_channel(self.channel.as_ref().ok_or(Failure::Disconnected)?, ChanData::Normal, bytes).map_err(protocol_failure)
+    }
+}
+
+impl Connection<'_> {
+    // ------------------------=
+    // FUNC: resize
+    // DESC: Requests the measured PTY size initially and sends window-change notifications after login.
+    // ------------------=
+    pub fn resize(&mut self,columns:u32,rows:u32)->Result<(),Failure>{
+        let columns=columns.clamp(1,320);let rows=rows.clamp(1,96);
+        if self.columns==columns&&self.rows==rows{return Ok(());}
+        if self.state==State::Connected{self.runner.term_window_change(self.channel.as_ref().ok_or(Failure::Disconnected)?,&sunset::packets::WinChange{cols:columns,rows,width:0,height:0}).map_err(protocol_failure)?;}
+        self.columns=columns;self.rows=rows;Ok(())
     }
 }

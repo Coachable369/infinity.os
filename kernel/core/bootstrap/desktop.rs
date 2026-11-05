@@ -2257,7 +2257,7 @@ impl super::DisplayDevice {
                     236,
                     1,
                 );
-            } else {
+            } else if screen != 8 {
                 self.ui_text(
                     toolbar_left + 16 * scale,
                     toolbar_top + 13 * scale,
@@ -2310,6 +2310,7 @@ impl super::DisplayDevice {
             return;
         }
         if screen==8 && self.terminal_edit_view(geometry.content,scale) {return;}
+        if screen==8 && crate::ui::command_terminal::inspect(|s|s.authorized) {self.command_terminal_view(geometry.content,geometry.toolbar,scale);if app_menu==20{self.desktop_native_performance_menu(left,top,screen,scale);}return;}
         if screen == 10 {
             self.render_task_manager_dashboard(
                 geometry,
@@ -8104,6 +8105,7 @@ fn system_content_hash(
             hash = hash.wrapping_mul(0x0100_0193);
         }
     }
+    hash ^= crate::ui::command_terminal::inspect(|s|s.revision.wrapping_mul(0x85ebca6b) ^ (s.menu as u32).rotate_left(3) ^ (s.menu_row as u32).rotate_left(7) ^ (s.help_selected as u32).rotate_left(11) ^ (s.help as u32).rotate_left(17) ^ (s.help_detail as u32).rotate_left(19));
     hash ^= editor_saved as u32;
     hash ^= crate::ui::editor_tools::revision().wrapping_mul(0x01000193);
     hash ^= crate::ui::app_assistant::revision().rotate_left(13);

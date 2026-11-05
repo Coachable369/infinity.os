@@ -1,8 +1,9 @@
 {
 "schema": "infinityos.ai-instruction-map",
 "version": 1,
-"directory": {"status":"partial-settings-coverage","targetCount":118,"registryPath":"/system/service-registry.json"},
+"directory": {"status":"partial-settings-coverage","targetCount":119,"registryPath":"/system/service-registry.json"},
 "actions": [
+{"id":"os.session.logout","scope":"os","target":"OS_SHELL:logout","aliases":["logout","log out","log me out","sign me out"]},
 {"id":"os.app.focus.named","scope":"os","target":"OS_FOCUS:{argument}","aliases":["focus app {argument}"]},
 {"id":"os.app.close.named","scope":"os","target":"OS_CLOSE:{argument}","aliases":["close app {argument}"]},
 {"id":"os.app.minimize.named","scope":"os","target":"OS_MINIMIZE:{argument}","aliases":["minimize app {argument}"]},
