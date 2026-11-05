@@ -250,10 +250,20 @@ impl DisplayModes {
     // ------------------=
     pub fn detected(&self) -> &[[u32; 2]] { &self.modes[..self.count] }
     // ------------------------=
-    // FUNC: selected
-    // DESC: Returns the current persistent display preference.
+    // FUNC: applied
+    // DESC: Records confirmed live scanout dimensions independently of firmware preference storage.
     // ------------------=
-    pub fn selected(&self) -> [u32; 2] { self.selected }
+    pub fn applied(&mut self,w:u32,h:u32){self.active=[w,h];self.failed=false;}
+    // ------------------------=
+    // FUNC: rejected
+    // DESC: Keeps the active scanout visible when the adapter rejects a live request.
+    // ------------------=
+    pub fn rejected(&mut self){self.failed=true;}
+    // ------------------------=
+    // FUNC: selected
+    // DESC: Returns the dimensions currently driving the desktop.
+    // ------------------=
+    pub fn selected(&self) -> [u32; 2] { self.active }
     // ------------------------=
     // FUNC: select
     // DESC: Commits the explicitly chosen mode without cycling through intermediate resolutions.
@@ -266,16 +276,16 @@ impl DisplayModes {
     }
     // ------------------------=
     // FUNC: label
-    // DESC: Distinguishes actual scanout, a pending restart, and rejected writes.
+    // DESC: Reports the actual scanout and whether the last change succeeded.
     // ------------------=
     pub fn label(&self,out:&mut[u8;48])->usize {
         let mut n=0;
-        for v in [self.selected[0],self.selected[1]]{
+        for v in self.active{
             if n!=0{for b in b" x "{out[n]=*b;n+=1;}}
             let mut d=[0u8;10];let mut at=10;let mut x=v;loop{at-=1;d[at]=b'0'+(x%10)as u8;x/=10;if x==0{break;}}
             out[n..n+10-at].copy_from_slice(&d[at..]);n+=10-at;
         }
-        let suffix:&[u8]=if self.failed{b" (save failed)"}else if self.active!=self.selected{b" (restart)"}else if self.count<2{b" (only mode)"}else{b""};
+        let suffix:&[u8]=if self.failed{b" (change failed)"}else if self.count<2{b" (only mode)"}else{b""};
         out[n..n+suffix.len()].copy_from_slice(suffix);n+suffix.len()
     }
 }
@@ -315,6 +325,8 @@ mod display_mode_tests {
         let rt=table.as_ptr() as u64;let mut modes=Modes::load(rt,[1920,1080]);
         assert_eq!(modes.count,2);modes.cycle(rt);
         assert_eq!(modes.selected,[1280,720]);assert_eq!(modes.active,[1920,1080]);
+        assert_eq!(modes.selected(),[1920,1080]);modes.applied(1280,720);assert_eq!(modes.selected(),[1280,720]);
+        modes.rejected();assert!(modes.failed);assert_eq!(modes.selected(),[1280,720]);
         let mut restarted=Modes::load(rt,[1280,720]);assert_eq!(restarted.selected,restarted.active);
         restarted.cycle(rt);assert!(restarted.failed);assert_eq!(restarted.selected,[1280,720]);
     }

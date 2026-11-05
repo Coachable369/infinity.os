@@ -73,7 +73,7 @@ int main(void) {
         assert(base==(expected?UINT64_C(0x50000000):0));
         assert(allocations==(mib>=256?1:mib>=128?2:3));
     }
-    assert(sizeof(InfinityBootInfo)==392 && offsetof(InfinityBootInfo,native_controller_kind)==368);
+    assert(sizeof(InfinityBootInfo)==400 && offsetof(InfinityBootInfo,native_controller_kind)==368);
     setup(2); InfinityNativeController c=discover();
     assert(c.kind==2 && c.base==0x08000000 && c.auxiliary==0x08010000 && reads==0);
     setup(3); c=discover(); assert(c.kind==3 && c.base==0x080c0000 && c.auxiliary==0x08000000 && reads==2);

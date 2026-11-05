@@ -1,5 +1,23 @@
 //! Native display-driver dispatch. Firmware scanout remains the safe fallback.
 
+#[cfg(target_arch="aarch64")]
+static GOP_SWITCH: core::sync::atomic::AtomicUsize=core::sync::atomic::AtomicUsize::new(0);
+// ------------------------=
+// FUNC: change_mode
+// DESC: Requests a hardware mode and returns its actual scanout; never calls firmware services after exit.
+// ------------------=
+pub fn change_mode(width:u32,height:u32)->Option<(usize,usize,u32)> {
+    #[cfg(target_arch="aarch64")] {
+        let address=GOP_SWITCH.load(core::sync::atomic::Ordering::Acquire);
+        if address!=0 {
+            let change:unsafe extern "efiapi" fn(u32,u32,*mut u64)->u32=unsafe{core::mem::transmute(address)};
+            let mut result=[0u64;3];
+            if unsafe{change(width,height,result.as_mut_ptr())}==1 {return Some((result[0]as usize,result[1]as usize,result[2]as u32));}
+        }
+    }
+    #[cfg(target_arch="x86_64")] {return pci_svga::change_mode(width,height);}
+    #[allow(unreachable_code)] None
+}
 #[cfg(target_arch = "x86_64")]
 mod pci_svga {
     use super::super::svga::{Bus, Scanout, Svga};
@@ -146,6 +164,27 @@ mod pci_svga {
         false
     }
     // ------------------------=
+    // FUNC: change_mode
+    // DESC: Switches the bound SVGA II adapter after checking limits, VRAM and framebuffer layout.
+    // ------------------=
+    pub(super) fn change_mode(w:u32,h:u32)->Option<(usize,usize,u32)> {
+        let (bus,driver)=unsafe{(&mut *(&raw mut ACTIVE)).as_mut()?};
+        if w==0 || h==0 || w>bus.read_register(4) || h>bus.read_register(5) {return None;}
+        let prev=[bus.read_register(2),bus.read_register(3)];
+        let size=bus.read_register(15) as u64;
+        if u64::from(w)*u64::from(h)*4>size {return None;}
+        bus.write_register(2,w);bus.write_register(3,h);bus.write_register(1,1);
+        let pitch=bus.read_register(12);let offset=bus.read_register(14);
+        let addr=u64::from(bus.read_register(13))+u64::from(offset);
+        if bus.read_register(2)!=w || bus.read_register(3)!=h || pitch%4!=0 || pitch/4<w ||
+            u64::from(pitch)*u64::from(h)+u64::from(offset)>size ||
+            u64::from(pitch/4)*u64::from(h)>3840*2160 || addr==0 || addr%4!=0 || addr+u64::from(pitch)*u64::from(h)>(1u64<<32) {
+            bus.write_register(2,prev[0]);bus.write_register(3,prev[1]);bus.write_register(1,1);return None;
+        }
+        driver.dimensions(w,h);
+        Some((addr as usize,pitch as usize/4,(bus.read_register(9)!=255) as u32))
+    }
+    // ------------------------=
     // FUNC: update
     // DESC: Sends compositor damage to the bound native SVGA driver, retaining damage on backpressure.
     // ------------------=
@@ -177,6 +216,8 @@ mod pci_svga {
 // DESC: Selects a real native backend where implemented; other architectures retain firmware scanout.
 // ------------------=
 pub fn initialize(_info: &crate::boot_info::BootInfo) -> &'static str {
+    #[cfg(target_arch="aarch64")]
+    GOP_SWITCH.store(_info.display_exchange as usize,core::sync::atomic::Ordering::Release);
     #[cfg(target_arch = "x86_64")]
     if pci_svga::initialize(_info) {
         return "vmware-svga-ii-native";

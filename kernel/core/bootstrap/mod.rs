@@ -120,6 +120,26 @@ struct AlignedBackBuffer([u32; MAX_SOFTWARE_BACK_BUFFER_PIXELS]);
 static mut PRIMARY_BACK_BUFFER: AlignedBackBuffer =
     AlignedBackBuffer([0; MAX_SOFTWARE_BACK_BUFFER_PIXELS]);
 
+// ------------------------=
+// FUNC: change_display_mode
+// DESC: Rebinds the compositor to the new hardware scanout and drops geometry from the old screen.
+// ------------------=
+pub fn change_display_mode(w:u32,h:u32)->bool {
+    #[cfg(all(target_os="none",any(target_arch="x86_64",target_arch="aarch64")))]
+    unsafe {
+        let Some(console)=(*(&raw mut CONSOLE)).as_mut() else{return false;};
+        let Some((addr,stride,format))=crate::drivers::display::change_mode(w,h) else{return false;};
+        let d=&mut console.display;
+        d.front_buffer=addr as *mut u32;d.buffer=(&raw mut PRIMARY_BACK_BUFFER.0).cast();
+        d.width=w as usize;d.height=h as usize;d.stride=stride;d.format=format;d.back_buffered=true;
+        d.dirty_count=0;d.clear_render_clip();
+        console.cursor_saved=false;console.menu_saved=false;
+        retained_windows::invalidate();launcher_backdrop::invalidate();system_ui_settings_changed();
+        return true;
+    }
+    #[allow(unreachable_code)] false
+}
+
 impl DisplayDevice {
     // ------------------------=
     // FUNC: from_boot_info

@@ -479,7 +479,7 @@ impl DisplayDevice {
         self.settings_template_surface(row.summary,authored_row.map(|mut e|{e.fill[3]=alpha(e.fill[3]);e}),Material{fill:(pr/2,pg.saturating_mul(3)/4,pb.saturating_mul(3)/4),edge:if expanded||keyboard_focus{(er,eg,eb)}else{(er/2,eg/2,eb/2)},opacity:alpha(218),edge_opacity:255,focus:if keyboard_focus{255}else{0},pressed:false,scale});
         let card=crate::ui::settings_cards::content(row.summary,scale);
         use crate::ui::installer_template::{settings_row_interaction,SettingsRowInteraction as I};
-        let native_description=if focus==5&&index==0{b"Choose a detected size for the next restart.".as_slice()}
+        let native_description=if focus==5&&index==0{b"Apply a detected display size immediately.".as_slice()}
             else{crate::ui::settings_cards::description(focus,index)};
         if let Some(description)=layout.settings_row_child_geometry(settings_window,focus,index,Role::SettingsSummaryDescription,0,1) {
             self.paint_settings_child_description(description,native_description,(141,174,198));
@@ -495,7 +495,15 @@ impl DisplayDevice {
                 value_bounds = label_area;
             }
             I::Edit => {
-                self.app_input_surface(control,keyboard_focus,scale);
+                self.app_input_surface(control,keyboard_focus || (focus==0 && index==0 && crate::ui::text_input::SETTINGS_FIELD_HOVERED.load(core::sync::atomic::Ordering::Relaxed)),scale);
+                if focus==0 && index==0 {
+                    let save=layout.machine_save_bounds(settings_window);
+                    use crate::ui::panel_recipe::{Surface,template_style};
+                    self.precision_surface_styled(save,Surface::Primary,Material{fill:self.active_accent_surface(crate::ui::skin::AccentSurface::Selection),
+                        edge:(er,eg,eb),opacity:255,edge_opacity:255,focus:0,pressed:false,scale},
+                        template_style(Surface::Primary,0,2,(save.height/(2*scale.max(1))as u32).min(40)as u8));
+                    self.access_glyph((save.x+save.width as i32/2).max(0)as usize,(save.y+save.height as i32/2).max(0)as usize,15,save.height as usize*2/3,false);
+                }
                 value_bounds=Rect{x:control.x+(12*scale)as i32,width:control.width.saturating_sub((24*scale)as u32),..control};
             }
             I::Toggle => value_bounds.width = value_bounds.width.saturating_sub((48 * scale) as u32),

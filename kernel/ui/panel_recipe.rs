@@ -246,6 +246,10 @@ fn pixel_authored_material(kind:Surface,width:usize,height:usize,x:usize,y:usize
         else {let cut=if kind==Surface::WindowFill {12}else{rim/scale};
             (axis(x,width,cut,scale),axis(y,height,cut,scale))};
     let state=|layer:usize| {
+        // The field rim is a three-part strip. Tile its straight authored
+        // midpoint instead of stretching corner highlights into broken rails.
+        let fx=if layer==1 && kind==Surface::Field && x>=rim && width-x>rim {128*256}else{fx};
+        let fy=if layer==1 && kind==Surface::Field && y>=rim && height-y>rim {128*256}else{fy};
         if normal==focused || m.focus==0 {texture(normal+layer*CELLS,fx,fy)}
         else if m.focus==255 {texture(focused+layer*CELLS,fx,fy)}
         else {transition(texture(normal+layer*CELLS,fx,fy),texture(focused+layer*CELLS,fx,fy),m.focus)}

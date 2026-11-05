@@ -120,7 +120,7 @@ impl DisplayDevice {
     // FUNC: access_glyph
     // DESC: Reuses the authored monochrome family for semantic controls and completed progress markers.
     // ------------------=
-    pub(super) fn access_glyph(&mut self,cx:usize,cy:usize,glyph:usize,size:usize,active:bool) {
+    pub(crate) fn access_glyph(&mut self,cx:usize,cy:usize,glyph:usize,size:usize,active:bool) {
         const ATLAS: &[u8; 16*64*64*4] = include_bytes!("../../../assets/ui-design-kit/default/eclipse-access-glyphs-v1.rgba");
         #[cfg(studio_native_preview)]
         let atlas=crate::studio_native_render::asset_override(b"eclipse-access-glyphs-v1.rgba").unwrap_or(ATLAS);

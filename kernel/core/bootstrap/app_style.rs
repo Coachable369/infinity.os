@@ -98,24 +98,21 @@ impl super::DisplayDevice {
     // DESC: Draws native text inputs with the current Studio-authored Node Name material, border, and corners.
     // ------------------=
     pub(crate) fn app_input_surface(&mut self,rect:Rect,focused:bool,scale:usize) {
-        use crate::ui::{installer_template::{InstallerTemplate,InstallerTemplateRole},panel_recipe::{self,Surface,Material}};
-        use core::sync::atomic::{AtomicU32,Ordering};
-        static FILL:AtomicU32=AtomicU32::new(0);
-        static EDGE:AtomicU32=AtomicU32::new(0);
-        static RECIPE:AtomicU32=AtomicU32::new(0);
-        let mut recipe=RECIPE.load(Ordering::Acquire);
-        if recipe==0 {
-        let field=InstallerTemplate::parse(crate::ui::installer_layout::CONFIGURATION_TEMPLATE_BYTES)
-            .ok().and_then(|doc|doc.element(2,InstallerTemplateRole::Input));
-        let (fill,edge,params)=field.map(|e|(e.fill,e.border,[e.surface_material,e.corner_style,e.corner_radius,1]))
-            .unwrap_or(([9,15,38,245],[134,199,255,255],[0,0,10,1]));
-        FILL.store(u32::from_le_bytes(fill),Ordering::Relaxed);EDGE.store(u32::from_le_bytes(edge),Ordering::Relaxed);
-        recipe=u32::from_le_bytes(params);RECIPE.store(recipe,Ordering::Release);
-        }
-        let fill=FILL.load(Ordering::Relaxed).to_le_bytes();let edge=EDGE.load(Ordering::Relaxed).to_le_bytes();
-        let [material,corners,radius,_]=recipe.to_le_bytes();let style=panel_recipe::template_style(Surface::Field,material,corners,radius);
-        self.precision_surface_styled(rect,Surface::Field,Material{fill:(fill[0],fill[1],fill[2]),edge:(edge[0],edge[1],edge[2]),
-            opacity:fill[3],edge_opacity:edge[3],focus:if focused{220}else{0},pressed:false,scale},style);
+        use crate::ui::installer_template::{InstallerTemplate,InstallerTemplateRole};
+        use core::sync::atomic::{AtomicU8,Ordering};
+        static INIT: AtomicU8=AtomicU8::new(0);
+        static mut FIELD:Option<crate::ui::installer_template::InstallerTemplateElement<'static>>=None;
+        // The linked document is immutable. Publish once, without making another
+        // renderer wait or parsing every embedded image on each pointer frame.
+        let field=if INIT.load(Ordering::Acquire)==2 {unsafe{FIELD}}else{
+            let field=InstallerTemplate::parse(crate::ui::installer_layout::CONFIGURATION_TEMPLATE_BYTES)
+                .ok().and_then(|doc|doc.element(2,InstallerTemplateRole::Input));
+            if INIT.compare_exchange(0,1,Ordering::Acquire,Ordering::Relaxed).is_ok() {
+                unsafe{FIELD=field;}INIT.store(2,Ordering::Release);
+            }
+            field
+        };
+        self.kit_text_field(rect,field,focused,scale);
     }
     // ------------------------=
     // FUNC: app_choice_field
@@ -393,12 +390,11 @@ impl super::DisplayDevice {
     // DESC: Uses the shared glossy button artwork for every native action without borrowing field or panel geometry.
     // ------------------=
     pub(super) fn app_button_surface(&mut self, r: Rect, primary: bool, focus: u8, pressed: bool, scale: usize) {
-        use crate::ui::{panel_recipe::{Material,Surface},skin::AccentSurface};
-        let accent=self.active_accent_rgb();
-        let fill=if primary {((accent>>16) as u8,(accent>>8) as u8,accent as u8)}
-            else {self.active_accent_surface(AccentSurface::Widget)};
+        use crate::ui::panel_recipe::{Material,Surface};
+        let colors=crate::ui::skin::kit_tokens::runtime_colors();
+        let rgb=|v:u32|((v>>16)as u8,(v>>8)as u8,v as u8);
         self.precision_surface(r,if primary {Surface::Primary}else{Surface::Secondary},
-            Material{fill,edge:self.active_accent_surface(AccentSurface::WindowOutline),
+            Material{fill:rgb(colors[if primary{6}else{1}]),edge:rgb(colors[3]),
                 opacity:255,edge_opacity:255,focus,pressed,scale});
     }
     // ------------------------=

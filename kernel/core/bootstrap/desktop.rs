@@ -6273,10 +6273,8 @@ impl super::DisplayDevice {
             } else if voice_starting {
                 b"Preparing".as_slice()
             } else { match voice_state().0 {
-                State::Off=>b"Voice off".as_slice(),State::Starting=>b"Preparing".as_slice(),
-                State::Listening=>if crate::runtime::ai::voice_conversation::waiting_for_pause() {
-                    b"Pause to retry".as_slice()
-                } else if crate::runtime::ai::voice_conversation::wake_armed() {b"Go ahead".as_slice()} else {wake_prompt},
+                State::Off=>b"Starting microphone".as_slice(),State::Starting=>b"Preparing".as_slice(),
+                State::Listening=>if crate::runtime::ai::voice_conversation::wake_armed() {b"Go ahead".as_slice()} else {wake_prompt},
                 State::Recognizing=>b"Recognizing".as_slice(),State::Submitting=>b"Queued".as_slice(),
                 State::Thinking=>b"Generating".as_slice(),
                 State::Speaking=>match crate::runtime::ai::voice_output::status().state {

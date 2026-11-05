@@ -1123,6 +1123,33 @@ static uint64_t prepare_identity_map(EFI_SYSTEM_TABLE *system) {
 #endif
 }
 
+#if defined(INFINITY_AARCH64)
+static EFI_GRAPHICS_OUTPUT_PROTOCOL *live_graphics;
+static uint32_t live_modes[32][3], live_mode_count;
+// ------------------------=
+// FUNC: live_display_mode
+// DESC: Applies a prevalidated GOP mode on the retained ARM firmware bridge and reports its actual framebuffer.
+ // ------------------=
+static uint32_t EFIAPI live_display_mode(uint32_t w,uint32_t h,uint64_t out[3]) {
+    EFI_GRAPHICS_OUTPUT_PROTOCOL *g=live_graphics;
+    if (!g || !out || !g->mode || !g->set_mode) return 0;
+    uint32_t previous=g->mode->mode;
+    for (uint32_t i=0;i<live_mode_count;i++) {
+        if (live_modes[i][0]!=w || live_modes[i][1]!=h) continue;
+        if (g->set_mode(g,live_modes[i][2])!=EFI_SUCCESS) return 0;
+        EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *m=g->mode;
+        if (m && m->info && m->info->horizontal_resolution==w && m->info->vertical_resolution==h &&
+            infinity_video_score(w,h,m->info->pixels_per_scan_line,m->info->pixel_format,m->info->pixel_information) &&
+            (uint64_t)m->info->pixels_per_scan_line*h<=INFINITY_VIDEO_BUFFER_PIXELS &&
+            infinity_video_memory_valid(m->framebuffer_base,m->framebuffer_size,m->info->pixels_per_scan_line,h)) {
+            out[0]=m->framebuffer_base; out[1]=m->info->pixels_per_scan_line;
+            out[2]=infinity_video_format(m->info->pixel_format,m->info->pixel_information); return 1;
+        }
+        g->set_mode(g,previous); return 0;
+    }
+    return 0;
+}
+#endif
 // ------------------------=
 // FUNC: gather_framebuffer
 // DESC: Reads gather framebuffer from firmware or device state.
@@ -1164,7 +1191,12 @@ static void gather_framebuffer(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info)
                 if (score && (uint64_t)candidate_info->pixels_per_scan_line*candidate_info->vertical_resolution <= INFINITY_VIDEO_BUFFER_PIXELS) {
                     uint32_t w=candidate_info->horizontal_resolution,h=candidate_info->vertical_resolution;
                     size_t k=0;while(k<count && (catalog[k][0]!=w || catalog[k][1]!=h)) ++k;
-                    if(k==count && count<32){catalog[count][0]=w;catalog[count++][1]=h;}
+                    if(k==count && count<32){
+                        catalog[k][0]=w;catalog[count++][1]=h;
+#if defined(INFINITY_AARCH64)
+                        live_modes[k][0]=w;live_modes[k][1]=h;live_modes[k][2]=candidate;
+#endif
+                    }
                     if(w==preferred[0] && h==preferred[1])requested=candidate;
                 }
                 if (score > best_score) { best_score = score; best_mode = candidate; }
@@ -1192,6 +1224,10 @@ static void gather_framebuffer(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info)
     info->framebuffer_height = mode->info->vertical_resolution;
     info->framebuffer_stride = mode->info->pixels_per_scan_line;
     info->framebuffer_format = infinity_video_format(mode->info->pixel_format, mode->info->pixel_information);
+#if defined(INFINITY_AARCH64)
+    live_graphics=graphics;live_mode_count=(uint32_t)count;
+    info->display_exchange=(uint64_t)(uintptr_t)live_display_mode;
+#endif
     serial_write("[BOOT] framebuffer ready\n");
 }
 
@@ -1664,6 +1700,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     memset(info->firmware_entropy, 0, sizeof(info->firmware_entropy));
     info->firmware_entropy_valid = 0;
     info->boot_reserved = 0;
+    info->display_exchange = 0;
     info->payload_bridge = 0;
     info->model_address = 0;
     info->model_bytes = 0;

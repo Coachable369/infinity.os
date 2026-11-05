@@ -3172,10 +3172,10 @@ impl ConsoleRuntime {
                 .identity
                 .update_voice_profile(user, user, enabled, activation)
         })
-        .transpose()
-        .is_ok();
+        .is_some_and(|result|result.is_ok());
         if updated {
             let _ = crate::runtime::persist_identity_state();
+            self.voice_autostart_after_ns=if enabled{0}else{u64::MAX};
             self.redraw();
         }
     }
@@ -5685,7 +5685,8 @@ impl ConsoleRuntime {
                     crate::bootstrap::system_ui_settings_changed();
                 }
             }
-            (5,0)=>self.display_modes.cycle(self.system.firmware_runtime_services),
+            (5,0)=>{let modes=self.display_modes.detected();if !modes.is_empty(){
+                let index=modes.iter().position(|m|*m==self.display_modes.selected()).map_or(0,|i|(i+1)%modes.len());self.apply_display_choice(index);}},
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
@@ -5702,6 +5703,20 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: save_machine_name
+    // DESC: Commits an edited machine name through the identity service, retaining input on failure.
+    // ------------------=
+    fn save_machine_name(&mut self) {
+        if !self.settings_editing || self.system_focus!=0 || self.command_length==0 { return; }
+        let mut bytes=[0;48];let length=self.command_length;
+        if length>bytes.len(){return;}
+        bytes[..length].copy_from_slice(&self.command[..length]);
+        if self.dispatch_setting(crate::runtime::ai::control::setting_command::Request::Name{bytes,length}) {
+            self.reset_input();
+        }else{self.settings_editing=true;}
+
+    }
+    // ------------------------=
     // FUNC: activate_settings_row_control
     // DESC: Routes mouse and keyboard activation through one semantic row binding, preserving native authorization and persistence.
     // ------------------=
@@ -5717,8 +5732,8 @@ impl ConsoleRuntime {
             }
             I::Toggle | I::Select => self.activate_settings_content_row(row),
             I::Edit => {
-                self.settings_window.expanded_row=Some(row);
-                self.activate_settings_content_row(row);
+                self.settings_window.expanded_row=None;
+                if !self.settings_editing { self.activate_settings_content_row(row); }
             }
             I::Details => self.toggle_settings_row(row),
         }
@@ -6873,16 +6888,7 @@ impl ConsoleRuntime {
                 self.reset_input();
                 return;
             }
-            if matches!(key, ConsoleKey::Enter) && self.command_length > 0 {
-                let _ = crate::runtime::with_runtime(|runtime| {
-                    runtime
-                        .identity
-                        .update_machine_name(&self.command[..self.command_length])
-                });
-                let _ = crate::runtime::persist_identity_state();
-                self.settings_editing = false;
-                self.reset_input();
-            }
+            if matches!(key, ConsoleKey::Enter) { self.save_machine_name(); }
             return;
         }
         if self.mode == ConsoleMode::Settings && self.system_focus == 6 {
@@ -9954,6 +9960,7 @@ impl ConsoleRuntime {
                         self.settings_window.control_focus=crate::ui::controls::SETTINGS_ROW_FOCUS+row;
                         self.activate_settings_row_control(row);
                     }
+                    SettingsTarget::SaveMachineName => {if clicked {self.save_machine_name();}},
                     SettingsTarget::ExpandedAction if clicked => {
                         if let Some(row) = self.settings_window.expanded_row {
                             self.activate_settings_content_row(row);
@@ -14758,6 +14765,17 @@ pub fn ui_animation_tick() -> bool {
                 runtime.system.framebuffer_width,
                 runtime.system.framebuffer_height,
             );
+            if runtime.system_focus==0 {
+                let point=layout.point(runtime.pointer_x,runtime.pointer_y);
+                let hover=layout.settings_window_geometry_for_section(runtime.settings_window,0).viewport.contains(point)
+                    && layout.settings_field_bounds(runtime.settings_window,0,0).contains(point);
+                let changed=crate::ui::text_input::SETTINGS_FIELD_HOVERED.swap(hover,core::sync::atomic::Ordering::Relaxed)!=hover;
+                let focus=hover || runtime.settings_window.control_focus==crate::ui::controls::SETTINGS_ROW_FOCUS;
+                let time=crate::ui::performance::monotonic_ns();
+                let moving=crate::bootstrap::login_access_animation_tick(0x77000000|u32::from(focus), time.unwrap_or(0)/1_000_000,
+                    runtime.pointer_pressed,runtime.spatial.state.reduced_motion||time.is_none());
+                if changed || (moving && focus) {crate::bootstrap::system_ui_settings_changed();frame_changed=true;}
+            }
             let maximum = layout
                 .settings_window_geometry_for_section(runtime.settings_window, runtime.system_focus)
                 .maximum_scroll;

@@ -574,6 +574,8 @@ impl DisplayDevice {
         let style=crate::ui::panel_recipe::template_style(kind,element.surface_material,element.corner_style,element.corner_radius);
         if element.role==InstallerTemplateRole::Console as u8 {
             self.access_frost_panel_styled(rect.left,rect.top,rect.width,rect.height,fill,border,opacity,border_opacity,style);
+        } else if kind==Surface::Field {
+            self.app_input_surface(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,width:rect.width as u32,height:rect.height as u32},focused,self.ui_scale());
         } else {
             self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
                 width:rect.width as u32,height:rect.height as u32},kind,crate::ui::panel_recipe::Material{
@@ -767,12 +769,14 @@ impl DisplayDevice {
                 (element.border[0],element.border[1],element.border[2]),fill_alpha,border_alpha,style);
             return;
         }
-        self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
+        if element.role==InstallerTemplateRole::Input as u8 {
+            self.app_input_surface(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,width:rect.width as u32,height:rect.height as u32},focused,self.ui_scale());
+        }else{self.precision_surface_styled(crate::ui::geometry::Rect{x:rect.left as i32,y:rect.top as i32,
             width:rect.width as u32,height:rect.height as u32},
             kind,
             crate::ui::panel_recipe::Material{fill:(element.fill[0],element.fill[1],element.fill[2]),
                 edge:(element.border[0],element.border[1],element.border[2]),opacity:fill_alpha,
-                edge_opacity:border_alpha,focus:if focused {255}else{0},pressed:false,scale:self.ui_scale()},style);
+                edge_opacity:border_alpha,focus:if focused {255}else{0},pressed:false,scale:self.ui_scale()},style);}
         if is_control && !element.text.is_empty() {
             let font_px = (element.font_size as usize * self.height / 1000).max(6);
             let text_height = (font_px * 7 / 6).max(1);

@@ -6,6 +6,7 @@ static CARET_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CARET_VISIBLE: AtomicBool = AtomicBool::new(true);
 static CARET_INDEX: AtomicUsize = AtomicUsize::new(0);
 static CARET_KIND: AtomicUsize = AtomicUsize::new(0);
+pub static SETTINGS_FIELD_HOVERED: AtomicBool = AtomicBool::new(false);
 static POINTER_SHAPE: AtomicUsize = AtomicUsize::new(PointerShape::Default as usize);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

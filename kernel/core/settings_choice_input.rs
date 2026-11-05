@@ -165,6 +165,18 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: apply_display_choice
+    // DESC: Applies the selected hardware mode before changing layout or storing a boot preference.
+    // ------------------=
+    pub(super) fn apply_display_choice(&mut self,index:usize) {
+        let Some([w,h])=self.display_modes.detected().get(index).copied() else{return;};
+        if crate::bootstrap::change_display_mode(w,h) {
+            self.system.framebuffer_width=w as usize;self.system.framebuffer_height=h as usize;
+            self.display_modes.applied(w,h);
+            self.display_modes.select(self.system.firmware_runtime_services,index);
+        }else{self.display_modes.rejected();}
+    }
+    // ------------------------=
     // FUNC: commit_settings_choice
     // DESC: Applies the clicked or keyboard-selected option exactly once through its owning service.
     // ------------------=
@@ -174,9 +186,7 @@ impl ConsoleRuntime {
         }
         let user = self.current_user;
         match (self.system_focus, row) {
-            (5, 0) => self
-                .display_modes
-                .select(self.system.firmware_runtime_services, index),
+            (5, 0) => self.apply_display_choice(index),
             (3, 2) => {
                 crate::runtime::ai::with_ai_runtime(|r| r.chat.select_model_index(index));
                 self.persist_ai_chat_preferences();

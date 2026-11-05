@@ -41,6 +41,13 @@ pub(super) fn verify() {
     let mut frames=0;
     for(width,height)in[(1280,800),(1600,1000)]{
         let layout=SystemLayout::new(width,height);
+        let general=state(0);let field=layout.settings_field_bounds(general,0,0);let save=layout.machine_save_bounds(general);
+        assert!(field.right()<save.x);assert_eq!(save.width,save.height);
+        for (bounds,target) in [(field,crate::ui::system_layout::SettingsTarget::ContentRow(0)),(save,crate::ui::system_layout::SettingsTarget::SaveMachineName)] {
+            let x=(bounds.x+bounds.width as i32/2)*1000/width as i32;
+            let y=(bounds.y+bounds.height as i32/2)*1000/height as i32;
+            assert_eq!(layout.settings_target_for_section(x,y,general,0),Some(target));
+        }
         for section in [0,3,4,5,9,10]{
             assert!(supports_basic_section(section));let state=state(section);let geometry=layout.settings_window_geometry_for_section(state,section);
             let (whole,ok)=frame(width,height,section,state,snapshot(),None);assert!(ok);assert!(whole.iter().any(|p|*p!=0x00182739));

@@ -189,13 +189,9 @@ impl DisplayDevice {
             let focused = focus == field_focus;
             let hovered = (100..=475).contains(&cursor_x)
                 && (normalized_y as i32..=(normalized_y + 70) as i32).contains(&cursor_y);
-            self.precision_surface(Rect { x: (self.width * 10 / 100) as i32,
+            self.app_input_surface(Rect { x: (self.width * 10 / 100) as i32,
                 y: field_top as i32, width: (self.width * 38 / 100) as u32,
-                height: field_height as u32 }, Surface::Field,
-                Material { fill: palette::BACKGROUND,
-                    opacity: if hovered && pressed { 250 } else { 226 },
-                    focus: if focused || hovered { 255 } else { 0 },
-                    pressed: hovered && pressed, ..material });
+                height: field_height as u32 }, focused || hovered, scale);
             self.installer_compact_text_strong(
                 self.width * 115 / 1000,
                 field_top + 8 * scale,

@@ -42,6 +42,11 @@ pub struct Svga {
 
 impl Svga {
     // ------------------------=
+    // FUNC: dimensions
+    // DESC: Updates FIFO damage limits after a successful native mode switch.
+    // ------------------=
+    pub fn dimensions(&mut self,width:u32,height:u32){self.width=width;self.height=height;}
+    // ------------------------=
     // FUNC: attach
     // DESC: Validates firmware scanout against native registers and takes ownership of the command FIFO.
     // ------------------=

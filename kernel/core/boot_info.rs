@@ -1,5 +1,5 @@
 pub const BOOT_MAGIC: u64 = 0x494e_4642_4f4f_5430;
-pub const BOOT_VERSION: u32 = 10;
+pub const BOOT_VERSION: u32 = 11;
 #[cfg(target_arch = "x86")]
 pub const ARCH_X86: u32 = 1;
 #[cfg(target_arch = "x86_64")]
@@ -63,6 +63,7 @@ pub struct BootInfo {
     pub native_controller_reserved: u32,
     pub native_controller_base: u64,
     pub native_controller_auxiliary: u64,
+    pub display_exchange: u64,
 }
 
-const _: () = assert!(core::mem::size_of::<BootInfo>() == 392);
+const _: () = assert!(core::mem::size_of::<BootInfo>() == 400);

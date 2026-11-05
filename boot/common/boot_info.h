@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define INFINITY_BOOT_MAGIC UINT64_C(0x494e46424f4f5430)
-#define INFINITY_BOOT_VERSION 10u
+#define INFINITY_BOOT_VERSION 11u
 #define INFINITY_ARCH_X86_64 2u
 #define INFINITY_ARCH_AARCH64 3u
 /* network_reserved discriminator: firmware_network is an ECAM function address.
@@ -64,8 +64,9 @@ typedef struct {
     uint32_t native_controller_reserved;
     uint64_t native_controller_base;
     uint64_t native_controller_auxiliary;
+    uint64_t display_exchange; /* Valid only while ARM retains boot services. */
 } InfinityBootInfo;
 
-_Static_assert(sizeof(InfinityBootInfo) == 392, "BootInfo ABI changed");
+_Static_assert(sizeof(InfinityBootInfo) == 400, "BootInfo ABI changed");
 
 #endif

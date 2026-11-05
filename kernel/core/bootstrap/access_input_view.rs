@@ -6,6 +6,27 @@ use crate::ui::panel_recipe::Surface as AccessSurface;
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: kit_text_field
+    // DESC: Paints the shared authored input border, focus transition and fill in native apps and setup.
+    // ------------------=
+    pub(crate) fn kit_text_field(&mut self, rect:crate::ui::geometry::Rect,
+        element:Option<crate::ui::installer_template::InstallerTemplateElement<'_>>, focused:bool, scale:usize) {
+        if let Some(element)=element {
+            let style=crate::ui::panel_recipe::template_style(AccessSurface::Field,
+                element.surface_material,element.corner_style,element.corner_radius);
+            self.precision_surface_styled(rect,
+                AccessSurface::Field,crate::ui::panel_recipe::Material{
+                    fill:(element.fill[0],element.fill[1],element.fill[2]),
+                    edge:(element.border[0],element.border[1],element.border[2]),
+                    opacity:(element.fill[3] as u16*element.opacity as u16/100)as u8,
+                    edge_opacity:(element.border[3] as u16*element.opacity as u16/100)as u8,
+                    focus:if focused{access::focus_amount()}else{0},pressed:false,scale},style);
+        }else{
+            self.access_surface(rect.x.max(0)as usize, rect.y.max(0)as usize, rect.width as usize, rect.height as usize, AccessSurface::Field, access::BACKGROUND,
+                access::BORDER, 255, focused);
+        }
+    }
+    // ------------------------=
     // FUNC: onboarding_input_field
     // DESC: Draws one polished first-boot text field with placeholder, focus, and secure masking.
     // ------------------=
@@ -43,20 +64,9 @@ impl DisplayDevice {
             .unwrap_or(255);
         // The caller restores this field's backing scene before bounded repaint;
         // preserve authored alpha and geometry instead of imposing another skin.
-        if let Some(element)=element {
-            let style=crate::ui::panel_recipe::template_style(AccessSurface::Field,
-                element.surface_material,element.corner_style,element.corner_radius);
-            self.precision_surface_styled(crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},
-                AccessSurface::Field,crate::ui::panel_recipe::Material{
-                    fill:(element.fill[0],element.fill[1],element.fill[2]),
-                    edge:(element.border[0],element.border[1],element.border[2]),
-                    opacity:(element.fill[3] as u16*element.opacity as u16/100)as u8,
-                    edge_opacity:(element.border[3] as u16*element.opacity as u16/100)as u8,
-                    focus:if focused{access::focus_amount()}else{0},pressed:false,scale:self.ui_scale()},style);
-        }else{
-            self.access_surface(left, top, width, height, AccessSurface::Field, access::BACKGROUND,
-                access::BORDER, 255, focused);
-        }
+        let bounds=crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32};
+        if element.is_some(){self.kit_text_field(bounds,element,focused,self.ui_scale());}
+        else {self.app_input_surface(bounds,focused,self.ui_scale());}
         let mut shown = [0u8; 64];
         let shown_len = input.len().min(shown.len());
         if masked {

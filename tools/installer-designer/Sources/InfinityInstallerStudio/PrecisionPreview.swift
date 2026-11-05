@@ -184,10 +184,12 @@ struct PrecisionAtlas {
         let fx = circular ? x * 255 * 256 / width : Self.axis(x, length: width, cut: cut, scale: scale)
         let fy = circular ? y * 255 * 256 / height : Self.axis(y, length: height, cut: cut, scale: scale)
         let state: (Int) -> PrecisionPixel = { layer in
+            let sx = layer == 1 && kind == .field && x >= rim && width - x > rim ? 128 * 256 : fx
+            let sy = layer == 1 && kind == .field && y >= rim && height - y > rim ? 128 * 256 : fy
             let normal = pair.0 + layer * Self.cellCount, focused = pair.1 + layer * Self.cellCount
-            if normal == focused || m.focus == 0 { return texture(normal, x: fx, y: fy) }
-            if m.focus == 255 { return texture(focused, x: fx, y: fy) }
-            return Self.transition(texture(normal, x: fx, y: fy), texture(focused, x: fx, y: fy), amount: m.focus)
+            if normal == focused || m.focus == 0 { return texture(normal, x: sx, y: sy) }
+            if m.focus == 255 { return texture(focused, x: sx, y: sy) }
+            return Self.transition(texture(normal, x: sx, y: sy), texture(focused, x: sx, y: sy), amount: m.focus)
         }
         let base = kind == .primary || kind == .current ? (62, 111, 255) : (16, 27, 58)
         var background = PrecisionPixel.clear

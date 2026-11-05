@@ -318,6 +318,7 @@ pub enum SettingsTarget {
     Section(usize),
     WorldShiftHero,
     ContentRow(usize),
+    SaveMachineName,
     ExpandedAction,
     ScrollPage(bool),
     ScrollThumb,
@@ -2706,7 +2707,16 @@ impl SystemLayout {
         let width=element.map_or(320,|e|u32::from(e.frame.width)*1280/1000+16)*self.scale as u32;
         let width=width.min(summary.width.saturating_sub((120*self.scale) as u32));
         let height=(36*self.scale as u32).min(summary.height);
-        Rect{x:area.right()+(8*self.scale)as i32-width as i32,y:summary.y+(summary.height-height)as i32/2,width,height}
+        let reserve=if section==0 && row==0 {height+8*self.scale as u32}else{0};
+        Rect{x:area.right()+(8*self.scale)as i32-width as i32,y:summary.y+(summary.height-height)as i32/2,width:width.saturating_sub(reserve),height}
+    }
+    // ------------------------=
+    // FUNC: machine_save_bounds
+    // DESC: Anchors the circular save action beside its field for both painting and hit testing.
+    // ------------------=
+    pub fn machine_save_bounds(self,state:SettingsWindowState)->Rect {
+        let field=self.settings_field_bounds(state,0,0);
+        Rect{x:field.right()+(8*self.scale)as i32,width:field.height,..field}
     }
     // ------------------------=
     // FUNC: settings_row_element_geometry
@@ -2895,6 +2905,7 @@ impl SystemLayout {
         for index in 0..state.row_count.clamp(1, 8) {
             let row = self.settings_row_geometry_for_section(state, index, section);
             if row.summary.contains(point) {
+                if section==0 && index==0 && self.machine_save_bounds(state).contains(point) {return Some(SettingsTarget::SaveMachineName);}
                 return Some(SettingsTarget::ContentRow(index));
             }
             if state.expanded_row == Some(index) && row.detail.contains(point) {
