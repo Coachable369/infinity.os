@@ -73,4 +73,11 @@ The direct AI audio pipeline is outside this change.
 Remaining acceptance: finish Yahoo loading, implement native CSS container sizing
 and its layout/restyle lifecycle, and verify responsive card placement and
 images in the installed OS. Do not enable the unfinished container-query flag.
-No updated ISO has been produced or published by this browser investigation.
+After the user requested a fast incremental ARM test ISO, `./build-kit arm-iso`
+completed successfully. Local artifact: `builds/InfinityOS-aarch64.iso`.
+SHA-256: `fe87ae7b722739333a991c346b3c80267ddb8ebfc2e1cdf6a3d16f70cbd3d14f`.
+Build manifest: `builds/manifests/20261106T210721222036Z-75926.json`.
+Kernel freshness, live/installed UI and SDK/model payload parity, and checksum
+checks passed. Broad regression tests were deferred. This packages the verified
+improvements; the Yahoo acceptance failures above remain unresolved. No x86 ISO
+was rebuilt and no installed VM was restarted or validated in this packaging run.
