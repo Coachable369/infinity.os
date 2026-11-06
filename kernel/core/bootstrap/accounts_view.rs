@@ -96,35 +96,42 @@ impl DisplayDevice {
         );
         let s = scale.max(1);
         let layout = accounts::layout(viewport, &view.state, &view.data, s);
-        if layout.list.width > 0 {
-            self.precision_surface(layout.list, Surface::Panel, Material { fill: chrome.selection,
-                edge: chrome.outline, opacity: 105, edge_opacity: 125, focus: 0, pressed: false, scale: s });
+        let panel = Rect{x:layout.title.x-(12*s)as i32,y:viewport.y+if layout.narrow{(44*s)as i32}else{0},
+            width:layout.title.width+(24*s)as u32,height:viewport.height.saturating_sub(layout.footer.height+if layout.narrow{(44*s)as u32}else{0})};
+        if layout.details.width>0 {
+            self.precision_surface(panel,Surface::Panel,Material{fill:(3,10,23),edge:(134,199,255),
+                opacity:245,edge_opacity:145,focus:0,pressed:false,scale:s});
+        }
+        if layout.list.width>0 {
+            self.app_label(Rect{x:layout.list.x+(8*s)as i32,y:layout.list.y-(32*s)as i32,
+                width:layout.list.width.saturating_sub((16*s)as u32),height:(28*s)as u32},
+                if view.state.tab==Tab::Users{b"Users on This Computer"}else{b"Groups on This Computer"},
+                (174,197,221),false,s);
         }
         let entry = view.state.selected_entry(&view.data);
-        if layout.details.width > 0 {
-            let title: &[u8] = match view.state.mode {
-                Mode::Create => {
-                    if view.state.tab == Tab::Users {
-                        b"New user"
-                    } else {
-                        b"New group"
-                    }
-                }
-                Mode::Rename => b"Edit names",
-                Mode::Password => b"Set password",
-                Mode::Delete => b"Confirm deletion",
-                Mode::Browse => entry.map(|e| e.name.as_bytes()).unwrap_or(b""),
+        if layout.details.width>0 {
+            let title:&[u8]=match view.state.mode {
+                Mode::Create=>if view.state.tab==Tab::Users{b"New user"}else{b"New group"},
+                Mode::Rename=>b"Edit names",Mode::Password=>b"Set password",Mode::Delete=>b"Confirm deletion",
+                Mode::Browse=>entry.map(|e|e.name.as_bytes()).unwrap_or(b""),
             };
             if view.state.mode==Mode::Browse {
-                let size=(36*s).min(layout.title.width as usize);
-                self.themed_icon(layout.title.x.max(0)as usize+size/2,layout.title.y.max(0)as usize+24*s,
-                    crate::ui::icon_theme::settings_section_icon(2),size);
-                let inset=(size+8*s) as u32;
-                let heading=Rect{x:layout.title.x+inset as i32,width:layout.title.width.saturating_sub(inset),
-                    height:(26*s)as u32,..layout.title};
-                self.app_label(heading,title,(255,255,255),true,s);
-                if let Some(e)=entry { self.app_label(Rect{y:heading.bottom(),..heading},e.handle.as_bytes(),(174,197,221),false,s); }
-            }else{self.app_label(layout.title, title, (255, 255, 255), true, s);}
+                self.account_avatar(Rect{x:layout.title.x,y:layout.title.y+(8*s)as i32,width:(80*s)as u32,height:(80*s)as u32},true);
+                let heading=Rect{x:layout.title.x+(96*s)as i32,y:layout.title.y+(12*s)as i32,
+                    width:layout.title.width.saturating_sub((96*s)as u32),height:(32*s)as u32};
+                let previous=self.render_clip;
+                self.intersect_render_clip(heading.x.max(0)as usize,heading.y.max(0)as usize,heading.width as usize,heading.height as usize);
+                self.template_text(heading.x.max(0)as usize,heading.y.max(0)as usize,title,255,255,255,255,26*s,true);
+                self.render_clip=previous;
+                if view.state.tab==Tab::Users {
+                    self.app_label(Rect{y:layout.title.y+(44*s)as i32,height:(24*s)as u32,..heading},b"Account type",(174,197,221),false,s);
+                }
+                if view.state.tab==Tab::Groups {
+                    self.app_label(Rect{y:heading.bottom()+(8*s)as i32,..heading},b"Group membership",(174,197,221),false,s);
+                }
+                self.fill_rect_alpha(layout.title.x.max(0)as usize,layout.title.bottom().max(0)as usize,
+                    layout.title.width as usize,s,134,199,255,130);
+            }else{self.app_label(layout.title,title,(255,255,255),true,s);}
         }
         if view.data.entries(view.state.tab).is_empty() && layout.list.width > 0 {
             self.app_label(
@@ -145,9 +152,9 @@ impl DisplayDevice {
         if let Some(control)=layout.controls[..layout.count].iter().find(|c|c.target==Target::Member(0)) {
             let heading=Rect{x:control.bounds.x,y:control.bounds.y-(30*s)as i32,width:control.bounds.width,height:(28*s)as u32};
             let previous=self.render_clip;
-            self.intersect_render_clip(layout.details.x.max(0)as usize,layout.details.y.max(0)as usize,
-                layout.details.width as usize,layout.details.height as usize);
-            self.app_label(heading,if view.state.tab==Tab::Users{b"Group membership"}else{b"Group members"},
+            self.intersect_render_clip(viewport.x.max(0)as usize,viewport.y.max(0)as usize,
+                viewport.width as usize,viewport.height as usize);
+            self.app_label(heading,if view.state.tab==Tab::Users{b"Membership"}else{b"Group members"},
                 (174,197,221),true,s);self.render_clip=previous;
         }
         for c in &layout.controls[..layout.count] {
@@ -198,6 +205,31 @@ impl DisplayDevice {
         self.render_clip = old;
     }
     // ------------------------=
+    // FUNC: account_selection
+    // DESC: Reuses the shared image-backed surface with the approved account-list electric-blue selection recipe.
+    // ------------------=
+    fn account_selection(&mut self,bounds:Rect,material:Material){
+        let style=crate::ui::panel_recipe::SurfaceStyle{material:2,corners:2,radius:6,
+            fill:Some(0xff0058ff),border:Some(0xff39baff)};
+        self.precision_surface_styled(bounds,Surface::Primary,material,style);
+    }
+    // ------------------------=
+    // FUNC: account_avatar
+    // DESC: Samples the approved reference portrait with clipped straight alpha and a muted unselected variant.
+    // ------------------=
+    fn account_avatar(&mut self,rect:Rect,active:bool){
+        const ART:&[u8]=include_bytes!("../../../assets/ui-design-kit/default/account-avatar-v1.rgba");
+        let Some(clip)=self.clipped_render_region(rect.x.max(0)as usize,rect.y.max(0)as usize,rect.width as usize,rect.height as usize)else{return;};
+        for y in clip.top..clip.bottom {for x in clip.left..clip.right {
+            let sx=((x as i32-rect.x).max(0)as usize*128/rect.width.max(1)as usize).min(127);
+            let sy=((y as i32-rect.y).max(0)as usize*128/rect.height.max(1)as usize).min(127);
+            let p=&ART[(sy*128+sx)*4..][..4];
+            let (r,g,b)=if active{(p[0],p[1],p[2])}else{let v=((u16::from(p[0])+u16::from(p[1])+u16::from(p[2]))/3)as u8;(v,v.saturating_add(5),v.saturating_add(16))};
+            if p[3]>0{self.blend_color_unchecked(x,y,r,g,b,p[3]);}
+        }}
+        self.mark_dirty_rect(clip.left,clip.top,clip.right-clip.left,clip.bottom-clip.top);
+    }
+    // ------------------------=
     // FUNC: paint_account_control
     // DESC: Paints one shared hit target, keeping password bytes absent and clipping all text to its control.
     // ------------------=
@@ -233,9 +265,9 @@ impl DisplayDevice {
             (122, 141, 164)
         };
         let material = Material {
-            fill: chrome.selection,
-            edge: chrome.outline,
-            opacity: if c.enabled { 230 } else { 112 },
+            fill: if selected{(0,84,255)}else{chrome.selection},
+            edge: if selected{(40,165,255)}else{chrome.outline},
+            opacity: if c.enabled { 255 } else { 112 },
             edge_opacity: if c.enabled { 255 } else { 128 },
             focus: if focused { 255 } else { 0 },
             pressed: pointer == 2 && c.enabled,
@@ -247,12 +279,13 @@ impl DisplayDevice {
         let entry = view.state.selected_entry(&view.data);
         if let Target::Row(i) = c.target {
             let item = &view.data.entries(view.state.tab)[i];
-            if selected || focused { self.precision_surface(c.bounds, Surface::Primary, material); }
-            let icon = (28 * s).min(c.bounds.width as usize / 3);
-            let _ = self.themed_icon(c.bounds.x.max(0) as usize + 20*s,
-                c.bounds.y.max(0) as usize + c.bounds.height as usize / 2,
-                crate::ui::icon_theme::settings_section_icon(2), icon);
-            let inset = (42*s) as u32;
+            if selected || focused { self.account_selection(c.bounds,material); }
+            let size=(40*s).min(c.bounds.height as usize);
+            self.account_avatar(Rect{x:c.bounds.x+(8*s)as i32,y:c.bounds.y+(c.bounds.height as i32-size as i32)/2,
+                width:size as u32,height:size as u32},selected);
+            if !selected {self.fill_rect_alpha(c.bounds.x.max(0)as usize,c.bounds.bottom().max(0)as usize,
+                c.bounds.width as usize,s,134,199,255,35);}
+            let inset = (60*s) as u32;
             let half = c.bounds.height/2;
             let name = Rect { x: c.bounds.x + inset as i32, width: c.bounds.width.saturating_sub(inset),
                 height: half, ..c.bounds };
@@ -359,7 +392,7 @@ impl DisplayDevice {
                         view.state
                             .selected_index(&view.data)
                             .is_some_and(|u| group.members & (1 << u) != 0),
-                        group.name.as_bytes(),
+                        if group.handle.as_bytes()==b"administrators" {b"Allow user to administer this computer".as_slice()}else{group.name.as_bytes()},
                     )
                 }
                 Target::Member(i) => (
@@ -373,21 +406,30 @@ impl DisplayDevice {
             }
             self.precision_toggle(
                 Rect {
-                    x: c.bounds.x + (8 * s) as i32,
+                    x: c.bounds.right() - (60 * s) as i32,
                     y: c.bounds.y + (10 * s) as i32,
-                    width: (38 * s) as u32,
-                    height: (20 * s) as u32,
+                    width: (52 * s) as u32,
+                    height: (26 * s) as u32,
                 },
                 checked,
                 c.enabled,
-                material,
+                Material{edge:if checked{(0,102,255)}else{material.edge},..material},
             );
-            label.x += (50 * s) as i32;
-            label.width = label.width.saturating_sub((50 * s) as u32);
+            label.width = label.width.saturating_sub((64 * s) as u32);
             self.app_label(label, text, color, false, s);
+        } else if matches!(c.target,Target::Role|Target::RoleOption(_)) {
+            if let Target::RoleOption(admin)=c.target {
+                self.app_dropdown_row(c.bounds,entry.is_some_and(|e|e.admin==admin),s);
+                self.app_label(label,if admin{b"Administrator"}else{b"Standard"},color,false,s);
+            }else{
+                self.precision_surface(c.bounds,Surface::Secondary,material);
+                label.width=label.width.saturating_sub((24*s)as u32);
+                self.app_label(label,if entry.is_some_and(|e|e.admin){b"Administrator"}else{b"Standard"},color,false,s);
+                self.app_symbol(Rect{x:c.bounds.right()-(28*s)as i32,width:(24*s)as u32,..c.bounds},b'v',color,s);
+            }
         } else {
             if selected || focused || !matches!(c.target, Target::Row(_)) {
-                self.precision_surface(
+                if selected { self.account_selection(c.bounds,material); }else{self.precision_surface(
                     c.bounds,
                     if selected || c.target == Target::Save {
                         Surface::Primary
@@ -395,12 +437,12 @@ impl DisplayDevice {
                         Surface::Secondary
                     },
                     material,
-                );
+                );}
             }
             let text: &[u8] = match c.target {
                 Target::Users => b"Users",
                 Target::Groups => b"Groups",
-                Target::New => b"+ Add",
+                Target::New => b"+",
                 Target::Back => b"Back",
                 Target::Row(i) => view.data.entries(view.state.tab)[i].name.as_bytes(),
                 Target::Rename => b"Edit names",
@@ -421,6 +463,10 @@ impl DisplayDevice {
                 let down = matches!(c.target, Target::ListDown | Target::DetailDown);
                 self.app_symbol(c.bounds, if down { b'v' } else { b'^' }, color, s);
             } else {
+                if matches!(c.target,Target::Users|Target::Groups|Target::New|Target::Delete) {
+                    let width=self.app_text_width(text,selected,s).min(label.width as usize);
+                    label.x+=(label.width as usize-width)as i32/2;label.width=width as u32;
+                }
                 self.app_label(
                     label,
                     text,

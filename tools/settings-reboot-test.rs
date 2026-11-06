@@ -83,7 +83,7 @@ fn main() {
     let pressure = store.create(b"settings-history-pressure", storage::object::ObjectType::Metadata,
         storage::object::Space::Personal, b"fixture").unwrap();
     let mut exhausted = false;
-    for _ in 0..64 {
+    for _ in 0..=storage::object::MAX_VERSIONS {
         if store.write(pressure, &[0x5a; IDENTITY_STATE_BYTES]) == Err(storage::object::ObjectError::InsufficientCapacity) {
             exhausted = true;
             break;
@@ -92,7 +92,7 @@ fn main() {
     assert!(exhausted, "Reproduce the previous append-only settings failure");
     // More than the entire global version table: a settings checkpoint must
     // not consume a new permanent history slot on every UI edit.
-    for i in 0..200 {
+    for i in 0..storage::object::MAX_VERSIONS * 2 {
         identity.update_speech_output(user.id, user.id, i % 2 == 0).unwrap();
         identity.update_user_theme(user.id,user.id,b"saved-theme").unwrap();
         store.checkpoint_identity(&identity.encode(), None).unwrap();
@@ -146,5 +146,5 @@ fn main() {
     assert_eq!(migrated.voice_profile(user.id).unwrap().output_voice,0);
     drop(store);
     std::fs::remove_file(path).unwrap();
-    println!("200 durable checkpoints and two independent media remounts passed");
+    println!("Durable checkpoints exceeding history capacity and two independent media remounts passed");
 }

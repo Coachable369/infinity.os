@@ -17,7 +17,11 @@ impl DisplayDevice {
         if diameter < 4 { return; }
         let edge = if checked {material.edge} else {(78,102,129)};
         let track=Material{fill:if checked {edge}else{material.fill},edge,..material};
-        let style=panel_recipe::template_style(Surface::Secondary,0,2,(diameter/2).min(40) as u8);
+        let mut style=panel_recipe::template_style(Surface::Secondary,0,2,(diameter/2).min(40) as u8);
+        if checked {
+            style.material=3;
+            style.fill=Some(0xff000000 | (u32::from(edge.0)<<16) | (u32::from(edge.1)<<8) | u32::from(edge.2));
+        }
         self.precision_surface_styled(rect,Surface::Secondary,track,style);
         let inset=(2*material.scale.max(1)) as u32;
         let size=diameter.saturating_sub(2*inset);

@@ -358,8 +358,14 @@ impl ConsoleRuntime {
         let data = self.accounts_directory();
         let geometry = self.accounts_layout(&data);
         match key {
+            ConsoleKey::Up | ConsoleKey::Down if self.accounts.role_open => {
+                self.accounts.focus=Target::RoleOption(matches!(key,ConsoleKey::Up));
+            }
             ConsoleKey::Escape => {
-                if self.accounts.mode != Mode::Browse {
+                if self.accounts.role_open {
+                    self.accounts.role_open=false;
+                    self.accounts.focus=Target::Role;
+                } else if self.accounts.mode != Mode::Browse {
                     self.accounts_cancel();
                 } else if self.accounts.detail {
                     self.accounts.detail = false;
@@ -519,6 +525,9 @@ impl ConsoleRuntime {
                 self.accounts_activate(target, &data);
                 self.settings_editing = self.accounts.mode != Mode::Browse;
                 self.accounts_changed();
+            } else if self.accounts.role_open {
+                self.accounts.role_open=false;
+                self.accounts_changed();
             }
         }
         true
@@ -558,6 +567,7 @@ impl ConsoleRuntime {
             return;
         }
         let entry = self.accounts.selected_entry(data).copied();
+        if !matches!(target,Target::Role|Target::RoleOption(_)){self.accounts.role_open=false;}
         match target {
             Target::Users | Target::Groups => {
                 self.accounts_secrets.clear();
@@ -597,6 +607,18 @@ impl ConsoleRuntime {
             }
             Target::Cancel => self.accounts_cancel(),
             Target::Save | Target::Confirm => self.accounts_save(),
+            Target::Role => {self.accounts.role_open=!self.accounts.role_open;}
+            Target::RoleOption(admin) => {
+                self.accounts.role_open=false;
+                if let Some(e)=entry.filter(|e|e.admin!=admin) {
+                    if let Some(group)=data.groups[..data.groups_len].iter().find(|g|g.handle.as_bytes()==b"administrators") {
+                        let (group,user)=(StableId(group.id),StableId(e.id));
+                        let request=if admin{AccountRequest::AddMember{group,user}}else{AccountRequest::RemoveMember{group,user}};
+                        let result=crate::runtime::manage_accounts(self.current_session,request);
+                        self.accounts_result(result);
+                    }
+                }
+            }
             Target::Enabled => {
                 if let Some(e) = entry {
                     let result = crate::runtime::manage_accounts(

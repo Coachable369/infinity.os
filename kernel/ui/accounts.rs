@@ -135,6 +135,8 @@ pub enum Target {
     Row(usize),
     Rename,
     Enabled,
+    Role,
+    RoleOption(bool),
     Password,
     Delete,
     Member(usize),
@@ -216,6 +218,7 @@ pub struct State {
     pub tab: Tab,
     pub selected: Option<Id>,
     pub detail: bool,
+    pub role_open: bool,
     pub mode: Mode,
     pub focus: Target,
     pub list_scroll: usize,
@@ -236,6 +239,7 @@ impl State {
             tab: Tab::Users,
             selected: None,
             detail: false,
+            role_open: false,
             mode: Mode::Browse,
             focus: Target::Users,
             list_scroll: 0,
@@ -255,6 +259,10 @@ impl State {
         data.entries(self.tab)
             .iter()
             .position(|e| Some(e.id) == self.selected)
+            .or_else(|| if self.selected.is_none() {
+                data.entries(self.tab).iter().position(|e|self.tab==Tab::Users && e.id==data.actor)
+                    .or_else(||(!data.entries(self.tab).is_empty()).then_some(0))
+            } else {None})
     }
     // ------------------------=
     // FUNC: selected_entry
@@ -282,6 +290,7 @@ impl State {
     // DESC: Clears form labels and all secret-length presentation on cancellation.
     // ------------------=
     pub fn cancel(&mut self) {
+        self.role_open = false;
         self.mode = Mode::Browse;
         self.name = Text::new();
         self.handle = Text::new();
@@ -414,7 +423,7 @@ impl Layout {
     // ------------------=
     pub fn hit(&self, point: Point) -> Option<Target> {
         self.controls[..self.count]
-            .iter()
+            .iter().rev()
             .find(|c| c.enabled && c.bounds.intersection(c.clip).contains(point))
             .map(|c| c.target)
     }
@@ -472,15 +481,15 @@ impl Layout {
 // ------------------=
 pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> Layout {
     let s = scale.max(1) as u32;
-    let gap = 8 * s;
+    let gap = 16 * s;
     let bar = 36 * s;
-    let footer_h = (48 * s).min(viewport.height);
+    let footer_h = (if state.feedback==Feedback::None {8*s}else{48*s}).min(viewport.height);
     let actions_h = if state.mode == Mode::Browse {
         0
     } else {
         (44 * s).min(viewport.height.saturating_sub(footer_h))
     };
-    let header_h = (44 * s).min(viewport.height.saturating_sub(footer_h + actions_h));
+    let header_h = (88 * s).min(viewport.height.saturating_sub(footer_h + actions_h));
     let body = Rect {
         x: viewport.x,
         y: viewport.y + header_h as i32,
@@ -495,13 +504,16 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
     let list_width = if narrow {
         body.width
     } else {
-        (body.width * 36 / 100).min(240 * s)
+        body.width * 39 / 100
     };
     let list = Rect {
         width: if narrow && show_detail { 0 } else { list_width },
         height: body.height.saturating_sub(bar + gap),
         ..body
     };
+    let title_top=(16+if narrow{44}else{0})*s;
+    let detail_top=((if state.mode==Mode::Browse {180}else{112})+if narrow{44}else{0})*s;
+    let detail_top=detail_top.min(viewport.height.saturating_sub(footer_h+actions_h+bar+gap+68*s));
     let details = if show_detail {
         Rect {
             x: if narrow {
@@ -509,13 +521,13 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             } else {
                 body.x + (list_width + gap) as i32
             },
-            y: body.y + (52 * s) as i32,
+            y: viewport.y + detail_top as i32,
             width: if narrow {
                 body.width
             } else {
-                body.width.saturating_sub(list_width + gap)
+                body.width.saturating_sub(list_width + gap + 16*s)
             },
-            height: body.height.saturating_sub(52 * s + bar + gap),
+            height: viewport.height.saturating_sub(detail_top+footer_h+actions_h+bar+gap),
         }
     } else {
         Rect::default()
@@ -532,8 +544,8 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             height: footer_h,
         },
         title: Rect {
-            y: body.y,
-            height: 52 * s,
+            y: viewport.y + title_top as i32,
+            height: detail_top.saturating_sub(title_top+32*s),
             ..details
         },
         narrow,
@@ -545,9 +557,9 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
     let compact = narrow && show_detail;
     let strip = if narrow { viewport.width } else { list_width };
     let segment = if compact { strip.saturating_sub(2 * gap) / 3 }
-        else { strip.saturating_sub(gap) / 2 };
+        else { strip / 2 };
     for (i, target) in [Target::Users, Target::Groups].into_iter().enumerate() {
-        out.add(target, Rect { x: viewport.x + (i as u32 * (segment + gap)) as i32,
+        out.add(target, Rect { x: viewport.x + (i as u32 * (segment + if compact {gap}else{0})) as i32,
             y: viewport.y, width: segment, height: bar.min(header_h) }, viewport,
             state.mode == Mode::Browse);
     }
@@ -556,12 +568,12 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             width: segment, height: bar.min(header_h) }
     } else {
         Rect { x: list.x, y: body.bottom() - bar as i32,
-            width: (72 * s).min(list.width), height: bar }
+            width: (36 * s).min(list.width), height: bar }
     };
     out.add(third, toolbar, viewport, state.mode == Mode::Browse
         && (third != Target::New || data.administrator));
     if list.width > 0 {
-        let row_h = 52 * s;
+        let row_h = 64 * s;
         out.list_max =
             (data.entries(state.tab).len() as u32 * row_h).saturating_sub(list.height) as usize;
         let scroll = state.list_scroll.min(out.list_max);
@@ -572,7 +584,7 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
                     x: list.x,
                     y: list.y + (i as u32 * row_h) as i32 - scroll as i32,
                     width: list.width,
-                    height: 50 * s,
+                    height: 60 * s,
                 },
                 list,
                 state.mode == Mode::Browse,
@@ -619,13 +631,23 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             }
             Mode::Delete => {}
             Mode::Browse => {
+                let count = if state.tab == Tab::Users {
+                    data.groups_len
+                } else {
+                    data.users_len
+                };
+                for i in 0..count {
+                    targets[n] = Target::Member(i);
+                    enabled[n] = data.administrator;
+                    n += 1;
+                }
                 for (target, on) in [
-                    (Target::Rename, can_edit && !protected),
-                    (Target::Password, can_edit && state.tab == Tab::Users),
                     (
                         Target::Enabled,
                         data.administrator && state.tab == Tab::Users,
                     ),
+                    (Target::Rename, can_edit && !protected),
+                    (Target::Password, can_edit && state.tab == Tab::Users),
                     (
                         Target::Delete,
                         data.administrator
@@ -644,35 +666,23 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
                     enabled[n] = on;
                     n += 1;
                 }
-                let count = if state.tab == Tab::Users {
-                    data.groups_len
-                } else {
-                    data.users_len
-                };
-                for i in 0..count {
-                    targets[n] = Target::Member(i);
-                    enabled[n] = data.administrator;
-                    n += 1;
-                }
             }
         }
-        let paired = details.width >= 320*s && targets[..n].starts_with(&[Target::Rename,Target::Password]);
         let row_height = |target| if matches!(target,Target::Field(_)) {68*s} else {44*s};
-        let mut total:u32=targets[..n].iter().map(|&t|row_height(t)).sum();
-        if paired {total-=44*s;}
-        if targets[..n].contains(&Target::Member(0)) {total+=32*s;}
+        let total:u32=targets[..n].iter().map(|&t|row_height(t)).sum();
+
         out.detail_max=total.saturating_sub(details.height) as usize;
         let mut y=details.y-state.detail_scroll.min(out.detail_max) as i32;
         for i in 0..n {
             let t=targets[i];
-            if t==Target::Member(0){y+=(32*s) as i32;}
+
             let h=row_height(t);
             let action_width=(details.width.saturating_sub(gap)/2).min(160*s);
             let width=if matches!(t,Target::Rename|Target::Password|Target::Delete) {action_width}
-                else {details.width.min(450*s)};
-            let x=details.x+if paired && i==1 {(action_width+gap) as i32}else{0};
+                else {details.width};
+            let x=details.x;
             out.add(t,Rect{x,y,width,height:h-4*s},details,enabled[i]);
-            if !paired || i!=0 {y+=h as i32;}
+            y+=h as i32;
         }
         if out.detail_max > 0 {
         for (i, target) in [Target::DetailUp, Target::DetailDown]
@@ -697,6 +707,16 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
             );
         }
     }
+    }
+    if show_detail && state.mode==Mode::Browse && state.tab==Tab::Users && out.title.height>=100*s {
+        let role=Rect{x:out.title.x+(96*s)as i32,y:out.title.y+(68*s)as i32,
+            width:out.title.width.saturating_sub(96*s).min(220*s),height:32*s};
+        out.add(Target::Role,role,viewport,data.administrator);
+        if state.role_open {
+            for (i,admin) in [true,false].into_iter().enumerate() {
+                out.add(Target::RoleOption(admin),Rect{y:role.bottom()+(i as u32*32*s)as i32,..role},viewport,data.administrator);
+            }
+        }
     }
     if state.mode != Mode::Browse {
         let left = if details.width > 0 {
@@ -746,6 +766,28 @@ pub fn layout(viewport: Rect, state: &State, data: &Directory, scale: usize) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: initial_selection_and_role_menu_share_authorized_geometry
+    // DESC: Opens the authenticated account without fixture preselection and routes menu hits above underlying membership controls.
+    // ------------------=
+    #[test]
+    fn initial_selection_and_role_menu_share_authorized_geometry(){
+        let mut data=Directory::empty();data.available=true;data.administrator=true;
+        data.users_len=2;data.users[0].id=[1;16];data.users[1].id=[2;16];data.actor=[2;16];
+        let mut state=State::new();
+        assert_eq!(state.selected_index(&data),Some(1));
+        let viewport=Rect{x:0,y:0,width:1000,height:650};
+        assert!(layout(viewport,&state,&data,1).details.width>0);
+        state.role_open=true;
+        let geometry=layout(viewport,&state,&data,1);
+        for admin in [true,false]{
+            let control=geometry.controls[..geometry.count].iter().find(|c|c.target==Target::RoleOption(admin)).unwrap();
+            assert_eq!(geometry.hit(Point{x:control.bounds.x+1,y:control.bounds.y+1}),Some(Target::RoleOption(admin)));
+        }
+        data.administrator=false;
+        let geometry=layout(viewport,&state,&data,1);
+        assert!(geometry.controls[..geometry.count].iter().filter(|c|matches!(c.target,Target::Role|Target::RoleOption(_))).all(|c|!c.enabled));
+    }
     // ------------------------=
     // FUNC: uncertain_commit_disables_every_account_control
     // DESC: Keeps an ambiguous durable result read-only even when a stale directory still contains administrator authority.

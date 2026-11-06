@@ -17,3 +17,12 @@ native, with the hand replacing diagonal arrow cursors at all four corners.
 
 Monitor cards and history use existing Eclipse card surfaces and typography.
 Never derive CPU load from runnable task count or RAM utilization from app budgets.
+
+Accounts reuse the exact portrait from `accounts-media-reference.png`, packaged
+by `tools/build-account-avatar.py`. The two-pane workspace owns a joined 36px
+segment strip, 64px identity rows, an 80px detail portrait and right-aligned
+52x26 toggles. The selected authenticated account is visible on first entry.
+Role selection uses the real Administrators membership transaction, including
+last-administrator protections. The Settings navigation and compositor-owned
+outer frame remain shared. Membership rows reflect actual groups, not fictional
+accounts or unenforced permissions from the concept board.

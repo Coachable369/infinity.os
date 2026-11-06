@@ -2313,9 +2313,13 @@ impl SystemLayout {
         let mut viewport_height = authored_content
             .map(|value| value.height as usize)
             .unwrap_or(height.saturating_sub(title_height + 116 * self.scale));
+        if section==2 {
+            viewport_top=authored_content.map(|v|v.y.max(0)as usize).unwrap_or(top+title_height)+16*self.scale;
+            viewport_height=(top+height).saturating_sub(viewport_top+20*self.scale);
+        }
         // The content panel contains fixed headings and a separately scrolling row area.
         {
-            if let Some((console, _, _, _)) = authored {
+            if let Some((console, _, _, _)) = authored.filter(|_|section!=2) {
                 let bottom = viewport_top + viewport_height;
                 for role in [
                     crate::ui::installer_template::InstallerTemplateRole::Title,

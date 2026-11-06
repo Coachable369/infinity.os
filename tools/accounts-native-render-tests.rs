@@ -57,8 +57,7 @@ pub(super) fn fixture() -> View {
             members: if i == 0 { 1 } else { 3 },
         };
     }
-    let mut state = State::new();
-    state.select(&data, 0);
+    let state = State::new();
     View { state, data }
 }
 
@@ -116,10 +115,18 @@ pub(super) fn verify() {
             .settings_window_geometry_for_section(window, 2)
             .viewport;
         let mut view = fixture();
+        if width==1600 {
+            let mut fresh=fixture();fresh.data.users_len=1;fresh.data.groups_len=1;
+            fresh.data.users[0].name=Text::from_bytes(b"Jonathan");fresh.state=State::new();
+            let pixels=frame(width,height,window,&fresh,None);
+            let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();
+            for pixel in pixels{ppm.extend_from_slice(&[(pixel>>16)as u8,(pixel>>8)as u8,pixel as u8]);}
+            std::fs::write("build/accounts-first-open-1600.ppm",ppm).unwrap();
+        }
         let first = frame(width, height, window, &view, None);
         assert!(first.iter().any(|p| *p != 0x00182739));
         let mut toggled = view;
-        toggled.state.focus = Target::Password;
+        toggled.state.focus = Target::Role;
         let changed = frame(width, height, window, &toggled, None);
         assert!(first.iter().zip(&changed).filter(|(a, b)| a != b).count() > 10);
         let clip = Region {
