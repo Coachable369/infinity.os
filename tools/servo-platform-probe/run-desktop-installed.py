@@ -577,7 +577,8 @@ class Guest(base.Guest):
             capture = self.audio_capture.resolve()
             capture.relative_to(ROOT / "build")
             command += ["-audiodev", f"wav,id=audio,out.frequency=48000,path={capture}",
-                        "-device", "intel-hda", "-device", "hda-duplex,audiodev=audio"]
+                        "-device", "intel-hda", "-device",
+                        ("hda-output" if getattr(self, "playback_only", False) else "hda-duplex") + ",audiodev=audio"]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log)
         deadline = time.monotonic() + 20
         while not qmp.exists():

@@ -16,6 +16,8 @@ import subprocess
 import sys
 import time
 import zlib
+import math
+import struct
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -347,6 +349,39 @@ def infinitycode(guest, native, python):
 
 
 # ------------------------=
+# FUNC: recorded_tone
+# DESC: Measures the generated 440 Hz fixture at the emulated speaker after the file was activated.
+# ------------------=
+def recorded_tone(capture, offset):
+    data = capture.read_bytes()
+    if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return None
+    channels, rate = struct.unpack_from("<HI", data, 22)
+    if channels not in (1, 2) or struct.unpack_from("<H", data, 34)[0] != 16:
+        return None
+    chunk = data.find(b"data", 36, 128)
+    if chunk < 0:
+        return None
+    base = chunk + 8
+    stride = channels * 2
+    start = base + max(0, (offset - base + stride - 1) // stride) * stride
+    count = rate // 50
+    reference = [(math.cos(2 * math.pi * 440 * i / rate),
+                  math.sin(2 * math.pi * 440 * i / rate)) for i in range(count)]
+    for position in range(start, len(data) - count * stride + 1, count * stride):
+        samples = struct.unpack_from("<" + "h" * (count * channels), data, position)[::channels]
+        power = sum(sample * sample for sample in samples)
+        if power < count * 80 * 80:
+            continue
+        cosine = sum(sample * pair[0] for sample, pair in zip(samples, reference))
+        sine = sum(sample * pair[1] for sample, pair in zip(samples, reference))
+        ratio = 2 * (cosine * cosine + sine * sine) / (count * power)
+        if ratio > 0.75:
+            return dict(rate=rate, rms=(power / count) ** 0.5, signal_fraction=ratio)
+    return None
+
+
+# ------------------------=
 # FUNC: media_player
 # DESC: Double-clicks a real MP4 in File Navigator and measures decoded red video pixels in the new native window.
 # ------------------=
@@ -368,13 +403,11 @@ def media_player(guest, native, python):
         if match:break
     else:raise AssertionError("Media fixture missing from Documents")
     previous=python.snapshot(guest)[2]
-    px,py=point
-    width,height=guest.state()[11:13]
-    a=lambda name,value:{"type":"abs","data":{"axis":name,"value":value}}
+    offset=guest.audio_capture.stat().st_size
     button=lambda down:{"type":"btn","data":{"button":"left","down":down}}
     # Send both clicks in guest input order, without unrelated pointer movement.
     for _ in range(2):
-        guest.qmp("input-send-event",{"events":[a("x",round(px*32767/(width-1))),a("y",round(py*32767/(height-1))),button(True)]})
+        guest.qmp("input-send-event",{"events":[button(True)]})
         time.sleep(.07)
         guest.qmp("input-send-event",{"events":[button(False)]})
         time.sleep(.08)
@@ -388,9 +421,10 @@ def media_player(guest, native, python):
                 count+=r>200 and g<32 and b<32
         return count>=140
     capture=wait(guest,python,lambda:screenshot(guest,"playing-mp4"),red_frame,120)
+    tone=wait(guest,python,lambda:recorded_tone(guest.audio_capture,offset),bool,45)
     native.ui.click(guest,*close_point(guest,window))
     receipt=finished(guest,python,previous)
-    return dict(double_click=True,video_frame=capture["path"],window=window,exit=receipt)
+    return dict(double_click=True,video_frame=capture["path"],speaker_tone=tone,window=window,exit=receipt)
 
 
 # ------------------------=
@@ -470,7 +504,8 @@ def main():
         if args.media_player_only:
             shutil.copyfile(ROOT/"tools/native-python/media-fixtures/clip.mp4",fixtures/"clip.mp4")
             proof["fixtures"]=pip.seed(guest,helper,fixtures,"media")
-            guest.audio_capture=destination/"speaker.wav"
+            guest.audio_capture=work/"speaker.wav"
+            guest.playback_only=True
             guest.boot(False)
             guest.authenticate()
             proof["media_player"]=media_player(guest,native,python)

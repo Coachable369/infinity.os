@@ -55,11 +55,12 @@ fn fixture_path(path: &str) -> std::path::PathBuf {
 fn first_owner(store: &mut ObjectStore<Disk>) -> ObjectId {
     let identity = store.resolve(b"/system/identity/state").unwrap();
     let length = store.metadata(identity).unwrap().logical_size as usize;
-    assert!([4096, 5632, 10768, 12960].contains(&length));
+    assert!([4096, 5632, 10768, 12960, 14400].contains(&length));
     let mut bytes = vec![0; length];
     assert_eq!(store.read_identity_state(identity, &mut bytes).unwrap(), length);
     assert_eq!(&bytes[..8], b"INFIDN1\0");
-    assert!((1..=4).contains(&u16::from_le_bytes(bytes[8..10].try_into().unwrap())));
+    let version=u16::from_le_bytes(bytes[8..10].try_into().unwrap());
+    assert!(matches!((version,length),(1,4096)|(2,5632)|(3,10768)|(4|5,12960)|(6,14400)));
     assert_eq!(u16::from_le_bytes(bytes[10..12].try_into().unwrap()) as usize, length);
     let checksum = bytes[..length - 4].iter().fold(0x811c9dc5u32, |sum, byte| (sum ^ *byte as u32).wrapping_mul(0x01000193));
     assert_eq!(u32::from_le_bytes(bytes[length - 4..].try_into().unwrap()), checksum);
@@ -108,7 +109,7 @@ fn seed_inputs(store: &mut ObjectStore<Disk>, directory: &Path, owner: ObjectId,
         assert!(bytes.len() <= 64 * 1024);
         let label = format!("pip-fixture-{index}");
         let existing = (0..256).filter_map(|i| store.query_nth(ObjectQueryRequest {
-            kind: Some(ObjectType::Text), space: Some(Space::Personal), include_tombstones: false,
+            kind: Some(if phase=="media"{ObjectType::Blob}else{ObjectType::Text}), space: Some(Space::Personal), include_tombstones: false,
         }, i)).find(|item| &item.display_name[..item.display_name_length as usize] == label.as_bytes());
         let path = if matches!(phase, "tk" | "data") { format!("/home/default/documents/{phase}/{name}") }
             else { format!("/home/default/documents/{name}") };

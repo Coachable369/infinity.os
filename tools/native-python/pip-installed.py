@@ -140,7 +140,7 @@ def seed(guest, helper, fixtures, phase):
     result = subprocess.run([str(helper), "seed", str(guest.disk), str(fixtures), phase, guest.arch],
                             check=True, capture_output=True, text=True)
     receipt = json.loads(result.stdout)
-    expected = 3 if phase in ("bundled", "bundled-import") else 4
+    expected = 1 if phase == "media" else 3 if phase in ("bundled", "bundled-import") else 4
     assert receipt["seeded_inputs"] == expected and not receipt["package_state_changed"]
     assert receipt["reused_phase"] == phase
     return receipt
