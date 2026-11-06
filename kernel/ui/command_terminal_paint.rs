@@ -55,3 +55,5 @@ pub fn content(canvas:&mut impl Canvas,s:&State,g:Layout,caret:bool) {
     }
     if s.max_scroll()>0 {canvas.rail(g.track,p.color(1));canvas.rail(g.thumb(s),if s.scroll_drag{p.color(5)}else{p.color(6)});}
 }
+
+#[path="disk_paint.rs"] pub mod disk;

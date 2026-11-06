@@ -267,3 +267,7 @@ clean = false
 domain = "studio"
 command = ["python3", "tools/studio-choice-proof.py"]
 clean = false
+
+[profiles.disk-tests]
+command = ["sh", "tools/disk-overview-test.sh"]
+clean = false

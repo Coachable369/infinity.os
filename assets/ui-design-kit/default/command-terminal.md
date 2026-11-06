@@ -66,6 +66,8 @@ that do not grant redistribution in InfinityOS. No substitute is labeled SF Mono
 
 ## Disk explorer overview
 
+The current layout and navigation contract is [ANSI usage wheel](disk-explorer.md).
+
 Reuse the terminal's packaged monospace font and sixteen ANSI colors. The disk
 outline is a text-cell diagram, with physical LBA positions (including gaps), a
 bright selected partition, and a separate measured pool allocation bar. Partition

@@ -14,7 +14,7 @@ impl ConsoleRuntime {
     fn disk_refresh(&self) {
         terminal::mutate(|s| {
             let view = &mut s.disk;
-            view.count = 0;
+            view.begin_listing();
             view.used = 0;
             view.pool_capacity = 0;
             if let Ok((used, total, _)) = storage::storage_usage() {
@@ -33,22 +33,17 @@ impl ConsoleRuntime {
                     }
                 }
             } else if view.partition.container {
-                if let Ok((used, _, _)) = storage::storage_usage() {
-                    view.used = u64::from(used) * 4096;
-                }
                 let mut path = [0; 96];
-                for i in 0..storage::object::NAMESPACE_CAPACITY {
+                for i in 0..storage::object::PUBLIC_NAMESPACE_CAPACITY {
                     let Some((n, id)) = storage::namespace_entry(i, &mut path) else {
                         break;
                     };
                     let Ok((m, _)) = storage::object_inspect_path(&path[..n]) else {
                         continue;
                     };
-                    if m.space == Space::Personal
-                        && m.kind != ObjectType::NamespaceNode
-                        && m.owner.0 == self.current_user.0
+                    if m.space != Space::Personal || m.owner.0 == self.current_user.0
                     {
-                        view.push(&path[..n], u64::from(m.logical_size), 0, id.0, false);
+                        view.add_path(&path[..n], if m.kind == ObjectType::NamespaceNode { 0 } else { u64::from(m.logical_size) }, id.0, m.kind == ObjectType::NamespaceNode);
                     }
                 }
             } else {
@@ -56,10 +51,10 @@ impl ConsoleRuntime {
                 match storage::visit_partition_files(
                     partition.first,
                     partition.bytes,
-                    |path, bytes| view.push(path, bytes, 0, [0; 16], false),
+                    |path, bytes| view.add_path(path, bytes, [0; 16], false),
                 ) {
-                    Ok(()) => view.message = b"Read-only partition. Files sorted by size.",
-                    Err(_) => view.message = b"Directory unavailable or unsupported filesystem.",
+                    Ok(()) => {},
+                    Err(_) => { view.incomplete = true; view.message = b"Partial scan or unsupported filesystem; totals may be incomplete."; },
                 }
             }
             if view.depth != 0 {
@@ -183,21 +178,9 @@ impl ConsoleRuntime {
                 }
                 ConsoleKey::Home if !v.inspect => v.selected = 0,
                 ConsoleKey::End if !v.inspect => v.selected = v.count.saturating_sub(1),
-                ConsoleKey::Enter | ConsoleKey::Right if depth == 0 => {
-                    if let Some(p) = row {
-                        v.partition = p;
-                        v.depth = 1;
-                        v.selected = 0;
-                        v.message = b"";
-                        refresh = true;
-                    }
-                }
-                ConsoleKey::Enter | ConsoleKey::Right if depth == 1 && row.is_some() => {
-                    v.inspect = true
-                }
-                ConsoleKey::Escape | ConsoleKey::Left if v.inspect => v.inspect = false,
+                ConsoleKey::Enter | ConsoleKey::Right => { refresh = v.enter(); }
                 ConsoleKey::Delete | ConsoleKey::Character(b'd' | b'D')
-                    if depth == 1 && v.partition.container && row.is_some() =>
+                    if depth == 1 && v.partition.container && row.is_some_and(|r| !r.directory) =>
                 {
                     v.confirm = true
                 }
@@ -205,14 +188,8 @@ impl ConsoleRuntime {
                     v.message = b"";
                     refresh = true;
                 }
-                ConsoleKey::Escape | ConsoleKey::Left if depth != 0 => {
-                    v.depth = 0;
-                    v.selected = 0;
-                    v.inspect = false;
-                    v.message = b"";
-                    refresh = true;
-                }
-                ConsoleKey::Escape | ConsoleKey::Character(b'q' | b'Q') => v.active = false,
+                ConsoleKey::Escape | ConsoleKey::Left => { refresh = v.back(); }
+                ConsoleKey::Character(b'q' | b'Q') => v.active = false,
                 _ => {}
             }
             s.changed();
