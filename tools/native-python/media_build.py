@@ -36,8 +36,11 @@ def codec_libraries(arch, llvm, newlib):
     flags += ["-mno-red-zone"] if arch == "x86_64" else ["-mno-outline-atomics", "-mstrict-align"]
     # Configure only link-probes newlib. The final application links the real
     # InfinityOS implementations from sdk/compiler, never these probe addresses.
-    probes = " ".join("-Wl,--defsym=" + name + "=0x1000" for name in
-                      "_sbrk _read _write _close _lseek _fstat _isatty _exit _kill _getpid".split())
+    syscall_names = "_sbrk _read _write _close _lseek _fstat _isatty _exit _kill _getpid".split()
+    if arch == "x86_64":
+        # This target's newlib references the unprefixed forms from sdk/compiler.
+        syscall_names += [name[1:] for name in syscall_names if name != "_exit"]
+    probes = " ".join("-Wl,--defsym=" + name + "=0x1000" for name in syscall_names)
     with (out / "codec-build.log").open("w") as log:
         if not (out / "config.h").is_file() or (out / "config.h").stat().st_mtime < pathlib.Path(__file__).stat().st_mtime:
             args = [str(source/"configure"), f"--arch={arch}", "--target-os=none", "--enable-cross-compile",
