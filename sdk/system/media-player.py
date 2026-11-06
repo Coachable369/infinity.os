@@ -4,7 +4,7 @@ import time
 import tkinter as tk
 import _infinity_media as codec
 
-NAVY, PANEL, BLUE, LIGHT, MUTED = "#081426", "#132441", "#155be6", "#f4f8ff", "#a7bddc"
+NAVY, PANEL, BLUE, LIGHT, MUTED = "#090F26", "#101B3A", "#3E6FFF", "#FFFFFF", "#A7BDDC"
 
 # ------------------------=
 # FUNC: timestamp
@@ -24,8 +24,8 @@ class Player:
         self.root = root
         root.title("Media Player")
         root.configure(bg=NAVY)
-        root.geometry("580x530")
-        root.minsize(430, 450)
+        root.geometry("640x600")
+        root.minsize(480, 500)
         self.raw = self.audio = self.video = self.pending_video = None
         self.pcm = bytearray()
         self.target = self.duration = self.position = 0.0
@@ -39,35 +39,44 @@ class Player:
         self.status = tk.StringVar(value="Choose a file from your library")
         head = tk.Frame(root, bg=NAVY)
         head.pack(fill="x", padx=20, pady=10)
+        self.button(head, "Library", self.library).pack(side="right", padx=(12, 0))
         tk.Label(head, textvariable=self.title, anchor="w", font=("Inter", 15, "bold"),
                  bg=NAVY, fg=LIGHT).pack(side="left", expand=True, fill="x")
-        self.button(head, "Library", self.library).pack(side="right")
-        self.screen = tk.Label(root, bg=NAVY)
-        self.screen.pack(expand=True, fill="both")
-        self.art = tk.PhotoImage(file="/System/media-cover.png")
-        self.screen.configure(image=self.art)
-        self.note = tk.Label(root, textvariable=self.status, bg=NAVY, fg=MUTED)
-        self.note.pack()
-        self.slider = tk.Scale(root, from_=0, to=1, resolution=.1, orient="horizontal",
+        # Reserve the transport before the expandable artwork in Tk's pack order.
+        controls = tk.Frame(root, bg=NAVY)
+        controls.pack(side="bottom", fill="x", padx=24, pady=(8, 16))
+        self.note = tk.Label(controls, textvariable=self.status, bg=NAVY, fg=MUTED,
+                             font=("Inter", 11), wraplength=420, justify="center")
+        self.note.pack(fill="x", pady=(0, 8))
+        self.slider = tk.Scale(controls, from_=0, to=1, resolution=.1, orient="horizontal",
                                showvalue=False, bg=NAVY, fg=LIGHT, troughcolor=PANEL,
                                activebackground=BLUE, highlightthickness=0)
-        self.slider.pack(fill="x", padx=24)
+        self.slider.pack(fill="x")
         self.slider.bind("<ButtonPress-1>", lambda e: setattr(self, "dragging", True))
         self.slider.bind("<ButtonRelease-1>", self.drop_seek)
         self.volume = tk.IntVar(value=85)
-        self.time = tk.Label(root, text="0:00 / 0:00", bg=NAVY, fg=MUTED)
+        self.time = tk.Label(controls, text="0:00 / 0:00", bg=NAVY, fg=MUTED)
         self.time.pack()
-        bar = tk.Frame(root, bg=NAVY)
+        bar = tk.Frame(controls, bg=NAVY)
         bar.pack(pady=(4, 12))
         self.button(bar, "Previous", lambda: self.step(-1)).pack(side="left", padx=5)
         self.transport = self.button(bar, "Play", self.toggle, primary=True)
         self.transport.pack(side="left", padx=5)
         self.button(bar, "Next", lambda: self.step(1)).pack(side="left", padx=5)
-        volume = tk.Frame(root, bg=NAVY)
+        volume = tk.Frame(controls, bg=NAVY)
         volume.pack(pady=(0, 8))
         tk.Label(volume, text="Volume", fg=MUTED, bg=NAVY).pack(side="left", padx=8)
         tk.Scale(volume, from_=0, to=100, variable=self.volume, length=140, orient="horizontal",
                  showvalue=False, bg=NAVY, fg=LIGHT, troughcolor=PANEL, highlightthickness=0).pack(side="left")
+        viewport = tk.Frame(root, bg=NAVY, width=512, height=288)
+        viewport.pack(fill="both", expand=True, padx=24, pady=8)
+        viewport.pack_propagate(False)
+        self.screen = tk.Label(viewport, bg=NAVY, borderwidth=0)
+        self.screen.pack(fill="both", expand=True)
+        original = tk.PhotoImage(file="/System/media-cover.png")
+        factor = max(1, (original.width()+287)//288, (original.height()+239)//240)
+        self.art = original.subsample(factor, factor)
+        self.screen.configure(image=self.art)
         root.bind("<space>", lambda e: self.toggle())
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.scan()
@@ -176,7 +185,7 @@ class Player:
             self.duration = max((a or (0,0))[1], (v or (0,0))[1])
             self.slider.configure(to=max(1, self.duration))
             self.position = self.target = 0
-            self.play()
+            self.play(fresh=True)
         except (ValueError, OSError, MemoryError) as exc:
             self.status.set(str(exc))
 
@@ -184,15 +193,15 @@ class Player:
     # FUNC: play
     # DESC: Restarts the playback clock from the selected position and schedules the first frame.
     # ------------------=
-    def play(self):
+    def play(self, fresh=False):
         if not self.audio and not self.video:
             self.library()
             return
         self.pending_video = None
         self.pcm.clear()
         self.eof = False
-        self.audio_done = self.audio is None
-        self.video_done = self.video is None
+        self.audio_done = not self.audio
+        self.video_done = not self.video
         self.wait_start = None
         if self.position >= self.duration and self.duration > 0:
             self.position = 0
@@ -200,7 +209,7 @@ class Player:
         self.submitted = self.chunk_start = self.position
         try:
             for stream in (self.audio, self.video):
-                if stream:
+                if stream and not fresh:
                     codec.seek(stream, self.position)
         except ValueError as exc:
             self.status.set(str(exc))

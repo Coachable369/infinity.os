@@ -41,6 +41,15 @@ fn main() {
     assert_eq!(runtime::task_manager::TaskManager::native_cooldown_ns(1000,100),0);
     let mut execution = runtime::execution::ExecutionManager::new();
     let mut tasks = runtime::task_manager::TaskManager::new();
+    tasks.sample_system(1_000_000_000,1_000_000_000,4,8<<30,3<<30);
+    tasks.sample_system(2_000_000_000,3_000_000_000,4,8<<30,4<<30);
+    assert_eq!(tasks.system.cpu_percent,50);
+    assert_eq!(tasks.system.ram_used,4<<30);
+    assert_eq!(tasks.history_count,2);
+    assert_eq!(tasks.history[59],tasks.system);
+    tasks.sample_system(3_000_000_000,3_000_000_000,4,8<<30,4<<30);
+    assert_eq!(tasks.system.cpu_percent,0);
+
     let light = tasks.launch(&mut execution, IMAGE_TEXT_EDITOR).unwrap();
     let heavy = tasks.launch(&mut execution, IMAGE_FILE_NAVIGATOR).unwrap();
     let mut budget = execution.get(light).unwrap().budget;

@@ -869,12 +869,6 @@ impl<D: BlockDevice> ObjectStore<D> {
         let motd=self.create_record(b"motd",ObjectType::Text,Space::System)?;
         self.write_record(motd,b"Infinity Command Window\nType help or describe what you want.")?;
         self.attach_record(b"/System/motd",motd)?;
-        let hello = self.create_record(b"hello.c", ObjectType::Text, Space::Personal)?;
-        self.write_record(hello, include_bytes!("../../sdk/c/examples/hello.c"))?;
-        self.attach_record(b"/home/default/documents/hello.c", hello)?;
-        let python = self.create_record(b"hello.py", ObjectType::Text, Space::Personal)?;
-        self.write_record(python, include_bytes!("../../sdk/python/examples/hello.py"))?;
-        self.attach_record(b"/home/default/documents/hello.py", python)?;
         #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         self.seed_python_examples(crate::runtime::native_python_package::EXAMPLE_EXTENSION,
             crate::runtime::native_python_package::LICENSE)?;
@@ -889,12 +883,12 @@ impl<D: BlockDevice> ObjectStore<D> {
             if extension_bytes.len() > MAX_CONTENT || license_bytes.len() > 512 * 1024 {
                 return Err(ObjectError::InsufficientCapacity);
             }
-            let example = self.create_record(b"native_demo.py", ObjectType::Text, Space::Personal)?;
+            let example = self.create_record(b"native_demo.py", ObjectType::Text, Space::System)?;
             self.write_record(example, include_bytes!("../../sdk/python/examples/native_demo.py"))?;
-            self.attach_record(b"/home/default/documents/native_demo.py", example)?;
-            let extension = self.create_record(b"infinity_native_test.so", ObjectType::Blob, Space::Personal)?;
+            self.attach_record(b"/System/UserTemplate/native_demo.py", example)?;
+            let extension = self.create_record(b"infinity_native_test.so", ObjectType::Blob, Space::System)?;
             self.write_record(extension, extension_bytes)?;
-            self.attach_record(b"/home/default/documents/infinity_native_test.so", extension)?;
+            self.attach_record(b"/System/UserTemplate/infinity_native_test.so", extension)?;
             let license = self.create_record(b"python-license", ObjectType::Text, Space::System)?;
             self.write_record_limit(license, license_bytes, 512 * 1024)?;
             self.attach_record(b"/system/licenses/python", license)?;
@@ -1980,7 +1974,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     fn ensure_user_home_record(&mut self, owner: ObjectId, home: user_home::Path) -> Result<user_home::Path, ObjectError> {
             let media=home.child(b"media").ok_or(ObjectError::InvalidPath)?;
-            let seed=self.resolve(media.as_bytes()).is_err();
+            let marker=home.child(b".template-version").ok_or(ObjectError::InvalidPath)?;
+            let seed=self.resolve(marker.as_bytes()).is_err();
             for child in [b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"]{
                 let path=if child.is_empty(){home}else{home.child(child).ok_or(ObjectError::InvalidObject)?};
                 if let Some(entry)=self.state.entries.iter().find(|e|e.used&&e.path()==path.as_bytes()){
@@ -1994,6 +1989,17 @@ impl<D: BlockDevice> ObjectStore<D> {
                 self.attach_record(path.as_bytes(),id)?;
             }
         if seed {
+            for (name,data) in [
+                (b"hello.c".as_slice(),include_bytes!("../../sdk/user-template/documents/hello.c").as_slice()),
+                (b"hello.py",include_bytes!("../../sdk/user-template/documents/hello.py").as_slice()),
+                (b"native_demo.py",include_bytes!("../../sdk/user-template/documents/native_demo.py").as_slice()),
+                (b"profile-example.json",include_bytes!("../../sdk/user-template/documents/profile-example.json").as_slice()),
+            ] {
+                self.seed_home_file(owner,home,b"documents",name,data,ObjectType::Text)?;
+            }
+            #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            self.seed_home_file(owner,home,b"documents",b"infinity_native_test.so",
+                crate::runtime::native_python_package::EXAMPLE_EXTENSION,ObjectType::Blob)?;
             for (name,folder,data) in [
                 (b"Chime.wav".as_slice(),b"music".as_slice(),include_bytes!("../../sdk/system/Infinity-Chime.wav").as_slice()),
                 (b"Melody.mp3",b"music",include_bytes!("../../sdk/system/Infinity-Melody.mp3").as_slice()),
@@ -2007,8 +2013,23 @@ impl<D: BlockDevice> ObjectStore<D> {
                 self.attach_record(destination.as_bytes(),id)?;
                 self.attach_record(media.child(name).ok_or(ObjectError::InvalidPath)?.as_bytes(),id)?;
             }
+            self.seed_home_file(owner,home,b"",b".template-version",b"1\n",ObjectType::Text)?;
         }
         Ok(home)
+    }
+
+    // ------------------------=
+    // FUNC: seed_home_file
+    // DESC: Copies a template into an owner-private object without replacing existing edits.
+    // ------------------=
+    fn seed_home_file(&mut self,owner:ObjectId,home:user_home::Path,folder:&[u8],name:&[u8],data:&[u8],kind:ObjectType)->Result<(),ObjectError>{
+        let parent=if folder.is_empty(){home}else{home.child(folder).ok_or(ObjectError::InvalidPath)?};
+        let path=parent.child(name).ok_or(ObjectError::InvalidPath)?;
+        if self.resolve(path.as_bytes()).is_ok(){return Ok(());}
+        let id=self.create_record(name,kind,Space::Personal)?;
+        let slot=self.object_index(id)?;self.state.objects[slot].owner=owner;
+        self.write_record_limit(id,data,MAX_DOWNLOAD_CONTENT)?;
+        self.attach_record(path.as_bytes(),id)
     }
 
     // ------------------------=

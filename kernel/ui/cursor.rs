@@ -140,3 +140,23 @@ pub fn sample(style: usize, x: usize, y: usize, size: usize) -> [u8; 4] {
     let p = SPRITES[style];
     [p[i], p[i + 1], p[i + 2], p[i + 3]]
 }
+
+// ------------------------=
+// FUNC: grab_bounds
+// DESC: Centers the palm hotspot on the exact shared window resize hit coordinate.
+// ------------------=
+pub fn grab_bounds(x:i32,y:i32,scale:usize,p:Preferences)->Rect {
+    if busy(){return bounds(x,y,scale,p,false);}
+    let edge=28*shape_scale(p,scale);
+    Rect{x:x-(edge/2)as i32,y:y-(edge*32/56)as i32,width:edge as u32,height:edge as u32}
+}
+// ------------------------=
+// FUNC: grab_sample
+// DESC: Samples the approved hand sprite without allocation or decoding in the pointer path.
+// ------------------=
+pub fn grab_sample(x:usize,y:usize,size:usize)->[u8;4]{
+    const PIXELS:&[u8]=include_bytes!("../../assets/ui-design-kit/default/grab-cursor-v1.rgba");
+    if size==0||x>=size||y>=size{return [0;4];}
+    let offset=((y*56/size)*56+x*56/size)*4;
+    [PIXELS[offset],PIXELS[offset+1],PIXELS[offset+2],PIXELS[offset+3]]
+}

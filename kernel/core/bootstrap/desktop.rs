@@ -3,6 +3,7 @@
 use super::*;
 use super::access_style as access;
 use crate::ui::panel_recipe::Surface as AccessSurface;
+static TASK_SAMPLE:core::sync::atomic::AtomicU64=core::sync::atomic::AtomicU64::new(0);
 static SETTINGS_PRESENTATION_DIRTY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 // ------------------------=
@@ -2619,69 +2620,16 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         self.app_card_alpha(geometry.content,(1,9,19),(55,133,178),246,scale);
 
-        let (count, running, total_ticks, total_memory, total_memory_limit, total_disk) =
-            crate::runtime::with_runtime(|runtime| {
-                let count = runtime.task_manager.task_count(&runtime.execution);
-                let mut running = 0usize;
-                let mut ticks = 0u64;
-                let mut memory = 0u64;
-                let mut memory_limit = 0u64;
-                let mut disk = 0u64;
-                for index in 0..count {
-                    if let Some(task) = runtime.task_manager.task_nth(&runtime.execution, index) {
-                        if matches!(
-                            task.state,
-                            crate::runtime::execution::ContextState::Runnable
-                                | crate::runtime::execution::ContextState::Running
-                        ) {
-                            running += 1;
-                        }
-                        ticks = ticks.saturating_add(task.usage.cpu_ticks);
-                        memory = memory.saturating_add(task.usage.memory_bytes);
-                        memory_limit = memory_limit.saturating_add(task.budget.memory_limit);
-                        disk = disk.saturating_add(task.installed_bytes);
-                    }
-                }
-                (count, running, ticks, memory, memory_limit, disk)
-            })
-            .unwrap_or((0, 0, 0, 0, 0, 0));
-
+        let (count,metrics)=crate::runtime::with_runtime(|r|(r.execution.count(),r.task_manager.system)).unwrap_or_default();
         let gap = 10 * scale;
         let card_top = top + 12 * scale;
         let card_height = 92 * scale;
         let card_width = width.saturating_sub(32 * scale + gap * 2) / 3;
-        let memory_percent = if total_memory_limit == 0 {
-            0
-        } else {
-            total_memory.saturating_mul(100) / total_memory_limit
-        } as usize;
-        let cpu_percent = if count == 0 {
-            0
-        } else {
-            running.saturating_mul(100) / count
-        };
-        let disk_capacity = (count.max(1) as u64).saturating_mul(256 * 1024);
-        let disk_percent =
-            (total_disk.saturating_mul(100) / disk_capacity.max(1)).min(100) as usize;
+        let memory_percent=(u128::from(metrics.ram_used)*100/u128::from(metrics.ram_total.max(1)))as usize;
         let cards = [
-            (
-                b"CPU ACTIVITY".as_slice(),
-                total_ticks,
-                cpu_percent,
-                19usize,
-            ),
-            (
-                b"MEMORY IN USE".as_slice(),
-                total_memory,
-                memory_percent,
-                18usize,
-            ),
-            (
-                b"APP DISK SIZE".as_slice(),
-                total_disk,
-                disk_percent,
-                11usize,
-            ),
+            (b"CPU USAGE".as_slice(),metrics.cpu_percent as u64,metrics.cpu_percent as usize,19usize),
+            (b"RAM USED".as_slice(),metrics.ram_used,memory_percent,18usize),
+            (b"TOTAL RAM".as_slice(),metrics.ram_total,100,18usize),
         ];
         for (index, (label, value, percent, role)) in cards.iter().enumerate() {
             let card_left = left + 12 * scale + index * (card_width + gap);
@@ -2704,7 +2652,7 @@ impl super::DisplayDevice {
                 1,
             );
             let (value_text, value_length) = if index == 0 {
-                Self::task_manager_count_text(*value)
+                Self::task_manager_percent_text(*value as usize)
             } else {
                 Self::task_manager_bytes_text(*value)
             };
@@ -2825,7 +2773,7 @@ impl super::DisplayDevice {
             self.ui_text(
                 left + width * 43 / 100,
                 row_top + 11 * scale,
-                Self::task_manager_state_text(task.state),
+                if task.usage.unresponsive{b"Hung"}else{Self::task_manager_state_text(task.state)},
                 163,
                 211,
                 230,
@@ -2862,15 +2810,31 @@ impl super::DisplayDevice {
                 1,
             );
         }
-        let footer = if count == 1 {
-            b"1 task".as_slice()
-        } else {
-            b"Live tasks  /  Use Task menu for actions".as_slice()
-        };
+        // Keep the process hit-test geometry stable; history uses spare space below it.
+        if height>=456*scale {
+            let gx=left+24*scale;let gy=top+358*scale;
+            let gw=width.saturating_sub(48*scale);let gh=height.saturating_sub(406*scale).min(100*scale);
+            self.ui_text(gx,gy,b"CPU / RAM    last 30 seconds",134,199,255,1);
+            let gy=gy+20*scale;
+            for row in 0..=4 {self.fill_rect_alpha(gx,gy+gh*row/4,gw,1,48,68,102,180);}
+            for col in 0..=6 {self.fill_rect_alpha(gx+gw*col/6,gy,1,gh,48,68,102,180);}
+            if let Some((samples,n))=crate::runtime::with_runtime(|r|(r.task_manager.history,r.task_manager.history_count)) {
+                let begin=60-n;
+                for i in begin+1..60 {for memory in [false,true] {
+                    let percent=|m:crate::runtime::task_manager::SystemUsage|if memory{(u128::from(m.ram_used)*100/u128::from(m.ram_total.max(1)))as usize}else{m.cpu_percent as usize};
+                    let x0=gx+gw*(i-1)/59;let x1=gx+gw*i/59;
+                    let y0=gy+gh-gh*percent(samples[i-1]).min(100)/100;
+                    let y1=gy+gh-gh*percent(samples[i]).min(100)/100;
+                    self.icon_line(x0 as i32,y0 as i32,x1 as i32,y1 as i32,if memory{(175,136,255)}else{(65,210,255)},scale);
+                }}
+            }
+        }
+        let mut footer=crate::runtime::console_execution::Bytes::<96>::new();
+        {use core::fmt::Write;let _=write!(footer,"{} tasks  /  {} online cores  /  Task menu: actions",count,metrics.cores);}
         self.ui_text(
             left + 20 * scale,
             top + height.saturating_sub(24 * scale),
-            footer,
+            footer.bytes(),
             117,
             175,
             205,
@@ -2935,7 +2899,7 @@ impl super::DisplayDevice {
         let left = geometry.toolbar.x.max(0) as usize + 10 * scale;
         let top = geometry.toolbar.bottom().max(0) as usize - 2 * scale;
         let width = 232 * scale;
-        let labels: [&[u8]; 7] = [
+        let labels: [&[u8]; 8] = [
             b"Launch File Navigator",
             b"Relaunch Selected",
             b"Pause / Resume",
@@ -2943,6 +2907,7 @@ impl super::DisplayDevice {
             b"End Selected Task",
             b"Refresh Now",
             b"Cycle Memory Budget",
+            b"Force Quit Selected",
         ];
         let panel = crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,
             height:(crate::ui::app_menu::panel_height(labels.len(),false)*scale)as u32};
@@ -2967,7 +2932,7 @@ impl super::DisplayDevice {
                     width:(width-28*scale)as u32,
                     height:(crate::ui::app_menu::ROW_HEIGHT*scale)as u32},
                 label,
-                if index==4 {(255,149,149)}else{(218,232,241)},scale,
+                if index==4||index==7 {(255,149,149)}else{(218,232,241)},scale,
             );
         }
     }
@@ -6806,6 +6771,7 @@ pub fn system_ui_present(
         let slot = &raw mut CONSOLE;
         if let Some(console) = (*slot).as_mut() {
             console.display.frame_started_ns = crate::ui::performance::monotonic_ns();
+            let motion_settled=console.display.fast_motion_frame && !fast_motion_frame;
             console.display.fast_motion_frame = fast_motion_frame;
             console.system_ui_active = true;
             console.restore_cursor();
@@ -6983,7 +6949,13 @@ pub fn system_ui_present(
                     window_visible,
                     window_maximized,
                 );
-            let content_changed = console.last_system_content != content;
+            let task_sample=crate::runtime::with_runtime(|r|r.task_manager.system.timestamp_ns).unwrap_or(0);
+            let task_changed=task_manager_window.visible && TASK_SAMPLE.swap(task_sample,core::sync::atomic::Ordering::Relaxed)!=task_sample;
+            if task_changed {
+                let r=layout.desktop_app_window_geometry(task_manager_window.x,task_manager_window.y,task_manager_window.width,task_manager_window.height,task_manager_window.maximized).content;
+                super::retained_windows::invalidate_region(3,super::PresentRegion{left:r.x.max(0)as usize,top:r.y.max(0)as usize,right:r.right().max(0)as usize,bottom:r.bottom().max(0)as usize});
+            }
+            let content_changed = console.last_system_content != content || motion_settled || task_changed;
             let assistant_revision = crate::ui::app_assistant::revision();
             let assistant_changed = crate::ui::redraw::assistant_requires_owner_damage(
                 screen,

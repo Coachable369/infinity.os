@@ -215,7 +215,7 @@ impl DisplayDevice {
     // DESC: Selects no backdrop blur for deterministic surface pixel fixtures.
     // ------------------=
     fn active_background_effects(&self) -> (u8, u8) {
-        (100, 0)
+        if TEST_BLUR.load(std::sync::atomic::Ordering::Relaxed) {(85,4)}else{(100,0)}
     }
 
     // ------------------------=
@@ -386,6 +386,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 // ------------------=
 #[cfg(not(studio_native_preview))]
 fn main() {
+    if std::env::args().any(|arg|arg=="--motion-benchmark-only") {motion_blur_benchmark();return;}
     if std::env::args().any(|arg|arg=="--login-waves-only") {configuration_wizard_render::login_wave_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--face-enrollment-only") {configuration_wizard_render::verify_face();return;}
@@ -1023,6 +1024,7 @@ fn thinking_text_pixels_test() {
     assert!(pixels[320 * 48..].iter().all(|pixel| *pixel == 0));
 }
 
+static TEST_BLUR:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
 static TEST_THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 // ------------------------=
@@ -1459,4 +1461,31 @@ fn retained_partial_update_test() {
     pixels.fill(0x302010);
     display.retained_window(1, (60, 50, 140, 100), |_| panic!("translation must reuse patched cache"));
     assert_eq!(pixels[110 * 320 + 70], 0x060504);
+}
+
+// ------------------------=
+// FUNC: motion_blur_benchmark
+// DESC: Compares identical production retained translations with and without redundant backdrop blur, retaining final settled pixels.
+// ------------------=
+fn motion_blur_benchmark(){
+    TEST_BLUR.store(true,std::sync::atomic::Ordering::Relaxed);
+    let mut pixels=vec![0x102030u32;1600*1000];
+    let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width:1600,height:1000,stride:1600,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    retained_windows::invalidate();
+    let mut paints=0;
+    d.retained_window(1,(80,80,1000,700),|target|{paints+=1;scene(target);});
+    let mut means=[0u128;2];
+    for (mode,mean) in means.iter_mut().enumerate(){
+        d.fast_motion_frame=mode==1;
+        let mut timings=[0u128;60];
+        for (i,t) in timings.iter_mut().enumerate(){let start=Instant::now();
+            d.retained_window(1,(80+i,80,1000,700),|_|{paints+=1;});*t=start.elapsed().as_nanos();}
+        timings.sort_unstable();*mean=timings[30];
+    }
+    assert_eq!(paints,1);
+    // A release frame returns to the exact settled rendering policy.
+    d.fast_motion_frame=false;d.retained_window(1,(140,80,1000,700),|_|{paints+=1;});assert_eq!(paints,1);
+    TEST_BLUR.store(false,std::sync::atomic::Ordering::Relaxed);
+    println!("motion benchmark: baseline median {} ns; fast median {} ns; application paints {}",means[0],means[1],paints);
 }

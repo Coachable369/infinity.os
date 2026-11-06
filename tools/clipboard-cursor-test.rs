@@ -14,6 +14,14 @@ mod clipboard_menu;
 // DESC: Verifies every clipboard action hit, overlay damage, clipboard erasure and animated cursor pixels.
 // ------------------=
 fn main() {
+    let prefs=input_preferences::Preferences::defaults();
+    for scale in 1..=4 {
+        let r=cursor::grab_bounds(200,200,scale,prefs);
+        assert_eq!(r.x+r.width as i32/2,200);
+        assert_eq!(r.y+(r.height*32/56)as i32,200);
+        assert!(cursor::grab_sample(r.width as usize/2,r.height as usize*32/56,r.width as usize)[3]>200);
+    }
+
     use geometry::Point;
     for (width,height) in [(640,480),(1280,800),(2560,1600)] {for scale in 1..=4 {
         let mut menu=clipboard_menu::Menu::new();menu.open=true;

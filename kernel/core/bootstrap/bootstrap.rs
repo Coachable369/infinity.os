@@ -929,9 +929,13 @@ impl ConsoleSurface {
     // DESC: Saves pixels beneath the cursor and then draws the cursor artwork.
     // ------------------=
     pub(super) fn save_and_draw_cursor(&mut self, cursor_x: i32, cursor_y: i32) {
-        let bounds = crate::ui::cursor::bounds(self.display.width as i32 * cursor_x / 1000,
-            self.display.height as i32 * cursor_y / 1000, self.display.ui_scale(),
-            crate::ui::input_preferences::current(), crate::ui::text_input::pointer_shape()!=crate::ui::text_input::PointerShape::Default);
+        let shape=crate::ui::text_input::pointer_shape();
+        let x=self.display.width as i32*cursor_x/1000;
+        let y=self.display.height as i32*cursor_y/1000;
+        let prefs=crate::ui::input_preferences::current();
+        let bounds=if matches!(shape,crate::ui::text_input::PointerShape::ResizeNorthWestSouthEast|crate::ui::text_input::PointerShape::ResizeNorthEastSouthWest){
+            crate::ui::cursor::grab_bounds(x,y,self.display.ui_scale(),prefs)
+        }else{crate::ui::cursor::bounds(x,y,self.display.ui_scale(),prefs,shape!=crate::ui::text_input::PointerShape::Default)};
         let left = bounds.x.max(0).min(self.display.width as i32) as usize;
         let top = bounds.y.max(0).min(self.display.height as i32) as usize;
         let width = bounds.right().max(0).min(self.display.width as i32) as usize - left;

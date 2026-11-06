@@ -15,6 +15,28 @@ const CHUNK_ROWS: usize = 32;
 const RESERVED: usize = 5;
 const PURE_MATH: usize = 6;
 const MAX_PURE_HELPERS: usize = 5;
+static OCCUPIED_TICKS:[AtomicU64;COUNT]=[const {AtomicU64::new(0)};COUNT];
+static ACTIVE_SINCE:[AtomicU64;COUNT]=[const {AtomicU64::new(0)};COUNT];
+static ACTIVITY_SEQUENCE:[AtomicU64;COUNT]=[const {AtomicU64::new(0)};COUNT];
+// ------------------------=
+// FUNC: occupied_ns
+// DESC: Reads completed and in-flight AP work without waiting on a running inference or decoder.
+// ------------------=
+pub fn occupied_ns()->u64 {
+    let now=counter();let mut sum=0u64;
+    for i in 0..COUNT {
+        for _ in 0..3 {
+            let seq=ACTIVITY_SEQUENCE[i].load(Ordering::Acquire);
+            if seq&1!=0{continue;}
+            let done=OCCUPIED_TICKS[i].load(Ordering::Relaxed);
+            let start=ACTIVE_SINCE[i].load(Ordering::Relaxed);
+            if ACTIVITY_SEQUENCE[i].load(Ordering::Acquire)==seq {
+                sum=sum.saturating_add(done).saturating_add(if start>0{now.saturating_sub(start)}else{0});break;
+            }
+        }
+    }
+    ticks_ns(sum)
+}
 static NEXT_ROW: AtomicUsize = AtomicUsize::new(0);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 // Exclusive row ranges are assigned by NEXT_ROW; BSP reads only after all APs
@@ -475,7 +497,15 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
     READY.fetch_or(1 << index, Ordering::Release);
     let slot = &SLOTS[index];
     loop {
-        match slot.state.load(Ordering::Acquire) {
+        let state=slot.state.load(Ordering::Acquire);
+        let active=matches!(state,1|4|PURE_MATH);
+        let active_start=if active {counter()}else{0};
+        if active {
+            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::AcqRel);
+            ACTIVE_SINCE[index].store(active_start,Ordering::Relaxed);
+            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::Release);
+        }
+        match state {
             1 => {
                 let job = &mut *slot.job.get();
                 let started = counter();
@@ -547,6 +577,12 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
                 core::hint::spin_loop();
             }
+        }
+        if active {
+            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::AcqRel);
+            OCCUPIED_TICKS[index].fetch_add(counter().saturating_sub(active_start),Ordering::Relaxed);
+            ACTIVE_SINCE[index].store(0,Ordering::Relaxed);
+            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::Release);
         }
     }
 }

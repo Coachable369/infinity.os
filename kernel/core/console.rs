@@ -1252,6 +1252,18 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: moving_window
+    // DESC: Applies the shared low-latency compositor policy to every captured drag and resize.
+    // ------------------=
+    fn moving_window(&self)->bool {
+        let mut native=false;
+        #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        {native=python_commands::gui_moving();}
+        self.pointer_pressed&&(native||self.home_window_dragging||self.app_window_dragging||self.settings_window_dragging
+            ||self.home_window_resizing.is_some()||self.app_window_resizing.is_some()||self.settings_window_resizing.is_some())
+    }
+
+    // ------------------------=
     // FUNC: redraw
     // DESC: Implements the redraw operation.
     // ------------------=
@@ -1265,8 +1277,6 @@ impl ConsoleRuntime {
     // DESC: Composes a committed scene; spatial refresh suppresses physical presentation until its overlay is complete.
     // ------------------=
     fn redraw_scene(&self) {
-        self.publish_command_terminal();
-        self.accounts_publish();
         if matches!(self.mode, ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked) {
             let time=crate::ui::performance::monotonic_ns();
             let key=(self.mode as u32)*65536+(self.system_step as u32)*256+self.system_focus as u32;
@@ -1279,14 +1289,6 @@ impl ConsoleRuntime {
             crate::bootstrap::access_animation_leave();
         }
         self.publish_minimized_shelf();
-        let mut editor_view = self.editor_tools;
-        editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
-        editor_view.filename_len = self.editor_document_name_length.min(editor_view.filename.len());
-        editor_view.filename[..editor_view.filename_len].copy_from_slice(&self.editor_document_name[..editor_view.filename_len]);
-        editor_view.path_len = self.editor_document_path_length.min(editor_view.path.len());
-        editor_view.path[..editor_view.path_len].copy_from_slice(&self.editor_document_path[..editor_view.path_len]);
-        crate::ui::editor_tools::publish(editor_view);
-        crate::ui::object_picker::publish(self.editor_picker);
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {
             let (e,c,t)=self.desktop_app_windows();
             let active=if self.mode==ConsoleMode::Settings {4} else {match self.desktop_app {
@@ -1303,6 +1305,17 @@ impl ConsoleRuntime {
             crate::ui::ai_widget::publish_menu(Default::default());
         }
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
+        self.publish_command_terminal();
+        self.accounts_publish();
+        let mut editor_view = self.editor_tools;
+        editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
+        editor_view.filename_len = self.editor_document_name_length.min(editor_view.filename.len());
+        editor_view.filename[..editor_view.filename_len].copy_from_slice(&self.editor_document_name[..editor_view.filename_len]);
+        editor_view.path_len = self.editor_document_path_length.min(editor_view.path.len());
+        editor_view.path[..editor_view.path_len].copy_from_slice(&self.editor_document_path[..editor_view.path_len]);
+        crate::ui::editor_tools::publish(editor_view);
+        crate::ui::object_picker::publish(self.editor_picker);
+
         // Terminal geometry, wrapped diagnostics and editor cursor scans are
         // presentation snapshots. Input handlers use the live command buffer,
         // so publish these once after the drain, not for each motion sample.
@@ -1415,7 +1428,7 @@ impl ConsoleRuntime {
                     &self.command[..self.command_length]
                 },
                 self.system_focus,
-                self.presenting_fast_motion_frame,
+                self.presenting_fast_motion_frame || self.moving_window(),
             );
             return;
         }
@@ -1868,7 +1881,7 @@ impl ConsoleRuntime {
         if action==1 && matches!(task.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON){return;}
         if action==1 && (task.image_identity==crate::runtime::task_manager::IMAGE_PREVIEW||task.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE)<=32){return;}
         let changed = crate::runtime::with_runtime(|runtime| match action {
-            0 => runtime
+            0 | 5 => runtime
                 .task_manager
                 .end(&mut runtime.execution, task.handle)
                 .ok(),
@@ -1909,7 +1922,7 @@ impl ConsoleRuntime {
         })
         .flatten()
         .is_some();
-        if action == 0 && changed {
+        if matches!(action,0|5) && changed {
             self.close_task_surface(task);
         } else if action == 1 && changed {
             self.reopen_task_surface(task);
@@ -2039,12 +2052,12 @@ impl ConsoleRuntime {
             if point_x >= toolbar_left + 10 * scale as i32
                 && point_x < toolbar_left + 10 * scale as i32 + menu_width
                 && point_y >= menu_top
-                && point_y < menu_top + (crate::ui::app_menu::panel_height(7,false)*scale) as i32
+                && point_y < menu_top + (crate::ui::app_menu::panel_height(8,false)*scale) as i32
             {
                 let action = ((point_y - menu_top
                     - (crate::ui::app_menu::PANEL_PADDING*scale) as i32)
                     / (crate::ui::app_menu::ROW_HEIGHT*scale) as i32)
-                    .clamp(0, 6) as u8;
+                    .clamp(0, 7) as u8;
                 self.shell_menu = 0;
                 match action {
                     0 => {
@@ -2055,6 +2068,7 @@ impl ConsoleRuntime {
                     3 => self.task_manager_action(3),
                     4 => self.task_manager_action(0),
                     6 => self.task_manager_action(4),
+                    7 => self.task_manager_action(5),
                     _ => self.refresh_task_manager_output(),
                 }
                 return true;
@@ -14962,9 +14976,12 @@ pub fn clock_tick() {
             use crate::runtime::task_manager as tm;
             if runtime.mode!=ConsoleMode::AppLauncher {runtime.end_surface_task(tm::IMAGE_LAUNCHER);}
             let task_manager_live = runtime.mode == ConsoleMode::Desktop
-                && runtime.desktop_app == DesktopAppKind::TaskManager;
+                && runtime.task_manager_window.visible;
             let top_live=runtime.command_terminal_visible() && crate::ui::command_terminal::inspect(|s|s.monitor);
-            if (task_manager_live||top_live) && next!=runtime.desktop_clock {
+            let sample_now=crate::ui::performance::monotonic_ns().unwrap_or(0);
+            let metrics_due=(task_manager_live||top_live) && crate::runtime::with_runtime(|r|
+                sample_now.saturating_sub(r.task_manager.system.timestamp_ns)>=500_000_000).unwrap_or(false);
+            if metrics_due {
                 crate::runtime::with_runtime(|r|{
                     for index in 0..r.execution.count(){
                         let Some(c)=r.execution.nth(index)else{continue;};let h=c.handle;
@@ -14977,14 +14994,21 @@ pub fn clock_tick() {
                         let bytes=crate::bootstrap::surface_bytes(slot);
                         if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=bytes;c.usage.timed=true;c.usage.busy_ns=crate::bootstrap::surface_busy_ns(slot);}
                     }
-                    r.task_manager.sample_live_cpu(&r.execution,crate::ui::performance::monotonic_ns().unwrap_or(0));
+                    r.task_manager.sample_live_cpu(&r.execution,sample_now);
+                    let cores=1+crate::runtime::ai::qwen::workers::online();
+                    // The BSP runs the native service polling loop continuously; APs publish
+                    // only active jobs. Native pages come from an already reserved boot arena.
+                    let busy=sample_now.saturating_add(crate::runtime::ai::qwen::workers::occupied_ns());
+                    let unused=crate::runtime::native_memory::memory_mut().available_pages()as u64*4096;
+                    r.task_manager.sample_system(sample_now,busy,cores,runtime.system.ram_total,
+                        runtime.system.ram_reserved.saturating_sub(unused));
                 });
                 if top_live {crate::ui::command_terminal::mutate(|s|s.changed());}
             }
-            if task_manager_live {
+            if metrics_due && task_manager_live && runtime.desktop_app==DesktopAppKind::TaskManager {
                 runtime.refresh_task_manager_output();
             }
-            if next != runtime.desktop_clock || runtime.text_input_focused() || task_manager_live {
+            if next != runtime.desktop_clock || runtime.text_input_focused() || metrics_due {
                 runtime.desktop_clock = next;
                 runtime.redraw();
             }

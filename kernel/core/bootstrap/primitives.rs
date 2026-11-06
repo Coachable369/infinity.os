@@ -1041,8 +1041,15 @@ impl super::DisplayDevice {
                 return;
             }
             crate::ui::text_input::PointerShape::ResizeNorthWestSouthEast
-            | crate::ui::text_input::PointerShape::ResizeNorthEastSouthWest
-            | crate::ui::text_input::PointerShape::ResizeVertical
+            | crate::ui::text_input::PointerShape::ResizeNorthEastSouthWest => {
+                let bounds=crate::ui::cursor::grab_bounds(x,y,self.ui_scale(),prefs);
+                for py in 0..bounds.height as usize {for px in 0..bounds.width as usize {
+                    let p=crate::ui::cursor::grab_sample(px,py,bounds.width as usize);
+                    self.blend_color(bounds.x+px as i32,bounds.y+py as i32,p[0],p[1],p[2],p[3]);
+                }}
+                return;
+            }
+            crate::ui::text_input::PointerShape::ResizeVertical
             | crate::ui::text_input::PointerShape::ResizeHorizontal => {
                 self.pointer_resize_cursor(x, y, scale, crate::ui::text_input::pointer_shape());
                 return;

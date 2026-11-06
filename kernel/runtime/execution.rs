@@ -51,6 +51,7 @@ pub struct ResourceUsage {
     pub cpu_ticks: u64,
     pub busy_ns:u64,
     pub timed:bool,
+    pub unresponsive:bool,
     pub queued_messages: u16,
     pub io_units: u64,
 }

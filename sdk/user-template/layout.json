@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "directories": ["documents", "downloads", "pictures", "music", "videos", "media", "projects", "trash"],
+  "media": {
+    "music/Chime.wav": "sdk/system/Infinity-Chime.wav",
+    "music/Melody.mp3": "sdk/system/Infinity-Melody.mp3",
+    "videos/Motion.mp4": "sdk/system/Infinity-Motion.mp4"
+  },
+  "aliases": {"media/Chime.wav": "music/Chime.wav", "media/Melody.mp3": "music/Melody.mp3", "media/Motion.mp4": "videos/Motion.mp4"},
+  "native_extension": "documents/infinity_native_test.so",
+  "memory": "hermes-memory1.json is created by IntelligenceKit for the authenticated identity, never copied from another account"
+}

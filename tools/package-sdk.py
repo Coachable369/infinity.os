@@ -96,6 +96,25 @@ def main():
         ident = ",".join(map(str, object_id(path)))
         text = str(asset.suffix in (".py", ".txt")).lower()
         lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: Some(include_bytes!("../../sdk/system/{asset.name}")), text: {text}, crc: {zlib.crc32(asset.read_bytes())} }},')
+    # The visible, immutable home skeleton is also the account provisioning source.
+    for asset in [ROOT / "sdk/user-template", *sorted((ROOT / "sdk/user-template").rglob("*"))]:
+        relative = asset.relative_to(ROOT / "sdk/user-template")
+        path = "/System/UserTemplate" + ("/" + str(relative) if str(relative) != "." else "")
+        ident = ",".join(map(str, object_id(path)))
+        value = ('Some(include_bytes!("../../' + str(asset.relative_to(ROOT)) + '"))') if asset.is_file() else "None"
+        crc = zlib.crc32(asset.read_bytes()) if asset.is_file() else 0
+        lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: {value}, text: {str(asset.is_file()).lower()}, crc: {crc} }},')
+    template = json.loads((ROOT / "sdk/user-template/layout.json").read_text())
+    for folder in template["directories"]:
+        if (ROOT / "sdk/user-template" / folder).is_dir():
+            continue
+        path = "/System/UserTemplate/" + folder
+        ident = ",".join(map(str, object_id(path)))
+        lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: None, text: false, crc: 0 }},')
+    for target, source in template["media"].items():
+        path = "/System/UserTemplate/" + target
+        ident = ",".join(map(str, object_id(path)))
+        lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: Some(include_bytes!("../../{source}")), text: false, crc: {zlib.crc32((ROOT/source).read_bytes())} }},')
     lines.append("];")
     write_changed(ROOT / "build/sdk/manifest.json", payloads["manifest.json"])
     write_changed(ROOT / "build/sdk/catalog.rs", ("\n".join(lines) + "\n").encode())

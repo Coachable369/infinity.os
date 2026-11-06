@@ -352,7 +352,7 @@ unsafe fn start_system_tool(console:&ConsoleRuntime,job:&mut Job,path:&[u8],argu
         return start_task(console,job,arguments);
     }
     if path==b"/System/figlet.py" {
-        for font in [b"/System/standard.flf".as_slice(),b"/System/small.flf"] {
+        for font in [b"/System/standard.flf".as_slice(),b"/System/small.flf",b"/System/graffiti.flf"] {
             let (_,n)=crate::storage::object_read_path(font,None,&mut job.archive).map_err(|_|b"Missing FIGfont.".as_slice())?;
             job.filesystem.mount_readonly(font,&job.archive[..n]).map_err(|_|b"Cannot mount FIGfont.".as_slice())?;
         }
@@ -959,7 +959,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
         MONITOR_RESUME_NS=timestamp.saturating_add(crate::runtime::task_manager::TaskManager::native_cooldown_ns(busy,monitor.map_or(100,|v|v.1.cpu_weight)));
         let sample=timestamp.saturating_sub(MONITOR_SAMPLE_NS)>=1_000_000_000;
         let bytes=if sample{MONITOR_SAMPLE_NS=timestamp;Some(memory_mut().resident_bytes(native_owner.0))}else{None};
-        crate::runtime::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.timed=true;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
+        crate::runtime::with_runtime(|r|{let hung=job.gui.unresponsive(r,timestamp);if let Some(c)=r.execution.get_mut(h){c.usage.unresponsive=hung;c.usage.timed=true;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
     }
     let progress=task.result_lengths(b"",&mut job.output,&mut job.errors);
     if job.generated.is_some_and(|g|g.phase==workflow::Phase::Run) {
@@ -1119,6 +1119,11 @@ fn application_call<T:crate::runtime::native_memory::PageTable>(application:&mut
 // ------------------=
 pub(super) fn release_gui_keyboard() { unsafe { (&mut *(&raw mut JOB)).gui_keyboard=false; } }
 
+// ------------------------=
+// FUNC: gui_moving
+// DESC: Reports the active native window gesture without copying its surface frames.
+// ------------------=
+pub(super) fn gui_moving()->bool{unsafe{(&*(&raw const JOB)).gui.moving()}}
 // ------------------------=
 // FUNC: gui_visible_and_focused
 // DESC: Publishes native client visibility and input focus into the shared desktop layer order.

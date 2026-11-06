@@ -97,6 +97,7 @@ fn sdk_package_access() {
         (b"/System/figlet.py",include_bytes!("../sdk/system/figlet.py").as_slice()),
         (b"/System/standard.flf",include_bytes!("../sdk/system/standard.flf").as_slice()),
         (b"/System/small.flf",include_bytes!("../sdk/system/small.flf").as_slice()),
+        (b"/System/graffiti.flf",include_bytes!("../sdk/system/graffiti.flf").as_slice()),
         (b"/System/Infinity-Chime.wav",include_bytes!("../sdk/system/Infinity-Chime.wav").as_slice()),
         (b"/System/Infinity-Melody.mp3",include_bytes!("../sdk/system/Infinity-Melody.mp3").as_slice()),
         (b"/System/Infinity-Motion.mp4",include_bytes!("../sdk/system/Infinity-Motion.mp4").as_slice()),
@@ -124,6 +125,18 @@ fn sdk_package_access() {
         }
     }
     let pictures=home.child(b"pictures").unwrap();
+    for (name,expected) in [(b"hello.c".as_slice(),include_bytes!("../sdk/user-template/documents/hello.c").as_slice()),
+        (b"hello.py",include_bytes!("../sdk/user-template/documents/hello.py").as_slice()),
+        (b"profile-example.json",include_bytes!("../sdk/user-template/documents/profile-example.json").as_slice())] {
+        let path=home.child(b"documents").unwrap().child(name).unwrap();
+        let id=store.resolve(path.as_bytes()).unwrap();
+        assert_eq!(store.metadata(id).unwrap().owner,owner);
+        let mut actual=vec![0;expected.len()];store.read(id,None,&mut actual).unwrap();assert_eq!(actual,expected);
+    }
+    let deleted=home.child(b"documents").unwrap().child(b"hello.py").unwrap();
+    store.detach(deleted.as_bytes()).unwrap();
+    store.ensure_user_home(owner,b"SDK Developer").unwrap();
+    assert!(store.resolve(deleted.as_bytes()).is_err());
     assert_eq!(store.sidebar_location(owner,home,4,None).unwrap().as_bytes(),pictures.as_bytes());
     let music=home.child(b"music").unwrap();
     assert_eq!(store.sidebar_location(owner,home,4,Some(music.as_bytes())).unwrap().as_bytes(),music.as_bytes());
@@ -550,13 +563,16 @@ fn editor_documents_recovery(sectors: usize) {
 fn hello_document_provisioning(sectors: usize) {
     let disk = MemoryDisk::new(sectors);
     let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x93;16]).unwrap();
-    let id = store.resolve(b"/home/default/documents/hello.c").unwrap();
+    let owner=storage::object::ObjectId([0x71;16]);
+    store.ensure_user_home(owner,b"SDK Developer").unwrap();
+    assert!(store.resolve(b"/home/default/documents/hello.c").is_err());
+    let id = store.resolve(b"/home/SDK.Developer/documents/hello.c").unwrap();
     let metadata = store.metadata(id).unwrap();
     assert_eq!(metadata.kind, ObjectType::Text);
     assert_eq!(metadata.content_type, ContentType::Utf8Text);
     assert_eq!(metadata.space, Space::Personal);
     let listed = (0..32).filter_map(|index|
-        store.namespace_list_nth(storage::object::DOCUMENTS_PATH, index)
+        store.namespace_list_nth(b"/home/SDK.Developer/documents", index)
     ).any(|entry| entry.object.id == id);
     assert!(listed);
     let mut bytes = [0u8;1024];
@@ -566,15 +582,15 @@ fn hello_document_provisioning(sectors: usize) {
     let version = store.write(id, edited).unwrap();
     let owner=storage::object::ObjectId([0x71;16]);
     let generated=store.create_owned_attached(b"calculator.c",ObjectType::Text,Space::Personal,edited,
-        b"/home/default/documents/calculator.c",owner).unwrap();
+        b"/home/SDK.Developer/documents/calculator.c",owner).unwrap();
     assert_eq!(store.create_owned_attached(b"calculator.c",ObjectType::Text,Space::Personal,b"replacement",
-        b"/home/default/documents/calculator.c",owner),Err(ObjectError::NameConflict));
+        b"/home/SDK.Developer/documents/calculator.c",owner),Err(ObjectError::NameConflict));
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
     assert_eq!(store.metadata(generated).unwrap().owner,owner);
-    assert_eq!(store.resolve(b"/home/default/documents/calculator.c").unwrap(),generated);
+    assert_eq!(store.resolve(b"/home/SDK.Developer/documents/calculator.c").unwrap(),generated);
     let length=store.read(generated,None,&mut bytes).unwrap();assert_eq!(&bytes[..length],edited);
-    assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), id);
+    assert_eq!(store.resolve(b"/home/SDK.Developer/documents/hello.c").unwrap(), id);
     assert_eq!(store.metadata(id).unwrap().current_version, version);
     let len = store.read(id, None, &mut bytes).unwrap();
     assert_eq!(&bytes[..len], edited);
@@ -870,7 +886,7 @@ fn main() {
     // This fixture exercises all five free namespace slots. The independent
     // provisioning test above verifies the sample; delete it here as a user
     // may do, retaining the same namespace budget for the lifecycle tests.
-    store.remove_path(b"/home/default/documents/hello.c").unwrap();
+    assert!(store.resolve(b"/home/default/documents/hello.c").is_err());
     assert!(store.resolve(b"/home/default/documents").is_ok());
     let documents = store
         .resolve(b"/home/default/documents")

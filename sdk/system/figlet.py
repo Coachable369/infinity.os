@@ -1,12 +1,14 @@
-"""figlet [-f standard|small] [-o FILE] TEXT -- full-width FIGfont rendering."""
+"""figlet [-f standard|small|graffiti] [-o FILE] TEXT -- full-width FIGfont rendering."""
 import argparse
 import os
 
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument("-f", "--font", choices=("standard", "small"), default="standard")
+p.add_argument("-f", "--font", choices=("standard", "small", "graffiti", "grafiti"), default="standard")
 p.add_argument("-o", "--output")
 p.add_argument("text", nargs="+")
 a = p.parse_args()
+if a.font == "grafiti":
+    a.font = "graffiti"
 with open(os.path.join(os.path.dirname(__file__), a.font + ".flf"), encoding="latin-1") as stream:
     header = stream.readline().split()
     if not header[0].startswith("flf2a"):

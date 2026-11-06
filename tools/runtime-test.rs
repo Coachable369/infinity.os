@@ -661,7 +661,10 @@ fn native_gui_lifecycle<T: runtime::native_memory::PageTable>() {
     let input=call!(0x1251,[8,window as u64,0,0,0,0]); assert!(input>0);
     let lease=call!(0x1110,[input as u64,runtime::EVENT_NATIVE_INPUT as u64,window as u64,100,8,0]); assert!(lease>0);
     assert!(runtime.native_input(UiEvent::Pointer{position:Point{x:12,y:23},phase:PointerPhase::Down,button:1},0,0,2));
+    assert!(!gui.unresponsive(&runtime,4_000_000_000));
+    assert!(gui.unresponsive(&runtime,6_000_000_000));
     assert_eq!(call!(0x1111,[lease as u64,user,128,0,0,0]),1);
+    assert!(!gui.unresponsive(&runtime,6_000_000_000));
     let mut packet=[0u8;128]; copy_from_user(&tables,user,&mut packet).unwrap();
     assert_eq!(u32::from_le_bytes(packet[36..40].try_into().unwrap()),3);
     assert_eq!(i32::from_le_bytes(packet[48..52].try_into().unwrap()),2);
@@ -672,7 +675,7 @@ fn native_gui_lifecycle<T: runtime::native_memory::PageTable>() {
     runtime.ui.windows.move_window(owner,id,Point{x:120,y:160},area).unwrap();
     runtime.ui.windows.resize_window(owner,id,320,200,area).unwrap();
     let title=runtime::native_gui::title_bounds(*runtime.ui.windows.inspect(id).unwrap(),1);
-    let title_point=Point{x:title.x+20,y:title.y+20};
+    let title_point=Point{x:title.x+title.width as i32/2,y:title.y+20};
     let bounds=runtime::native_gui::assistant_bounds(*runtime.ui.windows.inspect(id).unwrap(),1).unwrap();
     let tab=ui::app_assistant::geometry_in_viewport(bounds,area.width as usize,1,false).toggle;
     let tab_point=Point{x:tab.x+tab.width as i32/2,y:tab.y+tab.height as i32/2};

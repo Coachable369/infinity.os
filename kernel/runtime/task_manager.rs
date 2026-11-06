@@ -46,12 +46,24 @@ pub struct TaskSnapshot {
     pub cpu_share_percent: u8,
 }
 
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub struct SystemUsage {
+    pub ram_total:u64,
+    pub ram_used:u64,
+    pub cores:u16,
+    pub cpu_percent:u8,
+    pub timestamp_ns:u64,
+}
 #[derive(Clone, Copy)]
 pub struct TaskManager {
     previous_handles: [u16; super::execution::MAX_CONTEXTS],
     previous_ticks: [u64; super::execution::MAX_CONTEXTS],
     cpu_share_percent: [u8; super::execution::MAX_CONTEXTS],
     sample_time_ns:u64,
+    pub system:SystemUsage,
+    pub history:[SystemUsage;60],
+    pub history_count:usize,
+    system_busy_ns:u64,
     previous_busy_ns:[u64;super::execution::MAX_CONTEXTS],
     native_names:[[u8;64];2],
     installed_names: [[u8; 64]; MAX_CUSTOM_APPLICATION_IMAGES],
@@ -68,6 +80,9 @@ impl TaskManager {
             previous_handles: [0; super::execution::MAX_CONTEXTS],
             previous_ticks: [0; super::execution::MAX_CONTEXTS],
             cpu_share_percent: [0; super::execution::MAX_CONTEXTS],
+            system:SystemUsage{ram_total:0,ram_used:0,cores:0,cpu_percent:0,timestamp_ns:0},
+            history:[SystemUsage{ram_total:0,ram_used:0,cores:0,cpu_percent:0,timestamp_ns:0};60],
+            history_count:0,system_busy_ns:0,
             sample_time_ns:0,previous_busy_ns:[0;super::execution::MAX_CONTEXTS],
             native_names:[[0;64];2],
             installed_names: [[0; 64]; MAX_CUSTOM_APPLICATION_IMAGES],
@@ -275,6 +290,11 @@ impl TaskManager {
     // DESC: Reports measured window and executable busy time as a percentage of one CPU over the actual sample interval.
     // ------------------=
     pub fn sample_live_cpu(&mut self,execution:&ExecutionManager,now:u64) {
+        for index in 0..execution.count() {
+            if let Some(context)=execution.nth(index) {
+                if self.previous_handles[index]!=context.handle.0 {self.previous_busy_ns[index]=0;}
+            }
+        }
         self.sample_cpu(execution);
         let elapsed=now.saturating_sub(self.sample_time_ns);
         for index in 0..execution.count() {
@@ -287,6 +307,22 @@ impl TaskManager {
             self.previous_busy_ns[index]=c.usage.busy_ns;
         }
         self.sample_time_ns=now;
+    }
+
+    // ------------------------=
+    // FUNC: sample_system
+    // DESC: Publishes common physical-memory and measured core-occupancy telemetry with a bounded chronological history.
+    // ------------------=
+    pub fn sample_system(&mut self,now:u64,busy_ns:u64,cores:usize,ram_total:u64,ram_used:u64){
+        let elapsed=now.saturating_sub(self.system.timestamp_ns);
+        let delta=busy_ns.saturating_sub(self.system_busy_ns);
+        let cpu=if self.system.timestamp_ns>0 && elapsed>0 {
+            (u128::from(delta)*100/(u128::from(elapsed)*cores.max(1)as u128)).min(100)as u8
+        }else{0};
+        self.system=SystemUsage{ram_total,ram_used:ram_used.min(ram_total),cores:cores.min(u16::MAX as usize)as u16,cpu_percent:cpu,timestamp_ns:now};
+        self.system_busy_ns=busy_ns;
+        self.history.rotate_left(1);self.history[59]=self.system;
+        self.history_count=(self.history_count+1).min(60);
     }
 
     // ------------------------=

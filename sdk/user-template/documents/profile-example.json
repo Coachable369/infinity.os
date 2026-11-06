@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "description": "An editable JSON example. Your private AI memory is managed separately in your home folder.",
+  "preferences": { "language": "en" },
+  "projects": []
+}

@@ -94,23 +94,19 @@ pub fn client_work_area(display: Rect, scale: usize) -> Rect {
 // DESC: Shares exact authored controls and exterior side/corner resize hit areas without intercepting client pixels or top-edge drags.
 // ------------------=
 fn chrome_hit(window: Window, point: Point, scale: usize) -> Option<ChromePart> {
-    if matches!(window.state,WindowState::Fullscreen|WindowState::Withdrawn) { return None; }
-    let title = title_bounds(window, scale);
+    if !window.visible || matches!(window.state,WindowState::Fullscreen|WindowState::Withdrawn|WindowState::Minimized) { return None; }
+    let title=title_bounds(window,scale);
     if title.contains(point) {
-        if let Some(index) = crate::ui::app_launcher::window_controls::hit(crate::ui::app_launcher::window_controls::bounds(title, title.height, scale), point) {
+        if let Some(index)=crate::ui::app_launcher::window_controls::hit(crate::ui::app_launcher::window_controls::bounds(title,title.height,scale),point){
             return Some(ChromePart::Control(index));
         }
-        return Some(ChromePart::Title);
     }
-    if !window.visible || window.state != WindowState::Normal { return None; }
-    let edge = 6 * scale.max(1) as i32;
-    let b = window.bounds;
-    if point.x < b.x - edge || point.x >= b.right() + edge || point.y < title.y - edge || point.y >= b.bottom() + edge { return None; }
-    let left = point.x < b.x;
-    let right = point.x >= b.right();
-    let top = (left || right) && point.y < title.y + edge;
-    let bottom = point.y >= b.bottom();
-    if left || right || bottom { Some(ChromePart::Resize { left, right, top, bottom }) } else { None }
+    if window.state==WindowState::Normal {
+        if let Some(handle)=crate::ui::system_layout::native_window_resize_target(window.bounds.union(title),point,scale){
+            return Some(ChromePart::Resize{left:matches!(handle,0|2|5),right:matches!(handle,1|3|6),top:matches!(handle,0|1),bottom:matches!(handle,2|3|4)});
+        }
+    }
+    title.contains(point).then_some(ChromePart::Title)
 }
 
 pub struct Gui {
@@ -119,6 +115,7 @@ pub struct Gui {
     grants: [Option<CapabilityId>; MAX_GRANTS],
     leases: [Option<(u64, CapabilityId)>; MAX_LEASES],
     revision: u64,
+    last_event_poll:u64,
     hover: Option<WindowId>,
     chrome_drag: Option<ChromeDrag>,
     assistant_target: Option<WindowId>,
@@ -131,8 +128,21 @@ impl Gui {
     // ------------------=
     pub const fn new() -> Self {
         Self { surfaces: NativeSurfaces::new(), owner: None,
-            grants: [None; MAX_GRANTS], leases: [None; MAX_LEASES], revision: 0, hover: None, chrome_drag: None, assistant_target: None }
+            grants: [None; MAX_GRANTS], leases: [None; MAX_LEASES], revision: 0, last_event_poll:0, hover: None, chrome_drag: None, assistant_target: None }
     }
+    // ------------------------=
+    // FUNC: unresponsive
+    // DESC: Flags an application only when actual queued window events remain unserviced for five seconds.
+    // ------------------=
+    pub fn unresponsive(&self,runtime:&InfinityRuntime,now:u64)->bool {
+        self.last_event_poll>0 && now.saturating_sub(self.last_event_poll)>5_000_000_000
+            && self.leases.iter().flatten().any(|(id,_)|runtime.events.queue_depth(*id).is_some_and(|depth|depth>0))
+    }
+    // ------------------------=
+    // FUNC: moving
+    // DESC: Identifies a captured native title or resize gesture for the shared compositor quality policy.
+    // ------------------=
+    pub fn moving(&self)->bool{self.chrome_drag.is_some_and(|d|matches!(d.part,ChromePart::Title|ChromePart::Resize{..}))}
     // ------------------------=
     // FUNC: assistant_target
     // DESC: Binds the native assistant to the explicitly selected window, preventing focus changes from retargeting pending actions.
@@ -386,6 +396,7 @@ impl Gui {
         let result = self.surfaces.dispatch(runtime, memory, tables, caller, owner,
             operation, args, work, display, now);
         if result >= 0 {
+            if matches!(operation,0x1110|0x1111){self.last_event_poll=now;}
             if operation == 0x1110 { *self.leases.iter_mut().find(|s| s.is_none()).unwrap() = Some((result as u64,args[0])); }
             if operation == 0x1112 { for slot in &mut self.leases { if slot.is_some_and(|(lease,_)|lease==args[0]) { *slot = None; } } }
             if matches!(operation, 0x1100..=0x1108 | 0x1122..=0x1124) { self.revision = self.revision.wrapping_add(1); }

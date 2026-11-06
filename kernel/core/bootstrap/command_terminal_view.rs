@@ -33,7 +33,7 @@ impl DisplayDevice {
     pub(super) fn command_terminal_view(&mut self,body:Rect,toolbar:Rect,scale:usize) {
         let g=terminal::inspect(|s|s.layout(body,toolbar,scale));terminal::mutate(|s|s.reflow(g.columns(),g.rows()));terminal::publish_snapshot();
         terminal::inspect(|s|{
-            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote && !s.monitor && !s.disk.active {paint::content(&mut canvas,s,g,true);}
+            let mut canvas=Surface{display:self,body:g.body,opacity:s.opacity};if !s.remote && !s.monitor && !s.disk.active && !s.help {paint::content(&mut canvas,s,g,true);}
             if s.remote {canvas.fill(g.body,s.background_color());crate::ui::terminal_vt::inspect(|t|{
                 for y in 0..t.rows.min(g.rows()){for x in 0..t.columns.min(g.columns()){
                     let c=t.cells[y][x];let mut fg=c.fg;let mut bg=c.bg;if c.inverse{core::mem::swap(&mut fg,&mut bg);}if c.bold&&fg<8{fg+=8;}
@@ -46,8 +46,8 @@ impl DisplayDevice {
             if s.monitor {
                 use core::fmt::Write;
                 canvas.fill(g.body,s.background_color());
-                colored(&mut canvas,g,s.appearance,1,b"  PID   CPU    MEM KiB  STATUS    PROCESS",ansi_color(14));
-                let visible=g.rows().saturating_sub(4).max(1);
+                colored(&mut canvas,g,s.appearance,3,b"  PID   CPU    MEM KiB  STATUS    PROCESS",ansi_color(14));
+                let visible=g.rows().saturating_sub(6).max(1);
                 crate::runtime::with_runtime(|r|{
                     let count=r.execution.count();let selected=s.monitor_row.min(count.saturating_sub(1));
                     let mut runnable=0;let mut waiting=0;
@@ -58,16 +58,21 @@ impl DisplayDevice {
                     let mut summary=crate::runtime::console_execution::Bytes::<120>::new();
                     let _=write!(summary,"TOP   Tasks: {}   Running/ready: {}   Waiting: {}",count,runnable,waiting);
                     colored(&mut canvas,g,s.appearance,0,summary.bytes(),s.appearance.color(5));
+                    let m=r.task_manager.system;
+                    let mut resources=crate::runtime::console_execution::Bytes::<160>::new();
+                    let _=write!(resources,"CPU: {}%   Online cores: {}   RAM: {} / {} MiB",m.cpu_percent,m.cores,m.ram_used/1048576,m.ram_total/1048576);
+                    colored(&mut canvas,g,s.appearance,1,resources.bytes(),ansi_color(10));
+                    ascii(&mut canvas,g,s.appearance,2,b"RAM includes boot reservations; CPU includes the service polling core.");
                     let start=selected/visible*visible;
                     for i in start..count.min(start+visible) {
                         let Some(t)=r.task_manager.task_nth(&r.execution,i) else{break};
                         let mut line=crate::runtime::console_execution::Bytes::<160>::new();
                         let _=write!(line,"{} {:4} {:3}% {:9}  {:8}  ",if i==selected{'>'}else{' '},t.handle.0,t.cpu_share_percent,t.usage.memory_bytes/1024,
-                            core::str::from_utf8(crate::console::context_state_text(t.state)).unwrap_or("?"));
+                            if t.usage.unresponsive {"Hung"}else{core::str::from_utf8(crate::console::context_state_text(t.state)).unwrap_or("?")});
                         line.write(crate::console::task_name(r,&t));
                         let color=if i==selected{14}else if t.cpu_share_percent>=80{9}else if t.cpu_share_percent>=40{11}
                             else if t.cpu_share_percent!=0{10}else{7};
-                        colored(&mut canvas,g,s.appearance,i-start+2,line.bytes(),ansi_color(color));
+                        colored(&mut canvas,g,s.appearance,i-start+4,line.bytes(),ansi_color(color));
                     }
                     if g.rows()>=4 {if let Some(t)=r.task_manager.task_nth(&r.execution,selected) {
                         let mut line=crate::runtime::console_execution::Bytes::<96>::new();
