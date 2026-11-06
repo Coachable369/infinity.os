@@ -1622,7 +1622,13 @@ pub(crate) fn trash_empty_personal(owner:[u8;16])->Result<usize,object::ObjectEr
     let path=provision_user_home(owner)?.child(b"trash").ok_or(object::ObjectError::InvalidPath)?;
     let mut removed=0;
     loop {
-        let Some(entry)=namespace_list_nth(path.as_bytes(),0)?else{return Ok(removed);};
+        let mut candidate=None;
+        for index in 0..object::PUBLIC_NAMESPACE_CAPACITY {
+            let Some(entry)=namespace_list_nth(path.as_bytes(),index)?else{break;};
+            if entry.path_len as usize>path.as_bytes().len()
+                && entry.path[path.as_bytes().len()]==b'/' {candidate=Some(entry);break;}
+        }
+        let Some(entry)=candidate else{return Ok(removed);};
         let (metadata,_)=object_inspect_path(&entry.path[..entry.path_len as usize])?;
         if metadata.owner.0!=owner{return Err(object::ObjectError::Unauthorized);}
         object_remove_path(&entry.path[..entry.path_len as usize])?;removed+=1;
