@@ -208,7 +208,9 @@ pub unsafe extern "C" fn engine_boot()->! {
             let status=infinity_sqlite_initialize();if status!=0 { finish(1,4,status as u64); }
         }
         record(2,4,0);
-        let engine=servo::ServoBuilder::default().build();
+        #[path = "../../sdk/infinity-browser-servo/preferences.rs"]
+        mod web_preferences;
+        let engine=servo::ServoBuilder::default().preferences(web_preferences::web_preferences()).build();
         record(2,5,unsafe {Runtime::allocated()} as u64);
         #[cfg(infinity_swgl_probe)]
         {

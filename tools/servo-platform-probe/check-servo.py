@@ -20,21 +20,24 @@ def main():
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
     parser.add_argument("--codegen", action="store_true", help="Build native engine archives, not just metadata; does not link a browser")
     parser.add_argument("--resolve-lock", action="store_true", help="Explicitly resolve dependency changes before subsequent locked runs")
+    parser.add_argument("--reuse-prepared", action="store_true", help="Reuse existing native source overlays when refreshing codegen metadata")
     options = parser.parse_args()
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-deps.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py")), "--engine"], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-async-net.py")), "--engine"], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-entropy.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-fonts.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-style.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-webdriver.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-surfman.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-mozjs.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-certificates.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-engine.py"))], check=True)
-    if options.package == "servo":
-        subprocess.run(["python3", str(Path(__file__).with_name("prepare-software-renderer.py"))], check=True)
-    subprocess.run(["python3", str(Path(__file__).with_name("prepare-bindgen.py"))], check=True)
+    if not options.reuse_prepared:
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-deps.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py")), "--engine"], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-async-net.py")), "--engine"], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-parking.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-entropy.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-fonts.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-style.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-webdriver.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-surfman.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-mozjs.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-certificates.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-engine.py"))], check=True)
+        if options.package == "servo":
+            subprocess.run(["python3", str(Path(__file__).with_name("prepare-software-renderer.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-bindgen.py"))], check=True)
     arch = options.arch
     # The engine calls C/C++ APIs with floating arguments. Match AAPCS64's
     # hardware-float ABI; the native executor preserves FP/SIMD register state.
@@ -58,6 +61,11 @@ def main():
                         "LIBCLANG_PATH": "/opt/homebrew/opt/llvm/lib",
                         "__CARGO_TESTS_ONLY_SRC_ROOT": str(root / "build/servo-rust-src/library"),
                         "RUSTFLAGS": "--cfg infinity_native --check-cfg=cfg(infinity_native) --check-cfg=cfg(infinity_certificate_test)"})
+    # The native component links these archives into the shipping OS. Retain
+    # the established archive paths and dev safety checks, but optimize layout,
+    # image decoding and script bindings instead of shipping unoptimized code.
+    environment["CARGO_PROFILE_DEV_OPT_LEVEL"] = "2"
+    environment["CARGO_PROFILE_DEV_DEBUG"] = "0"
     # Native debug-codegen layout jobs also run on Stylo's pool. The upstream
     # 512 KiB default overflows on Google results and corrupts adjacent stacks.
     # Use Stylo's supported setting on both targets, retaining parallel layout.
@@ -116,6 +124,7 @@ def main():
     if native_libc.is_dir():
         command += ["--config", 'patch.crates-io.libc.path="' + str(native_libc) + '"']
     command += ["--config", 'patch.crates-io.mio.path="' + str(root / "build/servo-native-deps/mio-1.2.3") + '"']
+    command += ["--config", 'patch.crates-io.parking_lot_core.path="' + str(root / "build/servo-native-deps/parking_lot_core-0.9.12") + '"']
     command += ["--config", 'patch.crates-io.aws-lc-sys.path="' + str(root / "build/servo-native-deps/aws-lc-sys-0.45.0") + '"']
     command += ["--config", 'patch.crates-io.webdriver.path="' + str(root / "build/servo-native-deps/webdriver-0.54.0") + '"']
     command += ["--config", 'patch.crates-io.imsz.path="' + str(root / "build/servo-native-deps/imsz-0.4.1") + '"']
@@ -158,9 +167,9 @@ def main():
                 native_paths.update(event.get("linked_paths", []))
             if event.get("reason") == "compiler-artifact":
                 name = event.get("target", {}).get("name")
-                if name in ("core", "panic_abort", "compiler_builtins", "std"):
+                if name in ("core", "panic_abort", "compiler_builtins", "std", "flate2", "http", "log", "servo_base", "parking_lot"):
                     for filename in event.get("filenames", []):
-                        if filename.endswith(".rlib"):
+                        if filename.endswith(".rlib") and Path(filename).is_relative_to(root / "build/cargo" / target):
                             native_archives[name] = filename
             if event.get("reason") == "compiler-message":
                 log.write(event["message"].get("rendered") or "")
@@ -168,7 +177,7 @@ def main():
         status = process.wait()
     report = {"servo_revision": revision, "package": options.package, "target": target, "target_spec":target_spec, "command": command,
               "compiler_exit_status": status, "native_search_paths": sorted(native_paths),
-              "native_archives": native_archives, "executed": False}
+              "native_archives": native_archives, "optimization_level": 2, "executed": False}
     (output / (prefix + ".json")).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
     return status

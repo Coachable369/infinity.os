@@ -90,7 +90,7 @@ pub trait Provider {
 }
 
 struct Pending { id: u64, deadline: u64, failures: u8, priority: resource_order::Priority, load: WebResourceLoad }
-struct State<P> { provider: P, pending: Vec<Pending>, stream: Option<Stream>, image:Option<image_download::Transfer>, closed: bool, failed_document: bool }
+struct State<P> { provider: P, pending: Vec<Pending>, stream: Option<Stream>, image:Option<image_download::Transfer>, critical_streak:u8, last_visual:resource_order::Priority, closed: bool, failed_document: bool }
 pub struct Resources<P: Provider> { state: RefCell<State<P>>, clock: fn() -> u64 }
 
 impl<P: Provider> servo::ServoDelegate for Resources<P> {
@@ -127,7 +127,7 @@ impl<P: Provider> Resources<P> {
     // DESC: Creates a bounded resource queue without opening any network connections.
     // ------------------=
     pub fn new(provider: P, clock: fn() -> u64) -> Self {
-        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), stream: None,image:None, closed: false, failed_document: false }), clock }
+        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), stream: None,image:None, critical_streak:0, last_visual:resource_order::Priority::Other, closed: false, failed_document: false }), clock }
     }
     // ------------------------=
     // FUNC: download_image
@@ -255,6 +255,8 @@ impl<P: Provider> Resources<P> {
         }
         let at = 0;
         while at < state.pending.len() {
+            let selected=resource_order::dispatch_index(state.pending.iter().map(|p|(p.id!=0,p.priority)),state.critical_streak,state.last_visual);
+            if selected!=0 {let pending=state.pending.remove(selected);state.pending.insert(0,pending);}
             if state.pending[at].id == 0 {
                 let mut url=state.pending[at].load.request().url.clone();
                 url.set_fragment(None);
@@ -273,6 +275,8 @@ impl<P: Provider> Resources<P> {
                 let body=state.pending[at].load.request().body.clone();
                 match state.provider.begin_request(url.as_str(),method.as_str(), &headers,&body) {
                     Ok(id) if id != 0 => {
+                        state.critical_streak=resource_order::dispatched(state.critical_streak,state.pending[at].priority);
+                        if state.pending[at].priority>resource_order::Priority::Critical {state.last_visual=state.pending[at].priority;}
                         state.pending[at].id=id;
                         state.pending[at].deadline=now.saturating_add(TIMEOUT_NS);
                     },

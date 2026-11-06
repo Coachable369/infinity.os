@@ -3,6 +3,32 @@
 pub enum Priority { Document, Stylesheet, Critical, Font, Other }
 
 // ------------------------=
+// FUNC: dispatch_index
+// DESC: Keeps parsing dependencies first but gives visual resources a turn after three script/API dispatches.
+// ------------------=
+pub fn dispatch_index(queue:impl Iterator<Item=(bool,Priority)>,critical_streak:u8,last_visual:Priority)->usize {
+    let mut queue=queue.enumerate();
+    let Some((_,(active,first)))=queue.next() else {return 0;};
+    if active || first!=Priority::Critical || critical_streak<3 {return 0;}
+    let preferred=if last_visual==Priority::Font {Priority::Other} else {Priority::Font};
+    let mut fallback=None;
+    for (index,(active,priority)) in queue {
+        if active || priority<=Priority::Critical {continue;}
+        if priority==preferred {return index;}
+        fallback.get_or_insert(index);
+    }
+    fallback.unwrap_or(0)
+}
+
+// ------------------------=
+// FUNC: dispatched
+// DESC: Tracks bounded script bursts independently of transfer chunk count or engine pump frequency.
+// ------------------=
+pub fn dispatched(streak:u8,priority:Priority)->u8 {
+    if priority==Priority::Critical {streak.saturating_add(1)} else {0}
+}
+
+// ------------------------=
 // FUNC: classify
 // DESC: Uses the engine's Fetch destination metadata to prioritize parsing and layout dependencies.
 // ------------------=
@@ -47,6 +73,35 @@ pub fn retry_pre_header(method:&str,failures:u8)->bool {
 mod tests {
     extern crate std;
     use super::*;
+    // ------------------------=
+    // FUNC: visual_resources_progress_during_script_backlog
+    // DESC: Dispatches a populated queue while adding scripts and verifies fonts and images cannot be starved.
+    // ------------------=
+    #[test]
+    fn visual_resources_progress_during_script_backlog() {
+        let mut queue=std::vec![Priority::Critical;100];
+        queue.extend([Priority::Font,Priority::Other,Priority::Other]);
+        let mut streak=0;
+        let mut last_visual=Priority::Other;
+        let mut visual=std::vec::Vec::new();
+        for turn in 0..12 {
+            let at=dispatch_index(queue.iter().map(|&p|(false,p)),streak,last_visual);
+            let priority=queue.remove(at);
+            streak=dispatched(streak,priority);
+            if priority>Priority::Critical {visual.push((turn,priority));last_visual=priority;}
+            let at=insertion_index(queue.iter().map(|&p|(false,p)),Priority::Critical);
+            queue.insert(at,Priority::Critical);
+        }
+        assert_eq!(visual,[(3,Priority::Font),(7,Priority::Other),(11,Priority::Other)]);
+        assert_eq!(dispatch_index([(true,Priority::Critical),(false,Priority::Other)].into_iter(),3,Priority::Other),0);
+        assert_eq!(dispatch_index([(false,Priority::Stylesheet),(false,Priority::Other)].into_iter(),3,Priority::Other),0);
+        assert_eq!(dispatch_index(core::iter::empty(),3,Priority::Other),0);
+        let mut queue=std::vec![Priority::Critical;100];
+        queue.extend([Priority::Font;100]);
+        queue.push(Priority::Other);
+        let at=dispatch_index(queue.iter().map(|&p|(false,p)),3,Priority::Font);
+        assert_eq!(queue.remove(at),Priority::Other);
+    }
     // ------------------------=
     // FUNC: dispatch_order_preserves_active_work_and_fifo
     // DESC: Applies actual queue insertions and verifies document/critical precedence without replacing in-flight work.

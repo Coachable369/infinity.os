@@ -24,6 +24,8 @@ def main():
     parser.add_argument("--assert-script", help="JavaScript boolean over real page state; required with --url")
     parser.add_argument("--network-only", action="store_true", help="Retest only site compatibility after engine fixtures have passed")
     parser.add_argument("--load-timeout-seconds", type=int, default=60, choices=range(30,601), metavar="30..600", help="Bounded observation budget for slow emulation; does not change transport deadlines")
+    parser.add_argument("--viewport-width", type=int, default=800, choices=range(320,1921,2), metavar="320..1920")
+    parser.add_argument("--viewport-height", type=int, default=600, choices=range(240,1081,2), metavar="240..1080")
     parser.add_argument("--evidence-dir", type=Path, help="Retain this run's structured receipt and screenshot inside the repository")
     options = parser.parse_args()
     if options.evidence_dir:
@@ -34,6 +36,8 @@ def main():
         parser.error("--url requires --assert-script; --network-only requires --network-probe")
     environment=os.environ.copy()
     environment["INFINITY_BROWSER_LOAD_TIMEOUT"]=str(options.load_timeout_seconds)
+    environment["INFINITY_BROWSER_VIEWPORT_WIDTH"]=str(options.viewport_width)
+    environment["INFINITY_BROWSER_VIEWPORT_HEIGHT"]=str(options.viewport_height)
     if options.url:
         options.network_probe=True
         environment["INFINITY_BROWSER_PROBE_URL"]=options.url
@@ -120,6 +124,8 @@ def main():
     report["renderer_failure_recovery_verified"] = [9,2,53,1] in records
     report["browser_interactions_verified"] = all([9,2,40,step] in records for step in range(1,9))
     report["root_scrollbars_verified"] = all([9,2,61,step] in records for step in range(1,6))
+    report["modern_web_fonts_lazy_images_verified"] = [9,2,62,1] in records
+    report["native_mutex_handoff_timeout_verified"] = [9,2,63,1] in records
     report["opaque_iframe_checkbox_click_zoom_scroll_verified"] = [9,2,40,11] in records
     report["external_https_verified"] = network_passed
     report["external_page_zoom_verified"] = network_zoom_passed
@@ -131,6 +137,8 @@ def main():
         for name, code in (("engine",70), ("network",71), ("paint",72), ("network_gap",73))
     } if options.network_probe else None
     report["load_timeout_seconds"] = options.load_timeout_seconds if options.network_probe else None
+    report["observed_load_ms"] = next((r[3]/1_000_000 for r in records if r[:3]==[9,2,74]),None)
+    report["accelerator"] = "tcg"
     if options.evidence_dir:
         options.evidence_dir.mkdir(parents=True, exist_ok=True)
         if screenshot:

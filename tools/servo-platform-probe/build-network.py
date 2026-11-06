@@ -14,6 +14,7 @@ def main():
         raise SystemExit("Run through build-kit")
     root = Path(__file__).resolve().parents[2]
     environment = dict(os.environ, RUSTC_BOOTSTRAP="1",
+        CARGO_PROFILE_DEV_OPT_LEVEL="2", CARGO_PROFILE_DEV_DEBUG="0",
         CARGO_HOME=str(root / "build/servo-cargo-home"),
         __CARGO_TESTS_ONLY_SRC_ROOT=str(root / "build/servo-rust-src/library"),
         RUSTFLAGS="--cfg infinity_native --check-cfg=cfg(infinity_native) --check-cfg=cfg(infinity_certificate_test)")

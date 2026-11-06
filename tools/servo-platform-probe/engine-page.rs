@@ -22,6 +22,8 @@ mod request;
 mod recovery;
 #[path = "engine-scrollbars.rs"]
 mod scrollbars;
+#[path = "engine-modern-web.rs"]
+mod modern_web;
 #[cfg(infinity_network_probe)]
 #[path = "../../sdk/infinity-browser-servo/native_https.rs"]
 mod native_https;
@@ -429,6 +431,9 @@ fn verify_gradients(engine:&Servo)->bool {
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_MODERN_WEB_ONLY")==Some("1") {
+        return if modern_web::verify(engine) {0} else {62};
+    }
     if option_env!("INFINITY_BROWSER_SCROLLBARS_ONLY")==Some("1") {
         return if scrollbars::verify(engine) {0} else {61};
     }
@@ -457,6 +462,7 @@ pub fn verify(engine: &Servo) -> u64 {
     if option_env!("INFINITY_BROWSER_NETWORK_ONLY")==Some("1") {
         return if network::verify(engine) {0} else {20};
     }
+    if !modern_web::verify(engine) {return 62;}
     if !scrollbars::verify(engine) {return 61;}
     if !verify_gradients(engine) {return 54;}
     if !streaming::verify(engine) {return 41;}

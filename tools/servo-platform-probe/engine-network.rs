@@ -125,13 +125,16 @@ pub fn verify(engine: &servo::Servo) -> bool {
         nic:nic.clone(),port:49152 }),super::super::monotonic));
     engine.set_delegate(resources.clone());
     let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));
-    let Ok(context)=servo::SoftwareRenderingContext::new((800,600).into()) else { return false; };
+    let width=option_env!("INFINITY_BROWSER_VIEWPORT_WIDTH").and_then(|v|v.parse::<u32>().ok()).unwrap_or(800);
+    let height=option_env!("INFINITY_BROWSER_VIEWPORT_HEIGHT").and_then(|v|v.parse::<u32>().ok()).unwrap_or(600);
+    let Ok(context)=servo::SoftwareRenderingContext::new((width,height).into()) else { return false; };
     let context=Rc::new(context);
     let view=servo::WebViewBuilder::new(engine,context.clone())
         .delegate(Rc::new(ResourceDelegate {resources:resources.clone(),repaint:repaint.clone(),loaded:loaded.clone()}))
         .url(option_env!("INFINITY_BROWSER_PROBE_URL").unwrap_or("https://www.google.com/").parse().unwrap()).build();
     let timeout=option_env!("INFINITY_BROWSER_LOAD_TIMEOUT").and_then(|value|value.parse::<u64>().ok()).unwrap_or(60).clamp(30,600);
     view.show();let deadline=Instant::now()+Duration::from_secs(timeout);
+    let load_started=super::super::monotonic();
     // A completed first document may immediately navigate again (consent and
     // challenge pages do this). Sample the requested DOM condition throughout
     // the bounded observation window instead of accepting the first load event.
@@ -167,6 +170,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
+    super::super::record(2,74,super::super::monotonic().saturating_sub(load_started));
     super::super::record(2,70,longest_spin);
     super::super::record(2,71,longest_network);
     super::super::record(2,72,longest_paint);
@@ -182,7 +186,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
     super::super::record(2,34,dom_matches as u64);
     {
     let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
-    view.evaluate_javascript("JSON.stringify({ready:document.readyState,body:document.body&&{text:document.body.innerText.slice(0,300),height:document.body.getBoundingClientRect().height,display:getComputedStyle(document.body).display,visibility:getComputedStyle(document.body).visibility,opacity:getComputedStyle(document.body).opacity},top:Array.from(document.elementsFromPoint(100,100)).slice(0,5).map(e=>({tag:e.tagName,id:e.id,cls:e.className,background:getComputedStyle(e).backgroundColor,opacity:getComputedStyle(e).opacity})),sheets:document.styleSheets.length,images:Array.from(document.images).slice(0,6).map(i=>({complete:i.complete,width:i.naturalWidth}))})",move |value| {
+    view.evaluate_javascript("JSON.stringify({ready:document.readyState,sheets:document.styleSheets.length,fontStatus:document.fonts?document.fonts.status:null,bodyFont:document.body&&getComputedStyle(document.body).fontFamily,images:{total:document.images.length,loaded:Array.from(document.images).filter(i=>i.complete&&i.naturalWidth>0).length,failed:Array.from(document.images).filter(i=>i.complete&&!i.naturalWidth).length},viewport:[innerWidth,innerHeight],body:document.body&&[document.body.scrollWidth,document.body.scrollHeight]})",move |value| {
         if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&value);}
         inspection.set(1);
     });
@@ -192,20 +196,20 @@ pub fn verify(engine: &servo::Servo) -> bool {
         && dom_matches;
     {
         view.paint();
-        let image=context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(800,600).into()));
+        let image=context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(width as i32,height as i32).into()));
         let pixels=image.is_some_and(|image| {
                 // UART proof is a half-resolution thumbnail of real rendered pixels;
                 // serializing full-size pixels can itself exhaust the test wall timeout.
-                let mut thumbnail=std::vec::Vec::with_capacity(400*300*4);
+                let mut thumbnail=std::vec::Vec::with_capacity((width*height) as usize);
                 for y in (0..image.height()).step_by(2) {for x in (0..image.width()).step_by(2) {
                     thumbnail.extend_from_slice(&image.get_pixel(x,y).0);
                 }}
-                super::super::record(2,36,((400u64)<<32)|300u64);
+                super::super::record(2,36,((u64::from(width/2))<<32)|u64::from(height/2));
                 for (index,chunk) in thumbnail.chunks(8).enumerate() {
                     let mut bytes=[0;8];bytes[..chunk.len()].copy_from_slice(chunk);
                     super::super::record(5,index as u64,u64::from_le_bytes(bytes));
                 }
-                image.width()==800 && image.height()==600
+                image.width()==width && image.height()==height
                     && image.pixels().any(|pixel| pixel.0!=image.get_pixel(0,0).0)
             });
         passed=pixels && passed;
@@ -231,8 +235,8 @@ pub fn verify(engine: &servo::Servo) -> bool {
                     let pixels=Rc::new(Cell::new(0));let result=pixels.clone();
                     view.take_screenshot(None,move |image| {
                         let valid=image.is_ok_and(|image| {
-                            let width=image.enumerate_pixels().filter(|(_,y,pixel)|*y==2 && pixel.0==[0,255,0,255]).count();
-                            image.width()==800 && image.height()==600 && width.abs_diff((80.0*zoom).round() as usize)<=1
+                            let marker_width=image.enumerate_pixels().filter(|(_,y,pixel)|*y==2 && pixel.0==[0,255,0,255]).count();
+                            image.width()==width && image.height()==height && marker_width.abs_diff((80.0*zoom).round() as usize)<=1
                         });
                         result.set(if valid {1}else{2});
                     });
@@ -245,7 +249,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
                 }
             }
             view.paint();
-            if context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(800,600).into())).is_none() {passed=false;break;}
+            if context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(width as i32,height as i32).into())).is_none() {passed=false;break;}
             super::super::record(2,0x602,((index as u64)<<32)|((zoom*100.0).round() as u64));
         }
     }

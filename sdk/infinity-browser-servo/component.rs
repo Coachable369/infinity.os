@@ -2,6 +2,7 @@
 #![no_std]
 extern crate std;
 mod resources;
+mod preferences;
 mod session;
 mod clipboard;
 #[path = "../infinity-browser-core/worker.rs"]
@@ -229,7 +230,7 @@ fn run() {
         }
         if infinity_sqlite_initialize()!=0 { fatal(2); }
     }
-    let engine=servo::ServoBuilder::default().build();
+    let engine=servo::ServoBuilder::default().preferences(preferences::web_preferences()).build();
     #[cfg(infinity_component_trace)]
     verify_closed_channel_retirement();
     let mut session:Option<session::TabSessions<Network>>=None;

@@ -68,14 +68,13 @@ def main():
             raise SystemExit("Expected one native code-generated " + name + " archive")
         native_externs += ["--extern", name + "=" + str(archives[0])]
     if options.page_probe or options.component:
-        compression = list((target / "deps").glob("libflate2-*.rlib"))
-        if len(compression) != 1:
-            raise SystemExit("Expected one native gzip decoder archive")
-        native_externs += ["--extern", "flate2=" + str(compression[0])]
-        archives = list((target / "deps").glob("libhttp-*.rlib"))
-        if len(archives) != 1:
-            raise SystemExit("Expected one native HTTP type archive")
-        native_externs += ["--extern", "http=" + str(archives[0])]
+        # Different optimization profiles may coexist in Cargo's dependency
+        # cache. Link the exact artifacts reported by the successful engine run.
+        for name in ("flate2", "http", *(("parking_lot",) if options.page_probe else ())):
+            recorded=codegen.get("native_archives",{}).get(name)
+            if not recorded or not Path(recorded).is_file():
+                raise SystemExit("Rebuild engine metadata for native " + name)
+            native_externs += ["--extern",name + "=" + recorded]
     if options.network_probe:
         network = json.loads((output / "network.json").read_text())
         native_externs += ["--extern", "infinity_browser_native_network=" + network["archive"]]
@@ -110,18 +109,16 @@ def main():
                     str(root / "sdk/servo-runtime-primitives/lib.rs"), "-o", str(runtime)], check=True)
     if options.component:
         if options.component_trace:
-            archives = list((target / "deps").glob("liblog-*.rlib"))
-            if len(archives) != 1:
-                raise SystemExit("Expected one native log archive")
-            native_externs += ["--extern", "log=" + str(archives[0]), "--cfg", "infinity_component_trace"]
-            base = list((target / "deps").glob("libservo_base-*.rlib"))
-            if len(base) != 1:
-                raise SystemExit("Expected one native Servo base archive")
-            native_externs += ["--extern", "servo_base=" + str(base[0])]
+            for name in ("log", "servo_base"):
+                recorded=codegen.get("native_archives",{}).get(name)
+                if not recorded or not Path(recorded).is_file():
+                    raise SystemExit("Rebuild engine metadata for native " + name)
+                native_externs += ["--extern",name + "=" + recorded]
+            native_externs += ["--cfg", "infinity_component_trace"]
         archive = output / ("browser-component-" + arch + ".a")
         component = root / "sdk/infinity-browser-servo"
         command = ["rustc", *target_flags, "--edition=2021", "--target", target_spec, "--crate-type", "staticlib",
-                   "--cfg", "infinity_native", "-C", "panic=abort", "-l", "static=c++abi",
+                   "--cfg", "infinity_native", "-C", "panic=abort", "-C", "opt-level=2", "-l", "static=c++abi",
                    *native_search, *native_externs,
                    "--extern", "servo=" + str(target / "libservo.rlib"),
                    "--extern", "infinity_servo_runtime_primitives=" + str(runtime),
@@ -175,7 +172,7 @@ def main():
         print(json.dumps(report))
         return 1 if any(line.split()[0] == "U" for line in undefined.splitlines() if line.split()) else 0
     command = ["rustc", *target_flags, "--edition=2021", "--target", target_spec,
-               "--cfg", "infinity_native", "-C", "panic=abort",
+               "--cfg", "infinity_native", "-C", "panic=abort", "-C", "opt-level=2",
                *(["--cfg", "infinity_page_probe"] if options.page_probe else []),
                *(["--cfg", "infinity_network_probe"] if options.network_probe else []),
                *(["--cfg", "infinity_swgl_probe", "--extern",

@@ -162,6 +162,10 @@ clean = false
 command = ["cargo", "test", "--manifest-path", "sdk/infinity-browser-core/Cargo.toml"]
 clean = false
 
+[profiles.browser-modern-web-tests]
+command = ["env", "INFINITY_BROWSER_MODERN_WEB_ONLY=1", "python3", "tools/servo-platform-probe/run-engine-guest.py", "--page-probe", "--evidence-dir", "builds/evidence/browser-modern-web"]
+clean = false
+
 [profiles.enterprise-core-tests]
 command = ["cargo", "test", "--manifest-path", "sdk/infinity-enterprise-core/Cargo.toml"]
 clean = false
