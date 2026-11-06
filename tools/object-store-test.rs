@@ -88,6 +88,9 @@ fn sdk_package_access() {
     assert!(store.resolve(b"/InfintySDK").is_err());
     assert_eq!(store.metadata(store.resolve(b"/System").unwrap()).unwrap().kind,ObjectType::NamespaceNode);
     for (path, expected) in [
+        (b"/System/wc.py".as_slice(), include_bytes!("../sdk/system/wc.py").as_slice()),
+        (b"/System/sha256sum.py", include_bytes!("../sdk/system/sha256sum.py").as_slice()),
+        (b"/System/jsonfmt.py", include_bytes!("../sdk/system/jsonfmt.py").as_slice()),
         (b"/System/grep.py".as_slice(), include_bytes!("../sdk/system/grep.py").as_slice()),
         (b"/System/sed.py",include_bytes!("../sdk/system/sed.py").as_slice()),
         (b"/System/awk.py",include_bytes!("../sdk/system/awk.py").as_slice()),
@@ -102,9 +105,34 @@ fn sdk_package_access() {
         assert_eq!(store.read(id,None,&mut data).unwrap(),expected.len());
         assert_eq!(&data,expected);assert!(store.write(id,b"changed").is_err());
     }
+    assert_eq!(store.resolve(b"/system/grep.py"),store.resolve(b"/System/grep.py"));
+    let second=ObjectId([0x32;16]);
+    let other_home=store.ensure_user_home(second,b"Second User").unwrap();
+    for (home,user) in [(home,owner),(other_home,second)] {
+        for folder in [b"documents".as_slice(),b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"] {
+            let id=store.resolve(home.child(folder).unwrap().as_bytes()).unwrap();
+            assert_eq!(store.metadata(id).unwrap().owner,user);
+            assert_eq!(store.metadata(id).unwrap().kind,ObjectType::NamespaceNode);
+        }
+        for (folder,name,data) in [(b"music".as_slice(),b"Chime.wav".as_slice(),include_bytes!("../sdk/system/Infinity-Chime.wav").as_slice()),
+            (b"music",b"Melody.mp3",include_bytes!("../sdk/system/Infinity-Melody.mp3").as_slice()),
+            (b"videos",b"Motion.mp4",include_bytes!("../sdk/system/Infinity-Motion.mp4").as_slice())] {
+            let id=store.resolve(home.child(folder).unwrap().child(name).unwrap().as_bytes()).unwrap();
+            assert_eq!(store.metadata(id).unwrap().owner,user);
+            assert_eq!(store.resolve(home.child(b"media").unwrap().child(name).unwrap().as_bytes()).unwrap(),id);
+            let mut actual=vec![0;data.len()];store.read(id,None,&mut actual).unwrap();assert_eq!(actual,data);
+        }
+    }
+    let pictures=home.child(b"pictures").unwrap();
+    assert_eq!(store.sidebar_location(owner,home,4,None).unwrap().as_bytes(),pictures.as_bytes());
+    let music=home.child(b"music").unwrap();
+    assert_eq!(store.sidebar_location(owner,home,4,Some(music.as_bytes())).unwrap().as_bytes(),music.as_bytes());
+    assert!(store.sidebar_location(second,home,4,Some(other_home.as_bytes())).is_err());
+    assert!(store.sidebar_location(owner,home,4,Some(other_home.as_bytes())).is_err());
     let motd=store.resolve(b"/System/motd").unwrap();store.write(motd,b"Welcome\nback").unwrap();
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
+    assert_eq!(store.sidebar_location(owner,home,4,None).unwrap().as_bytes(),music.as_bytes());
     let mut message=[0;12];let n=store.read(motd,None,&mut message).unwrap();assert_eq!(&message[..n],b"Welcome\nback");
     assert_eq!(store.resolve(b"/InfinitySDK").unwrap(), root);
     let mut bytes = [0; 16384];
@@ -391,6 +419,28 @@ impl MemoryDisk {
     // ------------------=
     fn flip(&self, lba: usize, offset: usize) {
         self.0.borrow_mut()[lba][offset] ^= 0x5a;
+    }
+    // ------------------------=
+    // FUNC: table_sector
+    // DESC: Locates a format-10 metadata table sector for targeted corruption checks.
+    // ------------------=
+    fn table_sector(&self, bank:u64, offset:u64)->usize {
+        let header=self.0.borrow()[(STORE_RELATIVE_LBA+bank) as usize];
+        let extent=u32::from_le_bytes(header[40..44].try_into().unwrap()) as u64;
+        (STORE_RELATIVE_LBA+80+extent*8+if bank==BANK_A{0}else{80}+offset) as usize
+    }
+    // ------------------------=
+    // FUNC: legacy_fixture
+    // DESC: Encodes current fixture tables at their genuine legacy coordinates before testing upgrade and crash recovery.
+    // ------------------=
+    fn legacy_fixture(&self, version:u32) {
+        for bank in [BANK_A,BANK_B] {
+            if self.0.borrow()[(STORE_RELATIVE_LBA+bank) as usize][..8]!=*b"INFOSTAT" {continue;}
+            for i in 0..13 {let row=self.0.borrow()[self.table_sector(bank,i)];let offset=if i<6{5+i}else{25+i-6};self.0.borrow_mut()[(STORE_RELATIVE_LBA+bank+offset)as usize]=row;}
+            for i in 0..8 {let row=self.0.borrow()[self.table_sector(bank,32+i)];let offset=if i<4{bank+11+i}else{72+if bank==BANK_A{0}else{4}+i-4};self.0.borrow_mut()[(STORE_RELATIVE_LBA+offset)as usize]=row;}
+            for i in 0..11 {let row=self.0.borrow()[self.table_sector(bank,48+i)];let offset=if i<8{bank+15+i}else{2+if bank==BANK_A{0}else{3}+i-8};self.0.borrow_mut()[(STORE_RELATIVE_LBA+offset)as usize]=row;}
+        }
+        for sector in 0..80 {let at=STORE_RELATIVE_LBA as usize+sector;if self.0.borrow()[at][..4]==*b"INFO"{self.set_version_and_rechecksum(at,version);}}
     }
     // ------------------------=
     // FUNC: set_version_and_rechecksum
@@ -1013,20 +1063,20 @@ fn main() {
 
     let committed = rebooted.generation();
     let inactive = if committed & 1 == 1 { BANK_A } else { BANK_B };
-    disk.flip((STORE_RELATIVE_LBA + inactive + 7) as usize, 100);
+    disk.flip(disk.table_sector(inactive,2), 100);
     drop(rebooted);
     let rebooted = ObjectStore::mount(disk.clone(), 0).expect("ignore uncommitted bank");
     assert_eq!(rebooted.generation(), committed);
     drop(rebooted);
-    disk.flip((STORE_RELATIVE_LBA + inactive + 7) as usize, 100);
+    disk.flip(disk.table_sector(inactive,2), 100);
 
     let newest_root = if committed & 1 == 1 { ROOT_B } else { ROOT_A };
     disk.flip((STORE_RELATIVE_LBA + newest_root) as usize, 24);
     let fallback = ObjectStore::mount(disk.clone(), 0).expect("root fallback");
     assert!(fallback.generation() < committed);
     drop(fallback);
-    disk.flip((STORE_RELATIVE_LBA + BANK_A + 5) as usize, 70);
-    disk.flip((STORE_RELATIVE_LBA + BANK_B + 5) as usize, 70);
+    disk.flip(disk.table_sector(BANK_A,0), 70);
+    disk.flip(disk.table_sector(BANK_B,0), 70);
     assert!(matches!(
         ObjectStore::mount(disk.clone(), 0),
         Err(ObjectError::CorruptMetadata)
@@ -1062,7 +1112,7 @@ fn main() {
     ] {
         let corrupt = MemoryDisk::new(test_sectors);
         drop(ObjectStore::format(corrupt.clone(), 0, test_sectors as u64, seed).unwrap());
-        corrupt.flip((STORE_RELATIVE_LBA + BANK_B + offset) as usize, 80);
+        corrupt.flip(match offset {5=>corrupt.table_sector(BANK_B,0),15=>corrupt.table_sector(BANK_B,48),_ =>(STORE_RELATIVE_LBA+BANK_B+offset)as usize},80);
         assert!(
             matches!(
                 ObjectStore::mount(corrupt, 0),
@@ -1235,13 +1285,9 @@ fn namespace_expansion() {
     let count=store.persistent_namespace_count();
     for i in count..32 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
     drop(store);
-    for sector in 0..80 {
-        let at=STORE_RELATIVE_LBA as usize+sector;
-        if matches!(sector,2..=7) {disk.0.borrow_mut()[at]=[0xa5;512];}
-        else if disk.0.borrow()[at][..4]==*b"INFO" {disk.set_version_and_rechecksum(at,6);}
-    }
+    disk.legacy_fixture(6);
     let baseline=disk.0.borrow().clone();
-    for cut in 0..=40 {
+    for cut in 0..=90 {
         let backing=MemoryDisk(Rc::new(RefCell::new(baseline.clone())),Rc::new(Cell::new(None)));
         let failing=FailingDisk::new(backing.clone());
         let mut store=ObjectStore::mount(failing.clone(),0).unwrap();
@@ -1256,20 +1302,16 @@ fn namespace_expansion() {
     let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
     for i in 32..44 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
     drop(store);
-    // A compact v8 bank has no header-resident entries.
-    for sector in 0..80 {
-        let at=STORE_RELATIVE_LBA as usize+sector;
-        if disk.0.borrow()[at][..4]==*b"INFO" {disk.set_version_and_rechecksum(at,8);}
-    }
+    disk.legacy_fixture(8);
     let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
     assert_eq!(store.persistent_namespace_count(),44);
-    for i in 44..48 {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
+    for i in 44..storage::object::NAMESPACE_CAPACITY {store.attach(format!("/home/default/alias{i}").as_bytes(),id).unwrap();}
     let generation=store.generation();
     assert_eq!(store.attach(b"/home/default/overflow",id),Err(ObjectError::InsufficientCapacity));
     assert_eq!(store.generation(),generation);drop(store);
     let mut store=ObjectStore::mount(disk,0).unwrap();
-    assert_eq!(store.persistent_namespace_count(),48);
-    for i in 32..48 {assert_eq!(store.resolve(format!("/home/default/alias{i}").as_bytes()).unwrap(),id);}
+    assert_eq!(store.persistent_namespace_count(),storage::object::NAMESPACE_CAPACITY);
+    for i in 32..storage::object::NAMESPACE_CAPACITY {assert_eq!(store.resolve(format!("/home/default/alias{i}").as_bytes()).unwrap(),id);}
     let mut bytes=[0;16];let n=store.read(id,None,&mut bytes).unwrap();assert_eq!(&bytes[..n],b"preserve");
 }
 
@@ -1490,8 +1532,8 @@ fn private_browser_settings(sectors:usize) {
     state.add(b"https://example.com/",b"Example").unwrap();
     let id=store.create_attached(b"@browser-favorites",ObjectType::Metadata,Space::System,state.bytes(),path).unwrap();
     let mut filled=false;
-    for n in 0..32 {let mut alias=*b"/reserved/00";alias[10]=b'A'+n;
-        match store.attach(&alias,id) {Ok(())=>{},Err(ObjectError::InsufficientCapacity)=>{filled=true;break;},Err(e)=>panic!("{e:?}")}
+    for n in 0..storage::object::NAMESPACE_CAPACITY {let alias=format!("/reserved/{n}");
+        match store.attach(alias.as_bytes(),id) {Ok(())=>{},Err(ObjectError::InsufficientCapacity)=>{filled=true;break;},Err(e)=>panic!("{e:?}")}
     }
     assert!(filled);
     state.set_preferences(2,false).unwrap();let saved=state.bytes();

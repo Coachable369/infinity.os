@@ -3316,6 +3316,10 @@ impl super::DisplayDevice {
                     let dim=crate::ui::desktop_effects::current().dim;
                     if dim!=0 {self.fill_rect_alpha(0,top_bar,self.width,self.height.saturating_sub(top_bar),3,10,19,dim);}
                 }
+                if id==crate::ui::desktop_stack::NATIVE {
+                    crate::console::native_gui_frames(|window,frame,active|self.native_gui_window(window,frame,active));
+                    continue;
+                }
                 if id==0 {
                     self.desktop_navigator_windows(scale,window_x,window_y,window_width,window_height,
                         window_visible,window_maximized,home_location,dragging_item);
@@ -6047,8 +6051,10 @@ impl super::DisplayDevice {
                 ),
             };
             let paste_to=navigator_state.is_some_and(|state|state.paste_to_editing);
-            let title=if paste_to {b"Paste to location".as_slice()}else{title};
-            let detail=if paste_to && navigator_state.is_some_and(|state|state.workplace_notice==4) {
+            let sidebar=navigator_state.is_some_and(|s|s.sidebar_editing.is_some());
+            let title=if sidebar {b"Sidebar folder mapping".as_slice()}else if paste_to {b"Paste to location".as_slice()}else{title};
+            let detail=if sidebar {if navigator_state.is_some_and(|s|s.workplace_notice==4) {b"Cannot save: choose an accessible folder.".as_slice()}else{b"Enter a folder path. Saved for your account only.".as_slice()}}
+            else if paste_to && navigator_state.is_some_and(|state|state.workplace_notice==4) {
                 b"Paste failed. Check folder or existing names.".as_slice()
             }else if paste_to {b"Destination folder".as_slice()}else{detail};
             if paste_to {
@@ -7687,9 +7693,6 @@ pub fn system_ui_present(
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;
-            if matches!(screen,2|4|7|8|9|10|11) {
-                crate::console::native_gui_frames(|window,frame,active|console.display.native_gui_window(window,frame,active));
-            }
             console.display.clipboard_overlay();
             if matches!(screen,2|4|7|8|9|10|11) {console.display.file_preview_overlay();}
             console.save_and_draw_cursor(cursor_x, cursor_y);

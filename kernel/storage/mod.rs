@@ -1556,6 +1556,16 @@ pub fn object_destroy_explicit(
 }
 
 // ------------------------=
+// FUNC: personal_trash_prefix
+// DESC: Finds the user-home prefix of a personal trash reference without accepting unrelated paths.
+// ------------------=
+fn personal_trash_prefix(path:&[u8])->Option<usize>{
+    if !path.starts_with(b"/home/"){return None;}
+    let split=path[6..].iter().position(|b|*b==b'/')?+6;
+    path[split..].starts_with(b"/trash/").then_some(split)
+}
+
+// ------------------------=
 // FUNC: trash_move
 // DESC: Moves a selected Namespace reference beneath Trash while preserving ObjectId and original path.
 // ------------------=
@@ -1565,9 +1575,14 @@ pub fn trash_move(path: &[u8]) -> Result<object::ObjectId, object::ObjectError> 
     }
     let id = namespace_resolve(path)?;
     let mut trash_path = [0u8; 95];
-    trash_path[..6].copy_from_slice(b"/trash");
-    trash_path[6..6 + path.len()].copy_from_slice(path);
-    namespace_move(path, &trash_path[..6 + path.len()])?;
+    let split=if path.starts_with(b"/home/"){path[6..].iter().position(|b|*b==b'/').map(|i|i+6)}else{None};
+    let length=if let Some(split)=split {
+        if path[split..].starts_with(b"/trash/"){return Err(object::ObjectError::InvalidPath);}
+        trash_path[..split].copy_from_slice(&path[..split]);
+        trash_path[split..split+6].copy_from_slice(b"/trash");
+        trash_path[split+6..path.len()+6].copy_from_slice(&path[split..]);path.len()+6
+    }else{trash_path[..6].copy_from_slice(b"/trash");trash_path[6..6+path.len()].copy_from_slice(path);path.len()+6};
+    namespace_move(path, &trash_path[..length])?;
     Ok(id)
 }
 
@@ -1576,10 +1591,13 @@ pub fn trash_move(path: &[u8]) -> Result<object::ObjectId, object::ObjectError> 
 // DESC: Restores a Trash Namespace reference to its exact original human path.
 // ------------------=
 pub fn trash_restore(trash_path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
-    if !trash_path.starts_with(b"/trash/") {
-        return Err(object::ObjectError::InvalidPath);
-    }
-    let original = &trash_path[6..];
+    let mut buffer=[0u8;95];
+    let original=if trash_path.starts_with(b"/trash/"){&trash_path[6..]}else{
+        let split=personal_trash_prefix(trash_path).ok_or(object::ObjectError::InvalidPath)?;
+        buffer[..split].copy_from_slice(&trash_path[..split]);
+        buffer[split..trash_path.len()-6].copy_from_slice(&trash_path[split+6..]);
+        &buffer[..trash_path.len()-6]
+    };
     let id = namespace_resolve(trash_path)?;
     namespace_move(trash_path, original)?;
     Ok(id)
@@ -1590,10 +1608,25 @@ pub fn trash_restore(trash_path: &[u8]) -> Result<object::ObjectId, object::Obje
 // DESC: Permanently deletes one Trash entry through the selected reference lifecycle.
 // ------------------=
 pub fn trash_delete(trash_path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
-    if !trash_path.starts_with(b"/trash/") {
+    if !trash_path.starts_with(b"/trash/") && personal_trash_prefix(trash_path).is_none() {
         return Err(object::ObjectError::InvalidPath);
     }
     object_remove_path(trash_path)
+}
+
+// ------------------------=
+// FUNC: trash_empty_personal
+// DESC: Empties only the authenticated caller's personal trash namespace, never another user's entries.
+// ------------------=
+pub(crate) fn trash_empty_personal(owner:[u8;16])->Result<usize,object::ObjectError>{
+    let path=provision_user_home(owner)?.child(b"trash").ok_or(object::ObjectError::InvalidPath)?;
+    let mut removed=0;
+    loop {
+        let Some(entry)=namespace_list_nth(path.as_bytes(),0)?else{return Ok(removed);};
+        let (metadata,_)=object_inspect_path(&entry.path[..entry.path_len as usize])?;
+        if metadata.owner.0!=owner{return Err(object::ObjectError::Unauthorized);}
+        object_remove_path(&entry.path[..entry.path_len as usize])?;removed+=1;
+    }
 }
 
 // ------------------------=
@@ -2101,4 +2134,18 @@ pub(crate) fn command_terminal_preferences(owner:[u8;16],session:[u8;16],save:Op
     })}
     #[cfg(target_arch = "x86")]
     {let _=(path,save);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
+// FUNC: navigator_location
+// DESC: Resolves or updates one owner-scoped sidebar mapping after validating the active session and destination.
+// ------------------=
+pub(crate) fn navigator_location(owner:[u8;16],session:[u8;16],index:usize,save:Option<&[u8]>)
+    ->Result<crate::runtime::object_navigation::ByteText<96>,object::ObjectError> {
+    use crate::runtime::object_navigation::ByteText;
+    let _=browser_favorites_path(owner,session)?;
+    if index>=9 && index!=11{return Err(object::ObjectError::InvalidPath);}
+    let home=provision_user_home(owner)?;
+    with_store(|store|store.sidebar_location(object::ObjectId(owner),home,index,save))
+        .and_then(|p|ByteText::new(p.as_bytes()).map_err(|_|object::ObjectError::InvalidPath))
 }

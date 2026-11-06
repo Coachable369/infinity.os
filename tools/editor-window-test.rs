@@ -187,7 +187,7 @@ fn main() {
     assert!(ui::desktop_stack::take_visibility_damage());
     assert!(!ui::desktop_stack::take_visibility_damage());
     ui::desktop_stack::publish([true; 5], 2, 0);
-    assert!(!ui::desktop_stack::take_visibility_damage());
+    assert!(ui::desktop_stack::take_visibility_damage());
     ui::desktop_stack::publish([true, true, false, true, true], 0, 0);
     assert!(ui::desktop_stack::take_visibility_damage());
     let bounds = [Rect {
@@ -220,6 +220,10 @@ fn main() {
     visible[ui::desktop_stack::BROWSER]=false;
     stack.sync(visible,ui::desktop_stack::BROWSER,6);
     assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(2));
+    for active in [ui::desktop_stack::NATIVE,0,ui::desktop_stack::NATIVE,2,4,1] {
+        stack.sync([true;ui::desktop_stack::SURFACES],active,0);
+        assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(active));
+    }
     // Existing five-surface callers must neither expose nor hit the new slot.
     stack.sync([true;5],4,6);
     assert!(!stack.visible[ui::desktop_stack::BROWSER]);

@@ -1293,7 +1293,10 @@ impl ConsoleRuntime {
                 DesktopAppKind::None=>0,DesktopAppKind::CommandWindow=>1,DesktopAppKind::TextEditor=>2,DesktopAppKind::TaskManager=>3,DesktopAppKind::Browser=>5}};
             let browser=self.browser_window_state();
             unsafe { BROWSER_WINDOW=browser; }
-            crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open,browser.visible],active,self.system_focus);
+            let mut native=(false,false);
+            #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            { native=python_commands::gui_visible_and_focused(); }
+            crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open,browser.visible,native.0],if native.1 {6}else{active},self.system_focus);
         }
         self.publish_window_control_snapshot();
         if !matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
@@ -2439,6 +2442,14 @@ impl ConsoleRuntime {
         &mut self,
         state: crate::runtime::object_navigation::FileNavigatorState,
     ) {
+        if let Some(index)=state.sidebar_editing {
+            let saved=crate::storage::navigator_location(self.current_user.0,self.current_session.0,index,Some(state.editor_text.as_bytes()));
+            let _=crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut(){
+                if let Ok(path)=saved {let _=n.navigate(path.as_bytes());n.cancel_edit();n.dialog_open=None;}
+                else {n.workplace_notice=4;}
+            }});
+            return;
+        }
         if state.paste_to_editing {
             let path=state.editor_text.as_bytes();
             let valid=crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|
@@ -3400,7 +3411,7 @@ impl ConsoleRuntime {
         let named_home=crate::storage::provision_user_home(self.current_user.0).ok();
         let owned_path=named_home.and_then(|home|{
             if path==b"/home/default"{Some(home)}
-            else{None}
+            else if let Some(child)=path.strip_prefix(b"/home/default/"){home.child(child)}else{None}
         });
         let path=owned_path.as_ref().map(|p|p.as_bytes()).unwrap_or(path);
         let downloads=infinity_browser_core::download::owner_directory(self.current_user.0);
@@ -7788,6 +7799,21 @@ impl ConsoleRuntime {
                         y:(position.y as i64*self.system.framebuffer_height as i64/1000) as i32,
                     },phase,button}, other=>other,
             };
+            if let crate::ui::input::UiEvent::Pointer{position,phase,..}=event {
+                let stack=crate::ui::desktop_stack::current();
+                let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
+                let (e,c,t)=self.desktop_app_windows();
+                let rect=|w:DesktopAppWindowState|layout.desktop_app_window_geometry(w.x,w.y,w.width,w.height,w.maximized).window;
+                let (x,y,w,h)=layout.home_window_geometry_sized(self.home_window_x,self.home_window_y,self.home_window_width,self.home_window_height,self.home_window_maximized);
+                let bounds=[crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32},rect(c),rect(e),rect(t),layout.settings_window_geometry(self.settings_window).window,rect(self.browser_window_state())];
+                for id in stack.order.into_iter().rev() {
+                    if id==crate::ui::desktop_stack::NATIVE {break;}
+                    if stack.visible[id] && bounds[id].contains(position) {
+                        if phase==crate::ui::input::PointerPhase::Down {python_commands::release_gui_keyboard();}
+                        return false;
+                    }
+                }
+            }
             return python_commands::gui_input(self,event,scroll_y);
         }
         let _=(event,scroll_y);false
@@ -8223,10 +8249,11 @@ impl ConsoleRuntime {
             Some(FileNavigatorAction::Navigate(location)) => {
                 self.home_previous_location = self.home_location;
                 self.home_location = location;
-                let downloads=infinity_browser_core::download::owner_directory(self.current_user.0);
+                let destination=crate::storage::navigator_location(self.current_user.0,self.current_session.0,location,None);
+                let Ok(destination)=destination else{return;};
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime.file_navigator.as_mut().map(|navigator| {
-                        let result = navigator.navigate(if location==3{&downloads}else{home_location_path(location)});
+                        let result = navigator.navigate(destination.as_bytes());
                         navigator.menu_open = None;
                         result
                     })
@@ -8325,7 +8352,7 @@ impl ConsoleRuntime {
         let Some(state) = state else { return };
         match (state.dialog_open, action) {
             (Some(FileNavigatorDialog::EmptyTrash), 0) => {
-                let _ = crate::storage::trash_empty();
+                let _ = crate::storage::trash_empty_personal(self.current_user.0);
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime
                         .file_navigator
@@ -8499,6 +8526,7 @@ impl ConsoleRuntime {
         native_handled |= self.native_gui_event(crate::ui::input::UiEvent::Pointer {
             position:crate::ui::geometry::Point{x:self.pointer_x,y:self.pointer_y},phase:crate::ui::input::PointerPhase::Move,button:0},0);
         if native_handled {
+            if clicked || right_clicked {self.redraw();}
             self.session_idle.note_activity();
             // Native clients consume motion asynchronously; the shell cursor
             // must advance even when the client has no new frame to present.
@@ -9125,6 +9153,18 @@ impl ConsoleRuntime {
                 }
             }
             if right_clicked && self.home_window_visible {
+                if let Some(DesktopTarget::HomeSidebar(index))=self.desktop_target(layout) {
+                    if index<9 || index==11 {
+                        if let Ok(path)=crate::storage::navigator_location(self.current_user.0,self.current_session.0,index,None){
+                            crate::runtime::with_runtime(|r|{if let Some(n)=r.file_navigator.as_mut(){
+                                n.begin_location_edit();n.sidebar_editing=Some(index);n.editor_text=path;
+                                n.editor_cursor=path.as_bytes().len();n.workplace_notice=0;
+                                n.open_dialog(crate::runtime::object_navigation::FileNavigatorDialog::Location);
+                            }});
+                            self.redraw();return;
+                        }
+                    }
+                }
                 let target = self.desktop_target(layout);
                 if matches!(
                     target,
@@ -9402,8 +9442,8 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::HomeSidebar(location)) => {
                         self.home_previous_location = self.home_location;
                         self.home_location = location;
-                        let downloads=infinity_browser_core::download::owner_directory(self.current_user.0);
-                        let path = if location==3{downloads.as_slice()}else{home_location_path(location)};
+                        let Ok(destination)=crate::storage::navigator_location(self.current_user.0,self.current_session.0,location,None) else{return;};
+                        let path=destination.as_bytes();
                         let _ = crate::runtime::with_runtime(|runtime| {
                             runtime
                                 .file_navigator
@@ -10676,7 +10716,7 @@ impl ConsoleRuntime {
                 Ok(id) => self.output.write_id(b"Permanently deleted ObjectId: ", id),
                 Err(error) => self.storage_error(error),
             },
-            b"empty" => match crate::storage::trash_empty() {
+            b"empty" => match crate::storage::trash_empty_personal(self.current_user.0) {
                 Ok(count) => self
                     .output
                     .write_number(b"Trash entries deleted: ", count as u64),
@@ -13861,8 +13901,8 @@ fn home_location_path(location: usize) -> &'static [u8] {
         crate::storage::object::DOCUMENTS_PATH,
         b"/home/default/downloads",
         b"/home/default/pictures",
-        b"/home/default/media",
-        b"/home/default/media",
+        b"/home/default/music",
+        b"/home/default/videos",
         b"/home/default/projects",
         b"/trash",
     ][location.min(8)]

@@ -138,10 +138,10 @@ pub const fn dock_label(index: usize) -> &'static [u8] {
 // FUNC: dock_running
 // DESC: Derives dock indicators from current visible surfaces instead of hard-coded icon positions.
 // ------------------=
-pub const fn dock_running(
+pub const fn dock_running<const N:usize>(
     index: usize,
     launcher_open: bool,
-    visible: [bool; 6],
+    visible: [bool; N],
     settings_section: usize,
     ai_widget_visible: bool,
 ) -> bool {

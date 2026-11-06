@@ -23,6 +23,8 @@ mod python_packages;
 mod clock_configuration;
 #[path = "object_ssh.rs"]
 mod ssh_private;
+#[path = "object_sidebar.rs"]
+mod sidebar;
 pub(crate) use ssh_private::SSH_SERVICE_OWNER;
 pub use python_packages::{PythonPackageRevision, PythonDataRevision, PythonLibraryCatalog,
     format_python_library_context, PYTHON_LIBRARY_CONTEXT_BYTES};
@@ -47,19 +49,13 @@ const CONTENT: u64 = 80;
 pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 20;
 const AI_INSTRUCTION_MAPPING: &[u8] = include_bytes!("../../system/ai/instruction-mappings.json");
 const AI_SERVICE_REGISTRY: &[u8] = include_bytes!("../../system/ai/service-registry.json");
-// Thirteen object-table sectors fit in each 32-sector metadata bank. The first
-// six retain their original offsets and the remaining seven occupy the bank's
-// reserved tail, leaving useful object headroom after bootstrap System objects.
-const OBJECT_TABLE_SECTORS: usize = 13;
+// Format 10 stores bounded tables in separately allocated, checksummed bank
+// extents. Older bank coordinates remain readable for transactional migration.
+const OBJECT_TABLE_SECTORS: usize = 32;
 const OBJECTS_PER_SECTOR: usize = 4;
 const MAX_OBJECTS: usize = OBJECT_TABLE_SECTORS * OBJECTS_PER_SECTOR;
-// Each bank owns four additional sectors in the reserved 72..80 range.
-// Content still begins at sector 80; no existing payload is relocated.
-const MAX_VERSIONS: usize = 64;
-// The six unused sectors between the root pair and BANK_A provide three
-// additional namespace sectors per bank. Format 8 also uses the four sectors
-// already reserved by allocation-map block rounding, without moving content.
-pub const NAMESPACE_CAPACITY: usize = 52;
+const MAX_VERSIONS: usize = 128;
+pub const NAMESPACE_CAPACITY: usize = 128;
 pub const PUBLIC_NAMESPACE_CAPACITY: usize = NAMESPACE_CAPACITY + sdk_package::ENTRIES.len();
 const MAX_ENTRIES: usize = NAMESPACE_CAPACITY;
 const MAX_RELATIONSHIPS: usize = 16;
@@ -80,7 +76,9 @@ const ALLOCATION_EXTENSION_A: u64 =
     CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
 const ALLOCATION_EXTENSION_B: u64 =
     ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
-pub const FORMAT_VERSION: u32 = 9;
+pub const FORMAT_VERSION: u32 = 10;
+const TABLE_BANK_SECTORS: u64 = 80;
+const TABLE_BLOCKS: u16 = 20; // Two independent 40 KiB banks; never overwrite the committed bank.
 // New namespace sectors must stay within the blocks already reserved in v6/v7.
 const _: () = assert!((2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS)).div_ceil(8) * 8
     >= 2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) + 4);
@@ -424,6 +422,7 @@ struct State {
     generation: u64,
     next_identity: u64,
     total_blocks: u32,
+    table_extent: u32,
     allocation: [u8; ALLOCATION_BYTES],
     objects: [ObjectRecord; MAX_OBJECTS],
     versions: [VersionRecord; MAX_VERSIONS],
@@ -441,6 +440,7 @@ impl State {
             generation: 0,
             next_identity: 1,
             total_blocks,
+            table_extent: u32::MAX,
             allocation: [0; ALLOCATION_BYTES],
             objects: [ObjectRecord {
                 used: false,
@@ -1331,6 +1331,12 @@ impl<D: BlockDevice> ObjectStore<D> {
                 created: object_timestamp(self.state.generation + 1),
             };
             self.attach_record(path, id)?;
+            if path.starts_with(&home) && path.get(38..49)==Some(b"/downloads/") {
+                if let Ok(named)=self.user_home_path(owner,b"") {
+                    let destination=named.child(b"downloads").and_then(|p|p.child(&path[49..])).ok_or(ObjectError::InvalidPath)?;
+                    self.attach_record(destination.as_bytes(),id)?;
+                }
+            }
             Ok(id)
         })();
         self.finish(before, result)
@@ -1850,16 +1856,35 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn ensure_user_home(&mut self,owner:ObjectId,name:&[u8])->Result<user_home::Path,ObjectError>{
         let home = self.user_home_path(owner, name)?;
-        let complete=[b"".as_slice(),b"documents",b"downloads"].iter().all(|child|{
+        let complete=[b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"].iter().all(|child|{
             let path=if child.is_empty(){Some(home)}else{home.child(child)};
             path.is_some_and(|path|self.state.entries.iter().any(|e|e.used&&e.path()==path.as_bytes()
                 && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner==owner
                     && self.state.objects[i].kind==ObjectType::NamespaceNode as u8)))
         });
-        if complete{return Ok(home);}
+        let aliases=self.home_download_aliases(owner,home,false)?;
+        if complete && aliases==0{return Ok(home);}
         let before=self.begin()?;
-        let result=self.ensure_user_home_record(owner, home);
+        let result=self.ensure_user_home_record(owner, home).and_then(|home|{self.home_download_aliases(owner,home,true)?;Ok(home)});
         self.finish(before,result)
+    }
+
+    // ------------------------=
+    // FUNC: home_download_aliases
+    // DESC: Exposes identity-addressed browser downloads in the display-name home without duplicating content or crossing owners.
+    // ------------------=
+    fn home_download_aliases(&mut self,owner:ObjectId,home:user_home::Path,write:bool)->Result<usize,ObjectError>{
+        let mut prefix=[0u8;49];prefix[..6].copy_from_slice(b"/home/");
+        for(i,b)in owner.0.iter().enumerate(){prefix[6+i*2]=b"0123456789abcdef"[(b>>4)as usize];prefix[7+i*2]=b"0123456789abcdef"[(b&15)as usize];}
+        prefix[38..].copy_from_slice(b"/downloads/");
+        let mut count=0;
+        for i in 0..MAX_ENTRIES {
+            let entry=self.state.entries[i];if !entry.used||!entry.path().starts_with(&prefix){continue;}
+            if self.metadata(entry.target)?.owner!=owner{continue;}
+            let Some(path)=home.child(b"downloads").and_then(|p|p.child(&entry.path()[49..]))else{continue;};
+            if self.resolve(path.as_bytes()).is_ok(){continue;}
+            count+=1;if write{self.attach_record(path.as_bytes(),entry.target)?;}
+        }Ok(count)
     }
 
     // ------------------------=
@@ -1954,7 +1979,9 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Materializes owner-scoped home directories inside a caller-owned storage transaction.
     // ------------------=
     fn ensure_user_home_record(&mut self, owner: ObjectId, home: user_home::Path) -> Result<user_home::Path, ObjectError> {
-            for child in [b"".as_slice(),b"documents",b"downloads"]{
+            let media=home.child(b"media").ok_or(ObjectError::InvalidPath)?;
+            let seed=self.resolve(media.as_bytes()).is_err();
+            for child in [b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"]{
                 let path=if child.is_empty(){home}else{home.child(child).ok_or(ObjectError::InvalidObject)?};
                 if let Some(entry)=self.state.entries.iter().find(|e|e.used&&e.path()==path.as_bytes()){
                     let record=&self.state.objects[self.object_index(entry.target)?];
@@ -1966,6 +1993,21 @@ impl<D: BlockDevice> ObjectStore<D> {
                 let index=self.object_index(id)?;self.state.objects[index].owner=owner;
                 self.attach_record(path.as_bytes(),id)?;
             }
+        if seed {
+            for (name,folder,data) in [
+                (b"Chime.wav".as_slice(),b"music".as_slice(),include_bytes!("../../sdk/system/Infinity-Chime.wav").as_slice()),
+                (b"Melody.mp3",b"music",include_bytes!("../../sdk/system/Infinity-Melody.mp3").as_slice()),
+                (b"Motion.mp4",b"videos",include_bytes!("../../sdk/system/Infinity-Motion.mp4").as_slice()),
+            ] {
+                let destination=home.child(folder).and_then(|p|p.child(name)).ok_or(ObjectError::InvalidPath)?;
+                if self.resolve(destination.as_bytes()).is_ok(){continue;}
+                let id=self.create_record(name,ObjectType::Blob,Space::Personal)?;
+                let slot=self.object_index(id)?;self.state.objects[slot].owner=owner;
+                self.write_record_limit(id,data,MAX_DOWNLOAD_CONTENT)?;
+                self.attach_record(destination.as_bytes(),id)?;
+                self.attach_record(media.child(name).ok_or(ObjectError::InvalidPath)?.as_bytes(),id)?;
+            }
+        }
         Ok(home)
     }
 
@@ -2203,9 +2245,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the resolve operation.
     // ------------------=
     pub fn resolve(&self, path: &[u8]) -> Result<ObjectId, ObjectError> {
-        if sdk_package::owns(path) {
-            return sdk_package::resolve(path).ok_or(ObjectError::NamespaceNotFound);
-        }
+        if let Some(id)=sdk_package::resolve(path) {return Ok(id);}
         if path.starts_with(b"/objects/") {
             let id = parse_id(&path[9..]).ok_or(ObjectError::InvalidPath)?;
             if sdk_package::get(id).is_some() { return Ok(id); }
@@ -2218,7 +2258,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.state
             .entries
             .iter()
-            .find(|x| x.used && x.path() == path)
+            .find(|x| x.used && system_path_equal(x.path(), path))
             .map(|x| x.target)
             .ok_or(ObjectError::NamespaceNotFound)
     }
@@ -2724,7 +2764,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.state
             .entries
             .iter()
-            .filter(|e| e.used)
+            .filter(|e| e.used && e.path()!=b"/system")
             .map(|e| (e.path(), e.target))
             .chain(sdk_package::ENTRIES.iter().map(|entry| (entry.path, entry.id)))
             .nth(index)
@@ -2744,11 +2784,14 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub fn namespace_list_nth(&self, prefix: &[u8], index: usize) -> Option<NamespaceListResult> {
         (0..self.state.entries.iter().filter(|entry| entry.used).count() + sdk_package::ENTRIES.len())
             .filter_map(|i| self.namespace_entry(i))
-            .filter(|(path, _)| path.starts_with(prefix))
+            .filter(|(path, _)| path.len()>=prefix.len() && system_path_equal(&path[..prefix.len()],prefix))
             .nth(index)
             .map(|(path, id)| {
                 let mut stored = [0; MAX_PATH];
                 stored[..path.len()].copy_from_slice(path);
+                if path.len()>=7 && path[..7].eq_ignore_ascii_case(b"/System") {
+                    stored[..7].copy_from_slice(if prefix.len()>=7 {&prefix[..7]}else{b"/System"});
+                }
                 NamespaceListResult {
                 path: stored,
                 path_len: path.len() as u8,
@@ -2911,6 +2954,9 @@ impl<D: BlockDevice> ObjectStore<D> {
             .total_blocks
             .max(available.min((ALLOCATION_BYTES * 8) as u64) as u32);
         reserve_allocator_metadata(&mut self.state)?;
+        if self.state.table_extent == u32::MAX {
+            self.state.table_extent = self.allocate(Space::System, TABLE_BLOCKS)?;
+        }
         let generation = self.state.generation + 1;
         let bank = if self.mounted_root == 0 {
             BANK_B
@@ -3244,6 +3290,15 @@ impl NamespaceRecord {
 }
 
 // ------------------------=
+// FUNC: system_path_equal
+// DESC: Unifies the legacy internal and public System mount spelling without changing child-name case semantics.
+// ------------------=
+fn system_path_equal(a:&[u8],b:&[u8])->bool {
+    a==b || (a.len()>=7 && b.len()>=7 && a[..7].eq_ignore_ascii_case(b"/System")
+        && b[..7].eq_ignore_ascii_case(b"/System") && a[7..]==b[7..])
+}
+
+// ------------------------=
 // FUNC: validate_path
 // DESC: Implements the validate path operation.
 // ------------------=
@@ -3388,7 +3443,7 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
 // DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
 // ------------------=
 const fn supported_format(version: u32) -> bool {
-    matches!(version, 4 | 5 | 6 | 7 | 8 | FORMAT_VERSION)
+    matches!(version, 4 | 5 | 6 | 7 | 8 | 9 | FORMAT_VERSION)
 }
 // ------------------------=
 // FUNC: set_bit
@@ -3462,11 +3517,9 @@ fn version_sector(bank: u64, sector: usize) -> u64 {
 
 // ------------------------=
 // FUNC: namespace_capacity
-// DESC: Uses extended slots only when the scalable allocation metadata reservation exists; compact stores retain their original in-bank capacity.
+// DESC: Provides equal namespace capacity on compact and full-size object stores.
 // ------------------=
-fn namespace_capacity(state: &State) -> usize {
-    if state.total_blocks as usize > LEGACY_ALLOCATION_BLOCKS { MAX_ENTRIES } else { 48 }
-}
+fn namespace_capacity(_state: &State) -> usize { MAX_ENTRIES }
 
 // ------------------------=
 // FUNC: namespace_sector
@@ -3507,11 +3560,9 @@ fn write_bank<D: BlockDevice>(
         LEGACY_ALLOCATION_BYTES
     };
     put32(&mut h, 36, allocation_bytes as u32);
-    // Compact disks cannot address the large-disk extension sectors. Four
-    // complete namespace records fit in the unused checksummed bank header.
-    if allocation_bytes == LEGACY_ALLOCATION_BYTES {
-        for i in 0..4 { encode_entry(&state.entries[44+i], &mut h, 40+i*116); }
-    }
+    put32(&mut h, 40, state.table_extent);
+    let tables = c + CONTENT + state.table_extent as u64 * ALLOCATION_BLOCK_SECTORS
+        + if bank == BANK_A { 0 } else { TABLE_BANK_SECTORS };
     finish_sector(&mut h);
     write(d, base, &h)?;
     let allocation_sectors =
@@ -3545,14 +3596,7 @@ fn write_bank<D: BlockDevice>(
             );
         }
         finish_sector(&mut s);
-        // The first six sectors retain their v2 locations. The two expansion
-        // sectors use previously reserved bank space after relationships.
-        let offset = if sector < 6 {
-            5 + sector as u64
-        } else {
-            25 + (sector - 6) as u64
-        };
-        write(d, base + offset, &s)?;
+        write(d, tables + sector as u64, &s)?;
     }
     for sector in 0..MAX_VERSIONS / 8 {
         let mut s = [0u8; 512];
@@ -3562,9 +3606,9 @@ fn write_bank<D: BlockDevice>(
             encode_version(&state.versions[sector * 8 + n], &mut s, 16 + n * 60);
         }
         finish_sector(&mut s);
-        write(d, c + version_sector(bank, sector), &s)?;
+        write(d, tables + 32 + sector as u64, &s)?;
     }
-    for sector in 0..if allocation_bytes==LEGACY_ALLOCATION_BYTES {11} else {MAX_ENTRIES/4} {
+    for sector in 0..MAX_ENTRIES/4 {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFONSP2");
         put32(&mut s, 8, FORMAT_VERSION);
@@ -3572,7 +3616,7 @@ fn write_bank<D: BlockDevice>(
             encode_entry(&state.entries[sector * 4 + n], &mut s, 16 + n * 120);
         }
         finish_sector(&mut s);
-        write(d, c + namespace_sector(bank, sector), &s)?;
+        write(d, tables + 48 + sector as u64, &s)?;
     }
     for sector in 0..2 {
         let mut s = [0u8; 512];
@@ -3612,6 +3656,14 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     let mut state = State::empty(total);
     state.generation = g;
     state.next_identity = get64(&h, 24);
+    let tables = if format >= 10 {
+        state.table_extent = get32(&h, 40);
+        if state.table_extent as u64 + TABLE_BLOCKS as u64 > total as u64 {
+            return Err(ObjectError::CorruptMetadata);
+        }
+        c + CONTENT + state.table_extent as u64 * ALLOCATION_BLOCK_SECTORS
+            + if bank == BANK_A { 0 } else { TABLE_BANK_SECTORS }
+    } else { 0 };
     let allocation_sectors =
         (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
     for sector in 0..allocation_sectors {
@@ -3628,13 +3680,13 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
         let end = (start + ALLOCATION_SECTOR_BYTES).min(allocation_bytes);
         state.allocation[start..end].copy_from_slice(&s[16..16 + end - start]);
     }
-    for sector in 0..OBJECT_TABLE_SECTORS {
+    for sector in 0..if format >= 10 { OBJECT_TABLE_SECTORS } else { 13 } {
         let offset = if sector < 6 {
             5 + sector as u64
         } else {
             25 + (sector - 6) as u64
         };
-        let s = read(d, base + offset)?;
+        let s = read(d, if format >= 10 { tables + sector as u64 } else { base + offset })?;
         check(&s, b"INFOOBJ2")?;
         for n in 0..OBJECTS_PER_SECTOR {
             state.objects[sector * OBJECTS_PER_SECTOR + n] = decode_object(&s, 16 + n * 120)?;
@@ -3643,20 +3695,20 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     let version_sectors = if get32(&h, 8) == 4 {
         4
     } else {
-        MAX_VERSIONS / 8
+        if format >= 10 { MAX_VERSIONS / 8 } else { 8 }
     };
     for sector in 0..version_sectors {
-        let s = read(d, c + version_sector(bank, sector))?;
+        let s = read(d, if format >= 10 { tables + 32 + sector as u64 } else { c + version_sector(bank, sector) })?;
         check(&s, b"INFOVER2")?;
         for n in 0..8 {
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
         }
     }
-    if format >= 9 && allocation_bytes == LEGACY_ALLOCATION_BYTES {
+    if format == 9 && allocation_bytes == LEGACY_ALLOCATION_BYTES {
         for i in 0..4 { state.entries[44+i] = decode_entry(&h,40+i*116)?; }
     }
-    for sector in 0..if format >= 8 && allocation_bytes!=LEGACY_ALLOCATION_BYTES {MAX_ENTRIES/4} else if format >= 8 {11} else if format == 7 { 11 } else { 8 } {
-        let s = read(d, c + namespace_sector(bank, sector))?;
+    for sector in 0..if format >= 10 {MAX_ENTRIES/4} else if format >= 8 && allocation_bytes!=LEGACY_ALLOCATION_BYTES {13} else if format >= 8 {11} else if format == 7 { 11 } else { 8 } {
+        let s = read(d, if format >= 10 { tables + 48 + sector as u64 } else { c + namespace_sector(bank, sector) })?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {
             state.entries[sector * 4 + n] = decode_entry(&s, 16 + n * 120)?;
@@ -3862,6 +3914,15 @@ fn decode_relationship(s: &[u8], o: usize) -> Result<RelationshipRecord, ObjectE
 // DESC: Implements the validate state operation.
 // ------------------=
 fn validate_state(state: &State) -> Result<(), ObjectError> {
+    if state.table_extent != u32::MAX {
+        let start = state.table_extent as usize;
+        let end = start.checked_add(TABLE_BLOCKS as usize).ok_or(ObjectError::CorruptMetadata)?;
+        if end > state.total_blocks as usize
+            || (start..end).any(|b| !bit(&state.allocation, b))
+            || state.versions.iter().any(|v| v.used && (v.extent as usize) < end
+                && start < v.extent as usize + v.blocks as usize)
+        { return Err(ObjectError::CorruptMetadata); }
+    }
     let mut saw_unused = false;
     let mut prior = None;
     for o in &state.objects {

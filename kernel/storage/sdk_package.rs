@@ -17,7 +17,7 @@ include!("../../build/sdk/catalog.rs");
 // ------------------=
 pub fn owns(path: &[u8]) -> bool {
     path == b"/InfinitySDK" || path.starts_with(b"/InfinitySDK/")
-        || path==b"/System" || (path.starts_with(b"/System/") && resolve(path).is_some())
+        || path==b"/System" || (path.len()>7 && path[..8].eq_ignore_ascii_case(b"/System/") && resolve(path).is_some())
 }
 
 // ------------------------=
@@ -33,7 +33,7 @@ pub fn get(id: ObjectId) -> Option<&'static Entry> {
 // DESC: Resolves an exact public SDK path without consuming persistent object slots.
 // ------------------=
 pub fn resolve(path: &[u8]) -> Option<ObjectId> {
-    ENTRIES.iter().find(|entry| entry.path == path).map(|entry| entry.id)
+    ENTRIES.iter().find(|entry| entry.path == path || (path.len()>=7 && entry.path.len()>=7 && path[..7].eq_ignore_ascii_case(b"/System") && entry.path.starts_with(b"/System") && entry.path[7..]==path[7..])).map(|entry| entry.id)
 }
 
 // ------------------------=

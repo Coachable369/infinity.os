@@ -1153,6 +1153,7 @@ pub struct FileNavigatorState {
     pub location_editing: bool,
     pub rename_editing: bool,
     pub paste_to_editing: bool,
+    pub sidebar_editing: Option<usize>,
     pub editor_selected: bool,
     pub editor_text: ByteText<MAX_NAMESPACE_PATH>,
     pub editor_cursor: usize,
@@ -1467,6 +1468,7 @@ impl FileNavigatorState {
             location_editing: false,
             rename_editing: false,
             paste_to_editing: false,
+            sidebar_editing: None,
             editor_selected: false,
             editor_text: ByteText::empty(),
             editor_cursor: 0,
@@ -1589,6 +1591,7 @@ impl FileNavigatorState {
     // ------------------=
     pub fn begin_location_edit(&mut self) {
         self.paste_to_editing = false;
+        self.sidebar_editing = None;
         self.editor_selected = true;
         self.editor_text = self.active_namespace_ref;
         self.editor_cursor = self.editor_text.as_bytes().len();
@@ -1639,6 +1642,7 @@ impl FileNavigatorState {
     // ------------------=
     pub fn close_overlays(&mut self) {
         self.paste_to_editing = false;
+        self.sidebar_editing = None;
         self.editor_selected = false;
         self.menu_open = None;
         self.dialog_open = None;
@@ -1656,6 +1660,7 @@ impl FileNavigatorState {
         };
         self.editor_text = text;
         self.paste_to_editing = false;
+        self.sidebar_editing = None;
         self.editor_selected = true;
         self.editor_cursor = self.editor_text.as_bytes().len();
         self.rename_editing = true;
@@ -1670,6 +1675,7 @@ impl FileNavigatorState {
     // ------------------=
     pub fn cancel_edit(&mut self) {
         self.paste_to_editing = false;
+        self.sidebar_editing = None;
         self.editor_selected = false;
         self.location_editing = false;
         self.rename_editing = false;

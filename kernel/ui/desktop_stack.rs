@@ -1,7 +1,8 @@
 //! One bounded native window order for both painting and activation.
 use super::geometry::{Point, Rect};
 pub const BROWSER: usize = 5;
-pub const SURFACES: usize = 6;
+pub const NATIVE: usize = 6;
+pub const SURFACES: usize = 7;
 #[derive(Clone, Copy)]
 pub struct Stack {
     pub order: [usize; SURFACES],
@@ -16,7 +17,7 @@ impl Stack {
     // ------------------=
     pub const fn new() -> Self {
         Self {
-            order: [0, 1, 2, 3, 4, BROWSER],
+            order: [0, 1, 2, 3, 4, BROWSER, NATIVE],
             visible: [false; SURFACES],
             active: 0,
             settings_section: 0,
@@ -67,9 +68,9 @@ static mut VISIBILITY_DIRTY: bool = false;
 // ------------------=
 pub fn publish<const N: usize>(visible: [bool; N], active: usize, section: usize) {
     unsafe {
-        let previous = (*(&raw const STATE)).visible;
+        let previous = *(&raw const STATE);
         (&mut *(&raw mut STATE)).sync(visible, active, section);
-        VISIBILITY_DIRTY |= previous != (*(&raw const STATE)).visible;
+        VISIBILITY_DIRTY |= previous.visible != (*(&raw const STATE)).visible || previous.order != (*(&raw const STATE)).order;
     }
 }
 // ------------------------=

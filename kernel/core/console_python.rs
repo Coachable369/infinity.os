@@ -370,7 +370,7 @@ unsafe fn start_system_tool(console:&ConsoleRuntime,job:&mut Job,path:&[u8],argu
             } else {i+=1;}
         }
     }else{
-        let mut program=false;let mut skip_separator=false;let mut options=true;
+        let mut program=matches!(path,b"/System/wc.py"|b"/System/sha256sum.py"|b"/System/jsonfmt.py");let mut skip_separator=false;let mut options=true;
         for (i,&word) in arguments.iter().enumerate().skip(2){
             if skip_separator{skip_separator=false;continue;}
             if options && word==b"--"{options=false;continue;}
@@ -969,7 +969,8 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     }
     let mut changed=false;
     if job.gui_revision != job.gui.revision() {
-        job.gui_revision = job.gui.revision(); job.gui_keyboard = true; changed = true;
+        if job.gui_revision == 0 {job.gui_keyboard = true;}
+        job.gui_revision = job.gui.revision(); changed = true;
     }
     if authorized&&task.execution_id().is_some(){
         if let Some(mut generated)=job.generated.filter(|g|g.phase==workflow::Phase::Run&&!g.launched){
@@ -1117,6 +1118,16 @@ fn application_call<T:crate::runtime::native_memory::PageTable>(application:&mut
 // DESC: Returns keyboard routing to OS shortcuts and secure overlays without destroying the running native application.
 // ------------------=
 pub(super) fn release_gui_keyboard() { unsafe { (&mut *(&raw mut JOB)).gui_keyboard=false; } }
+
+// ------------------------=
+// FUNC: gui_visible_and_focused
+// DESC: Publishes native client visibility and input focus into the shared desktop layer order.
+// ------------------=
+pub(super) fn gui_visible_and_focused() -> (bool,bool) {
+    let mut visible=false;
+    gui_frames(|window,frame,_| {visible |= frame.visible && window.state!=crate::ui::window::WindowState::Minimized;});
+    (visible,visible && unsafe{(&*(&raw const JOB)).gui_keyboard})
+}
 
 // ------------------------=
 // FUNC: gui_frames
