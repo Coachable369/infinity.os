@@ -830,6 +830,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     recognition_failure_recovery_tests(owner);
     desktop_autostart_handoff_tests(owner);
     empty_capture_and_calibration_contention_tests(owner);
+    startup_ambient_recovery_tests(owner);
 }
 
 // ------------------------=
@@ -2111,4 +2112,28 @@ fn empty_capture_and_calibration_contention_tests(owner:runtime::execution::Secu
     let captures=CAPTURES.load(Ordering::SeqCst);
     NOW.fetch_add(10_000_000_000,Ordering::SeqCst);conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+}
+
+// ------------------------=
+// FUNC: startup_ambient_recovery_tests
+// DESC: Recovers a cold calibrated microphone after its settled ambient level rises, without a button reset or unaddressed command execution.
+// ------------------=
+fn startup_ambient_recovery_tests(owner:runtime::execution::SecurityIdentity) {
+    HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().extend([0;8000]);drain_microphone();
+    assert_eq!(conversation::microphone_threshold(),Some(300));
+    let turns=TURNS.load(Ordering::SeqCst);
+    let requests=RECOGNITION_REQUESTS.lock().unwrap().len();
+    for _ in 0..750 {
+        MICROPHONE.lock().unwrap().extend([500;320]);
+        NOW.fetch_add(20_000_000,Ordering::SeqCst);conversation::poll();
+    }
+    assert!(!conversation::waiting_for_pause());
+    assert_eq!(conversation::microphone_threshold(),Some(1000));
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests);
+    recognize_voice(b"Infinity respond after microphone recovery");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+    complete_voice_reply();conversation::stop(owner);conversation::poll();
 }

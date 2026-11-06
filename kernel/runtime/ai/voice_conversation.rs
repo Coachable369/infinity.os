@@ -124,6 +124,7 @@ static mut CAPTURE_EMPTY_REPORTED: bool = false;
 static mut CAPTURE_EMPTY_RETRIES: u8 = 0;
 static mut CAPTURE_BOUNDARY_PENDING: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
+static mut LIMIT_WAIT_SINCE: u64 = 0;
 static mut TURN_TIMING: timing::Timeline = timing::Timeline::new();
 static mut TURN_TIMING_ACTIVE: bool = false;
 static mut LAST_TIMING_RECORD: (u64, u64) = (0, 0);
@@ -535,6 +536,7 @@ unsafe fn clear_wake_command() {
 // DESC: Erases the single pending utterance and endpoint carry without touching microphone authority.
 // ------------------=
 unsafe fn clear_captured_turn() {
+    LIMIT_WAIT_SINCE = 0;
     (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
         (&*(&raw const NOISE_FLOOR)).threshold(),
         (&*(&raw const NOISE_FLOOR)).continuation_threshold());
@@ -1677,6 +1679,19 @@ pub fn poll() -> bool {
                     }
                     VadState::Limit => {
                         clear_wake_command();
+                        let now = super::qwen::workers::clock_ns();
+                        if LIMIT_WAIT_SINCE == 0 { LIMIT_WAIT_SINCE = now.max(1); }
+                        // Cold ADC gain can settle above the startup floor. The
+                        // rejected utterance is already erased; retaining its
+                        // old gate forever makes Stop the only way to recover.
+                        // Recalibrate fresh samples after a bounded pause wait,
+                        // preserving permission and requiring a new wake word.
+                        if now.saturating_sub(LIMIT_WAIT_SINCE) >= 3_000_000_000 {
+                            NOISE_FLOOR = voice_noise_floor::NoiseFloor::new();
+                            reset_listening_state();
+                            CAPTURE_BOUNDARY_PENDING = true;
+                            trace(b"overlong capture recovery; recalibrating microphone");
+                        }
                     }
                     _ => {}
                 }

@@ -122,3 +122,12 @@ Every function must have this comment header immediately above it:
 // DESC: <description>
 // ------------------=
 ```
+
+## Direct AI audio pipeline change freeze after user acceptance
+
+The current wake-listener recovery is awaiting the user's runtime verification.
+Once the user confirms it is fixed, do not edit the direct AI audio pipeline
+(capture, wake detection, recognition, generation handoff, synthesis, playback,
+and their startup/recovery orchestration) without new explicit user authorization.
+Unrelated UI, performance, build, or application requests do not authorize changes
+to this pipeline. Do not treat automated checks as the user's acceptance.

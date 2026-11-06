@@ -27,7 +27,7 @@ impl ConsoleRuntime {
     // DESC: Arms the one-shot greeting only on authenticated entry, never when returning from a desktop app.
     // ------------------=
     pub(super) fn schedule_login_welcome(&mut self){
-        self.login_welcome=1;self.login_welcome_retry_ns=0;
+        self.login_welcome=1;self.login_welcome_retry_ns=0;self.login_welcome_request=0;
         self.login_welcome_deadline=crate::runtime::ai::qwen::workers::clock_ns().saturating_add(12_000_000_000);
     }
     // ------------------------=
@@ -42,10 +42,21 @@ impl ConsoleRuntime {
         if self.current_session.is_zero()||matches!(self.mode,ConsoleMode::Locked|ConsoleMode::Authentication|ConsoleMode::Startup){
             self.login_welcome=0;voice_output::stop(owner);return false;
         }
-        if self.login_welcome==1 && now>self.login_welcome_deadline {self.login_welcome=0;return false;}
+        if now>self.login_welcome_deadline {
+            // A greeting is optional output, never an indefinite microphone
+            // startup gate. Cancel only its recorded job, not newer narration.
+            if self.login_welcome_request!=0 {voice_output::stop_request(owner,self.login_welcome_request);}
+            self.login_welcome=0;self.login_welcome_request=0;
+            crate::output_text(b"[voice] login greeting deadline; releasing microphone startup\n");
+            return false;
+        }
         let state=voice_output::status().state;
         let busy=matches!(state,OutputState::Queued|OutputState::Synthesizing|OutputState::Ready|OutputState::Speaking|OutputState::Buffered);
-        if self.login_welcome==2 {if !busy{self.login_welcome=0;}return busy;}
+        if self.login_welcome==2 {
+            let waiting=busy && voice_output::request_id(owner)==Some(self.login_welcome_request);
+            if !waiting {self.login_welcome=0;self.login_welcome_request=0;}
+            return waiting;
+        }
         if busy||!matches!(crate::runtime::ai::voice_conversation::state().0,crate::runtime::ai::voice_conversation::State::Off|crate::runtime::ai::voice_conversation::State::Failed){return true;}
         if now<self.login_welcome_retry_ns{return true;}
         let mut phrase=[0;160];
@@ -61,7 +72,7 @@ impl ConsoleRuntime {
         }).flatten();
         let Some((cap,n))=prepared else{self.login_welcome=0;return false;};
         match voice_output::submit(owner,cap,&phrase[..n]) {
-            Ok(())=>{self.login_welcome=2;true}
+            Ok(())=>{self.login_welcome=2;self.login_welcome_request=voice_output::request_id(owner).unwrap_or(0);true}
             Err(error)=>{
                 crate::runtime::with_runtime(|r|{let _=r.capabilities.retire_leaf(cap,owner);});
                 if matches!(error,crate::runtime::ai::types::AiError::ProviderUnavailable|crate::runtime::ai::types::AiError::QueueFull){
