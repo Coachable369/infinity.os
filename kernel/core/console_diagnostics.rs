@@ -277,6 +277,7 @@ fn account_target(target: crate::ui::accounts::Target) -> (u64, u64) {
         Target::Field(index) => (11, index as u64), Target::Save => (12, 0),
         Target::Cancel => (13, 0), Target::Confirm => (14, 0), Target::ListUp => (15, 0),
         Target::ListDown => (16, 0), Target::DetailUp => (17, 0), Target::DetailDown => (18, 0),
+        Target::Role => (19, 0), Target::RoleOption(administrator) => (20, administrator as u64),
     }
 }
 
