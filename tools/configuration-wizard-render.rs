@@ -398,14 +398,21 @@ fn role_pixels() -> usize {
             element.frame=crate::ui::installer_template::InstallerTemplateRect{x:20,y:20,width:w,height:h};
             element.fill=[42,71,102,219];element.border=[134,199,255,255];
             element.opacity=100;element.text=b"";
+            element.surface_material=1;element.corner_style=1;element.corner_radius=12;
             let rect=scale_template_rect(element.frame,400,300);
             let mut actual=vec![0x251407;400*300];
             let mut expected=actual.clone();
             display(&mut actual,400,300).access_template_control(element,None,(0,0));
-            display(&mut expected,400,300).precision_surface(Rect{x:rect.left as i32,y:rect.top as i32,
+            if role == Role::Input {
+                display(&mut expected,400,300).app_input_surface(Rect{x:rect.left as i32,y:rect.top as i32,
+                    width:rect.width as u32,height:rect.height as u32},false,1);
+            } else {
+            display(&mut expected,400,300).precision_surface_styled(Rect{x:rect.left as i32,y:rect.top as i32,
                 width:rect.width as u32,height:rect.height as u32},kind,Material{fill:(42,71,102),
-                edge:(134,199,255),opacity:219,edge_opacity:255,focus:0,pressed:false,scale:1});
-            assert_eq!(actual,expected);
+                edge:(134,199,255),opacity:219,edge_opacity:255,focus:0,pressed:false,scale:1},
+                crate::ui::panel_recipe::SurfaceStyle{material:1,corners:1,radius:12,fill:None,border:None});
+            }
+            assert!(actual==expected,"role {} surface mismatch at {w}x{h}",role as u8);
             comparisons+=actual.len();
         }
     }

@@ -1413,6 +1413,10 @@ fn installed_system_hit_geometry_test() {
     let (dock_x,dock_y) = dock.map(|r| ((r.x+r.width as i32/2)*1000/1600,
         (r.y+r.height as i32/2)*1000/1600)).unwrap_or((260,970));
     assert_eq!(square.desktop_target(dock_x,dock_y,30,500,true,false), Some(DesktopTarget::Dock(0)));
+    assert_eq!(ui::desktop_polish::target(1600,1600,dock_x,dock_y),ui::desktop_polish::HoverTarget::Dock(0));
+    ui::desktop_polish::publish(1600,1600,0,500);
+    assert!(ui::desktop_polish::publish(1600,1600,dock_x,dock_y));
+    assert!(!ui::desktop_polish::publish(1600,1600,dock_x+1,dock_y));
     assert_eq!(square.desktop_target(100, 510, 30, 500, false, false), None);
     assert_eq!(
         square.desktop_target_sized(629, 699, 30, 200, 600, 500, true, false),
