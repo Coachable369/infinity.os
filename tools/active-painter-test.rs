@@ -41,6 +41,8 @@ mod personalization_view;
 #[path="../kernel/core/bootstrap/editor_view.rs"] mod editor_view;
 #[path="configuration-wizard-render.rs"] mod configuration_wizard_render;
 #[path="../kernel/core/bootstrap/desktop_controls.rs"] mod desktop_controls;
+#[path="../kernel/core/bootstrap/desktop_drag_view.rs"] mod desktop_drag_view;
+#[path="desktop-drag-render-test.rs"] mod desktop_drag_render_test;
 #[path="../kernel/core/bootstrap/settings_view.rs"] mod settings_view;
 #[path="../kernel/core/bootstrap/accounts_view.rs"] mod accounts_view;
 #[path="../kernel/core/bootstrap/settings_dashboard_view.rs"] mod settings_dashboard_view;
@@ -386,6 +388,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 // ------------------=
 #[cfg(not(studio_native_preview))]
 fn main() {
+    if std::env::args().any(|arg|arg=="--desktop-drag-only") {desktop_drag_render_test::verify();return;}
     if std::env::args().any(|arg|arg=="--motion-benchmark-only") {motion_blur_benchmark();return;}
     if std::env::args().any(|arg|arg=="--login-waves-only") {configuration_wizard_render::login_wave_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}

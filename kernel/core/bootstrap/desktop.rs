@@ -5055,7 +5055,8 @@ impl super::DisplayDevice {
         .iter()
         .enumerate()
         {
-            if desktop_items & (1u8 << index) == 0 {
+            if desktop_items & (1u8 << index) == 0
+                || crate::ui::desktop_drag::current().map(|v| v.item == index && (v.source.is_some() || !v.held)).unwrap_or(false) {
                 continue;
             }
             let [x, y] = desktop_item_positions[index];
@@ -7638,7 +7639,7 @@ pub fn system_ui_present(
                         left:rect.x.max(0) as usize,top:rect.y.max(0) as usize,
                         right:rect.right().max(0) as usize,bottom:rect.bottom().max(0) as usize});}
                 }
-                for damage in [native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                for damage in [crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {
@@ -7659,9 +7660,12 @@ pub fn system_ui_present(
                 let shortcuts=crate::ui::app_launcher::shortcuts::current();
                 if let Some((id,_,_,true))=shortcuts.drag {
                     console.display.desktop_app_shortcut(id,
-                        console.display.width*shortcuts.pointer[0].clamp(0,1000) as usize/1000,
-                        console.display.height*shortcuts.pointer[1].clamp(0,1000) as usize/1000,shortcuts.positions[id]==[0,0]);
+                        console.display.width*shortcuts.drag_position()[0].clamp(0,1000) as usize/1000,
+                        console.display.height*shortcuts.drag_position()[1].clamp(0,1000) as usize/1000,shortcuts.positions[id]==[0,0]);
                 }
+            }
+            if matches!(screen,2|4|7|8|9|10|11) {
+                console.display.desktop_drag_overlay();
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;

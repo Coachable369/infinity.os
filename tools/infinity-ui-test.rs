@@ -57,6 +57,7 @@ fn main() {
     desktop_ai_chat_layout_test();
     window_move_composition_test();
     continuous_motion_coalescing_test();
+    desktop_drag_motion_test();
     independent_window_state_test();
     scene_and_damage_test();
     surface_and_compositor_test();
@@ -111,6 +112,62 @@ fn continuous_motion_coalescing_test() {
     assert!(!frames.take_for_tick());
     assert!(frames.request(true));
     assert!(!frames.take_for_tick());
+    // Simulate sustained 1 kHz HID traffic across 120 display deadlines.
+    // Pointer-active grace must not starve a captured drag or launcher frame.
+    let mut presented = 0;
+    for _ in 0..120 {
+        for _ in 0..16 { assert!(!frames.request(false)); }
+        if ui::platform::present_interactive_tick(true, true) && frames.take_for_tick() {
+            presented += 1;
+        }
+    }
+    assert_eq!(presented, 120);
+    assert!(!ui::platform::present_interactive_tick(false, true));
+    assert!(ui::platform::present_interactive_tick(false, false));
+}
+
+// ------------------------=
+// FUNC: desktop_drag_motion_test
+// DESC: Exercises captured offsets, bounded damage, cancellation, finite settling and reduced motion.
+// ------------------=
+fn desktop_drag_motion_test() {
+    use ui::desktop_drag as drag;
+    assert!(!drag::crossed_threshold([100,100],[101,101],3840,2160));
+    assert!(drag::crossed_threshold([100,100],[103,100],3840,2160));
+    let mut shortcut=ui::app_launcher::shortcuts::State::new();
+    shortcut.place(0,100,200);
+    shortcut.begin(0,130,230,false);
+    shortcut.motion(180,290);
+    assert_eq!(shortcut.drag_position(),[150,260]);
+    assert_eq!(shortcut.stationary_positions()[0],[0,0]);
+    let placed=shortcut.drag_position();shortcut.place(0,placed[0],placed[1]);shortcut.drag=None;
+    assert_eq!(shortcut.stationary_positions()[0],[150,260]);
+    assert_eq!(drag::anchored_position([100,200],[110,220],[450,500]), [440,480]);
+    assert_eq!(drag::anchored_position([100,200],[110,220],[-500,2000]), [35,880]);
+    drag::motion(0,[100,200],Some([100,200]),0,false);
+    let first=drag::take_damage(1920,1080).unwrap();
+    assert!(first.width < 300 && first.height < 200);
+    drag::motion(0,[110,210],Some([100,200]),16,false);
+    let moved=drag::take_damage(1920,1080).unwrap();
+    assert!(moved.contains(ui::geometry::Point{x:192,y:216}));
+    assert!(moved.width < 320 && moved.height < 220);
+    assert_eq!(drag::current().unwrap().position,[110,210]);
+    drag::finish(false,20,false);
+    assert!(drag::current().is_none());
+    assert!(drag::take_damage(1920,1080).is_some());
+    assert!(!drag::advance(200));
+    drag::motion(0,[200,200],Some([100,200]),300,false);
+    assert!(drag::advance(350));
+    assert!(drag::current().unwrap().emphasis > 0);
+    drag::finish(true,400,false);
+    assert!(!drag::current().unwrap().held);
+    assert!(drag::advance(560));
+    assert!(drag::current().is_none());
+    assert!(!drag::advance(600));
+    drag::motion(0,[200,200],Some([100,200]),700,true);
+    assert_eq!(drag::current().unwrap().emphasis,255);
+    drag::finish(true,710,true);
+    assert!(drag::current().is_none());
 }
 
 // ------------------------=
@@ -554,10 +611,10 @@ fn app_launcher_behavior_test() {
         layout.app_launcher_target(1, 500, 12),
         AppLauncherTarget::Dismiss
     );
-    assert_eq!(
-        layout.app_launcher_target(240, 960, 12),
-        AppLauncherTarget::DockToggle
-    );
+    let dock=ui::desktop_template::dock_scene().and_then(|scene|
+        ui::desktop_template::bounds(scene,73,1920,1080));
+    let (dx,dy)=dock.map(|r| normalized(r.x+r.width as i32/2,r.y+r.height as i32/2)).unwrap_or((240,960));
+    assert_eq!(layout.app_launcher_target(dx,dy,12),AppLauncherTarget::DockToggle);
     let (close_x, close_y) = normalized(
         geometry.close.x + geometry.close.width as i32 / 2,
         geometry.close.y + geometry.close.height as i32 / 2,
@@ -1351,10 +1408,11 @@ fn installed_system_hit_geometry_test() {
         square.desktop_target(170, 560, 30, 500, true, false),
         Some(DesktopTarget::HomeItem(0))
     );
-    assert_eq!(
-        square.desktop_target(260, 970, 30, 500, true, false),
-        Some(DesktopTarget::Dock(0))
-    );
+    let dock = ui::desktop_template::dock_scene().and_then(|scene|
+        ui::desktop_template::bounds(scene, 73, 1600, 1600));
+    let (dock_x,dock_y) = dock.map(|r| ((r.x+r.width as i32/2)*1000/1600,
+        (r.y+r.height as i32/2)*1000/1600)).unwrap_or((260,970));
+    assert_eq!(square.desktop_target(dock_x,dock_y,30,500,true,false), Some(DesktopTarget::Dock(0)));
     assert_eq!(square.desktop_target(100, 510, 30, 500, false, false), None);
     assert_eq!(
         square.desktop_target_sized(629, 699, 30, 200, 600, 500, true, false),

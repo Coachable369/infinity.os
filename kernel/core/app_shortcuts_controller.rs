@@ -177,7 +177,8 @@ impl ConsoleRuntime {
                 let _ = launcher::launcher_finish_drag(b"");
             } else if target == AppLauncherTarget::Dismiss || self.mode != ConsoleMode::AppLauncher
             {
-                state.place(id, self.pointer_x, self.pointer_y);
+                let position = state.drag_position();
+                state.place(id, position[0], position[1]);
             }
             shortcuts::cancel_launcher_drag();
             state.drag = None;

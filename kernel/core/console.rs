@@ -1502,6 +1502,13 @@ impl ConsoleRuntime {
             crate::ui::app_launcher::shortcuts::publish(state);
             crate::ui::app_launcher::shortcuts::cancel_launcher_drag();self.redraw();return;
         }
+        if matches!(key, ConsoleKey::Escape) && self.home_dragging_item.is_some() {
+            self.home_dragging_item = None;
+            self.home_drag_from_desktop = false;
+            self.home_drag_moved = false;
+            crate::ui::desktop_drag::finish(false, 0, true);
+            self.redraw(); return;
+        }
         if matches!(key,ConsoleKey::Escape) && crate::ui::desktop_widgets::current().menu.is_some() {
             let mut widgets=crate::ui::desktop_widgets::current(); widgets.menu=None;
             crate::ui::desktop_widgets::publish(widgets); self.redraw(); return;
@@ -9226,18 +9233,27 @@ impl ConsoleRuntime {
                 self.present_continuous_motion(released);
                 return;
             } else if let Some(item) = self.home_dragging_item {
-                if left_button
-                    && ((self.pointer_x - self.home_drag_origin_x).abs() > 7
-                        || (self.pointer_y - self.home_drag_origin_y).abs() > 7)
+                if (left_button || released) && crate::ui::desktop_drag::crossed_threshold(
+                    [self.home_drag_origin_x,self.home_drag_origin_y], [self.pointer_x,self.pointer_y],
+                    self.system.framebuffer_width,self.system.framebuffer_height)
                 {
                     self.home_drag_moved = true;
+                }
+                let now = crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000;
+                let position = if self.home_drag_from_desktop {
+                    crate::ui::desktop_drag::anchored_position(self.desktop_item_positions[item],
+                        [self.home_drag_origin_x, self.home_drag_origin_y], [self.pointer_x, self.pointer_y])
+                } else { [self.pointer_x.clamp(35,950), self.pointer_y.clamp(90,880)] };
+                if self.home_drag_moved && (left_button || released) {
+                    crate::ui::desktop_drag::motion(item, position,
+                        self.home_drag_from_desktop.then_some(self.desktop_item_positions[item]),
+                        now, self.spatial.state.reduced_motion);
                 }
                 if released {
                     let target = self.desktop_target(layout);
                     if self.home_drag_from_desktop {
                         if self.home_drag_moved {
-                            self.desktop_item_positions[item] =
-                                [self.pointer_x.clamp(35, 950), self.pointer_y.clamp(90, 880)];
+                            self.desktop_item_positions[item] = position;
                         }
                     } else if !self.home_drag_moved {
                         self.open_file_navigator_selection();
@@ -9256,6 +9272,8 @@ impl ConsoleRuntime {
                             _ => {}
                         }
                     }
+                    crate::ui::desktop_drag::finish(self.home_drag_from_desktop && self.home_drag_moved,
+                        now, self.spatial.state.reduced_motion);
                     self.home_dragging_item = None;
                     self.home_drag_from_desktop = false;
                     self.home_drag_moved = false;
@@ -14758,12 +14776,17 @@ pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
 // FUNC: ui_animation_tick
 // DESC: Advances launcher transitions and eased Settings scrolling on the display refresh clock.
 // ------------------=
-pub fn ui_animation_tick() -> bool {
+pub fn ui_animation_tick(defer_decoration: bool) -> bool {
     unsafe {
         let slot = &raw mut RUNTIME;
         let Some(runtime) = (*slot).as_mut() else {
             return false;
         };
+        let interactive = matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings
+            | ConsoleMode::AppLauncher | ConsoleMode::SystemMenu);
+        if !crate::ui::platform::present_interactive_tick(interactive, defer_decoration) {
+            return false;
+        }
         #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if crate::bootstrap::face_scan_animation_tick(
             runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7,
@@ -14824,13 +14847,15 @@ pub fn ui_animation_tick() -> bool {
         }
         if runtime.spatial.arriving { return runtime.spatial_arrival_tick(); }
         if runtime.spatial.open { return runtime.spatial_tick(); }
-        let thinking_changed = crate::bootstrap::thinking_animation_tick(matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings));
-        let assistant_changed = matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
+        let thinking_changed = !defer_decoration && crate::bootstrap::thinking_animation_tick(matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings));
+        let assistant_changed = !defer_decoration && matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
             && crate::ui::app_assistant::animation_tick();
         if thinking_changed && !motion_frame && !assistant_changed {
             runtime.redraw();
         }
-        let effects_changed=runtime.advance_desktop_effects();
+        let drag_changed = crate::ui::desktop_drag::advance(
+            crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000);
+        let effects_changed=runtime.advance_desktop_effects() || drag_changed;
         let mut frame_changed = motion_frame || assistant_changed || effects_changed;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
             runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);

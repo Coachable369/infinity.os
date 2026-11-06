@@ -117,6 +117,14 @@ pub struct FrameClock {
     pub dropped_frames: u32,
 }
 
+// ------------------------=
+// FUNC: present_interactive_tick
+// DESC: Keeps user-owned motion eligible during pointer activity while deferring expensive access-screen decoration.
+// ------------------=
+pub const fn present_interactive_tick(interactive: bool, defer_decoration: bool) -> bool {
+    interactive || !defer_decoration
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct MotionFrameCoalescer {
     pending: bool,

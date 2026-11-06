@@ -77,6 +77,10 @@ pub fn target(width: usize, height: usize, normalized_x: i32, normalized_y: i32)
         return match role {49=>HoverTarget::Brand,50=>HoverTarget::Help,52=>HoverTarget::Clock,
             53..=59=>HoverTarget::Status(usize::from(role-53)),_=>HoverTarget::None};
     }
+    if super::desktop_template::dock_scene().is_some() {
+        return super::desktop_template::dock_hit(point,width,height)
+            .map(HoverTarget::Dock).unwrap_or(HoverTarget::None);
+    }
     let dock_width = width * 54 / 100;
     let dock_height = 72 * scale;
     let dock_left = width.saturating_sub(dock_width) / 2;

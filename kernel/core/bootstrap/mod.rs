@@ -5,6 +5,7 @@ use crate::boot_info::BootInfo;
 mod bootstrap;
 mod crash;
 mod desktop;
+mod desktop_drag_view;
 mod desktop_menu_view;
 pub use self::desktop::system_ui_settings_changed;
 mod desktop_controls;

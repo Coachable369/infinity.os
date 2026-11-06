@@ -1242,12 +1242,8 @@ pub fn animation_tick() {
             crate::console::clock_tick();
         }
     }
-    // Keep the full-quality 60 Hz particle path while idle. A pointer update
-    // owns its current presentation deadline completely; effects resume at the
-    // first idle deadline (normally within 16 ms). On the software-rendered ARM
-    // bootstrap this prevents any expensive glow frame from landing between a
-    // HID sample and its cursor presentation. Installer and desktop paths are
-    // unchanged.
+    // Pointer delivery precedes decoration, but must never suppress the clock
+    // that presents captured window motion, scrolling or launcher transitions.
     let defer_for_pointer = unsafe {
         let active = POINTER_ACTIVITY_PENDING;
         POINTER_ACTIVITY_PENDING = false;
@@ -1258,11 +1254,7 @@ pub fn animation_tick() {
             active
         }
     };
-    if defer_for_pointer {
-        return;
-    }
-    // Configuration artwork is decorative; cursor delivery has first priority.
-    if crate::console::ui_animation_tick() {
+    if crate::console::ui_animation_tick(defer_for_pointer) || defer_for_pointer {
         return;
     }
     unsafe {

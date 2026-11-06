@@ -104,3 +104,16 @@ Refinement”, six sections: Focus Lens, Peek Through, Visual Clipboard, Drop
 Compass, Workspace Capsules, Component States. Midnight navy #071b2a, Inter-like
 type, text #dfedf5, muted #93b6c8, cyan #36cced, restrained violet glass rims,
 8px spacing rhythm. Shippable UI proportions, no icy materials or giant glows.
+
+## Captured desktop motion (November 2026)
+
+Reuse the packaged themed desktop icons at their normal size. A drag preserves
+its initial grab offset and follows the current pointer with no easing or queued
+pointer positions. Only the restrained cyan halo eases in over 100 ms and out
+over 160 ms after placement. Escape cancels without mutating stored positions.
+Reduced motion removes the transient halo transition. The existing compositor
+owns window chrome and translates retained surfaces during moves; do not invent
+application-specific borders. Input-owned frames remain eligible at every
+refresh deadline even while pointer activity defers decorative access effects.
+Reconstruct the previous/current icon bounds, including labels and halo, before
+painting the drag overlay. Do not redraw the desktop on every pointer sample.

@@ -185,6 +185,30 @@ fn enrollment_namespace_capacity() {
         let path=format!("/alias{}",index);store.attach(path.as_bytes(),source).unwrap();index+=1;
     }
     drop(store);
+    // Format 10 moved tables into allocated extents. A genuine v7 fixture
+    // must relocate those tables; changing only the version corrupts it.
+    for bank in [storage::object::BANK_A, storage::object::BANK_B] {
+        let mut sectors=disk.0.borrow_mut();
+        let header=sectors[&(STORE_RELATIVE_LBA+bank)];
+        let extent=u32::from_le_bytes(header[40..44].try_into().unwrap()) as u64;
+        let tables=STORE_RELATIVE_LBA+80+extent*8
+            + if bank==storage::object::BANK_A {0} else {80};
+        for i in 0..13 {
+            let row=sectors[&(tables+i)];
+            let offset=if i<6 {5+i} else {25+i-6};
+            sectors.insert(STORE_RELATIVE_LBA+bank+offset,row);
+        }
+        for i in 0..8 {
+            let row=sectors[&(tables+32+i)];
+            let offset=if i<4 {bank+11+i} else {72+if bank==storage::object::BANK_A {0} else {4}+i-4};
+            sectors.insert(STORE_RELATIVE_LBA+offset,row);
+        }
+        for i in 0..11 {
+            let row=sectors[&(tables+48+i)];
+            let offset=if i<8 {bank+15+i} else {2+if bank==storage::object::BANK_A {0} else {3}+i-8};
+            sectors.insert(STORE_RELATIVE_LBA+offset,row);
+        }
+    }
     // Model an actual old-format checkpoint, with checksummed metadata and no v8 entries.
     for sector in disk.0.borrow_mut().values_mut() {
         if [b"INFOROOT".as_slice(),b"INFOSTAT",b"INFOOBJ2",b"INFOVER2",b"INFONSP2",b"INFOALC2",b"INFOREL2"].contains(&&sector[..8]) {

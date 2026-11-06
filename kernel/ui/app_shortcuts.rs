@@ -67,6 +67,18 @@ impl State {
         }
     }
     // ------------------------=
+    // FUNC: drag_position
+    // DESC: Preserves a desktop shortcut's grab offset; new launcher copies originate at the pointer.
+    // ------------------=
+    pub fn drag_position(self) -> [i32; 2] {
+        let Some((id,x,y,_)) = self.drag else { return self.pointer; };
+        let p=self.positions[id];
+        if p==[0,0] {self.pointer} else {
+            [(i32::from(p[0])+self.pointer[0]-x).clamp(35,930),
+             (i32::from(p[1])+self.pointer[1]-y).clamp(90,840)]
+        }
+    }
+    // ------------------------=
     // FUNC: place
     // DESC: Places one desktop copy without removing its source launcher application.
     // ------------------=
@@ -223,8 +235,8 @@ pub fn take_damage(width: usize, height: usize) -> Option<(usize, usize, usize, 
         let mut positions = state.positions;
         if let Some((id, _, _, true)) = state.drag {
             positions[id] = [
-                state.pointer[0].clamp(0, 1000) as u16,
-                state.pointer[1].clamp(0, 1000) as u16,
+                state.drag_position()[0].clamp(0, 1000) as u16,
+                state.drag_position()[1].clamp(0, 1000) as u16,
             ];
         }
         for (id, p) in positions.iter().enumerate() {
