@@ -374,11 +374,28 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
             _=>{NOW.fetch_add(46_000_000_000,Ordering::SeqCst);}
         }
         voice_input::poll();
-        assert_eq!(voice_input::status().state,voice_input::InputState::Cancelled);
+        assert_eq!(voice_input::status().state,if reason == 2 {voice_input::InputState::Failed} else {voice_input::InputState::Cancelled});
+        if reason == 2 {assert_eq!(voice_input::status().error,2);}
         assert!(voice_input::take(owner,&mut transcript).is_err());
         assert!(unsafe { (&*(&raw const TASK)).is_none() });
         REVOKED.store(false,Ordering::SeqCst);NATIVE_BUSY.store(false,Ordering::Release);
     }
+    // Deadline expiry while a worker is already scheduled is retryable;
+    // explicit stop still wins and neither path publishes stale transcript PCM.
+    for cancelled in [false, true] {
+        voice_input::submit(owner,1,&[17,-19,23,-29]).unwrap();
+        NOW.fetch_add(46_000_000_000,Ordering::SeqCst);
+        if cancelled { assert!(voice_input::stop(owner)); }
+        voice_input::poll();
+        unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+        assert_eq!(voice_input::status().state, if cancelled {
+            voice_input::InputState::Cancelled
+        } else { voice_input::InputState::Failed });
+        assert!(voice_input::take(owner,&mut transcript).is_err());
+    }
+    voice_input::submit(owner,1,&[17,-19,23,-29]).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(voice_input::take(owner,&mut transcript).unwrap(),8);
     // Synthesis cancellation while waiting for shared native ownership never
     // resubmits or publishes the cancelled response.
     for reason in 0..3 {

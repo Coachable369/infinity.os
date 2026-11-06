@@ -15,9 +15,13 @@ const CHUNK_ROWS: usize = 32;
 const RESERVED: usize = 5;
 const PURE_MATH: usize = 6;
 const MAX_PURE_HELPERS: usize = 5;
-static OCCUPIED_TICKS:[AtomicU64;COUNT]=[const {AtomicU64::new(0)};COUNT];
-static ACTIVE_SINCE:[AtomicU64;COUNT]=[const {AtomicU64::new(0)};COUNT];
-static ACTIVITY_SEQUENCE:[AtomicU64;COUNT]=[const {AtomicU64::new(0)};COUNT];
+// Each AP writes only its own cache line. Packed atomic arrays force unrelated
+// inference workers to transfer the same line on every tiny matrix job.
+#[repr(align(128))]
+struct WorkerActivity { occupied: AtomicU64, since: AtomicU64, sequence: AtomicU64 }
+static ACTIVITY: [WorkerActivity; COUNT] = [const { WorkerActivity {
+    occupied: AtomicU64::new(0), since: AtomicU64::new(0), sequence: AtomicU64::new(0),
+}}; COUNT];
 // ------------------------=
 // FUNC: occupied_ns
 // DESC: Reads completed and in-flight AP work without waiting on a running inference or decoder.
@@ -26,11 +30,11 @@ pub fn occupied_ns()->u64 {
     let now=counter();let mut sum=0u64;
     for i in 0..COUNT {
         for _ in 0..3 {
-            let seq=ACTIVITY_SEQUENCE[i].load(Ordering::Acquire);
+            let seq=ACTIVITY[i].sequence.load(Ordering::Acquire);
             if seq&1!=0{continue;}
-            let done=OCCUPIED_TICKS[i].load(Ordering::Relaxed);
-            let start=ACTIVE_SINCE[i].load(Ordering::Relaxed);
-            if ACTIVITY_SEQUENCE[i].load(Ordering::Acquire)==seq {
+            let done=ACTIVITY[i].occupied.load(Ordering::Relaxed);
+            let start=ACTIVITY[i].since.load(Ordering::Relaxed);
+            if ACTIVITY[i].sequence.load(Ordering::Acquire)==seq {
                 sum=sum.saturating_add(done).saturating_add(if start>0{now.saturating_sub(start)}else{0});break;
             }
         }
@@ -501,9 +505,9 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
         let active=matches!(state,1|4|PURE_MATH);
         let active_start=if active {counter()}else{0};
         if active {
-            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::AcqRel);
-            ACTIVE_SINCE[index].store(active_start,Ordering::Relaxed);
-            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::Release);
+            ACTIVITY[index].sequence.fetch_add(1,Ordering::AcqRel);
+            ACTIVITY[index].since.store(active_start,Ordering::Relaxed);
+            ACTIVITY[index].sequence.fetch_add(1,Ordering::Release);
         }
         match state {
             1 => {
@@ -579,10 +583,10 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
             }
         }
         if active {
-            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::AcqRel);
-            OCCUPIED_TICKS[index].fetch_add(counter().saturating_sub(active_start),Ordering::Relaxed);
-            ACTIVE_SINCE[index].store(0,Ordering::Relaxed);
-            ACTIVITY_SEQUENCE[index].fetch_add(1,Ordering::Release);
+            ACTIVITY[index].sequence.fetch_add(1,Ordering::AcqRel);
+            ACTIVITY[index].occupied.fetch_add(counter().saturating_sub(active_start),Ordering::Relaxed);
+            ACTIVITY[index].since.store(0,Ordering::Relaxed);
+            ACTIVITY[index].sequence.fetch_add(1,Ordering::Release);
         }
     }
 }

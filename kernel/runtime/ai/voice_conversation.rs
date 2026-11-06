@@ -1473,21 +1473,16 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         (&mut *(&raw mut HANDOFF_PCM))[..HANDOFF_LENGTH]
             .copy_from_slice(&(&*(&raw const MONO))[consumed..n]);
     }
+    #[cfg(not(test))]
+    {
+        static mut LAST_CAPTURE_LOG_NS:u64=0;
+        if vad != LAST_VAD_STATE || now.saturating_sub(LAST_CAPTURE_LOG_NS)>=1_000_000_000 {
+            LAST_CAPTURE_LOG_NS=now;
+            voice_trace::capture(now,match vad {VadState::Waiting=>1,VadState::Speech=>2,VadState::Complete=>3,VadState::NoSpeech=>4,VadState::Limit=>5,VadState::Cancelled=>6},
+                (&*(&raw const NOISE_FLOOR)).threshold(),&(&*(&raw const MONO))[..n]);
+        }
+    }
     if vad != LAST_VAD_STATE {
-        #[cfg(not(test))]
-        voice_trace::capture(
-            now,
-            match vad {
-                VadState::Waiting => 1,
-                VadState::Speech => 2,
-                VadState::Complete => 3,
-                VadState::NoSpeech => 4,
-                VadState::Limit => 5,
-                VadState::Cancelled => 6,
-            },
-            (&*(&raw const NOISE_FLOOR)).threshold(),
-            &(&*(&raw const MONO))[..n],
-        );
         trace(match vad {
             VadState::Waiting => b"vad waiting",
             VadState::Speech => b"vad speech onset",
@@ -1816,9 +1811,9 @@ pub fn poll() -> bool {
                     // Cancellation and revoked authority never obtain a fresh
                     // lease. Provider failures use bounded engine recovery.
                     if status.state == voice_input::InputState::Failed
-                        && matches!(status.error, 5 | 6)
+                        && matches!(status.error, 2 | 5 | 6)
                     {
-                        if status.error == 6 {
+                        if matches!(status.error, 2 | 6) {
                             (&mut *(&raw mut TRANSCRIPT)).fill(0);
                             clear_wake_command();
                             clear_captured_turn();

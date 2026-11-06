@@ -1,9 +1,8 @@
 //! Wall-clock-bounded inference scheduling, independent of firmware and models.
-// Firmware input/network polling runs between pumps. A two-ms quantum spent
-// most of the observed prefill wall time outside inference (about 1.6 seconds
-// compute in 4.9 seconds to first token). Four ms amortizes that fixed overhead
-// while still yielding well inside a 16-ms interactive frame.
-pub const BUDGET_NS: u64 = 4_000_000;
+// The live VM spent 1.15 seconds in prefill work but 2.94 seconds reaching
+// the first token with a four-ms quantum. Eight ms amortizes intervening
+// firmware/service polling while retaining a bounded yield for input/audio.
+pub const BUDGET_NS: u64 = 8_000_000;
 const CLOCKED_LIMIT: usize = 16_384;
 const FALLBACK_LIMIT: usize = 256;
 
@@ -55,7 +54,7 @@ mod tests {
     use super::*;
     // ------------------------=
     // FUNC: fast_worker_polls_use_available_deadline
-    // DESC: Verifies fast polls can cross the old cap but cannot cross the four millisecond deadline.
+    // DESC: Verifies fast polls can cross the old cap but cannot cross the eight millisecond deadline.
     // ------------------=
     #[test]
     fn fast_worker_polls_use_available_deadline() {

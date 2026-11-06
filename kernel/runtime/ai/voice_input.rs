@@ -310,8 +310,11 @@ unsafe fn worker() {
     }
     (&mut *(&raw mut PCM)).fill(0);
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
-    let state = if cancelled(core::ptr::null_mut()) != 0 || ERROR == 2 {
+    let state = if CANCEL.load(Ordering::Acquire) {
         5
+    } else if super::qwen::workers::clock_ns() >= DEADLINE || ERROR == 2 {
+        ERROR = 2;
+        4
     } else if ERROR == 0 {
         3
     } else {
@@ -514,8 +517,19 @@ pub fn poll() {
                 .is_ok()
         })
         .unwrap_or(false);
-        if !valid || cancelled(core::ptr::null_mut()) != 0 {
+        if !valid || CANCEL.load(Ordering::Acquire) {
             stop(OWNER);
+        } else if super::qwen::workers::clock_ns() >= DEADLINE {
+            // Running workers own these buffers until they publish. Their
+            // deadline callback terminates decoding without masquerading as
+            // a user mute or revoked capability. Queued jobs have no worker.
+            if matches!(STATE.load(Ordering::Acquire), WAITING_ENGINE | 3) {
+                (&mut *(&raw mut PCM)).fill(0);
+                (&mut *(&raw mut TEXT)).fill(0);
+                LENGTH = 0;
+                ERROR = 2;
+                STATE.store(4, Ordering::Release);
+            }
         } else if STATE.load(Ordering::Acquire) == WAITING_ENGINE
             && ENGINE.load(Ordering::Acquire) != 1
         {

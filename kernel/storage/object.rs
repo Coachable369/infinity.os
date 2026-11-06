@@ -1593,6 +1593,35 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: audio_pipeline_log_commit
+    // DESC: Creates the canonical log namespace and rotates sixteen bounded native text checkpoints without growing version history.
+    // ------------------=
+    pub fn audio_pipeline_log_commit(&mut self,slot:u8,content:&[u8])->Result<u32,ObjectError> {
+        if slot>=16 || content.len()>MAX_CONTENT {return Err(ObjectError::InsufficientCapacity);}
+        for path in [b"/Logs".as_slice(),b"/Logs/ai.audiopipeline".as_slice()] {
+            match self.resolve(path) {
+                Ok(id) if self.metadata(id)?.kind==ObjectType::NamespaceNode=>{},
+                Ok(_)=>return Err(ObjectError::InvalidPath),
+                Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{
+                    let name=path.rsplit(|b|*b==b'/').next().ok_or(ObjectError::InvalidPath)?;
+                    self.create_attached(name,ObjectType::NamespaceNode,Space::Personal,b"",path)?;
+                },
+                Err(e)=>return Err(e),
+            }
+        }
+        let mut path=*b"/Logs/ai.audiopipeline/pipeline-00.log";
+        let at=path.len()-6;path[at]=b'0'+slot/10;path[at+1]=b'0'+slot%10;
+        match self.resolve(&path) {
+            Ok(id) if self.metadata(id)?.kind==ObjectType::Text=>self.replace_state(id,content),
+            Ok(_)=>Err(ObjectError::InvalidPath),
+            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{
+                self.create_attached(&path[22..],ObjectType::Text,Space::Personal,content,&path)?;Ok(1)
+            },
+            Err(e)=>Err(e),
+        }
+    }
+
+    // ------------------------=
     // FUNC: checkpoint
     // DESC: Atomically replaces a durable system checkpoint without consuming unbounded version slots.
     // ------------------=

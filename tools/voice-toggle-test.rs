@@ -1407,7 +1407,7 @@ fn recognition_failure_recovery_tests(owner: runtime::execution::SecurityIdentit
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before+1);
     let captures=CAPTURES.load(Ordering::SeqCst);
     let turns=TURNS.load(Ordering::SeqCst);
-    for error in [6,5,6] {
+    for error in [6,5,2,6,2] {
         begin_delayed_recognition(1800);
         let grants=INPUT_GRANTS.load(Ordering::SeqCst);
         BUSY.store(false,Ordering::SeqCst);

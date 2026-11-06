@@ -2155,3 +2155,14 @@ pub(crate) fn navigator_location(owner:[u8;16],session:[u8;16],index:usize,save:
     with_store(|store|store.sidebar_location(object::ObjectId(owner),home,index,save))
         .and_then(|p|ByteText::new(p.as_bytes()).map_err(|_|object::ObjectError::InvalidPath))
 }
+
+// ------------------------=
+// FUNC: audio_pipeline_log_commit
+// DESC: Writes one bounded diagnostic page through the native store on live and installed systems, with bounded checkpoint history.
+// ------------------=
+pub(crate) fn audio_pipeline_log_commit(slot:u8,content:&[u8])->Result<u32,object::ObjectError> {
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|store.audio_pipeline_log_commit(slot,content))}
+    #[cfg(target_arch="x86")]
+    {let _=(slot,content);Err(object::ObjectError::SpaceUnavailable)}
+}

@@ -818,6 +818,8 @@ fn disk_inspector() {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    audio_pipeline_logs();
+    if std::env::args().any(|arg|arg=="--audio-log-only") { return; }
     disk_inspector();
     if std::env::args().any(|arg|arg=="--disk-only") { return; }
     if std::env::args().any(|arg| arg == "--identity-state-only") {
@@ -1656,4 +1658,30 @@ fn checkpoint_replacement(sectors: usize) {
         let length = recovered.read(state, None, &mut data).unwrap();
         assert_eq!(&data[..length], b"retry");
     }
+}
+
+// ------------------------=
+// FUNC: audio_pipeline_logs
+// DESC: Verifies fresh-store log namespaces, bounded rotation history, remount persistence and atomic recovery after a failed diagnostic write.
+// ------------------=
+fn audio_pipeline_logs() {
+    let sectors=STORE_RELATIVE_LBA as usize+32_768;
+    let backing=MemoryDisk::new(sectors);
+    let disk=FailingDisk::new(backing.clone());
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x74;16]).unwrap();
+    for pass in 0..64u8 {store.audio_pipeline_log_commit(pass%16,&[pass;1024]).unwrap();}
+    assert_eq!(store.metadata(store.resolve(b"/Logs").unwrap()).unwrap().kind,ObjectType::NamespaceNode);
+    assert_eq!(store.metadata(store.resolve(b"/Logs/ai.audiopipeline").unwrap()).unwrap().kind,ObjectType::NamespaceNode);
+    assert_eq!(store.audio_pipeline_log_commit(16,b"invalid"),Err(ObjectError::InsufficientCapacity));
+    assert_eq!(store.audio_pipeline_log_commit(0,&[0;16385]),Err(ObjectError::InsufficientCapacity));
+    disk.arm(0);assert_eq!(store.audio_pipeline_log_commit(0,b"lost"),Err(ObjectError::TransactionFailed));disk.disarm();drop(store);
+    let mut recovered=ObjectStore::mount(backing,0).unwrap();
+    for slot in 0..16u8 {
+        let mut path=*b"/Logs/ai.audiopipeline/pipeline-00.log";let at=path.len()-6;
+        path[at]=b'0'+slot/10;path[at+1]=b'0'+slot%10;
+        let id=recovered.resolve(&path).unwrap();let mut data=[0;1024];
+        assert_eq!(recovered.read(id,None,&mut data).unwrap(),1024);
+        assert_eq!(data,[48+slot;1024]);assert_eq!(recovered.history_count(id),1);
+    }
+    recovered.audio_pipeline_log_commit(0,b"recovered").unwrap();
 }

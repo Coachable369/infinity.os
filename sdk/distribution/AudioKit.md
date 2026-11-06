@@ -58,3 +58,52 @@ Package tests decode the generated WAV and assert metadata, duration, nonzero
 bounded samples and rejection of invalid input. Those tests do not establish
 physical microphone/speaker behavior. Native capture/playback SDK acceptance
 remains pending until a public binding and device tests are supplied.
+
+## Permanent OS AI audio pipeline journal
+
+Every live boot and installed boot enables the native journal automatically.
+The OS creates `/Logs/ai.audiopipeline/` when its first batch is committed.
+This is independent of the desktop widget's focus and does not require an SDK
+application or Java runtime. `voice status` reports the directory, durable batch
+count, failed writes, dropped records, and last write cost.
+
+Records use Java `java.util.logging` style levels (`INFO`, `FINE`, `WARNING`),
+logger names under `infinity.ai.audio`, and an ISO-8601 UTC timestamp. This is a
+native single-line text formatter, not a Java binary serialization format.
+If UTC is unavailable, the timestamp is explicitly `UTC_UNAVAILABLE`. Every
+record also includes a monotonic nanosecond timestamp and boot-local sequence.
+Use monotonic values for elapsed time; changing the timezone or wall clock must
+not change measured performance.
+
+The journal captures:
+
+- Capture calibration, VAD transitions and one-second level/energy heartbeats.
+- Recognition queue time, model warmup, compute time, failure and cancellation.
+- Intent routing, memory inquiry, context retrieval and prompt preparation.
+- Inference load, prefill/decode work, cached/new/output tokens and first token.
+- First response text and **actual first display** as distinct milestones.
+- Synthesis queue/compute, publication, playback queue, first audio and drain.
+- Microphone rearming, automatic recovery, service-loop work and render work.
+
+`turn`, `recognition_job`, `chat_turn` and `speech_job` correlation records connect
+these stages. Timing `present` is a bitmask: a missing milestone is not a zero-time
+success. `phases` bits 0–10 are endpoint, transcript, submitted, first text,
+speech queued, first audio, drained, capture started, recognition ready, first
+display and generation done. `mic_rearmed_present` separately qualifies the
+rearm timestamp. Span status is the native provider error code; zero means no
+reported provider error. Playback completion records report the driver's state,
+not proof that sound physically reached the listener.
+
+Files `pipeline-00.log` through `pipeline-15.log` are a rotating journal, at most
+16 KiB each (256 KiB total). Records are buffered in a bounded producer queue;
+workers never write to disk or wait for logging locks. The owner thread flushes
+at most once every five seconds, retaining a failed batch for retry. Writes use
+atomic native checkpoints with bounded history. A power loss can lose the
+unflushed interval. Overflow/contention is counted explicitly. Rotation replaces
+old log pages; timestamps and sequence numbers determine order, not filenames.
+No transcripts, prompts, generated text, credentials or raw audio are recorded.
+
+To investigate a silent reply, compare `first_text_ns`, `first_display_ns`,
+`speech_queued_ns`, `first_audio_ns` and `drained_ns`, then inspect the correlated
+synthesis/playback spans. To investigate missed wake input, inspect capture
+state, energy and threshold around that time before blaming inference.

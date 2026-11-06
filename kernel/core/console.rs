@@ -13201,6 +13201,12 @@ impl ConsoleRuntime {
                 self.output.write_number(b"Recognition milliseconds: ", recognition.elapsed_ns / 1_000_000);
                 self.output.write_number(b"Recognition heap bytes: ", recognition.heap_bytes as u64);
                 self.output.write_number(b"Recognition error: ", recognition.error as u64);
+                let log = crate::runtime::ai::pipeline_log::status();
+                self.output.write_line(b"AI audio logs: /Logs/ai.audiopipeline/");
+                self.output.write_number(b"Durable log batches: ", log[0]);
+                self.output.write_number(b"Log write failures: ", log[1]);
+                self.output.write_number(b"Log records dropped: ", log[2]);
+                self.output.write_number(b"Last log write microseconds: ", log[3] / 1000);
             }
             return true;
         }
@@ -14454,6 +14460,7 @@ pub fn poll_native_ai() {
         crate::runtime::ai::voice_conversation::performance_work(1, render_started,
             crate::runtime::ai::qwen::workers::clock_ns());
     }
+    if owner { crate::runtime::ai::pipeline_log::poll(); }
 }
 
 // ------------------------=

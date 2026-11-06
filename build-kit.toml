@@ -271,3 +271,7 @@ clean = false
 [profiles.disk-tests]
 command = ["sh", "tools/disk-overview-test.sh"]
 clean = false
+
+[profiles.audio-pipeline-log-tests]
+command = ["sh", "tools/audio-pipeline-log-test.sh"]
+clean = false

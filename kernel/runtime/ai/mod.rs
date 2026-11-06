@@ -29,6 +29,7 @@ pub mod voice_conversation;
 pub mod voice_input;
 #[cfg(target_os = "none")]
 pub mod voice_output;
+pub mod pipeline_log;
 pub mod voice_pcm;
 pub mod voice_vad;
 pub mod wake_word;
