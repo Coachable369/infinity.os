@@ -2809,6 +2809,7 @@ impl ConsoleRuntime {
         self.app_window_dragging = false;
         self.app_window_resizing = None;
         self.home_dragging_item = None;
+        crate::ui::desktop_drag::finish(false, 0, true);
         crate::output_text(b"[desktop] state reset\n");
         self.spatial_preserve_world_appearance();
         crate::output_text(b"[desktop] world appearance preserved\n");
