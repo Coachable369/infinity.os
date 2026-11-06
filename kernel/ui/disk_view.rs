@@ -33,6 +33,7 @@ pub struct DiskView {
     pub count: usize,
     pub capacity: u64,
     pub used: u64,
+    pub pool_capacity: u64,
     pub partition: Row,
     pub rows: [Row; LIMIT],
     pub inspect: bool,
@@ -52,12 +53,23 @@ impl DiskView {
             count: 0,
             capacity: 0,
             used: 0,
+            pool_capacity: 0,
             partition: Row::EMPTY,
             rows: [Row::EMPTY; LIMIT],
             inspect: false,
             confirm: false,
             message: b"",
         }
+    }
+    // ------------------------=
+    // FUNC: partition_at
+    // DESC: Maps a physical disk byte to its GPT extent, retaining unpartitioned gaps.
+    // ------------------=
+    pub fn partition_at(&self, byte: u128) -> Option<usize> {
+        self.rows[..self.count].iter().position(|r| {
+            let first=u128::from(r.first)*512;
+            byte>=first && byte<first+u128::from(r.bytes)
+        })
     }
     // ------------------------=
     // FUNC: push

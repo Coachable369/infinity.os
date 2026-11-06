@@ -196,9 +196,9 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
         action: LauncherAction::Home(7),
     },
     LauncherEntry {
-        label: b"Media",
+        label: b"Media Player",
         icon_role: 8,
-        action: LauncherAction::Home(6),
+        action: LauncherAction::MediaPlayer,
     },
     LauncherEntry {
         label: b"Recycle Bin",
@@ -278,7 +278,7 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
         action: LauncherAction::InfinityCode,
     },
     #[cfg(feature = "native-python")]
-    LauncherEntry { label: b"Media Player", icon_role: 10, action: LauncherAction::MediaPlayer },
+    LauncherEntry { label: b"Media Files", icon_role: 4, action: LauncherAction::Home(6) },
 ];
 
 pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [

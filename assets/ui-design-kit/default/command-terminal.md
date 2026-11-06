@@ -63,3 +63,12 @@ process. Remote ANSI cursor, erase, scroll-region, rendition and alternate-scree
 operations stay inside the terminal grid. No remote escape may alter OS settings.
 SF Mono Terminal Regular is not bundled: Apple distributes it under restrictions
 that do not grant redistribution in InfinityOS. No substitute is labeled SF Mono.
+
+## Disk explorer overview
+
+Reuse the terminal's packaged monospace font and sixteen ANSI colors. The disk
+outline is a text-cell diagram, with physical LBA positions (including gaps), a
+bright selected partition, and a separate measured pool allocation bar. Partition
+capacity is not filesystem utilization. Unknown filesystem usage stays unknown.
+Arrow selection and Enter drill-down retain the existing explorer controls;
+small windows collapse the diagram to the keyboard-navigable partition list.

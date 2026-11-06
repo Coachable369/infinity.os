@@ -16,6 +16,11 @@ impl ConsoleRuntime {
             let view = &mut s.disk;
             view.count = 0;
             view.used = 0;
+            view.pool_capacity = 0;
+            if let Ok((used, total, _)) = storage::storage_usage() {
+                view.used = u64::from(used) * 4096;
+                view.pool_capacity = u64::from(total) * 4096;
+            }
             if view.depth == 0 {
                 match storage::visit_partitions(|name, first, bytes, mounted| {
                     view.push(name, bytes, first, [0; 16], mounted)

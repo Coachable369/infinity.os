@@ -162,21 +162,37 @@ use core::fmt::Write;
                 else {header.write(b"DISK / ");header.write(v.partition.label());let _=write!(header,"   {} MiB   |   LBA {}",v.partition.bytes/1048576,v.partition.first);}
                 colored(canvas,g,s.appearance,0,header.bytes(),ansi_color(14));
                 ascii(canvas,g,s.appearance,1,if v.depth==0 {b"   PARTITION SHARE            SIZE       NAME"}else if v.partition.container{b"   RELATIVE FILE SIZE         SIZE       PERSONAL FILE (largest first)"}else{b"   RELATIVE FILE SIZE         SIZE       FILE (read-only)"});
-                let chart=g.rows()>=9 && !v.inspect && v.depth==0 && v.capacity>0;
+                let chart=g.rows()>=14 && !v.inspect && v.depth==0 && v.capacity>0;
                 if chart {
-                    let columns=g.columns().saturating_sub(2).min(120);
-                    let mut left=0; let mut bytes=0u128;
-                    for (index,row) in v.rows[..v.count].iter().enumerate(){
-                        bytes+=u128::from(row.bytes);
-                        let right=((bytes*columns as u128)/u128::from(v.capacity)).min(columns as u128) as usize;
-                        for col in left..right{canvas.glyph(g.text.x+((col+1)*g.cell)as i32,g.text.y+2*g.line as i32,
-                            b'#',g.scale,s.appearance,ansi_color([14,12,13,10,11][index%5]));}
-                        left=right;
+                    let columns=g.columns().saturating_sub(4).min(110);
+                    let mut edge=crate::runtime::console_execution::Bytes::<120>::new();
+                    edge.write(b" ."); for _ in 0..columns {edge.write(b"-");} edge.write(b".");
+                    colored(canvas,g,s.appearance,1,edge.bytes(),ansi_color(8));
+                    for line in 2..=3 {
+                        colored(canvas,g,s.appearance,line,b" |",ansi_color(8));
+                        for col in 0..columns {
+                            // Position extents by LBA, retaining real inter-partition gaps.
+                            let byte=u128::from(v.capacity)*col as u128/columns.max(1) as u128;
+                            let part=v.partition_at(byte);
+                            let (ch,color)=part.map_or((b'.',8),|i|(if i==v.selected {b'#'} else {b'='},[14,12,13,10,11][i%5]));
+                            canvas.glyph(g.text.x+((col+2)*g.cell)as i32,g.text.y+(line*g.line)as i32,ch,g.scale,s.appearance,ansi_color(color));
+                        }
+                        canvas.glyph(g.text.x+((columns+2)*g.cell)as i32,g.text.y+(line*g.line)as i32,b'|',g.scale,s.appearance,ansi_color(8));
                     }
-                    for col in left..columns{canvas.glyph(g.text.x+((col+1)*g.cell)as i32,g.text.y+2*g.line as i32,
-                        b'.',g.scale,s.appearance,ansi_color(8));}
+                    colored(canvas,g,s.appearance,4,edge.bytes(),ansi_color(8));
+                    let mut usage=crate::runtime::console_execution::Bytes::<160>::new();
+                    if v.pool_capacity>0 {
+                        let percent=u128::from(v.used)*100/u128::from(v.pool_capacity);
+                        let _=write!(usage," Pool: {} MiB used / {} MiB allocatable ({}%)   [",v.used/1048576,v.pool_capacity/1048576,percent);
+                        let bars=(percent.min(100)*16/100)as usize;
+                        usage.write(&[b'#';16][..bars]);usage.write(&[b'.';16][..16-bars]);usage.write(b"]");
+                    } else {usage.write(b" Pool usage unavailable");}
+                    colored(canvas,g,s.appearance,5,usage.bytes(),ansi_color(10));
+                    ascii(canvas,g,s.appearance,6,b" # selected partition   = other partitions   . gaps / disk metadata");
+                    ascii(canvas,g,s.appearance,7,b"   PARTITION SHARE            SIZE       NAME");
                 }
-                let visible=g.rows().saturating_sub(5+usize::from(chart)).max(1);
+                let first=if chart {8}else{2};
+                let visible=g.rows().saturating_sub(first+3).max(1);
                 let base=v.selected/visible*visible;
                 let max=if v.depth==0{v.capacity}else{v.rows.first().map_or(0,|r|r.bytes)}.max(1);
                 if v.inspect && v.selected<v.count {
@@ -190,7 +206,7 @@ use core::fmt::Write;
                     let bars=(u128::from(row.bytes)*16/u128::from(max)).min(16) as usize;
                     line.write(&[b'#';16][..bars]);line.write(&[b'.';16][..16-bars]);
                     let _=write!(line,"] {:>10} KiB  ",row.bytes.div_ceil(1024));line.write(row.label());
-                    colored(canvas,g,s.appearance,i-base+2+usize::from(chart),line.bytes(),ansi_color(if i==v.selected{14}else{7}));
+                    colored(canvas,g,s.appearance,i-base+first,line.bytes(),ansi_color(if i==v.selected{14}else{7}));
                 }
                 }
                 if v.depth==1 && v.partition.container {

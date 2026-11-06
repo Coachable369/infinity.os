@@ -94,6 +94,9 @@ fn sdk_package_access() {
         (b"/System/figlet.py",include_bytes!("../sdk/system/figlet.py").as_slice()),
         (b"/System/standard.flf",include_bytes!("../sdk/system/standard.flf").as_slice()),
         (b"/System/small.flf",include_bytes!("../sdk/system/small.flf").as_slice()),
+        (b"/System/Infinity-Chime.wav",include_bytes!("../sdk/system/Infinity-Chime.wav").as_slice()),
+        (b"/System/Infinity-Melody.mp3",include_bytes!("../sdk/system/Infinity-Melody.mp3").as_slice()),
+        (b"/System/Infinity-Motion.mp4",include_bytes!("../sdk/system/Infinity-Motion.mp4").as_slice()),
     ] {
         let id=store.resolve(path).unwrap();let mut data=vec![0;expected.len()];
         assert_eq!(store.read(id,None,&mut data).unwrap(),expected.len());

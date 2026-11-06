@@ -10,6 +10,9 @@ use app_launcher::{LauncherRelease, LAUNCHER_APPS};
 fn main() {
     assert_eq!(LAUNCHER_APPS.iter().filter(|entry| entry.action==app_launcher::LauncherAction::Browser).count(),
         cfg!(feature="native-browser") as usize);
+    assert_eq!(LAUNCHER_APPS[3].action, app_launcher::LauncherAction::MediaPlayer);
+    assert_eq!(LAUNCHER_APPS[3].icon_role, 8);
+    assert_eq!(LAUNCHER_APPS.iter().filter(|e| e.action == app_launcher::LauncherAction::MediaPlayer).count(), 1);
     shortcut_drag_and_persistence();
     generated_catalog_projection();
     for section in [6, 7, 8, 9] {

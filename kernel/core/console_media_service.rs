@@ -18,6 +18,13 @@ fn extension(path: &[u8]) -> bool {
         .any(|s| s.eq_ignore_ascii_case(ext))
 }
 // ------------------------=
+// FUNC: bundled_sample
+// DESC: Allows only the three immutable public demonstration media objects.
+// ------------------=
+fn bundled_sample(path: &[u8]) -> bool {
+    matches!(path, b"/System/Infinity-Chime.wav" | b"/System/Infinity-Melody.mp3" | b"/System/Infinity-Motion.mp4")
+}
+// ------------------------=
 // FUNC: readable
 // DESC: Limits the library and each open to authorized personal objects and immutable snapshots.
 // ------------------=
@@ -26,9 +33,10 @@ fn readable(path: &[u8], user: [u8; 16]) -> Option<storage::object::ObjectMetada
         return None;
     }
     let (m, _) = storage::object_inspect_path(path).ok()?;
-    (m.space == storage::object::Space::Personal
-        && m.kind != storage::object::ObjectType::NamespaceNode
-        && crate::runtime::native_python_scope::readable(m.owner.0, user, true, path))
+    (user != [0;16] && m.kind != storage::object::ObjectType::NamespaceNode
+        && ((m.space == storage::object::Space::System && m.owner.0 == [0;16] && bundled_sample(path))
+            || (m.space == storage::object::Space::Personal
+                && crate::runtime::native_python_scope::readable(m.owner.0, user, true, path))))
     .then_some(m)
 }
 // ------------------------=
@@ -72,7 +80,7 @@ pub fn dispatch<T: PageTable>(
         0x12e0 => {
             let mut path = [0; 96];
             let mut seen = 0u64;
-            for i in 0..storage::object::NAMESPACE_CAPACITY {
+            for i in 0..storage::object::PUBLIC_NAMESPACE_CAPACITY {
                 let Some((n, _)) = storage::namespace_entry(i, &mut path) else {
                     break;
                 };
