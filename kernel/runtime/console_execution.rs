@@ -254,16 +254,31 @@ pub fn render_help(output: &mut Bytes<OUTPUT_BYTES>, domain: Option<&language::D
                     output
                         .write_segments(&[operation.domain, b" ", operation.action]);
                     output.write_line(operation.description);
-                    if operation.target.is_some() { output.write_line(b"Target: typed reference (see example)"); }
+                    if let Some(target) = operation.target { output.write_segments(&[b"Target: ", argument_help(target)]); }
                     for argument in operation.arguments {
-                        output.write_segments(&[b"  ",argument.name,if argument.required {b"=<value> (required)"}else{b"=<value> (optional)"}]);
+                        output.write_segments(&[b"  ",argument.name,if argument.required {b" (required): "}else{b" (optional): "},argument_help(argument.value_type)]);
                     }
                     output.write_number(b"Required capability: ",operation.capability);
+                    output.write_line(if operation.domain == b"user" || operation.domain == b"group" {
+                        if operation.side_effect == language::SideEffectClass::Query {
+                            b"Permissions: authenticated session; credential secrets are never returned."
+                        } else {
+                            b"Permissions: administrator for account changes; users may edit their own name and password. Built-in groups and the last enabled administrator are protected."
+                        }
+                    } else { b"Permissions: authenticated session and the listed capability, plus target ownership/service policy. Authorization is checked at execution." });
                     output.write_line(if operation.side_effect==language::SideEffectClass::Query {b"Effect: read only"}else{b"Effect: changes state; native authorization applies"});
                     output
-                        .write_segments(&[b"Result type: ", value_type_text(operation.output)]);
+                        .write_segments(&[b"Expected output type: ", value_type_text(operation.output)]);
                     output
                         .write_segments(&[b"Example: ", operation.example]);
+                    output.write_line(if operation.side_effect == language::SideEffectClass::Query {
+                        b"Returns the authorized current records/status. Counts, IDs and values depend on your system. Missing or inaccessible targets return an error."
+                    } else {
+                        b"Returns the changed record or operation result after authorization. Invalid arguments or denied authority produce an error without applying the requested change."
+                    });
+                    if operation.operation == crate::runtime::iop::OperationId::IdentityCreate || operation.operation == crate::runtime::iop::OperationId::IdentityResetPassword {
+                        output.write_line(b"Enter and confirm an 8-72 character password privately when prompted. Escape cancels. Do not put a password in the command line.");
+                    }
                 } else if let Some(domain) = domain {
                     output
                         .write_segments(&[domain.name, b" - ", domain.description]);
@@ -359,4 +374,30 @@ impl<const N: usize> core::fmt::Write for Bytes<N> {
     // DESC: Adapts bounded native output to allocation-free structured formatting.
     // ------------------=
     fn write_str(&mut self,text:&str)->core::fmt::Result {self.write(text.as_bytes());if self.overflow{Err(core::fmt::Error)}else{Ok(())}}
+}
+
+// ------------------------=
+// FUNC: argument_help
+// DESC: Documents the exact typed input category accepted by the Console schema.
+// ------------------=
+fn argument_help(kind: language::ArgumentType) -> &'static [u8] {
+    use language::ArgumentType::*;
+    match kind {
+        Text => b"text; quote values containing spaces",
+        Boolean => b"true or false",
+        ObjectType => b"registered object type, such as text or blob",
+        ObjectRef => b"obj:ID or authorized namespace path",
+        ProjectRef => b"project:ID",
+        CollectionRef => b"collection:ID",
+        DeviceRef => b"device:ID",
+        ServiceRef => b"service:ID",
+        NamespacePath => b"namespace path, quoted if it contains spaces",
+        Temporal => b"timestamp or generation reference accepted by this operation",
+        UserRef => b"user:HANDLE or user:ID; use user list to discover",
+        GroupRef => b"group:NAME or group:ID; use group list to discover",
+        SessionRef => b"session:ID",
+        MachineRef => b"machine:ID",
+        NetworkRef => b"network resource reference; see the operation example",
+        NodeRef => b"node:ID",
+    }
 }

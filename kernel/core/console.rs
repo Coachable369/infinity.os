@@ -10194,8 +10194,8 @@ impl ConsoleRuntime {
         if self.command_terminal_visible() && !self.ssh_terminal.active && self.command[..self.command_length].trim_ascii().eq_ignore_ascii_case(b"top") {
             crate::ui::command_terminal::mutate(|s|{s.monitor=true;s.monitor_row=0;s.changed();});self.reset_input();return;
         }
-        if self.command_terminal_visible() && self.command[..self.command_length]==*b"help" {
-            crate::ui::command_terminal::mutate(|s|{s.help=true;s.help_detail=false;s.help_selected=0;s.changed();});self.reset_input();return;
+        if self.command_terminal_visible() && !self.ssh_terminal.active && self.command[..self.command_length].trim_ascii().eq_ignore_ascii_case(b"help") {
+            crate::ui::command_terminal::mutate(|s|{s.help=true;s.help_detail=false;s.help_selected=0;s.help_query_length=0;s.help_scroll=0;s.changed();});self.reset_input();return;
         }
         if self.command_terminal_visible() && self.command[..self.command_length]==*b"clear" {crate::ui::command_terminal::mutate(|s|s.clear());self.output.clear();self.reset_input();return;}
         if self.command_length == 0 {

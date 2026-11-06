@@ -82,6 +82,8 @@ fn secret_command(identity: &mut IdentitySystem, session: StableId, input: &[u8]
 fn parser_contract() {
     let cases: &[(&[u8], OperationId, ValueType)] = &[
         (b"user create handle=avery display-name=\"Avery Chen\"", OperationId::IdentityCreate, ValueType::User),
+        (b"user add handle=avery display-name=\"Avery Chen\"", OperationId::IdentityCreate, ValueType::User),
+        (b"group add name=design", OperationId::GroupCreate, ValueType::Group),
         (b"user list", OperationId::IdentityList, ValueType::UserSet),
         (b"user read user:avery", OperationId::IdentityRead, ValueType::User),
         (b"user update user:avery handle=ava", OperationId::IdentityUpdate, ValueType::User),
@@ -134,7 +136,9 @@ fn account_dispatch() {
     identity.create_password(owner.id, b"owner-password", 3).unwrap();
     identity.complete_onboarding().unwrap();
     let session = identity.create_session(owner.id, b"owner-password", 4).unwrap().id;
-    let created = secret_command(&mut identity, session, b"user create handle=avery display-name=\"Avery Chen\"", b"new-password").unwrap();
+    assert!(identity.is_administrator(owner.id));
+    assert!(mutate(&mut identity, session, b"group delete group:administrators").is_err());
+    let created = secret_command(&mut identity, session, b"user add handle=avery display-name=\"Avery Chen\"", b"new-password").unwrap();
     let AccountResult::User(user) = created else { panic!("expected created user"); };
     assert_eq!(identity.user_count(), 2);
     let read_numeric = format!("user read user:{}", user.id.short());
@@ -150,7 +154,7 @@ fn account_dispatch() {
     assert!(matches!(prepared(&identity, session, b"user read user:99999999999999999999999999999"), Err(IdentityError::InvalidInput)));
     assert!(matches!(prepared(&identity, session, b"user update user:ava"), Err(IdentityError::InvalidInput)));
 
-    let result = mutate(&mut identity, session, b"group create name=design display-name=\"Design Team\"").unwrap();
+    let result = mutate(&mut identity, session, b"group add name=design display-name=\"Design Team\"").unwrap();
     let AccountResult::Group(group) = result else { panic!("expected created group"); };
     mutate(&mut identity, session, b"group add group:design user=user:ava").unwrap();
     assert!(identity.is_group_member(group.id, user.id));
@@ -307,7 +311,100 @@ fn password_authority_transitions() {
 }
 
 // ------------------------=
+// FUNC: help_catalog_contract
+// DESC: Exercises filtering, bounded misses and insertion drafts through the shared parser.
+// ------------------=
+fn help_catalog_contract() {
+    use runtime::console_help::{navigate,Navigation};
+    let mut state=Box::new(ui::command_terminal::State::new());state.help=true;
+    for &byte in b"user add" {assert!(navigate(&mut state,Navigation::Type(byte)).is_none());}
+    assert!(navigate(&mut state,Navigation::Open).is_none());assert!(state.help_detail&&state.help);
+    assert!(navigate(&mut state,Navigation::Back).is_none());assert!(!state.help_detail&&state.help);
+    let inserted=navigate(&mut state,Navigation::Insert).unwrap();assert!(!state.help);
+    assert_eq!(graph(inserted).nodes[0].unwrap().schema.operation,OperationId::IdentityCreate);
+
+    use runtime::console_help as help;
+    let mut selected = None;
+    let mut row = 0;
+    while let Some(index) = help::filtered_entry(b"uSeR aDd", row) {
+        let parsed = graph(help::command_draft(index));
+        assert_eq!(parsed.nodes[0].unwrap().schema.operation, OperationId::IdentityCreate);
+        selected = Some(index);
+        row += 1;
+    }
+    assert!(selected.is_some());
+    assert!(help::filtered_entry(b"no-such-native-command-987654", 0).is_none());
+    assert!(help::filtered_entry(b"", help::catalog_count()).is_none());
+    for (index, operation) in runtime::console_language::OPERATIONS.iter().enumerate() {
+        if operation.domain == b"user" || operation.domain == b"group" {
+            let draft = help::command_draft(help::COMMANDS.len() + index);
+            let parsed = graph(draft);
+            assert_eq!(parsed.nodes[0].unwrap().schema.operation, operation.operation);
+            assert!(help::filtered_entry(operation.domain, 0).is_some());
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Runs focused behavioral parser, dispatch, and secret-state acceptance through the repository harness.
 // ------------------=
-fn main() { parser_contract(); account_dispatch(); password_transitions(); password_shortcut_transitions(); password_authority_transitions(); }
+fn main() { help_pixels(); help_catalog_contract(); parser_contract(); account_dispatch(); password_transitions(); password_shortcut_transitions(); password_authority_transitions(); }
+
+struct HelpPixels { width:usize, height:usize, pixels:Vec<u8>, clip:ui::geometry::Rect }
+impl ui::command_terminal_paint::Canvas for HelpPixels {
+    // ------------------------=
+    // FUNC: fill
+    // DESC: Records exact production Help surface colors in the bounded host framebuffer.
+    // ------------------=
+    fn fill(&mut self,r:ui::geometry::Rect,c:(u8,u8,u8)) {
+        for y in r.y..r.bottom() { for x in r.x..r.right() { self.pixel(x,y,c,255); } }
+    }
+    // ------------------------=
+    // FUNC: rail
+    // DESC: Supplies the terminal canvas contract for a solid test rail.
+    // ------------------=
+    fn rail(&mut self,r:ui::geometry::Rect,c:(u8,u8,u8)) { self.fill(r,c); }
+    // ------------------------=
+    // FUNC: glyph
+    // DESC: Uses the actual packaged monospace glyph rasterizer rather than a substituted host font.
+    // ------------------=
+    fn glyph(&mut self,x:i32,y:i32,b:u8,scale:usize,p:ui::editor_tools::preferences::Preferences,c:(u8,u8,u8)) {
+        ui::command_terminal_paint::raster_glyph(p,b,scale,|dx,dy,a|self.pixel(x+dx as i32,y+dy as i32,c,a));
+    }
+}
+impl HelpPixels {
+    // ------------------------=
+    // FUNC: pixel
+    // DESC: Blends font coverage and asserts that Help stays inside its terminal body.
+    // ------------------=
+    fn pixel(&mut self,x:i32,y:i32,c:(u8,u8,u8),a:u8) {
+        assert!(self.clip.contains(ui::geometry::Point{x,y}));
+        assert!(x>=0&&y>=0&&(x as usize)<self.width&&(y as usize)<self.height);
+        let i=(y as usize*self.width+x as usize)*3;
+        for (j,v) in [c.0,c.1,c.2].into_iter().enumerate(){self.pixels[i+j]=((v as u32*a as u32+self.pixels[i+j]as u32*(255-a as u32))/255)as u8;}
+    }
+}
+// ------------------------=
+// FUNC: help_pixels
+// DESC: Exercises the shared Help painter at normal and compact sizes and retains human-reviewable production pixels.
+// ------------------=
+fn help_pixels() {
+    use ui::geometry::Rect;
+    use std::io::Write;
+    std::fs::create_dir_all("builds/validation/command-help").unwrap();
+    for (width,height) in [(1000usize,700usize),(640,480)] {
+        let body=Rect{x:20,y:60,width:(width-40)as u32,height:(height-80)as u32};
+        let toolbar=Rect{x:20,y:20,width:(width-40)as u32,height:40};
+        for detail in [false,true] {
+            let mut state=Box::new(ui::command_terminal::State::new());state.help=true;state.help_detail=detail;
+            state.help_query[..4].copy_from_slice(b"user");state.help_query_length=4;
+            let g=state.layout(body,toolbar,1);
+            let mut image=HelpPixels{width,height,pixels:vec![0;width*height*3],clip:g.body};
+            runtime::console_help_paint::paint(&mut image,g,&state);
+            assert!(image.pixels.iter().any(|p|*p!=0));
+            let path=format!("builds/validation/command-help/{}-{}.ppm",width,if detail{"manual"}else{"catalog"});
+            let mut file=std::fs::File::create(path).unwrap();write!(file,"P6\n{width} {height}\n255\n").unwrap();file.write_all(&image.pixels).unwrap();
+        }
+    }
+}

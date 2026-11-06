@@ -102,12 +102,24 @@ impl ConsoleRuntime {
                 _=>()
             }return true;
         }
-        if terminal::inspect(|s|s.help){terminal::mutate(|s|{match key {
-            ConsoleKey::Escape=>if s.help_detail{s.help_detail=false;}else{s.help=false;},
-            ConsoleKey::Up=>s.help_selected=s.help_selected.saturating_sub(1),
-            ConsoleKey::Down=>s.help_selected=(s.help_selected+1).min(crate::runtime::console_help::COMMANDS.len()-1),
-            ConsoleKey::Enter=>s.help_detail=true,_=>()
-        }s.changed();});return true;}
+        if terminal::inspect(|s| s.help) {
+            use crate::runtime::console_help::{self as help, Navigation};
+            let action = match key {
+                ConsoleKey::Up => Navigation::Up, ConsoleKey::Down => Navigation::Down,
+                ConsoleKey::Enter => Navigation::Open, ConsoleKey::Tab(false) => Navigation::Insert,
+                ConsoleKey::Escape => Navigation::Back, ConsoleKey::Backspace => Navigation::Erase,
+                ConsoleKey::Character(byte) => Navigation::Type(byte), _ => Navigation::Ignore,
+            };
+            let draft = terminal::mutate(|s| help::navigate(s,action));
+            if let Some(draft) = draft {
+                self.reset_input();
+                let length = draft.len().min(self.command.len());
+                self.command[..length].copy_from_slice(&draft[..length]);
+                self.command_length = length; self.command_cursor = length;
+                self.publish_command_terminal();
+            }
+            return true;
+        }
         if matches!(key,ConsoleKey::Shortcut(b'c'))&&!terminal::inspect(|s|s.remote){let mut bytes=[0;8192];if let Some(n)=terminal::inspect(|s|s.copy(&mut bytes)){if n>0{self.copy_workplace_text(&bytes[..n]);return true;}}}
         if let ConsoleKey::Shortcut(code)=key {if let Some(p)=terminal::inspect(|s|s.appearance.zoom_shortcut(code)) {
             terminal::mutate(|s|{s.appearance=p;s.changed();});self.command_terminal_save();return true;

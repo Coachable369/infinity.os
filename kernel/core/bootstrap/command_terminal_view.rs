@@ -82,27 +82,7 @@ impl DisplayDevice {
                 });
                 ascii(&mut canvas,g,s.appearance,g.rows().saturating_sub(1),b"Arrows: select  P: pause  T: CPU  M: memory  K: end  R: relaunch  Q: quit");
             }
-            if s.help {
-                canvas.fill(g.body,s.background_color());
-                let entries=crate::runtime::console_help::COMMANDS;
-                let e=&entries[s.help_selected.min(entries.len()-1)];
-                if s.help_detail {
-                    ascii(&mut canvas,g,s.appearance,0,b"+-- COMMAND REFERENCE ---------------------------------------+");
-                    ascii(&mut canvas,g,s.appearance,1,e.usage);
-                    let mut row=3;for part in e.description.chunks(g.columns()){ascii(&mut canvas,g,s.appearance,row,part);row+=1;}
-                    ascii(&mut canvas,g,s.appearance,g.rows().saturating_sub(1),b"Esc: command list");
-                }else {
-                    ascii(&mut canvas,g,s.appearance,0,b"+-- COMMAND ------------------+-- USAGE ----------------------+");
-                    let visible=g.rows().saturating_sub(3).max(1);let start=s.help_selected/visible*visible;
-                    for (i,e) in entries.iter().skip(start).take(visible).enumerate(){
-                        let mut line=[b' ';320];line[0]=if start+i==s.help_selected{b'>'}else{b'|'};
-                        let n=e.name.len().min(26);line[2..2+n].copy_from_slice(&e.name[..n]);line[29]=b'|';
-                        let n=e.usage.len().min(288);line[31..31+n].copy_from_slice(&e.usage[..n]);
-                        ascii(&mut canvas,g,s.appearance,i+1,&line[..(31+n).min(g.columns())]);
-                    }
-                    ascii(&mut canvas,g,s.appearance,g.rows().saturating_sub(1),b"Up/Down: select    Enter: help    Esc: prompt");
-                }
-            }
+            if s.help { crate::runtime::console_help_paint::paint(&mut canvas,g,s); }
         });
         terminal::inspect(|s|{
             let mut status=[0u8;128];let mut text=crate::runtime::console_execution::Bytes::<128>::new();

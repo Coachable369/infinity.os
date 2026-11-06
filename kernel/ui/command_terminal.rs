@@ -19,6 +19,7 @@ pub struct State {
     pub row_override:usize,pub column_override:usize,pub opacity:u8,pub background:u8,
     pub disk:disk_view::DiskView,
     pub monitor:bool,pub monitor_row:usize,pub help:bool,pub help_detail:bool,pub help_selected:usize,
+    pub help_query:[u8;64],pub help_query_length:usize,pub help_scroll:usize,
     pub remote:bool,pub setting_value:usize,pub setting_edit:bool,
     lines: [[u8; COLS]; ROWS], lengths: [usize; ROWS],
     pub first: u64, pub count: usize, stream_open: bool, stream_cursor: usize, escape: u8,
@@ -38,7 +39,7 @@ impl State {
     // DESC: Initializes bounded storage without heap allocation or host services.
     // ------------------=
     pub const fn new() -> Self {
-        Self { disk:disk_view::DiskView::new(), row_override:0,column_override:0,opacity:255,background:0,monitor:false,monitor_row:0,help:false,help_detail:false,help_selected:0,remote:false,setting_value:0,setting_edit:false,lines:[[0;COLS];ROWS],lengths:[0;ROWS],first:0,count:0,stream_open:false,stream_cursor:0,escape:0,
+        Self { disk:disk_view::DiskView::new(), row_override:0,column_override:0,opacity:255,background:0,monitor:false,monitor_row:0,help:false,help_detail:false,help_selected:0,help_query:[0;64],help_query_length:0,help_scroll:0,remote:false,setting_value:0,setting_edit:false,lines:[[0;COLS];ROWS],lengths:[0;ROWS],first:0,count:0,stream_open:false,stream_cursor:0,escape:0,
             owner:[0;16],authorized:false,capture:false,appearance:Preferences{scheme:1,font:2,size:3},revision:0,
             input:[0;INPUT],input_length:0,cursor:0,prompt:[0;256],prompt_length:0,
             scroll:0,columns:80,rows:24,selection:None,dragging:false,scroll_drag:false,grab:0,
@@ -67,7 +68,7 @@ impl State {
         if self.owner==owner && self.authorized==active {return false;}
         self.clear();self.owner=owner;self.authorized=active;self.capture=false;
         self.input.fill(0);self.input_length=0;self.cursor=0;self.prompt.fill(0);self.prompt_length=0;
-        self.disk=disk_view::DiskView::new();self.monitor=false;self.monitor_row=0;self.help=false;self.remote=false;self.setting_edit=false;self.row_override=0;self.column_override=0;self.opacity=255;self.background=0;
+        self.disk=disk_view::DiskView::new();self.monitor=false;self.monitor_row=0;self.help=false;self.help_detail=false;self.help_selected=0;self.help_query.fill(0);self.help_query_length=0;self.help_scroll=0;self.remote=false;self.setting_edit=false;self.row_override=0;self.column_override=0;self.opacity=255;self.background=0;
         self.search=false;self.query.fill(0);self.query_length=0;self.menu=Menu::None;self.notice=b"";
         self.appearance=Preferences{scheme:1,font:2,size:3};self.click_position=None;self.clicks=0;
         active

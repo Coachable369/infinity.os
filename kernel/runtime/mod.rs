@@ -19,6 +19,7 @@ pub mod compute_operator;
 pub mod console_language;
 pub mod console_execution;
 pub mod console_help;
+pub mod console_help_paint;
 pub mod console_terminal;
 pub mod event;
 pub mod execution;

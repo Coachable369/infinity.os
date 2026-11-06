@@ -3,13 +3,45 @@ use super::{console_language as language, console_execution::{Bytes, OUTPUT_BYTE
 pub struct Entry { pub name: &'static [u8], pub usage: &'static [u8], pub description: &'static [u8] }
 macro_rules! entry { ($n:literal,$u:literal,$d:literal) => { Entry{name:$n,usage:$u,description:$d} }; }
 pub static COMMANDS: &[Entry] = &[
+    entry!(b"exit",b"exit",b"Leave Command Window and return to the appropriate desktop or startup surface."),
+    entry!(b"hello",b"hello",b"Display the built-in system greeting."),
+    entry!(b"system status",b"system status",b"Inspect kernel and driver readiness."),
+    entry!(b"system info",b"system info",b"Inspect the current machine and system build."),
+    entry!(b"system generation",b"system generation",b"Inspect the active installed system generation."),
+    entry!(b"system boot",b"system boot",b"Inspect boot handoff and selected boot source."),
+    entry!(b"memory status",b"memory status",b"Inspect measured native memory availability."),
+    entry!(b"device list",b"device list",b"List devices discovered by native drivers."),
+    entry!(b"tasks",b"tasks",b"Alias for task list."),
+    entry!(b"task list",b"task list",b"Inspect registered processes and live resource usage."),
+    entry!(b"task inspect",b"task inspect HANDLE",b"Inspect one numeric task handle from task list."),
+    entry!(b"task launch",b"task launch APP",b"Start a registered native application."),
+    entry!(b"task end",b"task end HANDLE",b"End a selected process. Protected system tasks cannot be ended. Unsaved editor work retains its confirmation."),
+    entry!(b"task pause",b"task pause HANDLE",b"Pause a runnable task selected from task list."),
+    entry!(b"task resume",b"task resume HANDLE",b"Resume a paused task."),
+    entry!(b"task relaunch",b"task relaunch HANDLE",b"Relaunch a supported built-in task. Reopen native Python/C applications normally."),
+    entry!(b"task throttle",b"task throttle HANDLE cpu=N memory=N queue=N io=N",b"Update a task resource budget; inspect the task first and choose valid positive limits."),
+    entry!(b"runtime contexts",b"runtime contexts",b"Inspect native execution contexts."),
+    entry!(b"capability list",b"capability list",b"Inspect current capability grants without creating authority."),
+    entry!(b"event subscriptions",b"event subscriptions",b"Inspect registered event subscriptions."),
+    entry!(b"event trace",b"event trace",b"Inspect retained event tracing records."),
+    entry!(b"system resources",b"system resources",b"Inspect native resource accounting."),
+    entry!(b"voice stop",b"voice stop",b"Stop active conversation/listening. Alias: voice conversation stop."),
+    entry!(b"voice status",b"voice status",b"Inspect voice pipeline state without starting capture."),
+    entry!(b"ai status",b"ai status",b"Inspect inference availability and measured timing."),
+    entry!(b"ai trace",b"ai trace",b"Inspect recent AI execution tracing."),
+    entry!(b"model list",b"model list",b"List installed local model descriptors."),
+    entry!(b"model inspect",b"model inspect local-intent-v1",b"Inspect the built-in local intent model descriptor."),
+    entry!(b"agent list",b"agent list",b"List registered native AI agents."),
+    entry!(b"storage usage",b"storage usage",b"Inspect storage byte usage and capacity."),
+    entry!(b"user add",b"user add handle=NAME display-name=\"DISPLAY NAME\"",b"Create a user with privately entered and confirmed password. Alias of user create. Administrators can update, enable, disable and delete users through the user domain."),
+    entry!(b"group add",b"group add name=NAME [display-name=\"DISPLAY NAME\"] | group add group:NAME user=user:HANDLE",b"Create a group using name=, or add a user to an existing group using a group: target. The built-in administrators group cannot be renamed or deleted. The installer account starts as an administrator."),
     entry!(b"PATH",b"PATH | PATH=$PATH;/another/directory",b"Show or replace this session's semicolon-separated script search directories. Default: /System."),
     entry!(b"motd",b"motd | motd set MESSAGE",b"Read /System/motd, or customize the terminal greeting as an administrator."),
     entry!(b"grep",b"grep [-in] PATTERN [FILE ...]",b"Print matching lines; -i ignores case, -n includes line numbers. Without files, read stdin."),
     entry!(b"sed",b"sed 's/pattern/replacement/g' [FILE ...]",b"Print transformed lines. Omit g to replace only the first match on each line."),
     entry!(b"awk",b"awk [-F SEP] '{print $1,$2}' [FILE ...]",b"Print numbered fields, the whole record ($0), NR or NF."),
     entry!(b"figlet",b"figlet [-f standard|small] [-o FILE] TEXT",b"Render ASCII letters using a packaged FIGfont. -o creates a new personal text object."),
-    entry!(b"help",b"help [commands|DOMAIN|DOMAIN ACTION|COMMAND|search WORD]",b"Explore the registered command catalog. Enter/Space advances local pages; Esc ends paging."),
+    entry!(b"help",b"help [commands|DOMAIN|DOMAIN ACTION|COMMAND|search WORD]",b"Search the command catalog as you type. Enter opens a manual, Tab inserts an editable example, and Esc returns. Named topics print their manual."),
     entry!(b"disk",b"disk",b"Explore the system disk and partitions. Enter inspects a partition, arrows select. D moves your file to Trash or deletes a selected Trash entry after confirmation. U restores a selected Trash file. R refreshes; Q exits."),
     entry!(b"top",b"top",b"Live local process monitor: use arrows to select, p to pause or resume, k to end, r to relaunch a built-in app, q to return."),
     entry!(b"ipconfig",b"ipconfig [--all]",b"All native interfaces, link state, MAC, MTU, IP/prefix, gateway, DNS and traffic counters. Read only."),
@@ -29,7 +61,7 @@ pub static COMMANDS: &[Entry] = &[
     entry!(b"open",b"open PATH",b"Open a supported resource with its registered application."),
     entry!(b"preview",b"preview PATH",b"Preview a supported file using the native preview service."),
     entry!(b"wallpaper",b"wallpaper IMAGE_PATH",b"Set the current user's desktop wallpaper."),
-    entry!(b"ssh",b"ssh status | enable [port:N] [limit:N] | disable",b"Inspect/configure native SSH. Configuration requires a local administrator. Use help ssh key for registration."),
+    entry!(b"ssh",b"ssh USER@HOST [-p PORT] | ssh status | ssh enable [port:N] [limit:N] | ssh disable",b"Connect to a remote host with private password entry and an interactive terminal. Ctrl+] disconnects. Inspect/configure the local listener with ssh status/enable/disable; configuration requires a local administrator. Use help ssh key for registration."),
     entry!(b"ssh key",b"ssh key add|revoke USER ssh-ed25519 BASE64",b"Register/revoke a public key through IdentitySystem. Never paste a private key. New users receive ~/.ssh/id_ed25519 and .pub."),
     entry!(b"work",b"work help",b"Enterprise tools. Explore help work clipboard/history/checksum/compare/backup/restore/report/private."),
     entry!(b"work clipboard",b"work clipboard status|clear|ttl SECONDS|browser-read on|off|browser-write on|off",b"Session clipboard status, retention and explicit browser permissions."),
@@ -103,6 +135,7 @@ pub fn render(command: &[u8], out: &mut Bytes<OUTPUT_BYTES>) -> bool {
     }
     if topic==b"commands" {
         for entry in COMMANDS {out.write_line(entry.usage);}
+        for op in language::OPERATIONS {out.write_segments(&[op.domain,b" ",op.action,b" - ",op.description]);}
         return true;
     }
     if let Some(query)=topic.strip_prefix(b"search ") {
@@ -112,7 +145,8 @@ pub fn render(command: &[u8], out: &mut Bytes<OUTPUT_BYTES>) -> bool {
         return true;
     }
     if let Some(entry)=COMMANDS.iter().find(|entry|entry.name.eq_ignore_ascii_case(topic)) {
-        out.write_line(entry.usage);out.write_line(entry.description);return true;
+        let index = COMMANDS.iter().position(|item| core::ptr::eq(item, entry)).unwrap();
+        manual(index, out); return true;
     }
     match language::parse(command) {
         Ok(language::ParseOutcome::Help(domain,operation)) => {super::console_execution::render_help(out,domain,operation);
@@ -127,3 +161,124 @@ pub fn render(command: &[u8], out: &mut Bytes<OUTPUT_BYTES>) -> bool {
 // DESC: Performs bounded case-insensitive catalog matching without allocation.
 // ------------------=
 fn contains(text:&[u8],query:&[u8])->bool { !query.is_empty() && text.windows(query.len()).any(|w|w.eq_ignore_ascii_case(query)) }
+
+// ------------------------=
+// FUNC: catalog_count
+// DESC: Includes native front ends and all typed service operations in local Help.
+// ------------------=
+pub fn catalog_count() -> usize { COMMANDS.len() + language::OPERATIONS.len() }
+
+// ------------------------=
+// FUNC: catalog_name
+// DESC: Formats the canonical command name without executing or authorizing it.
+// ------------------=
+pub fn catalog_name(index: usize, out: &mut Bytes<128>) {
+    if let Some(entry) = COMMANDS.get(index) { out.write(entry.name); }
+    else if let Some(op) = language::OPERATIONS.get(index.saturating_sub(COMMANDS.len())) {
+        out.write(op.domain); out.write(b" "); out.write(op.action);
+    }
+}
+
+// ------------------------=
+// FUNC: catalog_matches
+// DESC: Searches names, syntax and descriptions case insensitively as the user types.
+// ------------------=
+pub fn catalog_matches(index: usize, query: &[u8]) -> bool {
+    if index >= catalog_count() { return false; }
+    let mut name = Bytes::<128>::new(); catalog_name(index, &mut name);
+    if index >= COMMANDS.len() && COMMANDS.iter().any(|entry| entry.name.eq_ignore_ascii_case(name.bytes())) { return false; }
+    if query.is_empty() { return true; }
+    if contains(name.bytes(), query) { return true; }
+    if let Some(entry) = COMMANDS.get(index) {
+        contains(entry.usage, query) || contains(entry.description, query)
+    } else if let Some(op) = language::OPERATIONS.get(index.saturating_sub(COMMANDS.len())) {
+        contains(op.description, query) || contains(op.example, query)
+    } else { false }
+}
+
+// ------------------------=
+// FUNC: filtered_entry
+// DESC: Resolves a visible catalog row to a stable entry without allocating.
+// ------------------=
+pub fn filtered_entry(query: &[u8], row: usize) -> Option<usize> {
+    (0..catalog_count()).filter(|index| catalog_matches(*index, query)).nth(row)
+}
+
+// ------------------------=
+// FUNC: command_draft
+// DESC: Returns a documented editable example; the caller must never execute this automatically.
+// ------------------=
+pub fn command_draft(index: usize) -> &'static [u8] {
+    if let Some(entry) = COMMANDS.get(index) { details(entry.name).0 }
+    else { language::OPERATIONS.get(index.saturating_sub(COMMANDS.len())).map_or(b"", |op| op.example) }
+}
+
+// ------------------------=
+// FUNC: manual
+// DESC: Renders the complete selected page from authoritative schema and native front end documentation.
+// ------------------=
+pub fn manual(index: usize, out: &mut Bytes<OUTPUT_BYTES>) {
+    if let Some(entry) = COMMANDS.get(index) {
+        out.write_line(entry.usage); out.write_line(entry.description);
+        let (example, permissions, result) = details(entry.name);
+        out.write_segments(&[b"Permissions: ", permissions]);
+        out.write_segments(&[b"Example: ", example]);
+        out.write_segments(&[b"Expected output: ", result]);
+    } else if let Some(op) = language::OPERATIONS.get(index.saturating_sub(COMMANDS.len())) {
+        super::console_execution::render_help(out, None, Some(op));
+    }
+}
+
+#[path = "console_help_details.rs"] mod documentation;
+use documentation::details;
+
+/// Input actions shared by the native controller and behavioral harness.
+#[derive(Clone,Copy)]
+pub enum Navigation { Up, Down, Open, Insert, Back, Erase, Type(u8), Ignore }
+// ------------------------=
+// FUNC: navigate
+// DESC: Advances interactive Help and returns only an editable draft, never an executable dispatch.
+// ------------------=
+pub fn navigate(s:&mut crate::ui::command_terminal::State,key:Navigation)->Option<&'static [u8]> {
+    let selected=filtered_entry(&s.help_query[..s.help_query_length],s.help_selected);
+    let draft=match key {Navigation::Insert=>selected.map(command_draft),Navigation::Open if s.help_detail=>selected.map(command_draft),_=>None};
+    match key {
+        Navigation::Back=>if s.help_detail{s.help_detail=false;s.help_scroll=0;}else{s.help=false;},
+        Navigation::Up if s.help_detail=>s.help_scroll=s.help_scroll.saturating_sub(1),
+        Navigation::Down if s.help_detail=>{
+            let mut page=Bytes::<OUTPUT_BYTES>::new();if let Some(index)=selected{manual(index,&mut page);}
+            s.help_scroll=s.help_scroll.saturating_add(1).min(manual_lines(page.bytes(),s.columns).count().saturating_sub(s.rows.saturating_sub(2)));
+        }
+        Navigation::Up=>s.help_selected=s.help_selected.saturating_sub(1),
+        Navigation::Down=>if filtered_entry(&s.help_query[..s.help_query_length],s.help_selected+1).is_some(){s.help_selected+=1;},
+        Navigation::Open if selected.is_some()=>{s.help_detail=true;s.help_scroll=0;},
+        Navigation::Type(byte @ 32..=126) if !s.help_detail && s.help_query_length<s.help_query.len()=>{
+            s.help_query[s.help_query_length]=byte;s.help_query_length+=1;s.help_selected=0;
+        }
+        Navigation::Erase if !s.help_detail=>{s.help_query_length=s.help_query_length.saturating_sub(1);s.help_selected=0;},
+        _=>{}
+    }
+    if draft.is_some(){s.help=false;}s.changed();draft
+}
+#[derive(Clone)]
+pub struct ManualLines<'a>{remaining:&'a[u8],columns:usize}
+// ------------------------=
+// FUNC: manual_lines
+// DESC: Wraps manual paragraphs on word boundaries while preserving explicit newlines.
+// ------------------=
+pub fn manual_lines(bytes:&[u8],columns:usize)->ManualLines<'_>{ManualLines{remaining:bytes,columns:columns.max(1)}}
+impl<'a> Iterator for ManualLines<'a>{
+    type Item=&'a[u8];
+    // ------------------------=
+    // FUNC: next
+    // DESC: Returns the next bounded line, consuming a delimiter without dropping command characters.
+    // ------------------=
+    fn next(&mut self)->Option<Self::Item>{
+        if self.remaining.is_empty(){return None;}
+        let end=self.remaining.iter().position(|b|*b==b'\n').unwrap_or(self.remaining.len());
+        let (length,advance)=if end<=self.columns{(end,(end+1).min(self.remaining.len()))}else{
+            match self.remaining[..self.columns+1].iter().rposition(|b|*b==b' '){Some(n)if n>0=>(n,n+1),_=>(self.columns,self.columns)}
+        };
+        let line=&self.remaining[..length];self.remaining=&self.remaining[advance..];Some(line)
+    }
+}

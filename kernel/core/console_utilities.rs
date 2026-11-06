@@ -20,7 +20,17 @@ impl ConsoleRuntime {
     // ------------------=
     fn page_result(&mut self,out:&Bytes<OUTPUT_BYTES>) {
         self.page_output(out.bytes());
-        if out.truncated(){unsafe{let p=&mut *core::ptr::addr_of_mut!(PAGE);let notice=b"\nOutput limit reached. Narrow the path, help topic, or search.\n";let start=p.len.saturating_sub(notice.len());p.data[start..p.len].copy_from_slice(notice);}}
+        if out.truncated() {
+            let notice = b"\nOutput limit reached. Narrow the path, help topic, or search.\n";
+            if self.command_terminal_visible() {
+                crate::ui::command_terminal::mutate(|state| state.append(notice));
+            } else { unsafe {
+                let page = &mut *core::ptr::addr_of_mut!(PAGE);
+                let length = notice.len().min(page.len);
+                let start = page.len - length;
+                page.data[start..page.len].copy_from_slice(&notice[..length]);
+            }}
+        }
     }
     // ------------------------=
     // FUNC: next_output_page

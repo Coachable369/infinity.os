@@ -72,3 +72,14 @@ bright selected partition, and a separate measured pool allocation bar. Partitio
 capacity is not filesystem utilization. Unknown filesystem usage stays unknown.
 Arrow selection and Enter drill-down retain the existing explorer controls;
 small windows collapse the diagram to the keyboard-navigable partition list.
+
+## Interactive Help
+
+Use the terminal's existing monospace grid, scheme colors and compositor frame.
+The first row is the live search query. The catalog includes native front ends
+and typed service operations. Cyan and a leading `>` mark the selected row.
+Typing filters names, syntax and descriptions; arrows select and Enter opens
+the manual. Manuals scroll with arrows and retain the search on Escape.
+Tab inserts a documented example into the editable prompt. Enter does the same
+from a manual page. Insertion never submits the command. Escape from the catalog
+returns to the prompt. Search and selection are cleared on session change.

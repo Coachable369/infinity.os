@@ -2264,6 +2264,7 @@ pub fn domain(name: &[u8]) -> Option<&'static DomainSchema> {
 // DESC: Finds a registered operation schema by domain and action.
 // ------------------=
 pub fn operation(domain_name: &[u8], action: &[u8]) -> Option<&'static OperationSchema> {
+    let action = if eq_ascii(domain_name, b"user") && eq_ascii(action, b"add") { b"create".as_slice() } else { action };
     OPERATIONS
         .iter()
         .find(|item| eq_ascii(item.domain, domain_name) && eq_ascii(item.action, action))
@@ -2385,6 +2386,10 @@ fn parse_stage(source: &[u8]) -> Result<OperationNode<'_>, ConsoleLanguageError>
         return Err(ConsoleLanguageError::MissingArgument);
     }
     let (action, mut rest) = next_token(rest)?;
+    let action = if eq_ascii(selected_domain.name, b"group") && eq_ascii(action, b"add")
+        && trim(rest).split(|byte| *byte == b'=').next().is_some_and(|name| eq_ascii(name, b"name") || eq_ascii(name, b"display-name")) {
+        b"create".as_slice()
+    } else { action };
     let schema =
         operation(selected_domain.name, action).ok_or(ConsoleLanguageError::UnknownOperation)?;
     let mut node = OperationNode {
