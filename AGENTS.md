@@ -123,11 +123,13 @@ Every function must have this comment header immediately above it:
 // ------------------=
 ```
 
-## Direct AI audio pipeline change freeze after user acceptance
+## Direct AI audio pipeline — accepted and frozen
 
-The current wake-listener recovery is awaiting the user's runtime verification.
-Once the user confirms it is fixed, do not edit the direct AI audio pipeline
+The user confirmed on 2026-11-06 that the audio LLM pipeline is working.
+Do not edit the direct AI audio pipeline
 (capture, wake detection, recognition, generation handoff, synthesis, playback,
 and their startup/recovery orchestration) without new explicit user authorization.
 Unrelated UI, performance, build, or application requests do not authorize changes
-to this pipeline. Do not treat automated checks as the user's acceptance.
+to this pipeline. Intent, AI Kit, and other adjacent work may proceed within its
+requested scope, but must preserve the direct audio pipeline. If adjacent work
+requires a pipeline change, stop that change and obtain explicit authorization.
