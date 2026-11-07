@@ -196,3 +196,18 @@ For live desktop acceptance, pass the contents of
 `--assert-script` with a 1536×864 viewport. Check the final frame as well as
 the assertion: a blank advertisement slot is distinct from a missing article
 photo. This check is a test input, never injected into product pages.
+
+ARM native guest results for this change:
+
+- The modern-web fixture passed (manifest `20261107T041030359655Z-5527.json`):
+  zero offscreen image transfers when the document completed, one after scrolling,
+  and two after switching the remaining responsive image to eager.
+- The live Yahoo run passed (manifest `20261107T041043198195Z-4851.json`).
+  At 1536×864 the document completed with 35 decoded images, three marked lazy
+  still pending and zero broken images. The active article photograph and visible
+  Trending thumbnails painted. The 300 px Trending rail ended at x=460 and the
+  carousel card began at x=476. Evidence:
+  `builds/evidence/yahoo-responsive-live/{result.json,page.png}`.
+- The combined readiness and active-slide check took 540 seconds under QEMU TCG.
+  This measures the software-emulated guest and includes waiting for the photo;
+  it is not an installed-VM performance result.
