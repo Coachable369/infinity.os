@@ -78,6 +78,38 @@ def main():
         return response;
     }
     let mut response_end_timer = ResponseEndTimer(Some(context.timing.clone()));''')
+    # Preserve the cache's per-key placeholder until response headers arrive.
+    # Releasing it before native I/O lets simultaneous preload and script
+    # consumers queue duplicate downloads, each with its own page timeout.
+    old = """            drop(cache_guard);
+            let forward_response =
+                http_network_fetch(http_fetch_params, include_credentials, done_chan, context)
+                    .await;
+
+            let http_request = &mut http_fetch_params.request;
+            let request_key = CacheKey::new(http_request);
+            cache_guard = context
+                .state
+                .http_cache
+                .get_or_guard(request_key.clone())
+                .await;"""
+    new = """            let pending_cache_entry = match cache_guard {
+                CachedResourcesOrGuard::Guard(guard) => Some(guard),
+                CachedResourcesOrGuard::Value(_) => None,
+            };
+            let forward_response =
+                http_network_fetch(http_fetch_params, include_credentials, done_chan, context)
+                    .await;
+
+            let http_request = &mut http_fetch_params.request;
+            let request_key = CacheKey::new(http_request);
+            cache_guard = match pending_cache_entry {
+                Some(guard) => CachedResourcesOrGuard::Guard(guard),
+                None => context.state.http_cache.get_or_guard(request_key.clone()).await,
+            };"""
+    if text.count(old) != 1:
+        raise RuntimeError("Native cache single-producer integration changed")
+    text = text.replace(old, new)
     (servo / relative).write_text(text)
     relative = "components/net/request_interceptor.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)

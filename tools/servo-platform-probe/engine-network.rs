@@ -1,5 +1,6 @@
 //! Real external HTTPS fixture: native e1000, DNS, TCP, TLS and Servo rendering.
 use super::{native_https, resources, ResourceDelegate};
+#[path="../../sdk/infinity-browser-core/frame_pacing.rs"] mod frame_pacing;
 use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 use infinity_browser_native_network::{client::{Configuration, Link}, smoltcp::time::Instant as NetworkTime};
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -140,6 +141,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
     // the bounded observation window instead of accepting the first load event.
     let observed=Rc::new(Cell::new(0));
     let mut next_assertion=Instant::now();
+    let mut pacer=frame_pacing::FramePacer::new(50_000_000);
     let mut longest_spin=0u64;
     let mut longest_network=0u64;
     let mut longest_paint=0u64;
@@ -155,7 +157,9 @@ pub fn verify(engine: &servo::Servo) -> bool {
         resources.pump();
         let paint_start=super::super::monotonic();
         longest_network=longest_network.max(paint_start.saturating_sub(network_start));
-        if repaint.replace(false) {view.paint();}
+        if repaint.get() && pacer.admit(super::super::monotonic()) {
+            repaint.set(false);view.paint();pacer.completed(super::super::monotonic());
+        }
         longest_paint=longest_paint.max(super::super::monotonic().saturating_sub(paint_start));
         // A usable streaming page need not finish background requests before
         // accepting zoom/input. The supplied DOM predicate is the readiness gate.
@@ -186,7 +190,7 @@ pub fn verify(engine: &servo::Servo) -> bool {
     super::super::record(2,34,dom_matches as u64);
     {
     let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
-    view.evaluate_javascript("JSON.stringify({ready:document.readyState,sheets:document.styleSheets.length,fontStatus:document.fonts?document.fonts.status:null,bodyFont:document.body&&getComputedStyle(document.body).fontFamily,images:{total:document.images.length,loaded:Array.from(document.images).filter(i=>i.complete&&i.naturalWidth>0).length,failed:Array.from(document.images).filter(i=>i.complete&&!i.naturalWidth).length},viewport:[innerWidth,innerHeight],body:document.body&&[document.body.scrollWidth,document.body.scrollHeight]})",move |value| {
+    view.evaluate_javascript("JSON.stringify((()=>{const box=e=>{if(!e)return null;let r=e.getBoundingClientRect();return [r.x,r.y,r.width,r.height]};return {ready:document.readyState,images:[document.images.length,Array.from(document.images).filter(i=>i.complete&&i.naturalWidth>0).length,Array.from(document.images).filter(i=>i.complete&&!i.naturalWidth).length],font:document.body&&getComputedStyle(document.body).fontFamily,slides:Array.from(document.querySelectorAll('article')).slice(0,2).map(box),trending:[box(document.getElementById('trending-search')),box(document.querySelector('#trending-search li')),box(document.querySelector('#trending-search li>div:last-child'))]}})())",move |value| {
         if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&value);}
         inspection.set(1);
     });
@@ -200,11 +204,12 @@ pub fn verify(engine: &servo::Servo) -> bool {
         let pixels=image.is_some_and(|image| {
                 // UART proof is a half-resolution thumbnail of real rendered pixels;
                 // serializing full-size pixels can itself exhaust the test wall timeout.
-                let mut thumbnail=std::vec::Vec::with_capacity((width*height) as usize);
-                for y in (0..image.height()).step_by(2) {for x in (0..image.width()).step_by(2) {
+                let scale=if option_env!("INFINITY_BROWSER_FULL_SCREENSHOT")==Some("1") {1} else {2};
+                let mut thumbnail=std::vec::Vec::with_capacity((width*height*4/(scale*scale)) as usize);
+                for y in (0..image.height()).step_by(scale as usize) {for x in (0..image.width()).step_by(scale as usize) {
                     thumbnail.extend_from_slice(&image.get_pixel(x,y).0);
                 }}
-                super::super::record(2,36,((u64::from(width/2))<<32)|u64::from(height/2));
+                super::super::record(2,36,((u64::from(width/scale))<<32)|u64::from(height/scale));
                 for (index,chunk) in thumbnail.chunks(8).enumerate() {
                     let mut bytes=[0;8];bytes[..chunk.len()].copy_from_slice(chunk);
                     super::super::record(5,index as u64,u64::from_le_bytes(bytes));

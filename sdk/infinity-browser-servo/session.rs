@@ -276,6 +276,7 @@ impl<P: Provider + 'static> Session<P> {
                 self.crashed.set(true);self.resources.cancel_all();
             })?;
         frame(image.width(), image.height(), image.as_raw());
+        self.frame_pacer.borrow_mut().completed((self.clock)());
         Ok(true)
     }
     // ------------------------=

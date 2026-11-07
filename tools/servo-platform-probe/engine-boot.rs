@@ -217,7 +217,7 @@ mod page_trace {
 pub unsafe extern "C" fn engine_boot()->! {
     record(2,1,0);
     let runtime=core::ptr::addr_of_mut!(RUNTIME).cast::<Runtime>();
-    let heap=core::slice::from_raw_parts_mut(0x80000000 as *mut u8,512*1024*1024);
+    let heap=core::slice::from_raw_parts_mut(0x80000000 as *mut u8,1024*1024*1024);
     runtime.write(Runtime::new(heap,Hooks {cpu,monotonic,utc,entropy:entropy_probe::fill,pump}).unwrap());
     if !Runtime::install(runtime) { finish(1,2,0); }
     std::panic::set_hook(std::boxed::Box::new(|info| {

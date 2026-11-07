@@ -415,7 +415,7 @@ fn fatal(code:u32)->! { let h=host();unsafe { (h.fatal)(h.context,code) } }
 pub unsafe extern "C" fn infinity_browser_run(host:*mut abi::Host)->u32 {
     if host.is_null() || (*host).version!=abi::VERSION || (*host).size as usize!=core::mem::size_of::<abi::Host>()
         || (*host).heap.is_null() || (*host).heap_length<128*1024*1024
-        || (*host).heap_length>512*1024*1024
+        || (*host).heap_length>abi::HEAP_BYTES
         || ((*host).heap as usize).checked_add((*host).heap_length).is_none() { return 1; }
     if HOST.compare_exchange(core::ptr::null_mut(),host,Ordering::AcqRel,Ordering::Acquire).is_err() { return 2; }
     let runtime=core::ptr::addr_of_mut!(RUNTIME).cast::<Runtime>();

@@ -15,7 +15,7 @@ mod browser_entropy;
 #[path = "browser_recovery.rs"]
 mod browser_recovery;
 static RANDOM_SEEDS: browser_entropy::Seeds = browser_entropy::Seeds::new();
-const HEAP_BYTES: usize = 512 * 1024 * 1024;
+const HEAP_BYTES: usize = abi::HEAP_BYTES;
 // The bounded page-aligned grant is partitioned into reclaimable buddy roots.
 // It occupies loader-owned BSS, not installer payload bytes or the framebuffer.
 #[repr(C, align(4096))]

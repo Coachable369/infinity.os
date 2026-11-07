@@ -1,6 +1,8 @@
 //! Versioned integer/pointer-only ABI between the native engine component and
 //! the OS worker. Callbacks must be nonblocking mailbox operations. All pointers
 //! remain owned by their issuer; frame/event bytes are borrowed for one call.
+// Private browser arena, independent of other system service grants.
+pub const HEAP_BYTES: usize = 1024 * 1024 * 1024;
 pub const VERSION: u32 = 5;
 pub const OPEN: u32 = 1;
 pub const CLOSE: u32 = 2;

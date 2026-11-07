@@ -148,7 +148,7 @@ def main():
         # engine patches changing its independent lockfile on each staging pass.
         command = command[:command.index("--config")]
     if options.package == "servo":
-        command += ["--no-default-features", "--features", "bundled,ipc-channel/force-inprocess"]
+        command += ["--no-default-features", "--features", "bundled,webcrypto,ipc-channel/force-inprocess"]
     elif options.package != "swgl":
         command += ["-p", options.package]
     prefix = options.package + "-" + arch + ("-codegen" if options.codegen else "-check")

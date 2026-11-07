@@ -34,6 +34,12 @@ static int mutex_capacity(void) {
 // ------------------=
 int infinity_c_sync_begin(void) {
     if (mutex_capacity()) return 6;
+    static pthread_cond_t conditions[512];
+    for (unsigned i=0;i<512;++i) if (pthread_cond_init(&conditions[i],0)) return 7;
+    pthread_cond_t stale=conditions[0];
+    for (unsigned i=0;i<512;++i) if (pthread_cond_destroy(&conditions[i])) return 8;
+    if (pthread_cond_init(&conditions[0],0) || pthread_cond_signal(&stale)!=EINVAL ||
+        pthread_cond_destroy(&conditions[0])) return 9;
     pthread_condattr_t a;
     if (pthread_condattr_init(&a) || pthread_condattr_setclock(&a,CLOCK_MONOTONIC) || pthread_cond_init(&condition,&a) || pthread_condattr_destroy(&a)) return 1;
     pthread_mutexattr_t ma; pthread_mutex_t recursive;

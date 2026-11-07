@@ -14,7 +14,7 @@ extern int infinity_std_wake(const uint32_t *, bool);
 typedef struct { uint32_t generation, sequence, depth, waiters; uint64_t owner; int active, recursive; } Mutex;
 typedef struct { uint32_t generation, sequence, waiters; int active; clockid_t clock; } Condition;
 static Mutex mutexes[INFINITY_NATIVE_MUTEXES];
-static Condition conditions[CAPACITY];
+static Condition conditions[INFINITY_NATIVE_CONDITIONS];
 typedef struct { uint64_t id; uint32_t depth; } Reader;
 typedef struct { uint32_t generation, sequence, waiters, writers; int active; uint64_t writer; Reader readers[INFINITY_NATIVE_READERS]; } Rwlock;
 static Rwlock rwlocks[CAPACITY];
@@ -233,12 +233,12 @@ int pthread_condattr_destroy(pthread_condattr_t *a) { if (!a || !a->is_initializ
 // ------------------=
 int pthread_cond_init(pthread_cond_t *out, const pthread_condattr_t *a) {
     if (!out || !infinity_std_thread_id() || (a && !a->is_initialized)) return EINVAL;
-    for (uint32_t i=0; i<CAPACITY; ++i) {
+    for (uint32_t i=0; i<INFINITY_NATIVE_CONDITIONS; ++i) {
         Condition *c=&conditions[i];
-        if (c->active || c->generation >= (UINT32_MAX / CAPACITY)-1) continue;
+        if (c->active || c->generation >= (UINT32_MAX / INFINITY_NATIVE_CONDITIONS)-1) continue;
         uint32_t generation=c->generation+1;
         *c=(Condition){.generation=generation,.active=1,.clock=a ? a->clock : CLOCK_REALTIME};
-        *out=generation*CAPACITY+i; return 0;
+        *out=generation*INFINITY_NATIVE_CONDITIONS+i; return 0;
     }
     return EAGAIN;
 }
@@ -249,8 +249,8 @@ int pthread_cond_init(pthread_cond_t *out, const pthread_condattr_t *a) {
 static Condition *condition_lookup(pthread_cond_t *handle) {
     if (!handle || !infinity_std_thread_id()) return 0;
     if (*handle == PTHREAD_COND_INITIALIZER && pthread_cond_init(handle,0)) return 0;
-    Condition *c=&conditions[*handle % CAPACITY];
-    return c->active && c->generation == *handle / CAPACITY ? c : 0;
+    Condition *c=&conditions[*handle % INFINITY_NATIVE_CONDITIONS];
+    return c->active && c->generation == *handle / INFINITY_NATIVE_CONDITIONS ? c : 0;
 }
 // ------------------------=
 // FUNC: condition_wait

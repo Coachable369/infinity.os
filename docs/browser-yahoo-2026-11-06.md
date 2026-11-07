@@ -116,3 +116,51 @@ The old acceptance expression used document.fonts.status, which is not exposed
 by this pinned engine. Follow-up runs instead check document readiness and decoded
 image counts; they still fail. No replacement ISO was published for these
 diagnostic-only changes, and Yahoo/browser completion must not be claimed.
+
+## Concurrent fetch correction and native browser capacity (2026-11-07 UTC)
+
+The earlier cache test started its second consumer after response headers arrived.
+A new regression starts both consumers before headers. It reproduced two native
+requests for one cacheable URL while delivering correct bodies to both consumers:
+`20261107T020102008539Z-90901.json` (expected failure).
+
+The native engine overlay now retains a new cache entry's producer guard until
+headers arrive. Waiting consumers then use the existing streamed cache entry;
+this does not introduce another cache or bypass HTTP policy. The same test passes
+with one native request: `20261107T020431369519Z-91246.json`.
+The subsequent 300-second Yahoo trace attempted 150 requests for 143 distinct
+URLs; repeated analytics or denied ad endpoints are counted in that total. It
+rendered the page font, hero photos, navigation and
+thumbnails. Full-page acceptance still failed in that run; see
+`builds/evidence/yahoo-cache-producer-20261107/`.
+
+Additional bounded browser changes:
+
+- Reserve network/input service time after a paint exceeds its frame budget;
+  preserve the cadence of fast paints. Browser core: 65 tests pass,
+  `20261107T021745445845Z-91863.json`.
+- Increase the private browser arena from 512 MiB to 1 GiB after the extended
+  native run exhausted the former limit while creating another script thread.
+  Keep the same shared grant limit in host and component. Move only the x86
+  browser arena past the existing display allocation to avoid overlap.
+- Enable the engine's Web Crypto feature. Yahoo's analytics script previously
+  raised `crypto is not defined`. Native tests verify random buffers, UUID
+  structure, the SHA-256 known-answer digest and an AES-GCM round trip.
+  Manifest: `20261107T021549668975Z-91749.json`.
+- Exercise duplicate font preloads, stylesheet glyph widths, carousel item
+  geometry and wrapping within a constrained flex row. The final combined
+  fixture passes: `20261107T021703568340Z-91819.json`.
+
+CSS FontFace status is not a reliable acceptance oracle in this engine version:
+stylesheet glyphs can render while that status remains `loading`. The regression
+uses measured glyph widths instead. The direct AI audio pipeline is unchanged.
+
+The subsequent full-viewport native run exited in SpiderMonkey's condition
+variable constructor before it could deliver a final frame. The fatal caller in
+manifest `20261107T021905304711Z-91934.json` resolves to the assertion on
+pthread condition initialization. The Servo C runtime limited conditions to 128
+irrespective of the larger mutex pool. Its separate condition budget now
+permits 4096 without enlarging the reader/writer lock pool. The ARM runtime
+test creates 512 live conditions, releases them, rejects a stale handle after
+slot reuse and still exercises real condition waits and broadcasts:
+`20261107T023010095400Z-92207.json`.
