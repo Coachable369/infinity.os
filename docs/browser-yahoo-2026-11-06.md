@@ -164,3 +164,9 @@ permits 4096 without enlarging the reader/writer lock pool. The ARM runtime
 test creates 512 live conditions, releases them, rejects a stale handle after
 slot reuse and still exercises real condition waits and broadcasts:
 `20261107T023010095400Z-92207.json`.
+
+After the condition fix, the same live guest reached a distinct layout panic
+while evaluating an intersection observer in a nested frame (manifest
+`20261107T023058094514Z-92462.json`). The embedding element had no padding
+box. The native source overlay now returns no intersection in that case; it
+does not suppress observer delivery or disable lazy images.

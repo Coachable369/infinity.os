@@ -111,6 +111,14 @@ def main():
         raise RuntimeError("Native cache single-producer integration changed")
     text = text.replace(old, new)
     (servo / relative).write_text(text)
+    # A hidden iframe has no layout box and therefore no intersection with the
+    # outer viewport. Its child document may still have active observers.
+    relative = "components/script/dom/intersectionobserver/intersectionobserver.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    old = "let current_offset = frame_container\n                        .upcast::<Node>()\n                        .padding_box()\n                        .unwrap()"
+    if text.count(old) != 1:
+        raise RuntimeError("Nested frame intersection integration changed")
+    (servo / relative).write_text(text.replace(old, old.split(".padding_box()")[0] + ".padding_box()?"))
     relative = "components/net/request_interceptor.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     text = text.replace("url: request.url().into_url(),", '''url: {
