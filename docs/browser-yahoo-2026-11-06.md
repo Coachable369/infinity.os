@@ -81,3 +81,38 @@ Kernel freshness, live/installed UI and SDK/model payload parity, and checksum
 checks passed. Broad regression tests were deferred. This packages the verified
 improvements; the Yahoo acceptance failures above remain unresolved. No x86 ISO
 was rebuilt and no installed VM was restarted or validated in this packaging run.
+
+## Follow-up: full-page acceptance remains failed (2026-11-07 UTC)
+
+The user's installed screenshot still shows missing images and overlapping carousel
+content. The previously published ARM image is not accepted as a Yahoo fix.
+
+A disposable native guest observed Yahoo for 300 seconds: readyState remained
+interactive and only 5 of 38 image elements had decoded images. Evidence:
+`builds/evidence/yahoo-console-20261107/result.json` and `page.png`, manifest
+`builds/manifests/20261107T005802762015Z-85444.json`. This is not installed-VM proof.
+A separate 90-second font trace also failed full-page acceptance, manifest
+`builds/manifests/20261107T011325945663Z-87332.json`.
+
+Added opt-in engine warning/font/cache diagnostics and page console capture to
+the disposable guest. These do not change the production audio pipeline.
+Expanded the native modern-web fixture to check WOFF2 decoding, streamed cache
+body delivery/request counts, concurrent cache consumers, and a preloaded network
+font consumed by FontFace. The final fixture passed through build-kit:
+`builds/manifests/20261107T011801318885Z-88204.json`.
+
+The cache already exists in Servo beneath native transport interception. Both
+completed and streamed cache tests pass; adding another cache is not justified.
+Yahoo's live run fetched 129 resources (88 unique URLs) in the 300-second trace.
+Native transport serializes requests. Remote font downloads succeed but the main
+font remains unapplied during the observed page load. These observations do not
+prove packet loss or a single root cause for the layout failure.
+
+The pinned engine also lacks layout container-query evaluation. Enabling its
+preference alone would execute an unimplemented method and is not a fix. Isolate
+layout failures with reduced behavioral fixtures before implementing that support.
+
+The old acceptance expression used document.fonts.status, which is not exposed
+by this pinned engine. Follow-up runs instead check document readiness and decoded
+image counts; they still fail. No replacement ISO was published for these
+diagnostic-only changes, and Yahoo/browser completion must not be claimed.

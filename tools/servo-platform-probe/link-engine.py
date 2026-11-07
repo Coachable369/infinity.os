@@ -70,7 +70,7 @@ def main():
     if options.page_probe or options.component:
         # Different optimization profiles may coexist in Cargo's dependency
         # cache. Link the exact artifacts reported by the successful engine run.
-        for name in ("flate2", "http", *(("parking_lot",) if options.page_probe else ())):
+        for name in ("flate2", "http", *(("parking_lot", "log") if options.page_probe else ())):
             recorded=codegen.get("native_archives",{}).get(name)
             if not recorded or not Path(recorded).is_file():
                 raise SystemExit("Rebuild engine metadata for native " + name)

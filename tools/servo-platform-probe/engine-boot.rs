@@ -172,6 +172,43 @@ fn utc()->Option<(u64,u32)> { Some((unsafe { (0x09010000 as *const u32).read_vol
 // DESC: Keeps the disposable owner cooperative; production event integration is not claimed.
 // ------------------=
 fn pump() { core::hint::spin_loop(); }
+#[cfg(infinity_page_probe)]
+mod page_trace {
+    struct Logger;
+    static LOGGER:Logger=Logger;
+    static COUNT:core::sync::atomic::AtomicUsize=core::sync::atomic::AtomicUsize::new(0);
+    impl log::Log for Logger {
+        // ------------------------=
+        // FUNC: enabled
+        // DESC: Limits diagnostic tracing to fetch/cache/font failures in disposable browser fixtures.
+        // ------------------=
+        fn enabled(&self,m:&log::Metadata)->bool {
+            m.level()<=log::Level::Warn || m.target().contains("font_context") || m.target().contains("http_cache")
+        }
+        // ------------------------=
+        // FUNC: log
+        // DESC: Bounds captured engine diagnostics while preserving native page behavior.
+        // ------------------=
+        fn log(&self,r:&log::Record) {
+            if self.enabled(r.metadata()) && COUNT.fetch_add(1,core::sync::atomic::Ordering::Relaxed)<2000 {
+                super::diagnostic(7,&std::format!("ENGINE {}: {}\n",r.target(),r.args()));
+            }
+        }
+        // ------------------------=
+        // FUNC: flush
+        // DESC: Writes diagnostics directly to the guest serial receipt.
+        // ------------------=
+        fn flush(&self) {}
+    }
+    // ------------------------=
+    // FUNC: install
+    // DESC: Enables engine diagnostics only when explicitly requested for a native fixture.
+    // ------------------=
+    pub fn install() {
+        if option_env!("INFINITY_BROWSER_TRACE")==Some("1") && log::set_logger(&LOGGER).is_ok() {log::set_max_level(log::LevelFilter::Debug);}
+    }
+}
+
 // ------------------------=
 // FUNC: engine_boot
 // DESC: Initializes native providers and invokes real Servo initialization on a registered worker stack.
@@ -190,6 +227,7 @@ pub unsafe extern "C" fn engine_boot()->! {
         if let Some(message)=info.payload().downcast_ref::<std::string::String>() { diagnostic(7,message); }
         finish(1,3,line as u64);
     }));
+    #[cfg(infinity_page_probe)] page_trace::install();
     record(2,2,0);
     std::thread::Builder::new().stack_size(4*1024*1024).spawn(|| {
         if option_env!("INFINITY_BROWSER_FAULT_CAPTURE_TEST")==Some("1") {

@@ -38,6 +38,14 @@ struct ResourceDelegate<P: resources::Provider> {
 }
 impl<P: resources::Provider> servo::WebViewDelegate for ResourceDelegate<P> {
     // ------------------------=
+    // FUNC: show_console_message
+    // DESC: Retains page JavaScript failures in native fixture diagnostics without modifying page execution.
+    // ------------------=
+    fn show_console_message(&self, _view: WebView, level: servo::ConsoleLogLevel, message: std::string::String) {
+        super::diagnostic(7,&std::format!("CONSOLE {level:?}: {message}\n"));
+    }
+
+    // ------------------------=
     // FUNC: load_web_resource
     // DESC: Routes actual Servo document and subresource loads through the shared adapter.
     // ------------------=
