@@ -38,6 +38,33 @@ def main():
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
 
+    # Use the web-compatible min-content main size for a single-line flex row.
+    # A fixed sibling must not prevent a text item from contributing its wrapped
+    # minimum to an enclosing auto grid track.
+    relative = "components/layout/flexbox/layout.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    old = """                container_min_content_size += (*outer_flex_base_size +
+                    Au::from_f32_px(
+                        min_flex_factors.flex_grow_or_shrink_factor * chosen_min_flex_fraction,
+                    ))
+                .clamp_between_extremums(*outer_min_main_size, *outer_max_main_size);"""
+    if text.count(old) != 1:
+        raise RuntimeError("Flex intrinsic size integration changed")
+    text = text.replace(old, """                if self.config.flex_axis == FlexAxis::Row {
+                    container_min_content_size += *min_content_main_size_for_multiline_container;
+                } else {
+    """ + old + """
+                }""")
+    (servo / relative).write_text(text)
+
+    # Restore the four pinned inputs before applying the idempotent native image overlay.
+    patch = Path(__file__).resolve().with_name("native-lazy-images.patch")
+    for line in patch.read_text().splitlines():
+        if line.startswith("--- a/"):
+            relative = line[6:]
+            (servo / relative).write_bytes(subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative]))
+    subprocess.run(["git", "-C", str(servo), "apply", str(patch)], check=True)
+
     # Intercept HTTP at the transport boundary, after request policy and cookie
     # selection. Upper fetch layers retain redirects, CORS and cache semantics.
     relative = "components/net/fetch/methods.rs"

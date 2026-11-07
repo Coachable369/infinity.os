@@ -2,7 +2,7 @@
 use std::{boxed::Box, future::Future, pin::Pin, string::String, task::{Context, Poll, Waker}, vec::Vec};
 use infinity_browser_native_network as net;
 use net::{client::{Configuration, Destination, Link}, rand_core::SeedableRng};
-use super::resources::{Provider, Response, Event};
+use super::resources::{Provider, Event};
 use std::{cell::RefCell, rc::Rc};
 
 pub trait Factory {
@@ -38,15 +38,15 @@ pub trait Factory {
     // ------------------=
     fn completed_request(_url:&str,status:u16,body_bytes:usize) {Self::completed(status,body_bytes);}
 }
-type Request = Pin<Box<dyn Future<Output = Result<Response, ()>>>>;
+type Request = Pin<Box<dyn Future<Output = Result<(), ()>>>>;
 type Events = Rc<RefCell<Option<Result<Event, ()>>>>;
-pub struct Https<F> { factory: F, next: u64, requests: Vec<(u64, Request, Events)> }
+pub struct Https<F> { factory: F, next: u64, scratch: Rc<RefCell<Vec<u8>>>, requests: Vec<(u64, Request, Events)> }
 impl<F: Factory> Https<F> {
     // ------------------------=
     // FUNC: new
     // DESC: Serializes bounded requests over the native service link to avoid competing NIC consumers.
     // ------------------=
-    pub fn new(factory: F) -> Self { Self { factory, next: 0, requests: Vec::with_capacity(16) } }
+    pub fn new(factory: F) -> Self { Self { factory, next: 0, scratch: Rc::new(RefCell::new(Vec::new())), requests: Vec::with_capacity(16) } }
 }
 impl<F: Factory> Provider for Https<F> {
     // ------------------------=
@@ -90,11 +90,14 @@ impl<F: Factory> Provider for Https<F> {
         self.next = self.next.checked_add(1).ok_or(())?;
         let events = Rc::new(RefCell::new(None));
         let output = events.clone();
+        let scratch=self.scratch.clone();
         let future = Box::pin(async move {
             let mut read = std::vec![0;16640];
             let mut write = std::vec![0;4096];
             let mut request = std::vec![0;17408];
-            let mut body = std::vec![0;super::resources::MAX_BODY];
+            // Only the oldest request is polled. Cancellation drops its lease.
+            let mut body=scratch.try_borrow_mut().map_err(|_|())?;
+            body.resize(super::resources::MAX_BODY,0);
             let mut head = std::vec![0;8192];
             let result = net::client::request_streaming(link, config, Destination::Resolve,
                 net::rand_chacha::ChaCha20Rng::from_seed(seed), net::TLS_SERVER_ROOTS, utc,
@@ -118,16 +121,8 @@ impl<F: Factory> Provider for Https<F> {
                 })
                 .await.map_err(|error| { F::failed_request(&requested_url,&error); })?;
             core::future::poll_fn(|_| if output.borrow().is_none() { Poll::Ready(()) } else { Poll::Pending }).await;
-            let parsed = net::response::Headers::parse(&head[..result.header_bytes]).map_err(|_| ())?;
-            let mut headers = Vec::new();
-            for (name, value) in parsed.iter() {
-                // Native client already decodes transfer framing. Never ask Servo to decode it twice.
-                if name.eq_ignore_ascii_case("transfer-encoding") || name.eq_ignore_ascii_case("connection") { continue; }
-                headers.push((String::from(name), String::from(core::str::from_utf8(value).map_err(|_| ())?)));
-            }
-            body.truncate(result.body_bytes);
             F::completed_request(&requested_url,result.status, result.body_bytes);
-            Ok(Response { status: result.status, headers, body })
+            Ok(())
         });
         self.requests.push((self.next, future, events));
         Ok(self.next)

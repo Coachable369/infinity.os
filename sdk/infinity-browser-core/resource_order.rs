@@ -37,7 +37,10 @@ pub fn classify(document:bool,destination:&str)->Priority {
     match destination {
         "document"|"iframe"|"frame"=>Priority::Document,
         "style"=>Priority::Stylesheet,
-        "script"|""=>Priority::Critical,
+        // Fetch/XHR and beacon traffic have an empty destination. Preserve
+        // their FIFO turn with images rather than promoting every background
+        // request above resources that are delaying the document load event.
+        "script"=>Priority::Critical,
         "font"=>Priority::Font,
         _=>Priority::Other,
     }
@@ -116,7 +119,7 @@ mod tests {
         }
         assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,4,6,3,2,1]);
         assert_eq!(insertion_index(core::iter::empty(),Priority::Document),0);
-        assert_eq!(classify(false,""),Priority::Critical);
+        assert_eq!(classify(false,""),Priority::Other);
         assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Critical),Some(6));
         assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Other),None);
         assert!(retry_pre_header("GET",0));
@@ -125,6 +128,25 @@ mod tests {
         assert!(!retry_pre_header("POST",0));
     }
 
+    // ------------------------=
+    // FUNC: later_fetches_do_not_overtake_queued_images
+    // DESC: Delivers an image and the data request needed to discover the next image despite recurring API traffic.
+    // ------------------=
+    #[test]
+    fn later_fetches_do_not_overtake_queued_images() {
+        let mut queue=std::vec![(classify(false,"image"),0),(classify(false,""),1)];
+        for id in 2..32 {
+            let priority=classify(false,"");
+            let at=insertion_index(queue.iter().map(|x|(false,x.0)),priority);
+            queue.insert(at,(priority,id));
+        }
+        let mut served=std::vec::Vec::new();
+        for _ in 0..2 {
+            let at=dispatch_index(queue.iter().map(|x|(false,x.0)),0,Priority::Other);
+            served.push(queue.remove(at).1);
+        }
+        assert_eq!(served,[0,1]);
+    }
     // ------------------------=
     // FUNC: embedded_documents_and_styles_bypass_script_backlog
     // DESC: Keeps challenge frames and render-blocking CSS ahead of queued application scripts without preempting live work.

@@ -1,4 +1,5 @@
 use super::*;
+#[path="engine-image-delivery.rs"] mod image_delivery;
 
 // ------------------------=
 // FUNC: verify_parking
@@ -27,7 +28,7 @@ fn verify_parking()->bool {
 // DESC: Exercises local FontFace loading, variable glyph metrics and observer-triggered image decoding in native Servo.
 // ------------------=
 pub fn verify(engine: &Servo) -> bool {
-    if !verify_parking() || !verify_cache(engine) {return false;}
+    if !image_delivery::verify(engine) || !verify_parking() || !verify_cache(engine) {return false;}
     let Ok(context)=SoftwareRenderingContext::new((640,480).into()) else {return false;};
     let repaint=Rc::new(Cell::new(false)); let loaded=Rc::new(Cell::new(0));
     let view=WebViewBuilder::new(engine,Rc::new(context)).delegate(Rc::new(PageDelegate {
@@ -63,10 +64,13 @@ pub fn verify(engine: &Servo) -> bool {
     "#) {return false;}
     if !javascript_true(engine,&view,&repaint,"(()=>{let a=carousel.querySelectorAll('article'),x=a[0].getBoundingClientRect(),y=a[1].getBoundingClientRect();return Math.abs(x.width-400)<1 && Math.abs(y.x-x.x-412)<1 && x.height>=225;})()") {return false;}
     if !javascript_true(engine,&view,&repaint,r#"(()=>{
-        const row=document.createElement('div');row.style.cssText='display:flex;gap:10px;width:300px';
+        const row=document.createElement('div');row.style.cssText='display:flex;gap:10px';
         row.innerHTML='<img width="62" height="62" style="flex-shrink:0"><div style="display:flex;flex-direction:column;width:100%"><a style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;text-overflow:ellipsis"><p style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden">A long trending headline that must wrap inside its column rather than overlapping the neighboring carousel</p></a></div>';
-        document.body.appendChild(row);let outer=row.getBoundingClientRect(),inner=row.lastElementChild.getBoundingClientRect();
-        return inner.right<=outer.right+1 && inner.width<=228+1;
+        const grid=document.createElement('div');grid.style.cssText='width:600px;display:grid;grid-template-columns:300px 1fr;gap:16px';
+        const rail=document.createElement('section');rail.style.display='grid';const wrapper=document.createElement('div');wrapper.append(row);rail.append(wrapper);
+        const card=document.createElement('article');grid.append(rail,card);document.body.append(grid);
+        let outer=row.getBoundingClientRect(),inner=row.lastElementChild.getBoundingClientRect();
+        return outer.width<=301 && inner.right<=rail.getBoundingClientRect().right+1 && inner.right<card.getBoundingClientRect().left && inner.width<=229;
     })()"#) {return false;}
     let woff=include_bytes!("../../build/servo-port-audit/tests/wpt/tests/fonts/hasubi-mono/HasubiMono-Regular.woff2");
     let bytes=woff.iter().map(|b|std::format!("{b}")).collect::<Vec<_>>().join(",");

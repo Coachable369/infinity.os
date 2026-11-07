@@ -170,3 +170,29 @@ while evaluating an intersection observer in a nested frame (manifest
 `20261107T023058094514Z-92462.json`). The embedding element had no padding
 box. The native source overlay now returns no intersection in that case; it
 does not suppress observer delivery or disable lazy images.
+
+## Image delivery and the desktop grid
+
+At a 1536×864 viewport the parent grid correctly assigned 300 CSS pixels to its
+left rail. The implicit track inside the rail measured 426–456 px: a flex row
+with a fixed thumbnail and a wrapping headline inflated the intrinsic minimum.
+The native layout overlay now sums the clamped min-content contributions for
+a single-line flex row. It leaves explicit fixed minimums and the column flex
+algorithm alone. The live frame in `builds/evidence/yahoo-images-tracks/page.png`
+shows the rail and Trending both 300 px wide, with a clear gutter to the carousel.
+That intermediate run was still interactive, with unresolved lazy images.
+
+The browser modern-web guest serves a 3 MiB bitmap in chunks. It checks the
+actual pixels for an HTML image, a script-assigned source and a CSS background.
+The native HTTPS adapter retains one bounded receive buffer for the serialized
+link. It sends only the current response's validated bytes to the consumer.
+Queued Fetch/XHR requests share FIFO order with images instead of preempting
+them as parser scripts. The HTML image overlay handles current and pending
+sources, viewport proximity, JS reflection of the loading attribute and
+speculative parser fetches; explicit preload links remain explicit requests.
+
+For live desktop acceptance, pass the contents of
+`tools/servo-platform-probe/yahoo-homepage-check.js` to the network guest's
+`--assert-script` with a 1536×864 viewport. Check the final frame as well as
+the assertion: a blank advertisement slot is distinct from a missing article
+photo. This check is a test input, never injected into product pages.

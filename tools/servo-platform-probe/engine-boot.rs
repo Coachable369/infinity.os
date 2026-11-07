@@ -183,6 +183,7 @@ mod page_trace {
         // DESC: Limits diagnostic tracing to fetch/cache/font failures in disposable browser fixtures.
         // ------------------=
         fn enabled(&self,m:&log::Metadata)->bool {
+            if option_env!("INFINITY_BROWSER_LOAD_TRACE")==Some("1") {return m.target().ends_with("document_loader");}
             m.level()<=log::Level::Warn || m.target().contains("font_context") || m.target().contains("http_cache")
         }
         // ------------------------=
@@ -205,7 +206,7 @@ mod page_trace {
     // DESC: Enables engine diagnostics only when explicitly requested for a native fixture.
     // ------------------=
     pub fn install() {
-        if option_env!("INFINITY_BROWSER_TRACE")==Some("1") && log::set_logger(&LOGGER).is_ok() {log::set_max_level(log::LevelFilter::Debug);}
+        if (option_env!("INFINITY_BROWSER_TRACE")==Some("1") || option_env!("INFINITY_BROWSER_LOAD_TRACE")==Some("1")) && log::set_logger(&LOGGER).is_ok() {log::set_max_level(log::LevelFilter::Debug);}
     }
 }
 

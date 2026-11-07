@@ -196,6 +196,14 @@ pub fn verify(engine: &servo::Servo) -> bool {
     });
     wait_for_callback(engine,&view,&repaint,&resources,&inspected);
     }
+    {
+        let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
+        view.evaluate_javascript("JSON.stringify(Array.from(document.images).filter(i=>!i.complete||!i.naturalWidth).map(i=>[i.getAttribute('loading'),i.complete,i.getBoundingClientRect().y,(i.currentSrc||i.src).slice(0,80)]))",move |value| {
+            if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&std::format!("\nUnresolved images: {value}\n"));}
+            inspection.set(1);
+        });
+        wait_for_callback(engine,&view,&repaint,&resources,&inspected);
+    }
     let mut passed=HTTP_STATUS.load(Ordering::Relaxed)==200 && BODY_BYTES.load(Ordering::Relaxed)>0
         && dom_matches;
     {

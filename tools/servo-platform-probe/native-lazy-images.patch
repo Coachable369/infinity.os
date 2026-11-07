@@ -1,0 +1,168 @@
+--- a/components/script/dom/html/embedded_content/htmlimageelement.rs
++++ b/components/script/dom/html/embedded_content/htmlimageelement.rs
+@@ -129,6 +129,8 @@
+     line_number: u64,
+     image_request: Cell<ImageRequestPhase>,
+     generation: Cell<u32>,
++    lazy_pending: Cell<bool>,
++    lazy_started: Cell<bool>,
+ }
+
+ impl HTMLImageElement {
+@@ -615,7 +617,7 @@
+         let document = self.owner_document();
+         LoadBlocker::terminate(&request.borrow().blocker, cx);
+         *request.borrow_mut().blocker.borrow_mut() =
+-            Some(LoadBlocker::new(&document, LoadType::Image(url.clone())));
++            (!self.lazy_policy()).then(|| LoadBlocker::new(&document, LoadType::Image(url.clone())));
+     }
+
+     fn init_pending_image_request(
+@@ -647,10 +649,40 @@
+             .as_mut()
+             .expect("Just created a request")
+             .blocker
+-            .borrow_mut() = Some(LoadBlocker::new(&document, LoadType::Image(url.clone())));
++            .borrow_mut() = (!self.lazy_policy()).then(|| LoadBlocker::new(&document, LoadType::Image(url.clone())));
+     }
+
+     /// <https://html.spec.whatwg.org/multipage/#update-the-image-data>
++    // ------------------------=
++    // FUNC: lazy_policy
++    // DESC: Only script-enabled documents opt into viewport-triggered loading.
++    // ------------------=
++    fn lazy_policy(&self) -> bool {
++        self.owner_document().scripting_enabled() && self.Loading() == "lazy"
++    }
++
++    // ------------------------=
++    // FUNC: awaiting_viewport
++    // DESC: Indicates that source selection is deferred for this element.
++    // ------------------=
++    pub(crate) fn awaiting_viewport(&self) -> bool { self.lazy_pending.get() }
++
++    // ------------------------=
++    // FUNC: resume_near_viewport
++    // DESC: Resumes the current source selection when layout places the image near the viewport.
++    // ------------------=
++    pub(crate) fn resume_near_viewport(&self, cx: &mut JSContext) {
++        let Some(bounds) = self.upcast::<Node>().border_box_without_reflow() else { return };
++        let viewport = self.owner_window().viewport_details().size;
++        let margin = 300.0;
++        if bounds.max_x().to_f32_px() < -margin || bounds.max_y().to_f32_px() < -margin ||
++            bounds.origin.x.to_f32_px() > viewport.width + margin ||
++            bounds.origin.y.to_f32_px() > viewport.height + margin { return; }
++        self.lazy_pending.set(false);
++        self.lazy_started.set(true);
++        self.update_the_image_data(cx);
++    }
++
+     fn prepare_image_request(
+         &self,
+         selected_source: &USVString,
+@@ -658,6 +690,11 @@
+         image_url: &ServoUrl,
+         cx: &mut js::context::JSContext,
+     ) {
++        if !self.lazy_started.get() && self.lazy_policy() {
++            self.lazy_pending.set(true);
++            return;
++        }
++        self.lazy_pending.set(false);
+         match self.image_request.get() {
+             ImageRequestPhase::Pending => {
+                 // Step 14. If the pending request is not null and urlString is the same as the
+@@ -1001,6 +1038,11 @@
+             return;
+         }
+
++        if !self.lazy_started.get() && self.lazy_policy() {
++            self.lazy_pending.set(true);
++            return;
++        }
++
+         // Step 3. Let selected source and selected pixel density be the URL and pixel density that
+         // results from selecting an image source, respectively.
+         let Some((selected_source, selected_pixel_density)) = self
+@@ -1284,6 +1326,8 @@
+             pending_request: DomRefCell::new(None),
+             form_owner: Default::default(),
+             generation: Default::default(),
++            lazy_pending: Default::default(),
++            lazy_started: Default::default(),
+             source_set: DomRefCell::new(SourceSet::new()),
+             dimension_attribute_source: Default::default(),
+             last_selected_source: DomRefCell::new(None),
+@@ -1534,6 +1578,8 @@
+
+     // https://html.spec.whatwg.org/multipage/#dom-img-src
+     make_url_getter!(Src, "src");
++    make_enumerated_getter!(Loading, "loading", "lazy" | "eager", missing => "eager", invalid => "eager");
++    make_setter!(SetLoading, "loading");
+
+     // https://html.spec.whatwg.org/multipage/#dom-img-src
+     make_url_setter!(SetSrc, "src");
+@@ -1750,6 +1796,10 @@
+             .unwrap()
+             .attribute_mutated(cx, attr, mutation);
+         match attr.local_name() {
++            &local_name!("loading") if self.lazy_pending.get() && !self.lazy_policy() => {
++                self.lazy_pending.set(false);
++                self.update_the_image_data(cx);
++            },
+             &local_name!("src") |
+             &local_name!("srcset") |
+             &local_name!("width") |
+@@ -1757,6 +1807,7 @@
+                 // <https://html.spec.whatwg.org/multipage/#reacting-to-dom-mutations>
+                 // The element's src, srcset, width, or sizes attributes are set, changed, or
+                 // removed.
++                self.lazy_started.set(false);
+                 self.update_the_image_data(cx);
+             },
+             &local_name!("crossorigin") => {
+--- a/components/script/dom/document/document.rs
++++ b/components/script/dom/document/document.rs
+@@ -3524,13 +3524,19 @@
+         cx: &mut JSContext,
+         time: CrossProcessInstant,
+     ) {
+-        if self.intersection_observers.borrow().is_empty() {
++        let has_lazy = self.responsive_images.borrow().iter().any(|img| img.awaiting_viewport());
++        if !has_lazy && self.intersection_observers.borrow().is_empty() {
+             return;
+         }
+         // Ensure that any layout changes are flushed for subsequent queries.
+         self.window()
+             .reflow_for_non_flushing_update_the_rendering_queries(cx);
+
++        if has_lazy {
++            let waiting: Vec<_> = self.responsive_images.borrow().iter()
++                .filter(|img| img.awaiting_viewport()).map(|img| DomRoot::from_ref(&**img)).collect();
++            for img in waiting { img.resume_near_viewport(cx); }
++        }
+         // Step 1-2
+         for intersection_observer in &*self.intersection_observers.borrow() {
+             self.update_single_intersection_observer_steps(cx, intersection_observer, time);
+--- a/components/script/dom/servoparser/prefetch.rs
++++ b/components/script/dom/servoparser/prefetch.rs
+@@ -154,7 +154,8 @@
+                 }
+                 TokenSinkResult::RawData(RawKind::ScriptData)
+             },
+-            (TagKind::StartTag, &local_name!("img")) if self.prefetching.get() => {
++            (TagKind::StartTag, &local_name!("img")) if self.prefetching.get() &&
++                !self.get_attr(tag, local_name!("loading")).is_some_and(|a| a.value.eq_ignore_ascii_case("lazy")) => {
+                 if let Some(url) = self.get_url(tag, local_name!("src")) {
+                     debug!("Prefetch {} {}", tag.name, url);
+                     let request = create_a_potential_cors_request(
+--- a/components/script_bindings/webidls/HTMLImageElement.webidl
++++ b/components/script_bindings/webidls/HTMLImageElement.webidl
+@@ -14,6 +14,7 @@
+   [CEReactions]
+            attribute USVString srcset;
+   [CEReactions] attribute DOMString sizes;
++  [CEReactions] attribute DOMString loading;
+   [CEReactions]
+            attribute DOMString? crossOrigin;
+   [CEReactions]
