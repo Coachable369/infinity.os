@@ -14,15 +14,7 @@ static mut ADVICE_TRACE: AdviceTrace = AdviceTrace { owner:[0;16], session:[0;16
 // DESC: Presents typed admission failures without manufacturing a model response.
 // ------------------=
 fn advice_error(error: AdviceError) -> &'static [u8] {
-    match error {
-        AdviceError::Denied => b"AI advice requires an active signed-in session with chat enabled.",
-        AdviceError::Busy => b"The local model is busy. Wait for the active request to finish.",
-        AdviceError::Unavailable => b"Select an available Hermes or Ministral model. Local inference is unavailable for this selection.",
-        AdviceError::InvalidInput => b"Enter a nonempty prompt within the 4096-byte limit.",
-        AdviceError::InvalidDecision => b"Use weights=80,20 scores=9,4/4,9 with weights totaling 100; optional eligible=1,0 applies hard constraints.",
-        AdviceError::ContextFull => b"The request exceeds the local model context. Shorten it or start a fresh chat.",
-        AdviceError::Failed => b"The local model could not start this request.",
-    }
+    text_request::error_message(error)
 }
 
 impl ConsoleRuntime {
@@ -114,19 +106,25 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn llm_command(&mut self, input: &[u8]) -> bool {
         let Some(command) = text_request::parse_command(input) else { return false; };
+        if command==Command::Help {
+            self.output.write_line(b"ai ask PROMPT | llm PROMPT     Ask the selected local language model.");
+            self.output.write_line(b"ai decide QUESTION            Compare supplied facts and priorities.");
+            self.output.write_line(b"Example: ai decide weights=80,20 scores=9,4/4,9");
+            self.output.write_line(b"Use 1-8 integer weights totaling 100; 2-8 options; scores 0-1000, higher is better.");
+            self.output.write_line(b"Optional eligible=1,0 excludes option 2. Ties stay tied; no eligible option is reported.");
+            self.output.write_line(b"ai response                   Show this session's current or partial response.");
+            self.output.write_line(b"ai cancel                     Cancel this session's active typed request.");
+            self.output.write_line(b"ai new                        Clear this session's idle typed conversation.");
+            self.output.write_line(b"Use llm ask/decide/response/cancel/new/help as aliases. Replies appear here when complete.");
+            return true;
+        }
+        if command==Command::Invalid {self.output.write_line(advice_error(AdviceError::InvalidCommand));return true;}
         if !self.workplace_authorized(false) || !self.ai_chat_allowed() {
             self.output.write_line(advice_error(AdviceError::Denied));
             return true;
         }
         match command {
-            Command::Help => {
-                self.output.write_line(b"ai ask PROMPT | llm PROMPT     Ask the selected local language model.");
-                self.output.write_line(b"ai decide QUESTION            Compare options using supplied facts and priorities.");
-                self.output.write_line(b"Weighted choice: ai decide weights=80,20 scores=9,4/4,9 (higher scores are better).");
-                self.output.write_line(b"ai response                   Show this command session's latest response.");
-                self.output.write_line(b"ai cancel                     Cancel this command session's active request.");
-                self.output.write_line(b"Replies appear here when complete; the AI widget shares the conversation.");
-            }
+            Command::Help|Command::Invalid => {},
             Command::Prompt(mode, prompt) => {
                 let facts = self.advice_facts();
                 let result = ai::with_ai_runtime(|runtime|
@@ -144,6 +142,22 @@ impl ConsoleRuntime {
                 }
             }
             Command::Response => self.print_llm_response(),
+            Command::New => {
+                let turn=unsafe {
+                    let trace=&*(&raw const ADVICE_TRACE);
+                    (trace.owner==self.current_user.0 && trace.session==self.current_session.0
+                        && trace.accepted!=0).then_some(trace.turn)
+                };
+                let result=turn.ok_or(AdviceError::NotOwned).and_then(|turn|ai::with_ai_runtime(|runtime|
+                    runtime.reset_text_advice(self.current_user.0,turn)));
+                match result {
+                    Ok(())=>{
+                        self.llm_reply=None;self.llm_delivered_turn=None;
+                        self.output.write_line(b"Started a fresh typed conversation. Your unsent widget draft and saved memory are preserved.");
+                    }
+                    Err(error)=>self.output.write_line(advice_error(error)),
+                }
+            }
             Command::Cancel => {
                 let owned = self.llm_reply.is_some_and(|reply| ai::with_ai_runtime(|runtime|
                     reply.state(self.current_user.0, self.current_session.0, true, &runtime.chat) == ReplyState::Waiting));
@@ -164,7 +178,7 @@ impl ConsoleRuntime {
         };
         ai::with_ai_runtime(|runtime| {
             match reply.state(self.current_user.0, self.current_session.0, self.ai_chat_allowed(), &runtime.chat) {
-                ReplyState::Revoked => return,
+                ReplyState::Revoked => {self.output.write_line(advice_error(AdviceError::NotOwned));return;},
                 ReplyState::Superseded => { self.output.write_line(b"A newer AI turn has replaced this request. Its earlier reply remains in the AI widget history."); return; }
                 _ => {}
             }
@@ -179,7 +193,7 @@ impl ConsoleRuntime {
                 GenerationState::Running => self.output.write_line(b"Response is still generating."),
                 GenerationState::Cancelled => self.output.write_line(b"AI request cancelled; any response above is partial."),
                 GenerationState::Failed => self.output.write_line(b"Local AI generation failed; any response above is partial."),
-                GenerationState::ContextFull => self.output.write_line(b"Local model context is full; any response above is partial."),
+                GenerationState::ContextFull => self.output.write_line(b"Local model context is full; any response above is partial. Use ai new before retrying."),
                 _ => {}
             }
         });
@@ -227,11 +241,7 @@ impl ConsoleRuntime {
             runtime.submit_text_advice(self.current_user.0, &input[..length], AdviceMode::Decide, facts, false));
         if let Ok(turn)=result {self.record_advice_submission(2,AdviceMode::Decide,turn);}
         if let Err(error) = result {
-            if error != AdviceError::Busy {
-                ai::with_ai_runtime(|runtime| runtime.chat.generation_state = if error == AdviceError::ContextFull {
-                    ai::chat::GenerationState::ContextFull
-                } else { ai::chat::GenerationState::Failed });
-            }
+            ai::with_ai_runtime(|runtime|runtime.chat.set_advice_notice(error));
         }
         true
     }

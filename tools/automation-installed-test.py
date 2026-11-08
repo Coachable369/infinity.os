@@ -132,8 +132,8 @@ def gui_crud(guest, proof):
     guest.text("guiprobe")
     guest.key("tab")
     guest.text(HELLO)
-    for _ in range(3):
-        guest.key("tab")
+    for _ in range(2):
+        guest.key("tab")  # Manual timing is disabled: path -> policy -> enabled.
     guest.key("ret")  # Enabled -> disabled.
     guest.key("tab")
     guest.key("tab")
@@ -143,12 +143,12 @@ def gui_crud(guest, proof):
     state = wait(guest, lambda s: len(set(s["rows"]) - before) == 1, "GUI service created")
     identifier = (set(state["rows"]) - before).pop()
     assert not state["rows"][identifier]["enabled"]
-    for _ in range(len(state["rows"])):
-        guest.key("down")
+    selected = wait_ui(guest, 1, 0)
+    assert [row["id"] for row in state["rows"].values() if row["kind"] == 0][selected[5]] == identifier
     guest.key("e")
     wait_ui(guest, 1, 2)
-    for _ in range(4):
-        guest.key("tab")
+    for _ in range(2):
+        guest.key("tab")  # Editing starts at script path; manual timing is skipped.
     guest.key("ret")  # Enable the manual service without launching it.
     guest.key("tab")
     guest.key("tab")
@@ -197,21 +197,18 @@ def gui_schedule_crud(guest, proof):
     created_row = state["rows"][identifier]
     assert created_row["kind"] == 1 and not created_row["enabled"], created_row
     assert created_row["state"] == 0 and created_row["runs"] == 0 and created_row["pid"] == 0, created_row
-    # The new schedule is last in its tab; selection is bounded by the 16-entry catalog.
-    for _ in range(len(state["rows"])):
-        guest.key("down")
+    selected = wait_ui(guest, 2, 0)
+    assert [row["id"] for row in state["rows"].values() if row["kind"] == 1][selected[5]] == identifier
     guest.key("e")
     wait_ui(guest, 2, 2)
-    # Fixed name -> script -> timing -> policy. Interval is option 2; Once is option 3.
-    for _ in range(3):
+    # Editing focuses script: script -> timing -> policy. Interval is option 2; Once is option 3.
+    for _ in range(2):
         guest.key("tab")
     guest.key("ret")
     guest.key("down")
     guest.key("ret")
     guest.key("shift", "tab")  # Return from policy to the readable UTC timing field.
-    guest.key("end")
-    for _ in range(19):
-        guest.key("backspace")
+    guest.key("ctrl", "a")
     guest.text("2099-12-31 23:59:00")
     for _ in range(3):
         guest.key("tab")  # Timing -> policy -> enabled -> Save.

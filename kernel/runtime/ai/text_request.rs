@@ -6,28 +6,81 @@ use core::fmt::Write;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdviceMode { Answer, Decide }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AdviceError { Denied, Busy, Unavailable, InvalidInput, InvalidDecision, ContextFull, Failed }
+pub enum AdviceError { Denied, Busy, Unavailable, InvalidInput, InvalidCommand, InvalidDecision(weighted::Error), ContextFull, Failed, NotOwned }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Command<'a> { Prompt(AdviceMode, &'a [u8]), Response, Cancel, Help }
+pub enum Command<'a> { Prompt(AdviceMode, &'a [u8]), Response, Cancel, New, Help, Invalid }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TypedTurn { pub owner: [u8;16], pub turn: u64, pub model: super::types::ModelId }
+
+// ------------------------=
+// FUNC: error_code
+// DESC: Exposes a stable content-free notice code for damage tracking and behavioral inspection.
+// ------------------=
+pub fn error_code(error: AdviceError) -> u8 {
+    match error {
+        AdviceError::Denied=>1,AdviceError::Busy=>2,AdviceError::Unavailable=>3,
+        AdviceError::InvalidInput=>4,AdviceError::InvalidCommand=>5,
+        AdviceError::InvalidDecision(weighted::Error::Syntax)=>6,
+        AdviceError::InvalidDecision(weighted::Error::Weights)=>7,
+        AdviceError::InvalidDecision(weighted::Error::Scores)=>8,
+        AdviceError::InvalidDecision(weighted::Error::Eligibility)=>9,
+        AdviceError::InvalidDecision(weighted::Error::NoEligibleOption)=>10,
+        AdviceError::ContextFull=>11,AdviceError::Failed=>12,AdviceError::NotOwned=>13,
+    }
+}
+
+// ------------------------=
+// FUNC: command_word
+// DESC: Separates one command word using ASCII whitespace without rewriting the remaining prompt bytes.
+// ------------------=
+fn command_word(input: &[u8]) -> (&[u8], &[u8]) {
+    let input=input.trim_ascii_start();
+    let end=input.iter().position(u8::is_ascii_whitespace).unwrap_or(input.len());
+    (&input[..end],input[end..].trim_ascii_start())
+}
 
 // ------------------------=
 // FUNC: parse_command
 // DESC: Parses only complete advisory command words; the prompt remains uninterpreted user data.
 // ------------------=
 pub fn parse_command(input: &[u8]) -> Option<Command<'_>> {
-    let input = input.trim_ascii();
-    if matches!(input, b"ai response" | b"llm response") { return Some(Command::Response); }
-    if matches!(input, b"ai cancel" | b"llm cancel") { return Some(Command::Cancel); }
-    if matches!(input, b"ai ask" | b"ai decide" | b"llm" | b"llm help" | b"ai help") { return Some(Command::Help); }
-    for (prefix, mode) in [(b"ai ask ".as_slice(), AdviceMode::Answer),
-        (b"ai decide ".as_slice(), AdviceMode::Decide), (b"llm decide ".as_slice(), AdviceMode::Decide),
-        (b"llm ".as_slice(), AdviceMode::Answer)] {
-        if let Some(prompt) = input.strip_prefix(prefix) {
-            let prompt = prompt.trim_ascii();
-            return Some(if prompt.is_empty() { Command::Help } else { Command::Prompt(mode, prompt) });
-        }
+    let (domain,rest)=command_word(input);
+    if !matches!(domain,b"ai"|b"llm") {return None;}
+    let (verb,prompt)=command_word(rest);
+    Some(match verb {
+        b""=>Command::Help,
+        b"ask"|b"decide"=>if prompt.is_empty() {Command::Help} else {
+            Command::Prompt(if verb==b"decide" {AdviceMode::Decide}else{AdviceMode::Answer},prompt)
+        },
+        b"response"|b"cancel"|b"new"|b"help"=>if !prompt.is_empty() {Command::Invalid} else {match verb {
+            b"response"=>Command::Response,b"cancel"=>Command::Cancel,b"new"=>Command::New,_=>Command::Help,
+        }},
+        _ if domain==b"llm"=>Command::Prompt(AdviceMode::Answer,rest),
+        _=>return None,
+    })
+}
+
+// ------------------------=
+// FUNC: error_message
+// DESC: Presents specific admission failures as system notices, never as generated assistant answers.
+// ------------------=
+pub fn error_message(error: AdviceError) -> &'static [u8] {
+    match error {
+        AdviceError::Denied=>b"AI advice requires an active signed-in session with chat enabled. Open AI & Voice Settings to enable chat.",
+        AdviceError::Busy=>b"The local model or voice conversation is busy. Wait for it to finish, or cancel your active request.",
+        AdviceError::Unavailable=>b"Select an available Hermes or Ministral model in AI & Voice Settings, then retry.",
+        AdviceError::InvalidInput=>b"Enter a nonempty ASCII prompt of at most 4096 bytes.",
+        AdviceError::InvalidCommand=>b"Unexpected arguments. Use ai help; use ai ask PROMPT to send literal text.",
+        AdviceError::InvalidDecision(weighted::Error::Syntax)=>b"Use one weights= tuple and one scores= matrix. Example: weights=80,20 scores=9,4/4,9.",
+        AdviceError::InvalidDecision(weighted::Error::Weights)=>b"Use 1-8 whole-number weights from 0 to 100 totaling 100. Example: weights=80,20.",
+        AdviceError::InvalidDecision(weighted::Error::Scores)=>b"Supply 2-8 options with one whole-number score from 0 to 1000 per criterion. Higher scores are better.",
+        AdviceError::InvalidDecision(weighted::Error::Eligibility)=>b"Supply one eligibility value per option: 1 means allowed, 0 means excluded. Example: eligible=1,0.",
+        AdviceError::InvalidDecision(weighted::Error::NoEligibleOption)=>b"No option meets the supplied hard constraints. Add an eligible option or revise the constraints before comparing.",
+        AdviceError::ContextFull=>b"The local model context is full. Shorten the prompt, or use ai new to clear your idle typed conversation and retry.",
+        AdviceError::Failed=>b"The local model could not start this request. Check AI & Voice Settings and retry.",
+        AdviceError::NotOwned=>b"This session has no current typed AI conversation to clear. A newer widget or voice turn is preserved.",
     }
-    None
 }
 
 // ------------------------=
@@ -90,7 +143,7 @@ pub fn prepare_prompt(mode: AdviceMode, input: &[u8], facts: Option<Facts>, out:
         }
     }
     if mode == AdviceMode::Decide {
-        if let Some(ranking) = weighted::rank(input).map_err(|_| AdviceError::InvalidDecision)? {
+        if let Some(ranking) = weighted::rank(input).map_err(AdviceError::InvalidDecision)? {
             prompt.write_str("\nVerified weighted arithmetic (each weighted sum is divided by 100; larger is better): ").map_err(|_| AdviceError::ContextFull)?;
             for index in 0..ranking.count {
                 write!(prompt, "option {} = {}/100, eligible={}; ", index+1, ranking.scores[index],
@@ -152,11 +205,38 @@ impl AiRuntime {
         for &byte in input { self.chat.push_input(if matches!(byte, b'\n' | b'\t') { b' ' } else { byte }); }
         self.chat.begin_native_turn();
         self.chat.generation_state = GenerationState::Running;
+        self.chat.record_typed_advice(owner);
         if preserve_composer {
             for &byte in &draft[..draft_length] { self.chat.push_input(byte); }
             self.chat.set_input_cursor(draft_cursor);
         }
         Ok(self.chat.turn_id())
+    }
+
+    // ------------------------=
+    // FUNC: reset_text_advice
+    // DESC: Clears only an explicitly identified idle typed conversation; active work and later voice or application turns retain their history.
+    // ------------------=
+    pub fn reset_text_advice(&mut self, owner: [u8;16], turn: u64) -> Result<(),AdviceError> {
+        if owner==[0;16] || owner!=self.chat_owner || !self.chat.enabled() {return Err(AdviceError::Denied);}
+        if self.execution.busy() || self.app_owner.is_some() || self.application_agent.is_some()
+            || self.app_saved.is_some() || self.application_saved.is_some() || self.intelligence_goal.is_some()
+            || self.chat.generation_state==GenerationState::Running
+            || self.qwen.as_ref().is_some_and(|service|service.busy())
+            || self.other_native.as_ref().is_some_and(|service|service.busy()) {return Err(AdviceError::Busy);}
+        #[cfg(target_os="none")]
+        if !matches!(super::voice_conversation::state().0,super::voice_conversation::State::Off
+            |super::voice_conversation::State::Listening|super::voice_conversation::State::Failed)
+            || matches!(super::voice_output::status().state,super::voice_output::OutputState::Queued
+                |super::voice_output::OutputState::Synthesizing|super::voice_output::OutputState::Ready
+                |super::voice_output::OutputState::Speaking|super::voice_output::OutputState::Buffered) {
+            return Err(AdviceError::Busy);
+        }
+        if self.chat.typed_advice()!=Some(TypedTurn {owner,turn,model:self.active_native})
+            || self.chat.selected_model()!=self.active_native {return Err(AdviceError::NotOwned);}
+        if let Some(service)=self.qwen.as_mut() {service.clear_conversation();}
+        self.chat.reset_typed_history();
+        Ok(())
     }
 }
 

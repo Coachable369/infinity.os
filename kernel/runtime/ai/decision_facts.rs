@@ -100,9 +100,10 @@ fn scalar(text: &[u8], maximum: u16) -> Result<u16,Error> {
 // ------------------=
 fn natural(input: &[u8]) -> Result<Option<Ranking>,Error> {
     if !input.split(|byte|byte.is_ascii_whitespace()).any(|token|word(token).eq_ignore_ascii_case(b"weight")) {return Ok(None);}
-    let mut tokens=[b"".as_slice();512]; let mut length=0;
+    let mut tokens=[b"".as_slice();512]; let mut separators=[0u8;512];let mut length=0;
     for token in input.split(|byte|byte.is_ascii_whitespace()).filter(|token|!word(token).is_empty()) {
         if length==tokens.len() {return Err(Error::Syntax);}
+        separators[length]=if token.ends_with(b":") {1} else if token.last().is_some_and(|byte|matches!(byte,b'.'|b'?'|b'!')) {2}else{0};
         tokens[length]=word(token);length+=1;
     }
     let tokens=&tokens[..length];
@@ -120,7 +121,10 @@ fn natural(input: &[u8]) -> Result<Option<Ranking>,Error> {
     let mut seen=0u8;let mut position=0;
     while position+1<tokens.len() {
         if !tokens[position].eq_ignore_ascii_case(b"option") {position+=1;continue;}
-        let Ok(number)=scalar(tokens[position+1],MAX_OPTIONS as u16) else {position+=1;continue;};
+        let definition=separators[position+1]==1 || (separators[position+1]==0 && tokens.get(position+2)
+            .is_some_and(|token|labels[..criteria].iter().any(|label|label.eq_ignore_ascii_case(token))));
+        if !definition {position+=1;continue;}
+        let number=scalar(tokens[position+1],MAX_OPTIONS as u16).map_err(|_|Error::Scores)?;
         if number==0 {return Err(Error::Scores);}
         let index=number as usize-1;
         if seen&(1<<index)!=0 {return Err(Error::Scores);}

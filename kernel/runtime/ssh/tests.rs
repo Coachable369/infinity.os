@@ -384,3 +384,19 @@ fn authorized_shell_delivers_pty_resize_and_input() {
     assert!(pty && shell && resized && sent_input);
     assert_eq!(received, b"help\r\x03");
 }
+
+// ------------------------=
+// FUNC: listener_availability_is_current
+// DESC: Distinguishes disabled, failed, network-waiting and live endpoints without treating old client failures as listener failure.
+// ------------------=
+#[test]
+fn listener_availability_is_current(){
+    use management::{availability,Availability};
+    assert_eq!(availability(false,false,None,false,false,None),Availability::Disabled);
+    assert_eq!(availability(true,false,None,false,true,Some(Failure::EntropyUnavailable)),Availability::Failed(Failure::EntropyUnavailable));
+    assert_eq!(availability(false,false,None,false,true,Some(Failure::HostKeyUnavailable)),Availability::Failed(Failure::HostKeyUnavailable));
+    assert_eq!(availability(true,false,None,true,false,Some(Failure::InvalidSignature)),Availability::WaitingForNetwork);
+    assert_eq!(availability(true,false,None,true,true,None),Availability::WaitingForListener);
+    assert_eq!(availability(true,true,Some(([10,20,30,40],2222)),true,true,Some(Failure::InvalidSignature)),Availability::Listening{address:[10,20,30,40],port:2222});
+    assert_eq!(management::parse(b" \tssh\tenable\t2222\t2 \n"),Ok(management::Command::Configure(Configuration{enabled:true,port:2222,max_connections:2})));
+}

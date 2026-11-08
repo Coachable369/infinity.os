@@ -4,6 +4,54 @@ use crate::ui::{ai_widget, geometry::Rect, system_layout::AiChatGeometry};
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: ai_widget_notice_wrap
+    // DESC: Measures word boundaries with the same native 14px caption face used to paint admission notices.
+    // ------------------=
+    pub(crate) fn ai_widget_notice_wrap(&self,text:&[u8],width:usize,scale:usize)->([usize;16],usize) {
+        let mut ends=[0;16];let mut count=0;let mut start=0;
+        while start<text.len() && count<ends.len() {
+            while text.get(start)==Some(&b' ') {start+=1;}
+            if start==text.len() {break;}
+            let mut end=start;let mut space=None;
+            while end<text.len() {
+                if text[end]==b' ' {space=Some(end);}
+                if self.app_menu_text_width(&text[start..=end],scale)>width {break;}
+                end+=1;
+            }
+            if end<text.len() {end=space.filter(|offset|*offset>start).unwrap_or(end.max(start+1));}
+            ends[count]=end;count+=1;start=end;
+        }
+        (ends,count)
+    }
+
+    // ------------------------=
+    // FUNC: ai_widget_advice_notice
+    // DESC: Shows a typed admission failure in the existing transcript card style, clipped above the unchanged composer.
+    // ------------------=
+    pub(crate) fn ai_widget_advice_notice(&mut self,bounds:Rect,text:&[u8],scale:usize)->Rect {
+        let inset=10*scale;
+        let text_width=(bounds.width as usize).saturating_sub(inset*2);
+        let line_height=20*scale;
+        let (ends,lines)=self.ai_widget_notice_wrap(text,text_width,scale);
+        let height=(lines*line_height+44*scale).min(bounds.height as usize);
+        let card=Rect {y:bounds.bottom()-height as i32,height:height as u32,..bounds};
+        let saved=self.render_clip;
+        self.intersect_render_clip(card.x.max(0)as usize,card.y.max(0)as usize,card.width as usize,card.height as usize);
+        self.app_card_alpha(card,(16,27,58),(134,199,255),255,scale);
+        self.app_label(Rect {x:card.x+inset as i32,y:card.y+(8*scale)as i32,
+            width:text_width as u32,height:(24*scale)as u32},b"Request not sent",(255,205,210),true,scale);
+        let mut start=0;
+        for (row,end) in ends[..lines].iter().copied().enumerate() {
+            while text.get(start)==Some(&b' ') {start+=1;}
+            self.app_menu_label(Rect {x:card.x+inset as i32,y:card.y+(34*scale+row*line_height)as i32,
+                width:text_width as u32,height:line_height as u32},&text[start..end],(224,235,243),scale);
+            start=end;
+        }
+        self.render_clip=saved;
+        card
+    }
+
+    // ------------------------=
     // FUNC: ai_widget_model
     // DESC: Shares the live model card with Studio while clipping content to the authored control.
     // ------------------=

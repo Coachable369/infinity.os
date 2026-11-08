@@ -1531,6 +1531,11 @@ impl ConsoleRuntime {
         self.caret_visible = true;
         if let Some(reverse) = crate::drivers::input::desktop_shortcuts::switcher_request(
             matches!(key,ConsoleKey::Tab(true)) && self.mode != ConsoleMode::AppLauncher
+                && !(self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::TaskManager
+                    && self.ai_chat_focus==0 && !self.spatial.open
+                    && !crate::ui::app_assistant::read(0).focused)
+                && !(matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings)
+                    && self.ai_chat_focus!=0 && !self.spatial.open)
                 && !(cfg!(feature="native-browser") && self.mode==ConsoleMode::Desktop
                     && self.desktop_app==DesktopAppKind::Browser && self.ai_chat_focus==0
                     && !self.spatial.open && !crate::ui::app_assistant::read(0).focused),
@@ -1775,7 +1780,7 @@ impl ConsoleRuntime {
             return true;
         }
         if self.ai_chat_preparing() && matches!(self.ai_chat_focus, 2 | 3)
-            && !matches!(key, ConsoleKey::Escape | ConsoleKey::Shortcut(b'm' | b'c')) {
+            && !matches!(key, ConsoleKey::Escape | ConsoleKey::Tab(_) | ConsoleKey::Shortcut(b'm' | b'c')) {
             return true;
         }
         if self.ai_chat_focus==2 {
@@ -14038,23 +14043,8 @@ fn system_operation_from_iop(
 // DESC: Implements the service id operation.
 // ------------------=
 fn service_id(name: &[u8]) -> Option<u32> {
-    use crate::runtime::service::*;
-    match name {
-        b"runtime" => Some(SERVICE_RUNTIME),
-        b"device" => Some(SERVICE_DEVICE),
-        b"storage" => Some(SERVICE_STORAGE),
-        b"object" => Some(SERVICE_OBJECT),
-        b"namespace" => Some(SERVICE_NAMESPACE),
-        b"event" => Some(SERVICE_EVENT),
-        b"console" => Some(SERVICE_CONSOLE),
-        b"installer" => Some(SERVICE_INSTALLER),
-        b"local-ml" => Some(SERVICE_LOCAL_ML),
-        b"infinity-ai" | b"ai" => Some(SERVICE_AI),
-        b"voice" => Some(SERVICE_VOICE),
-        b"agent" => Some(SERVICE_AGENT),
-        b"organization" => Some(SERVICE_ORGANIZATION),
-        _ => None,
-    }
+    if name==b"ai" { return Some(crate::runtime::service::SERVICE_AI); }
+    (1..=crate::runtime::service::MAX_SERVICES as u32).find(|id|service_name(*id)==name)
 }
 // ------------------------=
 // FUNC: service_name

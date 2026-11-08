@@ -26,7 +26,7 @@ static mut TCP_TX: [[u8; SOCKET_BYTES]; MAX_CONNECTIONS] = [[0; SOCKET_BYTES]; M
 static mut SSH_RX: [[u8; PACKET_BUFFER]; MAX_CONNECTIONS] = [[0; PACKET_BUFFER]; MAX_CONNECTIONS];
 static mut SSH_TX: [[u8; PACKET_BUFFER]; MAX_CONNECTIONS] = [[0; PACKET_BUFFER]; MAX_CONNECTIONS];
 static mut STATUS: Status = Status { enabled: false, listening: false, port: 22, active: 0, accepted: 0,
-    authenticated: 0, denied: 0, closed: 0, last_failure: None, peak_protocol_ns: 0, protocol_steps: 0 };
+    authenticated: 0, denied: 0, closed: 0, last_failure: None, peak_protocol_ns: 0, protocol_steps: 0, endpoint: None, host_ready: false, network_ready: false };
 /// Public diagnostic ABI v1: magic, version, sequence, enabled, listening, port,
 /// active, accepted, authenticated, denied, closed, failure, quota, grants,
 /// backlog slots, peak protocol nanoseconds, protocol steps, reserved, reserved,
@@ -40,6 +40,7 @@ pub struct Status {
     pub accepted: u64, pub authenticated: u64, pub denied: u64, pub closed: u64,
     pub last_failure: Option<Failure>,
     pub peak_protocol_ns: u64, pub protocol_steps: u64,
+    pub endpoint: Option<([u8;4],u16)>, pub host_ready: bool, pub network_ready: bool,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Link { pub address: [u8; 4], pub prefix: u8, pub mac: [u8; 6], pub gateway: Option<[u8; 4]>, pub generation: u64 }
@@ -188,7 +189,18 @@ impl IdentityAuthority for Policy<'_> {
 // FUNC: status
 // DESC: Returns structured operational counters without private keys, credentials or untrusted packet text.
 // ------------------=
-pub fn status() -> Option<Status> { let _guard = lock()?; Some(unsafe { STATUS }) }
+pub fn status() -> Option<Status> {
+    let _guard = lock()?;
+    unsafe {
+        let mut status=STATUS;
+        status.host_ready=(&*(&raw const HOST)).is_some();
+        let current=crate::runtime::with_runtime(|runtime|link(runtime,crate::runtime::ai::qwen::workers::clock_ns()/1_000_000_000)).flatten();
+        status.network_ready=current.is_some();
+        status.listening&=(&*(&raw const STATE)).as_ref().is_some_and(|state|Some(state.link)==current);
+        status.endpoint=if status.enabled&&status.listening { (&*(&raw const STATE)).as_ref().map(|state|(state.link.address,status.port)) } else { None };
+        Some(status)
+    }
+}
 
 // ------------------------=
 // FUNC: host_fingerprint

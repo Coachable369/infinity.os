@@ -153,6 +153,26 @@ fn verify_pixels(width:usize,height:usize,mut previous_start:usize)->usize {
     std::fs::create_dir_all("builds/validation/ai-widget").unwrap();
     let mut file=std::fs::File::create(format!("builds/validation/ai-widget/controls-{width}x{height}.ppm")).unwrap();
     write!(file,"P6\n{width} {height}\n255\n").unwrap();
-    for pixel in pixels {file.write_all(&[pixel as u8,(pixel>>8)as u8,(pixel>>16)as u8]).unwrap();}
+    for pixel in &pixels {file.write_all(&[*pixel as u8,(pixel>>8)as u8,(pixel>>16)as u8]).unwrap();}
+    let before=pixels.clone();
+    let viewport=g.transcript_viewport(scale);
+    let notice_text=b"No option meets the supplied hard constraints. Add an eligible option or revise the constraints before comparing.";
+    let (ends,lines)=display.ai_widget_notice_wrap(notice_text,viewport.width as usize-20*scale,scale);
+    assert_eq!(ends[lines-1],notice_text.len());
+    assert!(lines*20*scale+44*scale<=viewport.height as usize);
+    let card=display.ai_widget_advice_notice(viewport,notice_text,scale);
+    assert!(card.height>44*scale as u32 && card.bottom()<=viewport.bottom());
+    assert!(card.x>=viewport.x && card.right()<=viewport.right());
+    let mut changed=0;
+    for y in 0..height {for x in 0..width {
+        if pixels[y*width+x]!=before[y*width+x] {
+            changed+=1;assert!(card.contains(Point {x:x as i32,y:y as i32}));
+            assert!(!g.composer.contains(Point {x:x as i32,y:y as i32}));
+        }
+    }}
+    assert!(changed>100);
+    let mut notice=std::fs::File::create(format!("builds/validation/ai-widget/admission-{width}x{height}.ppm")).unwrap();
+    write!(notice,"P6\n{width} {height}\n255\n").unwrap();
+    for pixel in pixels {notice.write_all(&[pixel as u8,(pixel>>8)as u8,(pixel>>16)as u8]).unwrap();}
     previous_start
 }

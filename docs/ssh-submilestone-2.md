@@ -7,10 +7,10 @@ and extracted handlers through `runtime::console_execution`. Results contain bou
 stdout/stderr, numeric status, operation ID and typed diagnostics. Success follows
 actual handler completion. There is no Unix shell or process-launch compatibility.
 
-After signed public-key authentication, IdentitySystem provisions an explicitly
+After native password or signed public-key authentication, IdentitySystem provisions an explicitly
 SSH-origin session with exactly `SESSION_REMOTE_QUERY`. It inherits no desktop,
 microphone, camera, personal-space or AI-context authority. Every dispatch rechecks
-live identity/key/session state, validates a nondelegable exact-operation capability
+live identity/credential/session state, validates a nondelegable exact-operation capability
 through IOP, and retires that capability after completion.
 
 The ceiling permits `help`, `system status`, `node list` and `ai status` (metrics
@@ -35,8 +35,8 @@ queued before native authority is retired, and the transport remains alive to fl
 ## Local provisioning
 
 SSH defaults to enabled on port 22 with two connection slots when no saved
-configuration exists. A saved disabled setting remains disabled. Public-key
-authentication is still required. New accounts automatically receive an Ed25519
+configuration exists. A saved disabled setting remains disabled. Native account
+passwords and registered public keys are accepted. New accounts automatically receive an Ed25519
 key pair and public-key registration during first-run setup, Settings creation,
 and Console creation. Existing accounts and their keys are not silently modified.
 An authorized local Console can use:
@@ -52,6 +52,10 @@ ssh disable
 Use a standard client with the registered native handle. `ssh USER@HOST` opens
 an interactive native Console; `ssh USER@HOST "system status"` requests native exec.
 Verify the host fingerprint through a trusted local path before accepting it.
+`ssh status` reports the actual listening IPv4 address, port, a connection example,
+and typed startup/connection failures. An enabled listener waits for an enabled
+network profile, live link and valid IPv4 address. For a NAT VM, use the host
+address and forwarded SSH port from outside the VM.
 
 ## Verification and release
 
@@ -168,8 +172,9 @@ local editor can read the current files; remote Console authority cannot.
 To connect from another machine, the owner must deliberately copy the private
 key to that SSH client and restrict its local permissions (for macOS OpenSSH,
 `chmod 600 PATH_TO_KEY`), then use `ssh -i PATH_TO_KEY USER@HOST`. Merely generating
-a key on InfinityOS does not install it on the remote client. Native SSH remains
-public-key-only and retains the Submilestone 2 capability ceiling.
+a key on InfinityOS does not install it on the remote client. Password login also
+works without exporting a key; see [password authentication and client](ssh-password-client.md).
+Native SSH retains the Submilestone 2 capability ceiling.
 
 Identity format 6 preserves earlier offsets and appends twelve credential slots,
 allowing all eight identity slots to hold passwords and SSH credentials. Formats

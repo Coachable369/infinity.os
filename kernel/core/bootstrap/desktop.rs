@@ -6300,6 +6300,10 @@ impl super::DisplayDevice {
                 loading_left, loading_width, center_y + 86 * scale,
                 b"Please wait before speaking", accent_r, accent_g, accent_b, 1,
             );
+            if let Some(notice)=chat.advice_notice() {
+                self.ai_widget_advice_notice(geometry.transcript_viewport(scale),
+                    crate::runtime::ai::text_request::error_message(notice),scale);
+            }
             self.ai_widget_status_menu(geometry.status,crate::ui::ai_widget::current_menu(),voice_enabled,can_stop,scale);
             return;
         }
@@ -6436,6 +6440,9 @@ impl super::DisplayDevice {
                     238,
                 );
             }
+        }
+        if let Some(notice)=chat.advice_notice() {
+            self.ai_widget_advice_notice(viewport,crate::runtime::ai::text_request::error_message(notice),scale);
         }
         let composer_text = chat.input();
         self.ai_widget_composer(geometry.composer,composer_text,chat.input_cursor(),

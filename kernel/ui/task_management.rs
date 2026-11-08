@@ -8,17 +8,19 @@ pub enum Tab { Processes, Services, Scheduled }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode { Browse, Create, Edit, Delete }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Target { None, Tab(Tab), Row(usize), New, Edit, Delete, Start, Stop, Restart, Kill, Enabled, Trigger, RestartPolicy, TriggerOption(u8), RestartOption(u8), Field(usize), Save, Cancel, Confirm, Previous, Next }
+pub enum Target { None, Tab(Tab), Row(usize), New, Edit, Delete, Start, Stop, Restart, Kill, Output, Enabled, Trigger, RestartPolicy, TriggerOption(u8), RestartOption(u8), Field(usize), Save, Cancel, Confirm, Previous, Next }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Feedback { None, Saved, Failed, Invalid, SaveOrCancel, Deleted }
+pub enum Feedback { None, Saved, Requested, Failed, Invalid, InvalidName, InvalidPath, InvalidTiming, TooLong, Clipboard, SaveOrCancel, Deleted, SignIn, ReadOnly, Duplicate, Full, Busy, Storage, Clock, Protected, Script, Conflict, Unavailable, TerminalBusy }
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum NextRun { Disabled, Manual, Paused, NextBoot, BootDelay(u64), Scheduled, Ready, Running, Stopping, Finished, ClockUnavailable }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Text { pub bytes: [u8; 96], pub len: usize, pub caret: usize }
+pub struct Text { pub bytes: [u8; 96], pub len: usize, pub caret: usize, pub selected:bool }
 impl Text {
     // ------------------------=
     // FUNC: new
     // DESC: Creates an empty bounded field without allocating.
     // ------------------=
-    pub const fn new() -> Self { Self { bytes: [0;96], len:0, caret:0 } }
+    pub const fn new() -> Self { Self { bytes: [0;96], len:0, caret:0, selected:false } }
     // ------------------------=
     // FUNC: from_bytes
     // DESC: Copies one label or script path into an editable presentation value.
@@ -33,49 +35,72 @@ impl Text {
     // FUNC: edit
     // DESC: Applies the shared bounded text editor to a field and its caret.
     // ------------------=
-    pub fn edit(&mut self,key:TextEditKey)->bool { match key {
-        TextEditKey::Character(c)=>text_input::insert_ascii(&mut self.bytes,&mut self.len,&mut self.caret,c),
-        TextEditKey::Backspace=>text_input::backspace(&mut self.bytes,&mut self.len,&mut self.caret),
-        TextEditKey::Delete=>text_input::delete(&mut self.bytes,&mut self.len,&mut self.caret),
-        TextEditKey::Left=>text_input::move_caret(&mut self.caret,self.len,-1),
-        TextEditKey::Right=>text_input::move_caret(&mut self.caret,self.len,1),
-        TextEditKey::Home=>text_input::move_caret(&mut self.caret,self.len,-2),
-        TextEditKey::End=>text_input::move_caret(&mut self.caret,self.len,2),
-    } }
+    pub fn edit(&mut self,key:TextEditKey)->bool {
+        if self.selected&&matches!(key,TextEditKey::Character(_)|TextEditKey::Backspace|TextEditKey::Delete){*self=Self::new();if !matches!(key,TextEditKey::Character(_)){return true;}}
+        self.selected=false;
+        match key {
+            TextEditKey::Character(c)=>text_input::insert_ascii(&mut self.bytes,&mut self.len,&mut self.caret,c),
+            TextEditKey::Backspace=>text_input::backspace(&mut self.bytes,&mut self.len,&mut self.caret),
+            TextEditKey::Delete=>text_input::delete(&mut self.bytes,&mut self.len,&mut self.caret),
+            TextEditKey::Left=>text_input::move_caret(&mut self.caret,self.len,-1),
+            TextEditKey::Right=>text_input::move_caret(&mut self.caret,self.len,1),
+            TextEditKey::Home=>text_input::move_caret(&mut self.caret,self.len,-2),
+            TextEditKey::End=>text_input::move_caret(&mut self.caret,self.len,2),
+        }
+    }
+    // ------------------------=
+    // FUNC: paste
+    // DESC: Atomically replaces a selected field or inserts a complete printable line within its semantic limit.
+    // ------------------=
+    pub fn paste(&mut self,value:&[u8],limit:usize)->bool {
+        let mut next=if self.selected{Self::new()}else{*self};
+        if value.len()>limit.saturating_sub(next.len)||!text_input::paste_ascii(&mut next.bytes,&mut next.len,&mut next.caret,value){return false;}
+        next.selected=false;*self=next;true
+    }
+
 }
-#[derive(Clone, Copy)]
-pub struct Entry { pub id:u32, pub name:Text, pub path:Text, pub enabled:bool, pub trigger:u8, pub timing:u64, pub restart:u8, pub state:u8, pub next:u64, pub timing_text:Text, pub next_text:Text, pub exit:Option<i64>, pub runs:u64 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Entry { pub id:u32, pub owner:[u8;16], pub can_output:bool, pub next_status:NextRun, pub name:Text, pub path:Text, pub enabled:bool, pub trigger:u8, pub timing:u64, pub restart:u8, pub state:u8, pub next:u64, pub timing_text:Text, pub next_text:Text, pub exit:Option<i64>, pub runs:u64 }
 impl Entry {
     // ------------------------=
     // FUNC: empty
     // DESC: Defines an unused catalog presentation slot.
     // ------------------=
-    pub const fn empty()->Self { Self{id:0,name:Text::new(),path:Text::new(),enabled:false,trigger:0,timing:0,restart:0,state:0,next:0,timing_text:Text::new(),next_text:Text::new(),exit:None,runs:0} }
+    pub const fn empty()->Self { Self{id:0,owner:[0;16],can_output:false,next_status:NextRun::Manual,name:Text::new(),path:Text::new(),enabled:false,trigger:0,timing:0,restart:0,state:0,next:0,timing_text:Text::new(),next_text:Text::new(),exit:None,runs:0} }
+    // ------------------------=
+    // FUNC: same_definition
+    // DESC: Compares durable definition values while ignoring lifecycle and telemetry changes.
+    // ------------------=
+    pub fn same_definition(&self,other:&Self)->bool {
+        self.id==other.id&&self.owner==other.owner&&self.name.bytes()==other.name.bytes()&&self.path.bytes()==other.path.bytes()
+            &&self.enabled==other.enabled&&self.trigger==other.trigger&&self.timing==other.timing&&self.restart==other.restart
+    }
+
 }
 #[derive(Clone,Copy)]
-pub struct State { pub tab:Tab, pub mode:Mode, pub selected:usize, pub first:usize, pub focus:Target, pub fields:[Text;3], pub enabled:bool, pub trigger:u8, pub restart:u8, pub choice:u8, pub feedback:Feedback }
+pub struct State { pub tab:Tab, pub mode:Mode, pub selected:usize, pub selected_id:u32, pub original:Option<Entry>, pub conflict:bool, pub first:usize, pub focus:Target, pub fields:[Text;3], pub enabled:bool, pub trigger:u8, pub restart:u8, pub choice:u8, pub feedback:Feedback }
 impl State {
     // ------------------------=
     // FUNC: new
     // DESC: Opens on the existing Processes dashboard with no unsaved draft.
     // ------------------=
-    pub const fn new()->Self { Self{tab:Tab::Processes,mode:Mode::Browse,selected:0,first:0,focus:Target::None,fields:[Text::new();3],enabled:true,trigger:0,restart:0,choice:0,feedback:Feedback::None} }
+    pub const fn new()->Self { Self{tab:Tab::Processes,mode:Mode::Browse,selected:0,selected_id:0,original:None,conflict:false,first:0,focus:Target::None,fields:[Text::new();3],enabled:true,trigger:0,restart:0,choice:0,feedback:Feedback::None} }
     // ------------------------=
     // FUNC: switch
     // DESC: Changes tabs only when a draft has been saved or explicitly cancelled.
     // ------------------=
-    pub fn switch(&mut self,tab:Tab)->bool { if self.mode!=Mode::Browse {self.feedback=Feedback::SaveOrCancel;return false;} self.tab=tab;self.selected=0;self.first=0;self.focus=Target::Tab(tab);self.feedback=Feedback::None;true }
+    pub fn switch(&mut self,tab:Tab)->bool { if self.mode!=Mode::Browse {self.feedback=Feedback::SaveOrCancel;return false;} self.tab=tab;self.selected=0;self.selected_id=0;self.first=0;self.focus=Target::Tab(tab);self.feedback=Feedback::None;true }
     // ------------------------=
     // FUNC: cancel
     // DESC: Discards a draft or deletion prompt and returns to its current record.
     // ------------------=
-    pub fn cancel(&mut self) {self.mode=Mode::Browse;self.choice=0;self.focus=Target::New;self.feedback=Feedback::None;}
+    pub fn cancel(&mut self) {self.mode=Mode::Browse;self.original=None;self.conflict=false;self.choice=0;self.focus=Target::New;self.feedback=Feedback::None;}
     // ------------------------=
     // FUNC: begin
     // DESC: Creates a new draft or copies a selected service record without mutating the catalog.
     // ------------------=
     pub fn begin(&mut self,mode:Mode,entry:Option<Entry>) {
-        self.mode=mode;self.choice=0;self.feedback=Feedback::None;self.focus=if mode==Mode::Delete{Target::Cancel}else{Target::Field(0)};
+        self.mode=mode;self.original=entry;self.conflict=false;self.choice=0;self.feedback=Feedback::None;self.focus=if mode==Mode::Delete{Target::Cancel}else{Target::Field(0)};
         self.fields=[Text::new();3];self.enabled=true;self.trigger=if self.tab==Tab::Scheduled{2}else{0};self.restart=0;
         if mode!=Mode::Create {if let Some(e)=entry {self.fields[0]=e.name;self.fields[1]=e.path;self.fields[2]=if e.trigger==3{e.timing_text}else{number(e.timing)};self.enabled=e.enabled;self.trigger=e.trigger;self.restart=e.restart;}}
         else {self.fields[2]=Text::from_bytes(if self.tab==Tab::Scheduled{b"60"}else{b"0"});}
@@ -87,18 +112,47 @@ impl State {
     pub fn select(&mut self,index:usize,count:usize,rows:usize) {if self.mode!=Mode::Browse {self.feedback=Feedback::SaveOrCancel;return;}self.selected=index.min(count.saturating_sub(1));if self.selected<self.first{self.first=self.selected;}if self.selected>=self.first+rows.max(1){self.first=self.selected+1-rows.max(1);}self.focus=Target::Row(self.selected);self.feedback=Feedback::None;}
 }
 #[derive(Clone,Copy)]
-pub struct View {pub owner:[u8;16],pub session:[u8;16],pub state:State,pub entries:[Entry;CAPACITY],pub count:usize,pub available:bool}
+pub struct View {pub owner:[u8;16],pub session:[u8;16],pub state:State,pub entries:[Entry;CAPACITY],pub count:usize,pub total:usize,pub available:bool,pub can_manage:bool,pub access_reason:Feedback}
 impl View {
     // ------------------------=
     // FUNC: new
     // DESC: Creates an unavailable catalog view until the native service publishes it.
     // ------------------=
-    pub const fn new()->Self {Self{owner:[0;16],session:[0;16],state:State::new(),entries:[Entry::empty();CAPACITY],count:0,available:false}}
+    pub const fn new()->Self {Self{owner:[0;16],session:[0;16],state:State::new(),entries:[Entry::empty();CAPACITY],count:0,total:0,available:false,can_manage:false,access_reason:Feedback::Unavailable}}
     // ------------------------=
     // FUNC: selected
     // DESC: Retrieves the selected actual entry without fabricating an empty task.
     // ------------------=
-    pub fn selected(&self)->Option<Entry> {(self.state.selected<self.count).then(||self.entries[self.state.selected])}
+    pub fn selected(&self)->Option<Entry> {
+        if self.state.selected_id!=0 {self.entries[..self.count].iter().find(|e|e.id==self.state.selected_id).copied()}
+        else {(self.state.selected<self.count).then(||self.entries[self.state.selected])}
+    }
+    // ------------------------=
+    // FUNC: select
+    // DESC: Pins list selection to the actual record identity and keeps its row visible.
+    // ------------------=
+    pub fn select(&mut self,index:usize,rows:usize) {
+        self.state.select(index,self.count,rows);
+        if self.state.mode==Mode::Browse{self.state.selected_id=self.entries.get(self.state.selected).filter(|_|self.state.selected<self.count).map_or(0,|e|e.id);}
+    }
+    // ------------------------=
+    // FUNC: reconcile
+    // DESC: Retains selection by identity and fences drafts whose original definition changed or disappeared.
+    // ------------------=
+    pub fn reconcile(&mut self,rows:usize) {
+        if let Some(original)=self.state.original {
+            self.state.conflict=!self.entries[..self.count].iter().any(|e|e.same_definition(&original));
+            if self.state.conflict{self.state.feedback=Feedback::Conflict;}
+        }
+        if let Some(index)=self.entries[..self.count].iter().position(|e|e.id==self.state.selected_id&&e.id!=0){self.state.selected=index;}
+        else if matches!(self.state.mode,Mode::Edit|Mode::Delete){self.state.selected=self.count;}
+        else {self.state.selected=self.state.selected.min(self.count.saturating_sub(1));self.state.selected_id=if self.count==0{0}else{self.entries[self.state.selected].id};}
+        if self.state.selected<self.count {
+            if self.state.first>self.state.selected{self.state.first=self.state.selected;}
+            if self.state.selected>=self.state.first+rows.max(1){self.state.first=self.state.selected+1-rows.max(1);}
+        }else{self.state.first=self.state.first.min(self.count.saturating_sub(rows.max(1)));}
+    }
+
 }
 static mut VIEW: View=View::new();
 #[no_mangle]
@@ -171,27 +225,27 @@ pub fn layout(content:Rect,toolbar:Rect,view:&View,scale:usize)->Layout {
     let tw=(toolbar.width as usize/s).saturating_sub(128)/3;
     for(i,tab)in[Tab::Processes,Tab::Services,Tab::Scheduled].into_iter().enumerate(){l.push(Target::Tab(tab),rect(toolbar,116+i*tw,6,tw.saturating_sub(6),32,s),true);}
     if view.state.tab==Tab::Processes{return l;}
-    l.push(Target::New,rect(toolbar,10,6,94,32,s),view.available&&view.state.mode==Mode::Browse);
+    l.push(Target::New,rect(toolbar,10,6,94,32,s),view.available&&view.can_manage&&view.total<CAPACITY&&view.state.mode==Mode::Browse);
     for row in 0..l.rows {let i=view.state.first+row;if i>=view.count{break;}l.push(Target::Row(i),rect(l.list,0,row*48,list_width,44,s),view.state.mode==Mode::Browse);}
     let nav_y=h.saturating_sub(88);
     l.push(Target::Previous,rect(content,16,nav_y,88,28,s),view.state.mode==Mode::Browse&&view.state.first>0);
     l.push(Target::Next,rect(content,112,nav_y,list_width.saturating_sub(96),28,s),view.state.mode==Mode::Browse&&view.state.first+l.rows<view.count);
     let d=l.detail;
     if matches!(view.state.mode,Mode::Create|Mode::Edit) {
-        for i in 0..3 {l.push(Target::Field(i),rect(d,12,60+i*66,dw.saturating_sub(24),32,s),!(i==0&&view.state.mode==Mode::Edit));}
-        l.push(Target::Trigger,rect(d,12,238,dw.saturating_sub(24),32,s),true);
+        for i in 0..3 {l.push(Target::Field(i),rect(d,12,60+i*66,dw.saturating_sub(24),32,s),view.can_manage&&!(i==0&&view.state.mode==Mode::Edit)&&!(i==2&&view.state.trigger==0));}
+        l.push(Target::Trigger,rect(d,12,238,dw.saturating_sub(24),32,s),view.can_manage);
         let half=dw.saturating_sub(32)/2;
-        l.push(Target::Enabled,rect(d,12,280,if view.state.tab==Tab::Services{half}else{dw.saturating_sub(24)},32,s),true);
-        if view.state.tab==Tab::Services{l.push(Target::RestartPolicy,rect(d,20+half,280,half,32,s),true);}
-        l.push(Target::Save,rect(d,12,326,half,32,s),view.available);
+        l.push(Target::Enabled,rect(d,12,280,if view.state.tab==Tab::Services{half}else{dw.saturating_sub(24)},32,s),view.can_manage);
+        if view.state.tab==Tab::Services{l.push(Target::RestartPolicy,rect(d,20+half,280,half,32,s),view.can_manage);}
+        l.push(Target::Save,rect(d,12,326,half,32,s),view.available&&view.can_manage&&!view.state.conflict);
         l.push(Target::Cancel,rect(d,20+half,326,half,32,s),true);
     } else if view.state.mode==Mode::Delete {
-        l.push(Target::Confirm,rect(d,12,128,(dw.saturating_sub(32))/2,32,s),view.available);
+        l.push(Target::Confirm,rect(d,12,128,(dw.saturating_sub(32))/2,32,s),view.available&&view.can_manage&&!view.state.conflict);
         l.push(Target::Cancel,rect(d,20+(dw.saturating_sub(32))/2,128,(dw.saturating_sub(32))/2,32,s),true);
     } else {
-        let valid=view.selected().is_some()&&view.available;
+        let valid=view.selected().is_some()&&view.available&&view.can_manage;
         let half=dw.saturating_sub(32)/2;
-        for(i,target)in[Target::Edit,Target::Enabled,Target::Start,Target::Stop,Target::Restart,Target::Kill,Target::Delete].into_iter().enumerate(){l.push(target,rect(d,12+(i%2)*(half+8),196+(i/2)*40,half,32,s),valid&&view.selected().is_some_and(|e|match target {
+        for(i,target)in[Target::Edit,Target::Enabled,Target::Start,Target::Stop,Target::Restart,Target::Kill,Target::Delete,Target::Output].into_iter().enumerate(){l.push(target,rect(d,12+(i%2)*(half+8),196+(i/2)*40,half,32,s),(if target==Target::Output{view.available&&view.selected().is_some_and(|e|e.can_output)}else{valid})&&view.selected().is_some_and(|e|match target {
             Target::Edit|Target::Delete=>!matches!(e.state,1..=4),Target::Start=>!matches!(e.state,1..=4),
             Target::Stop=>matches!(e.state,1..=4),Target::Kill=>matches!(e.state,2..=4),
             Target::Restart=>view.state.tab==Tab::Services,_=>true,
@@ -200,7 +254,37 @@ pub fn layout(content:Rect,toolbar:Rect,view:&View,scale:usize)->Layout {
     if view.state.choice!=0 && matches!(view.state.mode,Mode::Create|Mode::Edit) {
         let count=if view.state.choice==2{3}else if view.state.tab==Tab::Services{2}else{4};
         let y=if view.state.choice==1{238}else{280};
-        for i in 0..count {l.push(if view.state.choice==1{Target::TriggerOption(i as u8)}else{Target::RestartOption(i as u8)},rect(d,12,y-count*28-8+i*28,dw.saturating_sub(24),28,s),true);}
+        for i in 0..count {l.push(if view.state.choice==1{Target::TriggerOption(i as u8)}else{Target::RestartOption(i as u8)},rect(d,12,y-count*28-8+i*28,dw.saturating_sub(24),28,s),view.can_manage);}
     }
     l
+}
+
+const FIELD_METRICS:&[u8]=include_bytes!("../../assets/fonts/InfinityUI-Regular-16.metrics");
+const FIELD_KERN:&[u8]=include_bytes!("../../assets/fonts/InfinityUI-Regular-16.kern");
+// ------------------------=
+// FUNC: field_text_width
+// DESC: Measures the exact packaged native field face for both hit testing and painting.
+// ------------------=
+pub fn field_text_width(bytes:&[u8],scale:usize)->usize {
+    let mut width=0usize;let mut previous=None;
+    for &byte in bytes {if !(32..=126).contains(&byte){continue;}let at=(byte-32)as usize;
+        if let Some(left)=previous{width=width.saturating_add_signed((FIELD_KERN[left*95+at]as isize-128)*scale as isize);}
+        width+=FIELD_METRICS[at]as usize*scale;previous=Some(at);
+    }width
+}
+// ------------------------=
+// FUNC: field_first
+// DESC: Scrolls only far enough to reveal the caret while using the same proportional font as the painter.
+// ------------------=
+pub fn field_first(text:&Text,width:usize,scale:usize)->usize {
+    let mut first=0;while first<text.caret&&field_text_width(&text.bytes()[first..text.caret],scale)>width.saturating_sub(2*scale){first+=1;}first
+}
+// ------------------------=
+// FUNC: field_caret
+// DESC: Places the caret at the nearest visible glyph boundary without relying on fixed character widths.
+// ------------------=
+pub fn field_caret(text:&Text,width:usize,offset:i32,scale:usize)->usize {
+    let first=field_first(text,width,scale);if offset<=0{return first;}let x=offset as usize;let mut prior=0;
+    for end in first+1..=text.len {let next=field_text_width(&text.bytes()[first..end],scale);if x<(prior+next)/2{return end-1;}prior=next;}
+    text.len
 }

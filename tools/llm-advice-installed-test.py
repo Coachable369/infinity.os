@@ -124,6 +124,11 @@ def exercise(guest, proof, timeout):
 
     guest.key("ctrl", "j")
     widget.wait(guest, native, lambda state: state[4] == 2 and state[10] == 1)
+    guest.key("shift", "tab")
+    widget.wait(guest, native, lambda state: state[4] == 1 and state[10] == 1)
+    guest.key("tab")
+    widget.wait(guest, native, lambda state: state[4] == 2 and state[10] == 1)
+    proof["widget_reverse_focus"] = True
     guest.key("ctrl", "x")
     widget.wait(guest, native, lambda state: state[5:7] == (0, 0))
     prompt = "decide weights=20,80 scores=9,4/4,9 Reply with exactly CHOICE:1 or CHOICE:2."
@@ -141,6 +146,21 @@ def exercise(guest, proof, timeout):
     assert result["terminal_rows"] == command_result["terminal_rows"], result
     proof["widget_decision"] = dict(admitted=submitted, completed=result)
     proof["screenshots"].append(str(guest.screenshot("llm-widget-decision-response")))
+    guest.launch("command", 5)
+    guest.command("ai new")
+    cleared = wait(guest, lambda state: state["chat_turn"] > result["chat_turn"]
+                   and state["generation"] == 0 and state["response_bytes"] == 0
+                   and state["command_owned"] == 0,
+                   "completed advisory conversation reset", audit=audit)
+    assert cleared["accepted_requests"] == result["accepted_requests"], cleared
+    guest.command("llm ask Explain a daemon in one short sentence.")
+    fresh = wait(guest, lambda state: state["origin"] == state["mode"] == 1
+                 and state["admitted_turn"] > cleared["chat_turn"]
+                 and state["accepted_requests"] == cleared["accepted_requests"] + 1,
+                 "fresh conversation admitted through llm alias", audit=audit)
+    fresh_result = completed(guest, fresh, audit, timeout, True)
+    proof["conversation_reset"] = dict(cleared=cleared, admitted=fresh, completed=fresh_result)
+    proof["screenshots"].append(str(guest.screenshot("llm-fresh-conversation-response")))
     proof["no_os_actions"] = True
     proof["response_ownership"] = True
     proof["native_inference"] = True

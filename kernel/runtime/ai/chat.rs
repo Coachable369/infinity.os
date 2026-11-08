@@ -128,6 +128,8 @@ pub struct ChatRuntime {
     last_memory_response: Option<MemoryResponseKind>,
     timeline_scroll_offset: usize,
     timeline_maximum_scroll: usize,
+    typed_advice: Option<super::text_request::TypedTurn>,
+    advice_notice: Option<(u64,super::text_request::AdviceError)>,
 }
 
 impl ChatRuntime {
@@ -155,7 +157,54 @@ impl ChatRuntime {
             last_memory_response: None,
             timeline_scroll_offset: 0,
             timeline_maximum_scroll: 0,
+            typed_advice: None,
+            advice_notice: None,
         }
+    }
+
+    // ------------------------=
+    // FUNC: record_typed_advice
+    // DESC: Marks only successfully admitted typed advice with its exact user, turn and model provenance.
+    // ------------------=
+    pub(super) fn record_typed_advice(&mut self, owner: [u8;16]) {
+        self.typed_advice=Some(super::text_request::TypedTurn {owner,turn:self.turn_id,model:self.selected_model});
+        self.advice_notice=None;
+    }
+
+    // ------------------------=
+    // FUNC: typed_advice
+    // DESC: Invalidates typed provenance automatically when any other route starts a newer conversation turn.
+    // ------------------=
+    pub(super) fn typed_advice(&self) -> Option<super::text_request::TypedTurn> {
+        self.typed_advice.filter(|record|record.turn==self.turn_id)
+    }
+
+    // ------------------------=
+    // FUNC: set_advice_notice
+    // DESC: Records a typed admission error without changing the draft, transcript, active generation, or turn identity.
+    // ------------------=
+    pub fn set_advice_notice(&mut self, error: super::text_request::AdviceError) {
+        self.advice_notice=Some((self.turn_id,error));
+    }
+
+    // ------------------------=
+    // FUNC: advice_notice
+    // DESC: Exposes an admission notice only until the current turn is superseded or a typed request succeeds.
+    // ------------------=
+    pub fn advice_notice(&self) -> Option<super::text_request::AdviceError> {
+        self.advice_notice.filter(|notice|notice.0==self.turn_id).map(|notice|notice.1)
+    }
+
+    // ------------------------=
+    // FUNC: reset_typed_history
+    // DESC: Clears an already authorized idle typed transcript while preserving model, preferences, personal memory, and unsubmitted draft.
+    // ------------------=
+    pub(super) fn reset_typed_history(&mut self) {
+        self.messages.fill(None);self.count=0;self.turn_id=self.turn_id.wrapping_add(1);
+        self.generation_state=GenerationState::Ready;
+        self.typed_advice=None;self.advice_notice=None;
+        self.timeline_scroll_offset=0;self.timeline_maximum_scroll=0;
+        self.last_response_kind=None;self.last_memory_response=None;
     }
 
     // ------------------------=
@@ -621,6 +670,7 @@ impl ChatRuntime {
             ^ ((self.enabled as u64) << 62);
         value ^= (self.count as u64) << 48;
         value ^= (self.timeline_scroll_offset as u64).rotate_left(19);
+        value ^= u64::from(self.advice_notice().map_or(0,super::text_request::error_code)).rotate_left(41);
         value ^= self
             .last_response_kind
             .map(|kind| (kind as u64) << 32)

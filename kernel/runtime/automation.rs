@@ -30,7 +30,22 @@ pub enum Restart{Never,OnFailure,Always}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum State{Stopped,Queued,Running,Stopping,Killing,Completed,Failed}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Error{Invalid,Unknown,Duplicate,Full,Denied,Busy,Storage,Corrupt,Unavailable}
+pub enum Error{Invalid,Unknown,Duplicate,Full,Denied,Busy,Storage,Corrupt,Unavailable,SignInRequired,Protected,ScriptUnavailable,ClockUnavailable,Conflict}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Access{pub available:bool,pub can_read:bool,pub can_manage:bool,pub reason:Option<Error>}
+impl Access{
+    // ------------------------=
+    // FUNC: evaluate
+    // DESC: Applies the same signed-in inspection and local-administrator mutation policy for both clients.
+    // ------------------=
+    pub fn evaluate(available:bool,signed_in:bool,administrator:bool)->Self{Self{available,can_read:available&&signed_in,can_manage:available&&signed_in&&administrator,reason:if !signed_in{Some(Error::SignInRequired)}else if !available{Some(Error::Storage)}else if !administrator{Some(Error::Denied)}else{None}}}
+}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Receipt{pub id:Option<u32>,pub action:Action}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Definition{pub id:u32,pub kind:Kind,pub name:Text<48>,pub path:Text<96>,pub owner:[u8;16],pub enabled:bool,pub trigger:Trigger,pub restart:Restart}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum NextRun{Disabled,Manual,Paused,NextBoot,BootDelay{seconds:u64},Scheduled{unix_seconds:u64},Ready,Running,Stopping,Finished,ClockUnavailable}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Entry{
     pub id:u32,pub name:Text<48>,pub path:Text<96>,pub owner:[u8;16],pub kind:Kind,
@@ -44,6 +59,32 @@ pub enum Action{List,Inspect,Create,Edit,Delete,Start,Stop,Kill,Restart,Enable,D
 pub struct Command{pub kind:Kind,pub action:Action,pub name:Text<48>,pub path:Option<Text<96>>,pub enabled:Option<bool>,pub trigger:Option<Trigger>,pub restart:Option<Restart>}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Catalog{entries:[Option<Entry>;CAPACITY],next_id:u32,pub revision:u64}
+impl Entry{
+    // ------------------------=
+    // FUNC: definition
+    // DESC: Captures editable configuration independently of changing execution receipts and catalog revision.
+    // ------------------=
+    pub fn definition(&self)->Definition{Definition{id:self.id,kind:self.kind,name:self.name,path:self.path,owner:self.owner,enabled:self.enabled,trigger:self.trigger,restart:self.restart}}
+    // ------------------------=
+    // FUNC: next_status
+    // DESC: Explains actual admission eligibility without displaying stale timestamps for manual or completed tasks.
+    // ------------------=
+    pub fn next_status(&self,now:Option<u64>,boot_seconds:u64)->NextRun{
+        if self.state==State::Running{return NextRun::Running;}
+        if matches!(self.state,State::Stopping|State::Killing){return NextRun::Stopping;}
+        if self.state==State::Queued&&(self.enabled||self.manual_queue){return match now{None=>NextRun::ClockUnavailable,Some(now)if now>=self.next_run=>NextRun::Ready,Some(_)=>NextRun::Scheduled{unix_seconds:self.next_run}};}
+        if !self.enabled{return NextRun::Disabled;}
+        if self.manual_stop{return NextRun::Paused;}
+        match self.trigger{
+            Trigger::Manual=>NextRun::Manual,
+            Trigger::Boot{..}if self.boot_fired=>NextRun::NextBoot,
+            Trigger::Boot{delay_seconds}if boot_seconds<u64::from(delay_seconds)=>NextRun::BootDelay{seconds:u64::from(delay_seconds)-boot_seconds},
+            Trigger::Once{..}if self.once_fired=>NextRun::Finished,
+            Trigger::Boot{..}=>NextRun::Ready,
+            _=>match now{None=>NextRun::ClockUnavailable,Some(now)if now>=self.next_run=>NextRun::Ready,Some(_)=>NextRun::Scheduled{unix_seconds:self.next_run}},
+        }
+    }
+}
 impl Catalog{
     // ------------------------=
     // FUNC: new
@@ -70,6 +111,16 @@ impl Catalog{
     // DESC: Resolves exact names within a tab without accepting ambiguous prefixes.
     // ------------------=
     pub fn find(&self,kind:Kind,name:&[u8])->Option<Entry>{self.entries.iter().flatten().find(|e|e.kind==kind&&e.name.bytes()==name).copied()}
+    // ------------------------=
+    // FUNC: apply_expected
+    // DESC: Rejects stale configuration or recreated identifiers while allowing unrelated jobs and execution receipts to advance.
+    // ------------------=
+    pub fn apply_expected(&mut self,command:&Command,owner:[u8;16],administrator:bool,now:u64,expected:Option<Definition>)->Result<Option<u32>,Error>{
+        if let Some(expected)=expected{
+            if expected.kind!=command.kind||expected.name!=command.name||self.get(expected.id).map(|e|e.definition())!=Some(expected){return Err(Error::Conflict);}
+        }
+        self.apply(command,owner,administrator,now)
+    }
     // ------------------------=
     // FUNC: apply
     // DESC: Applies administrator configuration or lifecycle intent to a staged catalog before its durable commit.
@@ -223,12 +274,52 @@ fn read64(bytes:&[u8],at:usize)->u64{u64::from_le_bytes(bytes[at..at+8].try_into
 // ------------------=
 fn number(bytes:&[u8])->Result<u64,Error>{if bytes.is_empty(){return Err(Error::Invalid);}bytes.iter().try_fold(0u64,|n,b|if b.is_ascii_digit(){n.checked_mul(10).and_then(|n|n.checked_add(u64::from(*b-b'0'))).ok_or(Error::Invalid)}else{Err(Error::Invalid)})}
 // ------------------------=
+// FUNC: days_in_month
+// DESC: Supplies Gregorian month lengths for validated UTC calendar conversion.
+// ------------------=
+fn days_in_month(year:u64,month:u64)->u64{match month{4|6|9|11=>30,2=>if year%4==0&&(year%100!=0||year%400==0){29}else{28},_=>31}}
+// ------------------------=
+// FUNC: parse_utc
+// DESC: Accepts explicit UTC dates or existing epoch seconds without local timezone ambiguity.
+// ------------------=
+pub fn parse_utc(input:&[u8])->Result<u64,Error>{
+    if input.iter().all(u8::is_ascii_digit){return number(input);}
+    let bytes=input.strip_suffix(b"Z").unwrap_or(input);
+    if !matches!(bytes.len(),16|19)||bytes[4]!=b'-'||bytes[7]!=b'-'||!matches!(bytes[10],b'T'|b' ')||bytes[13]!=b':'||bytes.len()==19&&bytes[16]!=b':'{return Err(Error::Invalid);}
+    let(year,month,day,hour,minute)=(number(&bytes[..4])?,number(&bytes[5..7])?,number(&bytes[8..10])?,number(&bytes[11..13])?,number(&bytes[14..16])?);
+    let second=if bytes.len()==19{number(&bytes[17..19])?}else{0};
+    if !(1970..=2199).contains(&year)||!(1..=12).contains(&month)||day==0||day>days_in_month(year,month)||hour>23||minute>59||second>59{return Err(Error::Invalid);}
+    let mut days=0;for y in 1970..year{days+=365+u64::from(days_in_month(y,2)==29);}for m in 1..month{days+=days_in_month(year,m);}
+    Ok((days+day-1)*86400+hour*3600+minute*60+second)
+}
+// ------------------------=
+// FUNC: format_utc
+// DESC: Formats bounded human-readable UTC dates while retaining epoch compatibility outside the supported calendar range.
+// ------------------=
+pub fn format_utc(seconds:u64)->Option<Text<32>>{
+    if seconds>=7_258_118_400{return None;}
+    let mut days=seconds/86400;let mut year=1970;while days>=365+u64::from(days_in_month(year,2)==29){days-=365+u64::from(days_in_month(year,2)==29);year+=1;}
+    let mut month=1;while days>=days_in_month(year,month){days-=days_in_month(year,month);month+=1;}
+    let mut bytes=*b"0000-00-00 00:00:00 UTC";
+    for(start,width,mut value)in[(0,4,year),(5,2,month),(8,2,days+1),(11,2,seconds%86400/3600),(14,2,seconds%3600/60),(17,2,seconds%60)]{for index in (start..start+width).rev(){bytes[index]=b'0'+(value%10)as u8;value/=10;}}
+    Text::new(&bytes).ok()
+}
+// ------------------------=
 // FUNC: parse
 // DESC: Parses one explicit service or schedule command with quoted paths and strict option validation.
 // ------------------=
 pub fn parse(input:&[u8])->Result<Command,Error>{
-    let mut tokens=[b"".as_slice();16];let mut count=0;let mut at=0;
-    while at<input.len(){while input.get(at).is_some_and(u8::is_ascii_whitespace){at+=1;}if at==input.len(){break;}if count==tokens.len(){return Err(Error::Invalid);}let quote=if matches!(input[at],b'\''|b'"'){let q=input[at];at+=1;Some(q)}else{None};let start=at;while at<input.len()&&if let Some(q)=quote{input[at]!=q}else{!input[at].is_ascii_whitespace()}{at+=1;}tokens[count]=&input[start..at];count+=1;if quote.is_some(){if at==input.len(){return Err(Error::Invalid);}at+=1;if at<input.len()&&!input[at].is_ascii_whitespace(){return Err(Error::Invalid);}}}
+    let mut storage=[[0u8;192];16];let mut lengths=[0;16];let mut count=0;let mut at=0;
+    while at<input.len(){
+        while input.get(at).is_some_and(u8::is_ascii_whitespace){at+=1;}if at==input.len(){break;}if count==storage.len(){return Err(Error::Invalid);}
+        let mut quote=None;
+        while at<input.len(){let byte=input[at];if quote.is_none()&&byte.is_ascii_whitespace(){break;}at+=1;
+            if quote==Some(byte){quote=None;continue;}if quote.is_none()&&matches!(byte,b'\''|b'"'){quote=Some(byte);continue;}
+            if lengths[count]==storage[count].len(){return Err(Error::Invalid);}storage[count][lengths[count]]=byte;lengths[count]+=1;
+        }
+        if quote.is_some(){return Err(Error::Invalid);}count+=1;
+    }
+    let tokens:[&[u8];16]=core::array::from_fn(|i|&storage[i][..lengths[i]]);
     let kind=match tokens[0]{b"service"=>Kind::Daemon,b"schedule"=>Kind::Schedule,_=>return Err(Error::Invalid)};
     let action=match tokens[1]{b""|b"list"=>Action::List,b"inspect"|b"show"=>Action::Inspect,b"create"=>Action::Create,b"edit"|b"update"=>Action::Edit,b"delete"|b"remove"=>Action::Delete,b"start"|b"run"=>Action::Start,b"stop"=>Action::Stop,b"kill"=>Action::Kill,b"restart"=>Action::Restart,b"enable"=>Action::Enable,b"disable"=>Action::Disable,b"logs"=>Action::Logs,_=>return Err(Error::Invalid)};
     if action==Action::List&&count>2||action!=Action::List&&count<3{return Err(Error::Invalid);}
@@ -243,7 +334,7 @@ pub fn parse(input:&[u8])->Result<Command,Error>{
             b"start" if mode.is_none()&&command.trigger.is_none()=>{mode=Some(match value{b"boot"=>true,b"manual"=>false,_=>return Err(Error::Invalid)});},
             b"delay" if delay.is_none()=>delay=Some(u32::try_from(number(value)?).map_err(|_|Error::Invalid)?),
             b"every" if command.trigger.is_none()&&mode.is_none()=>command.trigger=Some(Trigger::Interval{seconds:u32::try_from(number(value)?).map_err(|_|Error::Invalid)?}),
-            b"at" if command.trigger.is_none()&&mode.is_none()=>command.trigger=Some(Trigger::Once{unix_seconds:number(value)?}),
+            b"at" if command.trigger.is_none()&&mode.is_none()=>command.trigger=Some(Trigger::Once{unix_seconds:parse_utc(value)?}),
             b"restart" if command.restart.is_none()=>command.restart=Some(match value{b"never"=>Restart::Never,b"on-failure"=>Restart::OnFailure,b"always"=>Restart::Always,_=>return Err(Error::Invalid)}),
             _=>return Err(Error::Invalid),
         }

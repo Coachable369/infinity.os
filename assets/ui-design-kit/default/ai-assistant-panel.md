@@ -34,6 +34,13 @@ no additional bitmap or icon family is needed. Status actions control voice,
 stop the current response, and open AI & Voice Settings through existing OS APIs.
 Keyboard arrows/Tab navigate, Enter activates, and Escape/outside click dismisses.
 
+Typed-request admission notices reuse the existing inner transcript card, native
+14px menu face, and 20px caption line pitch. Place the measured card at the bottom of the transcript,
+clip it to that viewport, label it "Request not sent", and preserve the composer.
+The notice is system feedback, separate from model output. A successful typed
+submission or a newer conversation turn dismisses it. No new surface or icon
+asset is required.
+
 `tools/ai-widget-tests.rs` provides typed input/menu and production pixel checks
 through `active-painter-test --ai-widget-only`. These new checks and installed
 visual review have not yet been run; the current user-requested handoff skips

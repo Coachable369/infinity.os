@@ -64,7 +64,7 @@ fn failed_admission(){let mut c=Catalog::new();let id=create(&mut c);c.finished(
 // FUNC: main
 // DESC: Runs native catalog behavioral acceptance with no source-text or display-string oracles.
 // ------------------=
-fn main(){lifecycle();schedule();persistence();validation();failed_admission();fair_admission();reschedule_once();disable_retry();}
+fn main(){lifecycle();schedule();persistence();validation();failed_admission();fair_admission();reschedule_once();disable_retry();definition_guards();eligibility();utc_grammar();}
 
 // ------------------------=
 // FUNC: fair_admission
@@ -83,3 +83,44 @@ fn reschedule_once(){let mut c=Catalog::new();let id=apply(&mut c,b"schedule cre
 // DESC: Prevents disabled automatic retries while preserving explicit manual execution of a disabled daemon.
 // ------------------=
 fn disable_retry(){let mut c=Catalog::new();let id=create(&mut c);c.started(id,1,105).unwrap();c.finished(id,1,106).unwrap();apply(&mut c,b"service disable nightly",107).unwrap();assert_eq!(c.due(999,999),None);assert_eq!(c.get(id).unwrap().state,State::Stopped);apply(&mut c,b"service start nightly",109).unwrap();assert_eq!(c.due(109,109).unwrap().id,id);c.started(id,2,109).unwrap();c.finished(id,1,110).unwrap();assert_eq!(c.due(999,999),None);}
+
+// ------------------------=
+// FUNC: definition_guards
+// DESC: Allows lifecycle and unrelated changes while rejecting edited or replaced targets without modifying state.
+// ------------------=
+fn definition_guards(){
+    let mut c=Catalog::new();let id=create(&mut c);let expected=c.get(id).unwrap().definition();
+    apply(&mut c,b"service create other /other.py",100).unwrap();c.started(id,50,105).unwrap();c.finished(id,0,106).unwrap();
+    let edit=parse(b"service edit nightly /new.py").unwrap();assert_eq!(c.apply_expected(&edit,OWNER,true,110,Some(expected)),Ok(Some(id)));
+    let before=c;assert_eq!(c.apply_expected(&edit,OWNER,true,110,Some(expected)),Err(Error::Conflict));assert_eq!(c,before);
+    let original=c.get(id).unwrap().definition();apply(&mut c,b"service delete nightly",111).unwrap();let replacement=create(&mut c);assert_ne!(replacement,id);
+    let before=c;assert_eq!(c.apply_expected(&parse(b"service delete nightly").unwrap(),OWNER,true,112,Some(original)),Err(Error::Conflict));assert_eq!(c,before);
+}
+
+// ------------------------=
+// FUNC: eligibility
+// DESC: Checks displayed next-run classifications against real execution and durable one-shot transitions.
+// ------------------=
+fn eligibility(){
+    let mut c=Catalog::new();let id=create(&mut c);assert_eq!(c.get(id).unwrap().next_status(Some(101),1),NextRun::BootDelay{seconds:4});assert_eq!(c.get(id).unwrap().next_status(None,5),NextRun::Ready);assert_eq!(c.due(0,5).unwrap().id,id);
+    assert_eq!(c.get(id).unwrap().next_status(Some(105),5),NextRun::Ready);c.started(id,4,105).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(105),5),NextRun::Running);
+    c.finished(id,0,106).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(999),999),NextRun::NextBoot);
+    apply(&mut c,b"service stop nightly",107).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(999),999),NextRun::Paused);
+    apply(&mut c,b"service disable nightly",108).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(999),999),NextRun::Disabled);
+    apply(&mut c,b"service start nightly",109).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(109),109),NextRun::Ready);
+    c.started(id,5,109).unwrap();apply(&mut c,b"service kill nightly",110).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(110),110),NextRun::Stopping);
+    let id=apply(&mut c,b"schedule create once /once.py at=120",111).unwrap().unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(111),111),NextRun::Scheduled{unix_seconds:120});c.started(id,6,120).unwrap();c.finished(id,0,121).unwrap();assert_eq!(c.get(id).unwrap().next_status(Some(999),999),NextRun::Finished);
+    let id=apply(&mut c,b"service create manual /m.py",122).unwrap().unwrap();assert_eq!(c.get(id).unwrap().next_status(None,122),NextRun::Manual);
+}
+
+// ------------------------=
+// FUNC: utc_grammar
+// DESC: Verifies calendar parsing, quoted option values, whitespace and date roundtrips as structured values.
+// ------------------=
+fn utc_grammar(){
+    let command=parse(b" \tschedule\tcreate once '/path with spaces.py' at=\"2028-02-29 23:59:59\"\n").unwrap();assert_eq!(command.trigger,Some(Trigger::Once{unix_seconds:1835481599}));assert_eq!(command.path.unwrap().bytes(),b"/path with spaces.py");
+    for value in [b"2028-02-29T23:59:59Z".as_slice(),b"2028-02-29 23:59:59",b"1835481599"]{assert_eq!(parse_utc(value),Ok(1835481599));}
+    for bad in [b"2100-02-29 00:00".as_slice(),b"2028-02-30 00:00",b"2026-11-09 24:00",b"2026-11-09 00:60",b"2026-11-09 00:00:60",b"2200-01-01 00:00",b"2026-13-01 00:00",b"2026-11-00 00:00"]{assert_eq!(parse_utc(bad),Err(Error::Invalid));}
+    for seconds in [0,86400,951782400,1835481599,7258118399]{let formatted=format_utc(seconds).unwrap();assert_eq!(parse_utc(&formatted.bytes()[..19]),Ok(seconds));}assert_eq!(format_utc(7258118400),None);
+    assert_eq!(Access::evaluate(true,false,true).reason,Some(Error::SignInRequired));assert!(!Access::evaluate(true,false,true).can_manage);assert!(Access::evaluate(true,true,false).can_read);assert!(!Access::evaluate(true,true,false).can_manage);assert!(Access::evaluate(true,true,true).can_manage);assert_eq!(Access::evaluate(false,true,true).reason,Some(Error::Storage));
+}

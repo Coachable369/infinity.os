@@ -39,11 +39,14 @@ limited to that connection, so the next connection asks again. The password
 prompt masks input and bypasses local command history, transcript, completion,
 and clipboard shortcuts. Three rejected passwords end the attempt.
 
-This initial client provides a **line-mode remote shell**: type a command and
-press Enter; Escape disconnects. It is not a full-screen VT terminal and does
-not offer SCP/SFTP, forwarding, keyboard-interactive authentication, or remote
-public-key authentication. Servers must offer Ed25519 host keys and SSH password
-authentication. Logging out or locking the local session revokes the connection.
+The client sends keyboard input directly to the remote shell and renders a
+bounded VT terminal with cursor movement, colors, scrolling and alternate-screen
+state. Arrow keys and control shortcuts are forwarded; **Ctrl+]** disconnects.
+Escape is forwarded while connected and cancels during authentication. Printable
+text is currently ASCII. SCP/SFTP, forwarding, keyboard-interactive authentication
+and outbound public-key authentication are not supported. Servers must offer
+Ed25519 host keys and SSH password authentication. Logging out or locking the
+local session revokes the connection.
 
 TCP/SSH processing is bounded and shares the native NIC pump. Established SSH
 connections have independent buffers and do not reserve the browser actor.

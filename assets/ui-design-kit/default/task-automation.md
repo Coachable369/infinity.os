@@ -12,13 +12,13 @@ icons, wallpaper, or borders. The compositor continues to own the outer frame.
 | --- | --- | --- |
 | Tabs | Secondary / Primary button atlas | Processes, Services, Scheduled Tasks; selected tab uses Primary |
 | Lists | Panel surface and Secondary selection | 40 px rows, selected row focus; real catalog entries only |
-| Fields | Field atlas | Name, Python script, timing; focused border and visible caret |
+| Fields | Field atlas | Name, Python script, timing; focused border, proportional-font caret hit testing, select-all highlight and atomic single-line paste |
 | Choices | Secondary surface | Boot/manual/interval/once policy, enabled, restart policy |
-| Actions | Primary / Secondary button atlas | Save/New primary; Start/Stop/Restart/Kill/Edit/Delete secondary |
+| Actions | Primary / Secondary button atlas | Save/New primary; Start/Stop/Restart/Kill/Edit/Delete/View output secondary |
 | Inline editor | Panel surface | Existing list alongside a persistent draft; Save and Cancel are explicit |
 | Typography | Packaged Inter | 20/28 heading, 14/20 labels, 12/16 metadata |
 | Spacing | Existing 8 px rhythm | 16 px outer gutter, 8 px gaps; 32 px actions |
-| Feedback | Inline status region | Success, invalid input, failed persistence and unavailable state |
+| Feedback | Inline status region | Typed validation, stale edits, read-only authority, storage/clock recovery and lifecycle requests |
 
 The content is a split workspace: a 200 px list and a flexible detail area at
 normal Task Manager sizes. Rows show a readable name and typed lifecycle state.
@@ -28,16 +28,26 @@ save row. Destructive deletion requires an inline confirmation; no modal is used
 No empty row or unbacked status is rendered as an actual task.
 
 Once-only schedules use readable UTC `YYYY-MM-DD HH:MM[:SS]` dates; interval
-and boot delay fields use seconds. Next-run dates are displayed in UTC rather
-than exposing internal epoch counters. Policy choices use the existing native
+and boot delay fields use seconds. Next-run dates are displayed in UTC. Disabled, manually stopped, manual-only,
+completed Once, next-boot, and clock-unavailable states replace ineligible dates.
+Manual timing is disabled, omitted from keyboard traversal and never parsed. Policy choices use the existing native
 menu contract: opening preserves the value, arrows highlight, Enter commits,
 and Escape cancels.
 
 The Services and Scheduled Tasks tabs share a native catalog with the Command
-Window. All mutations use the same parser and authorized persistence path.
-Keyboard Tab traverses visible controls, arrows select list items, Enter activates
+Window. All mutations use the same parser and authorized persistence path. Read-only
+sessions see disabled mutations with a local-administrator explanation. Selection
+follows stable identity; an edit/delete stores its original durable definition.
+A changed or replaced record preserves the draft and disables commit until the
+user cancels and reviews it. Lifecycle telemetry alone does not create a conflict.
+Created records are selected and revealed. View output opens the authorized
+Command Window log route, preserving any active terminal editor, pending command
+or remote interactive session by refusing to displace it.
+Keyboard Tab / Shift+Tab traverses visible controls, arrows select list items, Enter activates
 a focused control, Escape cancels a draft/confirmation, and normal text editing
-is confined to the focused field. Dirty drafts block tab changes until Save or
+is confined to the focused field. Ctrl+A selects all; Ctrl+C/X/V use the
+session clipboard with atomic length validation. Invalid fields receive focus
+and a specific recovery message, with the draft retained. Dirty drafts block tab changes until Save or
 Cancel. Drafts and focus reset when the authenticated user or session changes. The Processes page preserves its existing monitoring and process actions.
 
 ## Review gates

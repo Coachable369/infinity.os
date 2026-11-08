@@ -9,6 +9,20 @@ pub enum Command<'a> {
     Configure(Configuration),
     Key { user: &'a [u8], key: [u8; 32], revoke: bool },
 }
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Availability { Disabled, Listening { address: [u8;4], port: u16 }, WaitingForNetwork, WaitingForListener, Failed(Failure) }
+// ------------------------=
+// FUNC: availability
+// DESC: Classifies current listener readiness without treating historical client errors as current listener failure.
+// ------------------=
+pub fn availability(enabled:bool,listening:bool,endpoint:Option<([u8;4],u16)>,host_ready:bool,network_ready:bool,last_failure:Option<Failure>)->Availability {
+    if enabled&&listening { if let Some((address,port))=endpoint { return Availability::Listening{address,port}; } }
+    if !host_ready { if let Some(failure)=last_failure { return Availability::Failed(failure); } }
+    if !enabled { return Availability::Disabled; }
+    if !network_ready { return Availability::WaitingForNetwork; }
+    if matches!(last_failure,Some(Failure::PermissionDenied|Failure::Capacity|Failure::NetworkUnavailable|Failure::Configuration)) { return Availability::Failed(last_failure.unwrap()); }
+    Availability::WaitingForListener
+}
 // ------------------------=
 // FUNC: parse
 // DESC: Parses exact local management operations with bounded Ed25519 public-key material and validated quotas.

@@ -1,6 +1,6 @@
 //! Native Task Manager automation workspace using the approved Precision kit.
 use super::DisplayDevice;
-use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface},task_management::{self as model,Control,Feedback,Mode,Tab,Target,View}};
+use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface},task_management::{self as model,Control,Feedback,Mode,NextRun,Tab,Target,View}};
 
 // ------------------------=
 // FUNC: trigger_label
@@ -22,6 +22,34 @@ fn restart_label(policy:u8)->&'static[u8] {match policy{1=>b"On failure",2=>b"Al
 // DESC: Insets a control label without changing its authoritative hit region.
 // ------------------=
 fn inset(r:Rect,s:usize)->Rect {Rect{x:r.x+(10*s)as i32,width:r.width.saturating_sub((20*s)as u32),..r}}
+// ------------------------=
+// FUNC: next_label
+// DESC: Describes actual execution eligibility rather than showing stale timestamp bookkeeping.
+// ------------------=
+fn next_label(entry:model::Entry)->model::Text {
+    let bytes:&[u8]=match entry.next_status{NextRun::Disabled=>b"Disabled",NextRun::Manual=>b"Manual only",NextRun::Paused=>b"Stopped by user",NextRun::NextBoot=>b"Next system boot",NextRun::Scheduled=>return entry.next_text,NextRun::Ready=>b"Ready",NextRun::Running=>b"Running now",NextRun::Stopping=>b"Stopping",NextRun::Finished=>b"Finished; edit to re-arm",NextRun::ClockUnavailable=>b"Waiting for system clock",NextRun::BootDelay(seconds)=>{let n=model::number(seconds);let mut text=model::Text::from_bytes(b"Boot in ");text.bytes[text.len..text.len+n.len].copy_from_slice(n.bytes());text.len+=n.len;text.bytes[text.len..text.len+2].copy_from_slice(b" s");text.len+=2;return text;}};
+    model::Text::from_bytes(bytes)
+}
+// ------------------------=
+// FUNC: feedback_label
+// DESC: Gives concise recovery instructions for typed errors, disabled controls and an empty catalog.
+// ------------------=
+fn feedback_label(reason:Feedback,view:&View)->&'static[u8] {match reason {
+    Feedback::None=>if !view.available{b"Automation storage is unavailable. Retry after recovery."}else if matches!(view.state.mode,Mode::Create|Mode::Edit){b"Tab / Shift+Tab: focus. Ctrl+A: select all. Ctrl+V: paste."}else if view.total>=model::CAPACITY{b"16 definitions maximum. Delete one before choosing New."}else if view.selected().is_some_and(|e|matches!(e.state,1..=4)){b"Stop before editing or deleting. Kill ends a running job."}else{b"Start runs now. Disabled pauses automatic starts."},
+    Feedback::Saved=>b"Definition saved.",Feedback::Requested=>b"Request accepted. The lifecycle state shows progress.",Feedback::Deleted=>b"Definition deleted. Its Python file was kept.",
+    Feedback::Failed=>b"Change failed. The saved definition was not changed.",Feedback::Invalid=>b"Check the definition fields and try Save again.",
+    Feedback::InvalidName=>b"Name: use 1-48 letters, digits, hyphens, dots or underscores.",
+    Feedback::InvalidPath=>b"Path: use an absolute .py path without . or .. segments.",
+    Feedback::InvalidTiming=>if view.state.trigger==3{b"Enter a valid UTC date: YYYY-MM-DD HH:MM[:SS]."}else if view.state.trigger==2{b"Interval must be 1 to 4294967295 seconds."}else{b"Boot delay must be 0 to 4294967295 seconds."},
+    Feedback::TooLong=>b"Use one printable line within the field's length limit.",Feedback::Clipboard=>b"Clipboard text is unavailable in this session.",
+    Feedback::SaveOrCancel=>b"Save or Cancel this draft before leaving.",Feedback::SignIn=>b"Sign in to view and manage automation.",
+    Feedback::ReadOnly=>b"Read only. A local administrator can change definitions.",Feedback::Duplicate=>b"This name already exists. Choose a different name.",
+    Feedback::Full=>b"16 definitions maximum. Delete one before creating another.",Feedback::Busy=>b"Stop this job before editing or deleting its definition.",
+    Feedback::Storage=>b"Storage failed. Your draft is kept; retry after recovery.",Feedback::Clock=>b"Set the system date/time, then retry this request.",
+    Feedback::Protected=>b"This name belongs to a protected system service.",Feedback::Script=>b"Choose an existing .py file readable by the job's owner.",
+    Feedback::Conflict=>b"Definition changed elsewhere. Cancel, review, then edit.",Feedback::Unavailable=>b"Automation is unavailable. Retry after service recovery.",
+    Feedback::TerminalBusy=>b"Finish the terminal command, editor or SSH session first.",
+}}
 impl DisplayDevice {
     // ------------------------=
     // FUNC: render_task_automation_tabs
@@ -54,23 +82,28 @@ impl DisplayDevice {
         if view.state.mode==Mode::Browse {
             if let Some(entry)=view.selected() {
                 self.task_automation_detail_line(detail,44,b"Python script",entry.path.bytes(),s);
-                self.task_automation_detail_line(detail,78,b"State",state_label(entry.state),s);
+                self.task_automation_detail_line(detail,68,b"State",state_label(entry.state),s);
                 let timing=model::number(entry.timing);let mut policy=[0u8;64];
                 let prefix:&[u8]=match entry.trigger{1=>b"Boot + ",2=>b"Every ",3=>b"At UTC ",_=>b"Manual"};
                 policy[..prefix.len()].copy_from_slice(prefix);let mut len=prefix.len();
                 if entry.trigger!=0{policy[len..len+timing.len].copy_from_slice(timing.bytes());len+=timing.len;if entry.trigger<3{policy[len..len+2].copy_from_slice(b" s");len+=2;}}
-                self.task_automation_detail_line(detail,104,if entry.trigger==3{b"Once (UTC)"}else{b"Start policy"},if entry.trigger==3{entry.timing_text.bytes()}else{&policy[..len]},s);
-                if view.state.tab==Tab::Services{self.task_automation_detail_line(detail,130,b"Restart policy",restart_label(entry.restart),s);}else{self.task_automation_detail_line(detail,130,b"Next (UTC)",if entry.next==0{b"Not queued"}else{entry.next_text.bytes()},s);}
+                self.task_automation_detail_line(detail,92,if entry.trigger==3{b"Once (UTC)"}else{b"Start policy"},if entry.trigger==3{entry.timing_text.bytes()}else{&policy[..len]},s);
+                if view.state.tab==Tab::Services{self.task_automation_detail_line(detail,116,b"Restart policy",restart_label(entry.restart),s);}
+                let next=next_label(entry);self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{140}else{116},b"Next run (UTC)",next.bytes(),s);
                 let runs=model::number(entry.runs);let mut summary=[0u8;56];summary[..runs.len].copy_from_slice(runs.bytes());let mut length=runs.len;
                 if let Some(exit)=entry.exit {
                     let code=model::number(exit.unsigned_abs());let separator=if exit<0{b" / -".as_slice()}else{b" / "};
                     summary[length..length+separator.len()].copy_from_slice(separator);length+=separator.len();
                     summary[length..length+code.len].copy_from_slice(code.bytes());length+=code.len;
                 }
-                self.task_automation_detail_line(detail,156,if entry.exit.is_some(){b"Runs / exit"}else{b"Runs"},&summary[..length],s);
-            } else {self.app_label(Rect{y:detail.y+(52*s)as i32,height:(52*s)as u32,..detail},b"Create a Python definition to get started.",(174,197,221),false,s);}
+                self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{164}else{140},if entry.exit.is_some(){b"Runs / exit"}else{b"Runs"},&summary[..length],s);
+            } else {self.app_label(Rect{y:detail.y+(52*s)as i32,height:(52*s)as u32,..detail},if view.can_manage{b"Choose New to schedule a Python script."}else{b"No configured Python definitions to view."},(174,197,221),false,s);}
         } else if view.state.mode==Mode::Delete {
-            self.app_label(Rect{y:detail.y+(52*s)as i32,height:(60*s)as u32,..detail},b"Remove this definition? Stop a running task first.",(232,191,193),false,s);
+            if let Some(entry)=view.state.original {
+                self.app_label(Rect{y:detail.y+(48*s)as i32,height:(24*s)as u32,..detail},entry.name.bytes(),(255,255,255),true,s);
+                self.app_label(Rect{y:detail.y+(74*s)as i32,height:(24*s)as u32,..detail},entry.path.bytes(),(174,197,221),false,s);
+            }
+            self.app_label(Rect{y:detail.y+(100*s)as i32,height:(24*s)as u32,..detail},b"Removal keeps the Python file.",(232,191,193),false,s);
         }
         let mut choice_panel=false;
         for c in &layout.controls[..layout.count] {
@@ -91,19 +124,21 @@ impl DisplayDevice {
                 Target::Field(index)=>{
                     self.app_label(Rect{y:c.bounds.y-(24*s)as i32,height:(24*s)as u32,..c.bounds},match index{0=>if c.enabled{b"Name"}else{b"Name (fixed identifier)"},1=>b"Python script path",_=>match view.state.trigger{3=>b"UTC date / time: YYYY-MM-DD HH:MM[:SS]",2=>b"Interval seconds",1=>b"Delay seconds",_=>b"Timing (unused for manual)"}},(174,197,221),false,s);
                     self.precision_surface(c.bounds,Surface::Field,Material{fill:(9,15,38),edge:(134,199,255),opacity:if c.enabled{255}else{130},edge_opacity:if c.enabled{255}else{130},focus:if focused&&c.enabled{255}else{0},pressed:false,scale:s});
-                    let field=view.state.fields[index];let r=inset(c.bounds,s);let available=(r.width as usize/(8*s)).max(1);let first=field.caret.saturating_sub(available.saturating_sub(1));
-                    self.app_label(r,&field.bytes()[first..],(240,246,255),false,s);
-                    if focused {let prefix=&field.bytes()[first..field.caret];let x=r.x.max(0)as usize+self.app_text_width(prefix,false,s);self.fill_rect_alpha(x,(r.y+8*s as i32).max(0)as usize,s,16*s,255,255,255,255);}
+                    let field=view.state.fields[index];let r=inset(c.bounds,s);let first=model::field_first(&field,r.width as usize,s);
+                    if focused&&c.enabled&&field.selected {self.fill_rect_alpha(r.x.max(0)as usize,(r.y+5*s as i32).max(0)as usize,model::field_text_width(&field.bytes()[first..],s).min(r.width as usize),22*s,74,129,235,130);}
+                    self.app_label(r,if index==2&&view.state.trigger==0{b"Not used"}else{&field.bytes()[first..]},if c.enabled{(240,246,255)}else{(112,130,155)},false,s);
+                    if focused&&c.enabled {let prefix=&field.bytes()[first..field.caret];let x=r.x.max(0)as usize+model::field_text_width(prefix,s);self.fill_rect_alpha(x,(r.y+8*s as i32).max(0)as usize,s,16*s,255,255,255,255);}
                 },
                 target=>{
                     let label:&[u8]=match target {
-                        Target::Edit=>b"Edit",Target::Delete=>b"Delete",Target::Start=>if view.state.tab==Tab::Services{b"Start"}else{b"Run now"},Target::Stop=>b"Stop",Target::Restart=>b"Restart",Target::Kill=>b"Kill",Target::Save=>b"Save",Target::Cancel=>b"Cancel",Target::Confirm=>b"Delete",Target::Previous=>b"Previous",Target::Next=>b"Next",Target::Trigger=>trigger_label(view.state.trigger),Target::RestartPolicy=>restart_label(view.state.restart),Target::TriggerOption(option)=>trigger_label(option),Target::RestartOption(option)=>restart_label(option),Target::Enabled=>if if view.state.mode==Mode::Browse{view.selected().is_some_and(|e|e.enabled)}else{view.state.enabled}{b"Enabled"}else{b"Disabled"},_=>b""};
+                        Target::Edit=>b"Edit",Target::Delete=>b"Delete",Target::Start=>if view.state.tab==Tab::Services{b"Start"}else{b"Run now"},Target::Stop=>b"Stop",Target::Restart=>b"Restart",Target::Kill=>b"Kill",Target::Output=>b"View output",Target::Save=>b"Save",Target::Cancel=>b"Cancel",Target::Confirm=>b"Delete",Target::Previous=>b"Previous",Target::Next=>b"Next",Target::Trigger=>trigger_label(view.state.trigger),Target::RestartPolicy=>restart_label(view.state.restart),Target::TriggerOption(option)=>trigger_label(option),Target::RestartOption(option)=>restart_label(option),Target::Enabled=>if if view.state.mode==Mode::Browse{view.selected().is_some_and(|e|e.enabled)}else{view.state.enabled}{b"Enabled"}else{b"Disabled"},_=>b""};
                     self.task_automation_button(*c,label,matches!(target,Target::Save),focused,s);
                 }
             }
         }
-        let feedback:&[u8]=match view.state.feedback{Feedback::None=>if !view.available{b"Automation storage is unavailable."}else if matches!(view.state.mode,Mode::Create|Mode::Edit){b"Tab moves focus. Enter changes a choice or saves."}else{b"Definitions persist across restarts."},Feedback::Saved=>b"Change saved.",Feedback::Deleted=>b"Definition deleted.",Feedback::Failed=>b"Change failed. Check access, script path, and task state.",Feedback::Invalid=>if view.state.trigger==3{b"Check name, Python path, and UTC date/time."}else{b"Check name, Python path, and numeric timing."},Feedback::SaveOrCancel=>b"Save or Cancel this draft before leaving."};
-        self.app_label(layout.status,feedback,if matches!(view.state.feedback,Feedback::Failed|Feedback::Invalid|Feedback::SaveOrCancel){(255,170,170)}else{(174,197,221)},false,s);
+        let reason=if !view.can_manage&&view.access_reason!=Feedback::None{view.access_reason}else if view.state.conflict{Feedback::Conflict}else{view.state.feedback};
+        let feedback=feedback_label(reason,view);
+        self.app_label(layout.status,feedback,if matches!(reason,Feedback::None|Feedback::Saved|Feedback::Requested|Feedback::Deleted){(174,197,221)}else{(255,170,170)},false,s);
         self.render_clip=old;true
     }
     // ------------------------=
