@@ -2227,36 +2227,7 @@ impl super::DisplayDevice {
                     1,
                 );
             } else if screen == 10 {
-                self.fill_rounded_rect_alpha(
-                    toolbar_left + 10 * scale,
-                    toolbar_top + 6 * scale,
-                    94 * scale,
-                    geometry.toolbar.height as usize - 12 * scale,
-                    7 * scale,
-                    if task_menu_open { 29 } else { 8 },
-                    if task_menu_open { 91 } else { 31 },
-                    if task_menu_open { 132 } else { 48 },
-                    240,
-                );
-                self.ui_text_strong(
-                    toolbar_left + 24 * scale,
-                    toolbar_top + 15 * scale,
-                    if crate::ui::task_management::current().state.tab==crate::ui::task_management::Tab::Processes {b"Task"} else {b"New"},
-                    225,
-                    240,
-                    249,
-                    1,
-                );
-                self.ui_text(
-                    toolbar_left + 79 * scale,
-                    toolbar_top + 15 * scale,
-                    if crate::ui::task_management::current().state.tab!=crate::ui::task_management::Tab::Processes {b"+"} else if task_menu_open { b"^" } else { b"v" },
-                    103,
-                    211,
-                    252,
-                    1,
-                );
-                self.render_task_automation_tabs(geometry.content,geometry.toolbar,scale,&crate::ui::task_management::current());
+                self.render_task_management_toolbar(geometry.content,geometry.toolbar,scale,&crate::ui::task_management::current(),task_menu_open);
             } else if screen != 8 {
                 self.ui_text(
                     toolbar_left + 16 * scale,

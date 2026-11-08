@@ -193,7 +193,7 @@ pub fn decimal<const N:usize>(text:&TextBuffer<N>)->Option<u64> {if text.len==0{
 #[derive(Clone,Copy)]
 pub struct Control {pub target:Target,pub bounds:Rect,pub enabled:bool}
 #[derive(Clone,Copy)]
-pub struct Layout {pub controls:[Control;48],pub count:usize,pub list:Rect,pub detail:Rect,pub status:Rect,pub rows:usize}
+pub struct Layout {pub controls:[Control;48],pub count:usize,pub list:Rect,pub detail:Rect,pub status:Rect,pub rows:usize,pub compact:bool}
 impl Layout {
     // ------------------------=
     // FUNC: push
@@ -222,9 +222,10 @@ fn rect(base:Rect,x:usize,y:usize,w:usize,h:usize,s:usize)->Rect {Rect{x:base.x+
 // ------------------=
 pub fn layout(content:Rect,toolbar:Rect,view:&View,scale:usize)->Layout {
     let s=scale.max(1);let w=content.width as usize/s;let h=content.height as usize/s;
+    let compact=h<416;
     let empty=Control{target:Target::None,bounds:Rect{x:0,y:0,width:0,height:0},enabled:false};
     let list_width=188.min(w/3);let dx=list_width+32;let dw=w.saturating_sub(dx+16);
-    let mut l=Layout{controls:[empty;48],count:0,list:rect(content,16,56,list_width,h.saturating_sub(112),s),detail:rect(content,dx,16,dw,h.saturating_sub(64),s),status:rect(content,16,h.saturating_sub(38),w.saturating_sub(32),32,s),rows:h.saturating_sub(152)/48};
+    let mut l=Layout{controls:[empty;48],count:0,list:rect(content,16,56,list_width,h.saturating_sub(112),s),detail:rect(content,dx,16,dw,h.saturating_sub(if compact{56}else{64}),s),status:rect(content,16,h.saturating_sub(38),w.saturating_sub(32),32,s),rows:h.saturating_sub(152)/48,compact};
     let tw=(toolbar.width as usize/s).saturating_sub(128)/3;
     for(i,tab)in[Tab::Processes,Tab::Services,Tab::Scheduled].into_iter().enumerate(){l.push(Target::Tab(tab),rect(toolbar,116+i*tw,6,tw.saturating_sub(6),32,s),true);}
     if view.state.tab==Tab::Processes{return l;}
@@ -235,20 +236,20 @@ pub fn layout(content:Rect,toolbar:Rect,view:&View,scale:usize)->Layout {
     l.push(Target::Next,rect(content,112,nav_y,list_width.saturating_sub(96),28,s),view.state.mode==Mode::Browse&&view.state.first+l.rows<view.count);
     let d=l.detail;
     if matches!(view.state.mode,Mode::Create|Mode::Edit) {
-        for i in 0..3 {l.push(Target::Field(i),rect(d,12,60+i*66,dw.saturating_sub(24),32,s),view.can_manage&&!(i==0&&view.state.mode==Mode::Edit)&&!(i==2&&view.state.trigger==0));}
-        l.push(Target::Trigger,rect(d,12,238,dw.saturating_sub(24),32,s),view.can_manage);
+        for i in 0..3 {l.push(Target::Field(i),rect(d,12,if compact{52+i*56}else{60+i*66},dw.saturating_sub(24),32,s),view.can_manage&&!(i==0&&view.state.mode==Mode::Edit)&&!(i==2&&view.state.trigger==0));}
+        l.push(Target::Trigger,rect(d,12,if compact{204}else{238},dw.saturating_sub(24),32,s),view.can_manage);
         let half=dw.saturating_sub(32)/2;
-        l.push(Target::Enabled,rect(d,12,280,if view.state.tab==Tab::Services{half}else{dw.saturating_sub(24)},32,s),view.can_manage);
-        if view.state.tab==Tab::Services{l.push(Target::RestartPolicy,rect(d,20+half,280,half,32,s),view.can_manage);}
-        l.push(Target::Save,rect(d,12,326,half,32,s),view.available&&view.can_manage&&!view.state.conflict);
-        l.push(Target::Cancel,rect(d,20+half,326,half,32,s),true);
+        l.push(Target::Enabled,rect(d,12,if compact{244}else{280},if view.state.tab==Tab::Services{half}else{dw.saturating_sub(24)},32,s),view.can_manage);
+        if view.state.tab==Tab::Services{l.push(Target::RestartPolicy,rect(d,20+half,if compact{244}else{280},half,32,s),view.can_manage);}
+        l.push(Target::Save,rect(d,12,if compact{284}else{326},half,32,s),view.available&&view.can_manage&&!view.state.conflict);
+        l.push(Target::Cancel,rect(d,20+half,if compact{284}else{326},half,32,s),true);
     } else if view.state.mode==Mode::Delete {
         l.push(Target::Confirm,rect(d,12,128,(dw.saturating_sub(32))/2,32,s),view.available&&view.can_manage&&!view.state.conflict);
         l.push(Target::Cancel,rect(d,20+(dw.saturating_sub(32))/2,128,(dw.saturating_sub(32))/2,32,s),true);
     } else {
         let valid=view.selected().is_some()&&view.available&&view.can_manage;
         let half=dw.saturating_sub(32)/2;
-        for(i,target)in[Target::Edit,Target::Enabled,Target::Start,Target::Stop,Target::Restart,Target::Kill,Target::Delete,Target::Output].into_iter().enumerate(){l.push(target,rect(d,12+(i%2)*(half+8),196+(i/2)*40,half,32,s),(if target==Target::Output{view.available&&view.selected().is_some_and(|e|e.can_output)}else{valid})&&view.selected().is_some_and(|e|match target {
+        for(i,target)in[Target::Edit,Target::Enabled,Target::Start,Target::Stop,Target::Restart,Target::Kill,Target::Delete,Target::Output].into_iter().enumerate(){l.push(target,rect(d,12+(i%2)*(half+8),if compact{168+(i/2)*40}else{196+(i/2)*40},half,32,s),(if target==Target::Output{view.available&&view.selected().is_some_and(|e|e.can_output)}else{valid})&&view.selected().is_some_and(|e|match target {
             Target::Edit|Target::Delete=>!matches!(e.state,1..=4),Target::Start=>!matches!(e.state,1..=4),
             Target::Stop=>matches!(e.state,1..=4),Target::Kill=>matches!(e.state,2..=4),
             Target::Restart=>view.state.tab==Tab::Services,_=>true,
@@ -256,7 +257,7 @@ pub fn layout(content:Rect,toolbar:Rect,view:&View,scale:usize)->Layout {
     }
     if view.state.choice!=0 && matches!(view.state.mode,Mode::Create|Mode::Edit) {
         let count=if view.state.choice==2{3}else if view.state.tab==Tab::Services{2}else{5};
-        let y=if view.state.choice==1{238}else{280};
+        let y=if view.state.choice==1{if compact{204}else{238}}else if compact{244}else{280};
         for i in 0..count {l.push(if view.state.choice==1{Target::TriggerOption(i as u8)}else{Target::RestartOption(i as u8)},rect(d,12,y-count*28-8+i*28,dw.saturating_sub(24),28,s),view.can_manage);}
     }
     l

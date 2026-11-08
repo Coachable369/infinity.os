@@ -61,6 +61,17 @@ Cancel. Drafts and focus reset when the authenticated user or session changes. T
 
 ## Review gates
 
+The complete Task Manager toolbar has one painter: Processes retains its Task
+menu; Services and Scheduled Tasks paint New directly on the toolbar substrate.
+Never layer a disabled translucent action over an earlier action or glyph.
+At content heights below 416 logical pixels, retain 32 px controls and 24 px
+field labels, reduce the field rhythm to 56 px, and reserve a separate 32 px
+feedback row. Compact browse metadata uses the existing 14/20 menu face. The
+installed 1024×768 desktop with the normal 160/140/760/650 window placement
+provides a 746×381 content rectangle and is a mandatory rendering fixture.
+Save, Cancel and all browse actions must end before feedback begins, and stay
+inside their panel; changing feedback must not alter any action's pixels.
+
 Compare production-rendered pixels to the Precision reference: hierarchy, 8 px
 spacing rhythm, glass edge softness, font quality, button state consistency,
 proportions, and unclipped controls at the 620 px minimum width. Host pixel review

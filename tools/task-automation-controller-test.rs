@@ -154,5 +154,11 @@ fn main(){
     let switched=m::current();assert_eq!(switched.owner,[2;16]);assert_eq!(switched.session,[20;16]);assert_eq!(switched.state.mode,Mode::Browse);assert_eq!(switched.state.tab,Tab::Processes);assert!(switched.state.fields.iter().all(|f|f.len==0));
     click(&mut c,Target::Tab(Tab::Scheduled));click(&mut c,Target::New);type_field(&mut c,0,b"same-user-new-session");
     c.current_session=runtime::identity::StableId([21;16]);c.refresh_task_automation();assert_eq!(m::current().state.mode,Mode::Browse);assert!(m::current().state.fields.iter().all(|f|f.len==0));
+    // Exercise production pointer hit regions at the installed 1024x768 geometry.
+    c.system=System{framebuffer_width:1024,framebuffer_height:768};c.app_window_x=160;c.app_window_y=140;c.app_window_width=760;c.app_window_height=650;
+    click(&mut c,Target::Tab(Tab::Scheduled));click(&mut c,Target::New);type_field(&mut c,0,b"compact");type_field(&mut c,1,b"/home/default/compact.py");type_field(&mut c,2,b"*/15 * * * *");click(&mut c,Target::Save);
+    assert_eq!(m::current().state.mode,Mode::Browse);let compact=runtime::with_runtime(|r|r.automation.find(Kind::Schedule,b"compact").unwrap().id).unwrap();
+    click(&mut c,Target::Edit);type_field(&mut c,2,b"0 12 * * 1-5");click(&mut c,Target::Save);assert_eq!(runtime::with_runtime(|r|r.automation.get(compact).unwrap().trigger),Some(Trigger::Cron{schedule:runtime::automation::parse_cron(b"0 12 * * 1-5").unwrap()}));
+    click(&mut c,Target::Delete);click(&mut c,Target::Confirm);assert_eq!(runtime::with_runtime(|r|r.automation.get(compact).is_none()),Some(true));
     println!("Task Manager GUI controller: typed create/edit/lifecycle/denial/delete and draft preservation passed");
 }

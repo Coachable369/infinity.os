@@ -52,10 +52,17 @@ fn feedback_label(reason:Feedback,view:&View)->&'static[u8] {match reason {
 }}
 impl DisplayDevice {
     // ------------------------=
-    // FUNC: render_task_automation_tabs
-    // DESC: Replaces the telemetry caption with the shared three-tab workspace navigation.
+    // FUNC: render_task_management_toolbar
+    // DESC: Owns the complete Task Manager toolbar so disabled automation controls never overlay a legacy action label.
     // ------------------=
-    pub(super) fn render_task_automation_tabs(&mut self,content:Rect,toolbar:Rect,scale:usize,view:&View) {
+    pub(super) fn render_task_management_toolbar(&mut self,content:Rect,toolbar:Rect,scale:usize,view:&View,task_menu_open:bool) {
+        if view.state.tab==Tab::Processes {
+            let left=toolbar.x.max(0)as usize;let top=toolbar.y.max(0)as usize;
+            self.fill_rounded_rect_alpha(left+10*scale,top+6*scale,94*scale,toolbar.height as usize-12*scale,7*scale,
+                if task_menu_open{29}else{8},if task_menu_open{91}else{31},if task_menu_open{132}else{48},240);
+            self.ui_text_strong(left+24*scale,top+15*scale,b"Task",225,240,249,1);
+            self.ui_text(left+79*scale,top+15*scale,if task_menu_open{b"^"}else{b"v"},103,211,252,1);
+        }
         let layout=model::layout(content,toolbar,view,scale);
         for control in &layout.controls[..layout.count] {if control.target==Target::New {self.task_automation_button(*control,b"New",true,view.state.focus==Target::New,scale);}
         if let Target::Tab(tab)=control.target {
@@ -75,28 +82,28 @@ impl DisplayDevice {
         self.app_label(Rect{x:layout.list.x,y:content.y+(16*s)as i32,width:layout.list.width,height:(28*s)as u32},if view.state.tab==Tab::Services{b"Daemon services"}else{b"Scheduled Python"},(255,255,255),true,s);
         self.precision_surface(layout.detail,Surface::Panel,Material{fill:(16,27,58),edge:(134,199,255),opacity:245,edge_opacity:170,focus:0,pressed:false,scale:s});
         let detail=inset(layout.detail,s);
-        let heading=Rect{y:detail.y+(8*s)as i32,height:(32*s)as u32,..detail};
+        let heading=Rect{y:detail.y+((if layout.compact{4}else{8})*s)as i32,height:((if layout.compact{24}else{32})*s)as u32,..detail};
         let selected_name=view.selected().map(|e|e.name);
         self.app_label(heading,match view.state.mode{Mode::Create=>b"New definition",Mode::Edit=>b"Edit definition",Mode::Delete=>b"Delete definition?",Mode::Browse=>selected_name.as_ref().map(|n|n.bytes()).unwrap_or(b"Automation")},(255,255,255),true,s);
         if view.count==0 {self.app_label(Rect{height:(72*s)as u32,..layout.list},if view.available{b"No definitions yet"}else{b"Service unavailable"},(174,197,221),false,s);}
         if view.state.mode==Mode::Browse {
             if let Some(entry)=view.selected() {
-                self.task_automation_detail_line(detail,44,b"Python script",entry.path.bytes(),s);
-                self.task_automation_detail_line(detail,68,b"State",state_label(entry.state),s);
+                self.task_automation_detail_line(detail,44,b"Python script",entry.path.bytes(),s,layout.compact);
+                self.task_automation_detail_line(detail,68,b"State",state_label(entry.state),s,layout.compact);
                 let timing=model::number(entry.timing);let mut policy=[0u8;64];
                 let prefix:&[u8]=match entry.trigger{1=>b"Boot + ",2=>b"Every ",3=>b"At UTC ",_=>b"Manual"};
                 policy[..prefix.len()].copy_from_slice(prefix);let mut len=prefix.len();
                 if matches!(entry.trigger,1..=3){policy[len..len+timing.len].copy_from_slice(timing.bytes());len+=timing.len;if entry.trigger<3{policy[len..len+2].copy_from_slice(b" s");len+=2;}}
-                self.task_automation_detail_line(detail,92,if entry.trigger==4{b"Cron (UTC)"}else if entry.trigger==3{b"Once (UTC)"}else{b"Start policy"},if entry.trigger>=3{entry.timing_text.bytes()}else{&policy[..len]},s);
-                if view.state.tab==Tab::Services{self.task_automation_detail_line(detail,116,b"Restart policy",restart_label(entry.restart),s);}
-                let next=next_label(entry);self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{140}else{116},b"Next run (UTC)",next.bytes(),s);
+                self.task_automation_detail_line(detail,92,if entry.trigger==4{b"Cron (UTC)"}else if entry.trigger==3{b"Once (UTC)"}else{b"Start policy"},if entry.trigger>=3{entry.timing_text.bytes()}else{&policy[..len]},s,layout.compact);
+                if view.state.tab==Tab::Services{self.task_automation_detail_line(detail,116,b"Restart policy",restart_label(entry.restart),s,layout.compact);}
+                let next=next_label(entry);self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{140}else{116},b"Next run (UTC)",next.bytes(),s,layout.compact);
                 let runs=model::number(entry.runs);let mut summary=[0u8;56];summary[..runs.len].copy_from_slice(runs.bytes());let mut length=runs.len;
                 if let Some(exit)=entry.exit {
                     let code=model::number(exit.unsigned_abs());let separator=if exit<0{b" / -".as_slice()}else{b" / "};
                     summary[length..length+separator.len()].copy_from_slice(separator);length+=separator.len();
                     summary[length..length+code.len].copy_from_slice(code.bytes());length+=code.len;
                 }
-                self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{164}else{140},if entry.exit.is_some(){b"Runs / exit"}else{b"Runs"},&summary[..length],s);
+                self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{164}else{140},if entry.exit.is_some(){b"Runs / exit"}else{b"Runs"},&summary[..length],s,layout.compact);
             } else {self.app_label(Rect{y:detail.y+(52*s)as i32,height:(52*s)as u32,..detail},if view.can_manage{b"Choose New to schedule a Python script."}else{b"No configured Python definitions to view."},(174,197,221),false,s);}
         } else if view.state.mode==Mode::Delete {
             if let Some(entry)=view.state.original {
@@ -155,9 +162,18 @@ impl DisplayDevice {
     // FUNC: task_automation_detail_line
     // DESC: Fits a named value into a clipped detail row using the shared type hierarchy.
     // ------------------=
-    fn task_automation_detail_line(&mut self,r:Rect,y:usize,label:&[u8],value:&[u8],s:usize) {
+    fn task_automation_detail_line(&mut self,r:Rect,y:usize,label:&[u8],value:&[u8],s:usize,compact:bool) {
+        let height=if compact{20}else{24};
         let label_width=if y==44{0}else{r.width*45/100};
-        if label_width>0{self.app_label(Rect{y:r.y+(y*s)as i32,width:label_width,height:(24*s)as u32,..r},label,(145,171,202),false,s);}
-        self.app_label(Rect{x:r.x+label_width as i32,y:r.y+(y*s)as i32,width:r.width-label_width,height:(24*s)as u32},value,(230,240,253),false,s);
+        let y=if compact{36+(y.saturating_sub(44)/24)*20}else{y};
+        let key=Rect{y:r.y+(y*s)as i32,width:label_width,height:(height*s)as u32,..r};
+        let value_rect=Rect{x:r.x+label_width as i32,y:key.y,width:r.width-label_width,height:key.height};
+        if compact {
+            if label_width>0{self.app_menu_label(key,label,(145,171,202),s);}
+            self.app_menu_label(value_rect,value,(230,240,253),s);
+        }else{
+            if label_width>0{self.app_label(key,label,(145,171,202),false,s);}
+            self.app_label(value_rect,value,(230,240,253),false,s);
+        }
     }
 }

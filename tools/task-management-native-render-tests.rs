@@ -19,14 +19,53 @@ fn frame(width:usize,height:usize,view:&View,clip:Option<Region>)->Vec<u32> {
     let mut pixels=vec![0x00090f26;width*height];
     let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:1,render_clip:clip,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
     let toolbar=Rect{x:16,y:16,width:(width-32)as u32,height:44};let content=Rect{x:16,y:60,width:(width-32)as u32,height:(height-76)as u32};
-    display.render_task_automation_tabs(content,toolbar,1,view);
+    display.render_task_management_toolbar(content,toolbar,1,view,false);
     assert!(display.render_task_automation(content,toolbar,1,view));pixels
+}
+// ------------------------=
+// FUNC: installed_frame
+// DESC: Renders the shared production toolbar and workspace using the installed desktop's actual window geometry.
+// ------------------=
+fn installed_frame(view:&View,task_menu_open:bool)->Vec<u32> {
+    let(width,height)=(1024,768);let mut pixels=vec![0x00090f26;width*height];
+    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:1,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    let g=crate::ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(160,140,760,650,false);
+    display.fill_rect_alpha(g.toolbar.x as usize,g.toolbar.y as usize,g.toolbar.width as usize,g.toolbar.height as usize,5,22,38,224);
+    display.render_task_management_toolbar(g.content,g.toolbar,1,view,task_menu_open);
+    display.render_task_automation(g.content,g.toolbar,1,view);pixels
+}
+// ------------------------=
+// FUNC: compact_installed_geometry
+// DESC: Verifies actual desktop dimensions preserve independent toolbar, action and feedback pixels across every automation mode.
+// ------------------=
+fn compact_installed_geometry() {
+    let g=crate::ui::system_layout::SystemLayout::new(1024,768).desktop_app_window_geometry(160,140,760,650,false);
+    assert_eq!((g.content.x,g.content.y,g.content.width,g.content.height),(179,209,746,381));
+    for tab in [Tab::Services,Tab::Scheduled] {for mode in [Mode::Browse,Mode::Create,Mode::Edit,Mode::Delete] {
+        let mut view=fixture(tab);view.select(1,4);
+        if mode!=Mode::Browse{view.state.begin(mode,view.selected());}
+        if matches!(mode,Mode::Create|Mode::Edit){view.state.fields[0]=model::Field::from_bytes(b"workspace-backup");view.state.fields[1]=model::Field::from_bytes(b"/home/ms9node01/documents/hello.py");view.state.fields[2]=model::Field::from_bytes(b"*/15 * * * *");if tab==Tab::Scheduled{view.state.trigger=4;}}
+        let layout=model::layout(g.content,g.toolbar,&view,1);assert!(layout.compact);
+        for c in &layout.controls[..layout.count] {if c.bounds.y>=g.content.y {
+            assert!(g.content.contains(Point{x:c.bounds.x,y:c.bounds.y}));assert!(g.content.contains(Point{x:c.bounds.right()-1,y:c.bounds.bottom()-1}));
+            assert!(c.bounds.bottom()<=layout.status.y);
+            if matches!(c.target,Target::Save|Target::Cancel|Target::Output|Target::Delete){assert!(c.bounds.bottom()<=layout.detail.bottom()-4);}
+            if c.enabled{assert_eq!(layout.hit(Point{x:c.bounds.x+1,y:c.bounds.y+1}),Some(c.target));}
+        }}
+        let pixels=installed_frame(&view,false);assert_eq!(pixels,installed_frame(&view,true));
+        let mut feedback=view;feedback.state.feedback=Feedback::Storage;let changed=installed_frame(&feedback,false);assert_ne!(pixels,changed);
+        for c in &layout.controls[..layout.count] {for y in c.bounds.y..c.bounds.bottom(){for x in c.bounds.x..c.bounds.right(){assert_eq!(pixels[y as usize*1024+x as usize],changed[y as usize*1024+x as usize]);}}}
+        let tab_name=if tab==Tab::Services{"services"}else{"scheduled"};let mode_name=match mode{Mode::Browse=>"browse",Mode::Create=>"create",Mode::Edit=>"edit",Mode::Delete=>"delete"};
+        let mut ppm=b"P6\n1024 768\n255\n".to_vec();for pixel in pixels{ppm.extend_from_slice(&[(pixel>>16)as u8,(pixel>>8)as u8,pixel as u8]);}std::fs::write(format!("build/task-manager-installed-{tab_name}-{mode_name}.ppm"),ppm).unwrap();
+    }}
+    let mut processes=View::new();processes.state.tab=Tab::Processes;assert_ne!(installed_frame(&processes,false),installed_frame(&processes,true));
 }
 // ------------------------=
 // FUNC: verify
 // DESC: Checks real pixels, exact hit geometry, focused fields, disabled actions and dirty draft transitions.
 // ------------------=
 pub(super) fn verify() {
+    compact_installed_geometry();
     for (width,height) in [(620usize,500usize),(900,680)] {
         let toolbar=Rect{x:16,y:16,width:(width-32)as u32,height:44};let content=Rect{x:16,y:60,width:(width-32)as u32,height:(height-76)as u32};
         for(tab,name)in[(Tab::Services,"services"),(Tab::Scheduled,"scheduled")] {
