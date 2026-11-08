@@ -30,20 +30,38 @@ not an implementation of process termination or restart.
 native process ID, run count, readable next UTC time or eligibility reason, and
 last exit code. Lists also show the configured trigger and next-run status.
 
+These commands work in Command Window and over SSH with the same account
+permissions. Any authenticated session can list jobs. Inspecting a managed job
+or its output requires its owner or an administrator; configuration and lifecycle
+changes require an administrator. Protected kernel services remain read-only.
+
+Start with an existing script. New accounts include `documents/hello.py`:
+
 ```text
-service create worker /home/default/documents/worker.py start=boot delay=5 restart=on-failure
+idir home
+path
+list documents/hello.py
+```
+
+Replace `/home/YOUR_HOME` below with the home path printed by `path`. If the sample
+file is absent, use the absolute path of another existing Python script you own.
+The following are individual operation examples; after Stop or Kill, use Inspect
+to confirm the process has exited before editing or deleting it.
+
+```text
+service create worker /home/YOUR_HOME/documents/hello.py start=boot delay=5 restart=on-failure
 service start worker
 service stop worker
 service restart worker
 service kill worker
 service disable worker
-service edit worker /home/default/documents/updated.py start=manual restart=never
+service edit worker /home/YOUR_HOME/documents/hello.py start=manual restart=never
 service enable worker
 service logs worker
 service delete worker
 
-taskscheduler create report */15 * * * * /home/default/documents/report.py
-taskscheduler create once /home/default/documents/report.py at="2026-12-01 09:00"
+taskscheduler create report */15 * * * * /home/YOUR_HOME/documents/hello.py
+taskscheduler create once /home/YOUR_HOME/documents/hello.py at="2026-12-01 09:00"
 taskscheduler inspect report
 taskscheduler edit report every=7200
 taskscheduler disable report
@@ -61,7 +79,7 @@ active compatibility alias for existing scripts. The default trigger is hourly,
 `0 * * * *`. Both of these forms use the same five cron fields:
 
 ```text
-taskscheduler create report 0 9 * * MON-FRI /home/default/documents/report.py
+taskscheduler create report 0 9 * * MON-FRI /home/YOUR_HOME/documents/hello.py
 taskscheduler edit report cron="0,30 9-17/2 1,15 * MON"
 ```
 

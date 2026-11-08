@@ -1,6 +1,6 @@
 # Local LLM commands and decision advice
 
-Command Window accepts:
+Command Window and authenticated SSH sessions accept the same commands:
 
 ```
 ai ask Explain the difference between a daemon and a scheduled task
@@ -13,6 +13,9 @@ ai new
 ```
 
 `llm ask`, `llm decide`, `llm response`, `llm cancel`, and `llm new` are aliases.
+SSH conversations and replies belong to the requesting session; they do not
+appear in another user's Command Window or AI widget. Account AI permissions
+and model availability apply on both transports.
 Command words accept spaces or tabs; prompt content keeps its internal spacing.
 `ai help` and `llm help` work even when chat is disabled. Controls reject extra
 arguments; use `ai ask PROMPT` to send text that starts with a control word.

@@ -1,13 +1,13 @@
 # SSH transport foundation — acceptance ledger
 
 The foundation is integrated into the native shared NIC reactor on ARM64 and
-x86_64. Submilestone 2 adds the restricted Console described in
+x86_64. The current shared native Console and account permissions are described in
 [ssh-submilestone-2.md](ssh-submilestone-2.md).
 
 ## Implemented and host-verified
 
 - Bounded inbound TCP acceptance, capability revocation, timeouts and slot reuse.
-- Default-on listener with persistent enable/disable configuration and local key administration.
+- Default-on listener with persistent enable/disable configuration and authenticated account key administration.
 - Pinned Sunset 0.6.0, native fallible entropy, Curve25519/Ed25519 and
   chacha20-poly1305 AEAD-only negotiation.
 - Signed public-key authentication, identity revocation, versioned credential migration.
