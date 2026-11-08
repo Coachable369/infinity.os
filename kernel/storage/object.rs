@@ -51,13 +51,13 @@ const CONTENT: u64 = 80;
 pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 20;
 const AI_INSTRUCTION_MAPPING: &[u8] = include_bytes!("../../system/ai/instruction-mappings.json");
 const AI_SERVICE_REGISTRY: &[u8] = include_bytes!("../../system/ai/service-registry.json");
-// Format 10 stores bounded tables in separately allocated, checksummed bank
-// extents. Older bank coordinates remain readable for transactional migration.
-const OBJECT_TABLE_SECTORS: usize = 32;
+// Format 11 expands allocated metadata banks without relocating content.
+// Format 10 retains its exact 32/16/32-sector geometry until the next commit.
+const OBJECT_TABLE_SECTORS: usize = 128;
 const OBJECTS_PER_SECTOR: usize = 4;
 const MAX_OBJECTS: usize = OBJECT_TABLE_SECTORS * OBJECTS_PER_SECTOR;
-pub const MAX_VERSIONS: usize = 128;
-pub const NAMESPACE_CAPACITY: usize = 128;
+pub const MAX_VERSIONS: usize = 1024;
+pub const NAMESPACE_CAPACITY: usize = 512;
 pub const PUBLIC_NAMESPACE_CAPACITY: usize = NAMESPACE_CAPACITY + sdk_package::ENTRIES.len();
 const MAX_ENTRIES: usize = NAMESPACE_CAPACITY;
 const MAX_RELATIONSHIPS: usize = 16;
@@ -78,9 +78,14 @@ const ALLOCATION_EXTENSION_A: u64 =
     CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
 const ALLOCATION_EXTENSION_B: u64 =
     ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
-pub const FORMAT_VERSION: u32 = 10;
-const TABLE_BANK_SECTORS: u64 = 80;
-const TABLE_BLOCKS: u16 = 20; // Two independent 40 KiB banks; never overwrite the committed bank.
+pub const FORMAT_VERSION: u32 = 11;
+const VERSION_TABLE_SECTORS: usize = MAX_VERSIONS / 8;
+const NAMESPACE_TABLE_SECTORS: usize = MAX_ENTRIES / 4;
+const TABLE_BANK_SECTORS: u64 = (OBJECT_TABLE_SECTORS + VERSION_TABLE_SECTORS + NAMESPACE_TABLE_SECTORS) as u64;
+const TABLE_BLOCKS: u16 = (2 * TABLE_BANK_SECTORS / ALLOCATION_BLOCK_SECTORS) as u16;
+const V10_TABLE_BANK_SECTORS: u64 = 80;
+const V10_TABLE_BLOCKS: u16 = 20;
+const _: () = assert!(2 * TABLE_BANK_SECTORS % ALLOCATION_BLOCK_SECTORS == 0);
 // New namespace sectors must stay within the blocks already reserved in v6/v7.
 const _: () = assert!((2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS)).div_ceil(8) * 8
     >= 2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) + 4);
@@ -425,6 +430,9 @@ struct State {
     next_identity: u64,
     total_blocks: u32,
     table_extent: u32,
+    table_blocks: u16,
+    retired_table_extent: u32,
+    retired_table_blocks: u16,
     allocation: [u8; ALLOCATION_BYTES],
     objects: [ObjectRecord; MAX_OBJECTS],
     versions: [VersionRecord; MAX_VERSIONS],
@@ -443,6 +451,9 @@ impl State {
             next_identity: 1,
             total_blocks,
             table_extent: u32::MAX,
+            table_blocks: 0,
+            retired_table_extent: u32::MAX,
+            retired_table_blocks: 0,
             allocation: [0; ALLOCATION_BYTES],
             objects: [ObjectRecord {
                 used: false,
@@ -3039,8 +3050,24 @@ impl<D: BlockDevice> ObjectStore<D> {
             .total_blocks
             .max(available.min((ALLOCATION_BYTES * 8) as u64) as u32);
         reserve_allocator_metadata(&mut self.state)?;
-        if self.state.table_extent == u32::MAX {
-            self.state.table_extent = self.allocate(Space::System, TABLE_BLOCKS)?;
+        // The next root supersedes the last v10 root. The transaction's protected
+        // allocation bitmap prevents reusing these sectors before that commit.
+        if self.state.retired_table_extent != u32::MAX {
+            let start=self.state.retired_table_extent as usize;
+            for block in start..start+self.state.retired_table_blocks as usize {
+                set_bit(&mut self.state.allocation,block,false);
+            }
+            self.state.retired_table_extent=u32::MAX;
+            self.state.retired_table_blocks=0;
+        }
+        if self.state.table_blocks != TABLE_BLOCKS {
+            let extent=self.allocate(Space::System,TABLE_BLOCKS)?;
+            if self.state.table_extent!=u32::MAX {
+                self.state.retired_table_extent=self.state.table_extent;
+                self.state.retired_table_blocks=self.state.table_blocks;
+            }
+            self.state.table_extent=extent;
+            self.state.table_blocks=TABLE_BLOCKS;
         }
         let generation = self.state.generation + 1;
         let bank = if self.mounted_root == 0 {
@@ -3528,7 +3555,7 @@ fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
 // DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
 // ------------------=
 const fn supported_format(version: u32) -> bool {
-    matches!(version, 4 | 5 | 6 | 7 | 8 | 9 | FORMAT_VERSION)
+    matches!(version, 4 | 5 | 6 | 7 | 8 | 9 | 10 | FORMAT_VERSION)
 }
 // ------------------------=
 // FUNC: set_bit
@@ -3646,6 +3673,12 @@ fn write_bank<D: BlockDevice>(
     };
     put32(&mut h, 36, allocation_bytes as u32);
     put32(&mut h, 40, state.table_extent);
+    put32(&mut h, 44, state.table_blocks as u32);
+    put32(&mut h, 48, state.retired_table_extent);
+    put32(&mut h, 52, state.retired_table_blocks as u32);
+    put32(&mut h, 56, MAX_OBJECTS as u32);
+    put32(&mut h, 60, MAX_VERSIONS as u32);
+    put32(&mut h, 64, MAX_ENTRIES as u32);
     let tables = c + CONTENT + state.table_extent as u64 * ALLOCATION_BLOCK_SECTORS
         + if bank == BANK_A { 0 } else { TABLE_BANK_SECTORS };
     finish_sector(&mut h);
@@ -3691,7 +3724,7 @@ fn write_bank<D: BlockDevice>(
             encode_version(&state.versions[sector * 8 + n], &mut s, 16 + n * 60);
         }
         finish_sector(&mut s);
-        write(d, tables + 32 + sector as u64, &s)?;
+        write(d, tables + OBJECT_TABLE_SECTORS as u64 + sector as u64, &s)?;
     }
     for sector in 0..MAX_ENTRIES/4 {
         let mut s = [0u8; 512];
@@ -3701,7 +3734,7 @@ fn write_bank<D: BlockDevice>(
             encode_entry(&state.entries[sector * 4 + n], &mut s, 16 + n * 120);
         }
         finish_sector(&mut s);
-        write(d, tables + 48 + sector as u64, &s)?;
+        write(d, tables + (OBJECT_TABLE_SECTORS + VERSION_TABLE_SECTORS) as u64 + sector as u64, &s)?;
     }
     for sector in 0..2 {
         let mut s = [0u8; 512];
@@ -3741,13 +3774,25 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     let mut state = State::empty(total);
     state.generation = g;
     state.next_identity = get64(&h, 24);
+    let (object_sectors,version_sectors,namespace_sectors,table_stride)=if format==11 {
+        if get32(&h,44)!=TABLE_BLOCKS as u32 || get32(&h,56)!=MAX_OBJECTS as u32
+            || get32(&h,60)!=MAX_VERSIONS as u32 || get32(&h,64)!=MAX_ENTRIES as u32 {
+            return Err(ObjectError::CorruptMetadata);
+        }
+        state.retired_table_extent=get32(&h,48);
+        state.retired_table_blocks=u16::try_from(get32(&h,52)).map_err(|_|ObjectError::CorruptMetadata)?;
+        (OBJECT_TABLE_SECTORS,VERSION_TABLE_SECTORS,NAMESPACE_TABLE_SECTORS,TABLE_BANK_SECTORS)
+    }else if format==10 {(32,16,32,V10_TABLE_BANK_SECTORS)}else {
+        (13,if format==4{4}else{8},if format>=8&&allocation_bytes!=LEGACY_ALLOCATION_BYTES{13}else if format>=7{11}else{8},0)
+    };
     let tables = if format >= 10 {
         state.table_extent = get32(&h, 40);
-        if state.table_extent as u64 + TABLE_BLOCKS as u64 > total as u64 {
+        state.table_blocks=if format==10{V10_TABLE_BLOCKS}else{TABLE_BLOCKS};
+        if state.table_extent as u64 + state.table_blocks as u64 > total as u64 {
             return Err(ObjectError::CorruptMetadata);
         }
         c + CONTENT + state.table_extent as u64 * ALLOCATION_BLOCK_SECTORS
-            + if bank == BANK_A { 0 } else { TABLE_BANK_SECTORS }
+            + if bank == BANK_A { 0 } else { table_stride }
     } else { 0 };
     let allocation_sectors =
         (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
@@ -3765,7 +3810,7 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
         let end = (start + ALLOCATION_SECTOR_BYTES).min(allocation_bytes);
         state.allocation[start..end].copy_from_slice(&s[16..16 + end - start]);
     }
-    for sector in 0..if format >= 10 { OBJECT_TABLE_SECTORS } else { 13 } {
+    for sector in 0..object_sectors {
         let offset = if sector < 6 {
             5 + sector as u64
         } else {
@@ -3777,13 +3822,8 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.objects[sector * OBJECTS_PER_SECTOR + n] = decode_object(&s, 16 + n * 120)?;
         }
     }
-    let version_sectors = if get32(&h, 8) == 4 {
-        4
-    } else {
-        if format >= 10 { MAX_VERSIONS / 8 } else { 8 }
-    };
     for sector in 0..version_sectors {
-        let s = read(d, if format >= 10 { tables + 32 + sector as u64 } else { c + version_sector(bank, sector) })?;
+        let s = read(d, if format >= 10 { tables + object_sectors as u64 + sector as u64 } else { c + version_sector(bank, sector) })?;
         check(&s, b"INFOVER2")?;
         for n in 0..8 {
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
@@ -3792,8 +3832,8 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     if format == 9 && allocation_bytes == LEGACY_ALLOCATION_BYTES {
         for i in 0..4 { state.entries[44+i] = decode_entry(&h,40+i*116)?; }
     }
-    for sector in 0..if format >= 10 {MAX_ENTRIES/4} else if format >= 8 && allocation_bytes!=LEGACY_ALLOCATION_BYTES {13} else if format >= 8 {11} else if format == 7 { 11 } else { 8 } {
-        let s = read(d, if format >= 10 { tables + 48 + sector as u64 } else { c + namespace_sector(bank, sector) })?;
+    for sector in 0..namespace_sectors {
+        let s = read(d, if format >= 10 { tables + (object_sectors+version_sectors) as u64 + sector as u64 } else { c + namespace_sector(bank, sector) })?;
         check(&s, b"INFONSP2")?;
         for n in 0..4 {
             state.entries[sector * 4 + n] = decode_entry(&s, 16 + n * 120)?;
@@ -3999,15 +4039,22 @@ fn decode_relationship(s: &[u8], o: usize) -> Result<RelationshipRecord, ObjectE
 // DESC: Implements the validate state operation.
 // ------------------=
 fn validate_state(state: &State) -> Result<(), ObjectError> {
-    if state.table_extent != u32::MAX {
-        let start = state.table_extent as usize;
-        let end = start.checked_add(TABLE_BLOCKS as usize).ok_or(ObjectError::CorruptMetadata)?;
-        if end > state.total_blocks as usize
-            || (start..end).any(|b| !bit(&state.allocation, b))
-            || state.versions.iter().any(|v| v.used && (v.extent as usize) < end
-                && start < v.extent as usize + v.blocks as usize)
-        { return Err(ObjectError::CorruptMetadata); }
+    if (state.table_extent==u32::MAX)!=(state.table_blocks==0)
+        || (state.retired_table_extent==u32::MAX)!=(state.retired_table_blocks==0)
+        || state.table_blocks!=0&&!matches!(state.table_blocks,V10_TABLE_BLOCKS|TABLE_BLOCKS)
+        || state.retired_table_blocks!=0&&(state.retired_table_blocks!=V10_TABLE_BLOCKS||state.table_blocks!=TABLE_BLOCKS)
+    {return Err(ObjectError::CorruptMetadata);}
+    for (extent,blocks) in [(state.table_extent,state.table_blocks),(state.retired_table_extent,state.retired_table_blocks)] {
+        if extent==u32::MAX{continue;}
+        let start=extent as usize;
+        let end=start.checked_add(blocks as usize).ok_or(ObjectError::CorruptMetadata)?;
+        if end>state.total_blocks as usize || (start..end).any(|b|!bit(&state.allocation,b))
+            || state.versions.iter().any(|v|v.used&&(v.extent as usize)<end&&start<v.extent as usize+v.blocks as usize)
+        {return Err(ObjectError::CorruptMetadata);}
     }
+    if state.retired_table_extent!=u32::MAX && state.table_extent < state.retired_table_extent+u32::from(state.retired_table_blocks)
+        && state.retired_table_extent < state.table_extent+u32::from(state.table_blocks)
+    {return Err(ObjectError::CorruptMetadata);}
     let mut saw_unused = false;
     let mut prior = None;
     for o in &state.objects {

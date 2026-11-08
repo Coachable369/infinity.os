@@ -30,12 +30,16 @@ The tool runner mounts only authorized input snapshots. These commands require n
 host OS filesystem or services. `runtime/install/System` is a catalog dependency, and release
 SDK parity checks enumerate its resources automatically.
 
-Format 10 expands bounded object, namespace and version tables to 128 entries.
-Two independent 40 KiB table banks are allocated through the native object
+Format 11 supports 512 objects, 512 namespace entries and 1,024 content versions,
+providing room for the eight supported accounts' seeded homes and SSH keys.
+Two independent 192 KiB table banks are allocated through the native object
 allocator. A commit writes the inactive checksummed bank before publishing its
-root. Formats 4–9 remain readable and migrate on their next commit without moving
-object content. Focused checks cover legacy migration, interrupted writes, table
-corruption, ownership, remounts and capacity rollback.
+root. Formats 4–10 remain readable and migrate on their next commit without moving
+object content. During a format 10 migration, its old 80 KiB bank pair remains
+reserved until both roots reference format 11 banks; the transaction allocator
+prevents early reuse. Focused checks cover both root orientations, every migration
+and retirement write/flush interruption, private key ownership, cold remounts,
+eight seeded homes, physical block reuse and allocation-exhaustion rollback.
 
 Media Player participates in the same desktop stacking order as shell windows.
 Native repaint notifications do not acquire focus; clicking an exposed window

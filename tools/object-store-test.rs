@@ -1,4 +1,5 @@
 mod storage;
+#[path="storage-metadata-fixture.rs"]mod metadata_fixture;
 #[path = "../kernel/storage/spatial_path.rs"]
 mod spatial_path;
 #[path="../sdk/infinity-browser-core/favorites.rs"]
@@ -466,8 +467,7 @@ impl MemoryDisk {
     // ------------------=
     fn table_sector(&self, bank:u64, offset:u64)->usize {
         let header=self.0.borrow()[(STORE_RELATIVE_LBA+bank) as usize];
-        let extent=u32::from_le_bytes(header[40..44].try_into().unwrap()) as u64;
-        (STORE_RELATIVE_LBA+80+extent*8+if bank==BANK_A{0}else{80}+offset) as usize
+        metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,offset) as usize
     }
     // ------------------------=
     // FUNC: legacy_fixture

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#[path="storage-metadata-fixture.rs"]mod metadata_fixture;
 #[path = "../kernel/runtime/mod.rs"] mod runtime;
 #[path = "storage.rs"] mod storage;
 #[path = "../kernel/ui/mod.rs"] mod ui;
@@ -190,21 +191,19 @@ fn enrollment_namespace_capacity() {
     for bank in [storage::object::BANK_A, storage::object::BANK_B] {
         let mut sectors=disk.0.borrow_mut();
         let header=sectors[&(STORE_RELATIVE_LBA+bank)];
-        let extent=u32::from_le_bytes(header[40..44].try_into().unwrap()) as u64;
-        let tables=STORE_RELATIVE_LBA+80+extent*8
-            + if bank==storage::object::BANK_A {0} else {80};
+
         for i in 0..13 {
-            let row=sectors[&(tables+i)];
+            let row=sectors[&metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,i)];
             let offset=if i<6 {5+i} else {25+i-6};
             sectors.insert(STORE_RELATIVE_LBA+bank+offset,row);
         }
         for i in 0..8 {
-            let row=sectors[&(tables+32+i)];
+            let row=sectors[&metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,32+i)];
             let offset=if i<4 {bank+11+i} else {72+if bank==storage::object::BANK_A {0} else {4}+i-4};
             sectors.insert(STORE_RELATIVE_LBA+offset,row);
         }
         for i in 0..11 {
-            let row=sectors[&(tables+48+i)];
+            let row=sectors[&metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,48+i)];
             let offset=if i<8 {bank+15+i} else {2+if bank==storage::object::BANK_A {0} else {3}+i-8};
             sectors.insert(STORE_RELATIVE_LBA+offset,row);
         }

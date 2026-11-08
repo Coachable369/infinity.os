@@ -1,4 +1,5 @@
 mod storage;
+#[path="storage-metadata-fixture.rs"]mod metadata_fixture;
 
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use storage::{
@@ -18,6 +19,14 @@ impl SparseDisk {
     // DESC: Converts a fresh empty fixture's metadata headers into the exact compact v5 shape for migration testing.
     // ------------------=
     fn downgrade_metadata_to_v5(&self) {
+        let mut rows=Vec::new();
+        for bank in [storage::object::BANK_A,storage::object::BANK_B] {
+            let Some(header)=self.bytes.borrow().get(&(STORE_RELATIVE_LBA+bank)).copied()else{continue;};
+            for sector in 0..13 {let source=metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,sector);let offset=if sector<6{5+sector}else{25+sector-6};rows.push((STORE_RELATIVE_LBA+bank+offset,self.bytes.borrow()[&source]));}
+            for sector in 0..8 {let source=metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,32+sector);let offset=if sector<4{bank+11+sector}else{72+if bank==storage::object::BANK_A{0}else{4}+sector-4};rows.push((STORE_RELATIVE_LBA+offset,self.bytes.borrow()[&source]));}
+            for sector in 0..8 {let source=metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,48+sector);rows.push((STORE_RELATIVE_LBA+bank+15+sector,self.bytes.borrow()[&source]));}
+        }
+        for(lba,bytes)in rows{self.bytes.borrow_mut().insert(lba,bytes);}
         for sector in self.bytes.borrow_mut().values_mut() {
             if !sector.starts_with(b"INFO") { continue; }
             sector[8..12].copy_from_slice(&5u32.to_le_bytes());
