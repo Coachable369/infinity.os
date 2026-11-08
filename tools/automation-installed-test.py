@@ -17,6 +17,7 @@ spec = importlib.util.spec_from_file_location("native_editor", ROOT / "tools/nat
 native = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native)
 DOCS = "/home/default/documents/"
+HELLO = "/home/ms9node01/documents/hello.py"
 
 class AutomationGuest(native.NativeGuest):
     # ------------------------=
@@ -129,7 +130,7 @@ def gui_crud(guest, proof):
     wait_ui(guest, 1, 1)
     guest.text("guiprobe")
     guest.key("tab")
-    guest.text(DOCS + "hello.py")
+    guest.text(HELLO)
     for _ in range(3):
         guest.key("tab")
     guest.key("ret")  # Enabled -> disabled.
@@ -175,30 +176,30 @@ def exercise(guest, proof):
     assert not guest.installer and guest.state()[3] == 1
     guest.launch("command", 5)
     wait(guest, lambda _: True, "automation runtime ready")
-    service = created(guest, "service create proof " + DOCS + "hello.py start=manual", 0)
+    service = created(guest, "service create proof " + HELLO + " start=manual", 0)
     guest.command("service start proof")
     proof["daemon_execution"] = completed(guest, service, 1)
     guest.command("service restart proof")
     proof["daemon_restart"] = completed(guest, service, 2)
-    once = created(guest, "schedule create once " + DOCS + "hello.py at=1", 1)
+    once = created(guest, "schedule create once " + HELLO + " at=1", 1)
     proof["once_execution"] = completed(guest, once, 1)
     # A long-running real Python sleep makes stop/kill and overlap assertions observable.
-    guest.command("object create daemonprobe.py")
-    guest.command("object write " + DOCS + "daemonprobe.py import time; time.sleep(600)")
+    guest.command("object create " + DOCS + "daemonprobe.py")
+    guest.command("object write " + DOCS + "daemonprobe.py import time; print(1,flush=True); time.sleep(600)")
     guest.command("service edit proof " + DOCS + "daemonprobe.py enabled=false start=boot delay=2")
     wait(guest, lambda s: not s["rows"][service]["enabled"], "service configuration committed")
     guest.command("service start proof")
-    wait(guest, lambda s: s["rows"][service]["state"] == 2 and s["rows"][service]["executed"], "real daemon started")
+    wait(guest, lambda s: s["rows"][service]["state"] == 2 and s["rows"][service]["stdout"] > 0, "real daemon started")
     guest.command("service stop proof")
     stop = wait(guest, lambda s: s["rows"][service]["state"] == 0, "daemon stopped")["rows"][service]
     assert stop["exit"] == -130 and stop["pid"] == 0, stop
     guest.command("service start proof")
-    wait(guest, lambda s: s["rows"][service]["state"] == 2 and s["rows"][service]["executed"], "daemon restarted")
+    wait(guest, lambda s: s["rows"][service]["state"] == 2 and s["rows"][service]["stdout"] > 0, "daemon restarted")
     guest.command("service kill proof")
     killed = wait(guest, lambda s: s["rows"][service]["state"] == 0, "daemon killed")["rows"][service]
     assert killed["exit"] == -9 and killed["pid"] == 0, killed
     interval = created(guest, "schedule create period " + DOCS + "daemonprobe.py every=1", 1)
-    running = wait(guest, lambda s: s["rows"][interval]["state"] == 2 and s["rows"][interval]["executed"], "scheduled native process running")["rows"][interval]
+    running = wait(guest, lambda s: s["rows"][interval]["state"] == 2 and s["rows"][interval]["stdout"] > 0, "scheduled native process running")["rows"][interval]
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
         current = snapshot(guest)
@@ -209,8 +210,10 @@ def exercise(guest, proof):
     guest.command("schedule disable period")
     guest.command("schedule kill period")
     wait(guest, lambda s: s["rows"][interval]["state"] == 0, "scheduled process killed")
-    guest.command("schedule edit period " + DOCS + "hello.py every=120 enabled=false")
-    configured = wait(guest, lambda s: not s["rows"][interval]["enabled"], "schedule edited")
+    guest.command("schedule edit period " + HELLO + " every=120 enabled=false")
+    guest.command("schedule run period")
+    proof["edited_schedule_execution"] = completed(guest, interval, 2)
+    assert not snapshot(guest)["rows"][interval]["enabled"]
     gui_crud(guest, proof)
     before = snapshot(guest)
     guest.stop()
