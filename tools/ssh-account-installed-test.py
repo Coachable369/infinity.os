@@ -32,10 +32,18 @@ automation_spec.loader.exec_module(automation)
 def export(guest, work, handle):
     assert guest.process is None
     key = work / handle
+    exported = key if not key.exists() else work / (handle + "-verify-" + str(time.time_ns()))
     result = subprocess.run([str(ROOT / "build/cargo/debug/installed-pool-verify"), "--ssh-account-key", "--vm-stopped",
-        str(guest.disk), handle, str(key)], capture_output=True, text=True, check=True, timeout=30)
+        str(guest.disk), handle, str(exported)], capture_output=True, text=True, check=True, timeout=30)
     record = json.loads(result.stdout)
     assert record["registered"] is True
+    if exported != key:
+        try:
+            assert exported.read_bytes() == key.read_bytes()
+            assert exported.with_suffix(".pub").read_bytes() == key.with_suffix(".pub").read_bytes()
+        finally:
+            exported.unlink()
+            exported.with_suffix(".pub").unlink()
     output = subprocess.run(["/usr/bin/ssh-keygen", "-y", "-f", str(key)], capture_output=True, check=True, timeout=10)
     derived = base64.b64decode(output.stdout.split()[1], validate=True)
     saved = base64.b64decode(key.with_suffix(".pub").read_bytes().split()[1], validate=True)
