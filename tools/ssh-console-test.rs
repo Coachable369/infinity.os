@@ -135,7 +135,7 @@ fn synchronous_stream_separator(){
     let mut success=execution::Outcome::new();success.stdout.write(b"result\n");success.finish_command();
     assert_eq!(success.stdout.bytes(),b"result\n\n");assert!(success.stderr.bytes().is_empty());assert_eq!(success.status,0);
     let mut mixed=execution::Outcome::new();mixed.stdout.write(b"result\n");mixed.stderr.write(b"notice\n");mixed.finish_command();
-    assert_eq!(mixed.stdout.bytes(),b"result\n\n");assert_eq!(mixed.stderr.bytes(),b"notice\n");
+    assert_eq!(mixed.stdout.bytes(),b"result\n");assert_eq!(mixed.stderr.bytes(),b"notice\n\n");
     let mut empty=execution::Outcome::new();empty.finish_command();assert_eq!(empty.stdout.bytes(),b"\n");assert!(empty.stderr.bytes().is_empty());
 }
 

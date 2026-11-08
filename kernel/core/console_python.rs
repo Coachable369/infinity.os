@@ -1092,6 +1092,10 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
             generated_event(generated, Event::Failed { code: 4 });
         }
     }
+    if authorized && job.generated.is_none() && console.output.remote.is_none() {
+        let _capture=crate::ui::command_terminal::Capture::new(true);
+        console.output.finish_command();
+    }
     job.generated = None;
     job.recovery=None;job.exception=None;
     job.count = 0;

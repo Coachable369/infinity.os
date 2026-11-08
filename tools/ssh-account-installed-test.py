@@ -26,6 +26,21 @@ automation_spec.loader.exec_module(automation)
 
 
 # ------------------------=
+# FUNC: prepare_helpers
+# DESC: Builds the native read-only artifact verifiers inside the active build-kit run instead of relying on stale host binaries.
+# ------------------=
+def prepare_helpers(artifacts):
+    assert os.environ.get("INFINITY_BUILD_KIT_ACTIVE") == "1"
+    (ROOT / "build/tools").mkdir(parents=True, exist_ok=True)
+    with (artifacts / "host-verifiers.log").open("wb") as log:
+        subprocess.run(["rustc", "--edition=2021", "-A", "warnings", str(ROOT / "tools/installed-object-test.rs"),
+                        "-o", str(ROOT / "build/tools/installed-object-test")], check=True, stdout=log, stderr=subprocess.STDOUT)
+        subprocess.run(["cargo", "build", "--quiet", "--manifest-path", str(ROOT / "tools/behavior-harness/Cargo.toml"),
+                        "--bin", "installed-pool-verify"], check=True, stdout=log, stderr=subprocess.STDOUT,
+                       env={**os.environ, "CARGO_TARGET_DIR": str(ROOT / "build/cargo")})
+
+
+# ------------------------=
 # FUNC: export
 # DESC: Reads only generated identity/key records from a stopped guest, then verifies OpenSSH derives the registered public key.
 # ------------------=
@@ -61,7 +76,7 @@ def client(guest, work, handle, command, key=None):
     argv[-1] = handle + "@127.0.0.1"
     result = subprocess.run(argv + [command], capture_output=True, timeout=30)
     if result.returncode != 255:
-        stream = result.stdout if result.stdout else result.stderr
+        stream = result.stderr if result.stderr else result.stdout
         if not stream.endswith((b"\n\n", b"\r\n\r\n")):
             guest.output_delimiter_failures.append(dict(user=handle, command=command,
                 exit_status=result.returncode, stdout_bytes=len(result.stdout), stderr_bytes=len(result.stderr)))
@@ -179,15 +194,25 @@ def verify_saved_source(guest, evidence, expected):
 def remote_password_input(guest, work):
     accounts.open_accounts(guest)
     before = accounts.directory(accounts.accounts(guest))
+    assert len(before["users"]) == 3
     password = accounts.TEST_PASSWORD.encode("ascii")
-    response = subprocess.run(account_client(guest, work, "ms9node01", "user create handle=sshpipe display-name=SSHPipe"),
-                              input=password + b"\n" + password + b"\n", capture_output=True, timeout=45)
-    assert response.returncode == 0 and not response.stderr, (response.returncode, response.stderr)
-    assert password not in response.stdout and password not in response.stderr
-    accounts.open_accounts(guest)
-    identifier = accounts.created(guest, 0, before, require_feedback=False)
-    return {"user": identifier, "exit_status": response.returncode, "password_echo_bytes": 0,
-            "private_piped_confirmation": True}
+    created = []
+    for index in range(5):
+        handle = "sshpipe" if index == 0 else "sshpipe" + str(index)
+        response = subprocess.run(account_client(guest, work, "ms9node01",
+                                  "user create handle=" + handle + " display-name=" + handle),
+                                  input=password + b"\n" + password + b"\n", capture_output=True, timeout=45)
+        assert password not in response.stdout and password not in response.stderr
+        (work / (handle + "-create-stdout.txt")).write_bytes(response.stdout)
+        (work / (handle + "-create-stderr.txt")).write_bytes(response.stderr)
+        assert response.returncode == 0 and not response.stderr, (handle, response.returncode, response.stderr)
+        accounts.open_accounts(guest)
+        identifier = accounts.created(guest, 0, before, require_feedback=False)
+        created.append(dict(handle=handle, user=identifier))
+        before = accounts.directory(accounts.accounts(guest))
+    assert len(before["users"]) == 8
+    return {"passed": True, "created": created, "supported_accounts": 8, "exit_status": 0,
+            "password_echo_bytes": 0, "private_piped_confirmation": True}
 
 
 # ------------------------=
@@ -348,6 +373,7 @@ def main():
         artifacts.mkdir(parents=True)
         subprocess.run(["cp", "-c", str(media), str(artifacts / "installer.iso")], check=True)
         packaged = native.desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, "aarch64")
+    prepare_helpers(artifacts)
     guest = ssh.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=args.resume, width=1920, height=1080, memory_mb=20480)
     guest.arch, guest.acceleration = "aarch64", "hvf"
     guest.patched, guest.detached_boots = True, []
@@ -425,10 +451,17 @@ def main():
                                  "stdout_bytes": len(response.stdout), "stderr_bytes": len(response.stderr)})
         management = remote_management(guest, work)
         result["remote_management"] = management
-        result["private_password_input"] = remote_password_input(guest, work)
+        try:
+            result["private_password_input"] = remote_password_input(guest, work)
+        except AssertionError as error:
+            result["private_password_input"] = dict(passed=False, failure=repr(error))
         execution, sources = remote_python_and_editor(guest, work)
         result["remote_editor_python"] = execution
         guest.stop()
+        if result["private_password_input"]["passed"]:
+            for account in result["private_password_input"]["created"]:
+                keys[account["handle"]] = export(guest, work, account["handle"])
+            assert len(keys) == 8 and len({item["fingerprint"] for item in keys.values()}) == 8
         execution["stored_source"] = verify_saved_source(guest, execution, sources)
         guest.boot(False)
         result["private_remote_ai"] = remote_ai_detached(guest, work)
@@ -447,6 +480,7 @@ def main():
         guest.authenticate()
         disabled = ssh.state(guest)
         assert disabled[3:5] == (0, 0) and disabled[13:15] == (0, 0)
+        assert result["private_password_input"]["passed"], result["private_password_input"]
         assert not guest.output_delimiter_failures, guest.output_delimiter_failures
         result.update(passed=True, initial=initial, keys=keys, requests=receipts,
             remote_management=management, revoked_key_rejected=True,

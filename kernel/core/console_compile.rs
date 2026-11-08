@@ -699,6 +699,8 @@ unsafe fn poll_lease(console:&mut ConsoleRuntime) {unsafe {
         console.redraw();
     }
     if !finished{return;}
+    let finish_local=allowed && lease.owner==owner && target==ReplyTarget::Console && console.output.remote.is_none();
+    let mut launched=false;
     if workflow_current && lease.owner==owner {
         let mut panel=assistant::read(2);
         let mut published_artifact=false;
@@ -801,6 +803,7 @@ unsafe fn poll_lease(console:&mut ConsoleRuntime) {unsafe {
         launch(console,&launch_path[..launch_length]);
         let launched_context=crate::runtime::ai::application_host::context().map(|context|context.instance)
             .filter(|context|Some(*context)!=previous_context && APP_ACTIVE);
+        launched=launched_context.is_some();
         if let Some(context)=launched_context {
             APP_SOURCE_PATH=lease.source_path;APP_SOURCE_PATH_LENGTH=lease.source_path_length;
             if let Some(mut recovery)=recovery {
@@ -817,6 +820,11 @@ unsafe fn poll_lease(console:&mut ConsoleRuntime) {unsafe {
         if launched_context.is_some() && lease.interaction_length>0 {
             let _=crate::runtime::ai::with_ai_runtime(|ai|ai.start_application_agent(console.current_user.0,console.current_session.0,&lease.interaction_objective[..lease.interaction_length],true));
         }
+    }
+    if finish_local && !launched {
+        let _capture=crate::ui::command_terminal::Capture::new(true);
+        console.output.finish_command();
+        console.redraw();
     }
 }}
 
@@ -920,7 +928,8 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     let Some((owner,task))=(&mut *(&raw mut APP)).as_mut() else{return;};
     if super::remote_commands::foreign_owner(owner.0,console) {return;}
     let attached=crate::ui::editor_chrome::terminal::inspect(|state|state.attached) && console.assistant_owner_alive(2);
-    let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&(console.output.remote.is_some()||console.assistant_owner_alive(1)||attached)&&!APP_CANCEL;
+    let result_authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&(console.output.remote.is_some()||console.assistant_owner_alive(1)||attached);
+    let authorized=result_authorized&&!APP_CANCEL;
     let monitor=APP_MONITOR.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|(c.state,c.budget))).flatten());
     let status=monitor.map(|v|v.0);
     let authorized=authorized && status!=Some(crate::runtime::execution::ContextState::Stopped);
@@ -1039,6 +1048,10 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
             State::Exited(code) if released=>console.output.write_number(b"Program exit status: ",code as u64),
             State::Cancelled=>console.output.write_line(b"Program cancelled."),
             _=>console.output.write_line(b"Program stopped safely (fault, deadline, or resource limit)."),
+        }
+        if result_authorized && console.output.remote.is_none() {
+            let _capture=crate::ui::command_terminal::Capture::new(true);
+            console.output.finish_command();
         }
         console.redraw();
     }

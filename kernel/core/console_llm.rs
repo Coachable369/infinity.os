@@ -307,6 +307,7 @@ impl ConsoleRuntime {
                 let _capture = crate::ui::command_terminal::Capture::new(reply.terminal);
                 self.output.write_number(b"AI response for request ", reply.turn);
                 self.print_llm_response();
+                if self.output.remote.is_none() { self.output.finish_command(); }
                 self.llm_delivered_turn = Some(reply.turn);
                 true
             }

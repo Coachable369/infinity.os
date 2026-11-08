@@ -103,10 +103,10 @@ impl Outcome {
     }
     // ------------------------=
     // FUNC: finish_command
-    // DESC: Separates a synchronous command on the stream carrying its result without inventing stdout for stderr-only failures.
+    // DESC: Separates a synchronous command after its last emitted stream; the transport drains stderr after stdout.
     // ------------------=
     pub fn finish_command(&mut self) {
-        if self.stdout.bytes().is_empty()&&!self.stderr.bytes().is_empty(){self.stderr.write(b"\n");}
+        if !self.stderr.bytes().is_empty(){self.stderr.write(b"\n");}
         else{self.stdout.write(b"\n");}
     }
 }
