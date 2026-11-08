@@ -335,14 +335,14 @@ def main():
         artifacts.mkdir(parents=True)
         subprocess.run(["cp", "-c", str(media), str(artifacts / "installer.iso")], check=True)
         packaged = native.desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, "aarch64")
-    guest = ssh.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=args.resume, width=1920, height=1080, memory_mb=12288)
+    guest = ssh.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=args.resume, width=1920, height=1080, memory_mb=20480)
     guest.arch, guest.acceleration = "aarch64", "hvf"
     guest.patched, guest.detached_boots = True, []
     guest.boot_timeout_seconds, guest.install_timeout_seconds = 600, 1800
     with socket.socket() as reserve:
         reserve.bind(("127.0.0.1", 0))
         guest.ssh_port = reserve.getsockname()[1]
-    result = {"passed": False, "architecture": "aarch64", "media": str(media), "packaged": packaged,
+    result = {"passed": False, "architecture": "aarch64", "memory_mib": guest.memory_mb, "media": str(media), "packaged": packaged,
               "full_kernel_comparison": False}
     try:
         if args.resume:

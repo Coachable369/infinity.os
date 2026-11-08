@@ -552,7 +552,7 @@ class Guest(base.Guest):
         self.log = (self.work / ("installer.log" if installer else "installed.log")).open("ab")
         acceleration=getattr(self,"acceleration","tcg")
         command = ["qemu-system-aarch64", "-machine", "virt", "-accel", acceleration, "-cpu", "host" if acceleration=="hvf" else "max",
-            "-smp", "4", "-m", "12G", "-bios", self.firmware, "-device", "ramfb",
+            "-smp", "4", "-m", f"{self.memory_mb}M", "-bios", self.firmware, "-device", "ramfb",
             "-device", "virtio-rng-pci",
             "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse",
             "-device", "virtio-scsi-pci", "-drive", f"if=none,id=disk,format=raw,file={self.disk}",
@@ -563,7 +563,7 @@ class Guest(base.Guest):
             # Exercise the default PC memory map. Raising max-ram-below-4g
             # does not defeat this machine's 3 GiB alignment cap with 12 GiB RAM.
             command=["qemu-system-x86_64","-machine","pc","-accel","tcg","-cpu","max",
-                "-smp","4","-m","12G","-vga","none","-device","VGA,xres=1024,yres=768,xmax=1024,ymax=768",
+                "-smp","4","-m",f"{self.memory_mb}M","-vga","none","-device","VGA,xres=1024,yres=768,xmax=1024,ymax=768",
                 "-drive",f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                 "-drive",f"if=ide,index=0,format=raw,file={self.disk}",
                 "-netdev","user,id=net","-device","e1000,netdev=net",

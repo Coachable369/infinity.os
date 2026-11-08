@@ -408,13 +408,13 @@ def main():
             assert hashlib.file_digest(source, "sha256").digest() == hashlib.file_digest(previous, "sha256").digest()
         receipt = {"reused": True}
     firmware = args.firmware or Path(f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd")
-    guest = AutomationGuest(work, 1, str(firmware), reuse=reuse, width=1024, height=768, memory_mb=12288)
+    guest = AutomationGuest(work, 1, str(firmware), reuse=reuse, width=1024, height=768, memory_mb=20480)
     guest.arch = args.arch
     guest.acceleration = "hvf" if args.arch == "aarch64" and platform.system() == "Darwin" and platform.machine() == "arm64" else "tcg"
     guest.patched = True
     guest.install_timeout_seconds = 1800 if args.arch == "x86_64" else 900
     guest.boot_timeout_seconds = 600
-    proof = dict(architecture=args.arch, installed_acceptance=False, fresh_install=False,
+    proof = dict(architecture=args.arch, memory_mib=guest.memory_mb, installed_acceptance=False, fresh_install=False,
                  reused_private_disk=reuse, media_kernels=receipt, screenshots=[])
     destination = ROOT / "builds/validation/automation" / args.arch / "installed.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

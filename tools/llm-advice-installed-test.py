@@ -215,13 +215,13 @@ def main():
             marker.write_text(json.dumps(dict(harness="llm-advice-installed-v1", architecture=args.arch,
                                              iso_sha256=iso_digest, media=media), indent=2) + "\n")
     firmware = args.firmware or Path(f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd")
-    guest = AdviceGuest(work, 1, str(firmware), reuse=reuse, width=1024, height=768, memory_mb=12288)
+    guest = AdviceGuest(work, 1, str(firmware), reuse=reuse, width=1024, height=768, memory_mb=20480)
     guest.arch = args.arch
     guest.acceleration = "hvf" if args.arch == "aarch64" and platform.system() == "Darwin" and platform.machine() == "arm64" else "tcg"
     guest.patched = True
     guest.install_timeout_seconds = 1800 if args.arch == "x86_64" else 900
     guest.boot_timeout_seconds = 600
-    proof = dict(architecture=args.arch, installed_acceptance=False, fresh_install=False,
+    proof = dict(architecture=args.arch, memory_mib=guest.memory_mb, installed_acceptance=False, fresh_install=False,
                  reused_private_disk=reuse, source_media=str(iso), iso_sha256=iso_digest,
                  media_kernels=media, screenshots=[], work=str(work), acceleration=guest.acceleration)
     destination = ROOT / "builds/validation/llm-advice" / args.arch / "installed.json"
