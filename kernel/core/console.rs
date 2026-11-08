@@ -432,6 +432,15 @@ impl ConsoleOutput {
     }
 
     // ------------------------=
+    // FUNC: finish_command
+    // DESC: Separates a completed command on its actual output stream, preserving native stderr diagnostics.
+    // ------------------=
+    fn finish_command(&mut self) {
+        if let Some(output)=self.remote.as_mut(){output.finish_command();}
+        else{self.write_line(b"");}
+    }
+
+    // ------------------------=
     // FUNC: write_segments
     // DESC: Writes or updates write segments data.
     // ------------------=
@@ -10276,7 +10285,7 @@ impl ConsoleRuntime {
     fn execute_input(&mut self) {
         let submitted = self.command_length != 0;
         self.execute_input_inner();
-        if submitted { self.output.write_line(b""); }
+        if submitted { self.output.finish_command(); }
     }
 
     // ------------------------=

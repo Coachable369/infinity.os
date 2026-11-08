@@ -56,6 +56,18 @@ fn main() {
             assert_eq!(local_result.operation, result.operation);
             assert_eq!(local_result.status, result.status);
         }
+        let member=match r.identity.manage_accounts(local.id,AccountRequest::CreateUser{handle:b"member",display_name:b"Member",password:b"member password",now:8}).unwrap(){AccountResult::User(user)=>user,_=>panic!()};
+        let member_local=r.identity.create_session(member.id,b"member password",8).unwrap();
+        let member_key=ed25519_dalek::SigningKey::from_bytes(&[8;32]).verifying_key().to_bytes();
+        r.identity.manage_ssh_key_durable(local.id,member.id,member_key,false,8,|_|Ok(())).unwrap();
+        let member_remote=r.identity.create_ssh_session(member.id,member_key,8).unwrap();
+        for session in [member_local.id,member_remote.id]{
+            assert_eq!(execution::execute(r,member.id,session,b"help taskscheduler",8).diagnostic,Diagnostic::Success);
+            assert_eq!(execution::execute(r,member.id,session,b"system status",8).diagnostic,Diagnostic::Success);
+            let result=execution::execute(r,member.id,session,b"node list",8);
+            assert_eq!(result.diagnostic,Diagnostic::Denied);assert_eq!(result.status,126);
+            assert!(result.stdout.bytes().is_empty());assert_eq!(r.capabilities.count(),baseline);
+        }
         for _ in 0..100 {
             let result = execution::execute(r, user.id, remote.id, b"system status", 8);
             assert_eq!(result.status, 0);
@@ -107,6 +119,24 @@ fn main() {
     raw_terminal();
     exec_input();
     output_boundaries();
+    synchronous_stream_separator();
+}
+
+// ------------------------=
+// FUNC: synchronous_stream_separator
+// DESC: Checks exact result-stream framing and unchanged status without using diagnostic prose as an oracle.
+// ------------------=
+fn synchronous_stream_separator(){
+    let mut failure=execution::Outcome::failure(Diagnostic::Denied);
+    let before=failure.stderr.bytes().to_vec();failure.finish_command();
+    assert!(failure.stdout.bytes().is_empty());assert_eq!(failure.stderr.bytes().len(),before.len()+1);
+    assert_eq!(&failure.stderr.bytes()[..before.len()],before);assert!(failure.stderr.bytes().ends_with(b"\n\n"));
+    assert_eq!(failure.status,126);assert_eq!(failure.diagnostic,Diagnostic::Denied);
+    let mut success=execution::Outcome::new();success.stdout.write(b"result\n");success.finish_command();
+    assert_eq!(success.stdout.bytes(),b"result\n\n");assert!(success.stderr.bytes().is_empty());assert_eq!(success.status,0);
+    let mut mixed=execution::Outcome::new();mixed.stdout.write(b"result\n");mixed.stderr.write(b"notice\n");mixed.finish_command();
+    assert_eq!(mixed.stdout.bytes(),b"result\n\n");assert_eq!(mixed.stderr.bytes(),b"notice\n");
+    let mut empty=execution::Outcome::new();empty.finish_command();assert_eq!(empty.stdout.bytes(),b"\n");assert!(empty.stderr.bytes().is_empty());
 }
 
 // ------------------------=

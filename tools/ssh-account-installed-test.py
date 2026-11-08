@@ -53,7 +53,12 @@ def client(guest, work, handle, command, key=None):
     argv[-1] = handle + "@127.0.0.1"
     result = subprocess.run(argv + [command], capture_output=True, timeout=30)
     if result.returncode != 255:
-        assert result.stdout.endswith((b"\n\n", b"\r\n\r\n")), (command, result.returncode, result.stdout[-32:], result.stderr[-32:])
+        stream = result.stdout if result.stdout else result.stderr
+        if not stream.endswith((b"\n\n", b"\r\n\r\n")):
+            guest.output_delimiter_failures.append(dict(user=handle, command=command,
+                exit_status=result.returncode, stdout_bytes=len(result.stdout), stderr_bytes=len(result.stderr)))
+        if command == "list /System":
+            (work / (handle + "-system-list.txt")).write_bytes(result.stdout)
     return result
 
 
@@ -338,6 +343,7 @@ def main():
     guest = ssh.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=args.resume, width=1920, height=1080, memory_mb=20480)
     guest.arch, guest.acceleration = "aarch64", "hvf"
     guest.patched, guest.detached_boots = True, []
+    guest.output_delimiter_failures = []
     guest.boot_timeout_seconds, guest.install_timeout_seconds = 600, 1800
     with socket.socket() as reserve:
         reserve.bind(("127.0.0.1", 0))
@@ -357,42 +363,56 @@ def main():
         host, known_hosts = ssh.keyscan(guest.ssh_port)
         (work / "known_hosts").write_bytes(known_hosts)
         accounts.open_accounts(guest)
-        ui_id = None
-        if args.resume and len(accounts.directory(accounts.accounts(guest))["users"]) == 2:
+        ui_id, cli_id = None, None
+        current = accounts.directory(accounts.accounts(guest))
+        if args.resume and len(current["users"]) in (2, 3):
             prior = previous["accounts_snapshot"]
-            assert accounts.directory(accounts.accounts(guest)) == accounts.directory(prior)
-            ordinary = [identifier for identifier, flags in accounts.directory(prior)["users"].items() if flags == 1]
+            prior_directory = accounts.directory(prior)
+            assert current["groups"] == prior_directory["groups"]
+            assert all(current["users"].get(identifier) == flags for identifier, flags in prior_directory["users"].items())
+            ordinary = [identifier for identifier, flags in prior_directory["users"].items() if flags == 1]
             assert len(ordinary) == 1 and prior[5] == accounts.BROWSE
             ui_id = ordinary[0]
             result["settings_creation_prior_evidence"] = str(work / "result.json")
+            added = set(current["users"]) - set(prior_directory["users"])
+            if added:
+                assert len(added) == 1
+                cli_id = added.pop()
+                assert current["users"][cli_id] == 1
+                result["resumed_existing_cli_fixture"] = cli_id
         if ui_id is None:
             assert len(accounts.directory(accounts.accounts(guest))["users"]) == 1
             ui_id = create_in_settings(guest)
-        before = accounts.directory(accounts.accounts(guest))
-        guest.launch("command", 5)
-        guest.command("user create handle=sshconsole display-name=SSHConsole")
-        for _ in range(2):
-            native.ui.text(guest, accounts.TEST_PASSWORD)
-            guest.key("ret")
-            guest.wait(lambda state: state[71] == 1, "account prompt consumed", timeout=600)
-        accounts.open_accounts(guest)
-        cli_id = accounts.created(guest, 0, before, require_feedback=False)
+        if cli_id is None:
+            before = accounts.directory(accounts.accounts(guest))
+            guest.launch("command", 5)
+            guest.command("user create handle=sshconsole display-name=SSHConsole")
+            for _ in range(2):
+                native.ui.text(guest, accounts.TEST_PASSWORD)
+                guest.key("ret")
+                guest.wait(lambda state: state[71] == 1, "account prompt consumed", timeout=600)
+            accounts.open_accounts(guest)
+            cli_id = accounts.created(guest, 0, before, require_feedback=False)
         assert ui_id != cli_id
         guest.screenshot("generated-key-accounts")
         guest.stop()
         handles = ("ms9node01", "sshsettings", "sshconsole")
         keys = {handle: export(guest, work, handle) for handle in handles}
         assert len({item["fingerprint"] for item in keys.values()}) == len(handles)
+        result["keys"] = keys
         guest.boot(False)
         guest.authenticate()
         ssh.wait_state(guest, lambda s: s[3:5] == (1, 1))
         reboot_host, _ = ssh.keyscan(guest.ssh_port)
         assert reboot_host == host
         receipts = []
+        result["requests"] = receipts
         for handle in handles:
             for command in ("help taskscheduler", "system status", "node list", "list /System", "taskscheduler list", "voice status"):
                 response = client(guest, work, handle, command)
-                assert response.returncode == 0 and response.stdout and not response.stderr
+                expected = 126 if command == "node list" and handle != "ms9node01" else 0
+                assert response.returncode == expected, (handle, command, response.returncode)
+                assert bool(response.stderr) == bool(expected) and (response.stdout or response.stderr)
                 receipts.append({"user": handle, "command": command, "status": response.returncode,
                                  "stdout_bytes": len(response.stdout), "stderr_bytes": len(response.stderr)})
         management = remote_management(guest, work)
@@ -419,6 +439,7 @@ def main():
         guest.authenticate()
         disabled = ssh.state(guest)
         assert disabled[3:5] == (0, 0) and disabled[13:15] == (0, 0)
+        assert not guest.output_delimiter_failures, guest.output_delimiter_failures
         result.update(passed=True, initial=initial, keys=keys, requests=receipts,
             remote_management=management, revoked_key_rejected=True,
             blank_line_command_delimiters=True,
@@ -432,6 +453,7 @@ def main():
         raise
     finally:
         guest.stop()
+        result["output_delimiter_failures"] = guest.output_delimiter_failures
         result["detached_boots"] = guest.detached_boots
         (work / ("resume-result.json" if args.resume else "result.json")).write_text(json.dumps(result, indent=2) + "\n")
 
