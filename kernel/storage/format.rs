@@ -4,7 +4,7 @@ use super::{
     StorageDevice, StorageError, StorageProfile, StorageProvisioningPlan, StorageStrategy,
 };
 
-use super::payload::Image;
+use super::payload::{Image,TransferProgress};
 #[cfg(all(target_arch = "x86_64",not(feature="streamed-payload")))]
 const ESP_IMAGE: Image = Image::embedded(include_bytes!("../../build/x86_64/installed-esp.img"));
 #[cfg(all(target_arch = "x86_64",not(feature="streamed-payload")))]
@@ -343,7 +343,8 @@ fn write_partition(
 // DESC: Writes or updates write esp data.
 // ------------------=
 fn write_esp<D: BlockDevice, F: FnMut(u8, &[u8])>(device: &mut D, plan: &StorageProvisioningPlan, progress: &mut F) -> Result<(), ()> {
-    ESP_IMAGE.transfer(device,plan.esp_first_lba,false,|index| report_transfer(progress,index,ESP_IMAGE.len(),12,23,b"INSTALLING EFI BOOTLOADER AND BOOT ASSETS"))
+    let mut transfer_progress=TransferProgress::new(ESP_IMAGE.len(),12,23);
+    ESP_IMAGE.transfer(device,plan.esp_first_lba,false,|index| report_transfer(progress,index,ESP_IMAGE.len(),&mut transfer_progress,b"INSTALLING EFI BOOTLOADER AND BOOT ASSETS"))
 }
 
 // ------------------------=
@@ -646,12 +647,8 @@ fn verify_system_generation<D: BlockDevice>(
 // FUNC: report_transfer
 // DESC: Reports completed sector work at bounded percentage boundaries, including actual KiB transferred.
 // ------------------=
-fn report_transfer<F: FnMut(u8, &[u8])>(progress: &mut F, index: usize, bytes: usize, start: u8, end: u8, label: &[u8]) {
-    let total = bytes.div_ceil(512).max(1);
-    let completed = (index + 1).min(total);
-    let span = usize::from(end - start);
-    let current = completed * span / total;
-    if current == index * span / total && completed != total { return; }
+fn report_transfer<F: FnMut(u8, &[u8])>(progress: &mut F, sectors: usize, bytes: usize, state:&mut TransferProgress, label: &[u8]) {
+    let Some((percent,completed))=state.advance(sectors)else{return;};
     let mut detail = [0u8; 128];
     let mut length = label.len().min(72);
     detail[..length].copy_from_slice(&label[..length]);
@@ -664,7 +661,7 @@ fn report_transfer<F: FnMut(u8, &[u8])>(progress: &mut F, index: usize, bytes: u
         for digit in digits[..count].iter().rev() { detail[length] = *digit; length += 1; }
         detail[length..length + suffix.len()].copy_from_slice(suffix); length += suffix.len();
     }
-    progress(start + current as u8, &detail[..length]);
+    progress(percent, &detail[..length]);
 }
 
 // ------------------------=
@@ -672,7 +669,8 @@ fn report_transfer<F: FnMut(u8, &[u8])>(progress: &mut F, index: usize, bytes: u
 // DESC: Writes or updates write kernel data.
 // ------------------=
 fn write_kernel<D: BlockDevice, F: FnMut(u8, &[u8])>(device: &mut D, plan: &StorageProvisioningPlan, progress: &mut F) -> Result<(), ()> {
-    KERNEL_IMAGE.transfer(device,plan.kernel_lba,false,|index| report_transfer(progress,index,KERNEL_IMAGE.len(),43,55,b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS"))
+    let mut transfer_progress=TransferProgress::new(KERNEL_IMAGE.len(),43,55);
+    KERNEL_IMAGE.transfer(device,plan.kernel_lba,false,|index| report_transfer(progress,index,KERNEL_IMAGE.len(),&mut transfer_progress,b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS"))
 }
 
 // ------------------------=
@@ -720,7 +718,8 @@ fn verify<D: BlockDevice, F: FnMut(u8, &[u8])>(
     if crc32_slices(&entries) != entries_crc {
         return Err(StorageError::VerifyGpt);
     }
-    ESP_IMAGE.transfer(device,plan.esp_first_lba,true,|index| report_transfer(progress,index,ESP_IMAGE.len(),67,73,b"VERIFYING EFI BOOTLOADER AND BOOT ASSETS")).map_err(|_|StorageError::VerifyBootEnvironment)?;
+    let mut transfer_progress=TransferProgress::new(ESP_IMAGE.len(),67,73);
+    ESP_IMAGE.transfer(device,plan.esp_first_lba,true,|index| report_transfer(progress,index,ESP_IMAGE.len(),&mut transfer_progress,b"VERIFYING EFI BOOTLOADER AND BOOT ASSETS")).map_err(|_|StorageError::VerifyBootEnvironment)?;
     if !device.read_sector(plan.container_first_lba, &mut sector)
         || &sector[..8] != b"INFCONT1"
         || !valid_record(&sector, 512, 508)
@@ -740,7 +739,8 @@ fn verify<D: BlockDevice, F: FnMut(u8, &[u8])>(
     {
         return Err(StorageError::VerifySpaces);
     }
-    KERNEL_IMAGE.transfer(device,plan.kernel_lba,true,|index| report_transfer(progress,index,KERNEL_IMAGE.len(),73,78,b"VERIFYING INSTALLED KERNEL AND CORE COMPONENTS")).map_err(|_|StorageError::VerifyKernel)?;
+    let mut transfer_progress=TransferProgress::new(KERNEL_IMAGE.len(),73,78);
+    KERNEL_IMAGE.transfer(device,plan.kernel_lba,true,|index| report_transfer(progress,index,KERNEL_IMAGE.len(),&mut transfer_progress,b"VERIFYING INSTALLED KERNEL AND CORE COMPONENTS")).map_err(|_|StorageError::VerifyKernel)?;
     Ok(())
 }
 

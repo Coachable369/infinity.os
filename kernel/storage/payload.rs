@@ -7,6 +7,28 @@ pub struct Image {
     pub slot: u32,
     pub sha256: [u8; 32],
 }
+pub struct TransferProgress {
+    total:usize,start:u8,end:u8,last:u8,
+}
+impl TransferProgress {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Tracks the last published percentage independently of the payload's transfer batch size.
+    // ------------------=
+    pub fn new(bytes:usize,start:u8,end:u8)->Self {
+        Self{total:bytes.div_ceil(512).max(1),start,end:end.max(start),last:start}
+    }
+    // ------------------------=
+    // FUNC: advance
+    // DESC: Reports a newly crossed percentage from actual completed sectors without duplicating or regressing progress.
+    // ------------------=
+    pub fn advance(&mut self,completed:usize)->Option<(u8,usize)> {
+        let completed=completed.min(self.total);
+        let percent=self.start+(completed*usize::from(self.end-self.start)/self.total)as u8;
+        if percent<=self.last{return None;}
+        self.last=percent;Some((percent,completed))
+    }
+}
 static mut BRIDGE: u64 = 0;
 // ------------------------=
 // FUNC: initialize
@@ -116,7 +138,7 @@ impl Image {
                 return Err(());
             }
             offset += count;
-            progress(offset / 512);
+            progress(offset.div_ceil(512));
         }
         if self.bytes.is_empty() && hash.finalize().as_slice() != self.sha256 {
             return Err(());

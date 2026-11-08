@@ -46,6 +46,7 @@ impl BlockDevice for Disk {
 // DESC: Verifies numeric decoding and installation failure semantics using structured values.
 // ------------------=
 fn main() {
+    batched_installation_progress();
     let mut decoded = [0f32; 256];
     let mut q4 = [0u8; 144];
     q4[0..2].copy_from_slice(&0x3c00u16.to_le_bytes());
@@ -84,4 +85,27 @@ fn main() {
     let writes = disk.writes;
     assert!(image.transfer(&mut disk, u64::MAX, false, |_| {}).is_err());
     assert_eq!(writes, disk.writes);
+}
+
+// ------------------------=
+// FUNC: batched_installation_progress
+// DESC: Exercises production transfer callbacks across 128-sector boundaries and a partial final sector, including the retained x86 ESP geometry.
+// ------------------=
+fn batched_installation_progress(){
+    static SOURCE:[u8;65536*3+7]=[37;65536*3+7];
+    let image=payload::Image::embedded(&SOURCE);
+    let mut disk=Disk{data:vec![0;(SOURCE.len().div_ceil(512)+1)*512],writes:0,fail:false};
+    for verify in [false,true]{
+        let mut progress=payload::TransferProgress::new(SOURCE.len(),67,73);
+        let mut callbacks=Vec::new();let mut reported=Vec::new();
+        image.transfer(&mut disk,1,verify,|sectors|{callbacks.push(sectors);if let Some(value)=progress.advance(sectors){reported.push(value);}}).unwrap();
+        assert_eq!(callbacks,[128,256,384,385]);
+        assert_eq!(reported,[(68,128),(70,256),(72,384),(73,385)]);
+        assert_eq!(progress.advance(385),None);assert_eq!(progress.advance(128),None);
+    }
+    let bytes=5_771_362_304usize;let mut progress=payload::TransferProgress::new(bytes,67,73);let mut reported=Vec::new();
+    for completed in (128..=bytes/512).step_by(128){if let Some((percent,_))=progress.advance(completed){reported.push(percent);}}
+    assert_eq!(reported,[68,69,70,71,72,73]);
+    disk.fail=true;let mut callbacks=0;
+    assert!(image.transfer(&mut disk,1,false,|_|callbacks+=1).is_err());assert_eq!(callbacks,0);
 }

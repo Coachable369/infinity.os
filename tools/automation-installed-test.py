@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -21,6 +22,81 @@ DOCS = "/home/default/documents/"
 HELLO = "/home/ms9node01/documents/hello.py"
 
 class AutomationGuest(native.NativeGuest):
+    # ------------------------=
+    # FUNC: sample_installer_io
+    # DESC: Persists bounded x86-only read diagnostics without changing guest state or using prose as an acceptance oracle.
+    # ------------------=
+    def sample_installer_io(self, state, force=False):
+        if getattr(self, "arch", None) != "x86_64" or not getattr(self, "installer", False):
+            return
+        now = time.monotonic_ns()
+        if not force and now < getattr(self, "installer_io_next_ns", 0):
+            return
+        self.installer_io_next_ns = now + 10_000_000_000
+        record = dict(monotonic_ns=now, disk=str(self.disk), state=None)
+        if state is not None:
+            record["state"] = dict(sequence=state[2], installed=state[3], mode=state[4],
+                                   installer_step=state[5], focus=state[6], clock=state[10])
+        if self.process is None or self.process.poll() is not None:
+            record["process_exit"] = None if self.process is None else self.process.returncode
+        else:
+            try:
+                target = None
+                for block in self.qmp("query-block"):
+                    inserted = block.get("inserted", {})
+                    filename = inserted.get("file") or inserted.get("image", {}).get("filename")
+                    if filename and Path(filename).resolve() == self.disk.resolve():
+                        target = block
+                        break
+                if target is None:
+                    record["disk_error"] = "target_not_found"
+                else:
+                    record["qmp_device"] = target.get("device")
+                    target_node = target.get("inserted", {}).get("node-name")
+                    for entry in self.qmp("query-blockstats"):
+                        if (record["qmp_device"] and entry.get("device") == record["qmp_device"]) or (target_node and entry.get("node-name") == target_node):
+                            stats = entry.get("stats", {})
+                            record["counters"] = {name: stats[name] for name in
+                                ("rd_bytes", "wr_bytes", "rd_operations", "wr_operations")
+                                if type(stats.get(name)) is int and stats[name] >= 0}
+                            break
+                    if "counters" not in record:
+                        record["disk_error"] = "counters_not_found"
+            except Exception as error:
+                record["disk_error"] = type(error).__name__
+            if getattr(self, "installer_io_rip", True):
+                try:
+                    registers = self.qmp("human-monitor-command", {"command-line": "info registers"})
+                    rip = re.search(r"\bRIP=([0-9a-fA-F]+)", registers)
+                    if rip:
+                        record["rip"] = int(rip[1], 16)
+                except Exception as error:
+                    record["rip_error"] = type(error).__name__
+        with (self.work / "installer-io.jsonl").open("a") as trace:
+            trace.write(json.dumps(record) + "\n")
+
+    # ------------------------=
+    # FUNC: state
+    # DESC: Samples target disk counters at ten-second intervals during existing x86 installer-state polling.
+    # ------------------=
+    def state(self):
+        state = super().state()
+        if getattr(self, "arch", None) == "x86_64" and getattr(self, "installer", False):
+            self.installer_io_state = state
+            self.sample_installer_io(state)
+        return state
+
+    # ------------------------=
+    # FUNC: wait
+    # DESC: Retains final installer diagnostics on success or failure while preserving the existing behavioral predicate and timeout.
+    # ------------------=
+    def wait(self, predicate, label, timeout=120):
+        try:
+            return super().wait(predicate, label, timeout)
+        finally:
+            if getattr(self, "arch", None) == "x86_64" and getattr(self, "installer", False):
+                self.sample_installer_io(getattr(self, "installer_io_state", None), force=True)
+
     # ------------------------=
     # FUNC: text
     # DESC: Types script punctuation through actual keyboard events without writing guest memory.
@@ -359,6 +435,9 @@ def main():
         raise
     finally:
         guest.stop()
+        trace = guest.work / "installer-io.jsonl"
+        if trace.is_file():
+            proof["installer_io_trace"] = str(trace)
         proof["work"] = str(work)
         destination.write_text(json.dumps(proof, indent=2) + "\n")
 
