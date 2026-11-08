@@ -480,6 +480,14 @@ class Guest:
         return self.cold_boot_proof(before)
 
     # ------------------------=
+    # FUNC: return_to_desktop
+    # DESC: Dismisses the restored foreground surface through its normal keyboard action.
+    # ------------------=
+    def return_to_desktop(self, state):
+        if state[4] != 5:
+            self.key("esc")
+
+    # ------------------------=
     # FUNC: authenticate
     # DESC: Authenticates the actual password field, then returns a legitimately restored application to Desktop through normal input.
     # ------------------=
@@ -495,8 +503,7 @@ class Guest:
         self.key("ret")
         state = self.wait(lambda state: state[4] not in (9, 10) and state[9] & 3 == 3,
                           "authenticated installed session")
-        if state[4] != 5:
-            self.key("esc")
+        self.return_to_desktop(state)
         return self.wait(lambda state: state[4] == 5 and state[9] & 3 == 3, "authenticated desktop")
 
     # ------------------------=

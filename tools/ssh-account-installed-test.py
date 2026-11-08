@@ -343,7 +343,8 @@ def main():
         reserve.bind(("127.0.0.1", 0))
         guest.ssh_port = reserve.getsockname()[1]
     result = {"passed": False, "architecture": "aarch64", "memory_mib": guest.memory_mb, "media": str(media), "packaged": packaged,
-              "full_kernel_comparison": False}
+              "full_kernel_comparison": False, "fresh_install": not args.resume,
+              "reused_private_disk": args.resume}
     try:
         if args.resume:
             guest.boot(False)
@@ -356,8 +357,17 @@ def main():
         host, known_hosts = ssh.keyscan(guest.ssh_port)
         (work / "known_hosts").write_bytes(known_hosts)
         accounts.open_accounts(guest)
-        assert len(accounts.directory(accounts.accounts(guest))["users"]) == 1
-        ui_id = create_in_settings(guest)
+        ui_id = None
+        if args.resume and len(accounts.directory(accounts.accounts(guest))["users"]) == 2:
+            prior = previous["accounts_snapshot"]
+            assert accounts.directory(accounts.accounts(guest)) == accounts.directory(prior)
+            ordinary = [identifier for identifier, flags in accounts.directory(prior)["users"].items() if flags == 1]
+            assert len(ordinary) == 1 and prior[5] == accounts.BROWSE
+            ui_id = ordinary[0]
+            result["settings_creation_prior_evidence"] = str(work / "result.json")
+        if ui_id is None:
+            assert len(accounts.directory(accounts.accounts(guest))["users"]) == 1
+            ui_id = create_in_settings(guest)
         before = accounts.directory(accounts.accounts(guest))
         guest.launch("command", 5)
         guest.command("user create handle=sshconsole display-name=SSHConsole")

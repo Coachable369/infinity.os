@@ -45,6 +45,18 @@ ui.click = adaptive_click
 
 class NativeGuest(desktop.Guest):
     # ------------------------=
+    # FUNC: return_to_desktop
+    # DESC: Closes restored Settings through its actual titlebar because Escape only changes its internal focus.
+    # ------------------=
+    def return_to_desktop(self, state):
+        if state[4] == 8:
+            chrome = read(self, "INFINITY_WINDOW_CONTROL_SNAPSHOT", 81)
+            assert chrome[:2] == (0x494e465743545231, 1) and chrome[56] == 1
+            adaptive_click(self, chrome[66], chrome[67])
+        else:
+            super().return_to_desktop(state)
+
+    # ------------------------=
     # FUNC: launch
     # DESC: Uses the dock launcher so a restored editor cannot consume slash as document text.
     # ------------------=
@@ -52,6 +64,9 @@ class NativeGuest(desktop.Guest):
         state = self.state()
         if state[4] in (9, 10):
             state = self.authenticate()
+        if state[4] == 8:
+            self.return_to_desktop(state)
+            state = self.wait(lambda s: s[4] == 5, "Settings returned to desktop", timeout=30)
         width, height = state[11:13]
         scale = 2 if width >= 2560 and height >= 1440 else 1
         dock_width = width * 54 // 100
