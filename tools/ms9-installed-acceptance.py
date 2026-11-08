@@ -62,7 +62,7 @@ class Guest:
         self.mesh_port = None
         self.mesh_connect = False
         self.width, self.height = width, height
-        assert 512 <= memory_mb <= 16384
+        assert 512 <= memory_mb <= 20480
         self.memory_mb = memory_mb
         self.last_pairing = None
         self.last_remote = None
