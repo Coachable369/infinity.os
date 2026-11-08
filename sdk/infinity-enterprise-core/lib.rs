@@ -112,7 +112,7 @@ pub fn sensitive(text:&[u8])->bool {
 }
 
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum Error {Capacity,UnsafeText,Invalid,Storage,Integrity,Conflict}
+pub enum Error {Capacity,UnsafeText,Invalid,Storage,Integrity,Conflict,Denied}
 
 pub const COMMANDS:&[&[u8]]=&[b"work help",b"work clipboard clear",b"work clipboard status",b"work clipboard ttl ",
     b"work clipboard browser-read ",b"work clipboard browser-write ",b"work history find ",b"work history clear",

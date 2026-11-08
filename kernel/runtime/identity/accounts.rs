@@ -355,6 +355,7 @@ impl IdentitySystem {
                 && self.machine.is_some_and(|machine| machine.id == session.machine)
                 && self.user(session.user).is_some_and(|user| user.state == UserState::Active)
                 && session.capabilities & SESSION_SETTINGS_READ != 0
+                && (session.origin!=SessionOrigin::Ssh||self.console_session_authorized(session.id,session.user))
         }).copied().ok_or(IdentityError::AccessDenied)
     }
 

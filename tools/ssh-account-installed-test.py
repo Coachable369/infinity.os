@@ -6,16 +6,23 @@ disposable guest solely to supply standard OpenSSH client fixtures.
 import argparse
 import base64
 import importlib.util
+import hashlib
 import json
+import os
 from pathlib import Path
+import select
 import socket
 import subprocess
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("ssh_acceptance", ROOT / "tools/ssh-installed-test.py")
 ssh = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ssh)
 accounts, native = ssh.accounts, ssh.native
+automation_spec = importlib.util.spec_from_file_location("ssh_automation_acceptance", ROOT / "tools/automation-installed-test.py")
+automation = importlib.util.module_from_spec(automation_spec)
+automation_spec.loader.exec_module(automation)
 
 
 # ------------------------=
@@ -44,7 +51,164 @@ def export(guest, work, handle):
 def client(guest, work, handle, command, key=None):
     argv = ssh.client(work, guest.ssh_port, key=key or handle)
     argv[-1] = handle + "@127.0.0.1"
-    return subprocess.run(argv + [command], capture_output=True, timeout=30)
+    result = subprocess.run(argv + [command], capture_output=True, timeout=30)
+    if result.returncode != 255:
+        assert result.stdout.endswith((b"\n\n", b"\r\n\r\n")), (command, result.returncode, result.stdout[-32:], result.stderr[-32:])
+    return result
+
+
+# ------------------------=
+# FUNC: account_client
+# DESC: Builds an isolated non-PTY OpenSSH channel for binary streams and application-owned keyboard input.
+# ------------------=
+def account_client(guest, work, handle, command):
+    argv = ssh.client(work, guest.ssh_port, key=handle, extra=("-T",))
+    argv[-1] = handle + "@127.0.0.1"
+    return argv + [command]
+
+
+# ------------------------=
+# FUNC: edit_source
+# DESC: Exercises the native remote editor through ANSI mode transitions and real save/exit control bytes.
+# ------------------=
+def edit_source(guest, work, path, source, label):
+    process = subprocess.Popen(account_client(guest, work, "ms9node01", "edit " + path),
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    received = bytearray()
+    transcript = work / (label + ".bin")
+    try:
+        deadline = time.monotonic() + 30
+        while b"\x1b[?1049h" not in received:
+            assert process.poll() is None, {"editor_exit": process.returncode}
+            assert time.monotonic() < deadline, {"editor_mode_bytes": len(received)}
+            if select.select([process.stdout], [], [], .1)[0]:
+                chunk = os.read(process.stdout.fileno(), 16384)
+                assert chunk
+                received.extend(chunk)
+                assert len(received) <= 65536
+        # The transport must deliver Ctrl-A, source bytes, save and exit in
+        # order even when SSH stdin EOF immediately follows the same packet.
+        payload = b"\x01" + source + b"\x13\x18"
+        assert len(payload) < 512
+        stdout, stderr = process.communicate(payload, timeout=45)
+        received.extend(stdout)
+        assert len(received) <= 2_000_000
+        assert process.returncode == 0 and not stderr, {"exit": process.returncode, "stderr": stderr}
+        assert b"\x1b[?1049l" in received and b"\x1b[?25h" in received
+        transcript.write_bytes(received)
+        return {"exit_status": process.returncode, "alternate_screen_entered": True,
+                "alternate_screen_left": True, "protocol_bytes": len(received),
+                "transcript": str(transcript), "sha256": hashlib.sha256(received).hexdigest()}
+    finally:
+        transcript.write_bytes(received)
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=10)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            stream.close()
+
+
+# ------------------------=
+# FUNC: remote_python_and_editor
+# DESC: Verifies native remote source creation/revision, two piped input lines, EOF, binary streams and actual process status.
+# ------------------=
+def remote_python_and_editor(guest, work):
+    path = automation.DOCS + "ssh-input-" + str(time.time_ns()) + ".py"
+    source = (b"import sys\na=int(input())\nb=int(input())\n"
+              b"assert sys.stdin.read()==''\n"
+              b"sys.stdout.buffer.write(bytes([0,255,a,b,a+b,0]))\n"
+              b"sys.stderr.buffer.write(bytes([0,254,b,a,0]))\n"
+              b"sys.exit(a+b)\n")
+    original = source.replace(b"sys.exit(a+b)", b"sys.exit(a+b-1)")
+    created = edit_source(guest, work, path, original, "ssh-editor-create")
+    edited = edit_source(guest, work, path, source, "ssh-editor-save")
+    before = native.read(guest, "INFINITY_PYTHON_SNAPSHOT", 10)
+    response = subprocess.run(account_client(guest, work, "ms9node01", "python " + path),
+                              input=b"37\n5\n", capture_output=True, timeout=90)
+    (work / "ssh-python-stdout.bin").write_bytes(response.stdout)
+    (work / "ssh-python-stderr.bin").write_bytes(response.stderr)
+    assert response.returncode == 42, {"exit": response.returncode, "stderr": response.stderr}
+    # These are binary application protocol frames, not diagnostic-copy checks.
+    frames = response.stdout.split(b"\0")
+    assert len(frames) == 3 and frames[1] == bytes([255, 37, 5, 42])
+    assert response.stderr.split(b"\0") == [b"", bytes([254, 5, 37]), b""]
+    finished = native.read(guest, "INFINITY_PYTHON_SNAPSHOT", 10)
+    assert finished[:2] == (0x494e46505954484e, 1) and finished[2] > before[2]
+    assert finished[3:7] == (2, 42, 6, 5), finished
+    return {"path": path, "create": created, "edit": edited, "native_process": finished,
+            "exit_status": response.returncode, "stdin_lines": 2, "stdin_eof": True,
+            "binary_stdout": [0, 255, 37, 5, 42, 0], "binary_stderr": [0, 254, 5, 37, 0]}, (original, source)
+
+
+# ------------------------=
+# FUNC: verify_saved_source
+# DESC: Matches both actual editor revisions against read-only native disk extraction after stopping the disposable guest.
+# ------------------=
+def verify_saved_source(guest, evidence, expected):
+    assert guest.process is None
+    exported = native.export_generated_artifacts(guest, None, "aarch64")
+    rows = [item for item in exported["artifacts"]
+            if bytes.fromhex(item["path_hex"]).decode("ascii") == evidence["path"]]
+    assert len(rows) == 2 and sum(bool(item["current"]) for item in rows) == 1
+    rows.sort(key=lambda item: item["version"])
+    for row, source in zip(rows, expected):
+        content = (Path(exported["directory"]) / row["file"]).read_bytes()
+        assert content == source and row["bytes"] == len(source)
+    assert rows[0]["object"] == rows[1]["object"] and rows[0]["version"] < rows[1]["version"]
+    assert rows[-1]["current"]
+    return {"directory": exported["directory"], "revisions": rows, "exact_bytes_verified": True}
+
+
+# ------------------------=
+# FUNC: remote_password_input
+# DESC: Creates an account through private exec stdin and confirms a committed identity without accepting password echo or command prose.
+# ------------------=
+def remote_password_input(guest, work):
+    accounts.open_accounts(guest)
+    before = accounts.directory(accounts.accounts(guest))
+    password = accounts.TEST_PASSWORD.encode("ascii")
+    response = subprocess.run(account_client(guest, work, "ms9node01", "user create handle=sshpipe display-name=SSHPipe"),
+                              input=password + b"\n" + password + b"\n", capture_output=True, timeout=45)
+    assert response.returncode == 0 and not response.stderr, (response.returncode, response.stderr)
+    assert password not in response.stdout and password not in response.stderr
+    accounts.open_accounts(guest)
+    identifier = accounts.created(guest, 0, before, require_feedback=False)
+    return {"user": identifier, "exit_status": response.returncode, "password_echo_bytes": 0,
+            "private_piped_confirmation": True}
+
+
+# ------------------------=
+# FUNC: remote_ai_detached
+# DESC: Requires private AI exec completion while the desktop is logged out and verifies no reply survives into another authenticated session.
+# ------------------=
+def remote_ai_detached(guest, work):
+    login = guest.wait(lambda state: state[3] == 1 and state[4] in (9, 10), "logged-out remote AI")
+    ssh.wait_state(guest, lambda state: state[3:5] == (1, 1))
+    handles = ("sshsettings", "sshconsole")
+    empty = {}
+    for handle in handles:
+        response = client(guest, work, handle, "ai response")
+        assert response.returncode == 0 and not response.stderr and response.stdout
+        empty[handle] = response.stdout
+    before = ssh.console_state(guest)
+    response = subprocess.run(account_client(guest, work, handles[0],
+        "ai ask Explain why backups should be tested in one short sentence."), capture_output=True, timeout=180)
+    assert response.returncode == 0 and not response.stderr and response.stdout, (response.returncode, response.stderr)
+    assert len(response.stdout) > len(empty[handles[0]])
+    (work / "ssh-private-ai-response.bin").write_bytes(response.stdout)
+    ssh.wait_state(guest, lambda state: state[6] == 0)
+    completed = ssh.console_state(guest)
+    assert completed[3] == before[3] + 1 and completed[7] == 0
+    assert guest.state()[4] in (9, 10) and guest.state()[9] & 2 == 0
+    for handle in handles:
+        after = client(guest, work, handle, "ai response")
+        assert after.returncode == 0 and not after.stderr and after.stdout == empty[handle]
+    return {"request_user": handles[0], "desktop_logged_out": True,
+            "exit_status": response.returncode, "channel_stdout_bytes": len(response.stdout),
+            "channel_sha256": hashlib.sha256(response.stdout).hexdigest(),
+            "new_session_reply_erased": True, "other_user_reply_isolated": True,
+            "native_token_counters": "Covered by the separate real-native remote-advice harness",
+            "login_mode": login[4], "completion_count": completed[3]}
 
 
 # ------------------------=
@@ -75,6 +239,78 @@ def create_in_settings(guest):
             accounts.wait_accounts(guest, lambda s: s[13:15] == (target, argument))
             native.ui.text(guest, value)
     return accounts.created(guest, 0, before)
+
+
+# ------------------------=
+# FUNC: remote_created
+# DESC: Creates through stock SSH and resolves the committed stable identifier from native catalog memory.
+# ------------------=
+def remote_created(guest, work, command, kind):
+    before = set(automation.wait(guest, lambda _: True, "remote catalog ready")["rows"])
+    response = client(guest, work, "ms9node01", command)
+    assert response.returncode == 0 and not response.stderr, (response.returncode, response.stderr)
+    current = automation.wait(guest, lambda s: len(set(s["rows"]) - before) == 1, "SSH-created catalog row")
+    identifier = (set(current["rows"]) - before).pop()
+    assert current["rows"][identifier]["kind"] == kind
+    return identifier
+
+
+# ------------------------=
+# FUNC: remote_management
+# DESC: Verifies same-user remote CRUD and native execution while ordinary accounts cannot mutate shared jobs.
+# ------------------=
+def remote_management(guest, work):
+    script = automation.HELLO
+    service = remote_created(guest, work, f"service create sshworker {script} start=manual enabled=false", 0)
+    cron = remote_created(guest, work, f'taskscheduler create sshcron {script} cron="* * * * *" enabled=false', 1)
+    assert automation.snapshot(guest)["rows"][cron]["next"] % 60 == 0
+    for command in ("service edit sshworker restart=on-failure", "service run sshworker"):
+        response = client(guest, work, "ms9node01", command)
+        assert response.returncode == 0 and not response.stderr, (command, response.returncode, response.stderr)
+    completion = automation.completed(guest, service, 1)
+    for handle in ("sshsettings", "sshconsole"):
+        before = automation.snapshot(guest)
+        for command in (f"service create denied {script}", "service start sshworker",
+                        f'taskscheduler create denied {script} cron="*/5 * * * *"',
+                        "taskscheduler enable sshcron", "service logs sshworker"):
+            response = client(guest, work, handle, command)
+            assert response.returncode == 126, (handle, command, response.returncode)
+            after = automation.wait(guest, lambda s: s["revision"] >= before["revision"], "denied remote command settled")
+            assert after["revision"] == before["revision"] and after["rows"] == before["rows"]
+    guest.launch("task manager", 5)
+    guest.key("tab")
+    guest.key("tab")
+    guest.key("ret")
+    view = automation.wait_ui(guest, 1, 0)
+    assert view[6] == 1
+    service_screen = str(guest.screenshot("ssh-created-local-service"))
+    guest.key("tab")
+    guest.key("ret")
+    view = automation.wait_ui(guest, 2, 0)
+    assert view[6] == 1
+    cron_screen = str(guest.screenshot("ssh-created-local-cron"))
+    response = client(guest, work, "ms9node01", "service delete sshworker")
+    assert response.returncode == 0
+    automation.wait(guest, lambda s: service not in s["rows"], "remote daemon deletion")
+    saved = automation.snapshot(guest)["rows"][cron]
+    guest.stop()
+    guest.boot(False)
+    guest.authenticate()
+    ssh.wait_state(guest, lambda s: s[3:5] == (1, 1))
+    restored = automation.wait(guest, lambda s: cron in s["rows"], "cron cold reboot")["rows"][cron]
+    for field in ("id", "kind", "runs", "next", "enabled"):
+        assert restored[field] == saved[field], (field, restored, saved)
+    assert client(guest, work, "ms9node01", "taskscheduler enable sshcron").returncode == 0
+    enabled = automation.wait(guest, lambda s: s["rows"][cron]["enabled"], "remote cron enabled")["rows"][cron]
+    assert enabled["next"] % 60 == 0
+    completed = automation.completed(guest, cron, restored["runs"] + 1)
+    assert client(guest, work, "ms9node01", "taskscheduler disable sshcron").returncode == 0
+    automation.wait(guest, lambda s: not s["rows"][cron]["enabled"], "remote cron disabled")
+    assert client(guest, work, "ms9node01", "taskscheduler delete sshcron").returncode == 0
+    automation.wait(guest, lambda s: cron not in s["rows"], "remote cron deletion")
+    return dict(service_id=service, cron_id=cron, service_completion=completion,
+                cron_completion=completed, cron_reboot=restored, ordinary_mutations_denied=True,
+                screenshots=[service_screen, cron_screen])
 
 
 # ------------------------=
@@ -144,15 +380,27 @@ def main():
         assert reboot_host == host
         receipts = []
         for handle in handles:
-            for command in ("help", "system status", "node list"):
+            for command in ("help taskscheduler", "system status", "node list", "list /System", "taskscheduler list", "voice status"):
                 response = client(guest, work, handle, command)
                 assert response.returncode == 0 and response.stdout and not response.stderr
                 receipts.append({"user": handle, "command": command, "status": response.returncode,
                                  "stdout_bytes": len(response.stdout), "stderr_bytes": len(response.stderr)})
-            denied = client(guest, work, handle, "voice status")
-            assert denied.returncode == 126 and denied.stderr
+        management = remote_management(guest, work)
+        result["remote_management"] = management
+        result["private_password_input"] = remote_password_input(guest, work)
+        execution, sources = remote_python_and_editor(guest, work)
+        result["remote_editor_python"] = execution
+        guest.stop()
+        execution["stored_source"] = verify_saved_source(guest, execution, sources)
+        guest.boot(False)
+        result["private_remote_ai"] = remote_ai_detached(guest, work)
+        guest.authenticate()
         wrong = client(guest, work, "sshsettings", "help", key="sshconsole")
         assert wrong.returncode == 255
+        public = (work / "sshconsole.pub").read_text().split()
+        revoke = client(guest, work, "ms9node01", f"ssh key revoke sshconsole {public[0]} {public[1]}")
+        assert revoke.returncode == 0
+        assert client(guest, work, "sshconsole", "system status").returncode == 255
         ssh.wait_state(guest, lambda s: s[6] == 0)
         ssh.command(guest, "ssh disable")
         ssh.wait_state(guest, lambda s: s[3:5] == (0, 0) and s[13:15] == (0, 0))
@@ -162,6 +410,8 @@ def main():
         disabled = ssh.state(guest)
         assert disabled[3:5] == (0, 0) and disabled[13:15] == (0, 0)
         result.update(passed=True, initial=initial, keys=keys, requests=receipts,
+            remote_management=management, revoked_key_rejected=True,
+            blank_line_command_delimiters=True,
             cross_user_authentication_rejected=True, saved_disable_survives_reboot=True,
             host_key_persistent=True, disabled=disabled)
     except BaseException as error:

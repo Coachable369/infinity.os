@@ -1,11 +1,11 @@
-//! Local administration only. The SSH transport never receives a ConsoleRuntime.
+//! Shared authenticated SSH administration and connection commands for local and remote Console sessions.
 use super::ConsoleRuntime;
 use infinity_ssh::management::{self, Command};
 
 impl ConsoleRuntime {
     // ------------------------=
     // FUNC: ssh_command
-    // DESC: Provides local listener configuration and public-key provisioning without adding any remote command capability.
+    // DESC: Uses the authenticated Console identity for listener configuration, public-key provisioning, and outbound connections.
     // ------------------=
     pub(super) fn ssh_command(&mut self, command: &[u8]) -> bool {
         if command.trim_ascii().split(u8::is_ascii_whitespace).next() != Some(b"ssh".as_slice()) { return false; }
@@ -15,7 +15,7 @@ impl ConsoleRuntime {
                 if let Some(status) = crate::drivers::ssh::status() {
                     match management::availability(status.enabled,status.listening,status.endpoint,status.host_ready,status.network_ready,status.last_failure) {
                         management::Availability::Listening { address, port } => {
-                            self.output.write_line(b"SSH listening. Password or public key; restricted native Console queries.");
+                            self.output.write_line(b"SSH listening. Password or public key; the same native CLI and account permissions as Command Window.");
                             let (endpoint,length)=super::node_endpoint_text(&address,port);
                             self.output.write_segments(&[b"Listening on: ",&endpoint[..length]]);
                             let handle=crate::runtime::with_runtime(|runtime|runtime.identity.user(self.current_user).map(|user|user.handle)).flatten();
@@ -24,7 +24,7 @@ impl ConsoleRuntime {
                             self.output.write_segments(&[b"Connect from another computer: ssh -p ",&number[..digits],b" ",handle.as_ref().map_or(b"USER".as_slice(),|handle|handle.as_bytes()),b"@",&endpoint[..host_length]]);
                             self.output.write_line(b"Use the forwarded host port instead when this VM is behind NAT.");
                         },
-                        management::Availability::Disabled => self.output.write_line(b"SSH disabled by saved configuration. A local administrator can use ssh enable."),
+                        management::Availability::Disabled => self.output.write_line(b"SSH disabled by saved configuration. An administrator can use ssh enable."),
                         management::Availability::WaitingForNetwork => self.output.write_line(b"SSH enabled; waiting for an enabled network interface, link and valid IPv4 address. Check ipconfig or Network settings."),
                         management::Availability::WaitingForListener => self.output.write_line(b"SSH enabled; waiting for native listener resources."),
                         management::Availability::Failed(failure) => self.ssh_failure(failure),
@@ -67,7 +67,7 @@ impl ConsoleRuntime {
             Failure::Configuration=>b"Invalid SSH configuration. Use ssh enable [PORT 1-49151] [LIMIT 1-4].",
             Failure::EntropyUnavailable=>b"Validated system entropy is unavailable; SSH cannot create secure keys or connections.",
             Failure::HostKeyUnavailable=>b"Protected SSH configuration or host-key storage is unavailable. Check installed storage before retrying.",
-            Failure::PermissionDenied=>b"SSH authority was denied. Configuration requires an active local administrator; remote sessions permit supported queries only.",
+            Failure::PermissionDenied=>b"SSH authority was denied. Listener configuration requires an active administrator; account and credential permissions apply on every connection.",
             Failure::NetworkUnavailable=>b"SSH network authority or interface is unavailable. Check Network settings and ipconfig.",
             Failure::Capacity=>b"SSH resources or connection slots are busy. Close an unused connection and retry.",
             Failure::Deadline=>b"The connection timed out.",Failure::AuthenticationLimit=>b"The connection exceeded its authentication attempt limit.",

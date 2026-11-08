@@ -61,6 +61,7 @@ fn main() {
     let owner = [0x17; 16];
     let daemon = catalog.apply(&automation::parse(b"service create worker /worker.py start=boot delay=5 restart=on-failure").unwrap(), owner, true, 100).unwrap().unwrap();
     let once = catalog.apply(&automation::parse(b"schedule create once /once.py at=110").unwrap(), owner, true, 100).unwrap().unwrap();
+    let cron = catalog.apply(&automation::parse(b"taskscheduler create periodic */5 * * * * /periodic.py").unwrap(), owner, true, 100).unwrap().unwrap();
     catalog.started(once, 14, 110).unwrap();
     catalog.finished(once, 0, 111).unwrap();
     catalog.started(daemon, 15, 111).unwrap();
@@ -82,6 +83,8 @@ fn main() {
     let id = mounted.resolve(automation::PATH).unwrap();
     assert_eq!(mounted.read_automation(&mut bytes), Ok(bytes.len()));
     let restored = Catalog::decode(&bytes).unwrap();
+    assert_eq!(restored.get(cron).unwrap().trigger,automation::Trigger::Cron{schedule:automation::parse_cron(b"*/5 * * * *").unwrap()});
+    assert_eq!(restored.get(cron).unwrap().next_status(Some(500),500),automation::NextRun::Scheduled{unix_seconds:600});
     assert_eq!(restored.get(once).unwrap().state, State::Completed);
     assert_eq!(restored.get(once).unwrap().runs, 1);
     assert_eq!(restored.get(once).unwrap().last_exit, Some(0));

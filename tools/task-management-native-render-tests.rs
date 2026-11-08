@@ -8,7 +8,7 @@ use crate::ui::{geometry::{Rect,Point},task_management::{self as model,Entry,Fee
 // ------------------=
 fn fixture(tab:Tab)->View {
     let mut v=View::new();v.available=true;v.can_manage=true;v.access_reason=Feedback::None;v.state.tab=tab;v.count=3;v.total=3;
-    for i in 0..3 {v.entries[i]=Entry{id:i as u32+1,owner:[1;16],can_output:true,next_status:if i==0{model::NextRun::Running}else if i==2{model::NextRun::Disabled}else{model::NextRun::Scheduled},name:Text::from_bytes([b"archive-index".as_slice(),b"workspace-backup",b"cache-refresh"][i]),path:Text::from_bytes(b"/home/default/scripts/workspace.py"),enabled:i!=2,trigger:if tab==Tab::Services{1}else{2},timing:60,restart:if tab==Tab::Services{1}else{0},state:if i==0{2}else{0},next:1794189600,timing_text:Text::from_bytes(b"2026-11-09 02:00:00"),next_text:Text::from_bytes(b"2026-11-09 02:00:00"),exit:if i==1{Some(0)}else{None},runs:12};}
+    for i in 0..3 {v.entries[i]=Entry{id:i as u32+1,owner:[1;16],can_output:true,next_status:if i==0{model::NextRun::Running}else if i==2{model::NextRun::Disabled}else{model::NextRun::Scheduled},name:Text::from_bytes([b"archive-index".as_slice(),b"workspace-backup",b"cache-refresh"][i]),path:Text::from_bytes(b"/home/default/scripts/workspace.py"),enabled:i!=2,trigger:if tab==Tab::Services{1}else{2},timing:60,restart:if tab==Tab::Services{1}else{0},state:if i==0{2}else{0},next:1794189600,timing_text:model::Field::from_bytes(b"2026-11-09 02:00:00"),next_text:Text::from_bytes(b"2026-11-09 02:00:00"),exit:if i==1{Some(0)}else{None},runs:12};}
     v
 }
 // ------------------------=
@@ -44,7 +44,8 @@ pub(super) fn verify() {
             let mut stale=v;stale.state.conflict=true;stale.state.feedback=Feedback::Conflict;assert!(!model::layout(content,toolbar,&stale,1).controls.iter().find(|c|c.target==Target::Save).unwrap().enabled);
             let mut choice_view=v;choice_view.state.choice=1;choice_view.state.focus=Target::TriggerOption(v.state.trigger);
             let choices=frame(width,height,&choice_view,None);assert_ne!(choices,editor);
-            if tab==Tab::Scheduled{let mut once=v;once.state.trigger=3;once.state.fields[2]=Text::from_bytes(b"2026-11-09 02:00:00");let pixels=frame(width,height,&once,None);let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();for pixel in pixels{ppm.extend_from_slice(&[(pixel>>16)as u8,(pixel>>8)as u8,pixel as u8]);}std::fs::write(format!("build/task-manager-once-edit-{width}.ppm"),ppm).unwrap();}
+            if tab==Tab::Scheduled{let mut once=v;once.state.trigger=3;once.state.fields[2]=model::Field::from_bytes(b"2026-11-09 02:00:00");let pixels=frame(width,height,&once,None);let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();for pixel in pixels{ppm.extend_from_slice(&[(pixel>>16)as u8,(pixel>>8)as u8,pixel as u8]);}std::fs::write(format!("build/task-manager-once-edit-{width}.ppm"),ppm).unwrap();}
+            if tab==Tab::Scheduled{let mut cron=v;cron.state.trigger=4;cron.state.fields[2]=model::Field::from_bytes(b"*/15 * * * *");cron.state.focus=Target::Field(2);let pixels=frame(width,height,&cron,None);let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();for pixel in pixels{ppm.extend_from_slice(&[(pixel>>16)as u8,(pixel>>8)as u8,pixel as u8]);}std::fs::write(format!("build/task-manager-cron-edit-{width}.ppm"),ppm).unwrap();}
             let choice_layout=model::layout(content,toolbar,&choice_view,1);
             for c in &choice_layout.controls[..choice_layout.count]{if matches!(c.target,Target::TriggerOption(_)){assert_eq!(choice_layout.hit(Point{x:c.bounds.x+c.bounds.width as i32/2,y:c.bounds.y+c.bounds.height as i32/2}),Some(c.target));}}
             let l=model::layout(content,toolbar,&v,1);

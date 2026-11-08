@@ -3,6 +3,13 @@ use super::*;
 
 impl IdentitySystem {
     // ------------------------=
+    // FUNC: console_capabilities
+    // DESC: Assigns identical account-derived command capabilities to local and SSH sessions; live handlers still recheck current roles.
+    // ------------------=
+    pub(crate) fn console_capabilities(&self,user:StableId)->u64 {
+        ORDINARY_SESSION_CAPABILITIES|if self.is_administrator(user){SESSION_IDENTITY_MANAGE}else{0}
+    }
+    // ------------------------=
     // FUNC: enroll_generated_ssh_key
     // DESC: Adds a validated key only inside trusted account-creation transactions; never grants session authority.
     // ------------------=
@@ -116,7 +123,7 @@ impl IdentitySystem {
 impl IdentitySystem {
     // ------------------------=
     // FUNC: create_ssh_session
-    // DESC: Creates a bounded remote-origin query session only for the key already verified by the SSH transport.
+    // DESC: Creates an independent SSH session with the authenticated user's ordinary scopes and current administrative role.
     // ------------------=
     pub(crate) fn create_ssh_session(&mut self, user: StableId, key: [u8; 32], now: u64) -> Result<Session, IdentityError> {
         if !self.ssh_key_active(user, &key) { return Err(IdentityError::AccessDenied); }
@@ -125,21 +132,22 @@ impl IdentitySystem {
         }
         let slot = self.sessions.iter().position(|s| s.is_none_or(|s| s.state == SessionState::Closed)).ok_or(IdentityError::Full)?;
         let machine = self.machine.ok_or(IdentityError::InvalidState)?.id;
+        let personal_space=self.user(user).ok_or(IdentityError::NotFound)?.personal_space_ref;
         let session = Session { origin: SessionOrigin::Ssh, remote_key: Some(key), remote_password: None, id: self.allocate_id(0x4e), user, machine,
-            created: now, state: SessionState::Active, capabilities: SESSION_REMOTE_QUERY,
-            personal_space: StableId::zero(), ai_context: StableId::zero() };
+            created: now, state: SessionState::Active, capabilities: self.console_capabilities(user),
+            personal_space, ai_context: self.allocate_id(0x41) };
         self.sessions[slot] = Some(session);
         Ok(session)
     }
     // ------------------------=
     // FUNC: console_session_authorized
-    // DESC: Rechecks native identity, origin and the independent remote ceiling before every command or output delivery.
+    // DESC: Rechecks native account, session and authenticated credential before local or SSH command dispatch and output delivery.
     // ------------------=
     pub fn console_session_authorized(&self, session: StableId, user: StableId) -> bool {
         if self.storage_uncertain || !self.user(user).is_some_and(|u| u.state == UserState::Active) { return false; }
         self.sessions.iter().flatten().any(|s| s.id == session && s.user == user && s.state == SessionState::Active
             && match s.origin { SessionOrigin::Local => s.capabilities & SESSION_DISPLAY_INPUT != 0,
-                SessionOrigin::Ssh => s.capabilities == SESSION_REMOTE_QUERY && (s.remote_key.is_some_and(|key| self.ssh_key_active(user, &key))
+                SessionOrigin::Ssh => s.capabilities & SESSION_DISPLAY_INPUT != 0 && (s.remote_key.is_some_and(|key| self.ssh_key_active(user, &key))
                     || s.remote_password.is_some_and(|id| self.ssh_password_active(user, id))) })
     }
 }

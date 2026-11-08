@@ -315,6 +315,7 @@ pub fn run() -> ! {
         // byte per animation/network/inference iteration. The finite drain
         // preserves fairness under sustained controller traffic.
         crate::drivers::network::poll();
+        crate::console::poll_ssh_commands();
         crate::console::poll_native_ai();
         core::hint::spin_loop();
     }

@@ -12,6 +12,24 @@ pub static mut INFINITY_GETURL_RESPONSE: [u64; 6] = [0; 6];
 static mut PENDING: Option<(SecurityIdentity, bool, bool, bool)> = None;
 
 // ------------------------=
+// FUNC: pending
+// DESC: Reports transfer work only to the shell which owns its network lease.
+// ------------------=
+pub(super) fn pending(console:&ConsoleRuntime)->bool {unsafe{PENDING.is_some_and(|(owner,_,_,_)|owner.0==console.current_session.0)}}
+
+// ------------------------=
+// FUNC: cancel
+// DESC: Releases only the calling shell's outstanding transfer on interruption or disconnect.
+// ------------------=
+pub(super) fn cancel(console:&ConsoleRuntime) {
+    if pending(console) {
+        let owner=SecurityIdentity(console.current_session.0);
+        let _=crate::drivers::https::cancel(owner);let _=crate::drivers::https::take(owner);
+        unsafe { PENDING=None; }
+    }
+}
+
+// ------------------------=
 // FUNC: authorize
 // DESC: Requires explicit authenticated operator consent for a sixty-second session network lease; endpoint policy remains mandatory.
 // ------------------=
@@ -230,6 +248,7 @@ pub(super) fn execute(console: &mut ConsoleRuntime, command: &[u8]) -> bool {
 // ------------------=
 fn fail(console: &mut ConsoleRuntime, options: Options<'_>, code: u32, message: &[u8]) {
     INFINITY_GETURL_EXIT.store(code, Ordering::Release);
+    if code!=0 {if let Some(output)=console.output.remote.as_mut(){output.status=code;output.diagnostic=crate::runtime::console_execution::Diagnostic::Unavailable;}}
     if !options.silent || options.show_error {
         console.output.write_line(message);
     }
@@ -242,6 +261,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) {
     let Some((owner, fail_http, silent, show_error)) = (unsafe { PENDING }) else {
         return;
     };
+    if super::remote_commands::foreign_owner(owner.0,console) { return; }
     let active = owner.0 == console.current_session.0
         && crate::runtime::with_runtime(|r| {
             (0..crate::runtime::identity::MAX_SESSIONS)
@@ -324,5 +344,6 @@ pub(super) fn poll(console: &mut ConsoleRuntime) {
         }
     }
     INFINITY_GETURL_EXIT.store(code, Ordering::Release);
+    if code!=0 {if let Some(output)=console.output.remote.as_mut(){output.status=code;output.diagnostic=crate::runtime::console_execution::Diagnostic::Unavailable;}}
     console.redraw();
 }

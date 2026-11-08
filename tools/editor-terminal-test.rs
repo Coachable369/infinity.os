@@ -7,6 +7,7 @@ use ui::{editor_chrome::terminal::{self,Preferences,State,Layout,Location},geome
 // DESC: Exercises persistent dock choices, responsive hit geometry, bounded stream delivery and typed diagnostic coordinates.
 // ------------------=
 fn main(){
+    terminal_editor_sessions();
     for open in [false,true]{for height in [112,224,1024]{let p=Preferences{open,height};assert_eq!(Preferences::decode(&p.encode()),Some(p));}}
     assert_eq!(Preferences::decode(&[b'I',b'E',b'T',1,2,112,0,0]),None);
     for scale in [1,2,3]{for width in [440,720,1024]{for height in [160,280,640]{
@@ -36,4 +37,24 @@ fn main(){
     assert_eq!(input.read(3,|bytes|bytes==b"hel"),3);assert!(!input.submit(b"again"));
     assert_eq!(input.read(10,|bytes|bytes==b"lo\n"),3);input.close();assert_eq!(input.read(10,|_|true),0);
     terminal::mutate(|state|*state=State::new());println!("editor terminal behavior passed");
+}
+
+// ------------------------=
+// FUNC: terminal_editor_sessions
+// DESC: Exercises nested remote surface selection, desktop preservation and complete private state erasure on slot reuse.
+// ------------------=
+fn terminal_editor_sessions(){
+    use ui::terminal_edit as edit;
+    edit::session([1;16]);edit::mutate(|s|{assert!(s.document.open(b"desktop"));s.document.set_cursor(7);assert!(s.document.insert(b'!'));s.active=true;});
+    {
+        let _first=edit::select_remote(0);edit::session([2;16]);edit::mutate(|s|{assert!(s.document.open(b"remote-a"));s.document.set_cursor(8);assert!(s.document.insert(b'!'));s.active=true;s.path[..7].copy_from_slice(b"private");s.path_len=7;s.cut[0]=65;s.cut_len=1;s.query[0]=66;s.query_len=1;s.revision=Some(([3;16],4));s.memory=Some(([5;16],6));s.top=9;s.prompt=2;s.closing_window=true;s.notice=b"Private state";});
+        {
+            let _second=edit::select_remote(1);edit::session([3;16]);edit::mutate(|s|{assert!(s.document.open(b"remote-b"));s.active=true;});
+        }
+        assert_eq!(edit::inspect(|s|s.owner),[2;16]);assert!(edit::inspect(|s|s.document.bytes()==b"remote-a!"));
+        edit::session([4;16]);edit::mutate(|s|{assert!(s.document.bytes().is_empty());assert!(!s.document.undo());assert!(!s.document.redo());assert!(!s.active);assert!(!s.closing_window);assert_eq!(s.top,0);assert_eq!(s.revision,None);assert_eq!(s.memory,None);assert_eq!((s.path_len,s.cut_len,s.query_len,s.prompt),(0,0,0,0));assert!(s.path.iter().chain(s.cut.iter()).chain(s.query.iter()).all(|b|*b==0));assert!(s.notice.is_empty());});
+    }
+    assert_eq!(edit::inspect(|s|s.owner),[1;16]);assert!(edit::inspect(|s|s.document.bytes()==b"desktop!"));edit::mutate(|s|{assert!(s.document.undo());assert_eq!(s.document.bytes(),b"desktop");});
+    {let _second=edit::select_remote(1);assert_eq!(edit::inspect(|s|s.owner),[3;16]);assert!(edit::inspect(|s|s.document.bytes()==b"remote-b"));edit::session([0;16]);assert!(edit::inspect(|s|s.document.bytes().is_empty()));}
+    assert!(edit::inspect(|s|s.document.bytes()==b"desktop"));edit::session([0;16]);
 }

@@ -857,6 +857,11 @@ pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsa
 // ------------------=
 pub(super) fn editor_running(console:&ConsoleRuntime)->bool {unsafe{let job=&*(&raw const JOB);job.task.is_some()&&job.owner==SecurityIdentity(console.current_session.0)}}
 // ------------------------=
+// FUNC: waiting_input
+// DESC: Admits remote stdin only while this session's native Python process is waiting for a line.
+// ------------------=
+pub(super) fn waiting_input(console:&ConsoleRuntime)->bool {unsafe{let job=&*(&raw const JOB);job.task.is_some()&&job.owner==SecurityIdentity(console.current_session.0)&&!job.pip&&job.input.waiting}}
+// ------------------------=
 // FUNC: input
 // DESC: Delivers complete native stdin lines, EOF and cancellation while leaving the source editor untouched.
 // ------------------=
@@ -866,7 +871,7 @@ pub(super) fn input(console:&mut ConsoleRuntime,key:super::ConsoleKey)->bool {un
     match key {
         super::ConsoleKey::Shortcut(b'c')=>{job.input.close();if let Some(task)=job.task.as_mut(){task.cancel();}job.child.cancel();console.reset_input();},
         super::ConsoleKey::Shortcut(b'd')=>job.input.close(),
-        super::ConsoleKey::Enter=>{if job.input.submit(&console.command[..console.command_length]){console.output.write_line(&console.command[..console.command_length]);console.reset_input();}},
+        super::ConsoleKey::Enter=>{if job.input.submit(&console.command[..console.command_length]){if console.output.remote.is_none(){console.output.write_line(&console.command[..console.command_length]);}console.reset_input();}},
         _=>{console.edit_input(key);},
     }true
 }}
@@ -889,7 +894,8 @@ fn terminal_read<T:crate::runtime::native_memory::PageTable>(input:&mut crate::r
 // FUNC: report_stream
 // DESC: Publishes newly produced bytes while the native Python process is still running, with no replay at completion.
 // ------------------=
-fn report_stream(console:&mut ConsoleRuntime,bytes:&[u8]) {
+fn report_stream(console:&mut ConsoleRuntime,bytes:&[u8],stderr:bool) {
+    if let Some(output)=console.output.remote.as_mut(){if stderr{output.stderr.write(bytes);}else{output.stdout.write(bytes);}return;}
     crate::ui::command_terminal::mutate(|s|{if s.authorized{s.append(bytes);}});
     crate::ui::editor_chrome::terminal::mutate(|state|state.append(bytes));
     for line in bytes.split(|b|*b==b'\n').filter(|line|!line.is_empty()) {
@@ -909,6 +915,7 @@ fn report_stream(console:&mut ConsoleRuntime,bytes:&[u8]) {
 pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let job = &mut *(&raw mut JOB);
     if job.task.is_none() { return; }
+    if super::remote_commands::foreign_owner(job.owner.0,console) { return; }
     let session_current=job.owner == SecurityIdentity(console.current_session.0) && job.package_owner == console.current_user.0 && active(console);
     let authorized = session_current&&job.generated.is_none_or(|generated|workflow::authorized(generated.phase,generated.launched,
         generated_current(console,generated),generated.user==console.current_user.0&&console.ai_chat_allowed()));
@@ -993,8 +1000,8 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
         job.ui_revision=ui.revision;changed=true;
     }}
     if authorized {if let Some((stdout,stderr,_))=progress {
-        if stdout>job.shown_output{report_stream(console,&job.output[job.shown_output..stdout]);job.shown_output=stdout;changed=true;}
-        if stderr>job.shown_errors{report_stream(console,&job.errors[job.shown_errors..stderr]);job.shown_errors=stderr;changed=true;}
+        if stdout>job.shown_output{report_stream(console,&job.output[job.shown_output..stdout],false);job.shown_output=stdout;changed=true;}
+        if stderr>job.shown_errors{report_stream(console,&job.errors[job.shown_errors..stderr],true);job.shown_errors=stderr;changed=true;}
     }}
     if matches!(result, State::Runnable) {
         if job.generated.is_some_and(|g|g.phase==workflow::Phase::Run) && job.recovery.is_some(){
@@ -1071,6 +1078,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let state = if package_incompatible { 5 } else { match result {
         State::Exited(_) if cleanup && packages_committed => 2, State::Cancelled => 3, _ => 4 } };
     let exit = if package_incompatible { 65 } else { match result { State::Exited(code) if packages_committed => code, _ => -1 } };
+    if let Some(output)=console.output.remote.as_mut(){output.status=if result==State::Cancelled{130}else if exit<0{70}else{exit as u32};if output.status!=0{output.diagnostic=crate::runtime::console_execution::Diagnostic::Unavailable;}}
     let (stdout, stderr, _) = lengths.unwrap_or((0, 0, false));
     publish(state, exit, stdout.saturating_add(job.drained_output), stderr.saturating_add(job.drained_errors), job.initial_pages, memory_mut().available_pages() as u64);
     if let Some(generated) = job.generated {

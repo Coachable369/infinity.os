@@ -2,6 +2,97 @@
 use super::*;
 use crate::runtime::ai::{self, text_request::{self, AdviceError, AdviceMode, Command, Facts, PendingReply, ReplyState}};
 
+impl ConsoleRuntime {
+    // ------------------------=
+    // FUNC: remote_advice_error
+    // DESC: Returns typed SSH failure status and the same readable AI admission guidance used locally.
+    // ------------------=
+    fn remote_advice_error(&mut self,error:AdviceError) {
+        use crate::runtime::console_execution::Diagnostic;
+        self.output.fail(match error {AdviceError::Denied|AdviceError::NotOwned=>Diagnostic::Denied,
+            AdviceError::Busy|AdviceError::ContextFull=>Diagnostic::Capacity,
+            AdviceError::InvalidInput|AdviceError::InvalidCommand|AdviceError::InvalidDecision(_)=>Diagnostic::Syntax,
+            _=>Diagnostic::Unavailable});
+        self.output.write_line(advice_error(error));
+    }
+    // ------------------------=
+    // FUNC: remote_llm_command
+    // DESC: Shares typed advice grammar while keeping SSH prompts and model context separate from the desktop conversation.
+    // ------------------=
+    fn remote_llm_command(&mut self,command:Command<'_>)->bool {
+        if !self.workplace_authorized(false)||!self.ai_chat_allowed(){self.remote_advice_error(AdviceError::Denied);return true;}
+        let owner=self.current_user.0;let session=self.current_session.0;
+        match command {
+            Command::Prompt(mode,prompt)=>{
+                let model=self.remote_model.or_else(||crate::runtime::with_runtime(|runtime|runtime.identity.ai_profile(self.current_user)
+                    .and_then(|profile|ai::chat::CHAT_MODELS.get(profile.chat_model_index as usize).map(|model|model.id)))
+                    .flatten()).unwrap_or(ai::chat::HERMES_MODEL_ID);
+                let facts=self.advice_facts();
+                match ai::with_ai_runtime(|runtime|runtime.submit_remote_advice(owner,session,model,prompt,mode,facts)) {
+                    Ok(turn)=>{self.remote_llm_delivered=None;self.output.write_number(b"Local AI request: ",turn);self.output.write_line(b"Generating a response. You can keep using this shell.");},
+                    Err(error)=>self.remote_advice_error(error),
+                }
+            },
+            Command::Response=>self.print_remote_advice(false),
+            Command::Cancel=>{
+                if self.remote_llm_waiting(){self.cancel_remote_llm();self.output.write_line(b"Cancellation requested.");}
+                else{self.output.write_line(b"This shell has no active AI request.");}
+            },
+            Command::New=>match ai::with_ai_runtime(|runtime|runtime.reset_remote_advice(owner,session)) {
+                Ok(())=>{self.remote_llm_delivered=None;self.output.write_line(b"Started a fresh typed conversation for this shell.");},
+                Err(error)=>self.remote_advice_error(error),
+            },
+            Command::Help|Command::Invalid=>{},
+        }
+        true
+    }
+    // ------------------------=
+    // FUNC: remote_llm_waiting
+    // DESC: Reports generation only for the authenticated SSH user's own session.
+    // ------------------=
+    pub(super) fn remote_llm_waiting(&self)->bool {
+        ai::with_ai_runtime(|runtime|runtime.remote_advice_state(self.current_user.0,self.current_session.0)
+            .is_some_and(|(_,state)|state==ai::chat::GenerationState::Running))
+    }
+    // ------------------------=
+    // FUNC: cancel_remote_llm
+    // DESC: Cancels only the caller's isolated typed lease on interruption or disconnect.
+    // ------------------=
+    pub(super) fn cancel_remote_llm(&mut self) {
+        ai::with_ai_runtime(|runtime|{
+            if let Some((turn,ai::chat::GenerationState::Running))=runtime.remote_advice_state(self.current_user.0,self.current_session.0){
+                let _=runtime.cancel_remote_advice(self.current_user.0,self.current_session.0,turn);
+            }
+        });
+    }
+    // ------------------------=
+    // FUNC: print_remote_advice
+    // DESC: Copies a complete owned response into SSH output without touching graphical transcripts or truncating native model bytes.
+    // ------------------=
+    fn print_remote_advice(&mut self,automatic:bool) {
+        let mut bytes=[0u8;16384];
+        let state=ai::with_ai_runtime(|runtime|runtime.remote_advice_state(self.current_user.0,self.current_session.0));
+        let Some((turn,_))=state else {if !automatic{self.output.write_line(b"This shell has no AI response yet.");}return;};
+        match ai::with_ai_runtime(|runtime|runtime.remote_advice_reply(self.current_user.0,self.current_session.0,turn,&mut bytes)) {
+            Ok((state,length))=>{
+                if length>0 {self.output.write_line(&bytes[..length]);}
+                else{self.output.write_line(if state==ai::chat::GenerationState::Running{b"The local model is still generating."}else{b"The request ended without a response."});}
+                if state!=ai::chat::GenerationState::Running{self.remote_llm_delivered=Some(turn);}
+            },
+            Err(error)=>self.remote_advice_error(error),
+        }
+        bytes.fill(0);
+    }
+    // ------------------------=
+    // FUNC: poll_remote_llm
+    // DESC: Delivers each completed private SSH advice turn once, independently of newer local widget requests.
+    // ------------------=
+    pub(super) fn poll_remote_llm(&mut self) {
+        let state=ai::with_ai_runtime(|runtime|runtime.remote_advice_state(self.current_user.0,self.current_session.0));
+        if state.is_some_and(|(turn,state)|self.remote_llm_delivered!=Some(turn)&&state!=ai::chat::GenerationState::Running){self.print_remote_advice(true);}
+    }
+}
+
 #[used]
 #[no_mangle]
 pub static mut INFINITY_LLM_ADVICE_SNAPSHOT: [u64;24] = [0;24];
@@ -118,7 +209,8 @@ impl ConsoleRuntime {
             self.output.write_line(b"Use llm ask/decide/response/cancel/new/help as aliases. Replies appear here when complete.");
             return true;
         }
-        if command==Command::Invalid {self.output.write_line(advice_error(AdviceError::InvalidCommand));return true;}
+        if command==Command::Invalid {self.output.fail(crate::runtime::console_execution::Diagnostic::Syntax);self.output.write_line(advice_error(AdviceError::InvalidCommand));return true;}
+        if self.output.remote.is_some() { return self.remote_llm_command(command); }
         if !self.workplace_authorized(false) || !self.ai_chat_allowed() {
             self.output.write_line(advice_error(AdviceError::Denied));
             return true;

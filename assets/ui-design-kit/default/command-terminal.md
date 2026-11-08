@@ -39,6 +39,15 @@ Exercise typed state transitions, bounded geometry, production-rendered pixels
 at compact/normal/HiDPI sizes, native execution, and fresh-install packaging.
 Do not present screenshots alone as command-execution or installed-VM proof.
 
+## Namespace listings
+
+`list`, `ls` and `dir` share the terminal's existing monospace grid and color
+scheme. Default output uses aligned Type, Owner, Size (B), Modified (UTC), and
+Name columns, with complete owner handles and right-aligned byte counts.
+Directories have an explicit type and trailing slash; their internal namespace
+payload size is not presented as user content. Legacy timestamps read "not
+recorded". No Unix permission bits or new icon/artwork family is introduced.
+
 ## Terminal editor (`edit`)
 
 Reuse the existing Command Window frame and selected packaged editor monospace

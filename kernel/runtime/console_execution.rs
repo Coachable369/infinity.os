@@ -1,10 +1,11 @@
 //! Shared native Console execution. Transport and graphical rendering are callers,
 //! never authority. All supported commands use the existing schema parser and IOP.
 use super::{InfinityRuntime, console_language::{self as language, ParseOutcome},
-    identity::{StableId, SessionOrigin}, execution::SecurityIdentity,
+    identity::StableId, execution::SecurityIdentity,
     capability::CapabilityType, iop::{IopError, IopMessage, OperationId}, service::SERVICE_CONSOLE};
 
-pub const OUTPUT_BYTES: usize = 8192;
+pub const OUTPUT_BYTES: usize = 32768;
+pub const ERROR_BYTES:usize=8192;
 #[derive(Clone, Copy)]
 pub struct Environment { pub architecture: &'static [u8], pub ready_devices: u8 }
 impl Environment {
@@ -73,7 +74,7 @@ impl<const N: usize> Bytes<N> {
     }
 }
 pub struct Outcome {
-    pub stdout: Bytes<OUTPUT_BYTES>, pub stderr: Bytes<1024>, pub status: u32,
+    pub stdout: Bytes<OUTPUT_BYTES>, pub stderr: Bytes<ERROR_BYTES>, pub status: u32,
     pub diagnostic: Diagnostic, pub operation: Option<OperationId>,
 }
 impl Outcome {
@@ -103,7 +104,7 @@ impl Outcome {
 }
 // ------------------------=
 // FUNC: supported
-// DESC: Defines a remote query ceiling over existing operation IDs; it grants no AI inference, GUI or administrative operations.
+// DESC: Selects the small shared IOP handlers implemented here; the full Console dispatcher owns all other commands for either transport.
 // ------------------=
 pub fn supported(operation: OperationId) -> bool {
     matches!(operation, OperationId::SystemStatus | OperationId::NodeList | OperationId::IntentResolve)
@@ -138,7 +139,7 @@ pub fn execute(runtime: &mut InfinityRuntime, user: StableId, session: StableId,
         ParseOutcome::Help(domain, operation) => render_help(&mut result.stdout, domain, operation),
         ParseOutcome::Graph(graph) if graph.node_count == 1 && !graph.plan_only && graph.assignment.is_none() => {
             let Some(node) = graph.nodes[0] else { return Outcome::failure(Diagnostic::Syntax); };
-            if !supported(node.schema.operation) { return Outcome::failure(Diagnostic::Denied); }
+            if !supported(node.schema.operation) { return Outcome::failure(Diagnostic::Unsupported); }
             result.operation = Some(node.schema.operation);
             if let Err(error) = dispatch(runtime, user, session, node.schema.operation, now, &mut result.stdout) {
                 return Outcome::failure(match error { IopError::AccessDenied => Diagnostic::Denied,
@@ -173,9 +174,7 @@ fn dispatch(runtime: &mut InfinityRuntime, user: StableId, session: StableId, op
             OperationId::SystemStatus => render_system(output, runtime.console_environment),
             OperationId::IntentResolve => render_ai(output),
             OperationId::NodeList => {
-                let active = (0..super::identity::MAX_SESSIONS).filter_map(|i| runtime.identity.session_nth(i))
-                    .find(|candidate| candidate.id == session).ok_or(IopError::AccessDenied)?;
-                if active.origin != SessionOrigin::Ssh && !runtime.identity.is_administrator(user) { return Err(IopError::AccessDenied); }
+                if !runtime.identity.is_administrator(user) { return Err(IopError::AccessDenied); }
                 let mut bytes = [0; 640];
                 let length = super::node::reconciliation::collect(super::node::reconciliation::request([0; 32], operation),
                     &mut bytes, &mut |request| super::node_client::read(runtime, request, now))?;

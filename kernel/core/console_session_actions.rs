@@ -7,6 +7,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn sign_out_session(&mut self)->bool {
         if self.current_session.is_zero()||self.settings_editing||!self.editor_document.is_saved()||crate::ui::terminal_edit::inspect(|s|s.active&&!s.document.is_saved()){return false;}
+        if self.output.remote.is_some(){self.remote_exit=true;self.cancel_account_password();return true;}
         if !self.persist_desktop_layout(){return false;}
         let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
         let ended=crate::runtime::with_runtime(|r|r.identity.end_session(self.current_session,self.current_user).is_ok()).unwrap_or(false);

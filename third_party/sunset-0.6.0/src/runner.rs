@@ -733,6 +733,14 @@ impl<'a, CS: CliServ> Runner<'a, CS> {
     }
 
     // ------------------------=
+    // FUNC: finish_channel_input
+    // DESC: Sends a single directional EOF while retaining the channel for peer output and exit status.
+    // ------------------=
+    pub fn finish_channel_input(&mut self,channel:&ChanHandle)->Result<()>{
+        let mut sender=self.traf_out.sender(&mut self.keys);
+        self.conn.channels.finish_input(channel.0,&mut sender)?;self.wake();Ok(())
+    }
+    // ------------------------=
     // FUNC: finish_channel_output
     // DESC: Sends the protocol EOF and close after application output and exit status have been queued.
     // ------------------=

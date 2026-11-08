@@ -792,11 +792,6 @@ pub fn object_read_path(
 pub(crate) fn editor_read_path(owner: [u8; 16], session: [u8; 16], path: &[u8], out: &mut [u8])
     -> Result<(usize, editor_objects::MemoryRevision), object::ObjectError> {
     let _ = browser_favorites_path(owner, session)?;
-    let local = crate::runtime::with_runtime(|runtime| (0..crate::runtime::identity::MAX_SESSIONS)
-        .filter_map(|i| runtime.identity.session_nth(i)).any(|s| s.id.0 == session && s.user.0 == owner
-            && s.origin == crate::runtime::identity::SessionOrigin::Local
-            && s.state == crate::runtime::identity::SessionState::Active)).unwrap_or(false);
-    if !local { return Err(object::ObjectError::Unauthorized); }
     #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
     { with_store(|store| editor_objects::load(store, object::ObjectId(owner), path, out)) }
     #[cfg(target_arch="x86")]
@@ -1265,9 +1260,8 @@ pub(crate) fn browser_favorites_save(owner:[u8;16],session:[u8;16],content:&[u8]
 // DESC: Requires the precise live profile/session pair at each private object-store operation.
 // ------------------=
 fn browser_favorites_path(owner:[u8;16],session:[u8;16])->Result<[u8;57],object::ObjectError> {
-    let active=crate::runtime::with_runtime(|runtime|(0..crate::runtime::identity::MAX_SESSIONS)
-        .filter_map(|i|runtime.identity.session_nth(i)).any(|s|s.id.0==session && s.user.0==owner
-        && s.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false);
+    let active=crate::runtime::with_runtime(|runtime|runtime.identity.console_session_authorized(
+        crate::runtime::identity::StableId(session),crate::runtime::identity::StableId(owner))).unwrap_or(false);
     if !active || owner==[0;16] {return Err(object::ObjectError::Unauthorized);}
     Ok(infinity_browser_core::favorites::owner_path(owner))
 }

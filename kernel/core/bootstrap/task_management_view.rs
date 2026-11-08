@@ -6,7 +6,7 @@ use crate::ui::{geometry::Rect,panel_recipe::{Material,Surface},task_management:
 // FUNC: trigger_label
 // DESC: Describes a typed trigger choice without implying a job has already run.
 // ------------------=
-fn trigger_label(trigger:u8)->&'static[u8] {match trigger{1=>b"At boot (delay seconds)",2=>b"Every interval (seconds)",3=>b"Once at a UTC date/time",_=>b"Manual start"}}
+fn trigger_label(trigger:u8)->&'static[u8] {match trigger{1=>b"At boot (delay seconds)",2=>b"Every interval (seconds)",3=>b"Once at a UTC date/time",4=>b"Cron schedule (UTC)",_=>b"Manual start"}}
 // ------------------------=
 // FUNC: state_label
 // DESC: Maps catalog state to concise observable lifecycle feedback.
@@ -27,7 +27,7 @@ fn inset(r:Rect,s:usize)->Rect {Rect{x:r.x+(10*s)as i32,width:r.width.saturating
 // DESC: Describes actual execution eligibility rather than showing stale timestamp bookkeeping.
 // ------------------=
 fn next_label(entry:model::Entry)->model::Text {
-    let bytes:&[u8]=match entry.next_status{NextRun::Disabled=>b"Disabled",NextRun::Manual=>b"Manual only",NextRun::Paused=>b"Stopped by user",NextRun::NextBoot=>b"Next system boot",NextRun::Scheduled=>return entry.next_text,NextRun::Ready=>b"Ready",NextRun::Running=>b"Running now",NextRun::Stopping=>b"Stopping",NextRun::Finished=>b"Finished; edit to re-arm",NextRun::ClockUnavailable=>b"Waiting for system clock",NextRun::BootDelay(seconds)=>{let n=model::number(seconds);let mut text=model::Text::from_bytes(b"Boot in ");text.bytes[text.len..text.len+n.len].copy_from_slice(n.bytes());text.len+=n.len;text.bytes[text.len..text.len+2].copy_from_slice(b" s");text.len+=2;return text;}};
+    let bytes:&[u8]=match entry.next_status{NextRun::Disabled=>b"Disabled",NextRun::Manual=>b"Manual only",NextRun::Paused=>b"Stopped by user",NextRun::NextBoot=>b"Next system boot",NextRun::Scheduled=>return entry.next_text,NextRun::Ready=>b"Ready",NextRun::Running=>b"Running now",NextRun::Stopping=>b"Stopping",NextRun::Finished=>if entry.trigger==4{b"No future match"}else{b"Finished; edit to re-arm"},NextRun::ClockUnavailable=>b"Waiting for system clock",NextRun::BootDelay(seconds)=>{let n=model::number(seconds);let mut text=model::Text::from_bytes(b"Boot in ");text.bytes[text.len..text.len+n.len].copy_from_slice(n.bytes());text.len+=n.len;text.bytes[text.len..text.len+2].copy_from_slice(b" s");text.len+=2;return text;}};
     model::Text::from_bytes(bytes)
 }
 // ------------------------=
@@ -35,12 +35,12 @@ fn next_label(entry:model::Entry)->model::Text {
 // DESC: Gives concise recovery instructions for typed errors, disabled controls and an empty catalog.
 // ------------------=
 fn feedback_label(reason:Feedback,view:&View)->&'static[u8] {match reason {
-    Feedback::None=>if !view.available{b"Automation storage is unavailable. Retry after recovery."}else if matches!(view.state.mode,Mode::Create|Mode::Edit){b"Tab / Shift+Tab: focus. Ctrl+A: select all. Ctrl+V: paste."}else if view.total>=model::CAPACITY{b"16 definitions maximum. Delete one before choosing New."}else if view.selected().is_some_and(|e|matches!(e.state,1..=4)){b"Stop before editing or deleting. Kill ends a running job."}else{b"Start runs now. Disabled pauses automatic starts."},
+    Feedback::None=>if !view.available{b"Automation storage is unavailable. Retry after recovery."}else if matches!(view.state.mode,Mode::Create|Mode::Edit){if view.state.trigger==4{b"Cron UTC: minute hour day month weekday. Use *, /, - or commas."}else{b"Tab / Shift+Tab: focus. Ctrl+A: select all. Ctrl+V: paste."}}else if view.total>=model::CAPACITY{b"16 definitions maximum. Delete one before choosing New."}else if view.selected().is_some_and(|e|matches!(e.state,1..=4)){b"Stop before editing or deleting. Kill ends a running job."}else{b"Start runs now. Disabled pauses automatic starts."},
     Feedback::Saved=>b"Definition saved.",Feedback::Requested=>b"Request accepted. The lifecycle state shows progress.",Feedback::Deleted=>b"Definition deleted. Its Python file was kept.",
     Feedback::Failed=>b"Change failed. The saved definition was not changed.",Feedback::Invalid=>b"Check the definition fields and try Save again.",
     Feedback::InvalidName=>b"Name: use 1-48 letters, digits, hyphens, dots or underscores.",
     Feedback::InvalidPath=>b"Path: use an absolute .py path without . or .. segments.",
-    Feedback::InvalidTiming=>if view.state.trigger==3{b"Enter a valid UTC date: YYYY-MM-DD HH:MM[:SS]."}else if view.state.trigger==2{b"Interval must be 1 to 4294967295 seconds."}else{b"Boot delay must be 0 to 4294967295 seconds."},
+    Feedback::InvalidTiming=>if view.state.trigger==4{b"Use 5 valid cron fields: minute hour day month weekday."}else if view.state.trigger==3{b"Enter a valid UTC date: YYYY-MM-DD HH:MM[:SS]."}else if view.state.trigger==2{b"Interval must be 1 to 4294967295 seconds."}else{b"Boot delay must be 0 to 4294967295 seconds."},
     Feedback::TooLong=>b"Use one printable line within the field's length limit.",Feedback::Clipboard=>b"Clipboard text is unavailable in this session.",
     Feedback::SaveOrCancel=>b"Save or Cancel this draft before leaving.",Feedback::SignIn=>b"Sign in to view and manage automation.",
     Feedback::ReadOnly=>b"Read only. A local administrator can change definitions.",Feedback::Duplicate=>b"This name already exists. Choose a different name.",
@@ -86,8 +86,8 @@ impl DisplayDevice {
                 let timing=model::number(entry.timing);let mut policy=[0u8;64];
                 let prefix:&[u8]=match entry.trigger{1=>b"Boot + ",2=>b"Every ",3=>b"At UTC ",_=>b"Manual"};
                 policy[..prefix.len()].copy_from_slice(prefix);let mut len=prefix.len();
-                if entry.trigger!=0{policy[len..len+timing.len].copy_from_slice(timing.bytes());len+=timing.len;if entry.trigger<3{policy[len..len+2].copy_from_slice(b" s");len+=2;}}
-                self.task_automation_detail_line(detail,92,if entry.trigger==3{b"Once (UTC)"}else{b"Start policy"},if entry.trigger==3{entry.timing_text.bytes()}else{&policy[..len]},s);
+                if matches!(entry.trigger,1..=3){policy[len..len+timing.len].copy_from_slice(timing.bytes());len+=timing.len;if entry.trigger<3{policy[len..len+2].copy_from_slice(b" s");len+=2;}}
+                self.task_automation_detail_line(detail,92,if entry.trigger==4{b"Cron (UTC)"}else if entry.trigger==3{b"Once (UTC)"}else{b"Start policy"},if entry.trigger>=3{entry.timing_text.bytes()}else{&policy[..len]},s);
                 if view.state.tab==Tab::Services{self.task_automation_detail_line(detail,116,b"Restart policy",restart_label(entry.restart),s);}
                 let next=next_label(entry);self.task_automation_detail_line(detail,if view.state.tab==Tab::Services{140}else{116},b"Next run (UTC)",next.bytes(),s);
                 let runs=model::number(entry.runs);let mut summary=[0u8;56];summary[..runs.len].copy_from_slice(runs.bytes());let mut length=runs.len;
@@ -122,7 +122,7 @@ impl DisplayDevice {
                     self.app_label(Rect{y:r.y+(23*s)as i32,height:(18*s)as u32,..r},if !e.enabled&&e.state==2{b"Running / disabled"}else if !e.enabled{b"Disabled"}else{state_label(e.state)},(174,197,221),false,s);
                 },
                 Target::Field(index)=>{
-                    self.app_label(Rect{y:c.bounds.y-(24*s)as i32,height:(24*s)as u32,..c.bounds},match index{0=>if c.enabled{b"Name"}else{b"Name (fixed identifier)"},1=>b"Python script path",_=>match view.state.trigger{3=>b"UTC date / time: YYYY-MM-DD HH:MM[:SS]",2=>b"Interval seconds",1=>b"Delay seconds",_=>b"Timing (unused for manual)"}},(174,197,221),false,s);
+                    self.app_label(Rect{y:c.bounds.y-(24*s)as i32,height:(24*s)as u32,..c.bounds},match index{0=>if c.enabled{b"Name"}else{b"Name (fixed identifier)"},1=>b"Python script path",_=>match view.state.trigger{3=>b"UTC date / time: YYYY-MM-DD HH:MM[:SS]",4=>b"Cron: min hour day month weekday (UTC)",2=>b"Interval seconds",1=>b"Delay seconds",_=>b"Timing (unused for manual)"}},(174,197,221),false,s);
                     self.precision_surface(c.bounds,Surface::Field,Material{fill:(9,15,38),edge:(134,199,255),opacity:if c.enabled{255}else{130},edge_opacity:if c.enabled{255}else{130},focus:if focused&&c.enabled{255}else{0},pressed:false,scale:s});
                     let field=view.state.fields[index];let r=inset(c.bounds,s);let first=model::field_first(&field,r.width as usize,s);
                     if focused&&c.enabled&&field.selected {self.fill_rect_alpha(r.x.max(0)as usize,(r.y+5*s as i32).max(0)as usize,model::field_text_width(&field.bytes()[first..],s).min(r.width as usize),22*s,74,129,235,130);}

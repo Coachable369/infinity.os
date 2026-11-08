@@ -20,6 +20,14 @@ name = "automation-console-test"
 path = "../automation-console-test.rs"
 
 [[bin]]
+name = "console-listing-test"
+path = "../console-listing-test.rs"
+
+[[bin]]
+name = "enterprise-access-test"
+path = "../enterprise-access-test.rs"
+
+[[bin]]
 name = "face-vault-test"
 path = "../face-vault-test.rs"
 
@@ -221,3 +229,7 @@ path = "../ssh-console-test.rs"
 [[bin]]
 name = "ssh-interactive-client-test"
 path = "../ssh-interactive-client-test.rs"
+
+[[bin]]
+name = "remote-advice-test"
+path = "../remote-advice-test.rs"

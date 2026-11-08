@@ -92,6 +92,9 @@ mod llm_commands;
 mod automation_commands;
 #[path = "console_task_automation.rs"]
 mod console_task_automation;
+#[path = "console_remote.rs"]
+mod remote_commands;
+pub use remote_commands::poll_ssh_commands;
 #[path = "console_source.rs"]
 mod source_commands;
 #[path = "console_python_libraries.rs"]
@@ -350,12 +353,24 @@ enum InstallerStep {
 mod geturl;
 
 struct ConsoleOutput {
+    remote: Option<crate::runtime::console_execution::Outcome>,
     lines: [[u8; LINE_CAPACITY]; OUTPUT_ROWS],
     lengths: [usize; OUTPUT_ROWS],
     count: usize,
 }
 
 impl ConsoleOutput {
+    // ------------------------=
+    // FUNC: fail
+    // DESC: Preserves a typed nonzero command status for remote callers without interpreting output text.
+    // ------------------=
+    fn fail(&mut self, diagnostic: crate::runtime::console_execution::Diagnostic) {
+        if let Some(output) = self.remote.as_mut() {
+            let failure = crate::runtime::console_execution::Outcome::failure(diagnostic);
+            output.status = failure.status;
+            output.diagnostic = diagnostic;
+        }
+    }
     // ------------------------=
     // FUNC: write_hex
     // DESC: Formats a bounded public identifier for human inspection without using prose as a machine interface.
@@ -372,6 +387,7 @@ impl ConsoleOutput {
     // ------------------=
     const fn new() -> Self {
         Self {
+            remote: None,
             lines: [[0; LINE_CAPACITY]; OUTPUT_ROWS],
             lengths: [0; OUTPUT_ROWS],
             count: 0,
@@ -383,6 +399,7 @@ impl ConsoleOutput {
     // DESC: Implements the clear operation.
     // ------------------=
     fn clear(&mut self) {
+        if let Some(output)=self.remote.as_mut(){output.stdout.write(b"\x1b[2J\x1b[H");}
         self.lines = [[0; LINE_CAPACITY]; OUTPUT_ROWS];
         self.lengths = [0; OUTPUT_ROWS];
         self.count = 0;
@@ -393,6 +410,10 @@ impl ConsoleOutput {
     // DESC: Writes or updates write line data.
     // ------------------=
     fn write_line(&mut self, line: &[u8]) {
+        if let Some(output) = self.remote.as_mut() {
+            output.stdout.write_line(line);
+            return;
+        }
         crate::ui::command_terminal::output(line);
         if !line.is_empty(){crate::ui::editor_chrome::terminal::mutate(|state|{if state.line_open{state.append(b"\n");}state.append(line);state.append(b"\n");});}
         if self.count == OUTPUT_ROWS {
@@ -499,6 +520,11 @@ struct ConsoleRuntime {
     shell_path: crate::runtime::object_navigation::ByteText<240>,
     llm_reply: Option<crate::runtime::ai::text_request::PendingReply>,
     llm_delivered_turn: Option<u64>,
+    remote_llm_delivered: Option<u64>,
+    remote_history_clear: bool,
+    remote_exit: bool,
+    remote_dimensions:Option<(usize,usize)>,
+    remote_model:Option<crate::runtime::ai::types::ModelId>,
     workplace_session: [u8;16],
     workplace_result: [u64;8],
     caret_visible: bool,
@@ -677,6 +703,11 @@ impl ConsoleRuntime {
             shell_path: shell_tools::default_path(),
             llm_reply: None,
             llm_delivered_turn: None,
+            remote_llm_delivered: None,
+            remote_history_clear: false,
+            remote_exit: false,
+            remote_dimensions:None,
+            remote_model:None,
             workplace_session: [0;16],
             workplace_result: [0;8],
             caret_visible: true,
@@ -1280,6 +1311,7 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
+        if self.output.remote.is_some() { return; }
         if self.spatial.open || self.spatial.arriving { self.spatial.refresh.set(true); return; }
         self.redraw_scene();
     }
@@ -4120,6 +4152,10 @@ impl ConsoleRuntime {
     // DESC: Locks the active identity session only after retaining its complete desktop layout.
     // ------------------=
     fn lock_session_preserving_desktop(&mut self, inactive: bool) -> bool {
+        if self.output.remote.is_some(){
+            self.cancel_account_password();
+            return crate::runtime::with_runtime(|runtime|runtime.identity.lock_session(self.current_session,self.current_user).is_ok()).unwrap_or(false);
+        }
         self.accounts_cancel();
         self.cancel_account_password();
         self.cancel_personalization_drag();
@@ -10235,9 +10271,19 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: execute_input
-    // DESC: Implements the execute input operation.
+    // DESC: Executes one shared command and separates its completed output from the next prompt.
     // ------------------=
     fn execute_input(&mut self) {
+        let submitted = self.command_length != 0;
+        self.execute_input_inner();
+        if submitted { self.output.write_line(b""); }
+    }
+
+    // ------------------------=
+    // FUNC: execute_input_inner
+    // DESC: Routes local and authenticated remote input through the same native command implementations.
+    // ------------------=
+    fn execute_input_inner(&mut self) {
         self.publish_command_terminal();
         let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
         if self.command_terminal_visible() && !self.ssh_terminal.active && self.workplace_authorized(false)
@@ -10257,7 +10303,7 @@ impl ConsoleRuntime {
         let command = self.command;
         let length = self.command_length;
         let private=self.command_history.private() || infinity_enterprise_core::sensitive(&command[..length]) || console_accounts_cli::sensitive_command(&command[..length]);
-        if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
+        if !private && self.output.remote.is_none() {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.shell_environment(&command[..length]) {self.reset_input();return;}
         if self.automation_command(&command[..length]) || self.llm_command(&command[..length]) { self.reset_input(); return; }
@@ -10367,8 +10413,13 @@ impl ConsoleRuntime {
             let outcome = crate::runtime::with_runtime(|runtime| crate::runtime::console_execution::execute(
                 runtime, self.current_user, self.current_session, &command[..length], now));
             if let Some(outcome) = outcome {
-                for bytes in [outcome.stdout.bytes(), outcome.stderr.bytes()] {
-                    for line in bytes.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
+                if let Some(remote)=self.output.remote.as_mut(){
+                    remote.status=outcome.status;remote.diagnostic=outcome.diagnostic;
+                    remote.stdout.write(outcome.stdout.bytes());remote.stderr.write(outcome.stderr.bytes());
+                }else{
+                    for bytes in [outcome.stdout.bytes(), outcome.stderr.bytes()] {
+                        for line in bytes.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) { self.output.write_line(line); }
+                    }
                 }
                 self.reset_input(); return;
             }
@@ -10403,6 +10454,7 @@ impl ConsoleRuntime {
                 if policy.authorize(resolved.operation, &context) {
                     self.dispatch(resolved.operation);
                 } else {
+                    self.output.fail(crate::runtime::console_execution::Diagnostic::Denied);
                     self.output
                         .write_line(b"That operation is not permitted in this context.");
                 }
@@ -10430,6 +10482,7 @@ impl ConsoleRuntime {
                         }
                     }
                 } else {
+                    self.output.fail(crate::runtime::console_execution::Diagnostic::Syntax);
                     self.output
                         .write_line(b"I couldn't determine what operation you intended.");
                     self.output
@@ -11976,6 +12029,11 @@ impl ConsoleRuntime {
     // DESC: Renders a typed identity failure without exposing credential details.
     // ------------------=
     fn identity_error(&mut self, error: crate::runtime::identity::IdentityError) -> bool {
+        self.output.fail(match error {
+            crate::runtime::identity::IdentityError::AccessDenied | crate::runtime::identity::IdentityError::InvalidCredential => crate::runtime::console_execution::Diagnostic::Denied,
+            crate::runtime::identity::IdentityError::InvalidInput => crate::runtime::console_execution::Diagnostic::Syntax,
+            _ => crate::runtime::console_execution::Diagnostic::Unavailable,
+        });
         self.output
             .write_segments(&[b"Identity operation failed: ", identity_error_text(error)]);
         true
@@ -12147,6 +12205,11 @@ impl ConsoleRuntime {
             SystemOperation::SystemBootStatus => self.system_boot(),
             SystemOperation::MemoryStatus => self.memory_status(),
             SystemOperation::ExitConsole => {
+                if self.output.remote.is_some(){
+                    if crate::ui::terminal_edit::inspect(|state|state.active&&!state.document.is_saved()){self.terminal_edit_close();}
+                    else{self.remote_exit=true;self.output.write_line(b"Session closed.");}
+                    return;
+                }
                 if self.mode == ConsoleMode::Desktop
                     && self.desktop_app == DesktopAppKind::CommandWindow
                 {
@@ -12992,6 +13055,17 @@ impl ConsoleRuntime {
         ] {
             for prefix in [b"model inspect ".as_slice(), b"model select ", b"model test ", b"model bench "] {
                 if command.strip_prefix(prefix) != Some(alias) { continue; }
+                if self.output.remote.is_some() && prefix!=b"model inspect " {
+                    if !self.workplace_authorized(false)||!self.ai_chat_allowed(){self.output.fail(crate::runtime::console_execution::Diagnostic::Denied);return true;}
+                    if !crate::runtime::ai::with_ai_runtime(|ai|ai.native_ready(id)){
+                        self.output.fail(crate::runtime::console_execution::Diagnostic::Unavailable);
+                        self.output.write_line(b"This model is not loaded.");return true;
+                    }
+                    self.remote_model=Some(id);
+                    if prefix==b"model select " {self.output.write_line(b"Model selected for this shell.");}
+                    else {self.llm_command(b"ai ask hello");}
+                    return true;
+                }
                 crate::runtime::ai::with_ai_runtime(|ai| {
                     let entry = crate::runtime::ai::chat::CHAT_MODELS.iter().position(|m| m.id == id).unwrap();
                     let metadata = crate::runtime::ai::chat::CHAT_MODELS[entry];
@@ -14589,9 +14663,11 @@ fn poll_native_ai_inner() {
     unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { geturl::poll(runtime); } }
     let app_turn = crate::runtime::ai::with_ai_runtime(|ai| ai.app_turn_owner());
     if let Some(id) = app_turn {
-        let allowed = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
+        let allowed = if id == crate::runtime::ai::remote_advice::OWNER {
+            crate::runtime::ai::with_ai_runtime(|ai| ai.remote_advice_authorized())
+        } else { unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|
             runtime.ai_chat_allowed() && runtime.assistant_owner_alive(id)
-                && crate::ui::app_assistant::expanded(id)) };
+                && crate::ui::app_assistant::expanded(id)) } };
         if !allowed { crate::runtime::ai::with_ai_runtime(|ai| ai.cancel_app_turn()); }
     }
     let desktop_allowed = unsafe { (&*(&raw const RUNTIME)).as_ref().is_some_and(|runtime|

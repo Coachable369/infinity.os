@@ -145,6 +145,8 @@ pub fn submit(
                     && candidate.user == user
                     && candidate.state == SessionState::Active
                     && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0
+                    && runtime.identity.console_session_authorized(session,user)
+                    && runtime.identity.is_administrator(user)
             });
         if !active {
             return Err(IopError::AccessDenied);
@@ -460,7 +462,8 @@ fn begin_operator_input(
                     && candidate.state == SessionState::Active
                     && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0
             });
-        if !active {
+        if !active || !runtime.identity.console_session_authorized(session,user)
+            || !runtime.identity.is_administrator(user) {
             return Err(IopError::AccessDenied);
         }
         let context = runtime

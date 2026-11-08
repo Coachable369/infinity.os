@@ -340,6 +340,7 @@ pub fn run() -> ! {
         crate::console::input_batch(poll_devices);
         crate::console::poll_installer_work(|| crate::console::input_batch(poll_devices));
         crate::drivers::network::poll();
+        crate::console::poll_ssh_commands();
         crate::console::poll_native_ai();
     }
 }

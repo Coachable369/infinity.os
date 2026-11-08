@@ -2,21 +2,28 @@
 
 ## Implementation
 
-The graphical Console and SSH share the existing native parser, operation schemas
-and extracted handlers through `runtime::console_execution`. Results contain bounded
-stdout/stderr, numeric status, operation ID and typed diagnostics. Success follows
-actual handler completion. There is no Unix shell or process-launch compatibility.
+The graphical Console and SSH use the same native Console dispatcher. The SSH
+reactor exchanges bounded command and response messages through
+`runtime::console_remote`; it never runs application handlers while borrowing the
+network or runtime. Each connection has its own retained headless Console for
+navigation, input state, asynchronous jobs, and response ownership. Results contain
+bounded stdout/stderr, numeric status, operation ID and typed diagnostics. There
+is no Unix shell compatibility layer.
 
 After native password or signed public-key authentication, IdentitySystem provisions an explicitly
-SSH-origin session with exactly `SESSION_REMOTE_QUERY`. It inherits no desktop,
-microphone, camera, personal-space or AI-context authority. Every dispatch rechecks
-live identity/credential/session state, validates a nondelegable exact-operation capability
-through IOP, and retires that capability after completion.
+SSH-origin session with the same account-derived capabilities and personal space
+as a local session. Administrators retain administrative command permissions;
+members retain their ordinary permissions. SSH session IDs and AI contexts are
+independent: login does not attach to, impersonate, or unlock a desktop session.
+Every dispatch and delivery rechecks the live account, credential, and session.
+Current group membership controls administrative actions, including immediate
+promotion or demotion of existing sessions.
 
-The ceiling permits `help`, `system status`, `node list` and `ai status` (metrics
-only). Other operations, plans and command pipelines are rejected explicitly.
-Graphical Console retains its existing broader native operations. No AI inference,
-Pool administration, file transfer, forwarding or privileged remote execution exists.
+The former query-only ceiling has been removed. Native syntax, handlers, and
+authorization apply to both transports, including executable services, scheduled
+tasks, and typed AI. SCP/SFTP and port forwarding remain separate unsupported
+transport features. Graphical actions must not silently modify another session's
+desktop. Native terminal applications use per-session raw input and ANSI output.
 
 One shell or exec channel is allowed per connection; up to four connections have
 independent line editing, history, buffers, terminal geometry and cancellation.
@@ -26,11 +33,14 @@ window changes and SSH interrupt signals are handled. Ctrl-D on an empty line cl
 the session. `exit` is not a separate SSH-specific command. Terminal editing is byte
 oriented; a full Unicode terminal emulator is outside this implementation.
 
-Each command is limited to 512 input bytes, 8192 stdout bytes and 1024 stderr bytes.
-Transport windows apply backpressure; a ten-second command/output deadline bounds
-stalled clients. Accepted operations are bounded local queries. No long-running
-inference or network job is executed on the SSH reactor. Exit status and close are
-queued before native authority is retired, and the transport remains alive to flush.
+Each command is limited to 512 input bytes, 32768 stdout bytes and 8192 stderr bytes.
+Transport windows apply backpressure. Queued dispatch and deferred exec have a
+bounded 180-second deadline; interactive asynchronous responses preserve the next
+draft. Secret entry suppresses echo and history; private mode suppresses history.
+Raw mode forwards application bytes and terminal geometry without line editing,
+echo, history, or a shell prompt. Cancellation and disconnect revoke only the
+owning session's work. No application handler runs on the SSH reactor. Exit status
+and close are queued before native authority is retired.
 
 ## Local provisioning
 
@@ -39,7 +49,7 @@ configuration exists. A saved disabled setting remains disabled. Native account
 passwords and registered public keys are accepted. New accounts automatically receive an Ed25519
 key pair and public-key registration during first-run setup, Settings creation,
 and Console creation. Existing accounts and their keys are not silently modified.
-An authorized local Console can use:
+An authorized Console session can use:
 
 ```
 ssh key add USER ssh-ed25519 BASE64_PUBLIC_KEY
@@ -57,7 +67,23 @@ and typed startup/connection failures. An enabled listener waits for an enabled
 network profile, live link and valid IPv4 address. For a NAT VM, use the host
 address and forwarded SSH port from outside the VM.
 
-## Verification and release
+## Current expansion and verification
+
+The November 8 implementation adds the complete shared command dispatcher,
+account-derived administrative permissions, private terminal editing, native
+program stdin and EOF, and isolated typed AI conversations. `taskscheduler`
+uses five-field cron notation. Native terminal and protocol harnesses cover
+these additions; fresh-installed acceptance and current release packaging must
+be completed before this expansion is considered released. The evidence below
+describes the earlier transport implementation, not acceptance of these additions.
+
+Nested outbound SSH preserves raw terminal bytes and supports directional stdin
+EOF without discarding subsequent stdout, stderr or exit status. File previews
+project authorized text and metadata into SSH output. Wallpaper changes require
+the same user's active desktop; a remote login cannot replace another user's
+desktop or clipboard.
+
+## Earlier transport release evidence
 
 Native implementation commit: `d98403e8` (mainline).
 The final clean release was stopped at the user's request to avoid repeated
@@ -149,9 +175,10 @@ outcomes. All guest provisioning goes through the local graphical Console.
 
 ## Readiness
 
-Submilestone 2 implementation is available with ARM installed evidence. Full
-cross-architecture acceptance remains blocked by x86_64 installation. No
-Submilestone 3 work has been performed or authorized.
+The earlier transport has ARM installed evidence. The expanded command runtime
+requires new installed evidence. Cross-architecture acceptance remains open until
+the x86_64 installation blocker is resolved and the expanded runtime is exercised
+on both targets.
 
 ## Automatic account-key provisioning
 
@@ -167,14 +194,14 @@ native storage transaction. Failure restores identity state; ambiguous commits
 invalidate authentication until reboot. Missing entropy prevents creation rather
 than substituting a fixed key. Generic object reads, versions, copies, aliases,
 writes and removal cannot access these key objects. The owner's authenticated
-local editor can read the current files; remote Console authority cannot.
+editor path can read the current files; generic access remains denied on either transport.
 
 To connect from another machine, the owner must deliberately copy the private
 key to that SSH client and restrict its local permissions (for macOS OpenSSH,
 `chmod 600 PATH_TO_KEY`), then use `ssh -i PATH_TO_KEY USER@HOST`. Merely generating
 a key on InfinityOS does not install it on the remote client. Password login also
 works without exporting a key; see [password authentication and client](ssh-password-client.md).
-Native SSH retains the Submilestone 2 capability ceiling.
+Native SSH uses the account-derived Console authority described above.
 
 Identity format 6 preserves earlier offsets and appends twelve credential slots,
 allowing all eight identity slots to hold passwords and SSH credentials. Formats

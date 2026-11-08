@@ -14,18 +14,20 @@ pub enum Feedback { None, Saved, Requested, Failed, Invalid, InvalidName, Invali
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum NextRun { Disabled, Manual, Paused, NextBoot, BootDelay(u64), Scheduled, Ready, Running, Stopping, Finished, ClockUnavailable }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Text { pub bytes: [u8; 96], pub len: usize, pub caret: usize, pub selected:bool }
-impl Text {
+pub struct TextBuffer<const N:usize> { pub bytes: [u8; N], pub len: usize, pub caret: usize, pub selected:bool }
+pub type Text=TextBuffer<96>;
+pub type Field=TextBuffer<256>;
+impl<const N:usize> TextBuffer<N> {
     // ------------------------=
     // FUNC: new
     // DESC: Creates an empty bounded field without allocating.
     // ------------------=
-    pub const fn new() -> Self { Self { bytes: [0;96], len:0, caret:0, selected:false } }
+    pub const fn new() -> Self { Self { bytes: [0;N], len:0, caret:0, selected:false } }
     // ------------------------=
     // FUNC: from_bytes
     // DESC: Copies one label or script path into an editable presentation value.
     // ------------------=
-    pub fn from_bytes(value: &[u8]) -> Self { let mut s=Self::new();s.len=value.len().min(96);s.bytes[..s.len].copy_from_slice(&value[..s.len]);s.caret=s.len;s }
+    pub fn from_bytes(value: &[u8]) -> Self { let mut s=Self::new();s.len=value.len().min(N);s.bytes[..s.len].copy_from_slice(&value[..s.len]);s.caret=s.len;s }
     // ------------------------=
     // FUNC: bytes
     // DESC: Returns the populated portion of the field.
@@ -60,13 +62,13 @@ impl Text {
 
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Entry { pub id:u32, pub owner:[u8;16], pub can_output:bool, pub next_status:NextRun, pub name:Text, pub path:Text, pub enabled:bool, pub trigger:u8, pub timing:u64, pub restart:u8, pub state:u8, pub next:u64, pub timing_text:Text, pub next_text:Text, pub exit:Option<i64>, pub runs:u64 }
+pub struct Entry { pub id:u32, pub owner:[u8;16], pub can_output:bool, pub next_status:NextRun, pub name:Text, pub path:Text, pub enabled:bool, pub trigger:u8, pub timing:u64, pub restart:u8, pub state:u8, pub next:u64, pub timing_text:Field, pub next_text:Text, pub exit:Option<i64>, pub runs:u64 }
 impl Entry {
     // ------------------------=
     // FUNC: empty
     // DESC: Defines an unused catalog presentation slot.
     // ------------------=
-    pub const fn empty()->Self { Self{id:0,owner:[0;16],can_output:false,next_status:NextRun::Manual,name:Text::new(),path:Text::new(),enabled:false,trigger:0,timing:0,restart:0,state:0,next:0,timing_text:Text::new(),next_text:Text::new(),exit:None,runs:0} }
+    pub const fn empty()->Self { Self{id:0,owner:[0;16],can_output:false,next_status:NextRun::Manual,name:Text::new(),path:Text::new(),enabled:false,trigger:0,timing:0,restart:0,state:0,next:0,timing_text:Field::new(),next_text:Text::new(),exit:None,runs:0} }
     // ------------------------=
     // FUNC: same_definition
     // DESC: Compares durable definition values while ignoring lifecycle and telemetry changes.
@@ -74,17 +76,18 @@ impl Entry {
     pub fn same_definition(&self,other:&Self)->bool {
         self.id==other.id&&self.owner==other.owner&&self.name.bytes()==other.name.bytes()&&self.path.bytes()==other.path.bytes()
             &&self.enabled==other.enabled&&self.trigger==other.trigger&&self.timing==other.timing&&self.restart==other.restart
+            &&(self.trigger!=4||self.timing_text.bytes()==other.timing_text.bytes())
     }
 
 }
 #[derive(Clone,Copy)]
-pub struct State { pub tab:Tab, pub mode:Mode, pub selected:usize, pub selected_id:u32, pub original:Option<Entry>, pub conflict:bool, pub first:usize, pub focus:Target, pub fields:[Text;3], pub enabled:bool, pub trigger:u8, pub restart:u8, pub choice:u8, pub feedback:Feedback }
+pub struct State { pub tab:Tab, pub mode:Mode, pub selected:usize, pub selected_id:u32, pub original:Option<Entry>, pub conflict:bool, pub first:usize, pub focus:Target, pub fields:[Field;3], pub enabled:bool, pub trigger:u8, pub restart:u8, pub choice:u8, pub feedback:Feedback }
 impl State {
     // ------------------------=
     // FUNC: new
     // DESC: Opens on the existing Processes dashboard with no unsaved draft.
     // ------------------=
-    pub const fn new()->Self { Self{tab:Tab::Processes,mode:Mode::Browse,selected:0,selected_id:0,original:None,conflict:false,first:0,focus:Target::None,fields:[Text::new();3],enabled:true,trigger:0,restart:0,choice:0,feedback:Feedback::None} }
+    pub const fn new()->Self { Self{tab:Tab::Processes,mode:Mode::Browse,selected:0,selected_id:0,original:None,conflict:false,first:0,focus:Target::None,fields:[Field::new();3],enabled:true,trigger:0,restart:0,choice:0,feedback:Feedback::None} }
     // ------------------------=
     // FUNC: switch
     // DESC: Changes tabs only when a draft has been saved or explicitly cancelled.
@@ -101,9 +104,9 @@ impl State {
     // ------------------=
     pub fn begin(&mut self,mode:Mode,entry:Option<Entry>) {
         self.mode=mode;self.original=entry;self.conflict=false;self.choice=0;self.feedback=Feedback::None;self.focus=if mode==Mode::Delete{Target::Cancel}else{Target::Field(0)};
-        self.fields=[Text::new();3];self.enabled=true;self.trigger=if self.tab==Tab::Scheduled{2}else{0};self.restart=0;
-        if mode!=Mode::Create {if let Some(e)=entry {self.fields[0]=e.name;self.fields[1]=e.path;self.fields[2]=if e.trigger==3{e.timing_text}else{number(e.timing)};self.enabled=e.enabled;self.trigger=e.trigger;self.restart=e.restart;}}
-        else {self.fields[2]=Text::from_bytes(if self.tab==Tab::Scheduled{b"60"}else{b"0"});}
+        self.fields=[Field::new();3];self.enabled=true;self.trigger=if self.tab==Tab::Scheduled{4}else{0};self.restart=0;
+        if mode!=Mode::Create {if let Some(e)=entry {self.fields[0]=Field::from_bytes(e.name.bytes());self.fields[1]=Field::from_bytes(e.path.bytes());self.fields[2]=if e.trigger>=3{e.timing_text}else{Field::from_bytes(number(e.timing).bytes())};self.enabled=e.enabled;self.trigger=e.trigger;self.restart=e.restart;}}
+        else {self.fields[2]=Field::from_bytes(if self.tab==Tab::Scheduled{b"*/15 * * * *"}else{b"0"});}
     }
     // ------------------------=
     // FUNC: select
@@ -185,7 +188,7 @@ pub fn number(mut value:u64)->Text {let mut scratch=[0;20];let mut n=20;loop{n-=
 // FUNC: decimal
 // DESC: Parses timing only when every digit fits an unsigned value.
 // ------------------=
-pub fn decimal(text:&Text)->Option<u64> {if text.len==0{return None;}text.bytes().iter().try_fold(0u64,|n,c|if c.is_ascii_digit(){n.checked_mul(10)?.checked_add(u64::from(c-b'0'))}else{None})}
+pub fn decimal<const N:usize>(text:&TextBuffer<N>)->Option<u64> {if text.len==0{return None;}text.bytes().iter().try_fold(0u64,|n,c|if c.is_ascii_digit(){n.checked_mul(10)?.checked_add(u64::from(c-b'0'))}else{None})}
 
 #[derive(Clone,Copy)]
 pub struct Control {pub target:Target,pub bounds:Rect,pub enabled:bool}
@@ -252,7 +255,7 @@ pub fn layout(content:Rect,toolbar:Rect,view:&View,scale:usize)->Layout {
         }));}
     }
     if view.state.choice!=0 && matches!(view.state.mode,Mode::Create|Mode::Edit) {
-        let count=if view.state.choice==2{3}else if view.state.tab==Tab::Services{2}else{4};
+        let count=if view.state.choice==2{3}else if view.state.tab==Tab::Services{2}else{5};
         let y=if view.state.choice==1{238}else{280};
         for i in 0..count {l.push(if view.state.choice==1{Target::TriggerOption(i as u8)}else{Target::RestartOption(i as u8)},rect(d,12,y-count*28-8+i*28,dw.saturating_sub(24),28,s),view.can_manage);}
     }
@@ -276,14 +279,14 @@ pub fn field_text_width(bytes:&[u8],scale:usize)->usize {
 // FUNC: field_first
 // DESC: Scrolls only far enough to reveal the caret while using the same proportional font as the painter.
 // ------------------=
-pub fn field_first(text:&Text,width:usize,scale:usize)->usize {
+pub fn field_first<const N:usize>(text:&TextBuffer<N>,width:usize,scale:usize)->usize {
     let mut first=0;while first<text.caret&&field_text_width(&text.bytes()[first..text.caret],scale)>width.saturating_sub(2*scale){first+=1;}first
 }
 // ------------------------=
 // FUNC: field_caret
 // DESC: Places the caret at the nearest visible glyph boundary without relying on fixed character widths.
 // ------------------=
-pub fn field_caret(text:&Text,width:usize,offset:i32,scale:usize)->usize {
+pub fn field_caret<const N:usize>(text:&TextBuffer<N>,width:usize,offset:i32,scale:usize)->usize {
     let first=field_first(text,width,scale);if offset<=0{return first;}let x=offset as usize;let mut prior=0;
     for end in first+1..=text.len {let next=field_text_width(&text.bytes()[first..end],scale);if x<(prior+next)/2{return end-1;}prior=next;}
     text.len

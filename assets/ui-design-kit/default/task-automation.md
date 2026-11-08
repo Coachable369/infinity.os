@@ -13,7 +13,7 @@ icons, wallpaper, or borders. The compositor continues to own the outer frame.
 | Tabs | Secondary / Primary button atlas | Processes, Services, Scheduled Tasks; selected tab uses Primary |
 | Lists | Panel surface and Secondary selection | 40 px rows, selected row focus; real catalog entries only |
 | Fields | Field atlas | Name, Python script, timing; focused border, proportional-font caret hit testing, select-all highlight and atomic single-line paste |
-| Choices | Secondary surface | Boot/manual/interval/once policy, enabled, restart policy |
+| Choices | Secondary surface | Cron/manual/boot/interval/once policy, enabled, restart policy |
 | Actions | Primary / Secondary button atlas | Save/New primary; Start/Stop/Restart/Kill/Edit/Delete/View output secondary |
 | Inline editor | Panel surface | Existing list alongside a persistent draft; Save and Cancel are explicit |
 | Typography | Packaged Inter | 20/28 heading, 14/20 labels, 12/16 metadata |
@@ -26,6 +26,15 @@ The detail card exposes script path, enablement, trigger/timing, next run, last
 exit, and run count. Editing uses labeled fields, native choices, and a separate
 save row. Destructive deletion requires an inline confirmation; no modal is used.
 No empty row or unbacked status is rendered as an actual task.
+
+New Scheduled Tasks use the existing timing field for a standard five-field
+Cron expression in UTC, initially `*/15 * * * *`. Its label names the field order:
+minute, hour, day, month, weekday. The native choice menu adds Cron without new
+artwork or geometry; Manual, Boot, Interval and Once remain available. Validation
+focuses the expression and preserves the draft. The canonical command is
+`taskscheduler create NAME /path.py cron="*/15 * * * *"`; the shared runtime
+computes the next UTC execution. Canonical expression formatting is lossless and
+bounded at 256 bytes. Long expressions use the existing measured field scrolling.
 
 Once-only schedules use readable UTC `YYYY-MM-DD HH:MM[:SS]` dates; interval
 and boot delay fields use seconds. Next-run dates are displayed in UTC. Disabled, manually stopped, manual-only,

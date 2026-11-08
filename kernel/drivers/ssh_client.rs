@@ -1,7 +1,7 @@
 //! Independent native SSH client actor, sharing the NIC without occupying browser sockets.
 use core::{cell::RefCell, sync::atomic::{AtomicBool, Ordering}};
 use crate::http_transport::{device::EthernetQueue, sockets::{self, Endpoint}, smoltcp::{iface::SocketStorage, time::Instant}};
-use crate::runtime::{identity::{StableId, SessionOrigin, SessionState}, execution::SecurityIdentity,
+use crate::runtime::{identity::{StableId, SessionState}, execution::SecurityIdentity,
     capability::CapabilityType, network::types as net};
 use infinity_ssh::{client::{Connection, State}, Failure, PACKET_BUFFER};
 
@@ -47,7 +47,7 @@ impl sockets::Authority for Policy<'_> {
     fn allows(&self, grant: u64, protocol: sockets::Protocol, peer: Endpoint) -> bool {
         if grant != self.caps[0] || protocol != sockets::Protocol::Tcp || peer != self.peer { return false; }
         let mut runtime = self.runtime.borrow_mut();
-        if !local_session(&runtime.identity, self.session) || super::ssh::link(&runtime, self.now) != Some(self.link) { return false; }
+        if !authorized_session(&runtime.identity, self.session) || super::ssh::link(&runtime, self.now) != Some(self.link) { return false; }
         let owner = SecurityIdentity(self.session.0);
         if !self.caps.iter().zip(TYPES).all(|(id, kind)| runtime.capabilities.validate(*id, owner, kind, 0, 1, 0, self.now).is_ok()) { return false; }
         let local = net::Endpoint { address: net::IpAddress::V4(self.link.address), port: PORT };
@@ -60,12 +60,12 @@ impl sockets::Authority for Policy<'_> {
     }
 }
 // ------------------------=
-// FUNC: local_session
-// DESC: Denies remote query sessions and locked or logged-out callers access to outbound connections.
+// FUNC: authorized_session
+// DESC: Allows the same outbound connection authority for live local and SSH users while rechecking remote credential revocation.
 // ------------------=
-fn local_session(identity: &crate::runtime::identity::IdentitySystem, session: StableId) -> bool {
+fn authorized_session(identity: &crate::runtime::identity::IdentitySystem, session: StableId) -> bool {
     (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| identity.session_nth(i))
-        .any(|s| s.id == session && s.origin == SessionOrigin::Local && s.state == SessionState::Active
+        .any(|s| s.id == session && s.state == SessionState::Active
             && identity.console_session_authorized(s.id, s.user))
 }
 // ------------------------=
@@ -81,7 +81,7 @@ pub fn begin_host(session: StableId, host: &str, port: u16, user: &str, now: u64
         let owner = SecurityIdentity(session.0);
         let mut caps = [0; 4];
         let granted = crate::runtime::with_runtime(|runtime| {
-            if !local_session(&runtime.identity, session) { return Err(Failure::PermissionDenied); }
+            if !authorized_session(&runtime.identity, session) { return Err(Failure::PermissionDenied); }
             for (i, kind) in [TYPES[0], TYPES[1], TYPES[2], CapabilityType::NetworkResolve].iter().enumerate() {
                 match runtime.capabilities.grant(*kind, 0, 1, 0, owner, owner, None, 0) {
                     Ok(id) => caps[i] = id,
@@ -123,7 +123,7 @@ pub fn begin(session: StableId, peer: Endpoint, user: &str, now: u64) -> Result<
         if (&*(&raw const ACTIVE)).is_some() || (&*(&raw const RESOLVING)).is_some() { return Err(Failure::Capacity); }
         let mut seed = [0; 8]; if !super::ssh_entropy::fill(&mut seed) { return Err(Failure::EntropyUnavailable); }
         crate::runtime::with_runtime(|runtime| {
-            if !local_session(&runtime.identity, session) { return Err(Failure::PermissionDenied); }
+            if !authorized_session(&runtime.identity, session) { return Err(Failure::PermissionDenied); }
             let link = super::ssh::link(runtime, now / 1000).ok_or(Failure::NetworkUnavailable)?;
             let owner = SecurityIdentity(session.0);
             let mut caps = [0; 3];
@@ -182,7 +182,7 @@ pub fn cancel(session: StableId) {
 // ------------------=
 fn access<T>(session: StableId, action: impl FnOnce(&mut Connection<'static>) -> Result<T, Failure>) -> Result<T, Failure> {
     let _guard = lock().ok_or(Failure::Capacity)?;
-    if !crate::runtime::with_runtime(|r| local_session(&r.identity, session)).unwrap_or(false) { return Err(Failure::PermissionDenied); }
+    if !crate::runtime::with_runtime(|r| authorized_session(&r.identity, session)).unwrap_or(false) { return Err(Failure::PermissionDenied); }
     unsafe { let actor = (&mut *(&raw mut ACTIVE)).as_mut().filter(|a| a.session == session).ok_or(Failure::Disconnected)?;
         action(&mut actor.ssh) }
 }
@@ -222,6 +222,11 @@ pub fn write(session: StableId, bytes: &[u8]) -> Result<usize, Failure> {
     access(session, |ssh| { let n = ssh.write(bytes)?;
         unsafe { INFINITY_SSH_CLIENT_SNAPSHOT[4] = INFINITY_SSH_CLIENT_SNAPSHOT[4].saturating_add(n as u64); } Ok(n) })
 }
+// ------------------------=
+// FUNC: finish_input
+// DESC: Half-closes only the owning authenticated outbound channel after its encrypted send queue drains.
+// ------------------=
+pub fn finish_input(session:StableId)->Result<bool,Failure>{access(session,|ssh|ssh.finish_input())}
 // ------------------------=
 // FUNC: ingest
 // DESC: Accepts only ARP and the dedicated outbound tuple, preserving unrelated native connections.

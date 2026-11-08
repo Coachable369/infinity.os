@@ -641,7 +641,44 @@ pub(super) fn poll(console:&mut ConsoleRuntime) {unsafe {
         .is_some_and(|execution|execution.interaction_active)) {
         generation_progress(console,VoiceStep::InteractionReady);
     }
+    poll_lease(console);
+}}
+// ------------------------=
+// FUNC: poll_remote
+// DESC: Advances SSH-owned compiler and program work independently of desktop voice progress and presentation.
+// ------------------=
+pub(super) fn poll_remote(console:&mut ConsoleRuntime) { poll_app(console); unsafe {poll_lease(console);} }
+// ------------------------=
+// FUNC: remote_busy
+// DESC: Reports only compilation or native execution owned by this authenticated shell.
+// ------------------=
+pub(super) fn remote_busy(console:&ConsoleRuntime)->bool {unsafe{
+    (&*(&raw const LEASE)).as_ref().is_some_and(|lease|lease.owner.0==console.current_session.0)
+        || (&*(&raw const APP)).as_ref().is_some_and(|(owner,_)|owner.0==console.current_session.0)
+}}
+// ------------------------=
+// FUNC: waiting_input
+// DESC: Admits remote stdin only when the caller's native application is parked on an input read.
+// ------------------=
+pub(super) fn waiting_input(console:&ConsoleRuntime)->bool {unsafe{
+    (&*(&raw const APP)).as_ref().is_some_and(|(owner,_)|owner.0==console.current_session.0)
+        && (&*(&raw const APP_INPUT)).waiting
+}}
+// ------------------------=
+// FUNC: remote_cancel
+// DESC: Cancels only the remote caller's native lease and stdin without touching another session's program.
+// ------------------=
+pub(super) fn remote_cancel(console:&mut ConsoleRuntime) {unsafe{
+    if let Some(lease)=(&*(&raw const LEASE)).as_ref().filter(|lease|lease.owner.0==console.current_session.0){let _=job::cancel(lease.owner);}
+    if (&*(&raw const APP)).as_ref().is_some_and(|(owner,_)|owner.0==console.current_session.0){APP_CANCEL=true;(&mut *(&raw mut APP_INPUT)).close();}
+}}
+// ------------------------=
+// FUNC: poll_lease
+// DESC: Completes the shared native compilation under its original shell authority.
+// ------------------=
+unsafe fn poll_lease(console:&mut ConsoleRuntime) {unsafe {
     let Some(lease)=(&mut *(&raw mut LEASE)).as_mut() else{return;};
+    if super::remote_commands::foreign_owner(lease.owner.0,console) {return;}
     let owner=SecurityIdentity(console.current_session.0);
     let now=crate::runtime::ai::qwen::workers::clock_ns();
     let target=REPLY_TARGET;
@@ -851,6 +888,7 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
 // ------------------=
 pub(super) fn input(console:&mut ConsoleRuntime,key:ConsoleKey)->bool {unsafe {
     if !APP_ACTIVE{return false;}
+    if (&*(&raw const APP)).as_ref().is_none_or(|(owner,_)|owner.0!=console.current_session.0){return false;}
     if crate::ui::native_uikit::presentation().active {
         match key {
             ConsoleKey::Shortcut(b'c')=>APP_CANCEL=true,
@@ -865,7 +903,7 @@ pub(super) fn input(console:&mut ConsoleRuntime,key:ConsoleKey)->bool {unsafe {
         ConsoleKey::Enter=>{
             if (&mut *(&raw mut APP_INPUT)).submit(&console.command[..console.command_length]) {
                 INFINITY_NATIVE_APP_SNAPSHOT[6]=0;
-                console.output.write_line(&console.command[..console.command_length]);
+                if console.output.remote.is_none(){console.output.write_line(&console.command[..console.command_length]);}
                 APP_LINE_OPEN=false;console.reset_input();
             }
         },
@@ -880,8 +918,9 @@ pub(super) fn input(console:&mut ConsoleRuntime,key:ConsoleKey)->bool {unsafe {
 fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     use crate::runtime::native_process::State;
     let Some((owner,task))=(&mut *(&raw mut APP)).as_mut() else{return;};
+    if super::remote_commands::foreign_owner(owner.0,console) {return;}
     let attached=crate::ui::editor_chrome::terminal::inspect(|state|state.attached) && console.assistant_owner_alive(2);
-    let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&(console.assistant_owner_alive(1)||attached)&&!APP_CANCEL;
+    let authorized=*owner==SecurityIdentity(console.current_session.0)&&active(console)&&(console.output.remote.is_some()||console.assistant_owner_alive(1)||attached)&&!APP_CANCEL;
     let monitor=APP_MONITOR.and_then(|h|crate::runtime::with_runtime(|r|r.execution.get(h).map(|c|(c.state,c.budget))).flatten());
     let status=monitor.map(|v|v.0);
     let authorized=authorized && status!=Some(crate::runtime::execution::ContextState::Stopped);
@@ -938,6 +977,11 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         APP_UI_REVISION=ui_revision;console.redraw();
     }
     if APP_OUTPUT_LENGTH>0 {
+        if let Some(output)=console.output.remote.as_mut() {
+            output.stdout.write(&(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH]);
+            INFINITY_NATIVE_APP_SNAPSHOT[7]=INFINITY_NATIVE_APP_SNAPSHOT[7].saturating_add(APP_OUTPUT_LENGTH as u64);
+            APP_OUTPUT_LENGTH=0;
+        } else {
         crate::ui::command_terminal::mutate(|s|{if s.authorized{s.append(&(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH]);}});
         crate::ui::editor_chrome::terminal::mutate(|terminal|terminal.append(&(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH]));
         for &byte in &(&*(&raw const APP_OUTPUT))[..APP_OUTPUT_LENGTH] {
@@ -952,6 +996,7 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         }
         INFINITY_NATIVE_APP_SNAPSHOT[7]=INFINITY_NATIVE_APP_SNAPSHOT[7].saturating_add(APP_OUTPUT_LENGTH as u64);
         APP_OUTPUT_LENGTH=0;console.redraw();
+        }
     }
     if state==State::Runnable {INFINITY_NATIVE_APP_SNAPSHOT[6]=u64::from((&*(&raw const APP_INPUT)).waiting);}
     if state==State::Runnable{return;}
@@ -986,6 +1031,10 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
         report_app_failure(console,recovery,failure,authorized);
     }
     if owner==SecurityIdentity(console.current_session.0) {
+        if let Some(output)=console.output.remote.as_mut(){
+            output.status=match state{State::Exited(code)if released=>code as u32,State::Cancelled=>130,_=>70};
+            if output.status!=0{output.diagnostic=crate::runtime::console_execution::Diagnostic::Unavailable;}
+        }
         match state {
             State::Exited(code) if released=>console.output.write_number(b"Program exit status: ",code as u64),
             State::Cancelled=>console.output.write_line(b"Program cancelled."),

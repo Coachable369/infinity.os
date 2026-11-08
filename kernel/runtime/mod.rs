@@ -21,6 +21,7 @@ pub mod console_execution;
 pub mod console_help;
 pub mod console_help_paint;
 pub mod console_terminal;
+pub mod console_remote;
 pub mod event;
 pub mod execution;
 #[cfg(all(

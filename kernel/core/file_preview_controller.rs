@@ -36,7 +36,32 @@ impl ConsoleRuntime {
     // DESC: Resolves relative paths and reads only authorized Personal Space content without invoking a file association.
     // ------------------=
     pub(super) fn preview_file(&mut self,path:&[u8]) {
+        if self.output.remote.is_some(){self.remote_preview(path);return;}
         self.load_preview_file(path,true);
+    }
+    // ------------------------=
+    // FUNC: remote_preview
+    // DESC: Previews authorized text or file metadata in the caller's SSH output without replacing a desktop surface.
+    // ------------------=
+    fn remote_preview(&mut self,path:&[u8]) {
+        use crate::runtime::console_execution::Diagnostic;
+        if !self.workplace_authorized(false){self.output.fail(Diagnostic::Denied);return;}
+        let Some(path)=self.utility_path(path) else {self.output.fail(Diagnostic::Syntax);self.output.write_line(b"Invalid preview path.");return;};
+        let Ok((metadata,_))=crate::storage::object_inspect_path(path.as_bytes()) else {self.output.fail(Diagnostic::Unavailable);self.output.write_line(b"File is unavailable.");return;};
+        if !preview::can_read(true,metadata.space==crate::storage::object::Space::Personal,metadata.owner.0,self.current_user.0){self.output.fail(Diagnostic::Denied);return;}
+        if metadata.kind==crate::storage::object::ObjectType::NamespaceNode {
+            let mut command=[0u8;104];command[..5].copy_from_slice(b"list ");let n=path.as_bytes().len();command[5..5+n].copy_from_slice(path.as_bytes());
+            self.utility_command(&command[..5+n]);return;
+        }
+        self.output.write_line(path.as_bytes());self.output.write_number(b"Bytes: ",u64::from(metadata.logical_size));
+        let mut bytes=[0u8;16384];
+        if metadata.logical_size as usize>bytes.len(){self.output.write_line(b"Preview exceeds 16 KiB. Use a file reader for the complete document.");return;}
+        match crate::storage::object_read_path(path.as_bytes(),None,&mut bytes){
+            Ok((_,length)) if core::str::from_utf8(&bytes[..length]).is_ok() && !bytes[..length].iter().any(|b|*b<32&&!matches!(*b,b'\n'|b'\r'|b'\t'))=>self.output.write_line(&bytes[..length]),
+            Ok(_)=>self.output.write_line(b"Binary content; metadata shown above."),
+            Err(_)=>{self.output.fail(Diagnostic::Unavailable);self.output.write_line(b"File could not be read.");},
+        }
+        bytes.fill(0);
     }
     // ------------------------=
     // FUNC: load_preview_file
@@ -79,6 +104,12 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn set_desktop_wallpaper(&mut self,path:&[u8],save:bool){
         if !self.workplace_authorized(save){return;}
+        if self.output.remote.is_some() && !unsafe{(&*(&raw const RUNTIME)).as_ref().is_some_and(|local|
+            local.current_user==self.current_user&&local.workplace_authorized(false)
+                &&matches!(local.mode,ConsoleMode::Desktop|ConsoleMode::Console|ConsoleMode::Settings))} {
+            self.output.fail(crate::runtime::console_execution::Diagnostic::Denied);
+            self.output.write_line(b"Wallpaper requires your own active desktop session.");return;
+        }
         self.load_preview_file(path,false);let state=preview::current();
         if !matches!(state.kind,Kind::Bitmap|Kind::Png){if save{self.preview_file(path);}else{self.close_preview_task();}return;}
         if save&&crate::storage::wallpaper_preference(self.current_user.0,self.current_session.0,Some(&state.path[..state.path_len])).is_err(){

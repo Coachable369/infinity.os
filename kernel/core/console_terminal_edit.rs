@@ -20,7 +20,7 @@ impl ConsoleRuntime {
         };
         let revision=if new{None}else{crate::storage::object_inspect_path(path.as_bytes()).ok().map(|(m,_)|(m.object.id.0,m.current_version))};
         if !edit::mutate(|s|s.document.open(&bytes[..len])){bytes.fill(0);self.output.write_line(b"edit supports ASCII text up to 16 KiB; this file was not changed.");return;}
-        bytes.fill(0);self.open_command_window();crate::bootstrap::system_ui_settings_changed();
+        bytes.fill(0);if self.output.remote.is_none(){self.open_command_window();crate::bootstrap::system_ui_settings_changed();}
         edit::mutate(|s|{s.active=true;s.closing_window=false;s.path.fill(0);s.path_len=path.as_bytes().len();s.path[..s.path_len].copy_from_slice(path.as_bytes());s.document.set_cursor(0);s.top=0;s.revision=revision;s.memory=memory.map(|(id,version)|(id.0,version));s.prompt=0;s.notice=if new{b"New file - Ctrl+S to create"}else{b"Ctrl+S Save   Ctrl+X Exit   Ctrl+W Find   Ctrl+G Go to line"};});
     }
     // ------------------------=

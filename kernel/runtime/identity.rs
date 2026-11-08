@@ -308,7 +308,6 @@ pub struct PersonalSpaceOwnership {
     pub space: StableId,
 }
 
-pub const SESSION_REMOTE_QUERY: u64 = 1 << 32;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SessionOrigin { Local, Ssh }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -888,7 +887,6 @@ impl IdentitySystem {
             .iter()
             .position(|session| session.is_none_or(|session| session.state == SessionState::Closed))
             .ok_or(IdentityError::Full)?;
-        let is_owner = self.is_administrator(user);
         let session = Session {
             origin: SessionOrigin::Local,
             remote_key: None, remote_password: None,
@@ -897,8 +895,7 @@ impl IdentitySystem {
             machine: machine.id,
             created: now,
             state: SessionState::Active,
-            capabilities: ORDINARY_SESSION_CAPABILITIES
-                | if is_owner { SESSION_IDENTITY_MANAGE } else { 0 },
+            capabilities: self.console_capabilities(user),
             personal_space: identity.personal_space_ref,
             ai_context: self.allocate_id(0x41),
         };

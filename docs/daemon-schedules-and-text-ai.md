@@ -42,32 +42,54 @@ service enable worker
 service logs worker
 service delete worker
 
-schedule create report /home/default/documents/report.py every=3600
-schedule create once /home/default/documents/report.py at="2026-12-01 09:00"
-schedule inspect report
-schedule edit report every=7200
-schedule disable report
-schedule run report
-schedule stop report
-schedule restart report
-schedule kill report
-schedule logs report
-schedule enable report
-schedule delete report
+taskscheduler create report */15 * * * * /home/default/documents/report.py
+taskscheduler create once /home/default/documents/report.py at="2026-12-01 09:00"
+taskscheduler inspect report
+taskscheduler edit report every=7200
+taskscheduler disable report
+taskscheduler run report
+taskscheduler stop report
+taskscheduler restart report
+taskscheduler kill report
+taskscheduler logs report
+taskscheduler enable report
+taskscheduler delete report
 ```
+
+`taskscheduler` is the canonical scheduled-task command. `schedule` remains an
+active compatibility alias for existing scripts. The default trigger is hourly,
+`0 * * * *`. Both of these forms use the same five cron fields:
+
+```text
+taskscheduler create report 0 9 * * MON-FRI /home/default/documents/report.py
+taskscheduler edit report cron="0,30 9-17/2 1,15 * MON"
+```
+
+Fields are minute (0–59), hour (0–23), day of month (1–31), month (1–12),
+and day of week (0–7; 0 and 7 are Sunday). `*`, comma lists, inclusive ranges,
+and steps on ranges or wildcards are supported. Three-letter month and weekday
+names are case-insensitive. Calendar evaluation follows traditional
+[cron day-field semantics](https://man.openbsd.org/crontab.5): two restricted day
+fields use OR; when either starts with `*`, the day fields must both match.
+For example, `0 9 1,15 * MON` runs on the first and fifteenth and every Monday.
+All times are UTC, with no DST conversion. Supported calendar dates are 1970–2199.
+Cron dispatch checks the current minute, skips missed historical minutes, and
+persists its next-minute fence before execution. It never overlaps the same job.
+This is the five-field schedule notation; Python scripts run through the native
+runner, without a Unix shell, crontab environment assignments, or shell expansion.
 
 Task Manager exposes the same operations on its **Services** and **Scheduled
 Tasks** tabs. Creation and editing use inline fields; Save must commit durable
 state before the UI reports success. Stop a running job before editing or
 deleting its definition. Boot/manual policies are available for daemons;
-schedules also support fixed intervals and a one-time UTC date. Dates accept
+schedules support standard five-field cron, fixed intervals and a one-time UTC date. Dates accept
 `YYYY-MM-DDTHH:MM[:SS]Z`, quoted `YYYY-MM-DD HH:MM[:SS]`, or epoch seconds.
 All dates use UTC; there is no implicit local-time conversion. Quote an entire
 script path when it contains spaces. Spaces and tabs separate command tokens.
 The GUI preserves unsaved drafts and rejects stale edits or deletion when that
 job's definition changed; unrelated job activity and run counters do not conflict.
 
-Configuration and lifecycle changes require an active local administrator.
+Configuration and lifecycle changes require an active authenticated administrator.
 Jobs run with their approving account's bounded source access after logout;
 deactivation or loss of administrator membership cancels execution. Stop cancels
 at the next native boundary; Kill immediately reclaims the suspended native task.

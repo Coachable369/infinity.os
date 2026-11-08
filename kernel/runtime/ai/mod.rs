@@ -10,6 +10,7 @@ pub mod clock;
 pub mod control;
 pub mod session_request;
 pub mod text_request;
+pub mod remote_advice;
 pub mod generation;
 pub mod intelligence;
 pub mod intent;
@@ -147,6 +148,7 @@ pub struct AiRuntime {
     other_native: Option<qwen::service::Service>,
     active_native: ModelId,
     app_owner: Option<usize>,
+    remote_advice: remote_advice::State,
     app_workflow_goal: Option<u64>,
     app_saved: Option<qwen::service::Conversation>,
     application_agent: Option<application_agent::Agent>,
@@ -421,6 +423,7 @@ impl AiRuntime {
     // DESC: Releases app inference and clears private document tokens before another consumer uses the model.
     // ------------------=
     pub fn cancel_app_turn(&mut self) {
+        if self.remote_advice_active(){if !self.remote_advice_authorized(){self.finish_remote_advice(chat::GenerationState::Cancelled,true);}return;}
         if let Some(id) = self.app_owner.take() {
             if let Some(service) = self.qwen.as_mut() {
                 if let Some(saved) = self.app_saved.take() {
@@ -468,6 +471,7 @@ impl AiRuntime {
     // DESC: Cooperatively streams app output and stages complete edits without publishing private text to desktop chat or speech.
     // ------------------=
     fn poll_app_turn(&mut self) -> bool {
+        if self.remote_advice_active(){return self.poll_remote_advice();}
         let Some(id) = self.app_owner else {
             return false;
         };
@@ -748,6 +752,7 @@ impl AiRuntime {
     // ------------------=
     pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
         if self.chat_owner != owner {
+            self.remote_advice.local_epoch=self.remote_advice.local_epoch.wrapping_add(1);
             self.inference_request = None;
             self.hermes_memory = None;
             self.hermes_session = [0;16];
@@ -763,9 +768,9 @@ impl AiRuntime {
             self.intelligence_summary = None;
             self.intelligence_checkpoint_pending = false;
             self.runtime_failure_checkpoints = [None; intelligence::MAX_GOALS];
-            if let Some(service) = self.qwen.as_mut() {
+            if !self.remote_advice_active(){if let Some(service) = self.qwen.as_mut() {
                 service.clear_conversation();
-            }
+            }}
             if let Some(service) = self.other_native.as_mut() {
                 service.clear_conversation();
             }
@@ -787,7 +792,8 @@ impl AiRuntime {
         self.hermes_session=session;
         self.hermes_memory=document;
         if changed {
-            if let Some(service)=self.qwen.as_mut(){service.clear_conversation();}
+            self.remote_advice.local_epoch=self.remote_advice.local_epoch.wrapping_add(1);
+            if !self.remote_advice_active(){if let Some(service)=self.qwen.as_mut(){service.clear_conversation();}}
             if let Some(service)=self.other_native.as_mut(){service.clear_conversation();}
         }
     }
@@ -1542,6 +1548,7 @@ impl AiRuntime {
             other_native: None,
             active_native: chat::HERMES_MODEL_ID,
             app_owner: None,
+            remote_advice: remote_advice::State::new(),
             app_workflow_goal: None,
             app_saved: None,
             application_agent: None,

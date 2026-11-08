@@ -126,6 +126,16 @@ impl<'a> Connection<'a> {
         }
     }
     // ------------------------=
+    // FUNC: finish_input
+    // DESC: Sends stdin EOF after pending encrypted input drains while preserving the reverse output stream and remote exit status.
+    // ------------------=
+    pub fn finish_input(&mut self)->Result<bool,Failure>{
+        if self.state!=State::Connected{return Err(Failure::PermissionDenied);}
+        if self.runner.is_output_pending(){return Ok(false);}
+        self.runner.finish_channel_input(self.channel.as_ref().ok_or(Failure::Disconnected)?).map_err(protocol_failure)?;
+        Ok(true)
+    }
+    // ------------------------=
     // FUNC: write
     // DESC: Forwards bounded terminal input only after successful authentication.
     // ------------------=
@@ -146,4 +156,21 @@ impl Connection<'_> {
         if self.state==State::Connected{self.runner.term_window_change(self.channel.as_ref().ok_or(Failure::Disconnected)?,&sunset::packets::WinChange{cols:columns,rows,width:0,height:0}).map_err(protocol_failure)?;}
         self.columns=columns;self.rows=rows;Ok(())
     }
+}
+
+// ------------------------=
+// FUNC: pending_input_capacity
+// DESC: Reports exact room in the bounded terminal queue after its acknowledged prefix is reclaimed.
+// ------------------=
+pub fn pending_input_capacity(capacity:usize,length:usize,sent:usize)->usize{
+    if sent>length||length>capacity{0}else{capacity-(length-sent)}
+}
+// ------------------------=
+// FUNC: queue_terminal_input
+// DESC: Atomically appends literal bytes behind unsent input without decoding controls or discarding a partial write.
+// ------------------=
+pub fn queue_terminal_input(buffer:&mut[u8],length:&mut usize,sent:&mut usize,bytes:&[u8])->bool{
+    if *sent>*length||*length>buffer.len()||bytes.len()>pending_input_capacity(buffer.len(),*length,*sent){return false;}
+    buffer.copy_within(*sent..*length,0);*length-=*sent;*sent=0;
+    buffer[*length..*length+bytes.len()].copy_from_slice(bytes);*length+=bytes.len();true
 }

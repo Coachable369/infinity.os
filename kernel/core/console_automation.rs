@@ -9,7 +9,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn automation_command(&mut self, input: &[u8]) -> bool {
         let verb = input.trim_ascii().split(u8::is_ascii_whitespace).next().unwrap_or(b"");
-        if !matches!(verb, b"service" | b"schedule") { return false; }
+        if !matches!(verb, b"service" | b"taskscheduler" | b"schedule") { return false; }
         if let Ok(command) = automation::parse(input) {
             if command.kind == Kind::Daemon && command.action == Action::Inspect && super::service_id(command.name.bytes()).is_some() {
                 let access=self.automation_access();
@@ -29,12 +29,12 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn automation_access(&self) -> Access {
         crate::runtime::with_runtime(|runtime| {
-            use crate::runtime::identity::{SessionOrigin, SessionState, UserState, SESSION_SETTINGS_UPDATE_ALLOWED};
+            use crate::runtime::identity::{SessionState, UserState, SESSION_SETTINGS_UPDATE_ALLOWED};
             let active = runtime.identity.user(self.current_user).is_some_and(|u| u.state == UserState::Active);
             let session = (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| runtime.identity.session_nth(i))
-                .find(|s| s.id == self.current_session && s.user == self.current_user && s.state == SessionState::Active);
-            let administrator = session.is_some_and(|s| s.origin == SessionOrigin::Local
-                && s.capabilities & SESSION_SETTINGS_UPDATE_ALLOWED != 0 && runtime.identity.is_administrator(self.current_user));
+                .find(|s| s.id == self.current_session && s.user == self.current_user && s.state == SessionState::Active
+                    && runtime.identity.console_session_authorized(s.id,s.user));
+            let administrator = session.is_some_and(|s| s.capabilities & SESSION_SETTINGS_UPDATE_ALLOWED != 0 && runtime.identity.is_administrator(self.current_user));
             Access::evaluate(runtime.automation_ready, active && session.is_some(), administrator)
         }).unwrap_or(Access { available: false, can_read: false, can_manage: false, reason: Some(Error::Unavailable) })
     }
@@ -78,7 +78,7 @@ impl ConsoleRuntime {
             let now_ns = crate::runtime::ai::qwen::workers::clock_ns();
             let utc = crate::runtime::ai::clock::SYSTEM.utc_nanoseconds(now_ns).map(|n| n / 1_000_000_000);
             crate::runtime::with_runtime(|runtime| {
-                if runtime.automation.count(command.kind) == 0 { self.output.write_line(b"No configured jobs. Use help service or help schedule to create one."); }
+                if runtime.automation.count(command.kind) == 0 { self.output.write_line(b"No configured jobs. Use help service or help taskscheduler to create one."); }
                 for index in 0..runtime.automation.count(command.kind) {
                     if let Some(entry) = runtime.automation.nth(command.kind, index) {
                         self.output.write_segments(&[entry.name.bytes(), b"  ", if entry.enabled { b"enabled" } else { b"disabled" }, b"  ", state_text(entry.state), b"  ", entry.path.bytes()]);
@@ -171,6 +171,7 @@ impl ConsoleRuntime {
             Trigger::Boot { delay_seconds } => self.output.write_number(b"Trigger: seconds after boot: ", u64::from(delay_seconds)),
             Trigger::Interval { seconds } => self.output.write_number(b"Trigger: repeat every seconds: ", u64::from(seconds)),
             Trigger::Once { unix_seconds } => self.automation_utc(b"Trigger: once at ", unix_seconds),
+            Trigger::Cron { schedule } => { if let Ok(expression)=automation::format_cron(schedule) { self.output.write_segments(&[b"Trigger: cron (UTC): ",expression.bytes()]); } }
         }
     }
 
@@ -195,7 +196,7 @@ impl ConsoleRuntime {
                 NextRun::Disabled => b"Next: disabled; run explicitly to execute once.", NextRun::Manual => b"Next: manual run only.",
                 NextRun::Paused => b"Next: paused by stop; start or enable to resume.", NextRun::NextBoot => b"Next: next boot.",
                 NextRun::Ready => b"Next: ready; waiting for a worker.", NextRun::Running => b"Next: current run must finish; runs never overlap.",
-                NextRun::Stopping => b"Next: waiting for process termination.", NextRun::Finished => b"Next: one-time trigger complete; edit the date or run manually.",
+                NextRun::Stopping => b"Next: waiting for process termination.", NextRun::Finished => b"Next: no future automatic run; edit the trigger or run manually.",
                 NextRun::ClockUnavailable => b"Next: waiting for a valid system UTC clock.", _ => b"Next: unavailable.",
             }),
         }
@@ -206,12 +207,14 @@ impl ConsoleRuntime {
     // DESC: Reports a specific failure without acknowledging an uncommitted mutation.
     // ------------------=
     pub(super) fn automation_error(&mut self, error: Error, action: Option<Action>) {
+        use crate::runtime::console_execution::Diagnostic;
+        self.output.fail(match error {Error::Denied|Error::SignInRequired|Error::Protected=>Diagnostic::Denied,Error::Storage|Error::Corrupt|Error::Unavailable|Error::ClockUnavailable|Error::ScriptUnavailable|Error::Busy=>Diagnostic::Unavailable,Error::Full=>Diagnostic::Capacity,_=>Diagnostic::Syntax});
         self.output.write_line(match error {
-            Error::Invalid => b"Invalid command. Use help service or help schedule for syntax and examples.",
-            Error::Unknown => b"Job not found. Use service list or schedule list.", Error::Duplicate => b"This job name is already in use. Choose another name or edit the existing job.",
+            Error::Invalid => b"Invalid command. Use help service or help taskscheduler for syntax and examples.",
+            Error::Unknown => b"Job not found. Use service list or taskscheduler list.", Error::Duplicate => b"This job name is already in use. Choose another name or edit the existing job.",
             Error::Full => b"All 16 job slots are in use. Delete an unused job first.", Error::SignInRequired => b"Sign in to inspect or manage jobs.",
-            Error::Denied if matches!(action,Some(Action::Inspect|Action::Logs)) => b"Only this job's approving account or a local administrator can inspect its details or output.",
-            Error::Denied => b"An active local administrator session is required to change jobs.",
+            Error::Denied if matches!(action,Some(Action::Inspect|Action::Logs)) => b"Only this job's approving account or an administrator can inspect its details or output.",
+            Error::Denied => b"An active administrator session is required to change jobs.",
             Error::Protected => b"Kernel infrastructure is protected. Choose a distinct name for an executable daemon.",
             Error::ScriptUnavailable => b"Script unavailable. Use an existing absolute .py path readable by the job's approving account.",
             Error::ClockUnavailable => b"A valid system UTC clock is required. Check Date & Time settings before scheduling or starting jobs.",

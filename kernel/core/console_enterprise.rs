@@ -9,55 +9,8 @@ use crate::ui::clipboard::{self,ClipboardKind,ClipboardError};
 // ------------------=
 fn now_ms()->u64 {crate::runtime::ai::qwen::workers::clock_ns()/1_000_000}
 
-struct NativeFiles;
-// ------------------------=
-// FUNC: storage_error
-// DESC: Preserves capacity and collision failures instead of reporting every native storage rejection as generic I/O.
-// ------------------=
-fn storage_error(error:crate::storage::object::ObjectError)->Error {
-    use crate::storage::object::ObjectError as E;
-    match error {E::InsufficientCapacity=>Error::Capacity,E::NameConflict=>Error::Conflict,_=>Error::Storage}
-}
-impl Files for NativeFiles {
-    // ------------------------=
-    // FUNC: read
-    // DESC: Reads exact native regular-file content, rejecting truncation and system objects.
-    // ------------------=
-    fn read(&mut self,path:&[u8],out:&mut [u8])->Result<usize,Error> {
-        let (metadata,_)=crate::storage::object_inspect_path(path).map_err(|_|Error::Storage)?;
-        if metadata.space!=crate::storage::object::Space::Personal || matches!(metadata.content_type,
-            crate::storage::object::ContentType::Namespace|crate::storage::object::ContentType::System) {return Err(Error::Invalid);}
-        if metadata.logical_size as usize>out.len() {return Err(Error::Capacity);}
-        let (_,n)=crate::storage::object_read_path(path,None,out).map_err(|_|Error::Storage)?;
-        if n!=metadata.logical_size as usize {return Err(Error::Integrity);}Ok(n)
-    }
-    // ------------------------=
-    // FUNC: copy
-    // DESC: Creates an independent native backup and refuses existing destination names.
-    // ------------------=
-    fn copy(&mut self,source:&[u8],destination:&[u8])->Result<(),Error> {
-        personal_destination(destination)?;
-        crate::storage::object_copy_path(source,destination).map(|_|()).map_err(storage_error)
-    }
-    // ------------------------=
-    // FUNC: write
-    // DESC: Creates one native content version; failed commits keep the old version authoritative.
-    // ------------------=
-    fn write(&mut self,path:&[u8],bytes:&[u8])->Result<u32,Error> {
-        crate::storage::object_write_path(path,bytes).map_err(storage_error)
-    }
-}
-// ------------------------=
-// FUNC: personal_destination
-// DESC: Restricts newly created workplace files to an existing Personal Space parent with no overwrite.
-// ------------------=
-fn personal_destination(path:&[u8])->Result<(),Error> {
-    let normalized=crate::runtime::object_navigation::normalize_absolute_path(path).map_err(|_|Error::Invalid)?;
-    if normalized.as_bytes()!=path || crate::storage::namespace_resolve(path).is_ok() {return Err(Error::Conflict);}
-    let at=path.iter().rposition(|b|*b==b'/').ok_or(Error::Invalid)?;
-    let (parent,_)=crate::storage::object_inspect_path(&path[..at.max(1)]).map_err(|_|Error::Storage)?;
-    if parent.space!=crate::storage::object::Space::Personal {return Err(Error::Invalid);}Ok(())
-}
+#[path="console_enterprise_access.rs"] mod access;
+use access::NativeFiles;
 
 impl ConsoleRuntime {
     // ------------------------=
@@ -221,10 +174,7 @@ impl ConsoleRuntime {
     // DESC: Checks the full active session and native Personal Space capability before workplace operations.
     // ------------------=
     pub(super) fn workplace_authorized(&self,write:bool)->bool {
-        use crate::runtime::identity::{SessionState,SESSION_PERSONAL_READ,SESSION_PERSONAL_WRITE};
-        let required=if write {SESSION_PERSONAL_WRITE}else{SESSION_PERSONAL_READ};
-        crate::runtime::with_runtime(|r|(0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i|r.identity.session_nth(i))
-            .any(|s|s.id==self.current_session && s.user==self.current_user && s.state==SessionState::Active && s.capabilities&required!=0)).unwrap_or(false)
+        NativeFiles{owner:self.current_user,session:self.current_session}.authorized(write)
     }
     // ------------------------=
     // FUNC: synchronize_workplace
@@ -386,12 +336,16 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn execute_workplace(&mut self,input:&[u8])->bool {
         if input!=b"work" && !input.starts_with(b"work ") {return false;}
-        if !self.workplace_authorized(false) {self.output.write_line(b"An active personal session is required.");return true;}
+        if !self.workplace_authorized(false) {self.output.fail(crate::runtime::console_execution::Diagnostic::Denied);self.output.write_line(b"An active personal session is required.");return true;}
         let sequence=self.workplace_result[0].wrapping_add(1);self.workplace_result=[0;8];self.workplace_result[0]=sequence;
         let result=self.workplace_command(input);
         self.workplace_result[2]=if result.is_ok() {1}else{2};
         if let Err(error)=result {
-            self.output.write_line(match error {Error::Integrity=>b"Integrity verification failed; do not trust this backup.",
+            self.output.fail(match error {Error::Denied=>crate::runtime::console_execution::Diagnostic::Denied,
+                Error::Capacity=>crate::runtime::console_execution::Diagnostic::Capacity,
+                Error::Storage|Error::Integrity=>crate::runtime::console_execution::Diagnostic::Unavailable,
+                _=>crate::runtime::console_execution::Diagnostic::Syntax});
+            self.output.write_line(match error {Error::Denied=>b"This session cannot access that clipboard or file.",Error::Integrity=>b"Integrity verification failed; do not trust this backup.",
                 Error::Conflict=>b"Destination exists or source and destination conflict.",Error::Capacity=>b"Operation exceeds native capacity limits.",
                 Error::Storage=>b"Storage operation failed; check the path, permissions, and capacity.",
                 _=>b"Invalid arguments or unsupported object. Run work help."});
@@ -403,6 +357,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn workplace_command(&mut self,input:&[u8])->Result<(),Error> {
         let w=work::Words::parse(input)?;let action=w.get(1).unwrap_or(b"help");let count=w.len();
+        let mut files=NativeFiles{owner:self.current_user,session:self.current_session};
         self.workplace_result[1]=match action {b"help"=>1,b"clipboard"=>2,b"private"=>3,b"history"=>4,b"checksum"=>5,
             b"compare"=>6,b"backup"=>7,b"restore"=>8,b"report"=>9,_=>0};
         match action {
@@ -416,9 +371,9 @@ impl ConsoleRuntime {
             },
             b"clipboard"=>{
                 let option=w.get(2).ok_or(Error::Invalid)?;
-                let (mut ttl,mut read,mut write)=clipboard::with_shared(|c|c.policy());
+                let (mut ttl,mut read,mut write)=clipboard::with_shared(|c|if c.authorized(self.current_session.0){Ok(c.policy())}else{Err(Error::Denied)})?;
                 match option {
-                    b"clear" if count==3=>clipboard::with_shared(|c|c.clear()),
+                    b"clear" if count==3=>clipboard::with_shared(|c|access::clear_clipboard(c,self.current_session.0))?,
                     b"status" if count==3=>{
                         self.output.write_number(b"Expiry seconds (0 disables): ",ttl as u64);
                         self.output.write_number(b"Browser paste enabled: ",read as u64);
@@ -443,7 +398,7 @@ impl ConsoleRuntime {
                 self.output.write_line(if enabled {b"Private command mode on; history erased and command echo disabled."}else{b"Private command mode off."});
             },
             b"history"=>match w.get(2) {
-                Some(b"clear") if count==3=>{self.command_history.clear();self.output.write_line(b"Command history erased.");},
+                Some(b"clear") if count==3=>{self.command_history.clear();self.remote_history_clear=true;self.output.write_line(b"Command history erased.");},
                 Some(b"find") if count==4=>{
                     let mut before=work::HISTORY;let mut found=0;
                     while found<OUTPUT_ROWS {
@@ -454,13 +409,13 @@ impl ConsoleRuntime {
                 },_=>return Err(Error::Invalid),
             },
             b"checksum" if count==3=>{
-                let mut bytes=[0;work::CONTENT];let n=NativeFiles.read(w.get(2).unwrap(),&mut bytes)?;
+                let mut bytes=[0;work::CONTENT];let n=files.read(w.get(2).unwrap(),&mut bytes)?;
                 let hash=work::checksum(&bytes[..n]);self.workplace_digest(hash);
                 self.output.write_hex(b"SHA256: ",&hash);
             },
             b"compare" if count==4=>{
                 let mut left=[0;work::CONTENT];let mut right=[0;work::CONTENT];
-                let a=NativeFiles.read(w.get(2).unwrap(),&mut left)?;let b=NativeFiles.read(w.get(3).unwrap(),&mut right)?;
+                let a=files.read(w.get(2).unwrap(),&mut left)?;let b=files.read(w.get(3).unwrap(),&mut right)?;
                 let result=work::compare(&left[..a],&right[..b]);
                 self.workplace_result[3]=result.same as u64;self.workplace_result[4]=a as u64;self.workplace_result[5]=b as u64;
                 self.workplace_result[6]=result.first_difference.map_or(u64::MAX,|v|v as u64);
@@ -469,22 +424,22 @@ impl ConsoleRuntime {
                 if let Some(at)=result.first_difference {self.output.write_number(b"First difference (byte offset): ",at as u64);}
             },
             b"backup" if count==4=>{
-                if !self.workplace_authorized(true) {return Err(Error::Invalid);}
-                let digest=work::backup(&mut NativeFiles,w.get(2).unwrap(),w.get(3).unwrap())?;
+                if !self.workplace_authorized(true) {return Err(Error::Denied);}
+                let digest=work::backup(&mut files,w.get(2).unwrap(),w.get(3).unwrap())?;
                 self.workplace_digest(digest);
                 self.output.write_line(b"Independent backup verified. Retain this digest for restore.");self.output.write_hex(b"SHA256: ",&digest);
             },
             b"restore" if count==5=>{
-                if !self.workplace_authorized(true) {return Err(Error::Invalid);}
+                if !self.workplace_authorized(true) {return Err(Error::Denied);}
                 let digest=work::parse_digest(w.get(4).unwrap())?;
-                let version=work::restore(&mut NativeFiles,w.get(2).unwrap(),w.get(3).unwrap(),digest)?;
+                let version=work::restore(&mut files,w.get(2).unwrap(),w.get(3).unwrap(),digest)?;
                 self.workplace_result[3]=version as u64;
                 self.output.write_number(b"Restored and verified version: ",version as u64);
                 self.output.write_line(b"Previous target content remains in native object history.");
             },
             b"report" if count==3=>{
-                if !self.workplace_authorized(true) {return Err(Error::Invalid);}
-                let path=w.get(2).unwrap();personal_destination(path)?;
+                if !self.workplace_authorized(true) {return Err(Error::Denied);}
+                let path=w.get(2).unwrap();files.destination(path)?;
                 let storage=crate::storage::storage_usage().ok();
                 let tasks=crate::runtime::with_runtime(|r|r.task_manager.task_count(&r.execution) as u32);
                 #[cfg(feature="native-browser")]
@@ -496,8 +451,8 @@ impl ConsoleRuntime {
                     ready_devices:self.system.ready_device_count() as u32,storage_used:storage.map(|s|s.0),storage_total:storage.map(|s|s.1),tasks,
                     browser_state:browser.map(|v|v.0),browser_error:browser.map(|v|v.1)};
                 let mut bytes=[0;512];let n=report.json(&mut bytes)?;
-                crate::storage::object_create_note_at(crate::runtime::object_navigation::namespace_basename(path),&bytes[..n],path).map_err(storage_error)?;
-                let mut verified=[0;512];let actual=NativeFiles.read(path,&mut verified)?;
+                files.create(path,&bytes[..n])?;
+                let mut verified=[0;512];let actual=files.read(path,&mut verified)?;
                 if actual!=n || verified[..n]!=bytes[..n] {return Err(Error::Integrity);}
                 self.workplace_result[3]=n as u64;self.workplace_result[4]=crate::storage::object::crc32(&verified[..n]) as u64;
                 self.output.write_line(b"Redacted JSON support report saved and verified.");
@@ -518,12 +473,13 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn file_clipboard(&mut self,key:u8,state:crate::runtime::object_navigation::FileNavigatorState) {
         let result=(||->Result<(),Error>{
-            if !self.workplace_authorized(key!=b'c') {return Err(Error::Invalid);}
+            let mut files=NativeFiles{owner:self.current_user,session:self.current_session};
+            if !files.authorized(key!=b'c') {return Err(Error::Denied);}
             if key==b'c' || key==b'x' {
                 if (state.selected_index as usize)<crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT {return Err(Error::Invalid);}
                 let entry=navigator_child_nth(state.active_namespace_ref.as_bytes(),state.selected_index as usize).ok_or(Error::Invalid)?;
                 let path=&entry.path[..entry.path_len as usize];let id=crate::storage::namespace_resolve(path).map_err(|_|Error::Storage)?;
-                if crate::storage::object_inspect_path(path).map_err(|_|Error::Storage)?.0.space!=crate::storage::object::Space::Personal {return Err(Error::Invalid);}
+                files.metadata(path,key==b'x')?;
                 let mut value=[0;512];if path.len()+17>value.len() {return Err(Error::Capacity);}
                 value[0]=(key==b'x') as u8;value[1..17].copy_from_slice(&id.0);value[17..17+path.len()].copy_from_slice(path);
                 clipboard::with_shared(|c|c.write(self.current_session.0,ClipboardKind::ObjectRefs,&value[..17+path.len()],now_ms())).map_err(|_|Error::Invalid)?;
@@ -534,11 +490,12 @@ impl ConsoleRuntime {
                 if id.0!=value[1..17] {return Err(Error::Conflict);}
                 let destination=crate::runtime::object_navigation::namespace_child_path(state.active_namespace_ref.as_bytes(),
                     crate::runtime::object_navigation::namespace_basename(source)).map_err(|_|Error::Invalid)?;
-                personal_destination(destination.as_bytes())?;
+                files.metadata(source,value[0]==1)?;
+                files.destination(destination.as_bytes())?;
                 if value[0]==1 {
                     crate::storage::namespace_move(source,destination.as_bytes()).map_err(|_|Error::Storage)?;
                     clipboard::with_shared(|c|c.clear());
-                }else{crate::storage::object_copy_path(source,destination.as_bytes()).map_err(|_|Error::Storage)?;}
+                }else{files.copy(source,destination.as_bytes())?;}
             }else{return Err(Error::Invalid);}Ok(())
         })();
         let notice=if result.is_ok() {if key==b'v' {1}else if key==b'x' {2}else{3}} else {4};

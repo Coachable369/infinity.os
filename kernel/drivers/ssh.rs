@@ -45,7 +45,8 @@ pub struct Status {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Link { pub address: [u8; 4], pub prefix: u8, pub mac: [u8; 6], pub gateway: Option<[u8; 4]>, pub generation: u64 }
 struct Session { tcp: sockets::Handle, ssh: Transport<'static>, native: Option<crate::runtime::identity::Session>,
-    terminal: crate::runtime::console_terminal::Terminal, failure: Option<Failure>, completed: u64, last_operation: u64 }
+    terminal: crate::runtime::console_terminal::Terminal, failure: Option<Failure>, completed: u64, last_operation: u64,
+    slot:u8,console_bound:bool,awaiting:Option<u64>,latest:Option<u64>,awaiting_command:bool,resize_pending:bool,eof_sent:bool }
 #[no_mangle]
 pub static mut INFINITY_SSH_CONSOLE_SNAPSHOT: [u64; 48] = [0; 48];
 static mut COMMANDS: u64 = 0;
@@ -475,7 +476,7 @@ pub(super) fn poll(nic: &mut super::e1000::E1000, now: u64) {
                             state.listeners[index] = None;
                             let ssh = Transport::new(&mut (&mut *(&raw mut SSH_RX))[index], &mut (&mut *(&raw mut SSH_TX))[index], now);
                             match ssh {
-                                Ok(ssh) => { state.sessions[index] = Some(Session { tcp, ssh, native: None, terminal: crate::runtime::console_terminal::Terminal::new(), failure: None, completed: 0, last_operation: 0 }); STATUS.active += 1; STATUS.accepted = STATUS.accepted.saturating_add(1); },
+                                Ok(ssh) => { state.sessions[index] = Some(Session { tcp, ssh, native: None, terminal: crate::runtime::console_terminal::Terminal::new(), failure: None, completed: 0, last_operation: 0,slot:index as u8,console_bound:false,awaiting:None,latest:None,awaiting_command:false,resize_pending:false,eof_sent:false }); STATUS.active += 1; STATUS.accepted = STATUS.accepted.saturating_add(1); },
                                 Err(failure) => { let _ = state.reactor.release(tcp); STATUS.last_failure = Some(failure); },
                             }
                         }
@@ -566,6 +567,7 @@ fn drive(session: &mut Session, reactor: &mut sockets::Reactor<'static, MAX_CONN
 // ------------------=
 unsafe fn retire_session(session: &mut Session) {
     if let Some(native) = session.native.take() {
+        crate::runtime::console_remote::retire(crate::runtime::console_remote::Binding{slot:session.slot,user:native.user,session:native.id});
         if let Some(slot) = (&mut *(&raw mut RETIRING)).iter_mut().find(|slot| slot.is_none()) { *slot = Some((native.id, native.user)); }
     }
 }
@@ -599,7 +601,7 @@ impl IdentityAuthority for IdentitySystem {
 }
 // ------------------------=
 // FUNC: service_console
-// DESC: Executes at most one bounded native query per NIC tick, outside the protocol policy borrow and without any desktop callbacks.
+// DESC: Moves bounded terminal input and output through the authenticated mailbox without executing application work in the NIC actor.
 // ------------------=
 unsafe fn service_console(now: u64) {
     crate::runtime::with_runtime(|runtime| {
@@ -617,53 +619,83 @@ unsafe fn service_console(now: u64) {
 // ------------------=
 fn console_step(session: &mut Session, runtime: &mut crate::runtime::InfinityRuntime, now: u64) -> Result<(), Failure> {
     use infinity_ssh::ConsoleRequest;
-    use crate::runtime::console_execution::{self, Outcome, Diagnostic as ConsoleDiagnostic};
+    use crate::runtime::console_execution::{Outcome, Diagnostic as ConsoleDiagnostic};
+    use crate::runtime::console_remote;
     let Some(principal) = session.ssh.principal() else { return Ok(()); };
     if session.native.is_none() {
         session.native = Some(match principal.password_credential {
             Some(id) => runtime.identity.create_ssh_password_session(StableId(principal.user), StableId(id), now / 1000),
             None => runtime.identity.create_ssh_session(StableId(principal.user), principal.public_key, now / 1000),
         }.map_err(|_| Failure::PermissionDenied)?);
-        session.ssh.authorize_console()?;
     }
     let native = session.native.unwrap();
+    let binding=console_remote::Binding{slot:session.slot,user:native.user,session:native.id};
     if session.terminal.finished { return Ok(()); }
     if !runtime.identity.console_session_authorized(native.id, native.user) { return Err(Failure::Revoked); }
+    if !session.console_bound {
+        if !console_remote::bind(binding){return Ok(());}
+        session.ssh.authorize_console()?;session.console_bound=true;
+    }
     let terminal = &mut session.terminal;
     match session.ssh.take_console_request() {
         Some(ConsoleRequest::Pty { columns, rows }) => { if !terminal.resize(columns, rows) { return Err(Failure::Protocol); } terminal.pty = true; }
-        Some(ConsoleRequest::Resize { columns, rows }) => { if !terminal.resize(columns, rows) { return Err(Failure::Protocol); } }
-        Some(ConsoleRequest::Interrupt) => { terminal.interrupt(); unsafe { INTERRUPTS = INTERRUPTS.saturating_add(1); } },
+        Some(ConsoleRequest::Resize { columns, rows }) => { if !terminal.resize(columns, rows) { return Err(Failure::Protocol); } session.resize_pending=true; }
+        Some(ConsoleRequest::Interrupt) => { console_remote::interrupt(binding,terminal.interactive);session.awaiting=None;session.latest=None;terminal.interrupt(); unsafe { INTERRUPTS = INTERRUPTS.saturating_add(1); } },
         Some(ConsoleRequest::Shell) => { if !terminal.start(None, now) { return Err(Failure::Protocol); } }
         Some(ConsoleRequest::Exec { bytes, length }) => { if !terminal.start(Some(&bytes[..length]), now) { return Err(Failure::Protocol); } }
         None => (),
     }
-    for _ in 0..64 {
-        if !terminal.can_input() { break; }
-        let mut byte = [0];
-        if session.ssh.read_console(&mut byte, &runtime.identity, now)? == 0 { break; }
-        terminal.input_byte(byte[0], now);
-        if byte[0] == 3 { unsafe { INTERRUPTS = INTERRUPTS.saturating_add(1); } }
+    console_remote::resize(binding,terminal.columns,terminal.rows);
+    let mut drained=false;
+    if terminal.raw {
+        if session.resize_pending&&terminal.input_raw(b"",now) {session.resize_pending=false;}
+        if terminal.can_input() {
+            let mut bytes=[0;64];let length=session.ssh.read_console(&mut bytes,&runtime.identity,now)?;
+            if length>0 {terminal.input_raw(&bytes[..length],now);}else{drained=session.ssh.console_eof();}
+        }
+    } else {
+        session.resize_pending=false;
+        for _ in 0..64 {
+            if !terminal.can_input() { break; }
+            let mut byte = [0];
+            if session.ssh.read_console(&mut byte, &runtime.identity, now)? == 0 {drained=session.ssh.console_eof();break;}
+            terminal.input_byte(byte[0], now);
+            if byte[0] == 3 { console_remote::interrupt(binding,terminal.interactive);session.awaiting=None;session.latest=None;unsafe { INTERRUPTS = INTERRUPTS.saturating_add(1); } }
+        }
     }
-    if terminal.started && terminal.interactive && session.ssh.console_eof() {
-        if terminal.length > 0 && !terminal.pending && terminal.outcome.is_none() { terminal.pending = true; terminal.deadline = now.saturating_add(10_000); }
-        terminal.closing = true;
+    if drained&&!session.eof_sent {
+        if terminal.length>0&&!terminal.pending {terminal.pending=true;terminal.deadline=now.saturating_add(10_000);}
+        else if !terminal.pending {
+            if let Some(sequence)=console_remote::eof(binding,terminal.interactive){
+                session.eof_sent=true;session.awaiting=Some(sequence);session.latest=Some(sequence);session.awaiting_command=false;
+                terminal.submitted(now);if terminal.interactive{terminal.closing=true;}
+            }
+        }
     }
     if terminal.deadline != 0 && now >= terminal.deadline {
+        console_remote::interrupt(binding,terminal.interactive);session.awaiting=None;session.latest=None;
         terminal.deadline = 0; terminal.wire_offset = 0; terminal.wire_length = 0;
         terminal.complete(Outcome::failure(ConsoleDiagnostic::Deadline)); terminal.closing = true;
     }
     if terminal.pending {
-        let started = crate::ui::performance::monotonic_ns();
-        let result = console_execution::execute(runtime, native.user, native.id, &terminal.input[..terminal.length], now / 1000);
-        session.completed = session.completed.saturating_add(1);
-        session.last_operation = result.operation.map(|op| op.machine_id() as u64).unwrap_or(0);
-        unsafe {
-            COMMANDS = COMMANDS.saturating_add(1);
-            if result.diagnostic == ConsoleDiagnostic::Denied { COMMAND_DENIALS = COMMAND_DENIALS.saturating_add(1); }
-            if let (Some(start), Some(end)) = (started, crate::ui::performance::monotonic_ns()) { PEAK_EXECUTION_NS = PEAK_EXECUTION_NS.max(end.saturating_sub(start)); }
+        let sequence=if terminal.raw {console_remote::input(binding,&terminal.input[..terminal.length],terminal.interactive)}
+            else {console_remote::submit(binding,&terminal.input[..terminal.length],terminal.interactive)};
+        if let Some(sequence)=sequence {
+            session.awaiting=Some(sequence);session.latest=Some(sequence);session.awaiting_command=!terminal.raw&&!terminal.secret&&!terminal.read_input;terminal.submitted(now);
         }
-        terminal.complete(result);
+    }
+    if terminal.outcome.is_none() {
+        if let Some(reply)=console_remote::take_reply(binding) {
+            let current=session.awaiting==Some(reply.sequence);
+            if current&&session.awaiting_command {
+                session.completed=session.completed.saturating_add(1);
+                session.last_operation=reply.outcome.operation.map_or(0,|op|op.machine_id()as u64);
+                unsafe {COMMANDS=COMMANDS.saturating_add(1);if reply.outcome.diagnostic==ConsoleDiagnostic::Denied {COMMAND_DENIALS=COMMAND_DENIALS.saturating_add(1);}}
+                session.awaiting_command=false;
+            }
+            if current&&(!reply.more||terminal.interactive||reply.raw) {session.awaiting=None;}
+            if !current&&session.latest==Some(reply.sequence){terminal.update(reply);}else{terminal.deliver(reply,!current);}
+        }
     }
     if !terminal.echo().is_empty() {
         let n = session.ssh.write_console(terminal.echo(), false, &runtime.identity, now)?;
@@ -677,9 +709,10 @@ fn console_step(session: &mut Session, runtime: &mut crate::runtime::InfinityRun
         }
         terminal.output_complete();
     }
-    if terminal.closing && terminal.echo().is_empty() {
+    if terminal.ready_to_close() {
         if session.ssh.finish_console(terminal.status)? {
             runtime.identity.end_session(native.id, native.user).map_err(|_| Failure::PermissionDenied)?;
+            console_remote::retire(binding);
             // The execution authority is gone, but SSH must still flush exit-status and channel close.
             terminal.finished = true;
         }

@@ -1,4 +1,4 @@
-//! Password SSH authentication uses native credentials and a restricted remote session.
+//! Password SSH authentication uses native credentials and an independent native user session.
 use super::*;
 
 impl IdentitySystem {
@@ -44,7 +44,7 @@ impl IdentitySystem {
 
     // ------------------------=
     // FUNC: create_ssh_password_session
-    // DESC: Creates the same query-only remote session as key login following verified password authentication.
+    // DESC: Creates the same account-derived remote authority and personal scopes as verified SSH key login.
     // ------------------=
     pub(crate) fn create_ssh_password_session(&mut self, user: StableId, credential: StableId, now: u64) -> Result<Session, IdentityError> {
         if !self.ssh_password_active(user, credential) { return Err(IdentityError::AccessDenied); }
@@ -53,9 +53,10 @@ impl IdentitySystem {
         }
         let slot = self.sessions.iter().position(|s| s.is_none_or(|s| s.state == SessionState::Closed)).ok_or(IdentityError::Full)?;
         let machine = self.machine.ok_or(IdentityError::InvalidState)?.id;
+        let personal_space=self.user(user).ok_or(IdentityError::NotFound)?.personal_space_ref;
         let session = Session { origin: SessionOrigin::Ssh, remote_key: None, remote_password: Some(credential),
             id: self.allocate_id(0x4e), user, machine, created: now, state: SessionState::Active,
-            capabilities: SESSION_REMOTE_QUERY, personal_space: StableId::zero(), ai_context: StableId::zero() };
+            capabilities: self.console_capabilities(user), personal_space, ai_context: self.allocate_id(0x41) };
         self.sessions[slot] = Some(session);
         Ok(session)
     }

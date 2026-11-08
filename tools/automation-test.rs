@@ -64,7 +64,7 @@ fn failed_admission(){let mut c=Catalog::new();let id=create(&mut c);c.finished(
 // FUNC: main
 // DESC: Runs native catalog behavioral acceptance with no source-text or display-string oracles.
 // ------------------=
-fn main(){lifecycle();schedule();persistence();validation();failed_admission();fair_admission();reschedule_once();disable_retry();definition_guards();eligibility();utc_grammar();}
+fn main(){lifecycle();schedule();persistence();validation();failed_admission();fair_admission();reschedule_once();disable_retry();definition_guards();eligibility();utc_grammar();cron_calendar();cron_lifecycle();}
 
 // ------------------------=
 // FUNC: fair_admission
@@ -123,4 +123,34 @@ fn utc_grammar(){
     for bad in [b"2100-02-29 00:00".as_slice(),b"2028-02-30 00:00",b"2026-11-09 24:00",b"2026-11-09 00:60",b"2026-11-09 00:00:60",b"2200-01-01 00:00",b"2026-13-01 00:00",b"2026-11-00 00:00"]{assert_eq!(parse_utc(bad),Err(Error::Invalid));}
     for seconds in [0,86400,951782400,1835481599,7258118399]{let formatted=format_utc(seconds).unwrap();assert_eq!(parse_utc(&formatted.bytes()[..19]),Ok(seconds));}assert_eq!(format_utc(7258118400),None);
     assert_eq!(Access::evaluate(true,false,true).reason,Some(Error::SignInRequired));assert!(!Access::evaluate(true,false,true).can_manage);assert!(Access::evaluate(true,true,false).can_read);assert!(!Access::evaluate(true,true,false).can_manage);assert!(Access::evaluate(true,true,true).can_manage);assert_eq!(Access::evaluate(false,true,true).reason,Some(Error::Storage));
+}
+
+// ------------------------=
+// FUNC: cron_calendar
+// DESC: Exercises actual five-field cron masks, ranges, steps, names, Sunday aliases and day OR semantics against UTC dates.
+// ------------------=
+fn cron_calendar(){
+    let cron=parse_cron(b"*/15 9-17/2 * JAN,MAR MON-FRI").unwrap();assert_eq!(cron.minutes,(1<<0)|(1<<15)|(1<<30)|(1<<45));assert_eq!(cron.hours,(1<<9)|(1<<11)|(1<<13)|(1<<15)|(1<<17));assert_eq!(cron.months,(1<<1)|(1<<3));assert_eq!(cron.weekdays,0b0111110);
+    assert!(cron.matches_utc(parse_utc(b"2026-01-05 09:15").unwrap()));assert!(!cron.matches_utc(parse_utc(b"2026-01-04 09:15").unwrap()));assert!(!cron.matches_utc(parse_utc(b"2026-01-05 10:15").unwrap()));
+    let both=parse_cron(b"0 9 1,15 * MON").unwrap();assert!(both.matches_utc(parse_utc(b"2026-11-01 09:00").unwrap()));assert!(both.matches_utc(parse_utc(b"2026-11-02 09:00").unwrap()));assert!(!both.matches_utc(parse_utc(b"2026-11-03 09:00").unwrap()));
+    let weekday=parse_cron(b"0 9 * * MON").unwrap();assert!(!weekday.matches_utc(parse_utc(b"2026-11-01 09:00").unwrap()));assert!(weekday.matches_utc(parse_utc(b"2026-11-02 09:00").unwrap()));
+    assert_eq!(parse_cron(b"0 0 * * 0").unwrap(),parse_cron(b"0 0 * * 7").unwrap());
+    let leap=parse_cron(b"0 0 29 FEB *").unwrap();assert_eq!(leap.next_after(parse_utc(b"2096-03-01 00:00").unwrap()),Some(parse_utc(b"2104-02-29 00:00").unwrap()));
+    let sunday_leap=parse_cron(b"0 0 29 FEB */7").unwrap();let next=sunday_leap.next_after(parse_utc(b"2072-03-01 00:00").unwrap()).unwrap();assert!(sunday_leap.matches_utc(next));assert!(next>parse_utc(b"2080-03-01 00:00").unwrap());
+    for expression in [b"* * * * *".as_slice(),b"0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58 0,2,4,6,8,10,12,14,16,18,20,22 */2,2 1,3,5,7,9,11 */2,3",b"0 0 1-31 * 0-6",b"0 0 */5,2 * MON-FRI",b"0 0 29 FEB */7"]{let cron=parse_cron(expression).unwrap();let formatted=format_cron(cron).unwrap();assert_eq!(parse_cron(formatted.bytes()),Ok(cron));}
+    for expression in [b"* * * *".as_slice(),b"* * * * * *",b"60 * * * *",b"0 24 * * *",b"0 0 0 * *",b"0 0 * 13 *",b"0 0 * * 8",b"*/0 * * * *",b"20-10 * * * *",b"1,,2 * * * *",b"0 0 31 FEB *",b"0 0 * * FUNDAY",b"5/2 * * * *"]{assert_eq!(parse_cron(expression),Err(Error::Invalid),"{expression:?}");}
+}
+// ------------------------=
+// FUNC: cron_lifecycle
+// DESC: Verifies named cron CRUD, minute fencing, cold reload, missed-minute skipping, non-overlap and existing catalog compatibility.
+// ------------------=
+fn cron_lifecycle(){
+    let mut c=Catalog::new();let id=apply(&mut c,b"taskscheduler create quarter */15 * * * * /quarter.py",100).unwrap().unwrap();assert_eq!(c.get(id).unwrap().next_run,900);assert_eq!(c.due(899,899),None);assert_eq!(c.due(900,900).unwrap().id,id);
+    c.started(id,20,900).unwrap();assert_eq!(c.due(1800,1800),None);c.finished(id,0,1801).unwrap();assert_eq!(c.get(id).unwrap().next_run,2700);assert_eq!(c.due(1802,1802),None);
+    let mut bytes=[0;STATE_BYTES];c.encode(&mut bytes).unwrap();let mut c=Catalog::decode(&bytes).unwrap();assert_eq!(c.due(2790,2790),None);assert_eq!(c.get(id).unwrap().next_status(Some(2790),2790),NextRun::Scheduled{unix_seconds:3600});assert_eq!(c.due(3600,3600).unwrap().id,id);
+    c.started(id,21,3600).unwrap();c.finished(id,0,3601).unwrap();assert_eq!(c.due(3602,3602),None);assert_eq!(c.get(id).unwrap().next_run,4500);
+    apply(&mut c,b"taskscheduler disable quarter",3700).unwrap();assert_eq!(c.due(4500,4500),None);apply(&mut c,b"taskscheduler run quarter",3701).unwrap();assert_eq!(c.due(3701,3701).unwrap().id,id);c.started(id,22,3701).unwrap();c.finished(id,0,3702).unwrap();
+    apply(&mut c,b"taskscheduler edit quarter cron=\"0 9 * * MON-FRI\" enabled=true",3703).unwrap();assert!(matches!(c.get(id).unwrap().trigger,Trigger::Cron{..}));apply(&mut c,b"taskscheduler delete quarter",3704).unwrap();assert_eq!(c.count(Kind::Schedule),0);
+    let legacy=apply(&mut c,b"schedule create interval /interval.py every=60",100).unwrap().unwrap();c.encode(&mut bytes).unwrap();assert_eq!(Catalog::decode(&bytes).unwrap().get(legacy).unwrap().trigger,Trigger::Interval{seconds:60});
+    let a=parse(b"taskscheduler create same /same.py cron=\"*/5 * * * *\"").unwrap();let b=parse(b"schedule create same /same.py cron=\"*/5 * * * *\"").unwrap();assert_eq!(a,b);assert_eq!(a,parse(b"taskscheduler create same \"*/5 * * * *\" /same.py").unwrap());
 }

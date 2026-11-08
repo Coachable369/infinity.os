@@ -13,13 +13,14 @@ pub(super) struct Terminal {
     length: usize,
     sending: bool,
     sent: usize,
+    eof:bool,eof_sent:bool,
 }
 impl Terminal {
     // ------------------------=
     // FUNC: new
     // DESC: Starts an inactive terminal with private bounded credential storage.
     // ------------------=
-    pub const fn new() -> Self { Self { session: StableId::zero(), active: false, shown: None, secret: [0; 1024], length: 0, sending: false, sent: 0 } }
+    pub const fn new() -> Self { Self { session: StableId::zero(), active: false, shown: None, secret: [0; 1024], length: 0, sending: false, sent: 0,eof:false,eof_sent:false } }
     // ------------------------=
     // FUNC: erase
     // DESC: Erases password or remote input on submit, cancellation and session changes.
@@ -28,6 +29,41 @@ impl Terminal {
 }
 #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
 impl ConsoleRuntime {
+    // ------------------------=
+    // FUNC: remote_ssh_connected
+    // DESC: Requests raw terminal forwarding only after this shell's own outbound connection authenticates.
+    // ------------------=
+    pub(super) fn remote_ssh_connected(&self)->bool {
+        self.output.remote.is_some()&&self.ssh_terminal.active&&ssh_client::state(self.current_session)==Some(State::Connected)
+    }
+    // ------------------------=
+    // FUNC: remote_ssh_input_capacity
+    // DESC: Reports exact nested-terminal queue capacity so the shared dispatcher can retain input under network backpressure.
+    // ------------------=
+    pub(super) fn remote_ssh_input_capacity(&self)->usize{
+        if !self.remote_ssh_connected()||self.ssh_terminal.eof{return 0;}
+        let t=&self.ssh_terminal;infinity_ssh::client::pending_input_capacity(t.secret.len(),t.length,t.sent)
+    }
+    // ------------------------=
+    // FUNC: remote_ssh_input
+    // DESC: Preserves authenticated remote terminal bytes exactly, reserving Ctrl-] solely for disconnecting this nested connection.
+    // ------------------=
+    pub(super) fn remote_ssh_input(&mut self,bytes:&[u8])->bool{
+        if !self.remote_ssh_connected(){return false;}
+        if bytes.contains(&29){self.ssh_terminal_cancel();return true;}
+        if self.ssh_terminal.eof{return false;}
+        let t=&mut self.ssh_terminal;
+        let accepted=infinity_ssh::client::queue_terminal_input(&mut t.secret,&mut t.length,&mut t.sent,bytes);
+        if accepted{t.sending=t.length>0;}accepted
+    }
+    // ------------------------=
+    // FUNC: remote_ssh_eof
+    // DESC: Defers nested stdin EOF until every previously accepted input byte has been sent without discarding reverse output.
+    // ------------------=
+    pub(super) fn remote_ssh_eof(&mut self)->bool{
+        if !self.remote_ssh_connected(){return false;}
+        self.ssh_terminal.eof=true;true
+    }
     // ------------------------=
     // FUNC: ssh_connect_command
     // DESC: Opens an outbound SSH terminal without accepting passwords in command arguments.
@@ -47,7 +83,7 @@ impl ConsoleRuntime {
         let now = crate::runtime::ai::qwen::workers::clock_ns() / 1_000_000;
         match ssh_client::begin_host(self.current_session, host, port.unwrap(), user, now) {
             Ok(()) => {
-                self.ssh_terminal.erase(); self.ssh_terminal.active = true;
+                self.ssh_terminal.erase();self.ssh_terminal.eof=false;self.ssh_terminal.eof_sent=false; self.ssh_terminal.active = true;
                 self.ssh_terminal.session = self.current_session; self.ssh_terminal.shown = None;
                 self.output.write_line(b"Connecting with SSH. Ctrl+] disconnects. Verify the server fingerprint before entering your password.");
             }
@@ -109,8 +145,7 @@ impl ConsoleRuntime {
                 };
                 // Compact only acknowledged bytes. Never discard a partial write when another key arrives.
                 let t=&mut self.ssh_terminal;
-                if t.sent>0 {t.secret.copy_within(t.sent..t.length,0);t.length-=t.sent;t.sent=0;}
-                if t.length+n<=t.secret.len(){t.secret[t.length..t.length+n].copy_from_slice(&bytes[..n]);t.length+=n;t.sending=t.length>0;}
+                if !t.eof&&infinity_ssh::client::queue_terminal_input(&mut t.secret,&mut t.length,&mut t.sent,&bytes[..n]){t.sending=t.length>0;}
                 else {crate::ui::command_terminal::mutate(|s|s.notice=b"SSH input busy: wait for the remote host");}
             }
             _ => (),
@@ -122,12 +157,12 @@ impl ConsoleRuntime {
     // DESC: Drops remote authority and erases private input without adding it to local history.
     // ------------------=
     pub(super) fn ssh_terminal_cancel(&mut self) {
-        if self.current_session==self.ssh_terminal.session&&!matches!(self.mode,ConsoleMode::Locked|ConsoleMode::Authentication)&&crate::ui::command_terminal::inspect(|s|s.remote){
+        if self.output.remote.is_none()&&self.current_session==self.ssh_terminal.session&&!matches!(self.mode,ConsoleMode::Locked|ConsoleMode::Authentication)&&crate::ui::command_terminal::inspect(|s|s.remote){
             crate::ui::terminal_vt::inspect(|t|{for row in 0..t.rows{let mut bytes=[0;320];for x in 0..t.columns{bytes[x]=t.cells[row][x].byte;}let n=bytes[..t.columns].iter().rposition(|b|*b!=b' ').map_or(0,|n|n+1);if n>0{crate::ui::command_terminal::mutate(|s|s.line(&bytes[..n]));}}});
         }
         ssh_client::cancel(self.ssh_terminal.session); self.ssh_terminal.erase();
-        crate::ui::command_terminal::mutate(|s|s.remote=false);crate::ui::terminal_vt::mutate(|t|t.reset());
-        self.ssh_terminal.active = false; self.ssh_terminal.shown = None; self.reset_input();
+        if self.output.remote.is_none(){crate::ui::command_terminal::mutate(|s|s.remote=false);crate::ui::terminal_vt::mutate(|t|t.reset());}
+        self.ssh_terminal.active = false; self.ssh_terminal.shown = None;self.ssh_terminal.eof=false;self.ssh_terminal.eof_sent=false; self.reset_input();
     }
     // ------------------------=
     // FUNC: ssh_terminal_poll
@@ -142,7 +177,7 @@ impl ConsoleRuntime {
             self.ssh_terminal_cancel(); self.output.write_line(b"SSH disconnected or timed out."); self.redraw(); return;
         };
         self.publish_command_terminal();
-        let _capture=crate::ui::command_terminal::Capture::new(true);
+        let _capture=crate::ui::command_terminal::Capture::new(self.output.remote.is_none());
         let mut changed = self.ssh_terminal.shown != Some(state);
         if changed {
             self.ssh_terminal.shown = Some(state);
@@ -152,16 +187,18 @@ impl ConsoleRuntime {
                     self.output.write_line(b"Verify this fingerprint with the server administrator. Trust for this connection? Y / N");
                 }
                 State::Password => self.output.write_line(b"Remote account password (private; Escape cancels):"),
-                State::Connected => {self.reset_input();crate::ui::terminal_vt::mutate(|t|t.reset());crate::ui::command_terminal::mutate(|s|{s.remote=true;s.changed();});},
+                State::Connected => {self.reset_input();if self.output.remote.is_none(){crate::ui::terminal_vt::mutate(|t|t.reset());crate::ui::command_terminal::mutate(|s|{s.remote=true;s.changed();});}},
                 State::Exited(code) => { self.output.write_number(b"Remote exit status: ", code as u64); }
                 State::Failed(_) => self.output.write_line(b"SSH authentication or connection failed."),
                 _ => (),
             }
         }
-        let (cols,rows)=crate::ui::command_terminal::inspect(|s|(s.columns,s.rows));
+        let (cols,rows)=self.remote_dimensions.unwrap_or_else(||crate::ui::command_terminal::inspect(|s|(s.columns,s.rows)));
         let _=ssh_client::resize(self.current_session,cols as u32,rows as u32);
-        crate::ui::terminal_vt::mutate(|t|t.resize(cols,rows));
-        if state==State::Connected {crate::ui::terminal_vt::mutate(|t|{if !t.reply().is_empty(){if let Ok(n)=ssh_client::write(self.current_session,t.reply()){t.consume_reply(n);}}});}
+        if self.output.remote.is_none(){
+            crate::ui::terminal_vt::mutate(|t|t.resize(cols,rows));
+            if state==State::Connected {crate::ui::terminal_vt::mutate(|t|{if !t.reply().is_empty(){if let Ok(n)=ssh_client::write(self.current_session,t.reply()){t.consume_reply(n);}}});}
+        }
         if state == State::Connected && self.ssh_terminal.sending {
             let from = self.ssh_terminal.sent; let end = self.ssh_terminal.length;
             if let Ok(n) = ssh_client::write(self.current_session, &self.ssh_terminal.secret[from..end]) {
@@ -169,10 +206,17 @@ impl ConsoleRuntime {
                 if self.ssh_terminal.sent == end { self.ssh_terminal.erase(); self.reset_input(); changed = true; }
             }
         }
+        if state==State::Connected&&self.ssh_terminal.eof&&!self.ssh_terminal.eof_sent&&!self.ssh_terminal.sending {
+            if ssh_client::finish_input(self.current_session)==Ok(true){self.ssh_terminal.eof_sent=true;}
+        }
         let mut bytes = [0; 512];
         for stderr in [false, true] {
             if let Ok(n) = ssh_client::read(self.current_session, &mut bytes, stderr) {
-                if n > 0 { crate::ui::terminal_vt::mutate(|t|t.feed(&bytes[..n]));crate::ui::command_terminal::mutate(|s|s.changed()); changed = true; }
+                if n > 0 {
+                    if let Some(output)=self.output.remote.as_mut(){if stderr{output.stderr.write(&bytes[..n]);}else{output.stdout.write(&bytes[..n]);}}
+                    else{crate::ui::terminal_vt::mutate(|t|t.feed(&bytes[..n]));crate::ui::command_terminal::mutate(|s|s.changed());}
+                    changed = true;
+                }
             }
         }
         if matches!(state, State::Exited(_) | State::Failed(_)) { self.ssh_terminal_cancel(); }

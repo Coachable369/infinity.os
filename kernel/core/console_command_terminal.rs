@@ -7,7 +7,7 @@ impl ConsoleRuntime {
     // DESC: Restricts terminal interaction to the authenticated standalone Command Window.
     // ------------------=
     pub(super) fn command_terminal_visible(&self)->bool {
-        !self.current_session.is_zero() && (self.mode==ConsoleMode::Console || self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::CommandWindow)
+        self.output.remote.is_none() && !self.current_session.is_zero() && (self.mode==ConsoleMode::Console || self.mode==ConsoleMode::Desktop&&self.desktop_app==DesktopAppKind::CommandWindow)
             && crate::ui::installer_template::navigation::scene()==0 && !crate::ui::native_uikit::presentation().active
     }
     // ------------------------=
@@ -15,6 +15,7 @@ impl ConsoleRuntime {
     // DESC: Revokes private scrollback on lock or identity change and synchronizes the inline local prompt.
     // ------------------=
     pub(super) fn publish_command_terminal(&self) {
+        if self.output.remote.is_some() { return; }
         let active=!self.current_session.is_zero()&&!matches!(self.mode,ConsoleMode::Locked|ConsoleMode::Authentication|ConsoleMode::Startup);
         let revoke=terminal::inspect(|s|s.authorized&&(!active||s.owner!=self.current_session.0));
         if revoke {crate::ui::terminal_vt::mutate(|t|t.reset());}

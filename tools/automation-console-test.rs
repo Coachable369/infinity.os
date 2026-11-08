@@ -24,8 +24,13 @@ mod storage {
         crate::runtime::automation::Catalog::decode(bytes).map_err(|_|object::ObjectError::CorruptContent)?;Ok(COMMITS.fetch_add(1,Ordering::Relaxed)as u32+1)
     }
 }
-struct Output;
+struct Output{failure:Option<runtime::console_execution::Diagnostic>}
 impl Output{
+    // ------------------------=
+    // FUNC: fail
+    // DESC: Records the same typed failure signal consumed by remote command outcomes.
+    // ------------------=
+    fn fail(&mut self,value:runtime::console_execution::Diagnostic){self.failure=Some(value);}
     // ------------------------=
     // FUNC: write_line
     // DESC: Ignores display diagnostics without making human-readable strings a test oracle.
@@ -86,7 +91,7 @@ fn main(){
         let ordinary=r.identity.create_session(member.id,b"member password",6).unwrap();let key=ed25519_dalek::SigningKey::from_bytes(&[7;32]).verifying_key().to_bytes();
         r.identity.manage_ssh_key_durable(local.id,admin.id,key,false,7,|_|Ok(())).unwrap();let remote=r.identity.create_ssh_session(admin.id,key,8).unwrap();(admin,local,member,ordinary,remote)
     }).unwrap();
-    let mut c=ConsoleRuntime{current_user:admin.id,current_session:local.id,output:Output,protected_inspections:0};assert!(c.automation_access().can_manage);
+    let mut c=ConsoleRuntime{current_user:admin.id,current_session:local.id,output:Output{failure:None},protected_inspections:0};assert!(c.automation_access().can_manage);
     assert_eq!(c.task_automation_execute_receipt(b"service create demo /System/wc.py",None),Err(Error::ClockUnavailable));
     runtime::ai::clock::SYSTEM.observe(1_800_000_000,0);
     let receipt=c.task_automation_execute_receipt(b"service create demo /System/wc.py",None).unwrap();assert_eq!(receipt.action,Action::Create);let id=receipt.id.unwrap();assert_ne!(id,0);
@@ -98,10 +103,12 @@ fn main(){
     assert_eq!(c.task_automation_execute_receipt(b"service inspect demo",Some(original)),Err(Error::Conflict));assert_eq!(c.task_automation_execute_receipt(b"service logs demo",Some(original)),Err(Error::Conflict));
     c.current_user=member.id;c.current_session=ordinary.id;assert!(c.automation_access().can_read);assert!(!c.automation_access().can_manage);
     assert_eq!(c.task_automation_execute_receipt(b"service start demo",None),Err(Error::Denied));assert_eq!(c.task_automation_execute_receipt(b"service inspect demo",None),Err(Error::Denied));assert_eq!(c.task_automation_execute_receipt(b"service logs demo",None),Err(Error::Denied));
-    c.current_user=admin.id;c.current_session=remote.id;assert!(c.automation_access().can_read);assert!(!c.automation_access().can_manage);assert_eq!(c.task_automation_execute_receipt(b"service start demo",None),Err(Error::Denied));
+    c.current_user=admin.id;c.current_session=remote.id;assert!(c.automation_access().can_read);assert!(c.automation_access().can_manage);assert_eq!(c.task_automation_execute_receipt(b"service inspect demo",None).unwrap().id,Some(id));
     c.current_session=StableId::zero();assert_eq!(c.automation_access().reason,Some(Error::SignInRequired));assert_eq!(c.task_automation_execute_receipt(b"service list",None),Err(Error::SignInRequired));
     c.current_session=local.id;assert!(c.automation_command(b" \tservice\tinspect\truntime \n"));assert_eq!(c.protected_inspections,1);assert!(c.automation_command(b"service\tstart\tdemo"));assert_eq!(runtime::with_runtime(|r|r.automation.get(id).unwrap().state),Some(State::Queued));
     assert_eq!(c.task_automation_execute_receipt(b"service start demo",None),Err(Error::Busy));assert_eq!(c.task_automation_execute_receipt(b"service kill runtime",None),Err(Error::Protected));
-    runtime::with_runtime(|r|r.automation_ready=false);assert_eq!(c.automation_access().reason,Some(Error::Storage));
+    c.automation_command(b"taskscheduler create invalid /System/wc.py cron=\"bad\"");assert_eq!(c.output.failure,Some(runtime::console_execution::Diagnostic::Syntax));
+    c.current_session=remote.id;runtime::with_runtime(|r|r.identity.manage_ssh_key_durable(local.id,admin.id,ed25519_dalek::SigningKey::from_bytes(&[7;32]).verifying_key().to_bytes(),true,9,|_|Ok(())).unwrap());assert_eq!(c.automation_access().reason,Some(Error::SignInRequired));
+    c.current_session=local.id;runtime::with_runtime(|r|r.automation_ready=false);assert_eq!(c.automation_access().reason,Some(Error::Storage));
     assert_eq!(storage::COMMITS.load(Ordering::Relaxed),3);
 }

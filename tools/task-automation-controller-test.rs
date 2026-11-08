@@ -80,7 +80,7 @@ fn attempt_disabled(c:&mut ConsoleRuntime,target:ui::task_management::Target){le
 // FUNC: type_field
 // DESC: Replaces one editable field through real key input, preserving normal caret semantics.
 // ------------------=
-fn type_field(c:&mut ConsoleRuntime,index:usize,value:&[u8]){click(c,ui::task_management::Target::Field(index));c.input_task_management(ConsoleKey::End);for _ in 0..96{c.input_task_management(ConsoleKey::Backspace);}for byte in value{assert!(c.input_task_management(ConsoleKey::Character(*byte)));}}
+fn type_field(c:&mut ConsoleRuntime,index:usize,value:&[u8]){click(c,ui::task_management::Target::Field(index));c.input_task_management(ConsoleKey::Shortcut(b'a'));c.input_task_management(ConsoleKey::Backspace);for byte in value{assert!(c.input_task_management(ConsoleKey::Character(*byte)));}}
 // ------------------------=
 // FUNC: main
 // DESC: Exercises service/schedule creation, configuration, lifecycle intent, denied mutation, and inline deletion through the production GUI controller.
@@ -97,7 +97,7 @@ fn main(){
     click(&mut c,Target::Edit);type_field(&mut c,1,b"/home/default/updated.py");click(&mut c,Target::Tab(Tab::Scheduled));assert_eq!(m::current().state.tab,Tab::Services);assert_eq!(m::current().state.feedback,Feedback::SaveOrCancel);click(&mut c,Target::Save);
     assert_eq!(runtime::with_runtime(|r|r.automation.get(e.id).unwrap().path.bytes()==b"/home/default/updated.py"),Some(true));
     c.allowed=false;let commits=c.commits;c.refresh_task_automation();assert!(!m::current().can_manage);assert_eq!(m::current().access_reason,Feedback::ReadOnly);attempt_disabled(&mut c,Target::Enabled);c.input_task_management(ConsoleKey::Character(b'n'));assert_eq!(m::current().state.mode,Mode::Browse);assert_eq!(c.commits,commits);assert!(runtime::with_runtime(|r|r.automation.get(e.id).unwrap().enabled).unwrap());c.allowed=true;c.refresh_task_automation();
-    click(&mut c,Target::Tab(Tab::Scheduled));click(&mut c,Target::New);type_field(&mut c,0,b"nightly");type_field(&mut c,1,b"/home/default/nightly.py");type_field(&mut c,2,b"3600");click(&mut c,Target::Save);
+    click(&mut c,Target::Tab(Tab::Scheduled));click(&mut c,Target::New);type_field(&mut c,0,b"nightly");type_field(&mut c,1,b"/home/default/nightly.py");click(&mut c,Target::Trigger);click(&mut c,Target::TriggerOption(2));type_field(&mut c,2,b"3600");click(&mut c,Target::Save);
     let job=runtime::with_runtime(|r|r.automation.find(Kind::Schedule,b"nightly").unwrap()).unwrap();assert_eq!(job.trigger,Trigger::Interval{seconds:3600});
     click(&mut c,Target::Edit);type_field(&mut c,2,b"0");click(&mut c,Target::Save);assert_eq!(m::current().state.mode,Mode::Edit);assert_eq!(m::current().state.feedback,Feedback::InvalidTiming);assert_eq!(m::current().state.focus,Target::Field(2));click(&mut c,Target::Cancel);
     click(&mut c,Target::Delete);assert!(runtime::with_runtime(|r|r.automation.get(job.id).is_some()).unwrap());click(&mut c,Target::Cancel);assert_eq!(m::current().state.mode,Mode::Browse);click(&mut c,Target::Delete);click(&mut c,Target::Confirm);assert!(runtime::with_runtime(|r|r.automation.get(job.id).is_none()).unwrap());
@@ -108,6 +108,12 @@ fn main(){
     for utc in [86400,951782400,1835481599,7258118399]{let displayed=controller::task_automation_date(utc);assert_eq!(controller::task_automation_parse_date(displayed.bytes()),Some(utc));}
     click(&mut c,Target::New);type_field(&mut c,0,b"once");type_field(&mut c,1,b"/home/default/once.py");click(&mut c,Target::Trigger);click(&mut c,Target::TriggerOption(3));type_field(&mut c,2,b"2028-02-29 23:59:59");click(&mut c,Target::Save);
     assert_eq!(runtime::with_runtime(|r|r.automation.find(Kind::Schedule,b"once").unwrap().trigger),Some(Trigger::Once{unix_seconds:1835481599}));
+    // New scheduled tasks expose Cron directly and preserve invalid drafts before a typed commit.
+    click(&mut c,Target::New);assert_eq!(m::current().state.trigger,4);type_field(&mut c,0,b"cron-quarter");type_field(&mut c,1,b"/home/default/quarter.py");
+    for expression in [b"*/0 * * * *".as_slice(),b"60 * * * *",b"* * * *",b"* * * * * *"] {type_field(&mut c,2,expression);click(&mut c,Target::Save);assert_eq!(m::current().state.mode,Mode::Create);assert_eq!(m::current().state.feedback,Feedback::InvalidTiming);assert_eq!(m::current().state.focus,Target::Field(2));}
+    type_field(&mut c,2,b"*/15 * * * *");click(&mut c,Target::Save);let cron=runtime::with_runtime(|r|r.automation.find(Kind::Schedule,b"cron-quarter").unwrap()).unwrap();assert_eq!(cron.trigger,Trigger::Cron{schedule:runtime::automation::parse_cron(b"*/15 * * * *").unwrap()});assert_eq!(cron.next_run,900);assert_eq!(m::current().selected().unwrap().id,cron.id);
+    click(&mut c,Target::Edit);assert_eq!(runtime::automation::parse_cron(m::current().state.fields[2].bytes()).unwrap(),runtime::automation::parse_cron(b"*/15 * * * *").unwrap());type_field(&mut c,2,b"0 9 * * 1-5");click(&mut c,Target::Save);assert_eq!(runtime::with_runtime(|r|r.automation.get(cron.id).unwrap().trigger),Some(Trigger::Cron{schedule:runtime::automation::parse_cron(b"0 9 * * 1-5").unwrap()}));
+    click(&mut c,Target::Edit);let external=runtime::automation::parse(b"taskscheduler edit cron-quarter cron=\"30 9 * * 1-5\"").unwrap();runtime::with_runtime(|r|r.automation.apply(&external,[1;16],true,100).unwrap());c.refresh_task_automation();assert!(m::current().state.conflict);attempt_disabled(&mut c,Target::Save);click(&mut c,Target::Cancel);click(&mut c,Target::Delete);click(&mut c,Target::Confirm);
     // Created rows are selected by ID even when a freed catalog slot is reused.
     let once=runtime::with_runtime(|r|r.automation.find(Kind::Schedule,b"once").unwrap()).unwrap();assert_eq!(m::current().selected().unwrap().id,once.id);
     click(&mut c,Target::Edit);let draft=m::current().state.fields;
@@ -119,7 +125,7 @@ fn main(){
     c.command_length=0;c.ssh_terminal.active=false;ui::terminal_edit::mutate(|s|s.active=false);click(&mut c,Target::Output);assert_eq!(c.logs,1);assert_eq!(c.desktop_app,DesktopAppKind::CommandWindow);assert!(ui::command_terminal::inspect(|s|s.count>0));c.desktop_app=DesktopAppKind::TaskManager;
     click(&mut c,Target::Tab(Tab::Services));
     // Manual timing is disabled and ignored even when a previous policy left a nonnumeric draft.
-    click(&mut c,Target::New);type_field(&mut c,0,b"manual");type_field(&mut c,1,b"/home/default/manual.py");let mut v=m::current();v.state.fields[2]=m::Text::new();m::publish(v);click(&mut c,Target::Save);
+    click(&mut c,Target::New);type_field(&mut c,0,b"manual");type_field(&mut c,1,b"/home/default/manual.py");let mut v=m::current();v.state.fields[2]=m::Field::new();m::publish(v);click(&mut c,Target::Save);
     let manual=runtime::with_runtime(|r|r.automation.find(Kind::Daemon,b"manual").unwrap()).unwrap();assert_eq!(manual.trigger,Trigger::Manual);assert_eq!(m::current().selected().unwrap().id,manual.id);
     // Shared selection and clipboard edit a real field, atomically rejecting an oversized paste.
     click(&mut c,Target::Edit);click(&mut c,Target::Field(1));c.input_task_management(ConsoleKey::Shortcut(b'a'));assert!(m::current().state.fields[1].selected);c.input_task_management(ConsoleKey::Shortcut(b'c'));

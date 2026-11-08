@@ -18,14 +18,16 @@ Passwords are not command arguments. SSH must be enabled, and the account must
 already exist in the installed system. Replacing an ISO does not update the
 kernel of an existing installed VM.
 
-Inbound sessions retain the restricted native Console permissions used by key
-authentication: `help`, `system status`, `node list`, and `ai status`. Password
-authentication does not grant a Unix shell, administrative permissions, file
-transfer, forwarding, or access to the desktop session.
+Password and key authentication create independent SSH sessions with the same
+native command permissions as the account's local Console. Administrators can
+perform administrative commands; ordinary members remain subject to the same
+permission checks. Current roles and credential revocation are checked during
+the session. SSH does not attach to a desktop session or provide a Unix shell,
+SCP/SFTP, or port forwarding.
 
 ## Connect from InfinityOS
 
-Open Command Window while signed in locally:
+Use an authenticated native Console session:
 
 ```text
 ssh user@server.example.com
@@ -46,7 +48,7 @@ Escape is forwarded while connected and cancels during authentication. Printable
 text is currently ASCII. SCP/SFTP, forwarding, keyboard-interactive authentication
 and outbound public-key authentication are not supported. Servers must offer
 Ed25519 host keys and SSH password authentication. Logging out or locking the
-local session revokes the connection.
+owning session revokes the connection.
 
 TCP/SSH processing is bounded and shares the native NIC pump. Established SSH
 connections have independent buffers and do not reserve the browser actor.
@@ -57,7 +59,7 @@ reported as a connection-start failure rather than cancelling another request.
 
 `./build-kit ssh-tests` exercises real encrypted client/server password exchange,
 host confirmation, incorrect-password retry, partial network delivery, shell
-input/output, credential revocation, native account throttling, and restricted
-session permissions. Native architecture checks and installed-VM acceptance
+input/output, credential revocation, native account throttling, role-based
+session permissions, and independent mailbox/terminal state. Native architecture checks and installed-VM acceptance
 are separate from these protocol tests; consult the build manifest and recorded
 VM results rather than assuming an older ISO contains this implementation.

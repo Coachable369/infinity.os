@@ -22,9 +22,9 @@ impl ConsoleRuntime {
             view.total=runtime.automation.count(Kind::Daemon)+runtime.automation.count(Kind::Schedule);
             for i in 0..runtime.automation.count(kind).min(model::CAPACITY) {
                 let Some(e)=runtime.automation.nth(kind,i)else{continue;};
-                let (trigger,timing)=match e.trigger{Trigger::Manual=>(0,0),Trigger::Boot{delay_seconds}=>(1,u64::from(delay_seconds)),Trigger::Interval{seconds}=>(2,u64::from(seconds)),Trigger::Once{unix_seconds}=>(3,unix_seconds)};
+                let (trigger,timing)=match e.trigger{Trigger::Manual=>(0,0),Trigger::Boot{delay_seconds}=>(1,u64::from(delay_seconds)),Trigger::Interval{seconds}=>(2,u64::from(seconds)),Trigger::Once{unix_seconds}=>(3,unix_seconds),Trigger::Cron{..}=>(4,0)};
                 let next=e.next_status(now,monotonic/1_000_000_000);
-                view.entries[view.count]=model::Entry{id:e.id,owner:e.owner,can_output:access.can_manage||e.owner==self.current_user.0,next_status:task_automation_next(next),name:model::Text::from_bytes(e.name.bytes()),path:model::Text::from_bytes(e.path.bytes()),enabled:e.enabled,trigger,timing,restart:match e.restart{Restart::Never=>0,Restart::OnFailure=>1,Restart::Always=>2},state:match e.state{State::Stopped=>0,State::Queued=>1,State::Running=>2,State::Stopping=>3,State::Killing=>4,State::Completed=>5,State::Failed=>6},next:e.next_run,timing_text:task_automation_date(timing),next_text:task_automation_date(e.next_run),exit:e.last_exit,runs:e.runs};view.count+=1;
+                view.entries[view.count]=model::Entry{id:e.id,owner:e.owner,can_output:access.can_manage||e.owner==self.current_user.0,next_status:task_automation_next(next),name:model::Text::from_bytes(e.name.bytes()),path:model::Text::from_bytes(e.path.bytes()),enabled:e.enabled,trigger,timing,restart:match e.restart{Restart::Never=>0,Restart::OnFailure=>1,Restart::Always=>2},state:match e.state{State::Stopped=>0,State::Queued=>1,State::Running=>2,State::Stopping=>3,State::Killing=>4,State::Completed=>5,State::Failed=>6},next:e.next_run,timing_text:match e.trigger{Trigger::Cron{schedule}=>automation::format_cron(schedule).map(|text|model::Field::from_bytes(text.bytes())).unwrap_or(model::Field::new()),_=>model::Field::from_bytes(task_automation_date(timing).bytes())},next_text:task_automation_date(e.next_run),exit:e.last_exit,runs:e.runs};view.count+=1;
             }
         });}
         let (geometry,s)=self.task_automation_geometry();let rows=model::layout(geometry.content,geometry.toolbar,&view,s).rows;
@@ -55,12 +55,12 @@ impl ConsoleRuntime {
         if matches!(view.state.mode,Mode::Create|Mode::Edit) {
             if let Target::Field(index)=view.state.focus {
                 if index<3&&layout.controls[..layout.count].iter().any(|c|c.target==Target::Field(index)&&c.enabled) {
-                    let field=&mut view.state.fields[index];let limit=if index==0{48}else if index==1{95}else{20};
+                    let field=&mut view.state.fields[index];let limit=if index==0{48}else if index==1{95}else if view.state.trigger==4{256}else{20};
                     match key {
                         ConsoleKey::Shortcut(b'a')=>{field.selected=true;field.caret=field.len;},
-                        ConsoleKey::Shortcut(b'c'|b'x')=>{if field.selected&&field.len>0 {if self.copy_workplace_text(field.bytes()){if matches!(key,ConsoleKey::Shortcut(b'x')){*field=model::Text::new();}}else{view.state.feedback=Feedback::Clipboard;}}},
+                        ConsoleKey::Shortcut(b'c'|b'x')=>{if field.selected&&field.len>0 {if self.copy_workplace_text(field.bytes()){if matches!(key,ConsoleKey::Shortcut(b'x')){*field=model::Field::new();}}else{view.state.feedback=Feedback::Clipboard;}}},
                         ConsoleKey::Shortcut(b'v')=>{
-                            let mut bytes=[0u8;96];
+                            let mut bytes=[0u8;256];
                             view.state.feedback=match self.read_workplace_text(&mut bytes){Ok(n)=>if field.paste(&bytes[..n],limit){Feedback::None}else{Feedback::TooLong},Err(crate::ui::clipboard::ClipboardError::TooLarge)=>Feedback::TooLong,Err(_)=>Feedback::Clipboard};bytes.fill(0);
                         },
                         _=>if let Some(edit)=text_edit_key(key){
@@ -119,10 +119,11 @@ impl ConsoleRuntime {
             Target::Trigger=>{view.state.choice=1;view.state.focus=Target::TriggerOption(view.state.trigger);},
             Target::TriggerOption(option)=>{
                 let previous=view.state.trigger;
-                if option==3&&previous!=3 {
+                if option==4&&previous!=4 {view.state.fields[2]=model::Field::from_bytes(b"*/15 * * * *");}
+                else if option==3&&previous!=3 {
                     let now=crate::runtime::ai::clock::SYSTEM.utc_nanoseconds(crate::runtime::ai::qwen::workers::clock_ns()).map(|n|n/1_000_000_000);
-                    view.state.fields[2]=now.and_then(|n|n.checked_add(86400)).map(task_automation_date).unwrap_or(model::Text::new());
-                }else if previous==3&&option!=3{view.state.fields[2]=model::number(if option==2{60}else{0});}
+                    view.state.fields[2]=now.and_then(|n|n.checked_add(86400)).map(|date|model::Field::from_bytes(task_automation_date(date).bytes())).unwrap_or(model::Field::new());
+                }else if previous>=3&&option<3{view.state.fields[2]=model::Field::from_bytes(model::number(if option==2{60}else{0}).bytes());}
                 view.state.trigger=option;view.state.choice=0;view.state.focus=Target::Trigger;
             },
             Target::RestartPolicy=>{view.state.choice=2;view.state.focus=Target::RestartOption(view.state.restart);},
@@ -175,7 +176,7 @@ fn task_automation_next(next:automation::NextRun)->model::NextRun {use automatio
 // DESC: Reconstructs the original durable identity and configuration for an atomic stale-edit guard.
 // ------------------=
 fn task_automation_definition(entry:model::Entry,tab:Tab)->Definition {
-    Definition{id:entry.id,kind:if tab==Tab::Services{Kind::Daemon}else{Kind::Schedule},name:automation::Text::new(entry.name.bytes()).unwrap(),path:automation::Text::new(entry.path.bytes()).unwrap(),owner:entry.owner,enabled:entry.enabled,trigger:match entry.trigger{1=>Trigger::Boot{delay_seconds:entry.timing as u32},2=>Trigger::Interval{seconds:entry.timing as u32},3=>Trigger::Once{unix_seconds:entry.timing},_=>Trigger::Manual},restart:match entry.restart{1=>Restart::OnFailure,2=>Restart::Always,_=>Restart::Never}}
+    Definition{id:entry.id,kind:if tab==Tab::Services{Kind::Daemon}else{Kind::Schedule},name:automation::Text::new(entry.name.bytes()).unwrap(),path:automation::Text::new(entry.path.bytes()).unwrap(),owner:entry.owner,enabled:entry.enabled,trigger:match entry.trigger{1=>Trigger::Boot{delay_seconds:entry.timing as u32},2=>Trigger::Interval{seconds:entry.timing as u32},3=>Trigger::Once{unix_seconds:entry.timing},4=>Trigger::Cron{schedule:automation::parse_cron(entry.timing_text.bytes()).unwrap()},_=>Trigger::Manual},restart:match entry.restart{1=>Restart::OnFailure,2=>Restart::Always,_=>Restart::Never}}
 }
 // ------------------------=
 // FUNC: task_automation_command
@@ -184,18 +185,18 @@ fn task_automation_definition(entry:model::Entry,tab:Tab)->Definition {
 fn task_automation_command(view:&model::View,target:Target)->Result<crate::runtime::console_execution::Bytes<512>,Feedback> {
     use core::fmt::Write;
     let mut out=crate::runtime::console_execution::Bytes::<512>::new();
-    let kind=if view.state.tab==Tab::Services{"service"}else{"schedule"};
+    let kind=if view.state.tab==Tab::Services{"service"}else{"taskscheduler"};
     if target==Target::Save {
         let name=view.state.fields[0].bytes();
         if name.is_empty()||name.len()>48||!name.iter().all(|c|c.is_ascii_alphanumeric()||b"-_.".contains(c)){return Err(Feedback::InvalidName);}
         let name=core::str::from_utf8(name).map_err(|_|Feedback::InvalidName)?;
         let path=view.state.fields[1].bytes();automation::validate_path(path).map_err(|_|Feedback::InvalidPath)?;
-        let timing=match view.state.trigger{0=>0,3=>task_automation_parse_date(view.state.fields[2].bytes()).filter(|n|*n>0).ok_or(Feedback::InvalidTiming)?,_=>model::decimal(&view.state.fields[2]).filter(|n|*n<=u32::MAX as u64&&(view.state.trigger!=2||*n>0)).ok_or(Feedback::InvalidTiming)?};
+        let timing=match view.state.trigger{0=>0,4=>{automation::parse_cron(view.state.fields[2].bytes()).map_err(|_|Feedback::InvalidTiming)?;0},3=>task_automation_parse_date(view.state.fields[2].bytes()).filter(|n|*n>0).ok_or(Feedback::InvalidTiming)?,_=>model::decimal(&view.state.fields[2]).filter(|n|*n<=u32::MAX as u64&&(view.state.trigger!=2||*n>0)).ok_or(Feedback::InvalidTiming)?};
         write!(out,"{kind} {} {name} ",if view.state.mode==Mode::Create{"create"}else{"edit"}).map_err(|_|Feedback::TooLong)?;
         out.write_char('"').map_err(|_|Feedback::TooLong)?;
         for character in core::str::from_utf8(path).map_err(|_|Feedback::InvalidPath)?.chars() {if character=='"'{out.write_str("\"'\"'\"")}else{out.write_char(character)}.map_err(|_|Feedback::TooLong)?;}
         write!(out,"\" enabled={}",view.state.enabled).map_err(|_|Feedback::TooLong)?;
-        match view.state.trigger {0=>write!(out," start=manual"),1=>write!(out," start=boot delay={timing}"),2=>write!(out," every={timing}"),_=>write!(out," at={timing}")}.map_err(|_|Feedback::TooLong)?;
+        match view.state.trigger {0=>write!(out," start=manual"),1=>write!(out," start=boot delay={timing}"),2=>write!(out," every={timing}"),4=>write!(out," cron=\"{}\"",core::str::from_utf8(view.state.fields[2].bytes()).map_err(|_|Feedback::InvalidTiming)?),_=>write!(out," at={timing}")}.map_err(|_|Feedback::TooLong)?;
         if view.state.tab==Tab::Services{write!(out," restart={}",match view.state.restart{1=>"on-failure",2=>"always",_=>"never"}).map_err(|_|Feedback::TooLong)?;}
     }else{
         let selected=if target==Target::Confirm{view.state.original}else{view.selected()}.ok_or(Feedback::Conflict)?;

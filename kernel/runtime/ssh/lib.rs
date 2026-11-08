@@ -113,7 +113,7 @@ impl<'a> Transport<'a> {
     }
     // ------------------------=
     // FUNC: authorize_console
-    // DESC: Enables one native session channel only after the service has created a restricted authenticated identity session.
+    // DESC: Enables one native session channel only after the service has created an independent authenticated identity session.
     // ------------------=
     pub fn authorize_console(&mut self) -> Result<(), Failure> {
         if self.phase != Phase::Authenticated || self.principal.is_none() { return Err(Failure::PermissionDenied); }

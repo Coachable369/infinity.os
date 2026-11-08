@@ -110,6 +110,15 @@ impl Channels {
     }
 
     // ------------------------=
+    // FUNC: finish_input
+    // DESC: Half-closes the local send direction without closing the peer's output or sending channel close.
+    // ------------------=
+    pub(crate) fn finish_input(&mut self,num:ChanNum,sender:&mut TrafSend)->Result<()>{
+        let channel=self.get_mut(num)?;
+        if !channel.sent_eof{sender.send(packets::ChannelEof{num:channel.send_num()?})?;channel.sent_eof=true;}
+        Ok(())
+    }
+    // ------------------------=
     // FUNC: finish_output
     // DESC: Queues EOF and close exactly once without pretending the peer has closed its input.
     // ------------------=
@@ -1005,13 +1014,11 @@ impl Channel {
         }
     }
 
-    fn handle_eof(&mut self, s: &mut TrafSend, is_client: bool) -> Result<()> {
-        //TODO: check existing state?
-        if !self.sent_eof {
-            s.send(packets::ChannelEof { num: self.send_num()? })?;
-            self.sent_eof = true;
-        }
-
+    // ------------------------=
+    // FUNC: handle_eof
+    // DESC: Marks only peer input EOF; the local application retains its independent output until explicitly finished.
+    // ------------------=
+    fn handle_eof(&mut self, _s: &mut TrafSend, is_client: bool) -> Result<()> {
         // Wake readers on EOF
         self.wake_read(ChanData::Normal, is_client);
         if is_client {
@@ -1054,7 +1061,12 @@ impl Channel {
     }
 
     // None on close
+    // ------------------------=
+    // FUNC: send_allowed
+    // DESC: Exposes flow-control capacity only while the local send direction remains open.
+    // ------------------=
     fn send_allowed(&self) -> Option<usize> {
+        if self.sent_eof||self.sent_close||self.is_closed(){return None;}
         let r = self.send.as_ref().map(|s| usize::min(s.window, s.max_packet));
         trace!("send_allowed {r:?}");
         r

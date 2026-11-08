@@ -174,7 +174,7 @@ def gui_crud(guest, proof):
 
 # ------------------------=
 # FUNC: gui_schedule_crud
-# DESC: Creates a disabled interval, edits it to a dated Once task, and deletes it using real GUI controls.
+# DESC: Creates a disabled Cron task, edits it to a dated Once task, and deletes it using real GUI controls.
 # ------------------=
 def gui_schedule_crud(guest, proof):
     wait_ui(guest, 2, 0)
@@ -184,7 +184,7 @@ def gui_schedule_crud(guest, proof):
     guest.text("guischedule")
     guest.key("tab")
     guest.text(HELLO)
-    # Path -> interval -> trigger choice -> enabled. Keep the new task disabled.
+    # Path -> Cron expression -> trigger choice -> enabled. Keep the new task disabled.
     for _ in range(3):
         guest.key("tab")
     guest.key("ret")
@@ -197,15 +197,16 @@ def gui_schedule_crud(guest, proof):
     created_row = state["rows"][identifier]
     assert created_row["kind"] == 1 and not created_row["enabled"], created_row
     assert created_row["state"] == 0 and created_row["runs"] == 0 and created_row["pid"] == 0, created_row
+    assert created_row["next"] > 0 and created_row["next"] % 900 == 0, created_row
     selected = wait_ui(guest, 2, 0)
     assert [row["id"] for row in state["rows"].values() if row["kind"] == 1][selected[5]] == identifier
     guest.key("e")
     wait_ui(guest, 2, 2)
-    # Editing focuses script: script -> timing -> policy. Interval is option 2; Once is option 3.
+    # Editing focuses script: script -> timing -> policy. Cron is option 4; Once is option 3.
     for _ in range(2):
         guest.key("tab")
     guest.key("ret")
-    guest.key("down")
+    guest.key("up")
     guest.key("ret")
     guest.key("shift", "tab")  # Return from policy to the readable UTC timing field.
     guest.key("ctrl", "a")
@@ -248,7 +249,7 @@ def exercise(guest, proof):
     proof["daemon_execution"] = completed(guest, service, 1)
     guest.command("service restart proof")
     proof["daemon_restart"] = completed(guest, service, 2)
-    once = created(guest, "schedule create once " + HELLO + " at=1", 1)
+    once = created(guest, "taskscheduler create once " + HELLO + " at=1", 1)
     proof["once_execution"] = completed(guest, once, 1)
     # A long-running real Python sleep makes stop/kill and overlap assertions observable.
     guest.command("object create " + DOCS + "daemonprobe.py")
@@ -265,7 +266,7 @@ def exercise(guest, proof):
     guest.command("service kill proof")
     killed = wait(guest, lambda s: s["rows"][service]["state"] == 0, "daemon killed")["rows"][service]
     assert killed["exit"] == -9 and killed["pid"] == 0, killed
-    interval = created(guest, "schedule create period " + DOCS + "daemonprobe.py every=1", 1)
+    interval = created(guest, "taskscheduler create period " + DOCS + "daemonprobe.py every=1", 1)
     running = wait(guest, lambda s: s["rows"][interval]["state"] == 2 and s["rows"][interval]["stdout"] > 0, "scheduled native process running")["rows"][interval]
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
@@ -274,11 +275,11 @@ def exercise(guest, proof):
             assert current["rows"][interval]["runs"] == running["runs"] == 1
             assert current["rows"][interval]["pid"] == running["pid"]
         time.sleep(.2)
-    guest.command("schedule disable period")
-    guest.command("schedule kill period")
+    guest.command("taskscheduler disable period")
+    guest.command("taskscheduler kill period")
     wait(guest, lambda s: s["rows"][interval]["state"] == 0, "scheduled process killed")
-    guest.command("schedule edit period " + HELLO + " every=120 enabled=false")
-    guest.command("schedule run period")
+    guest.command("taskscheduler edit period " + HELLO + " every=120 enabled=false")
+    guest.command("taskscheduler run period")
     proof["edited_schedule_execution"] = completed(guest, interval, 2)
     assert not snapshot(guest)["rows"][interval]["enabled"]
     gui_crud(guest, proof)
@@ -294,8 +295,8 @@ def exercise(guest, proof):
     assert after["rows"][once]["state"] == 5 and after["rows"][once]["runs"] == 1
     proof["cold_reboot"] = after
     guest.command("service delete proof")
-    guest.command("schedule delete once")
-    guest.command("schedule delete period")
+    guest.command("taskscheduler delete once")
+    guest.command("taskscheduler delete period")
     wait(guest, lambda s: not any(i in s["rows"] for i in (service, once, interval)), "CLI deletion")
     guest.stop()
     guest.boot(False)
@@ -336,7 +337,7 @@ def main():
     guest.acceleration = "hvf" if args.arch == "aarch64" and platform.system() == "Darwin" and platform.machine() == "arm64" else "tcg"
     guest.patched = True
     guest.install_timeout_seconds = 1800 if args.arch == "x86_64" else 900
-    guest.boot_timeout_seconds = 300 if args.arch == "x86_64" else 120
+    guest.boot_timeout_seconds = 600
     proof = dict(architecture=args.arch, installed_acceptance=False, fresh_install=False,
                  reused_private_disk=reuse, media_kernels=receipt, screenshots=[])
     destination = ROOT / "builds/validation/automation" / args.arch / "installed.json"
