@@ -285,6 +285,7 @@ sh tools/font-library-test.sh
 
 make ssh-test
 make accounts-test
+make task-automation-test
 
 echo "==> Building InfinityOS for AArch64 first, then x86_64"
 

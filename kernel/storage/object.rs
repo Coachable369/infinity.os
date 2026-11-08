@@ -2,6 +2,8 @@
 //! no Rust layout is ever written to persistent media.
 
 use super::organization;
+#[path = "../runtime/automation.rs"]
+mod automation_catalog;
 #[path = "sdk_package.rs"]
 mod sdk_package;
 #[path="user_home.rs"]
@@ -864,6 +866,12 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.create_record(b"shell-profile-state", ObjectType::Metadata, Space::System)?;
         self.write_record(shell_profiles, b"INFSHL01\x01\0")?;
         self.attach_record(b"/system/settings/shell/profiles", shell_profiles)?;
+        let automation = self.create_record(b"automation-state", ObjectType::Metadata, Space::System)?;
+        let mut automation_bytes = [0u8; automation_catalog::STATE_BYTES];
+        let automation_length = automation_catalog::Catalog::new().encode(&mut automation_bytes)
+            .map_err(|_| ObjectError::CorruptContent)?;
+        self.write_record(automation, &automation_bytes[..automation_length])?;
+        self.attach_record(automation_catalog::PATH, automation)?;
         // Seed only while formatting a new store, never while mounting an
         // existing one: the example is an ordinary, user-owned document.
         let motd=self.create_record(b"motd",ObjectType::Text,Space::System)?;
@@ -1631,6 +1639,33 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: checkpoint_automation
+    // DESC: Creates or replaces a validated job catalog atomically, including migration of stores created before automation support.
+    // ------------------=
+    pub(crate) fn checkpoint_automation(&mut self, content: &[u8]) -> Result<u32, ObjectError> {
+        automation_catalog::Catalog::decode(content).map_err(|_| ObjectError::CorruptContent)?;
+        match self.resolve(automation_catalog::PATH) {
+            Ok(id) => self.replace_state(id, content),
+            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => self.create_attached(
+                b"automation-state", ObjectType::Metadata, Space::System, content,
+                automation_catalog::PATH).map(|_| 1),
+            Err(error) => Err(error),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: read_automation
+    // DESC: Loads the exact private system job checkpoint without granting generic file access to persistent execution authority.
+    // ------------------=
+    pub(crate) fn read_automation(&mut self, out: &mut [u8]) -> Result<usize, ObjectError> {
+        let id = self.resolve(automation_catalog::PATH)?;
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8 || record.kind != ObjectType::Metadata as u8
+            || &record.name[..record.name_len as usize] != b"automation-state" { return Err(ObjectError::Unauthorized); }
+        self.read_internal(id, None, out)
+    }
+
+    // ------------------------=
     // FUNC: replace_state
     // DESC: Replaces a checkpoint object with bounded history using copy-on-write data and atomic metadata.
     // ------------------=
@@ -1818,7 +1853,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         let name = &record.name[..record.name_len as usize];
         if self.is_identity_state(id)? || matches!(name, b"@ssh-user-private" | b"@ssh-user-public" | b"@ssh-user-directory")
             || record.space == Space::System as u8
-            && matches!(name, b"@ssh-host-key" | b"@ssh-config") {
+            && matches!(name, b"@ssh-host-key" | b"@ssh-config" | b"automation-state") {
             Err(ObjectError::Unauthorized)
         } else { Ok(()) }
     }

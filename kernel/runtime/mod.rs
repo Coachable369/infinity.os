@@ -106,6 +106,9 @@ pub mod object_navigation;
 pub mod resource_policy;
 pub mod scheduler;
 pub mod service;
+pub mod automation;
+#[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+pub mod automation_worker;
 pub mod storage_advertiser;
 pub mod storage_client;
 pub mod storage_coordinator;
@@ -309,6 +312,8 @@ pub struct InfinityRuntime {
     pub iop: IopRouter,
     pub events: EventFabric,
     pub services: ServiceManager,
+    pub automation: automation::Catalog,
+    pub automation_ready: bool,
     pub identity: identity::IdentitySystem,
     pub fonts: font::FontCatalog,
     pub ui: crate::ui::InfinityUiRuntime,
@@ -461,6 +466,8 @@ impl InfinityRuntime {
             iop: IopRouter::new(),
             events: EventFabric::new(),
             services: ServiceManager::new(),
+            automation: automation::Catalog::new(),
+            automation_ready: false,
             identity: identity::IdentitySystem::new(),
             fonts: font::FontCatalog::new(),
             ui: crate::ui::InfinityUiRuntime::new(),
@@ -3092,6 +3099,23 @@ pub fn register_firmware_network_device(device: network::types::FirmwareNetworkD
 // DESC: Implements the storage initialized operation.
 // ------------------=
 pub fn storage_initialized() {
+    #[cfg(target_os = "none")]
+    {
+        let mut bytes = [0u8; automation::STATE_BYTES];
+        let restored = match crate::storage::automation_state_load(&mut bytes) {
+            Ok(length) => automation::Catalog::decode(&bytes[..length]).ok(),
+            Err(crate::storage::object::ObjectError::NotFound | crate::storage::object::ObjectError::NamespaceNotFound) => {
+                let catalog = automation::Catalog::new();
+                catalog.encode(&mut bytes).ok().and_then(|length|
+                    crate::storage::automation_state_commit(&bytes[..length]).ok().map(|_| catalog))
+            }
+            Err(_) => None,
+        };
+        with_runtime(|runtime| {
+            runtime.automation_ready = restored.is_some();
+            if let Some(catalog) = restored { runtime.automation = catalog; }
+        });
+    }
     with_runtime(|runtime| {
         let _ = runtime.services.announce_ready(SERVICE_STORAGE);
         for _ in 0..MAX_SERVICES {

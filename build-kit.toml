@@ -62,6 +62,14 @@ clean = false
 command = ["make", "test"]
 clean = false
 
+[profiles.task-automation-tests]
+command = ["make", "task-automation-test"]
+clean = false
+
+[profiles.text-ai-tests]
+command = ["env", "CARGO_TARGET_DIR=build/behavior-harness", "cargo", "run", "--quiet", "--release", "--manifest-path", "tools/behavior-harness/Cargo.toml", "--bin", "llm-advice-test"]
+clean = false
+
 [profiles.ssh-tests]
 command = ["sh", "tools/ssh-test.sh"]
 clean = false

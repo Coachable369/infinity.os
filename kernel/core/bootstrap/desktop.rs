@@ -2241,7 +2241,7 @@ impl super::DisplayDevice {
                 self.ui_text_strong(
                     toolbar_left + 24 * scale,
                     toolbar_top + 15 * scale,
-                    b"Task",
+                    if crate::ui::task_management::current().state.tab==crate::ui::task_management::Tab::Processes {b"Task"} else {b"New"},
                     225,
                     240,
                     249,
@@ -2250,23 +2250,13 @@ impl super::DisplayDevice {
                 self.ui_text(
                     toolbar_left + 79 * scale,
                     toolbar_top + 15 * scale,
-                    if task_menu_open { b"^" } else { b"v" },
+                    if crate::ui::task_management::current().state.tab!=crate::ui::task_management::Tab::Processes {b"+"} else if task_menu_open { b"^" } else { b"v" },
                     103,
                     211,
                     252,
                     1,
                 );
-                let live = b"LIVE TELEMETRY  /  1 SEC";
-                let live_width = self.ui_text_width(live, 1);
-                self.ui_text(
-                    toolbar_left + geometry.toolbar.width as usize - live_width - 18 * scale,
-                    toolbar_top + 15 * scale,
-                    live,
-                    107,
-                    199,
-                    236,
-                    1,
-                );
+                self.render_task_automation_tabs(geometry.content,geometry.toolbar,scale,&crate::ui::task_management::current());
             } else if screen != 8 {
                 self.ui_text(
                     toolbar_left + 16 * scale,
@@ -2612,6 +2602,7 @@ impl super::DisplayDevice {
         menu_open: bool,
         scale: usize,
     ) {
+        if self.render_task_automation(geometry.content,geometry.toolbar,scale,&crate::ui::task_management::current()) {return;}
         let left = geometry.content.x.max(0) as usize;
         let top = geometry.content.y.max(0) as usize;
         let width = geometry.content.width as usize;

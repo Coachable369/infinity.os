@@ -833,6 +833,10 @@ input-regression-test: build/behavior-tests/libinfinity_browser_core.rlib
 	@build/behavior-tests/window-workflows-test
 	@tools/input-regression-test.sh
 
+.PHONY: task-automation-test
+task-automation-test: build/sdk/catalog.rs
+	@sh tools/task-automation-test.sh
+
 task-manager-test:
 	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
 		--manifest-path tools/behavior-harness/Cargo.toml --bin task-manager-test
@@ -862,7 +866,7 @@ test-mouse-menu: x86_64 aarch64
 	@tools/mouse-menu-test.sh x86_64
 	@tools/mouse-menu-test.sh aarch64
 
-test: desktop-session-test command-terminal-test ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+test: task-automation-test desktop-session-test command-terminal-test ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
 
 .PHONY: ssh-test
 ssh-test:

@@ -4,6 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "llm-advice-test"
+path = "../llm-advice-test.rs"
+
+[[bin]]
+name = "automation-storage-test"
+path = "../automation-storage-test.rs"
+
+[[bin]]
+name = "task-automation-controller-test"
+path = "../task-automation-controller-test.rs"
+
+[[bin]]
 name = "face-vault-test"
 path = "../face-vault-test.rs"
 

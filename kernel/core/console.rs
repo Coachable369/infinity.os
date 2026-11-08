@@ -86,6 +86,12 @@ mod menu_editor_commands;
 mod generated_app_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
+#[path = "console_llm.rs"]
+mod llm_commands;
+#[path = "console_automation.rs"]
+mod automation_commands;
+#[path = "console_task_automation.rs"]
+mod console_task_automation;
 #[path = "console_source.rs"]
 mod source_commands;
 #[path = "console_python_libraries.rs"]
@@ -491,6 +497,8 @@ struct ConsoleRuntime {
     command_cursor: usize,
     command_history: infinity_enterprise_core::History,
     shell_path: crate::runtime::object_navigation::ByteText<240>,
+    llm_reply: Option<crate::runtime::ai::text_request::PendingReply>,
+    llm_delivered_turn: Option<u64>,
     workplace_session: [u8;16],
     workplace_result: [u64;8],
     caret_visible: bool,
@@ -667,6 +675,8 @@ impl ConsoleRuntime {
             command_cursor: 0,
             command_history: infinity_enterprise_core::History::new(),
             shell_path: shell_tools::default_path(),
+            llm_reply: None,
+            llm_delivered_turn: None,
             workplace_session: [0;16],
             workplace_result: [0;8],
             caret_visible: true,
@@ -1846,6 +1856,7 @@ impl ConsoleRuntime {
     // DESC: Handles live table selection and full keyboard lifecycle/resource actions.
     // ------------------=
     fn input_task_manager(&mut self, key: ConsoleKey) {
+        if self.input_task_management(key) { return; }
         let count = crate::runtime::with_runtime(|runtime| {
             runtime.task_manager.task_count(&runtime.execution)
         })
@@ -2046,6 +2057,7 @@ impl ConsoleRuntime {
         if !geometry.toolbar.contains(point) && !geometry.content.contains(point) {
             return false;
         }
+        if self.activate_task_management_pointer(geometry, point, scale) { return true; }
         let menu_width = 232 * scale as i32;
         if point_y >= toolbar_top
             && point_y < toolbar_top + geometry.toolbar.height as i32
@@ -2172,6 +2184,7 @@ impl ConsoleRuntime {
     // DESC: Rebuilds the bounded live graphical task table from authoritative snapshots.
     // ------------------=
     fn refresh_task_manager_output(&mut self) {
+        self.refresh_task_automation();
         self.output.clear();
         self.output
             .write_line(b"ID  TASK                 STATE       CPU WEIGHT");
@@ -2793,6 +2806,7 @@ impl ConsoleRuntime {
         self.cancel_node_pairing_input();
         self.mode = ConsoleMode::Desktop;
         self.synchronize_workplace();
+        self.refresh_task_automation();
         self.desktop_app = DesktopAppKind::None;
         self.system_focus = 0;
         self.ai_chat_focus = 0;
@@ -2929,6 +2943,7 @@ impl ConsoleRuntime {
         if !self.ai_chat_allowed() || self.ai_chat_preparing() {
             return;
         }
+        if self.submit_decision_widget_input() { return; }
         let memory = crate::runtime::ai::with_ai_runtime(|runtime| {
             if !runtime.submit_chat() {
                 return None;
@@ -3111,6 +3126,9 @@ impl ConsoleRuntime {
         python_commands::release_gui_keyboard();
         self.window_action(id, if close { shelf::Action::Close } else { shelf::Action::Restore });
         if close && self.editor_dialog == EditorDialog::Unsaved { return None; }
+        if close && app == App::TaskManager && crate::ui::task_management::current().state.mode != crate::ui::task_management::Mode::Browse {
+            return None;
+        }
         Some(true)
     }
 
@@ -3566,6 +3584,15 @@ impl ConsoleRuntime {
     // DESC: Guards dirty Text Editor closure and dismisses other active desktop applications immediately.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        if self.desktop_app == DesktopAppKind::TaskManager {
+            let mut view = crate::ui::task_management::current();
+            if view.state.mode != crate::ui::task_management::Mode::Browse {
+                view.state.feedback = crate::ui::task_management::Feedback::SaveOrCancel;
+                crate::ui::task_management::publish(view);
+                self.redraw();
+                return;
+            }
+        }
         if self.desktop_app==DesktopAppKind::CommandWindow && self.terminal_edit_close() {crate::ui::terminal_edit::mutate(|s|s.closing_window=true);self.redraw();return;}
         self.cancel_account_password();
         if self.close_authored_destination() { self.redraw(); return; }
@@ -10228,6 +10255,7 @@ impl ConsoleRuntime {
         if !private {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.shell_environment(&command[..length]) {self.reset_input();return;}
+        if self.automation_command(&command[..length]) || self.llm_command(&command[..length]) { self.reset_input(); return; }
         if command_word(&command[..length],0).is_some_and(|w|w.eq_ignore_ascii_case(b"cd"))
             && self.workplace_authorized(false) {
             self.execute_native_navigation_command(&command[..length]);self.reset_input();return;
@@ -12269,6 +12297,7 @@ impl ConsoleRuntime {
     // DESC: Implements the execute runtime command operation.
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
+        if self.automation_command(command) { return true; }
         #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if command==b"camera build" {
             let started=compiler_commands::camera_build(self).is_ok();
@@ -12950,6 +12979,7 @@ impl ConsoleRuntime {
     // DESC: Projects typed AI, model, provider, voice, and agent state into the human console.
     // ------------------=
     fn execute_ai_command(&mut self, command: &[u8]) -> bool {
+        if self.llm_command(command) { return true; }
         use crate::runtime::ai::{model::LOCAL_INTENT_MODEL_ID, types::DataLocality};
         for (alias, id) in [
             (b"hermes".as_slice(), crate::runtime::ai::chat::HERMES_MODEL_ID),
@@ -14470,6 +14500,17 @@ pub fn poll_native_ai() {
 // DESC: Advances bounded native service work without blocking each state transition on its own framebuffer repaint.
 // ------------------=
 fn poll_native_ai_inner() {
+    #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    {
+        let now = crate::runtime::ai::qwen::workers::clock_ns();
+        let utc = crate::runtime::ai::clock::SYSTEM.utc_nanoseconds(now).map_or(0, |time| time / 1_000_000_000);
+        if crate::runtime::automation_worker::poll(now, utc, now / 1_000_000_000) {
+            unsafe { if let Some(console) = (&mut *(&raw mut RUNTIME)).as_mut() {
+                console.refresh_task_automation();
+                if console.task_manager_window.visible { console.redraw(); }
+            } }
+        }
+    }
     #[cfg(target_os="none")]
     unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() { runtime.ssh_terminal_poll(); } }
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -14606,6 +14647,7 @@ fn poll_native_ai_inner() {
             ai_changed = true;
         }
     } }
+    unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() { ai_changed |= runtime.poll_llm_response(); } }
     if ai_changed {
         let checkpoint=crate::runtime::ai::with_ai_runtime(|ai|ai.take_intelligence_checkpoint_request());
         if let Some(goal)=checkpoint { unsafe { if let Some(runtime)=(&*(&raw const RUNTIME)).as_ref() {

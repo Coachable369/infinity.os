@@ -978,6 +978,29 @@ fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectEr
 }
 
 // ------------------------=
+// FUNC: automation_state_load
+// DESC: Reads the shared daemon and task catalog from the mounted live or installed Object Store.
+// ------------------=
+pub(crate) fn automation_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.read_automation(out)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = out; Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: automation_state_commit
+// DESC: Validates and atomically checkpoints native job state after controller authorization or worker lifecycle admission.
+// ------------------=
+pub(crate) fn automation_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
+    crate::runtime::automation::Catalog::decode(content).map_err(|_| object::ObjectError::CorruptContent)?;
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.checkpoint_automation(content)) }
+    #[cfg(target_arch = "x86")]
+    { Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
 // FUNC: python_packages_load
 // DESC: Loads only the active profile's package archive without granting generic system-object access.
 // ------------------=

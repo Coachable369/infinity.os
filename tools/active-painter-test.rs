@@ -48,6 +48,8 @@ mod personalization_view;
 #[path="../kernel/core/bootstrap/settings_dashboard_view.rs"] mod settings_dashboard_view;
 #[path="settings-native-render-tests.rs"] mod settings_native_render_tests;
 #[path="accounts-native-render-tests.rs"] mod accounts_native_render_tests;
+#[path="../kernel/core/bootstrap/task_management_view.rs"] mod task_management_view;
+#[path="task-management-native-render-tests.rs"] mod task_management_native_render_tests;
 // The exact same packaged semantic atlases used by the OS, not a host icon substitute.
 mod desktop {
     pub const NODE_TRUST_TOPOLOGY_BMP:&[u8]=include_bytes!("../assets/mesh/infinity-node-trust-topology-v1.bmp");
@@ -391,6 +393,7 @@ fn main() {
     if std::env::args().any(|arg|arg=="--desktop-drag-only") {desktop_drag_render_test::verify();return;}
     if std::env::args().any(|arg|arg=="--motion-benchmark-only") {motion_blur_benchmark();return;}
     if std::env::args().any(|arg|arg=="--login-waves-only") {configuration_wizard_render::login_wave_tests::verify();return;}
+    if std::env::args().any(|arg|arg=="--task-management-only") {task_management_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--face-enrollment-only") {configuration_wizard_render::verify_face();return;}
     if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}
@@ -415,6 +418,7 @@ fn main() {
         window_controls_test();window_control_states_proof();return;
     }
     file_preview_proof::render();
+    task_management_native_render_tests::verify();
     settings_native_render_tests::verify();
     configuration_wizard_render::verify();
     window_substrate_pixels();
