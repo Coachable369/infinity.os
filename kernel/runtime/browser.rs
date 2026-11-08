@@ -20,14 +20,14 @@ const HEAP_BYTES: usize = abi::HEAP_BYTES;
 // It occupies loader-owned BSS, not installer payload bytes or the framebuffer.
 #[repr(C, align(4096))]
 struct Heap([u8; HEAP_BYTES]);
-#[cfg_attr(target_arch = "x86_64", link_section = ".browser_heap")]
+#[cfg_attr(all(target_os = "none", any(target_arch = "x86_64", target_arch = "aarch64")), link_section = ".browser_heap")]
 static mut HEAP: Heap = Heap([0; HEAP_BYTES]);
 // ------------------------=
 // FUNC: heap_address
-// DESC: Resolves the loader-owned arena without a 32-bit displacement on x86; other targets retain native addressing.
+// DESC: Resolves the loader-owned arena with full-width native addresses for either low or high firmware placement.
 // ------------------=
 fn heap_address() -> *mut u8 {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_os = "none", target_arch = "x86_64"))]
     unsafe {
         let address: usize;
         core::arch::asm!(
@@ -38,7 +38,21 @@ fn heap_address() -> *mut u8 {
         );
         address as *mut u8
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+    unsafe {
+        let address: usize;
+        core::arch::asm!(
+            "movz {address}, #:abs_g3:{arena}",
+            "movk {address}, #:abs_g2_nc:{arena}",
+            "movk {address}, #:abs_g1_nc:{arena}",
+            "movk {address}, #:abs_g0_nc:{arena}",
+            address = out(reg) address,
+            arena = sym HEAP,
+            options(nomem, nostack, preserves_flags)
+        );
+        address as *mut u8
+    }
+    #[cfg(not(all(target_os = "none", any(target_arch = "x86_64", target_arch = "aarch64"))))]
     { core::ptr::addr_of_mut!(HEAP).cast() }
 }
 static STATE: AtomicU32 = AtomicU32::new(0);

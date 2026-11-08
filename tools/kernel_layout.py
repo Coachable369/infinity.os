@@ -32,7 +32,7 @@ def validate(header, platform="virtualbox"):
                 raise ValueError("ARM kernel load range is outside the 12 GiB QEMU guest RAM")
         if machine == 62 and end > 0x80000000:
             if (physical, memsz) not in ((0x100000000, 0x60000000),
-                                         (0x160000000, 0x20000000),
+                                         (0x1a0000000, 0x40000000),
                                          (0x180000000, 0x3f49000)):
                 raise ValueError("x86 load range exceeds relative-addressing range")
             if filesz != 0 or flags != 6:
@@ -43,7 +43,7 @@ def validate(header, platform="virtualbox"):
     ordered = sorted(ranges)
     if any(left[1] > right[0] for left, right in zip(ordered, ordered[1:])):
         raise ValueError("overlapping kernel load ranges")
-    if platform == "qemu" and (machine != 183 or min(start for start, _ in ranges) != 0x42000000):
+    if platform == "qemu" and (machine != 183 or min(start for start, _ in ranges) != 0x50000000):
         raise ValueError("QEMU test media requires the ARM native kernel load base")
     return ranges
 

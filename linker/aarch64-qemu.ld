@@ -6,14 +6,14 @@ PHDRS
     rodata PT_LOAD FLAGS(4);
     data PT_LOAD FLAGS(6);
     speech PT_LOAD FLAGS(6);
+    browser PT_LOAD FLAGS(6);
     stack PT_GNU_STACK FLAGS(6);
 }
 
 SECTIONS
 {
-    /* QEMU virt RAM begins at 0x40000000. Leave 32 MiB for firmware
-       while keeping the complete low kernel below the fixed speech arena. */
-    . = 0x42000000;
+    /* Retain the proven kernel base above QEMU's low firmware allocations. */
+    . = 0x50000000;
     .text : ALIGN(0x1000) { *(.text .text.*) } :text
     .rodata : ALIGN(0x1000) { *(.rodata .rodata.*) } :rodata
     .data : ALIGN(0x1000) { *(.data .data.*)
@@ -27,11 +27,16 @@ SECTIONS
     .init_array : ALIGN(8) { KEEP(*(.init_array .init_array.*)) } :data
     .fini_array : ALIGN(8) { KEEP(*(.fini_array .fini_array.*)) } :data
     .got : ALIGN(0x1000) { *(.got .got.*) } :data
-    /* Same native arena layout as the canonical ARM image; only base differs. */
+    /* Keep the fixed speech arena; place only the browser arena in high RAM. */
     __low_bss = ALIGN(0x1000);
     .speech_heap 0x100000000 (NOLOAD) : ALIGN(0x1000) {
         *(.speech_heap)
     } :speech
+    .browser_heap 0x1a0000000 (NOLOAD) : ALIGN(0x1000) {
+        *(.browser_heap)
+    } :browser
+    ASSERT(SIZEOF(.browser_heap) == 0 || SIZEOF(.browser_heap) == 0x40000000,
+           "QEMU browser arena must retain its complete 1 GiB allocation")
     . = __low_bss;
     .bss : ALIGN(0x1000) { *(.bss .bss.*) *(COMMON)
         . = ALIGN(4096);

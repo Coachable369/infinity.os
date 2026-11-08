@@ -32,7 +32,9 @@ SECTIONS
         *(.speech_heap)
     } :speech
     . = __low_bss;
-    .bss : ALIGN(0x1000) { *(.bss .bss.*) *(COMMON)
+    .bss (NOLOAD) : ALIGN(0x1000) { *(.bss .bss.*) *(COMMON)
+        /* Canonical ARM retains the browser arena in ordinary low RAM. */
+        *(.browser_heap)
         . = ALIGN(4096);
         infinity_browser_private_browser_bss_start = .;
         *(.browser_state_bss.*)
