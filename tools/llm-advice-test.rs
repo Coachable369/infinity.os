@@ -14,6 +14,17 @@ fn output_text(_: &[u8]) {}
 // DESC: Exercises typed parsing, inference admission, response ownership, cancellation, capacity, and identity isolation without using displayed prose as an oracle.
 // ------------------=
 fn contract() {
+    let mut terminal=Box::new(ui::command_terminal::State::new());terminal.session([1;16],true);
+    let mut bytes=vec![b'x';211];bytes.extend_from_slice(b"\n\nend");
+    write_response_lines(&bytes,|line|terminal.line(line));
+    assert_eq!(terminal.count,3);assert_eq!(terminal.length(terminal.first),211);
+    assert_eq!(terminal.length(terminal.first+1),0);assert_eq!(terminal.length(terminal.first+2),3);
+    for columns in [67,100,160]{
+        terminal.reflow(columns,20);
+        assert_eq!(terminal.length(terminal.first),211);
+        for column in 0..211{assert_eq!(terminal.byte(ui::command_terminal::Position{row:terminal.first,column}),b'x');}
+        assert_eq!(terminal.visual(1).unwrap(),ui::command_terminal::Position{row:terminal.first,column:columns});
+    }
     assert_eq!(parse_command(b"ai ask Explain scheduling"), Some(Command::Prompt(AdviceMode::Answer, b"Explain scheduling")));
     assert_eq!(parse_command(b"llm decide Which option?"), Some(Command::Prompt(AdviceMode::Decide, b"Which option?")));
     assert_eq!(parse_command(b"ai decide Which option?"), Some(Command::Prompt(AdviceMode::Decide, b"Which option?")));

@@ -552,6 +552,8 @@ mod voice_output {
 #[path = "../kernel/ui/thinking.rs"] mod thinking;
 #[path = "../kernel/runtime/ai/wake_word.rs"] mod wake_word;
 #[path = "../kernel/runtime/ai/voice_conversation.rs"] mod conversation;
+use conversation as voice_conversation;
+#[path = "../kernel/runtime/ai/text_reset_policy.rs"] mod text_reset_policy;
 // ------------------------=
 // FUNC: toggles_restart_after_drain_without_reopening_after_revocation
 // DESC: Executes rapid off/on/off/on, cancellation acknowledgement, repeated reuse and owner revocation through the production controller.
@@ -564,6 +566,8 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     CHAT_READY.store(false,Ordering::SeqCst);
     assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Starting);
     assert!(conversation::preparing());assert_eq!(CAPTURES.load(Ordering::SeqCst),0);
+    assert!(text_reset_policy::allows(conversation::state().0,voice_output::OutputState::Idle));
+    assert_eq!(conversation::state().0,State::Starting);assert_eq!(CAPTURES.load(Ordering::SeqCst),0);
     MODEL_READY.store(true,Ordering::SeqCst);
     CHAT_READY.store(true,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Listening);
@@ -2136,4 +2140,20 @@ fn startup_ambient_recovery_tests(owner:runtime::execution::SecurityIdentity) {
     recognize_voice(b"Infinity respond after microphone recovery");
     assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
     complete_voice_reply();conversation::stop(owner);conversation::poll();
+}
+
+// ------------------------=
+// FUNC: typed_history_reset_preserves_active_audio
+// DESC: Exercises the production reset gate with passive preparation, active voice turns and every nonterminal output state.
+// ------------------=
+#[test]
+fn typed_history_reset_preserves_active_audio(){
+    use conversation::State;use voice_output::OutputState;
+    for state in [State::Off,State::Starting,State::Listening,State::Failed]{
+        for output in [OutputState::Idle,OutputState::Failed,OutputState::Cancelled,OutputState::Complete]{assert!(text_reset_policy::allows(state,output));}
+        for output in [OutputState::Queued,OutputState::Synthesizing,OutputState::Ready,OutputState::Speaking,OutputState::Buffered]{assert!(!text_reset_policy::allows(state,output));}
+    }
+    for state in [State::Recognizing,State::Submitting,State::Thinking,State::Speaking,State::Stopping]{
+        for output in [OutputState::Idle,OutputState::Failed,OutputState::Cancelled,OutputState::Complete]{assert!(!text_reset_policy::allows(state,output));}
+    }
 }

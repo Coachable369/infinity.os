@@ -2,6 +2,34 @@
 use super::{chat::{ChatRole, ChatRuntime, GenerationState}, AiRuntime};
 use core::fmt::Write;
 #[path="decision_facts.rs"] pub mod weighted;
+#[cfg(target_os="none")]
+use super::{voice_conversation,voice_output};
+#[cfg(target_os="none")]
+#[path="text_reset_policy.rs"] mod reset_policy;
+#[cfg(target_os="none")]
+#[used]
+#[no_mangle]
+static mut INFINITY_TEXT_RESET_SNAPSHOT:[u64;8]=[0x494e465452535431,1,0,0,0,0,0,0];
+
+// ------------------------=
+// FUNC: audio_reset_allowed
+// DESC: Records the actual read-only audio gate for one authorized reset attempt without changing the frozen pipeline.
+// ------------------=
+#[cfg(target_os="none")]
+fn audio_reset_allowed(turn:u64)->bool{
+    let conversation=voice_conversation::state().0;let output=voice_output::status().state;
+    let allowed=reset_policy::allows(conversation,output);
+    unsafe{
+        let target=core::ptr::addr_of_mut!(INFINITY_TEXT_RESET_SNAPSHOT).cast::<u64>();
+        let sequence=target.add(2).read_volatile().wrapping_add(2)&!1;
+        target.add(2).write_volatile(sequence|1);target.add(7).write_volatile(sequence|1);
+        target.add(3).write_volatile(conversation as u64);target.add(4).write_volatile(output as u64);
+        target.add(5).write_volatile(u64::from(allowed));target.add(6).write_volatile(turn);
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+        target.add(7).write_volatile(sequence);target.add(2).write_volatile(sequence);
+    }
+    allowed
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdviceMode { Answer, Decide }
@@ -225,11 +253,7 @@ impl AiRuntime {
             || self.qwen.as_ref().is_some_and(|service|service.busy())
             || self.other_native.as_ref().is_some_and(|service|service.busy()) {return Err(AdviceError::Busy);}
         #[cfg(target_os="none")]
-        if !matches!(super::voice_conversation::state().0,super::voice_conversation::State::Off
-            |super::voice_conversation::State::Listening|super::voice_conversation::State::Failed)
-            || matches!(super::voice_output::status().state,super::voice_output::OutputState::Queued
-                |super::voice_output::OutputState::Synthesizing|super::voice_output::OutputState::Ready
-                |super::voice_output::OutputState::Speaking|super::voice_output::OutputState::Buffered) {
+        if !audio_reset_allowed(turn) {
             return Err(AdviceError::Busy);
         }
         if self.chat.typed_advice()!=Some(TypedTurn {owner,turn,model:self.active_native})
@@ -266,4 +290,12 @@ impl PendingReply {
 pub fn response(chat: &ChatRuntime) -> Option<&[u8]> {
     chat.message_count().checked_sub(1).and_then(|index| chat.message(index))
         .filter(|message| message.role == ChatRole::Assistant).map(|message| message.text())
+}
+
+// ------------------------=
+// FUNC: write_response_lines
+// DESC: Preserves native response line boundaries so each terminal applies its own visual wrapping width.
+// ------------------=
+pub fn write_response_lines(bytes:&[u8],mut write:impl FnMut(&[u8])){
+    for line in bytes.split(|byte|*byte==b'\n'){write(line);}
 }

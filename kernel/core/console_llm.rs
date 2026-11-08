@@ -275,10 +275,7 @@ impl ConsoleRuntime {
                 _ => {}
             }
             if let Some(bytes) = text_request::response(&runtime.chat) {
-                for line in bytes.split(|byte| *byte == b'\n') {
-                    if line.is_empty() { self.output.write_line(b""); }
-                    else { for chunk in line.chunks(LINE_CAPACITY) { self.output.write_line(chunk); } }
-                }
+                text_request::write_response_lines(bytes,|line|self.output.write_line(line));
             }
             use ai::chat::GenerationState;
             match runtime.chat.generation_state {

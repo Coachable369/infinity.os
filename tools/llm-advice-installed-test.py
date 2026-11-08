@@ -49,6 +49,35 @@ def snapshot(guest):
     return dict(sequence=state[2], **dict(zip(names, state[3:23])))
 
 # ------------------------=
+# FUNC: reset_snapshot
+# DESC: Collects the exact read-only native reset gate while allowing diagnostic-only comparison with an older matched fixture.
+# ------------------=
+def reset_snapshot(guest):
+    try:
+        state = native.read(guest, "INFINITY_TEXT_RESET_SNAPSHOT", 8)
+    except AssertionError:
+        return None
+    assert state[:2] == (0x494e465452535431, 1)
+    return dict(sequence=state[2], voice_state=state[3], output_state=state[4],
+                audio_idle=state[5], requested_turn=state[6])
+
+# ------------------------=
+# FUNC: reveal_widget
+# DESC: Minimizes Command Window through its published native titlebar target and verifies the actual hidden-window state.
+# ------------------=
+def reveal_widget(guest):
+    chrome = native.read(guest, "INFINITY_WINDOW_CONTROL_SNAPSHOT", 81)
+    assert chrome[:2] == (0x494e465743545231, 1) and chrome[20] == 1
+    native.adaptive_click(guest, chrome[26], chrome[27])
+    deadline = time.monotonic() + 15
+    while True:
+        chrome = native.read(guest, "INFINITY_WINDOW_CONTROL_SNAPSHOT", 81)
+        if chrome[20] == 0 and chrome[3] & (1 << 6):
+            return
+        assert time.monotonic() < deadline, dict(window_state=chrome)
+        time.sleep(.1)
+
+# ------------------------=
 # FUNC: wait
 # DESC: Requires typed transitions and a live guest within a bounded deadline, preserving numeric failure evidence.
 # ------------------=
@@ -145,13 +174,20 @@ def exercise(guest, proof, timeout):
     assert result["command_turn"] == result["delivered_turn"] == command_result["delivered_turn"], result
     assert result["terminal_rows"] == command_result["terminal_rows"], result
     proof["widget_decision"] = dict(admitted=submitted, completed=result)
+    reveal_widget(guest)
+    proof["widget_response_unoccluded"] = True
     proof["screenshots"].append(str(guest.screenshot("llm-widget-decision-response")))
     guest.launch("command", 5)
     guest.command("ai new")
-    cleared = wait(guest, lambda state: state["chat_turn"] > result["chat_turn"]
-                   and state["generation"] == 0 and state["response_bytes"] == 0
-                   and state["command_owned"] == 0,
-                   "completed advisory conversation reset", audit=audit)
+    try:
+        cleared = wait(guest, lambda state: state["chat_turn"] > result["chat_turn"]
+                       and state["generation"] == 0 and state["response_bytes"] == 0
+                       and state["command_owned"] == 0,
+                       "completed advisory conversation reset", audit=audit)
+    finally:
+        proof["reset_guard"] = reset_snapshot(guest)
+    assert proof["reset_guard"] is not None, "Reset policy diagnostic is required for current media"
+    assert proof["reset_guard"]["requested_turn"] == result["chat_turn"] and proof["reset_guard"]["audio_idle"] == 1, proof["reset_guard"]
     assert cleared["accepted_requests"] == result["accepted_requests"], cleared
     guest.command("llm ask Explain a daemon in one short sentence.")
     fresh = wait(guest, lambda state: state["origin"] == state["mode"] == 1
