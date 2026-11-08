@@ -18,6 +18,7 @@ include!("../../build/sdk/catalog.rs");
 pub fn owns(path: &[u8]) -> bool {
     path == b"/InfinitySDK" || path.starts_with(b"/InfinitySDK/")
         || path==b"/System" || (path.len()>7 && path[..8].eq_ignore_ascii_case(b"/System/") && resolve(path).is_some())
+        || INSTALL_PATHS.iter().any(|candidate| *candidate == path)
 }
 
 // ------------------------=

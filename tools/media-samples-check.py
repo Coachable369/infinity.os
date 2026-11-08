@@ -14,7 +14,7 @@ def main():
     for name, audio, video in [('Infinity-Chime.wav', 'pcm_s16le', None),
                                 ('Infinity-Melody.mp3', 'mp3', None),
                                 ('Infinity-Motion.mp4', 'aac', 'h264')]:
-        path = root / 'sdk/system' / name
+        path = root / 'runtime/install/System' / name
         assert 0 < path.stat().st_size < 4*1024*1024
         info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)]))
         assert 5.9 <= float(info['format']['duration']) <= 6.2

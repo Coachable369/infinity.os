@@ -13,7 +13,7 @@ import wave
 def main():
     assert os.environ.get('INFINITY_BUILD_KIT_ACTIVE')
     root = Path(__file__).resolve().parents[1]
-    out = root / 'sdk/system'
+    out = root / 'runtime/install/System'
     wav = out / 'Infinity-Chime.wav'
     rate = 24000
     notes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63]

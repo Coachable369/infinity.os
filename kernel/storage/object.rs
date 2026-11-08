@@ -2065,9 +2065,9 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.seed_home_file(owner,home,b"documents",b"infinity_native_test.so",
                 crate::runtime::native_python_package::EXAMPLE_EXTENSION,ObjectType::Blob)?;
             for (name,folder,data) in [
-                (b"Chime.wav".as_slice(),b"music".as_slice(),include_bytes!("../../sdk/system/Infinity-Chime.wav").as_slice()),
-                (b"Melody.mp3",b"music",include_bytes!("../../sdk/system/Infinity-Melody.mp3").as_slice()),
-                (b"Motion.mp4",b"videos",include_bytes!("../../sdk/system/Infinity-Motion.mp4").as_slice()),
+                (b"Chime.wav".as_slice(),b"music".as_slice(),include_bytes!("../../runtime/install/System/Infinity-Chime.wav").as_slice()),
+                (b"Melody.mp3",b"music",include_bytes!("../../runtime/install/System/Infinity-Melody.mp3").as_slice()),
+                (b"Motion.mp4",b"videos",include_bytes!("../../runtime/install/System/Infinity-Motion.mp4").as_slice()),
             ] {
                 let destination=home.child(folder).and_then(|p|p.child(name)).ok_or(ObjectError::InvalidPath)?;
                 if self.resolve(destination.as_bytes()).is_ok(){continue;}

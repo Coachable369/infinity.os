@@ -65,6 +65,30 @@ def write_changed(path, data):
         path.write_bytes(data)
 
 # ------------------------=
+# FUNC: install_tree
+# DESC: Maps the recursive staging tree to absolute guest paths, preserving empty directories and rejecting unsupported inputs.
+# ------------------=
+def install_tree(root):
+    base = root / "runtime/install"
+    records = []
+    for asset in sorted(base.rglob("*")):
+        if asset.is_symlink() or not (asset.is_file() or asset.is_dir()):
+            raise ValueError(f"Unsupported install entry: {asset}")
+        path = "/" + asset.relative_to(base).as_posix()
+        if len(path.encode()) > 95 or any(ord(c) < 32 for c in path):
+            raise ValueError(f"Invalid install path: {path}")
+        records.append((path, asset.relative_to(root).as_posix(),
+                        asset.read_bytes() if asset.is_file() else None))
+    return records
+
+# ------------------------=
+# FUNC: rust_bytes
+# DESC: Encodes arbitrary UTF-8 paths as Rust byte strings without interpreting quotes or escapes.
+# ------------------=
+def rust_bytes(value):
+    return 'b"' + ''.join(f"\\x{byte:02x}" for byte in value.encode()) + '"'
+
+# ------------------------=
 # FUNC: main
 # DESC: Produces the native include catalog and an atomically published versioned SDK archive.
 # ------------------=
@@ -89,13 +113,17 @@ def main():
         lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: {value}, text: {str(is_text).lower()}, crc: {crc} }},')
     # Built-in shell resources use the same immutable object service, but do not
     # belong in the downloadable SDK or consume writable namespace slots.
-    root_id = ",".join(map(str, object_id("/System")))
-    lines.append(f'    Entry {{ path: b"/System", id: ObjectId([{root_id}]), data: None, text: false, crc: 0 }},')
-    for asset in sorted((ROOT / "sdk/system").iterdir()):
-        path = "/System/" + asset.name
+    staged = install_tree(ROOT)
+    occupied = {path for path, _ in entries}
+    for path, source, data in staged:
+        if path in occupied or path == "/System/UserTemplate" or path.startswith("/System/UserTemplate/"):
+            raise ValueError(f"Install path conflicts with generated package: {path}")
+        occupied.add(path)
         ident = ",".join(map(str, object_id(path)))
-        text = str(asset.suffix in (".py", ".txt")).lower()
-        lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: Some(include_bytes!("../../sdk/system/{asset.name}")), text: {text}, crc: {zlib.crc32(asset.read_bytes())} }},')
+        value = "None" if data is None else 'Some(include_bytes!(' + json.dumps("../../" + source, ensure_ascii=False) + '))'
+        text = data is not None and PurePosixPath(path).suffix in (".py", ".txt", ".md", ".json", ".c", ".h")
+        crc = 0 if data is None else zlib.crc32(data)
+        lines.append(f'    Entry {{ path: {rust_bytes(path)}, id: ObjectId([{ident}]), data: {value}, text: {str(text).lower()}, crc: {crc} }},')
     # The visible, immutable home skeleton is also the account provisioning source.
     for asset in [ROOT / "sdk/user-template", *sorted((ROOT / "sdk/user-template").rglob("*"))]:
         relative = asset.relative_to(ROOT / "sdk/user-template")
@@ -116,6 +144,11 @@ def main():
         ident = ",".join(map(str, object_id(path)))
         lines.append(f'    Entry {{ path: b"{path}", id: ObjectId([{ident}]), data: Some(include_bytes!("../../{source}")), text: false, crc: {zlib.crc32((ROOT/source).read_bytes())} }},')
     lines.append("];")
+    lines.append("pub static INSTALL_PATHS: &[&[u8]] = &[" + ",".join(rust_bytes(path) for path, _, _ in staged) + "];")
+    write_changed(ROOT / "build/sdk/install-manifest.json", (json.dumps([
+        dict(path=path, source=source, directory=data is None,
+             sha256=None if data is None else hashlib.sha256(data).hexdigest())
+        for path, source, data in staged], indent=2) + "\n").encode())
     write_changed(ROOT / "build/sdk/manifest.json", payloads["manifest.json"])
     write_changed(ROOT / "build/sdk/catalog.rs", ("\n".join(lines) + "\n").encode())
     archive = ROOT / "builds/InfinitySDK.tar.gz"

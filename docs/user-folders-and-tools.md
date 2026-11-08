@@ -27,7 +27,7 @@ jsonfmt --sort-keys /home/Your.Name/documents/settings.json
 ```
 
 The tool runner mounts only authorized input snapshots. These commands require no
-host OS filesystem or services. `sdk/system` is a catalog dependency, and release
+host OS filesystem or services. `runtime/install/System` is a catalog dependency, and release
 SDK parity checks enumerate its resources automatically.
 
 Format 10 expands bounded object, namespace and version tables to 128 entries.

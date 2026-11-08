@@ -103,7 +103,7 @@ sys.modules["tkinter"] = types.SimpleNamespace(**{name: Widget for name in
     ("Frame", "Label", "PhotoImage", "Scale", "IntVar", "StringVar", "Button")}, TclError=RuntimeError)
 codec = Codec()
 sys.modules["_infinity_media"] = codec
-Player = runpy.run_path(str(Path(__file__).resolve().parents[1] / "sdk/system/media-player.py"))["Player"]
+Player = runpy.run_path(str(Path(__file__).resolve().parents[1] / "runtime/install/System/media-player.py"))["Player"]
 root = Widget()
 player = Player(root, "/home/Alex/music/Chime.wav")
 root.pending.pop(1)()

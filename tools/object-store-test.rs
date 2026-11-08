@@ -26,6 +26,31 @@ impl storage::object::ObjectCapabilityPolicy for SdkReader {
 }
 
 // ------------------------=
+// FUNC: install_tree_access
+// DESC: Compares every recursive staged file and directory against the native object store after format and remount.
+// ------------------=
+fn install_tree_access(store: &mut ObjectStore<MemoryDisk>, directory: &std::path::Path) {
+    for item in std::fs::read_dir(directory).unwrap() {
+        let path = item.unwrap().path();
+        let relative = path.strip_prefix("runtime/install").unwrap().to_str().unwrap();
+        let guest = format!("/{relative}");
+        let id = store.resolve(guest.as_bytes()).unwrap();
+        let metadata = store.metadata(id).unwrap();
+        if path.is_dir() {
+            assert_eq!(metadata.kind, ObjectType::NamespaceNode);
+            install_tree_access(store, &path);
+        } else {
+            let expected = std::fs::read(&path).unwrap();
+            let mut actual = vec![0; metadata.logical_size as usize];
+            assert_eq!(store.read(id, None, &mut actual).unwrap(), expected.len());
+            assert_eq!(actual, expected);
+            assert_eq!(store.write(id, b"changed"), Err(ObjectError::Unauthorized));
+            assert_eq!(store.detach(guest.as_bytes()), Err(ObjectError::Unauthorized));
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: sdk_package_access
 // DESC: Exercises installed SDK discovery, owner-independent reads, readonly protection, copying and remount byte parity.
 // ------------------=
@@ -34,6 +59,7 @@ fn sdk_package_access() {
     let sectors = STORE_RELATIVE_LBA as usize + 32768;
     let disk = MemoryDisk::new(sectors);
     let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0xa7; 16]).unwrap();
+    install_tree_access(&mut store, std::path::Path::new("runtime/install"));
     let generation = store.generation();
     let slots = store.persistent_namespace_count();
     let root = store.resolve(b"/InfinitySDK").unwrap();
@@ -88,19 +114,19 @@ fn sdk_package_access() {
     assert!(store.resolve(b"/InfintySDK").is_err());
     assert_eq!(store.metadata(store.resolve(b"/System").unwrap()).unwrap().kind,ObjectType::NamespaceNode);
     for (path, expected) in [
-        (b"/System/wc.py".as_slice(), include_bytes!("../sdk/system/wc.py").as_slice()),
-        (b"/System/sha256sum.py", include_bytes!("../sdk/system/sha256sum.py").as_slice()),
-        (b"/System/jsonfmt.py", include_bytes!("../sdk/system/jsonfmt.py").as_slice()),
-        (b"/System/grep.py".as_slice(), include_bytes!("../sdk/system/grep.py").as_slice()),
-        (b"/System/sed.py",include_bytes!("../sdk/system/sed.py").as_slice()),
-        (b"/System/awk.py",include_bytes!("../sdk/system/awk.py").as_slice()),
-        (b"/System/figlet.py",include_bytes!("../sdk/system/figlet.py").as_slice()),
-        (b"/System/standard.flf",include_bytes!("../sdk/system/standard.flf").as_slice()),
-        (b"/System/small.flf",include_bytes!("../sdk/system/small.flf").as_slice()),
-        (b"/System/graffiti.flf",include_bytes!("../sdk/system/graffiti.flf").as_slice()),
-        (b"/System/Infinity-Chime.wav",include_bytes!("../sdk/system/Infinity-Chime.wav").as_slice()),
-        (b"/System/Infinity-Melody.mp3",include_bytes!("../sdk/system/Infinity-Melody.mp3").as_slice()),
-        (b"/System/Infinity-Motion.mp4",include_bytes!("../sdk/system/Infinity-Motion.mp4").as_slice()),
+        (b"/System/wc.py".as_slice(), include_bytes!("../runtime/install/System/wc.py").as_slice()),
+        (b"/System/sha256sum.py", include_bytes!("../runtime/install/System/sha256sum.py").as_slice()),
+        (b"/System/jsonfmt.py", include_bytes!("../runtime/install/System/jsonfmt.py").as_slice()),
+        (b"/System/grep.py".as_slice(), include_bytes!("../runtime/install/System/grep.py").as_slice()),
+        (b"/System/sed.py",include_bytes!("../runtime/install/System/sed.py").as_slice()),
+        (b"/System/awk.py",include_bytes!("../runtime/install/System/awk.py").as_slice()),
+        (b"/System/figlet.py",include_bytes!("../runtime/install/System/figlet.py").as_slice()),
+        (b"/System/standard.flf",include_bytes!("../runtime/install/System/standard.flf").as_slice()),
+        (b"/System/small.flf",include_bytes!("../runtime/install/System/small.flf").as_slice()),
+        (b"/System/graffiti.flf",include_bytes!("../runtime/install/System/graffiti.flf").as_slice()),
+        (b"/System/Infinity-Chime.wav",include_bytes!("../runtime/install/System/Infinity-Chime.wav").as_slice()),
+        (b"/System/Infinity-Melody.mp3",include_bytes!("../runtime/install/System/Infinity-Melody.mp3").as_slice()),
+        (b"/System/Infinity-Motion.mp4",include_bytes!("../runtime/install/System/Infinity-Motion.mp4").as_slice()),
     ] {
         let id=store.resolve(path).unwrap();let mut data=vec![0;expected.len()];
         assert_eq!(store.read(id,None,&mut data).unwrap(),expected.len());
@@ -115,9 +141,9 @@ fn sdk_package_access() {
             assert_eq!(store.metadata(id).unwrap().owner,user);
             assert_eq!(store.metadata(id).unwrap().kind,ObjectType::NamespaceNode);
         }
-        for (folder,name,data) in [(b"music".as_slice(),b"Chime.wav".as_slice(),include_bytes!("../sdk/system/Infinity-Chime.wav").as_slice()),
-            (b"music",b"Melody.mp3",include_bytes!("../sdk/system/Infinity-Melody.mp3").as_slice()),
-            (b"videos",b"Motion.mp4",include_bytes!("../sdk/system/Infinity-Motion.mp4").as_slice())] {
+        for (folder,name,data) in [(b"music".as_slice(),b"Chime.wav".as_slice(),include_bytes!("../runtime/install/System/Infinity-Chime.wav").as_slice()),
+            (b"music",b"Melody.mp3",include_bytes!("../runtime/install/System/Infinity-Melody.mp3").as_slice()),
+            (b"videos",b"Motion.mp4",include_bytes!("../runtime/install/System/Infinity-Motion.mp4").as_slice())] {
             let id=store.resolve(home.child(folder).unwrap().child(name).unwrap().as_bytes()).unwrap();
             assert_eq!(store.metadata(id).unwrap().owner,user);
             assert_eq!(store.resolve(home.child(b"media").unwrap().child(name).unwrap().as_bytes()).unwrap(),id);
@@ -145,6 +171,7 @@ fn sdk_package_access() {
     let motd=store.resolve(b"/System/motd").unwrap();store.write(motd,b"Welcome\nback").unwrap();
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
+    install_tree_access(&mut store, std::path::Path::new("runtime/install"));
     assert_eq!(store.sidebar_location(owner,home,4,None).unwrap().as_bytes(),music.as_bytes());
     let mut message=[0;12];let n=store.read(motd,None,&mut message).unwrap();assert_eq!(&message[..n],b"Welcome\nback");
     assert_eq!(store.resolve(b"/InfinitySDK").unwrap(), root);
@@ -818,6 +845,7 @@ fn disk_inspector() {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg| arg == "--sdk-only") { sdk_package_access(); return; }
     audio_pipeline_logs();
     if std::env::args().any(|arg|arg=="--audio-log-only") { return; }
     disk_inspector();
@@ -827,7 +855,6 @@ fn main() {
         return;
     }
     sdk_package_access();
-    if std::env::args().any(|arg| arg == "--sdk-only") { return; }
     editable_ai_dictionaries();
     if std::env::args().any(|arg|arg=="--clock-only"){clock_persistence();return;}
     if std::env::args().any(|arg|arg=="--hermes-memory-only"){hermes_persistence();return;}

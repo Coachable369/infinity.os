@@ -749,7 +749,7 @@ pub(super) fn launch_media(console:&mut ConsoleRuntime,path:Option<&[u8]>)->bool
         return true;
     }
     let argv=[b"/system/python".as_slice(),media::PLAYER,path.unwrap_or_default()];
-    let result=unsafe{start(console,media::PLAYER,&argv[..if path.is_some(){3}else{2}],Some(include_bytes!("../../sdk/system/media-player.py")))};
+    let result=unsafe{start(console,media::PLAYER,&argv[..if path.is_some(){3}else{2}],Some(include_bytes!("../../runtime/install/System/media-player.py")))};
     if let Err(msg)=result{console.output.write_line(msg);return false;}true
 }
 

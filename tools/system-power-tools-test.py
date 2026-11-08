@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # DESC: Executes an installed-source tool with deterministic stdin and captures its process result.
 # ------------------=
 def run(name, data, *args):
-    return subprocess.run([sys.executable, str(ROOT / 'sdk/system' / (name + '.py')), *args], input=data, capture_output=True)
+    return subprocess.run([sys.executable, str(ROOT / 'runtime/install/System' / (name + '.py')), *args], input=data, capture_output=True)
 
 # ------------------------=
 # FUNC: main
