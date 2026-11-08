@@ -521,7 +521,21 @@ class Guest(base.Guest):
                 "value": max(-40, min(40, int(delta / divisor[index]) or (1 if delta > 0 else -1)))}}
                 for index,(axis, delta) in enumerate(zip(("x", "y"), deltas)) if abs(delta) > 4]
             self.qmp("input-send-event", {"events": events})
-            self.wait(lambda s: s[13:15] != state[13:15], "browser pointer moved", timeout=30)
+            sent_at=time.monotonic()
+            retries=0
+            # ------------------------=
+            # FUNC: moved
+            # DESC: Resends at most two unacknowledged startup gestures while still requiring observed native pointer movement.
+            # ------------------=
+            def moved(current):
+                nonlocal retries
+                if current[13:15]!=state[13:15]:
+                    return True
+                if retries<2 and time.monotonic()-sent_at>=retries+1:
+                    self.qmp("input-send-event", {"events": events})
+                    retries+=1
+                return False
+            self.wait(moved, "browser pointer moved", timeout=30)
         else:
             raise AssertionError({"pointer_target":target,"pointer_actual":state[13:15]})
         if not press:return
