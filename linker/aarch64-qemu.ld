@@ -11,7 +11,9 @@ PHDRS
 
 SECTIONS
 {
-    . = 0x50000000;
+    /* QEMU virt RAM begins at 0x40000000. Leave 32 MiB for firmware
+       while keeping the complete low kernel below the fixed speech arena. */
+    . = 0x42000000;
     .text : ALIGN(0x1000) { *(.text .text.*) } :text
     .rodata : ALIGN(0x1000) { *(.rodata .rodata.*) } :rodata
     .data : ALIGN(0x1000) { *(.data .data.*)

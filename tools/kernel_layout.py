@@ -43,7 +43,7 @@ def validate(header, platform="virtualbox"):
     ordered = sorted(ranges)
     if any(left[1] > right[0] for left, right in zip(ordered, ordered[1:])):
         raise ValueError("overlapping kernel load ranges")
-    if platform == "qemu" and (machine != 183 or min(start for start, _ in ranges) != 0x50000000):
+    if platform == "qemu" and (machine != 183 or min(start for start, _ in ranges) != 0x42000000):
         raise ValueError("QEMU test media requires the ARM native kernel load base")
     return ranges
 

@@ -2,6 +2,7 @@
 """Fresh-installed daemon/schedule acceptance using real input and typed native state."""
 from pathlib import Path
 import argparse
+import calendar
 import hashlib
 import importlib.util
 import json
@@ -116,7 +117,7 @@ def completed(guest, identifier, runs):
 
 # ------------------------=
 # FUNC: gui_crud
-# DESC: Creates, edits and deletes a disabled daemon through the actual inline Task Manager form.
+# DESC: Exercises daemon and schedule CRUD through actual Task Manager forms and typed native snapshots.
 # ------------------=
 def gui_crud(guest, proof):
     guest.launch("task manager", 5)
@@ -165,8 +166,77 @@ def gui_crud(guest, proof):
     guest.key("ret")
     wait_ui(guest, 2, 0)
     proof["screenshots"].append(str(guest.screenshot("task-manager-scheduled")))
+    proof["gui_service_crud"] = True
+    gui_schedule_crud(guest, proof)
     proof["gui_crud"] = True
     guest.launch("command", 5)
+
+
+# ------------------------=
+# FUNC: gui_schedule_crud
+# DESC: Creates a disabled interval, edits it to a dated Once task, and deletes it using real GUI controls.
+# ------------------=
+def gui_schedule_crud(guest, proof):
+    wait_ui(guest, 2, 0)
+    before = set(wait(guest, lambda _: True, "GUI schedule catalog ready")["rows"])
+    guest.key("n")
+    wait_ui(guest, 2, 1)
+    guest.text("guischedule")
+    guest.key("tab")
+    guest.text(HELLO)
+    # Path -> interval -> trigger choice -> enabled. Keep the new task disabled.
+    for _ in range(3):
+        guest.key("tab")
+    guest.key("ret")
+    guest.key("tab")  # Schedules have no daemon restart-policy control.
+    proof["screenshots"].append(str(guest.screenshot("task-manager-schedule-create")))
+    guest.key("ret")
+    wait_ui(guest, 2, 0)
+    state = wait(guest, lambda s: len(set(s["rows"]) - before) == 1, "GUI schedule created")
+    identifier = (set(state["rows"]) - before).pop()
+    created_row = state["rows"][identifier]
+    assert created_row["kind"] == 1 and not created_row["enabled"], created_row
+    assert created_row["state"] == 0 and created_row["runs"] == 0 and created_row["pid"] == 0, created_row
+    # The new schedule is last in its tab; selection is bounded by the 16-entry catalog.
+    for _ in range(len(state["rows"])):
+        guest.key("down")
+    guest.key("e")
+    wait_ui(guest, 2, 2)
+    # Fixed name -> script -> timing -> policy. Interval is option 2; Once is option 3.
+    for _ in range(3):
+        guest.key("tab")
+    guest.key("ret")
+    guest.key("down")
+    guest.key("ret")
+    guest.key("shift", "tab")  # Return from policy to the readable UTC timing field.
+    guest.key("end")
+    for _ in range(19):
+        guest.key("backspace")
+    guest.text("2099-12-31 23:59:00")
+    for _ in range(3):
+        guest.key("tab")  # Timing -> policy -> enabled -> Save.
+    proof["screenshots"].append(str(guest.screenshot("task-manager-schedule-edit")))
+    guest.key("ret")
+    wait_ui(guest, 2, 0)
+    expected_due = calendar.timegm((2099, 12, 31, 23, 59, 0))
+    edited = wait(guest, lambda s: identifier in s["rows"]
+                  and s["rows"][identifier]["next"] == expected_due,
+                  "GUI schedule UTC edit committed")
+    edited_row = edited["rows"][identifier]
+    assert edited_row["kind"] == 1 and not edited_row["enabled"], edited_row
+    assert edited_row["state"] == 0 and edited_row["runs"] == 0 and edited_row["pid"] == 0, edited_row
+    assert edited["revision"] > state["revision"], (state, edited)
+    guest.key("delete")
+    wait_ui(guest, 2, 3)
+    confirmation = wait(guest, lambda _: True, "GUI schedule deletion confirmation")
+    assert identifier in confirmation["rows"]  # Opening confirmation alone cannot delete.
+    guest.key("shift", "tab")
+    guest.key("ret")
+    wait_ui(guest, 2, 0)
+    deleted = wait(guest, lambda s: identifier not in s["rows"], "GUI schedule deleted")
+    assert set(deleted["rows"]) == before, deleted
+    proof["gui_schedule_crud"] = dict(created=created_row, edited=edited_row,
+                                     deleted_identifier=identifier, deleted_revision=deleted["revision"])
 
 # ------------------------=
 # FUNC: exercise
