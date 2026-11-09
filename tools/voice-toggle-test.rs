@@ -803,7 +803,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
-    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
     MICROPHONE.lock().unwrap().extend([2400;1600]);MICROPHONE.lock().unwrap().extend(vec![0;voice_vad::END_SILENCE+4096]);
@@ -845,6 +845,74 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     login_reset_tests(owner);
     empty_capture_and_calibration_contention_tests(owner);
     startup_ambient_recovery_tests(owner);
+    duplex_and_followup_tests(owner);
+}
+
+// ------------------------=
+// FUNC: duplex_and_followup_tests
+// DESC: Exercises reply-time speech admission, echo rejection, addressed cancellation, context revocation and bounded wake-free follow-ups through production VAD and controller transitions.
+// ------------------=
+fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    for playing in [false,true] {
+        assert!(conversation::start(owner));
+        recognize_voice(b"Infinity explain this");
+        assert_eq!(conversation::phase(),conversation::Phase::Generating);
+        if playing {conversation::poll();OUTPUT.store(1,Ordering::SeqCst);}
+        else {STREAMING.store(true,Ordering::SeqCst);VISIBLE.store(0,Ordering::SeqCst);}
+        let turns=TURNS.load(Ordering::SeqCst);
+        let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
+        let requests=RECOGNITION_REQUESTS.lock().unwrap().len();
+        assert_eq!(conversation::phase(),if playing{conversation::Phase::Speaking}else{conversation::Phase::Generating});
+        if playing {
+            // No reference cannot safely distinguish room input from output.
+            ECHO_PLAYBACK.store(false,Ordering::SeqCst);
+            NOW.fetch_add(250_000_000,Ordering::SeqCst);
+            MICROPHONE.lock().unwrap().extend(microphone_phrase(2100));drain_microphone();
+            assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests);
+            ECHO_PLAYBACK.store(true,Ordering::SeqCst);
+            MICROPHONE.lock().unwrap().extend(microphone_phrase(2100));drain_microphone();
+            assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests);
+        }
+        *TEST_TRANSCRIPT.lock().unwrap()=Some(b"room conversation".to_vec());
+        MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
+        MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels);
+        *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity change the subject".to_vec());
+        MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
+        MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+1);
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"change the subject");
+        *TEST_TRANSCRIPT.lock().unwrap()=None;
+        ECHO_PLAYBACK.store(false,Ordering::SeqCst);STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
+        conversation::stop(owner);conversation::poll();
+    }
+    assert!(conversation::start(owner));recognize_voice(b"Infinity hello");
+    conversation::poll();OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);assert!(conversation::wake_armed());
+    let turns=TURNS.load(Ordering::SeqCst);
+    recognize_voice(b"tell me more");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+    assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"tell me more");
+    complete_voice_reply();recognize_voice(b"outside the followup window");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
+    conversation::stop(owner);conversation::poll();
+    assert!(conversation::start(owner));recognize_voice(b"Infinity explain something");
+    STREAMING.store(true,Ordering::SeqCst);VISIBLE.store(0,Ordering::SeqCst);
+    HOLD_RECOGNITION.store(true,Ordering::SeqCst);
+    let turns=TURNS.load(Ordering::SeqCst);let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(2300));drain_microphone();
+    assert_eq!(conversation::phase(),conversation::Phase::Recognizing);
+    SELECTED_MODEL.store(9,Ordering::SeqCst);
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity stale interruption".to_vec());
+    BUSY.store(false,Ordering::SeqCst);READY.store(true,Ordering::SeqCst);conversation::poll();
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels);
+    conversation::stop(owner);conversation::poll();
+    SELECTED_MODEL.store(0,Ordering::SeqCst);HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+    STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
+    *TEST_TRANSCRIPT.lock().unwrap()=None;
 }
 
 // ------------------------=
@@ -1257,7 +1325,7 @@ fn next_turn_capture_boundary_tests(owner: runtime::execution::SecurityIdentity)
         assert!(MICROPHONE.lock().unwrap().is_empty());
         assert_eq!(NOW.load(Ordering::SeqCst), now);
         assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
-        assert!(!conversation::wake_armed());
+        assert!(conversation::wake_armed());
         let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
         let turns = TURNS.load(Ordering::SeqCst);
         recognize_voice(command);
@@ -1370,8 +1438,9 @@ fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
                 }
             }
             assert_eq!(conversation::state().0, State::Listening);
-            assert!(!conversation::wake_armed());
+            assert!(conversation::wake_armed());
             assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+            expire_followup();
             recognize_voice(b"unaddressed follow-up");
             assert_eq!(TURNS.load(Ordering::SeqCst), turns + 1);
         }
@@ -1552,20 +1621,24 @@ fn turn_timing_tests(owner: runtime::execution::SecurityIdentity) {
 fn recognize_voice(transcript: &[u8]) {
     assert_eq!(conversation::state().0,conversation::State::Listening);
     *TEST_TRANSCRIPT.lock().unwrap()=Some(transcript.to_vec());
-    MICROPHONE.lock().unwrap().extend([2100;1600]);
+    let playing=OUTPUT.load(Ordering::SeqCst)==1;
+    let previous_echo=ECHO_PLAYBACK.load(Ordering::SeqCst);
+    if playing {ECHO_PLAYBACK.store(true,Ordering::SeqCst);}
+    MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if playing && i%2==0 {-2100}else{2100}));
     MICROPHONE.lock().unwrap().extend(vec![0;voice_vad::END_SILENCE+4096]);
     for _ in 0..10 {
         conversation::poll();
         if conversation::state().0==conversation::State::Recognizing {break;}
     }
-    assert_eq!(conversation::state().0,conversation::State::Recognizing);
+    assert_eq!(conversation::state().0,conversation::State::Recognizing,"transcript={:?}",transcript);
     conversation::poll();
+    ECHO_PLAYBACK.store(previous_echo,Ordering::SeqCst);
     *TEST_TRANSCRIPT.lock().unwrap()=None;
 }
 
 // ------------------------=
 // FUNC: complete_voice_reply
-// DESC: Drains the accepted spoken response and verifies that listening resumes without authorizing another command.
+// DESC: Drains a reply and expires its bounded follow-up window before legacy fresh-wake scenarios.
 // ------------------=
 fn complete_voice_reply() {
     assert_eq!(conversation::state().0,conversation::State::Thinking);
@@ -1574,6 +1647,19 @@ fn complete_voice_reply() {
     OUTPUT.store(2,Ordering::SeqCst);
     conversation::poll();
     assert_eq!(conversation::state().0,conversation::State::Listening);
+    assert!(conversation::wake_armed());
+    expire_followup();
+    assert!(!conversation::wake_armed());
+}
+
+// ------------------------=
+// FUNC: expire_followup
+// DESC: Advances the bounded follow-up deadline with a live quiet microphone frame rather than simulating a failed ADC.
+// ------------------=
+fn expire_followup() {
+    NOW.fetch_add(10_000_000_001,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([0;320]);
+    conversation::poll();
     assert!(!conversation::wake_armed());
 }
 

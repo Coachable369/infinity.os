@@ -6200,24 +6200,15 @@ impl super::DisplayDevice {
         };
         #[cfg(target_os="none")]
         let state = {
-            use crate::runtime::ai::voice_conversation::{state as voice_state,State};
-            if app_progress.is_some() || chat.generation_state == crate::runtime::ai::chat::GenerationState::Running || !chat.selected_model_ready() {
-                state
-            } else if !voice_enabled {
+            use crate::runtime::ai::voice_conversation::{phase,phase_label,Phase};
+            let current=phase();
+            if !voice_enabled {
                 b"Voice off".as_slice()
-            } else if voice_starting {
-                b"Preparing".as_slice()
-            } else { match voice_state().0 {
-                State::Off=>b"Starting microphone".as_slice(),State::Starting=>b"Preparing".as_slice(),
-                State::Listening=>if crate::runtime::ai::voice_conversation::wake_armed() {b"Go ahead".as_slice()} else {wake_prompt},
-                State::Recognizing=>b"Recognizing".as_slice(),State::Submitting=>b"Queued".as_slice(),
-                State::Thinking=>b"Generating".as_slice(),
-                State::Speaking=>match crate::runtime::ai::voice_output::status().state {
-                    crate::runtime::ai::voice_output::OutputState::Speaking=>b"Speaking".as_slice(),
-                    _=>b"Preparing speech".as_slice(),
-                },State::Stopping=>b"Stopping".as_slice(),
-                State::Failed=>b"Unavailable".as_slice(),
-            }}
+            } else if matches!(current,Phase::Off) && (app_progress.is_some() || chat.generation_state == crate::runtime::ai::chat::GenerationState::Running || !chat.selected_model_ready()) {
+                state
+            } else if current==Phase::Listening {
+                if crate::runtime::ai::voice_conversation::wake_armed(){b"Go ahead".as_slice()}else{wake_prompt}
+            } else {phase_label(current)}
         };
         let frame = unsafe { THINKING_ANIMATION.frame as usize };
         self.ai_widget_header(geometry,state,chat.minimized(),can_stop || voice_starting,scale,(accent_r,accent_g,accent_b));

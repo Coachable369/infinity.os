@@ -10289,7 +10289,7 @@ impl ConsoleRuntime {
     fn execute_input(&mut self) {
         let submitted = self.command_length != 0;
         self.execute_input_inner();
-        if submitted { self.output.finish_command(); }
+        if submitted && !self.log_reader.active { self.output.finish_command(); }
     }
 
     // ------------------------=

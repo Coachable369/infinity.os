@@ -15,6 +15,7 @@ static RECOVERY_WINDOW: AtomicU64 = AtomicU64::new(0);
 static RECOVERY_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 static METRIC_JOB: AtomicU64 = AtomicU64::new(0);
 static PREPARE_DEADLINE: AtomicU64 = AtomicU64::new(0);
+static LAST_PROGRESS: AtomicU64 = AtomicU64::new(0);
 const NATIVE_ENGINE_BUSY: i32 = 8;
 const WAITING_ENGINE: usize = 6;
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -496,6 +497,22 @@ pub fn take(owner: SecurityIdentity, out: &mut [u8]) -> Result<usize, AiError> {
 // DESC: Revocation cancels ongoing decoding and prevents unauthorized transcript publication.
 // ------------------=
 pub fn poll() {
+    // A worker that never returns must still leave diagnostic evidence. This
+    // observation never clears its PCM or model while it owns those buffers.
+    #[cfg(target_os="none")]
+    {
+        let state=STATE.load(Ordering::Acquire);
+        let engine=ENGINE.load(Ordering::Acquire);
+        let now=super::qwen::workers::clock_ns();
+        if (engine==1 || matches!(state,1|2|WAITING_ENGINE))
+            && now.saturating_sub(LAST_PROGRESS.load(Ordering::Relaxed))>=5_000_000_000 {
+            LAST_PROGRESS.store(now,Ordering::Relaxed);
+            let deadline=if engine==1 {PREPARE_DEADLINE.load(Ordering::Acquire)}else{unsafe{DEADLINE}};
+            super::pipeline_log::emit(if now>=deadline{"WARNING"}else{"INFO"},"recognition",
+                format_args!("event=worker_progress job={} engine={} state={} cancelled={} deadline_elapsed={} sample_ns={}",
+                    metric_job(),engine,state,CANCEL.load(Ordering::Acquire),now>=deadline,now));
+        }
+    }
     if ENGINE.load(Ordering::Acquire) == 4 {
         let _ = prepare();
     }

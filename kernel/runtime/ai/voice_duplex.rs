@@ -1,0 +1,100 @@
+//! One bounded interruption recognizer, owned by the current spoken turn.
+use super::*;
+static mut PENDING: bool = false;
+static mut TURN: u64 = 0;
+static mut MODEL: u32 = 0;
+static mut WORD: WakeWord = WakeWord::Infinity;
+
+// ------------------------=
+// FUNC: pending
+// DESC: Prevents reply completion from discarding an interruption already being recognized.
+// ------------------=
+pub(super) unsafe fn pending() -> bool { PENDING }
+
+// ------------------------=
+// FUNC: clear
+// DESC: Revokes interruption context; the normal owner cancellation path retains worker buffers until acknowledgement.
+// ------------------=
+pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0; }
+
+// ------------------------=
+// FUNC: poll
+// DESC: Captures while generating or speaking, validates an addressed interruption, and cancels only its original conversational turn.
+// ------------------=
+pub(super) unsafe fn poll(playing: bool) -> bool {
+    if !capture_frame(playing) { stop(OWNER); return true; }
+    if !PENDING {
+        match (&*(&raw const UTTERANCE)).state() {
+            VadState::Complete => {
+                // Never replace a typed edit or an independently owned app job.
+                let available=super::super::with_ai_runtime(|ai| ai.chat.input().is_empty()
+                    && ai.chat.turn_id()==CHAT_TURN && ai.app_turn_owner().is_none());
+                if available {
+                    RECOGNIZE_CAP=grant(OWNER,CapabilityType::AudioInput,CAPTURE_CAPABILITY_SECONDS).unwrap_or(0);
+                    PENDING=(&*(&raw const UTTERANCE)).speech()
+                        .is_some_and(|pcm|voice_input::submit(OWNER,RECOGNIZE_CAP,pcm).is_ok());
+                    if PENDING {
+                        TURN=CHAT_TURN;
+                        MODEL=super::super::with_ai_runtime(|ai|ai.chat.selected_model());
+                        WORD=configured_wake_word(OWNER);
+                        trace(b"duplex interruption recognition queued");
+                    } else {retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;}
+                }
+                clear_captured_turn();
+            }
+            VadState::NoSpeech | VadState::Limit => clear_captured_turn(),
+            _=>{}
+        }
+        return false;
+    }
+    match voice_input::status().state {
+        voice_input::InputState::Ready => {
+            let result=voice_input::take(OWNER,&mut *(&raw mut TRANSCRIPT));
+            retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;PENDING=false;
+            let valid=active_owner(OWNER) && WORD==configured_wake_word(OWNER)
+                && super::super::with_ai_runtime(|ai|ai.chat.turn_id()==TURN
+                    && ai.chat.selected_model()==MODEL && ai.chat.input().is_empty()
+                    && ai.app_turn_owner().is_none());
+            let addressed=result.ok().filter(|n|valid && *n!=0).map(|n|
+                (n,wake_word::classify(&(&*(&raw const TRANSCRIPT))[..n],WORD)));
+            let action=match addressed {
+                Some((n,wake_word::Match::Command{start}))=>{
+                    let end=wake_word::deduplicated_command_end(&(&*(&raw const TRANSCRIPT))[..n],WORD,start);
+                    let mut checked=[0u8;512];
+                    let valid=normalize_command(&(&*(&raw const TRANSCRIPT))[start..end],&mut checked)
+                        .is_some_and(|length|length<=super::super::chat::CHAT_INPUT_CAPACITY);
+                    checked.fill(0);valid.then_some((start,end))
+                },
+                Some((_,wake_word::Match::WakeOnly))=>Some((0,0)),
+                _=>None,
+            };
+            if let Some((start,end))=action {
+                // A recognized wake is the cancellation boundary, never raw VAD
+                // or arbitrary room speech. Native workers drain normally.
+                super::super::with_ai_runtime(|ai|{if ai.chat.turn_id()==TURN {ai.cancel_chat();}});
+                voice_output::stop_request(OWNER,REPLY_OUTPUT_REQUEST);
+                trace(b"duplex authorized interruption");
+                report_timing();TURN_TIMING_ACTIVE=false;
+                clear_wake_command();
+                if start==end {
+                    resume_captured_turn();arm_followup();
+                } else {
+                    clear_captured_turn();
+                    if queue_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
+                        STATE=if submit_pending_transcript(){State::Thinking}else{State::Submitting};
+                    } else {resume_captured_turn();}
+                }
+                (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                return true;
+            }
+            (&mut *(&raw mut TRANSCRIPT)).fill(0);
+            clear_captured_turn();trace(b"duplex unaddressed audio discarded");
+        }
+        voice_input::InputState::Failed | voice_input::InputState::Cancelled => {
+            PENDING=false;retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;clear_captured_turn();
+            trace(b"duplex recognition failed; original reply retained");
+        }
+        _=>{}
+    }
+    false
+}

@@ -22,6 +22,8 @@ pub mod timing;
 mod voice_echo;
 #[path = "voice_noise_floor.rs"]
 mod voice_noise_floor;
+#[path = "voice_duplex.rs"]
+mod duplex;
 use timing::Milestone;
 #[cfg(not(test))]
 #[path = "voice_trace.rs"]
@@ -38,6 +40,49 @@ pub enum State {
     Speaking,
     Stopping,
     Failed,
+}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Phase { Off, Preparing, Calibrating, Listening, Capturing, RecognitionQueued, Recognizing, Submitting, Generating, SpeechQueued, Synthesizing, PlaybackReady, Speaking, Stopping, Failed }
+static mut LAST_PHASE: Option<Phase> = None;
+// ------------------------=
+// FUNC: phase
+// DESC: Reports the actual active capture, recognizer, generation or output phase independently of the reply controller's coarse state.
+// ------------------=
+pub fn phase() -> Phase { unsafe {
+    if duplex::pending() || STATE==State::Recognizing {
+        return if voice_input::status().state==voice_input::InputState::Queued {Phase::RecognitionQueued}else{Phase::Recognizing};
+    }
+    match STATE {
+        State::Off=>Phase::Off,State::Starting=>Phase::Preparing,State::Failed=>Phase::Failed,State::Stopping=>Phase::Stopping,
+        State::Listening=>if calibrating(){Phase::Calibrating}else if matches!((&*(&raw const UTTERANCE)).state(),VadState::Speech|VadState::Complete){Phase::Capturing}else{Phase::Listening},
+        State::Recognizing=>Phase::Recognizing,State::Submitting=>Phase::Submitting,
+        State::Thinking|State::Speaking=>match voice_output::status().state {
+            voice_output::OutputState::Queued=>Phase::SpeechQueued,
+            voice_output::OutputState::Synthesizing=>Phase::Synthesizing,
+            voice_output::OutputState::Ready|voice_output::OutputState::Buffered=>Phase::PlaybackReady,
+            voice_output::OutputState::Speaking=>Phase::Speaking,
+            _=>Phase::Generating,
+        },
+    }
+}}
+// ------------------------=
+// FUNC: phase_label
+// DESC: Supplies the shared existing widget header with a concise label for each measured pipeline phase.
+// ------------------=
+pub fn phase_label(value:Phase)->&'static [u8] {match value {
+    Phase::Off=>b"Voice off",Phase::Preparing=>b"Preparing",Phase::Calibrating=>b"Calibrating mic",
+    Phase::Listening=>b"Listening",Phase::Capturing=>b"Hearing you",Phase::RecognitionQueued=>b"Queued for recognition",
+    Phase::Recognizing=>b"Recognizing",Phase::Submitting=>b"Submitting",Phase::Generating=>b"Generating",
+    Phase::SpeechQueued=>b"Speech queued",Phase::Synthesizing=>b"Creating speech",Phase::PlaybackReady=>b"Buffering audio",
+    Phase::Speaking=>b"Speaking",Phase::Stopping=>b"Stopping",Phase::Failed=>b"Unavailable",
+}}
+// ------------------------=
+// FUNC: record_phase
+// DESC: Logs each phase transition once without transcript content or repeated per-frame records.
+// ------------------=
+unsafe fn record_phase() {
+    let current=phase();
+    if LAST_PHASE!=Some(current) {LAST_PHASE=Some(current);trace(phase_label(current));}
 }
 static mut STATE: State = State::Off;
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
@@ -533,6 +578,17 @@ unsafe fn clear_wake_command() {
     WAKE_ARMED_MODEL = 0;
 }
 // ------------------------=
+// FUNC: arm_followup
+// DESC: Opens one ten-second follow-up for this authenticated owner and selected model after an addressed exchange.
+// ------------------=
+unsafe fn arm_followup() {
+    WAKE_ARMED=true;
+    WAKE_ARMED_UNTIL=super::qwen::workers::clock_ns().saturating_add(WAKE_COMMAND_WINDOW_NS);
+    WAKE_ARMED_MODEL=super::with_ai_runtime(|ai|ai.chat.selected_model());
+    WAKE_ARMED_WORD=configured_wake_word(OWNER);
+    trace(b"follow-up listening window opened");
+}
+// ------------------------=
 // FUNC: clear_captured_turn
 // DESC: Erases the single pending utterance and endpoint carry without touching microphone authority.
 // ------------------=
@@ -625,8 +681,12 @@ unsafe fn reset_listening_state() {
     (&mut *(&raw mut RESAMPLER)).clear();
     (&mut *(&raw mut RAW)).fill(0);
     (&mut *(&raw mut MONO)).fill(0);
-    (&mut *(&raw mut ECHO)).fill(0);
-    ECHO_VALID_UNTIL = 0;
+    // Retain the last short playback reference across reply completion so
+    // acoustic speaker tail cannot become the newly authorized follow-up.
+    if super::qwen::workers::clock_ns() >= ECHO_VALID_UNTIL {
+        (&mut *(&raw mut ECHO)).fill(0);
+        ECHO_VALID_UNTIL = 0;
+    }
     LEVEL = 0;
     REOPEN_AT = 0;
     REOPEN_DEADLINE = 0;
@@ -901,6 +961,7 @@ fn stop_session(owner: SecurityIdentity,cancel_turn:bool,all_output:bool) -> boo
         INPUT_CAP = 0;
         CAPABILITY_REPLACE_AT = 0;
         voice_input::stop(owner);
+        duplex::clear();
         STOP_ALL_OUTPUT = all_output;
         if all_output { voice_output::stop(owner); }
         else { voice_output::stop_request(owner,REPLY_OUTPUT_REQUEST); }
@@ -960,7 +1021,7 @@ unsafe fn recover_reply() {
 // DESC: Gives a continuous microphone back to the user when a completed acknowledgment is waiting behind independently owned workflow narration.
 // ------------------=
 unsafe fn resume_background_listening() -> bool {
-    if !CONTINUOUS || !matches!(STATE, State::Thinking | State::Speaking)
+    if duplex::pending() || !CONTINUOUS || !matches!(STATE, State::Thinking | State::Speaking)
         || !super::with_ai_runtime(|ai| ai.chat.turn_id() == CHAT_TURN
             && ai.chat.generation_state == GenerationState::Complete)
         || voice_output::request_id(OWNER) == Some(REPLY_OUTPUT_REQUEST)
@@ -1040,11 +1101,13 @@ unsafe fn speak_next() -> bool {
         TURN_TIMING_ACTIVE = false;
         SYNC_VISIBLE_AT = REPLY_LENGTH;
         if CONTINUOUS {
-            // A completed reply never authorizes another spoken request.
-            // Only a newly recognized wake phrase may open the next command.
-            clear_wake_command();
+            // Finish an in-flight interruption before changing its capture
+            // context or releasing its recognition authority.
+            if duplex::pending() {STATE=State::Thinking;return true;}
             if voice_input::prepared() {
-                return listen();
+                let listening=listen();
+                if listening && STATE==State::Listening {arm_followup();}
+                return listening;
             }
             let _ = voice_input::prepare();
             STATE = State::Starting;
@@ -1428,6 +1491,13 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     if duplex && voice_output::echo_reference(OWNER, &mut *(&raw mut ECHO)) {
         ECHO_VALID_UNTIL = now + 200_000_000;
     }
+    // Without a playback reference, speaker audio cannot safely authorize a
+    // wake. Drain this chunk while keeping DMA and the active reply alive.
+    if duplex && now >= ECHO_VALID_UNTIL {
+        (&mut *(&raw mut RAW)).fill(0);(&mut *(&raw mut MONO)).fill(0);
+        clear_captured_turn();LEVEL=0;
+        return crate::drivers::audio::discard_capture_pending(OWNER)!=Some(false);
+    }
     if now < ECHO_VALID_UNTIL {
         voice_echo::subtract(&mut (&mut *(&raw mut MONO))[..n], &*(&raw const ECHO));
     } else {
@@ -1538,6 +1608,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
 // ------------------=
 pub fn poll() -> bool {
     unsafe {
+        record_phase();
         let previous = STATE;
         let was_waiting_for_pause = waiting_for_pause();
         let was_calibrating = calibrating();
@@ -1589,16 +1660,18 @@ pub fn poll() -> bool {
             }
         }
         presentation_changed |= resume_background_listening();
-        // Recognition retains one following utterance so wake-only decoding
-        // cannot erase an immediately spoken command. Inference and playback
-        // still own the accepted turn; their input is drained, never queued.
+        // Recognition retains one following utterance. During a reply a
+        // separate bounded recognizer admits only an addressed interruption.
         let narration_playing = voice_output::status().state == voice_output::OutputState::Speaking;
         if STATE == State::Recognizing && !capture_frame(narration_playing) {
             trace(b"conversation stopped recognition capture");
             stop(OWNER);
             return true;
         }
-        if matches!(STATE, State::Submitting | State::Thinking | State::Speaking)
+        if matches!(STATE,State::Thinking|State::Speaking) && duplex::poll(narration_playing) {
+            return true;
+        }
+        if STATE == State::Submitting
             && !drain_muted_capture()
         {
             trace(b"conversation stopped muted capture");
@@ -1955,6 +2028,7 @@ pub fn poll() -> bool {
         }
         presentation_changed |= synchronize_visible_reply();
         report_timing();
+        record_phase();
         STATE != previous
             || presentation_changed
             || was_waiting_for_pause != waiting_for_pause()
