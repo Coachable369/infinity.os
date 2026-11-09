@@ -64,9 +64,8 @@ fn main() {
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
     for (path, expected) in [
-        (b"/home/default/documents/hello.py".as_slice(), include_bytes!("../../sdk/python/examples/hello.py").as_slice()),
-        (b"/home/default/documents/native_demo.py".as_slice(), include_bytes!("../../sdk/python/examples/native_demo.py").as_slice()),
-        (b"/home/default/documents/infinity_native_test.so".as_slice(), extension.as_slice()),
+        (b"/System/UserTemplate/native_demo.py".as_slice(), include_bytes!("../../sdk/python/examples/native_demo.py").as_slice()),
+        (b"/System/UserTemplate/infinity_native_test.so".as_slice(), extension.as_slice()),
         (b"/system/licenses/python".as_slice(), license.as_slice()),
     ] {
         let id = store.resolve(path).unwrap();

@@ -34,7 +34,9 @@ fn executable_export(bytes: &[u8], name: &[u8]) -> Option<u64> {
         if link >= count || number(bytes, section + 56, 8)? != 24 { return None; }
         let offset = number(bytes, section + 24, 8)? as usize;
         let length = number(bytes, section + 32, 8)? as usize;
-        if length % 24 != 0 || length / 24 > 65536 { return None; }
+        // Bundled CPython plus Tcl/Tk exceeds 65,536 symbols. Keep a bounded
+        // admission limit while allowing the shipped interpreter's exports.
+        if length % 24 != 0 || length / 24 > 131072 { return None; }
         let symbols = bytes.get(offset..offset.checked_add(length)?)?;
         let string_section = sections + link * 64;
         if number(bytes, string_section + 4, 4)? != 3 { return None; }
