@@ -501,8 +501,7 @@ pub fn playback_active(owner: SecurityIdentity) -> bool {
 // ------------------=
 pub fn echo_reference(owner: SecurityIdentity, output: &mut [i16]) -> bool {
     unsafe {
-        PLAYING
-            && owner == OWNER
+        owner == OWNER
             && crate::drivers::audio::infinity_audio_echo_reference(
                 owner,
                 STREAM_GENERATION.load(Ordering::Acquire) as u64,

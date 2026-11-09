@@ -53,7 +53,24 @@ fn main() {
     assert_eq!(reference, [20, 30, 40, 50]);
     assert_eq!(stream.status(99).content_position, 8);
     assert!(stream.sealed_resident(9).is_none());
+    let mut tail = EchoTail::<4>::new();
+    let owner = SecurityIdentity([7;16]);
+    tail.retain(&stream, owner, 9, 4, 16_000, 100);
     assert_eq!(stream.erase_pcm(), 8);
+    let mut final_reference=[0;4];
+    assert!(tail.copy(owner,9,400_000_100,&mut final_reference));
+    assert_eq!(final_reference,[20,30,40,50]);
+    assert!(!tail.copy(SecurityIdentity([8;16]),9,400_000_100,&mut final_reference));
+    assert!(!tail.copy(owner,10,400_000_100,&mut final_reference));
+    assert!(!tail.copy(owner,9,800_000_100,&mut final_reference));
+    assert!(!tail.copy(owner,9,100,&mut final_reference));
+    stream.reset(10); stream.append(10,&[1,3,5,7],0,2).unwrap();
+    tail.retain(&stream,owner,10,2,16_000,900_000_000);
+    tail.expire(1_700_000_000);
+    assert!(!tail.copy(owner,10,900_000_000,&mut final_reference));
+    assert_eq!(stream.erase_pcm(), 4);
+
+
     assert_eq!(stream.erase_pcm(), 0);
     stream.reset(10);
     assert!(stream.sealed_resident(10).is_none());

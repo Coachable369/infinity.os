@@ -26,6 +26,7 @@ static mut INFINITY_GENERATION: u64 = 0;
 static mut INFINITY_ACTIVE: bool = false;
 static mut INFINITY_STARTED: bool = false;
 static mut INFINITY_PLAYED_FRAMES: u64 = 0;
+static mut ECHO_TAIL: crate::runtime::audio::EchoTail<9600> = crate::runtime::audio::EchoTail::new();
 const SYSTEM_CUE_MAX_SAMPLES: usize = 48_000 * 2 * 12;
 #[repr(align(128))]
 struct ResidentSystemCue([i16; SYSTEM_CUE_MAX_SAMPLES]);
@@ -319,7 +320,7 @@ pub fn infinity_audio_open(owner: crate::runtime::execution::SecurityIdentity, c
         if idle {
             (&mut *(&raw mut INFINITY_AUDIO)).reset(generation);
             INFINITY_OWNER = owner; INFINITY_GENERATION = generation; INFINITY_ACTIVE = true; INFINITY_STARTED = false;
-            INFINITY_PLAYED_FRAMES = 0; PLAYBACK_STARTED_AT = 0;
+            INFINITY_PLAYED_FRAMES = 0; PLAYBACK_STARTED_AT = 0; (&mut *(&raw mut ECHO_TAIL)).clear();
             LEASE = lease; PLAY_STATE = PlaybackState::Idle; true
         } else { false }
     };
@@ -428,6 +429,10 @@ pub fn infinity_audio_echo_reference(owner: crate::runtime::execution::SecurityI
     if LOCK.swap(true, Ordering::Acquire) { return false; }
     let copied = unsafe {
         if !INFINITY_ACTIVE || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { false }
+        else if !INFINITY_STARTED {
+            let now = crate::ui::performance::monotonic_ns().unwrap_or(u64::MAX);
+            (&mut *(&raw mut ECHO_TAIL)).copy(owner, generation, now, output)
+        }
         else if let Some(device) = (&*(&raw const DEVICE)).as_ref() {
             let played = device.resident_progress().ok().map(|progress| progress.played_bytes as u64 / 4).unwrap_or(INFINITY_PLAYED_FRAMES);
             (&*(&raw const INFINITY_AUDIO)).reference_mono(played, device.sample_rate, 16_000, output)
@@ -592,6 +597,10 @@ unsafe fn finish_playback(device: &mut hda::Hda, state: PlaybackState) {
         .unwrap_or(INFINITY_PLAYED_FRAMES * 4).min(RESIDENT_BYTES as u64);
     let total = RESIDENT_BYTES as u64;
     INFINITY_PLAYED_FRAMES = played / 4;
+    if INFINITY_ACTIVE && matches!(state, PlaybackState::Complete | PlaybackState::Cancelled | PlaybackState::Underrun) {
+        (&mut *(&raw mut ECHO_TAIL)).retain(&*(&raw const INFINITY_AUDIO), INFINITY_OWNER, INFINITY_GENERATION,
+            played / 4, device.sample_rate, crate::ui::performance::monotonic_ns().unwrap_or(0));
+    } else { (&mut *(&raw mut ECHO_TAIL)).clear(); }
     device.stop(); PLAY_STATE = state; RESIDENT_BYTES = 0; INFINITY_STARTED = false;
     trace_playback_transition(state, played / 4, total / 4);
     PLAYBACK_STARTED_AT = 0;
@@ -698,6 +707,7 @@ pub fn poll() {
             }
         }
         LAST_HARDWARE_POLL = now;
+        (&mut *(&raw mut ECHO_TAIL)).expire(now.unwrap_or(u64::MAX));
         if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut() {
             // A prepared response may wait for another native synthesis job.
             // Preserve the existing capability while that work is pending;

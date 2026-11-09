@@ -84,6 +84,11 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 _=>None,
             };
             if let Some((start,end))=action {
+                if start != end && stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
+                    stop_spoken_reply();
+                    (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                    return true;
+                }
                 // A recognized wake is the cancellation boundary, never raw VAD
                 // or arbitrary room speech. Native workers drain normally.
                 super::super::with_ai_runtime(|ai|{if ai.chat.turn_id()==TURN {ai.cancel_chat();}});

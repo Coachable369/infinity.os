@@ -477,6 +477,37 @@ unsafe fn pending_prompt_valid() -> bool {
         })
 }
 // ------------------------=
+// FUNC: stop_speech_command
+// DESC: Recognizes only complete local speech-stop requests after wake/context authorization.
+// ------------------=
+fn stop_speech_command(input: &[u8]) -> bool {
+    let mut text = [0u8; 64];
+    let mut length = 0;
+    for &byte in input {
+        if byte.is_ascii_alphanumeric() {
+            if length == text.len() { return false; }
+            text[length] = byte.to_ascii_lowercase(); length += 1;
+        } else if byte.is_ascii_whitespace() && length != 0 && text[length-1] != b' ' {
+            if length == text.len() { return false; }
+            text[length] = b' '; length += 1;
+        }
+    }
+    if length != 0 && text[length-1] == b' ' { length -= 1; }
+    matches!(&text[..length], b"stop" | b"please stop" | b"stop please" | b"stop speaking" | b"stop talking" | b"be quiet" | b"cancel response")
+}
+// ------------------------=
+// FUNC: stop_spoken_reply
+// DESC: Cancels this conversation without submitting inference or disabling microphone capture.
+// ------------------=
+unsafe fn stop_spoken_reply() {
+    super::with_ai_runtime(|ai| { if ai.chat.turn_id() == CHAT_TURN && ai.app_turn_owner().is_none() { ai.cancel_chat(); } });
+    voice_output::stop_request(OWNER, REPLY_OUTPUT_REQUEST);
+    clear_pending_prompt(true);
+    report_timing(); TURN_TIMING_ACTIVE = false;
+    clear_wake_command(); clear_captured_turn();
+    resume_captured_turn(); arm_followup();
+}
+// ------------------------=
 // FUNC: queue_command
 // DESC: Inserts a fully validated bounded transcript atomically and records ownership before waiting for local-model readiness.
 // ------------------=
@@ -1489,7 +1520,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         trace(b"capture resampler backpressure");
         return false;
     }
-    if duplex && voice_output::echo_reference(OWNER, &mut *(&raw mut ECHO)) {
+    if voice_output::echo_reference(OWNER, &mut *(&raw mut ECHO)) {
         // Include queued microphone frames and room decay after a spoken span.
         ECHO_VALID_UNTIL = now.saturating_add(800_000_000);
     }
@@ -1854,6 +1885,11 @@ pub fn poll() -> bool {
                             }
                         }
                     }
+                    if command.is_some_and(|(start,end)| stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end])) {
+                        stop_spoken_reply();
+                        (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                        return true;
+                    }
                     let queued = command
                         .map(|(start, end)| {
                             clear_wake_command();
@@ -2040,4 +2076,15 @@ pub fn poll() -> bool {
             || was_waiting_for_pause != waiting_for_pause()
             || was_calibrating != calibrating()
     }
+}
+
+#[cfg(test)]
+#[test]
+// ------------------------=
+// FUNC: speech_stop_requires_a_complete_control_request
+// DESC: Rejects ordinary questions, negation and application stop commands.
+// ------------------=
+fn speech_stop_requires_a_complete_control_request() {
+    for command in [b"STOP!" as &[u8], b"please stop.", b"Stop speaking", b"stop talking"] { assert!(stop_speech_command(command)); }
+    for command in [b"do not stop" as &[u8], b"don't stop", b"what does stop mean?", b"stop the browser", b"stopwatch"] { assert!(!stop_speech_command(command)); }
 }

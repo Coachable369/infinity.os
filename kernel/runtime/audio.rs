@@ -509,3 +509,46 @@ impl AudioStream {
         self.renew(&request, caps, now)
     }
 }
+
+/// Bounded post-playback reference; never exposed across owners or stream generations.
+pub struct EchoTail<const N: usize> {
+    pcm: [i16; N], owner: SecurityIdentity, generation: u64, until: u64,
+}
+impl<const N: usize> EchoTail<N> {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates an empty echo tail without retaining speaker samples.
+    // ------------------=
+    pub const fn new() -> Self { Self { pcm: [0; N], owner: SecurityIdentity([0;16]), generation: 0, until: 0 } }
+    // ------------------------=
+    // FUNC: clear
+    // DESC: Erases the bounded private speaker reference.
+    // ------------------=
+    pub fn clear(&mut self) { self.pcm.fill(0); self.until = 0; }
+    // ------------------------=
+    // FUNC: expire
+    // DESC: Erases samples at their deadline even when no microphone consumer polls them.
+    // ------------------=
+    pub fn expire(&mut self, now:u64) { if self.until != 0 && now >= self.until { self.clear(); } }
+    // ------------------------=
+    // FUNC: retain
+    // DESC: Saves only played speaker frames before the source stream is erased.
+    // ------------------=
+    pub fn retain<const S:usize,const M:usize>(&mut self, stream: &InfinityAudio<S,M>, owner:SecurityIdentity, generation:u64, played:u64, rate:u32, now:u64) {
+        self.clear();
+        if stream.reference_mono(played, rate, 16_000, &mut self.pcm) {
+            self.owner=owner; self.generation=generation; self.until=now.saturating_add(800_000_000);
+        }
+    }
+    // ------------------------=
+    // FUNC: copy
+    // DESC: Copies an unexpired matching-session tail without extending its lifetime.
+    // ------------------=
+    pub fn copy(&mut self, owner:SecurityIdentity, generation:u64, now:u64, output:&mut[i16]) -> bool {
+        if now >= self.until { self.clear(); return false; }
+        if owner != self.owner || generation != self.generation { return false; }
+        output.fill(0);
+        let count=output.len().min(N); let offset=output.len()-count;
+        output[offset..].copy_from_slice(&self.pcm[N-count..]); true
+    }
+}
