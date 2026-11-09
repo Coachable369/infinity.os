@@ -691,8 +691,10 @@ installer-entropy-test:
 	python3 tools/re-provision-tpm-test.py
 
 .PHONY: fabric-test
+# Fault fixtures retain multiple cold-mounted stores on each host test thread.
+# This host-only allowance is separate from native kernel stack acceptance.
 fabric-test:
-	@CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --release \
+	@RUST_MIN_STACK=16777216 CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --release \
 		--manifest-path tools/behavior-harness/Cargo.toml --bin fabric-test
 
 milestone-3b-test: object-test install-test object-vm-test

@@ -2,6 +2,7 @@ use crate::{native_fabric::NativeReplica, runtime::fabric::{replica::*, resource
     storage::{BlockDevice, object::{ObjectStore, ObjectType, Space, STORE_RELATIVE_LBA}}};
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, rc::Rc, collections::BTreeMap};
+#[path="storage-metadata-fixture.rs"]mod metadata_fixture;
 
 // ------------------------=
 // FUNC: pool_mutation_execution_gate_preserves_plan_and_domain_boundaries
@@ -89,63 +90,73 @@ fn replay_captured_installed_pool_capacity_failure() {
 }
 
 // ------------------------=
+// FUNC: occupied_versions
+// DESC: Counts actual durable history through typed storage queries independently of the metadata table layout.
+// ------------------=
+fn occupied_versions(store:&ObjectStore<Disk>)->usize {
+    let query=crate::storage::object::ObjectQueryRequest{kind:None,space:None,include_tombstones:true};
+    let mut index=0;let mut versions=0;
+    while let Some(object)=store.query_nth(query,index){versions+=store.history_count(object.object.id);index+=1;}
+    versions
+}
+
+// ------------------------=
+// FUNC: legacy_v4_fixture
+// DESC: Relocates the active bounded fixture's real tables into v4 coordinates without truncating any live object, version or namespace record.
+// ------------------=
+fn legacy_v4_fixture(disk:&mut Disk){
+    metadata_fixture::downgrade_v10(disk,STORE_RELATIVE_LBA);
+    let mut copied=Vec::new();
+    for bank in [crate::storage::object::BANK_A,crate::storage::object::BANK_B]{
+        let sectors=disk.0.borrow();let header=sectors.sectors[&(STORE_RELATIVE_LBA+bank)];
+        for (logical,count,retained,per,stride) in [(0,32,13,4,120),(32,16,4,8,60),(48,32,8,4,120)]{
+            for sector in 0..count{
+                let row=sectors.sectors[&metadata_fixture::table_sector(&header,STORE_RELATIVE_LBA,bank,logical+sector)];
+                if sector>=retained{for entry in 0..per{assert_eq!(row[16+entry*stride],0,"v4 fixture must retain all live records");}continue;}
+                let offset=match logical{0=>if sector<6{5+sector}else{25+sector-6},32=>11+sector,_=>15+sector};
+                copied.push((STORE_RELATIVE_LBA+bank+offset,row));
+            }
+        }
+    }
+    let mut persisted=disk.0.borrow_mut();
+    for (lba,bytes) in copied{persisted.sectors.insert(lba,bytes);}
+    for (_,bytes) in persisted.sectors.range_mut(STORE_RELATIVE_LBA..STORE_RELATIVE_LBA+72){
+        bytes[8..12].copy_from_slice(&4u32.to_le_bytes());bytes[508..].fill(0);
+        let crc=crate::storage::object::crc32(bytes);bytes[508..].copy_from_slice(&crc.to_le_bytes());
+    }
+}
+
+// ------------------------=
 // FUNC: installed_density_empty_pool_creation_survives_version_table_expansion
 // DESC: Reproduces thirty-one occupied version slots, then verifies empty-object admission past the old limit and every sector-cut rollback boundary.
 // ------------------=
 #[test]
 fn installed_density_empty_pool_creation_survives_version_table_expansion() {
     use crate::runtime::{fabric::placement::StorageClass, node::types::NodeId};
-    let disk = Disk::default();
+    let mut disk = Disk::default();
     let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
     store.initialize_pool_catalog().unwrap();
     let owner = NodeId([3; 32]); let resource = ResourceId([4; 16]);
     let first = store.pool_create(owner, 0, 1, StorageClass::Critical, b"retained", owner, resource, [5; 16], 1).unwrap();
     // Fill to the migration boundary from actual persisted occupancy; newly
     // packaged system objects must not silently change this fixture's density.
-    loop {
-        let occupied = {
-            let persisted = disk.0.borrow();
-            let bank = [0, 1].map(|i| {
-                let root = persisted.sectors.get(&(STORE_RELATIVE_LBA + i)).unwrap();
-                (u64::from_le_bytes(root[16..24].try_into().unwrap()), u64::from_le_bytes(root[24..32].try_into().unwrap()))
-            }).into_iter().max().unwrap().1;
-            (0..4).map(|s| {
-                let bytes = persisted.sectors.get(&(STORE_RELATIVE_LBA + bank + 11 + s)).unwrap();
-                (0..8).filter(|n| bytes[16 + n * 60] != 0).count()
-            }).sum::<usize>()
-        };
-        assert!(occupied <= 31, "baseline exceeds the legacy migration fixture");
-        if occupied == 31 { break; }
-        store.create(b"Core state", ObjectType::Metadata, Space::System, &[0]).unwrap();
+    let occupied=occupied_versions(&store);
+    assert!(occupied<=31,"baseline exceeds the legacy migration fixture");
+    if occupied<31 {
+        let filler=store.create(b"Core state",ObjectType::Metadata,Space::System,&[0]).unwrap();
+        for _ in occupied+1..31{store.write(filler,&[0]).unwrap();}
     }
+    assert_eq!(occupied_versions(&store),31);
     drop(store);
-    // Format-4 banks have the same original-sector layout and only 32 slots.
-    // Recreate those exact binary headers and checksums, not a prose fixture.
-    {
-        let mut persisted = disk.0.borrow_mut();
-        for (_, bytes) in persisted.sectors.range_mut(STORE_RELATIVE_LBA..STORE_RELATIVE_LBA + 72) {
-            bytes[8..12].copy_from_slice(&4u32.to_le_bytes());
-            bytes[508..512].fill(0);
-            let crc = crate::storage::object::crc32(bytes);
-            bytes[508..512].copy_from_slice(&crc.to_le_bytes());
-        }
-        let roots = [0, 1].map(|i| {
-            let root = persisted.sectors.get(&(STORE_RELATIVE_LBA + i)).unwrap();
-            (u64::from_le_bytes(root[16..24].try_into().unwrap()), u64::from_le_bytes(root[24..32].try_into().unwrap()))
-        });
-        let bank = roots.into_iter().max().unwrap().1;
-        let occupied: usize = (0..4).map(|s| {
-            let bytes = persisted.sectors.get(&(STORE_RELATIVE_LBA + bank + 11 + s)).unwrap();
-            (0..8).filter(|n| bytes[16 + n * 60] != 0).count()
-        }).sum();
-        assert_eq!(occupied, 31);
-    }
+    legacy_v4_fixture(&mut disk);
     let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert_eq!(occupied_versions(&store),31);
     let baseline = disk.0.borrow().sectors.clone();
     let prior_writes = disk.0.borrow().writes;
     let empty = store.pool_create(owner, 0, 2, StorageClass::Temporary, &[], owner, resource, [5; 16], 1).unwrap();
     let writes = disk.0.borrow().writes - prior_writes;
     assert_ne!(empty.object, first.object);
+    assert!(occupied_versions(&store)>32);
     drop(store);
     let mut mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
     assert_eq!(mounted.pool_manifest(crate::storage::object::ObjectId(empty.object), owner, 0), Ok(empty));
@@ -614,13 +625,13 @@ fn discovered_resource_observes_capacity_reservations_and_reboot_ordering() {
 fn oversized_extent_cannot_allocate_beyond_native_capacity() {
     use crate::storage::object::ObjectError;
     #[derive(Clone)]
-    struct LimitedDisk(Disk);
+    struct LimitedDisk(Disk,u64);
     impl BlockDevice for LimitedDisk {
         // ------------------------=
         // FUNC: block_count
         // DESC: Advertises the actual small device boundary so allocator growth cannot turn this fixture into a larger pool.
         // ------------------=
-        fn block_count(&self) -> u64 { STORE_RELATIVE_LBA + 80 + 100 * 8 }
+        fn block_count(&self) -> u64 { STORE_RELATIVE_LBA + 80 + self.1 * 8 }
         // ------------------------=
         // FUNC: read_sector
         // DESC: Rejects reads outside the advertised device while preserving sparse persisted sectors.
@@ -641,14 +652,19 @@ fn oversized_extent_cannot_allocate_beyond_native_capacity() {
         // ------------------=
         fn flush(&mut self) -> bool { self.0.flush() }
     }
+    let probe=Disk::default();
+    let formatted=ObjectStore::format(probe.clone(),0,probe.block_count(),[8;16]).unwrap();
+    let blocks=u64::from(formatted.usage_blocks())+16;
+    assert!(blocks<256,"fixture must remain smaller than the valid 1 MiB staging request");
+    drop(formatted);
     let disk = Disk::default();
-    let mut limited = LimitedDisk(disk.clone());
+    let mut limited = LimitedDisk(disk.clone(),blocks);
     let capacity = limited.block_count();
     assert!(!limited.write_sector(capacity, &[0; 512]));
     assert!(!limited.read_sector(capacity, &mut [0; 512]));
     assert_eq!(disk.0.borrow().writes, 0);
     let mut store = ObjectStore::format(limited.clone(), 0, capacity, [8; 16]).unwrap();
-    assert_eq!(store.total_blocks(), 100);
+    assert_eq!(u64::from(store.total_blocks()), blocks);
     let used = store.usage_blocks();
     let writes = disk.0.borrow().writes;
     assert_eq!(store.create_staging_extent(1024 * 1024), Err(ObjectError::InsufficientCapacity));
@@ -656,7 +672,7 @@ fn oversized_extent_cannot_allocate_beyond_native_capacity() {
     assert_eq!(disk.0.borrow().writes, writes);
     drop(store);
     let mut restored = ObjectStore::mount(limited, 0).unwrap();
-    assert_eq!(restored.total_blocks(), 100);
+    assert_eq!(u64::from(restored.total_blocks()), blocks);
     assert_eq!(restored.usage_blocks(), used);
     assert_eq!(restored.create_staging_extent(1024 * 1024), Err(ObjectError::InsufficientCapacity));
     assert_eq!(restored.usage_blocks(), used);
