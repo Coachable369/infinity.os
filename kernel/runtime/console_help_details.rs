@@ -5,6 +5,8 @@
 // ------------------=
 pub fn details(name: &[u8]) -> (&'static [u8], &'static [u8], &'static [u8]) {
     match name {
+        b"cat" => (b"cat /Logs/ai.audiopipeline/pipeline-00.log",b"Active authenticated session with read access to the file; private objects remain protected.",b"File contents. Use -f to follow appended bytes or -n 20 for the last 20 lines. Ctrl-C or Escape stops following."),
+        b"tail" => (b"tail -f -n 20 /Logs/ai.audiopipeline/pipeline-00.log",b"Active authenticated session with read access; each refresh rechecks authorization.",b"Last 20 lines, then new bytes once per second. Replaced or truncated files restart from the beginning. Ctrl-C or Escape returns to the prompt."),
         b"exit" => (b"exit",b"Active local session.",b"Command Window closes; no remote logout or shutdown is performed."),
         b"hello" => (b"hello",b"No elevated authority.",b"A short native system greeting."),
         b"system status" => (b"system status",b"Active session.",b"Architecture and native service readiness."),

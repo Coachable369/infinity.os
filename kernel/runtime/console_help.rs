@@ -66,6 +66,8 @@ pub static COMMANDS: &[Entry] = &[
     entry!(b"idir",b"idir [PATH|home|parent|previous]",b"Native namespace navigation; alias of cd."),
     entry!(b"path",b"path",b"Print the current namespace."),
     entry!(b"find",b"find TEXT",b"Search bounded namespace paths case-insensitively."),
+    entry!(b"cat",b"cat [-f] [-n LINES] FILE",b"Read an authorized text or log object (up to 16 KiB). -f follows appended content once per second; Ctrl+C or Escape stops. Paths with spaces may be quoted. Replaced or truncated files restart from the beginning."),
+    entry!(b"tail",b"tail [-f] [-n LINES] FILE",b"The shared cat reader, defaulting to the last 10 lines. Example: tail -f /Logs/ai.audiopipeline/pipeline-00.log. Requires an authenticated session and file read permission. Displays exact appended bytes; -n 0 starts with future additions only."),
     entry!(b"examine",b"examine PATH",b"Inspect object identity, type, reference count, version and size."),
     entry!(b"resolve",b"resolve PATH",b"Resolve a namespace path to its immutable ObjectId."),
     entry!(b"versions",b"versions PATH",b"Inspect object version history."),

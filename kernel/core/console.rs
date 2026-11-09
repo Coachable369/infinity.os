@@ -8,6 +8,8 @@ mod command_terminal_controller;
 mod console_utilities;
 #[path="console_terminal_edit.rs"]
 mod console_terminal_edit;
+#[path="console_log_follow.rs"]
+mod console_log_follow;
 #[path = "window_workflows.rs"]
 mod window_workflows;
 #[path = "file_preview_controller.rs"]
@@ -588,6 +590,7 @@ struct ConsoleRuntime {
     accounts_secrets: console_accounts::Secrets,
     account_password: console_accounts_cli::PasswordEntry,
     ssh_terminal: console_ssh_client::Terminal,
+    log_reader: console_log_follow::LogReader,
     selected_node_id: Option<crate::runtime::node::types::NodeId>,
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     node_policy_offset: usize,
@@ -776,6 +779,7 @@ impl ConsoleRuntime {
             accounts_secrets: console_accounts::Secrets::new(),
             account_password: console_accounts_cli::PasswordEntry::new(),
             ssh_terminal: console_ssh_client::Terminal::new(),
+            log_reader: console_log_follow::LogReader::new(),
             selected_node_id: None,
             node_input_lease: None,
             node_policy_offset: 0,
@@ -10315,6 +10319,7 @@ impl ConsoleRuntime {
         if !private && self.output.remote.is_none() {self.output.write_segments(&[self.prompt(), &command[..length]]);}
         if !private && self.workplace_authorized(false) {self.command_history.record(&command[..length]);}
         if self.shell_environment(&command[..length]) {self.reset_input();return;}
+        if matches!(command_word(&command[..length],0),Some(b"cat"|b"tail")) {self.log_command(&command[..length]);self.reset_input();return;}
         if self.automation_command(&command[..length]) || self.llm_command(&command[..length]) { self.reset_input(); return; }
         if command_word(&command[..length],0).is_some_and(|w|w.eq_ignore_ascii_case(b"cd"))
             && self.workplace_authorized(false) {
@@ -14586,7 +14591,7 @@ fn poll_native_ai_inner() {
         }
     }
     #[cfg(target_os="none")]
-    unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() { runtime.ssh_terminal_poll(); } }
+    unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() { runtime.ssh_terminal_poll(); runtime.poll_log_reader(); } }
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
         let visible=runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7;

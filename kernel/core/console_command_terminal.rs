@@ -21,7 +21,7 @@ impl ConsoleRuntime {
         if revoke {crate::ui::terminal_vt::mutate(|t|t.reset());}
         let load=terminal::mutate(|s|s.session(self.current_session.0,active));
         if load {crate::ui::terminal_vt::mutate(|t|t.reset());if let Ok(bytes)=crate::storage::command_terminal_preferences(self.current_user.0,self.current_session.0,None){terminal::mutate(|s|s.restore_settings(&bytes));}}
-        if active {terminal::mutate(|s|s.publish_draft(self.navigation_context.path(),&self.command[..self.command_length],self.command_cursor,!self.ssh_terminal.active));}
+        if active {terminal::mutate(|s|s.publish_draft(self.navigation_context.path(),&self.command[..self.command_length],self.command_cursor,!self.ssh_terminal.active&&!self.log_reader.active));}
         terminal::publish_snapshot();
     }
     // ------------------------=
@@ -64,6 +64,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn command_terminal_key(&mut self,key:ConsoleKey)->bool {
         if !self.command_terminal_visible()||crate::ui::terminal_edit::inspect(|s|s.active){return false;}
+        if self.log_reader_key(key){return true;}
         if self.disk_key(key) {return true;}
         if let Some(row)=terminal::inspect(|s|s.monitor.then_some(s.monitor_row)) {
             let count=crate::runtime::with_runtime(|r|r.execution.count()).unwrap_or(0);

@@ -64,6 +64,7 @@ impl Shell {
     // DESC: Keeps exec channels open for actual asynchronous work and private continuation prompts.
     // ------------------=
     fn busy(&self) -> bool {
+        if self.console.log_reader.active{return true;}
         if edit::inspect(|state|state.active) || self.console.account_password.active() || self.console.ssh_terminal.active
             || self.console.remote_llm_waiting() || geturl::pending(&self.console) { return true; }
         #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -101,6 +102,7 @@ impl Shell {
     // DESC: Cancels only work owned by this shell, erasing password drafts before releasing a connection.
     // ------------------=
     fn interrupt(&mut self) {
+        self.console.log_reader.clear();
         self.deferred=None;
         self.keys=keys::Decoder::new();
         self.console.cancel_account_password();
@@ -155,7 +157,8 @@ impl Shell {
         if self.console.remote_ssh_connected(){let _=self.console.remote_ssh_input(bytes);return;}
         let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000;
         for &byte in bytes {for key in self.keys.feed(byte,now).0.into_iter().flatten(){
-            if edit::inspect(|state|state.active){self.console.terminal_edit_key(key);}
+            if self.console.log_reader.active{self.console.log_reader_key(key);}
+            else if edit::inspect(|state|state.active){self.console.terminal_edit_key(key);}
             else if self.console.ssh_terminal.active{self.console.ssh_terminal_input(key);}
         }}
     }
@@ -211,6 +214,7 @@ impl Shell {
             JobKind::Interrupt=>{self.interrupt();self.console.output.fail(Diagnostic::Cancelled);self.console.output.write_line(b"Command interrupted.");},
             JobKind::Closed=>self.interrupt(),
             JobKind::Eof=>{
+                self.console.log_reader.clear();
                 if self.console.remote_ssh_connected(){let _=self.console.remote_ssh_eof();}
                 if self.console.account_password.active(){self.console.cancel_account_password();self.console.output.fail(Diagnostic::Cancelled);}
                 if edit::inspect(|state|state.active){edit::session([0;16]);self.console.output.fail(Diagnostic::Cancelled);self.console.output.write_line(b"Input closed; unsaved editor changes were discarded.");}
@@ -231,7 +235,8 @@ impl Shell {
     // ------------------=
     fn poll_work(&mut self) {
         if let Some(key)=self.keys.expire(crate::runtime::ai::qwen::workers::clock_ns()/1_000_000){
-            if edit::inspect(|state|state.active){self.console.terminal_edit_key(key);}
+            if self.console.log_reader.active{self.console.log_reader_key(key);}
+            else if edit::inspect(|state|state.active){self.console.terminal_edit_key(key);}
             else if self.console.ssh_terminal.active{self.console.ssh_terminal_input(key);}
             self.render_editor();
         }
@@ -241,6 +246,7 @@ impl Shell {
         compiler_commands::poll_remote(&mut self.console);
         geturl::poll(&mut self.console);
         self.console.ssh_terminal_poll();
+        self.console.poll_log_reader();
         if !edit::inspect(|state|state.active) { self.console.poll_remote_llm(); }
         if self.deferred.is_some() && (!self.native_busy()||self.waiting_input()) {
             let job=self.deferred.take().unwrap();self.process(job);
@@ -272,7 +278,7 @@ impl Shell {
             clear_history:core::mem::take(&mut self.console.remote_history_clear),
             close:self.console.remote_exit,
             read_input,
-            raw:edit::inspect(|state|state.active)||self.console.remote_ssh_connected() };
+            raw:edit::inspect(|state|state.active)||self.console.remote_ssh_connected()||self.console.log_reader.active };
         self.foreground = more;
         self.read_input=read_input;
         if let Err(reply) = transport::reply(self.binding, reply) { self.pending = Some(reply); }
