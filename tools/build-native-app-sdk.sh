@@ -22,4 +22,8 @@ for unit in runtime libc format stdio isolated; do
 done
 "$linker" -r "$scratch/runtime.o" "$scratch/libc.o" "$scratch/format.o" "$scratch/stdio.o" "$scratch/isolated.o" -o "$destination/application-crt.o.part"
 mv "$destination/application-crt.o.part" "$destination/application-crt.o"
-(cd "$destination" && shasum -a 256 clang.elf lld.elf application-crt.o > SHA256SUMS)
+if [ "${INFINITY_SKIP_VALIDATION:-0}" != 1 ]; then
+  (cd "$destination" && shasum -a 256 clang.elf lld.elf application-crt.o > SHA256SUMS)
+else
+  rm -f "$destination/SHA256SUMS"
+fi

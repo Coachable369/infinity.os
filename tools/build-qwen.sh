@@ -91,15 +91,17 @@ mformat -F -i ${payload_build}/installed-esp.img -v INFINITYEFI ::
 python3 tools/iso-staging.py consume "${payload_build}/installed" "${payload_build}/installed-esp.img"
 # The packed ESP owns these bytes now; release the disposable duplicate tree.
 rm -r -- "${payload_build}/installed"
-CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
-if test -n "$hermes"; then
-    CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
+if test "${INFINITY_SKIP_VALIDATION:-0}" != 1; then
+    CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
+    if test -n "$hermes"; then
+        CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
+    fi
 fi
 python3 tools/iso-staging.py check "$payload_build" "$((esp_size + 1073741824))"
 build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img "$installed_kernel" ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
-if [ "${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then
+if [ "${INFINITY_SKIP_VALIDATION:-0}" != 1 ] && [ "${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then
     cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - "$installed_kernel"
 fi
 # Its validated bytes now belong to the payload shards. Release only this
@@ -118,39 +120,45 @@ fi
 # disposable staging directory on every packaging attempt.
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=build/cargo cargo build --release -Z build-std=core --target "$triple" --features "$payload_features"
 /opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T "$linker_script" -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF build/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o "$@"
-rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
-python3 tools/voice-kokoro/install-parity.py "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
-build/tools/cursor-install-parity "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+if test "${INFINITY_SKIP_VALIDATION:-0}" != 1; then
+    rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
+    python3 tools/voice-kokoro/install-parity.py "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+    build/tools/cursor-install-parity "$installed_kernel" ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+fi
 cp build/$arch/$boot ${payload_build}/live/EFI/BOOT/
 iso_size=$(python3 tools/iso-staging.py size "${payload_build}/live")
 python3 tools/iso-staging.py check "$payload_build" 1073741824
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
-# Preserve the exact current live kernel before the consumptive staging copy
-# transfers and removes the live tree.
-cp "${payload_build}/live/EFI/INFINITY/KERNEL.ELF" "${payload_build}/current-live-kernel.elf"
-python3 tools/native-compiler-parity-test.py --arch "$arch" \
-    --live-kernel "${payload_build}/current-live-kernel.elf" --installed-kernel "$installed_kernel"
+# Preserve the exact current live kernel for enabled validation before the
+# consumptive staging copy transfers and removes the live tree.
+if test "${INFINITY_SKIP_VALIDATION:-0}" != 1; then
+    cp "${payload_build}/live/EFI/INFINITY/KERNEL.ELF" "${payload_build}/current-live-kernel.elf"
+    python3 tools/native-compiler-parity-test.py --arch "$arch" \
+        --live-kernel "${payload_build}/current-live-kernel.elf" --installed-kernel "$installed_kernel"
+fi
 python3 tools/iso-staging.py consume "${payload_build}/live" "${payload_build}/iso/efi.img"
 # The ISO's EFI image now owns the live payload. Release this private mktemp
 # duplicate before allocating the final ISO alongside the previous release,
 # retaining only the exact current live kernel needed by the publication gate.
 test ! -d "${payload_build}/live" || rm -r -- "${payload_build}/live"
-# Publish only after model and installed-kernel parity have passed. Keep a failed
-# image out of the canonical filename used by provisioning.
+# Keep a failed image out of the canonical filename until packaging and any
+# enabled validation have completed.
 python3 tools/iso-staging.py check "$(dirname "$installer_output")" "$((iso_size + 1073741824))"
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "$installer_output.partial" ${payload_build}/iso
 # The candidate now owns the EFI bytes. All following gates read the candidate,
 # so release this run's duplicate before reconstructing the installed ESP.
 rm -- "${payload_build}/iso/efi.img"
-if [ "${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then
-python3 tools/iso-kernel-freshness.py \
-    "$installer_output.partial" \
-    "${payload_build}/current-live-kernel.elf" \
-    "$installed_kernel"
+if test "${INFINITY_SKIP_VALIDATION:-0}" != 1; then
+    if [ "${INFINITY_SKIP_BYTE_COMPARE:-0}" != 1 ]; then
+        python3 tools/iso-kernel-freshness.py \
+            "$installer_output.partial" \
+            "${payload_build}/current-live-kernel.elf" \
+            "$installed_kernel"
+    fi
+    python3 tools/ui-payload-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
+    python3 tools/sdk-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
+    python3 tools/full-bundle-iso-test.py "$installer_output.partial"
+    python3 tools/audio-install-parity.py "$installer_output.partial" "$arch" "$installed_kernel"
 fi
-python3 tools/ui-payload-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
-python3 tools/sdk-parity.py "${payload_build}/current-live-kernel.elf" "$installed_kernel"
-python3 tools/full-bundle-iso-test.py "$installer_output.partial"
-python3 tools/audio-install-parity.py "$installer_output.partial" "$arch" "$installed_kernel"
 mv "$installer_output.partial" "$installer_output"

@@ -244,8 +244,10 @@ env LDFLAGS= CPPFLAGS= cmake -G Ninja \
   -DCMAKE_EXE_LINKER_FLAGS="$compiler_link_flags"
 ninja -C "$compiler_build" -j"$jobs" clang lld
 
-rustc --edition 2021 "$repo/tools/native-c-toolchain-test.rs" -o "$work/native-c-toolchain-test"
-INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$compiler_build/bin/clang.elf" "$compiler_build/bin/lld.elf"
+if [ "${INFINITY_SKIP_VALIDATION:-0}" != 1 ]; then
+  rustc --edition 2021 "$repo/tools/native-c-toolchain-test.rs" -o "$work/native-c-toolchain-test"
+  INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$compiler_build/bin/clang.elf" "$compiler_build/bin/lld.elf"
+fi
 # Retain validated native binaries outside disposable build scratch so release
 # cleanup cannot destroy the input needed by subsequent guest acceptance tests.
 published=$repo/builds/toolchains/$architecture
@@ -255,6 +257,10 @@ for program in clang lld; do
   "$llvm_bin/llvm-strip" --strip-all "$published/$program.elf.part"
   mv "$published/$program.elf.part" "$published/$program.elf"
 done
-INFINITY_COMPILER_STRIPPED=1 INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$published/clang.elf" "$published/lld.elf"
-(cd "$published" && shasum -a 256 clang.elf lld.elf > SHA256SUMS)
+if [ "${INFINITY_SKIP_VALIDATION:-0}" != 1 ]; then
+  INFINITY_COMPILER_STRIPPED=1 INFINITY_COMPILER_MACHINE="$elf_machine" "$work/native-c-toolchain-test" "$published/clang.elf" "$published/lld.elf"
+  (cd "$published" && shasum -a 256 clang.elf lld.elf > SHA256SUMS)
+else
+  rm -f "$published/SHA256SUMS"
+fi
 sh tools/build-native-app-sdk.sh "$architecture"

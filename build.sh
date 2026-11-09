@@ -7,10 +7,11 @@ temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
 if [ "${1:-}" = "--help" ]; then
-    echo "Usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests] [--skip-byte-comparisons] [--target all|aarch64|x86_64]"
+    echo "Usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests|--build-only] [--skip-byte-comparisons] [--target all|aarch64|x86_64]"
     echo "Without arguments, a terminal prompts for build type, architecture, and tests."
     echo "--skip-tests retains kernel/asset packaging, parity and checksum checks."
     echo "--skip-byte-comparisons omits redundant full-image comparisons; publication checksums remain."
+    echo "--build-only packages one target without tests, payload verification, or checksum generation."
     exit 0
 fi
 if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
@@ -48,8 +49,6 @@ if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
 fi
 test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
 test "${TMPDIR:-}" = "$temporary_dir"
-python3 tools/package-sdk.py
-
 target=all
 package_only=false
 skip_tests=false
@@ -57,15 +56,20 @@ machine=native
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --package-only) package_only=true; shift ;;
+        --build-only)
+            package_only=true
+            export INFINITY_SKIP_TESTS=1 INFINITY_SKIP_VALIDATION=1 INFINITY_SKIP_BYTE_COMPARE=1
+            shift ;;
         --skip-tests) skip_tests=true; shift ;;
         --skip-byte-comparisons) export INFINITY_SKIP_BYTE_COMPARE=1; shift ;;
         --target) [ "$#" -ge 2 ] || exit 2; target=$2; shift 2 ;;
         --machine) [ "$#" -ge 2 ] || exit 2; machine=$2; shift 2 ;;
-        *) echo "usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests|--package-only] [--target aarch64|x86_64|all] [--machine native|qemu]" >&2; exit 2 ;;
+        *) echo "usage: ./build.sh [--incremental|--full|--tests-only] [--skip-tests|--package-only|--build-only] [--target aarch64|x86_64|all] [--machine native|qemu]" >&2; exit 2 ;;
     esac
 done
 case "$target" in aarch64|x86_64|all) ;; *) echo "unsupported build target: $target" >&2; exit 2 ;; esac
 case "$machine" in native|qemu) ;; *) echo "unsupported machine: $machine" >&2; exit 2 ;; esac
+python3 tools/package-sdk.py
 if [ "$machine" = qemu ] && [ "$target" != aarch64 ]; then
     echo "QEMU model media requires --target aarch64" >&2
     exit 2
@@ -88,22 +92,44 @@ if [ "$machine" = qemu ] && { [ "$target" != aarch64 ] || [ "$package_only" != t
     exit 2
 fi
 
-# Fast test-ISO handoff after a build: retain native dependency products and
-# defer the broad regression suite, never the publication/parity gates.
+# Retain valid dependencies for packaging; validation stays enabled unless the
+# caller explicitly selects build-only operation.
 if [ "$package_only" = true ]; then
     case "$target" in aarch64|x86_64) ;; *) echo "--package-only requires --target aarch64|x86_64" >&2; exit 2 ;; esac
     # The packaging pipeline forcibly rebuilds this target's installed kernel
     # and refreshes its assets itself. A prior full build is not a prerequisite.
     export INFINITY_ISO_BUILD_AUTHORITY=build.sh
     if [ "$machine" = qemu ]; then
-        python3 tools/kernel-layout-test.py
+        if [ "${INFINITY_SKIP_VALIDATION:-0}" != 1 ]; then
+            python3 tools/kernel-layout-test.py
+        fi
         sh tools/build-hermes.sh --target "$target" --machine qemu
+        if [ "${INFINITY_SKIP_VALIDATION:-0}" = 1 ]; then
+            rm -f "$project_root/build/test-media/InfinityOS-aarch64-qemu-models.bootmedia.sha256"
+            echo "Built ARM QEMU model media: $project_root/build/test-media/InfinityOS-aarch64-qemu-models.bootmedia (tests and checksums skipped)"
+            exit 0
+        fi
         (cd "$project_root/build/test-media" && shasum -a 256 InfinityOS-aarch64-qemu-models.bootmedia > InfinityOS-aarch64-qemu-models.bootmedia.sha256)
         (cd "$project_root/build/test-media" && shasum -a 256 -c InfinityOS-aarch64-qemu-models.bootmedia.sha256)
         echo "Verified ARM QEMU model test media: $project_root/build/test-media/InfinityOS-aarch64-qemu-models.bootmedia (canonical ISOs unchanged; broad regressions deferred)"
         exit 0
     fi
     sh tools/build-hermes.sh --target "$target"
+    if [ "$target" = aarch64 ]; then
+        cp tools/configure-virtualbox-arm64.sh tools/start-virtualbox-arm64.sh "$output_dir/"
+        chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"
+    fi
+    if [ "${INFINITY_SKIP_VALIDATION:-0}" = 1 ]; then
+        # A prior digest must not appear to describe the newly published image.
+        rm -f "$output_dir/InfinityOS-$target.iso.sha256"
+        if [ -f "$output_dir/SHA256SUMS" ]; then
+            checksum_index=$(mktemp "$temporary_dir/iso-checksums.XXXXXX")
+            awk -v image="InfinityOS-$target.iso" '$2 != image && $2 != "./" image' "$output_dir/SHA256SUMS" > "$checksum_index"
+            mv "$checksum_index" "$output_dir/SHA256SUMS"
+        fi
+        echo "Built $target ISO: $output_dir/InfinityOS-$target.iso (tests and checksums skipped)"
+        exit 0
+    fi
     python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
     if python3 -c 'import sys, tomllib; sys.exit("native-python" not in tomllib.load(open("Cargo.toml", "rb"))["features"]["default"])'; then
         python3 tools/native-python/parity.py --arch "$target" --iso "$output_dir/InfinityOS-$target.iso"
@@ -116,10 +142,6 @@ if [ "$package_only" = true ]; then
     fi
     cat "$output_dir/InfinityOS-$target.iso.sha256" >> "$checksum_index"
     mv "$checksum_index" "$output_dir/SHA256SUMS"
-    if [ "$target" = aarch64 ]; then
-        cp tools/configure-virtualbox-arm64.sh tools/start-virtualbox-arm64.sh "$output_dir/"
-        chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"
-    fi
     echo "Verified $target test ISO: $output_dir/InfinityOS-$target.iso (broad regression suite deferred)"
     exit 0
 fi

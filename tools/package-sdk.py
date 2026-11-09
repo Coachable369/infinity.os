@@ -161,8 +161,12 @@ def main():
                 info.size, info.mode, info.mtime = len(data), 0o644, 0
                 tar.addfile(info, io.BytesIO(data))
     temporary.replace(archive)
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    write_changed(archive.with_suffix(archive.suffix + ".sha256"), f"{digest}  {archive.name}\n".encode())
+    checksum = archive.with_suffix(archive.suffix + ".sha256")
+    if os.environ.get("INFINITY_SKIP_VALIDATION") == "1":
+        checksum.unlink(missing_ok=True)
+    else:
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        write_changed(checksum, f"{digest}  {archive.name}\n".encode())
     # Retire only the packager's identifiable old generated archive, never an
     # arbitrary file stored under that name. Do so after publishing its successor.
     legacy = archive.with_name("InfintySDK.tar.gz")
