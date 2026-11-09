@@ -45,6 +45,92 @@ ui.click = adaptive_click
 
 class NativeGuest(desktop.Guest):
     # ------------------------=
+    # FUNC: stable_screenshot
+    # DESC: Captures an unmodified full frame after presentation advances and a caller-selected region stays pixel-stable, without pausing the guest.
+    # ------------------=
+    def stable_screenshot(self, label, roi, timeout=30):
+        assert len(roi) == 4 and all(type(value) is int for value in roi)
+        x, y, width, height = roi
+        assert x >= 0 and y >= 0 and width > 0 and height > 0
+        assert 0 < timeout <= 30 and self.frames_length == 10802 * 8
+        started = time.monotonic_ns()
+        deadline = started + int(timeout * 1_000_000_000)
+        receipt = {"version": 1, "result": 0, "phase": 1, "roi": list(roi),
+                   "started_monotonic_ns": started, "required_stable_ns": 600_000_000,
+                   "baseline": None, "barrier": None, "samples": []}
+
+        # ------------------------=
+        # FUNC: completed_frame
+        # DESC: Reads a coherent completed-presentation counter and ring entry using only privileged diagnostic memory reads.
+        # ------------------=
+        def completed_frame():
+            assert self.process.poll() is None, "Guest exited during stable screenshot"
+            header = struct.unpack("<2Q", self.memory(self.frames_address, 16))
+            if header[0] != 1 or header[1] == 0:
+                return None
+            offset = 16 + 24 * ((header[1] - 1) % 3600)
+            sample = struct.unpack("<3Q", self.memory(self.frames_address + offset, 24))
+            after = struct.unpack("<2Q", self.memory(self.frames_address, 16))
+            return list(sample) if header == after and sample[0] == header[1] else None
+
+        try:
+            while time.monotonic_ns() < deadline:
+                frame = completed_frame()
+                if frame is not None:
+                    if receipt["baseline"] is None:
+                        receipt["baseline"] = frame
+                        receipt["phase"] = 2
+                    elif frame[0] > receipt["baseline"][0]:
+                        receipt["barrier"] = frame
+                        receipt["phase"] = 3
+                        break
+                time.sleep(.1)
+            if receipt["barrier"] is None:
+                receipt["result"] = 2
+                raise AssertionError({"stable_screenshot": label, "phase": receipt["phase"],
+                                      "reason": "No new completed presentation within deadline"})
+            previous = None
+            stable_since = None
+            while time.monotonic_ns() < deadline:
+                before = completed_frame()
+                if before is None:
+                    time.sleep(.1)
+                    continue
+                target = super().screenshot(label)
+                screen_width, screen_height, pixels = desktop.read_pixels(target)
+                assert x + width <= screen_width and y + height <= screen_height
+                digest = hashlib.sha256()
+                for row in range(y, y + height):
+                    start = (row * screen_width + x) * 3
+                    digest.update(pixels[start:start + width * 3])
+                after = completed_frame()
+                if after is None or after[0] < receipt["barrier"][0]:
+                    previous = None
+                    time.sleep(.1)
+                    continue
+                now = time.monotonic_ns()
+                signature = (screen_width, screen_height, digest.hexdigest())
+                if signature != previous:
+                    stable_since = now
+                    previous = signature
+                elapsed = now - stable_since
+                receipt["samples"].append({"monotonic_ns": now, "before": before,
+                    "after": after, "roi_sha256": signature[2], "stable_ns": elapsed})
+                if elapsed >= receipt["required_stable_ns"]:
+                    receipt.update(result=1, width=screen_width, height=screen_height,
+                                   full_ppm_sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+                    return target
+                time.sleep(.1)
+            receipt["result"] = 2
+            raise AssertionError({"stable_screenshot": label, "phase": 3,
+                                  "reason": "Selected pixel region did not stabilize within deadline"})
+        finally:
+            if receipt["result"] == 0:
+                receipt["result"] = 3
+            receipt["finished_monotonic_ns"] = time.monotonic_ns()
+            (self.work / f"{label}.stability.json").write_text(json.dumps(receipt, indent=2) + "\n")
+
+    # ------------------------=
     # FUNC: return_to_desktop
     # DESC: Closes restored Settings through its actual titlebar because Escape only changes its internal focus.
     # ------------------=

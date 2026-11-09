@@ -80,7 +80,7 @@ impl Entry {
     }
 
 }
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,PartialEq,Eq)]
 pub struct State { pub tab:Tab, pub mode:Mode, pub selected:usize, pub selected_id:u32, pub original:Option<Entry>, pub conflict:bool, pub first:usize, pub focus:Target, pub fields:[Field;3], pub enabled:bool, pub trigger:u8, pub restart:u8, pub choice:u8, pub feedback:Feedback }
 impl State {
     // ------------------------=
@@ -114,7 +114,7 @@ impl State {
     // ------------------=
     pub fn select(&mut self,index:usize,count:usize,rows:usize) {if self.mode!=Mode::Browse {self.feedback=Feedback::SaveOrCancel;return;}self.selected=index.min(count.saturating_sub(1));if self.selected<self.first{self.first=self.selected;}if self.selected>=self.first+rows.max(1){self.first=self.selected+1-rows.max(1);}self.focus=Target::Row(self.selected);self.feedback=Feedback::None;}
 }
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,PartialEq,Eq)]
 pub struct View {pub owner:[u8;16],pub session:[u8;16],pub state:State,pub entries:[Entry;CAPACITY],pub count:usize,pub total:usize,pub available:bool,pub can_manage:bool,pub access_reason:Feedback}
 impl View {
     // ------------------------=
@@ -158,6 +158,7 @@ impl View {
 
 }
 static mut VIEW: View=View::new();
+static PRESENTATION_REVISION:core::sync::atomic::AtomicU64=core::sync::atomic::AtomicU64::new(0);
 #[no_mangle]
 pub static mut INFINITY_TASK_MANAGEMENT_SNAPSHOT:[u64;8]=[0x495441534b554931,1,0,0,0,0,0,0];
 // ------------------------=
@@ -166,10 +167,16 @@ pub static mut INFINITY_TASK_MANAGEMENT_SNAPSHOT:[u64;8]=[0x495441534b554931,1,0
 // ------------------=
 pub fn current()->View {unsafe{VIEW}}
 // ------------------------=
+// FUNC: revision
+// DESC: Identifies changed draft, focus, authority or catalog pixels independently of process telemetry.
+// ------------------=
+pub fn revision()->u64 {PRESENTATION_REVISION.load(core::sync::atomic::Ordering::Relaxed)}
+// ------------------------=
 // FUNC: publish
 // DESC: Publishes a completed UI state from the serialized desktop event loop.
 // ------------------=
 pub fn publish(view:View) {unsafe{
+    if VIEW!=view {PRESENTATION_REVISION.fetch_add(1,core::sync::atomic::Ordering::Relaxed);}
     VIEW=view;
     let sequence=INFINITY_TASK_MANAGEMENT_SNAPSHOT[2].wrapping_add(2);
     INFINITY_TASK_MANAGEMENT_SNAPSHOT[2]=sequence|1;

@@ -4,6 +4,7 @@ use super::*;
 use super::access_style as access;
 use crate::ui::panel_recipe::Surface as AccessSurface;
 static TASK_SAMPLE:core::sync::atomic::AtomicU64=core::sync::atomic::AtomicU64::new(0);
+static TASK_PRESENTATION:core::sync::atomic::AtomicU64=core::sync::atomic::AtomicU64::new(0);
 static SETTINGS_PRESENTATION_DIRTY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 // ------------------------=
@@ -6920,9 +6921,17 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let task_sample=crate::runtime::with_runtime(|r|r.task_manager.system.timestamp_ns).unwrap_or(0);
-            let task_changed=task_manager_window.visible && TASK_SAMPLE.swap(task_sample,core::sync::atomic::Ordering::Relaxed)!=task_sample;
-            if task_changed {
-                let r=layout.desktop_app_window_geometry(task_manager_window.x,task_manager_window.y,task_manager_window.width,task_manager_window.height,task_manager_window.maximized).content;
+            let task_revision=crate::ui::task_management::revision();
+            let task_changed=task_manager_window.visible && {
+                let sampled=TASK_SAMPLE.swap(task_sample,core::sync::atomic::Ordering::Relaxed)!=task_sample;
+                let edited=TASK_PRESENTATION.swap(task_revision,core::sync::atomic::Ordering::Relaxed)!=task_revision;
+                sampled||edited
+            };
+            let task_damage=task_changed.then(||{
+                let geometry=layout.desktop_app_window_geometry(task_manager_window.x,task_manager_window.y,task_manager_window.width,task_manager_window.height,task_manager_window.maximized);
+                geometry.toolbar.union(geometry.content)
+            });
+            if let Some(r)=task_damage {
                 super::retained_windows::invalidate_region(3,super::PresentRegion{left:r.x.max(0)as usize,top:r.y.max(0)as usize,right:r.right().max(0)as usize,bottom:r.bottom().max(0)as usize});
             }
             let content_changed = console.last_system_content != content || motion_settled || task_changed;
@@ -6958,7 +6967,7 @@ pub fn system_ui_present(
             let thinking_body_changed = (&mut *(&raw mut THINKING_ANIMATION)).take_body_damage();
             let command_input_only = screen == 8 && console.last_system_screen == 8
                 && crate::ui::installer_template::navigation::scene()==0
-                && !assistant_changed
+                && !assistant_changed && !task_changed
                 && content_changed && static_content == console.last_system_static_content
                 && !structural_change_without_window && !file_navigator_changed && !focus_changed
                 && !window_moved && !window_resized && !app_window_geometry_changed
@@ -7306,13 +7315,14 @@ pub fn system_ui_present(
                 if browser_changed {
                     damages[0]=damages[0].union(browser_damage_rect);
                 }
+                if let Some(rect)=task_damage {damages[0]=damages[0].union(rect);}
                 let union_pixels = damages[0].width as u64 * damages[0].height as u64;
                 let split_pixels = split_damages
                     .iter()
                     .map(|region| region.width as u64 * region.height as u64)
                     .sum::<u64>();
                 let damage_count = if split_motion_damage
-                    && !browser_changed
+                    && !browser_changed && !task_changed
                     && previous_damage_window != current_damage_window
                     && split_pixels < union_pixels
                 {

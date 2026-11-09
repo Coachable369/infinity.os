@@ -201,7 +201,7 @@ def gui_crud(guest, proof):
     guest.key("tab")
     guest.key("ret")
     wait_ui(guest, 1, 0)
-    proof["screenshots"].append(str(guest.screenshot("task-manager-services")))
+    proof["screenshots"].append(str(guest.stable_screenshot("task-manager-services", (180, 210, 745, 380))))
     before = set(snapshot(guest)["rows"])
     guest.key("n")
     wait_ui(guest, 1, 1)
@@ -213,7 +213,7 @@ def gui_crud(guest, proof):
     guest.key("ret")  # Enabled -> disabled.
     guest.key("tab")
     guest.key("tab")
-    proof["screenshots"].append(str(guest.screenshot("task-manager-service-form")))
+    proof["screenshots"].append(str(guest.stable_screenshot("task-manager-service-form", (180, 210, 745, 380))))
     guest.key("ret")
     wait_ui(guest, 1, 0)
     state = wait(guest, lambda s: len(set(s["rows"]) - before) == 1, "GUI service created")
@@ -241,7 +241,7 @@ def gui_crud(guest, proof):
     guest.key("shift", "tab")
     guest.key("ret")
     wait_ui(guest, 2, 0)
-    proof["screenshots"].append(str(guest.screenshot("task-manager-scheduled")))
+    proof["screenshots"].append(str(guest.stable_screenshot("task-manager-scheduled", (180, 210, 745, 380))))
     proof["gui_service_crud"] = True
     gui_schedule_crud(guest, proof)
     proof["gui_crud"] = True
@@ -265,7 +265,7 @@ def gui_schedule_crud(guest, proof):
         guest.key("tab")
     guest.key("ret")
     guest.key("tab")  # Schedules have no daemon restart-policy control.
-    proof["screenshots"].append(str(guest.screenshot("task-manager-schedule-create")))
+    proof["screenshots"].append(str(guest.stable_screenshot("task-manager-schedule-create", (180, 210, 745, 380))))
     guest.key("ret")
     wait_ui(guest, 2, 0)
     state = wait(guest, lambda s: len(set(s["rows"]) - before) == 1, "GUI schedule created")
@@ -289,7 +289,7 @@ def gui_schedule_crud(guest, proof):
     guest.text("2099-12-31 23:59:00")
     for _ in range(3):
         guest.key("tab")  # Timing -> policy -> enabled -> Save.
-    proof["screenshots"].append(str(guest.screenshot("task-manager-schedule-edit")))
+    proof["screenshots"].append(str(guest.stable_screenshot("task-manager-schedule-edit", (180, 210, 745, 380))))
     guest.key("ret")
     wait_ui(guest, 2, 0)
     expected_due = calendar.timegm((2099, 12, 31, 23, 59, 0))

@@ -61,10 +61,58 @@ fn compact_installed_geometry() {
     let mut processes=View::new();processes.state.tab=Tab::Processes;assert_ne!(installed_frame(&processes,false),installed_frame(&processes,true));
 }
 // ------------------------=
+// FUNC: paint_retained_draft
+// DESC: Paints the production toolbar and form through the real retained Task Manager surface at installed geometry.
+// ------------------=
+fn paint_retained_draft(display:&mut DisplayDevice,view:&View) {
+    let g=crate::ui::system_layout::SystemLayout::new(1024,768).desktop_app_window_geometry(160,140,760,650,false);
+    display.retained_window(3,(g.window.x as usize,g.window.y as usize,g.window.width as usize,g.window.height as usize),|target|{
+        target.fill_rect_alpha(g.toolbar.x as usize,g.toolbar.y as usize,g.toolbar.width as usize,g.toolbar.height as usize,5,22,38,224);
+        target.render_task_management_toolbar(g.content,g.toolbar,1,view,false);
+        assert!(target.render_task_automation(g.content,g.toolbar,1,view));
+    });
+}
+// ------------------------=
+// FUNC: retained_draft_updates
+// DESC: Verifies complete paths, enabled state, date/time and focus changes invalidate real cached form pixels while identical publications retain them.
+// ------------------=
+fn retained_draft_updates() {
+    let saved=model::current();let mut view=fixture(Tab::Services);view.state.begin(Mode::Create,None);
+    view.state.fields[0]=model::Field::from_bytes(b"guiprobe");
+    view.state.fields[1]=model::Field::from_bytes(b"/home/ms9node01/documents/");view.state.focus=Target::Field(1);
+    model::publish(view);super::retained_windows::invalidate();
+    let mut pixels=vec![0x00090f26;1024*768];
+    let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width:1024,height:768,stride:1024,format:1,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    paint_retained_draft(&mut display,&view);
+    let g=crate::ui::system_layout::SystemLayout::new(1024,768).desktop_app_window_geometry(160,140,760,650,false);
+    let r=g.toolbar.union(g.content);let damage=Region{left:r.x as usize,top:r.y as usize,right:r.right()as usize,bottom:r.bottom()as usize};
+    for step in 0..7 {
+        let before=pixels.clone();let revision=model::revision();model::publish(view);assert_eq!(model::revision(),revision);
+        display.retained_window(3,(g.window.x as usize,g.window.y as usize,g.window.width as usize,g.window.height as usize),|_|panic!("identical published form repainted"));
+        match step {
+            0=>view.state.fields[1]=model::Field::from_bytes(b"/home/ms9node01/documents/hello.py"),
+            1=>view.state.enabled=false,
+            2=>view.state.focus=Target::Save,
+            3=>view.state.focus=Target::Tab(Tab::Services),
+            4=>{view.state.tab=Tab::Scheduled;view.state.trigger=3;view.state.fields[2]=model::Field::from_bytes(b"2099-12-31");view.state.focus=Target::Field(2);},
+            5=>view.state.fields[2]=model::Field::from_bytes(b"2099-12-31 23:59:00"),
+            _=>view.state.focus=Target::Save,
+        }
+        model::publish(view);assert_eq!(model::revision(),revision+1);
+        super::retained_windows::invalidate_region(3,damage);
+        pixels.fill(0x00090f26);display.render_clip=Some(damage);paint_retained_draft(&mut display,&model::current());
+        let updated=pixels.clone();assert_ne!(updated,before);
+        super::retained_windows::invalidate();pixels.fill(0x00090f26);display.render_clip=None;
+        paint_retained_draft(&mut display,&model::current());assert_eq!(updated,pixels);
+    }
+    model::publish(saved);super::retained_windows::invalidate();
+}
+// ------------------------=
 // FUNC: verify
 // DESC: Checks real pixels, exact hit geometry, focused fields, disabled actions and dirty draft transitions.
 // ------------------=
 pub(super) fn verify() {
+    retained_draft_updates();
     compact_installed_geometry();
     for (width,height) in [(620usize,500usize),(900,680)] {
         let toolbar=Rect{x:16,y:16,width:(width-32)as u32,height:44};let content=Rect{x:16,y:60,width:(width-32)as u32,height:(height-76)as u32};
