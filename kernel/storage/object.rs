@@ -1695,23 +1695,28 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Replaces bounded checkpoint history within an already-owned atomic native transaction.
     // ------------------=
     fn replace_state_record(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
-        let previous = self.state.versions;
+        // The owning transaction already retains complete rollback state. Only
+        // old extents are needed here; copying every VersionRecord adds 48 KiB
+        // to the native command stack after the version table expansion.
+        let mut previous_extents = [0u32; MAX_VERSIONS];
+        let mut previous_blocks = [0u16; MAX_VERSIONS];
+        let mut previous_count = 0;
         // Release metadata slots only. Old data remains allocated until the new
         // content is written, so a failed write cannot damage the committed root.
         for version in &mut self.state.versions {
             if version.used && version.object == id {
+                previous_extents[previous_count] = version.extent;
+                previous_blocks[previous_count] = version.blocks;
+                previous_count += 1;
                 version.used = false;
             }
         }
         let result = self.write_record(id, content);
         if result.is_ok() {
-            for version in &previous {
-                if version.used && version.object == id {
-                    for block in
-                        version.extent as usize..version.extent as usize + version.blocks as usize
-                    {
-                        self.release_unreferenced_block(block);
-                    }
+            for index in 0..previous_count {
+                let first = previous_extents[index] as usize;
+                for block in first..first + previous_blocks[index] as usize {
+                    self.release_unreferenced_block(block);
                 }
             }
         }

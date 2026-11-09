@@ -5,8 +5,9 @@ use crate::runtime::{console_language::OperationNode, iop::storage_protocol::{Op
 impl ConsoleRuntime {
     // ------------------------=
     // FUNC: execute_pool_node
-    // DESC: Converts validated Console arguments into the shared native storage request; output text is never parsed as state or fed to another service.
+    // DESC: Converts validated arguments into shared storage requests outside the generic dispatcher's large stack frame; output is never used as authority.
     // ------------------=
+    #[inline(never)]
     pub(super) fn execute_pool_node(&mut self, node: &OperationNode<'_>) -> bool {
         if node_argument(node,b"durable")==Some(b"true".as_slice()) {
             self.output.write_line(b"DURABLE POOL APPROVAL: exact configured peers and operations, survives reboot until revoked.");

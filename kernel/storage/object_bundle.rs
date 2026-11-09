@@ -262,8 +262,9 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
     // ------------------------=
     // FUNC: create_owned_bundle
-    // DESC: Atomically creates application content, a distinct private metadata record and its catalog binding, with rollback on any encoding or sector failure.
+    // DESC: Atomically creates content, private metadata and catalog binding; keeps rollback State out of callers' validation and retry frames.
     // ------------------=
+    #[inline(never)]
     pub(crate) fn create_owned_bundle<const N: usize, const M: usize>(
         &mut self,
         catalog: ObjectId,
