@@ -2,7 +2,7 @@
 //! Uses production keyboard/pointer controller with the real typed catalog authority.
 #[path="../kernel/runtime/mod.rs"]mod runtime;
 #[path="../kernel/ui/mod.rs"]mod ui;
-use ui::system_layout::SystemLayout;
+use ui::system_layout::{DesktopAppWindowState,SystemLayout};
 #[derive(Clone,Copy)]
 pub enum ConsoleKey{Shortcut(u8),SelectMove(i8),Character(u8),Backspace,Enter,Escape,Tab(bool),Up,Down,Left,Right,Home,End,Delete,Help}
 mod console {pub use super::ConsoleKey;}
@@ -10,7 +10,7 @@ mod console {pub use super::ConsoleKey;}
 enum DesktopAppKind{TaskManager,CommandWindow}
 struct SshTerminal{active:bool}
 struct System{framebuffer_width:usize,framebuffer_height:usize}
-struct ConsoleRuntime{current_user:runtime::identity::StableId,current_session:runtime::identity::StableId,system:System,app_window_x:i32,app_window_y:i32,app_window_width:i32,app_window_height:i32,app_window_maximized:bool,shell_menu:u8,allowed:bool,commits:usize,fail:Option<runtime::automation::Error>,ssh_terminal:SshTerminal,command_length:usize,desktop_app:DesktopAppKind,logs:usize}
+struct ConsoleRuntime{current_user:runtime::identity::StableId,current_session:runtime::identity::StableId,system:System,app_window_x:i32,app_window_y:i32,app_window_width:i32,app_window_height:i32,app_window_maximized:bool,task_manager_window:DesktopAppWindowState,shell_menu:u8,allowed:bool,commits:usize,fail:Option<runtime::automation::Error>,ssh_terminal:SshTerminal,command_length:usize,desktop_app:DesktopAppKind,logs:usize}
 // ------------------------=
 // FUNC: output_text
 // DESC: Supplies an inert diagnostic transport without using text as an assertion oracle.
@@ -23,6 +23,11 @@ fn output_text(_:&[u8]){}
 fn text_edit_key(k:ConsoleKey)->Option<ui::text_input::TextEditKey>{use ui::text_input::TextEditKey as T;Some(match k{ConsoleKey::Character(c)=>T::Character(c),ConsoleKey::Backspace=>T::Backspace,ConsoleKey::Delete=>T::Delete,ConsoleKey::Left=>T::Left,ConsoleKey::Right=>T::Right,ConsoleKey::Home=>T::Home,ConsoleKey::End=>T::End,_=>return None})}
 #[path="../kernel/core/console_task_automation.rs"]mod controller;
 impl ConsoleRuntime{
+    // ------------------------=
+    // FUNC: desktop_app_windows
+    // DESC: Supplies explicit independent window fixtures to the production controller without duplicating its geometry policy.
+    // ------------------=
+    fn desktop_app_windows(&self)->(DesktopAppWindowState,DesktopAppWindowState,DesktopAppWindowState){let other=DesktopAppWindowState::new(self.app_window_x,self.app_window_y,self.app_window_width,self.app_window_height);(other,other,self.task_manager_window)}
     // ------------------------=
     // FUNC: automation_error
     // DESC: Leaves diagnostic prose outside the behavioral oracle while retaining typed receipt failures.
@@ -82,12 +87,49 @@ fn attempt_disabled(c:&mut ConsoleRuntime,target:ui::task_management::Target){le
 // ------------------=
 fn type_field(c:&mut ConsoleRuntime,index:usize,value:&[u8]){click(c,ui::task_management::Target::Field(index));c.input_task_management(ConsoleKey::Shortcut(b'a'));c.input_task_management(ConsoleKey::Backspace);for byte in value{assert!(c.input_task_management(ConsoleKey::Character(*byte)));}}
 // ------------------------=
+// FUNC: terminal_snapshot
+// DESC: Captures observable terminal authority, input and transcript bytes without using diagnostic copy as an acceptance oracle.
+// ------------------=
+fn terminal_snapshot()->([u8;16],bool,bool,u32,usize,usize,usize,Vec<Vec<u8>>){ui::command_terminal::inspect(|s|(s.owner,s.authorized,s.capture,s.revision,s.input_length,s.cursor,s.scroll,(s.first..=s.end()).map(|row|(0..s.length(row)).map(|column|s.byte(ui::command_terminal::Position{row,column})).collect()).collect()))}
+// ------------------------=
+// FUNC: background_refresh
+// DESC: Refreshes an actual manual catalog mutation behind the command window while retaining the selected draft, Task Manager pagination and local terminal subject.
+// ------------------=
+fn background_refresh(c:&mut ConsoleRuntime){
+    use ui::task_management::{self as m,Mode,Tab,Target};
+    let window=c.task_manager_window;
+    let active=(c.app_window_x,c.app_window_y,c.app_window_width,c.app_window_height,c.app_window_maximized);
+    c.task_manager_window.height=820;c.task_manager_window.visible=true;c.app_window_height=820;
+    c.refresh_task_automation();click(c,Target::Tab(Tab::Services));
+    for index in 0..7 {c.task_automation_execute_receipt(format!("service create background-{index} /home/default/background.py start=manual").as_bytes(),None).unwrap();}
+    c.refresh_task_automation();click(c,Target::Row(6));click(c,Target::Edit);type_field(c,1,b"/home/default/unsaved-background.py");
+    let draft=m::current();assert_eq!(draft.state.mode,Mode::Edit);assert_eq!(draft.state.first,0);assert_eq!(draft.count,7);
+    c.desktop_app=DesktopAppKind::CommandWindow;c.app_window_height=360;c.command_length=11;
+    ui::command_terminal::mutate(|s|{s.session(c.current_session.0,true);s.line(b"retained output");s.input[..11].copy_from_slice(b"pending CLI");s.input_length=11;s.cursor=3;s.changed();});
+    let terminal=terminal_snapshot();let subject=(c.current_user,c.current_session);let revision=m::revision();
+    let receipt=c.task_automation_execute_receipt(b"service create background-7 /home/default/background.py start=manual",None).unwrap();
+    assert_eq!(m::current().count,7);assert_eq!(m::revision(),revision);
+    c.refresh_task_automation();
+    let refreshed=m::current();assert_eq!(refreshed.count,8);assert!(m::revision()>revision);
+    assert!(refreshed.entries[..refreshed.count].iter().any(|entry|Some(entry.id)==receipt.id&&entry.owner==subject.0.0&&entry.state==0));
+    assert!(refreshed.state==draft.state);assert_eq!(refreshed.selected().unwrap().id,draft.selected().unwrap().id);
+    assert_eq!((refreshed.owner,refreshed.session),(subject.0.0,subject.1.0));
+    assert_eq!((c.current_user,c.current_session),subject);assert_eq!(c.desktop_app,DesktopAppKind::CommandWindow);assert_eq!(c.command_length,11);assert_eq!(c.app_window_height,360);
+    assert_eq!(terminal_snapshot(),terminal);
+    let revision=m::revision();c.refresh_task_automation();assert_eq!(m::revision(),revision);assert_eq!(terminal_snapshot(),terminal);
+    for index in 0..8 {c.task_automation_execute_receipt(format!("service delete background-{index}").as_bytes(),None).unwrap();}
+    c.task_manager_window=window;(c.app_window_x,c.app_window_y,c.app_window_width,c.app_window_height,c.app_window_maximized)=active;
+    c.desktop_app=DesktopAppKind::TaskManager;c.command_length=0;
+    ui::command_terminal::mutate(|s|*s=ui::command_terminal::State::new());m::publish(m::View::new());
+}
+// ------------------------=
 // FUNC: main
 // DESC: Exercises service/schedule creation, configuration, lifecycle intent, denied mutation, and inline deletion through the production GUI controller.
 // ------------------=
 fn main(){
     use ui::task_management::{self as m,Tab,Target,Mode,Feedback};use runtime::automation::{Kind,State,Trigger,Restart};
-    runtime::initialize(false);runtime::with_runtime(|r|r.automation_ready=true);let mut c=ConsoleRuntime{current_user:runtime::identity::StableId([1;16]),current_session:runtime::identity::StableId([10;16]),system:System{framebuffer_width:1280,framebuffer_height:800},app_window_x:80,app_window_y:100,app_window_width:760,app_window_height:650,app_window_maximized:false,shell_menu:0,allowed:true,commits:0,fail:None,ssh_terminal:SshTerminal{active:false},command_length:0,desktop_app:DesktopAppKind::TaskManager,logs:0};
+    runtime::initialize(false);runtime::with_runtime(|r|r.automation_ready=true);let mut c=ConsoleRuntime{current_user:runtime::identity::StableId([1;16]),current_session:runtime::identity::StableId([10;16]),system:System{framebuffer_width:1280,framebuffer_height:800},app_window_x:80,app_window_y:100,app_window_width:760,app_window_height:650,app_window_maximized:false,task_manager_window:DesktopAppWindowState::new(80,100,760,650),shell_menu:0,allowed:true,commits:0,fail:None,ssh_terminal:SshTerminal{active:false},command_length:0,desktop_app:DesktopAppKind::TaskManager,logs:0};
+    background_refresh(&mut c);
     ui::clipboard::with_shared(|clip|clip.session(c.current_session.0,true));
     c.refresh_task_automation();click(&mut c,Target::Tab(Tab::Services));click(&mut c,Target::New);
     type_field(&mut c,0,b"worker");type_field(&mut c,1,b"/home/default/my worker.py");click(&mut c,Target::Trigger);assert_eq!(m::current().state.trigger,0);c.input_task_management(ConsoleKey::Escape);assert_eq!(m::current().state.trigger,0);click(&mut c,Target::Trigger);c.input_task_management(ConsoleKey::Down);assert_eq!(m::current().state.trigger,0);c.input_task_management(ConsoleKey::Enter);assert_eq!(m::current().state.trigger,1);type_field(&mut c,2,b"15");click(&mut c,Target::RestartPolicy);click(&mut c,Target::RestartOption(1));click(&mut c,Target::Save);
@@ -155,7 +197,7 @@ fn main(){
     click(&mut c,Target::Tab(Tab::Scheduled));click(&mut c,Target::New);type_field(&mut c,0,b"same-user-new-session");
     c.current_session=runtime::identity::StableId([21;16]);c.refresh_task_automation();assert_eq!(m::current().state.mode,Mode::Browse);assert!(m::current().state.fields.iter().all(|f|f.len==0));
     // Exercise production pointer hit regions at the installed 1024x768 geometry.
-    c.system=System{framebuffer_width:1024,framebuffer_height:768};c.app_window_x=160;c.app_window_y=140;c.app_window_width=760;c.app_window_height=650;
+    c.system=System{framebuffer_width:1024,framebuffer_height:768};c.app_window_x=160;c.app_window_y=140;c.app_window_width=760;c.app_window_height=650;c.task_manager_window=DesktopAppWindowState::new(160,140,760,650);
     click(&mut c,Target::Tab(Tab::Scheduled));click(&mut c,Target::New);type_field(&mut c,0,b"compact");type_field(&mut c,1,b"/home/default/compact.py");type_field(&mut c,2,b"*/15 * * * *");click(&mut c,Target::Save);
     assert_eq!(m::current().state.mode,Mode::Browse);let compact=runtime::with_runtime(|r|r.automation.find(Kind::Schedule,b"compact").unwrap().id).unwrap();
     click(&mut c,Target::Edit);type_field(&mut c,2,b"0 12 * * 1-5");click(&mut c,Target::Save);assert_eq!(runtime::with_runtime(|r|r.automation.get(compact).unwrap().trigger),Some(Trigger::Cron{schedule:runtime::automation::parse_cron(b"0 12 * * 1-5").unwrap()}));

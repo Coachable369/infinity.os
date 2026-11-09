@@ -32,11 +32,12 @@ impl ConsoleRuntime {
     }
     // ------------------------=
     // FUNC: task_automation_geometry
-    // DESC: Resolves the same content and toolbar rectangles used by the production painter.
+    // DESC: Resolves Task Manager's own content and toolbar, including when another application is focused.
     // ------------------=
     fn task_automation_geometry(&self)->(crate::ui::system_layout::DesktopAppWindowGeometry,usize) {
         let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
-        (layout.desktop_app_window_geometry(self.app_window_x,self.app_window_y,self.app_window_width,self.app_window_height,self.app_window_maximized),layout.scale().max(1))
+        let window=self.desktop_app_windows().2;
+        (layout.desktop_app_window_geometry(window.x,window.y,window.width,window.height,window.maximized),layout.scale().max(1))
     }
     // ------------------------=
     // FUNC: input_task_management

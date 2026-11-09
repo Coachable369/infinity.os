@@ -15157,8 +15157,12 @@ pub fn clock_tick() {
                 });
                 if top_live {crate::ui::command_terminal::mutate(|s|s.changed());}
             }
-            if metrics_due && task_manager_live && runtime.desktop_app==DesktopAppKind::TaskManager {
-                runtime.refresh_task_manager_output();
+            if metrics_due && task_manager_live {
+                if runtime.desktop_app==DesktopAppKind::TaskManager {
+                    runtime.refresh_task_manager_output();
+                } else {
+                    runtime.refresh_task_automation();
+                }
             }
             if next != runtime.desktop_clock || runtime.text_input_focused() || metrics_due {
                 runtime.desktop_clock = next;
