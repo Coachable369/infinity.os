@@ -50,7 +50,11 @@ impl BlockDevice for Disk {
 fn main() {
     std::fs::create_dir_all("build/tests").unwrap();
     let path = format!("build/tests/settings-reboot-{}.img", std::process::id());
-    let sectors = STORE_RELATIVE_LBA + 32768;
+    // Exhaust version slots without also exhausting content blocks: every
+    // historical checkpoint occupies a whole number of 4 KiB allocations.
+    let checkpoint_sectors = (IDENTITY_STATE_BYTES as u64).div_ceil(4096) * 8;
+    let sectors = STORE_RELATIVE_LBA + 32768
+        + storage::object::MAX_VERSIONS as u64 * checkpoint_sectors;
     let file = OpenOptions::new().create_new(true).read(true).write(true).open(&path).unwrap();
     file.set_len(sectors*512).unwrap();
     let mut store = ObjectStore::format(Disk(file, sectors), 0, sectors, [0x43;16]).unwrap();
