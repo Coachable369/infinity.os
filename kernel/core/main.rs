@@ -108,6 +108,16 @@ pub unsafe extern "C" fn memcmp(left: *const c_void, right: *const c_void, count
 // DESC: Implements the infinity kernel entry operation.
 // ------------------=
 pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
+    initialize_kernel(info);
+    drivers::input::run()
+}
+
+#[inline(never)]
+// ------------------------=
+// FUNC: initialize_kernel
+// DESC: Completes startup in a returning frame so construction temporaries cannot occupy the input loop's stack for the lifetime of the OS.
+// ------------------=
+fn initialize_kernel(info: *const BootInfo) {
     crash::register_boot_info(info);
     let valid = !info.is_null()
         && unsafe {
@@ -256,7 +266,6 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     }
     console::initialize(system::SystemSnapshot::new(info, devices));
     crash::set_phase(crash::CrashPhase::Input);
-    drivers::input::run()
 }
 
 // ------------------------=

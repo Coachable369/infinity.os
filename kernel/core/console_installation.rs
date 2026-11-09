@@ -4,6 +4,7 @@ use super::{ConsoleMode, InstallerStep, StorageError, StorageManager, RUNTIME, I
 // FUNC: poll
 // DESC: Executes an explicitly confirmed installation once, after its new scene is visible and all device/runtime input borrows ended.
 // ------------------=
+#[inline(never)]
 pub fn poll(mut service_input: impl FnMut()) {
     let plan = unsafe {
         let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() else { return; };

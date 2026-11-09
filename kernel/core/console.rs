@@ -14523,6 +14523,7 @@ pub fn reduced_motion() -> bool {
 // FUNC: poll_native_ai
 // DESC: Advances every service pass but coalesces background scene damage to 60 Hz without delaying the separate input drain.
 // ------------------=
+#[inline(never)]
 pub fn poll_native_ai() {
     let service_started = crate::runtime::ai::qwen::workers::clock_ns();
     let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
@@ -14794,6 +14795,7 @@ pub fn input_cursor_presentation(x: i32, y: i32) -> bool {
 // FUNC: initialize
 // DESC: Initializes initialize state.
 // ------------------=
+#[inline(never)]
 pub fn initialize(system: SystemSnapshot) {
     let mut runtime = ConsoleRuntime::new(system);
     crate::output_text(b"[console] subsystem online\n");

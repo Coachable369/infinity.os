@@ -340,4 +340,5 @@ fn cursor(output:&mut crate::runtime::console_execution::Bytes<{crate::runtime::
 // FUNC: poll_ssh_commands
 // DESC: Exposes the serialized shared shell pump to both native architecture input loops.
 // ------------------=
+#[inline(never)]
 pub fn poll_ssh_commands() { poll(); }
