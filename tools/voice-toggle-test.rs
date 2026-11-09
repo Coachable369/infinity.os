@@ -882,12 +882,18 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
         assert_eq!(TURNS.load(Ordering::SeqCst),turns);
         assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels);
+        let old_endpoint=conversation::timing_snapshot().at(conversation::timing::Milestone::Endpoint).unwrap();
+        NOW.fetch_add(1_000_000,Ordering::SeqCst);
         *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity change the subject".to_vec());
         MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
         MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
         assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
         assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+1);
         assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"change the subject");
+        let timing=conversation::timing_snapshot();
+        assert!(timing.at(conversation::timing::Milestone::Endpoint).unwrap()>old_endpoint);
+        assert!(timing.at(conversation::timing::Milestone::Transcript).is_some());
+        assert!(timing.at(conversation::timing::Milestone::Submitted).is_some());
         *TEST_TRANSCRIPT.lock().unwrap()=None;
         ECHO_PLAYBACK.store(false,Ordering::SeqCst);STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
         conversation::stop(owner);conversation::poll();

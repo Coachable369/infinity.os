@@ -4,6 +4,8 @@ static mut PENDING: bool = false;
 static mut TURN: u64 = 0;
 static mut MODEL: u32 = 0;
 static mut WORD: WakeWord = WakeWord::Infinity;
+static mut CAPTURE_STARTED: u64 = 0;
+static mut CAPTURE_ENDED: u64 = 0;
 
 // ------------------------=
 // FUNC: pending
@@ -15,7 +17,7 @@ pub(super) unsafe fn pending() -> bool { PENDING }
 // FUNC: clear
 // DESC: Revokes interruption context; the normal owner cancellation path retains worker buffers until acknowledgement.
 // ------------------=
-pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0; }
+pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0;CAPTURE_STARTED=0;CAPTURE_ENDED=0; }
 
 // ------------------------=
 // FUNC: poll
@@ -34,6 +36,8 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                     PENDING=(&*(&raw const UTTERANCE)).speech()
                         .is_some_and(|pcm|voice_input::submit(OWNER,RECOGNIZE_CAP,pcm).is_ok());
                     if PENDING {
+                        CAPTURE_STARTED=UTTERANCE_STARTED_AT;
+                        CAPTURE_ENDED=UTTERANCE_ENDED_AT;
                         TURN=CHAT_TURN;
                         MODEL=super::super::with_ai_runtime(|ai|ai.chat.selected_model());
                         WORD=configured_wake_word(OWNER);
@@ -81,6 +85,12 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 } else {
                     clear_captured_turn();
                     if queue_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
+                        let now=super::super::qwen::workers::clock_ns();
+                        (&mut *(&raw mut TURN_TIMING)).begin(CAPTURE_ENDED);
+                        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::CaptureStarted,CAPTURE_STARTED);
+                        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::RecognitionReady,now);
+                        (&mut *(&raw mut TURN_TIMING)).observe(Milestone::Transcript,now);
+                        TURN_TIMING_ACTIVE=true;
                         STATE=if submit_pending_transcript(){State::Thinking}else{State::Submitting};
                     } else {resume_captured_turn();}
                 }
