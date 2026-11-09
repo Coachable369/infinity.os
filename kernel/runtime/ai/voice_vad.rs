@@ -289,6 +289,14 @@ impl Utterance {
         }
     }
     // ------------------------=
+    // FUNC: interruption_probe
+    // DESC: Borrows confirmed in-progress speech for stop-only recognition without completing or clearing the utterance.
+    // ------------------=
+    pub fn interruption_probe(&self) -> Option<&[i16]> {
+        if self.state() != VadState::Speech || self.active_speech_samples() < RATE * 2 { return None; }
+        Some(&self.pcm[self.detector.segment.start..self.detector.samples()])
+    }
+    // ------------------------=
     // FUNC: speech
     // DESC: Borrows completed speech with its full endpoint tail; partial speech and failure never reach STT.
     // ------------------=

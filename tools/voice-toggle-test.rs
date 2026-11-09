@@ -916,6 +916,29 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         ECHO_PLAYBACK.store(false,Ordering::SeqCst);STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
         conversation::stop(owner);conversation::poll();
     }
+    assert!(conversation::start(owner)); recognize_voice(b"Infinity explain this");
+    conversation::poll(); OUTPUT.store(1,Ordering::SeqCst); ECHO_PLAYBACK.store(true,Ordering::SeqCst);
+    let turns=TURNS.load(Ordering::SeqCst);let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity stop".to_vec());
+    MICROPHONE.lock().unwrap().extend((0..voice_vad::RATE*2+640).map(|i|if i%2==0{2800}else{-2800}));
+    drain_microphone();conversation::poll();
+    assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+1,"stop must not wait for silence under continuous residual audio");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    assert_eq!(conversation::state().0,State::Listening);
+    *TEST_TRANSCRIPT.lock().unwrap()=None;ECHO_PLAYBACK.store(false,Ordering::SeqCst);
+    conversation::stop(owner);conversation::poll();
+    assert!(conversation::start(owner)); recognize_voice(b"Infinity explain this");
+    conversation::poll(); OUTPUT.store(1,Ordering::SeqCst); ECHO_PLAYBACK.store(true,Ordering::SeqCst);
+    let turns=TURNS.load(Ordering::SeqCst);
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity change the".to_vec());
+    MICROPHONE.lock().unwrap().extend((0..voice_vad::RATE*2+640).map(|i|if i%2==0{2800}else{-2800}));
+    drain_microphone();conversation::poll();
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns,"partial ordinary command must remain unsubmitted");
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity change the subject".to_vec());
+    MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns+1,"full command must survive its earlier probe");
+    *TEST_TRANSCRIPT.lock().unwrap()=None;ECHO_PLAYBACK.store(false,Ordering::SeqCst);
+    conversation::stop(owner);conversation::poll();
     for playing in [false, true] {
         assert!(conversation::start(owner));
         recognize_voice(b"Infinity explain this");

@@ -7,6 +7,8 @@ static mut WORD: WakeWord = WakeWord::Infinity;
 static mut CAPTURE_STARTED: u64 = 0;
 static mut CAPTURE_ENDED: u64 = 0;
 static mut INTERRUPTING: bool = false;
+static mut PROBE: bool = false;
+static mut PROBED_SAMPLES: usize = 0;
 
 // ------------------------=
 // FUNC: pending
@@ -26,17 +28,35 @@ pub(super) unsafe fn capturing() -> bool {
 // FUNC: clear
 // DESC: Revokes interruption context; the normal owner cancellation path retains worker buffers until acknowledgement.
 // ------------------=
-pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0;CAPTURE_STARTED=0;CAPTURE_ENDED=0;INTERRUPTING=false; }
+pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0;CAPTURE_STARTED=0;CAPTURE_ENDED=0;INTERRUPTING=false; PROBE=false; PROBED_SAMPLES=0; }
 
 // ------------------------=
 // FUNC: poll
 // DESC: Captures while generating or speaking, validates an addressed interruption, and cancels only its original conversational turn.
 // ------------------=
 pub(super) unsafe fn poll(playing: bool) -> bool {
-    if !matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {INTERRUPTING=false;}
+    if !matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {INTERRUPTING=false;PROBED_SAMPLES=0;}
     if !capture_frame(playing) { stop(OWNER); return true; }
     if playing && matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {INTERRUPTING=true;}
     if !PENDING {
+        let samples=(&*(&raw const UTTERANCE)).active_speech_samples();
+        if samples >= PROBED_SAMPLES.saturating_add(super::super::voice_vad::RATE) {
+            if let Some(pcm)=(&*(&raw const UTTERANCE)).interruption_probe() {
+                let available=super::super::with_ai_runtime(|ai| ai.chat.input().is_empty()
+                    && ai.chat.turn_id()==CHAT_TURN && ai.app_turn_owner().is_none());
+                if available {
+                    RECOGNIZE_CAP=grant(OWNER,CapabilityType::AudioInput,CAPTURE_CAPABILITY_SECONDS).unwrap_or(0);
+                    PENDING=voice_input::submit(OWNER,RECOGNIZE_CAP,pcm).is_ok();
+                    if PENDING {
+                        PROBE=true;PROBED_SAMPLES=samples;TURN=CHAT_TURN;
+                        MODEL=super::super::with_ai_runtime(|ai|ai.chat.selected_model());WORD=configured_wake_word(OWNER);
+                        trace(b"duplex stop probe queued before endpoint");
+                        return false;
+                    }
+                    retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;
+                }
+            }
+        }
         match (&*(&raw const UTTERANCE)).state() {
             VadState::Complete => {
                 // Never replace a typed edit or an independently owned app job.
@@ -47,6 +67,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                     PENDING=(&*(&raw const UTTERANCE)).speech()
                         .is_some_and(|pcm|voice_input::submit(OWNER,RECOGNIZE_CAP,pcm).is_ok());
                     if PENDING {
+                        PROBE=false;
                         CAPTURE_STARTED=UTTERANCE_STARTED_AT;
                         CAPTURE_ENDED=UTTERANCE_ENDED_AT;
                         TURN=CHAT_TURN;
@@ -76,9 +97,22 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                     stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
                 }
                 if valid && playback_transcript(transcript) {
-                    (&mut *(&raw mut TRANSCRIPT)).fill(0); clear_captured_turn();
+                    (&mut *(&raw mut TRANSCRIPT)).fill(0); if !PROBE {clear_captured_turn();} PROBE=false;
                     trace(b"duplex playback transcript discarded"); return false;
                 }
+            }
+            if PROBE {
+                PROBE=false;
+                if valid && result.ok().is_some_and(|n| {
+                    let input=&(&*(&raw const TRANSCRIPT))[..n];
+                    if let wake_word::Match::Command{start}=wake_word::classify(input,WORD) {
+                        stop_speech_command(&input[start..])
+                    } else { false }
+                }) {
+                    stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
+                }
+                (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                return false;
             }
             let addressed=result.ok().filter(|n|valid && *n!=0).map(|n|
                 (n,wake_word::classify(&(&*(&raw const TRANSCRIPT))[..n],WORD)));
@@ -127,7 +161,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
             clear_captured_turn();trace(b"duplex unaddressed audio discarded");
         }
         voice_input::InputState::Failed | voice_input::InputState::Cancelled => {
-            PENDING=false;retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;clear_captured_turn();
+            PENDING=false;retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;if !PROBE {clear_captured_turn();} PROBE=false;
             trace(b"duplex recognition failed; original reply retained");
         }
         _=>{}
