@@ -496,6 +496,50 @@ fn stop_speech_command(input: &[u8]) -> bool {
     matches!(&text[..length], b"stop" | b"please stop" | b"stop please" | b"stop speaking" | b"stop talking" | b"be quiet" | b"cancel response")
 }
 // ------------------------=
+// FUNC: reply_fragment
+// DESC: Matches whole normalized words against the current response, never arbitrary substrings.
+// ------------------=
+fn reply_fragment(input: &[u8], reply: &[u8]) -> bool {
+    let words = input.split(|b| !b.is_ascii_alphanumeric()).filter(|w| !w.is_empty());
+    let count = words.clone().count();
+    if count == 0 { return true; }
+    for start in 0..reply.len() {
+        if !reply[start].is_ascii_alphanumeric() || (start != 0 && reply[start-1].is_ascii_alphanumeric()) { continue; }
+        let mut candidate = reply[start..].split(|b| !b.is_ascii_alphanumeric()).filter(|w| !w.is_empty());
+        if words.clone().all(|word| candidate.next().is_some_and(|other| word.eq_ignore_ascii_case(other))) { return true; }
+    }
+    false
+}
+// ------------------------=
+// FUNC: playback_transcript
+// DESC: Rejects multiword recognition of the current reply during its bounded follow-up window.
+// ------------------=
+unsafe fn playback_transcript(input: &[u8]) -> bool {
+    let active = matches!(STATE, State::Thinking | State::Speaking)
+        || (WAKE_ARMED && super::qwen::workers::clock_ns() < WAKE_ARMED_UNTIL)
+        || RECOGNITION_WAKE_AUTHORIZED;
+    active && input.split(|b| !b.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).count() >= 2
+        && reply_fragment(input, &(&*(&raw const REPLY))[..REPLY_LENGTH])
+}
+// ------------------------=
+// FUNC: addressed_stop_with_echo
+// DESC: Accepts a configured wake and stop surrounded only by known reply fragments; rejects quoted playback and unrelated prefixes.
+// ------------------=
+fn addressed_stop_with_echo(input: &[u8], reply: &[u8], word: WakeWord) -> bool {
+    if reply_fragment(input, reply) { return false; }
+    for offset in 0..input.len() {
+        if offset != 0 && input[offset-1].is_ascii_alphanumeric() { continue; }
+        let wake_word::Match::Command { start } = wake_word::classify(&input[offset..],word) else { continue; };
+        if !reply_fragment(&input[..offset], reply) { continue; }
+        let start = offset + start;
+        for end in start+1..=input.len() {
+            if end < input.len() && input[end].is_ascii_alphanumeric() { continue; }
+            if stop_speech_command(&input[start..end]) && reply_fragment(&input[end..],reply) { return true; }
+        }
+    }
+    false
+}
+// ------------------------=
 // FUNC: stop_spoken_reply
 // DESC: Cancels this conversation without submitting inference or disabling microphone capture.
 // ------------------=
@@ -1858,6 +1902,16 @@ pub fn poll() -> bool {
                         resume_captured_turn();
                         return true;
                     }
+                    if let Ok(n) = result {
+                        let transcript=&(&*(&raw const TRANSCRIPT))[..n];
+                        if addressed_stop_with_echo(transcript, &(&*(&raw const REPLY))[..REPLY_LENGTH], configured_wake_word(OWNER)) {
+                            stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
+                        }
+                        if playback_transcript(transcript) {
+                            (&mut *(&raw mut TRANSCRIPT)).fill(0); clear_captured_turn(); resume_captured_turn();
+                            trace(b"recognized playback fragment discarded"); return true;
+                        }
+                    }
                     let mut command = None;
                     let mut wake_only = false;
                     let mut unaddressed = false;
@@ -2087,4 +2141,22 @@ pub fn poll() -> bool {
 fn speech_stop_requires_a_complete_control_request() {
     for command in [b"STOP!" as &[u8], b"please stop.", b"Stop speaking", b"stop talking"] { assert!(stop_speech_command(command)); }
     for command in [b"do not stop" as &[u8], b"don't stop", b"what does stop mean?", b"stop the browser", b"stopwatch"] { assert!(!stop_speech_command(command)); }
+}
+
+#[cfg(test)]
+#[test]
+// ------------------------=
+// FUNC: mixed_stop_and_playback_fragments
+// DESC: Exercises echo-prefixed and suffixed stop requests while rejecting spoken instructions and unrelated speech.
+// ------------------=
+fn mixed_stop_and_playback_fragments() {
+    let reply=b"Here is the next phrase of the response. Say Infinity stop to interrupt.";
+    for input in [b"the next phrase Infinity stop" as &[u8],b"Infinity stop the response",b"the next phrase Infinity please stop the response",b"Infinity STOP!"] {
+        assert!(addressed_stop_with_echo(input,b"Here is the next phrase of the response.",WakeWord::Infinity),"{:?}",input);
+    }
+    for input in [b"Say Infinity stop to interrupt" as &[u8],b"don't Infinity stop",b"Infinity stop the browser",b"Computer stop",b"Infinity what does stop mean"] {
+        assert!(!addressed_stop_with_echo(input,reply,WakeWord::Infinity));
+    }
+    assert!(reply_fragment(b"NEXT phrase of the response!",reply));
+    assert!(!reply_fragment(b"next phrase of the browser",reply));
 }

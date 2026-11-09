@@ -923,7 +923,7 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         else { STREAMING.store(true,Ordering::SeqCst); VISIBLE.store(0,Ordering::SeqCst); }
         let turns=TURNS.load(Ordering::SeqCst);
         let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
-        *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity stop.".to_vec());
+        *TEST_TRANSCRIPT.lock().unwrap()=Some(if playing {b"New response Infinity stop.".to_vec()} else {b"Infinity stop.".to_vec()});
         MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
         MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
         assert_eq!(TURNS.load(Ordering::SeqCst),turns);
@@ -953,6 +953,8 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     conversation::poll();OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);assert!(conversation::wake_armed());
     let turns=TURNS.load(Ordering::SeqCst);
+    recognize_voice(b"New response.");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns,"spoken response must not become a follow-up prompt");
     recognize_voice(b"tell me more");
     assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
     assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"tell me more");

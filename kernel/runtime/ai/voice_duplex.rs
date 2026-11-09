@@ -70,6 +70,16 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 && super::super::with_ai_runtime(|ai|ai.chat.turn_id()==TURN
                     && ai.chat.selected_model()==MODEL && ai.chat.input().is_empty()
                     && ai.app_turn_owner().is_none());
+            if let Ok(n) = result {
+                let transcript=&(&*(&raw const TRANSCRIPT))[..n];
+                if valid && addressed_stop_with_echo(transcript, &(&*(&raw const REPLY))[..REPLY_LENGTH],WORD) {
+                    stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
+                }
+                if valid && playback_transcript(transcript) {
+                    (&mut *(&raw mut TRANSCRIPT)).fill(0); clear_captured_turn();
+                    trace(b"duplex playback transcript discarded"); return false;
+                }
+            }
             let addressed=result.ok().filter(|n|valid && *n!=0).map(|n|
                 (n,wake_word::classify(&(&*(&raw const TRANSCRIPT))[..n],WORD)));
             let action=match addressed {
