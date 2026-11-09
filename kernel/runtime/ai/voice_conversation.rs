@@ -41,6 +41,7 @@ pub enum State {
 }
 static mut STATE: State = State::Off;
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
+static mut LOGIN_RESET_PENDING: bool = false;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 static mut LOGIN_USER:Option<[u8;16]>=None;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -814,7 +815,7 @@ pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Optio
     }
     // Login capture shuts down asynchronously. Its cancellation is not a mute
     // request for the newly authenticated desktop session.
-    if unsafe { STATE == State::Stopping && OWNER != owner } {
+    if unsafe { STATE == State::Stopping && (OWNER != owner || LOGIN_RESET_PENDING) } {
         *deadline = now.saturating_add(250_000_000);
         return None;
     }
@@ -822,6 +823,7 @@ pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Optio
     if !matches!(state().0, State::Off | State::Failed) {
         return None;
     }
+    unsafe { LOGIN_RESET_PENDING = false; }
     let started = start(owner);
     if !started && state().0 == State::Failed && active_user(owner).is_some() {
         *deadline = now.saturating_add(5_000_000_000);
@@ -836,6 +838,27 @@ pub fn autostart(owner: SecurityIdentity, deadline: &mut u64, now: u64) -> Optio
         return None;
     }
     Some(started)
+}
+
+// ------------------------=
+// FUNC: reset_for_login
+// DESC: Drains the previous voice session at authenticated entry, clearing transient input without racing resident speech workers or changing user preferences.
+// ------------------=
+pub fn reset_for_login(owner: SecurityIdentity) -> bool {
+    if active_user(owner).is_none() { return false; }
+    unsafe {
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        { LOGIN_USER = None; LOGIN_RETRY_AT = 0; }
+        // Even an idle controller can retain a partial composer or completed
+        // output. Use the normal cancellation path, not a native engine reset
+        // while an AP may still be accessing its model and scratch buffers.
+        if STATE == State::Off { STATE = State::Starting; }
+        let previous = OWNER;
+        stop_session(previous, true, true);
+        super::with_ai_runtime(|ai| ai.chat.clear_input());
+        LOGIN_RESET_PENDING = true;
+        true
+    }
 }
 // ------------------------=
 // FUNC: toggle

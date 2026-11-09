@@ -288,6 +288,15 @@ mod chat {
             crate::COMPOSER.lock().unwrap().pop();crate::INPUT_LENGTH.fetch_sub(1,crate::Ordering::SeqCst);true
         }
         // ------------------------=
+        // FUNC: clear_input
+        // DESC: Clears the fixture composer at a new authenticated session boundary.
+        // ------------------=
+        pub fn clear_input(&mut self){
+            self.input.clear();
+            crate::COMPOSER.lock().unwrap().clear();
+            crate::INPUT_LENGTH.store(0,crate::Ordering::SeqCst);
+        }
+        // ------------------------=
         // FUNC: set_input_cursor
         // DESC: Models the fixture's end-only composer caret used when clearing an unchanged owned prompt.
         // ------------------=
@@ -833,8 +842,48 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     calibrated_instruction_tail_tests(owner);
     recognition_failure_recovery_tests(owner);
     desktop_autostart_handoff_tests(owner);
+    login_reset_tests(owner);
     empty_capture_and_calibration_contention_tests(owner);
     startup_ambient_recovery_tests(owner);
+}
+
+// ------------------------=
+// FUNC: login_reset_tests
+// DESC: Verifies authenticated login clears old input, drains same-owner work before restarting, and rejects an inactive session.
+// ------------------=
+fn login_reset_tests(owner:runtime::execution::SecurityIdentity) {
+    use conversation::State;
+    assert!(conversation::start(owner));
+    with_ai_runtime(|ai| {for byte in b"stale input" {assert!(ai.chat.push_input(*byte));}});
+    BUSY.store(true,Ordering::SeqCst);
+    assert!(conversation::reset_for_login(owner));
+    assert!(COMPOSER.lock().unwrap().is_empty());
+    assert_eq!(conversation::state().0,State::Stopping);
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    let mut deadline=0;
+    assert_eq!(conversation::autostart(owner,&mut deadline,10),None);
+    assert_ne!(deadline,u64::MAX);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    BUSY.store(false,Ordering::SeqCst);
+    conversation::poll();
+    let due=deadline;
+    assert_eq!(conversation::autostart(owner,&mut deadline,due),Some(true));
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
+    assert!(conversation::stop(owner));
+    conversation::poll();
+    // Fresh installation can reach login with no prior listening session.
+    assert!(conversation::reset_for_login(owner));
+    assert_eq!(conversation::state().0,State::Stopping);
+    conversation::poll();
+    let mut deadline=0;
+    assert_eq!(conversation::autostart(owner,&mut deadline,10),Some(true));
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+2);
+    assert!(conversation::stop(owner));
+    conversation::poll();
+    ACTIVE.store(false,Ordering::SeqCst);
+    assert!(!conversation::reset_for_login(owner));
+    assert_eq!(conversation::state().0,State::Off);
+    ACTIVE.store(true,Ordering::SeqCst);
 }
 
 // ------------------------=

@@ -28,6 +28,10 @@ impl ConsoleRuntime {
     // DESC: Arms the one-shot greeting only on authenticated entry, never when returning from a desktop app.
     // ------------------=
     pub(super) fn schedule_login_welcome(&mut self){
+        #[cfg(target_os="none")]
+        crate::runtime::ai::voice_conversation::reset_for_login(
+            crate::runtime::execution::SecurityIdentity(self.current_session.0));
+        self.voice_autostart_after_ns=crate::runtime::ai::qwen::workers::clock_ns();
         self.login_welcome=1;self.login_welcome_retry_ns=0;self.login_welcome_request=0;
         self.login_welcome_deadline=crate::runtime::ai::qwen::workers::clock_ns().saturating_add(12_000_000_000);
     }
