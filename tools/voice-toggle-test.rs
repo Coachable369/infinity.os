@@ -858,7 +858,10 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         assert!(conversation::start(owner));
         recognize_voice(b"Infinity explain this");
         assert_eq!(conversation::phase(),conversation::Phase::Generating);
-        if playing {conversation::poll();OUTPUT.store(1,Ordering::SeqCst);}
+        if playing {
+            conversation::poll();OUTPUT.store(1,Ordering::SeqCst);
+            assert!(conversation::poll(),"playback phase must invalidate the widget even without a coarse state change");
+        }
         else {STREAMING.store(true,Ordering::SeqCst);VISIBLE.store(0,Ordering::SeqCst);}
         let turns=TURNS.load(Ordering::SeqCst);
         let cancels=CANCEL_CALLS.load(Ordering::SeqCst);

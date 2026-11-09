@@ -1608,13 +1608,15 @@ unsafe fn capture_frame(duplex: bool) -> bool {
 // ------------------=
 pub fn poll() -> bool {
     unsafe {
+        let previous_phase=phase();
+        let phase_changed=LAST_PHASE!=Some(previous_phase);
         record_phase();
         let previous = STATE;
         let was_waiting_for_pause = waiting_for_pause();
         let was_calibrating = calibrating();
         let mut presentation_changed = synchronize_visible_reply();
         if matches!(STATE, State::Off | State::Failed) {
-            return false;
+            return phase_changed;
         }
         if STATE != State::Stopping && !active_owner(OWNER) {
             trace(b"conversation stopped inactive owner");
@@ -2030,6 +2032,8 @@ pub fn poll() -> bool {
         report_timing();
         record_phase();
         STATE != previous
+            || phase_changed
+            || phase()!=previous_phase
             || presentation_changed
             || was_waiting_for_pause != waiting_for_pause()
             || was_calibrating != calibrating()
