@@ -489,6 +489,13 @@ pub fn playback_progress(owner: SecurityIdentity) -> Option<PlaybackProgress> {
     }
 }
 // ------------------------=
+// FUNC: playback_active
+// DESC: Reports owner-bound audible playback independently of a concurrent lookahead synthesis job.
+// ------------------=
+pub fn playback_active(owner: SecurityIdentity) -> bool {
+    unsafe { PLAYING && OWNER == owner }
+}
+// ------------------------=
 // FUNC: echo_reference
 // DESC: Copies recent own-session DMA audio at the microphone rate; only the desktop owner reads immutable playing storage.
 // ------------------=

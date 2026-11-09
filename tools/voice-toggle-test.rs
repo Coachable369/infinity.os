@@ -25,6 +25,7 @@ static HOLD_RECOGNITION: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
 static OUTPUT_REQUEST: AtomicUsize = AtomicUsize::new(0);
 static ECHO_PLAYBACK: AtomicBool = AtomicBool::new(false);
+static LOOKAHEAD_PLAYING: AtomicBool = AtomicBool::new(false);
 static OUTPUT_STOPS: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_FRAMES: AtomicUsize = AtomicUsize::new(0);
 static PLAYBACK_SEQUENCE: AtomicUsize = AtomicUsize::new(1);
@@ -457,6 +458,13 @@ mod voice_input {
 }
 mod voice_output {
     // ------------------------=
+    // FUNC: playback_active
+    // DESC: Models DMA continuing while the next phrase is being synthesized.
+    // ------------------=
+    pub fn playback_active(_:crate::runtime::execution::SecurityIdentity)->bool {
+        crate::OUTPUT.load(crate::Ordering::SeqCst)==1 || crate::LOOKAHEAD_PLAYING.load(crate::Ordering::SeqCst)
+    }
+    // ------------------------=
     // FUNC: echo_reference
     // DESC: Supplies either headphone isolation or a deterministic real PCM echo reference for background narration tests.
     // ------------------=
@@ -854,13 +862,15 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
 // ------------------=
 fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     use conversation::State;
-    for playing in [false,true] {
+    for mode in 0..3 {
+        let playing=mode!=0;
         assert!(conversation::start(owner));
         recognize_voice(b"Infinity explain this");
         assert_eq!(conversation::phase(),conversation::Phase::Generating);
         if playing {
             conversation::poll();OUTPUT.store(1,Ordering::SeqCst);
             assert!(conversation::poll(),"playback phase must invalidate the widget even without a coarse state change");
+            if mode==2 {LOOKAHEAD_PLAYING.store(true,Ordering::SeqCst);OUTPUT.store(3,Ordering::SeqCst);}
         }
         else {STREAMING.store(true,Ordering::SeqCst);VISIBLE.store(0,Ordering::SeqCst);}
         let turns=TURNS.load(Ordering::SeqCst);
@@ -870,7 +880,7 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         if playing {
             // No reference cannot safely distinguish room input from output.
             ECHO_PLAYBACK.store(false,Ordering::SeqCst);
-            NOW.fetch_add(250_000_000,Ordering::SeqCst);
+            NOW.fetch_add(900_000_000,Ordering::SeqCst);
             MICROPHONE.lock().unwrap().extend(microphone_phrase(2100));drain_microphone();
             assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests);
             ECHO_PLAYBACK.store(true,Ordering::SeqCst);
@@ -886,6 +896,13 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         NOW.fetch_add(1_000_000,Ordering::SeqCst);
         *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity change the subject".to_vec());
         MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
+        if mode==1 {
+            drain_microphone();
+            OUTPUT.store(2,Ordering::SeqCst);
+            conversation::poll();
+            assert_eq!(conversation::state().0,State::Thinking,"reply completion must retain the interruption onset");
+            assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        }
         MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
         assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
         assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+1);
@@ -895,9 +912,26 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
         assert!(timing.at(conversation::timing::Milestone::Transcript).is_some());
         assert!(timing.at(conversation::timing::Milestone::Submitted).is_some());
         *TEST_TRANSCRIPT.lock().unwrap()=None;
+        LOOKAHEAD_PLAYING.store(false,Ordering::SeqCst);
         ECHO_PLAYBACK.store(false,Ordering::SeqCst);STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
         conversation::stop(owner);conversation::poll();
     }
+    assert!(conversation::start(owner));recognize_voice(b"Infinity check speaker tail");
+    conversation::poll();OUTPUT.store(1,Ordering::SeqCst);ECHO_PLAYBACK.store(true,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend([0;640]);drain_microphone();
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    let requests=RECOGNITION_REQUESTS.lock().unwrap().len();
+    let turns=TURNS.load(Ordering::SeqCst);
+    NOW.fetch_add(400_000_000,Ordering::SeqCst);
+    MICROPHONE.lock().unwrap().extend(microphone_phrase(2100));drain_microphone();
+    assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests,"delayed speaker tail must not authorize a follow-up");
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"tell me more".to_vec());
+    MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
+    MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns+1,"independent near-end speech must survive tail suppression");
+    ECHO_PLAYBACK.store(false,Ordering::SeqCst);*TEST_TRANSCRIPT.lock().unwrap()=None;
+    conversation::stop(owner);conversation::poll();
     assert!(conversation::start(owner));recognize_voice(b"Infinity hello");
     conversation::poll();OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);assert!(conversation::wake_armed());

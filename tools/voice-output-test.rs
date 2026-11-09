@@ -690,6 +690,8 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
         assert!(submit_progressive_span(owner,1,b"Rewind.",0,7,true).is_err());
         let immutable=BUFFERED_PCM.lock().unwrap().clone();
         submit_progressive_span(owner,1,b"Second.",6,13,true).unwrap();
+        assert!(playback_active(owner),"lookahead must not disable playback echo cancellation");
+        assert!(!playback_active(runtime::execution::SecurityIdentity([2;16])));
         assert!(!can_prefetch());
         assert!(submit_progressive_span(owner,1,b"Extra.",13,19,true).is_err());
         if slow {
@@ -701,6 +703,7 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
             assert_eq!(status().state,S::Queued);
             assert_eq!(PLAYED_PCM.lock().unwrap().len(),batches+1);
             assert!(!PLAYING.load(Ordering::SeqCst));
+            assert!(!playback_active(owner));
             assert!(!can_prefetch());
         }
         unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }

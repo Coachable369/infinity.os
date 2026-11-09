@@ -6,6 +6,7 @@ static mut MODEL: u32 = 0;
 static mut WORD: WakeWord = WakeWord::Infinity;
 static mut CAPTURE_STARTED: u64 = 0;
 static mut CAPTURE_ENDED: u64 = 0;
+static mut INTERRUPTING: bool = false;
 
 // ------------------------=
 // FUNC: pending
@@ -14,17 +15,27 @@ static mut CAPTURE_ENDED: u64 = 0;
 pub(super) unsafe fn pending() -> bool { PENDING }
 
 // ------------------------=
+// FUNC: capturing
+// DESC: Keeps an interruption's onset and wake prefix across the end of the spoken reply.
+// ------------------=
+pub(super) unsafe fn capturing() -> bool {
+    INTERRUPTING && matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete)
+}
+
+// ------------------------=
 // FUNC: clear
 // DESC: Revokes interruption context; the normal owner cancellation path retains worker buffers until acknowledgement.
 // ------------------=
-pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0;CAPTURE_STARTED=0;CAPTURE_ENDED=0; }
+pub(super) unsafe fn clear() { PENDING=false; TURN=0; MODEL=0;CAPTURE_STARTED=0;CAPTURE_ENDED=0;INTERRUPTING=false; }
 
 // ------------------------=
 // FUNC: poll
 // DESC: Captures while generating or speaking, validates an addressed interruption, and cancels only its original conversational turn.
 // ------------------=
 pub(super) unsafe fn poll(playing: bool) -> bool {
+    if !matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {INTERRUPTING=false;}
     if !capture_frame(playing) { stop(OWNER); return true; }
+    if playing && matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {INTERRUPTING=true;}
     if !PENDING {
         match (&*(&raw const UTTERANCE)).state() {
             VadState::Complete => {

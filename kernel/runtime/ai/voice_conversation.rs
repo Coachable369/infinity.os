@@ -56,6 +56,7 @@ pub fn phase() -> Phase { unsafe {
         State::Off=>Phase::Off,State::Starting=>Phase::Preparing,State::Failed=>Phase::Failed,State::Stopping=>Phase::Stopping,
         State::Listening=>if calibrating(){Phase::Calibrating}else if matches!((&*(&raw const UTTERANCE)).state(),VadState::Speech|VadState::Complete){Phase::Capturing}else{Phase::Listening},
         State::Recognizing=>Phase::Recognizing,State::Submitting=>Phase::Submitting,
+        State::Thinking|State::Speaking if voice_output::playback_active(OWNER)=>Phase::Speaking,
         State::Thinking|State::Speaking=>match voice_output::status().state {
             voice_output::OutputState::Queued=>Phase::SpeechQueued,
             voice_output::OutputState::Synthesizing=>Phase::Synthesizing,
@@ -1021,7 +1022,7 @@ unsafe fn recover_reply() {
 // DESC: Gives a continuous microphone back to the user when a completed acknowledgment is waiting behind independently owned workflow narration.
 // ------------------=
 unsafe fn resume_background_listening() -> bool {
-    if duplex::pending() || !CONTINUOUS || !matches!(STATE, State::Thinking | State::Speaking)
+    if duplex::pending() || duplex::capturing() || !CONTINUOUS || !matches!(STATE, State::Thinking | State::Speaking)
         || !super::with_ai_runtime(|ai| ai.chat.turn_id() == CHAT_TURN
             && ai.chat.generation_state == GenerationState::Complete)
         || voice_output::request_id(OWNER) == Some(REPLY_OUTPUT_REQUEST)
@@ -1103,7 +1104,7 @@ unsafe fn speak_next() -> bool {
         if CONTINUOUS {
             // Finish an in-flight interruption before changing its capture
             // context or releasing its recognition authority.
-            if duplex::pending() {STATE=State::Thinking;return true;}
+            if duplex::pending() || duplex::capturing() {STATE=State::Thinking;return true;}
             if voice_input::prepared() {
                 let listening=listen();
                 if listening && STATE==State::Listening {arm_followup();}
@@ -1489,7 +1490,8 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         return false;
     }
     if duplex && voice_output::echo_reference(OWNER, &mut *(&raw mut ECHO)) {
-        ECHO_VALID_UNTIL = now + 200_000_000;
+        // Include queued microphone frames and room decay after a spoken span.
+        ECHO_VALID_UNTIL = now.saturating_add(800_000_000);
     }
     // Without a playback reference, speaker audio cannot safely authorize a
     // wake. Drain this chunk while keeping DMA and the active reply alive.
@@ -1664,7 +1666,7 @@ pub fn poll() -> bool {
         presentation_changed |= resume_background_listening();
         // Recognition retains one following utterance. During a reply a
         // separate bounded recognizer admits only an addressed interruption.
-        let narration_playing = voice_output::status().state == voice_output::OutputState::Speaking;
+        let narration_playing = voice_output::playback_active(OWNER);
         if STATE == State::Recognizing && !capture_frame(narration_playing) {
             trace(b"conversation stopped recognition capture");
             stop(OWNER);
