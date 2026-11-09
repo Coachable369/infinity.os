@@ -70,7 +70,13 @@ rm -f "build/$arch/installed-kernel.o" \
       "build/$arch/libinstalled-kernel.a" \
       "build/$arch/installed-esp.img" \
       "build/browser-payload/$arch/manifest.rs"
-make build/$arch/$boot "$installed_kernel" build/$arch/installed-esp.img
+# Allow an explicitly named, validation-only prerequisite change to reuse the
+# existing toolchain while all kernel and actual compiler sources stay tracked.
+set --
+if test -n "${INFINITY_MAKE_OLD_FILE:-}"; then
+    set -- -o "$INFINITY_MAKE_OLD_FILE"
+fi
+make "$@" build/$arch/$boot "$installed_kernel" build/$arch/installed-esp.img
 CARGO_TARGET_DIR=build/behavior-harness cargo build --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack
 mkdir -p ${payload_build}/installed/EFI/INFINITY/PAYLOAD ${payload_build}/live/EFI/BOOT ${payload_build}/live/EFI/INFINITY/PAYLOAD ${payload_build}/iso
 mkdir -p ${payload_build}/iso/EFI/BOOT
