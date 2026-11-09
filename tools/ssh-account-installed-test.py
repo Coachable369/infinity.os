@@ -1,4 +1,4 @@
-"""Generated account-key acceptance on unchanged fresh installed ARM media.
+"""Generated account-key acceptance on unchanged fresh installed ARM or x86 media.
 
 No full kernel byte comparisons. Native key objects are read from a stopped
 disposable guest solely to supply standard OpenSSH client fixtures.
@@ -118,7 +118,7 @@ def edit_source(guest, work, path, source, label):
         # order even when SSH stdin EOF immediately follows the same packet.
         payload = b"\x01" + source + b"\x13\x18"
         assert len(payload) < 512
-        stdout, stderr = process.communicate(payload, timeout=45)
+        stdout, stderr = process.communicate(payload, timeout=120 if guest.arch == "x86_64" else 45)
         received.extend(stdout)
         assert len(received) <= 2_000_000
         assert process.returncode == 0 and not stderr, {"exit": process.returncode, "stderr": stderr}
@@ -152,7 +152,7 @@ def remote_python_and_editor(guest, work):
     edited = edit_source(guest, work, path, source, "ssh-editor-save")
     before = native.read(guest, "INFINITY_PYTHON_SNAPSHOT", 10)
     response = subprocess.run(account_client(guest, work, "ms9node01", "python " + path),
-                              input=b"37\n5\n", capture_output=True, timeout=90)
+                              input=b"37\n5\n", capture_output=True, timeout=300 if guest.arch == "x86_64" else 90)
     (work / "ssh-python-stdout.bin").write_bytes(response.stdout)
     (work / "ssh-python-stderr.bin").write_bytes(response.stderr)
     assert response.returncode == 42, {"exit": response.returncode, "stderr": response.stderr}
@@ -174,7 +174,7 @@ def remote_python_and_editor(guest, work):
 # ------------------=
 def verify_saved_source(guest, evidence, expected):
     assert guest.process is None
-    exported = native.export_generated_artifacts(guest, None, "aarch64")
+    exported = native.export_generated_artifacts(guest, None, guest.arch)
     rows = [item for item in exported["artifacts"]
             if bytes.fromhex(item["path_hex"]).decode("ascii") == evidence["path"]]
     assert len(rows) == 2 and sum(bool(item["current"]) for item in rows) == 1
@@ -201,7 +201,8 @@ def remote_password_input(guest, work):
         handle = "sshpipe" if index == 0 else "sshpipe" + str(index)
         response = subprocess.run(account_client(guest, work, "ms9node01",
                                   "user create handle=" + handle + " display-name=" + handle),
-                                  input=password + b"\n" + password + b"\n", capture_output=True, timeout=45)
+                                  input=password + b"\n" + password + b"\n", capture_output=True,
+                                  timeout=120 if guest.arch == "x86_64" else 45)
         assert password not in response.stdout and password not in response.stderr
         (work / (handle + "-create-stdout.txt")).write_bytes(response.stdout)
         (work / (handle + "-create-stderr.txt")).write_bytes(response.stderr)
@@ -230,7 +231,8 @@ def remote_ai_detached(guest, work):
         empty[handle] = response.stdout
     before = ssh.console_state(guest)
     response = subprocess.run(account_client(guest, work, handles[0],
-        "ai ask Explain why backups should be tested in one short sentence."), capture_output=True, timeout=180)
+        "ai ask Explain why backups should be tested in one short sentence."), capture_output=True,
+        timeout=900 if guest.arch == "x86_64" else 180)
     assert response.returncode == 0 and not response.stderr and response.stdout, (response.returncode, response.stderr)
     assert len(response.stdout) > len(empty[handles[0]])
     (work / "ssh-private-ai-response.bin").write_bytes(response.stdout)
@@ -358,6 +360,7 @@ def remote_management(guest, work):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("work", type=Path)
+    parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
     parser.add_argument("--iso", type=Path, required=True)
     parser.add_argument("--resume", action="store_true", help="Resume only this harness's unchanged freshly installed disk")
     args = parser.parse_args()
@@ -367,22 +370,25 @@ def main():
     artifacts = work / "artifacts"
     if args.resume:
         previous = json.loads((work / "result.json").read_text())
-        assert previous["architecture"] == "aarch64" and previous["detached_boots"] and not previous["passed"]
+        assert previous["architecture"] == args.arch and previous["detached_boots"] and not previous["passed"]
         packaged = previous["packaged"]
     else:
         artifacts.mkdir(parents=True)
         subprocess.run(["cp", "-c", str(media), str(artifacts / "installer.iso")], check=True)
-        packaged = native.desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, "aarch64")
+        packaged = native.desktop.extract_media_kernels(artifacts / "installer.iso", artifacts, args.arch)
     prepare_helpers(artifacts)
-    guest = ssh.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=args.resume, width=1920, height=1080, memory_mb=20480)
-    guest.arch, guest.acceleration = "aarch64", "hvf"
+    guest = ssh.Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=args.resume,
+                      width=1920, height=1080, memory_mb=20480)
+    guest.arch, guest.acceleration = args.arch, "hvf" if args.arch == "aarch64" else "tcg"
     guest.patched, guest.detached_boots = True, []
     guest.output_delimiter_failures = []
-    guest.boot_timeout_seconds, guest.install_timeout_seconds = 600, 1800
+    guest.boot_timeout_seconds = 1200 if args.arch == "x86_64" else 600
+    guest.install_timeout_seconds = 3600 if args.arch == "x86_64" else 1800
     with socket.socket() as reserve:
         reserve.bind(("127.0.0.1", 0))
         guest.ssh_port = reserve.getsockname()[1]
-    result = {"passed": False, "architecture": "aarch64", "memory_mib": guest.memory_mb, "media": str(media), "packaged": packaged,
+    result = {"passed": False, "architecture": args.arch, "acceleration": guest.acceleration,
+              "memory_mib": guest.memory_mb, "media": str(media), "packaged": packaged,
               "full_kernel_comparison": False, "fresh_install": not args.resume,
               "reused_private_disk": args.resume}
     try:
