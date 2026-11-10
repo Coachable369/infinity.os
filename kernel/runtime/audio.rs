@@ -542,13 +542,18 @@ impl<const N: usize> EchoTail<N> {
     }
     // ------------------------=
     // FUNC: copy
-    // DESC: Copies an unexpired matching-session tail without extending its lifetime.
+    // DESC: Advances the matching-session 16-kHz tail with elapsed silence instead of replaying its last samples.
     // ------------------=
     pub fn copy(&mut self, owner:SecurityIdentity, generation:u64, now:u64, output:&mut[i16]) -> bool {
         if now >= self.until { self.clear(); return false; }
         if owner != self.owner || generation != self.generation { return false; }
         output.fill(0);
         let count=output.len().min(N); let offset=output.len()-count;
-        output[offset..].copy_from_slice(&self.pcm[N-count..]); true
+        let elapsed = now.saturating_sub(self.until.saturating_sub(800_000_000));
+        let advance = (elapsed.saturating_mul(16_000) / 1_000_000_000).min(N as u64) as usize;
+        for (index, sample) in output[offset..].iter_mut().enumerate() {
+            if let Some(value) = self.pcm.get(N-count+index+advance) { *sample = *value; }
+        }
+        true
     }
 }

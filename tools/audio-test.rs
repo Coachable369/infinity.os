@@ -58,8 +58,14 @@ fn main() {
     tail.retain(&stream, owner, 9, 4, 16_000, 100);
     assert_eq!(stream.erase_pcm(), 8);
     let mut final_reference=[0;4];
-    assert!(tail.copy(owner,9,400_000_100,&mut final_reference));
+    assert!(tail.copy(owner,9,100,&mut final_reference));
     assert_eq!(final_reference,[20,30,40,50]);
+    assert!(tail.copy(owner,9,62_600,&mut final_reference));
+    assert_eq!(final_reference,[30,40,50,0]);
+    assert!(tail.copy(owner,9,125_100,&mut final_reference));
+    assert_eq!(final_reference,[40,50,0,0]);
+    assert!(tail.copy(owner,9,400_000_100,&mut final_reference));
+    assert_eq!(final_reference,[0;4]);
     assert!(!tail.copy(SecurityIdentity([8;16]),9,400_000_100,&mut final_reference));
     assert!(!tail.copy(owner,10,400_000_100,&mut final_reference));
     assert!(!tail.copy(owner,9,800_000_100,&mut final_reference));

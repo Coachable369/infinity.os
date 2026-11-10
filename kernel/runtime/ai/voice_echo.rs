@@ -3,7 +3,7 @@
 
 // ------------------------=
 // FUNC: correlation_score
-// DESC: Scores one bounded echo lag with subsampling while keeping full-range PCM arithmetic inside i64.
+// DESC: Scores one echo lag with subsampling and overflow-safe full-range PCM arithmetic.
 // ------------------=
 fn correlation_score(frame: &[i16], reference: &[i16], offset: usize, stride: usize) -> i64 {
     let mut dot = 0i64;
@@ -18,7 +18,11 @@ fn correlation_score(frame: &[i16], reference: &[i16], offset: usize, stride: us
         dot += mic * speaker;
         power += speaker * speaker;
     }
-    dot * dot / power.max(1)
+    if let Some(square) = dot.checked_mul(dot) {
+        square / power.max(1)
+    } else {
+        ((i128::from(dot) * i128::from(dot)) / i128::from(power.max(1))) as i64
+    }
 }
 
 // ------------------------=
@@ -26,18 +30,27 @@ fn correlation_score(frame: &[i16], reference: &[i16], offset: usize, stride: us
 // DESC: Finds an acoustic echo lag with a fixed coarse-to-fine budget instead of scanning every lag at full resolution.
 // ------------------=
 fn best_offset(frame: &[i16], reference: &[i16]) -> (usize, i64) {
-    const COARSE_SAMPLE_STEP: usize = 4;
+    const COARSE_SAMPLE_STEP: usize = 8;
     let last = reference.len() - frame.len();
     let mut best = (0usize, 0i64);
-    for offset in 0..=last {
-        let score = correlation_score(frame, reference, offset, COARSE_SAMPLE_STEP);
+    for offset in (0..=last).step_by(if frame.len() < 1280 { 1 } else { 8 }) {
+        let score = correlation_score(
+            frame,
+            reference,
+            offset,
+            if frame.len() < 1280 {
+                4
+            } else {
+                COARSE_SAMPLE_STEP
+            },
+        );
         if score > best.1 {
             best = (offset, score);
         }
     }
     let coarse = best.0;
     best.1 = 0;
-    for offset in coarse.saturating_sub(3)..=(coarse + 3).min(last) {
+    for offset in coarse.saturating_sub(8)..=(coarse + 8).min(last) {
         let score = correlation_score(frame, reference, offset, 1);
         if score > best.1 {
             best = (offset, score);
@@ -47,102 +60,209 @@ fn best_offset(frame: &[i16], reference: &[i16]) -> (usize, i64) {
 }
 
 // ------------------------=
-// FUNC: nearby_offset
-// DESC: Tracks a previously discovered acoustic path across consecutive microphone frames with constant bounded work.
+// FUNC: fit
+// DESC: Fits bounded speaker paths over a speech-scale window, returning delay and fixed-point gain.
 // ------------------=
-fn nearby_offset(frame: &[i16], reference: &[i16], expected: usize) -> (usize, i64) {
-    let last = reference.len() - frame.len();
-    let mut best = (expected.min(last), 0i64);
-    for offset in expected.saturating_sub(4)..=(expected + 4).min(last) {
-        let score = correlation_score(frame, reference, offset, 1);
-        if score > best.1 {
-            best = (offset, score);
+fn fit(mic: &mut [i16], reference: &[i16]) -> [(usize, i64); 4] {
+    let mut paths = [(0, 0); 4];
+    for path in &mut paths {
+        let energy = mic.iter().map(|&x| (i64::from(x) >> 4).pow(2)).sum::<i64>();
+        if energy == 0 || reference.len() < mic.len() {
+            break;
+        }
+        let (offset, score) = best_offset(mic, reference);
+        if score < energy / 8 {
+            break;
+        }
+        let mut dot = 0i64;
+        let mut power = 0i64;
+        for (&m, &r) in mic.iter().zip(&reference[offset..]) {
+            dot += i64::from(m) * i64::from(r);
+            power += i64::from(r).pow(2);
+        }
+        if power == 0 {
+            break;
+        }
+        let gain = ((dot * (1 << 20)) / power).clamp(-(2 << 20), 2 << 20);
+        *path = (reference.len() - mic.len() - offset, gain);
+        for (m, &r) in mic.iter_mut().zip(&reference[offset..]) {
+            *m = (i64::from(*m) - ((gain * i64::from(r)) >> 20)).clamp(-32768, 32767) as i16;
         }
     }
-    best
+    paths
 }
-
-// ------------------------=
-// FUNC: subtract
-// DESC: Removes up to four correlated speaker paths, preserving independent near-end speech for interruption.
-// ------------------=
-pub fn subtract(mic: &mut [i16], reference: &[i16]) {
-    const MAX_FRAMES: usize = 15;
-    let mut original = [0i64; MAX_FRAMES];
-    for (index, frame) in mic.chunks(320).enumerate().take(MAX_FRAMES) {
-        original[index] = frame
-            .iter()
-            .map(|&value| {
-                let value = i64::from(value) >> 4;
-                value * value
-            })
-            .sum();
+pub struct Canceller {
+    history: [i16; 4800],
+    work: [i16; 4800],
+    filled: usize,
+    since_fit: usize,
+    paths: [(usize, i64); 4],
+    learned: bool,
+}
+impl Canceller {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Reserves bounded private microphone history and echo path state without allocation.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self {
+            history: [0; 4800],
+            work: [0; 4800],
+            filled: 0,
+            since_fit: 0,
+            paths: [(0, 0); 4],
+            learned: false,
+        }
     }
-    for _ in 0..4 {
-        let mut path: Option<(usize, usize)> = None;
-        for (index, frame) in mic.chunks_mut(320).enumerate().take(MAX_FRAMES) {
-            if frame.len() < 80 || reference.len() < frame.len() {
-                continue;
-            }
-            // Twelve-bit samples keep the scored full-frame correlation in i64.
-            let energy = frame
+    // ------------------------=
+    // FUNC: clear
+    // DESC: Erases microphone history and learned paths at owner or reference boundaries.
+    // ------------------=
+    pub fn clear(&mut self) {
+        self.history.fill(0);
+        self.work.fill(0);
+        self.filled = 0;
+        self.since_fit = 0;
+        self.learned = false;
+        self.paths = [(0, 0); 4];
+    }
+    // ------------------------=
+    // FUNC: process
+    // DESC: Emits current samples immediately, fitting at most every 80 ms and freezing learned paths during double talk.
+    // ------------------=
+    pub fn process(&mut self, mic: &mut [i16], reference: &[i16]) {
+        let n = mic.len();
+        if n == 0 {
+            return;
+        }
+        if n > 4800 || reference.len() < n {
+            self.clear();
+            return;
+        }
+        let keep = self
+            .filled
+            .min(4800 - n)
+            .min(reference.len().saturating_sub(n));
+        self.history.copy_within(self.filled - keep..self.filled, 0);
+        self.history[keep..keep + n].copy_from_slice(mic);
+        self.filled = keep + n;
+        if mic.iter().all(|&sample| sample == 0) {
+            return;
+        }
+        self.since_fit = self.since_fit.saturating_add(n);
+        let refit = self.since_fit >= 1280;
+        if refit {
+            self.since_fit = 0;
+            self.work[..self.filled].copy_from_slice(&self.history[..self.filled]);
+            let original = self.work[..self.filled]
                 .iter()
-                .map(|&value| {
-                    let value = i64::from(value) >> 4;
-                    value * value
-                })
+                .map(|&x| i64::from(x).pow(2))
                 .sum::<i64>();
-            if energy == 0 {
-                continue;
-            }
-            let best = if let Some((first_frame, first_offset)) = path {
-                nearby_offset(
-                    frame,
-                    reference,
-                    first_offset.saturating_add((index - first_frame) * 320),
-                )
-            } else {
-                best_offset(frame, reference)
-            };
-            // Do not fit an unrelated human voice to arbitrary playback noise.
-            if best.1 < energy / 8 {
-                continue;
-            }
-            path.get_or_insert((index, best.0));
-            let mut dot = 0i64;
-            let mut power = 0i64;
-            for (sample, echo) in frame.iter().zip(&reference[best.0..]) {
-                dot += i64::from(*sample) * i64::from(*echo);
-                power += i64::from(*echo) * i64::from(*echo);
-            }
-            if power == 0 {
-                continue;
-            }
-            let gain = ((dot * (1 << 20)) / power).clamp(-(2 << 20), 2 << 20);
-            for (sample, echo) in frame.iter_mut().zip(&reference[best.0..]) {
-                *sample = (i64::from(*sample) - ((gain * i64::from(*echo)) >> 20))
-                    .clamp(-32768, 32767) as i16;
+            let paths = fit(&mut self.work[..self.filled], reference);
+            let residual = self.work[..self.filled]
+                .iter()
+                .map(|&x| i64::from(x).pow(2))
+                .sum::<i64>();
+            if original > 0 && residual < original / 16 {
+                self.paths = paths;
+                self.learned = true;
             }
         }
-    }
-    for (index, frame) in mic.chunks_mut(320).enumerate().take(MAX_FRAMES) {
-        let remaining = frame
-            .iter()
-            .map(|&value| {
-                let value = i64::from(value) >> 4;
-                value * value
-            })
-            .sum::<i64>();
-        // Only suppress tiny residuals after playback explained at least 97%
-        // of the input. Uncorrelated near-end speech remains available to VAD.
-        if remaining < original[index] / 32 {
-            frame.fill(0);
+        if self.learned {
+            for (i, m) in mic.iter_mut().enumerate() {
+                let mut value = i64::from(*m);
+                for &(lag, gain) in &self.paths {
+                    if let Some(at) = reference.len().checked_sub(n + lag) {
+                        value -= (gain * i64::from(reference[at + i])) >> 20;
+                    }
+                }
+                *m = value.clamp(-32768, 32767) as i16;
+            }
+        } else if refit {
+            mic.copy_from_slice(&self.work[keep..self.filled]);
         }
     }
 }
 
 #[cfg(test)]
+// ------------------------=
+// FUNC: subtract
+// DESC: Exercises the bounded fitting primitive in single-window unit fixtures.
+// ------------------=
+pub fn subtract(mic: &mut [i16], reference: &[i16]) {
+    let _ = fit(mic, reference);
+}
+#[cfg(test)]
 mod tests {
+    // ------------------------=
+    // FUNC: streaming_double_talk_preserves_user_and_erases_private_state
+    // DESC: Exercises incremental DMA sizes, trained echo, independent interruption, silent input, and session reset.
+    // ------------------=
+    #[test]
+    fn streaming_double_talk_preserves_user_and_erases_private_state() {
+        let mut seed = 51u32;
+        let speaker: Vec<i16> = (0..32000)
+            .map(|_| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                ((seed >> 16) as i16) / 4
+            })
+            .collect();
+        for block in [80, 320, 1600] {
+            let mut filter = super::Canceller::new();
+            let mut error = 0i64;
+            let mut echo_energy = 0i64;
+            for at in (0..speaker.len()).step_by(block) {
+                let end = (at + block).min(speaker.len());
+                let mut reference = vec![0; 9600];
+                let count = end.min(9600);
+                reference[9600 - count..].copy_from_slice(&speaker[end - count..end]);
+                let human: Vec<i16> = (at..end)
+                    .map(|i| {
+                        if (16000..24000).contains(&i) {
+                            if i % 23 < 11 {
+                                2600
+                            } else {
+                                -2600
+                            }
+                        } else {
+                            0
+                        }
+                    })
+                    .collect();
+                let mut mic: Vec<i16> = (at..end)
+                    .zip(&human)
+                    .map(|(i, &h)| {
+                        let echo = if i >= 800 { speaker[i - 800] / 2 } else { 0 };
+                        if at >= 9600 {
+                            echo_energy += i64::from(echo).pow(2);
+                        }
+                        echo + h
+                    })
+                    .collect();
+                filter.process(&mut mic, &reference);
+                if at >= 9600 {
+                    error += mic
+                        .iter()
+                        .zip(&human)
+                        .map(|(&m, &h)| (i64::from(m) - i64::from(h)).pow(2))
+                        .sum::<i64>();
+                }
+            }
+            assert!(filter.learned);
+            assert!(
+                error < echo_energy / 100,
+                "block={block} error={error} echo={echo_energy}"
+            );
+            let mut silent = vec![0; block];
+            filter.process(&mut silent, &speaker[speaker.len() - 9600..]);
+            assert!(silent.iter().all(|&v| v == 0));
+            filter.clear();
+            assert!(!filter.learned);
+            assert_eq!(filter.filled, 0);
+            assert!(filter.history.iter().chain(&filter.work).all(|&v| v == 0));
+            assert_eq!(filter.paths, [(0, 0); 4]);
+        }
+    }
     // ------------------------=
     // FUNC: reflected_playback_does_not_become_a_new_utterance
     // DESC: Exercises a direct speaker path plus two delayed room reflections and independent near-end speech.

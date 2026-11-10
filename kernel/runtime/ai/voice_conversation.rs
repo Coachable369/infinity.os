@@ -146,6 +146,7 @@ static mut RAW: [i16; 4800] = [0; 4800];
 static mut MONO: [i16; 4800] = [0; 4800];
 static mut ECHO: [i16; 9600] = [0; 9600];
 static mut ECHO_VALID_UNTIL: u64 = 0;
+static mut ECHO_CANCELLER: voice_echo::Canceller = voice_echo::Canceller::new();
 static mut TRANSCRIPT: [u8; 512] = [0; 512];
 static mut PENDING_PROMPT: [u8; 512] = [0; 512];
 static mut PENDING_PROMPT_LENGTH: usize = 0;
@@ -761,6 +762,7 @@ unsafe fn reset_listening_state() {
     // acoustic speaker tail cannot become the newly authorized follow-up.
     if super::qwen::workers::clock_ns() >= ECHO_VALID_UNTIL {
         (&mut *(&raw mut ECHO)).fill(0);
+        (&mut *(&raw mut ECHO_CANCELLER)).clear();
         ECHO_VALID_UNTIL = 0;
     }
     LEVEL = 0;
@@ -1062,6 +1064,7 @@ fn stop_session(owner: SecurityIdentity,cancel_turn:bool,all_output:bool) -> boo
         (&mut *(&raw mut RAW)).fill(0);
         (&mut *(&raw mut MONO)).fill(0);
         (&mut *(&raw mut ECHO)).fill(0);
+        (&mut *(&raw mut ECHO_CANCELLER)).clear();
         ECHO_VALID_UNTIL = 0;
         (&mut *(&raw mut TRANSCRIPT)).fill(0);
         clear_pending_prompt(true);
@@ -1315,6 +1318,7 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
             (&mut *(&raw mut RAW)).fill(0);
             (&mut *(&raw mut MONO)).fill(0);
             (&mut *(&raw mut ECHO)).fill(0);
+            (&mut *(&raw mut ECHO_CANCELLER)).clear();
             ECHO_VALID_UNTIL = 0;
             LEVEL = 0;
         }
@@ -1576,9 +1580,10 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         return crate::drivers::audio::discard_capture_pending(OWNER)!=Some(false);
     }
     if now < ECHO_VALID_UNTIL {
-        voice_echo::subtract(&mut (&mut *(&raw mut MONO))[..n], &*(&raw const ECHO));
+        (&mut *(&raw mut ECHO_CANCELLER)).process(&mut (&mut *(&raw mut MONO))[..n], &*(&raw const ECHO));
     } else {
         (&mut *(&raw mut ECHO)).fill(0);
+        (&mut *(&raw mut ECHO_CANCELLER)).clear();
     }
     if !(&*(&raw const NOISE_FLOOR)).ready() {
         // Login audio is output, not an ambient microphone baseline. Keep the
