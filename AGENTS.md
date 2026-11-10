@@ -125,11 +125,29 @@ Every function must have this comment header immediately above it:
 
 ## Direct AI audio pipeline — accepted and frozen
 
-The user confirmed on 2026-11-06 that the audio LLM pipeline is working.
-Do not edit the direct AI audio pipeline
-(capture, wake detection, recognition, generation handoff, synthesis, playback,
-and their startup/recovery orchestration) without new explicit user authorization.
-Unrelated UI, performance, build, or application requests do not authorize changes
-to this pipeline. Intent, AI Kit, and other adjacent work may proceed within its
-requested scope, but must preserve the direct audio pipeline. If adjacent work
-requires a pipeline change, stop that change and obtain explicit authorization.
+The user reconfirmed acceptance on 2026-11-10: "This works. No more work on
+audio pipeline. Freeze all direct audio pipeline assets, ensure we do not modify
+those further. LLM can be modified at varying layers."
+
+The accepted direct audio pipeline and all its supporting assets are frozen.
+Do not edit, replace, regenerate with changed inputs, tune, refactor, upgrade,
+or remove its capture, wake detection, recognition, generation handoff,
+synthesis, playback, echo cancellation, interruption/follow-up behavior, or
+startup/recovery orchestration without new explicit user authorization that
+reopens the affected audio scope. This includes speech models, voice data,
+PCM assets, native dependencies, configuration/defaults, and build/installer
+inputs that determine that behavior on either architecture.
+
+LLM models, inference, reasoning, prompts, memory, intent, AI Kit, and application
+layers may change within their requested scope while preserving the accepted
+audio interfaces, lifecycle, timing, ownership, cancellation, and speech output
+contract. A generic LLM, UI, performance, build, or application request does not
+reopen direct audio work. In shared files, change only unrelated sections. If a
+requested change requires modifying the frozen pipeline, stop that portion and
+obtain explicit user authorization; continue independent permitted work.
+
+Consult [the protected scope inventory](docs/direct-audio-pipeline-freeze.md)
+before adjacent work. Preserve the accepted working state, including existing
+uncommitted changes; do not reset it to an older commit or silently absorb it
+into another task. Routine builds may reproduce/package the unchanged pipeline
+when requested, but must not silently change its assets or dependencies.
