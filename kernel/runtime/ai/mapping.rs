@@ -11,7 +11,7 @@ pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappin
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 512;
-pub const CAPABILITY_TARGETS: [&[u8]; 119] = [
+pub const CAPABILITY_TARGETS: [&[u8]; 120] = [
     b"OS_OPEN:text_editor",
     b"OS_OPEN:file_navigator",
     b"OS_OPEN:browser",
@@ -131,6 +131,7 @@ pub const CAPABILITY_TARGETS: [&[u8]; 119] = [
     b"OS_MAXIMIZE:{argument}",
     b"OS_RESTORE:{argument}",
     b"OS_SHELL:logout",
+    b"OS_MEMORY:{argument}",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -562,14 +563,14 @@ fn parse_action<'a>(
     if target.contains(&b'{') && !dynamic {
         return Err(Error::InvalidTarget);
     }
+    let sample: &[u8] = if target==b"OS_MEMORY:{argument}" {b"status"} else {b"x"};
     let probe = AliasMatch {
         argument_start: 0,
-        argument_end: 1,
+        argument_end: sample.len(),
         dynamic,
     };
     if dynamic {
-        let mut sample = [b'x'; 1];
-        command_for_target(target, probe, &mut sample)?;
+        command_for_target(target, probe, sample)?;
     } else {
         command_for_target(target, probe, b"")?;
     }

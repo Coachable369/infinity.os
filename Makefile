@@ -757,7 +757,7 @@ hermes-memory-test:
 	rustc --edition=2021 -O tools/object-store-test.rs -o build/tests/object-store-test
 	build/tests/object-store-test --hermes-memory-only
 
-ai-test: hermes-memory-test system-clock-test
+ai-test: hermes-memory-test system-clock-test aikit-memory-test
 	@tools/ai-test.sh
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test causal_attention
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test native_attention_softmax_preserves_bits
@@ -1120,3 +1120,7 @@ command-terminal-test:
 desktop-session-test:
 	@rustc --edition=2021 tools/desktop-session-interaction-test.rs -o build/desktop-session-interaction-test
 	@build/desktop-session-interaction-test
+
+.PHONY: aikit-memory-test
+aikit-memory-test:
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin aikit-memory-test

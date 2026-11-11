@@ -1828,7 +1828,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         if sdk_package::get(id).is_some() { return Err(ObjectError::Unauthorized); }
         self.allow_public_identity_access(id)?;
         let record = &self.state.objects[self.object_index(id)?];
-        if &record.name[..record.name_len as usize] == b"@hermes-memory"
+        if matches!(&record.name[..record.name_len as usize],b"@hermes-memory"|b"@aikit-memory")
             || record.space == Space::System as u8
             && matches!(
                 &record.name[..record.name_len as usize],
@@ -1908,6 +1908,17 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub(crate) fn read_wallpaper_preference(&mut self,id:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
         let record=&self.state.objects[self.object_index(id)?];
         if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@wallpaper"{return Err(ObjectError::Unauthorized);}
+        self.read_internal(id,None,out)
+    }
+
+    // ------------------------=
+    // FUNC: read_aikit_memory
+    // DESC: Restricts catalog reads to the matching owner and native memory object type.
+    // ------------------=
+    pub(crate) fn read_aikit_memory(&mut self,id:ObjectId,owner:ObjectId,out:&mut[u8])->Result<usize,ObjectError>{
+        let record=&self.state.objects[self.object_index(id)?];
+        if record.owner!=owner || record.space!=Space::Personal as u8 || record.kind!=ObjectType::Metadata as u8
+            || &record.name[..record.name_len as usize]!=b"@aikit-memory" {return Err(ObjectError::Unauthorized);}
         self.read_internal(id,None,out)
     }
 

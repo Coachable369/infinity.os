@@ -650,6 +650,7 @@
     {"id":"os.app.close.named","target":"OS_CLOSE:{argument}"},
     {"id":"os.app.minimize.named","target":"OS_MINIMIZE:{argument}"},
     {"id":"os.app.maximize.named","target":"OS_MAXIMIZE:{argument}"},
-    {"id":"os.app.restore.named","target":"OS_RESTORE:{argument}"}
+    {"id":"os.app.restore.named","target":"OS_RESTORE:{argument}"},
+    {"id":"ai.memory","target":"OS_MEMORY:{argument}"}
   ]
 }

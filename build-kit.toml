@@ -287,3 +287,7 @@ clean = false
 [profiles.audio-pipeline-log-tests]
 command = ["sh", "tools/audio-pipeline-log-test.sh"]
 clean = false
+
+[profiles.aikit-memory-tests]
+command = ["make", "aikit-memory-test"]
+clean = false

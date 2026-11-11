@@ -12,6 +12,7 @@ pub mod object;
 #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
 pub(crate) mod ssh;
 mod hermes_memory_store;
+pub(crate) mod aikit_memory;
 pub(crate) mod editor_objects;
 mod interactive_device;
 use crate::runtime::ai::hermes_profile;
@@ -2182,4 +2183,18 @@ pub(crate) fn audio_pipeline_log_commit(slot:u8,content:&[u8])->Result<u32,objec
     {with_store(|store|store.audio_pipeline_log_commit(slot,content))}
     #[cfg(target_arch="x86")]
     {let _=(slot,content);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
+// FUNC: aikit_memory_authorized
+// DESC: Checks the current owner/session pair through IdentitySystem before every private memory operation.
+// ------------------=
+pub(crate) fn aikit_memory_authorized(owner:[u8;16],session:[u8;16])->bool {browser_favorites_path(owner,session).is_ok()}
+// ------------------------=
+// FUNC: aikit_memory_checkpoint
+// DESC: Shares native durable memory between AIKit clients while enforcing identity outside model instructions.
+// ------------------=
+pub(crate) fn aikit_memory_checkpoint(owner:[u8;16],session:[u8;16],save:Option<&crate::runtime::ai::persistent_memory::Memory>,out:&mut[u8])->Result<usize,object::ObjectError>{
+    if !aikit_memory_authorized(owner,session){return Err(object::ObjectError::Unauthorized);}
+    with_store(|store|aikit_memory::checkpoint(store,owner,save,out))
 }

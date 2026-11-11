@@ -1,8 +1,8 @@
 {
-"schema": "infinityos.ai-instruction-map",
-"version": 1,
-"directory": {"status":"partial-settings-coverage","targetCount":119,"registryPath":"/system/service-registry.json"},
-"actions": [
+"schema":"infinityos.ai-instruction-map",
+"version":1,
+"directory":{"status":"partial-settings-coverage","targetCount":120,"registryPath":"/system/service-registry.json"},
+"actions":[
 {"id":"os.session.logout","scope":"os","target":"OS_SHELL:logout","aliases":["logout","log out","log me out","sign me out"]},
 {"id":"os.app.focus.named","scope":"os","target":"OS_FOCUS:{argument}","aliases":["focus app {argument}"]},
 {"id":"os.app.close.named","scope":"os","target":"OS_CLOSE:{argument}","aliases":["close app {argument}"]},
@@ -121,6 +121,7 @@
 {"id":"app.spatial.newCategory","scope":"application","target":"OS_CONTEXT:new category","aliases":["new category","create category"]},
 {"id":"os.clock.read","scope":"os","target":"OS_CLOCK:read","aliases":["what time is it","what is the current time","tell me the time"]},
 {"id":"os.clock.set","scope":"os","target":"OS_CLOCK:set:{argument}","aliases":["set time to {argument}","set the time to {argument}","change the time to {argument}"]},
-{"id":"os.clock.timeZone","scope":"os","target":"OS_CLOCK:zone:{argument}","aliases":["set time zone to {argument}","change the time zone to {argument}","set timezone to {argument}"]}
+{"id":"os.clock.timeZone","scope":"os","target":"OS_CLOCK:zone:{argument}","aliases":["set time zone to {argument}","change the time zone to {argument}","set timezone to {argument}"]},
+{"id":"memory","scope":"os","target":"OS_MEMORY:{argument}","aliases":["memory {argument}"]}
 ]
 }

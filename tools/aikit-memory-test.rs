@@ -1,0 +1,224 @@
+#![allow(dead_code)]
+#[path = "../kernel/runtime/mod.rs"] mod runtime;
+#[path = "../kernel/ui/mod.rs"] mod ui;
+#[path = "../kernel/storage/spatial_path.rs"] mod spatial_path;
+mod storage;
+#[path = "../kernel/storage/aikit_memory.rs"] mod aikit_memory;
+use runtime::ai::persistent_memory::{self as memory,Memory,Record,Category,Error};
+use std::{fs::{File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}};
+use storage::{BlockDevice, object::{ObjectStore, ObjectError, STORE_RELATIVE_LBA}};
+
+// ------------------------=
+// FUNC: output_text
+// DESC: Supplies the runtime diagnostic sink without using prose as an acceptance oracle.
+// ------------------=
+fn output_text(_: &[u8]) {}
+
+struct Disk(File, u64);
+impl BlockDevice for Disk {
+    // ------------------------=
+    // FUNC: block_count
+    // DESC: Exposes the actual file-backed test disk geometry.
+    // ------------------=
+    fn block_count(&self) -> u64 { self.1 }
+    // ------------------------=
+    // FUNC: read_sector
+    // DESC: Reads one bounded disk sector across independent mounts.
+    // ------------------=
+    fn read_sector(&mut self, lba: u64, out: &mut [u8; 512]) -> bool {
+        lba < self.1 && self.0.seek(SeekFrom::Start(lba * 512)).is_ok() && self.0.read_exact(out).is_ok()
+    }
+    // ------------------------=
+    // FUNC: write_sector
+    // DESC: Writes one actual native Object Store sector.
+    // ------------------=
+    fn write_sector(&mut self, lba: u64, bytes: &[u8; 512]) -> bool {
+        lba < self.1 && self.0.seek(SeekFrom::Start(lba * 512)).is_ok() && self.0.write_all(bytes).is_ok()
+    }
+    // ------------------------=
+    // FUNC: flush
+    // DESC: Requires durable disk synchronization before a test checkpoint is acknowledged.
+    // ------------------=
+    fn flush(&mut self) -> bool { self.0.sync_all().is_ok() }
+}
+
+// ------------------------=
+// FUNC: main
+// DESC: Exercises native durable owner checkpoints, cold remount, corrections, deletion, corruption and stable IDs.
+// ------------------=
+fn main() {
+    assert!(runtime::ai::mapping::DEFAULT.len()<=storage::object::MAX_CONTENT);
+    runtime::ai::mapping::validate(runtime::ai::mapping::DEFAULT).unwrap();
+    search_tests();
+    api_tests();
+    std::fs::create_dir_all("build/tests").unwrap();
+    let path = format!("build/tests/aikit-memory-{}.img",std::process::id());
+    let sectors=STORE_RELATIVE_LBA+32768;
+    let file=OpenOptions::new().create_new(true).read(true).write(true).open(&path).unwrap();
+    file.set_len(sectors*512).unwrap();
+    let mut store=ObjectStore::format(Disk(file,sectors),0,sectors,[0x64;16]).unwrap();
+    let owner=[0x19;16];let other=[0x23;16];let mut bytes=[0;memory::MAX_BYTES];
+    let mut m=Memory::new(owner);
+    let id=m.store(owner,Record::new(owner,Category::Semantic,b"My dog is Ollie",b"explicit user request",10).unwrap()).unwrap();
+    assert_eq!(m.store(owner,Record::new(owner,Category::Semantic,b"MY DOG IS OLLIE",b"explicit user request",11).unwrap()),Ok(id));
+    assert_eq!(m.inspect(other,id).err(),Some(Error::Unauthorized));
+    let n=aikit_memory::checkpoint(&mut store,owner,Some(&m),&mut bytes).unwrap();
+    for end in 0..n {assert!(Memory::decode(&bytes[..end],owner).is_err());}
+    let mut broken=bytes;broken[45]^=0x55;assert_eq!(Memory::decode(&broken[..n],owner).err(),Some(Error::Corrupt));
+    drop(store);
+    interrupted_writes(&path,sectors,owner,id);
+    let mut store=ObjectStore::mount(Disk(OpenOptions::new().read(true).write(true).open(&path).unwrap(),sectors),0).unwrap();
+    let n=aikit_memory::checkpoint(&mut store,owner,None,&mut bytes).unwrap();
+    let mut m=Memory::decode(&bytes[..n],owner).unwrap();assert_eq!(m.inspect(owner,id).unwrap().content(),b"My dog is Ollie");
+    m.update(owner,id,Record::new(owner,Category::Semantic,b"My dog is Oliver",b"explicit correction",20).unwrap()).unwrap();
+    assert_eq!(m.inspect(owner,id).unwrap().created_at,10);
+    aikit_memory::checkpoint(&mut store,owner,Some(&m),&mut bytes).unwrap();
+    assert!(aikit_memory::checkpoint(&mut store,other,Some(&m),&mut bytes).is_err());
+    m.delete(owner,id).unwrap();aikit_memory::checkpoint(&mut store,owner,Some(&m),&mut bytes).unwrap();
+    drop(store);
+    let mut store=ObjectStore::mount(Disk(OpenOptions::new().read(true).write(true).open(&path).unwrap(),sectors),0).unwrap();
+    let n=aikit_memory::checkpoint(&mut store,owner,None,&mut bytes).unwrap();
+    let mut m=Memory::decode(&bytes[..n],owner).unwrap();assert_eq!(m.inspect(owner,id).err(),Some(Error::NotFound));
+    let next=m.store(owner,Record::new(owner,Category::Procedural,b"Verified fix: rebuild the app",b"verified devkit outcome",30).unwrap()).unwrap();assert!(next>id);
+    drop(store);std::fs::remove_file(path).unwrap();
+    println!("AIKit native checkpoint persistence, update, deletion and isolation: PASS (cold remount, not OS reboot)");
+}
+
+// ------------------------=
+// FUNC: search_tests
+// DESC: Verifies exact vector ordering, lexical Unicode matching, limits, context budget, and provider failure.
+// ------------------=
+fn search_tests(){
+    use runtime::ai::memory_search::{self as search,EmbeddingProvider};
+    let owner=[7;16];let mut m=Memory::new(owner);
+    let mut a=Record::new(owner,Category::Semantic,"Ollie likes CAFÉ walks".as_bytes(),b"user",1).unwrap();
+    a.set_embedding(b"fixture-model",&[1.0,0.0],2).unwrap();let a=m.store(owner,a).unwrap();
+    let mut b=Record::new(owner,Category::Procedural,b"Ollie walks every day",b"verified",2).unwrap();
+    b.set_embedding(b"fixture-model",&[0.6,0.8],2).unwrap();let b=m.store(owner,b).unwrap();
+    let mut foreign=Record::new(owner,Category::Semantic,b"Unrelated",b"user",2).unwrap();foreign.set_embedding(b"other-model",&[1.0,0.0],2).unwrap();m.store(owner,foreign).unwrap();
+    let hits=search::semantic(&m,owner,b"fixture-model",&[1.0,0.0],2,0.0).unwrap();assert_eq!(hits.len,2);assert_eq!(hits.hits[0].id,a);assert_eq!(hits.hits[1].id,b);assert_eq!(hits.incompatible,1);assert!((hits.hits[1].score-0.6).abs()<0.00001);
+    assert_eq!(search::semantic(&m,owner,b"fixture-model",&[1.0,0.0],8,0.9).unwrap().len,1);
+    assert_eq!(search::semantic(&m,owner,b"fixture-model",&[1.0],8,0.0).unwrap().incompatible,3);
+    assert!(search::cosine(&[1.0],&[1.0,0.0]).is_err());assert!(search::cosine(&[f32::NAN],&[1.0]).is_err());assert!(search::cosine(&[0.0],&[1.0]).is_err());
+    assert!(search::semantic(&m,[8;16],b"fixture-model",&[1.0,0.0],2,0.0).is_err());
+    let hits=search::lexical(&m,owner,"café OLLIE ollie".as_bytes(),1).unwrap();assert_eq!(hits.len,1);assert_eq!(hits.hits[0].id,a);assert_eq!(hits.hits[0].score,2.0);
+    let mut out=[0;1024];let n=search::context(&m,owner,b"Ollie",3,200,&mut out).unwrap();assert!(n>0 && n<=200);assert_eq!(search::context(&m,owner,b"absent",3,200,&mut out),Ok(0));assert_eq!(search::context(&m,owner,b"Ollie",3,10,&mut out),Ok(0));
+    let mut provider=search::Unavailable;assert_eq!(provider.model(),Err(Error::Unavailable));assert_eq!(provider.embed(b"anything",&mut[0.0;2]),Err(Error::Unavailable));
+    m.delete(owner,a).unwrap();assert!(search::lexical(&m,owner,b"Ollie",10).unwrap().hits[..1].iter().all(|h|h.id!=a));
+    println!("AIKit lexical, cosine, owner isolation and bounded context: PASS; real semantic provider UNAVAILABLE");
+}
+
+struct Backend {bytes:Vec<u8>,allowed:bool,fail:bool,reads:usize,writes:usize}
+impl runtime::ai::memory_api::Backend for Backend {
+    // ------------------------=
+    // FUNC: authorize
+    // DESC: Models a revoked or valid IdentitySystem session for deterministic native API tests.
+    // ------------------=
+    fn authorize(&mut self,owner:[u8;16],session:[u8;16])->bool{self.allowed && owner==[7;16] && session==[9;16]}
+    // ------------------------=
+    // FUNC: load
+    // DESC: Supplies committed bytes independently of the engine cache.
+    // ------------------=
+    fn load(&mut self,_:[u8;16],_:[u8;16],out:&mut[u8])->Result<usize,Error>{self.reads+=1;out[..self.bytes.len()].copy_from_slice(&self.bytes);Ok(self.bytes.len())}
+    // ------------------------=
+    // FUNC: save
+    // DESC: Injects failed durability without publishing candidate records.
+    // ------------------=
+    fn save(&mut self,_:[u8;16],_:[u8;16],m:&Memory)->Result<(),Error>{if self.fail{return Err(Error::Storage);}let mut b=[0;memory::MAX_BYTES];let n=m.encode(&mut b)?;self.bytes=b[..n].to_vec();self.writes+=1;Ok(())}
+    // ------------------------=
+    // FUNC: now
+    // DESC: Supplies a deterministic clock for cache tests; real retrieval timing is measured separately.
+    // ------------------=
+    fn now(&self)->u64{0}
+}
+// ------------------------=
+// FUNC: api_tests
+// DESC: Verifies explicit requests, failure receipts, revocation, cache reuse, forgetting and model-independent reload.
+// ------------------=
+fn api_tests(){
+    use runtime::ai::{memory_api::{Engine,Operation},memory_request::{self,Command},hermes_memory_request::Outcome};
+    let owner=[7;16];let session=[9;16];let mut bytes=[0;memory::MAX_BYTES];let n=Memory::new(owner).encode(&mut bytes).unwrap();
+    let mut backend=Backend{bytes:bytes[..n].to_vec(),allowed:true,fail:false,reads:0,writes:0};let mut engine=Engine::new();let mut out=[0;8192];
+    let request=memory_request::natural(b"Infinity, remember that Ollie likes walks").unwrap();assert_eq!(request,Command::Remember(b"Ollie likes walks"));
+    let receipt=memory_request::respond(&mut engine,&mut backend,owner,session,request,1,&mut out);assert_eq!(receipt.outcome,Outcome::Saved);
+    let hits=engine.search(&mut backend,owner,session,b"Ollie",4).unwrap();assert_eq!(hits.len,1);let id=hits.hits[0].id;
+    let before=backend.reads;for _ in 0..20{engine.context(&mut backend,owner,session,b"Ollie",256,&mut out).unwrap();}assert_eq!(backend.reads,before);
+    let duplicate=memory_request::respond(&mut engine,&mut backend,owner,session,request,2,&mut out);assert_eq!(duplicate.outcome,Outcome::Saved);assert_eq!(backend.writes,1);
+    let mut samples=Vec::new();
+    for _ in 0..1000 {let start=std::time::Instant::now();engine.context(&mut backend,owner,session,b"Ollie",256,&mut out).unwrap();samples.push(start.elapsed().as_nanos());}
+    samples.sort();println!("Host cached retrieval p50={}ns p95={}ns; not native-VM latency",samples[500],samples[950]);
+    backend.allowed=false;assert_eq!(engine.search(&mut backend,owner,session,b"Ollie",4).err(),Some(Error::Unauthorized));backend.allowed=true;
+    backend.fail=true;let receipt=memory_request::respond(&mut engine,&mut backend,owner,session,Command::Update(id,b"changed"),3,&mut out);assert_eq!(receipt.outcome,Outcome::Failed);backend.fail=false;
+    assert_eq!(engine.inspect(&mut backend,owner,session,id).unwrap().content(),b"Ollie likes walks");
+    assert!(engine.execute(&mut backend,owner,session,Operation::Store(Category::Semantic,b"my password is secret",b"user"),4).is_err());
+    let mut switched_model_engine=Engine::new();assert_eq!(switched_model_engine.search(&mut backend,owner,session,b"Ollie",4).unwrap().len,1);
+    let receipt=memory_request::respond(&mut engine,&mut backend,owner,session,Command::ForgetId(id),5,&mut out);assert_eq!(receipt.outcome,Outcome::Forgotten);
+    let mut reloaded=Engine::new();assert_eq!(reloaded.search(&mut backend,owner,session,b"Ollie",4).unwrap().len,0);
+    assert!(memory_request::natural(b"do not remember that secret").is_none());
+    use runtime::ai::{control,kit::{CapabilityDirectory,ExecutionBroker,ExecutionRequest,RequestOrigin,PolicyContext,PolicyDenial}};
+    assert!(CapabilityDirectory::contains(b"OS_MEMORY:{argument}"));assert!(control::Command::decode(b"OS_MEMORY:remember Ollie likes walks").is_some());
+    let command=control::Command::decode(b"OS_MEMORY:remember Ollie likes walks").unwrap();
+    for origin in [RequestOrigin::Model,RequestOrigin::DesktopChat,RequestOrigin::Voice] {
+        let mut broker=ExecutionBroker::new();
+        broker.stage(ExecutionRequest{command,owner,origin,correlation_id:1}).unwrap();
+        let result=broker.take(PolicyContext{requester:owner,owner,chat_enabled:true,desktop_allowed:true});
+        if origin==RequestOrigin::Model {assert_eq!(result,Err(PolicyDenial::PermissionDenied));}
+        else {assert_eq!(result.unwrap().unwrap().command,command);}
+    }
+    use runtime::ai::{memory_api::{candidate,Evidence},intelligence::software::{Execution,Event}};
+    assert!(candidate(owner,b"I prefer Rust",Evidence::Generated,true,1).is_err());
+    assert!(candidate(owner,b"I prefer Rust",Evidence::UserPreference,false,1).is_err());
+    assert_eq!(candidate(owner,b"I prefer Rust",Evidence::UserPreference,true,1).unwrap().category,Category::Semantic);
+    let mut e=Execution::new(1,owner);
+    assert!(candidate(owner,b"calculator",Evidence::Development(&e),true,1).is_err());
+    for event in [Event::SourceSaved{object:[1;16],revision:1},Event::Compiled{artifact:[2;16]},Event::Launched{context:1},Event::InteractionReady{context:1,revision:1}]{assert!(e.record(1,owner,event));}
+    assert_eq!(candidate(owner,b"calculator",Evidence::Development(&e),true,1).unwrap().category,Category::Episodic);
+    assert!(e.record(1,owner,Event::RuntimeFailed{source:[1;16],revision:1,context:1,code:1}));
+    assert!(candidate(owner,b"calculator",Evidence::Development(&e),true,1).is_err());
+    println!("AIKit memory API, cache, durable receipts, explicit operations and revocation: PASS");
+}
+
+struct FaultDisk { disk:Disk, remaining:usize }
+impl BlockDevice for FaultDisk {
+    // ------------------------=
+    // FUNC: block_count
+    // DESC: Preserves the native fixture geometry during interruption injection.
+    // ------------------=
+    fn block_count(&self)->u64{self.disk.block_count()}
+    // ------------------------=
+    // FUNC: read_sector
+    // DESC: Allows recovery reads even after the simulated power loss.
+    // ------------------=
+    fn read_sector(&mut self,lba:u64,out:&mut[u8;512])->bool{self.disk.read_sector(lba,out)}
+    // ------------------------=
+    // FUNC: write_sector
+    // DESC: Fails every subsequent write after the selected durable transaction boundary.
+    // ------------------=
+    fn write_sector(&mut self,lba:u64,data:&[u8;512])->bool{if self.remaining==0{return false;}self.remaining-=1;self.disk.write_sector(lba,data)}
+    // ------------------------=
+    // FUNC: flush
+    // DESC: Injects failure at flush boundaries as well as sector writes.
+    // ------------------=
+    fn flush(&mut self)->bool{if self.remaining==0{return false;}self.remaining-=1;self.disk.flush()}
+}
+// ------------------------=
+// FUNC: interrupted_writes
+// DESC: Cold-remounts actual ObjectStore transactions interrupted at content, metadata and root commit stages.
+// ------------------=
+fn interrupted_writes(path:&str,sectors:u64,owner:[u8;16],id:u64){
+    for boundary in [0,1,4,32,128,512,1024] {
+        let copy=format!("{path}-fault");std::fs::copy(path,&copy).unwrap();
+        let disk=Disk(OpenOptions::new().read(true).write(true).open(&copy).unwrap(),sectors);
+        let mut store=ObjectStore::mount(FaultDisk{disk,remaining:boundary},0).unwrap();
+        let mut bytes=[0;memory::MAX_BYTES];let n=aikit_memory::checkpoint(&mut store,owner,None,&mut bytes).unwrap();
+        let mut m=Memory::decode(&bytes[..n],owner).unwrap();
+        m.update(owner,id,Record::new(owner,Category::Semantic,b"Replacement",b"user",2).unwrap()).unwrap();
+        let success=aikit_memory::checkpoint(&mut store,owner,Some(&m),&mut bytes).is_ok();drop(store);
+        let mut store=ObjectStore::mount(Disk(OpenOptions::new().read(true).write(true).open(&copy).unwrap(),sectors),0).unwrap();
+        let n=aikit_memory::checkpoint(&mut store,owner,None,&mut bytes).unwrap();let restored=Memory::decode(&bytes[..n],owner).unwrap();
+        let text=restored.inspect(owner,id).unwrap().content();
+        assert!(text==b"My dog is Ollie" || text==b"Replacement");if success{assert_eq!(text,b"Replacement");}
+        drop(store);std::fs::remove_file(copy).unwrap();
+    }
+    println!("AIKit interrupted native checkpoint recovery: PASS");
+}

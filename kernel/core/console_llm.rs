@@ -196,6 +196,14 @@ impl ConsoleRuntime {
     // DESC: Submits explicit local advisory prompts and binds terminal delivery to the authenticated requesting session.
     // ------------------=
     pub(super) fn llm_command(&mut self, input: &[u8]) -> bool {
+        let memory=input.strip_prefix(b"infinity memory ").or_else(||input.strip_prefix(b"ai memory "));
+        if let Some(input)=memory {
+            if !self.workplace_authorized(false) {self.output.fail(crate::runtime::console_execution::Diagnostic::Denied);self.output.write_line(b"Memory access denied.");return true;}
+            let Some(command)=ai::memory_request::command(input) else {self.output.fail(crate::runtime::console_execution::Diagnostic::Syntax);self.output.write_line(b"memory status | stats | search QUERY | inspect ID | remember TEXT | update ID to TEXT | forget ID");return true;};
+            let mut out=[0;8192];let receipt=ai::with_ai_runtime(|ai|ai.memory_command(self.current_user.0,self.current_session.0,command,&mut out));
+            if receipt.outcome==ai::hermes_memory_request::Outcome::Failed {self.output.fail(crate::runtime::console_execution::Diagnostic::Unavailable);}
+            self.output.write_line(&out[..receipt.length]);return true;
+        }
         let Some(command) = text_request::parse_command(input) else { return false; };
         if command==Command::Help {
             self.output.write_line(b"ai ask PROMPT | llm PROMPT     Ask the selected local language model.");

@@ -71,3 +71,7 @@ the public application ABI.
 - Long operations stay responsive and report failure honestly.
 - Offline AI control works with the OS's installed model; internet is needed only
   for actions that intrinsically access online resources.
+
+## Persistent owner memory
+
+See [PersistentMemory.md](PersistentMemory.md) for native APIs, CLI examples, format, privacy policy and limits. Lexical recall is available; semantic embedding generation requires a validated native model.

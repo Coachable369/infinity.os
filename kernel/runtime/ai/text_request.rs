@@ -204,9 +204,10 @@ impl AiRuntime {
         let mode = if decision_question(input) { AdviceMode::Decide } else { mode };
         let mut prompt = [0u8; 6144];
         let length = prepare_prompt(mode, input, facts, &mut prompt)?;
-        let mut context = [0u8;1536];
-        let context_length = self.hermes_memory.as_ref().map_or(Ok(0), |profile|
-            profile.selected_context(input, &mut context)).map_err(|_| AdviceError::ContextFull)?;
+        let mut context = [0u8;1792];
+        let mut context_length = self.hermes_memory.as_ref().map_or(Ok(0), |profile|
+            profile.selected_context(input, &mut context[..1536])).map_err(|_| AdviceError::ContextFull)?;
+        context_length+=self.recall_memory(owner,self.hermes_session,input,256,&mut context[context_length..]).unwrap_or(0);
         if self.chat.selected_model() != self.active_native {
             core::mem::swap(&mut self.qwen, &mut self.other_native);
             self.active_native = self.chat.selected_model();

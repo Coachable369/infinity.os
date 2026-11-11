@@ -195,9 +195,12 @@ impl AiRuntime {
         let Some(length)=decision_prompt(&agent.objective[..agent.length],&state,&mut prompt) else {
             status(b"App interaction exceeds the bounded model context. AI control paused.");self.application_agent=Some(agent);self.stop_application_agent();return true;
         };
+        let mut memory_prompt=[0u8;24832];
+        let memory_length=self.memory_augmented_prompt(agent.context.owner,agent.context.session,&prompt[..length],&mut memory_prompt);
+        let submitted_prompt=memory_length.map_or(&prompt[..length],|n|&memory_prompt[..n]);
         let service=self.qwen.as_mut().unwrap();
         self.application_saved=service.suspend_conversation();
-        if service.submit(&prompt[..length]).is_err() {
+        if service.submit(submitted_prompt).is_err() {
             self.release_application_inference();status(b"Local model could not accept this app decision. AI control paused.");
             self.application_agent=Some(agent);self.stop_application_agent();return true;
         }

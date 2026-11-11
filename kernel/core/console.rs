@@ -3024,6 +3024,7 @@ impl ConsoleRuntime {
         match command {
             Command::Setting(request) => return Some(self.dispatch_setting(request)),
             Command::Clock(request) => return Some(self.dispatch_clock(request)),
+            Command::Memory(request) => return Some(crate::runtime::ai::with_ai_runtime(|ai| ai.memory_action(self.current_user.0,self.current_session.0,request))),
             Command::Shell(action) => {
                 use crate::runtime::ai::control::ShellAction as S;
                 use crate::drivers::input::desktop_shortcuts::DesktopAction as D;

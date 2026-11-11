@@ -67,6 +67,8 @@ impl AiRuntime {
         if !matches!(model,super::chat::HERMES_MODEL_ID|super::chat::MINISTRAL_MODEL_ID)||!self.native_ready(model){return Err(AdviceError::Unavailable);}
         let mut prompt=[0u8;6144];let mode=if text_request::decision_question(input){AdviceMode::Decide}else{mode};
         let length=text_request::prepare_prompt(mode,input,facts,&mut prompt)?;
+        let mut memory_context=[0;256];
+        let memory_length=self.recall_memory(owner,session,input,256,&mut memory_context).unwrap_or(0);
         let existing=self.remote_advice.find(owner,session);
         let index=existing.or_else(||self.remote_advice.sessions.iter().position(|s|s.turn==0||!authorized(s.owner,s.session))).ok_or(AdviceError::Busy)?;
         if self.remote_advice.next_turn==u64::MAX{return Err(AdviceError::ContextFull);}
@@ -75,7 +77,7 @@ impl AiRuntime {
         let saved=service.suspend_conversation().ok_or(AdviceError::Busy)?;
         let reuse=existing==Some(index)&&self.remote_advice.sessions[index].model==model;
         if reuse {if let Some(history)=self.remote_advice.sessions[index].history.take(){service.restore_conversation(history);}}
-        let submitted=service.submit_with_kind(&prompt[..length],qwen::service::SubmissionKind::Conversation);prompt.fill(0);
+        let submitted=service.submit_personal(&prompt[..length],&memory_context[..memory_length],None);prompt.fill(0);
         if let Err(error)=submitted {
             if reuse {self.remote_advice.sessions[index].history=service.suspend_conversation();}
             service.restore_conversation(saved);

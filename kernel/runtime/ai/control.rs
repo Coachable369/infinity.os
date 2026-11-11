@@ -121,6 +121,7 @@ pub mod setting_command;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
+    Memory(super::memory_request::Native),
     Setting(setting_command::Request),
     Clock(super::clock::Request),
     TextEditor,
@@ -318,6 +319,7 @@ impl Command {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let bytes = bytes.trim_ascii();
+        if let Some(request) = bytes.strip_prefix(b"OS_MEMORY:") {return super::memory_request::Native::decode(request).map(Self::Memory);}
         if let Some(request) = bytes.strip_prefix(b"OS_SETTING:") {
             return setting_command::Request::protocol(request).map(Self::Setting);
         }
@@ -615,7 +617,7 @@ impl Command {
     // DESC: Keeps native authorized system controls independent of unrelated application dialogs and editor focus.
     // ------------------=
     pub fn requires_app_ready(self) -> bool {
-        !matches!(self,Self::Setting(_)|Self::Clock(_))
+        !matches!(self,Self::Setting(_)|Self::Clock(_)|Self::Memory(_))
     }
 
     // ------------------------=
@@ -633,6 +635,7 @@ impl Command {
             };
         }
         match self {
+            Self::Memory(_) => b"The authorized memory operation completed.",
             Self::Setting(_) => b"The setting was saved and applied.",
             Self::Shell(ShellAction::Logout) => b"Signed out.",
             Self::Clock(_) => b"The system clock request completed through the native clock service.",
@@ -685,6 +688,7 @@ pub fn protocol_output(bytes: &[u8]) -> bool {
         b"OS_MENU:",
         b"OS_SHELL:",
         b"OS_CLOCK:",
+        b"OS_MEMORY:",
         b"OS_SETTING:",
     ]
     .iter()

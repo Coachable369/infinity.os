@@ -969,6 +969,16 @@ impl Service {
     }
 
     // ------------------------=
+    // FUNC: attach_memory_context
+    // DESC: Retains bounded untrusted recall for an owner-scoped plan without modifying capabilities, execution steps or permission state.
+    // ------------------=
+    pub fn attach_memory_context(&mut self,goal_id:u64,owner:[u8;16],context:&[u8])->bool {
+        let Some(value)=BoundedText::new(context) else{return false;};
+        let Some(plan)=self.plans.iter_mut().flatten().find(|plan|plan.goal.id==goal_id && plan.goal.owner==owner) else{return false;};
+        plan.goal.context=value;true
+    }
+
+    // ------------------------=
     // FUNC: event
     // DESC: Reads retained progress events in chronological order.
     // ------------------=

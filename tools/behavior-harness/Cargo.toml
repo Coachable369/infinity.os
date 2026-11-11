@@ -233,3 +233,7 @@ path = "../ssh-interactive-client-test.rs"
 [[bin]]
 name = "remote-advice-test"
 path = "../remote-advice-test.rs"
+
+[[bin]]
+name = "aikit-memory-test"
+path = "../aikit-memory-test.rs"
