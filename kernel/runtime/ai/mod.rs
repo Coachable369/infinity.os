@@ -214,8 +214,9 @@ impl AiRuntime {
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
+        let explicit_memory=memory_request::natural(input).is_some();
         if matches!(route, RequestRoute::Inference(_))
-            && (memory_request::natural(input).is_some() || hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None) {
+            && (explicit_memory || hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None) {
             route = RequestRoute::Inference(InferenceMode::Conversation);
         }
         let software_goal=crate::ui::app_assistant::editor_compile_intent::software_workflow(input);
@@ -228,7 +229,7 @@ impl AiRuntime {
                     correlation_id: request.correlation_id,
                 })
                 .map_err(|_| b"An OS action is already pending.".as_slice())?;
-        } else if intelligence::Service::classify(input, false)
+        } else if !explicit_memory && intelligence::Service::classify(input, false)
             == intelligence::RequestClass::ComplexGoal
         {
             let goal_origin = match origin {

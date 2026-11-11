@@ -109,9 +109,6 @@ pub fn command(input: &[u8]) -> Option<Command<'_>> {
 // DESC: Recognizes explicit memory requests; other wording can use semantic OS_MEMORY tool inference.
 // ------------------=
 pub fn natural(input: &[u8]) -> Option<Command<'_>> {
-    if super::control::veto_action(input) {
-        return None;
-    }
     let mut s = input.trim_ascii();
     for p in [b"Infinity, ".as_slice(), b"Infinity ", b"please "] {
         s = prefix(s, p).unwrap_or(s);

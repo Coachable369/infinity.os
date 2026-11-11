@@ -155,6 +155,12 @@ fn api_tests(){
     let receipt=memory_request::respond(&mut engine,&mut backend,owner,session,Command::ForgetId(id),5,&mut out);assert_eq!(receipt.outcome,Outcome::Forgotten);
     let mut reloaded=Engine::new();assert_eq!(reloaded.search(&mut backend,owner,session,b"Ollie",4).unwrap().len,0);
     assert!(memory_request::natural(b"do not remember that secret").is_none());
+    assert_eq!(memory_request::natural(b"remember that I do not eat meat"),Some(Command::Remember(b"I do not eat meat")));
+    assert_eq!(memory_request::natural(b"remember that my nickname is \"Moon\""),Some(Command::Remember(b"my nickname is \"Moon\"")));
+    let mut ai=Box::new(runtime::ai::AiRuntime::new());ai.bind_chat_owner(owner);
+    assert_eq!(ai.route_application_request(2,b"remember that create a calculator app is just an example"),Ok(runtime::ai::kit::RequestRoute::Inference(runtime::ai::kit::InferenceMode::Conversation)));
+    assert!(!ai.control_pending());
+
     use runtime::ai::{control,kit::{CapabilityDirectory,ExecutionBroker,ExecutionRequest,RequestOrigin,PolicyContext,PolicyDenial}};
     assert!(CapabilityDirectory::contains(b"OS_MEMORY:{argument}"));assert!(control::Command::decode(b"OS_MEMORY:remember Ollie likes walks").is_some());
     let command=control::Command::decode(b"OS_MEMORY:remember Ollie likes walks").unwrap();
