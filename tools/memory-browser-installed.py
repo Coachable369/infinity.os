@@ -36,6 +36,12 @@ def inbound_terminal(guest, work):
         port = reserve.getsockname()[1]
     guest.qmp("human-monitor-command", {"command-line": f"hostfwd_add tcp:127.0.0.1:{port}-:22"})
     ssh.wait_state(guest, lambda state:state[3:5]==(1,1))
+    handle = "qa" + str(time.time_ns())[-10:]
+    guest.command(f"user create handle={handle} display-name=TerminalQA")
+    for _ in range(2):
+        native.ui.text(guest,ssh.accounts.TEST_PASSWORD)
+        guest.key("ret")
+        guest.wait(lambda state:state[71]==1,"fixture account input committed",timeout=90)
     _, key = ssh.keyscan(port)
     known = work/"pinned-guest-host"
     known.write_bytes(key)
@@ -44,7 +50,7 @@ def inbound_terminal(guest, work):
     helper.chmod(0o700)
     args = ["/usr/bin/ssh","-F","/dev/null","-oStrictHostKeyChecking=yes",f"-oUserKnownHostsFile={known}",
             "-oPreferredAuthentications=password","-oPubkeyAuthentication=no","-oNumberOfPasswordPrompts=1",
-            "-oConnectTimeout=10","-p",str(port),"-tt","ms9node01@127.0.0.1"]
+            "-oConnectTimeout=10","-p",str(port),"-tt",f"{handle}@127.0.0.1"]
     env = dict(os.environ, SSH_ASKPASS=str(helper), SSH_ASKPASS_REQUIRE="force",DISPLAY="qa",
                INFINITY_QA_PASSWORD="incorrect-qa-password")
     proc = None
@@ -52,7 +58,7 @@ def inbound_terminal(guest, work):
         rejected=subprocess.run(args+["system status"],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,env=env,timeout=20,start_new_session=True)
         assert rejected.returncode==255
-        env["INFINITY_QA_PASSWORD"] = ssh.accounts.ADMIN_PASSWORD
+        env["INFINITY_QA_PASSWORD"] = ssh.accounts.TEST_PASSWORD
         proc=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                               env=env,start_new_session=True)
         ssh.wait_console(guest,[],lambda state,rows:state[7]==1 and any(row[6]&2 for row in rows))
@@ -63,7 +69,7 @@ def inbound_terminal(guest, work):
         proc.stdin.flush()
         out,_=proc.communicate(timeout=20)
         assert proc.returncode==0 and out
-        return {"password_authenticated":True,"bad_password_refused":True,"pty":True,
+        return {"account":"separate new nonadministrator","password_authenticated":True,"bad_password_refused":True,"pty":True,
                 "operation":next(row[7] for row in rows if row[4]==1),"output_bytes":len(out),"exit":proc.returncode}
     finally:
         helper.unlink(missing_ok=True)
@@ -147,10 +153,10 @@ def main():
             guest.stop()
         guest.onboard()
         proof["devices"] = advice.detached(guest)
+        guest.launch("command", 5)
         if args.verify_ssh:
             proof["external_terminal"]=inbound_terminal(guest,work)
             (work/"external-terminal.json").write_text(json.dumps(proof["external_terminal"])+"\n")
-        guest.launch("command", 5)
         if args.reuse:
             # This disposable test owns these synthetic markers.
             for _ in range(16):
