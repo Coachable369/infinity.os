@@ -26,7 +26,6 @@ pub fn request(engine: &mut Engine, backend: &mut impl Backend, owner: Owner, se
             let records = catalog.records(owner)?;
             let mut ids = [0; super::persistent_memory::MAX_RECORDS];
             let count = if text.is_empty() {
-                for (id, record) in ids.iter_mut().zip(records) { *id = record.id; }
                 records.len()
             } else {
                 let results = if action == 2 {
@@ -44,8 +43,8 @@ pub fn request(engine: &mut Engine, backend: &mut impl Backend, owner: Owner, se
                 results.len
             };
             let mut matched = 0;
-            for &id in &ids[..count] {
-                let r = catalog.inspect(owner,id)?;
+            for index in 0..count {
+                let r = if text.is_empty() { &records[index] } else { catalog.inspect(owner,ids[index])? };
                 if filter != 0 && r.category != category(filter)? { continue; }
                 if matched / 6 == number {
                     write!(out,"{}\t{}\t",r.id,r.category as u8).map_err(|_|Error::Capacity)?;

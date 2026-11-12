@@ -180,6 +180,8 @@ def main():
         previous = python.snapshot(guest)[2]
         guest.launch("Infinity Memory", 5)
         bounds = window(guest)
+        proof["launch_to_visible_ms"]=(time.monotonic_ns()-guest.last_key_receipt["sent_monotonic_ns"])//1_000_000
+        print(json.dumps({"launch_to_visible_ms":proof["launch_to_visible_ms"]}),flush=True)
         time.sleep(2)
         proof["window"]=bounds
         wx,wy,ww,wh=(bounds[k] for k in ("x","y","width","height"))

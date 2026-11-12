@@ -239,6 +239,14 @@ impl Task {
         Ok(())
     }
     // ------------------------=
+    // FUNC: ready_for_resume
+    // DESC: Prevents startup batching from spinning on a sleeping or partially loaded native task.
+    // ------------------=
+    pub fn ready_for_resume(&self,now:u64)->bool {
+        self.process.is_some() && now>=self.sleep_until
+    }
+
+    // ------------------------=
     // FUNC: cancel
     // DESC: Prevents any further user execution after owner closure, cancellation or lost capability.
     // ------------------=

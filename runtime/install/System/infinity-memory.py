@@ -38,9 +38,7 @@ class Browser:
     # DESC: Creates the searchable collection and selected-record inspector in one native window.
     # ------------------=
     def __init__(self, root):
-        from _infinity_media import io as surface
-        self.surfaces = [[tk.PhotoImage(data=surface(6, b"", primary + state * 2), format="PPM")
-                          for state in range(3)] for primary in (0, 1)]
+        self.surfaces = {}
         body_px = 17 if root.winfo_screenwidth() < 1500 else 20
         body_font = ("Inter", -body_px)
         self.button_font = ("Inter", -max(14, body_px-3))
@@ -214,17 +212,28 @@ class Browser:
         return True
 
     # ------------------------=
+    # FUNC: surface
+    # DESC: Materializes each active UIKit state once, only when a button actually displays it.
+    # ------------------=
+    def surface(self, primary, state):
+        key = int(primary) + 2 * state
+        if key not in self.surfaces:
+            from _infinity_media import io
+            self.surfaces[key] = tk.PhotoImage(data=io(6, b"", key), format="PPM")
+        return self.surfaces[key]
+
+    # ------------------------=
     # FUNC: button
     # DESC: Renders the active Infinity UIKit button recipe for normal, hover and pressed states.
     # ------------------=
     def button(self, parent, label, action, primary=False):
-        normal, hover, pressed = self.surfaces[int(primary)]
+        normal = self.surface(primary, 0)
         button = tk.Button(parent, text=label, command=action, image=normal, compound="center",
                            fg=WHITE, activeforeground=WHITE, bg=NAVY, activebackground=NAVY,
                            font=self.button_font, borderwidth=0, relief="flat", highlightthickness=0)
-        for event, art in (("<Enter>", hover), ("<Leave>", normal), ("<ButtonPress-1>", pressed),
-                           ("<ButtonRelease-1>", hover), ("<FocusIn>", hover), ("<FocusOut>", normal)):
-            button.bind(event, lambda e, image=art: button.configure(image=image), add="+")
+        for event, state in (("<Enter>", 1), ("<Leave>", 0), ("<ButtonPress-1>", 2),
+                             ("<ButtonRelease-1>", 1), ("<FocusIn>", 1), ("<FocusOut>", 0)):
+            button.bind(event, lambda e, s=state: button.configure(image=self.surface(primary, s)), add="+")
         return button
 
     # ------------------------=

@@ -26,6 +26,7 @@ impl Snapshot {
 }
 struct Job {
     memory_browser: bool,
+    memory_launching: bool,
     media_open: Option<crate::runtime::object_navigation::ByteText<96>>,
     tool_export: Option<crate::runtime::object_navigation::ByteText<96>>,
     monitor:Option<crate::runtime::execution::ContextHandle>,
@@ -61,7 +62,7 @@ struct Generated {
 }
 static mut MONITOR_SAMPLE_NS:u64=0;
 static mut MONITOR_RESUME_NS:u64=0;
-static mut JOB: Job = Job { memory_browser:false, media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
+static mut JOB: Job = Job { memory_browser:false, memory_launching:false, media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
     filesystem: Vfs::new(), data: app_data::Data::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false,
@@ -172,7 +173,7 @@ fn snapshot(target: &mut Snapshot, path: &[u8], user: [u8; 16]) -> Result<(), &'
 // FUNC: prepare_packages
 // DESC: Starts each invocation from the current user's committed archive with no inherited staged writes or previous-user files.
 // ------------------=
-fn prepare_packages(console: &ConsoleRuntime, job: &mut Job, writable: bool) -> Result<(), &'static [u8]> {
+fn prepare_packages(console: &ConsoleRuntime, job: &mut Job, writable: bool, bundled_only: bool) -> Result<(), &'static [u8]> {
     job.tool_export=None;
     job.network.reset(SecurityIdentity(console.current_session.0), false);
     job.extensions.clear();
@@ -182,6 +183,9 @@ fn prepare_packages(console: &ConsoleRuntime, job: &mut Job, writable: bool) -> 
     job.data = app_data::Data::new();
     job.interaction_objective.fill(0);job.interaction_length=0;
     job.pip = writable; job.package_owner = console.current_user.0;
+    job.package_revision=None;
+    // The immutable Memory program uses the shipped standard library and built-ins only.
+    if bundled_only {return Ok(());}
     let (revision, length) = crate::storage::python_packages_load(console.current_user.0,
         console.current_session.0, &mut job.archive)
         .map_err(|_| b"python: cannot load this user's installed packages.".as_slice())?;
@@ -235,7 +239,7 @@ unsafe fn start_pip(console: &ConsoleRuntime, arguments: &[&[u8]]) -> Result<(),
     })?;
     let install = mode == PipMode::Install;
     let online = install && arguments.iter().skip(1).any(|value| !value.starts_with(b"-") && !value.starts_with(b"/"));
-    prepare_packages(console, job, mode != PipMode::ReadOnly)?;
+    prepare_packages(console, job, mode != PipMode::ReadOnly,false)?;
     job.network.reset(SecurityIdentity(console.current_session.0), online);
     job.pip = true;
     let mut owned = [[0u8; 256]; 24]; let mut lengths = [0usize; 24];
@@ -291,7 +295,7 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
     let job = &mut *(&raw mut JOB);
     if job.task.is_some() { return Err(b"python: a script is already running; use python-cancel."); }
     if !active(console) { return Err(b"python: an authenticated session is required."); }
-    prepare_packages(console, job, false)?;
+    prepare_packages(console, job, false,path==memory_browser::PATH && expected_source.is_some() && candidate.is_none())?;
     snapshot(&mut job.files[0], path, console.current_user.0)?;
     if expected_source.is_some_and(|source| source != &job.files[0].bytes[..job.files[0].len]) {
         return Err(b"python: saved source changed before validation; no code was executed.");
@@ -480,6 +484,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
     job.memory_browser = path == memory_browser::PATH && arguments.len()==2 && job.generated.is_none()
         && &job.files[0].bytes[..job.files[0].len] == include_bytes!("../../runtime/install/System/infinity-memory.py");
+    job.memory_launching=job.memory_browser;
     let name=if path==memory_browser::PATH { b"Infinity Memory".as_slice() } else if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
     MONITOR_RESUME_NS=0;
     job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
@@ -845,7 +850,7 @@ pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsa
         let job = &mut *(&raw mut JOB);
         let result = if job.task.is_some() { Err(b"python: a script is already running; use python-cancel.".as_slice()) }
             else if !active(console) { Err(b"python: an authenticated session is required.".as_slice()) }
-            else { prepare_packages(console, job, false).and_then(|_| {
+            else { prepare_packages(console, job, false,false).and_then(|_| {
                 job.network.reset(SecurityIdentity(console.current_session.0), allow_network);
                 start_task(console, job, &args[..count])
             }) };
@@ -964,22 +969,34 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let scale = crate::ui::system_layout::SystemLayout::new(display.width as usize, display.height as usize).scale();
     let work = crate::runtime::native_gui::client_work_area(display,scale);
     let gui_allowed = authorized && !job.pip && job.generated.is_none_or(|g|g.phase == workflow::Phase::Run);
-    let result = task.poll_with_services(now, authorized, memory_mut(),
-        b"", &files[..file_count], &mut job.output, &mut job.errors,
-        |memory, tables, operation, arguments| crate::runtime::with_runtime(|runtime|job.gui.dispatch(runtime,memory,tables,job.owner,native_owner,gui_allowed,operation,arguments,work,display,now)).flatten()
-            .or_else(||memory_browser::dispatch(gui_allowed && job.memory_browser,
-                console.current_user.0, console.current_session.0, tables, operation, arguments))
-            .or_else(||media::dispatch(gui_allowed && ((operation==0x12e6 && job.memory_browser) || (job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER)),console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
-            .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
-            .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
-            .or_else(||terminal_read(&mut job.input,tables,operation,arguments))
-            .or_else(||job.child.syscall(memory, tables, operation, arguments, &mut job.filesystem,
-                job.owner, job.pip, &mut *(&raw mut NEXT_TASK_ID), now, parent_deadline).map(|result| {
-                    if operation == 0x1280 && result >= 0 { job.network.close(); }
-                    result
-                }))
-            .or_else(||job.network.syscall(tables, operation, arguments))
-            .or_else(|| job.data.syscall(&mut job.filesystem, &mut job.archive, tables, operation, arguments)));
+    // Importing Tk and constructing its first window issues many short native calls.
+    // Amortize desktop event-loop trips only during startup, with a strict time and call budget.
+    let mut remaining=16u8;
+    let mut slice_now=now;
+    let result=loop {
+        let result = task.poll_with_services(slice_now, authorized, memory_mut(),
+            b"", &files[..file_count], &mut job.output, &mut job.errors,
+            |memory, tables, operation, arguments| crate::runtime::with_runtime(|runtime|job.gui.dispatch(runtime,memory,tables,job.owner,native_owner,gui_allowed,operation,arguments,work,display,now)).flatten()
+                .or_else(||{let result=memory_browser::dispatch(gui_allowed && job.memory_browser,
+                    console.current_user.0, console.current_session.0, tables, operation, arguments);
+                    if result.is_some(){job.memory_launching=false;}result})
+                .or_else(||media::dispatch(gui_allowed && ((operation==0x12e6 && job.memory_browser) || (job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER)),console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
+                .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
+                .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
+                .or_else(||terminal_read(&mut job.input,tables,operation,arguments))
+                .or_else(||job.child.syscall(memory, tables, operation, arguments, &mut job.filesystem,
+                    job.owner, job.pip, &mut *(&raw mut NEXT_TASK_ID), now, parent_deadline).map(|result| {
+                        if operation == 0x1280 && result >= 0 { job.network.close(); }
+                        result
+                    }))
+                .or_else(||job.network.syscall(tables, operation, arguments))
+                .or_else(|| job.data.syscall(&mut job.filesystem, &mut job.archive, tables, operation, arguments)));
+        if !job.memory_launching || !matches!(result,State::Runnable) {break result;}
+        remaining-=1;
+        let next=crate::runtime::ai::qwen::workers::clock_ns();
+        if remaining==0 || next<=slice_now || next.saturating_sub(now)>=2_000_000 || !task.ready_for_resume(next) {break result;}
+        slice_now=next;
+    };
     if let Some(h)=job.monitor {
         let timestamp=crate::runtime::ai::qwen::workers::clock_ns();
         let busy=timestamp.saturating_sub(now);
