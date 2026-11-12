@@ -122,8 +122,11 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--reuse", action="store_true")
     parser.add_argument("--verify-ssh", action="store_true")
+    parser.add_argument("--resume-desktop",action="store_true",help="Resume the app checks on an installed, previously authenticated test fixture")
     parser.add_argument("--kernel", type=Path, help="Test a corrected kernel on the stopped private QA disk")
     args = parser.parse_args()
+    if args.resume_desktop and (not args.reuse or args.verify_ssh):
+        parser.error("--resume-desktop needs --reuse and runs only the desktop checks")
     work = args.work.resolve()
     assert work.parent == ROOT / "build" and work.name.startswith("memory-browser-")
     artifacts = work / "artifacts"
@@ -148,12 +151,16 @@ def main():
     guest.arch, guest.acceleration, guest.patched = "aarch64", "hvf", True
     guest.boot_timeout_seconds, guest.install_timeout_seconds = 600, 1800
     proof = {"accepted":False, "updated_private_kernel":str(args.kernel) if args.kernel else None}
-    output = work / "result.json" if args.verify_ssh else ROOT / "builds/validation/aikit-memory/browser-installed.json"
+    output = work / "result.json" if args.verify_ssh or args.resume_desktop else ROOT / "builds/validation/aikit-memory/browser-installed.json"
     try:
         if not args.reuse:
             guest.install()
             guest.stop()
-        guest.onboard()
+        if args.resume_desktop:
+            guest.boot(False)
+            guest.authenticate()
+        else:
+            guest.onboard()
         proof["devices"] = advice.detached(guest)
         guest.launch("command", 5)
         if args.verify_ssh:
