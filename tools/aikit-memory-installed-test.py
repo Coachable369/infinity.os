@@ -45,7 +45,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=Path, required=True)
+    parser.add_argument("--install-timeout", type=int, default=1800,
+                        help="Maximum seconds per installation stage on the emulated test host")
     args = parser.parse_args()
+    if args.install_timeout <= 0:
+        parser.error("--install-timeout must be positive")
     iso = args.iso.resolve()
     assert iso.is_relative_to(ROOT) and iso.is_file()
     work = ROOT / "build" / f"aikit-memory-installed-{args.arch}-{time.time_ns()}"
@@ -58,7 +62,7 @@ def main():
     guest.arch = args.arch
     guest.acceleration = "hvf" if args.arch == "aarch64" and platform.system() == "Darwin" and platform.machine() == "arm64" else "tcg"
     guest.patched = True
-    guest.install_timeout_seconds = 1800
+    guest.install_timeout_seconds = args.install_timeout
     guest.boot_timeout_seconds = 600
     proof = dict(architecture=args.arch, media=media, source=str(iso), accepted=False, screenshots=[])
     destination = ROOT / "builds/validation/aikit-memory" / args.arch / "installed.json"
