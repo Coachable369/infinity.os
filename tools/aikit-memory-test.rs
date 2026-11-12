@@ -249,6 +249,9 @@ fn real_recall() {
     let mut page=Bytes::new();
     memory_browser::request(&mut engine,&mut backend,owner,session,2,0,0,b"Compilation failed because a library was absent",2,&mut page).unwrap();
     assert_eq!(page.bytes().split(|b|*b==b'\t').next(),Some(b"1".as_slice()),"paraphrase ranking: {:?}",page.bytes());
+    let mut literal=Bytes::new();
+    memory_browser::request(&mut engine,&mut backend,owner,session,2,0,0,b"ORBIT",2,&mut literal).unwrap();
+    assert_eq!(literal.bytes().split(|b|*b==b'\t').next(),Some(b"3".as_slice()));
     let stats=engine.execute(&mut backend,owner,session,Operation::Status,2).unwrap();
     assert_eq!(stats.embedded,3);
     let question=b"What is the diagnostic project code?";

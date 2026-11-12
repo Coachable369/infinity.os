@@ -112,6 +112,7 @@ class Browser:
         buttons = tk.Frame(right, bg=PANEL)
         buttons.pack(fill="x", padx=14, pady=10)
         self.delete = self.button(buttons, "Delete", self.remove)
+        self.delete.configure(state="disabled")
         self.delete.pack(side="left")
         self.button(buttons, "Save", self.save, True).pack(side="right")
         tk.Label(root, textvariable=self.status, bg=NAVY, fg=MUTED, anchor="w").pack(fill="x", padx=18, pady=(0, 10))
@@ -144,7 +145,7 @@ class Browser:
         if self.pending is not None:
             self.root.after_cancel(self.pending)
         self.page = 0
-        self.pending = self.root.after(180, self.refresh)
+        self.pending = self.root.after(320, self.refresh)
 
     # ------------------------=
     # FUNC: refresh
@@ -161,17 +162,22 @@ class Browser:
             if self.page and self.page * 6 >= self.total:
                 self.page = max(0, (self.total - 1) // 6)
                 return self.refresh()
-            self.ids.clear()
-            self.listbox.delete(0, "end")
-            for row in rows:
-                identity, category, title = row.split("\t", 2)
-                self.ids.append(int(identity))
-                self.listbox.insert("end", title)
+            records = [row.split("\t", 2) for row in rows]
+            ids = [int(row[0]) for row in records]
+            titles = tuple(row[2] for row in records)
+            if ids != self.ids or titles != self.listbox.get(0, "end"):
+                self.ids = ids
+                self.listbox.delete(0, "end")
+                if titles:
+                    self.listbox.insert("end", *titles)
+                if self.record in ids:
+                    self.listbox.selection_set(ids.index(self.record))
             self.prev.configure(state="normal" if self.page else "disabled")
             self.next.configure(state="normal" if (self.page + 1) * 6 < self.total else "disabled")
-            prefix = ("1 match" if self.total == 1 else f"{count} matches") if self.total else "No matching memories"
-            self.status.set(f"{prefix}    |    {total} stored    |    {embedded} embedded    |    {size} bytes")
-            self.delete.configure(state="normal" if self.record else "disabled")
+            prefix = {0: "No matching memories", 1: "1 match"}.get(self.total, f"{count} matches")
+            summary = f"{prefix}    |    {total} stored    |    {embedded} embedded    |    {size} bytes"
+            if self.status.get() != summary:
+                self.status.set(summary)
         except (OSError, ValueError) as error:
             self.ids.clear()
             self.listbox.delete(0, "end")

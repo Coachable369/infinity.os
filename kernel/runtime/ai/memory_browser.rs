@@ -32,7 +32,10 @@ pub fn request(engine: &mut Engine, backend: &mut impl Backend, owner: Owner, se
                 let results = if action == 2 {
                     let mut vector = [0.0; super::memory_embedding::DIM];
                     match super::memory_embedding::Potion.embed(text, &mut vector) {
-                        Ok(_) => memory_search::semantic(catalog,owner,super::memory_embedding::MODEL,&vector,ids.len(),0.40)?,
+                        Ok(_) => {
+                            let hits = memory_search::semantic(catalog,owner,super::memory_embedding::MODEL,&vector,ids.len(),0.40)?;
+                            if hits.len == 0 { memory_search::lexical(catalog,owner,text,ids.len())? } else { hits }
+                        }
                         Err(Error::Unavailable) => memory_search::lexical(catalog,owner,text,ids.len())?,
                         Err(error) => return Err(error),
                     }
