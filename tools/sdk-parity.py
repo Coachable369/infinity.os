@@ -19,8 +19,11 @@ def main():
     for name in sys.argv[1:]:
         with (ROOT / name).open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
             assert binary.find(manifest_bytes) >= 0, (name, "SDK manifest absent or stale")
-            for resource in ("assets/ai-memory/weights.bin", "assets/ai-memory/tokens.bin",
-                             "assets/ai-memory/offsets.bin", "assets/apps/infinity-memory-v1.bmp"):
+            resources = ["assets/ai-memory/weights.bin", "assets/ai-memory/tokens.bin", "assets/ai-memory/offsets.bin"]
+            # The launcher is compiled only in the installed kernel; the live installer has no desktop.
+            if "installed-kernel" in Path(name).name:
+                resources.append("assets/apps/infinity-memory-v1.bmp")
+            for resource in resources:
                 assert binary.find((ROOT / resource).read_bytes()) >= 0, (name, resource)
             for record in manifest["files"]:
                 payload = (ROOT / record["source"]).read_bytes()
