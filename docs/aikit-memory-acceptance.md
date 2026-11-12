@@ -14,7 +14,7 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | MEM-02 | PASS | Inspect resolves ID in the authorized catalog | memory_api.rs | — |
 | MEM-03 | PASS | Update keeps the ID and count | persistent_memory.rs | — |
 | MEM-04 | PASS | Delete and cold remount exclude the record | aikit_memory.rs | — |
-| MEM-05 | PASS | Previous installed ARM guest saved, updated, rebooted, forgot and rebooted again | aikit-memory-installed-test.py | Verify latest browser build separately |
+| MEM-05 | PASS | GUI-edited record 2 retained its ID across a cold boot. After CLI deletion a second boot found no record. See arm-focus-and-reboot.json | memory-browser-installed.py | — |
 | MEM-06 | PASS | Independent cold ObjectStore remount reconstructs search from persisted records | aikit_memory.rs | — |
 | MEM-07 | PASS | Every truncated checkpoint and CRC mutation is rejected | persistent_memory.rs | — |
 | MEM-08 | PASS | Owner mismatch and revoked session are denied even after a cache hit | memory_api.rs | — |
@@ -29,7 +29,7 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | VEC-07 | PASS | Updated record replaces original embedding and deleted ID excluded | persistent_memory.rs | — |
 | VEC-08 | PASS | Mismatched model or dimensions excluded and counted | memory_search.rs | — |
 | VEC-09 | PASS | Unavailable provider and Unicode case-insensitive lexical search exercised | memory_search.rs | — |
-| VEC-10 | PASS | Host cache retrieval and first-token times measured in final-boundary.log | memory_api.rs | Profile on target hardware |
+| VEC-10 | PASS | Host production semantic retrieval and context encoding over 3 records, 256 samples, p50 8.54 µs and p95 10.5 µs (integration-final.log) | memory_api.rs | Profile larger catalogs on target hardware |
 | AI-01 | PASS | Installed ARM Command Window answered ORBIT-7429 from a separate GUI-created record in a fresh conversation | text_request.rs, ai/mod.rs | Test physical voice separately |
 | AI-02 | PASS | Synthetic fact present in decoded final token buffer for authorized request only | qwen/service.rs | — |
 | AI-03 | PASS | Real host Hermes returned ORBIT-7429 with recalled context in a fresh conversation | aikit-memory-test.rs | — |
@@ -37,7 +37,7 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | AI-05 | PASS | Empty context produced a normal real Hermes response | qwen/service.rs | — |
 | AI-06 | PASS | Unauthorized owner denied and cold model answer omits the synthetic fact | memory_api.rs | — |
 | AI-07 | PASS | Complete recall records and framing fit the byte-derived upper bound | memory_search.rs | — |
-| AI-08 | NOT TESTED | Storage is independent of the selected conversation model; engine reload exercised | aikit_memory.rs | Switch real models in a guest |
+| AI-08 | PASS | Installed console selected Ministral (1095307268), found the original stable ID, and restored Hermes (1095307269) | console.rs, memory_api.rs | — |
 | AI-09 | PASS | Production Hermes polled incrementally through first token and completion on host | qwen/service.rs | Physical voice test outstanding |
 | AI-10 | NOT TESTED | Recalled data is escaped and excluded from trusted tool prefix; raw model and application origins denied by broker tests | ai/mod.rs, memory_search.rs, kit.rs | Adversarial installed interaction |
 
@@ -58,6 +58,8 @@ The November 12 ARM evidence below uses a private installed disk with an updated
 | GUI-06 | PASS | Close destroyed the native application and reclaimed its allocated process pages | native_gui.rs, memory-browser-installed.py | — |
 | GUI-07 | NOT TESTED | Six-row pagination, keyword and category filtering exercised through the browser service on host | memory_browser.rs | Drive each widget on target |
 | INT-01 | PASS | Separate real-model ARM prompt returned the GUI-edited code (arm-model-answer.png). No fact was given to the conversation | text_request.rs, qwen/service.rs | — |
-| PERF-01 | PASS | Single host cold runs took 608 ms without recall and 1,797 ms with recall to first token. Cached retrieval p50 875 ns and p95 958 ns | aikit-memory-test.rs | Repeat with interleaved requests on target |
+| PERF-01 | PASS | Single host cold runs took 601 ms without recall and 1,733 ms with recall to first token. Cached keyword retrieval p50 1.00 µs and p95 1.04 µs | aikit-memory-test.rs | Repeat with interleaved requests on target |
 | PERF-02 | NOT TESTED | No physical microphone-to-speaker regression or GUI write latency distribution was measured | normal AIKit voice request and native app | Measure through the installed OS |
 | ARCH-01 | NOT TESTED | Latest app has been exercised on ARM; x86_64 guest evidence for this milestone is outstanding | shared native runtime | Verify on installed x86_64 |
+| ICON-01 | PASS | The production launcher interaction test resolved the registered app, and its installed launcher entry successfully started the native surface | app_launcher.rs, launcher_icons.rs | Inspect icon at additional scales |
+| TRACE-01 | PASS | Host tests verified selected IDs and excluded irrelevant and unauthorized records at the actual inference boundary; native guest recorded input admission, 11 generated tokens and final delivery | memory_api.rs, qwen/service.rs | Verify operator-facing diagnostic commands on x86_64 |

@@ -1,7 +1,7 @@
 """Infinity Memory, the native signed-in AIKit catalog browser."""
 import time
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 from _infinity_app import memory_request
 
 CATEGORIES = ("All memories", "Episodic", "Semantic", "Procedural")
@@ -58,6 +58,7 @@ class Browser:
         root.configure(bg=NAVY)
         self.record = self.page = self.total = 0
         self.pending = None
+        self.confirmation = None
         self.original = ""
         self.original_category = "Semantic"
         self.ids = []
@@ -114,7 +115,9 @@ class Browser:
         self.delete = self.button(buttons, "Delete", self.remove)
         self.delete.configure(state="disabled")
         self.delete.pack(side="left")
-        self.button(buttons, "Save", self.save, True).pack(side="right")
+        self.commit = self.button(buttons, "Save", self.save, True)
+        self.commit.pack(side="right")
+        root.bind("<Escape>", lambda event: self.cancel_confirmation())
         tk.Label(root, textvariable=self.status, bg=NAVY, fg=MUTED, anchor="w").pack(fill="x", padx=18, pady=(0, 10))
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.bind("<Control-n>", lambda event: self.new())
@@ -176,7 +179,7 @@ class Browser:
             self.next.configure(state="normal" if (self.page + 1) * 6 < self.total else "disabled")
             prefix = {0: "No matching memories", 1: "1 match"}.get(self.total, f"{count} matches")
             summary = f"{prefix}    |    {total} stored    |    {embedded} embedded    |    {size} bytes"
-            if self.status.get() != summary:
+            if self.confirmation is None and self.status.get() != summary:
                 self.status.set(summary)
         except (OSError, ValueError) as error:
             self.ids.clear()
@@ -195,9 +198,46 @@ class Browser:
     # FUNC: discard
     # DESC: Protects unsaved content and category edits during navigation or close.
     # ------------------=
-    def discard(self):
-        clean = self.editor.get("1.0", "end-1c") == self.original and self.category.get() == self.original_category
-        return clean or messagebox.askyesno("Unsaved memory", "Discard your changes?", parent=self.root)
+    def discard(self, action):
+        if self.confirmation is not None:
+            return
+        if self.editor.get("1.0", "end-1c") == self.original and self.category.get() == self.original_category:
+            action()
+        else:
+            self.confirm("Discard unsaved changes?", "Discard", action)
+
+    # ------------------------=
+    # FUNC: confirm
+    # DESC: Offers explicit choices on the same native surface while retaining the original record identity.
+    # ------------------=
+    def confirm(self, prompt, label, action):
+        self.confirmation = action
+        self.status.set(prompt)
+        self.delete.configure(text="Cancel", state="normal", command=self.cancel_confirmation)
+        self.commit.configure(text=label, command=self.accept_confirmation)
+        self.delete.focus_force()
+
+    # ------------------------=
+    # FUNC: cancel_confirmation
+    # DESC: Returns to ordinary editing without modifying durable memory or the current draft.
+    # ------------------=
+    def cancel_confirmation(self):
+        if self.confirmation is None:
+            return
+        self.confirmation = None
+        self.delete.configure(text="Delete", command=self.remove, state="normal" if self.record else "disabled")
+        self.commit.configure(text="Save", command=self.save)
+        self.refresh()
+
+    # ------------------------=
+    # FUNC: accept_confirmation
+    # DESC: Performs the captured operation once after an explicit confirmation.
+    # ------------------=
+    def accept_confirmation(self):
+        action = self.confirmation
+        if action is not None:
+            self.cancel_confirmation()
+            action()
 
     # ------------------------=
     # FUNC: show
@@ -227,17 +267,16 @@ class Browser:
     # ------------------=
     def select(self, event):
         selection = self.listbox.curselection()
-        if selection and self.discard():
-            self.show(self.ids[selection[0]])
+        if selection:
+            identity = self.ids[selection[0]]
+            self.discard(lambda: self.show(identity))
 
     # ------------------------=
     # FUNC: new
     # DESC: Starts a blank record after protecting unsaved changes.
     # ------------------=
     def new(self):
-        if self.discard():
-            self.reset()
-            self.editor.focus_force()
+        self.discard(self.reset)
 
     # ------------------------=
     # FUNC: reset
@@ -250,6 +289,7 @@ class Browser:
         self.category.set("Semantic")
         self.editor.delete("1.0", "end")
         self.listbox.selection_clear(0, "end")
+        self.editor.focus_force()
         self.heading.set("New memory")
         self.details.set("")
         self.delete.configure(state="disabled")
@@ -259,6 +299,8 @@ class Browser:
     # DESC: Updates the current stable record or creates one and displays its durable receipt.
     # ------------------=
     def save(self):
+        if self.confirmation is not None:
+            return
         text = self.editor.get("1.0", "end-1c").strip()
         if not 0 < len(text.encode()) <= 512:
             self.status.set("Enter between 1 and 512 UTF-8 bytes.")
@@ -276,22 +318,30 @@ class Browser:
     # DESC: Confirms permanent removal and refreshes the catalog only on success.
     # ------------------=
     def remove(self):
-        if self.record and messagebox.askyesno("Delete memory", f"Delete memory {self.record}?", parent=self.root):
-            try:
-                memory_request(6, self.record, 0, "")
-            except OSError as error:
-                self.status.set(message(error))
-                return
-            self.reset()
-            self.refresh()
+        if self.record:
+            identity = self.record
+            self.confirm(f"Permanently delete memory {identity}?", "Delete memory", lambda: self.erase(identity))
+
+    # ------------------------=
+    # FUNC: erase
+    # DESC: Deletes the confirmed stable ID and resets the inspector only after durable success.
+    # ------------------=
+    def erase(self, identity):
+        try:
+            memory_request(6, identity, 0, "")
+        except OSError as error:
+            self.status.set(message(error))
+            return
+        self.reset()
+        self.refresh()
 
     # ------------------------=
     # FUNC: close
     # DESC: Releases the native window only after resolving outstanding edits.
     # ------------------=
     def close(self):
-        if self.discard():
-            self.root.destroy()
+        self.cancel_confirmation()
+        self.discard(self.root.destroy)
 
 
 if __name__ == "__main__":

@@ -171,18 +171,11 @@ def main():
         settled_editor(guest,(wx+68,wy+83,390,27),"memory-browser-filter")
         native.adaptive_click(guest,wx+97,wy+153)
         native.adaptive_click(guest,wx+381,wy+483)
-        tk.wait(guest,python,lambda:tk.gui(guest,native),
-                          lambda g:len([w for w in g["windows"] if w["visible"]]) == 2,timeout=30)
-        proof["delete_prompt"] = str(guest.screenshot("memory-browser-confirm-delete"))
-        guest.key("esc")
-        tk.wait(guest,python,lambda:tk.gui(guest,native),
-                lambda g:sum(w["visible"] for w in g["windows"])==1,timeout=30)
+        proof["delete_prompt"] = settled_editor(guest,(wx+320,wy+460,480,50),"memory-browser-confirm-delete")
         native.adaptive_click(guest,wx+381,wy+483)
-        tk.wait(guest,python,lambda:tk.gui(guest,native),
-                lambda g:sum(w["visible"] for w in g["windows"])==2,timeout=30)
-        guest.key("ret")
-        tk.wait(guest,python,lambda:tk.gui(guest,native),
-                lambda g:sum(w["visible"] for w in g["windows"])==1,timeout=30)
+        native.adaptive_click(guest,wx+381,wy+483)
+        native.adaptive_click(guest,wx+ww-88,wy+wh-66)
+        settled_editor(guest,(wx+320,wy+180,470,35),"memory-browser-after-delete")
         native.adaptive_click(guest,*tk.close_point(guest,window(guest)))
         tk.finished(guest,python,previous)
         native.adaptive_click(guest, command_bounds[0]+100, command_bounds[1]+command_bounds[3]-40)
