@@ -14,7 +14,7 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | MEM-02 | PASS | Inspect resolves ID in the authorized catalog | memory_api.rs | — |
 | MEM-03 | PASS | Update keeps the ID and count | persistent_memory.rs | — |
 | MEM-04 | PASS | Delete and cold remount exclude the record | aikit_memory.rs | — |
-| MEM-05 | PASS | GUI-edited record 2 retained its ID across a cold boot. After CLI deletion a second boot found no record. See arm-focus-and-reboot.json | memory-browser-installed.py | — |
+| MEM-05 | PASS | GUI-edited record retained its ID across a cold boot. After graphical deletion a second boot found no record. See browser-installed.json and manifest 20261112T081317117388Z-96798. | memory-browser-installed.py | — |
 | MEM-06 | PASS | Independent cold ObjectStore remount reconstructs search from persisted records | aikit_memory.rs | — |
 | MEM-07 | PASS | Every truncated checkpoint and CRC mutation is rejected | persistent_memory.rs | — |
 | MEM-08 | PASS | Owner mismatch and revoked session are denied even after a cache hit | memory_api.rs | — |
@@ -52,9 +52,9 @@ The November 12 ARM evidence below uses a private installed disk with an updated
 |---|---|---|---|---|
 | GUI-01 | PASS | Launcher opens Infinity Memory; native window service reports a visible 840 × 550 surface | infinity-memory.py, launcher registry | — |
 | GUI-02 | PASS | ARM shows the compiler record written through Command Window and its embedding count | console_memory_browser.rs | — |
-| GUI-03 | PASS | Graphical create and edit saved record 2; an independent CLI search returned the corrected ORBIT-7429 | infinity-memory.py | Input ordering tracked below |
-| GUI-04 | FAIL | Rapid search followed by editing transferred four trailing characters into the new record, visible in focus-record.png | Tk and native input dispatch | Isolate and verify event ordering |
-| GUI-05 | NOT TESTED | Confirmed-delete and cancellation in the graphical interface have not been driven on target | infinity-memory.py | Verify both dialog choices |
+| GUI-03 | PASS | Graphical create and edit saved the same stable record; independent CLI search returned the corrected ORBIT-7429 (accepted-arm-record.png) | infinity-memory.py | Input ordering tracked below |
+| GUI-04 | FAIL | Rapid search followed by editing transferred four trailing characters into the new record, visible in focus-record.png | Tk and native input dispatch | The app coalesces searches and avoids repainting unchanged rows. The final paced guest test preserved every character (accepted-arm-record.png); repeat rapid focus switching independently. |
+| GUI-05 | PASS | Cancel and Delete memory were clicked in the installed native inspector. Independent CLI lookup and a cold boot verified deletion. See accepted-arm-confirm-delete.png and browser-installed.json | infinity-memory.py | — |
 | GUI-06 | PASS | Close destroyed the native application and reclaimed its allocated process pages | native_gui.rs, memory-browser-installed.py | — |
 | GUI-07 | NOT TESTED | Six-row pagination, keyword and category filtering exercised through the browser service on host | memory_browser.rs | Drive each widget on target |
 | INT-01 | PASS | Separate real-model ARM prompt returned the GUI-edited code (arm-model-answer.png). No fact was given to the conversation | text_request.rs, qwen/service.rs | — |
@@ -63,3 +63,5 @@ The November 12 ARM evidence below uses a private installed disk with an updated
 | ARCH-01 | NOT TESTED | Latest app has been exercised on ARM; x86_64 guest evidence for this milestone is outstanding | shared native runtime | Verify on installed x86_64 |
 | ICON-01 | PASS | The production launcher interaction test resolved the registered app, and its installed launcher entry successfully started the native surface | app_launcher.rs, launcher_icons.rs | Inspect icon at additional scales |
 | TRACE-01 | PASS | Host tests verified selected IDs and excluded irrelevant and unauthorized records at the actual inference boundary; native guest recorded input admission, 11 generated tokens and final delivery | memory_api.rs, qwen/service.rs | Verify operator-facing diagnostic commands on x86_64 |
+
+The final ARM installed receipt is `builds/validation/aikit-memory/browser-installed.json`. The guest emitted 11 model tokens and delivered 42 response bytes with zero control actions. Its bounded search, edit, confirmation and answer screenshots are `accepted-arm-*.png`. The test used a private installed ARM disk with an updated kernel. Canonical release packaging has separate evidence.
