@@ -76,6 +76,7 @@ class Browser:
         controls.pack(fill="x", padx=18, pady=6)
         ttk.Label(controls, text="Search").pack(side="left", padx=(0, 6))
         self.search = ttk.Entry(controls, textvariable=self.query)
+        self.search.bind("<ButtonPress-1>", lambda event: self.search.focus_force(), add="+")
         self.search.pack(side="left", expand=True, fill="x")
         for var, options in ((self.mode, ("Semantic", "Keyword")), (self.filter, CATEGORIES)):
             box = ttk.Combobox(controls, textvariable=var, values=options, width=13, state="readonly")
@@ -101,6 +102,7 @@ class Browser:
         tk.Label(right, textvariable=self.heading, bg=PANEL, fg=WHITE, font=("Inter", 15, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
         self.editor = tk.Text(right, height=5, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
                               font=("Inter", 12), padx=8, pady=8)
+        self.editor.bind("<ButtonPress-1>", lambda event: self.editor.focus_force(), add="+")
         self.editor.pack(fill="both", expand=True, padx=14)
         row = tk.Frame(right, bg=PANEL)
         row.pack(fill="x", padx=14, pady=8)
@@ -116,8 +118,9 @@ class Browser:
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.bind("<Control-n>", lambda event: self.new())
         root.bind("<Control-s>", lambda event: self.save())
-        root.bind("<Control-f>", lambda event: self.search.focus_set())
+        root.bind("<Control-f>", lambda event: self.search.focus_force())
         root.after_idle(self.refresh)
+        root.after_idle(self.search.focus_force)
 
     # ------------------------=
     # FUNC: button
@@ -228,7 +231,7 @@ class Browser:
     def new(self):
         if self.discard():
             self.reset()
-            self.editor.focus_set()
+            self.editor.focus_force()
 
     # ------------------------=
     # FUNC: reset

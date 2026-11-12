@@ -20,8 +20,8 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | MEM-08 | PASS | Owner mismatch and revoked session are denied even after a cache hit | memory_api.rs | — |
 | MEM-09 | PASS | Native record encode/decode and update preserve original content, metadata and stable identity | persistent_memory.rs | — |
 | MEM-10 | PASS | Injected backend failure returns failure and invalidates cache | memory_api.rs | — |
-| VEC-01 | NOT TESTED | Real pretrained provider executed on host, installed run pending | memory_embedding.rs | Verify guest |
-| VEC-02 | NOT TESTED | Three actual model vectors stored in host engine | memory_api.rs | Verify guest |
+| VEC-01 | PASS | Installed ARM record detail shows the packaged Potion model and 64 dimensions | memory_embedding.rs | — |
+| VEC-02 | PASS | Both GUI-created and conversational records report embeddings in installed ARM | memory_api.rs | — |
 | VEC-03 | NOT TESTED | Native WordPiece and learned query row pooling rank paraphrase first on host | memory_embedding.rs | Verify guest |
 | VEC-04 | PASS | Invalid dimensions, nonfinite and zero vectors rejected | persistent_memory.rs | — |
 | VEC-05 | PASS | Cosine ordering checked independently and real pretrained model ranked a paraphrase on host | memory_search.rs | — |
@@ -30,7 +30,7 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | VEC-08 | PASS | Mismatched model or dimensions excluded and counted | memory_search.rs | — |
 | VEC-09 | PASS | Unavailable provider and Unicode case-insensitive lexical search exercised | memory_search.rs | — |
 | VEC-10 | PASS | Host cache retrieval and first-token times measured in final-boundary.log | memory_api.rs | Profile on target hardware |
-| AI-01 | NOT TESTED | Normal typed and conversational requests call owner-scoped retrieval in production | text_request.rs, ai/mod.rs | Observe installed request |
+| AI-01 | PASS | Installed ARM Command Window answered ORBIT-7429 from a separate GUI-created record in a fresh conversation | text_request.rs, ai/mod.rs | Test physical voice separately |
 | AI-02 | PASS | Synthetic fact present in decoded final token buffer for authorized request only | qwen/service.rs | — |
 | AI-03 | PASS | Real host Hermes returned ORBIT-7429 with recalled context in a fresh conversation | aikit-memory-test.rs | — |
 | AI-04 | PASS | Orchard memory excluded from diagnostic question even though both contain “the” | memory_search.rs | — |
@@ -42,3 +42,22 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | AI-10 | NOT TESTED | Recalled data is escaped and excluded from trusted tool prefix; raw model and application origins denied by broker tests | ai/mod.rs, memory_search.rs, kit.rs | Adversarial installed interaction |
 
 All source paths in the matrix refer to the existing kernel runtime, native storage or tools directories. Runtime tests own their synthetic records and disposable disks. Physical voice and immunity to arbitrary prompt injection are unverified.
+
+
+## Installed application and integration
+
+The November 12 ARM evidence below uses a private installed disk with an updated kernel, with its installation medium detached. Screenshots and machine-readable receipts are under `builds/validation/aikit-memory/`.
+
+| ID | Status | Evidence | Implementation | Remaining work |
+|---|---|---|---|---|
+| GUI-01 | PASS | Launcher opens Infinity Memory; native window service reports a visible 840 × 550 surface | infinity-memory.py, launcher registry | — |
+| GUI-02 | PASS | ARM shows the compiler record written through Command Window and its embedding count | console_memory_browser.rs | — |
+| GUI-03 | PASS | Graphical create and edit saved record 2; an independent CLI search returned the corrected ORBIT-7429 | infinity-memory.py | Input ordering tracked below |
+| GUI-04 | FAIL | Rapid search followed by editing transferred four trailing characters into the new record, visible in focus-record.png | Tk and native input dispatch | Isolate and verify event ordering |
+| GUI-05 | NOT TESTED | Confirmed-delete and cancellation in the graphical interface have not been driven on target | infinity-memory.py | Verify both dialog choices |
+| GUI-06 | PASS | Close destroyed the native application and reclaimed its allocated process pages | native_gui.rs, memory-browser-installed.py | — |
+| GUI-07 | NOT TESTED | Six-row pagination, keyword and category filtering exercised through the browser service on host | memory_browser.rs | Drive each widget on target |
+| INT-01 | PASS | Separate real-model ARM prompt returned the GUI-edited code (arm-model-answer.png). No fact was given to the conversation | text_request.rs, qwen/service.rs | — |
+| PERF-01 | PASS | Single host cold runs took 608 ms without recall and 1,797 ms with recall to first token. Cached retrieval p50 875 ns and p95 958 ns | aikit-memory-test.rs | Repeat with interleaved requests on target |
+| PERF-02 | NOT TESTED | No physical microphone-to-speaker regression or GUI write latency distribution was measured | normal AIKit voice request and native app | Measure through the installed OS |
+| ARCH-01 | NOT TESTED | Latest app has been exercised on ARM; x86_64 guest evidence for this milestone is outstanding | shared native runtime | Verify on installed x86_64 |
