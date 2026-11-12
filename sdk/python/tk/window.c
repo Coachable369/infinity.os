@@ -100,6 +100,17 @@ static int native_create(NativeWindow *w){
     grant=infinity_gui_request(INFINITY_GUI_SURFACE_PUBLISH,w->surface);if(grant<0)goto failed;w->publish=grant;
     grant=infinity_gui_request(INFINITY_GUI_SURFACE_RESIZE,w->surface);if(grant<0)goto failed;w->resize=grant;
     create=infinity_gui_request(INFINITY_GUI_WINDOW_CREATE,0);if(create<0)goto failed;
+    int64_t left=infinity_gui_geometry(4), top=infinity_gui_geometry(5);
+    int64_t right=left+infinity_gui_geometry(6), bottom=top+infinity_gui_geometry(7);
+    if (left>=0 && right-left>=w->width) {
+        if (w->x<left) w->x=(int)left;
+        if (w->x>right-w->width) w->x=(int)(right-w->width);
+    }
+    if (top>=0 && bottom-top>=w->height) {
+        if (w->y<top) w->y=(int)top;
+        if (w->y>bottom-w->height) w->y=(int)(bottom-w->height);
+    }
+    if (w->tk) { w->tk->changes.x=w->x; w->tk->changes.y=w->y; }
     int64_t native=infinity_window_create(create,w->surface,w->x,w->y,w->width,w->height);if(native<0)goto failed;w->native=native;
     grant=infinity_gui_request(INFINITY_GUI_WINDOW_MANAGE,w->native);if(grant<0)goto failed;w->manage=grant;
     if(w->title[0]&&infinity_window_title(w->manage,w->native,w->title,strlen(w->title))<0)goto failed;

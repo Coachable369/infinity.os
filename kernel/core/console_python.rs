@@ -461,6 +461,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     job.input=crate::runtime::native_console_input::Input::new();job.shown_output=0;job.shown_errors=0;job.drained_output=0;job.drained_errors=0;
     if job.pip { job.input.close(); }
     job.application=None;job.ui_revision=0;
+    job.gui_revision=0;
     job.initial_pages = memory_mut().available_pages() as u64;
     let id = NEXT_TASK_ID;
     NEXT_TASK_ID = id.checked_add(1).ok_or(b"python: process identifiers exhausted.".as_slice())?;

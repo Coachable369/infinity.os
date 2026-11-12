@@ -369,11 +369,21 @@ impl Gui {
         }
         if operation == 0x1252 {
             if args[1..].iter().any(|v| *v != 0) { return Some(-3); }
+            let shelf = crate::ui::app_launcher::minimized_shelf::current();
+            let mut preferred = work;
+            if shelf.floating == [0; 2] && shelf.drag.is_none() {
+                let rail = crate::ui::app_launcher::minimized_shelf::Geometry::new(
+                    display.width as usize, display.height as usize, shelf).rail;
+                let gap = (display.width / 100).max(1);
+                let reserve = (rail.width + 2 * gap).min(work.width / 3);
+                preferred.width -= reserve;
+                if shelf.left { preferred.x += reserve as i32; }
+            }
             return Some(match args[0] {
                 0 => display.x as i64, 1 => display.y as i64,
                 2 => display.width as i64, 3 => display.height as i64,
-                4 => work.x as i64, 5 => work.y as i64,
-                6 => work.width as i64, 7 => work.height as i64, _ => -3,
+                4 => preferred.x as i64, 5 => preferred.y as i64,
+                6 => preferred.width as i64, 7 => preferred.height as i64, _ => -3,
             });
         }
         if operation == 0x1251 {
