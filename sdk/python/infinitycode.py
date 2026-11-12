@@ -62,7 +62,7 @@ class Studio:
         self.toolbox_filter.trace_add("write",self.filter_controls)
         self.filter_controls()
         ttk.Label(left, text="Layers",style="Heading.TLabel").pack(anchor="w", pady=(15,5))
-        self.layers = tk.Listbox(left, width=18, background="#090F26", foreground="white",
+        self.layers = tk.Listbox(left, width=18, height=4, background="#090F26", foreground="white",
                                  selectbackground="#3E6FFF", exportselection=False, borderwidth=0)
         self.layers.pack(fill="both", expand=True)
         self.layers.bind("<<ListboxSelect>>", self.layer_selected)
@@ -88,13 +88,12 @@ class Studio:
         ttk.Button(right, text="Apply properties",style="Accent.TButton", command=lambda:self.perform(self.apply)).pack(fill="x",pady=(2,4))
         ttk.Button(right, text="Go to handler", command=lambda:self.perform(self.goto_handler)).pack(fill="x",pady=(0,6))
         self.snap = tk.BooleanVar(root, True)
-        ttk.Checkbutton(right, text="Snap · 10 px", variable=self.snap).pack(anchor="w")
-        ttk.Label(right, text="Drag to move.\nCorner grip resizes.\nCanvas: 640 × 420").pack(anchor="w", pady=16)
+        ttk.Checkbutton(right, text="Snap to 10 px", variable=self.snap).pack(anchor="w")
         self.tabs = ttk.Notebook(workspace)
         self.tabs.pack(fill="both", expand=True, padx=10)
         designer = ttk.Frame(self.tabs, padding=10)
         self.tabs.add(designer, text="Form Designer")
-        ttk.Label(designer, text="Form    /    640 × 420").pack(anchor="w", pady=8)
+        ttk.Label(designer, text="Form    /    640 x 420").pack(anchor="w", pady=8)
         viewport = tk.Canvas(designer,background="#070D20",highlightthickness=0,
                              scrollregion=(0,0,WIDTH+24,HEIGHT+24))
         x_scroll = ttk.Scrollbar(designer,orient="horizontal",command=viewport.xview)
@@ -211,7 +210,7 @@ class Studio:
                 editor.see(index);editor.focus_set()
                 self.status.set(f"{label}:{line}:{error.offset or 1} — {error.msg}")
                 return "break"
-        self.status.set("Python and event methods: no syntax errors · not executed")
+        self.status.set("Python and event methods: no syntax errors | not executed")
         return "break"
 
     # ------------------------=
@@ -315,7 +314,7 @@ class Studio:
         self.sync_source()
         self.selected = self.project.add(kind)
         self.render()
-        self.status.set("Control added · Generate Python to update source")
+        self.status.set("Control added | Generate Python to update source")
 
     # ------------------------=
     # FUNC: start
@@ -386,7 +385,7 @@ class Studio:
         self.project.replace(value)
         self.selected = item["id"]
         self.render()
-        self.status.set("Designer updated · Python changes only when Generate Python is selected")
+        self.status.set("Designer updated | Python changes only when Generate Python is selected")
 
     # ------------------------=
     # FUNC: delete
@@ -443,7 +442,7 @@ class Studio:
         self.source.insert("1.0", self.generated)
         self.sync_source()
         self.tabs.select(1)
-        self.status.set("Python generated · connected event methods included")
+        self.status.set("Python generated | connected event methods included")
 
     # ------------------------=
     # FUNC: save
@@ -488,7 +487,7 @@ class Studio:
         with open(path + ".tmp", "w", encoding="utf-8") as stream:
             stream.write(source)
         os.replace(path + ".tmp", path)
-        self.status.set("Exported " + path + " · syntax checked; not executed")
+        self.status.set("Exported " + path + " | syntax checked; not executed")
 
     # ------------------------=
     # FUNC: close

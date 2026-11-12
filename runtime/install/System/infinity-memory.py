@@ -48,8 +48,9 @@ class Browser:
         style = ttk.Style(root)
         style.theme_use("clam")
         style.configure("TLabel", background=NAVY, foreground=WHITE, font=body_font)
-        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=8, font=body_font)
+        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=8, font=body_font, bordercolor="#50779A", lightcolor=PANEL, darkcolor=PANEL, insertcolor=WHITE)
         style.configure("TCombobox", fieldbackground=PANEL, background=PANEL, foreground=WHITE, padding=6, font=body_font)
+        style.map("TEntry", bordercolor=[("focus", "#86C7FF")])
         style.map("TCombobox", fieldbackground=[("readonly", PANEL)], foreground=[("readonly", WHITE)])
         root.option_add("*TCombobox*Listbox.background", PANEL)
         root.option_add("*TCombobox*Listbox.foreground", WHITE)
@@ -70,7 +71,7 @@ class Browser:
         self.filter = tk.StringVar(value=CATEGORIES[0])
         self.mode = tk.StringVar(value="Semantic")
         self.category = tk.StringVar(value="Semantic")
-        self.status = tk.StringVar(value="Loading memories…")
+        self.status = tk.StringVar(value="Loading memories...")
         self.heading = tk.StringVar(value="Memory details")
         self.details = tk.StringVar()
         top = tk.Frame(root, bg=NAVY)
@@ -105,7 +106,7 @@ class Browser:
         self.query.trace_add("write", self.changed)
         body = tk.PanedWindow(root, orient="horizontal", bg=NAVY, sashwidth=7, bd=0)
         body.pack(expand=True, fill="both", padx=18, pady=10)
-        left, right = tk.Frame(body, bg=PANEL), tk.Frame(body, bg=PANEL)
+        left, right = (tk.Frame(body, bg=PANEL, highlightthickness=1, highlightbackground="#365777") for _ in range(2))
         body.add(left, minsize=200, width=int(width*.35))
         body.add(right, minsize=290)
         tk.Label(left,textvariable=self.list_title,bg=PANEL,fg=WHITE,font=("Inter",-body_px-3,"bold")).pack(anchor="w", padx=14, pady=(10,2))
@@ -142,8 +143,18 @@ class Browser:
         root.bind("<Control-n>", lambda event: self.new())
         root.bind("<Control-s>", lambda event: self.save())
         root.bind("<Control-f>", lambda event: self.search.focus_force())
-        root.after_idle(self.refresh)
+        root.after_idle(self.open_catalog)
         root.after_idle(field.focus_force)
+
+    # ------------------------=
+    # FUNC: open_catalog
+    # DESC: Displays the first actual record on launch while preserving the quick entry field for typing.
+    # ------------------=
+    def open_catalog(self):
+        self.refresh()
+        if self.ids:
+            self.listbox.selection_set(0)
+            self.show(self.ids[0])
 
     # ------------------------=
     # FUNC: fact_changed
@@ -154,7 +165,7 @@ class Browser:
             self.root.after_cancel(self.fact_job)
             self.fact_job = None
         if self.fact.get().strip():
-            self.fact_state.set("Saving…")
+            self.fact_state.set("Saving...")
             self.fact_job = self.root.after(1000, self.store_fact)
         else:
             self.fact_id, self.fact_last = 0, ""
