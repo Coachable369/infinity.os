@@ -61,16 +61,18 @@ def inbound_terminal(guest, work):
         env["INFINITY_QA_PASSWORD"] = ssh.accounts.TEST_PASSWORD
         proc=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                               env=env,start_new_session=True)
-        ssh.wait_console(guest,[],lambda state,rows:state[7]==1 and any(row[6]&2 for row in rows))
+        initial,rows=ssh.wait_console(guest,[],lambda state,rows:state[7]==1 and any(row[6]&2 for row in rows))
+        terminal=next(row[0] for row in rows if row[6]&2)
         proc.stdin.write(b"system status\r")
         proc.stdin.flush()
-        _,rows=ssh.wait_console(guest,[],lambda state,rows:any(row[4]==1 and row[7]==0x8005 for row in rows))
+        _,rows=ssh.wait_console(guest,[],lambda state,rows:state[3]>initial[3] and any(
+            row[0]==terminal and row[4]==1 and row[5]==0 for row in rows))
         proc.stdin.write(b"\x04")
         proc.stdin.flush()
         out,_=proc.communicate(timeout=20)
         assert proc.returncode==0 and out
         return {"account":"separate new nonadministrator","password_authenticated":True,"bad_password_refused":True,"pty":True,
-                "operation":next(row[7] for row in rows if row[4]==1),"output_bytes":len(out),"exit":proc.returncode}
+                "command":"system status","successful_commands":next(row[4] for row in rows if row[0]==terminal),"output_bytes":len(out),"exit":proc.returncode}
     finally:
         helper.unlink(missing_ok=True)
         if proc is not None and proc.poll() is None:
