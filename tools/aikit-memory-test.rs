@@ -49,6 +49,7 @@ impl BlockDevice for Disk {
 fn main() {
     assert!(runtime::ai::mapping::DEFAULT.len()<=storage::object::MAX_CONTENT);
     runtime::ai::mapping::validate(runtime::ai::mapping::DEFAULT).unwrap();
+    personal_recall_route();
     browser_operations();
     real_recall();
     search_tests();
@@ -232,6 +233,25 @@ fn interrupted_writes(path:&str,sectors:u64,owner:[u8;16],id:u64){
 }
 
 // ------------------------=
+// FUNC: personal_recall_route
+// DESC: Exercises the actual voice and desktop router and verifies recall cannot authorize a model settings proposal.
+// ------------------=
+fn personal_recall_route() {
+    use runtime::ai::{kit::*,mapping::ConfiguredMap};
+    let mut map=ConfiguredMap::new();
+    for origin in [RequestOrigin::Voice,RequestOrigin::DesktopChat] {
+        for input in [b"What's the name of my cat?".as_slice(),b"What is my cat called",b"Tell me about my cat", "What’s my dog's name?".as_bytes()] {
+            let request=RequestApi::new().accept(input,[7;16],origin);
+            let route=IntentRouter::route(&mut map,&request);
+            assert_eq!(route,RequestRoute::Inference(InferenceMode::Conversation));
+            assert!(InferenceRequest::admit(&request,route).is_none());
+        }
+        let request=RequestApi::new().accept(b"Change my computer name to Shade",[7;16],origin);
+        assert!(matches!(IntentRouter::route(&mut map,&request),RequestRoute::Control(_)));
+    }
+}
+
+// ------------------------=
 // FUNC: real_recall
 // DESC: Exercises the shipped pretrained model, independent sessions and a cold Hermes conversation over the production submission boundary.
 // ------------------=
@@ -315,6 +335,18 @@ fn real_recall() {
             println!("Native generation cancel return={:?}",stop.elapsed());
         }
         assert!(counts[1]<counts[0]);
+        for fact in [b"Ihave a cat".as_slice(),b"My cat's nams shade"] {
+            engine.execute(&mut backend,owner,session,Operation::Store(Category::Semantic,fact,b"user"),3).unwrap();
+        }
+        let question=b"What's the name of my cat?";
+        let n=engine.context(&mut backend,owner,session,question,256,&mut context).unwrap();
+        model.clear_conversation();
+        model.submit_recalled(question,profile,&context[..n],None).unwrap();
+        let start=std::time::Instant::now();
+        while model.busy(){model.poll().unwrap();assert!(start.elapsed().as_secs()<180);}
+        let answer=String::from_utf8_lossy(model.output());
+        assert!(answer.split(|c:char| !c.is_alphabetic()).any(|w|w.eq_ignore_ascii_case("Shade")),"answer: {answer}");
+        println!("Personal recall with original saved spelling: {answer}");
         unsafe{qwen::workers::stop_host_workers();}
         for worker in workers {worker.join().unwrap();}
     }

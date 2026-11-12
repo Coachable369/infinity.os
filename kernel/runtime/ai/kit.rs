@@ -107,13 +107,30 @@ pub enum RequestRoute {
 
 pub struct InferenceBroker;
 
+// ------------------------=
+// FUNC: personal_inquiry
+// DESC: Routes informational questions about the speaker to owner-scoped recall after explicit OS controls have been resolved.
+// ------------------=
+fn personal_inquiry(input: &[u8]) -> bool {
+    let mut terms=input.split(|b|!b.is_ascii_alphabetic()).filter(|s|!s.is_empty()).peekable();
+    for prefix in [b"infinity".as_slice(),b"please"] {
+        if terms.peek().is_some_and(|w|w.eq_ignore_ascii_case(prefix)){terms.next();}
+    }
+    let Some(first)=terms.next() else{return false;};
+    let question=[b"what".as_slice(),b"who",b"when",b"where",b"which",b"how",b"why"]
+        .iter().any(|w|first.eq_ignore_ascii_case(w));
+    let about=first.eq_ignore_ascii_case(b"tell") && terms.next().is_some_and(|w|w.eq_ignore_ascii_case(b"me"))
+        && terms.next().is_some_and(|w|w.eq_ignore_ascii_case(b"about"));
+    (question || about) && terms.any(|w|w.eq_ignore_ascii_case(b"my") || w.eq_ignore_ascii_case(b"mine"))
+}
+
 impl InferenceBroker {
     // ------------------------=
     // FUNC: route
     // DESC: Chooses plain conversation or the bounded desktop-tool prompt without granting execution authority.
     // ------------------=
     pub fn route(input: &[u8]) -> InferenceMode {
-        if control::veto_action(input) {
+        if control::veto_action(input) || personal_inquiry(input) {
             InferenceMode::Conversation
         } else {
             InferenceMode::DesktopTools
