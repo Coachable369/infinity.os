@@ -14,6 +14,16 @@ mod geturl_command;
 const LINE_CAPACITY: usize = 128;
 struct ConsoleOutput {
     lines: Vec<Vec<u8>>,
+    remote: Option<runtime::console_execution::Outcome>,
+}
+mod remote_commands {
+    // ------------------------=
+    // FUNC: foreign_owner
+    // DESC: Models this fixture's single shell; no other remote shells are registered in the host actor harness.
+    // ------------------=
+    pub fn foreign_owner(owner: [u8; 16], console: &super::ConsoleRuntime) -> bool {
+        owner != console.current_session.0 && console.output.remote.is_some()
+    }
 }
 impl ConsoleOutput {
     // ------------------------=
@@ -266,7 +276,7 @@ fn main() {
     let mut command_console = ConsoleRuntime {
         current_user: session.user,
         current_session: session.id,
-        output: ConsoleOutput { lines: Vec::new() },
+        output: ConsoleOutput { lines: Vec::new(), remote: None },
         redraws: 0,
     };
     use core::sync::atomic::Ordering;
@@ -308,6 +318,7 @@ fn main() {
         u32::MAX
     );
     assert_eq!(command_console.redraws, 0);
+    command_console.output.remote = Some(runtime::console_execution::Outcome::new());
     https::cancel(owner).unwrap();
     geturl_command::poll(&mut command_console);
     assert_eq!(
@@ -315,6 +326,9 @@ fn main() {
         42
     );
     assert_eq!(command_console.redraws, 1);
+    let remote = command_console.output.remote.take().unwrap();
+    assert_eq!(remote.status, 42);
+    assert_eq!(remote.diagnostic, runtime::console_execution::Diagnostic::Unavailable);
     assert_eq!(
         https::get(
             owner,
