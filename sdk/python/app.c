@@ -91,7 +91,28 @@ static PyObject *done(PyObject *self,PyObject *args) {
 static PyObject *yield_native(PyObject *self,PyObject *unused) {
     (void)self;(void)unused;app_yield();Py_RETURN_NONE;
 }
+// ------------------------=
+// FUNC: memory_request
+// DESC: Calls the private memory browser service using an output buffer owned by this process.
+// ------------------=
+static PyObject *memory_request(PyObject *self, PyObject *args) {
+    unsigned long long id;
+    unsigned int action, category;
+    const char *text;
+    Py_ssize_t length;
+    char result[4096];
+    (void)self;
+    if (!PyArg_ParseTuple(args, "IKIs#", &action, &id, &category, &text, &length)) return NULL;
+    int64_t rc = infinity_system_call(0x12f8, action, id, category,
+        (uintptr_t)text, length, (uintptr_t)result);
+    if (rc < 0 || rc > sizeof(result)) {
+        PyErr_Format(PyExc_OSError, "Memory operation failed (%lld)", (long long)rc);
+        return NULL;
+    }
+    return PyBytes_FromStringAndSize(result, rc);
+}
 static PyMethodDef methods[]={
+    {"memory_request",memory_request,METH_VARARGS,NULL},
     {"window",window,METH_VARARGS,NULL},{"element",element,METH_VARARGS,NULL},
     {"state",state,METH_VARARGS,NULL},{"choice",choice,METH_VARARGS,NULL},
     {"text_action",text_action,METH_VARARGS,NULL},{"publish",publish,METH_NOARGS,NULL},

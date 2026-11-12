@@ -23,7 +23,7 @@ pub struct Service {
     tool_grammar: Option<fn(&[u8], bool) -> bool>,
     turn_start: usize,
     turn_desktop_context: bool,
-    personal_context: [u8; 1536],
+    personal_context: [u8; 1792],
     personal_context_len: usize,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
@@ -214,7 +214,7 @@ impl Service {
             tool_grammar: None,
             turn_start: 0,
             turn_desktop_context: false,
-            personal_context: [0; 1536],
+            personal_context: [0; 1792],
             personal_context_len: 0,
             reused_tokens: 0,
             prefill_tokens: 0,
@@ -495,6 +495,27 @@ impl Service {
     // ------------------=
     pub fn output(&self) -> &[u8] {
         &self.output[..self.output_count]
+    }
+    #[cfg(not(target_os = "none"))]
+    // ------------------------=
+    // FUNC: acceptance_prompt_contains
+    // DESC: Compares synthetic evidence against decoded production input tokens without publishing the prompt.
+    // ------------------=
+    pub fn acceptance_prompt_contains(&self, value: &[u8]) -> bool {
+        if value.is_empty() || value.len()>512 {return false;}
+        let mut window=[0;512];
+        let mut used=0;
+        for &token in &self.prompt[..self.prompt_count] {
+            let mut piece=[0;1024];
+            if let Ok(n)=self.tokenizer.decode(token,&mut piece) {
+                for &b in &piece[..n] {
+                    if used==value.len() {window.copy_within(1..used,0);used-=1;}
+                    window[used]=b; used+=1;
+                    if &window[..used]==value {return true;}
+                }
+            }
+        }
+        false
     }
     // ------------------------=
     // FUNC: acceptance_context_limit

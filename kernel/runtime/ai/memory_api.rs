@@ -29,6 +29,9 @@ pub struct Engine {
     memory: Memory,
     loaded: bool,
     owner: Owner,
+    pub trace: memory_search::Trace,
+    pub attempts: u64,
+    pub recall_failures: u64,
     pub loads: u64,
     pub errors: u64,
     pub retrieval_ns: u64,
@@ -61,6 +64,9 @@ impl Engine {
             memory: Memory::new([0; 16]),
             loaded: false,
             owner: [0; 16],
+            trace: memory_search::Trace::EMPTY,
+            attempts: 0,
+            recall_failures: 0,
             loads: 0,
             errors: 0,
             retrieval_ns: 0,
@@ -86,6 +92,14 @@ impl Engine {
         }
         self.loaded = false;
         self.memory = Memory::new([0; 16]);
+        if self.owner != owner {
+            self.trace = memory_search::Trace::EMPTY;
+            self.attempts = 0;
+            self.recall_failures = 0;
+            self.retrieval_ns = 0;
+            self.max_retrieval_ns = 0;
+            self.errors = 0;
+        }
         self.owner = owner;
         let mut bytes = [0; MAX_BYTES];
         let result = backend.load(owner, session, &mut bytes).and_then(|n| {
@@ -96,7 +110,16 @@ impl Engine {
             Memory::decode(&bytes[..n], owner)
         });
         match result {
-            Ok(m) => {
+            Ok(mut m) => {
+                // Rebuild older indexes in RAM. Read-only requests never write a checkpoint.
+                for index in 0..m.records(owner)?.len() {
+                    let mut r = m.records(owner)?[index];
+                    if r.model() != super::memory_embedding::MODEL || r.embedding().len() != super::memory_embedding::DIM {
+                        if memory_search::embed_record(&mut r, &mut super::memory_embedding::Potion).is_ok() {
+                            m.update(owner,r.id,r)?;
+                        }
+                    }
+                }
                 self.memory = m;
                 self.loaded = true;
                 self.loads += 1;
@@ -107,6 +130,14 @@ impl Engine {
                 Err(e)
             }
         }
+    }
+    // ------------------------=
+    // FUNC: catalog
+    // DESC: Borrows the authorized cached owner index only for the current bounded list operation.
+    // ------------------=
+    pub fn catalog(&mut self, backend: &mut impl Backend, owner: Owner, session: Owner) -> Result<&Memory,Error> {
+        self.ensure(backend,owner,session)?;
+        Ok(&self.memory)
     }
     // ------------------------=
     // FUNC: search
@@ -142,7 +173,11 @@ impl Engine {
     ) -> Result<usize, Error> {
         let start = backend.now();
         self.ensure(backend, owner, session)?;
-        let result = memory_search::context(&self.memory, owner, query, 3, budget, out);
+        self.attempts = self.attempts.saturating_add(1);
+        self.trace = memory_search::Trace::EMPTY;
+        let result = memory_search::recall(&self.memory, owner, query, 3)
+            .and_then(|hits| memory_search::encode_context(&self.memory, owner, &hits, budget, out, &mut self.trace));
+        if result.is_err() { self.recall_failures = self.recall_failures.saturating_add(1); }
         self.retrieval_ns = backend.now().saturating_sub(start);
         self.max_retrieval_ns = self.max_retrieval_ns.max(self.retrieval_ns);
         result
@@ -206,13 +241,17 @@ impl Engine {
                 if sensitive(text) {
                     return Err(Error::Unauthorized);
                 }
-                receipt.id = next.store(owner, Record::new(owner, category, text, source, now)?)?;
+                let mut record = Record::new(owner, category, text, source, now)?;
+                embed_if_supported(&mut record)?;
+                receipt.id = next.store(owner, record)?;
             }
             Operation::Update(id, category, text, source) => {
                 if sensitive(text) {
                     return Err(Error::Unauthorized);
                 }
-                next.update(owner, id, Record::new(owner, category, text, source, now)?)?;
+                let mut record = Record::new(owner, category, text, source, now)?;
+                embed_if_supported(&mut record)?;
+                next.update(owner, id, record)?;
                 receipt.id = id;
             }
             Operation::Delete(id) => {
@@ -348,4 +387,15 @@ pub fn candidate(owner:Owner, text:&[u8], evidence:Evidence<'_>, consent:bool, n
     if prefix.len()+text.len()>content.len(){return Err(Error::Capacity);}
     content[..prefix.len()].copy_from_slice(prefix);content[prefix.len()..prefix.len()+text.len()].copy_from_slice(text);
     Record::new(owner,category,&content[..prefix.len()+text.len()],source,now)
+}
+
+// ------------------------=
+// FUNC: embed_if_supported
+// DESC: Stores original text when the English model cannot represent the input.
+// ------------------=
+fn embed_if_supported(record: &mut Record) -> Result<(), Error> {
+    match memory_search::embed_record(record, &mut super::memory_embedding::Potion) {
+        Err(Error::Unavailable) => Ok(()),
+        result => result,
+    }
 }

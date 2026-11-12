@@ -107,6 +107,13 @@ pub fn lexical(
     query: &[u8],
     limit: usize,
 ) -> Result<Results, Error> {
+    keywords(memory, owner, query, limit, false)
+}
+// ------------------------=
+// FUNC: keywords
+// DESC: Excludes common question words only during automatic recall, preserving literal manual searches.
+// ------------------=
+fn keywords(memory:&Memory,owner:Owner,query:&[u8],limit:usize,selective:bool)->Result<Results,Error> {
     let query = core::str::from_utf8(query).map_err(|_| Error::Invalid)?;
     let mut end=query.len().min(512);
     while !query.is_char_boundary(end){end-=1;}
@@ -116,6 +123,7 @@ pub fn lexical(
         let content = core::str::from_utf8(r.content()).map_err(|_| Error::Corrupt)?;
         let mut count = 0;
         for (i, word) in words(query).enumerate() {
+            if selective && ["a","an","the","is","are","was","what","how","why","which","to","in","of","and","or","my","me","do","you","i","for","it","can","please"].iter().any(|stop|word.eq_ignore_ascii_case(stop)) { continue; }
             if words(query).take(i).any(|old| same_word(old, word)) {
                 continue;
             }
@@ -222,7 +230,26 @@ pub fn context(
     token_budget: usize,
     out: &mut [u8],
 ) -> Result<usize, Error> {
-    let results = lexical(memory, owner, query, limit)?;
+    let hits = recall(memory,owner,query,limit)?;
+    encode_context(memory,owner,&hits,token_budget,out,&mut Trace::EMPTY)
+}
+#[derive(Clone, Copy)]
+pub struct Trace {
+    pub candidates: usize,
+    pub selected: usize,
+    pub bytes: usize,
+    pub semantic: bool,
+    pub hits: [Hit; 3],
+}
+impl Trace {
+    pub const EMPTY:Self=Self{candidates:0,selected:0,bytes:0,semantic:false,hits:[Hit{id:0,score:0.0};3]};
+}
+// ------------------------=
+// FUNC: encode_context
+// DESC: Records only the authorized IDs and scores that actually fit in the submitted memory block.
+// ------------------=
+pub fn encode_context(memory:&Memory,owner:Owner,results:&Results,token_budget:usize,out:&mut[u8],trace:&mut Trace)->Result<usize,Error>{
+    *trace = Trace { candidates:results.len, semantic:results.semantic, ..Trace::EMPTY };
     if results.len == 0 {
         return Ok(0);
     }
@@ -235,7 +262,7 @@ pub fn context(
     out[..prefix.len()].copy_from_slice(prefix);
     let mut at = prefix.len();
     let mut count = 0;
-    for hit in &results.hits[..results.len] {
+    for hit in results.hits[..results.len].iter().take(trace.hits.len()) {
         let r = memory.inspect(owner, hit.id)?;
         let mut item = [0u8; 3500];
         item[0] = b'[';
@@ -280,11 +307,34 @@ pub fn context(
         }
         out[at..at + n].copy_from_slice(&item[..n]);
         at += n;
+        trace.hits[count] = *hit;
         count += 1;
     }
     if count == 0 {
         return Ok(0);
     }
     out[at..at + suffix.len()].copy_from_slice(suffix);
-    Ok(at + suffix.len())
+    trace.selected = count;
+    trace.bytes = at + suffix.len();
+    Ok(trace.bytes)
+}
+
+// ------------------------=
+// FUNC: recall
+// DESC: Keeps exact keyword hits and admits paraphrases above the configured angular similarity cutoff.
+// ------------------=
+pub fn recall(memory: &Memory, owner: Owner, query: &[u8], limit: usize) -> Result<Results, Error> {
+    use super::memory_embedding::{Potion, DIM, MODEL};
+    let lexical = keywords(memory, owner, query, limit, true)?;
+    let mut query_vector = [0.0; DIM];
+    if Potion.embed(query.get(..query.len().min(512)).unwrap_or_default(), &mut query_vector).is_err() {
+        return Ok(lexical);
+    }
+    let mut ranked = semantic(memory, owner, MODEL, &query_vector, limit, 0.48)?;
+    for hit in &lexical.hits[..lexical.len] {
+        if !ranked.hits[..ranked.len].iter().any(|entry| entry.id == hit.id) {
+            ranked.insert(Hit { id: hit.id, score: hit.score / (hit.score + 1.0) }, limit);
+        }
+    }
+    Ok(ranked)
 }

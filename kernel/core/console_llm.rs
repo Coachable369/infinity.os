@@ -199,6 +199,16 @@ impl ConsoleRuntime {
         let memory=input.strip_prefix(b"infinity memory ").or_else(||input.strip_prefix(b"ai memory "));
         if let Some(input)=memory {
             if !self.workplace_authorized(false) {self.output.fail(crate::runtime::console_execution::Diagnostic::Denied);self.output.write_line(b"Memory access denied.");return true;}
+            if input.trim_ascii().eq_ignore_ascii_case(b"trace") {
+                let authorized=crate::runtime::with_runtime(|r| r.identity.console_session_authorized(self.current_session,self.current_user)
+                    && r.identity.is_administrator(self.current_user)).unwrap_or(false);
+                if !authorized { self.output.fail(crate::runtime::console_execution::Diagnostic::Denied); return true; }
+                let mut out=crate::runtime::console_execution::Bytes::<512>::new();
+                if ai::with_ai_runtime(|ai| ai.memory_trace(self.current_user.0,self.current_session.0,&mut out)).is_ok() {
+                    self.output.write_line(out.bytes());
+                } else { self.output.fail(crate::runtime::console_execution::Diagnostic::Unavailable); }
+                return true;
+            }
             let Some(command)=ai::memory_request::command(input) else {self.output.fail(crate::runtime::console_execution::Diagnostic::Syntax);self.output.write_line(b"memory status | stats | search QUERY | inspect ID | remember TEXT | update ID to TEXT | forget ID");return true;};
             let mut out=[0;8192];let receipt=ai::with_ai_runtime(|ai|ai.memory_command(self.current_user.0,self.current_session.0,command,&mut out));
             if receipt.outcome==ai::hermes_memory_request::Outcome::Failed {self.output.fail(crate::runtime::console_execution::Diagnostic::Unavailable);}

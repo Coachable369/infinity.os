@@ -80,6 +80,7 @@ pub enum LauncherAction {
     Settings(usize),
     TextEditor,
     InfinityCode,
+    InfinityMemory,
     MediaPlayer,
     CommandWindow,
     TaskManager,
@@ -179,7 +180,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize + 2 * cfg!(feature = "native-python") as usize] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize + 3 * cfg!(feature = "native-python") as usize] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 4,
@@ -279,6 +280,8 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
     },
     #[cfg(feature = "native-python")]
     LauncherEntry { label: b"Media Files", icon_role: 4, action: LauncherAction::Home(6) },
+    #[cfg(feature = "native-python")]
+    LauncherEntry { label: b"Infinity Memory", icon_role: 61, action: LauncherAction::InfinityMemory },
 ];
 
 pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [

@@ -3,7 +3,7 @@ use super::{console_language as language, console_execution::{Bytes, OUTPUT_BYTE
 pub struct Entry { pub name: &'static [u8], pub usage: &'static [u8], pub description: &'static [u8] }
 macro_rules! entry { ($n:literal,$u:literal,$d:literal) => { Entry{name:$n,usage:$u,description:$d} }; }
 pub static COMMANDS: &[Entry] = &[
-    entry!(b"ai memory",b"ai memory status | stats | search QUERY | inspect ID | remember TEXT | update ID to TEXT | forget ID",b"Owner-private persistent AIKit memory. Alias: infinity memory. Lexical recall works without an embedding model; deletes are durable. memory status still reports RAM."),
+    entry!(b"ai memory",b"ai memory status | stats | search QUERY | inspect ID | remember TEXT | update ID to TEXT | forget ID",b"Owner-private persistent AIKit memory. Alias: infinity memory. Open Infinity Memory for semantic search and editing. memory status still reports RAM."),
     entry!(b"exit",b"exit",b"Leave Command Window and return to the appropriate desktop or startup surface."),
     entry!(b"hello",b"hello",b"Display the built-in system greeting."),
     entry!(b"system status",b"system status",b"Inspect kernel and driver readiness."),

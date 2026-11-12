@@ -29,6 +29,17 @@ Other phrasings can be proposed by the existing LLM intent engine using
 The model must search first to obtain IDs; it must not invent IDs or claim success
 before the native receipt. Recalled procedures never authorize execution.
 
+## Infinity Memory
+
+Open **Infinity Memory** from the application launcher. Select **New memory**, enter
+up to 512 UTF-8 bytes, choose its category, and press **Save**. The inspector
+shows its stable ID, source, UTC timestamps and embedding model. Search defaults
+to semantic similarity. Choose **Keyword** for literal terms or unsupported
+languages. Use the category filter and Previous/Next for six results per page.
+Delete asks for confirmation. Ctrl+N creates, Ctrl+S saves and Ctrl+F focuses
+search. Console, conversational requests and this app access the same owner
+catalog.
+
 ## Native API
 
 This is an internal, freestanding Rust AIKit API, not a separate service or database.
@@ -52,7 +63,7 @@ tests use an explicit fixture backend; host production access is unavailable.
 IntelligenceKit and DevKit use the existing AIKit prompt builder. Application
 source/advice, application decisions, desktop chat and SSH advice add a single
 bounded recall block; unavailable retrieval leaves normal inference intact.
-Python/C applications do **not** have a new private-memory syscall. They may not
+The private browser operation is restricted to the immutable installed application in its owning session. Other Python/C applications have no private-memory grant. They may not
 bypass owner policy via generated application actions. Do not invent Python/C
 bindings or read the checkpoint as a normal file. Existing application APIs remain
 unchanged. The Rust behavioral example is in `Examples/NativeMemoryHarness.rs`.
@@ -95,21 +106,25 @@ this feature does not migrate or alter protected voice settings.
 
 ## Search and embeddings
 
-**Live semantic embedding generation is unavailable:** no validated native
-embedding model is installed for this feature. Status reports this explicitly.
-Lexical search independently counts distinct matching alphanumeric query terms,
-case-insensitively (Unicode lowercase), sorting by count then stable ID. It examines
-the first 512 UTF-8-safe query bytes and returns at most the requested limit/16.
+AIKit packages the pretrained **Potion Base 2M** English static embedding
+table. The model space is `potion-2M-389b9f64-en-v1`, with 64 dimensions.
+Native WordPiece segmentation and normalized mean pooling use the original
+weights. This implementation supports ASCII English input. Other scripts and
+unrepresentable words retain keyword search. Persisted records contain the text
+and its vector. Updating a record embeds the new text. Opening an older catalog
+rebuilds supported records in RAM and the next successful write persists them.
 
-`memory_search::EmbeddingProvider` exposes `model()` and `embed(text, out)`.
-`embed_record` validates returned dimensions and finite nonzero vectors.
-`semantic` performs exact cosine ranking with configurable threshold [-1,1],
-owner isolation, model/dimension compatibility, and top-K. Incompatible records
-are counted and skipped. Tests use mathematical vectors only, not fake semantic
-embeddings. A real model must be validated in InfinityOS before advertising vector
-memory. Changing embedding models requires re-embedding; switching conversational
-models does not alter records. No model download or silent fallback to random
-vectors occurs.
+The graphical semantic search ranks by exact cosine similarity with a 0.40
+threshold. Conversational recall uses a 0.48 threshold and also considers
+distinct matching keywords, excluding common English question words. The
+Console search/forget-by-query commands remain lexical. Queries are bounded
+to 512 bytes. Results are ordered by score and then stable ID. The embedding
+model is independent of the conversation model.
+
+Use `ai memory status` for counts, retrieval times, candidates, records
+selected, and the conservative memory token upper bound. An authenticated
+administrator can use `ai memory trace` to inspect the last selected IDs and
+scores for their own catalog. No prompt or memory text is written to the trace.
 
 ## Capture, privacy and latency
 

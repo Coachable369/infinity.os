@@ -20,6 +20,8 @@ pub mod settings;
 pub mod memory;
 pub mod persistent_memory;
 pub mod memory_search;
+pub mod memory_browser;
+pub mod memory_embedding;
 pub mod memory_api;
 pub mod memory_request;
 pub mod hermes_profile;
@@ -1127,7 +1129,9 @@ impl AiRuntime {
             let Ok(n)=context else{return false;};
             n
         }else{0};
+        if route == RequestRoute::Inference(InferenceMode::Conversation) {
         augmented_len+=self.persistent_memory.context(&mut memory_api::Native,self.chat_owner,self.hermes_session,input,256,&mut augmented[augmented_len..augmented_len+256]).unwrap_or(0);
+        }
         #[cfg(target_os="none")]
         let prompt_phase = voice_conversation::WorkPhase::begin(12, origin == RequestOrigin::Voice);
         self.deferred_tool_catalog = route == RequestRoute::Inference(InferenceMode::DesktopTools);
@@ -2300,6 +2304,28 @@ fn plan_text(plan:&intelligence::Plan)->crate::runtime::console_execution::Bytes
 // ------------------=
 fn memory_timestamp()->u64 {let now=crate::ui::performance::monotonic_ns().unwrap_or(0);clock::SYSTEM.utc_nanoseconds(now).map(|ns|ns/1_000_000_000).unwrap_or(0)}
 impl AiRuntime {
+    // ------------------------=
+    // FUNC: memory_trace
+    // DESC: Exposes the owning developer session's last selected IDs and scores after live authorization.
+    // ------------------=
+    pub(crate) fn memory_trace(&mut self,owner:[u8;16],session:[u8;16],out:&mut crate::runtime::console_execution::Bytes<512>)->Result<(),persistent_memory::Error>{
+        use core::fmt::Write;
+        self.persistent_memory.catalog(&mut memory_api::Native,owner,session)?;
+        let trace=self.persistent_memory.trace;
+        writeln!(out,"Selected {} of {} candidates",trace.selected,trace.candidates).map_err(|_|persistent_memory::Error::Capacity)?;
+        for hit in &trace.hits[..trace.selected] {
+            writeln!(out,"ID {}  score {:.3}",hit.id,hit.score).map_err(|_|persistent_memory::Error::Capacity)?;
+        }
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: browse_memories
+    // DESC: Handles the signed-in native browser through the same owner cache and durable transaction policy as chat.
+    // ------------------=
+    pub fn browse_memories(&mut self, owner:[u8;16], session:[u8;16], action:u64, id:u64, category:u8, text:&[u8], output:&mut crate::runtime::console_execution::Bytes<4096>) -> Result<(),persistent_memory::Error> {
+        if (4..=6).contains(&action) { self.pending_memory=None; }
+        memory_browser::request(&mut self.persistent_memory,&mut memory_api::Native,owner,session,action,id,category,text,memory_timestamp(),output)
+    }
     // ------------------------=
     // FUNC: memory_command
     // DESC: Exposes deterministic memory operations to native kit and console clients after live session authorization.

@@ -17,6 +17,11 @@ impl DisplayDevice {
         role: usize,
         size: usize,
     ) -> bool {
+        if role == 61 {
+            self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-memory-v1.bmp"),
+                center_x.saturating_sub(size/2),center_y.saturating_sub(size/2),size,size);
+            return true;
+        }
         #[cfg(feature="native-browser")]
         if role==60 {
             self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-browser-icon-v1.bmp"),

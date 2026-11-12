@@ -49,6 +49,8 @@ impl BlockDevice for Disk {
 fn main() {
     assert!(runtime::ai::mapping::DEFAULT.len()<=storage::object::MAX_CONTENT);
     runtime::ai::mapping::validate(runtime::ai::mapping::DEFAULT).unwrap();
+    browser_operations();
+    real_recall();
     search_tests();
     api_tests();
     std::fs::create_dir_all("build/tests").unwrap();
@@ -105,7 +107,7 @@ fn search_tests(){
     let mut out=[0;1024];let n=search::context(&m,owner,b"Ollie",3,200,&mut out).unwrap();assert!(n>0 && n<=200);assert_eq!(search::context(&m,owner,b"absent",3,200,&mut out),Ok(0));assert_eq!(search::context(&m,owner,b"Ollie",3,10,&mut out),Ok(0));
     let mut provider=search::Unavailable;assert_eq!(provider.model(),Err(Error::Unavailable));assert_eq!(provider.embed(b"anything",&mut[0.0;2]),Err(Error::Unavailable));
     m.delete(owner,a).unwrap();assert!(search::lexical(&m,owner,b"Ollie",10).unwrap().hits[..1].iter().all(|h|h.id!=a));
-    println!("AIKit lexical, cosine, owner isolation and bounded context: PASS; real semantic provider UNAVAILABLE");
+    println!("AIKit lexical, cosine, owner isolation and bounded context: PASS");
 }
 
 struct Backend {bytes:Vec<u8>,allowed:bool,fail:bool,reads:usize,writes:usize}
@@ -227,4 +229,109 @@ fn interrupted_writes(path:&str,sectors:u64,owner:[u8;16],id:u64){
         drop(store);std::fs::remove_file(copy).unwrap();
     }
     println!("AIKit interrupted native checkpoint recovery: PASS");
+}
+
+// ------------------------=
+// FUNC: real_recall
+// DESC: Exercises the shipped pretrained model, independent sessions and a cold Hermes conversation over the production submission boundary.
+// ------------------=
+fn real_recall() {
+    use runtime::ai::{memory_api::{Engine,Operation}, memory_browser, qwen};
+    use runtime::console_execution::Bytes;
+    let owner=[7;16]; let session=[9;16];
+    let mut serialized=[0;memory::MAX_BYTES];
+    let n=Memory::new(owner).encode(&mut serialized).unwrap();
+    let mut backend=Backend{bytes:serialized[..n].to_vec(),allowed:true,fail:false,reads:0,writes:0};
+    let mut engine=Engine::new();
+    for content in [b"Install the missing compiler dependency to fix the build".as_slice(),b"The orchard grows peaches and apples",b"The diagnostic project code is ORBIT-7429."] {
+        engine.execute(&mut backend,owner,session,Operation::Store(Category::Semantic,content,b"test user"),1).unwrap();
+    }
+    let mut page=Bytes::new();
+    memory_browser::request(&mut engine,&mut backend,owner,session,2,0,0,b"Compilation failed because a library was absent",2,&mut page).unwrap();
+    assert_eq!(page.bytes().split(|b|*b==b'\t').next(),Some(b"1".as_slice()),"paraphrase ranking: {:?}",page.bytes());
+    let stats=engine.execute(&mut backend,owner,session,Operation::Status,2).unwrap();
+    assert_eq!(stats.embedded,3);
+    let question=b"What is the diagnostic project code?";
+    let mut context=[0;256];
+    backend.allowed=false;
+    assert_eq!(engine.context(&mut backend,[8;16],session,question,256,&mut context),Err(Error::Unauthorized));
+    assert_eq!(context,[0;256]);
+    backend.allowed=true;
+    let n=engine.context(&mut backend,owner,session,question,256,&mut context).unwrap();
+    assert!(context[..n].windows(10).any(|s|s==b"ORBIT-7429"));
+    assert!(!context[..n].windows(7).any(|s|s==b"orchard"));
+    if std::env::args().any(|a|a=="--inference") {
+        let bytes=Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf").unwrap().into_boxed_slice());
+        let arena=Box::leak(vec![0u128;1280*1024*1024/16].into_boxed_slice());
+        let arena=unsafe{std::slice::from_raw_parts_mut(arena.as_mut_ptr().cast::<u8>(),arena.len()*16)};
+        let mut model=qwen::service::Service::load_hermes(bytes,arena).unwrap();
+        let workers:Vec<_>=(0..4).map(|id|std::thread::spawn(move||unsafe{qwen::workers::run_host_worker(id)})).collect();
+        while qwen::workers::online()!=4 {std::thread::yield_now();}
+        for authorized in [false,true] {
+            model.clear_conversation();
+            let start=std::time::Instant::now();
+            model.submit_personal(question,if authorized{&context[..n]}else{&[]},None).unwrap();
+            assert_eq!(model.acceptance_prompt_contains(b"ORBIT-7429"),authorized);
+            let mut first=None;
+            while model.busy() {
+                model.poll().unwrap();
+                if !model.output().is_empty() && first.is_none() { first=Some(start.elapsed()); }
+                assert!(start.elapsed().as_secs()<180);
+            }
+            assert_eq!(model.output().windows(10).any(|v|v==b"ORBIT-7429"),authorized,
+                "diagnostic fact answer: {}",String::from_utf8_lossy(model.output()));
+            println!("Cold Hermes diagnostic fact authorized={authorized} first_token={first:?}");
+        }
+        unsafe{qwen::workers::stop_host_workers();}
+        for worker in workers {worker.join().unwrap();}
+    }
+}
+
+// ------------------------=
+// FUNC: browser_operations
+// DESC: Exercises the UI service and conversation against the same catalog, including filter pages, revocation and removal.
+// ------------------=
+fn browser_operations() {
+    use runtime::ai::{memory_api::{Engine,Operation}, memory_request::{self,Command},memory_browser};
+    use runtime::console_execution::Bytes;
+    let (owner,session)=([7;16],[9;16]);
+    let mut bytes=[0;memory::MAX_BYTES];
+    let n=Memory::new(owner).encode(&mut bytes).unwrap();
+    let mut backend=Backend{bytes:bytes[..n].to_vec(),allowed:true,fail:false,reads:0,writes:0};
+    let mut engine=Engine::new();
+    let mut output=Bytes::new();
+    memory_browser::request(&mut engine,&mut backend,owner,session,4,0,3,b"Resolve compiler errors by installing the missing package",100,&mut output).unwrap();
+    let id=std::str::from_utf8(output.bytes()).unwrap().parse::<u64>().unwrap();
+    let saved=engine.inspect(&mut backend,owner,session,id).unwrap();
+    assert_eq!((saved.created_at,saved.updated_at,saved.category,saved.source()),(100,100,Category::Procedural,b"Infinity Memory".as_slice()));
+    let original=saved.embedding().to_vec();
+    let mut ctx=[0;256];
+    assert!(engine.context(&mut backend,owner,session,b"missing library breaks compilation",256,&mut ctx).unwrap()>0);
+    let mut out=[0;8192];
+    let r=memory_request::respond(&mut engine,&mut backend,owner,session,Command::Remember(b"Project architecture uses a distributed queue"),101,&mut out);
+    assert_eq!(r.outcome,runtime::ai::hermes_memory_request::Outcome::Saved);
+    let mut page=Bytes::new();
+    memory_browser::request(&mut engine,&mut backend,owner,session,1,0,2,b"distributed",102,&mut page).unwrap();
+    assert_eq!(page.bytes().split(|b|*b==b'\t').next(),Some(b"2".as_slice()));
+    memory_browser::request(&mut engine,&mut backend,owner,session,5,id,1,b"The orchard grows pears",103,&mut Bytes::new()).unwrap();
+    let updated=engine.inspect(&mut backend,owner,session,id).unwrap();
+    assert_eq!((updated.created_at,updated.updated_at,updated.category),(100,103,Category::Episodic));
+    assert_ne!(original,updated.embedding());
+    assert_eq!(engine.context(&mut backend,owner,session,b"missing library breaks compilation",256,&mut ctx),Ok(0));
+    let mut denied=Bytes::new();
+    for action in 0..=6 {
+        assert_eq!(memory_browser::request(&mut engine,&mut backend,[8;16],session,action,id,1,b"private",104,&mut denied),Err(Error::Unauthorized));
+        assert!(denied.bytes().is_empty());
+    }
+    memory_browser::request(&mut engine,&mut backend,owner,session,6,id,0,b"",105,&mut Bytes::new()).unwrap();
+    assert_eq!(engine.inspect(&mut backend,owner,session,id).err(),Some(Error::NotFound));
+    assert_eq!(engine.context(&mut backend,owner,session,b"orchard pears",256,&mut ctx),Ok(0));
+    for i in 0..8 {
+        engine.execute(&mut backend,owner,session,Operation::Store(Category::Semantic,format!("Notebook {i}").as_bytes(),b"test"),i).unwrap();
+    }
+    for (page_index,expected) in [(0,6),(1,2)] {
+        let mut page=Bytes::new();
+        memory_browser::request(&mut engine,&mut backend,owner,session,1,page_index,2,b"Notebook",106,&mut page).unwrap();
+        assert_eq!(page.bytes().iter().filter(|b|**b==b'\n').count(),expected+1);
+    }
 }

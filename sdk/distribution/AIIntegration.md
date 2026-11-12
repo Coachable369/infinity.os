@@ -74,4 +74,4 @@ the public application ABI.
 
 ## Persistent owner memory
 
-See [PersistentMemory.md](PersistentMemory.md) for native APIs, CLI examples, format, privacy policy and limits. Lexical recall is available; semantic embedding generation requires a validated native model.
+See [PersistentMemory.md](PersistentMemory.md) for native APIs, CLI examples, format, privacy policy and limits. AIKit combines native Potion embeddings with lexical recall and applies the current session’s permissions.

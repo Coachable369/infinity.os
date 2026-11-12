@@ -8,6 +8,7 @@ mod workflow;
 #[path="console_media_service.rs"] mod media;
 #[path = "../runtime/generated_app_recovery.rs"]
 mod recovery;
+#[path="console_memory_browser.rs"] mod memory_browser;
 use super::native_network as network;
 #[path = "console_python_extensions.rs"]
 mod extensions;
@@ -24,6 +25,7 @@ impl Snapshot {
     const EMPTY: Self = Self { path: [0; 95], path_len: 0, bytes: [0; LIMIT], len: 0, object: [0; 16], version: 0 };
 }
 struct Job {
+    memory_browser: bool,
     media_open: Option<crate::runtime::object_navigation::ByteText<96>>,
     tool_export: Option<crate::runtime::object_navigation::ByteText<96>>,
     monitor:Option<crate::runtime::execution::ContextHandle>,
@@ -59,7 +61,7 @@ struct Generated {
 }
 static mut MONITOR_SAMPLE_NS:u64=0;
 static mut MONITOR_RESUME_NS:u64=0;
-static mut JOB: Job = Job { media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
+static mut JOB: Job = Job { memory_browser:false, media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
     filesystem: Vfs::new(), data: app_data::Data::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false,
@@ -345,6 +347,7 @@ unsafe fn start_system_tool(console:&ConsoleRuntime,job:&mut Job,path:&[u8],argu
     let mut names=[ByteText::<96>::empty();32];let mut argv=[b"".as_slice();32];
     if arguments.len()>argv.len(){return Err(b"Too many arguments.");}
     argv[..arguments.len()].copy_from_slice(arguments);
+    if path==memory_browser::PATH { return start_task(console,job,arguments); }
     if path==media::PLAYER {
         let cover=b"/System/media-cover.png";
         let (_,n)=crate::storage::object_read_path(cover,None,&mut job.archive).map_err(|_|b"Player artwork unavailable.".as_slice())?;
@@ -474,7 +477,9 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
         }
     }
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
-    let name=if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
+    job.memory_browser = path == memory_browser::PATH && arguments.len()==2 && job.generated.is_none()
+        && &job.files[0].bytes[..job.files[0].len] == include_bytes!("../../runtime/install/System/infinity-memory.py");
+    let name=if path==memory_browser::PATH { b"Infinity Memory".as_slice() } else if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
     MONITOR_RESUME_NS=0;
     job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
     if job.monitor.is_none(){if job.application.take().is_some(){crate::runtime::ai::application_host::detach();}
@@ -728,6 +733,18 @@ fn exception_call<T:crate::runtime::native_memory::PageTable>(
 }
 
 // ------------------------=
+// FUNC: launch_memory
+// DESC: Focuses the existing browser or starts its immutable installed source under the current login.
+// ------------------=
+pub(super) fn launch_memory(console:&mut ConsoleRuntime) {
+    if gui_control(console,Some(b"Infinity Memory"),crate::ui::window::WindowControl::Focus)==Some(true) { return; }
+    let argv=[b"/system/python".as_slice(),memory_browser::PATH];
+    if let Err(message)=unsafe { start(console,memory_browser::PATH,&argv,Some(include_bytes!("../../runtime/install/System/infinity-memory.py"))) } {
+        console.output.write_line(message);
+    }
+}
+
+// ------------------------=
 // FUNC: launch_media
 // DESC: Starts the immutable player with an optional selected object for immediate playback.
 // ------------------=
@@ -949,7 +966,9 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let result = task.poll_with_services(now, authorized, memory_mut(),
         b"", &files[..file_count], &mut job.output, &mut job.errors,
         |memory, tables, operation, arguments| crate::runtime::with_runtime(|runtime|job.gui.dispatch(runtime,memory,tables,job.owner,native_owner,gui_allowed,operation,arguments,work,display,now)).flatten()
-            .or_else(||media::dispatch(gui_allowed && job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER,console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
+            .or_else(||memory_browser::dispatch(gui_allowed && job.memory_browser,
+                console.current_user.0, console.current_session.0, tables, operation, arguments))
+            .or_else(||media::dispatch(gui_allowed && ((operation==0x12e6 && job.memory_browser) || (job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER)),console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
             .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
             .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
             .or_else(||terminal_read(&mut job.input,tables,operation,arguments))

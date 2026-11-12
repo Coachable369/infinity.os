@@ -170,7 +170,10 @@ pub fn respond(
         let operation = match cmd {
             Command::Status => {
                 let stats = engine.execute(backend, owner, session, Operation::Status, now)?;
-                write!(output,"Memories: {}\nEmbedded: {}\nStorage bytes: {}\nSemantic search: unavailable (no validated embedding model)\nRetrieval ns: {} (max {})\nStorage/index errors: {}\n",stats.count,stats.embedded,engine.storage_bytes,engine.retrieval_ns,engine.max_retrieval_ns,engine.errors).map_err(|_|Error::Capacity)?;
+                write!(output,"Memories: {}\nEmbedded: {}\nStorage bytes: {}\nSemantic recall: Potion 2M (64 dimensions, English)\nRetrieval ns: {} (max {})\nStorage/index errors: {}\n",stats.count,stats.embedded,engine.storage_bytes,engine.retrieval_ns,engine.max_retrieval_ns,engine.errors).map_err(|_|Error::Capacity)?;
+                writeln!(output, "Recall attempts: {}  errors: {}  candidates: {}  selected: {}  token upper bound: {}  mode: {}",
+                    engine.attempts,engine.recall_failures,engine.trace.candidates,engine.trace.selected,engine.trace.bytes,
+                    if engine.trace.semantic {"semantic + keyword"} else {"keyword"}).map_err(|_|Error::Capacity)?;
                 return Ok(Outcome::Inspected);
             }
             Command::Inspect(id) => {

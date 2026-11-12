@@ -5993,6 +5993,11 @@ impl ConsoleRuntime {
             }
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
+            LauncherAction::InfinityMemory => {
+                self.close_app_launcher();
+                #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                python_commands::launch_memory(self);
+            }
             LauncherAction::MediaPlayer => {
                 self.close_app_launcher();
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
