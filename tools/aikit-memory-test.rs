@@ -252,7 +252,7 @@ fn real_recall() {
     let stats=engine.execute(&mut backend,owner,session,Operation::Status,2).unwrap();
     assert_eq!(stats.embedded,3);
     let question=b"What is the diagnostic project code?";
-    let mut context=[0;256];
+    let mut context=[0x7f;256];
     backend.allowed=false;
     assert_eq!(engine.context(&mut backend,[8;16],session,question,256,&mut context),Err(Error::Unauthorized));
     assert_eq!(context,[0;256]);
@@ -260,6 +260,14 @@ fn real_recall() {
     let n=engine.context(&mut backend,owner,session,question,256,&mut context).unwrap();
     assert!(context[..n].windows(10).any(|s|s==b"ORBIT-7429"));
     assert!(!context[..n].windows(7).any(|s|s==b"orchard"));
+    let mut samples=Vec::with_capacity(256);
+    for _ in 0..256 {
+        let started=std::time::Instant::now();
+        assert_eq!(engine.context(&mut backend,owner,session,question,256,&mut context),Ok(n));
+        samples.push(started.elapsed());
+    }
+    samples.sort_unstable();
+    println!("Host semantic recall including prompt encoding, 3 records: p50={:?} p95={:?}",samples[128],samples[243]);
     if std::env::args().any(|a|a=="--inference") {
         let bytes=Box::leak(std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf").unwrap().into_boxed_slice());
         let arena=Box::leak(vec![0u128;1280*1024*1024/16].into_boxed_slice());
@@ -326,6 +334,11 @@ fn browser_operations() {
     memory_browser::request(&mut engine,&mut backend,owner,session,6,id,0,b"",105,&mut Bytes::new()).unwrap();
     assert_eq!(engine.inspect(&mut backend,owner,session,id).err(),Some(Error::NotFound));
     assert_eq!(engine.context(&mut backend,owner,session,b"orchard pears",256,&mut ctx),Ok(0));
+    let unicode=engine.execute(&mut backend,owner,session,Operation::Store(Category::Semantic,"Café Montréal".as_bytes(),b"test"),106).unwrap();
+    let mut fallback=Bytes::new();
+    memory_browser::request(&mut engine,&mut backend,owner,session,2,0,0,"Montréal".as_bytes(),106,&mut fallback).unwrap();
+    let first_id=std::str::from_utf8(fallback.bytes().split(|b|*b==b'\t').next().unwrap()).unwrap().parse::<u64>().unwrap();
+    assert_eq!(first_id,unicode.id);
     for i in 0..8 {
         engine.execute(&mut backend,owner,session,Operation::Store(Category::Semantic,format!("Notebook {i}").as_bytes(),b"test"),i).unwrap();
     }

@@ -22,7 +22,7 @@ The production-code test entry point is `./build-kit run env CARGO_TARGET_DIR=bu
 | MEM-10 | PASS | Injected backend failure returns failure and invalidates cache | memory_api.rs | — |
 | VEC-01 | PASS | Installed ARM record detail shows the packaged Potion model and 64 dimensions | memory_embedding.rs | — |
 | VEC-02 | PASS | Both GUI-created and conversational records report embeddings in installed ARM | memory_api.rs | — |
-| VEC-03 | NOT TESTED | Native WordPiece and learned query row pooling rank paraphrase first on host | memory_embedding.rs | Verify guest |
+| VEC-03 | PASS | arm-semantic-result.png shows the complete paraphrase “Compilation failed because a library was absent” finding the stored compiler dependency repair on ARM | memory_embedding.rs | — |
 | VEC-04 | PASS | Invalid dimensions, nonfinite and zero vectors rejected | persistent_memory.rs | — |
 | VEC-05 | PASS | Cosine ordering checked independently and real pretrained model ranked a paraphrase on host | memory_search.rs | — |
 | VEC-06 | PASS | Top-K and threshold checked with numerical fixtures | memory_search.rs | — |

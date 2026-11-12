@@ -31,8 +31,11 @@ pub fn request(engine: &mut Engine, backend: &mut impl Backend, owner: Owner, se
             } else {
                 let results = if action == 2 {
                     let mut vector = [0.0; super::memory_embedding::DIM];
-                    super::memory_embedding::Potion.embed(text, &mut vector)?;
-                    memory_search::semantic(catalog,owner,super::memory_embedding::MODEL,&vector,ids.len(),0.40)?
+                    match super::memory_embedding::Potion.embed(text, &mut vector) {
+                        Ok(_) => memory_search::semantic(catalog,owner,super::memory_embedding::MODEL,&vector,ids.len(),0.40)?,
+                        Err(Error::Unavailable) => memory_search::lexical(catalog,owner,text,ids.len())?,
+                        Err(error) => return Err(error),
+                    }
                 } else { memory_search::lexical(catalog,owner,text,ids.len())? };
                 for (id, hit) in ids.iter_mut().zip(&results.hits[..results.len]) { *id = hit.id; }
                 results.len

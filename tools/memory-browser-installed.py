@@ -34,6 +34,29 @@ def window(guest):
                    and g["windows"][0]["width"] >= 640, timeout=90)["windows"][0]
 
 # ------------------------=
+# FUNC: settled_editor
+# DESC: Waits for actual painted input to settle before the independent virtual mouse changes focus.
+# ------------------=
+def settled_editor(guest, region, name):
+    x, y, width, height = region
+    deadline = time.monotonic() + 45
+    previous, since = None, time.monotonic()
+    while time.monotonic() < deadline:
+        frame = tk.screenshot(guest, name)
+        pitch = frame["width"] * 3
+        rows = frame["pixels"]
+        current = b"".join(rows[r*pitch+x*3:r*pitch+(x+width)*3] for r in range(y,y+height))
+        # A blinking insertion caret can change a single vertical column.
+        if previous is None or sum(a != b for a,b in zip(current, previous)) > 3 * height:
+            since = time.monotonic()
+        elif time.monotonic() - since >= 3:
+            return frame["path"]
+        previous = current
+        time.sleep(.35)
+    raise AssertionError(f"Native editor failed to settle in {region}")
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Runs launcher, recall and reboot checks using real inputs against the installed account.
 # ------------------=
@@ -97,11 +120,11 @@ def main():
         proof["initial"] = str(guest.screenshot("memory-browser-initial"))
         native.adaptive_click(guest, wx+142,wy+97)
         guest.text("Compilation failed because a library was absent")
-        time.sleep(1)
-        proof["semantic"]=str(guest.screenshot("memory-browser-semantic"))
+        proof["semantic"]=settled_editor(guest,(wx+68,wy+83,390,27),"memory-browser-semantic")
         native.adaptive_click(guest,wx+ww-65,wy+33)
         native.adaptive_click(guest,wx+ww-170,wy+wh//2)
         guest.text("The diagnostic project code is ORBIT-7331.")
+        settled_editor(guest,(wx+324,wy+180,470,35),"memory-browser-before-create")
         native.adaptive_click(guest,wx+ww-88,wy+wh-66)
         time.sleep(1)
         native.adaptive_click(guest,wx+ww-170,wy+wh//2)
@@ -109,6 +132,7 @@ def main():
         for _ in range(5):
             guest.key("backspace")
         guest.text("7429.")
+        settled_editor(guest,(wx+324,wy+180,470,35),"memory-browser-before-update")
         native.adaptive_click(guest,wx+ww-88,wy+wh-66)
         time.sleep(1)
         proof["saved"] = str(guest.screenshot("memory-browser-record"))
@@ -125,12 +149,44 @@ def main():
         admitted=advice.wait(guest,lambda s:s["admitted_turn"]>before["admitted_turn"],"separate question admitted",60)
         proof["answer_receipt"]=advice.completed(guest,admitted,(before["audit_count"],before["audit_fingerprint"]),240,True)
         proof["answer"]=str(guest.screenshot("memory-browser-model-answer"))
+        guest.command("model select ministral")
+        switched=advice.wait(guest,lambda s:s["model"]!=before["model"] and s["native_ready"]==s["selected_ready"]==1,
+                             "second model selected",60)
+        assert memory.command(guest,"search ORBIT")[5:7] == (1,identity)
+        guest.command("model select hermes")
+        restored=advice.wait(guest,lambda s:s["model"]==before["model"] and s["native_ready"]==s["selected_ready"]==1,
+                             "original model restored",60)
+        proof["model_switch"]=[switched["model"],restored["model"]]
         guest.stop()
         guest.boot(False)
         guest.authenticate()
         guest.launch("command",5)
         assert memory.command(guest,"search ORBIT")[5:7] == (1,identity)
-        assert memory.command(guest,f"forget {identity}")[3] == 1
+        previous = python.snapshot(guest)[2]
+        guest.launch("Infinity Memory", 5)
+        bounds = window(guest)
+        wx, wy = bounds["x"], bounds["y"]
+        native.adaptive_click(guest,wx+142,wy+97)
+        guest.text("ORBIT")
+        settled_editor(guest,(wx+68,wy+83,390,27),"memory-browser-filter")
+        native.adaptive_click(guest,wx+97,wy+153)
+        native.adaptive_click(guest,wx+381,wy+483)
+        tk.wait(guest,python,lambda:tk.gui(guest,native),
+                          lambda g:len([w for w in g["windows"] if w["visible"]]) == 2,timeout=30)
+        proof["delete_prompt"] = str(guest.screenshot("memory-browser-confirm-delete"))
+        guest.key("esc")
+        tk.wait(guest,python,lambda:tk.gui(guest,native),
+                lambda g:sum(w["visible"] for w in g["windows"])==1,timeout=30)
+        native.adaptive_click(guest,wx+381,wy+483)
+        tk.wait(guest,python,lambda:tk.gui(guest,native),
+                lambda g:sum(w["visible"] for w in g["windows"])==2,timeout=30)
+        guest.key("ret")
+        tk.wait(guest,python,lambda:tk.gui(guest,native),
+                lambda g:sum(w["visible"] for w in g["windows"])==1,timeout=30)
+        native.adaptive_click(guest,*tk.close_point(guest,window(guest)))
+        tk.finished(guest,python,previous)
+        native.adaptive_click(guest, command_bounds[0]+100, command_bounds[1]+command_bounds[3]-40)
+        assert memory.command(guest,"search ORBIT")[5] == 0
         guest.stop()
         guest.boot(False)
         guest.authenticate()

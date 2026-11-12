@@ -34,8 +34,7 @@ before the native receipt. Recalled procedures never authorize execution.
 Open **Infinity Memory** from the application launcher. Select **New memory**, enter
 up to 512 UTF-8 bytes, choose its category, and press **Save**. The inspector
 shows its stable ID, source, UTC timestamps and embedding model. Search defaults
-to semantic similarity. Choose **Keyword** for literal terms or unsupported
-languages. Use the category filter and Previous/Next for six results per page.
+to semantic similarity. Choose **Keyword** for literal terms. Semantic search uses keyword matching when the embedding model cannot represent the query. Use the category filter and Previous/Next for six results per page.
 Delete asks for confirmation. Ctrl+N creates, Ctrl+S saves and Ctrl+F focuses
 search. Console, conversational requests and this app access the same owner
 catalog.

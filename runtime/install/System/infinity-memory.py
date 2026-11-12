@@ -169,8 +169,8 @@ class Browser:
                 self.listbox.insert("end", title)
             self.prev.configure(state="normal" if self.page else "disabled")
             self.next.configure(state="normal" if (self.page + 1) * 6 < self.total else "disabled")
-            prefix = f"{count} matches" if self.total else "No matching memories"
-            self.status.set(f"{prefix}    •    {total} stored    •    {embedded} embedded    •    {size} bytes")
+            prefix = ("1 match" if self.total == 1 else f"{count} matches") if self.total else "No matching memories"
+            self.status.set(f"{prefix}    |    {total} stored    |    {embedded} embedded    |    {size} bytes")
             self.delete.configure(state="normal" if self.record else "disabled")
         except (OSError, ValueError) as error:
             self.ids.clear()
@@ -212,7 +212,7 @@ class Browser:
         self.editor.insert("1.0", content)
         self.heading.set(f"Memory {identity}")
         self.details.set(f"Source  {source}\nCreated  {stamp(created)}\nUpdated  {stamp(updated)}\n"
-                         + (f"{model}   ·   {dimensions} dimensions" if dimensions else "Keyword index only"))
+                         + (f"{model}  /  {dimensions} dimensions" if dimensions else "Keyword index only"))
         self.delete.configure(state="normal")
 
     # ------------------------=

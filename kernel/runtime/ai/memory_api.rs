@@ -172,10 +172,12 @@ impl Engine {
         out: &mut [u8],
     ) -> Result<usize, Error> {
         let start = backend.now();
-        self.ensure(backend, owner, session)?;
+        out.fill(0);
+        let loaded = self.ensure(backend, owner, session);
+        if loaded == Err(Error::Unauthorized) { return Err(Error::Unauthorized); }
         self.attempts = self.attempts.saturating_add(1);
         self.trace = memory_search::Trace::EMPTY;
-        let result = memory_search::recall(&self.memory, owner, query, 3)
+        let result = loaded.and_then(|()| memory_search::recall(&self.memory, owner, query, 3))
             .and_then(|hits| memory_search::encode_context(&self.memory, owner, &hits, budget, out, &mut self.trace));
         if result.is_err() { self.recall_failures = self.recall_failures.saturating_add(1); }
         self.retrieval_ns = backend.now().saturating_sub(start);
