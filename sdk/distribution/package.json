@@ -43,6 +43,7 @@
     "Examples/C/calculator.c": "sdk/c/examples/calculator-ui.c",
     "Examples/C/hello.c": "sdk/c/examples/hello.c",
     "Examples/C/camera.c": "sdk/c/examples/camera_capture.c",
+    "AIKit/Potion-LICENSE.txt": "assets/ai-memory/LICENSE",
     "AIKit/PersistentMemory.md": "sdk/distribution/PersistentMemory.md",
     "Examples/NativeMemoryHarness.rs": "tools/aikit-memory-test.rs"
   },

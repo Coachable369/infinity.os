@@ -19,6 +19,9 @@ def main():
     for name in sys.argv[1:]:
         with (ROOT / name).open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
             assert binary.find(manifest_bytes) >= 0, (name, "SDK manifest absent or stale")
+            for resource in ("assets/ai-memory/weights.bin", "assets/ai-memory/tokens.bin",
+                             "assets/ai-memory/offsets.bin", "assets/apps/infinity-memory-v1.bmp"):
+                assert binary.find((ROOT / resource).read_bytes()) >= 0, (name, resource)
             for record in manifest["files"]:
                 payload = (ROOT / record["source"]).read_bytes()
                 assert binary.find(payload) >= 0, (name, record["path"])
