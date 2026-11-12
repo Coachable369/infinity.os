@@ -16,6 +16,22 @@ def stamp(value):
     return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(value)) if value else "Unavailable"
 
 
+# ------------------------=
+# FUNC: message
+# DESC: Maps native API failures to the relevant recovery action in the inspector.
+# ------------------=
+def message(error):
+    detail = str(error)
+    for code, explanation in ((-95, "Choose Keyword search for this text."),
+                              (-28, "Memory is full. Remove a record and try again."),
+                              (-13, "Access denied. Check your session and remove any credentials from the text."),
+                              (-2, "This memory was removed. Refresh the list."),
+                              (-5, "Memory storage is unavailable. Refresh to retry.")):
+        if detail.endswith(f"({code})"):
+            return explanation
+    return detail
+
+
 class Browser:
     # ------------------------=
     # FUNC: __init__
@@ -26,10 +42,18 @@ class Browser:
         self.surfaces = [[tk.PhotoImage(data=surface(6, b"", primary + state * 2), format="PPM")
                           for state in range(3)] for primary in (0, 1)]
         style = ttk.Style(root)
+        style.theme_use("clam")
         style.configure("TLabel", background=NAVY, foreground=WHITE, font=("Inter", 11))
+        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=5)
+        style.configure("TCombobox", fieldbackground=PANEL, background=PANEL, foreground=WHITE, padding=4)
+        style.map("TCombobox", fieldbackground=[("readonly", PANEL)], foreground=[("readonly", WHITE)])
+        root.option_add("*TCombobox*Listbox.background", PANEL)
+        root.option_add("*TCombobox*Listbox.foreground", WHITE)
         self.root = root
         root.title("Infinity Memory")
-        root.geometry("840x550")
+        width = min(840, root.winfo_screenwidth() - 40)
+        height = min(550, root.winfo_screenheight() - 120)
+        root.geometry(f"{width}x{height}+{max(0,(root.winfo_screenwidth()-width)//2)}+{max(72,(root.winfo_screenheight()-height)//2)}")
         root.minsize(640, 440)
         root.configure(bg=NAVY)
         self.record = self.page = self.total = 0
@@ -148,7 +172,7 @@ class Browser:
         except (OSError, ValueError) as error:
             self.ids.clear()
             self.listbox.delete(0, "end")
-            self.status.set(str(error))
+            self.status.set(message(error))
 
     # ------------------------=
     # FUNC: move
@@ -175,7 +199,7 @@ class Browser:
             header, model, source, content = memory_request(3, identity, 0, "").decode().split("\0")
             _, category, created, updated, dimensions = map(int, header.split("\t"))
         except (OSError, ValueError) as error:
-            self.status.set(str(error))
+            self.status.set(message(error))
             return
         self.record = identity
         self.original = content
@@ -233,7 +257,7 @@ class Browser:
         try:
             identity = int(memory_request(5 if self.record else 4, self.record, CATEGORIES.index(self.category.get()), text))
         except OSError as error:
-            self.status.set(str(error))
+            self.status.set(message(error))
             return
         self.show(identity)
         self.refresh()
@@ -247,7 +271,7 @@ class Browser:
             try:
                 memory_request(6, self.record, 0, "")
             except OSError as error:
-                self.status.set(str(error))
+                self.status.set(message(error))
                 return
             self.reset()
             self.refresh()

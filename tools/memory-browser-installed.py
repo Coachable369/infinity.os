@@ -87,6 +87,7 @@ def main():
         guest.command("ai new")
         repair=memory.command(guest,"remember Install the missing compiler dependency to fix the build")
         assert repair[3]==0
+        command_bounds=native.features(guest)[21:25]
         previous = python.snapshot(guest)[2]
         guest.launch("Infinity Memory", 5)
         bounds = window(guest)
@@ -94,7 +95,7 @@ def main():
         proof["window"]=bounds
         wx,wy,ww,wh=(bounds[k] for k in ("x","y","width","height"))
         proof["initial"] = str(guest.screenshot("memory-browser-initial"))
-        native.adaptive_click(guest, wx+142,wy+82)
+        native.adaptive_click(guest, wx+142,wy+97)
         guest.text("Compilation failed because a library was absent")
         time.sleep(1)
         proof["semantic"]=str(guest.screenshot("memory-browser-semantic"))
@@ -113,13 +114,14 @@ def main():
         proof["saved"] = str(guest.screenshot("memory-browser-record"))
         native.adaptive_click(guest, *tk.close_point(guest,window(guest)))
         proof["reclaimed"] = list(tk.finished(guest,python,previous))
-        command_bounds = native.features(guest)[21:25]
+        proof["after_close"]=str(guest.screenshot("memory-browser-after-close"))
+        assert command_bounds[2]>200 and command_bounds[3]>100,command_bounds
         native.adaptive_click(guest, command_bounds[0]+100, command_bounds[1]+command_bounds[3]-40)
         lookup=memory.command(guest,"search ORBIT")
         assert lookup[5]==1 and lookup[6]>0,lookup
         identity=lookup[6]
         before=advice.wait(guest,lambda s:s["native_ready"]==s["selected_ready"]==1,"model available",300)
-        guest.command("ai ask What is the diagnostic project code?")
+        guest.command("ai ask What is the diagnostic project code")
         admitted=advice.wait(guest,lambda s:s["admitted_turn"]>before["admitted_turn"],"separate question admitted",60)
         proof["answer_receipt"]=advice.completed(guest,admitted,(before["audit_count"],before["audit_fingerprint"]),240,True)
         proof["answer"]=str(guest.screenshot("memory-browser-model-answer"))
