@@ -35,6 +35,12 @@ fn main() {
     }
     let mut utterance = Utterance::new(300);
     assert_eq!(utterance.speech(), None);
+    utterance.push(&[900; INTERRUPT_PROBE_SAMPLES - FRAME]);
+    assert!(utterance.interruption_probe().is_none());
+    utterance.push(&[900; FRAME]);
+    assert_eq!(utterance.interruption_probe().map(|pcm|pcm.len()),Some(INTERRUPT_PROBE_SAMPLES));
+    assert!(utterance.speech().is_none());
+    utterance.clear(300);
     utterance.push(&input);
     assert_eq!(utterance.state(), VadState::Complete);
     assert_eq!(utterance.speech().unwrap(), &input[segment.start..segment.end]);

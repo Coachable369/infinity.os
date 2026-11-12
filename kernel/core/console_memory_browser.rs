@@ -9,7 +9,7 @@ pub const PATH: &[u8] = b"/System/infinity-memory.py";
 pub fn dispatch<T: PageTable>(allowed: bool, owner:[u8;16], session:[u8;16], tables:&mut T, operation:u64, args:[u64;6]) -> Option<i64> {
     if operation != 0x12f8 { return None; }
     if !allowed { return Some(-13); }
-    if args[0] > 6 || args[2] > 3 || args[4] > 512 { return Some(-22); }
+    if args[0] > 7 || args[2] > 3 || args[4] > 512 { return Some(-22); }
     let mut input = [0;512];
     let input = &mut input[..args[4] as usize];
     if !input.is_empty() && copy_from_user(tables,args[3],input).is_err() {return Some(-14);}

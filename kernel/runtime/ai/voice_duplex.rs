@@ -40,10 +40,11 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
     if playing && matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {INTERRUPTING=true;}
     if !PENDING {
         let samples=(&*(&raw const UTTERANCE)).active_speech_samples();
-        if samples >= PROBED_SAMPLES.saturating_add(super::super::voice_vad::RATE) {
+        let probe_at = if PROBED_SAMPLES == 0 { super::super::voice_vad::INTERRUPT_PROBE_SAMPLES }
+            else { PROBED_SAMPLES.saturating_add(super::super::voice_vad::RATE) };
+        if samples >= probe_at {
             if let Some(pcm)=(&*(&raw const UTTERANCE)).interruption_probe() {
-                let available=super::super::with_ai_runtime(|ai| ai.chat.input().is_empty()
-                    && ai.chat.turn_id()==CHAT_TURN && ai.app_turn_owner().is_none());
+                let available=super::super::with_ai_runtime(|ai| ai.chat.turn_id()==CHAT_TURN && ai.app_turn_owner().is_none());
                 if available {
                     RECOGNIZE_CAP=grant(OWNER,CapabilityType::AudioInput,CAPTURE_CAPABILITY_SECONDS).unwrap_or(0);
                     PENDING=voice_input::submit(OWNER,RECOGNIZE_CAP,pcm).is_ok();
@@ -60,8 +61,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
         match (&*(&raw const UTTERANCE)).state() {
             VadState::Complete => {
                 // Never replace a typed edit or an independently owned app job.
-                let available=super::super::with_ai_runtime(|ai| ai.chat.input().is_empty()
-                    && ai.chat.turn_id()==CHAT_TURN && ai.app_turn_owner().is_none());
+                let available=super::super::with_ai_runtime(|ai| ai.chat.turn_id()==CHAT_TURN && ai.app_turn_owner().is_none());
                 if available {
                     RECOGNIZE_CAP=grant(OWNER,CapabilityType::AudioInput,CAPTURE_CAPABILITY_SECONDS).unwrap_or(0);
                     PENDING=(&*(&raw const UTTERANCE)).speech()
@@ -89,11 +89,13 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
             retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;PENDING=false;
             let valid=active_owner(OWNER) && WORD==configured_wake_word(OWNER)
                 && super::super::with_ai_runtime(|ai|ai.chat.turn_id()==TURN
-                    && ai.chat.selected_model()==MODEL && ai.chat.input().is_empty()
+                    && ai.chat.selected_model()==MODEL
                     && ai.app_turn_owner().is_none());
             if let Ok(n) = result {
                 let transcript=&(&*(&raw const TRANSCRIPT))[..n];
-                if valid && addressed_stop_with_echo(transcript, &(&*(&raw const REPLY))[..REPLY_LENGTH],WORD) {
+                let reply = &(&*(&raw const REPLY))[..REPLY_LENGTH];
+                if valid && (addressed_stop_with_echo(transcript, reply, WORD)
+                    || (!PROBE && stop_speech_command(transcript) && !reply_fragment(transcript, reply))) {
                     stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
                 }
                 if valid && playback_transcript(transcript) {
@@ -128,6 +130,13 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 _=>None,
             };
             if let Some((start,end))=action {
+                // A typed draft is independent of a spoken stop. Preserve it
+                // when a different spoken follow-up would need the composer.
+                if !super::super::with_ai_runtime(|ai|ai.chat.input().is_empty())
+                    && !stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
+                    (&mut *(&raw mut TRANSCRIPT)).fill(0);
+                    return false;
+                }
                 if start != end && stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
                     stop_spoken_reply();
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
@@ -135,8 +144,9 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 }
                 // A recognized wake is the cancellation boundary, never raw VAD
                 // or arbitrary room speech. Native workers drain normally.
-                super::super::with_ai_runtime(|ai|{if ai.chat.turn_id()==TURN {ai.cancel_chat();}});
+                INTERRUPTED_REPLY = Some((OWNER, TURN));
                 voice_output::stop_request(OWNER,REPLY_OUTPUT_REQUEST);
+                super::super::with_ai_runtime(|ai|{if ai.chat.turn_id()==TURN {ai.cancel_chat();}});
                 trace(b"duplex authorized interruption");
                 report_timing();TURN_TIMING_ACTIVE=false;
                 clear_wake_command();

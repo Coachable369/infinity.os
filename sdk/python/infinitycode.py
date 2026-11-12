@@ -20,23 +20,45 @@ class Studio:
         configure_workspace_bounds(root)
         root.configure(background="#090F26")
         style = configure_theme(root)
-        style.map("TNotebook.Tab", background=[("selected", "#1A2E63")])
+        style.configure("TNotebook", background="#090F26", borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(14, 8), font=("Inter",-15,"bold"))
+        style.map("TNotebook.Tab", background=[("selected", "#1A2E63")], foreground=[("selected", "#FFFFFF")])
         style.configure("TFrame", background="#101B3A")
-        style.configure("TLabel", background="#101B3A", foreground="#FFFFFF", font=("Inter", 11))
-        toolbar = ttk.Frame(root, padding=12)
+        style.configure("TLabel", background="#101B3A", foreground="#FFFFFF", font=("Inter",-15))
+        style.configure("Heading.TLabel", font=("Inter",-19,"bold"), foreground="#DAE9FF")
+        style.configure("TEntry", fieldbackground="#090F26", foreground="#FFFFFF", padding=4)
+        style.configure("TButton", padding=(8,5), font=("Inter",-14))
+        style.configure("Accent.TButton", background="#315ED2", foreground="white")
+        toolbar = ttk.Frame(root, padding=(12,8))
         toolbar.pack(fill="x")
-        ttk.Label(toolbar, text="InfinityCode   /   PYTHON", font=("Inter", 15, "bold")).pack(side="left", padx=(0, 20))
-        for title, command in (("Open", self.load), ("Save", self.save), ("Undo", self.undo),
-                               ("Redo", self.redo), ("Check Python", self.check_python), ("Generate Python", self.generate), ("Export .py", self.export)):
-            ttk.Button(toolbar, text=title, command=lambda action=command: self.perform(action)).pack(side="left", padx=3)
-        workspace = ttk.Frame(root, padding=10)
+        ttk.Label(toolbar, text="InfinityCode", font=("Inter",-24,"bold")).pack(side="left", padx=(2,14))
+        for group in ((("Open", self.load), ("Save", self.save)), (("Undo", self.undo), ("Redo", self.redo)),
+                      (("Check Python", self.check_python), ("Generate Python", self.generate), ("Export", self.export))):
+            ttk.Separator(toolbar, orient="vertical").pack(side="left",fill="y",padx=5)
+            for title, command in group:
+                ttk.Button(toolbar,text=title,width=0,style="Accent.TButton" if title=="Generate Python" else "TButton",
+                           command=lambda action=command:self.perform(action)).pack(side="left",padx=2)
+        footer = ttk.Frame(root, padding=(12,5))
+        footer.pack(side="bottom",fill="x")
+        workspace = ttk.Frame(root, padding=8)
         workspace.pack(fill="both", expand=True)
         left = ttk.Frame(workspace, padding=8)
         left.pack(side="left", fill="y")
-        ttk.Label(left, text="TOOLBOX").pack(anchor="w", pady=8)
+        ttk.Label(left, text="Toolbox", style="Heading.TLabel").pack(anchor="w", pady=(0,8))
+        self.toolbox_filter = tk.StringVar()
+        search = ttk.Entry(left,textvariable=self.toolbox_filter,width=16)
+        ttk.Label(left,text="Find a control").pack(anchor="w")
+        search.pack(fill="x",pady=(2,6))
+        search.bind("<ButtonPress-1>",lambda event:search.focus_force(),add="+")
+        self.palette = ttk.Frame(left)
+        self.palette.pack(fill="x")
+        self.palette_items = []
         for kind in KINDS:
-            ttk.Button(left, text=kind, command=lambda value=kind: self.perform(lambda: self.add(value))).pack(fill="x", pady=3)
-        ttk.Label(left, text="LAYERS").pack(anchor="w", pady=(20, 8))
+            button = ttk.Button(self.palette,text=kind,command=lambda value=kind:self.perform(lambda:self.add(value)))
+            self.palette_items.append((kind,button))
+        self.toolbox_filter.trace_add("write",self.filter_controls)
+        self.filter_controls()
+        ttk.Label(left, text="Layers",style="Heading.TLabel").pack(anchor="w", pady=(15,5))
         self.layers = tk.Listbox(left, width=18, background="#090F26", foreground="white",
                                  selectbackground="#3E6FFF", exportselection=False, borderwidth=0)
         self.layers.pack(fill="both", expand=True)
@@ -44,23 +66,32 @@ class Studio:
         ttk.Button(left, text="Delete selected", command=lambda: self.perform(self.delete)).pack(fill="x", pady=8)
         right = ttk.Frame(workspace, padding=12, width=190)
         right.pack(side="right", fill="y")
-        ttk.Label(right, text="PROPERTIES").pack(anchor="w", pady=8)
+        ttk.Label(right, text="Properties",style="Heading.TLabel").pack(anchor="w",pady=(0,6))
         self.fields = {}
-        for key in ("id", "text", "x", "y", "width", "height", "handler"):
-            ttk.Label(right, text=key.capitalize()).pack(anchor="w", pady=(10, 3))
-            field = ttk.Entry(right, width=20)
-            field.pack(fill="x")
-            self.fields[key] = field
-        ttk.Button(right, text="Apply properties", command=lambda: self.perform(self.apply)).pack(fill="x", pady=16)
-        ttk.Button(right, text="Go to handler", command=lambda: self.perform(self.goto_handler)).pack(fill="x", pady=3)
+        for label, keys in (("Identity",("id","text")),("Layout",("x","y","width","height")),("Event",("handler",))):
+            group = ttk.LabelFrame(right,text=label,padding=6)
+            group.pack(fill="x",pady=(0,6))
+            for index,key in enumerate(keys):
+                row,col = divmod(index,2) if label=="Layout" else (index,0)
+                cell = ttk.Frame(group)
+                cell.grid(row=row,column=col,sticky="ew",padx=2,pady=2)
+                group.columnconfigure(col,weight=1)
+                ttk.Label(cell,text="Name" if key=="id" else key.capitalize()).pack(anchor="w")
+                field = ttk.Entry(cell,width=7 if label=="Layout" else 17)
+                field.pack(fill="x")
+                field.bind("<ButtonPress-1>",lambda event,entry=field:entry.focus_force(),add="+")
+                field.bind("<Return>",lambda event:self.perform(self.apply))
+                self.fields[key] = field
+        ttk.Button(right, text="Apply properties",style="Accent.TButton", command=lambda:self.perform(self.apply)).pack(fill="x",pady=(2,4))
+        ttk.Button(right, text="Go to handler", command=lambda:self.perform(self.goto_handler)).pack(fill="x",pady=(0,6))
         self.snap = tk.BooleanVar(root, True)
         ttk.Checkbutton(right, text="Snap · 10 px", variable=self.snap).pack(anchor="w")
         ttk.Label(right, text="Drag to move.\nCorner grip resizes.\nCanvas: 640 × 420").pack(anchor="w", pady=16)
         self.tabs = ttk.Notebook(workspace)
         self.tabs.pack(fill="both", expand=True, padx=10)
         designer = ttk.Frame(self.tabs, padding=10)
-        self.tabs.add(designer, text="Designer")
-        ttk.Label(designer, text="Actual native controls · fixed export dimensions").pack(anchor="w", pady=8)
+        self.tabs.add(designer, text="Form Designer")
+        ttk.Label(designer, text="Form    /    640 × 420").pack(anchor="w", pady=8)
         self.canvas = tk.Frame(designer, width=WIDTH, height=HEIGHT, background="#090F26")
         self.canvas.pack(anchor="nw")
         self.canvas.pack_propagate(False)
@@ -71,7 +102,7 @@ class Studio:
         source_frame = ttk.Frame(self.tabs)
         self.tabs.add(source_frame, text="Python")
         self.source = tk.Text(source_frame, undo=True, background="#090F26", foreground="#FFFFFF",
-                              insertbackground="#86C7FF", font=("Menlo", 12), wrap="none", borderwidth=0)
+                              insertbackground="#86C7FF", font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
         vertical = ttk.Scrollbar(source_frame, orient="vertical", command=self.source.yview)
         horizontal = ttk.Scrollbar(source_frame, orient="horizontal", command=self.source.xview)
         vertical.pack(side="right", fill="y")
@@ -83,7 +114,7 @@ class Studio:
         ttk.Label(methods_frame, text="Define methods here; enter a method name in the control's Handler property.\n"
                   "Methods take no arguments and access native widgets through controls['id'].").pack(anchor="w", padx=10, pady=10)
         self.methods = tk.Text(methods_frame, undo=True, background="#090F26", foreground="#FFFFFF",
-                               insertbackground="#86C7FF", font=("Menlo", 12), wrap="none", borderwidth=0)
+                               insertbackground="#86C7FF", font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
         methods_scroll = ttk.Scrollbar(methods_frame, orient="vertical", command=self.methods.yview)
         methods_scroll.pack(side="right", fill="y")
         self.methods.pack(fill="both", expand=True)
@@ -91,15 +122,25 @@ class Studio:
         for editor in (self.source,self.methods):
             editor.tag_configure("diagnostic", background="#602D42", foreground="#FFFFFF")
             editor.bind("<Control-Return>",lambda event:self.check_python())
-        footer = ttk.Frame(root, padding=10)
-        footer.pack(fill="x")
-        self.path = ttk.Entry(footer, width=55)
+        ttk.Label(footer,text="Project").pack(side="left",padx=(0,6))
+        self.path = ttk.Entry(footer, width=38)
         self.path.insert(0, "/data/project.json" if sys.platform == "infinityos" else os.path.abspath("project.json"))
         self.path.pack(side="left")
-        self.status = tk.StringVar(root, "Ready · Save a project or export Python for Text Editor / Run")
+        self.status = tk.StringVar(root, "Ready")
         ttk.Label(footer, textvariable=self.status).pack(side="left", padx=12)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.saved = copy.deepcopy(self.project.data)
+
+    # ------------------------=
+    # FUNC: filter_controls
+    # DESC: Filters the existing toolbox without changing the current form or selection.
+    # ------------------=
+    def filter_controls(self, *args):
+        query = self.toolbox_filter.get().strip().casefold()
+        for kind, button in self.palette_items:
+            button.pack_forget()
+            if query in kind.casefold():
+                button.pack(fill="x", pady=2)
 
     # ------------------------=
     # FUNC: check_python

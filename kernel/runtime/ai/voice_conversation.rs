@@ -159,6 +159,7 @@ static mut REPLY_AT: usize = 0;
 static mut REPLY_OUTPUT_REQUEST: u64 = 0;
 static mut OUTPUT_AT_SUBMIT: Option<u64> = None;
 static mut STOP_ALL_OUTPUT: bool = true;
+static mut INTERRUPTED_REPLY: Option<(SecurityIdentity,u64)> = None;
 static mut SYNC_VISIBLE_AT: usize = 0;
 static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
@@ -494,7 +495,7 @@ fn stop_speech_command(input: &[u8]) -> bool {
         }
     }
     if length != 0 && text[length-1] == b' ' { length -= 1; }
-    matches!(&text[..length], b"stop" | b"please stop" | b"stop please" | b"stop speaking" | b"stop talking" | b"be quiet" | b"cancel response")
+    matches!(&text[..length], b"stop" | b"please stop" | b"stop please" | b"stop speaking" | b"stop talking" | b"be quiet" | b"cancel response" | b"interrupt" | b"please interrupt" | b"stop the response")
 }
 // ------------------------=
 // FUNC: reply_fragment
@@ -545,8 +546,13 @@ fn addressed_stop_with_echo(input: &[u8], reply: &[u8], word: WakeWord) -> bool 
 // DESC: Cancels this conversation without submitting inference or disabling microphone capture.
 // ------------------=
 unsafe fn stop_spoken_reply() {
-    super::with_ai_runtime(|ai| { if ai.chat.turn_id() == CHAT_TURN && ai.app_turn_owner().is_none() { ai.cancel_chat(); } });
+    INTERRUPTED_REPLY = Some((OWNER, CHAT_TURN));
     voice_output::stop_request(OWNER, REPLY_OUTPUT_REQUEST);
+    super::with_ai_runtime(|ai| { if ai.chat.turn_id() == CHAT_TURN && ai.app_turn_owner().is_none() { ai.cancel_chat(); } });
+    REPLY_AT = REPLY_LENGTH;
+    SYNC_VISIBLE_AT = REPLY_LENGTH;
+    REPLY_COMPLETE = true;
+    duplex::clear();
     clear_pending_prompt(true);
     report_timing(); TURN_TIMING_ACTIVE = false;
     clear_wake_command(); clear_captured_turn();
@@ -1197,6 +1203,9 @@ unsafe fn speak_next() -> bool {
         (&mut *(&raw mut REPLY)).fill(0);
         return true;
     }
+    // Recognition and synthesis contend for native speech workers. Let an
+    // admitted interruption finish before submitting another synthesis span.
+    if duplex::pending() { return true; }
     let remaining = &(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH];
     let count = speech_chunk::next(remaining, REPLY_COMPLETE, REPLY_AT == 0);
     if count == 0 {
@@ -1297,6 +1306,7 @@ unsafe fn refresh_reply() {
 // ------------------=
 pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
     unsafe {
+        if INTERRUPTED_REPLY == Some((owner, turn)) { return; }
         if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) {
             return;
         }

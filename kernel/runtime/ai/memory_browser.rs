@@ -63,14 +63,15 @@ pub fn request(engine: &mut Engine, backend: &mut impl Backend, owner: Owner, se
             write!(out,"{}\t{}\t{}\t{}\t{}",r.id,r.category as u8,r.created_at,r.updated_at,r.embedding().len()).map_err(|_|Error::Capacity)?;
             for field in [r.model(),r.source(),r.content()] { out.write(&[0]); out.write(field); }
         }
-        4..=6 => {
+        4..=7 => {
             let op = match action {
-                4 => Operation::Store(category(filter)?,content.as_bytes(),b"Infinity Memory"),
+                4 | 7 => Operation::Store(category(filter)?,content.as_bytes(),b"Infinity Memory"),
                 5 => Operation::Update(number,category(filter)?,content.as_bytes(),b"Infinity Memory"),
                 _ => Operation::Delete(number),
             };
             let receipt = engine.execute(backend,owner,session,op,now)?;
             write!(out,"{}",receipt.id).map_err(|_|Error::Capacity)?;
+            if action == 7 { write!(out," {}",u8::from(receipt.written)).map_err(|_|Error::Capacity)?; }
         }
         _ => return Err(Error::Invalid),
     }

@@ -911,19 +911,14 @@ impl AiRuntime {
         }
         self.interrupt_active_intelligence();
         let broker_cancelled=self.execution.cancel();
-        if active_work || broker_cancelled {
-            self.chat.generation_state = chat::GenerationState::Cancelled;
-            return true;
-        }
-        let Some(service) = self.qwen.as_mut() else {
-            return false;
-        };
-        let active = service.busy();
-        service.cancel();
-        if active {
-            self.chat.generation_state = chat::GenerationState::Cancelled;
-        }
-        active
+        let native_cancelled = self.qwen.as_mut().is_some_and(|service| {
+            let active = service.busy();
+            service.cancel();
+            active
+        });
+        let cancelled = active_work || broker_cancelled || native_cancelled;
+        if cancelled { self.chat.generation_state = chat::GenerationState::Cancelled; }
+        cancelled
     }
     // ------------------------=
     // FUNC: load_ministral
@@ -2323,7 +2318,7 @@ impl AiRuntime {
     // DESC: Handles the signed-in native browser through the same owner cache and durable transaction policy as chat.
     // ------------------=
     pub fn browse_memories(&mut self, owner:[u8;16], session:[u8;16], action:u64, id:u64, category:u8, text:&[u8], output:&mut crate::runtime::console_execution::Bytes<4096>) -> Result<(),persistent_memory::Error> {
-        if (4..=6).contains(&action) { self.pending_memory=None; }
+        if (4..=7).contains(&action) { self.pending_memory=None; }
         memory_browser::request(&mut self.persistent_memory,&mut memory_api::Native,owner,session,action,id,category,text,memory_timestamp(),output)
     }
     // ------------------------=

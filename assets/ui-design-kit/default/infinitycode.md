@@ -30,3 +30,5 @@ Application lifecycle uses the shared native window service: voice/AI open,
 focus, close, minimize, maximize and restore resolve the authenticated user's
 owned window. Close requests pass through the IDE's unsaved-project confirmation;
 they do not terminate the Python process behind that confirmation.
+
+The current workspace reference is `infinitycode-workspace-reference.png`. Use a grouped project toolbar, searchable Toolbox, Layers list, Form Designer/Python/Event Methods tabs and an inspector grouped into Identity, Layout and Event. Keep exported widget coordinates independent of the workbench size.

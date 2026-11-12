@@ -316,6 +316,10 @@ fn browser_operations() {
     let saved=engine.inspect(&mut backend,owner,session,id).unwrap();
     assert_eq!((saved.created_at,saved.updated_at,saved.category,saved.source()),(100,100,Category::Procedural,b"Infinity Memory".as_slice()));
     let original=saved.embedding().to_vec();
+    let mut duplicate=Bytes::new();
+    memory_browser::request(&mut engine,&mut backend,owner,session,7,0,3,saved.content(),101,&mut duplicate).unwrap();
+    let receipt:Vec<u64>=std::str::from_utf8(duplicate.bytes()).unwrap().split_whitespace().map(|v|v.parse().unwrap()).collect();
+    assert_eq!(receipt,[id,0]);
     let mut ctx=[0;256];
     assert!(engine.context(&mut backend,owner,session,b"missing library breaks compilation",256,&mut ctx).unwrap()>0);
     let mut out=[0;8192];
@@ -330,7 +334,7 @@ fn browser_operations() {
     assert_ne!(original,updated.embedding());
     assert_eq!(engine.context(&mut backend,owner,session,b"missing library breaks compilation",256,&mut ctx),Ok(0));
     let mut denied=Bytes::new();
-    for action in 0..=6 {
+    for action in 0..=7 {
         assert_eq!(memory_browser::request(&mut engine,&mut backend,[8;16],session,action,id,1,b"private",104,&mut denied),Err(Error::Unauthorized));
         assert!(denied.bytes().is_empty());
     }

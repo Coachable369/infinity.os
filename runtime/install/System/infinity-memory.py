@@ -41,20 +41,24 @@ class Browser:
         from _infinity_media import io as surface
         self.surfaces = [[tk.PhotoImage(data=surface(6, b"", primary + state * 2), format="PPM")
                           for state in range(3)] for primary in (0, 1)]
+        body_px = 17 if root.winfo_screenwidth() < 1500 else 20
+        body_font = ("Inter", -body_px)
+        self.button_font = ("Inter", -max(14, body_px-3))
+        root.option_add("*Font", body_font)
         style = ttk.Style(root)
         style.theme_use("clam")
-        style.configure("TLabel", background=NAVY, foreground=WHITE, font=("Inter", 11))
-        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=5)
-        style.configure("TCombobox", fieldbackground=PANEL, background=PANEL, foreground=WHITE, padding=4)
+        style.configure("TLabel", background=NAVY, foreground=WHITE, font=body_font)
+        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=8, font=body_font)
+        style.configure("TCombobox", fieldbackground=PANEL, background=PANEL, foreground=WHITE, padding=6, font=body_font)
         style.map("TCombobox", fieldbackground=[("readonly", PANEL)], foreground=[("readonly", WHITE)])
         root.option_add("*TCombobox*Listbox.background", PANEL)
         root.option_add("*TCombobox*Listbox.foreground", WHITE)
         self.root = root
         root.title("Infinity Memory")
-        width = min(840, root.winfo_screenwidth() - 40)
-        height = min(550, root.winfo_screenheight() - 120)
+        width = min(1520, root.winfo_screenwidth() - 48, root.maxsize()[0])
+        height = min(960, root.winfo_screenheight() - 124, root.maxsize()[1])
         root.geometry(f"{width}x{height}+{max(0,(root.winfo_screenwidth()-width)//2)}+{max(72,(root.winfo_screenheight()-height)//2)}")
-        root.minsize(640, 440)
+        root.minsize(min(720,width), min(510,height))
         root.configure(bg=NAVY)
         self.record = self.page = self.total = 0
         self.pending = None
@@ -71,26 +75,41 @@ class Browser:
         self.details = tk.StringVar()
         top = tk.Frame(root, bg=NAVY)
         top.pack(fill="x", padx=18, pady=(16, 8))
-        tk.Label(top, text="Infinity Memory", font=("Inter", 18, "bold"), bg=NAVY, fg=WHITE).pack(side="left")
-        self.button(top, "New memory", self.new, True).pack(side="right")
+        tk.Label(top, text="Infinity Memory", font=("Inter", -int(body_px*2.1), "bold"), bg=NAVY, fg=WHITE).pack(side="left")
+        self.fact_id = 0
+        self.fact_job = None
+        self.fact_last = ""
+        self.fact = tk.StringVar()
+        self.fact_state = tk.StringVar(value="")
+        capture = tk.Frame(root, bg=PANEL, padx=12, pady=8, highlightthickness=1, highlightbackground="#567FA3")
+        capture.pack(fill="x", padx=18, pady=4)
+        tk.Label(capture, text="Add a fact", bg=PANEL, fg=WHITE, font=("Inter",-body_px,"bold")).pack(side="left", padx=(0,12))
+        field = ttk.Entry(capture, textvariable=self.fact, font=body_font)
+        field.pack(side="left", expand=True, fill="x")
+        field.bind("<ButtonPress-1>", lambda event: field.focus_force(), add="+")
+        field.bind("<Return>", lambda event: self.finish_fact())
+        field.bind("<FocusOut>", lambda event: self.finish_fact())
+        tk.Label(capture, textvariable=self.fact_state, bg=PANEL, fg="#8BDDB9", width=12).pack(side="right")
+        self.fact.trace_add("write", self.fact_changed)
         controls = tk.Frame(root, bg=NAVY)
         controls.pack(fill="x", padx=18, pady=6)
         ttk.Label(controls, text="Search").pack(side="left", padx=(0, 6))
-        self.search = ttk.Entry(controls, textvariable=self.query)
+        self.search = ttk.Entry(controls, textvariable=self.query, font=body_font)
         self.search.bind("<ButtonPress-1>", lambda event: self.search.focus_force(), add="+")
         self.search.pack(side="left", expand=True, fill="x")
         for var, options in ((self.mode, ("Semantic", "Keyword")), (self.filter, CATEGORIES)):
-            box = ttk.Combobox(controls, textvariable=var, values=options, width=13, state="readonly")
+            box = ttk.Combobox(controls, textvariable=var, values=options, width=11, state="readonly", font=body_font)
             box.pack(side="left", padx=(6, 0))
             box.bind("<<ComboboxSelected>>", self.changed)
-        self.button(controls, "Refresh", self.refresh).pack(side="left", padx=(6, 0))
+        self.list_title = tk.StringVar(value="Memories")
         self.query.trace_add("write", self.changed)
         body = tk.PanedWindow(root, orient="horizontal", bg=NAVY, sashwidth=7, bd=0)
         body.pack(expand=True, fill="both", padx=18, pady=10)
         left, right = tk.Frame(body, bg=PANEL), tk.Frame(body, bg=PANEL)
-        body.add(left, minsize=180, width=280)
+        body.add(left, minsize=200, width=int(width*.35))
         body.add(right, minsize=290)
-        self.listbox = tk.Listbox(left, bg=PANEL, fg=WHITE, selectbackground=BLUE, font=("Inter", 12),
+        tk.Label(left,textvariable=self.list_title,bg=PANEL,fg=WHITE,font=("Inter",-body_px-3,"bold")).pack(anchor="w", padx=14, pady=(10,2))
+        self.listbox = tk.Listbox(left, bg=PANEL, fg=WHITE, selectbackground=BLUE, font=body_font,
                                   exportselection=False, borderwidth=0, highlightthickness=0)
         self.listbox.pack(expand=True, fill="both", padx=10, pady=12)
         self.listbox.bind("<<ListboxSelect>>", self.select)
@@ -100,9 +119,9 @@ class Browser:
         self.next = self.button(nav, "Next", lambda: self.move(1))
         self.prev.pack(side="left")
         self.next.pack(side="right")
-        tk.Label(right, textvariable=self.heading, bg=PANEL, fg=WHITE, font=("Inter", 15, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+        tk.Label(right, textvariable=self.heading, bg=PANEL, fg=WHITE, font=("Inter", -body_px-5, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
         self.editor = tk.Text(right, height=5, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
-                              font=("Inter", 12), padx=8, pady=8)
+                              font=body_font, padx=8, pady=8)
         self.editor.bind("<ButtonPress-1>", lambda event: self.editor.focus_force(), add="+")
         self.editor.pack(fill="both", expand=True, padx=14)
         row = tk.Frame(right, bg=PANEL)
@@ -124,7 +143,64 @@ class Browser:
         root.bind("<Control-s>", lambda event: self.save())
         root.bind("<Control-f>", lambda event: self.search.focus_force())
         root.after_idle(self.refresh)
-        root.after_idle(self.search.focus_force)
+        root.after_idle(field.focus_force)
+
+    # ------------------------=
+    # FUNC: fact_changed
+    # DESC: Coalesces typing into one owner-scoped fact and leaves failed drafts editable.
+    # ------------------=
+    def fact_changed(self, *args):
+        if self.fact_job is not None:
+            self.root.after_cancel(self.fact_job)
+            self.fact_job = None
+        if self.fact.get().strip():
+            self.fact_state.set("Saving…")
+            self.fact_job = self.root.after(1000, self.store_fact)
+        else:
+            self.fact_id, self.fact_last = 0, ""
+
+    # ------------------------=
+    # FUNC: store_fact
+    # DESC: Updates only a row created by this draft; a preexisting duplicate remains independently owned by its original record.
+    # ------------------=
+    def store_fact(self):
+        self.fact_job = None
+        value = self.fact.get().strip()
+        if not value or value == self.fact_last:
+            if value:
+                self.fact_state.set("Autosaved")
+            return True
+        if len(value.encode()) > 512:
+            self.fact_state.set("Too long")
+            self.status.set("Facts can contain up to 512 UTF-8 bytes.")
+            return False
+        try:
+            if self.fact_id:
+                memory_request(5, self.fact_id, 2, value)
+            else:
+                identity, created = map(int, memory_request(7, 0, 2, value).split())
+                self.fact_id = identity if created else 0
+        except OSError as error:
+            self.fact_state.set("Unsaved")
+            self.status.set(message(error))
+            return False
+        self.fact_last = value
+        self.fact_state.set("Autosaved")
+        self.refresh()
+        return True
+
+    # ------------------------=
+    # FUNC: finish_fact
+    # DESC: Flushes the draft on Enter, focus transfer or close and starts a fresh capture after commit.
+    # ------------------=
+    def finish_fact(self):
+        if self.fact_job is not None:
+            self.root.after_cancel(self.fact_job)
+            self.fact_job = None
+        if not self.store_fact():
+            return False
+        self.fact.set("")
+        return True
 
     # ------------------------=
     # FUNC: button
@@ -134,7 +210,7 @@ class Browser:
         normal, hover, pressed = self.surfaces[int(primary)]
         button = tk.Button(parent, text=label, command=action, image=normal, compound="center",
                            fg=WHITE, activeforeground=WHITE, bg=NAVY, activebackground=NAVY,
-                           font=("Inter", 11), borderwidth=0, relief="flat", highlightthickness=0)
+                           font=self.button_font, borderwidth=0, relief="flat", highlightthickness=0)
         for event, art in (("<Enter>", hover), ("<Leave>", normal), ("<ButtonPress-1>", pressed),
                            ("<ButtonRelease-1>", hover), ("<FocusIn>", hover), ("<FocusOut>", normal)):
             button.bind(event, lambda e, image=art: button.configure(image=image), add="+")
@@ -162,6 +238,7 @@ class Browser:
             rows = raw.splitlines()
             _, count, total, embedded, size = rows.pop().split("\t")
             self.total = int(count)
+            self.list_title.set(f"Memories ({count})")
             if self.page and self.page * 6 >= self.total:
                 self.page = max(0, (self.total - 1) // 6)
                 return self.refresh()
@@ -256,8 +333,8 @@ class Browser:
         self.category.set(self.original_category)
         self.editor.delete("1.0", "end")
         self.editor.insert("1.0", content)
-        self.heading.set(f"Memory {identity}")
-        self.details.set(f"Source  {source}\nCreated  {stamp(created)}\nUpdated  {stamp(updated)}\n"
+        self.heading.set(content.splitlines()[0][:48])
+        self.details.set(f"Memory {identity}   |   {source}\nCreated  {stamp(created)}\nUpdated  {stamp(updated)}\n"
                          + (f"{model}  /  {dimensions} dimensions" if dimensions else "Keyword index only"))
         self.delete.configure(state="normal")
 
@@ -340,6 +417,8 @@ class Browser:
     # DESC: Releases the native window only after resolving outstanding edits.
     # ------------------=
     def close(self):
+        if not self.finish_fact():
+            return
         self.cancel_confirmation()
         self.discard(self.root.destroy)
 

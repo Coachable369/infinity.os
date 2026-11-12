@@ -31,8 +31,7 @@ before the native receipt. Recalled procedures never authorize execution.
 
 ## Infinity Memory
 
-Open **Infinity Memory** from the application launcher. Select **New memory**, enter
-up to 512 UTF-8 bytes, choose its category, and press **Save**. The inspector
+Open **Infinity Memory** from the application launcher. Type in **Add a fact**. After one second of inactivity, **Autosaved** confirms the durable write. Keep typing to update that fact, or press Enter to start another. Moving to search also commits the current fact. Failed saves keep the draft visible. Facts support up to 512 UTF-8 bytes. Select a saved record to edit its content and category in the inspector. The inspector
 shows its stable ID, source, UTC timestamps and embedding model. Search defaults
 to semantic similarity. Choose **Keyword** for literal terms. Semantic search uses keyword matching when the embedding model cannot represent the query. Use the category filter and Previous/Next for six results per page.
 Delete asks for confirmation. Ctrl+N creates, Ctrl+S saves and Ctrl+F focuses

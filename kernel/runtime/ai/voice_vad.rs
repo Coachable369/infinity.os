@@ -6,6 +6,7 @@ pub const MAX_SAMPLES: usize = RATE * 10;
 // onset gate. This is retained audio, not additional endpoint wait time.
 const PRE_ROLL: usize = RATE * 3 / 5;
 const ONSET_FRAMES: usize = 3;
+pub const INTERRUPT_PROBE_SAMPLES: usize = RATE * 4 / 5;
 const AMBIENT_FRAMES: usize = 9;
 // A normal hesitation between a product name and the rest of a command must
 // not submit that prefix as a finished instruction. This remains sample-based.
@@ -293,7 +294,7 @@ impl Utterance {
     // DESC: Borrows confirmed in-progress speech for stop-only recognition without completing or clearing the utterance.
     // ------------------=
     pub fn interruption_probe(&self) -> Option<&[i16]> {
-        if self.state() != VadState::Speech || self.active_speech_samples() < RATE * 2 { return None; }
+        if self.state() != VadState::Speech || self.active_speech_samples() < INTERRUPT_PROBE_SAMPLES { return None; }
         Some(&self.pcm[self.detector.segment.start..self.detector.samples()])
     }
     // ------------------------=

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import socket
 from pathlib import Path
 import time
 
@@ -23,6 +24,52 @@ memory = load("browser_memory_fixture", "tools/aikit-memory-installed-test.py")
 tk = load("browser_tk_fixture", "tools/native-python/tk-installed.py")
 python = load("browser_python_fixture", "tools/native-python/installed.py")
 native, advice = memory.native, memory.advice
+ssh = load("browser_ssh", "tools/ssh-installed-test.py")
+
+# ------------------------=
+# FUNC: inbound_terminal
+# DESC: Checks an actual password-authenticated external OpenSSH PTY and native command completion on this disposable installation.
+# ------------------=
+def inbound_terminal(guest, work):
+    with socket.socket() as reserve:
+        reserve.bind(("127.0.0.1", 0))
+        port = reserve.getsockname()[1]
+    guest.qmp("human-monitor-command", {"command-line": f"hostfwd_add tcp:127.0.0.1:{port}-:22"})
+    ssh.wait_state(guest, lambda state:state[3:5]==(1,1))
+    _, key = ssh.keyscan(port)
+    known = work/"pinned-guest-host"
+    known.write_bytes(key)
+    helper = work/"askpass"
+    helper.write_text('#!/bin/sh\nprintf "%s\\n" "$INFINITY_QA_PASSWORD"\n')
+    helper.chmod(0o700)
+    args = ["/usr/bin/ssh","-F","/dev/null","-oStrictHostKeyChecking=yes",f"-oUserKnownHostsFile={known}",
+            "-oPreferredAuthentications=password","-oPubkeyAuthentication=no","-oNumberOfPasswordPrompts=1",
+            "-oConnectTimeout=10","-p",str(port),"-tt","ms9node01@127.0.0.1"]
+    env = dict(os.environ, SSH_ASKPASS=str(helper), SSH_ASKPASS_REQUIRE="force",DISPLAY="qa",
+               INFINITY_QA_PASSWORD="incorrect-qa-password")
+    proc = None
+    try:
+        rejected=subprocess.run(args+["system status"],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,env=env,timeout=20,start_new_session=True)
+        assert rejected.returncode==255
+        env["INFINITY_QA_PASSWORD"] = ssh.accounts.ADMIN_PASSWORD
+        proc=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                              env=env,start_new_session=True)
+        ssh.wait_console(guest,[],lambda state,rows:state[7]==1 and any(row[6]&2 for row in rows))
+        proc.stdin.write(b"system status\r")
+        proc.stdin.flush()
+        _,rows=ssh.wait_console(guest,[],lambda state,rows:any(row[4]==1 and row[7]==0x8005 for row in rows))
+        proc.stdin.write(b"\x04")
+        proc.stdin.flush()
+        out,_=proc.communicate(timeout=20)
+        assert proc.returncode==0 and out
+        return {"password_authenticated":True,"bad_password_refused":True,"pty":True,
+                "operation":next(row[7] for row in rows if row[4]==1),"output_bytes":len(out),"exit":proc.returncode}
+    finally:
+        helper.unlink(missing_ok=True)
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 # ------------------------=
 # FUNC: window
@@ -66,6 +113,7 @@ def main():
     parser.add_argument("--iso", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--reuse", action="store_true")
+    parser.add_argument("--verify-ssh", action="store_true")
     parser.add_argument("--kernel", type=Path, help="Test a corrected kernel on the stopped private QA disk")
     args = parser.parse_args()
     work = args.work.resolve()
@@ -99,6 +147,9 @@ def main():
             guest.stop()
         guest.onboard()
         proof["devices"] = advice.detached(guest)
+        if args.verify_ssh:
+            proof["external_terminal"]=inbound_terminal(guest,work)
+            (work/"external-terminal.json").write_text(json.dumps(proof["external_terminal"])+"\n")
         guest.launch("command", 5)
         if args.reuse:
             # This disposable test owns these synthetic markers.
@@ -118,24 +169,17 @@ def main():
         proof["window"]=bounds
         wx,wy,ww,wh=(bounds[k] for k in ("x","y","width","height"))
         proof["initial"] = str(guest.screenshot("memory-browser-initial"))
-        native.adaptive_click(guest, wx+142,wy+97)
-        guest.text("Compilation failed because a library was absent")
-        proof["semantic"]=settled_editor(guest,(wx+68,wy+83,390,27),"memory-browser-semantic")
-        native.adaptive_click(guest,wx+ww-65,wy+33)
-        native.adaptive_click(guest,wx+ww-170,wy+wh//2)
         guest.text("The diagnostic project code is ORBIT-7331.")
-        settled_editor(guest,(wx+324,wy+180,470,35),"memory-browser-before-create")
-        native.adaptive_click(guest,wx+ww-88,wy+wh-66)
-        time.sleep(1)
-        native.adaptive_click(guest,wx+ww-170,wy+wh//2)
+        settled_editor(guest,(wx+65,wy+56,ww-90,65),"memory-browser-before-create")
         guest.key("end")
         for _ in range(5):
             guest.key("backspace")
         guest.text("7429.")
-        settled_editor(guest,(wx+324,wy+180,470,35),"memory-browser-before-update")
-        native.adaptive_click(guest,wx+ww-88,wy+wh-66)
-        time.sleep(1)
-        proof["saved"] = str(guest.screenshot("memory-browser-record"))
+        proof["saved"] = settled_editor(guest,(wx+65,wy+56,ww-90,65),"memory-browser-record")
+        guest.key("ret")
+        guest.key("ctrl","f")
+        guest.text("Compilation failed because a library was absent")
+        proof["semantic"]=settled_editor(guest,(wx+58,wy+112,ww-370,74),"memory-browser-semantic")
         native.adaptive_click(guest, *tk.close_point(guest,window(guest)))
         proof["reclaimed"] = list(tk.finished(guest,python,previous))
         proof["after_close"]=str(guest.screenshot("memory-browser-after-close"))
@@ -144,6 +188,14 @@ def main():
         lookup=memory.command(guest,"search ORBIT")
         assert lookup[5]==1 and lookup[6]>0,lookup
         identity=lookup[6]
+        previous = python.snapshot(guest)[2]
+        guest.launch("InfinityCode",5)
+        code_window = window(guest)
+        proof["code_window"]=code_window
+        proof["code_image"]=settled_editor(guest,(code_window["x"]+8,code_window["y"]+6,400,130),"infinitycode-workspace")
+        native.adaptive_click(guest,*tk.close_point(guest,code_window))
+        tk.finished(guest,python,previous)
+        native.adaptive_click(guest,command_bounds[0]+100,command_bounds[1]+command_bounds[3]-40)
         before=advice.wait(guest,lambda s:s["native_ready"]==s["selected_ready"]==1,"model available",300)
         guest.command("ai ask What is the diagnostic project code")
         admitted=advice.wait(guest,lambda s:s["admitted_turn"]>before["admitted_turn"],"separate question admitted",60)
@@ -166,14 +218,14 @@ def main():
         guest.launch("Infinity Memory", 5)
         bounds = window(guest)
         wx, wy = bounds["x"], bounds["y"]
-        native.adaptive_click(guest,wx+142,wy+97)
+        guest.key("ctrl","f")
         guest.text("ORBIT")
-        settled_editor(guest,(wx+68,wy+83,390,27),"memory-browser-filter")
-        native.adaptive_click(guest,wx+97,wy+153)
-        native.adaptive_click(guest,wx+381,wy+483)
+        settled_editor(guest,(wx+58,wy+112,ww-370,74),"memory-browser-filter")
+        native.adaptive_click(guest,wx+100,wy+230)
+        native.adaptive_click(guest,wx+int(ww*.35)+90,wy+wh-66)
         proof["delete_prompt"] = settled_editor(guest,(wx+320,wy+460,480,50),"memory-browser-confirm-delete")
-        native.adaptive_click(guest,wx+381,wy+483)
-        native.adaptive_click(guest,wx+381,wy+483)
+        native.adaptive_click(guest,wx+int(ww*.35)+90,wy+wh-66)
+        native.adaptive_click(guest,wx+int(ww*.35)+90,wy+wh-66)
         native.adaptive_click(guest,wx+ww-88,wy+wh-66)
         settled_editor(guest,(wx+320,wy+180,470,35),"memory-browser-after-delete")
         native.adaptive_click(guest,*tk.close_point(guest,window(guest)))
