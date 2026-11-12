@@ -589,31 +589,35 @@ fn native_scene_damage(mut window: ui::window::Window) {
     window.visible=true; window.state=WindowState::Normal;
     let mut scene=SceneDamage::new();
     let mut windows=[None;8]; windows[0]=Some(window);
-    let initial=scene.update(&windows,display,1).unwrap();
+    let mut generations=[0;8];
+    let initial=scene.update(&windows,&generations,display,1).unwrap();
     assert_eq!(initial,Rect{x:97,y:103,width:353,height:290});
-    assert_eq!(scene.update(&windows,display,1),None);
+    assert_eq!(scene.update(&windows,&generations,display,1),None);
+    generations[0]=1;
+    assert_eq!(scene.update(&windows,&generations,display,1),Some(initial));
+    assert_eq!(scene.update(&windows,&generations,display,1),None);
     window.bounds.x=-280; windows[0]=Some(window);
-    let moved=scene.update(&windows,display,1).unwrap();
+    let moved=scene.update(&windows,&generations,display,1).unwrap();
     assert_eq!(moved,Rect{x:0,y:103,width:450,height:290});
     window.bounds.width=500; windows[0]=Some(window);
-    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:0,y:103,width:250,height:290});
+    assert_eq!(scene.update(&windows,&generations,display,1).unwrap(),Rect{x:0,y:103,width:250,height:290});
     window.state=WindowState::Minimized;window.visible=false;windows[0]=Some(window);
-    assert!(scene.update(&windows,display,1).unwrap().contains(Point{x:220,y:390}));
+    assert!(scene.update(&windows,&generations,display,1).unwrap().contains(Point{x:220,y:390}));
     // Minimized clients have no title or adorner; removing an already hidden
     // window must not invent a second desktop damage rectangle.
-    assert_eq!(scene.update(&[None;8],display,1),None);
-    assert_eq!(scene.update(&[None;8],display,1),None);
+    assert_eq!(scene.update(&[None;8],&generations,display,1),None);
+    assert_eq!(scene.update(&[None;8],&generations,display,1),None);
     window.state=WindowState::Normal;window.visible=true;window.bounds.x=100;windows[0]=Some(window);
-    scene.update(&windows,display,1).unwrap();
+    scene.update(&windows,&generations,display,1).unwrap();
     window.state=WindowState::Withdrawn;window.visible=false;windows[0]=Some(window);
-    assert!(scene.update(&windows,display,1).unwrap().contains(Point{x:600,y:390}));
-    assert_eq!(scene.update(&windows,display,1),None);
+    assert!(scene.update(&windows,&generations,display,1).unwrap().contains(Point{x:600,y:390}));
+    assert_eq!(scene.update(&windows,&generations,display,1),None);
     window.state=WindowState::Normal;window.visible=true;windows[0]=Some(window);
     let mut other=window;other.id=ui::window::WindowId(window.id.0+1);other.bounds.x=250;
-    windows[1]=Some(other);scene.update(&windows,display,1).unwrap();
+    windows[1]=Some(other);scene.update(&windows,&generations,display,1).unwrap();
     windows.swap(0,1);
-    assert_eq!(scene.update(&windows,display,1).unwrap(),Rect{x:97,y:103,width:683,height:290});
-    assert_eq!(scene.update(&[None;8],display,1).unwrap(),Rect{x:97,y:103,width:683,height:290});
+    assert_eq!(scene.update(&windows,&generations,display,1).unwrap(),Rect{x:97,y:103,width:683,height:290});
+    assert_eq!(scene.update(&[None;8],&generations,display,1).unwrap(),Rect{x:97,y:103,width:683,height:290});
 }
 
 // ------------------------=

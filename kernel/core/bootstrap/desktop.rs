@@ -7595,14 +7595,16 @@ pub fn system_ui_present(
             }
             if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10 | 11) {
                 let mut native_windows = [None; 8];
+                let mut generations = [0; 8];
                 let mut native_count = 0;
-                crate::console::native_gui_frames(|window, _, _| {
+                crate::console::native_gui_frames(|window, frame, _| {
                     if native_count < native_windows.len() {
                         native_windows[native_count] = Some(window);
+                        generations[native_count] = frame.descriptor.content_generation;
                         native_count += 1;
                     }
                 });
-                let native_damage = console.native_scene_damage.update(&native_windows, display_rect, layout.scale());
+                let native_damage = console.native_scene_damage.update(&native_windows, &generations, display_rect, layout.scale());
                 let control_damage=crate::ui::app_launcher::window_controls::take_damage();
                 for rect in control_damage.into_iter().flatten() {
                     for slot in 0..13 {super::retained_windows::invalidate_region(slot,super::PresentRegion {

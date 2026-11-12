@@ -8,9 +8,8 @@ const MAX_GRANTS: usize = 96;
 const MAX_LEASES: usize = 24;
 
 /// Last presented native footprints, independent of ordinary console content.
-/// Pixel-only publications need no backdrop reconstruction; moves, resize,
-/// withdrawal, destruction and stacking changes do.
-pub struct SceneDamage { previous: [Option<(WindowId, Rect)>; 8] }
+/// A committed surface generation invalidates the visible client even at unchanged geometry.
+pub struct SceneDamage { previous: [Option<(WindowId, Rect, u64)>; 8] }
 
 impl SceneDamage {
     // ------------------------=
@@ -21,9 +20,9 @@ impl SceneDamage {
 
     // ------------------------=
     // FUNC: update
-    // DESC: Returns clipped old/new chrome-and-client damage, including destroyed windows and edge grab indicators, without invalidating unchanged pixel-only updates.
+    // DESC: Returns clipped old/new chrome-and-client damage, including destroyed windows and edge grab indicators, including newly published client pixels.
     // ------------------=
-    pub fn update(&mut self, windows: &[Option<Window>; 8], display: Rect, scale: usize) -> Option<Rect> {
+    pub fn update(&mut self, windows: &[Option<Window>; 8], generations: &[u64;8], display: Rect, scale: usize) -> Option<Rect> {
         let mut current = [None; 8];
         let mut damage: Option<Rect> = None;
         for (index, window) in windows.iter().enumerate() {
@@ -38,11 +37,11 @@ impl SceneDamage {
                     let footprint = Rect { x: bounds.x.saturating_sub(pad), y: bounds.y.saturating_sub(pad),
                         width: bounds.width.saturating_add(2 * pad as u32), height: bounds.height.saturating_add(2 * pad as u32) }
                         .intersection(display);
-                    if footprint.width > 0 && footprint.height > 0 { current[index] = Some((window.id, footprint)); }
+                    if footprint.width > 0 && footprint.height > 0 { current[index] = Some((window.id, footprint, generations[index])); }
                 }
             }
             if current[index] != self.previous[index] {
-                for (_, rect) in [current[index], self.previous[index]].into_iter().flatten() {
+                for (_, rect, _) in [current[index], self.previous[index]].into_iter().flatten() {
                     damage = Some(damage.map_or(rect, |old| old.union(rect)));
                 }
             }
