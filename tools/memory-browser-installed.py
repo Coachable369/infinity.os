@@ -146,7 +146,7 @@ def main():
     guest.arch, guest.acceleration, guest.patched = "aarch64", "hvf", True
     guest.boot_timeout_seconds, guest.install_timeout_seconds = 600, 1800
     proof = {"accepted":False, "updated_private_kernel":str(args.kernel) if args.kernel else None}
-    output = ROOT / "builds/validation/aikit-memory/browser-installed.json"
+    output = work / "result.json" if args.verify_ssh else ROOT / "builds/validation/aikit-memory/browser-installed.json"
     try:
         if not args.reuse:
             guest.install()
