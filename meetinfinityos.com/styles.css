@@ -68,6 +68,15 @@ em { font-style: normal; font-weight: 350; color: var(--ice); }
 .hero-cta { margin-top: 26px; color: var(--cyan); border-color: #68e4ff66 !important; }
 .art-fallback { position: absolute; width: 56%; height: 65%; top: 20%; right: 0; object-fit: contain; }
 #infinity-canvas { width: 100%; height: 100%; display: block; opacity: 0; }
+/* Keep the circuit field bright around the sculpture and quiet behind the copy. */
+@media (min-width: 760px) {
+  #infinity-canvas {
+    --handoff: clamp(0, calc((var(--story-progress, 0) - .06) * 5), 1);
+    mask-image: linear-gradient(90deg,
+      rgb(0 0 0 / calc(.14 + .86 * var(--handoff))) 35%, #000 47% 50%,
+      rgb(0 0 0 / calc(1 - .86 * var(--handoff))) 64%);
+  }
+}
 .art-ready #infinity-canvas { opacity: 1; }
 .art-ready .art-fallback { opacity: 0; }
 .hero-bottom { position: absolute; bottom: 28px; left: var(--gutter); right: var(--gutter); display: flex; align-items: center; justify-content: space-between; gap: 30px; z-index: 3; }

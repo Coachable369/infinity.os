@@ -12,19 +12,18 @@ Do not add the board's fictional sign-in or version label.
 
 `emblem-reference.png` is decoded directly from `infinity-emblem-v2.bmp`.
 Its same-named PNG companion is different artwork. The actual BMP pixels
-remain authoritative for navigation, fallback and small brand marks.
-The 3D interpretation must preserve the two broad rounded lobes, open centers
-and foreground rising diagonal. No typographic infinity or torus knot.
+remain authoritative for navigation and small brand marks. The hero uses
+`woven-cobalt-reference.png`: the downward front ribbon, two open lobes and
+layered glass reflections are taken from the supplied artwork.
 
 ## Motion
 
-The user explicitly requested real axis rotation and animated electrical paths.
-Use the actual artwork on a silhouette-traced beveled 3D relief, with blue-chrome
-edge shading. The kit has no original 3D model; do not substitute a generic tube.
-At rest it turns gently; native scrolling adds a larger reversible Y-axis turn
-and modest X-axis tilt. Do not hijack scrolling or require drag input.
-Circuit traces stay on the ground plane; bright pulses travel along their
-lengths and branch outward. They are not decorative floating dots.
+Rest near face-on so the woven crossing reads immediately. A slow idle yaw
+shows its rounded cobalt edge. Scroll eases one full turn through the hero
+and vision chapters, returning to the authored face. Use the cropped face
+texture as the static fallback. Behind it, paired banks of circuit traces
+fan out above and below the crossing, with wider cores, soft halos and
+outward-moving packet heads. Leave the middle open for the emblem.
 The hero should introduce the next section within the first viewport.
 
 Pause freezes both idle rotation and electrical pulses. Reduced motion removes

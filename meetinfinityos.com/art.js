@@ -1,5 +1,5 @@
 import * as THREE from "./assets/vendor/three.module.min.js";
-import { circuitPaths, scenePose } from "./scene-math.mjs";
+import { circuitPaths, scenePose } from "./scene-math.mjs?v=woven1";
 import { createEmblemGeometry } from "./emblem-geometry.js";
 
 // ------------------------=
@@ -35,7 +35,7 @@ function studioEnvironment(renderer) {
 
 // ------------------------=
 // FUNC: traceGeometry
-// DESC: Batches continuous floor circuits into one strip mesh with distance-aware pulse attributes.
+// DESC: Batches continuous circuit lanes into one strip mesh with distance-aware pulse attributes.
 // ------------------=
 function traceGeometry(width) {
   const positions = [], edges = [], along = [], seeds = [], indices = [];
@@ -49,17 +49,22 @@ function traceGeometry(width) {
       total += length;
     }
     let distance = 0;
-    for (let i = 1; i < path.length; i++) {
-      const a = path[i - 1], b = path[i], length = lengths[i - 1];
-      const nx = -(b[2] - a[2]) / length * width, nz = (b[0] - a[0]) / length * width;
-      const start = positions.length / 3;
-      positions.push(a[0] + nx, a[1], a[2] + nz, a[0] - nx, a[1], a[2] - nz,
-        b[0] + nx, b[1], b[2] + nz, b[0] - nx, b[1], b[2] - nz);
-      edges.push(1, -1, 1, -1);
-      along.push(distance / total, distance / total, (distance + length) / total, (distance + length) / total);
-      seeds.push((pathIndex % 14) / 14, (pathIndex % 14) / 14, (pathIndex % 14) / 14, (pathIndex % 14) / 14);
-      indices.push(start, start + 2, start + 1, start + 1, start + 2, start + 3);
-      distance += length;
+    const base = positions.length / 3;
+    for (let i = 0; i < path.length; i++) {
+      const a = path[Math.max(0, i - 1)], b = path[i], c = path[Math.min(path.length - 1, i + 1)];
+      const incoming = i ? new THREE.Vector2(a[1] - b[1], b[0] - a[0]).normalize() : null;
+      const outgoing = i + 1 < path.length ? new THREE.Vector2(b[1] - c[1], c[0] - b[0]).normalize() : null;
+      const normal = (incoming || outgoing).clone().add(outgoing || incoming).normalize();
+      normal.multiplyScalar(width / normal.dot(outgoing || incoming));
+      positions.push(b[0] + normal.x, b[1] + normal.y, b[2], b[0] - normal.x, b[1] - normal.y, b[2]);
+      edges.push(1, -1);
+      along.push(distance / total, distance / total);
+      seeds.push((pathIndex % 14) / 14, (pathIndex % 14) / 14);
+      if (i < lengths.length) {
+        const k = base + i * 2;
+        indices.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+        distance += lengths[i];
+      }
     }
   }
   const geometry = new THREE.BufferGeometry();
@@ -98,12 +103,12 @@ function traceMaterial(uniforms, glow) {
       // DESC: Combines chapter activation with a moving cyan pulse on connected electrical traces.
       // ------------------=
       void main() {
-        float activation = smoothstep(vSeed * .68, vSeed * .68 + .22, uProgress + .25);
+        float activation = smoothstep(vSeed * .68, vSeed * .68 + .22, uProgress + .60);
         float travel = fract(vAlong - uTime * .17 + vSeed * 1.7);
-        float pulse = exp(-travel * 24.0) * activation;
+        float pulse = exp(-min(1.0 - travel, travel * 4.0) * 17.0) * activation;
         float edge = pow(max(0.0, 1.0 - abs(vEdge)), uGlow > .5 ? 2.0 : .3);
-        float brightness = uGlow > .5 ? pulse * .8 : .25 + activation * .62 + pulse * 2.0;
-        vec3 color = mix(vec3(.04, .29, .72), vec3(.67, .95, 1.0), pulse);
+        float brightness = uGlow > .5 ? (.10 + pulse * .80) : .40 + activation * .32 + pulse * 1.5;
+        vec3 color = mix(vec3(.08, .35, .72), vec3(.67, .95, 1.0), pulse);
         gl_FragColor = vec4(color, brightness * edge);
       }`
   });
@@ -116,7 +121,7 @@ function traceMaterial(uniforms, glow) {
 export async function create(canvas, image) {
   let renderer;
   try {
-    const response = await fetch(new URL("./assets/emblem-outline.json", import.meta.url));
+    const response = await fetch(new URL("./assets/emblem-outline.json?v=woven1", import.meta.url));
     if (!response.ok) return null;
     const outline = await response.json();
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
@@ -154,7 +159,7 @@ export async function create(canvas, image) {
     }
     material.onBeforeCompile = preserveFaceOpacity;
     const edgeMaterial = new THREE.MeshPhysicalMaterial({
-      color: "#4779ce", metalness: .95, roughness: .2, clearcoat: 1,
+      color: "#2963bf", metalness: .68, roughness: .18, clearcoat: 1,
       clearcoatRoughness: .12, envMapIntensity: 1.7, transparent: true
     });
     const emblem = new THREE.Mesh(geometry, [material, edgeMaterial]);
@@ -170,15 +175,14 @@ export async function create(canvas, image) {
 
     const uniforms = { uTime: { value: 0 }, uProgress: { value: 0 } };
     const circuits = new THREE.Group();
-    circuits.add(new THREE.Mesh(traceGeometry(.014), traceMaterial(uniforms, false)));
-    circuits.add(new THREE.Mesh(traceGeometry(.09), traceMaterial(uniforms, true)));
+    circuits.add(new THREE.Mesh(traceGeometry(.018), traceMaterial(uniforms, false)));
+    circuits.add(new THREE.Mesh(traceGeometry(.082), traceMaterial(uniforms, true)));
     scene.add(circuits);
-    const padGeometry = new THREE.RingGeometry(.035, .055, 16);
-    const padMaterial = new THREE.MeshBasicMaterial({ color: "#3c8bb9", side: THREE.DoubleSide, transparent: true, opacity: .4 });
+    const padGeometry = new THREE.RingGeometry(.036, .063, 16);
+    const padMaterial = new THREE.MeshBasicMaterial({ color: "#3c8bb9", side: THREE.DoubleSide, transparent: true, opacity: .85 });
     for (const path of circuitPaths()) {
       const pad = new THREE.Mesh(padGeometry, padMaterial);
       pad.position.set(...path[path.length - 1]);
-      pad.rotation.x = -Math.PI / 2;
       circuits.add(pad);
     }
     let lastWidth = 0, lastHeight = 0, lost = false;
@@ -214,7 +218,7 @@ export async function create(canvas, image) {
       camera.position.set(0, mobile ? .6 : .7, mobile ? 15.5 : 11.8);
       camera.lookAt(0, 0, 0);
       const pose = scenePose(time, progress, paused);
-      const travel = THREE.MathUtils.smoothstep(progress, .06, mobile ? .29 : .5);
+      const travel = THREE.MathUtils.smoothstep(progress, .06, mobile ? .29 : .27);
       const exit = THREE.MathUtils.smoothstep(progress, .57, .81);
       const worldWidth = Math.tan(THREE.MathUtils.degToRad(18)) * camera.position.z * 2 * camera.aspect;
       const scale = (mobile ? Math.min(.64, worldWidth / 6.8) : Math.min(1.05, worldWidth / 12.6)) * (1 - travel * .16);
@@ -232,8 +236,8 @@ export async function create(canvas, image) {
       reflectionMaterial.opacity = (1 - exit) * .11;
       reflectionEdgeMaterial.opacity = reflectionMaterial.opacity;
       reflection.visible = emblem.visible && !mobile;
-      circuits.position.x = emblem.position.x * .55;
-      circuits.position.y = mobile ? .5 : 0;
+      circuits.position.copy(emblem.position);
+      circuits.scale.setScalar(scale);
       circuits.rotation.y = paused ? -.1 : -.1 + progress * .25;
       uniforms.uTime.value = pose.pulse;
       uniforms.uProgress.value = progress;

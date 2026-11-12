@@ -93,14 +93,14 @@
   // ------------------=
   async function artworkLoaded() {
     try {
-      const art = await import("./art.js");
+      const art = await import("./art.js?v=woven1");
       renderer?.dispose();
       renderer = await art.create(canvas, image);
       if (renderer) resizeArtwork();
     } catch { canvas.dataset.renderer = "static"; }
   }
   image.addEventListener("load", artworkLoaded);
-  image.src = "assets/infinity-emblem.webp";
+  image.src = "assets/woven-cobalt.webp";
   new ResizeObserver(resizeArtwork).observe(canvas);
   // ------------------------=
   // FUNC: contextLost

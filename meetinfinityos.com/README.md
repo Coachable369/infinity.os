@@ -13,11 +13,11 @@ Then open `http://127.0.0.1:4178/`.
 Start with `design/continuum.md` and `design/IDesign-Kit.png`.
 The authoritative symbol is `../assets/boot/infinity-emblem-v2.bmp`.
 The same-named PNG is DIFFERENT artwork and is not a valid substitute.
-Header, small marks and fallback use pixels decoded from the BMP itself.
-The rotating model is a beveled 3D relief traced from that emblem's outer
+Header and small marks use pixels decoded from the BMP itself.
+The rotating model is a beveled 3D relief traced from the woven cobalt glass hero artwork’s outer
 silhouette and two openings, with the original artwork mapped to its faces.
 It is not a generic tube, torus knot, or an original source 3D model.
-The baked floor reflection is excluded from the mesh. Its unseen reverse and
+The hero fallback uses the same cropped artwork. Its unseen reverse and
 edge depth are reconstructed. Tool icons are Lucide; licenses are included.
 
 The lossless 1672x941 web emblem is pixel-identical to `emblem-reference.png`.
@@ -117,8 +117,7 @@ never disturb a running native build or its lock.
 ## Reproducing The Contours
 
 `design/extract-emblem.cjs` uses Sharp as an authoring dependency to derive
-`assets/emblem-outline.json` from `design/emblem-reference.png`. It extracts the
-largest alpha component above the floor reflection, retains both openings,
-and smooths raster edge noise. The current contour area differs from its
-extracted mask by less than 0.2%; tests enforce a 0.5% bound.
+`assets/emblem-outline.json` and `assets/woven-cobalt.webp` from `design/woven-cobalt-reference.png`. It extracts the
+largest alpha component within the cropped face, retains both openings,
+and smooths raster edge noise. Tests enforce a 0.5% bound on contour area error.
 Sharp is not shipped to the browser or required for preview/testing.

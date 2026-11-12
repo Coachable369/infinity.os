@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FILES = (
     "index.html whitepaper.html invest.html styles.css whitepaper.css navigation.js app.js art.js "
     "emblem-geometry.js scene-math.mjs assets/emblem-outline.json "
-    "assets/brand.webp assets/infinity-emblem.webp assets/infinity-detail.webp "
+    "assets/woven-cobalt.webp assets/brand.webp assets/infinity-emblem.webp assets/infinity-detail.webp "
     "assets/screenshots/sign-in-960.webp assets/screenshots/sign-in-1600.webp assets/screenshots/sign-in-full.webp "
     "assets/screenshots/desktop-ai-960.webp assets/screenshots/desktop-ai-1600.webp assets/screenshots/desktop-ai-full.webp "
     "assets/screenshots/app-library-960.webp assets/screenshots/app-library-1600.webp assets/screenshots/app-library-full.webp "

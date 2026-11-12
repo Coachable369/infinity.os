@@ -11,11 +11,11 @@ import { createEmblemGeometry } from "../emblem-geometry.js";
 // ------------------=
 function authoredEmblem() {
   const outline = JSON.parse(readFileSync(new URL("../assets/emblem-outline.json", import.meta.url)));
-  const source = readFileSync(new URL("../design/emblem-reference.png", import.meta.url));
+  const source = readFileSync(new URL("../design/woven-cobalt-reference.png", import.meta.url));
   assert.equal(createHash("sha256").update(source).digest("hex"), outline.sourceSha256);
   assert.equal(outline.contours.length, 3);
-  assert.ok(outline.areas[0] > 500000);
-  assert.ok(outline.areas[1] < -60000 && outline.areas[2] < -60000);
+  assert.ok(outline.areas[0] > 470000);
+  assert.ok(outline.areas[1] < -33000 && outline.areas[2] < -33000);
   const filledArea = outline.areas.reduce((sum, value) => sum + value, 0);
   assert.ok(Math.abs(filledArea - outline.opaquePixels) / outline.opaquePixels < .005);
   const geometry = createEmblemGeometry(outline);
@@ -57,10 +57,11 @@ function traceGeometry() {
   assert.equal(paths.length, 28);
   assert.deepEqual(paths, circuitPaths());
   for (const path of paths) {
-    assert.equal(path.length, 5);
+    assert.equal(path.length, 6);
+    assert.ok(Math.abs(path.at(-1)[1] - path[0][1]) >= 1);
     for (const point of path) {
       assert.ok(point.every(Number.isFinite));
-      assert.equal(point[1], -1.95);
+      assert.ok(point[2] < -1);
     }
     for (let i = 1; i < path.length; i++) assert.ok(Math.hypot(...path[i].map((v, axis) => v - path[i - 1][axis])) > 0);
   }

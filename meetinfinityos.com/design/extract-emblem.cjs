@@ -52,12 +52,12 @@ function smoothContour(points) {
 
 // ------------------------=
 // FUNC: extract
-// DESC: Separates the authored emblem from its baked floor reflection and exports reusable mesh contours.
+// DESC: Crops the woven glass master and extracts aligned face pixels and mesh contours.
 // ------------------=
 async function extract() {
-  const source = path.join(__dirname, "emblem-reference.png");
-  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const width = info.width, height = 685, binary = new Uint8Array(width * height);
+  const source = path.join(__dirname, "woven-cobalt-reference.png");
+  const { data, info } = await sharp(source).extract({ left: 57, top: 356, width: 1140, height: 556 }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const width = info.width, height = info.height, binary = new Uint8Array(width * height);
   for (let i = 0; i < binary.length; i++) binary[i] = data[i * 4 + 3] > 190 ? 1 : 0;
   // Close tiny raster-alpha gaps without changing the two large authored openings.
   const dilated = new Uint8Array(binary.length), closed = new Uint8Array(binary.length);
@@ -116,14 +116,15 @@ async function extract() {
       points.push(next);
       key = next.join(",");
     } while (key !== start);
-    if (Math.abs(area(points)) > 1000) contours.push(smoothContour(simplify(points, 4).slice(0, -1)));
+    if (Math.abs(area(points)) > 1000) contours.push(smoothContour(simplify(points, 1.6).slice(0, -1)));
   }
   contours.sort((a, b) => Math.abs(area(b)) - Math.abs(area(a)));
   if (contours.length !== 3) throw new Error(`Expected one outer contour and two openings, got ${contours.length}`);
   const result = { sourceSha256: createHash("sha256").update(fs.readFileSync(source)).digest("hex"),
-    sourceWidth: width, sourceHeight: info.height, reflectionCutoff: height,
-    crossing: [837, 405], unitsPerPixel: 1 / 220, opaquePixels: largest.length,
+    sourceWidth: width, sourceHeight: info.height,
+    crossing: [width / 2, height / 2], unitsPerPixel: 1 / 171, opaquePixels: largest.length,
     contours, areas: contours.map(area) };
+  await sharp(data, { raw: info }).webp({ lossless: true, effort: 6 }).toFile(path.join(__dirname, "../assets/woven-cobalt.webp"));
   fs.writeFileSync(path.join(__dirname, "../assets/emblem-outline.json"), JSON.stringify(result));
   console.log(JSON.stringify({ contours: contours.length, points: contours.map(p => p.length), areas: result.areas }));
 }

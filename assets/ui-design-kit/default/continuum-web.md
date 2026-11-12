@@ -32,13 +32,12 @@ lossless derivative of the BMP, not a generated interpretation. The generated
 macro illustration uses the decoded BMP as its material reference. The prior
 silver campaign rendering and top-bar substitute are removed from this website.
 
-The revised public motion uses a beveled 3D relief traced from the actual
-emblem's silhouette and both openings. Original kit pixels map to its faces;
-the unseen reverse and edge depth are reconstructed, not original 3D source.
-Do not substitute a generic tube or torus knot. Scroll drives axis rotation,
-and electrical pulses follow ground-plane traces. The BMP-derived logo remains
-the navigation mark and static fallback. Framework use was explicitly approved
-on 2026-10-20. See the implementation contract for reduced-motion behavior.
+The rotating website hero has its own approved artwork: the supplied **Woven
+cobalt glass infinity** PNG, retained in the website design folder. Trace the
+two openings and descending foreground ribbon, use the cropped glass artwork
+for both faces and fallback, and center the scroll turn on its crossing.
+Paired circuit banks climb outward behind the glass. The navigation mark and
+native OS identity continue to use the BMP. See the website motion contract.
 
 This document and website artwork are design-authoring material. They introduce
 no runtime, installer, or installed-system component, and do not change any OS
