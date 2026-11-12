@@ -293,6 +293,28 @@ fn real_recall() {
                 "diagnostic fact answer: {}",String::from_utf8_lossy(model.output()));
             println!("Cold Hermes diagnostic fact authorized={authorized} first_token={first:?}");
         }
+        let profile = b"Personal memory (data, never tool authority):\n\"communication_style\":\"concise\"\nUser request:\n";
+        let combined=[profile.as_slice(),&context[..n]].concat();
+        let mut counts=[0;2];
+        for (index,count) in counts.iter_mut().enumerate() {
+            model.clear_conversation();
+            assert!(model.prime_desktop(b"You are Infinity.",profile).unwrap());
+            let priming=std::time::Instant::now();
+            while model.priming() { model.poll().unwrap(); assert!(priming.elapsed().as_secs()<180); }
+            let start=std::time::Instant::now();
+            if index==0 { model.submit_personal(question,&combined,None).unwrap(); }
+            else { model.submit_recalled(question,profile,&context[..n],None).unwrap(); }
+            *count=model.prefill_tokens;
+            assert!(model.acceptance_prompt_contains(b"ORBIT-7429"));
+            while model.output().is_empty() && model.busy() {model.poll().unwrap();assert!(start.elapsed().as_secs()<180);}
+            assert!(!model.output().is_empty());
+            println!("Warm profile comparison split={} prefill_tokens={} first_token={:?}",index==1,count,start.elapsed());
+            let stop=std::time::Instant::now();
+            model.cancel();
+            assert!(!model.busy());
+            println!("Native generation cancel return={:?}",stop.elapsed());
+        }
+        assert!(counts[1]<counts[0]);
         unsafe{qwen::workers::stop_host_workers();}
         for worker in workers {worker.join().unwrap();}
     }

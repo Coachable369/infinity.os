@@ -1124,14 +1124,15 @@ impl AiRuntime {
             let Ok(n)=context else{return false;};
             n
         }else{0};
+        let profile_len = augmented_len;
         if route == RequestRoute::Inference(InferenceMode::Conversation) {
-        augmented_len+=self.persistent_memory.context(&mut memory_api::Native,self.chat_owner,self.hermes_session,input,256,&mut augmented[augmented_len..augmented_len+256]).unwrap_or(0);
+            augmented_len+=self.persistent_memory.context(&mut memory_api::Native,self.chat_owner,self.hermes_session,input,256,&mut augmented[augmented_len..augmented_len+256]).unwrap_or(0);
         }
         #[cfg(target_os="none")]
         let prompt_phase = voice_conversation::WorkPhase::begin(12, origin == RequestOrigin::Voice);
         self.deferred_tool_catalog = route == RequestRoute::Inference(InferenceMode::DesktopTools);
         let submitted = if route == RequestRoute::Inference(InferenceMode::Conversation) {
-            service.submit_personal(input, &augmented[..augmented_len], None)
+            service.submit_recalled(input, &augmented[..profile_len], &augmented[profile_len..augmented_len], None)
         } else {
             service.prime_desktop(&conversation_prefix[..prefix_length], &augmented[..augmented_len])
                 .and_then(|_| service.submit_personal(input, &augmented[..augmented_len], Some(

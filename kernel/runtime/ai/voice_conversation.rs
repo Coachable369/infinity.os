@@ -547,7 +547,10 @@ fn addressed_stop_with_echo(input: &[u8], reply: &[u8], word: WakeWord) -> bool 
 // ------------------=
 unsafe fn stop_spoken_reply() {
     INTERRUPTED_REPLY = Some((OWNER, CHAT_TURN));
-    voice_output::stop_request(OWNER, REPLY_OUTPUT_REQUEST);
+    // An explicit stop addresses this session's current speech, including
+    // prefetched narration whose request receipt has already advanced.
+    voice_output::stop(OWNER);
+    trace(b"authorized spoken stop: output cancellation requested");
     super::with_ai_runtime(|ai| { if ai.chat.turn_id() == CHAT_TURN && ai.app_turn_owner().is_none() { ai.cancel_chat(); } });
     REPLY_AT = REPLY_LENGTH;
     SYNC_VISIBLE_AT = REPLY_LENGTH;

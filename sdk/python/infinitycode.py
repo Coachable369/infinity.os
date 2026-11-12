@@ -1,5 +1,8 @@
 """InfinityCode: native Python source workspace and real-widget UI designer."""
 import copy
+import io
+import keyword
+import tokenize
 import os
 import sys
 import tkinter as tk
@@ -92,8 +95,17 @@ class Studio:
         designer = ttk.Frame(self.tabs, padding=10)
         self.tabs.add(designer, text="Form Designer")
         ttk.Label(designer, text="Form    /    640 × 420").pack(anchor="w", pady=8)
-        self.canvas = tk.Frame(designer, width=WIDTH, height=HEIGHT, background="#090F26")
-        self.canvas.pack(anchor="nw")
+        viewport = tk.Canvas(designer,background="#070D20",highlightthickness=0,
+                             scrollregion=(0,0,WIDTH+24,HEIGHT+24))
+        x_scroll = ttk.Scrollbar(designer,orient="horizontal",command=viewport.xview)
+        y_scroll = ttk.Scrollbar(designer,orient="vertical",command=viewport.yview)
+        x_scroll.pack(side="bottom",fill="x")
+        y_scroll.pack(side="right",fill="y")
+        viewport.pack(fill="both",expand=True)
+        viewport.configure(xscrollcommand=x_scroll.set,yscrollcommand=y_scroll.set)
+        self.canvas = tk.Frame(viewport, width=WIDTH, height=HEIGHT, background="#101B3A",
+                               highlightthickness=1,highlightbackground="#456B94")
+        viewport.create_window(12,12,anchor="nw",window=self.canvas,width=WIDTH,height=HEIGHT)
         self.canvas.pack_propagate(False)
         self.grip = tk.Frame(self.canvas, background="#86C7FF", width=10, height=10)
         self.grip.bind("<ButtonPress-1>", self.resize_start)
@@ -119,7 +131,12 @@ class Studio:
         methods_scroll.pack(side="right", fill="y")
         self.methods.pack(fill="both", expand=True)
         self.methods.configure(yscrollcommand=methods_scroll.set)
+        self.syntax_jobs = {}
         for editor in (self.source,self.methods):
+            for role,color in (("keyword","#91BDFF"),("string","#9CE1C0"),("comment","#8A9BB4"),("number","#EBC293")):
+                editor.tag_configure(role,foreground=color)
+            editor.bind("<<Modified>>",lambda event,e=editor:self.schedule_syntax(e))
+            editor.edit_modified(False)
             editor.tag_configure("diagnostic", background="#602D42", foreground="#FFFFFF")
             editor.bind("<Control-Return>",lambda event:self.check_python())
         ttk.Label(footer,text="Project").pack(side="left",padx=(0,6))
@@ -130,6 +147,41 @@ class Studio:
         ttk.Label(footer, textvariable=self.status).pack(side="left", padx=12)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.saved = copy.deepcopy(self.project.data)
+
+    # ------------------------=
+    # FUNC: schedule_syntax
+    # DESC: Coalesces edits before colorizing a bounded native Python document.
+    # ------------------=
+    def schedule_syntax(self, editor):
+        if not editor.edit_modified():
+            return
+        editor.edit_modified(False)
+        job = self.syntax_jobs.pop(editor,None)
+        if job is not None:
+            self.root.after_cancel(job)
+        self.syntax_jobs[editor] = self.root.after(180,lambda:self.colorize(editor))
+
+    # ------------------------=
+    # FUNC: colorize
+    # DESC: Applies real Python token ranges without altering source, history, selection or diagnostics.
+    # ------------------=
+    def colorize(self, editor):
+        self.syntax_jobs.pop(editor,None)
+        ranges = {role:[] for role in ("keyword","string","comment","number")}
+        roles = {tokenize.STRING:"string",tokenize.COMMENT:"comment",tokenize.NUMBER:"number"}
+        source = editor.get("1.0","end-1c")
+        try:
+            for token in tokenize.generate_tokens(io.StringIO(source).readline):
+                role = "keyword" if token.type==tokenize.NAME and keyword.iskeyword(token.string) else roles.get(token.type)
+                if role:
+                    ranges[role].extend((f"{token.start[0]}.{token.start[1]}",f"{token.end[0]}.{token.end[1]}"))
+        except (tokenize.TokenError,IndentationError,SyntaxError):
+            pass
+        for role,indices in ranges.items():
+            editor.tag_remove(role,"1.0","end")
+            if indices:
+                editor.tag_add(role,*indices)
+        editor.tag_raise("diagnostic")
 
     # ------------------------=
     # FUNC: filter_controls

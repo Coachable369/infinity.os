@@ -919,10 +919,17 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     assert!(conversation::start(owner)); recognize_voice(b"Infinity explain this");
     conversation::poll(); OUTPUT.store(1,Ordering::SeqCst); ECHO_PLAYBACK.store(true,Ordering::SeqCst);
     let turns=TURNS.load(Ordering::SeqCst);let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
+    HOLD_RECOGNITION.store(true,Ordering::SeqCst);
     *COMPOSER.lock().unwrap() = b"unfinished draft".to_vec();
     *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity stop".to_vec());
     MICROPHONE.lock().unwrap().extend((0..voice_vad::INTERRUPT_PROBE_SAMPLES+640).map(|i|if i%2==0{2800}else{-2800}));
-    drain_microphone();conversation::poll();
+    drain_microphone();
+    assert!(BUSY.load(Ordering::SeqCst));
+    OUTPUT_REQUEST.fetch_add(1,Ordering::SeqCst);
+    HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+    BUSY.store(false,Ordering::SeqCst);
+    READY.store(true,Ordering::SeqCst);
+    conversation::poll();
     assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+1,"stop must not wait for silence under continuous residual audio");
     assert_eq!(TURNS.load(Ordering::SeqCst),turns);
     assert_eq!(conversation::state().0,State::Listening);

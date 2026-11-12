@@ -25,6 +25,7 @@ pub struct Service {
     turn_desktop_context: bool,
     personal_context: [u8; 1792],
     personal_context_len: usize,
+    profile_len: usize,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
     pub allocated_bytes: usize,
@@ -216,6 +217,7 @@ impl Service {
             turn_desktop_context: false,
             personal_context: [0; 1792],
             personal_context_len: 0,
+            profile_len: 0,
             reused_tokens: 0,
             prefill_tokens: 0,
             allocated_bytes: bytes.len() + arena.len() + core::mem::size_of::<Self>(),
@@ -234,20 +236,31 @@ impl Service {
     // DESC: Inserts selected personal facts only when changed; identical facts remain in the retained KV history instead of being prefetched every turn.
     // ------------------=
     pub fn submit_personal(&mut self, text: &[u8], context: &[u8], tools: Option<&[u8]>) -> Result<(), Error> {
-        if context.len() > self.personal_context.len() { return Err(Error::Overflow); }
-        let changed = context != &self.personal_context[..self.personal_context_len];
+        self.submit_recalled(text, context, &[], tools)
+    }
+    // ------------------------=
+    // FUNC: submit_recalled
+    // DESC: Reuses the primed profile and retained recall independently; changed facts enter only the user turn.
+    // ------------------=
+    pub fn submit_recalled(&mut self, text: &[u8], profile: &[u8], facts: &[u8], tools: Option<&[u8]>) -> Result<(), Error> {
+        let size = profile.len().checked_add(facts.len()).ok_or(Error::Overflow)?;
+        if size > self.personal_context.len() { return Err(Error::Overflow); }
+        let previous = &self.personal_context[..self.personal_context_len];
+        let (old_profile, old_facts) = previous.split_at(self.profile_len);
         let mut prompt = [0u8; 8192];
-        let input = if changed && !context.is_empty() {
-            let end = context.len().checked_add(text.len()).ok_or(Error::Overflow)?;
-            if end > prompt.len() { return Err(Error::Overflow); }
-            prompt[..context.len()].copy_from_slice(context);
-            prompt[context.len()..end].copy_from_slice(text);
-            &prompt[..end]
-        } else { text };
-        match tools { Some(prefix) => self.submit_desktop(input, prefix)?, None => self.submit(input)? }
+        let mut used = 0usize;
+        for part in [if profile == old_profile { &[] } else { profile },
+                     if facts == old_facts { &[] } else { facts }, text] {
+            let end = used.checked_add(part.len()).ok_or(Error::Overflow)?;
+            prompt.get_mut(used..end).ok_or(Error::Overflow)?.copy_from_slice(part);
+            used = end;
+        }
+        match tools { Some(prefix) => self.submit_desktop(&prompt[..used],prefix)?, None => self.submit(&prompt[..used])? }
         self.personal_context.fill(0);
-        self.personal_context[..context.len()].copy_from_slice(context);
-        self.personal_context_len = context.len();
+        self.personal_context[..profile.len()].copy_from_slice(profile);
+        self.personal_context[profile.len()..size].copy_from_slice(facts);
+        self.personal_context_len = size;
+        self.profile_len = profile.len();
         Ok(())
     }
     // ------------------------=
@@ -401,6 +414,7 @@ impl Service {
             self.engine.rewind_prefix(self.turn_start);
             self.personal_context.fill(0);
             self.personal_context_len = 0;
+            self.profile_len = 0;
         }
         self.completed = false;
         self.stop_reason = StopReason::Cancelled;
@@ -417,6 +431,7 @@ impl Service {
         self.prompt.fill(0);
         self.personal_context.fill(0);
         self.personal_context_len = 0;
+        self.profile_len = 0;
         self.desktop_context = false;
         self.prompt_count = 0;
         self.output.fill(0);
@@ -473,6 +488,7 @@ impl Service {
         self.desktop_context = true;
         self.personal_context[..context.len()].copy_from_slice(context);
         self.personal_context_len = context.len();
+        self.profile_len = context.len();
         self.priming = true;
         self.busy = true;
         Ok(true)

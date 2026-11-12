@@ -33,6 +33,7 @@ pub struct Detector {
     energy: u64,
     consecutive: usize,
     last_voice: usize,
+    speech_start: usize,
     segment: Segment,
     threshold: u16,
     continuation_threshold: u16,
@@ -53,6 +54,7 @@ impl Detector {
             energy: 0,
             consecutive: 0,
             last_voice: 0,
+            speech_start: 0,
             segment: Segment { start: 0, end: 0 },
             threshold,
             continuation_threshold: threshold,
@@ -119,6 +121,7 @@ impl Detector {
                         self.last_voice = self.samples;
                     }
                     if self.state == VadState::Waiting && self.consecutive >= ONSET_FRAMES {
+                        self.speech_start = self.samples.saturating_sub(ONSET_FRAMES * FRAME);
                         self.segment.start =
                             self.samples.saturating_sub(ONSET_FRAMES * FRAME + PRE_ROLL);
                         self.state = VadState::Speech;
@@ -220,6 +223,7 @@ impl Detector {
         self.frame_samples = 0;
         self.consecutive = 0;
         self.last_voice = 0;
+        self.speech_start = 0;
         self.waiting_energies.fill(0);
         self.waiting_frames = 0;
     }
@@ -294,7 +298,7 @@ impl Utterance {
     // DESC: Borrows confirmed in-progress speech for stop-only recognition without completing or clearing the utterance.
     // ------------------=
     pub fn interruption_probe(&self) -> Option<&[i16]> {
-        if self.state() != VadState::Speech || self.active_speech_samples() < INTERRUPT_PROBE_SAMPLES { return None; }
+        if self.state() != VadState::Speech || self.detector.last_voice.saturating_sub(self.detector.speech_start) < INTERRUPT_PROBE_SAMPLES { return None; }
         Some(&self.pcm[self.detector.segment.start..self.detector.samples()])
     }
     // ------------------------=
