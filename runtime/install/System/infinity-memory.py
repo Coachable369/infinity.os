@@ -7,6 +7,8 @@ from _infinity_app import memory_request
 CATEGORIES = ("All memories", "Episodic", "Semantic", "Procedural")
 NAVY, PANEL, WHITE, BLUE, MUTED = "#090f26", "#101b3a", "#ffffff", "#3e6fff", "#a7bddc"
 
+# Downsampled from the approved Infinity Memory launcher glyph; no filesystem access at launch.
+MEMORY_GLYPH = "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"
 
 # ------------------------=
 # FUNC: stamp
@@ -48,6 +50,13 @@ class Browser:
         style.configure("TLabel", background=NAVY, foreground=WHITE, font=body_font)
         style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=8, font=body_font, bordercolor="#50779A", lightcolor=PANEL, darkcolor=PANEL, insertcolor=WHITE)
         style.configure("TCombobox", fieldbackground=PANEL, background=PANEL, foreground=WHITE, padding=6, font=body_font)
+        style.configure("Library.Treeview", background=PANEL, fieldbackground=PANEL,
+                        foreground=WHITE, font=body_font, rowheight=body_px+17, borderwidth=0,
+                        lightcolor=PANEL, darkcolor=PANEL)
+        style.map("Library.Treeview", background=[("selected", "#244F96")],
+                  foreground=[("selected", WHITE)])
+        style.configure("TCombobox", arrowcolor="#A8D5FF", bordercolor="#416084",
+                        lightcolor=PANEL, darkcolor=PANEL)
         style.map("TEntry", bordercolor=[("focus", "#86C7FF")])
         style.map("TCombobox", fieldbackground=[("readonly", PANEL)], foreground=[("readonly", WHITE)])
         root.option_add("*TCombobox*Listbox.background", PANEL)
@@ -57,7 +66,7 @@ class Browser:
         width = min(1520, root.winfo_screenwidth() - 48, root.maxsize()[0])
         height = min(960, root.winfo_screenheight() - 124, root.maxsize()[1])
         root.geometry(f"{width}x{height}+{max(0,(root.winfo_screenwidth()-width)//2)}+{max(72,(root.winfo_screenheight()-height)//2)}")
-        root.minsize(min(720,width), min(510,height))
+        root.minsize(min(720,width), min(550,height))
         root.configure(bg=NAVY)
         self.record = self.page = self.total = 0
         self.pending = None
@@ -71,16 +80,21 @@ class Browser:
         self.category = tk.StringVar(value="Semantic")
         self.status = tk.StringVar(value="Loading memories...")
         self.heading = tk.StringVar(value="Memory details")
-        self.details = tk.StringVar()
+        self.metadata = [tk.StringVar(value="—") for _ in range(4)]
+        self.page_label = tk.StringVar()
+        self.empty_hint = tk.StringVar()
         top = tk.Frame(root, bg=NAVY)
         top.pack(fill="x", padx=18, pady=(16, 8))
-        tk.Label(top, text="Infinity Memory", font=("Inter", -int(body_px*2.1), "bold"), bg=NAVY, fg=WHITE).pack(side="left")
+        self.glyph = tk.PhotoImage(data=MEMORY_GLYPH)
+        tk.Label(top, image=self.glyph, bg=NAVY, bd=0).pack(side="left", padx=(0,12))
+        tk.Label(top, text="Infinity Memory", font=("Inter", -int(body_px*1.85), "bold"), bg=NAVY, fg=WHITE).pack(side="left")
+        tk.Label(top, text="Personal workspace", font=("Inter",-body_px), bg=NAVY, fg=MUTED).pack(side="right")
         self.fact_id = 0
         self.fact_job = None
         self.fact_last = ""
         self.fact = tk.StringVar()
-        self.fact_state = tk.StringVar(value="")
-        capture = tk.Frame(root, bg=PANEL, padx=12, pady=8, highlightthickness=1, highlightbackground="#567FA3")
+        self.fact_state = tk.StringVar(value="Autosave on")
+        capture = tk.Frame(root, bg=PANEL, padx=12, pady=8, highlightthickness=1, highlightbackground="#324D70")
         capture.pack(fill="x", padx=18, pady=4)
         tk.Label(capture, text="Add a fact", bg=PANEL, fg=WHITE, font=("Inter",-body_px,"bold")).pack(side="left", padx=(0,12))
         field = ttk.Entry(capture, textvariable=self.fact, font=body_font)
@@ -92,7 +106,7 @@ class Browser:
         self.fact.trace_add("write", self.fact_changed)
         controls = tk.Frame(root, bg=NAVY)
         controls.pack(fill="x", padx=18, pady=6)
-        ttk.Label(controls, text="Search").pack(side="left", padx=(0, 6))
+        ttk.Label(controls, text="Search", width=10, anchor="w").pack(side="left", padx=(12, 4))
         self.search = ttk.Entry(controls, textvariable=self.query, font=body_font)
         self.search.bind("<ButtonPress-1>", lambda event: self.search.focus_force(), add="+")
         self.search.pack(side="left", expand=True, fill="x")
@@ -105,38 +119,60 @@ class Browser:
         body = tk.PanedWindow(root, orient="horizontal", bg=NAVY, sashwidth=7, bd=0)
         body.pack(expand=True, fill="both", padx=18, pady=10)
         left, right = (tk.Frame(body, bg=PANEL, highlightthickness=1, highlightbackground="#365777") for _ in range(2))
-        body.add(left, minsize=200, width=int(width*.35))
-        body.add(right, minsize=290)
-        tk.Label(left,textvariable=self.list_title,bg=PANEL,fg=WHITE,font=("Inter",-body_px-3,"bold")).pack(anchor="w", padx=14, pady=(10,2))
-        self.listbox = tk.Listbox(left, bg=PANEL, fg=WHITE, selectbackground=BLUE, font=body_font,
-                                  exportselection=False, borderwidth=0, highlightthickness=0)
-        self.listbox.pack(expand=True, fill="both", padx=10, pady=12)
-        self.listbox.bind("<<ListboxSelect>>", self.select)
+        body.add(left, minsize=200, width=int(width*.35), stretch="always")
+        body.add(right, minsize=290, width=int(width*.65), stretch="always")
+        tk.Label(left,textvariable=self.list_title,bg=PANEL,fg=WHITE,font=("Inter",-body_px-2,"bold")).pack(anchor="w", padx=14, pady=(10,8))
+        tk.Frame(left, height=1, bg="#31476A").pack(fill="x", padx=12)
+        list_area = tk.Frame(left, bg=PANEL)
+        list_area.pack(expand=True, fill="both", padx=8, pady=6)
+        self.listbox = ttk.Treeview(list_area, show="tree", selectmode="browse", height=4, style="Library.Treeview")
+        self.listbox.column("#0", width=160, minwidth=80, stretch=True)
+        self.listbox.pack(fill="both", expand=True)
+        self.empty = tk.Label(list_area, textvariable=self.empty_hint, bg=PANEL, fg=MUTED,
+                              font=("Inter", -body_px), justify="left", wraplength=180)
+        self.listbox.bind("<<TreeviewSelect>>", self.select)
         nav = tk.Frame(left, bg=PANEL)
         nav.pack(fill="x", padx=8, pady=8)
         self.prev = self.button(nav, "Previous", lambda: self.move(-1))
         self.next = self.button(nav, "Next", lambda: self.move(1))
         self.prev.pack(side="left")
         self.next.pack(side="right")
+        tk.Label(nav, textvariable=self.page_label, bg=PANEL, fg=MUTED,
+                 font=("Inter",-13)).pack(expand=True)
         tk.Label(right, textvariable=self.heading, bg=PANEL, fg=WHITE, font=("Inter", -body_px-5, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
-        self.editor = tk.Text(right, height=5, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
-                              font=body_font, padx=8, pady=8)
+        tk.Label(right, text="Fact", bg=PANEL, fg=MUTED, font=("Inter",-14,"bold")).pack(anchor="w", padx=14, pady=(0,4))
+        self.editor = tk.Text(right, height=3, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
+                              font=body_font, padx=12, pady=10, relief="flat", bd=0, highlightthickness=1,
+                              highlightbackground="#405D80", highlightcolor="#86C7FF")
         self.editor.bind("<ButtonPress-1>", lambda event: self.editor.focus_force(), add="+")
-        self.editor.pack(fill="both", expand=True, padx=14)
+
         row = tk.Frame(right, bg=PANEL)
         row.pack(fill="x", padx=14, pady=8)
-        ttk.Label(row, text="Category").pack(side="left")
+        tk.Label(row, text="Category", bg=PANEL, fg=MUTED).pack(side="left")
         ttk.Combobox(row, values=CATEGORIES[1:], textvariable=self.category, state="readonly", width=14).pack(side="left", padx=8)
-        tk.Label(right, textvariable=self.details, bg=PANEL, fg=MUTED, anchor="w", justify="left").pack(fill="x", padx=14)
+        tk.Frame(right, height=1, bg="#31476A").pack(fill="x", padx=14, pady=(0,5))
+        meta = tk.Frame(right, bg=PANEL)
+        meta.pack(fill="x", padx=14, pady=(2,5))
+        for i,label in enumerate(("Source", "Record", "Created", "Updated")):
+            col = i % 2
+            meta.columnconfigure(col, weight=1, uniform="metadata")
+            cell = tk.Frame(meta, bg=PANEL)
+            cell.grid(row=i//2, column=col, sticky="ew", pady=2)
+            tk.Label(cell, text=label, width=7, anchor="w", font=("Inter",-13),
+                     fg=MUTED, bg=PANEL).pack(side="left")
+            tk.Label(cell, textvariable=self.metadata[i], anchor="w", font=("Inter",-14),
+                     fg=WHITE, bg=PANEL).pack(side="left", fill="x", expand=True)
         buttons = tk.Frame(right, bg=PANEL)
-        buttons.pack(fill="x", padx=14, pady=10)
         self.delete = self.button(buttons, "Delete", self.remove)
         self.delete.configure(state="disabled")
         self.delete.pack(side="left")
         self.commit = self.button(buttons, "Save", self.save, True)
         self.commit.pack(side="right")
+        # Reserve the actions and metadata before allocating the flexible editor.
+        buttons.pack(side="bottom", fill="x", padx=14, pady=(4, 9))
+        self.editor.pack(fill="both", expand=True, padx=14, before=row)
         root.bind("<Escape>", lambda event: self.cancel_confirmation())
-        tk.Label(root, textvariable=self.status, bg=NAVY, fg=MUTED, anchor="w").pack(fill="x", padx=18, pady=(0, 10))
+        tk.Label(root, textvariable=self.status, bg="#101E38", fg=MUTED, anchor="w", padx=18, pady=5, font=("Inter",-14)).pack(fill="x")
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.bind("<Control-n>", lambda event: self.new())
         root.bind("<Control-s>", lambda event: self.save())
@@ -151,7 +187,7 @@ class Browser:
     def open_catalog(self):
         self.refresh()
         if self.ids:
-            self.listbox.selection_set(0)
+            self.listbox.selection_set(str(self.ids[0]))
             self.show(self.ids[0])
 
     # ------------------------=
@@ -258,20 +294,27 @@ class Browser:
             rows = raw.splitlines()
             _, count, total, embedded, size = rows.pop().split("\t")
             self.total = int(count)
-            self.list_title.set(f"Memories ({count})")
+            self.list_title.set(f"Library   ·   {count}")
+            self.page_label.set(f"{self.page+1} / {(self.total+5)//6}" if self.total>6 else "")
             if self.page and self.page * 6 >= self.total:
                 self.page = max(0, (self.total - 1) // 6)
                 return self.refresh()
             records = [row.split("\t", 2) for row in rows]
             ids = [int(row[0]) for row in records]
             titles = tuple(row[2] for row in records)
-            if ids != self.ids or titles != self.listbox.get(0, "end"):
-                self.ids = ids
-                self.listbox.delete(0, "end")
-                if titles:
-                    self.listbox.insert("end", *titles)
+            if records != getattr(self, "rows", None):
+                self.ids, self.rows = ids, records
+                self.listbox.delete(*self.listbox.get_children())
+                for identity, title in zip(ids, titles):
+                    self.listbox.insert("", "end", iid=str(identity), text=title)
                 if self.record in ids:
-                    self.listbox.selection_set(ids.index(self.record))
+                    self.listbox.selection_set(str(self.record))
+            if ids:
+                self.empty.place_forget()
+            else:
+                self.empty_hint.set("No matches. Try a different search or filter." if int(total)
+                                    else "Your library is empty. Add your first fact above.")
+                self.empty.place(x=12,y=12)
             self.prev.configure(state="normal" if self.page else "disabled")
             self.next.configure(state="normal" if (self.page + 1) * 6 < self.total else "disabled")
             prefix = {0: "No matching memories", 1: "1 match"}.get(self.total, f"{count} matches")
@@ -280,7 +323,8 @@ class Browser:
                 self.status.set(summary)
         except (OSError, ValueError) as error:
             self.ids.clear()
-            self.listbox.delete(0, "end")
+            self.rows = None
+            self.listbox.delete(*self.listbox.get_children())
             self.status.set(message(error))
 
     # ------------------------=
@@ -353,9 +397,11 @@ class Browser:
         self.category.set(self.original_category)
         self.editor.delete("1.0", "end")
         self.editor.insert("1.0", content)
-        self.heading.set(content.splitlines()[0][:48])
-        self.details.set(f"Memory {identity}   |   {source}\nCreated  {stamp(created)}\nUpdated  {stamp(updated)}\n"
-                         + (f"{model}  /  {dimensions} dimensions" if dimensions else "Keyword index only"))
+        self.heading.set("Memory details")
+        for field, value in zip(self.metadata,(source, f"#{identity}  ·  {model or 'Keyword'}" +
+                                                  (f" / {dimensions}d" if dimensions else ""),
+                                                  stamp(created), stamp(updated))):
+            field.set(value)
         self.delete.configure(state="normal")
 
     # ------------------------=
@@ -363,9 +409,11 @@ class Browser:
     # DESC: Resolves the selected stable ID instead of inferring identity from a row position.
     # ------------------=
     def select(self, event):
-        selection = self.listbox.curselection()
+        selection = self.listbox.selection()
         if selection:
-            identity = self.ids[selection[0]]
+            identity = int(selection[0])
+            if identity == self.record or identity not in self.ids:
+                return
             self.discard(lambda: self.show(identity))
 
     # ------------------------=
@@ -385,10 +433,11 @@ class Browser:
         self.original_category = "Semantic"
         self.category.set("Semantic")
         self.editor.delete("1.0", "end")
-        self.listbox.selection_clear(0, "end")
+        self.listbox.selection_remove(*self.listbox.selection())
         self.editor.focus_force()
         self.heading.set("New memory")
-        self.details.set("")
+        for field in self.metadata:
+            field.set("—")
         self.delete.configure(state="disabled")
 
     # ------------------------=
