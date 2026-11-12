@@ -63,7 +63,7 @@ def main():
     guest.acceleration = "hvf" if args.arch == "aarch64" and platform.system() == "Darwin" and platform.machine() == "arm64" else "tcg"
     guest.patched = True
     guest.install_timeout_seconds = args.install_timeout
-    guest.boot_timeout_seconds = 600
+    guest.boot_timeout_seconds = 1200 if guest.acceleration == "tcg" else 600
     proof = dict(architecture=args.arch, media=media, source=str(iso), accepted=False, screenshots=[])
     destination = ROOT / "builds/validation/aikit-memory" / args.arch / "installed.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
