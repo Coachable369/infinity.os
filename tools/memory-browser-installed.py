@@ -1,6 +1,5 @@
 """Exercise the native launcher, real GUI edits and AIKit recall on private installed media."""
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
@@ -69,14 +68,28 @@ def main():
         proof["devices"] = advice.detached(guest)
         guest.launch("command", 5)
         guest.command("ai new")
+        repair=memory.command(guest,"remember Install the missing compiler dependency to fix the build")
+        assert repair[3]==0
         previous = python.snapshot(guest)[2]
         guest.launch("Infinity Memory", 5)
         bounds = window(guest)
         time.sleep(2)
-        proof["empty"] = str(guest.screenshot("memory-browser-initial"))
+        proof["initial"] = str(guest.screenshot("memory-browser-initial"))
         native.adaptive_click(guest, bounds["x"]+bounds["width"]//2, bounds["y"]+bounds["height"]//2)
+        guest.key("ctrl","f")
+        guest.text("Compilation failed because a library was absent")
+        time.sleep(1)
+        proof["semantic"]=str(guest.screenshot("memory-browser-semantic"))
+        guest.key("ctrl","a")
+        guest.key("backspace")
         guest.key("ctrl","n")
-        guest.text("The diagnostic project code is ORBIT-7429.")
+        guest.text("The diagnostic project code is ORBIT-7331.")
+        guest.key("ctrl","s")
+        time.sleep(1)
+        guest.key("ctrl","end")
+        for _ in range(5):
+            guest.key("backspace")
+        guest.text("7429.")
         guest.key("ctrl","s")
         time.sleep(1)
         proof["saved"] = str(guest.screenshot("memory-browser-record"))
@@ -102,6 +115,8 @@ def main():
         guest.authenticate()
         guest.launch("command",5)
         assert memory.command(guest,"search ORBIT")[5] == 0
+        other=memory.command(guest,"search compiler")
+        assert other[5]==1 and memory.command(guest,f"forget {other[6]}")[3]==1
         proof["accepted"]=True
     except BaseException as error:
         proof["failure"]=str(error)
