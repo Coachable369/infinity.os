@@ -461,10 +461,43 @@ fn uncertain_commit_latch() {
 }
 
 // ------------------------=
+// FUNC: reboot_after_configuration
+// DESC: Exercises installer seed, interrupted setup, completed setup and damaged storage across cold identity restores.
+// ------------------=
+fn reboot_after_configuration() {
+    let mut first = IdentitySystem::new();
+    first.restore_boot_identity(Some(b"INFIDN1\0FIRST-BOOT-REQUIRED"));
+    first.begin_onboarding().unwrap();
+    let mut resumed = IdentitySystem::new();
+    resumed.restore_boot_identity(Some(&first.encode()));
+    assert_eq!(resumed.onboarding_state(), OnboardingState::InProgress);
+    assert!(resumed.permits_onboarding());
+    let (original, owner, _) = fixture();
+    let saved = original.encode();
+    for _ in 0..2 {
+        let mut boot = IdentitySystem::new();
+        boot.restore_boot_identity(Some(&saved));
+        assert!(!boot.permits_onboarding());
+        assert!(boot.begin_onboarding().is_err());
+        assert_eq!(boot.onboarding_state(), OnboardingState::Complete);
+        assert_eq!(boot.user_nth(0).unwrap().id, owner.id);
+        assert!(boot.create_session(owner.id, b"owner password", 10).is_ok());
+    }
+    for missing in [None, Some(&saved[..17]), Some(b"INFIDN1\0FIRST-BOOT" as &[u8])] {
+        let mut boot = IdentitySystem::new();
+        boot.restore_boot_identity(missing);
+        assert!(boot.account_storage_uncertain());
+        assert!(!boot.permits_onboarding());
+        assert!(boot.begin_onboarding().is_err());
+    }
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Executes focused behavioral account-management tests against the production native identity model.
 // ------------------=
 fn main() {
+    reboot_after_configuration();
     authorization_and_crud();
     administrator_safety();
     password_reclaim_and_rollback();

@@ -403,16 +403,33 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: restore_boot_identity
+    // DESC: Accepts only the installer seed or a validated checkpoint; a failed read never grants first-boot authority.
+    // ------------------=
+    pub fn restore_boot_identity(&mut self, bytes: Option<&[u8]>) {
+        if bytes == Some(b"INFIDN1\0FIRST-BOOT-REQUIRED") { return; }
+        if let Some(state) = bytes.and_then(|data| Self::decode(data).ok()) {
+            *self = state;
+        } else {
+            self.onboarding = OnboardingState::RecoveryRequired;
+            self.latch_account_storage_uncertain();
+        }
+    }
+
+    // ------------------------=
+    // FUNC: permits_onboarding
+    // DESC: Allows setup only for a trusted, unfinished identity checkpoint.
+    // ------------------=
+    pub fn permits_onboarding(&self) -> bool {
+        !self.account_storage_uncertain() && self.onboarding != OnboardingState::Complete
+    }
+
+    // ------------------------=
     // FUNC: begin_onboarding
     // DESC: Marks first-boot setup in progress so interruption is recoverable.
     // ------------------=
     pub fn begin_onboarding(&mut self) -> Result<(), IdentityError> {
-        if !matches!(
-            self.onboarding,
-            OnboardingState::Required
-                | OnboardingState::RecoveryRequired
-                | OnboardingState::InProgress
-        ) {
+        if !self.permits_onboarding() {
             return Err(IdentityError::InvalidState);
         }
         self.onboarding = OnboardingState::InProgress;

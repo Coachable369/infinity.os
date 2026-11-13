@@ -2822,12 +2822,14 @@ impl ConsoleRuntime {
     // DESC: Starts or resumes the durable first-boot identity workflow.
     // ------------------=
     fn enter_onboarding(&mut self) {
+        if !crate::runtime::with_runtime(|r| r.identity.begin_onboarding().is_ok()).unwrap_or(false) {
+            return;
+        }
         self.mode = ConsoleMode::Onboarding;
         self.system_step = 0;
         self.system_focus = 1;
         self.reset_input();
         crate::runtime::with_runtime(|runtime| {
-            let _ = runtime.identity.begin_onboarding();
             if runtime.identity.machine().is_some() {
                 self.system_step = 2;
             }
@@ -14815,9 +14817,8 @@ pub fn initialize(system: SystemSnapshot) {
         runtime.show_startup();
     } else {
         crate::output_text(b"InfinityOS Native Boot\nBoot source: installed system\n");
-        let onboarding = crate::runtime::with_runtime(|system| system.identity.onboarding_state())
-            .unwrap_or(crate::runtime::identity::OnboardingState::Required);
-        if onboarding == crate::runtime::identity::OnboardingState::Complete {
+        let setup = crate::runtime::with_runtime(|r| r.identity.permits_onboarding()).unwrap_or(false);
+        if !setup {
             runtime.mode = ConsoleMode::Authentication;
             runtime.system_focus = 1;
             runtime.system_step = 0;

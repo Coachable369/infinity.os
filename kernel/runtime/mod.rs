@@ -3261,25 +3261,11 @@ pub fn storage_initialized() {
         #[cfg(target_os = "none")]
         {
             let mut persisted = [0u8; identity::IDENTITY_STATE_BYTES];
-            if let Some(length) = crate::storage::identity_state_load(&mut persisted)
-                .ok()
-                .filter(|length| {
-                    matches!(
-                        *length,
-                        identity::LEGACY_IDENTITY_STATE_BYTES
-                            | identity::V2_IDENTITY_STATE_BYTES
-                            | identity::V3_IDENTITY_STATE_BYTES
-                            | identity::V5_IDENTITY_STATE_BYTES
-                            | identity::IDENTITY_STATE_BYTES
-                    )
-                })
-            {
-                match identity::IdentitySystem::decode(&persisted[..length]) {
-                    Ok(state) => runtime.identity = state,
-                    Err(_) => crate::output_text(
-                        b"[identity] durable state invalid; onboarding recovery required\n",
-                    ),
-                }
+            let checkpoint = crate::storage::identity_state_load(&mut persisted).ok()
+                .and_then(|length| persisted.get(..length));
+            runtime.identity.restore_boot_identity(checkpoint);
+            if runtime.identity.account_storage_uncertain() {
+                crate::output_text(b"[identity] cannot restore saved account; first boot disabled, existing storage preserved\n");
             }
         }
     });
@@ -3371,6 +3357,18 @@ pub fn complete_onboarding_durable() -> bool {
         return false;
     }
     if persist_identity_state() {
+        // Read through the same private object path used on the next boot. A
+        // successful write alone cannot admit a session with a stale checkpoint.
+        #[cfg(target_os = "none")]
+        {
+            let expected = runtime_ref().identity.encode();
+            let mut saved = [0u8; identity::IDENTITY_STATE_BYTES];
+            if crate::storage::identity_state_load(&mut saved) == Ok(saved.len()) && saved == expected {
+                return true;
+            }
+            runtime_mut().identity.latch_account_storage_uncertain();
+        }
+        #[cfg(not(target_os = "none"))]
         return true;
     }
     with_runtime(|r| r.identity.restore_account_checkpoint(before));
