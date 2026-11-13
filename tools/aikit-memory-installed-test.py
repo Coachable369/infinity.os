@@ -83,7 +83,8 @@ def main():
         assert command(guest, "search Rust")[5] == 0
         proof["screenshots"].append(str(guest.screenshot("memory-before-reboot")))
         guest.stop()
-        guest.onboard()
+        guest.boot(False)
+        guest.authenticate()
         advice.detached(guest)
         guest.launch("command", 5)
         restored = command(guest, "search Moonquartz")
@@ -92,7 +93,8 @@ def main():
         removed = command(guest, f"forget {identity}")
         assert removed[3] == 1 and removed[4] == before
         guest.stop()
-        guest.onboard()
+        guest.boot(False)
+        guest.authenticate()
         advice.detached(guest)
         guest.launch("command", 5)
         assert command(guest, "search Moonquartz")[5] == 0
