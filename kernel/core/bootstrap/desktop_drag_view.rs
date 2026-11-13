@@ -6,7 +6,7 @@ impl DisplayDevice {
     // DESC: Centers the themed wastebasket and caption in the drop target used by input.
     // ------------------=
     pub(super) fn desktop_trash_tile(&mut self, scale: usize) {
-        let tile = crate::ui::desktop_polish::trash_rect(self.width,self.height,scale);
+        let tile = crate::ui::desktop_widgets::current().position_trash(crate::ui::desktop_polish::trash_rect(self.width,self.height,scale),self.width,self.height);
         let size = (self.height / 21).max(44);
         self.themed_icon(tile.x as usize + tile.width as usize/2,tile.y as usize+size/2,10,size);
         self.ui_text_centered(tile.x as usize,tile.width as usize,tile.y as usize+size+8,

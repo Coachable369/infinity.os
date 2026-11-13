@@ -18,24 +18,11 @@ impl DisplayDevice {
         if authored.is_some() {
             self.intersect_render_clip(panel_left,panel_top,panel_width,panel_height);
         }
+        self.fill_rounded_rect_alpha(panel_left,panel_top,panel_width,panel_height,26*scale,12,29,51,195);
         if let Some(scene) = authored {
-            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[]);
-        } else {
-        self.fill_rounded_rect_alpha(
-            panel_left.saturating_sub(8 * scale),
-            panel_top + 10 * scale,
-            panel_width.saturating_add(16 * scale),
-            panel_height,
-            26 * scale,
-            0,
-            2,
-            10,
-            132,
-        );
-        self.app_card_alpha(geometry.panel,(16,27,58),(134,199,255),230,scale);
-        self.kit_close_control(geometry.close);
-
-        }
+            // The grid and track are layout guides, not extra framed surfaces.
+            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[81,84,85,86]);
+        } else { self.kit_close_control(geometry.close); }
 
         let search_left = geometry.search.x.max(0) as usize;
         let search_top = geometry.search.y.max(0) as usize;
@@ -241,43 +228,6 @@ impl DisplayDevice {
             );
         }
 
-        let divider_y = panel_top + panel_height * 70 / 100;
-        self.fill_rect_alpha(
-            geometry.category_left,
-            divider_y,
-            geometry.category_width * 5,
-            scale,
-            55,
-            109,
-            143,
-            150,
-        );
-        for (index, entry) in crate::ui::app_launcher::LAUNCHER_CATEGORIES
-            .iter()
-            .enumerate()
-        {
-            let left = geometry.category_left + index * geometry.category_width + 6 * scale;
-            let width = geometry.category_width.saturating_sub(12 * scale);
-            let selected = focus == visible + index + 1;
-            let emphasis = if selected { crate::ui::app_launcher::highlight_level() } else { 0 };
-            let icon_size = geometry.category_height * (48 + 5 * emphasis / 255) / 100;
-            let _ = self.launcher_icon(
-                left + width / 2,
-                geometry.category_top + geometry.category_height * 37 / 100,
-                entry.icon_role,
-                icon_size,
-            );
-            self.ui_text_centered(
-                left,
-                width,
-                geometry.category_top + geometry.category_height * 68 / 100,
-                entry.label,
-                197,
-                220,
-                237,
-                1,
-            );
-        }
         self.render_clip = outer_clip;
     }
 }

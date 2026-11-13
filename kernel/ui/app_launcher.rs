@@ -204,7 +204,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
 pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize + 3 * cfg!(feature = "native-python") as usize] = [
     LauncherEntry {
         label: b"File Navigator",
-        icon_role: 4,
+        icon_role: 3,
         action: LauncherAction::Home(0),
     },
     LauncherEntry {
@@ -303,34 +303,6 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
     LauncherEntry { label: b"Media Files", icon_role: 4, action: LauncherAction::Home(6) },
     #[cfg(feature = "native-python")]
     LauncherEntry { label: b"Infinity Memory", icon_role: 61, action: LauncherAction::InfinityMemory },
-];
-
-pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [
-    LauncherEntry {
-        label: b"Home",
-        icon_role: 0,
-        action: LauncherAction::Home(0),
-    },
-    LauncherEntry {
-        label: b"Work",
-        icon_role: 9,
-        action: LauncherAction::Home(7),
-    },
-    LauncherEntry {
-        label: b"System",
-        icon_role: 19,
-        action: LauncherAction::Settings(0),
-    },
-    LauncherEntry {
-        label: b"Utilities",
-        icon_role: 25,
-        action: LauncherAction::CommandWindow,
-    },
-    LauncherEntry {
-        label: b"Personal Space",
-        icon_role: 1,
-        action: LauncherAction::Home(1),
-    },
 ];
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

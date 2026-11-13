@@ -54,7 +54,7 @@ use crate::storage::{
 use crate::system::SystemSnapshot;
 use crate::ui::app_launcher::{
     launcher_visible_count, launcher_visible_entry, DockAction, LauncherAction,
-    DESKTOP_DOCK_ENTRIES, LAUNCHER_CATEGORIES,
+    DESKTOP_DOCK_ENTRIES,
 };
 use crate::ui::session_state::{
     DesktopResumeSurface, DesktopSessionLayout, LockedDesktopState, SessionIdleState,
@@ -641,6 +641,7 @@ struct ConsoleRuntime {
     home_selected_item: Option<usize>,
     home_dragging_item: Option<usize>,
     home_drag_from_desktop: bool,
+    trash_grab: Option<(i32,i32,i32,i32,bool)>,
     desktop_file_drag: bool,
     trash_drag_source: Option<crate::ui::file_preview::DesktopFile>,
     home_drag_origin_x: i32,
@@ -845,6 +846,7 @@ impl ConsoleRuntime {
             home_selected_item: None,
             home_dragging_item: None,
             home_drag_from_desktop: false,
+            trash_grab: None,
             desktop_file_drag: false,
             trash_drag_source: None,
             home_drag_origin_x: 0,
@@ -4127,6 +4129,7 @@ impl ConsoleRuntime {
         }
         crate::ui::editor_tools::preferences::publish(appearance);
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        self.trash_grab=None;
         self.restore_app_shortcuts();
         crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::new());
         self.spatial_restore_world_appearance();
@@ -6090,7 +6093,7 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: activate_launcher_focus
-    // DESC: Activates the currently focused filtered application or persistent category card.
+    // DESC: Activates the currently focused filtered application.
     // ------------------=
     fn activate_launcher_focus(&mut self) {
         let query = &self.command[..self.command_length];
@@ -6103,10 +6106,7 @@ impl ConsoleRuntime {
             }
             return;
         }
-        let category = self.system_focus.saturating_sub(visible + 1);
-        if let Some(entry) = LAUNCHER_CATEGORIES.get(category) {
-            self.activate_launcher_action(entry.action);
-        }
+
     }
 
     // ------------------------=
@@ -7055,7 +7055,7 @@ impl ConsoleRuntime {
                 _ => None,
             };
             if let Some(direction) = direction {
-                self.system_focus = next_focus(self.system_focus, visible, LAUNCHER_CATEGORIES.len(), crate::ui::app_launcher::LAUNCHER_COLUMNS, direction);
+                self.system_focus = next_focus(self.system_focus, visible, 0, crate::ui::app_launcher::LAUNCHER_COLUMNS, direction);
                 self.reveal_launcher_focus(visible);
                 return;
             }
@@ -8716,6 +8716,18 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        if let Some((gx,gy,ox,oy,moved))=self.trash_grab {
+            let (w,h)=(self.system.framebuffer_width,self.system.framebuffer_height);
+            let moved=moved || crate::ui::desktop_drag::crossed_threshold([ox,oy],[self.pointer_x,self.pointer_y],w,h);
+            if moved && w>0 && h>0 {
+                let mut state=crate::ui::desktop_widgets::current();
+                state.trash_position=Some([(self.pointer_x-gx*1000/w as i32).clamp(0,1000) as u16,(self.pointer_y-gy*1000/h as i32).clamp(0,1000) as u16]);
+                crate::ui::desktop_widgets::publish(state);
+            }
+            self.trash_grab=left_button.then_some((gx,gy,ox,oy,moved));
+            if released {if moved {let _=self.checkpoint_desktop_layout();}else{self.open_personal_trash(0);}}
+            self.present_continuous_motion(released);return;
+        }
         if self.continue_scroll_capture(left_button,released){return;}
         if self.command_terminal_pointer(clicked,left_button) {self.present_continuous_motion(clicked||released);return;}
         let preview_before=crate::ui::file_preview::current();
@@ -9470,7 +9482,7 @@ impl ConsoleRuntime {
                     let height = self.system.framebuffer_height;
                     let point = crate::ui::geometry::Point{x:self.pointer_x*width as i32/1000,y:self.pointer_y*height as i32/1000};
                     let trash = target == Some(DesktopTarget::Dock(7)) || (target.is_none() &&
-                        crate::ui::desktop_polish::trash_rect(width,height,layout.scale()).contains(point));
+                        crate::ui::desktop_widgets::current().position_trash(crate::ui::desktop_polish::trash_rect(width,height,layout.scale()),width,height).contains(point));
                     if self.home_drag_moved && trash {
                         if let Some(source) = self.trash_drag_source.take() { self.move_drag_to_trash(&source.path[..source.length]); }
                     } else if self.home_drag_from_desktop {
@@ -9914,12 +9926,6 @@ impl ConsoleRuntime {
                             self.pointer_x,
                             self.pointer_y,
                         );
-                    }
-                }
-                AppLauncherTarget::Category(index) => {
-                    self.system_focus = visible + index + 1;
-                    if clicked {
-                        self.activate_launcher_focus();
                     }
                 }
                 AppLauncherTarget::Close

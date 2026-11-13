@@ -99,7 +99,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                     stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
                 }
                 if valid && playback_transcript(transcript) {
-                    (&mut *(&raw mut TRANSCRIPT)).fill(0); if !PROBE {clear_captured_turn();} PROBE=false;
+                    (&mut *(&raw mut TRANSCRIPT)).fill(0); PROBE=false;
                     trace(b"duplex playback transcript discarded"); return false;
                 }
             }
@@ -168,10 +168,11 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 return true;
             }
             (&mut *(&raw mut TRANSCRIPT)).fill(0);
-            clear_captured_turn();trace(b"duplex unaddressed audio discarded");
+            // The submitted clip was cleared on dispatch; preserve any later microphone input.
+            trace(b"duplex unaddressed audio discarded");
         }
         voice_input::InputState::Failed | voice_input::InputState::Cancelled => {
-            PENDING=false;retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;if !PROBE {clear_captured_turn();} PROBE=false;
+            PENDING=false;retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;PROBE=false;
             trace(b"duplex recognition failed; original reply retained");
         }
         _=>{}

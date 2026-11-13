@@ -599,14 +599,8 @@ fn app_launcher_behavior_test() {
         layout.app_launcher_target(app_x, app_y, 12),
         AppLauncherTarget::App(0)
     );
-    let (category_x, category_y) = normalized(
-        geometry.category_left as i32 + geometry.category_width as i32 / 2,
-        geometry.category_top as i32 + geometry.category_height as i32 / 2,
-    );
-    assert_eq!(
-        layout.app_launcher_target(category_x, category_y, 12),
-        AppLauncherTarget::Category(0)
-    );
+    let (bottom_x,bottom_y)=normalized(geometry.grid_left as i32+12,geometry.grid_viewport.bottom()-8);
+    assert!(matches!(layout.app_launcher_target(bottom_x,bottom_y,24),AppLauncherTarget::App(_)));
     assert_eq!(
         layout.app_launcher_target(1, 500, 12),
         AppLauncherTarget::Dismiss

@@ -4,6 +4,7 @@ use super::geometry::{Point, Rect};
 pub struct State {
     pub positions: [[u16; 2]; 2],
     pub visible: u8,
+    pub trash_position: Option<[u16;2]>,
     pub drag: Option<(usize, i32, i32)>,
     pub menu: Option<Point>,
 }
@@ -23,6 +24,7 @@ impl State {
         Self {
             positions: [[0; 2]; 2],
             visible: 2,
+            trash_position: None,
             drag: None,
             menu: None,
         }
@@ -36,6 +38,7 @@ impl State {
         for i in 0..4 {
             value |= (self.positions[i / 2][i % 2].min(1001) as u64) << (i * 10);
         }
+        if let Some([x,y])=self.trash_position {value |= (1u64<<62)|((x.min(1000) as u64)<<42)|((y.min(1000) as u64)<<52);}
         value
     }
     // ------------------------=
@@ -47,11 +50,23 @@ impl State {
         if value >> 63 == 0 {
             return state;
         }
+        if value & (1u64<<62)!=0 {state.trash_position=Some([((value>>42)&1023).min(1000) as u16,((value>>52)&1023).min(1000) as u16]);}
         state.visible = ((value >> 40) & 3) as u8;
         for i in 0..4 {
             state.positions[i / 2][i % 2] = (((value >> (i * 10)) & 1023) as u16).min(1001);
         }
         state
+    }
+    // ------------------------=
+    // FUNC: position_trash
+    // DESC: Resolves the normalized personal placement against the current display bounds.
+    // ------------------=
+    pub fn position_trash(self,mut tile:Rect,width:usize,height:usize)->Rect {
+        if let Some([x,y])=self.trash_position {
+            tile.x=(width*x as usize/1000).min(width.saturating_sub(tile.width as usize)) as i32;
+            tile.y=(height*y as usize/1000).clamp((height*7/100).min(height.saturating_sub(tile.height as usize)),height.saturating_sub(tile.height as usize)) as i32;
+        }
+        tile
     }
     // ------------------------=
     // FUNC: rect
@@ -224,6 +239,11 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
         *(&raw mut PAINTED) = new;
     }
     let mut damage: Option<Rect> = None;
+    if old.trash_position!=new.trash_position {
+        let size=(height/21).max(44);
+        let tile=Rect{x:width.saturating_sub(size+24+12*scale) as i32,y:height.saturating_sub(size+32+16*scale) as i32,width:(size+24) as u32,height:(size+32) as u32};
+        damage=Some(old.position_trash(tile,width,height).union(new.position_trash(tile,width,height)));
+    }
     for id in 0..2 {
         if old.rect(id,width,height,scale,false) != new.rect(id,width,height,scale,false) || (old.visible ^ new.visible) & (1 << id) != 0 {
             for state in [old, new] {

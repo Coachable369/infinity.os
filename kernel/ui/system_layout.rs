@@ -106,7 +106,6 @@ pub struct AiChatScrollGeometry {
 pub enum AppLauncherTarget {
     Search,
     App(usize),
-    Category(usize),
     ScrollbarThumb,
     ScrollbarTrack,
     Close,
@@ -237,10 +236,6 @@ pub struct AppLauncherGeometry {
     pub grid_row_height: usize,
     pub grid_viewport: Rect,
     pub scrollbar_track: Rect,
-    pub category_left: usize,
-    pub category_top: usize,
-    pub category_width: usize,
-    pub category_height: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1427,10 +1422,8 @@ impl SystemLayout {
         let inner_width = panel_width.saturating_sub(inset * 2);
         let grid_top = panel_top + panel_height * 21 / 100;
         let grid_row_height = panel_height * 22 / 100;
-        let grid_bottom = panel_top + panel_height * 69 / 100;
+        let grid_bottom = panel_top + panel_height * 95 / 100;
         let scrollbar_width = (7 * self.scale).max(5);
-        let category_left = panel_left + inset;
-        let category_width = inner_width / 5;
         let geometry = AppLauncherGeometry {
             panel,
             search,
@@ -1456,10 +1449,6 @@ impl SystemLayout {
                 scrollbar_width,
                 grid_bottom.saturating_sub(grid_top),
             ),
-            category_left,
-            category_top: panel_top + panel_height * 76 / 100,
-            category_width,
-            category_height: panel_height * 16 / 100,
         };
         if let Some(scene) = crate::ui::desktop_template::bound_scene(81) {
             if let Some(template) = crate::ui::desktop_template::template() {
@@ -1487,12 +1476,10 @@ impl SystemLayout {
             geometry.grid_top = geometry.grid_viewport.y.max(0) as usize;
             geometry.grid_cell_width = (geometry.grid_viewport.width as usize / 6).max(1);
             geometry.grid_row_height = (geometry.grid_viewport.height as usize / 2).max(1);
-            let categories = authored(85);
-            geometry.category_left = categories.x.max(0) as usize;
-            geometry.category_top = categories.y.max(0) as usize;
-            geometry.category_width = (categories.width as usize / 5).max(1);
-            geometry.category_height = categories.height as usize;
+            let bottom = geometry.panel.bottom() - (geometry.panel.height / 20) as i32;
+            geometry.grid_viewport.height = bottom.saturating_sub(geometry.grid_top as i32).max(1) as u32;
             geometry.scrollbar_track = authored(86);
+            geometry.scrollbar_track.height = geometry.grid_viewport.height;
         geometry
     }
 
@@ -1650,18 +1637,6 @@ impl SystemLayout {
             };
             if geometry.grid_viewport.contains(point) && cell.contains(point) {
                 return AppLauncherTarget::App(index);
-            }
-        }
-        for index in 0..5usize {
-            if rect(
-                geometry.category_left + index * geometry.category_width,
-                geometry.category_top,
-                geometry.category_width,
-                geometry.category_height,
-            )
-            .contains(point)
-            {
-                return AppLauncherTarget::Category(index);
             }
         }
         AppLauncherTarget::Panel

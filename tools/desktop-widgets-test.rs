@@ -138,3 +138,21 @@ fn damage_is_bounded_and_idle_is_clean() {
     assert!(damage.contains(Point { x: old.x, y: old.y }));
     assert_eq!(take_damage(1920, 1080, 1), None);
 }
+
+// ------------------------=
+// FUNC: trash_placement_is_personal_and_clamped
+// DESC: Verifies legacy defaults, damage, cross-resolution placement and durable round trip.
+// ------------------=
+#[test]
+fn trash_placement_is_personal_and_clamped() {
+    let mut state=State::new();
+    let tile=geometry::Rect{x:680,y:500,width:80,height:70};
+    assert_eq!(State::decode(state.encode()).position_trash(tile,800,600),tile);
+    state.trash_position=Some([250,500]);
+    let restored=State::decode(state.encode());
+    let placed=restored.position_trash(tile,1600,900);
+    assert_eq!((placed.x,placed.y),(400,450));
+    state.trash_position=Some([1000,1000]);
+    assert_eq!(state.position_trash(tile,800,600).right(),800);
+    assert_eq!(state.position_trash(tile,800,600).bottom(),600);
+}

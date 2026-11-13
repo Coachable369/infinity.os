@@ -169,6 +169,23 @@ impl Canceller {
             }
         }
         if self.learned {
+            // Capture and playback DMA are sampled independently. Track small cursor
+            // shifts on echo-dominated blocks without adapting gains to the user.
+            let (lag,gain)=self.paths[0];
+            if gain!=0 && n>=80 {
+                let power=mic.iter().step_by(4).map(|&v|(i64::from(v)>>4).pow(2)).sum::<i64>();
+                let limit=reference.len()-n;
+                let mut best=(lag,0i64);
+                for delay in lag.saturating_sub(16)..=lag.saturating_add(16).min(limit) {
+                    let score=correlation_score(mic,reference,limit-delay,4);
+                    if score>best.1 {best=(delay,score);}
+                }
+                if best.1>power*3/4 && best.0!=lag {
+                    for (delay,amplitude) in &mut self.paths {
+                        if *amplitude!=0 {*delay=delay.saturating_add_signed(best.0 as isize-lag as isize).min(limit);}
+                    }
+                }
+            }
             for (i, m) in mic.iter_mut().enumerate() {
                 let mut value = i64::from(*m);
                 for &(lag, gain) in &self.paths {
@@ -194,6 +211,25 @@ pub fn subtract(mic: &mut [i16], reference: &[i16]) {
 }
 #[cfg(test)]
 mod tests {
+    // ------------------------=
+    // FUNC: tracks_independent_dma_cursor_jitter
+    // DESC: Checks residual energy when capture and speaker cursors jitter during continuous playback.
+    // ------------------=
+    #[test]
+    fn tracks_independent_dma_cursor_jitter() {
+        let mut seed=19u32;
+        let speaker:Vec<i16>=(0..32000).map(|_|{seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);((seed>>16) as i16)/3}).collect();
+        let mut filter=super::Canceller::new();
+        let (mut before,mut after)=(0i64,0i64);
+        for at in (9600..31000).step_by(320) {
+            let lag=if at<16000 {800} else {800+(at/320)%8};
+            let mut mic:Vec<i16>=speaker[at-lag..at-lag+320].iter().map(|v|v/2).collect();
+            let power=mic.iter().map(|&v|i64::from(v).pow(2)).sum::<i64>();
+            filter.process(&mut mic,&speaker[at+320-9600..at+320]);
+            if at>=16000 {before+=power;after+=mic.iter().map(|&v|i64::from(v).pow(2)).sum::<i64>();}
+        }
+        assert!(after*100<before);
+    }
     // ------------------------=
     // FUNC: streaming_double_talk_preserves_user_and_erases_private_state
     // DESC: Exercises incremental DMA sizes, trained echo, independent interruption, silent input, and session reset.

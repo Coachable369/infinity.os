@@ -296,7 +296,14 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
     if job.task.is_some() { return Err(b"python: a script is already running; use python-cancel."); }
     if !active(console) { return Err(b"python: an authenticated session is required."); }
     prepare_packages(console, job, false,path==memory_browser::PATH && expected_source.is_some() && candidate.is_none())?;
-    snapshot(&mut job.files[0], path, console.current_user.0)?;
+    if path==memory_browser::PATH && expected_source==Some(include_bytes!("../../runtime/install/System/infinity-memory.py").as_slice()) && candidate.is_none() {
+        // Launch the signed-in system app from this kernel's immutable generation.
+        // An older installed ObjectStore script cannot acquire its private syscall.
+        let source=include_bytes!("../../runtime/install/System/infinity-memory.py");
+        let dest=&mut job.files[0];
+        dest.bytes[..source.len()].copy_from_slice(source);dest.len=source.len();
+        dest.path[..path.len()].copy_from_slice(path);dest.path_len=path.len();dest.object=[0;16];dest.version=0;
+    } else {snapshot(&mut job.files[0], path, console.current_user.0)?;}
     if expected_source.is_some_and(|source| source != &job.files[0].bytes[..job.files[0].len]) {
         return Err(b"python: saved source changed before validation; no code was executed.");
     }
@@ -746,7 +753,7 @@ pub(super) fn launch_memory(console:&mut ConsoleRuntime) {
     if gui_control(console,Some(b"Infinity Memory"),crate::ui::window::WindowControl::Focus)==Some(true) { return; }
     let argv=[b"/system/python".as_slice(),memory_browser::PATH];
     if let Err(message)=unsafe { start(console,memory_browser::PATH,&argv,Some(include_bytes!("../../runtime/install/System/infinity-memory.py"))) } {
-        console.output.write_line(message);
+        console.show_shell_notice(message);
     }
 }
 
@@ -1050,6 +1057,9 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     }
     let execution = task.execution_id();
     let lengths = task.result_lengths(b"", &mut job.output, &mut job.errors);
+    if authorized && job.memory_browser && !matches!(result,State::Exited(0)|State::Cancelled) {
+        console.show_shell_notice(b"Infinity Memory could not finish starting or running. See the Python diagnostics above.");
+    }
     if authorized {
         if let Some((_length, _errors, truncated)) = lengths {
             if truncated { console.output.write_line(b"python: output exceeded capture limit."); }

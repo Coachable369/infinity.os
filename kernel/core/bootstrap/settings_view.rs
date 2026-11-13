@@ -320,7 +320,8 @@ impl DisplayDevice {
             let navigation_item=crate::ui::settings_template::role_at(focus,Role::SettingsNavigationItem,index);
             self.settings_template_surface(row,authored_panel(navigation_item),Material{fill:(selection_r,selection_g,selection_b),edge:(outline_r,outline_g,outline_b),opacity:if index==focus{235}else{0},edge_opacity:if index==focus{255}else{0},focus:if index==focus{100}else{0},pressed:false,scale});
             if let Some(element)=crate::ui::settings_template::role_at(focus,Role::SettingsNavigationIcon,index) {
-                if let Some(bounds)=layout.settings_element_geometry(settings_window,focus,element.id){
+                if let Some(mut bounds)=layout.settings_element_geometry(settings_window,focus,element.id){
+                    bounds.y=row.y+(row.height as i32-bounds.height as i32)/2;
                     if !element.hidden&&element.opacity>0 {
                         self.template_element_in_rect(element,settings_template.and_then(|t|t.asset(element.image_asset)),None,crate::ui::installer_layout::InstallerRect{left:bounds.x.max(0)as usize,top:bounds.y.max(0)as usize,width:bounds.width as usize,height:bounds.height as usize});
                     }
@@ -328,6 +329,8 @@ impl DisplayDevice {
             }else{let size=(28*scale).min(h.saturating_sub(8));let _=self.themed_icon(x+28*scale,y+h/2,crate::ui::icon_theme::settings_section_icon(index),size);}
             let label=crate::ui::settings_template::role_at(focus,Role::SettingsNavigationLabel,index);
             let bounds=label.and_then(|e|layout.settings_element_geometry(settings_window,focus,e.id)).unwrap_or(crate::ui::geometry::Rect{x:(x+52*scale)as i32,y:(y+h.saturating_sub(UI_FONT_CELL_HEIGHT)/2)as i32,width:w.saturating_sub(68*scale)as u32,height:UI_FONT_CELL_HEIGHT as u32});
+            let label_height=label.map(|e|(e.font_size as usize*self.height/1000).clamp(1,256)*28/24).unwrap_or(UI_FONT_CELL_HEIGHT);
+            let bounds=crate::ui::geometry::Rect{y:row.y+(h.saturating_sub(label_height)/2) as i32,height:label_height as u32,..bounds};
             self.paint_settings_bound_text(label,bounds,label.map(|e|e.text).filter(|t|!t.is_empty()).unwrap_or(section),if index==focus{(240,248,252)}else{(182,204,220)},true,false);
         }
         self.render_clip = caller_clip;

@@ -153,14 +153,17 @@ impl ConsoleRuntime {
         {
             return false;
         }
-        if crate::ui::desktop_polish::trash_rect(width,height,scale).contains(point) {
+        if crate::ui::desktop_widgets::current().position_trash(crate::ui::desktop_polish::trash_rect(width,height,scale),width,height).contains(point) {
             if secondary {
                 let mut menu = super::clipboard_menu::Menu::new();
                 menu.open = true;
                 menu.target = super::clipboard_menu::Target::Trash;
                 menu.place(point.x,point.y,width,height,scale);
                 super::clipboard_menu::publish(menu);
-            } else if clicked { self.open_personal_trash(0); }
+            } else if clicked {
+                let tile=state.position_trash(crate::ui::desktop_polish::trash_rect(width,height,scale),width,height);
+                self.trash_grab=Some((point.x-tile.x,point.y-tile.y,self.pointer_x,self.pointer_y,false));
+            }
             self.redraw();
             return true;
         }
