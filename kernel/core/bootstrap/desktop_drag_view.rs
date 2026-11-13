@@ -7,9 +7,10 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn desktop_trash_tile(&mut self, scale: usize) {
         let tile = crate::ui::desktop_polish::trash_rect(self.width,self.height,scale);
-        self.themed_icon(tile.x as usize + tile.width as usize/2,tile.y as usize+26*scale,10,50*scale);
-        self.ui_text_centered(tile.x as usize,tile.width as usize,tile.y as usize+54*scale,
-            b"Trash",226,239,248,scale);
+        let size = (self.height / 21).max(44);
+        self.themed_icon(tile.x as usize + tile.width as usize/2,tile.y as usize+size/2,10,size);
+        self.ui_text_centered(tile.x as usize,tile.width as usize,tile.y as usize+size+8,
+            b"Trash",221,235,243,1);
     }
 
     // ------------------------=

@@ -150,38 +150,27 @@ impl DisplayDevice {
             let well_left = cell_left + geometry.grid_cell_width.saturating_sub(well_size) / 2;
             let emphasis=if selected {crate::ui::app_launcher::highlight_level()} else {0};
             let well_top=cell_top + 3*scale - 2*scale*emphasis/255;
-            self.fill_rounded_rect_alpha(
-                well_left,
-                well_top,
-                well_size,
-                well_size,
-                13 * scale,
-                (7+14*emphasis/255) as u8,
-                (28+44*emphasis/255) as u8,
-                (49+62*emphasis/255) as u8,
-                186,
-            );
-            self.outline_rounded_rect(
-                well_left,
-                well_top,
-                well_size,
-                well_size,
-                13 * scale,
-                if selected { 100 } else { 48 },
-                if selected { 211 } else { 105 },
-                if selected { 255 } else { 146 },
-            );
             let _ = self.launcher_icon(
                 well_left + well_size / 2,
                 well_top + well_size / 2,
                 entry.icon_role,
-                well_size * 84 / 100,
+                well_size * (84 + 8 * emphasis / 255) / 100,
             );
+            let label = entry.label();
+            let available = geometry.grid_cell_width.saturating_sub(8 * scale);
+            let mut short = [0u8; 96];
+            let label = if self.ui_text_width(label,1) > available {
+                let mut n = label.len().min(short.len()-3);
+                while n > 0 && self.ui_text_width(&label[..n],1) + self.ui_text_width(b"...",1) > available { n -= 1; }
+                short[..n].copy_from_slice(&label[..n]);
+                short[n..n+3].copy_from_slice(b"...");
+                &short[..n+3]
+            } else { label };
             self.ui_text_centered_strong(
                 cell_left,
                 geometry.grid_cell_width,
-                well_top + well_size + 8 * scale,
-                entry.label(),
+                cell_top + well_size + 11 * scale,
+                label,
                 220,
                 235,
                 245,
@@ -230,29 +219,6 @@ impl DisplayDevice {
                     let center_y = (self.height as i32 * presentation.drag_y / 1000)
                         .clamp(0, self.height.saturating_sub(1) as i32)
                         as usize;
-                    let left = center_x.saturating_sub(ghost_size / 2);
-                    let top = center_y.saturating_sub(ghost_size / 2);
-                    self.fill_rounded_rect_alpha(
-                        left.saturating_sub(5 * scale),
-                        top.saturating_sub(5 * scale),
-                        ghost_size + 10 * scale,
-                        ghost_size + 10 * scale,
-                        17 * scale,
-                        29,
-                        105,
-                        151,
-                        210,
-                    );
-                    self.outline_rounded_rect(
-                        left,
-                        top,
-                        ghost_size,
-                        ghost_size,
-                        13 * scale,
-                        112,
-                        220,
-                        255,
-                    );
                     let _ = self.launcher_icon(
                         center_x,
                         center_y,
@@ -293,28 +259,8 @@ impl DisplayDevice {
             let left = geometry.category_left + index * geometry.category_width + 6 * scale;
             let width = geometry.category_width.saturating_sub(12 * scale);
             let selected = focus == visible + index + 1;
-            self.fill_rounded_rect_alpha(
-                left,
-                geometry.category_top,
-                width,
-                geometry.category_height,
-                12 * scale,
-                7,
-                29,
-                50,
-                220,
-            );
-            self.outline_rounded_rect(
-                left,
-                geometry.category_top,
-                width,
-                geometry.category_height,
-                12 * scale,
-                if selected { 98 } else { 45 },
-                if selected { 212 } else { 99 },
-                if selected { 255 } else { 139 },
-            );
-            let icon_size = geometry.category_height * 48 / 100;
+            let emphasis = if selected { crate::ui::app_launcher::highlight_level() } else { 0 };
+            let icon_size = geometry.category_height * (48 + 5 * emphasis / 255) / 100;
             let _ = self.launcher_icon(
                 left + width / 2,
                 geometry.category_top + geometry.category_height * 37 / 100,

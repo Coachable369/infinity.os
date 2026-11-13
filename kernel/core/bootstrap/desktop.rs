@@ -4835,6 +4835,7 @@ impl super::DisplayDevice {
         let panel = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .app_launcher_geometry()
             .panel;
+        self.blur_framebuffer_region(panel.x.max(0) as usize, panel.y.max(0) as usize, panel.width as usize, panel.height as usize, 6);
         self.retained_window(
             5,
             (
@@ -4868,75 +4869,17 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: app_launcher_content_update
-    // DESC: Repaints only opaque focus outlines so pointer movement cannot alter the glass backdrop.
+    // DESC: Restores the captured desktop under the panel and uses the same borderless painter for focus updates.
     // ------------------=
     pub(super) fn app_launcher_content_update(&mut self, scale: usize, query: &[u8], focus: usize) {
-        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-            .app_launcher_geometry();
-        let search_left = geometry.search.x.max(0) as usize;
-        let search_top = geometry.search.y.max(0) as usize;
-        self.outline_rounded_rect(
-            search_left,
-            search_top,
-            geometry.search.width as usize,
-            geometry.search.height as usize,
-            geometry.search.height as usize / 2,
-            if focus == 0 { 101 } else { 50 },
-            if focus == 0 { 205 } else { 121 },
-            if focus == 0 { 255 } else { 168 },
-        );
-        let visible = crate::ui::app_launcher::launcher_visible_count(query);
-        let presentation = crate::ui::app_launcher::launcher_presentation();
-        let launcher_clip = self.render_clip;
-        self.intersect_render_clip(
-            geometry.grid_viewport.x.max(0) as usize,
-            geometry.grid_viewport.y.max(0) as usize,
-            geometry.grid_viewport.width as usize,
-            geometry.grid_viewport.height as usize,
-        );
-        for visible_index in 0..visible {
-            let slot = crate::ui::app_launcher::launcher_display_slot(visible_index, presentation);
-            let column = slot % crate::ui::app_launcher::LAUNCHER_COLUMNS;
-            let row = slot / crate::ui::app_launcher::LAUNCHER_COLUMNS;
-            let cell_left = geometry.grid_left + column * geometry.grid_cell_width;
-            let cell_top = (geometry.grid_top + row * geometry.grid_row_height)
-                .saturating_sub(presentation.scroll);
-            let well_size = geometry
-                .grid_cell_width
-                .min(geometry.grid_row_height)
-                .saturating_mul(70)
-                / 100;
-            let well_left = cell_left + geometry.grid_cell_width.saturating_sub(well_size) / 2;
-            let selected = focus == visible_index + 1;
-            self.outline_rounded_rect(
-                well_left,
-                cell_top + 3 * scale,
-                well_size,
-                well_size,
-                15 * scale,
-                if selected { 100 } else { 48 },
-                if selected { 211 } else { 105 },
-                if selected { 255 } else { 146 },
-            );
-        }
-        self.render_clip = launcher_clip;
-        for index in 0..crate::ui::app_launcher::LAUNCHER_CATEGORIES.len() {
-            let left = geometry.category_left + index * geometry.category_width + 6 * scale;
-            let width = geometry.category_width.saturating_sub(12 * scale);
-            let selected = focus == visible + index + 1;
-            self.outline_rounded_rect(
-                left,
-                geometry.category_top,
-                width,
-                geometry.category_height,
-                12 * scale,
-                if selected { 98 } else { 45 },
-                if selected { 212 } else { 99 },
-                if selected { 255 } else { 139 },
-            );
-        }
+        let clip = self.render_clip;
+        let r = crate::ui::system_layout::SystemLayout::new(self.width,self.height).app_launcher_geometry().panel;
+        self.intersect_render_clip(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize);
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        super::launcher_backdrop::restore(self);
+        self.app_launcher(scale,query,focus);
+        self.render_clip = clip;
     }
-
 
     // ------------------------=
     // FUNC: desktop_window_rect

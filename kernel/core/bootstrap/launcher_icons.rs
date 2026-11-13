@@ -91,9 +91,6 @@ impl DisplayDevice {
             return;
         }
         let radius = (size / 5).max(5);
-        let palette = [(12, 65, 105), (25, 52, 108), (34, 38, 104)][kind.min(2)];
-        self.fill_rounded_rect_alpha(left, top, size, size, radius, palette.0, palette.1, palette.2, 248);
-        self.outline_rounded_rect(left, top, size, size, radius, 112, 224, 255);
         let stroke: (u8, u8, u8) = (173, 240, 255);
         if kind == 0 {
             for ring in 0..3 {

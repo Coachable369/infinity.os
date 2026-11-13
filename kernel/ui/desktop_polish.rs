@@ -12,8 +12,11 @@ pub const DOCK_ITEMS: usize = 8;
 // DESC: Anchors the desktop Trash tile above the dock and clear of the left window tray.
 // ------------------=
 pub fn trash_rect(width: usize, height: usize, scale: usize) -> Rect {
-    Rect { x: (width / 9) as i32, y: height.saturating_sub(184 * scale) as i32,
-        width: (76 * scale) as u32, height: (78 * scale) as u32 }
+    let icon = (height / 21).max(44);
+    let w = icon + 24;
+    let h = icon + 32;
+    Rect { x: width.saturating_sub(w + 12 * scale) as i32,
+        y: height.saturating_sub(h + 16 * scale) as i32, width: w as u32, height: h as u32 }
 }
 
 const NONE: usize = 0;

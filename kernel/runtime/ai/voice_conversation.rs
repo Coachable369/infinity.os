@@ -1845,10 +1845,13 @@ pub fn poll() -> bool {
                             && UTTERANCE_STARTED_AT < WAKE_ARMED_UNTIL;
                         FOLLOWUP_ONSET_UNTIL =
                             super::qwen::workers::clock_ns().saturating_add(WAKE_COMMAND_WINDOW_NS);
-                        (&mut *(&raw mut UTTERANCE))
-                            .clear_with_continuation(
+                        if submitted && !narration_playing && super::qwen::workers::clock_ns() >= ECHO_VALID_UNTIL {
+                            (&mut *(&raw mut UTTERANCE)).begin_command_handoff();
+                        } else {
+                            (&mut *(&raw mut UTTERANCE)).clear_with_continuation(
                                 (&*(&raw const NOISE_FLOOR)).threshold(),
                                 (&*(&raw const NOISE_FLOOR)).continuation_threshold());
+                        }
                         UTTERANCE_STARTED_AT = 0;
                         UTTERANCE_ENDED_AT = 0;
                         LAST_VAD_STATE = VadState::Waiting;

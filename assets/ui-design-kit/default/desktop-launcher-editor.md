@@ -25,3 +25,8 @@ capabilities; installed catalogs can additionally contain registered user apps.
 Panels and controls reuse Eclipse Precision surfaces and existing icon families.
 The outer launcher clips content to its authored surface, including unusually
 small or moved regions. Keep search and control bounds within that surface.
+
+The catalog floats bare theme glyphs on a single frosted navy panel. Focus lifts
+and enlarges just the glyph; captions remain aligned and drag previews carry no
+plate. Category shortcuts follow the same treatment. The desktop wastebasket
+uses normal shortcut typography at the bottom right, inset from the work area.

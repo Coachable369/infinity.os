@@ -371,6 +371,15 @@ impl Utterance {
         self.detector.calibrated_tail = self.detector.continuation_threshold;
     }
     // ------------------------=
+    // FUNC: begin_command_handoff
+    // DESC: Erases wake PCM but retains its measured gates for the immediately following quiet command.
+    // ------------------=
+    pub fn begin_command_handoff(&mut self) {
+        let onset = self.detector.threshold;
+        let tail = self.detector.continuation_threshold;
+        self.clear_with_continuation(onset, tail);
+    }
+    // ------------------------=
     // FUNC: cancel
     // DESC: Stops segmentation and erases all retained audio, including preroll.
     // ------------------=
@@ -558,6 +567,24 @@ mod tests {
         }
     }
 
+    // ------------------------=
+    // FUNC: quiet_command_survives_recognition_handoff
+    // DESC: A wake and a separately endpointed prompt at identical levels must both reach recognition.
+    // ------------------=
+    #[test]
+    fn quiet_command_survives_recognition_handoff() {
+        let mut u = Utterance::new(3000);
+        u.idle_wake_gate(true);
+        for _ in 0..350 { u.push(&[80;FRAME]); }
+        for volume in [780, 760] {
+            for _ in 0..12 { u.push(&[volume;FRAME]); }
+            for _ in 0..41 { u.push(&[80;FRAME]); }
+            assert!(u.speech().unwrap().contains(&volume));
+            u.begin_command_handoff();
+            assert_eq!(u.state(), VadState::Waiting);
+            assert!(u.speech().is_none());
+        }
+    }
     // ------------------------=
     // FUNC: waiting_gain_rise_does_not_hold_the_endpoint_open
     // DESC: Reproduces calibrated RMS217 rising to ambient380 before speech, then proves bounded release and reset to the measured floor.
