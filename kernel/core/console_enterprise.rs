@@ -107,11 +107,11 @@ impl ConsoleRuntime {
         match key {
             ConsoleKey::Escape=>clipboard_menu::close(),
             ConsoleKey::Up|ConsoleKey::Left=>{
-                menu.row=(menu.row+clipboard_menu::LABELS.len()-1)%clipboard_menu::LABELS.len();
+                menu.row=(menu.row+menu.labels().len()-1)%menu.labels().len();
                 clipboard_menu::publish(menu);
             },
             ConsoleKey::Down|ConsoleKey::Right=>{
-                menu.row=(menu.row+1)%clipboard_menu::LABELS.len();
+                menu.row=(menu.row+1)%menu.labels().len();
                 clipboard_menu::publish(menu);
             },
             ConsoleKey::Enter if !menu.viewer=>self.clipboard_menu_action(menu.row),
@@ -126,6 +126,7 @@ impl ConsoleRuntime {
         use clipboard_menu::Target;
         let mut menu=clipboard_menu::current();clipboard_menu::close();
         if !self.workplace_authorized(false) {return;}
+        if menu.target == Target::Trash { self.open_personal_trash(row); return; }
         if row==6 {
             if menu.target==Target::Editor {self.clipboard_menu_key(ConsoleKey::Shortcut(b'C'));}
             #[cfg(feature="native-browser")]
@@ -151,6 +152,7 @@ impl ConsoleRuntime {
                     if view.address_selected {browser_controller::search_text(self,&view.edit[..view.edit_length]);}
                 },
                 Target::Browser=>browser_controller::search_selection(self),
+                Target::Trash=>{},
                 Target::Navigator=>{
                     if let Some(state)=crate::runtime::with_runtime(|r|r.file_navigator).flatten().filter(|n|n.editor_selected) {
                         browser_controller::search_text(self,state.editor_text.as_bytes());
@@ -161,6 +163,7 @@ impl ConsoleRuntime {
         }
         let Some(&key)=b"cxva".get(row) else{return;};
         match menu.target {
+            Target::Trash=>{},
             Target::Editor=>{self.input_editor_tools(ConsoleKey::Shortcut(key));},
             Target::Navigator=>{self.input_file_navigator(ConsoleKey::Shortcut(key));},
             #[cfg(feature="native-browser")]

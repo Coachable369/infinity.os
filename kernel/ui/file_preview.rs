@@ -8,6 +8,20 @@ pub const CAPACITY: usize = 8 * 1024 * 1024;
 pub fn can_read(authenticated:bool,personal:bool,owner:[u8;16],user:[u8;16])->bool {authenticated&&personal&&(owner==[0;16]||owner==user)}
 #[derive(Clone,Copy,PartialEq,Eq)]
 pub struct DesktopFile {pub path:[u8;96],pub length:usize}
+impl DesktopFile {
+    // ------------------------=
+    // FUNC: from_path
+    // DESC: Captures a namespace reference at drag start so scrolling cannot change its identity.
+    // ------------------=
+    pub fn from_path(path: &[u8]) -> Self {
+        let mut file = EMPTY_FILE;
+        if path.len() <= file.path.len() {
+            file.path[..path.len()].copy_from_slice(path);
+            file.length = path.len();
+        }
+        file
+    }
+}
 pub const EMPTY_FILE:DesktopFile=DesktopFile{path:[0;96],length:0};
 static mut DESKTOP:[DesktopFile;16]=[EMPTY_FILE;16];
 static mut DESKTOP_DIRTY:bool=false;

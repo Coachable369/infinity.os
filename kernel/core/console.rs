@@ -641,6 +641,8 @@ struct ConsoleRuntime {
     home_selected_item: Option<usize>,
     home_dragging_item: Option<usize>,
     home_drag_from_desktop: bool,
+    desktop_file_drag: bool,
+    trash_drag_source: Option<crate::ui::file_preview::DesktopFile>,
     home_drag_origin_x: i32,
     home_drag_origin_y: i32,
     home_drag_moved: bool,
@@ -843,6 +845,8 @@ impl ConsoleRuntime {
             home_selected_item: None,
             home_dragging_item: None,
             home_drag_from_desktop: false,
+            desktop_file_drag: false,
+            trash_drag_source: None,
             home_drag_origin_x: 0,
             home_drag_origin_y: 0,
             home_drag_moved: false,
@@ -1575,6 +1579,8 @@ impl ConsoleRuntime {
         }
         if matches!(key, ConsoleKey::Escape) && self.home_dragging_item.is_some() {
             self.home_dragging_item = None;
+            self.trash_drag_source = None;
+            self.desktop_file_drag = false;
             self.home_drag_from_desktop = false;
             self.home_drag_moved = false;
             crate::ui::desktop_drag::finish(false, 0, true);
@@ -2641,6 +2647,10 @@ impl ConsoleRuntime {
             return;
         };
         let path = &entry.path[..entry.path_len as usize];
+        if state.workplace_notice == 8 && crate::runtime::object_navigation::is_personal_trash(state.active_namespace_ref.as_bytes()) {
+            self.restore_personal_trash_entry(path);
+            return;
+        }
         if let Ok((metadata, _)) = crate::storage::object_inspect_path(path) {
             let extension = crate::runtime::application_association::path_extension(path);
             let Some(content_kind) = crate::runtime::application_association::ContentKind::from_u8(metadata.content_type as u8) else {
@@ -4644,22 +4654,52 @@ impl ConsoleRuntime {
     // FUNC: desktop_reference_paths
     // DESC: Maps one Home presentation item to its native source and Desktop namespace projections.
     // ------------------=
-    fn desktop_reference_paths(item: usize) -> Option<(&'static [u8], &'static [u8])> {
-        match item {
-            0 => Some((
-                b"/home/default/documents",
-                b"/home/default/desktop/documents",
-            )),
-            1 => Some((
-                b"/home/default/downloads",
-                b"/home/default/desktop/downloads",
-            )),
-            2 => Some((b"/home/default/pictures", b"/home/default/desktop/pictures")),
-            3 => Some((b"/home/default/media", b"/home/default/desktop/music")),
-            4 => Some((b"/home/default/media", b"/home/default/desktop/videos")),
-            5 => Some((b"/home/default/projects", b"/home/default/desktop/projects")),
-            _ => None,
-        }
+    fn desktop_reference_paths(home: crate::storage::object::user_home::Path,item: usize) -> Option<(crate::storage::object::user_home::Path,crate::storage::object::user_home::Path)> {
+        let name = *[b"documents".as_slice(),b"downloads",b"pictures",b"music",b"videos",b"projects"].get(item)?;
+        Some((home.child(name)?,home.child(b"desktop")?.child(name)?))
+    }
+
+    // ------------------------=
+    // FUNC: open_personal_trash
+    // DESC: Opens the authenticated account collection and routes purge through confirmation.
+    // ------------------=
+    fn open_personal_trash(&mut self, action: usize) {
+        let Some(path) = crate::storage::provision_user_home(self.current_user.0).ok().and_then(|h|h.child(b"trash")) else {return;};
+        let reuse = self.home_window_visible && self.desktop_app == DesktopAppKind::None
+            && crate::runtime::with_runtime(|r|r.file_navigator.is_some_and(|n|n.active_namespace_ref.as_bytes()==path.as_bytes())).unwrap_or(false);
+        if !reuse && self.open_file_navigator_window(path.as_bytes()).is_none() {return;}
+        if action == 2 {
+            crate::runtime::with_runtime(|r| {
+                if let Some(n) = r.file_navigator.as_mut() { n.open_dialog(crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash); }
+            });
+        } else if action == 1 { self.set_file_navigator_association_notice(8); }
+    }
+
+    // ------------------------=
+    // FUNC: restore_personal_trash_entry
+    // DESC: Returns the selected account-owned reference and reports any occupied destination.
+    // ------------------=
+    fn restore_personal_trash_entry(&mut self, path: &[u8]) {
+        let trash = crate::storage::provision_user_home(self.current_user.0).ok().and_then(|h|h.child(b"trash"));
+        let allowed = self.workplace_authorized(true) && trash.is_some_and(|root|
+            path.strip_prefix(root.as_bytes()).is_some_and(|suffix|suffix.starts_with(b"/")))
+            && crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|m.owner.0 == self.current_user.0);
+        let restored = allowed && crate::storage::trash_restore(path).is_ok();
+        self.set_file_navigator_association_notice(if restored {9} else {10});
+        self.refresh_desktop_items();
+    }
+
+    // ------------------------=
+    // FUNC: move_drag_to_trash
+    // DESC: Requires a writable personal reference beneath the signed-in user's home before moving it.
+    // ------------------=
+    fn move_drag_to_trash(&mut self, path: &[u8]) {
+        let home = crate::storage::provision_user_home(self.current_user.0).ok();
+        let allowed = home.is_some_and(|home| path.strip_prefix(home.as_bytes()).is_some_and(|s|s.starts_with(b"/") && s != b"/trash"))
+            && self.workplace_authorized(true)
+            && crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|m.owner.0==self.current_user.0);
+        if allowed && crate::storage::trash_move(path).is_ok() { self.refresh_desktop_items(); }
+        else { self.open_personal_trash(0); self.set_file_navigator_association_notice(12); }
     }
 
     // ------------------------=
@@ -4669,9 +4709,10 @@ impl ConsoleRuntime {
     fn refresh_desktop_items(&mut self) {
         self.refresh_desktop_preview_files();
         let mut items = 0u8;
+        let home = crate::storage::provision_user_home(self.current_user.0).ok();
         for item in 0..6usize {
-            if let Some((_, target)) = Self::desktop_reference_paths(item) {
-                if crate::storage::namespace_resolve(target).is_ok() {
+            if let Some((_, target)) = home.and_then(|h|Self::desktop_reference_paths(h,item)) {
+                if crate::storage::namespace_resolve(target.as_bytes()).is_ok() {
                     items |= 1u8 << item;
                 }
             }
@@ -4684,10 +4725,10 @@ impl ConsoleRuntime {
     // DESC: Persists a second namespace reference and records its current Desktop presentation point.
     // ------------------=
     fn place_desktop_reference(&mut self, item: usize) {
-        let Some((source, target)) = Self::desktop_reference_paths(item) else {
+        let Some((source, target)) = crate::storage::provision_user_home(self.current_user.0).ok().and_then(|h|Self::desktop_reference_paths(h,item)) else {
             return;
         };
-        if crate::storage::namespace_ensure_link(source, target).is_ok() {
+        if crate::storage::namespace_ensure_link(source.as_bytes(), target.as_bytes()).is_ok() {
             self.desktop_items |= 1u8 << item;
             self.desktop_item_positions[item] =
                 [self.pointer_x.clamp(35, 950), self.pointer_y.clamp(90, 880)];
@@ -8257,9 +8298,10 @@ impl ConsoleRuntime {
                     return;
                 }
                 A::Duplicate => self.copy_file_navigator_entry(path, state.active_namespace_ref.as_bytes()),
-                A::Trash => {
-                    let _ = crate::storage::trash_move(path);
+                A::Restore => {
+                    self.restore_personal_trash_entry(path);
                 }
+                A::Trash => self.move_drag_to_trash(path),
                 _ => {}
             }
             }
@@ -8534,7 +8576,8 @@ impl ConsoleRuntime {
         let Some(state) = state else { return };
         match (state.dialog_open, action) {
             (Some(FileNavigatorDialog::EmptyTrash), 0) => {
-                let _ = crate::storage::trash_empty_personal(self.current_user.0);
+                if !self.workplace_authorized(true) || crate::storage::trash_empty_personal(self.current_user.0).is_err() { self.set_file_navigator_association_notice(11); }
+                self.refresh_desktop_items();
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime
                         .file_navigator
@@ -9418,17 +9461,26 @@ impl ConsoleRuntime {
                 } else { [self.pointer_x.clamp(35,950), self.pointer_y.clamp(90,880)] };
                 if self.home_drag_moved && (left_button || released) {
                     crate::ui::desktop_drag::motion(item, position,
-                        self.home_drag_from_desktop.then_some(self.desktop_item_positions[item]),
+                        self.home_drag_from_desktop.then(|| self.desktop_item_positions[item]),
                         now, self.spatial.state.reduced_motion);
                 }
                 if released {
                     let target = self.desktop_target(layout);
-                    if self.home_drag_from_desktop {
+                    let width = self.system.framebuffer_width;
+                    let height = self.system.framebuffer_height;
+                    let point = crate::ui::geometry::Point{x:self.pointer_x*width as i32/1000,y:self.pointer_y*height as i32/1000};
+                    let trash = target == Some(DesktopTarget::Dock(7)) || (target.is_none() &&
+                        crate::ui::desktop_polish::trash_rect(width,height,layout.scale()).contains(point));
+                    if self.home_drag_moved && trash {
+                        if let Some(source) = self.trash_drag_source.take() { self.move_drag_to_trash(&source.path[..source.length]); }
+                    } else if self.home_drag_from_desktop {
                         if self.home_drag_moved {
                             self.desktop_item_positions[item] = position;
                         }
                     } else if !self.home_drag_moved {
-                        self.open_file_navigator_selection();
+                        if item == 7 && self.desktop_file_drag {
+                            if let Some(file) = self.trash_drag_source { self.preview_file(&file.path[..file.length]); }
+                        } else { self.open_file_navigator_selection(); }
                     } else if self.home_drag_moved {
                         match target {
                             Some(DesktopTarget::HomeSidebar(location)) if item == 6 => {
@@ -9446,6 +9498,8 @@ impl ConsoleRuntime {
                     }
                     crate::ui::desktop_drag::finish(self.home_drag_from_desktop && self.home_drag_moved,
                         now, self.spatial.state.reduced_motion);
+                    self.desktop_file_drag = false;
+                    self.trash_drag_source = None;
                     self.home_dragging_item = None;
                     self.home_drag_from_desktop = false;
                     self.home_drag_moved = false;
@@ -9664,6 +9718,12 @@ impl ConsoleRuntime {
                                 navigator.context_menu_open = false;
                             })
                         });
+                        self.desktop_file_drag = false;
+                        self.trash_drag_source = crate::runtime::with_runtime(|r|r.file_navigator).flatten()
+                            .and_then(|n|navigator_child_nth(n.active_namespace_ref.as_bytes(),item))
+                            .map(|entry|crate::ui::file_preview::DesktopFile::from_path(&entry.path[..entry.path_len as usize]));
+                        let source = self.trash_drag_source.unwrap_or(crate::ui::file_preview::EMPTY_FILE);
+                        crate::ui::desktop_drag::set_name(crate::runtime::object_navigation::namespace_basename(&source.path[..source.length]));
                         self.home_dragging_item = Some(item);
                         self.home_drag_from_desktop = false;
                         self.home_drag_origin_x = self.pointer_x;
@@ -9702,11 +9762,7 @@ impl ConsoleRuntime {
                                 self.spatial_open();
                                 return;
                             }
-                            Some(DockAction::Trash) => {
-                                self.home_window_visible = true;
-                                self.home_location = 8;
-                                crate::output_text(b"[objects] recycle collection opened\n")
-                            }
+                            Some(DockAction::Trash) => self.open_personal_trash(0),
                             None => {}
                         }
                     }
@@ -9722,6 +9778,10 @@ impl ConsoleRuntime {
                     }
                     None => {
                         if let Some(item) = self.desktop_item_at_pointer() {
+                            self.desktop_file_drag = false;
+                            self.trash_drag_source = crate::storage::provision_user_home(self.current_user.0).ok().and_then(|h|Self::desktop_reference_paths(h,item)).map(|(_,path)|crate::ui::file_preview::DesktopFile::from_path(path.as_bytes()));
+                            let source = self.trash_drag_source.unwrap_or(crate::ui::file_preview::EMPTY_FILE);
+                            crate::ui::desktop_drag::set_name(crate::runtime::object_navigation::namespace_basename(&source.path[..source.length]));
                             self.home_dragging_item = Some(item);
                             self.home_drag_from_desktop = true;
                             self.home_drag_origin_x = self.pointer_x;

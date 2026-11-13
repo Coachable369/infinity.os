@@ -1,7 +1,7 @@
 //! Session-local native text context menu and clipboard viewer geometry.
 use crate::ui::geometry::{Point,Rect};
 #[derive(Clone,Copy,PartialEq,Eq)]
-pub enum Target {Editor,Browser,Address,Navigator}
+pub enum Target {Editor,Browser,Address,Navigator,Trash}
 pub const LABELS:[&[u8];7]=[b"Copy",b"Cut",b"Paste",b"Select all",b"See Clipboard",b"Search with Google",b"Remember selection"];
 #[derive(Clone,Copy)]
 pub struct Menu {
@@ -14,6 +14,13 @@ pub struct Menu {
 }
 impl Menu {
     // ------------------------=
+    // FUNC: labels
+    // DESC: Keeps pointer, keyboard and painted rows in agreement for each menu.
+    // ------------------=
+    pub fn labels(&self) -> &'static [&'static [u8]] {
+        if self.target == Target::Trash { &[b"Open Trash", b"Restore an item...", b"Empty Trash..."] } else { &LABELS }
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Starts without retained clipboard data or an open overlay.
     // ------------------=
@@ -25,7 +32,7 @@ impl Menu {
     // DESC: Keeps every row and the clipboard sheet inside the display at supported scales.
     // ------------------=
     pub fn place(&mut self,x:i32,y:i32,width:usize,height:usize,scale:usize) {
-        let (base_width,base_height)=if self.viewer {(520,350)}else{(248,222)};
+        let (base_width,base_height)=if self.viewer {(520,350)}else{(248,12 + 30 * self.labels().len())};
         self.scale=scale.max(1).min((width/base_width).max(1)).min((height/base_height).max(1));
         let w=base_width*self.scale;
         let h=base_height*self.scale;
@@ -40,7 +47,7 @@ impl Menu {
         if !self.open || self.viewer || !self.rect.contains(p) {return None;}
         let offset=p.y-self.rect.y-6*self.scale as i32;
         if offset<0 {return None;}
-        let row=offset as usize/(30*self.scale);(row<LABELS.len()).then_some(row)
+        let row=offset as usize/(30*self.scale);(row<self.labels().len()).then_some(row)
     }
     // ------------------------=
     // FUNC: viewer_action

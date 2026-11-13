@@ -2,6 +2,17 @@
 use super::*;
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: desktop_trash_tile
+    // DESC: Centers the themed wastebasket and caption in the drop target used by input.
+    // ------------------=
+    pub(super) fn desktop_trash_tile(&mut self, scale: usize) {
+        let tile = crate::ui::desktop_polish::trash_rect(self.width,self.height,scale);
+        self.themed_icon(tile.x as usize + tile.width as usize/2,tile.y as usize+26*scale,10,50*scale);
+        self.ui_text_centered(tile.x as usize,tile.width as usize,tile.y as usize+54*scale,
+            b"Trash",226,239,248,scale);
+    }
+
+    // ------------------------=
     // FUNC: desktop_drag_overlay
     // DESC: Reuses the themed icon with a finite cyan lift/drop halo above retained windows.
     // ------------------=
@@ -21,7 +32,9 @@ impl DisplayDevice {
             0=>(b"Documents",0),1=>(b"Downloads",1),2=>(b"Pictures",0),
             3=>(b"Music",0),4=>(b"Videos",0),5=>(b"Projects",2),_ =>(b"notes.txt",3),
         };
-        let role=[4,5,6,7,8,9,49][view.item.min(6)];
+        let (captured,length) = crate::ui::desktop_drag::name();
+        let label = if length > 0 { &captured[..length] } else { label };
+        let role = if view.source.is_some() { [4,5,6,7,8,9,49][view.item.min(6)] } else {49};
         let _=kind;
         self.themed_icon(x+size/2,y+size/2,role,size);
         let label_width=self.ui_text_width(label,1);

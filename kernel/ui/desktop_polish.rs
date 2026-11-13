@@ -7,6 +7,15 @@ use super::geometry::{Point, Rect};
 pub const POLISH_COUNT: usize = 10;
 pub const DOCK_ITEMS: usize = 8;
 
+// ------------------------=
+// FUNC: trash_rect
+// DESC: Anchors the desktop Trash tile above the dock and clear of the left window tray.
+// ------------------=
+pub fn trash_rect(width: usize, height: usize, scale: usize) -> Rect {
+    Rect { x: (width / 9) as i32, y: height.saturating_sub(184 * scale) as i32,
+        width: (76 * scale) as u32, height: (78 * scale) as u32 }
+}
+
 const NONE: usize = 0;
 const BRAND: usize = 1;
 const HELP: usize = 2;

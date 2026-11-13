@@ -219,7 +219,7 @@ impl super::DisplayDevice {
         let w=menu.rect.width as usize;
         self.app_card_alpha(menu.rect,(5,18,31),(73,180,229),250,s);
         if !menu.viewer {
-            for (row,label) in crate::console::clipboard_menu::LABELS.iter().enumerate() {
+            for (row,label) in menu.labels().iter().enumerate() {
                 let label=if row==6 && menu.target==crate::console::clipboard_menu::Target::Browser {b"Save image to Downloads" as &[u8]}else{*label};
                 let top=y+(6+row*30)*s;
                 if row==menu.row {self.fill_rounded_rect_alpha(x+5*s,top,w-10*s,30*s,4*s,20,66,91,255);}
@@ -5037,6 +5037,7 @@ impl super::DisplayDevice {
             self.app_label(crate::ui::geometry::Rect{x:r.x,y:r.y+54,width:r.width,height:28},
                 crate::runtime::object_navigation::namespace_basename(&file.path[..file.length]),(221,235,243),false,1);
         }
+        self.desktop_trash_tile(scale);
         self.desktop_dock(scale, launcher_open);
     }
     // ------------------------=
@@ -5706,6 +5707,11 @@ impl super::DisplayDevice {
                 5=>b"No installed application can open this object",
                 6=>b"The selected application is unavailable or incompatible",
                 7=>b"Opened with the selected application",
+                8=>b"Select the item you want to restore.",
+                9=>b"Restored to original location.",
+                10=>b"Unable to restore. Check the original location for a name conflict.",
+                11=>b"Trash could not be emptied.",
+                12=>b"Unable to move this item to your Trash.",
                 _=>b"File operation could not be completed",
             };
             let limit=browser_width.saturating_sub(sidebar_w+28*scale)/(8*scale);

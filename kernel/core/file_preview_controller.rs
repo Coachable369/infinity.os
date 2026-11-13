@@ -24,8 +24,8 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn refresh_desktop_preview_files(&self) {
         let mut files=[preview::EMPTY_FILE;16];let mut count=0;
-        if self.workplace_authorized(false){for i in 0..256{
-            let Ok(Some(entry))=crate::storage::namespace_list_nth(b"/home/default/desktop",i) else{break;};
+        if let Some(desktop) = crate::storage::provision_user_home(self.current_user.0).ok().and_then(|h|h.child(b"desktop")).filter(|_|self.workplace_authorized(false)){for i in 0..256{
+            let Ok(Some(entry))=crate::storage::namespace_child_nth(desktop.as_bytes(),i) else{break;};
             let path=&entry.path[..entry.path_len as usize];let Ok((m,_))=crate::storage::object_inspect_path(path)else{continue;};
             if m.kind==crate::storage::object::ObjectType::NamespaceNode||!preview::can_read(true,m.space==crate::storage::object::Space::Personal,m.owner.0,self.current_user.0){continue;}
             if path.len()>96{continue;}files[count].path[..path.len()].copy_from_slice(path);files[count].length=path.len();count+=1;if count==files.len(){break;}
@@ -197,9 +197,10 @@ impl ConsoleRuntime {
         if self.inactive_file_navigator_at_pointer().is_some(){return false;}
         self.refresh_desktop_preview_files();let files=preview::desktop_files();
         let selected=files.iter().enumerate().find(|(i,f)|{let r=preview::desktop_rect(*i,self.system.framebuffer_width,self.system.framebuffer_height);f.length!=0&&(r.bottom() as usize)<self.system.framebuffer_height.saturating_sub(100*l.scale())&&r.contains(p)});
+        let reference;
         let path=if let Some((_,f))=selected {&f.path[..f.length]}else{
             let Some(item)=self.desktop_item_at_pointer() else{return false;};
-            let Some((_,path))=Self::desktop_reference_paths(item) else{return false;};path
+            let Some((_,path))=crate::storage::provision_user_home(self.current_user.0).ok().and_then(|h|Self::desktop_reference_paths(h,item)) else{return false;};reference=path;reference.as_bytes()
         };
         let mut v=Preview::new();v.open=true;v.menu=true;v.owner=self.current_session.0;
         v.path[..path.len()].copy_from_slice(path);v.path_len=path.len();

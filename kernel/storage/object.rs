@@ -1941,7 +1941,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn ensure_user_home(&mut self,owner:ObjectId,name:&[u8])->Result<user_home::Path,ObjectError>{
         let home = self.user_home_path(owner, name)?;
-        let complete=[b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"].iter().all(|child|{
+        let complete=[b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash",b"desktop"].iter().all(|child|{
             let path=if child.is_empty(){Some(home)}else{home.child(child)};
             path.is_some_and(|path|self.state.entries.iter().any(|e|e.used&&e.path()==path.as_bytes()
                 && self.object_index(e.target).is_ok_and(|i|self.state.objects[i].owner==owner
@@ -2067,7 +2067,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             let media=home.child(b"media").ok_or(ObjectError::InvalidPath)?;
             let marker=home.child(b".template-version").ok_or(ObjectError::InvalidPath)?;
             let seed=self.resolve(marker.as_bytes()).is_err();
-            for child in [b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"]{
+            for child in [b"".as_slice(),b"documents",b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash",b"desktop"]{
                 let path=if child.is_empty(){home}else{home.child(child).ok_or(ObjectError::InvalidObject)?};
                 if let Some(entry)=self.state.entries.iter().find(|e|e.used&&e.path()==path.as_bytes()){
                     let record=&self.state.objects[self.object_index(entry.target)?];

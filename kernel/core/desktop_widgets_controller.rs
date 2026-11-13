@@ -153,6 +153,35 @@ impl ConsoleRuntime {
         {
             return false;
         }
+        if crate::ui::desktop_polish::trash_rect(width,height,scale).contains(point) {
+            if secondary {
+                let mut menu = super::clipboard_menu::Menu::new();
+                menu.open = true;
+                menu.target = super::clipboard_menu::Target::Trash;
+                menu.place(point.x,point.y,width,height,scale);
+                super::clipboard_menu::publish(menu);
+            } else if clicked { self.open_personal_trash(0); }
+            self.redraw();
+            return true;
+        }
+        if clicked && self.mode == ConsoleMode::Desktop {
+            let files = crate::ui::file_preview::desktop_files();
+            if let Some(file) = files.iter().enumerate().find_map(|(i,file)|{
+                let rect = crate::ui::file_preview::desktop_rect(i,width,height);
+                (file.length > 0 && rect.bottom() < height.saturating_sub(100*scale) as i32 && rect.contains(point)).then_some(*file)
+            }) {
+                self.desktop_file_drag = true;
+                self.trash_drag_source = Some(file);
+                let source = self.trash_drag_source.unwrap_or(crate::ui::file_preview::EMPTY_FILE);
+                crate::ui::desktop_drag::set_name(crate::runtime::object_navigation::namespace_basename(&source.path[..source.length]));
+                self.home_dragging_item = Some(7);
+                self.home_drag_from_desktop = false;
+                self.home_drag_moved = false;
+                self.home_drag_origin_x = self.pointer_x;
+                self.home_drag_origin_y = self.pointer_y;
+                return true;
+            }
+        }
         if secondary {
             state.menu = Some(point);
             self.shell_menu = 0;

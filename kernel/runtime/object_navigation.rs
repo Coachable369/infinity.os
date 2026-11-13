@@ -35,6 +35,7 @@ pub enum ContextAction {
     Rename,
     Duplicate,
     Trash,
+    Restore,
     Copy,
     Cut,
     Paste,
@@ -70,6 +71,7 @@ impl ContextAction {
             Self::Rename => b"Rename",
             Self::Duplicate => b"Duplicate",
             Self::Trash => b"Move to Trash",
+            Self::Restore => b"Restore to original location",
             Self::NewFolder => b"New Folder",
             Self::List => b"List View",
             Self::Grid => b"Grid View",
@@ -1739,6 +1741,8 @@ impl FileNavigatorState {
             &[NewFolder, Paste, PasteTo, List, Grid, Sort]
         } else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT {
             &[Open]
+        } else if is_personal_trash(self.active_namespace_ref.as_bytes()) {
+            &[Restore, Preview]
         } else if self.context_image {
             &[Open,Preview,SetWallpaper,OpenWith,SetDefaultWith,Rename,Duplicate,Copy,Cut,Paste,PasteTo,Trash]
         } else {
@@ -1827,6 +1831,14 @@ impl FileNavigatorState {
     }
 }
 
+// ------------------------=
+// FUNC: is_personal_trash
+// DESC: Identifies the reserved root of an account's recoverable objects.
+// ------------------=
+pub fn is_personal_trash(path: &[u8]) -> bool {
+    path.strip_prefix(b"/home/").and_then(|tail|tail.strip_suffix(b"/trash"))
+        .is_some_and(|owner| !owner.is_empty() && !owner.contains(&b'/'))
+}
 // ------------------------=
 // FUNC: is_immediate_namespace_child
 // DESC: Reports whether a candidate NamespaceRef is one direct child of a parent.

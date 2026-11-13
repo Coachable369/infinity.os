@@ -137,7 +137,7 @@ fn sdk_package_access() {
     let second=ObjectId([0x32;16]);
     let other_home=store.ensure_user_home(second,b"Second User").unwrap();
     for (home,user) in [(home,owner),(other_home,second)] {
-        for folder in [b"documents".as_slice(),b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash"] {
+        for folder in [b"documents".as_slice(),b"downloads",b"pictures",b"music",b"videos",b"media",b"projects",b"trash",b"desktop"] {
             let id=store.resolve(home.child(folder).unwrap().as_bytes()).unwrap();
             assert_eq!(store.metadata(id).unwrap().owner,user);
             assert_eq!(store.metadata(id).unwrap().kind,ObjectType::NamespaceNode);
@@ -161,7 +161,16 @@ fn sdk_package_access() {
         let mut actual=vec![0;expected.len()];store.read(id,None,&mut actual).unwrap();assert_eq!(actual,expected);
     }
     let deleted=home.child(b"documents").unwrap().child(b"hello.py").unwrap();
-    store.detach(deleted.as_bytes()).unwrap();
+    let trashed = home.child(b"trash").unwrap().child(b"documents").unwrap().child(b"hello.py").unwrap();
+    let original = store.resolve(deleted.as_bytes()).unwrap();
+    store.move_entry(deleted.as_bytes(),trashed.as_bytes()).unwrap();
+    assert_eq!(store.resolve(trashed.as_bytes()).unwrap(),original);
+    assert!(store.resolve(deleted.as_bytes()).is_err());
+    store.move_entry(trashed.as_bytes(),deleted.as_bytes()).unwrap();
+    assert_eq!(store.resolve(deleted.as_bytes()).unwrap(),original);
+    store.move_entry(deleted.as_bytes(),trashed.as_bytes()).unwrap();
+    store.remove_path(trashed.as_bytes()).unwrap();
+    assert!(store.resolve(trashed.as_bytes()).is_err());
     store.ensure_user_home(owner,b"SDK Developer").unwrap();
     assert!(store.resolve(deleted.as_bytes()).is_err());
     assert_eq!(store.sidebar_location(owner,home,4,None).unwrap().as_bytes(),pictures.as_bytes());

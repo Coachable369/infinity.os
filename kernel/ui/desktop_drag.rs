@@ -36,6 +36,25 @@ pub fn bounds(position: [i32; 2], width: usize, height: usize) -> Rect {
         y: (height as i32 * position[1] / 1000) - 12,
         width: size.max(180) + 24, height: size + 64 }
 }
+static mut NAME: [u8; 96] = [0; 96];
+static mut NAME_LENGTH: usize = 0;
+
+// ------------------------=
+// FUNC: set_name
+// DESC: Captures the object's visible name once for drag frames.
+// ------------------=
+pub fn set_name(name: &[u8]) {
+    unsafe {
+        NAME_LENGTH = name.len().min(96);
+        NAME[..NAME_LENGTH].copy_from_slice(&name[..NAME_LENGTH]);
+    }
+}
+
+// ------------------------=
+// FUNC: name
+// DESC: Returns a bounded copy without reading the object store during painting.
+// ------------------=
+pub fn name() -> ([u8;96],usize) { unsafe { (NAME,NAME_LENGTH) } }
 static mut VIEW: Option<Drag> = None;
 static mut PREVIOUS: Option<Drag> = None;
 static mut DIRTY: bool = false;

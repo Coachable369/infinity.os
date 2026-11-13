@@ -1904,6 +1904,16 @@ pub fn namespace_list_nth(
 }
 
 // ------------------------=
+// FUNC: navigator_lists_entry
+// DESC: Projects entries stored under their original relative paths into the personal Trash list.
+// ------------------=
+fn navigator_lists_entry(parent: &[u8], path: &[u8]) -> bool {
+    if crate::runtime::object_navigation::is_personal_trash(parent) {
+        return path.strip_prefix(parent).is_some_and(|rest| rest.starts_with(b"/"));
+    }
+    crate::runtime::object_navigation::is_immediate_namespace_child(parent,path)
+}
+// ------------------------=
 // FUNC: namespace_child_nth
 // DESC: Returns one direct child projection without leaking deeper descendants into a navigator view.
 // ------------------=
@@ -1917,7 +1927,7 @@ pub fn namespace_child_nth(
             break;
         };
         let path = &entry.path[..entry.path_len as usize];
-        if crate::runtime::object_navigation::is_immediate_namespace_child(parent, path) {
+        if navigator_lists_entry(parent, path) {
             if visible == requested {
                 return Ok(Some(entry));
             }
@@ -1937,7 +1947,7 @@ pub fn namespace_child_count(parent: &[u8]) -> Result<usize, object::ObjectError
         let Some(entry) = namespace_list_nth(parent, source_index)? else {
             break;
         };
-        if crate::runtime::object_navigation::is_immediate_namespace_child(
+        if navigator_lists_entry(
             parent,
             &entry.path[..entry.path_len as usize],
         ) {
@@ -1964,7 +1974,7 @@ pub fn namespace_child_nth_sorted(
                 break;
             };
             let candidate_path = &candidate.path[..candidate.path_len as usize];
-            if !crate::runtime::object_navigation::is_immediate_namespace_child(
+            if !navigator_lists_entry(
                 parent,
                 candidate_path,
             ) {
@@ -2012,7 +2022,7 @@ pub fn namespace_child_sorted_index(parent: &[u8], path: &[u8], descending: bool
     for index in 0..256 {
         let Some(entry) = namespace_list_nth(parent, index)? else { break; };
         let candidate = &entry.path[..entry.path_len as usize];
-        if !crate::runtime::object_navigation::is_immediate_namespace_child(parent, candidate) { continue; }
+        if !navigator_lists_entry(parent, candidate) { continue; }
         if candidate == path { found = true; continue; }
         let ordering = namespace_name_order(candidate, path);
         if ordering == if descending { core::cmp::Ordering::Greater } else { core::cmp::Ordering::Less } { rank += 1; }
@@ -2025,6 +2035,7 @@ pub fn namespace_child_sorted_index(parent: &[u8], path: &[u8], descending: bool
 // DESC: Compares final NamespaceRef components using stable ASCII case folding.
 // ------------------=
 fn namespace_name_order(left: &[u8], right: &[u8]) -> core::cmp::Ordering {
+    let path_order = left.cmp(right);
     let left = crate::runtime::object_navigation::namespace_basename(left);
     let right = crate::runtime::object_navigation::namespace_basename(right);
     for index in 0..left.len().min(right.len()) {
@@ -2035,7 +2046,7 @@ fn namespace_name_order(left: &[u8], right: &[u8]) -> core::cmp::Ordering {
             ordering => return ordering,
         }
     }
-    left.len().cmp(&right.len())
+    left.len().cmp(&right.len()).then(path_order)
 }
 
 // ------------------------=
