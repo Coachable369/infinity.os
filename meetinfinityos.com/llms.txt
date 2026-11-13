@@ -1,0 +1,9 @@
+# InfinityOS
+
+> InfinityOS is an AI-native personal operating system project exploring local intelligence, voice interaction and distributed computing.
+
+## Official pages
+
+- [Meet InfinityOS](https://www.meetinfinityos.com/): Project vision, desktop screenshots, and an overview of the user experience.
+- [InfinityOS whitepapers](https://www.meetinfinityos.com/whitepaper.html): Read the online overview and check the publication status of planned papers.
+- [Investor overview](https://www.meetinfinityos.com/invest.html): Development priorities, potential commercial models, and risks. These are plans, not financial projections or guarantees.

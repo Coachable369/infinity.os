@@ -121,3 +121,11 @@ never disturb a running native build or its lock.
 largest alpha component within the cropped face, retains both openings,
 and smooths raster edge noise. Tests enforce a 0.5% bound on contour area error.
 Sharp is not shipped to the browser or required for preview/testing.
+
+Search discovery: publish with `./deploy.sh`. The public allowlist includes robots.txt,
+llms.txt, the XML sitemap, and the public IndexNow ownership key. Keep the sitemap
+and AI guide in sync with canonical pages. On a new production host run
+`./publish-canonical.sh` to install the HTTPS www and index.html redirects.
+Notify IndexNow only for changed canonical URLs after verifying public deployment.
+Google discovers the sitemap through robots.txt; a verified property owner can
+also submit it in Google Search Console.

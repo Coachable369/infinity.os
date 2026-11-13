@@ -24,6 +24,7 @@ if (( $# > 1 )); then
 fi
 
 FILES=(
+  robots.txt llms.txt sitemap.xml e4987c218601455f9588299dae476fbd.txt
   index.html whitepaper.html invest.html styles.css whitepaper.css navigation.js app.js art.js
   emblem-geometry.js scene-math.mjs assets/emblem-outline.json
   assets/woven-cobalt.webp assets/brand.webp assets/infinity-emblem.webp assets/infinity-detail.webp
@@ -83,6 +84,7 @@ mv "$1/staging-$2/assets/vendor/"* "$1/public_html/assets/vendor/"
 rmdir "$1/staging-$2/assets/vendor"
 mv "$1/staging-$2/assets/"* "$1/public_html/assets/"
 mv "$1/staging-$2/"*.css "$1/staging-$2/"*.js "$1/staging-$2/"*.mjs "$1/public_html/"
+mv "$1/staging-$2/"*.txt "$1/staging-$2/sitemap.xml" "$1/public_html/"
 mv "$1/staging-$2/invest.html" "$1/public_html/invest.html"
 mv "$1/staging-$2/whitepaper.html" "$1/public_html/whitepaper.html"
 mv "$1/staging-$2/index.html" "$1/public_html/index.html"

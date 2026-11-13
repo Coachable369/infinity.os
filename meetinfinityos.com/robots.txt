@@ -1,0 +1,5 @@
+# Public content is open to search and AI crawlers, including page assets.
+User-agent: *
+Allow: /
+
+Sitemap: https://www.meetinfinityos.com/sitemap.xml
