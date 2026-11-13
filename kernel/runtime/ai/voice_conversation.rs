@@ -740,7 +740,7 @@ pub fn calibrating() -> bool {
 pub fn microphone_threshold() -> Option<u16> {
     unsafe {
         let floor = &*(&raw const NOISE_FLOOR);
-        floor.ready().then_some(floor.threshold())
+        floor.ready().then_some((&*(&raw const UTTERANCE)).onset_threshold())
     }
 }
 // ------------------------=
@@ -1642,6 +1642,10 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         clear_captured_turn();
         FOLLOWUP_ONSET_UNTIL = 0;
     }
+    let idle_wake = STATE == State::Listening && !duplex && !WAKE_ARMED && now >= ECHO_VALID_UNTIL;
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    let idle_wake = idle_wake && OWNER != LOGIN_OWNER;
+    (&mut *(&raw mut UTTERANCE)).idle_wake_gate(idle_wake);
     let consumed = if accept {
         (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n])
     } else {
@@ -1669,7 +1673,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         if vad != LAST_VAD_STATE || now.saturating_sub(LAST_CAPTURE_LOG_NS)>=1_000_000_000 {
             LAST_CAPTURE_LOG_NS=now;
             voice_trace::capture(now,match vad {VadState::Waiting=>1,VadState::Speech=>2,VadState::Complete=>3,VadState::NoSpeech=>4,VadState::Limit=>5,VadState::Cancelled=>6},
-                (&*(&raw const NOISE_FLOOR)).threshold(),&(&*(&raw const MONO))[..n]);
+                (&*(&raw const UTTERANCE)).onset_threshold(),&(&*(&raw const MONO))[..n]);
         }
     }
     if vad != LAST_VAD_STATE {

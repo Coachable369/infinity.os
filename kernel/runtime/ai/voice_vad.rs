@@ -39,6 +39,11 @@ pub struct Detector {
     continuation_threshold: u16,
     waiting_energies: [u32; AMBIENT_FRAMES],
     waiting_frames: usize,
+    quiet_frames: usize,
+    quiet_peak_energy: u32,
+    adapt_idle: bool,
+    calibrated_onset: u16,
+    calibrated_tail: u16,
     limit_silence: usize,
 }
 impl Detector {
@@ -60,6 +65,8 @@ impl Detector {
             continuation_threshold: threshold,
             waiting_energies: [0; AMBIENT_FRAMES],
             waiting_frames: 0,
+            quiet_frames: 0, quiet_peak_energy: 0, adapt_idle: false,
+            calibrated_onset: threshold, calibrated_tail: threshold,
             limit_silence: 0,
         }
     }
@@ -108,6 +115,27 @@ impl Detector {
                     self.continuation_threshold
                 } else { self.threshold };
                 let voiced = self.energy >= u64::from(threshold.max(1)).pow(2) * FRAME as u64;
+                if self.adapt_idle && self.state == VadState::Waiting {
+                    let rms_squared = (self.energy / FRAME as u64) as u32;
+                    if u64::from(rms_squared) * 16 < u64::from(self.threshold).pow(2) {
+                        self.quiet_peak_energy = self.quiet_peak_energy.max(rms_squared);
+                        self.quiet_frames += 1;
+                        if self.quiet_frames == RATE / FRAME {
+                            // A loud startup sample must not permanently deafen an idle
+                            // listener. One uninterrupted quiet second permits a 3 dB step.
+                            let next = (u32::from(self.threshold) * 7 / 10).max(300) as u16;
+                            if u64::from(next).pow(2) >= 4 * u64::from(self.quiet_peak_energy) {
+                                self.threshold = next;
+                                self.continuation_threshold = self.continuation_threshold.min(next);
+                            }
+                            self.quiet_frames = 0;
+                            self.quiet_peak_energy = 0;
+                        }
+                    } else {
+                        self.quiet_frames = 0;
+                        self.quiet_peak_energy = 0;
+                    }
+                }
                 if self.state == VadState::Waiting {
                     if voiced { self.waiting_frames = 0; }
                     else { self.observe_waiting_ambient(); }
@@ -294,6 +322,23 @@ impl Utterance {
         }
     }
     // ------------------------=
+    // FUNC: onset_threshold
+    // DESC: Exposes the active speech onset threshold for capture diagnostics.
+    // ------------------=
+    pub const fn onset_threshold(&self) -> u16 { self.detector.threshold }
+    // ------------------------=
+    // FUNC: idle_wake_gate
+    // DESC: Enables quiet-room recovery only during idle desktop wake capture, never during playback or recognition.
+    // ------------------=
+    pub fn idle_wake_gate(&mut self, enabled: bool) {
+        if !enabled && self.detector.adapt_idle {
+            self.detector.threshold = self.detector.calibrated_onset;
+            self.detector.continuation_threshold = self.detector.continuation_threshold.max(self.detector.calibrated_tail);
+        }
+        self.detector.adapt_idle = enabled;
+        if !enabled { self.detector.quiet_frames = 0; self.detector.quiet_peak_energy = 0; }
+    }
+    // ------------------------=
     // FUNC: interruption_probe
     // DESC: Borrows confirmed in-progress speech for stop-only recognition without completing or clearing the utterance.
     // ------------------=
@@ -323,6 +368,7 @@ impl Utterance {
     pub fn clear_with_continuation(&mut self, threshold: u16, continuation: u16) {
         self.clear(threshold);
         self.detector.continuation_threshold = continuation.max(1).min(threshold.max(1));
+        self.detector.calibrated_tail = self.detector.continuation_threshold;
     }
     // ------------------------=
     // FUNC: cancel
@@ -492,6 +538,23 @@ mod tests {
             }
             assert_eq!(value.state(), if overlong { VadState::NoSpeech } else { VadState::Complete });
             assert_eq!(value.speech().is_none(), overlong);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: quiet_room_recovers_a_soft_wake_after_loud_calibration
+    // DESC: A quiet room followed by soft speech must produce a segment; identical playback and steady noise cannot authorize it.
+    // ------------------=
+    #[test]
+    fn quiet_room_recovers_a_soft_wake_after_loud_calibration() {
+        for (idle, ambient, expected) in [(true, 80, VadState::Complete), (false, 80, VadState::Waiting), (true, 1100, VadState::Waiting)] {
+            let mut u = Utterance::new(3000);
+            u.idle_wake_gate(idle);
+            for _ in 0..350 { u.push(&[ambient; FRAME]); }
+            assert_eq!(u.state(), VadState::Waiting);
+            for _ in 0..12 { u.push(&[780; FRAME]); }
+            for _ in 0..41 { u.push(&[ambient; FRAME]); }
+            assert_eq!(u.state(), expected);
         }
     }
 

@@ -7,9 +7,6 @@ from _infinity_app import memory_request
 CATEGORIES = ("All memories", "Episodic", "Semantic", "Procedural")
 NAVY, PANEL, WHITE, BLUE, MUTED = "#090f26", "#101b3a", "#ffffff", "#3e6fff", "#a7bddc"
 
-# Downsampled from the approved Infinity Memory launcher glyph; no filesystem access at launch.
-MEMORY_GLYPH = "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"
-
 # ------------------------=
 # FUNC: stamp
 # DESC: Displays a stored UTC timestamp including the no-clock state.
@@ -83,12 +80,28 @@ class Browser:
         self.metadata = [tk.StringVar(value="—") for _ in range(4)]
         self.page_label = tk.StringVar()
         self.empty_hint = tk.StringVar()
-        top = tk.Frame(root, bg=NAVY)
-        top.pack(fill="x", padx=18, pady=(16, 8))
-        self.glyph = tk.PhotoImage(data=MEMORY_GLYPH)
-        tk.Label(top, image=self.glyph, bg=NAVY, bd=0).pack(side="left", padx=(0,12))
-        tk.Label(top, text="Infinity Memory", font=("Inter", -int(body_px*1.85), "bold"), bg=NAVY, fg=WHITE).pack(side="left")
-        tk.Label(top, text="Personal workspace", font=("Inter",-body_px), bg=NAVY, fg=MUTED).pack(side="right")
+        menu_bar = tk.Frame(root, bg=PANEL)
+        menu_bar.pack(fill="x", pady=(0, 6))
+        style.layout("Library.TMenubutton", [("Menubutton.padding", {"sticky": "nswe", "children":
+            [("Menubutton.label", {"sticky": "w"})]})])
+        style.configure("Library.TMenubutton", font=body_font, background=PANEL, foreground=WHITE,
+                        padding=(14, 6), relief="flat")
+        style.map("Library.TMenubutton", background=[("active", "#244F96"), ("focus", "#244F96")])
+        self.menus = {}
+        for title, entries in (
+            ("File", (("New memory", self.new, "Ctrl+N"), ("Save memory", self.save, "Ctrl+S"), ("Close", self.close, ""))),
+            ("Edit", (("Cut", lambda: self.edit_event("Cut"), ""), ("Copy", lambda: self.edit_event("Copy"), ""),
+                      ("Paste", lambda: self.edit_event("Paste"), ""), ("Delete selected memory…", self.remove, ""))),
+            ("View", (("Find memories", lambda: self.search.focus_force(), "Ctrl+F"),
+                      ("Clear search", lambda: self.query.set(""), ""), ("Refresh library", self.refresh, "")))):
+            button = ttk.Menubutton(menu_bar, text=title, style="Library.TMenubutton", takefocus=True)
+            menu = tk.Menu(button, tearoff=False, bg=PANEL, fg=WHITE, activebackground="#244F96",
+                           activeforeground=WHITE, font=body_font)
+            self.menus[title] = menu
+            for label, action, shortcut in entries:
+                menu.add_command(label=label, command=action, accelerator=shortcut)
+            button.configure(menu=menu)
+            button.pack(side="left")
         self.fact_id = 0
         self.fact_job = None
         self.fact_last = ""
@@ -96,7 +109,7 @@ class Browser:
         self.fact_state = tk.StringVar(value="Autosave on")
         capture = tk.Frame(root, bg=PANEL, padx=12, pady=8, highlightthickness=1, highlightbackground="#324D70")
         capture.pack(fill="x", padx=18, pady=4)
-        tk.Label(capture, text="Add a fact", bg=PANEL, fg=WHITE, font=("Inter",-body_px,"bold")).pack(side="left", padx=(0,12))
+        tk.Label(capture, text="Add a fact", width=10, anchor="w", bg=PANEL, fg=WHITE, font=("Inter",-body_px,"bold")).pack(side="left", padx=(0,4))
         field = ttk.Entry(capture, textvariable=self.fact, font=body_font)
         field.pack(side="left", expand=True, fill="x")
         field.bind("<ButtonPress-1>", lambda event: field.focus_force(), add="+")
@@ -179,6 +192,15 @@ class Browser:
         root.bind("<Control-f>", lambda event: self.search.focus_force())
         root.after_idle(self.open_catalog)
         root.after_idle(field.focus_force)
+
+    # ------------------------=
+    # FUNC: edit_event
+    # DESC: Routes clipboard actions to the active editable field.
+    # ------------------=
+    def edit_event(self, operation):
+        field = self.root.focus_get()
+        if isinstance(field, (ttk.Entry, tk.Text)) and not isinstance(field, ttk.Combobox):
+            field.event_generate(f"<<{operation}>>")
 
     # ------------------------=
     # FUNC: open_catalog

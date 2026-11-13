@@ -6,7 +6,7 @@ The left pane presents up to six record summaries. The inspector uses a fixed he
 
 The current workspace reference is `infinity-memory-workspace-reference.png`. The first field adds a fact with debounced durable save; the second searches the catalog. Use a readable 17–20 logical pixel body, a full-width capture row, and a wider selected-record inspector. Display autosave success only after the owner-scoped receipt.
 
-Workspace refinement: reuse the generated Memory glyph alongside the display title.
+Workspace refinement: the compositor owns the sole window title. A compact File, Edit and View menu strip starts the client area; use the Memory glyph in the launcher. Align the capture and search labels on the same grid.
 Group the capture and search controls on consecutive aligned rows. Below, the Library
 uses single-selection rows with a consistent 32 px rhythm, while the inspector separates
 editable content from record metadata and commit actions. Use the kit's inset field
