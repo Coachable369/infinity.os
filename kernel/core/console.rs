@@ -2830,10 +2830,19 @@ impl ConsoleRuntime {
         self.system_focus = 1;
         self.reset_input();
         crate::runtime::with_runtime(|runtime| {
-            if runtime.identity.machine().is_some() {
+            if let Some(machine) = runtime.identity.machine() {
+                let name = machine.display_name.as_bytes();
+                self.onboarding_machine[..name.len()].copy_from_slice(name);
+                self.onboarding_machine_length = name.len();
                 self.system_step = 2;
             }
             if let Some(user) = runtime.identity.user_nth(0) {
+                let handle = user.handle.as_bytes();
+                let name = user.display_name.as_bytes();
+                self.onboarding_handle[..handle.len()].copy_from_slice(handle);
+                self.onboarding_handle_length = handle.len();
+                self.onboarding_name[..name.len()].copy_from_slice(name);
+                self.onboarding_name_length = name.len();
                 self.current_user = user.id;
                 // A restarted first boot asks for the existing credential again before
                 // completing. This reconstructs authority without persisting a password
