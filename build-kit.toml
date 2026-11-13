@@ -291,3 +291,8 @@ clean = false
 [profiles.aikit-memory-tests]
 command = ["make", "aikit-memory-test"]
 clean = false
+
+[profiles.studio-password-confirmation]
+domain = "studio"
+command = ["sh", "tools/password-confirmation-render.sh"]
+clean = false

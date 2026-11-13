@@ -396,6 +396,7 @@ fn main() {
     if std::env::args().any(|arg|arg=="--task-management-only") {task_management_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--settings-only") {settings_native_render_tests::verify();return;}
     if std::env::args().any(|arg|arg=="--face-enrollment-only") {configuration_wizard_render::verify_face();return;}
+    if std::env::args().any(|arg|arg=="--password-confirmation") {configuration_wizard_render::verify_password_pair();return;}
     if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}
     if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
     if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}

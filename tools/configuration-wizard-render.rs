@@ -894,3 +894,39 @@ pub(super) fn verify() {
     std::fs::write(format!("{output}/evidence.json"),format!(
         "{{\"semantic_control_pixel_comparisons\":{comparisons},\"configuration_scene_pixels\":{screen_pixels},\"configuration_scenes\":16,\"installer_template_scenes\":26,\"native_compositor\":true,\"native_fonts\":true,\"installed_verified\":false,\"dynamic_network_scene_verified\":true}}\n")).unwrap();
 }
+
+// ------------------------=
+// FUNC: verify_password_pair
+// DESC: Verifies typing in either masked field changes pixels only inside that field.
+// ------------------=
+pub(super) fn verify_password_pair() {
+    let out = "builds/validation/password-confirmation";
+    std::fs::create_dir_all(out).unwrap();
+    for (w,h) in [(1280,800),(1920,1080)] {
+        let layout = crate::ui::system_layout::SystemLayout::new(w,h);
+        let first = layout.onboarding_input_geometry(4).unwrap();
+        let second = layout.onboarding_confirmation_geometry(4).unwrap();
+        assert_eq!((first.x,first.width,first.height),(second.x,second.width,second.height));
+        assert!(second.y > first.bottom());
+        let render = |input: &[u8]| {
+            let mut pixels = vec![0; w*h];
+            assert!(display(&mut pixels,w,h).configuration_template_scene_data(CONFIGURATION_TEMPLATE_BYTES,4,1,
+                template_compositor::ConfigurationViewState{input,masked:true,validation_error:false,network:None}));
+            pixels
+        };
+        let empty = render(b"\0");
+        write_ppm(&format!("{out}/password-{w}x{h}.ppm"),&empty,w,h);
+        for (input,rect) in [(b"********\0".as_slice(),first),(b"\0********".as_slice(),second)] {
+            let changed = render(input);
+            let mut count = 0;
+            for (i,(a,b)) in empty.iter().zip(&changed).enumerate() {
+                if a != b {
+                    let (x,y)=((i%w) as i32,(i/w) as i32);
+                    assert!(x>=rect.x && x<rect.right() && y>=rect.y && y<rect.bottom());
+                    count+=1;
+                }
+            }
+            assert!(count>10);
+        }
+    }
+}
