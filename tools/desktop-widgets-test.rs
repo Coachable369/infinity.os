@@ -22,7 +22,8 @@ fn visible_brand_opens_menu_and_ai_clears_dock() {
         let panel=State::new().rect(1,width,height,scale,false);
         assert!(panel.bottom() <= height.saturating_sub(82*scale) as i32);
         let composer=desktop_template::bounds(3,68,width,height).unwrap();
-        assert!(composer.bottom() <= panel.bottom());
+        let base=desktop_template::bounds(3,2,width,height).unwrap();
+        assert!(composer.bottom()+panel.y-base.y <= panel.bottom());
     }
 }
 // ------------------------=
@@ -32,8 +33,12 @@ fn visible_brand_opens_menu_and_ai_clears_dock() {
 #[test]
 fn authored_defaults_match_preview_at_every_resolution() {
     for (w,h,s) in [(800,600,1),(1280,800,1),(1536,1024,1),(3840,2160,2)] {
+        let mut state=State::new();
+        assert_eq!(state.visible,2);
+        assert_eq!(state.rect(1,w,h,s,false).y,state.rect(0,w,h,s,false).y);
+        state.visible=3;
         for id in 0..2 {
-            assert_eq!(State::new().rect(id,w,h,s,false),desktop_template::bounds((id+2)as u8,2,w,h).unwrap());
+            assert_eq!(state.rect(id,w,h,s,false),desktop_template::bounds((id+2)as u8,2,w,h).unwrap());
         }
     }
 }
@@ -109,6 +114,9 @@ fn damage_is_bounded_and_idle_is_clean() {
     let _ = take_damage(1920, 1080, 1);
     assert_eq!(take_damage(1920, 1080, 1), None);
     let mut state = current();
+    state.visible=3;
+    publish(state);
+    let _=take_damage(1920,1080,1);
     state.drag = Some((0, 10, 10));
     publish(state);
     assert_eq!(take_damage(1920, 1080, 1), None);

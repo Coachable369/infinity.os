@@ -18,6 +18,27 @@ pub mod navigation;
 pub mod shortcuts;
 #[path = "window_controls.rs"]
 pub mod window_controls;
+static HIGHLIGHT_FOCUS: AtomicUsize = AtomicUsize::new(0);
+static HIGHLIGHT_LEVEL: AtomicUsize = AtomicUsize::new(255);
+
+// ------------------------=
+// FUNC: animate_highlight
+// DESC: Raises the active tile over a short elapsed-time transition after focus changes.
+// ------------------=
+pub fn animate_highlight(focus:usize, elapsed:usize, reduced:bool)->bool {
+    let moved=HIGHLIGHT_FOCUS.swap(focus,Ordering::Relaxed)!=focus;
+    let old=HIGHLIGHT_LEVEL.load(Ordering::Relaxed);
+    let next=if reduced {255} else {(if moved {0} else {old}).saturating_add(elapsed.min(128)*2).min(255)};
+    HIGHLIGHT_LEVEL.store(next,Ordering::Relaxed);
+    moved || old!=next
+}
+
+// ------------------------=
+// FUNC: highlight_level
+// DESC: Reads eased keyboard and pointer selection emphasis for the grid painter.
+// ------------------=
+pub fn highlight_level()->usize {motion::ease_byte(HIGHLIGHT_LEVEL.load(Ordering::Relaxed) as u8) as usize}
+
 const LAUNCHER_DRAG_THRESHOLD: i32 = 8;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -586,6 +607,7 @@ pub fn launcher_interaction_state_hash() -> u64 {
     let presentation = launcher_presentation();
     LAUNCHER_ORDER[0].load(Ordering::Relaxed)
         ^ LAUNCHER_ORDER[1].load(Ordering::Relaxed).rotate_left(13)
+        ^ (highlight_level() as u64).rotate_left(12)
         ^ (presentation.scroll as u64).rotate_left(7)
         ^ (presentation.drag_source.unwrap_or(0xff) as u64).rotate_left(27)
         ^ (presentation.drag_target.unwrap_or(0xff) as u64).rotate_left(35)

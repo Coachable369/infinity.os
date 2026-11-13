@@ -1,7 +1,8 @@
 //! Launcher copies and pointer capture; only the UI thread publishes this state.
 use super::{LAUNCHER_APPS, LAUNCHER_NO_ITEM};
 
-pub const STATE_BYTES: usize = 9 + 5 * LAUNCHER_APPS.len();
+const OLD_BYTES: usize = 9 + 5 * LAUNCHER_APPS.len();
+pub const STATE_BYTES: usize = OLD_BYTES + 6 * 17;
 const LEGACY_STATE_BYTES: usize = 84;
 const PATH_PREFIX: &[u8] = b"/home/default/.launcher-layout-";
 // ------------------------=
@@ -19,11 +20,43 @@ pub fn user_path(user: [u8; 16]) -> [u8; PATH_PREFIX.len() + 32] {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
+    pub pins: [[u8;17];6],
     pub positions: [[u16; 2]; LAUNCHER_APPS.len()],
     pub drag: Option<(usize, i32, i32, bool)>,
     pub pointer: [i32; 2],
 }
 impl State {
+    // ------------------------=
+    // FUNC: pin
+    // DESC: Replaces one app slot, retaining a stable catalog identity across logins.
+    // ------------------=
+    pub fn pin(&mut self, slot: usize, entry: super::VisibleEntry) -> bool {
+        let Some(pin) = slot.checked_sub(1).and_then(|i|self.pins.get_mut(i)) else {return false;};
+        let mut key = [0;17];
+        if let super::LauncherAction::Generated(id) = entry.action {
+            key[0]=2;
+            key[1..].copy_from_slice(&id);
+        } else if let Some(index)=LAUNCHER_APPS.iter().position(|app|app.action==entry.action && app.label==entry.label()) {
+            key[0]=1;
+            key[1]=index as u8;
+        } else {return false;}
+        *pin=key;
+        true
+    }
+
+    // ------------------------=
+    // FUNC: pinned
+    // DESC: Resolves current artwork and action, including registered generated applications.
+    // ------------------=
+    pub fn pinned(&self, slot: usize) -> Option<super::VisibleEntry> {
+        let pin=self.pins.get(slot.checked_sub(1)?)?;
+        match pin[0] {
+            1=>LAUNCHER_APPS.get(pin[1] as usize).copied().map(super::VisibleEntry::from_builtin),
+            2=>super::generated_entries().into_iter().flatten().find(|e|matches!(e.action,super::LauncherAction::Generated(id) if id[..]==pin[1..])),
+            _=>None,
+        }
+    }
+
     // ------------------------=
     // FUNC: stationary_positions
     // DESC: Omits the captured shortcut while its single moving presentation is visible.
@@ -41,6 +74,7 @@ impl State {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            pins: [[0;17];6],
             positions: [[0; 2]; LAUNCHER_APPS.len()],
             drag: None,
             pointer: [0; 2],
@@ -93,7 +127,7 @@ impl State {
     // ------------------=
     pub fn encode(self, order: [u8; LAUNCHER_APPS.len()]) -> [u8; STATE_BYTES] {
         let mut out = [0; STATE_BYTES];
-        out[..4].copy_from_slice(b"IAP2");
+        out[..4].copy_from_slice(b"IAP3");
         out[4..4 + LAUNCHER_APPS.len()].copy_from_slice(&order);
         let positions_at = 4 + LAUNCHER_APPS.len() + 1;
         for (i, p) in self.positions.iter().enumerate() {
@@ -101,6 +135,10 @@ impl State {
                 .copy_from_slice(&p[0].to_le_bytes());
             out[positions_at + 2 + i * 4..positions_at + 4 + i * 4]
                 .copy_from_slice(&p[1].to_le_bytes());
+        }
+        for (i,pin) in self.pins.iter().enumerate() {
+            let start = OLD_BYTES - 4 + 17*i;
+            out[start..start+17].copy_from_slice(pin);
         }
         let checksum_at = STATE_BYTES - 4;
         let sum = checksum(&out[..checksum_at]);
@@ -115,16 +153,17 @@ impl State {
         let legacy = bytes.len() == LEGACY_STATE_BYTES && &bytes[..4] == b"IAP1";
         // IAP2 contains five bytes per registered app and nine bytes of framing.
         // New entries append to the permutation without moving saved shortcuts.
-        let current = (94..=STATE_BYTES).contains(&bytes.len()) && (bytes.len()-9)%5==0;
+        let with_pins = (94+102..=STATE_BYTES).contains(&bytes.len()) && (bytes.len()-111)%5==0 && bytes.starts_with(b"IAP3");
+        let current = (94..=OLD_BYTES).contains(&bytes.len()) && (bytes.len()-9)%5==0;
         let current = current && bytes.get(..4) == Some(b"IAP2");
         let checksum_at = bytes.len().checked_sub(4)?;
-        if (!legacy && !current)
+        if (!legacy && !current && !with_pins)
             || checksum(&bytes[..checksum_at])
                 != u32::from_le_bytes(bytes[checksum_at..].try_into().ok()?)
         {
             return None;
         }
-        let stored_count = if legacy { 15 } else { (bytes.len() - 9) / 5 };
+        let stored_count = if with_pins { (bytes.len()-111)/5 } else if legacy { 15 } else { (bytes.len() - 9) / 5 };
         if stored_count > LAUNCHER_APPS.len() {
             return None;
         }
@@ -152,6 +191,13 @@ impl State {
             );
             if *p != [0, 0] && (!(35..=930).contains(&p[0]) || !(90..=840).contains(&p[1])) {
                 return None;
+            }
+        }
+        if with_pins {
+            for (i,pin) in state.pins.iter_mut().enumerate() {
+                let start = 5 + stored_count*5 + 17*i;
+                pin.copy_from_slice(&bytes[start..start+17]);
+                if pin[0]>2 || pin[0]==1 && pin[1] as usize>=LAUNCHER_APPS.len(){return None;}
             }
         }
         Some((state, order))

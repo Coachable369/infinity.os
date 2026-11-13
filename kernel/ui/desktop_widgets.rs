@@ -22,7 +22,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             positions: [[0; 2]; 2],
-            visible: 3,
+            visible: 2,
             drag: None,
             menu: None,
         }
@@ -67,7 +67,7 @@ impl State {
     ) -> Rect {
         let top = height * 7 / 100;
         let overview_height = (330 * scale).min(height * 30 / 100);
-        let default_y = if id == 0 {
+        let default_y = if id == 0 || self.visible & 1 == 0 {
             top
         } else {
             top + overview_height + 20 * scale
@@ -80,7 +80,14 @@ impl State {
         } else {
             bottom.saturating_sub(default_y)
         };
-        let authored=super::desktop_template::bounds((id+2) as u8,2,width,height);
+        let authored=super::desktop_template::bounds((id+2) as u8,2,width,height).map(|mut rect| {
+            if id == 1 && self.visible & 1 == 0 {
+                if let Some(overview) = super::desktop_template::bounds(2,2,width,height) {
+                    rect.y = overview.y;
+                }
+            }
+            rect
+        });
         // Authoring owns the default geometry. Work-area snapping constrains
         // user drags, not saved designs (which may intentionally overlap a dock).
         if self.positions[id] == [0, 0] && !(minimized && id == 1) {
@@ -218,7 +225,7 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
     }
     let mut damage: Option<Rect> = None;
     for id in 0..2 {
-        if old.positions[id] != new.positions[id] || (old.visible ^ new.visible) & (1 << id) != 0 {
+        if old.rect(id,width,height,scale,false) != new.rect(id,width,height,scale,false) || (old.visible ^ new.visible) & (1 << id) != 0 {
             for state in [old, new] {
                 if state.visible & (1 << id) != 0 {
                     let rect = state.rect(id, width, height, scale, false);

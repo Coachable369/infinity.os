@@ -71,6 +71,7 @@ class Browser:
         self.original = ""
         self.original_category = "Semantic"
         self.ids = []
+        self.recent_queries = []
         self.query = tk.StringVar()
         self.filter = tk.StringVar(value=CATEGORIES[0])
         self.mode = tk.StringVar(value="Semantic")
@@ -90,7 +91,8 @@ class Browser:
         self.menus = {}
         for title, entries in (
             ("File", (("New memory", self.new, "Ctrl+N"), ("Save memory", self.save, "Ctrl+S"), ("Close", self.close, ""))),
-            ("Edit", (("Cut", lambda: self.edit_event("Cut"), ""), ("Copy", lambda: self.edit_event("Copy"), ""),
+            ("Edit", (("Undo typing", lambda: self.history(False), ""), ("Redo typing", lambda: self.history(True), ""),
+                      ("Copy fact", self.copy_fact, ""), ("Duplicate as draft", self.duplicate, ""), ("Cut", lambda: self.edit_event("Cut"), ""), ("Copy", lambda: self.edit_event("Copy"), ""),
                       ("Paste", lambda: self.edit_event("Paste"), ""), ("Delete selected memory…", self.remove, ""))),
             ("View", (("Find memories", lambda: self.search.focus_force(), "Ctrl+F"),
                       ("Clear search", lambda: self.query.set(""), ""), ("Refresh library", self.refresh, "")))):
@@ -102,6 +104,8 @@ class Browser:
                 menu.add_command(label=label, command=action, accelerator=shortcut)
             button.configure(menu=menu)
             button.pack(side="left")
+        self.recent_menu = tk.Menu(self.menus["View"], tearoff=False, bg=PANEL, fg=WHITE, activebackground="#244F96")
+        self.menus["View"].add_cascade(label="Recent searches", menu=self.recent_menu, state="disabled")
         self.fact_id = 0
         self.fact_job = None
         self.fact_last = ""
@@ -122,6 +126,8 @@ class Browser:
         ttk.Label(controls, text="Search", width=10, anchor="w").pack(side="left", padx=(12, 4))
         self.search = ttk.Entry(controls, textvariable=self.query, font=body_font)
         self.search.bind("<ButtonPress-1>", lambda event: self.search.focus_force(), add="+")
+        self.search.bind("<Return>", lambda event: self.remember_search())
+        self.search.bind("<FocusOut>", lambda event: self.remember_search())
         self.search.pack(side="left", expand=True, fill="x")
         for var, options in ((self.mode, ("Semantic", "Keyword")), (self.filter, CATEGORIES)):
             box = ttk.Combobox(controls, textvariable=var, values=options, width=11, state="readonly", font=body_font)
@@ -154,7 +160,7 @@ class Browser:
                  font=("Inter",-13)).pack(expand=True)
         tk.Label(right, textvariable=self.heading, bg=PANEL, fg=WHITE, font=("Inter", -body_px-5, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
         tk.Label(right, text="Fact", bg=PANEL, fg=MUTED, font=("Inter",-14,"bold")).pack(anchor="w", padx=14, pady=(0,4))
-        self.editor = tk.Text(right, height=3, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
+        self.editor = tk.Text(right, undo=True, maxundo=80, height=3, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
                               font=body_font, padx=12, pady=10, relief="flat", bd=0, highlightthickness=1,
                               highlightbackground="#405D80", highlightcolor="#86C7FF")
         self.editor.bind("<ButtonPress-1>", lambda event: self.editor.focus_force(), add="+")
@@ -179,6 +185,7 @@ class Browser:
         self.delete = self.button(buttons, "Delete", self.remove)
         self.delete.configure(state="disabled")
         self.delete.pack(side="left")
+        self.button(buttons, "Copy fact", self.copy_fact).pack(side="left", padx=6)
         self.commit = self.button(buttons, "Save", self.save, True)
         self.commit.pack(side="right")
         # Reserve the actions and metadata before allocating the flexible editor.
@@ -192,6 +199,64 @@ class Browser:
         root.bind("<Control-f>", lambda event: self.search.focus_force())
         root.after_idle(self.open_catalog)
         root.after_idle(field.focus_force)
+
+    # ------------------------=
+    # FUNC: remember_search
+    # DESC: Keeps the last six distinct queries in this window for one-click recall.
+    # ------------------=
+    def remember_search(self):
+        query = self.query.get().strip()
+        if not query:
+            return
+        self.recent_queries = [query] + [q for q in self.recent_queries if q != query][:5]
+        self.recent_menu.delete(0, "end")
+        for value in self.recent_queries:
+            self.recent_menu.add_command(label=value[:48], command=lambda q=value: self.query.set(q))
+        self.menus["View"].entryconfigure("Recent searches", state="normal")
+
+    # ------------------------=
+    # FUNC: copy_fact
+    # DESC: Copies the complete visible draft without requiring a text selection.
+    # ------------------=
+    def copy_fact(self):
+        text = self.editor.get("1.0", "end-1c")
+        if text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.status.set("Fact copied to clipboard")
+
+    # ------------------------=
+    # FUNC: duplicate
+    # DESC: Starts an independent draft with the selected content and category.
+    # ------------------=
+    def duplicate(self):
+        if not self.record or self.confirmation is not None:
+            return
+        text, category = self.editor.get("1.0", "end-1c"), self.category.get()
+        # Switching to a copy must not silently discard edits to the original.
+        self.discard(lambda: self.start_copy(text, category))
+
+    # ------------------------=
+    # FUNC: start_copy
+    # DESC: Opens the confirmed copy with its own typing history.
+    # ------------------=
+    def start_copy(self, text, category):
+        self.reset()
+        self.editor.insert("1.0", text)
+        self.editor.edit_reset()
+        self.category.set(category)
+        self.heading.set("Copy of memory")
+        self.status.set("Edit this copy and save it as a new memory.")
+
+    # ------------------------=
+    # FUNC: history
+    # DESC: Restores or reapplies edits within the current record only.
+    # ------------------=
+    def history(self, redo):
+        try:
+            (self.editor.edit_redo if redo else self.editor.edit_undo)()
+        except tk.TclError:
+            self.status.set("Nothing to redo" if redo else "Nothing to undo")
 
     # ------------------------=
     # FUNC: edit_event
@@ -419,7 +484,8 @@ class Browser:
         self.category.set(self.original_category)
         self.editor.delete("1.0", "end")
         self.editor.insert("1.0", content)
-        self.heading.set("Memory details")
+        self.editor.edit_reset()
+        self.heading.set(f"{self.original_category} memory")
         for field, value in zip(self.metadata,(source, f"#{identity}  ·  {model or 'Keyword'}" +
                                                   (f" / {dimensions}d" if dimensions else ""),
                                                   stamp(created), stamp(updated))):
@@ -457,6 +523,7 @@ class Browser:
         self.editor.delete("1.0", "end")
         self.listbox.selection_remove(*self.listbox.selection())
         self.editor.focus_force()
+        self.editor.edit_reset()
         self.heading.set("New memory")
         for field in self.metadata:
             field.set("—")

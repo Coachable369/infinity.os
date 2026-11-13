@@ -139,8 +139,12 @@ fn shortcut_drag_and_persistence() {
     s.place(6, 400, 500);
     s.drag = None;
     let order = app_launcher::launcher_presentation().order;
+    let app = app_launcher::launcher_visible_entry(b"",3).unwrap();
+    assert!(!s.pin(0,app) && !s.pin(7,app));
+    assert!(s.pin(4,app));
     let encoded = s.encode(order);
     let (restored, restored_order) = State::decode(&encoded).unwrap();
+    assert_eq!(restored.pinned(4),Some(app));
     assert_eq!(restored.positions, s.positions);
     assert_eq!(restored.drag, None);
     assert_eq!(restored_order, order);

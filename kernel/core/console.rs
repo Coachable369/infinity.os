@@ -9676,6 +9676,11 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
                     Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
                     Some(DesktopTarget::Dock(index)) => {
+                        if let Some(entry)=crate::ui::app_launcher::shortcuts::current().pinned(index) {
+                            self.activate_launcher_action(entry.action);
+                            self.redraw();
+                            return;
+                        }
                         match DESKTOP_DOCK_ENTRIES.get(index).map(|entry| entry.action) {
                             Some(DockAction::Launcher) => self.open_app_launcher(),
                             Some(DockAction::Files) => {
@@ -9740,6 +9745,11 @@ impl ConsoleRuntime {
                     },self.pointer_x,self.pointer_y);
                 }
                 let presentation=crate::ui::app_launcher::launcher_presentation();
+                if released && presentation.drag_moved {
+                    if let Some(entry)=crate::ui::app_launcher::launcher_visible_entry(&self.command[..self.command_length],source) {
+                        if self.pin_at_pointer(entry) {return;}
+                    }
+                }
                 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 if (left_button || released) && presentation.drag_moved && target==AppLauncherTarget::Dismiss {
                     if let Some(id)=crate::ui::app_launcher::launcher_visible_app_id(&self.command[..self.command_length],source) {
@@ -15076,7 +15086,8 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
         }
         let drag_changed = crate::ui::desktop_drag::advance(
             crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000);
-        let effects_changed=runtime.advance_desktop_effects() || drag_changed;
+        let pin_changed=crate::ui::desktop_polish::advance_pin(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000);
+        let effects_changed=runtime.advance_desktop_effects() || drag_changed || pin_changed;
         let mut frame_changed = motion_frame || assistant_changed || effects_changed;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
             runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);
@@ -15148,7 +15159,7 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
             runtime.redraw();
             return true;
         }
-        if tick.changed {
+        if crate::ui::app_launcher::animate_highlight(runtime.system_focus,elapsed_ms,runtime.spatial.state.reduced_motion) || tick.changed {
             frame_changed = true;
         }
         if frame_changed {

@@ -66,6 +66,20 @@ impl DisplayDevice {
                 1,
             );
         }
+        // Grip, window count and scroll position remain visible independently of selection.
+        let grip_width=(w/4).max(1);
+        self.fill_rounded_rect_alpha(x+(w-grip_width)/2,y+6,grip_width,3,1,151,192,220,160);
+        let count=state.count();
+        if count>0 && state.drag.is_none() {
+            let digits=[b'0'+(count/10) as u8,b'0'+(count%10) as u8];
+            self.ui_text_centered(x,w,y+12,if count<10 {&digits[1..]} else {&digits},154,211,238,1);
+        }
+        if count>g.capacity {
+            let track=h.saturating_sub(56);
+            let thumb=(track*g.capacity/count).max(4).min(track);
+            let offset=(track-thumb)*state.offset.min(count-g.capacity)/(count-g.capacity);
+            self.fill_rounded_rect_alpha(x+w-5,y+32+offset,3,thumb,1,106,197,235,200);
+        }
         if state.count() == 0 {
             self.ui_text_centered(x, w, y + h / 2 + w / 3, b"None", 143, 174, 195, 1);
         }

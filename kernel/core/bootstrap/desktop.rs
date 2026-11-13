@@ -6424,7 +6424,13 @@ impl super::DisplayDevice {
     // ------------------=
     fn desktop_dock(&mut self, scale: usize, launcher_open: bool) {
         if let Some(scene) = crate::ui::desktop_template::dock_scene() {
-            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[]);
+            let pins=crate::ui::app_launcher::shortcuts::current();
+            let mut skip=[0u8;6];
+            let mut count=0;
+            for slot in 1..=6 {
+                if pins.pinned(slot).is_some() {skip[count]=73+slot as u8;count+=1;}
+            }
+            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&skip[..count]);
             let hovered = match crate::ui::desktop_polish::current() {
                 crate::ui::desktop_polish::HoverTarget::Dock(index)=>Some(index),_=>None,
             };
@@ -6435,7 +6441,27 @@ impl super::DisplayDevice {
                 if hovered==Some(index) || (index==0 && launcher_open) {
                     self.app_card_alpha(r,(16,27,58),(134,199,255),0,scale);
                 }
-                if index!=0 && crate::ui::desktop_polish::dock_running(index,launcher_open,
+                let pinned=pins.pinned(index);
+                if let Some(entry)=pinned {
+                    self.launcher_icon(r.x.max(0) as usize+r.width as usize/2,r.y.max(0) as usize+r.height as usize/2,
+                        entry.icon_role,(r.width.min(r.height) as usize*9/10).max(1));
+                }
+                let light=crate::ui::desktop_polish::pin_light(index);
+                if light>0 {
+                    let travel=r.width as usize;
+                    let offset=travel*(255-light)/255;
+                    self.fill_rounded_rect_alpha(r.x.max(0) as usize+offset,r.bottom().saturating_sub(4*scale as i32).max(0) as usize,
+                        (10*scale).min(travel-offset),3*scale,scale,104,218,255,light as u8);
+                }
+                if hovered==Some(index) {
+                    let label=pinned.as_ref().map(|e|e.label()).unwrap_or(crate::ui::desktop_polish::dock_label(index));
+                    let width=self.ui_text_width(label,1)+16*scale;
+                    let x=(r.x.max(0) as usize+r.width as usize/2).saturating_sub(width/2).min(self.width.saturating_sub(width));
+                    let y=(r.y.max(0) as usize).saturating_sub(30*scale);
+                    self.fill_rounded_rect_alpha(x,y,width,26*scale,8*scale,10,26,48,240);
+                    self.ui_text_centered_strong(x,width,y+4*scale,label,220,238,255,1);
+                }
+                if pinned.is_none() && index!=0 && crate::ui::desktop_polish::dock_running(index,launcher_open,
                     stack.visible,stack.settings_section,widgets.visible&2!=0) {
                     let size=(3*scale).min(r.width as usize).min(r.height as usize);
                     self.fill_rounded_rect_alpha((r.x.max(0)as usize+r.width as usize/2).saturating_sub(size/2),
@@ -6513,6 +6539,8 @@ impl super::DisplayDevice {
             );
             if index == 0 {
                 self.launcher_dock_icon(x, icon_top, size, launcher_open || is_hovered);
+            } else if let Some(app)=crate::ui::app_launcher::shortcuts::current().pinned(index) {
+                self.launcher_icon(x+size/2,icon_top+size/2,app.icon_role,size);
             } else {
                 self.desktop_app_icon(
                     x,
@@ -6536,7 +6564,8 @@ impl super::DisplayDevice {
             }
         }
         if let Some(index) = hovered {
-            let label = crate::ui::desktop_polish::dock_label(index);
+            let pinned=crate::ui::app_launcher::shortcuts::current().pinned(index);
+            let label=pinned.as_ref().map(|e|e.label()).unwrap_or(crate::ui::desktop_polish::dock_label(index));
             let label_width = self.ui_text_width(label, 1) + 20 * scale;
             let center = dock_left + icon_gap / 2 + index * icon_gap + 23 * scale;
             let left = center
@@ -7615,7 +7644,12 @@ pub fn system_ui_present(
                         left:rect.x.max(0) as usize,top:rect.y.max(0) as usize,
                         right:rect.right().max(0) as usize,bottom:rect.bottom().max(0) as usize});}
                 }
-                for damage in [crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                let dock_damage=crate::ui::desktop_polish::take_dock_damage().then(|| {
+                    let dock=crate::ui::desktop_template::dock_scene().and_then(|s|crate::ui::desktop_template::bounds(s,72,console.display.width,console.display.height)).unwrap_or(layout.desktop_foreground_geometry().dock);
+                    let margin=40*layout.scale() as u32;
+                    crate::ui::geometry::Rect{x:0,y:(dock.y-margin as i32).max(0),width:console.display.width as u32,height:dock.height+margin}
+                });
+                for damage in [dock_damage,crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {

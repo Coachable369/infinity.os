@@ -296,3 +296,8 @@ clean = false
 domain = "studio"
 command = ["sh", "tools/password-confirmation-render.sh"]
 clean = false
+
+[profiles.studio-desktop-refinement]
+domain = "studio"
+command = ["sh", "tools/desktop-refinement-test.sh"]
+clean = false

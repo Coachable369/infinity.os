@@ -145,19 +145,20 @@ impl DisplayDevice {
             let well_size = geometry
                 .grid_cell_width
                 .min(geometry.grid_row_height)
-                .saturating_mul(70)
+                .saturating_mul(63)
                 / 100;
             let well_left = cell_left + geometry.grid_cell_width.saturating_sub(well_size) / 2;
-            let well_top = cell_top + 3 * scale;
+            let emphasis=if selected {crate::ui::app_launcher::highlight_level()} else {0};
+            let well_top=cell_top + 3*scale - 2*scale*emphasis/255;
             self.fill_rounded_rect_alpha(
                 well_left,
                 well_top,
                 well_size,
                 well_size,
                 13 * scale,
-                7,
-                28,
-                49,
+                (7+14*emphasis/255) as u8,
+                (28+44*emphasis/255) as u8,
+                (49+62*emphasis/255) as u8,
                 186,
             );
             self.outline_rounded_rect(
@@ -221,7 +222,7 @@ impl DisplayDevice {
                     let ghost_size = geometry
                         .grid_cell_width
                         .min(geometry.grid_row_height)
-                        .saturating_mul(70)
+                        .saturating_mul(63)
                         / 100;
                     let center_x = (self.width as i32 * presentation.drag_x / 1000)
                         .clamp(0, self.width.saturating_sub(1) as i32)

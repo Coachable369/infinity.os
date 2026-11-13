@@ -4,6 +4,27 @@ use crate::ui::app_launcher::{self as launcher, shortcuts};
 use crate::ui::geometry::Point;
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: pin_at_pointer
+    // DESC: Commits a launcher drop on one of the six customizable application slots.
+    // ------------------=
+    pub(super) fn pin_at_pointer(&mut self, entry:launcher::VisibleEntry) -> bool {
+        let crate::ui::desktop_polish::HoverTarget::Dock(slot) = crate::ui::desktop_polish::target(
+            self.system.framebuffer_width,self.system.framebuffer_height,self.pointer_x,self.pointer_y) else {return false;};
+        let mut state=shortcuts::current();
+        if !state.pin(slot,entry) {return false;}
+        state.drag=None;
+        shortcuts::publish(state);
+        shortcuts::cancel_launcher_drag();
+        self.save_app_shortcuts();
+        let time=crate::ui::performance::monotonic_ns();
+        crate::ui::desktop_polish::illuminate_pin(slot,time.unwrap_or(0)/1_000_000,self.spatial.state.reduced_motion || time.is_none());
+        self.mode=ConsoleMode::Desktop;
+        self.reset_input();
+        self.redraw();
+        true
+    }
+
+    // ------------------------=
     // FUNC: save_app_shortcuts
     // DESC: Commits desktop copies and launcher ordering after release, never during pointer motion.
     // ------------------=
@@ -168,6 +189,7 @@ impl ConsoleRuntime {
                 self.pointer_y,
             );
         }
+        if released && moved && self.pin_at_pointer(launcher::VisibleEntry::from_builtin(launcher::LAUNCHER_APPS[id])) {return true;}
         if released {
             if !moved {
                 self.activate_launcher_action(launcher::LAUNCHER_APPS[id].action);
