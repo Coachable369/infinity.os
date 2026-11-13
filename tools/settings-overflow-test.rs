@@ -324,7 +324,14 @@ fn verify_authored_row_flow() {
     assert!(ui::settings_template::element_identity(0, [0; 16]).is_none());
     for (width, height) in [(1024, 768), (1366, 768), (1920, 1080), (2048, 2048), (2560, 1440)] {
         let layout = SystemLayout::new(width, height);
-        for section in [0, 1, 2, 3, 4, 5, 8, 9, 10] {
+        // Accounts owns its heading and form, rather than these expandable Settings rows.
+        // Its viewport must stay within the window at every tested display size.
+        let accounts = layout.settings_window_geometry_for_section(SettingsWindowState {
+            x:80, y:100, width:850, height:760, maximized:false, expanded_row:None,
+            scroll_offset:0, control_focus:0, row_count:5 },2);
+        assert_eq!(accounts.viewport.intersection(accounts.window),accounts.viewport);
+        assert!(accounts.viewport.width > 0 && accounts.viewport.height > 0);
+        for section in [0, 1, 3, 4, 5, 8, 9, 10] {
             let console = ui::settings_template::element(section, Role::Console).unwrap().frame;
             let count = if matches!(section, 1 | 8 | 10) { 8 } else if section == 3 { 7 } else { 5 };
             let collapsed = SettingsWindowState { x: 80, y: 100, width: 850, height: 760,
