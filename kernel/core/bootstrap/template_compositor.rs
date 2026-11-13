@@ -420,13 +420,23 @@ impl DisplayDevice {
                 if let Some(state)=configuration_state {
                     if element.role==InstallerTemplateRole::Input as u8 {
                         let rect=scale_template_rect(element.frame,self.width,self.height);
+                        let mut fields = state.input.splitn(2, |byte| *byte == 0);
+                        let first = fields.next().unwrap_or_default();
                         self.onboarding_input_field_with_element(Some(element),rect.left,rect.top,rect.width,rect.height,
-                            state.input,state.masked,navigation.is_some_and(|(focus,_,_)|focus==1),element.text);
+                            first,state.masked,navigation.is_some_and(|(focus,_,_)|focus==1),element.text);
+                        let bottom = if state.masked {
+                            let top = rect.top + crate::ui::system_layout::SystemLayout::password_confirmation_offset(rect.height);
+                            self.onboarding_input_field_with_element(Some(element),rect.left,top,rect.width,rect.height,
+                                fields.next().unwrap_or_default(),true,navigation.is_some_and(|(focus,_,_)|focus==2),b"Confirm password");
+                            top + rect.height
+                        } else { rect.bottom() };
                         if state.validation_error {
                             let color=super::access_style::semantic_color(11);
-                            self.access_label((rect.left,rect.bottom().saturating_add(8*self.ui_scale().max(1)),
+                            self.access_label((rect.left,bottom.saturating_add(8*self.ui_scale().max(1)),
                                 rect.width,24*self.ui_scale().max(1)),
-                                if state.masked {b"Use at least eight characters."}else{b"This field is required before continuing."},
+                                if state.masked && first.len()<8 {b"Use at least eight characters."}
+                                else if state.masked {b"Check that both passwords match and try again."}
+                                else {b"This field is required before continuing."},
                                 14*self.ui_scale().max(1),color,false,false);
                         }
                         continue;
@@ -460,7 +470,9 @@ impl DisplayDevice {
                 {
                     let progress=(progress_index,screen.saturating_sub(1) as usize);
                     if element.role==InstallerTemplateRole::ProgressSegment as u8 {progress_index+=1;}
-                    self.access_template_control(element, navigation, progress);
+                    if configuration_state.is_some_and(|state| state.masked) && element.role == InstallerTemplateRole::PrimaryButton as u8 {
+                        self.access_template_control_with_focus(element,navigation,progress,Some(navigation.is_some_and(|(focus,_,_)| focus == 3)));
+                    } else { self.access_template_control(element, navigation, progress); }
                 } else if configuration
                     && element.kind == 3
                 {

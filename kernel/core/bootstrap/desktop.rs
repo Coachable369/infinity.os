@@ -1652,19 +1652,20 @@ impl super::DisplayDevice {
                     b"PROFILE DETAIL"
                 },
                 14 * scale, access::SECONDARY, false, true);
-            self.onboarding_input_field(
-                step,
-                input_left,
-                input_top,
-                input_width,
-                input_height,
-                input,
-                masked,
-                focus == 1,
-                authored_placeholder,
-            );
+            let mut fields = input.splitn(2, |byte| *byte == 0);
+            let first = fields.next().unwrap_or_default();
+            self.onboarding_input_field(step,input_left,input_top,input_width,input_height,
+                first,masked,focus == 1,authored_placeholder);
+            let last_top = if step == 4 {
+                let top = input_top + crate::ui::system_layout::SystemLayout::password_confirmation_offset(input_height);
+                self.onboarding_input_field(step,input_left,top,input_width,input_height,
+                    fields.next().unwrap_or_default(),true,focus == 2,b"Confirm password");
+                top
+            } else { input_top };
             let helper = if validation_error {
-                if step == 4 {
+                if step == 4 && first.len() >= 8 {
+                    b"Check that both passwords match and try again.".as_slice()
+                } else if step == 4 {
                     b"Use at least eight characters.".as_slice()
                 } else {
                     b"This field is required before continuing.".as_slice()
@@ -1674,7 +1675,7 @@ impl super::DisplayDevice {
             } else {
                 b"You can revise this value from Settings later.".as_slice()
             };
-            self.access_label((input_left, input_top + input_height + 10 * scale, input_width, 24 * scale),
+            self.access_label((input_left, last_top + input_height + 10 * scale, input_width, 24 * scale),
                 helper, 14 * scale, if validation_error { access::ERROR } else { access::SECONDARY }, false, false);
         } else if step == 5 {
             let privacy_rows: [(&[u8], &[u8], usize); 4] = [
@@ -1917,6 +1918,7 @@ impl super::DisplayDevice {
             return;
         }
         self.render_clip=previous_clip;
+        if step == 4 { self.onboarding_frame(step,input,masked,focus,validation_error); return; }
         if crate::ui::installer_layout::configuration_template_input_variable(step)
             != crate::ui::installer_template::InstallerTemplateVariable::None
         {
@@ -7540,9 +7542,11 @@ pub fn system_ui_present(
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
             {
-                console
-                    .display
-                    .system_ui_input_field(screen, step, input, masked);
+                if screen == 1 && step == 4 {
+                    console.display.onboarding_focus_controls(step,input,masked,focus,validation_error);
+                } else {
+                    console.display.system_ui_input_field(screen, step, input, masked);
+                }
             } else if content_changed {
                 console.menu_saved = false;
                 console.display.system_ui_frame(

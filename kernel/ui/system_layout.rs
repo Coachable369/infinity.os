@@ -35,6 +35,7 @@ pub enum OnboardingTarget {
     Back,
     Primary,
     Input,
+    Confirmation,
     NetworkChoice(usize),
 }
 
@@ -922,6 +923,9 @@ impl SystemLayout {
         normalized_y: i32,
     ) -> Option<OnboardingTarget> {
         let point = self.point(normalized_x, normalized_y);
+        if self.onboarding_confirmation_geometry(step).is_some_and(|r| r.contains(point)) {
+            return Some(OnboardingTarget::Confirmation);
+        }
         let authored_card = self.onboarding_template_rect(step, InstallerTemplateRole::Console);
         if step != 6 {
             if let Some(field) = self.onboarding_template_rect(step, InstallerTemplateRole::Input) {
@@ -1051,6 +1055,24 @@ impl SystemLayout {
         )
         .contains(point)
         .then_some(OnboardingTarget::Primary)
+    }
+
+    // ------------------------=
+    // FUNC: password_confirmation_offset
+    // DESC: Places equal-height password inputs one third of a field height apart.
+    // ------------------=
+    pub fn password_confirmation_offset(height: usize) -> usize {
+        height + (height / 3).max(1)
+    }
+
+    // ------------------------=
+    // FUNC: onboarding_confirmation_geometry
+    // DESC: Anchors the confirmation field below the original with identical UIKit dimensions.
+    // ------------------=
+    pub fn onboarding_confirmation_geometry(self, step: usize) -> Option<Rect> {
+        if step != 4 { return None; }
+        let field = self.onboarding_input_geometry(step)?;
+        Some(Rect { y: field.y + Self::password_confirmation_offset(field.height as usize) as i32, ..field })
     }
 
     // ------------------------=

@@ -572,6 +572,9 @@ struct ConsoleRuntime {
     onboarding_handle_length: usize,
     onboarding_name: [u8; 48],
     onboarding_name_length: usize,
+    confirmation: [u8; 72],
+    confirmation_length: usize,
+    confirmation_cursor: usize,
     onboarding_secret: [u8; 72],
     onboarding_secret_length: usize,
     current_user: crate::runtime::identity::StableId,
@@ -761,6 +764,9 @@ impl ConsoleRuntime {
             onboarding_handle_length: 0,
             onboarding_name: [0; 48],
             onboarding_name_length: 0,
+            confirmation: [0; 72],
+            confirmation_length: 0,
+            confirmation_cursor: 0,
             onboarding_secret: [0; 72],
             onboarding_secret_length: 0,
             current_user: crate::runtime::identity::StableId::zero(),
@@ -933,7 +939,7 @@ impl ConsoleRuntime {
         if self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)).is_some() {return true;}
         match self.mode {
             ConsoleMode::Onboarding => {
-                (1..=4).contains(&self.system_step) && self.system_focus == 1
+                (1..=4).contains(&self.system_step) && self.system_focus == 1 || self.system_step == 4 && self.system_focus == 2
             }
             ConsoleMode::Authentication | ConsoleMode::Locked => self.system_focus == 1,
             ConsoleMode::AppLauncher => self.system_focus == 0,
@@ -975,7 +981,7 @@ impl ConsoleRuntime {
         match self.mode {
             ConsoleMode::Onboarding => matches!(
                 layout.onboarding_target(self.system_step, self.pointer_x, self.pointer_y),
-                Some(OnboardingTarget::Input)
+                Some(OnboardingTarget::Input | OnboardingTarget::Confirmation)
             ),
             ConsoleMode::Authentication | ConsoleMode::Locked => {
                 layout.authentication_target(self.pointer_x, self.pointer_y) == Some(1)
@@ -1072,7 +1078,9 @@ impl ConsoleRuntime {
     // DESC: Publishes focused caret and I-beam state immediately before framebuffer composition.
     // ------------------=
     fn publish_text_input_presentation(&self) {
-        let (cursor, kind) = if self.ai_chat_composer_focused() {
+        let (cursor, kind) = if self.mode == ConsoleMode::Onboarding && self.system_step == 4 && self.system_focus == 2 {
+            (self.confirmation_cursor, 1)
+        } else if self.ai_chat_composer_focused() {
             (crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.input_cursor()),3)
         } else if let Some(caret)=self.assistant_owner().and_then(|(id,_)|crate::ui::app_assistant::input_caret(id)) {
             (caret,5)
@@ -1426,7 +1434,13 @@ impl ConsoleRuntime {
                         .copy_from_slice(machine.display_name.as_bytes());
                 }
             }
-            let displayed_input = if self.mode==ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::TextEditor {
+            // Only mask glyphs and a field separator leave the password editor.
+            let mut password_masks = [b'*'; 145];
+            let displayed_input = if self.mode == ConsoleMode::Onboarding && self.system_step == 4 {
+                let first = self.command_length.min(72);
+                password_masks[first] = 0;
+                &password_masks[..first + 1 + self.confirmation_length]
+            } else if self.mode==ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::TextEditor {
                 self.editor_document.bytes()
             } else if self.mode == ConsoleMode::Settings && !self.settings_editing {
                 &settings_value[..settings_value_length]
@@ -6368,6 +6382,40 @@ impl ConsoleRuntime {
     fn input_onboarding(&mut self, key: ConsoleKey) {
         #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if self.system_step==7 {self.input_face_setup(key);return;}
+        if self.system_step == 4 {
+            if self.system_focus == 1 && self.command_length >= self.onboarding_secret.len() && matches!(key, ConsoleKey::Character(_)) { return; }
+            if let ConsoleKey::Tab(reverse) = key {
+                self.system_focus = (self.system_focus + if reverse {3} else {1}) % 4;
+                return;
+            }
+            if self.system_focus == 2 {
+                use crate::ui::text_input as edit;
+                let len = &mut self.confirmation_length;
+                let cursor = &mut self.confirmation_cursor;
+                match key {
+                    ConsoleKey::Character(c) => {edit::insert_ascii(&mut self.confirmation,len,cursor,c);}
+                    ConsoleKey::Backspace => {edit::backspace(&mut self.confirmation,len,cursor);}
+                    ConsoleKey::Delete => {edit::delete(&mut self.confirmation,len,cursor);}
+                    ConsoleKey::Left => {edit::move_caret(cursor,*len,-1);}
+                    ConsoleKey::Right => {edit::move_caret(cursor,*len,1);}
+                    ConsoleKey::Home => {edit::move_caret(cursor,*len,-2);}
+                    ConsoleKey::End => {edit::move_caret(cursor,*len,2);}
+                    ConsoleKey::Enter | ConsoleKey::Escape => {}
+                    _ => return,
+                }
+                if !matches!(key, ConsoleKey::Enter | ConsoleKey::Escape) {
+                    self.onboarding_validation_error = false;
+                    return;
+                }
+            }
+            if matches!(key, ConsoleKey::Enter) && self.system_focus == 1 {
+                self.system_focus = 2;
+                return;
+            }
+            if matches!(key, ConsoleKey::Escape) || matches!(key, ConsoleKey::Enter) && self.system_focus == 0 {
+                self.clear_password_confirmation();
+            }
+        }
         if self.system_step == 6 {
             if matches!(key, ConsoleKey::Tab(_)) {
                 let reverse = matches!(key, ConsoleKey::Tab(true));
@@ -6470,6 +6518,7 @@ impl ConsoleRuntime {
                     self.onboarding_validation_error = true;
                     return;
                 }
+                if self.system_step == 4 { self.clear_password_confirmation(); }
                 self.system_step += 1;
             }
             5 => {
@@ -6587,6 +6636,16 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: clear_password_confirmation
+    // DESC: Discards the verification entry when leaving the password page.
+    // ------------------=
+    fn clear_password_confirmation(&mut self) {
+        self.confirmation.fill(0);
+        self.confirmation_length = 0;
+        self.confirmation_cursor = 0;
+    }
+
+    // ------------------------=
     // FUNC: commit_onboarding_input
     // DESC: Stores the current field bytes in the runtime variable selected by the saved UI template.
     // ------------------=
@@ -6621,7 +6680,8 @@ impl ConsoleRuntime {
                     .copy_from_slice(&self.command[..self.onboarding_name_length]);
             }
             InstallerTemplateVariable::Password => {
-                if self.command_length < 8 || self.command_length > self.onboarding_secret.len() {
+                if self.command_length < 8 || self.command_length > self.onboarding_secret.len()
+                    || self.command[..self.command_length] != self.confirmation[..self.confirmation_length] {
                     return false;
                 }
                 self.onboarding_secret_length = self.command_length;
@@ -8828,7 +8888,13 @@ impl ConsoleRuntime {
             } else if let Some(target) =
                 layout.onboarding_target(self.system_step.min(7), self.pointer_x, self.pointer_y)
             {
+                if self.system_step == 4 && !clicked {
+                    crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);
+                    return;
+                }
                 match target {
+                    OnboardingTarget::Confirmation => self.system_focus = 2,
+                    OnboardingTarget::Primary if self.system_step == 4 => self.system_focus = 3,
                     OnboardingTarget::Back => self.system_focus = 0,
                     OnboardingTarget::Primary | OnboardingTarget::Input => self.system_focus = 1,
                     OnboardingTarget::NetworkChoice(index) => self.system_focus = index + 2,
@@ -8842,7 +8908,12 @@ impl ConsoleRuntime {
                         );
                     }
                 }
-                if clicked && !matches!(target, OnboardingTarget::Input) {
+                if clicked && target == OnboardingTarget::Confirmation {
+                    if let Some(field) = layout.onboarding_confirmation_geometry(self.system_step) {
+                        self.confirmation_cursor = self.clicked_caret_index(field,16 * layout.scale(),self.confirmation_length);
+                    }
+                }
+                if clicked && !matches!(target, OnboardingTarget::Input | OnboardingTarget::Confirmation) {
                     self.input_onboarding(ConsoleKey::Enter);
                 }
             }
