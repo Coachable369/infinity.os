@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#050608">
-  <title>InfinityOS for Investors | Local AI for Dedicated Workstations</title>
-  <meta name="description" content="The investment case for InfinityOS: local inference, persistent user memory and permissioned OS actions for dedicated workstations. Contact Jonathan McAllister.">
-  <meta property="og:title" content="InfinityOS for Investors | Local AI for Dedicated Workstations">
-  <meta property="og:description" content="The investment case for InfinityOS: local inference, persistent user memory and permissioned OS actions for dedicated workstations. Contact Jonathan McAllister.">
+  <title>InfinityOS for Investors | A Presence-Aware, AI-Native Operating System</title>
+  <meta name="description" content="InfinityOS brings local AI, personal memory and native app development into the operating system, with a vision for work that follows you across trusted devices.">
+  <meta property="og:title" content="InfinityOS for Investors | A Presence-Aware, AI-Native Operating System">
+  <meta property="og:description" content="InfinityOS brings local AI, personal memory and native app development into the operating system, with a vision for work that follows you across trusted devices.">
   <meta property="og:image" content="https://www.meetinfinityos.com/assets/infinity-emblem.webp">
   <meta property="og:url" content="https://www.meetinfinityos.com/invest.html">
   <meta name="twitter:card" content="summary_large_image">
@@ -20,7 +20,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="InfinityOS">
   <meta property="og:image:alt" content="InfinityOS infinity emblem">
-  <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "WebPage", "@id": "https://www.meetinfinityos.com/invest.html#page", "url": "https://www.meetinfinityos.com/invest.html", "name": "InfinityOS for Investors | Local AI for Dedicated Workstations", "description": "The investment case for InfinityOS: local inference, persistent user memory and permissioned OS actions for dedicated workstations. Contact Jonathan McAllister.", "isPartOf": {"@id": "https://www.meetinfinityos.com/#website"}}]}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "WebPage", "@id": "https://www.meetinfinityos.com/invest.html#page", "url": "https://www.meetinfinityos.com/invest.html", "name": "InfinityOS for Investors | A Presence-Aware, AI-Native Operating System", "description": "InfinityOS brings local AI, personal memory and native app development into the operating system, with a vision for work that follows you across trusted devices.", "isPartOf": {"@id": "https://www.meetinfinityos.com/#website"}}]}</script>
 </head>
 <body class="whitepaper-page investor-page">
   <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -38,16 +38,16 @@
     <header class="paper-heading">
       <div class="paper-label"><span class="eyebrow">INVESTOR OVERVIEW</span><time datetime="2026-11-13">November 2026</time></div>
       <h1>InfinityOS <span>Investors</span></h1>
-      <p class="paper-subtitle">A workstation that remembers the job and can act on it.</p>
-      <p class="paper-deck">InfinityOS brings inference, user memory and application controls onto the device. Our first commercial hypothesis is a dedicated workstation for teams that need AI assistance even when a cloud connection is unavailable.</p>
+      <p class="paper-subtitle">Tell your computer what you want to accomplish.</p>
+      <p class="paper-deck">InfinityOS is an AI-native operating system built on a custom Rust kernel. You can speak, type or use the desktop to get things done. Its presence-aware vision is simple: when you move to another trusted device, your work should be there with you.</p>
       <a class="text-link" href="#founder">Contact Jonathan McAllister <svg aria-hidden="true"><use href="#arrow"/></svg></a>
     </header>
     <div class="paper-layout">
       <aside class="paper-contents">
         <nav aria-label="Investor overview contents">
           <p class="eyebrow">THE PERSPECTIVE</p>
-          <a href="#architecture"><span>01</span> What exists today</a>
-          <a href="#customer"><span>02</span> First customer</a>
+          <a href="#architecture"><span>01</span> The operating system</a>
+          <a href="#customer"><span>02</span> The Infinity Pool</a>
           <a href="#commercial"><span>03</span> Business model</a>
           <a href="#proof"><span>04</span> Investment milestones</a>
           <a href="#founder"><span>05</span> Founder and contact</a>
@@ -56,18 +56,20 @@
       <article class="paper-body" id="investor-overview" aria-label="InfinityOS investor overview" tabindex="-1">
         <div class="paper-abstract">
           <p class="eyebrow">THE CASE IN BRIEF</p>
-          <p>A company building an AI-enabled device can buy a model. It still has to decide what that model may do, what it should remember between shifts and how the device will work offline. InfinityOS implements those pieces together.</p>
-          <p>The investment thesis is that equipment makers will pay for that integration if it saves them engineering time and helps operators finish real tasks faster. A narrow field pilot can test both assumptions.</p>
+          <p>People already know how to explain a job. The expensive part is translating it into menus, applications and scripts, then doing it all again on the next device. InfinityOS brings local intelligence, memory and the authority to perform supported actions into the same operating system. A request can end in a change to your workspace, with your permissions still in force.</p>
         </div>
-        <section id="architecture" aria-labelledby="architecture-title"><span class="paper-number">01 / WHAT EXISTS TODAY</span><h2 id="architecture-title">From a request to a permitted action.</h2>
-<p>Three parts of InfinityOS already work together:</p>
-<ul><li><strong>Local inference.</strong> The OS runs a packaged language model on the device. A developer can build around local inference without making a hosted model API a prerequisite for every request.</li>
-<li><strong>Account-scoped memory.</strong> A user can save a fact, find it later, correct it or delete it in Infinity Memory. Installed-system checks have exercised editing a record, rebooting from disk and recovering the edit; deleting it and rebooting again removed it. This gives the user control over what the assistant can recall.</li>
-<li><strong>Permissioned actions.</strong> The intent layer represents a supported request as a typed operation. A policy check separates interpreting the request from executing it. An application can expose a specific action without giving the model a general-purpose command shell.</li></ul>
+        <section id="architecture" aria-labelledby="architecture-title">
+          <span class="paper-number">01 / THE OPERATING SYSTEM</span>
+          <h2 id="architecture-title">A computer you can teach. Software you can change.</h2>
+          <p>Tell InfinityOS a fact, restart the machine and ask about it later. The language model runs locally, and the memory belongs to your account. You can open Infinity Memory to see what was saved, correct it or delete it. Voice and text give you a quick way to ask; the desktop gives you a place to inspect the result.</p>
+          <p>That same idea extends to building software. AIKit, IntelligenceKit and DevKit connect the local model and its memory to tools for generating, compiling and running applications. Developers can expose specific app actions through the OS and its permission checks. For a company building a specialized device, that means its engineers can spend their time on the diagnostic tool or classroom application people need, rather than building a speech interface, a memory store and an action system for each product.</p>
         </section>
-        <section id="customer" aria-labelledby="customer-title"><span class="paper-number">02 / FIRST CUSTOMER</span><h2 id="customer-title">Start with a workstation built for one job.</h2>
-<p>Consider an equipment maker shipping a service console to field technicians. A technician could save an installation detail under their account, recall it on a later visit and open the diagnostic application by voice. The equipment maker would supply the diagnostic application and decide which operations it exposes. This is a proposed pilot, not a deployed customer story.</p>
-<p>For the buyer, the question is concrete: does this cut time spent finding context and switching tools enough to justify supporting another operating system? A dedicated console is a better first test than asking an enterprise to replace its employees’ everyday desktops.</p>
+        <section id="customer" aria-labelledby="customer-title">
+          <span class="paper-number">02 / THE INFINITY POOL</span>
+          <h2 id="customer-title">Leave the workstation. Keep the work.</h2>
+          <p>Imagine a technician starting a diagnosis at a desk, then walking to the machine with a tablet. Today the handoff may mean finding the asset number again, reopening the manual and repeating the last check. Our goal is for the tablet to pick up at that check, while the workstation continues the analysis.</p>
+          <p>The Infinity Pool is the architecture behind that vision: trusted devices would share processing power, storage and application capabilities. A lightweight device could use a more capable machine nearby, and a person could change screens without rebuilding their workspace. Cross-device session handoff is a development goal.</p>
+          <p>A field-service console offers a focused first investment test: can an equipment maker integrate its diagnostic application faster, and can its technicians finish a repair with fewer repeated steps? If that works, the same foundation could serve a classroom, a home or a robot, each with its own applications and permissions.</p>
         </section>
         <section id="commercial" aria-labelledby="commercial-title"><span class="paper-number">03 / BUSINESS MODEL</span><h2 id="commercial-title">Sell a supported deployment.</h2>
 <p>We would start with a paid integration pilot on one agreed hardware configuration. If the pilot earns a rollout, the proposed recurring product is a supported OS image: tested updates, compatibility with the customer’s application and a defined support commitment. The customer would pay for a dependable device in the field.</p>
