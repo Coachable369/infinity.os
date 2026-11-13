@@ -360,7 +360,7 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
         let network=if screen==7 {Some(onboarding_network_view::NetworkViewState{selected:0,connected:true,
             wired_detail:b"Connected link detected",wireless_detail:b"No wireless adapter detected"})}else{None};
         if !target.configuration_template_scene_data(bytes,usize::from(screen-1),focus,
-            template_compositor::ConfigurationViewState{input:b"",masked:false,validation_error:false,network}) {
+            template_compositor::ConfigurationViewState{input:b"",masked:screen==5,validation_error:false,network}) {
             return Err("Native configuration composition rejected the scene".into());
         }
         }
