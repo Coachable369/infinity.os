@@ -4128,8 +4128,8 @@ impl ConsoleRuntime {
                 .position(|id| fonts.contains(*id)).unwrap_or(0) as u8;
         }
         crate::ui::editor_tools::preferences::publish(appearance);
+        self.trash_grab = None;
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        self.trash_grab=None;
         self.restore_app_shortcuts();
         crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::new());
         self.spatial_restore_world_appearance();
