@@ -3,6 +3,7 @@ use super::*;
 static mut PENDING: bool = false;
 static mut TURN: u64 = 0;
 static mut MODEL: u32 = 0;
+static mut INTERRUPT: Option<SpokenPhrase> = None;
 static mut WORD: WakeWord = WakeWord::Infinity;
 static mut CAPTURE_STARTED: u64 = 0;
 static mut CAPTURE_ENDED: u64 = 0;
@@ -50,7 +51,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                     PENDING=voice_input::submit(OWNER,RECOGNIZE_CAP,pcm).is_ok();
                     if PENDING {
                         PROBE=true;PROBED_SAMPLES=samples;TURN=CHAT_TURN;
-                        MODEL=super::super::with_ai_runtime(|ai|ai.chat.selected_model());WORD=configured_wake_word(OWNER);
+                        MODEL=super::super::with_ai_runtime(|ai|ai.chat.selected_model());WORD=configured_wake_word(OWNER);INTERRUPT=configured_interrupt(OWNER);
                         trace(b"duplex stop probe queued before endpoint");
                         return false;
                     }
@@ -72,7 +73,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                         CAPTURE_ENDED=UTTERANCE_ENDED_AT;
                         TURN=CHAT_TURN;
                         MODEL=super::super::with_ai_runtime(|ai|ai.chat.selected_model());
-                        WORD=configured_wake_word(OWNER);
+                        WORD=configured_wake_word(OWNER);INTERRUPT=configured_interrupt(OWNER);
                         trace(b"duplex interruption recognition queued");
                     } else {retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;}
                 }
@@ -87,15 +88,14 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
         voice_input::InputState::Ready => {
             let result=voice_input::take(OWNER,&mut *(&raw mut TRANSCRIPT));
             retire(RECOGNIZE_CAP);RECOGNIZE_CAP=0;PENDING=false;
-            let valid=active_owner(OWNER) && WORD==configured_wake_word(OWNER)
+            let valid=active_owner(OWNER) && WORD==configured_wake_word(OWNER) && INTERRUPT==configured_interrupt(OWNER)
                 && super::super::with_ai_runtime(|ai|ai.chat.turn_id()==TURN
                     && ai.chat.selected_model()==MODEL
                     && ai.app_turn_owner().is_none());
             if let Ok(n) = result {
                 let transcript=&(&*(&raw const TRANSCRIPT))[..n];
                 let reply = &(&*(&raw const REPLY))[..REPLY_LENGTH];
-                if valid && (addressed_stop_with_echo(transcript, reply, WORD)
-                    || (!PROBE && stop_speech_command(transcript) && !reply_fragment(transcript, reply))) {
+                if valid && addressed_stop_with_echo(transcript, reply, WORD, INTERRUPT) {
                     stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
                 }
                 if valid && playback_transcript(transcript) {
@@ -107,8 +107,8 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 PROBE=false;
                 if valid && result.ok().is_some_and(|n| {
                     let input=&(&*(&raw const TRANSCRIPT))[..n];
-                    if let wake_word::Match::Command{start}=wake_word::classify(input,WORD) {
-                        stop_speech_command(&input[start..])
+                    if let wake_word::Match::Command{start}=wake_word::interrupt_address(input,WORD) {
+                        stop_speech_command(&input[start..], INTERRUPT)
                     } else { false }
                 }) {
                     stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
@@ -117,7 +117,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 return false;
             }
             let addressed=result.ok().filter(|n|valid && *n!=0).map(|n|
-                (n,wake_word::classify(&(&*(&raw const TRANSCRIPT))[..n],WORD)));
+                (n,wake_word::interrupt_address(&(&*(&raw const TRANSCRIPT))[..n],WORD)));
             let action=match addressed {
                 Some((n,wake_word::Match::Command{start}))=>{
                     let end=wake_word::deduplicated_command_end(&(&*(&raw const TRANSCRIPT))[..n],WORD,start);
@@ -133,11 +133,11 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 // A typed draft is independent of a spoken stop. Preserve it
                 // when a different spoken follow-up would need the composer.
                 if !super::super::with_ai_runtime(|ai|ai.chat.input().is_empty())
-                    && !stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
+                    && !stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end], INTERRUPT) {
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
                     return false;
                 }
-                if start != end && stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
+                if start != end && stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end], INTERRUPT) {
                     stop_spoken_reply();
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
                     return true;

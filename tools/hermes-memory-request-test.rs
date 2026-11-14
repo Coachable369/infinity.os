@@ -241,3 +241,27 @@ fn absent_memory_and_invalid_edits_do_not_claim_persistence() {
     assert_eq!(commits, 1);
     assert_eq!(document.bytes(), before);
 }
+
+// ------------------------=
+// FUNC: personalized_voice_settings_round_trip
+// DESC: Exercises explicit changes with learning disabled, authenticated reload and failed edits retaining the prior value.
+// ------------------=
+#[test]
+fn personalized_voice_settings_round_trip() {
+    let mut doc=Document::new(OWNER,b"Alex",b"Infinity").unwrap().updated(OWNER,b"learning_enabled",b"false").unwrap();
+    for (request,key,value) in [
+        (b"Please rename yourself to Lyra.".as_slice(), b"assistant_name".as_slice(), b"Lyra".as_slice()),
+        (b"Set your voice style to calm and concise.", b"communication_style", b"calm and concise"),
+        (b"Change your voice to Bella.", b"output_voice", b"Bella"),
+        (b"Change your interrupt phrase to stand down.", b"interrupt_word", b"stand down"),
+        (b"Set your wake word to Blue Star.", b"wake_word", b"Blue Star"),
+    ] {
+        let (receipt,count)=apply(&mut doc,request);
+        valid_receipt(receipt,Outcome::Saved);assert_eq!(count,1);
+        let mut bytes=[0;64];let n=doc.get(key,&mut bytes).unwrap();assert_eq!(&bytes[..n],value);
+    }
+    let before=doc.bytes().to_vec();
+    valid_receipt(apply(&mut doc,b"Set your wake word to ***").0,Outcome::Failed);
+    assert_eq!(doc.bytes(),before);
+    assert!(Document::parse(doc.bytes(),[2;16]).is_err());
+}

@@ -83,6 +83,7 @@ fn aliases(wake_word: WakeWord) -> &'static [&'static [u8]] {
     match wake_word {
         WakeWord::Infinity => INFINITY_ALIASES,
         WakeWord::Computer => COMPUTER_ALIASES,
+        WakeWord::Custom(_) => &[],
     }
 }
 
@@ -103,6 +104,7 @@ fn skip_separators(transcript: &[u8], mut at: usize) -> usize {
 // DESC: Resolves one configured wake spelling at an exact bounded transcript position.
 // ------------------=
 fn match_wake(transcript: &[u8], at: usize, wake_word: WakeWord) -> Option<usize> {
+    if let WakeWord::Custom(p) = wake_word { return match_alias(transcript, at, p.bytes()); }
     aliases(wake_word)
         .iter()
         .find_map(|alias| match_alias(transcript, at, alias))
@@ -126,6 +128,17 @@ fn match_address(transcript: &[u8], mut at: usize, wake_word: WakeWord) -> Optio
         at = skip_separators(transcript, at + 3);
     }
     match_wake(transcript, at, wake_word)
+}
+
+// ------------------------=
+// FUNC: interrupt_address
+// DESC: Requires the whole configured wake phrase for barge-in, even when ordinary wake detection accepts clipped ASR aliases.
+// ------------------=
+pub fn interrupt_address(input: &[u8], word: WakeWord) -> Match {
+    let mut at=skip_separators(input,0);
+    if let Some(end)=match_alias(input,at,b"hey") { at=skip_separators(input,end); }
+    if match_alias(input,at,word.phrase()).is_none() {return Match::Absent;}
+    classify(input,word)
 }
 
 // ------------------------=

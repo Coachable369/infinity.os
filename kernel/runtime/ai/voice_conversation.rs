@@ -10,7 +10,7 @@ use super::{
 use crate::runtime::{
     capability::CapabilityType,
     execution::SecurityIdentity,
-    identity::{SessionState, WakeWord},
+    identity::{SessionState, WakeWord, SpokenPhrase},
 };
 #[path = "../../ui/voice_indicator.rs"]
 pub mod indicator;
@@ -345,6 +345,15 @@ fn configured_wake_word(owner: SecurityIdentity) -> WakeWord {
     .unwrap_or(WakeWord::Infinity)
 }
 // ------------------------=
+// FUNC: configured_interrupt
+// DESC: Reads the active session's optional replacement stop command.
+// ------------------=
+fn configured_interrupt(owner: SecurityIdentity) -> Option<SpokenPhrase> {
+    crate::runtime::with_runtime(|r| (0..crate::runtime::identity::MAX_SESSIONS)
+        .filter_map(|i| r.identity.session_nth(i)).find(|s| s.id.0 == owner.0 && s.state == SessionState::Active)
+        .and_then(|s| r.identity.voice_profile(s.user)).and_then(|p| p.interrupt_word)).flatten()
+}
+// ------------------------=
 // FUNC: grant
 // DESC: Grants a short direction-specific voice lease only for the active logged-in session.
 // ------------------=
@@ -482,7 +491,7 @@ unsafe fn pending_prompt_valid() -> bool {
 // FUNC: stop_speech_command
 // DESC: Recognizes only complete local speech-stop requests after wake/context authorization.
 // ------------------=
-fn stop_speech_command(input: &[u8]) -> bool {
+fn stop_speech_command(input: &[u8], custom: Option<SpokenPhrase>) -> bool {
     let mut text = [0u8; 64];
     let mut length = 0;
     for &byte in input {
@@ -495,6 +504,7 @@ fn stop_speech_command(input: &[u8]) -> bool {
         }
     }
     if length != 0 && text[length-1] == b' ' { length -= 1; }
+    if let Some(p) = custom { return text[..length].eq_ignore_ascii_case(p.bytes()); }
     matches!(&text[..length], b"stop" | b"please stop" | b"stop please" | b"stop speaking" | b"stop talking" | b"be quiet" | b"cancel response" | b"interrupt" | b"please interrupt" | b"stop the response")
 }
 // ------------------------=
@@ -527,16 +537,16 @@ unsafe fn playback_transcript(input: &[u8]) -> bool {
 // FUNC: addressed_stop_with_echo
 // DESC: Accepts a configured wake and stop surrounded only by known reply fragments; rejects quoted playback and unrelated prefixes.
 // ------------------=
-fn addressed_stop_with_echo(input: &[u8], reply: &[u8], word: WakeWord) -> bool {
+fn addressed_stop_with_echo(input: &[u8], reply: &[u8], word: WakeWord, custom: Option<SpokenPhrase>) -> bool {
     if reply_fragment(input, reply) { return false; }
     for offset in 0..input.len() {
         if offset != 0 && input[offset-1].is_ascii_alphanumeric() { continue; }
-        let wake_word::Match::Command { start } = wake_word::classify(&input[offset..],word) else { continue; };
+        let wake_word::Match::Command { start } = wake_word::interrupt_address(&input[offset..],word) else { continue; };
         if !reply_fragment(&input[..offset], reply) { continue; }
         let start = offset + start;
         for end in start+1..=input.len() {
             if end < input.len() && input[end].is_ascii_alphanumeric() { continue; }
-            if stop_speech_command(&input[start..end]) && reply_fragment(&input[end..],reply) { return true; }
+            if stop_speech_command(&input[start..end],custom) && reply_fragment(&input[end..],reply) { return true; }
         }
     }
     false
@@ -1929,7 +1939,7 @@ pub fn poll() -> bool {
                     }
                     if let Ok(n) = result {
                         let transcript=&(&*(&raw const TRANSCRIPT))[..n];
-                        if addressed_stop_with_echo(transcript, &(&*(&raw const REPLY))[..REPLY_LENGTH], configured_wake_word(OWNER)) {
+                        if addressed_stop_with_echo(transcript, &(&*(&raw const REPLY))[..REPLY_LENGTH], configured_wake_word(OWNER),configured_interrupt(OWNER)) {
                             stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;
                         }
                         if playback_transcript(transcript) {
@@ -1964,7 +1974,7 @@ pub fn poll() -> bool {
                             }
                         }
                     }
-                    if command.is_some_and(|(start,end)| stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end])) {
+                    if command.is_some_and(|(start,end)| stop_speech_command(&(&*(&raw const TRANSCRIPT))[start..end],configured_interrupt(OWNER))) {
                         stop_spoken_reply();
                         (&mut *(&raw mut TRANSCRIPT)).fill(0);
                         return true;
@@ -2164,8 +2174,8 @@ pub fn poll() -> bool {
 // DESC: Rejects ordinary questions, negation and application stop commands.
 // ------------------=
 fn speech_stop_requires_a_complete_control_request() {
-    for command in [b"STOP!" as &[u8], b"please stop.", b"Stop speaking", b"stop talking"] { assert!(stop_speech_command(command)); }
-    for command in [b"do not stop" as &[u8], b"don't stop", b"what does stop mean?", b"stop the browser", b"stopwatch"] { assert!(!stop_speech_command(command)); }
+    for command in [b"STOP!" as &[u8], b"please stop.", b"Stop speaking", b"stop talking"] { assert!(stop_speech_command(command,None)); }
+    for command in [b"do not stop" as &[u8], b"don't stop", b"what does stop mean?", b"stop the browser", b"stopwatch"] { assert!(!stop_speech_command(command,None)); }
 }
 
 #[cfg(test)]
@@ -2177,10 +2187,10 @@ fn speech_stop_requires_a_complete_control_request() {
 fn mixed_stop_and_playback_fragments() {
     let reply=b"Here is the next phrase of the response. Say Infinity stop to interrupt.";
     for input in [b"the next phrase Infinity stop" as &[u8],b"Infinity stop the response",b"the next phrase Infinity please stop the response",b"Infinity STOP!"] {
-        assert!(addressed_stop_with_echo(input,b"Here is the next phrase of the response.",WakeWord::Infinity),"{:?}",input);
+        assert!(addressed_stop_with_echo(input,b"Here is the next phrase of the response.",WakeWord::Infinity,None),"{:?}",input);
     }
     for input in [b"Say Infinity stop to interrupt" as &[u8],b"don't Infinity stop",b"Infinity stop the browser",b"Computer stop",b"Infinity what does stop mean"] {
-        assert!(!addressed_stop_with_echo(input,reply,WakeWord::Infinity));
+        assert!(!addressed_stop_with_echo(input,reply,WakeWord::Infinity,None));
     }
     assert!(reply_fragment(b"NEXT phrase of the response!",reply));
     assert!(!reply_fragment(b"next phrase of the browser",reply));

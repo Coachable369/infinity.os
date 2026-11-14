@@ -192,12 +192,8 @@ impl ConsoleRuntime {
                 self.persist_ai_chat_preferences();
             }
             (3, 7) => {
-                if crate::runtime::with_runtime(|r| {
-                    r.identity.update_output_voice(user, user, index as u8)
-                })
-                .is_some_and(|r| r.is_ok())
-                {
-                    let _ = crate::runtime::persist_identity_state();
+                if let Some(name)=crate::runtime::ai::hermes_profile::VOICES.get(index) {
+                    crate::runtime::ai::with_ai_runtime(|ai|ai.save_hermes_field(b"output_voice",name));
                 }
             }
             (3, 0) => {

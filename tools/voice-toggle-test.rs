@@ -95,15 +95,8 @@ mod runtime {
         #[derive(PartialEq)] pub enum SessionState {Active,Locked}
         pub struct Session {pub id:super::execution::SecurityIdentity,pub user:super::execution::SecurityIdentity,pub state:SessionState}
         pub struct AiProfile {pub speech_output_enabled:bool}
-        #[derive(Clone,Copy,PartialEq)] pub enum WakeWord {Infinity,Computer}
-        impl WakeWord {
-            // ------------------------=
-            // FUNC: phrase
-            // DESC: Supplies the configured phrase to the production parser fixture.
-            // ------------------=
-            pub const fn phrase(self)->&'static[u8]{match self{Self::Infinity=>b"Infinity",Self::Computer=>b"Computer"}}
-        }
-        pub struct VoiceProfile {pub wake_word:WakeWord}
+        pub use crate::voice_words::{WakeWord,SpokenPhrase};
+        pub struct VoiceProfile {pub wake_word:WakeWord, pub interrupt_word:Option<SpokenPhrase>}
     }
     pub mod audio {
         #[derive(PartialEq)] pub enum CaptureState {Idle,Recording,Overrun,Complete,Cancelled,Denied,DeviceLost}
@@ -125,7 +118,7 @@ mod runtime {
         // FUNC: voice_profile
         // DESC: Supplies the selected durable wake phrase to the production controller.
         // ------------------=
-        pub fn voice_profile(&self,_:execution::SecurityIdentity)->Option<identity::VoiceProfile>{Some(identity::VoiceProfile{wake_word:if crate::WAKE_SETTING.load(crate::Ordering::SeqCst)==0 {identity::WakeWord::Infinity}else{identity::WakeWord::Computer}})}
+        pub fn voice_profile(&self,_:execution::SecurityIdentity)->Option<identity::VoiceProfile>{Some(identity::VoiceProfile{interrupt_word:(crate::WAKE_SETTING.load(crate::Ordering::SeqCst)==2).then(||identity::SpokenPhrase::parse(b"stand down").unwrap()),wake_word:if crate::WAKE_SETTING.load(crate::Ordering::SeqCst)==0 {identity::WakeWord::Infinity}else if crate::WAKE_SETTING.load(crate::Ordering::SeqCst)==2{identity::WakeWord::parse(b"Blue Star").unwrap()}else{identity::WakeWord::Computer}})}
     }
     pub struct Caps;
     impl Caps {
@@ -567,6 +560,7 @@ mod voice_output {
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod voice_vad;
 #[path = "../kernel/ui/thinking.rs"] mod thinking;
+#[path = "../kernel/runtime/voice_words.rs"] mod voice_words;
 #[path = "../kernel/runtime/ai/wake_word.rs"] mod wake_word;
 #[path = "../kernel/runtime/ai/voice_conversation.rs"] mod conversation;
 use conversation as voice_conversation;
@@ -887,7 +881,7 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
             MICROPHONE.lock().unwrap().extend(microphone_phrase(2100));drain_microphone();
             assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests);
         }
-        *TEST_TRANSCRIPT.lock().unwrap()=Some(b"room conversation".to_vec());
+        *TEST_TRANSCRIPT.lock().unwrap()=Some(b"please stop".to_vec());
         MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
         MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
         assert_eq!(TURNS.load(Ordering::SeqCst),turns);
@@ -952,6 +946,20 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     assert_eq!(TURNS.load(Ordering::SeqCst),turns+1,"full command must survive its earlier probe");
     *TEST_TRANSCRIPT.lock().unwrap()=None;ECHO_PLAYBACK.store(false,Ordering::SeqCst);
     conversation::stop(owner);conversation::poll();
+    WAKE_SETTING.store(2,Ordering::SeqCst);
+    assert!(conversation::start(owner)); recognize_voice(b"Blue Star explain this");
+    conversation::poll(); OUTPUT.store(1,Ordering::SeqCst); ECHO_PLAYBACK.store(true,Ordering::SeqCst);
+    let turns=TURNS.load(Ordering::SeqCst);let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
+    for (phrase,cancelled) in [(b"stand down".as_slice(),false),(b"Infinity stand down",false),(b"Blue Star stand down",true)] {
+        *TEST_TRANSCRIPT.lock().unwrap()=Some(phrase.to_vec());
+        MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
+        MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+usize::from(cancelled));
+        assert_eq!(OUTPUT.load(Ordering::SeqCst)==0,cancelled);
+    }
+    WAKE_SETTING.store(0,Ordering::SeqCst);*TEST_TRANSCRIPT.lock().unwrap()=None;
+    ECHO_PLAYBACK.store(false,Ordering::SeqCst);conversation::stop(owner);conversation::poll();
     for playing in [false, true] {
         assert!(conversation::start(owner));
         recognize_voice(b"Infinity explain this");

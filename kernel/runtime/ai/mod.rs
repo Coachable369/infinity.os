@@ -216,8 +216,9 @@ impl AiRuntime {
         }
         let request = self.requests.accept(input, self.chat_owner, origin);
         let mut route = IntentRouter::route(&mut self.instruction_mapping, &request);
-        let explicit_memory=memory_request::natural(input).is_some();
-        if matches!(route, RequestRoute::Inference(_))
+        let personalization=matches!(origin,RequestOrigin::Voice|RequestOrigin::DesktopChat) && (hermes_profile::conversation::assistant_setting(input).is_some() || hermes_profile::conversation::asks_assistant_name(input));
+        let explicit_memory=personalization || memory_request::natural(input).is_some();
+        if personalization || matches!(route, RequestRoute::Inference(_))
             && (explicit_memory || hermes_profile::conversation::action(input,self.hermes_memory.as_ref().is_some_and(|d|d.enabled(b"learning_enabled")))!=hermes_profile::conversation::Action::None) {
             route = RequestRoute::Inference(InferenceMode::Conversation);
         }
@@ -807,6 +808,23 @@ impl AiRuntime {
     pub fn load_hermes_memory(&mut self,session:[u8;16],document:Option<hermes_profile::Document>) {
         let changed=self.hermes_memory.as_ref().map(|d|d.bytes())!=document.as_ref().map(|d|d.bytes());
         if self.hermes_session!=session {self.memory_inquiries.cancel();}
+        #[cfg(target_os="none")]
+        if let Some(doc)=document.as_ref() {
+            use crate::runtime::identity::{WakeWord, SpokenPhrase, StableId};
+            let mut wake=[0;32]; let mut stop=[0;32];
+            if let Some(word)=doc.get(b"wake_word",&mut wake).ok().and_then(|n|WakeWord::parse(&wake[..n])) {
+                let interrupt=doc.get(b"interrupt_word",&mut stop).ok().and_then(|n|SpokenPhrase::parse(&stop[..n]));
+                let mut name=[0;16];
+                let voice=doc.get(b"output_voice",&mut name).ok().and_then(|n|hermes_profile::output_voice(&name[..n]));
+                let owner=StableId(self.chat_owner);
+                crate::runtime::with_runtime(|r| {
+                    r.identity.restore_spoken_controls(owner,word,interrupt);
+                    if let Some(v)=voice.filter(|v|r.identity.voice_profile(owner).is_some_and(|p| p.output_voice!=*v)) {
+                        let _=r.identity.update_output_voice(owner,owner,v);
+                    }
+                });
+            }
+        }
         self.hermes_session=session;
         self.hermes_memory=document;
         if changed {
@@ -825,17 +843,12 @@ impl AiRuntime {
         if self.qwen.as_ref().is_some_and(|s|s.busy()) || self.app_owner.is_some(){return false;}
         let Ok(document)=crate::storage::hermes_memory(self.chat_owner,self.hermes_session,b"",b"Infinity",Some((key,value))) else{return false;};
         let accent = (key == b"favorite_color").then(||hermes_profile::conversation::color(value)).flatten();
-        let wake = if value == b"Computer" { crate::runtime::identity::WakeWord::Computer }
-            else { crate::runtime::identity::WakeWord::Infinity };
         let before = crate::runtime::with_runtime(|runtime| {
             let owner = crate::runtime::identity::StableId(self.chat_owner);
-            let change_wake = key == b"wake_word"
-                && runtime.identity.voice_profile(owner).is_some_and(|profile| profile.wake_word != wake);
             let change_accent = accent.is_some_and(|rgb|
                 runtime.identity.user_profile(owner).is_some_and(|profile| profile.accent_rgb != rgb));
-            if !change_wake && !change_accent { return None; }
+            if !change_accent { return None; }
             let before = runtime.identity.account_checkpoint();
-            if change_wake { let _ = runtime.identity.update_wake_word(owner, owner, wake); }
             if let Some(rgb) = accent.filter(|_|change_accent) {
                 let _ = runtime.identity.update_user_accent(owner, owner, rgb);
             }
@@ -866,7 +879,7 @@ impl AiRuntime {
     pub fn personal_memory_reply(&mut self, input: &[u8], reply: &mut [u8; 8192])
         -> Option<hermes_memory_request::Receipt>
     {
-        if self.instruction_mapping.resolve(input).or_else(||control::Command::explicit(input)).is_some() {return None;}
+        if !hermes_profile::conversation::asks_assistant_name(input) && hermes_profile::conversation::assistant_setting(input).is_none() && self.instruction_mapping.resolve(input).or_else(||control::Command::explicit(input)).is_some() {return None;}
         if !self.chat.enabled() || self.execution.busy() || self.app_owner.is_some()
             || self.qwen.as_ref().is_some_and(|service| service.busy()) {
             return None;

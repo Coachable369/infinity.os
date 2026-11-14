@@ -3920,7 +3920,7 @@ impl super::DisplayDevice {
                     && profile.activation != crate::runtime::identity::VoiceActivation::Disabled
             })
             .unwrap_or(false);
-        let wake_word = voice_profile
+        let wake_word = voice_profile.as_ref()
             .map(|profile| profile.wake_word.phrase())
             .unwrap_or(b"Infinity");
         let speech_enabled = crate::runtime::with_runtime(|runtime| {
@@ -6078,7 +6078,13 @@ impl super::DisplayDevice {
             })
             .unwrap_or(false);
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let mut custom_prompt = [0u8;36];
         let wake_prompt: &[u8] = match voice_profile.map(|profile|profile.wake_word) {
+            Some(crate::runtime::identity::WakeWord::Custom(p))=> {
+                custom_prompt[..4].copy_from_slice(b"Say ");
+                custom_prompt[4..4+p.bytes().len()].copy_from_slice(p.bytes());
+                &custom_prompt[..4+p.bytes().len()]
+            },
             Some(crate::runtime::identity::WakeWord::Computer)=>b"Say Computer",
             _=>b"Say Infinity",
         };

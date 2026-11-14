@@ -2986,13 +2986,6 @@ impl ConsoleRuntime {
         }).flatten();
         let document=seed.and_then(|(name,wake)|crate::storage::hermes_memory(
             self.current_user.0,self.current_session.0,name.as_bytes(),wake.phrase(),None).ok());
-        if let Some(doc)=document.as_ref(){
-            let mut wake=[0;16];
-            if let Ok(n)=doc.get(b"wake_word",&mut wake){
-                let value=if &wake[..n]==b"Computer"{crate::runtime::identity::WakeWord::Computer}else{crate::runtime::identity::WakeWord::Infinity};
-                crate::runtime::with_runtime(|runtime|{let _=runtime.identity.update_wake_word(self.current_user,self.current_user,value);});
-            }
-        }
         crate::runtime::ai::with_ai_runtime(|runtime|runtime.load_hermes_memory(self.current_session.0,document));
         let mut intelligence=[0u8;crate::runtime::ai::intelligence::MAX_STATE_BYTES];
         if let Ok(length)=crate::storage::intelligence_state_load(self.current_user.0,self.current_session.0,&mut intelligence) {
@@ -5868,14 +5861,10 @@ impl ConsoleRuntime {
             (3, 5) => self.cycle_voice_wake_word(),
             (3, 7) => {
                 let user = self.current_user;
-                let changed = crate::runtime::with_runtime(|r| {
-                    let current = r.identity.voice_profile(user).ok_or(crate::runtime::identity::IdentityError::NotFound)?;
-                    let next = crate::ui::controls::next_choice(current.output_voice as usize, 5)
-                        .ok_or(crate::runtime::identity::IdentityError::NotFound)?;
-                    r.identity.update_output_voice(user, user, next as u8)
-                }).is_some_and(|result| result.is_ok());
-                if changed {
-                    let _ = crate::runtime::persist_identity_state();
+                let next=crate::runtime::with_runtime(|r|r.identity.voice_profile(user)
+                    .and_then(|p|crate::ui::controls::next_choice(p.output_voice as usize,5))).flatten();
+                if next.is_some_and(|i|crate::runtime::ai::with_ai_runtime(|ai|ai.save_hermes_field(
+                    b"output_voice",crate::runtime::ai::hermes_profile::VOICES[i]))) {
                     crate::bootstrap::system_ui_settings_changed();
                 }
             }

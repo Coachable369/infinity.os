@@ -1,4 +1,6 @@
 //! Versioned, allocation-free JSON identity memory. Unknown fields survive edits.
+#[path="../voice_words.rs"]
+mod spoken_words;
 #[path="hermes_conversation.rs"]
 pub mod conversation;
 #[path="hermes_inquiries.rs"]
@@ -7,8 +9,10 @@ use conversation::relevant as super_relevant;
 pub const FILE_NAME: &[u8] = b"hermes-memory1.json";
 pub const MAX_BYTES: usize = 8192;
 pub const CONTEXT_BYTES: usize = 2048;
-pub const FIELDS: [&[u8]; 22] = [
+pub const FIELDS: [&[u8]; 24] = [
     b"wake_word",
+    b"interrupt_word",
+    b"output_voice",
     b"assistant_name",
     b"user_name",
     b"birth_date",
@@ -422,7 +426,7 @@ impl Document {
             .find(|e| &self.bytes[e.key_start..e.key_end] == key);
         let Some(e)=e else{return match key{
             b"learning_enabled"|b"inquiries_enabled"|b"inference_enabled"=>Ok(b"\"true\""),
-            b"address"|b"time"|b"timezone"|b"favorite_color"|b"interests"|b"communication_style"|b"recurring_projects"|b"dislikes"|b"inferred_interests"=>Ok(b"\"\""),
+            b"output_voice"|b"interrupt_word"|b"address"|b"time"|b"timezone"|b"favorite_color"|b"interests"|b"communication_style"|b"recurring_projects"|b"dislikes"|b"inferred_interests"=>Ok(b"\"\""),
             _=>Err(Error::Field)
         };};
         Ok(&self.bytes[e.start..e.end])
@@ -548,6 +552,14 @@ impl Document {
         append(out,&mut n,b"User request:\n")?;Ok(n)
     }
 }
+pub const VOICES: [&[u8];5] = [b"Heart",b"Bella",b"Nicole",b"Adam",b"Michael"];
+// ------------------------=
+// FUNC: output_voice
+// DESC: Resolves a spoken installed voice name to the synthesizer's existing index.
+// ------------------=
+pub fn output_voice(value:&[u8]) -> Option<u8> {
+    VOICES.iter().position(|v| v.eq_ignore_ascii_case(value)).map(|i| i as u8)
+}
 // ------------------------=
 // FUNC: validate
 // DESC: Validates editable values without guessing names, dates, or unsupported wake words.
@@ -563,9 +575,10 @@ fn validate(key: &[u8], value: &[u8]) -> Result<(), Error> {
     {
         return Err(Error::Value);
     }
-    if key == b"wake_word" && value != b"Infinity" && value != b"Computer" {
+    if (key == b"wake_word" || (key == b"interrupt_word" && !value.is_empty())) && spoken_words::SpokenPhrase::parse(value).is_none() {
         return Err(Error::Value);
     }
+    if key == b"output_voice" && !value.is_empty() && output_voice(value).is_none() { return Err(Error::Value); }
     if key == b"assistant_name" && (value.is_empty() || value.len() > 64) {
         return Err(Error::Value);
     }

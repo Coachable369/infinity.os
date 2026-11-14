@@ -27,10 +27,50 @@ pub fn field(name:&[u8])->Option<&'static[u8]>{
     super::FIELDS.into_iter().find(|key|name.eq_ignore_ascii_case(key))
 }
 // ------------------------=
+// FUNC: asks_assistant_name
+// DESC: Recognizes direct identity questions without interpreting unrelated requests containing the word name.
+// ------------------=
+pub fn asks_assistant_name(input: &[u8]) -> bool {
+    let s=input.trim_ascii();let s=s.strip_suffix(b"?").unwrap_or(s);
+    [b"what is your name".as_slice(), b"what's your name", b"what are you called", b"who are you"]
+        .iter().any(|q|s.eq_ignore_ascii_case(q))
+}
+// ------------------------=
+// FUNC: assistant_setting
+// DESC: Recognizes explicit user instructions to personalize the assistant without treating questions as changes.
+// ------------------=
+pub fn assistant_setting(input: &[u8]) -> Option<(&'static [u8], &[u8])> {
+    let s=input.trim_ascii();
+    let s=prefix(s,b"Infinity,").or_else(||prefix(s,b"Infinity ")).unwrap_or(s);
+    let s=prefix(s,b"please ").unwrap_or(s);
+    let s=s.strip_suffix(b".").or_else(||s.strip_suffix(b"!")).unwrap_or(s);
+    if s.contains(&b'?') {return None;}
+    for head in [b"rename yourself to ".as_slice(), b"rename the assistant to ", b"rename the llm to ", b"call yourself "] {
+        if let Some(v)=prefix(s,head) {return Some((b"assistant_name",v));}
+    }
+    for verb in [b"set ".as_slice(), b"change "] {
+        let Some(rest)=prefix(s,verb) else {continue;};
+        let rest=prefix(rest,b"your ").or_else(||prefix(rest,b"the ")).or_else(||prefix(rest,b"my ")).unwrap_or(rest);
+        for (label,key) in [(b"wake word to ".as_slice(),b"wake_word".as_slice()),(b"wake phrase to ",b"wake_word"),
+            (b"interrupt word to ",b"interrupt_word"),(b"interrupt phrase to ",b"interrupt_word"),
+            (b"voice to ",b"output_voice"),(b"voice style to ",b"communication_style"),(b"assistant name to ",b"assistant_name")] {
+            if let Some(v)=prefix(rest,label){
+                if key==b"communication_style" && super::output_voice(v).is_some() {return Some((b"output_voice",v));}
+                return Some((key,v));
+            }
+        }
+    }
+    for head in [b"change your name to ".as_slice(), b"set your name to "] {
+        if let Some(v)=prefix(s,head){return Some((b"assistant_name",v));}
+    }
+    None
+}
+// ------------------------=
 // FUNC: action
 // DESC: Parses explicit inspection, correction, deletion, and consent controls; optional learning accepts direct first-person assertions only.
 // ------------------=
 pub fn action(input:&[u8],learn:bool)->Action<'_>{
+    if let Some((k,v))=assistant_setting(input){return Action::Set(k,v);}
     let mut input=input.trim_ascii();
     input=prefix(input,b"Infinity,").or_else(||prefix(input,b"Infinity ")).unwrap_or(input);
     input=input.trim_ascii_end();

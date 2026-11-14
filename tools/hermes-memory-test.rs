@@ -12,6 +12,8 @@ fn round_trip() {
         let value: &[u8] = match key {
             b"learning_enabled"|b"inquiries_enabled"|b"inference_enabled"=>b"true",
             b"wake_word" => b"Computer",
+            b"output_voice" => b"Bella",
+            b"interrupt_word" => b"stand down",
             b"birth_date" => b"2000-02-29",
             _ => "Zoë \"example\"\npreferences".as_bytes(),
         };
@@ -34,7 +36,7 @@ fn reject_invalid() {
         Some(Error::Owner)
     );
     assert!(d.updated([1; 16], b"birth_date", b"1900-02-29").is_err());
-    assert!(d.updated([1; 16], b"wake_word", b"anything").is_err());
+    assert!(d.updated([1; 16], b"wake_word", b"*").is_err());
     assert!(d.updated([1; 16], b"owner_id", b"new").is_err());
     for n in 0..d.bytes().len() - 2 {
         assert!(Document::parse(&d.bytes()[..n], [1; 16]).is_err());

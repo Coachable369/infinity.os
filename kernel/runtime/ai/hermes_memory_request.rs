@@ -35,6 +35,12 @@ pub fn respond(
     mut commit: impl FnMut(&[u8], &[u8]) -> bool,
     out: &mut [u8; 8192],
 ) -> Option<Receipt> {
+    if conversation::asks_assistant_name(input) {
+        let profile=document?;
+        let mut name=[0;64]; let n=profile.get(b"assistant_name",&mut name).ok()?;
+        out[..11].copy_from_slice(b"My name is ");out[11..11+n].copy_from_slice(&name[..n]);out[11+n]=b'.';
+        return Some(Receipt{length:12+n,outcome:Outcome::Inspected});
+    }
     let action = conversation::action(
         input,
         document.is_some_and(|profile| profile.enabled(b"learning_enabled")),

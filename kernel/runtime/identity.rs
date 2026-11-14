@@ -189,36 +189,9 @@ pub enum VoiceActivation {
     Continuous = 3,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum WakeWord {
-    Infinity = 1,
-    Computer = 2,
-}
-
-impl WakeWord {
-    // ------------------------=
-    // FUNC: phrase
-    // DESC: Returns the bounded spoken phrase associated with this wake-word selection.
-    // ------------------=
-    pub const fn phrase(self) -> &'static [u8] {
-        match self {
-            Self::Infinity => b"Infinity",
-            Self::Computer => b"Computer",
-        }
-    }
-
-    // ------------------------=
-    // FUNC: next
-    // DESC: Cycles the supported local wake phrases for the Settings selector.
-    // ------------------=
-    pub const fn next(self) -> Self {
-        match self {
-            Self::Infinity => Self::Computer,
-            Self::Computer => Self::Infinity,
-        }
-    }
-}
-
+#[path = "voice_words.rs"]
+mod voice_words;
+pub use voice_words::{WakeWord, SpokenPhrase};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingScope {
     System = 1,
@@ -297,6 +270,7 @@ pub struct VoiceProfile {
     pub enabled: bool,
     pub activation: VoiceActivation,
     pub wake_word: WakeWord,
+    pub interrupt_word: Option<SpokenPhrase>,
     pub output_voice: u8,
 }
 
@@ -615,6 +589,7 @@ impl IdentitySystem {
             enabled: true,
             activation: VoiceActivation::Continuous,
             wake_word: WakeWord::Infinity,
+            interrupt_word: None,
             output_voice: 0,
         });
         self.ownership[slot] = Some(PersonalSpaceOwnership {
@@ -1400,6 +1375,17 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: restore_spoken_controls
+    // DESC: Mirrors the authenticated JSON controls in the owning user's live voice profile.
+    // ------------------=
+    pub fn restore_spoken_controls(&mut self, owner: StableId, wake: WakeWord, interrupt: Option<SpokenPhrase>) {
+        if let Some(profile) = self.voice_profiles.iter_mut().flatten().find(|p| p.user == owner) {
+            profile.wake_word = wake;
+            profile.interrupt_word = interrupt;
+        }
+    }
+
+    // ------------------------=
     // FUNC: update_output_voice
     // DESC: Saves only an installed voice for its owning user without changing microphone authority.
     // ------------------=
@@ -2044,8 +2030,8 @@ fn write_user(
         );
     out[at + 158] = voice.map(|v| v.enabled as u8).unwrap_or(0) | (timeout_minutes << 1);
     out[at + 159] = voice
-        .map(|value| (value.activation as u8) | ((value.wake_word as u8) << 2) | (value.output_voice << 4))
-        .unwrap_or(1 | ((WakeWord::Infinity as u8) << 2))
+        .map(|value| (value.activation as u8) | (if value.wake_word == WakeWord::Computer {2 << 2} else {1 << 2}) | (value.output_voice << 4))
+        .unwrap_or(1 | (1 << 2))
         | if profile.is_some_and(|p|!p.face_login_enabled) {0x80}else{0}
 }
 
@@ -2124,6 +2110,7 @@ fn read_user(
             3 => VoiceActivation::Continuous,
             _ => VoiceActivation::Disabled,
         },
+        interrupt_word: None, // Custom words are restored from the authenticated JSON profile.
         wake_word: match (voice_preferences >> 2) & 3 {
             0 | 1 => WakeWord::Infinity,
             2 => WakeWord::Computer,
