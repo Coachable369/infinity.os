@@ -134,6 +134,70 @@ pub fn natural(input: &[u8]) -> Option<Command<'_>> {
     }
     None
 }
+// ------------------------=
+// FUNC: fact_label
+// DESC: Normalizes a personal fact label, including the possessive punctuation supplied by speech recognition.
+// ------------------=
+fn fact_label(label: &str, out: &mut [u8; 72]) -> Option<usize> {
+    let mut used = 0;
+    for word in label.split_whitespace() {
+        if used > 0 { *out.get_mut(used)? = b' '; used += 1; }
+        for ch in word.chars() {
+            if matches!(ch, '\'' | '’') { continue; }
+            if !ch.is_ascii_alphabetic() && ch != '-' { return None; }
+            *out.get_mut(used)? = ch.to_ascii_lowercase() as u8;
+            used += 1;
+        }
+    }
+    (used > 0).then_some(used)
+}
+
+// ------------------------=
+// FUNC: lookup_fact
+// DESC: Answers direct personal fact questions from the session's profile or exact stored assertions before inference.
+// ------------------=
+pub fn lookup_fact(
+    input: &[u8], profile: Option<&super::hermes_profile::Document>, engine: &mut Engine,
+    backend: &mut impl Backend, owner: Owner, session: Owner, out: &mut [u8],
+) -> Option<Receipt> {
+    let question = input.trim_ascii().strip_suffix(b"?").unwrap_or(input.trim_ascii()).trim_ascii();
+    let rest = [b"what is ".as_slice(), b"what's ", "what’s ".as_bytes()]
+        .into_iter().find_map(|opening| prefix(question, opening))?;
+    let reverse = prefix(rest, b"the name of my ");
+    let subject = core::str::from_utf8(reverse.or_else(|| prefix(rest, b"my "))?).ok()?;
+    let mut key = [0; 72];
+    let mut length = fact_label(subject, &mut key)?;
+    if reverse.is_some() {
+        if !key[..length].ends_with(b"s") { *key.get_mut(length)? = b's'; length += 1; }
+        key.get_mut(length..length + 5)?.copy_from_slice(b" name");
+        length += 5;
+    }
+    let matches_label = |label: &[u8]| {
+        let mut normalized = [0; 72];
+        core::str::from_utf8(label).ok().and_then(|s| fact_label(s, &mut normalized))
+            .is_some_and(|n| normalized[..n] == key[..length])
+    };
+    if !backend.authorize(owner, session) { return None; }
+    let mut facts = [0; 1024];
+    let profile_value = profile.and_then(|p| p.get(b"facts", &mut facts).ok()).and_then(|n| {
+        facts[..n].split(|&b| b == b'\n').rev().find_map(|line| {
+            let colon = line.iter().position(|&b| b == b':')?;
+            matches_label(&line[..colon]).then(|| line[colon + 1..].trim_ascii())
+        })
+    });
+    let value = profile_value.or_else(|| {
+        engine.catalog(backend, owner, session).ok()?.records(owner).ok()?.iter()
+            .filter_map(|record| {
+                let assertion = prefix(record.content(), b"my ")?;
+                let at = assertion.windows(4).position(|p| p.eq_ignore_ascii_case(b" is "))?;
+                matches_label(&assertion[..at]).then_some(((record.updated_at, record.id), assertion[at + 4..].trim_ascii()))
+            }).max_by_key(|(order, _)| *order).map(|(_, value)| value)
+    })?;
+    if value.is_empty() { return None; }
+    out.get_mut(..value.len())?.copy_from_slice(value);
+    Some(Receipt { length: value.len(), outcome: Outcome::Inspected })
+}
+
 struct Output<'a> {
     bytes: &'a mut [u8],
     len: usize,

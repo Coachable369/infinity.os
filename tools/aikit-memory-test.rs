@@ -50,6 +50,7 @@ fn main() {
     assert!(runtime::ai::mapping::DEFAULT.len()<=storage::object::MAX_CONTENT);
     runtime::ai::mapping::validate(runtime::ai::mapping::DEFAULT).unwrap();
     personal_recall_route();
+    saved_fact_answers();
     browser_operations();
     real_recall();
     search_tests();
@@ -240,7 +241,7 @@ fn personal_recall_route() {
     use runtime::ai::{kit::*,mapping::ConfiguredMap};
     let mut map=ConfiguredMap::new();
     for origin in [RequestOrigin::Voice,RequestOrigin::DesktopChat] {
-        for input in [b"What's the name of my cat?".as_slice(),b"What is my cat called",b"Tell me about my cat", "What’s my dog's name?".as_bytes()] {
+        for input in [b"What's the name of my cat?".as_slice(),b"What is my cat called", b"What is my cat's name?", b"What is my cats name?",b"Tell me about my cat", "What’s my dog's name?".as_bytes()] {
             let request=RequestApi::new().accept(input,[7;16],origin);
             let route=IntentRouter::route(&mut map,&request);
             assert_eq!(route,RequestRoute::Inference(InferenceMode::Conversation));
@@ -249,6 +250,33 @@ fn personal_recall_route() {
         let request=RequestApi::new().accept(b"Change my computer name to Shade",[7;16],origin);
         assert!(matches!(IntentRouter::route(&mut map,&request),RequestRoute::Control(_)));
     }
+}
+
+// ------------------------=
+// FUNC: saved_fact_answers
+// DESC: Resolves the reported question across durable store formats and enforces the active session.
+// ------------------=
+fn saved_fact_answers() {
+    use runtime::ai::{hermes_profile::Document, memory_api::Engine, memory_request::lookup_fact};
+    let (owner, session) = ([7; 16], [9; 16]);
+    let profile = Document::new(owner, b"Tester", b"Infinity").unwrap()
+        .updated(owner, b"facts", b"dogs name: Ollie\ncats name: Shade").unwrap();
+    let mut memory = Memory::new(owner);
+    memory.store(owner, Record::new(owner, Category::Semantic, b"My cat's name is Luna", b"user", 1).unwrap()).unwrap();
+    let mut bytes = [0; memory::MAX_BYTES];
+    let n = memory.encode(&mut bytes).unwrap();
+    let mut backend = Backend { bytes: bytes[..n].to_vec(), allowed: true, fail: false, reads: 0, writes: 0 };
+    let mut engine = Engine::new();
+    let mut out = [0; 256];
+    for (profile, value) in [(Some(&profile), b"Shade".as_slice()), (None, b"Luna".as_slice())] {
+        for question in [b"What is my cats name?".as_slice(), "What is my cat’s name?".as_bytes(), b"What's the name of my cat?"] {
+            let answer = lookup_fact(question, profile, &mut engine, &mut backend, owner, session, &mut out).unwrap();
+            assert_eq!(&out[..answer.length], value);
+        }
+    }
+    assert!(lookup_fact(b"What is my cats name?", Some(&profile), &mut engine, &mut backend, owner, [0;16], &mut out).is_none());
+    assert!(lookup_fact(b"What is my cats age?", Some(&profile), &mut engine, &mut backend, owner, session, &mut out).is_none());
+    assert_eq!(backend.writes, 0);
 }
 
 // ------------------------=

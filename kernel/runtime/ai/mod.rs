@@ -871,6 +871,10 @@ impl AiRuntime {
             || self.qwen.as_ref().is_some_and(|service| service.busy()) {
             return None;
         }
+        if let Some(answer) = memory_request::lookup_fact(input, self.hermes_memory.as_ref(),
+            &mut self.persistent_memory, &mut memory_api::Native, self.chat_owner, self.hermes_session, reply) {
+            return Some(answer);
+        }
         if let Some(command)=memory_request::natural(input) {
             self.pending_memory=None;
             return Some(memory_request::respond(&mut self.persistent_memory,&mut memory_api::Native,self.chat_owner,self.hermes_session,command,memory_timestamp(),reply));
