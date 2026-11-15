@@ -265,3 +265,36 @@ fn personalized_voice_settings_round_trip() {
     assert_eq!(doc.bytes(),before);
     assert!(Document::parse(doc.bytes(),[2;16]).is_err());
 }
+
+// ------------------------=
+// FUNC: paraphrases_persist_without_changing_the_wrong_identity
+// DESC: Exercises reported and paraphrased statements through receipts and authenticated JSON reloads.
+// ------------------=
+#[test]
+fn paraphrases_persist_without_changing_the_wrong_identity() {
+    let mut doc=Document::new(OWNER,b"Jonathan",b"Infinity").unwrap();
+    for (key,value,requests) in [
+        (b"assistant_name".as_slice(), b"Lyra".as_slice(), &[b"your new name is Lyra.".as_slice(),
+            b"From now on, call yourself Lyra.",b"Could you please change your name to Lyra?",b"I'll call you Lyra.",b"Make Lyra your new name."][..]),
+        (b"wake_word",b"Blue Star",&[b"Your wake phrase is now Blue Star.".as_slice(),b"Update the wake word to Blue Star.",b"Use Blue Star as your wake word."][..]),
+        (b"interrupt_word",b"stand down",&[b"Your new stop phrase should be stand down.".as_slice(),b"Can you set your interrupt word to stand down?"][..]),
+        (b"output_voice",b"Bella",&[b"Your voice should be Bella.".as_slice(),b"Switch your voice to Bella, please."][..]),
+        (b"communication_style",b"warm and concise",&[b"Your speaking style should be warm and concise.".as_slice()][..])
+    ] {
+        for request in requests {
+            valid_receipt(apply(&mut doc,request).0,Outcome::Saved);
+            let mut buf=[0;64];let n=doc.get(key,&mut buf).unwrap();assert_eq!(&buf[..n],value);
+        }
+    }
+    let before=doc.bytes().to_vec();
+    for question in [b"What's your new name?".as_slice(),b"What should I call you?",b"Could you tell me your name?"] {
+        let mut out=[0;8192];let answer=respond(question,Some(&doc),|_,_|panic!("read attempted a write"),&mut out).unwrap();
+        assert_eq!(answer.outcome,Outcome::Inspected);
+        assert!(answer.length>0);
+    }
+    for s in [b"Your new name is Lyra?".as_slice(),b"Don't change your name to Lyra.",b"If your name is Lyra, what happens?"] {
+        assert!(apply(&mut doc,s).0.is_none());
+    }
+    assert_eq!(before,doc.bytes());
+    assert_eq!(hermes_profile::conversation::assistant_setting(b"My name is Lyra."),None);
+}

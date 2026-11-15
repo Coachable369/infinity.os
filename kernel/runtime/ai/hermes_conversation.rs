@@ -27,43 +27,91 @@ pub fn field(name:&[u8])->Option<&'static[u8]>{
     super::FIELDS.into_iter().find(|key|name.eq_ignore_ascii_case(key))
 }
 // ------------------------=
-// FUNC: asks_assistant_name
-// DESC: Recognizes direct identity questions without interpreting unrelated requests containing the word name.
+// FUNC: after_any
+// DESC: Consumes one of the allowed grammatical prefixes, preserving the user's spelling in the suffix.
 // ------------------=
-pub fn asks_assistant_name(input: &[u8]) -> bool {
-    let s=input.trim_ascii();let s=s.strip_suffix(b"?").unwrap_or(s);
-    [b"what is your name".as_slice(), b"what's your name", b"what are you called", b"who are you"]
+fn after_any<'a>(s:&'a[u8], forms:&[&[u8]]) -> Option<&'a[u8]> {
+    forms.iter().find_map(|form|prefix(s,form))
+}
+// ------------------------=
+// FUNC: before_suffix
+// DESC: Extracts a value preceding a spoken setting label without changing its case.
+// ------------------=
+fn before_suffix<'a>(s:&'a[u8],suffix:&[u8])->Option<&'a[u8]> {
+    let at=s.len().checked_sub(suffix.len())?;
+    s[at..].eq_ignore_ascii_case(suffix).then(||s[..at].trim_ascii())
+}
+// ------------------------=
+// FUNC: addressed_input
+// DESC: Strips optional address and politeness before interpreting a direct request.
+// ------------------=
+fn addressed_input(s:&[u8])->&[u8] {
+    let s=s.trim_ascii();
+    let s=after_any(s,&[b"hey infinity,",b"infinity,",b"infinity "]).unwrap_or(s);
+    after_any(s,&[b"please ",b"please, "]).unwrap_or(s)
+}
+// ------------------------=
+// FUNC: asks_assistant_name
+// DESC: Handles identity questions without interpreting them as rename requests.
+// ------------------=
+pub fn asks_assistant_name(input:&[u8])->bool {
+    let s=addressed_input(input);
+    let s=s.strip_suffix(b"?").or_else(||s.strip_suffix(b".")).unwrap_or(s).trim_ascii();
+    let s=after_any(s,&[b"can you tell me ",b"could you tell me ",b"remind me ",b"tell me "]).unwrap_or(s);
+    [b"what is your name".as_slice(),b"what's your name",b"what is your new name",b"what's your new name",
+     b"your name",b"what your name is",b"what are you called",b"what should i call you",b"who are you"]
         .iter().any(|q|s.eq_ignore_ascii_case(q))
 }
 // ------------------------=
 // FUNC: assistant_setting
-// DESC: Recognizes explicit user instructions to personalize the assistant without treating questions as changes.
+// DESC: Composes request framing, setting, assignment and value; only a direct instruction or declaration can write.
 // ------------------=
-pub fn assistant_setting(input: &[u8]) -> Option<(&'static [u8], &[u8])> {
-    let s=input.trim_ascii();
-    let s=prefix(s,b"Infinity,").or_else(||prefix(s,b"Infinity ")).unwrap_or(s);
-    let s=prefix(s,b"please ").unwrap_or(s);
-    let s=s.strip_suffix(b".").or_else(||s.strip_suffix(b"!")).unwrap_or(s);
-    if s.contains(&b'?') {return None;}
-    for head in [b"rename yourself to ".as_slice(), b"rename the assistant to ", b"rename the llm to ", b"call yourself "] {
-        if let Some(v)=prefix(s,head) {return Some((b"assistant_name",v));}
-    }
-    for verb in [b"set ".as_slice(), b"change "] {
-        let Some(rest)=prefix(s,verb) else {continue;};
-        let rest=prefix(rest,b"your ").or_else(||prefix(rest,b"the ")).or_else(||prefix(rest,b"my ")).unwrap_or(rest);
-        for (label,key) in [(b"wake word to ".as_slice(),b"wake_word".as_slice()),(b"wake phrase to ",b"wake_word"),
-            (b"interrupt word to ",b"interrupt_word"),(b"interrupt phrase to ",b"interrupt_word"),
-            (b"voice to ",b"output_voice"),(b"voice style to ",b"communication_style"),(b"assistant name to ",b"assistant_name")] {
-            if let Some(v)=prefix(rest,label){
-                if key==b"communication_style" && super::output_voice(v).is_some() {return Some((b"output_voice",v));}
-                return Some((key,v));
+pub fn assistant_setting(input:&[u8])->Option<(&'static[u8],&[u8])> {
+    let s=addressed_input(input);
+    let s=after_any(s,&[b"from now on, ",b"from now on ",b"going forward, "]).unwrap_or(s);
+    let polite=after_any(s,&[b"could you ",b"would you ",b"can you "]);
+    if polite.is_none() && s.contains(&b'?') {return None;}
+    let s=polite.unwrap_or(s);
+    let s=after_any(s,&[b"please ",b"i want you to ",b"i'd like you to "]).unwrap_or(s);
+    let s=s.trim_ascii_end();
+    let s=s.strip_suffix(b".").or_else(||s.strip_suffix(b"!")).or_else(||s.strip_suffix(b"?")).unwrap_or(s).trim_ascii();
+    let command=after_any(s,&[b"change ",b"set ",b"update ",b"switch ",b"make "]);
+    let (key,value)=if let Some(v)=after_any(s,&[b"rename yourself to ",b"rename the assistant to ",b"rename the llm to ",
+        b"call yourself ",b"go by ",b"i'll call you ",b"i want to call you ",b"you should go by ",b"you are now called ",b"i want your name to be ",b"i would like to call you "]) {
+        (b"assistant_name".as_slice(),v)
+    } else {
+        let reverse=after_any(s,&[b"use ",b"make "]).and_then(|tail| {
+            [(b" as your wake word".as_slice(),b"wake_word".as_slice()),(b" as your interrupt phrase",b"interrupt_word"),
+             (b" as your name",b"assistant_name"),(b" as your voice",b"output_voice"),(b" as your speaking style",b"communication_style"),
+             (b" your new name",b"assistant_name")].iter().find_map(|(suffix,key)|before_suffix(tail,suffix).map(|v|(*key,v)))
+        });
+        let rest=command.unwrap_or(s);
+        let owner=after_any(rest,&[b"your ",b"the ",b"my "]);
+        let rest=owner.unwrap_or(rest);
+        let rest=prefix(rest,b"new ").unwrap_or(rest);
+        let mut found=None;
+        for (label,key) in [(b"assistant name ".as_slice(),b"assistant_name".as_slice()),(b"name ",b"assistant_name"),
+            (b"wake word ",b"wake_word"),(b"wake phrase ",b"wake_word"),(b"wake-up word ",b"wake_word"),
+            (b"interrupt word ",b"interrupt_word"),(b"interrupt phrase ",b"interrupt_word"),(b"stop phrase ",b"interrupt_word"),
+            (b"voice style ",b"communication_style"),(b"speaking style ",b"communication_style"),(b"tone ",b"communication_style"),
+            (b"voice ",b"output_voice")] {
+            if label==b"name " && prefix(command.unwrap_or(s),b"your ").is_none(){continue;}
+            if command.is_none() && owner.is_none(){continue;}
+            if let Some(tail)=prefix(rest,label) {
+                let forms:&[&[u8]]=if command.is_some(){&[b"to "]}else{&[b"is now ",b"is ",b"will be ",b"should be "]};
+                if let Some(v)=after_any(tail,forms){found=Some((key,v));break;}
             }
         }
+        found.or(reverse)?
+    };
+    let mut v=value.trim_ascii();
+    for end in [b" from now on".as_slice(),b", please",b" please"] {
+        if v.len()>end.len() && v[v.len()-end.len()..].eq_ignore_ascii_case(end){v=v[..v.len()-end.len()].trim_ascii();}
     }
-    for head in [b"change your name to ".as_slice(), b"set your name to "] {
-        if let Some(v)=prefix(s,head){return Some((b"assistant_name",v));}
-    }
-    None
+    if v.len()>=2 && v.first()==v.last() && matches!(v[0],b'\''|b'"'){v=&v[1..v.len()-1];}
+    if v.is_empty() || v.iter().any(|b|matches!(b,b'?'|b';'|b'\n')) ||
+        v.split(|b|b.is_ascii_whitespace()).any(|w|[b"if".as_slice(),b"unless",b"not",b"maybe",b"or"].iter().any(|x|w.eq_ignore_ascii_case(x))) {return None;}
+    Some((if key==b"communication_style" && super::output_voice(v).is_some(){b"output_voice"}else{key},v))
 }
 // ------------------------=
 // FUNC: action
