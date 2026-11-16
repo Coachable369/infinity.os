@@ -37,9 +37,14 @@ fn authored_defaults_match_preview_at_every_resolution() {
         assert_eq!(state.visible,2);
         assert_eq!(state.rect(1,w,h,s,false).y,state.rect(0,w,h,s,false).y);
         state.visible=3;
-        for id in 0..2 {
-            assert_eq!(state.rect(id,w,h,s,false),desktop_template::bounds((id+2)as u8,2,w,h).unwrap());
-        }
+        let overview=state.rect(0,w,h,s,false);
+        let ai=state.rect(1,w,h,s,false);
+        assert_eq!(ai,desktop_template::bounds(3,2,w,h).unwrap());
+        assert_eq!(overview.height,desktop_template::bounds(2,2,w,h).unwrap().height);
+        assert!(!overview.intersects(ai));
+        let first_detail=desktop_template::bounds(2,60,w,h).unwrap();
+        let chart_height=desktop_template::overview_chart_height(overview.width,h);
+        assert!(first_detail.y >= overview.y+chart_height as i32);
     }
 }
 // ------------------------=

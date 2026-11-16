@@ -114,7 +114,7 @@ pub fn dock_hit_in(t: InstallerTemplate<'_>, scene:u8, point:Point, width:usize,
 pub fn bounds(scene:u8,role:u8,width:usize,height:usize)->Option<Rect> {
     let e=element(scene,role)?;
     if e.hidden||e.opacity==0{return None;}
-    Some(mapped(e,width,height,None))
+    Some(if scene == 2 { overview_layer(e,width,height,None) } else { mapped(e,width,height,None) })
 }
 
 // ------------------------=
@@ -125,6 +125,28 @@ pub fn mapped(e:InstallerTemplateElement<'_>,width:usize,height:usize,translatio
     let r=scale_template_rect(e.frame,width,height);
     let (dx,dy)=translation.unwrap_or((0,0));
     Rect{x:(r.left as i32).saturating_add(dx),y:(r.top as i32).saturating_add(dy),width:r.width as u32,height:r.height as u32}
+}
+
+// ------------------------=
+// FUNC: overview_chart_height
+// DESC: Reserves the first content row for two equal gauges while keeping the desktop usable on smaller displays.
+// ------------------=
+pub fn overview_chart_height(panel_width:u32,height:usize)->u32 {
+    (panel_width * 42 / 100).min(height as u32 / 5)
+}
+
+// ------------------------=
+// FUNC: overview_layer
+// DESC: Inserts the telemetry row between the authored heading and detail rows on the desktop and in Studio.
+// ------------------=
+pub fn overview_layer(e:InstallerTemplateElement<'_>,width:usize,height:usize,translation:Option<(i32,i32)>)->Rect {
+    let mut r=mapped(e,width,height,translation);
+    if let Some(panel)=element(2,2) {
+        let extra=overview_chart_height(mapped(panel,width,height,None).width,height);
+        if e.role==2 { r.height+=extra; }
+        else if matches!(e.role,5|60..=64) { r.y+=extra as i32; }
+    }
+    r
 }
 
 // ------------------------=

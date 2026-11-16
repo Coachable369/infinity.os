@@ -2,19 +2,6 @@ use super::*;
 #[cfg(any(target_arch="x86_64",target_arch="aarch64"))]
 impl DisplayDevice {
     // ------------------------=
-    // FUNC: metric_ring
-    // DESC: Draws a bounded annular metric against the UIKit track, with a fixed twelve-o'clock origin.
-    // ------------------=
-    pub(crate) fn metric_ring(&mut self,x:usize,y:usize,r:usize,value:u8,color:(u8,u8,u8)){
-        self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/ui-design-kit/default/telemetry-ring.bmp"),x.saturating_sub(r+2),y.saturating_sub(r+2),2*r+4,2*r+4);
-        const ARC:[(i16,i16);51]=ARC_POINTS;
-        for (i,pair) in ARC.windows(2).enumerate(){
-            let point=|(dx,dy):(i16,i16)|(x as i32+dx as i32*r as i32/1024,y as i32+dy as i32*r as i32/1024);
-            let (a,b)=point(pair[0]);let(c,d)=point(pair[1]);
-            self.icon_line(a,b,c,d,if i*2<(value as usize){color}else{(39,63,86)},r*2);
-        }
-    }
-    // ------------------------=
     // FUNC: weather_widget
     // DESC: Composites real provider data on the reusable glass illustration; stale readings remain labeled.
     // ------------------=
@@ -54,4 +41,3 @@ impl DisplayDevice {
         self.render_clip=old;
     }
 }
-const ARC_POINTS:[(i16,i16);51]=[(0,-1024),(128,-1016),(255,-992),(377,-952),(493,-897),(602,-828),(701,-746),(789,-653),(865,-549),(927,-436),(974,-316),(1006,-192),(1022,-64),(1022,64),(1006,192),(974,316),(927,436),(865,549),(789,653),(701,746),(602,828),(493,897),(377,952),(255,992),(128,1016),(0,1024),(-128,1016),(-255,992),(-377,952),(-493,897),(-602,828),(-701,746),(-789,653),(-865,549),(-927,436),(-974,316),(-1006,192),(-1022,64),(-1022,-64),(-1006,-192),(-974,-316),(-927,-436),(-865,-549),(-789,-653),(-701,-746),(-602,-828),(-493,-897),(-377,-952),(-255,-992),(-128,-1016),(0,-1024)];

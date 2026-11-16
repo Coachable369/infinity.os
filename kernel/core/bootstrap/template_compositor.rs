@@ -31,6 +31,60 @@ pub(super) struct ConfigurationViewState<'a> {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: metric_ring
+    // DESC: Draws a bounded annular metric against the UIKit track, with a fixed twelve-o'clock origin.
+    // ------------------=
+    pub(crate) fn metric_ring(&mut self,x:usize,y:usize,r:usize,value:u8,color:(u8,u8,u8)){
+        let outer=r as i32;
+        let stroke=(outer/5).max(2);
+        let inner=(outer-stroke).max(0);
+        let mid=(outer+inner)/2;
+        let v=usize::from(value.min(100));
+        let first=ARC_POINTS[v/2];
+        let next=ARC_POINTS[(v.div_ceil(2)).min(50)];
+        let end=((first.0 as i32+next.0 as i32)/2,(first.1 as i32+next.1 as i32)/2);
+        let tip=(mid*end.0/1024,mid*end.1/1024);
+        let cap=stroke*stroke/4;
+        for dy in -outer..=outer {
+            for dx in -outer..=outer {
+                let distance=dx*dx+dy*dy;
+                let border=(outer*outer-distance+outer).min(distance-inner*inner+inner);
+                if border<=0 {continue;}
+                let cross=dx*end.1-dy*end.0;
+                let sector=if v<=50 {dx>=0 && cross>=0} else {dx>=0 || cross>=0};
+                let rounded=(dx-tip.0).pow(2)+(dy-tip.1).pow(2)<=cap || dx*dx+(dy+mid).pow(2)<=cap;
+                let (red,green,blue)=if v!=0 && (v==100 || sector || rounded) {color} else {(45,69,92)};
+                let alpha=(border*255/(outer*2).max(1)).clamp(0,255) as u8;
+                self.blend_color(x as i32+dx,y as i32+dy,red,green,blue,alpha);
+            }
+        }
+    }
+    // ------------------------=
+    // FUNC: overview_charts
+    // DESC: Pairs live eased percentages with large consistently scaled CPU and memory rings.
+    // ------------------=
+    pub(crate) fn overview_charts(&mut self,panel:crate::ui::geometry::Rect,readings:[u8;2]) {
+        let width=panel.width as usize;
+        let row=crate::ui::desktop_template::overview_chart_height(panel.width,self.height) as usize;
+        if width<40 || row<32 { return; }
+        let radius=(row*36/100).min(width/5);
+        let y=panel.y.max(0) as usize+(self.height*54/1000)+radius;
+        for (i,(label,color)) in [(b"CPU".as_slice(),(91,222,249)),(b"Memory".as_slice(),(184,157,255))].iter().enumerate(){
+            let x=panel.x.max(0) as usize+width*(1+2*i)/4;
+            let v=readings[i].min(100);
+            self.metric_ring(x,y,radius,v,*color);
+            let digits=[b'0'+v/100,b'0'+v/10%10,b'0'+v%10,b'%'];
+            let start=if v==100{0}else if v>=10{1}else{2};
+            let font=(radius*48/100).clamp(10,48);
+            let text=&digits[start..];
+            let bounds=crate::ui::geometry::Rect{x:(x-radius) as i32,y:(y-radius) as i32,width:(2*radius) as u32,height:(2*radius) as u32};
+            let ink_y=self.template_centered_value_y(bounds,text,font).max(0) as usize;
+            self.template_text(x-self.template_text_width(text,font,true)/2,ink_y,text,236,246,255,255,font,true);
+            let caption=(radius*30/100).clamp(10,30);
+            self.template_text(x-self.template_text_width(label,caption,false)/2,y+radius+2,label,208,221,236,255,caption,false);
+        }
+    }
+    // ------------------------=
     // FUNC: widget_grip
     // DESC: Paints the AI widget's six-dot grip at the same offset on every desktop widget.
     // ------------------=
@@ -84,7 +138,21 @@ impl DisplayDevice {
                 ||(!wallpaper&&e.role==InstallerTemplateRole::SceneBackground as u8){continue;}
             if let Some((_,value))=values.iter().find(|(role,_)|*role==e.role){e.text=value;}
             let offset = if e.role == InstallerTemplateRole::SceneBackground as u8 { None } else { translation };
-            let r=crate::ui::desktop_template::mapped(e,self.width,self.height,offset);
+            let mut r=if scene==2 { crate::ui::desktop_template::overview_layer(e,self.width,self.height,offset) }
+                else { crate::ui::desktop_template::mapped(e,self.width,self.height,offset) };
+            if scene==2 && (60..=64).contains(&e.role) {
+                let pixels=e.font_size as usize*self.height/1000;
+                let inset=r.width.saturating_sub(self.template_text_width(e.text,pixels,false) as u32);
+                r.x+=inset as i32;
+                r.width-=inset;
+            }
+            if scene==2 && e.role==5 {
+                if let Some(panel)=crate::ui::desktop_template::bounds(2,2,self.width,self.height) {
+                    let right=panel.right()+translation.unwrap_or((0,0)).0;
+                    let width=(right-r.x-(r.x-panel.x-translation.unwrap_or((0,0)).0)).max(0) as usize;
+                    self.fill_rect_alpha(r.x.max(0) as usize,(r.y-6).max(0) as usize,width,1,110,151,188,60);
+                }
+            }
             let old=self.render_clip;
             self.intersect_render_clip(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize);
             if e.role==InstallerTemplateRole::LauncherClose as u8 {
@@ -1081,3 +1149,5 @@ impl DisplayDevice {
         self.render_clip = previous_clip;
     }
 }
+
+const ARC_POINTS:[(i16,i16);51]=[(0,-1024),(128,-1016),(255,-992),(377,-952),(493,-897),(602,-828),(701,-746),(789,-653),(865,-549),(927,-436),(974,-316),(1006,-192),(1022,-64),(1022,64),(1006,192),(974,316),(927,436),(865,549),(789,653),(701,746),(602,828),(493,897),(377,952),(255,992),(128,1016),(0,1024),(-128,1016),(-255,992),(-377,952),(-493,897),(-602,828),(-701,746),(-789,653),(-865,549),(-927,436),(-974,316),(-1006,192),(-1022,64),(-1022,-64),(-1006,-192),(-974,-316),(-927,-436),(-865,-549),(-789,-653),(-701,-746),(-602,-828),(-493,-897),(-377,-952),(-255,-992),(-128,-1016),(0,-1024)];

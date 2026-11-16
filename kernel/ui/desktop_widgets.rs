@@ -105,6 +105,13 @@ impl State {
             bottom.saturating_sub(default_y)
         };
         let authored=super::desktop_template::bounds((id+2) as u8,2,width,height).map(|mut rect| {
+            if id == 0 && self.positions[0]==[0,0] && self.visible & 2 != 0 {
+                if let Some(ai)=super::desktop_template::bounds(3,2,width,height) {
+                    if rect.intersects(ai) {
+                        rect.x=(ai.x-rect.width as i32-12*scale as i32).max(0);
+                    }
+                }
+            }
             if id == 1 && self.visible & 1 == 0 {
                 if let Some(overview) = super::desktop_template::bounds(2,2,width,height) {
                     rect.y = overview.y;

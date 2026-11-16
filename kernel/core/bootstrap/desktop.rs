@@ -6060,17 +6060,7 @@ impl super::DisplayDevice {
             &[(60,name.as_bytes()),(61,b"Active"),(62,b"Online"),(63,b"Ready"),(64,b"Ready")],
             Some((geometry.x-base.x,geometry.y-base.y)),false,&[]);
         self.widget_grip(geometry.x.max(0) as usize,geometry.y.max(0) as usize,scale);
-        {
-            let x=geometry.right().max(0) as usize;
-            let y=geometry.y.max(0) as usize+geometry.height as usize/12;
-            let radius=(geometry.height as usize/24).clamp(5,18);
-            let ram=crate::ui::widget_keyframes::value(1);
-            self.metric_ring(x.saturating_sub(radius*8),y,radius,crate::ui::widget_keyframes::value(0),(92,217,251));
-            self.metric_ring(x.saturating_sub(radius*3),y,radius,ram,(177,146,246));
-            for (offset,label) in [(8,b"CPU".as_slice()),(3,b"RAM".as_slice())]{
-                self.ui_text_centered(x.saturating_sub(radius*(offset+2)),radius*4,y+radius+1,label,195,216,232,1);
-            }
-        }
+        self.overview_charts(geometry,[crate::ui::widget_keyframes::value(0),crate::ui::widget_keyframes::value(1)]);
     }
 
     // ------------------------=

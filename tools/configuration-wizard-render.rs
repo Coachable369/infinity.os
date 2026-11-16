@@ -331,6 +331,12 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
         if !launcher_scene && !target.desktop_template_scene(bytes,screen,&[],offset,true,if screen==3 {&[65,66,67,68,69,70,71]}else{&[]}) {
             return Err("Native desktop scene rejected the template".into());
         }
+        if screen==2 {
+            if let Some(panel)=crate::ui::desktop_template::bounds(2,2,width,height) {
+                target.overview_charts(panel,[36,68]);
+                target.widget_grip(panel.x.max(0) as usize,panel.y.max(0) as usize,target.ui_scale());
+            }
+        }
         if let Some(geometry) = ai_geometry {
             let scale=target.ui_scale();
             target.widget_grip(geometry.panel.x.max(0) as usize,geometry.panel.y.max(0) as usize,scale);

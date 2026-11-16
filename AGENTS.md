@@ -18,6 +18,21 @@ for every UI task, without exceptions.
   must not invent alternate outer borders, corner treatments, or focus states.
   Compare production-rendered pixels against this reference before acceptance.
 
+## Desktop widget design and acceptance
+
+Every new or redesigned desktop widget requires an AI-generated visual design kit
+before implementation. Save the reference artwork and its specification under
+`assets/ui-design-kit/default/`. Specify geometry, typography, chart and data
+hierarchy, materials, drag handle, interaction states, animation and reduced motion.
+Use the same kit in Infinity Studio and the installed OS.
+
+Capture the production widget renderer at the reference size, compare it alongside
+the kit, and correct discrepancies in layout, proportions, text, artwork, and
+states. Verify keyframes and live data separately. A widget is complete only when
+the implementation matches its kit 100%. For each specified size and state, compare
+reference and actual pixels with identical data, font, scale, backdrop, and animation time.
+Report any difference and keep acceptance open until corrected. Include the reference and render in the handoff.
+
 ## Shared architecture ports
 
 Maintain one shared implementation for each feature across aarch64 and x86_64.
