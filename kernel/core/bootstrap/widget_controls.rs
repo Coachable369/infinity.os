@@ -23,11 +23,16 @@ impl DisplayDevice {
                 let rect=Rect{x:(x+offset) as i32,y:(y+top)as i32,width:width as u32,height:height as u32};
                 self.precision_surface(rect,kind,Material{fill:(10,29,52),edge:(105,173,209),opacity:220,edge_opacity:220,focus:if focus{255}else{0},pressed:false,scale});
                 self.intersect_render_clip(x+offset+4,y+top,width.saturating_sub(8),height);
-                self.ui_text(x+offset+8,y+top+height.saturating_sub(15)/2,label,228,241,252,1);
+                let text_y=y+top+height.saturating_sub(28)/2;
+                if kind==Surface::Field {
+                    self.ui_text(x+offset+8,text_y,label,228,241,252,1);
+                } else {
+                    self.ui_text_centered(x+offset,width,text_y,label,228,241,252,1);
+                }
                 self.render_clip=old;self.intersect_render_clip(x,y,w,h);
             };
             control(w/20,h/3,w*9/10,h/4,Surface::Field,if draft.is_empty(){b"City name"}else{draft},focused);
-            control(w/20,h*2/3,w*4/10,h/4,Surface::Primary,b"Save location",false);
+            control(w/20,h*2/3,w*4/10,h/4,Surface::Primary,b"Save",false);
             control(w/2,h*2/3,w*45/100,h/4,Surface::Secondary,b"Detect",false);
             self.render_clip=old;return;
         }
