@@ -325,12 +325,15 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
     }
     if kind==5 {
         let launcher_scene = crate::ui::desktop_template::bound_scene(81)==Some(screen);
-        if !launcher_scene && !target.desktop_template_scene(bytes,screen,&[],None,true,if screen==3 {&[65,66,67,68,69,70,71]}else{&[]}) {
+        let ai_geometry = (screen == 3).then(|| crate::ui::system_layout::SystemLayout::new(width,height).ai_chat_geometry(false));
+        let offset = ai_geometry.as_ref().and_then(|g| crate::ui::desktop_template::bounds(3,2,width,height)
+            .map(|base| (g.panel.x-base.x,g.panel.y-base.y)));
+        if !launcher_scene && !target.desktop_template_scene(bytes,screen,&[],offset,true,if screen==3 {&[65,66,67,68,69,70,71]}else{&[]}) {
             return Err("Native desktop scene rejected the template".into());
         }
-        if screen==3 {
-            let geometry=crate::ui::system_layout::SystemLayout::new(width,height).ai_chat_geometry(false);
+        if let Some(geometry) = ai_geometry {
             let scale=target.ui_scale();
+            target.widget_grip(geometry.panel.x.max(0) as usize,geometry.panel.y.max(0) as usize,scale);
             target.ai_widget_header(geometry,b"Say Infinity",false,false,scale,(134,199,255));
             target.ai_widget_model(geometry.model,b"Hermes 3 Llama 3.2 3B",scale);
             target.desktop_bound_surface(67,geometry.timeline);

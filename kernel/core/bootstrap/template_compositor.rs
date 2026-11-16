@@ -31,6 +31,15 @@ pub(super) struct ConfigurationViewState<'a> {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: widget_grip
+    // DESC: Paints the AI widget's six-dot grip at the same offset on every desktop widget.
+    // ------------------=
+    pub(crate) fn widget_grip(&mut self,left:usize,top:usize,scale:usize){
+        for row in 0..3 { for col in 0..2 {
+            self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226);
+        }}
+    }
+    // ------------------------=
     // FUNC: restore_boot_template_region
     // DESC: Removes transient boot animation pixels by restoring the authored final scene within its exact damage rectangle.
     // ------------------=
@@ -74,7 +83,8 @@ impl DisplayDevice {
             if e.hidden||e.opacity==0||skip.contains(&e.role)
                 ||(!wallpaper&&e.role==InstallerTemplateRole::SceneBackground as u8){continue;}
             if let Some((_,value))=values.iter().find(|(role,_)|*role==e.role){e.text=value;}
-            let r=crate::ui::desktop_template::mapped(e,self.width,self.height,translation);
+            let offset = if e.role == InstallerTemplateRole::SceneBackground as u8 { None } else { translation };
+            let r=crate::ui::desktop_template::mapped(e,self.width,self.height,offset);
             let old=self.render_clip;
             self.intersect_render_clip(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize);
             if e.role==InstallerTemplateRole::LauncherClose as u8 {

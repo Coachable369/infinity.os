@@ -2,15 +2,6 @@ use super::*;
 #[cfg(any(target_arch="x86_64",target_arch="aarch64"))]
 impl DisplayDevice {
     // ------------------------=
-    // FUNC: widget_grip
-    // DESC: Paints the AI widget's six-dot grip at the same offset on every desktop widget.
-    // ------------------=
-    pub(super) fn widget_grip(&mut self,left:usize,top:usize,scale:usize){
-        for row in 0..3 { for col in 0..2 {
-            self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226);
-        }}
-    }
-    // ------------------------=
     // FUNC: metric_ring
     // DESC: Draws a bounded annular metric against the UIKit track, with a fixed twelve-o'clock origin.
     // ------------------=
