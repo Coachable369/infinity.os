@@ -86,7 +86,7 @@ impl ConsoleRuntime {
             }
             widgets::publish(state);
             if state.drag.is_none() {
-                let _ = self.checkpoint_desktop_layout();
+                let _ = self.persist_desktop_layout();
             }
             if state != old {
                 self.redraw();
@@ -97,6 +97,7 @@ impl ConsoleRuntime {
         }
         if let Some(menu) = state.menu_rect(width, height, scale) {
             if clicked {
+                let previous=state;
                 if menu.contains(point) {
                     let row = (point.y - menu.y) as usize / (36 * scale);
                     if state.transparency_menu {
@@ -125,7 +126,10 @@ impl ConsoleRuntime {
                 }
                 state.menu = None;state.menu_widget=None;state.visibility_menu=false;state.transparency_menu=false;
                 widgets::publish(state);
-                let _ = self.checkpoint_desktop_layout();
+                if previous.visible!=state.visible || previous.transparency!=state.transparency
+                    || previous.positions!=state.positions || previous.weather_position!=state.weather_position {
+                    let _ = self.persist_desktop_layout();
+                }
                 self.redraw();
             } else {
                 crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
