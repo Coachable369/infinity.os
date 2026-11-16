@@ -147,6 +147,13 @@ fn api_tests(){
     let receipt=memory_request::respond(&mut engine,&mut backend,owner,session,request,1,&mut out);assert_eq!(receipt.outcome,Outcome::Saved);
     let hits=engine.search(&mut backend,owner,session,b"Ollie",4).unwrap();assert_eq!(hits.len,1);let id=hits.hits[0].id;
     let before=backend.reads;for _ in 0..20{engine.context(&mut backend,owner,session,b"Ollie",256,&mut out).unwrap();}assert_eq!(backend.reads,before);
+    let profile=runtime::ai::hermes_profile::Document::new(owner,b"Tester",b"Infinity").unwrap()
+        .updated(owner,b"facts",b"Ollie likes beaches").unwrap();
+    let (json,vector)=engine.personal_context(&mut backend,owner,session,Some(&profile),b"Ollie",&mut out);
+    assert!(json>0 && vector>0);assert_eq!(engine.trace.hits[0].id,id);assert_eq!(backend.reads,before);
+    assert_eq!(engine.personal_context(&mut backend,owner,[0;16],Some(&profile),b"Ollie",&mut out),(0,0));
+    let other=runtime::ai::hermes_profile::Document::new([8;16],b"Other",b"Infinity").unwrap();
+    assert_eq!(engine.personal_context(&mut backend,owner,session,Some(&other),b"Ollie",&mut out).0,0);
     let duplicate=memory_request::respond(&mut engine,&mut backend,owner,session,request,2,&mut out);assert_eq!(duplicate.outcome,Outcome::Saved);assert_eq!(backend.writes,1);
     let mut samples=Vec::new();
     for _ in 0..1000 {let start=std::time::Instant::now();engine.context(&mut backend,owner,session,b"Ollie",256,&mut out).unwrap();samples.push(start.elapsed().as_nanos());}

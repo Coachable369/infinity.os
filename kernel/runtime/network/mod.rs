@@ -277,6 +277,13 @@ impl NetworkRuntime {
             expires_at: None,
             policy_source: 1,
         })?;
+        self.policy.create(NetworkPolicyRule {
+            id:0, subject:Subject::Service(0x4e5450), direction:Direction::Outbound, interface_id:Some(2),
+            local:EndpointSelector::any(), remote:EndpointSelector { network:Some(IpAddress::V4([162,159,200,1])),
+                prefix_length:32, port:Some(123),protocol:Some(TransportProtocol::Datagram),local_only:false },
+            action:PolicyAction::Allow, priority:1000,logging:LoggingMode::Decisions,enabled:true,
+            expires_at:None,policy_source:1
+        })?;
         Ok(())
     }
 

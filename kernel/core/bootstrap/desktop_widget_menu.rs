@@ -17,6 +17,7 @@ impl DisplayDevice {
         for (i, label) in [
             b"System Overview".as_slice(),
             b"AI Chat",
+            b"Weather",
             b"Reset positions",
         ]
         .iter()
@@ -24,7 +25,7 @@ impl DisplayDevice {
         {
             let top = y + (46 + i * 36) * scale;
             self.ui_text(x + 40 * scale, top, label, 222, 237, 249, 1);
-            if i < 2 && state.visible & (1 << i) != 0 {
+            if i < 3 && state.visible & (1 << i) != 0 {
                 let (a, b) = ((x + 15 * scale) as i32, (top + 7 * scale) as i32);
                 self.icon_line(
                     a,

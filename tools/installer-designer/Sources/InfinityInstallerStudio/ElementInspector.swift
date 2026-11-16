@@ -82,6 +82,13 @@ struct ElementInspector: View {
                         }
                         Divider()
                         geometrySection(element)
+                        if element.role == .launcherGrid {
+                            let values = element.text.split(separator: ",").compactMap { Int($0) }
+                            let size = values.first ?? 70
+                            let hover = values.dropFirst().first ?? 25
+                            Stepper("Icon size: \(size)%", value: Binding(get: { size }, set: { stringBinding(\.text).wrappedValue = "\($0),\(hover)" }), in: 40...100)
+                            Stepper("Hover magnification: \(hover)%", value: Binding(get: { hover }, set: { stringBinding(\.text).wrappedValue = "\(size),\($0)" }), in: 0...40)
+                        }
                         if element.role == .input {
                             variableSection(element)
                         }

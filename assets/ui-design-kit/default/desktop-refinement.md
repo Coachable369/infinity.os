@@ -117,3 +117,17 @@ application-specific borders. Input-owned frames remain eligible at every
 refresh deadline even while pointer activity defers decorative access effects.
 Reconstruct the previous/current icon bounds, including labels and halo, before
 painting the drag overlay. Do not redraw the desktop on every pointer sample.
+
+### Launcher and desktop instruments
+
+The launcher surface owns the grid bounds, glass fill, opacity, corner radius
+and border color. In Studio select **App Launcher Panel → Application Grid** to
+set icon size and hover magnification independently. Selection lifts the glyph
+without drawing a tile border. The drawer rail uses the selected outline accent.
+
+**Desktop Widgets** in UIKit includes Forecast glass (512 × 256 BGRA) and
+Resource ring track (64 × 64 BGRA). Keep the forecast's left half clear for
+live type; the illustration is decorative, never a substitute for provider
+conditions. CPU and memory use separate cyan and lavender arcs. Values share
+the Task Manager sample. The compositor interpolates changed values for 320 ms,
+tray hover for 150 ms, and jumps to the final keyframe under reduced motion.

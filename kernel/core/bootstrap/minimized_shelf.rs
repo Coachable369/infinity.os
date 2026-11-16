@@ -18,8 +18,10 @@ impl DisplayDevice {
         let h = r.height as usize;
         // Reuse the kit's frosted surface recipe with the Eclipse blue/silver
         // tokens; do not introduce an independently rasterized glass layer.
-        self.glass_panel_with_palette(x, y, w, h, false,
-            (16, 27, 58), self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline));
+        let edge = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        let radius = (w / 4).clamp(6, 22);
+        self.fill_rounded_rect_alpha(x,y,w,h,radius,16,27,58,208);
+        self.outline_rounded_rect(x,y,w,h,radius,edge.0,edge.1,edge.2);
         let snap = state.drag.and_then(|(px, _, _, _)| {
             if px <= 35 {
                 Some(true)
@@ -93,6 +95,7 @@ impl DisplayDevice {
             let tw = tile.width as usize;
             let selected = state.menu == Some(id);
             let hovered = state.hover == Some(id);
+            let level=if hovered {crate::ui::widget_keyframes::value(3) as usize}else{0};
             self.fill_rounded_rect_alpha(
                 tx,
                 ty,
@@ -105,7 +108,7 @@ impl DisplayDevice {
                 if selected {
                     220
                 } else if hovered {
-                    185
+                    (100 + 85*level/255) as u8
                 } else {
                     100
                 },
@@ -120,7 +123,7 @@ impl DisplayDevice {
                 if selected || hovered { 215 } else { 88 },
                 if selected || hovered { 255 } else { 116 },
             );
-            self.launcher_icon(tx + tw / 2, ty + tw / 2, shelf::icon(id), tw * 4 / 5);
+            self.launcher_icon(tx + tw / 2, ty + tw / 2 - 2*level/255, shelf::icon(id), tw * (80+9*level/255) / 100);
             self.fill_rounded_rect_alpha(tx + tw - 8, ty + tw - 8, 5, 5, 2, 63, 221, 174, 255);
             if id < shelf::NAVIGATORS {
                 self.fill_rounded_rect_alpha(

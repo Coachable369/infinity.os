@@ -67,7 +67,7 @@ pub fn poll() {
                 NEXT_POLL = now.saturating_add(1_000_000);
                 super::browser_network::pump();
                 if let Some(nic) = (&mut *(&raw mut NIC)).as_mut() {
-                    pump(nic, now / 1_000_000_000);
+                    pump(nic, now);
                     super::https::poll(nic, now / 1_000_000);
                     super::ssh::poll(nic, now / 1_000_000);
                     super::ssh_client::poll(nic, now / 1_000_000);
@@ -84,7 +84,8 @@ pub fn poll() {
 // FUNC: pump
 // DESC: Moves bounded NIC frames through the shared NetworkRuntime using only configured IPv4 and observed link state.
 // ------------------=
-fn pump(nic: &mut super::e1000::E1000, now: u64) {
+fn pump(nic: &mut super::e1000::E1000, ns: u64) {
+    let now=ns/1_000_000_000;
     use crate::runtime::network::types::*;
     crate::runtime::with_runtime(|runtime| {
         let network = &mut runtime.network;
@@ -155,6 +156,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
             } else {
                 Some(address)
             });
+        unsafe { super::network_time::poll(network,address,ns); }
         let mut frame = [0u8; super::e1000::MAX_FRAME];
         for _ in 0..4 {
             let Some(length) = nic.receive(&mut frame) else {
@@ -172,6 +174,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
             let Some(packet) = network.wire.receive_datagram() else {
                 break;
             };
+            if unsafe { super::network_time::receive(&packet,ns) } {continue;}
             let _ = network.connections.deliver_datagram(
                 packet,
                 &mut network.policy,

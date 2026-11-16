@@ -61,6 +61,7 @@ pub enum Error {
 }
 #[derive(Clone)]
 pub struct Document {
+    pub(super) owner: [u8;16],
     bytes: [u8; MAX_BYTES],
     length: usize,
 }
@@ -384,6 +385,7 @@ impl Document {
             return Err(Error::Capacity);
         }
         let mut doc = Self {
+            owner,
             bytes: [0; MAX_BYTES],
             length: bytes.len(),
         };

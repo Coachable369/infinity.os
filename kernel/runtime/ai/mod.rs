@@ -263,8 +263,10 @@ impl AiRuntime {
                     b"The objective could not be converted into a safe executable plan.".as_slice()
                 })?;
             let mut recalled=[0u8;intelligence::MAX_TEXT_BYTES];
-            if let Ok(n)=self.recall_memory(request.owner,self.hermes_session,input,recalled.len(),&mut recalled) {
-                if n>0 {self.intelligence.attach_memory_context(id,request.owner,&recalled[..n]);}
+            if request.owner==self.chat_owner {
+                let (json,vector)=self.persistent_memory.personal_context(&mut memory_api::Native,request.owner,
+                    self.hermes_session,self.hermes_memory.as_ref(),input,&mut recalled);
+                if json+vector>0 {self.intelligence.attach_memory_context(id,request.owner,&recalled[..json+vector]);}
             }
             self.intelligence
                 .begin(id, request.owner, &intelligence::InstalledCapabilities)
@@ -1131,20 +1133,13 @@ impl AiRuntime {
         }
         let input = self.chat.input();
         let mut augmented=[0u8;8192];
-        let mut augmented_len=if let Some(profile)=self.hermes_memory.as_ref(){
+        let (profile_len,vector_len)={
             #[cfg(target_os="none")]
-            let _phase = voice_conversation::WorkPhase::begin(11, origin == RequestOrigin::Voice);
-            #[cfg(target_os="none")]
-            let context=intelligence::personal_memory_context(profile,input,&mut augmented[..1536]);
-            #[cfg(not(target_os="none"))]
-            let context=profile.selected_context(input,&mut augmented[..1536]);
-            let Ok(n)=context else{return false;};
-            n
-        }else{0};
-        let profile_len = augmented_len;
-        if route == RequestRoute::Inference(InferenceMode::Conversation) {
-            augmented_len+=self.persistent_memory.context(&mut memory_api::Native,self.chat_owner,self.hermes_session,input,256,&mut augmented[augmented_len..augmented_len+256]).unwrap_or(0);
-        }
+            let _phase=voice_conversation::WorkPhase::begin(11,origin==RequestOrigin::Voice);
+            self.persistent_memory.personal_context(&mut memory_api::Native,self.chat_owner,self.hermes_session,
+                self.hermes_memory.as_ref(),input,&mut augmented[..1792])
+        };
+        let augmented_len=profile_len+vector_len;
         #[cfg(target_os="none")]
         let prompt_phase = voice_conversation::WorkPhase::begin(12, origin == RequestOrigin::Voice);
         self.deferred_tool_catalog = route == RequestRoute::Inference(InferenceMode::DesktopTools);
@@ -1455,9 +1450,10 @@ impl AiRuntime {
         let mut start = guidance.len() + count;
         let input = (0..self.chat.message_count()).rev().filter_map(|i| self.chat.message(i))
             .find(|message| message.role == chat::ChatRole::User).map(|message| message.text()).unwrap_or(b"");
-        let mut context = [0u8; 1536];
-        let context_length = self.hermes_memory.as_ref()
-            .and_then(|profile| profile.selected_context(input, &mut context).ok()).unwrap_or(0);
+        let mut context = [0u8; 1792];
+        let (json,vector)=self.persistent_memory.personal_context(&mut memory_api::Native,self.chat_owner,
+            self.hermes_session,self.hermes_memory.as_ref(),input,&mut context);
+        let context_length=json+vector;
         let Some(context_end) = start.checked_add(context_length).filter(|end| *end <= prompt.len()) else {
             self.inference_request = None;
             self.chat_deadline_ns = None;
@@ -2402,9 +2398,12 @@ impl AiRuntime {
     // DESC: Adds one bounded owner-checked contextual block to kit requests, preserving the original prompt on retrieval or capacity failure.
     // ------------------=
     pub(super) fn memory_augmented_prompt(&mut self,owner:[u8;16],session:[u8;16],prompt:&[u8],out:&mut[u8])->Option<usize>{
-        if prompt.len()+256>out.len(){return None;}
-        let n=self.recall_memory(owner,session,prompt,256,&mut out[..256]).ok()?;
-        if n==0{return None;}
+        let available=out.len().checked_sub(prompt.len())?;
+        if owner!=self.chat_owner || session!=self.hermes_session{return None}
+        let (json_len,vector_len)=self.persistent_memory.personal_context(&mut memory_api::Native,owner,session,
+            self.hermes_memory.as_ref(),prompt,&mut out[..available]);
+        let n=json_len+vector_len;
+        if n==0{return None}
         out[n..n+prompt.len()].copy_from_slice(prompt);Some(n+prompt.len())
     }
 }

@@ -25,6 +25,7 @@ pub mod desktop_drag;
 pub mod desktop_polish;
 pub mod desktop_stack;
 pub mod desktop_widgets;
+pub mod widget_keyframes;
 pub mod desktop_template;
 pub mod editor_chrome;
 pub mod editor_tools;

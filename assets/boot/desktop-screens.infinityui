@@ -2033,6 +2033,278 @@
       ],
       "id" : 3,
       "title" : "AI Voice Widget"
+    },
+    {
+      "elements" : [
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "borderToken" : 3,
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "launcherGlass",
+          "cornerRadius" : 26,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "red" : 12,
+            "green" : 29,
+            "blue" : 51,
+            "alpha" : 195
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 720,
+            "width" : 672,
+            "x" : 154,
+            "y" : 150
+          },
+          "hidden" : false,
+          "id" : "C9916F52-5A11-4F63-8B4D-D8E14ECAF9B5",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Launcher Glass",
+          "opacity" : 100,
+          "role" : 81,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 0
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "searchField",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 46,
+            "width" : 427,
+            "x" : 284,
+            "y" : 193
+          },
+          "hidden" : false,
+          "id" : "7A9D3282-0E3E-430E-8FF2-A6CF173F23FD",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Search Field",
+          "opacity" : 100,
+          "role" : 82,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 1
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "closeLauncher",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 23,
+            "width" : 20,
+            "x" : 802,
+            "y" : 161
+          },
+          "hidden" : false,
+          "id" : "3E98D528-C16E-419E-8FAF-76E15669D519",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "Close Launcher",
+          "opacity" : 100,
+          "role" : 83,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "x",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "applicationGrid",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 519,
+            "width" : 636,
+            "x" : 162,
+            "y" : 300
+          },
+          "hidden" : false,
+          "id" : "EA6FC4E3-BA88-448A-AAEA-2E1EC5EF4878",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Application Grid",
+          "opacity" : 100,
+          "role" : 84,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "70,25",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 3
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "scrollTrack",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 520,
+            "width" : 20,
+            "x" : 794,
+            "y" : 300
+          },
+          "hidden" : false,
+          "id" : "58629EB5-BB91-4F04-92D5-DE10B711FD72",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Scroll Track",
+          "opacity" : 100,
+          "role" : 86,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 5
+        }
+      ],
+      "id" : 4,
+      "title" : "App Launcher Panel"
     }
   ],
   "version" : 1

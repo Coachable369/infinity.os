@@ -1497,3 +1497,28 @@ fn motion_blur_benchmark(){
     TEST_BLUR.store(false,std::sync::atomic::Ordering::Relaxed);
     println!("motion benchmark: baseline median {} ns; fast median {} ns; application paints {}",means[0],means[1],paints);
 }
+
+#[cfg(test)]
+#[path="../kernel/core/bootstrap/widget_controls.rs"] mod widget_controls;
+#[cfg(test)]
+#[test]
+// ------------------------=
+// FUNC: forecast_and_meter_pixels
+// DESC: Exercises actual artwork, data-driven temperature rendering and arc coverage at zero and full load.
+// ------------------=
+fn forecast_and_meter_pixels(){
+    let (width,height)=(960,540);
+    let mut pixels=vec![0x201005u32;width*height];
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    ui::widget_keyframes::advance(2,255,0,true);
+    d.weather_widget(1,Some((65,3,100)),100);
+    let first=pixels.clone();d.weather_widget(1,Some((-12,71,110)),110);
+    assert!(pixels.iter().zip(first.iter()).filter(|(a,b)|a!=b).count()>100);
+    d.metric_ring(530,315,25,0,(92,217,251));
+    let first=pixels.clone();d.metric_ring(530,315,25,100,(92,217,251));
+    assert!(pixels.iter().zip(first.iter()).filter(|(a,b)|a!=b).count()>100);
+    use std::io::Write;
+    let mut file=std::io::BufWriter::new(std::fs::File::create("build/widgets-native.ppm").unwrap());
+    write!(file,"P6\n{width} {height}\n255\n").unwrap();
+    for p in pixels{file.write_all(&[(p&255)as u8,(p>>8)as u8,(p>>16)as u8]).unwrap();}
+}

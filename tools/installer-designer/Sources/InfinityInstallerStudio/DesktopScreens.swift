@@ -101,16 +101,18 @@ extension InstallerStudioDocument {
               screens.count < Self.maximumScreenCount else { return self }
         var result = self
         let definitions: [(String, StudioElementRole, CanvasRect)] = [
-            ("Launcher Glass", .launcherSurface, CanvasRect(x:70,y:150,width:860,height:720)),
-            ("Search Field", .launcherSearch, CanvasRect(x:233,y:193,width:534,height:46)),
-            ("Close Launcher", .launcherClose, CanvasRect(x:900,y:161,width:20,height:23)),
-            ("Application Grid", .launcherGrid, CanvasRect(x:96,y:301,width:795,height:346)),
-            ("Categories", .launcherCategories, CanvasRect(x:96,y:697,width:808,height:115)),
-            ("Scroll Track", .launcherScrollbar, CanvasRect(x:900,y:301,width:20,height:346))
+            ("Launcher Glass", .launcherSurface, CanvasRect(x:156,y:150,width:688,height:720)),
+            ("Search Field", .launcherSearch, CanvasRect(x:286,y:193,width:427,height:46)),
+            ("Close Launcher", .launcherClose, CanvasRect(x:820,y:161,width:20,height:23)),
+            ("Application Grid", .launcherGrid, CanvasRect(x:177,y:301,width:636,height:346)),
+            ("Categories", .launcherCategories, CanvasRect(x:177,y:697,width:646,height:115)),
+            ("Scroll Track", .launcherScrollbar, CanvasRect(x:820,y:301,width:20,height:346))
         ]
         let layers = definitions.enumerated().map { index, item in
             var element = StudioElement.make(name:item.0, kind:item.1 == .launcherClose ? .button : .panel,
                 role:item.1, frame:item.2, text:item.1 == .launcherClose ? "x" : "", zIndex:index)
+            if item.1 == .launcherGrid { element.text = "70,25" }
+            if item.1 == .launcherSurface { element.cornerRadius = 26 }
             element.fontSize = 16
             element.locked = false
             return element

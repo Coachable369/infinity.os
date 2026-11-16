@@ -16,6 +16,8 @@ pub fn system_ui_settings_changed() {
 }
 #[path = "minimized_shelf.rs"]
 mod minimized_shelf;
+#[path = "widget_controls.rs"]
+mod widget_controls;
 #[path = "desktop_widget_menu.rs"]
 mod desktop_widget_menu;
 #[path = "launcher_view.rs"]
@@ -6034,6 +6036,7 @@ impl super::DisplayDevice {
     // DESC: Renders the persistent right-side system overview and AI status foreground layer.
     // ------------------=
     fn desktop_widgets(&mut self, scale: usize) {
+        if crate::ui::desktop_widgets::current().visible & 4 != 0 {self.weather_widget(scale,crate::console::weather::reading(),crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000_000);}
         if crate::ui::desktop_widgets::current().shown(0,crate::ui::desktop_stack::current().visible[crate::ui::desktop_stack::BROWSER]) { self.desktop_overview_widget(scale); }
         self.desktop_ai_chat(scale);
     }
@@ -6050,6 +6053,17 @@ impl super::DisplayDevice {
         self.desktop_template_scene(crate::ui::desktop_template::BYTES,2,
             &[(60,name.as_bytes()),(61,b"Active"),(62,b"Online"),(63,b"Ready"),(64,b"Ready")],
             Some((geometry.x-base.x,geometry.y-base.y)),false,&[]);
+        {
+            let x=geometry.right().max(0) as usize;
+            let y=geometry.y.max(0) as usize+geometry.height as usize/12;
+            let radius=(geometry.height as usize/24).clamp(5,18);
+            let ram=crate::ui::widget_keyframes::value(1);
+            self.metric_ring(x.saturating_sub(radius*8),y,radius,crate::ui::widget_keyframes::value(0),(92,217,251));
+            self.metric_ring(x.saturating_sub(radius*3),y,radius,ram,(177,146,246));
+            for (offset,label) in [(8,b"CPU".as_slice()),(3,b"RAM".as_slice())]{
+                self.ui_text_centered(x.saturating_sub(radius*(offset+2)),radius*4,y+radius+1,label,195,216,232,1);
+            }
+        }
     }
 
     // ------------------------=
@@ -7604,7 +7618,11 @@ pub fn system_ui_present(
                     let margin=40*layout.scale() as u32;
                     crate::ui::geometry::Rect{x:0,y:(dock.y-margin as i32).max(0),width:console.display.width as u32,height:dock.height+margin}
                 });
-                for damage in [dock_damage,crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                let widgets=crate::ui::desktop_widgets::current();
+                let metric_damage=crate::ui::widget_keyframes::take(3).then(||widgets.rect(0,console.display.width,console.display.height,layout.scale(),false));
+                let weather_damage=crate::ui::widget_keyframes::take(4).then(||widgets.rect(2,console.display.width,console.display.height,layout.scale(),false));
+                let shelf_damage=crate::ui::widget_keyframes::take(8).then(||{use crate::ui::app_launcher::minimized_shelf as shelf;shelf::Geometry::new(console.display.width,console.display.height,shelf::current()).rail});
+                for damage in [metric_damage,weather_damage,shelf_damage,dock_damage,crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {

@@ -15,6 +15,8 @@ pub(crate) mod ssh;
 pub(crate) mod ssh_client;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod ssh_entropy;
+#[cfg(any(target_arch="x86_64",target_arch="aarch64"))]
+mod network_time;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) mod browser_network;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

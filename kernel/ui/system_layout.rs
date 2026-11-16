@@ -1390,7 +1390,7 @@ impl SystemLayout {
     pub fn app_launcher_geometry(self) -> AppLauncherGeometry {
         let top_bar = self.top_bar_height();
         let dock_top = self.height.saturating_sub(82 * self.scale);
-        let panel_width = (self.width * 86 / 100)
+        let panel_width = (self.width * 688 / 1000)
             .min(self.width.saturating_sub(32 * self.scale))
             .max(1);
         let available_height = dock_top.saturating_sub(top_bar + 24 * self.scale).max(1);

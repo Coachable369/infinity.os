@@ -1240,6 +1240,26 @@
       "width": 64,
       "height": 64,
       "format": "rgba"
+    },
+    {
+      "id": "desktop.weather.glass",
+      "label": "Forecast glass",
+      "group": "Desktop Widgets",
+      "target": "assets/ui-design-kit/default/weather-glass.bmp",
+      "offset": 0,
+      "width": 512,
+      "height": 256,
+      "format": "bmp"
+    },
+    {
+      "id": "desktop.telemetry.ring",
+      "label": "Resource ring track",
+      "group": "Desktop Widgets",
+      "target": "assets/ui-design-kit/default/telemetry-ring.bmp",
+      "offset": 0,
+      "width": 64,
+      "height": 64,
+      "format": "bmp"
     }
   ]
 }

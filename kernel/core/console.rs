@@ -353,6 +353,9 @@ enum InstallerStep {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[path = "geturl.rs"]
 mod geturl;
+#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+#[path="weather.rs"]
+pub(crate) mod weather;
 
 struct ConsoleOutput {
     remote: Option<crate::runtime::console_execution::Outcome>,
@@ -15143,7 +15146,23 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
             crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000);
         let pin_changed=crate::ui::desktop_polish::advance_pin(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000);
         let effects_changed=runtime.advance_desktop_effects() || drag_changed || pin_changed;
-        let mut frame_changed = motion_frame || assistant_changed || effects_changed;
+        let mut widget_changed=false;
+        #[cfg(any(target_arch="x86_64",target_arch="aarch64"))]
+        if runtime.mode==ConsoleMode::Desktop && !defer_decoration {
+            use crate::ui::{desktop_widgets,widget_keyframes as keys,app_launcher::minimized_shelf};
+            let now=crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000;
+            let reduced=runtime.spatial.state.reduced_motion;
+            let state=desktop_widgets::current();
+            if state.shown(0,crate::ui::desktop_stack::current().visible[crate::ui::desktop_stack::BROWSER]){
+                if let Some(m)=crate::runtime::with_runtime(|r|r.task_manager.system){
+                    widget_changed|=keys::advance(0,m.cpu_percent,now,reduced);
+                    widget_changed|=keys::advance(1,(u128::from(m.ram_used)*100/u128::from(m.ram_total.max(1))).min(100) as u8,now,reduced);
+                }
+            }
+            widget_changed|=keys::advance(2,if state.visible&4!=0{255}else{0},now,reduced);
+            widget_changed|=keys::advance(3,if minimized_shelf::current().hover.is_some(){255}else{0},now,reduced);
+        }
+        let mut frame_changed = widget_changed || motion_frame || assistant_changed || effects_changed;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
             runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);
         if pool_revision != runtime.pool_view_revision {
@@ -15234,6 +15253,8 @@ pub fn clock_tick() {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
+            #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+            weather::tick(runtime);
             if runtime.accounts_focus_guard() { return; }
             diagnostics::publish(runtime);
             runtime.synchronize_workplace();
@@ -15291,7 +15312,8 @@ pub fn clock_tick() {
                 && runtime.task_manager_window.visible;
             let top_live=runtime.command_terminal_visible() && crate::ui::command_terminal::inspect(|s|s.monitor);
             let sample_now=crate::ui::performance::monotonic_ns().unwrap_or(0);
-            let metrics_due=(task_manager_live||top_live) && crate::runtime::with_runtime(|r|
+            let overview_live=runtime.mode==ConsoleMode::Desktop && crate::ui::desktop_widgets::current().shown(0,crate::ui::desktop_stack::current().visible[crate::ui::desktop_stack::BROWSER]);
+            let metrics_due=(task_manager_live||top_live||overview_live) && crate::runtime::with_runtime(|r|
                 sample_now.saturating_sub(r.task_manager.system.timestamp_ns)>=500_000_000).unwrap_or(false);
             if metrics_due {
                 crate::runtime::with_runtime(|r|{

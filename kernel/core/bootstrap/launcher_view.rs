@@ -18,7 +18,21 @@ impl DisplayDevice {
         if authored.is_some() {
             self.intersect_render_clip(panel_left,panel_top,panel_width,panel_height);
         }
-        self.fill_rounded_rect_alpha(panel_left,panel_top,panel_width,panel_height,26*scale,12,29,51,195);
+        let surface = authored.and_then(|scene| crate::ui::desktop_template::element(scene,81));
+        let fill = surface.map_or([12,29,51,195], |e| e.fill);
+        let edge = surface.map_or([134,199,255,255], |e| e.border);
+        let radius = surface.map_or(26, |e| e.corner_radius as usize) * scale;
+        let opacity = surface.map_or(100, |e| e.opacity) as usize;
+        self.fill_rounded_rect_alpha(panel_left,panel_top,panel_width,panel_height,radius,fill[0],fill[1],fill[2],(fill[3] as usize*opacity/100) as u8);
+        if edge[3] != 0 && opacity != 0 {
+            self.outline_rounded_rect(panel_left,panel_top,panel_width,panel_height,radius,edge[0],edge[1],edge[2]);
+        }
+        let recipe = authored.and_then(|scene| crate::ui::desktop_template::element(scene,84))
+            .and_then(|e| core::str::from_utf8(e.text).ok()).unwrap_or("70,25");
+        let mut values = recipe.split(',');
+        let size = values.next().and_then(|v| v.parse::<usize>().ok()).unwrap_or(70).clamp(40,100);
+        let hover = values.next().and_then(|v| v.parse::<usize>().ok()).unwrap_or(25).min(40);
+        let glyph = (geometry.grid_cell_width * 5 / 4).min(geometry.grid_row_height) * 63 * 84 * size / 1_000_000;
         if let Some(scene) = authored {
             // The grid and track are layout guides, not extra framed surfaces.
             self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[81,84,85,86]);
@@ -61,10 +75,13 @@ impl DisplayDevice {
             search_icon_size,
         );
         let search_text = if query.is_empty() {
-            b"Search apps, files, settings and more...".as_slice()
+            if search_width < 650*scale { b"Search apps and files...".as_slice() } else { b"Search apps, files, settings and more...".as_slice() }
         } else {
             query
         };
+        let shortcut = b"/ SEARCH";
+        let shortcut_width = self.ui_text_width(shortcut, 1);
+        self.intersect_render_clip(search_left,search_top,search_width.saturating_sub(shortcut_width+30*scale),search_height);
         self.ui_text(
             search_left + 50 * scale,
             (search_top + search_height / 2).saturating_sub(UI_FONT_CELL_HEIGHT / 2),
@@ -82,8 +99,8 @@ impl DisplayDevice {
             focus == 0,
             1,
         );
-        let shortcut = b"/ SEARCH";
-        let shortcut_width = self.ui_text_width(shortcut, 1);
+        self.render_clip = search_clip;
+        self.intersect_render_clip(search_left,search_top,search_width,search_height);
         self.fill_rounded_rect_alpha(
             search_left + search_width.saturating_sub(shortcut_width + 25 * scale),
             search_top + 10 * scale,
@@ -136,12 +153,12 @@ impl DisplayDevice {
                 / 100;
             let well_left = cell_left + geometry.grid_cell_width.saturating_sub(well_size) / 2;
             let emphasis=if selected {crate::ui::app_launcher::highlight_level()} else {0};
-            let well_top=cell_top + 3*scale - 2*scale*emphasis/255;
+            let well_top=(cell_top + 3*scale).saturating_sub(8*scale*emphasis/255);
             let _ = self.launcher_icon(
                 well_left + well_size / 2,
                 well_top + well_size / 2,
                 entry.icon_role,
-                well_size * (84 + 8 * emphasis / 255) / 100,
+                glyph * (100 + hover * emphasis / 255) / 100,
             );
             let label = entry.label();
             let available = geometry.grid_cell_width.saturating_sub(8 * scale);
@@ -195,11 +212,6 @@ impl DisplayDevice {
             if let Some(source) = presentation.drag_source {
                 if let Some(entry) = crate::ui::app_launcher::launcher_visible_entry(query, source)
                 {
-                    let ghost_size = geometry
-                        .grid_cell_width
-                        .min(geometry.grid_row_height)
-                        .saturating_mul(63)
-                        / 100;
                     let center_x = (self.width as i32 * presentation.drag_x / 1000)
                         .clamp(0, self.width.saturating_sub(1) as i32)
                         as usize;
@@ -210,7 +222,7 @@ impl DisplayDevice {
                         center_x,
                         center_y,
                         entry.icon_role,
-                        ghost_size * 84 / 100,
+                        glyph,
                     );
                 }
             }

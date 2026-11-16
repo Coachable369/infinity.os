@@ -92,13 +92,13 @@ impl ConsoleRuntime {
             if clicked {
                 if menu.contains(point) {
                     let row = (point.y - menu.y) as usize / (36 * scale);
-                    if row == 1 || row == 2 {
+                    if (1..=3).contains(&row) {
                         state.visible ^= 1 << (row - 1);
                         if row == 2 {
                             self.set_ai_chat_enabled(state.visible & 2 != 0);
                         }
                         self.ai_chat_focus = 0;
-                    } else if row == 3 {
+                    } else if row == 4 {
                         state.positions = [[0; 2]; 2];
                     }
                 }

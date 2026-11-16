@@ -156,3 +156,16 @@ fn trash_placement_is_personal_and_clamped() {
     assert_eq!(state.position_trash(tile,800,600).right(),800);
     assert_eq!(state.position_trash(tile,800,600).bottom(),600);
 }
+
+// ------------------------=
+// FUNC: weather_visibility_round_trip
+// DESC: Verifies newly enabled forecasts survive a session reload without moving previously saved desktop objects.
+// ------------------=
+#[test]
+fn weather_visibility_round_trip(){
+ for flags in 0..8 { for trash in [None,Some([0,0]),Some([1000,1000])] {
+    let mut s=State::new();s.positions=[[1001,1001],[872,504]];s.trash_position=trash;s.visible=flags;
+    assert_eq!(State::decode(s.encode()),s);
+ }}
+ assert_eq!(State::decode(0),State::new());
+}

@@ -39,7 +39,7 @@ impl State {
             value |= (self.positions[i / 2][i % 2].min(1001) as u64) << (i * 10);
         }
         if let Some([x,y])=self.trash_position {value |= (1u64<<62)|((x.min(1000) as u64)<<42)|((y.min(1000) as u64)<<52);}
-        value
+        if self.visible & 4 != 0 { !value } else { value }
     }
     // ------------------------=
     // FUNC: decode
@@ -47,11 +47,11 @@ impl State {
     // ------------------=
     pub fn decode(value: u64) -> Self {
         let mut state = Self::new();
-        if value >> 63 == 0 {
-            return state;
-        }
+        if value == 0 {return state;}
+        let weather = value >> 63 == 0;
+        let value = if weather { !value } else { value };
         if value & (1u64<<62)!=0 {state.trash_position=Some([((value>>42)&1023).min(1000) as u16,((value>>52)&1023).min(1000) as u16]);}
-        state.visible = ((value >> 40) & 3) as u8;
+        state.visible = ((value >> 40) & 3) as u8 | ((weather as u8) << 2);
         for i in 0..4 {
             state.positions[i / 2][i % 2] = (((value >> (i * 10)) & 1023) as u16).min(1001);
         }
@@ -80,6 +80,10 @@ impl State {
         scale: usize,
         minimized: bool,
     ) -> Rect {
+        if id==2 {
+            let w=(340*scale).min(width/3);let h=w/2;
+            return Rect{x:(width/10) as i32,y:height.saturating_sub(h+105*scale) as i32,width:w as u32,height:h as u32}
+        }
         let top = height * 7 / 100;
         let overview_height = (330 * scale).min(height * 30 / 100);
         let default_y = if id == 0 || self.visible & 1 == 0 {
@@ -200,7 +204,7 @@ impl State {
     pub fn menu_rect(self, width: usize, height: usize, scale: usize) -> Option<Rect> {
         self.menu.map(|p| {
             let w = (260 * scale).min(width);
-            let h = (152 * scale).min(height);
+            let h = (188 * scale).min(height);
             Rect {
                 x: p.x.clamp(0, width.saturating_sub(w) as i32),
                 y: p.y.clamp(0, height.saturating_sub(h) as i32),
@@ -244,7 +248,7 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
         let tile=Rect{x:width.saturating_sub(size+24+12*scale) as i32,y:height.saturating_sub(size+32+16*scale) as i32,width:(size+24) as u32,height:(size+32) as u32};
         damage=Some(old.position_trash(tile,width,height).union(new.position_trash(tile,width,height)));
     }
-    for id in 0..2 {
+    for id in 0..3 {
         if old.rect(id,width,height,scale,false) != new.rect(id,width,height,scale,false) || (old.visible ^ new.visible) & (1 << id) != 0 {
             for state in [old, new] {
                 if state.visible & (1 << id) != 0 {

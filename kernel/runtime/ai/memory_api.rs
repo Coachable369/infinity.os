@@ -185,6 +185,20 @@ impl Engine {
         result
     }
     // ------------------------=
+    // FUNC: personal_context
+    // DESC: Searches both owner-bound memory sources independently, reserving space for each and preserving separate prompt segments.
+    // ------------------=
+    pub fn personal_context(&mut self, backend:&mut impl Backend, owner:Owner, session:Owner,
+        profile:Option<&super::hermes_profile::Document>, query:&[u8],out:&mut[u8])->(usize,usize){
+        if !backend.authorize(owner,session){return (0,0)}
+        let profile=profile.filter(|p|p.owner==owner);
+        let vector_budget=256.min(if profile.is_some(){out.len()/2}else{out.len()});
+        let json_budget=1536.min(out.len()-vector_budget);
+        let json=profile.and_then(|p|p.selected_context(query,&mut out[..json_budget]).ok()).unwrap_or(0);
+        let vector=self.context(backend,owner,session,query,vector_budget,&mut out[json..json+vector_budget]).unwrap_or(0);
+        (json,vector)
+    }
+    // ------------------------=
     // FUNC: inspect
     // DESC: Copies one authorized record for native clients without exposing another user's cached catalog.
     // ------------------=

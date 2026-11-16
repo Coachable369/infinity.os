@@ -197,7 +197,7 @@ fn lock() -> Option<Guard> {
 // FUNC: default_gateway
 // DESC: Selects the active unscoped IPv4 default route independently of the typically on-link DNS server.
 // ------------------=
-fn default_gateway(network: &crate::runtime::network::NetworkRuntime) -> Option<[u8; 4]> {
+pub(super) fn default_gateway(network: &crate::runtime::network::NetworkRuntime) -> Option<[u8; 4]> {
     (0..network.interfaces.route_count())
         .filter_map(|i| network.interfaces.route_nth(i))
         .filter(|r| {
