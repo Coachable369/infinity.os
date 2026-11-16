@@ -15,6 +15,47 @@ from infinitycode_model import Project, KINDS, WIDTH, validate, export_source, c
 
 class ProjectTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_widget_example_in_tk
+    # DESC: Runs the packaged counter in Tk, dispatches its real buttons and restores the released drag on a second launch.
+    # ------------------=
+    @unittest.skipUnless(os.environ.get("INFINITYCODE_GUI_TEST") == "1", "explicit GUI session required")
+    def test_widget_example_in_tk(self):
+        import tkinter as tk
+        from types import SimpleNamespace
+        template = ROOT / "sdk/widgets/examples/counter.py"
+        with tempfile.TemporaryDirectory() as folder, patch.object(tk.Misc, "mainloop", lambda self: None):
+            filename = str(Path(folder) / template.name)
+            code = compile(template.read_text(), filename, "exec")
+            env = {"__file__": filename}
+            exec(code, env)
+            root = env["root"]
+            try:
+                root.update()
+                controls = env["controls"]
+                controls["add"].invoke()
+                self.assertEqual(controls["count"].cget("text"), "1")
+                controls["reset"].invoke()
+                self.assertEqual(controls["count"].cget("text"), "0")
+                host = env["widget_host"]
+                event = SimpleNamespace(widget=root, x_root=root.winfo_x()+5, y_root=root.winfo_y()+5)
+                host.press(event)
+                event.x_root, event.y_root = 245, 205
+                host.move(event)
+                root.update()
+                host.release(event)
+                saved = json.loads(Path(host.path).read_text())
+                self.assertEqual(saved, [root.winfo_x(), root.winfo_y()])
+            finally:
+                root.destroy()
+            exec(code, env)
+            root = env["root"]
+            try:
+                root.update()
+                self.assertEqual([root.winfo_x(), root.winfo_y()], saved)
+            finally:
+                root.destroy()
+
+    # ------------------------=
     # FUNC: test_packaged_widget_backend
     # DESC: Executes the installed template callbacks and compares its exported code with the editable form.
     # ------------------=

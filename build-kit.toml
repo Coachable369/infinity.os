@@ -306,3 +306,8 @@ clean = false
 domain = "studio"
 command = ["sh","tools/weather-location-check.sh"]
 clean = false
+
+[profiles.studio-widget-authoring]
+domain = "studio"
+command = ["env", "INFINITYCODE_GUI_TEST=1", "python3", "tools/native-python/infinitycode-test.py"]
+clean = false
