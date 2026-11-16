@@ -37,3 +37,19 @@ pub fn invalidate(id:usize){DIRTY.fetch_or(1<<id,Ordering::Relaxed);}
 // DESC: Consumes the requested control's pending paint only.
 // ------------------=
 pub fn take(mask:u8)->bool{DIRTY.fetch_and(!mask,Ordering::Relaxed)&mask!=0}
+
+static CLOUD_PHASE:AtomicU8=AtomicU8::new(0);
+// ------------------------=
+// FUNC: weather_phase
+// DESC: Advances the repeating sky transition and invalidates only weather, respecting reduced motion.
+// ------------------=
+pub fn weather_phase(now:u64,reduced:bool)->bool {
+    let phase=if reduced{0}else{((now/250)%128) as u8};
+    if CLOUD_PHASE.swap(phase,Ordering::Relaxed)==phase{return false}
+    invalidate(2);true
+}
+// ------------------------=
+// FUNC: cloud_phase
+// DESC: Samples the prepared cloud transition without changing it during composition.
+// ------------------=
+pub fn cloud_phase()->u8{CLOUD_PHASE.load(Ordering::Relaxed)}

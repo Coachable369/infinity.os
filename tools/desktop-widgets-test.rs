@@ -200,3 +200,21 @@ fn widgets_share_width_and_snap_into_stacks() {
         assert!((weather.y-ai.bottom()-12*scale as i32).abs()<=h.div_ceil(1000) as i32);
     }
 }
+
+#[test]
+// ------------------------=
+// FUNC: all_widgets_remain_reachable_when_overview_appears
+// DESC: Exercises a saved Weather position in the AI column and independent fine opacity adjustments.
+// ------------------=
+fn all_widgets_remain_reachable_when_overview_appears(){
+    for (w,h,s) in [(800,600,1),(1024,768,1),(1920,1080,1),(3840,2160,2)]{
+        let mut state=State::new();state.visible=7;
+        let ai=state.rect(1,w,h,s,false);
+        state.weather_position=[(1+ai.x.max(0)as usize*1000/w)as u16,(1+ai.y.max(0)as usize*1000/h)as u16];
+        let r=state.rect(2,w,h,s,false);
+        assert!(!r.intersects(ai));
+        assert!(!r.intersects(state.rect(0,w,h,s,false)));
+        for id in 0..3{state.set_percent(id,[7,43,100][id]);}
+        assert_eq!([state.percent(0),state.percent(1),state.percent(2)],[7,43,100]);
+    }
+}

@@ -158,3 +158,5 @@ pub mod scroll_capture;
 pub mod command_terminal_paint;
 
 pub mod terminal_vt;
+
+pub mod weather_forecast;

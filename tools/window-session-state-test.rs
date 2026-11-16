@@ -33,7 +33,7 @@ fn example_layout() -> DesktopSessionLayout {
         input_preferences: [0xa1, 7, 8, 3, 2, 3, 0, 0],
         app_drawer_left: true,
         app_drawer_floating: [301, 201],
-        widget_transparency:57, weather_position:[789,654], widgets: 0x8000_0100_0123_4567,
+        widget_transparency:57 | (13<<6) | (7<<11) | (24<<16), weather_position:[789,654], widgets: 0x8000_0100_0123_4567,
     }
 }
 

@@ -1511,9 +1511,9 @@ fn forecast_and_meter_pixels(){
     let mut pixels=vec![0x201005u32;width*height];
     let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
     ui::widget_keyframes::advance(2,255,0,true);
-    d.weather_widget(1,None,100,b"",true,b"",false,b"Enter your city");
+    d.weather_widget(1,None,None,100,b"",true,b"",false,b"Enter your city");
     let empty=pixels.clone();
-    d.weather_widget(1,None,100,b"",true,b"Oslo",true,b"Enter your city");
+    d.weather_widget(1,None,None,100,b"",true,b"Oslo",true,b"Enter your city");
     assert!(pixels.iter().zip(empty.iter()).filter(|(a,b)|a!=b).count()>40);
     if let Some(path)=std::env::var_os("WEATHER_SETUP_PPM"){
         use std::io::Write;
@@ -1521,8 +1521,8 @@ fn forecast_and_meter_pixels(){
         write!(f,"P6\n{width} {height}\n255\n").unwrap();
         for p in &pixels{f.write_all(&[(*p&255)as u8,((*p>>8)&255)as u8,((*p>>16)&255)as u8]).unwrap();}
     }
-    d.weather_widget(1,Some((65,3,100,true)),100,b"Oslo",false,b"",false,b"");
-    let first=pixels.clone();pixels.fill(0x201005);d.weather_widget(1,Some((65,3,100,false)),100,b"Oslo",false,b"",false,b"");
+    d.weather_widget(1,Some((65,3,100,true)),None,100,b"Oslo",false,b"",false,b"");
+    let first=pixels.clone();pixels.fill(0x201005);d.weather_widget(1,Some((65,3,100,false)),None,100,b"Oslo",false,b"",false,b"");
     assert!(pixels.iter().zip(first.iter()).filter(|(a,b)|a!=b).count()>100);
     d.metric_ring(530,315,25,0,(92,217,251));
     let first=pixels.clone();d.metric_ring(530,315,25,100,(92,217,251));
@@ -1531,4 +1531,32 @@ fn forecast_and_meter_pixels(){
     let mut file=std::io::BufWriter::new(std::fs::File::create("build/widgets-native.ppm").unwrap());
     write!(file,"P6\n{width} {height}\n255\n").unwrap();
     for p in pixels{file.write_all(&[(p&255)as u8,(p>>8)as u8,(p>>16)as u8]).unwrap();}
+}
+
+#[cfg(test)]
+#[test]
+// ------------------------=
+// FUNC: weather_outlook_and_chooser_render
+// DESC: Composes the production menu and weather card and verifies cloud motion changes actual pixels.
+// ------------------=
+fn weather_outlook_and_chooser_render(){
+    let (width,height)=(1280,800);
+    let mut pixels=vec![0x24170cu32;width*height];
+    let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    let mut state=ui::desktop_widgets::State::new();state.visible=7;state.menu=Some(ui::geometry::Point{x:150,y:120});state.visibility_menu=true;ui::desktop_widgets::publish(state);
+    ui::widget_keyframes::advance(2,255,0,true);
+    let out=ui::weather_forecast::Outlook::parse(r#"{"utc_offset_seconds":0,"current":{"time":43200},"daily":{"sunrise":[21600],"sunset":[64800]},"hourly":{"time":[43200,46800,50400,54000,57600],"temperature_2m":[65,68,70,72,67]}}"#).unwrap();
+    assert_eq!(out.count,4);assert_eq!(out.hours[0].hour,13);assert_eq!(out.hours[2].temperature,72);
+    d.weather_widget(1,Some((65,0,120,true)),Some(out),120,b"Bossier City",false,b"",false,b"");
+    let first=pixels.clone();pixels.fill(0x24170c);
+    ui::widget_keyframes::weather_phase(8250,false);
+    d.weather_widget(1,Some((65,0,120,true)),Some(out),120,b"Bossier City",false,b"",false,b"");
+    assert!(first.iter().zip(&pixels).filter(|(a,b)|a!=b).count()>500);
+    d.desktop_widget_menu(1);
+    if let Some(path)=std::env::var_os("WEATHER_REVIEW_PPM"){
+        use std::io::Write;
+        let mut f=std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+        write!(f,"P6\n{width} {height}\n255\n").unwrap();
+        for p in pixels{f.write_all(&[(p&255)as u8,(p>>8)as u8,(p>>16)as u8]).unwrap();}
+    }
 }

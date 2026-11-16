@@ -63,7 +63,7 @@ pub struct DesktopSessionLayout {
     pub app_drawer_left: bool,
     pub app_drawer_floating: [u16; 2],
     pub widgets: u64,
-    pub widget_transparency: u8,
+    pub widget_transparency: u32,
     pub weather_position: [u16;2],
 }
 
@@ -298,7 +298,10 @@ pub(crate) fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayo
         DesktopResumeSurface::CommandWindow => 4,
         DesktopResumeSurface::TaskManager => 5,
     };
-    out[at+124] |= (layout.widget_transparency & 31)<<3;
+    out[at+124] |= ((layout.widget_transparency as u8) & 31)<<3;
+    for (id,offset) in [16,33,50].into_iter().enumerate(){
+        out[at+offset]|=(((layout.widget_transparency>>(6+5*id))&31) as u8)<<2;
+    }
     out[at + 125] = layout.settings_section.min(u8::MAX as usize) as u8;
     out[at + 126] = layout
         .settings_expanded_row
@@ -314,7 +317,7 @@ pub(crate) fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayo
     let [x,y]=layout.weather_position.map(|v|v.min(1001));
     out[at+127]=x as u8;
     out[at+132]=y as u8;
-    out[at + 158] = u8::from(layout.app_drawer_left) | ((x>>8) as u8)<<1 | ((y>>8) as u8)<<3 | (layout.widget_transparency & 32);
+    out[at + 158] = u8::from(layout.app_drawer_left) | ((x>>8) as u8)<<1 | ((y>>8) as u8)<<3 | ((layout.widget_transparency as u8) & 32);
 }
 
 // ------------------------=
@@ -322,11 +325,11 @@ pub(crate) fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayo
 // DESC: Restores one validated desktop layout from a fixed durable record.
 // ------------------=
 pub(crate) fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
-    let home = read_placement(input, at)?;
-    let settings = read_placement(input, at + 17)?;
-    let editor = read_placement(input, at + 34)?;
-    let command = read_placement(input, at + 51)?;
-    let task_manager = read_placement(input, at + 133)?;
+    let home = read_placement(input, at, 0x7f)?;
+    let settings = read_placement(input, at + 17, 0x7f)?;
+    let editor = read_placement(input, at + 34, 0x7f)?;
+    let command = read_placement(input, at + 51, 3)?;
+    let task_manager = read_placement(input, at + 133, 3)?;
     let mut positions = [[0i32; 2]; 7];
     let positions_at = at + 68;
     for (index, position) in positions.iter_mut().enumerate() {
@@ -356,7 +359,8 @@ pub(crate) fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayou
         app_drawer_left: input[at + 158] & 1 != 0,
         app_drawer_floating: [0; 2],
         widgets: 0,
-        widget_transparency:(input[at+124]>>3) | (input[at+158]&32),
+        widget_transparency:u32::from((input[at+124]>>3) | (input[at+158]&32)) |
+            [16,33,50].into_iter().enumerate().fold(0,|v,(id,offset)| v | (u32::from((input[at+offset]>>2)&31)<<(6+5*id))),
         weather_position:[input[at+127] as u16 | ((input[at+158] as u16>>1)&3)<<8,input[at+132] as u16 | ((input[at+158] as u16>>3)&3)<<8],
     })
 }
@@ -377,11 +381,11 @@ fn write_placement(out: &mut [u8], at: usize, placement: WindowPlacement) {
 // FUNC: read_placement
 // DESC: Decodes one window placement and rejects invalid geometry or flag bits.
 // ------------------=
-fn read_placement(input: &[u8], at: usize) -> Option<WindowPlacement> {
+fn read_placement(input: &[u8], at: usize, allowed:u8) -> Option<WindowPlacement> {
     let flags = input[at + 16];
     let width = get_i32(input, at + 8);
     let height = get_i32(input, at + 12);
-    if flags & !3 != 0 || width <= 0 || height <= 0 {
+    if flags & !allowed != 0 || width <= 0 || height <= 0 {
         return None;
     }
     Some(WindowPlacement::new(

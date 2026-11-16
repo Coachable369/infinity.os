@@ -15168,6 +15168,7 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
                     widget_changed|=keys::advance(1,(u128::from(m.ram_used)*100/u128::from(m.ram_total.max(1))).min(100) as u8,now,reduced);
                 }
             }
+            if state.visible&4!=0 {widget_changed|=keys::weather_phase(now,reduced);}
             widget_changed|=keys::advance(2,if state.visible&4!=0{255}else{0},now,reduced);
             widget_changed|=keys::advance(3,if minimized_shelf::current().hover.is_some(){255}else{0},now,reduced);
         }

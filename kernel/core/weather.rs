@@ -9,6 +9,7 @@ static mut PENDING:Option<(SecurityIdentity,https::Ticket,Request)>=None;
 static mut SESSION:Option<SecurityIdentity>=None;
 static mut NEXT:u64=0;
 static mut REPORT:Option<(i16,u8,u64,bool)>=None;
+static mut OUTLOOK:Option<crate::ui::weather_forecast::Outlook>=None;
 static mut PLACE:Option<Place>=None;
 static mut QUERY:Text<54>=Text::EMPTY;
 static mut SETUP:bool=true;
@@ -23,6 +24,11 @@ static mut MESSAGE:&[u8]=b"Enter your city";
 pub(crate) fn view()->(Option<(i16,u8,u64,bool)>,Text<64>,bool,Text<54>,bool,&'static [u8]){
     unsafe{(REPORT,PLACE.map(|p|p.city).unwrap_or(Text::EMPTY),SETUP,QUERY,FOCUS,MESSAGE)}
 }
+// ------------------------=
+// FUNC: outlook
+// DESC: Copies the active location forecast for the desktop painter.
+// ------------------=
+pub(crate) fn outlook()->Option<crate::ui::weather_forecast::Outlook>{unsafe{OUTLOOK}}
 // ------------------------=
 // FUNC: configure
 // DESC: Opens the city field from the widget context menu.
@@ -40,6 +46,13 @@ pub(super) fn blur(){unsafe{FOCUS=false}}
 pub(super) fn click(x:i32,y:i32)->bool{unsafe{
     if LOOKUP.is_some(){return false}
     if !SETUP && y<32 && x>=65{SETUP=true;MESSAGE=b"Enter your city";QUERY=Text::EMPTY;FOCUS=true;}
+    else if !SETUP && y>=65 && (x<26 || x>=74) {
+        if let Some(mut out)=OUTLOOK {
+            let pages=out.count.div_ceil(3).max(1);
+            out.page=if x<26{out.page.saturating_sub(1)}else{(out.page+1).min(pages-1)};
+            OUTLOOK=Some(out);
+        }
+    }
     else if SETUP && (33..59).contains(&y) && (5..95).contains(&x){FOCUS=true;}
     else if SETUP && (66..92).contains(&y) && ((5..45).contains(&x)||(50..95).contains(&x)){if x>=50{LOOKUP=Some(Request::Detect);}else if QUERY.len>0{LOOKUP=Some(Request::City);}NEXT=0;}
     else{return false}
@@ -86,7 +99,7 @@ pub(super) fn tick(console:&ConsoleRuntime){
         let active=enabled.then_some(owner);
         if SESSION!=active{
             if let Some((a,t,_))=PENDING{let _=https::cancel_browser(a,t);}
-            PENDING=None;SESSION=active;REPORT=None;PLACE=None;QUERY=Text::EMPTY;SETUP=true;FOCUS=false;LOOKUP=None;NEXT=0;MESSAGE=b"Enter your city";
+            PENDING=None;SESSION=active;REPORT=None;OUTLOOK=None;PLACE=None;QUERY=Text::EMPTY;SETUP=true;FOCUS=false;LOOKUP=None;NEXT=0;MESSAGE=b"Enter your city";
             if enabled{let mut saved=[0;120];if let Ok(n)=crate::storage::weather_location(console.current_user.0,owner.0,None,&mut saved){PLACE=Place::decode(&saved[..n]);SETUP=PLACE.is_none();}}
             crate::ui::widget_keyframes::invalidate(2);
         }
@@ -95,12 +108,15 @@ pub(super) fn tick(console:&ConsoleRuntime){
                 Ok(None)|Err(https::Failure::Busy)=>return,
                 result if enabled && actor==owner=>{
                     if kind==Request::Forecast{
-                        if let Ok(Some(Ok(r)))=result{if r.status==200{if let Some((t,c,day))=parse(&r.bytes[..r.length]){REPORT=Some((t,c,now,day));NEXT=now+900;}}}
+                        if let Ok(Some(Ok(r)))=result{if r.status==200{if let Some((t,c,day))=parse(&r.bytes[..r.length]){let previous=OUTLOOK.map_or(0,|out|out.page);
+                            OUTLOOK=core::str::from_utf8(&r.bytes[..r.length]).ok().and_then(crate::ui::weather_forecast::Outlook::parse);
+                            if let Some(ref mut out)=*(&raw mut OUTLOOK){out.page=previous.min(out.count.saturating_sub(1)/3);}
+                            REPORT=Some((t,c,now,day));NEXT=now+900;}}}
                     }else{
                         let found=if let Ok(Some(Ok(r)))=result{if r.status==200{place::resolve(&r.bytes[..r.length],kind==Request::Detect)}else{None}}else{None};
                         LOOKUP=None;
                         if let Some(p)=found{let mut scratch=[0;120];if crate::storage::weather_location(console.current_user.0,owner.0,Some(p.encode().value()),&mut scratch).is_ok(){
-                            PLACE=Some(p);REPORT=None;SETUP=false;FOCUS=false;NEXT=0;
+                            PLACE=Some(p);REPORT=None;OUTLOOK=None;SETUP=false;FOCUS=false;NEXT=0;
                         }else{MESSAGE=b"Could not save city";}}
                         else{MESSAGE=b"City not found";}
                     }

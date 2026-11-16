@@ -1272,6 +1272,36 @@
       "format": "bmp"
     },
     {
+      "id": "desktop.weather.cloud1",
+      "label": "Daylight cloud keyframe 1",
+      "group": "Desktop Widgets",
+      "target": "assets/ui-design-kit/default/weather-cloud-1.bmp",
+      "offset": 0,
+      "width": 512,
+      "height": 256,
+      "format": "bmp"
+    },
+    {
+      "id": "desktop.weather.cloud2",
+      "label": "Daylight cloud keyframe 2",
+      "group": "Desktop Widgets",
+      "target": "assets/ui-design-kit/default/weather-cloud-2.bmp",
+      "offset": 0,
+      "width": 512,
+      "height": 256,
+      "format": "bmp"
+    },
+    {
+      "id": "desktop.weather.cloud3",
+      "label": "Daylight cloud keyframe 3",
+      "group": "Desktop Widgets",
+      "target": "assets/ui-design-kit/default/weather-cloud-3.bmp",
+      "offset": 0,
+      "width": 512,
+      "height": 256,
+      "format": "bmp"
+    },
+    {
       "id": "desktop.telemetry.ring",
       "label": "Resource ring track",
       "group": "Desktop Widgets",

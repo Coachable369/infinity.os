@@ -34,7 +34,7 @@ impl Place{
     // FUNC: path
     // DESC: Builds a forecast request exclusively from validated coordinates.
     // ------------------=
-    pub fn path(self)->Option<Text<192>>{let mut s=Text::EMPTY;for b in [b"/v1/forecast?latitude=".as_slice(),self.lat.value(),b"&longitude=",self.lon.value(),b"&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit"]{s.add(b)?;}Some(s)}
+    pub fn path(self)->Option<Text<320>>{let mut s=Text::EMPTY;for b in [b"/v1/forecast?latitude=".as_slice(),self.lat.value(),b"&longitude=",self.lon.value(),b"&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit&hourly=temperature_2m&forecast_hours=25&daily=sunrise,sunset&forecast_days=2&timeformat=unixtime&timezone=auto"]{s.add(b)?;}Some(s)}
     // ------------------------=
     // FUNC: encode
     // DESC: Serializes only the resolved locality for the owner's preferences.
@@ -77,7 +77,7 @@ mod tests{
     fn location_preference_roundtrip(){
         let city=resolve(br#"{"results":[{"name":"Oslo","latitude":59.91,"longitude":10.74},{"name":"Paris","latitude":48.8,"longitude":2.3}]}"#,false).unwrap();
         let auto=resolve(br#"{"success":true,"city":"Oslo","latitude":59.91,"longitude":10.74}"#,true).unwrap();
-        assert_eq!(city,auto);assert_eq!(Place::decode(auto.encode().value()),Some(city));assert_eq!(auto.path().unwrap().value(),b"/v1/forecast?latitude=59.91&longitude=10.74&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit");
+        assert_eq!(city,auto);assert_eq!(Place::decode(auto.encode().value()),Some(city));assert_eq!(auto.path().unwrap().value(),b"/v1/forecast?latitude=59.91&longitude=10.74&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit&hourly=temperature_2m&forecast_hours=25&daily=sunrise,sunset&forecast_days=2&timeformat=unixtime&timezone=auto");
         assert!(resolve(b"{}",false).is_none());assert!(resolve(br#"{"success":false,"city":"Oslo","latitude":60,"longitude":10}"#,true).is_none());
         assert!(Place::decode(b"City\n92\n0").is_none());assert_eq!(search(b"St. John's").unwrap().value(),b"/v1/search?count=1&language=en&name=St%2E%20John%27s");
     }

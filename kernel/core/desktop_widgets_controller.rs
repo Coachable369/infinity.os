@@ -96,16 +96,25 @@ impl ConsoleRuntime {
             return true;
         }
         if let Some(menu) = state.menu_rect(width, height, scale) {
+            if let Some(id)=state.menu_widget.filter(|_|state.transparency_menu) {
+                let inset=20*scale as i32;
+                let length=(menu.width as i32-2*inset).max(1);
+                if state.adjusting || (clicked && menu.contains(point) && point.y>=menu.y+36*scale as i32) {
+                    if self.pointer_pressed || clicked {
+                        let value=((point.x-menu.x-inset).clamp(0,length)*100+length/2)/length;
+                        state.set_percent(id,value as u32);
+                    }
+                    let release=state.adjusting && !self.pointer_pressed;
+                    state.adjusting=self.pointer_pressed;widgets::publish(state);
+                    if release || !state.adjusting { let _=self.persist_desktop_layout(); }
+                    self.redraw();return true;
+                }
+            }
             if clicked {
                 let previous=state;
                 if menu.contains(point) {
                     let row = (point.y - menu.y) as usize / (36 * scale);
-                    if state.transparency_menu {
-                        if let (Some(id),1..=4)=(state.menu_widget,row) {
-                            let shift=id*2;
-                            state.transparency=(state.transparency & !(3<<shift)) | (((row-1) as u8)<<shift);
-                        }
-                    } else if let Some(id)=state.menu_widget {
+                    if let Some(id)=state.menu_widget.filter(|_|!state.transparency_menu) {
                         match row{
                             1=>match id{2=>{#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]super::weather::configure();},1=>self.open_settings(3),_=>self.open_settings(0)},
                             2=>{state.transparency_menu=true;widgets::publish(state);self.redraw();return true;},

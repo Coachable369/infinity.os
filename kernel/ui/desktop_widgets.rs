@@ -6,7 +6,8 @@ pub struct State {
     pub weather_position: [u16;2],
     pub menu_widget: Option<usize>,
     pub visible: u8,
-    pub transparency: u8,
+    pub transparency: u32,
+    pub adjusting: bool,
     pub transparency_menu: bool,
     pub visibility_menu: bool,
     pub trash_position: Option<[u16;2]>,
@@ -19,8 +20,23 @@ impl State {
     // DESC: Adjusts only the widget background while keeping text and control contrast intact.
     // ------------------=
     pub fn material_alpha(self, id:usize, base:u8)->u8 {
-        let level=(self.transparency>>(2*id)) & 3;
-        ((base as u16 * (100 - 25*level as u16))/100) as u8
+        (u32::from(base)*(100-self.percent(id))/100) as u8
+    }
+    // ------------------------=
+    // FUNC: percent
+    // DESC: Reads the legacy quarter steps and additional precision from the session layout.
+    // ------------------=
+    pub fn percent(self,id:usize)->u32 {
+        (25*((self.transparency>>(2*id))&3)+((self.transparency>>(6+5*id))&31)).min(100)
+    }
+    // ------------------------=
+    // FUNC: set_percent
+    // DESC: Stores a continuous slider selection while preserving the other widgets.
+    // ------------------=
+    pub fn set_percent(&mut self,id:usize,percent:u32){
+        let value=percent.min(100);let quarters=(value/25).min(3);
+        let (lo,hi)=(2*id,6+5*id);
+        self.transparency=(self.transparency & !((3<<lo)|(31<<hi)))|(quarters<<lo)|((value-25*quarters)<<hi);
     }
     // ------------------------=
     // FUNC: shown
@@ -37,7 +53,7 @@ impl State {
         Self {
             positions: [[0; 2]; 2],
             weather_position: [0;2], menu_widget: None,
-            visible: 2, transparency: 0, transparency_menu: false, visibility_menu: false,
+            visible: 2, adjusting:false, transparency: 0, transparency_menu: false, visibility_menu: false,
             trash_position: None,
             drag: None,
             menu: None,
@@ -97,8 +113,24 @@ impl State {
         if id==2 {
             let w=super::desktop_template::widget_width(width,height) as usize;let h=w/2;
             let [x,y]=self.weather_position;
-            return Rect{x:if x==0{width/10}else{((x-1)as usize*width/1000).min(width.saturating_sub(w))}as i32,
-                y:if y==0{height.saturating_sub(h+105*scale)}else{((y-1)as usize*height/1000).min(height.saturating_sub(h))}as i32,width:w as u32,height:h as u32}
+            let preferred=Rect{x:if x==0{width/10}else{((x-1)as usize*width/1000).min(width.saturating_sub(w))}as i32,
+                y:if y==0{height.saturating_sub(h+105*scale)}else{((y-1)as usize*height/1000).min(height.saturating_sub(h))}as i32,width:w as u32,height:h as u32};
+            if self.visible&7!=7 || self.drag.is_some(){return preferred}
+            let obstacles=[self.rect(0,width,height,scale,false),self.rect(1,width,height,scale,false)];
+            if obstacles.iter().all(|r|!r.intersects(preferred)){return preferred}
+            let gap=(12*scale) as i32;
+            let xmax=width.saturating_sub(w) as i32;
+            let ymin=(height*7/100) as i32;
+            let ymax=(height.saturating_sub(h+82*scale) as i32).max(ymin);
+            let mut best=None;
+            for x in [preferred.x,0,xmax,obstacles[0].x-w as i32-gap,obstacles[1].x-w as i32-gap,obstacles[0].right()+gap,obstacles[1].right()+gap] {
+                for y in [preferred.y,ymin,ymax,obstacles[0].bottom()+gap,obstacles[1].bottom()+gap,obstacles[0].y-h as i32-gap,obstacles[1].y-h as i32-gap] {
+                    let candidate=Rect{x:x.clamp(0,xmax),y:y.clamp(ymin,ymax),..preferred};
+                    let distance=(candidate.x-preferred.x).abs()+(candidate.y-preferred.y).abs();
+                    if obstacles.iter().all(|r|!r.intersects(candidate)) && best.is_none_or(|(d,_)|distance<d){best=Some((distance,candidate));}
+                }
+            }
+            return best.map_or(preferred,|(_,rect)|rect);
         }
         let top = height * 7 / 100;
         let overview_height = (330 * scale).min(height * 30 / 100);
@@ -220,7 +252,7 @@ impl State {
     pub fn menu_rect(self, width: usize, height: usize, scale: usize) -> Option<Rect> {
         self.menu.map(|p| {
             let w = (260 * scale).min(width);
-            let rows=if self.transparency_menu || self.visibility_menu {5} else if self.menu_widget.is_some(){4}else{2};
+            let rows=if self.transparency_menu {3} else if self.visibility_menu {5} else if self.menu_widget.is_some(){4}else{2};
             let h = ((rows*36+8)*scale).min(height);
             Rect {
                 x: p.x.clamp(0, width.saturating_sub(w) as i32),
@@ -294,7 +326,7 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
     }
     for id in 0..3 {
         if old.rect(id,width,height,scale,false) != new.rect(id,width,height,scale,false) || (old.visible ^ new.visible) & (1 << id) != 0
-            || (old.transparency ^ new.transparency) & (3 << (2*id)) != 0 {
+            || old.percent(id)!=new.percent(id) {
             for state in [old, new] {
                 if state.visible & (1 << id) != 0 {
                     let rect = state.rect(id, width, height, scale, false);
@@ -303,7 +335,7 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
             }
         }
     }
-    if old.menu != new.menu || old.transparency_menu != new.transparency_menu
+    if old.transparency!=new.transparency || old.menu != new.menu || old.transparency_menu != new.transparency_menu
         || old.visibility_menu != new.visibility_menu || old.menu_widget != new.menu_widget {
         for state in [old, new] {
             if let Some(rect) = state.menu_rect(width, height, scale) {
