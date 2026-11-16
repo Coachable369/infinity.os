@@ -44,6 +44,9 @@ impl DisplayDevice {
         };
         for (i,label) in labels.iter().enumerate(){
             let top=y+(36+i*36)*scale;
+            if state.menu_hover==Some(i+1){
+                self.fill_rounded_rect_alpha(x+6*scale,top+2*scale,w-12*scale,32*scale,6*scale,74,133,205,85);
+            }
             if state.visibility_menu && i==3{self.fill_rounded_rect_alpha(x+12*scale,top,w-24*scale,scale,0,126,164,206,70);}
             self.ui_text_raster(x+16*scale,top+7*scale,label,218,232,246,body,false,None);
             if state.visibility_menu && i<3 {

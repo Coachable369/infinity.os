@@ -117,12 +117,12 @@ impl ConsoleRuntime {
                     if let Some(id)=state.menu_widget.filter(|_|!state.transparency_menu) {
                         match row{
                             1=>match id{2=>{#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]super::weather::configure();},1=>self.open_settings(3),_=>self.open_settings(0)},
-                            2=>{state.transparency_menu=true;widgets::publish(state);self.redraw();return true;},
+                            2=>{state.transparency_menu=true;state.menu_hover=None;widgets::publish(state);self.redraw();return true;},
                             3=>{state.visible &= !(1<<id);if id==1{self.set_ai_chat_enabled(false);}},
                             _=>{}
                         }
                     }else if !state.visibility_menu && row==1 {
-                        state.visibility_menu=true;widgets::publish(state);self.redraw();return true;
+                        state.visibility_menu=true;state.menu_hover=None;widgets::publish(state);self.redraw();return true;
                     }else if state.visibility_menu && (1..=3).contains(&row) {
                         state.visible ^= 1 << (row - 1);
                         if row == 2 {
@@ -133,7 +133,7 @@ impl ConsoleRuntime {
                         state.positions = [[0; 2]; 2];state.weather_position=[0;2];
                     }
                 }
-                state.menu = None;state.menu_widget=None;state.visibility_menu=false;state.transparency_menu=false;
+                state.menu = None;state.menu_hover=None;state.menu_widget=None;state.visibility_menu=false;state.transparency_menu=false;
                 widgets::publish(state);
                 if previous.visible!=state.visible || previous.transparency!=state.transparency
                     || previous.positions!=state.positions || previous.weather_position!=state.weather_position {
@@ -141,7 +141,11 @@ impl ConsoleRuntime {
                 }
                 self.redraw();
             } else {
-                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+                let row=(point.y-menu.y).max(0) as usize/(36*scale);
+                let hover=(menu.contains(point) && row>0 && !state.transparency_menu).then_some(row);
+                if state.menu_hover!=hover{
+                    state.menu_hover=hover;widgets::publish(state);self.redraw();
+                }else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}
             }
             return true;
         }

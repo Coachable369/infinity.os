@@ -5,6 +5,7 @@ pub struct State {
     pub positions: [[u16; 2]; 2],
     pub weather_position: [u16;2],
     pub menu_widget: Option<usize>,
+    pub menu_hover: Option<usize>,
     pub visible: u8,
     pub transparency: u32,
     pub adjusting: bool,
@@ -52,7 +53,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             positions: [[0; 2]; 2],
-            weather_position: [0;2], menu_widget: None,
+            weather_position: [0;2], menu_widget: None, menu_hover: None,
             visible: 2, adjusting:false, transparency: 0, transparency_menu: false, visibility_menu: false,
             trash_position: None,
             drag: None,
@@ -335,7 +336,7 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
             }
         }
     }
-    if old.transparency!=new.transparency || old.menu != new.menu || old.transparency_menu != new.transparency_menu
+    if old.menu_hover!=new.menu_hover || old.transparency!=new.transparency || old.menu != new.menu || old.transparency_menu != new.transparency_menu
         || old.visibility_menu != new.visibility_menu || old.menu_widget != new.menu_widget {
         for state in [old, new] {
             if let Some(rect) = state.menu_rect(width, height, scale) {
