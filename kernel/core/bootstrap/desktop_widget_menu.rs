@@ -15,7 +15,7 @@ impl DisplayDevice {
         self.glass_panel(x, y, rect.width as usize, rect.height as usize, true);
         if let Some(id)=state.menu_widget{
             if state.transparency_menu {
-                self.ui_text_strong(x+16*scale,y+10*scale,b"BACKGROUND TRANSPARENCY",120,209,245,1);
+                self.ui_text_strong(x+16*scale,y+10*scale,b"TRANSPARENCY",120,209,245,1);
                 for (index,label) in [b"0%".as_slice(),b"25%",b"50%",b"75%"].iter().enumerate(){
                     let top=y+(46+36*index)*scale;
                     if usize::from((state.transparency>>(2*id))&3)==index {self.ui_text(x+14*scale,top,b"*",120,209,245,1);}
