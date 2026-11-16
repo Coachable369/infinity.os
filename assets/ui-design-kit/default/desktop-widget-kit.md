@@ -9,3 +9,5 @@ The board specifies the three stock widgets at rest. Use a six-dot drag handle, 
 - **Infinity AI** layers a smoke lightmap behind its microphone, model, conversation and compose controls. Text remains legible at rest and during audio activity. Preserve all existing keyboard, pointer and voice actions.
 
 For acceptance, capture fixed-data native renders of each state at the same size, scale, backdrop and animation frame as its reference. Compare all pixels before approving. Verify drag capture, configuration, focus and persistence separately.
+
+Use `python3 tools/widget-design-compare.py REFERENCE.png CAPTURE.png --diff DIFF.png` for the exact comparison. Supply independent, widget-sized fixtures. A difference in dimensions or in any RGBA channel fails the check.
