@@ -108,10 +108,17 @@ impl DisplayDevice {
     // DESC: Composites the shared neutral smoke material behind live controls.
     // ------------------=
     pub(crate) fn smoke_backdrop(&mut self,r:crate::ui::geometry::Rect,inset:usize) {
+        self.smoke_backdrop_alpha(r,inset,255);
+    }
+    // ------------------------=
+    // FUNC: smoke_backdrop_alpha
+    // DESC: Applies the selected opacity to the smoke layer.
+    // ------------------=
+    fn smoke_backdrop_alpha(&mut self,r:crate::ui::geometry::Rect,inset:usize,alpha:u8) {
         let width=(r.width as usize).saturating_sub(inset*2);
         let height=(r.height as usize).saturating_sub(inset*2);
         self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/ai-smoke.bmp"),
-            (r.x+inset as i32).max(0) as usize,(r.y+inset as i32).max(0) as usize,width,height,255);
+            (r.x+inset as i32).max(0) as usize,(r.y+inset as i32).max(0) as usize,width,height,alpha);
     }
     // ------------------------=
     // FUNC: widget_grip
@@ -183,6 +190,7 @@ impl DisplayDevice {
                     self.fill_rect_alpha(r.x.max(0) as usize,(r.y-6).max(0) as usize,width,1,110,151,188,60);
                 }
             }
+            if matches!(scene,2|3) && e.role==2 { e.opacity=crate::ui::desktop_widgets::current().material_alpha((scene-2) as usize,e.opacity); }
             if wallpaper && matches!(scene,2|3) && e.role==2 {self.widget_shadow(r,self.ui_scale());}
             let old=self.render_clip;
             self.intersect_render_clip(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize);
@@ -190,7 +198,7 @@ impl DisplayDevice {
                 self.kit_close_control(r);
             } else {self.template_element_in_rect(e,template.asset(e.image_asset),None,
                 crate::ui::installer_layout::InstallerRect{left:r.x.max(0)as usize,top:r.y.max(0)as usize,width:r.width as usize,height:r.height as usize});}
-            if matches!(scene,2|3) && e.role==2 {self.smoke_backdrop(r,8);}
+            if matches!(scene,2|3) && e.role==2 {self.smoke_backdrop_alpha(r,8,crate::ui::desktop_widgets::current().material_alpha((scene-2) as usize,255));}
             self.render_clip=old;
         }
         true

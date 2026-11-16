@@ -14,10 +14,25 @@ impl DisplayDevice {
         let (x, y) = (rect.x.max(0) as usize, rect.y.max(0) as usize);
         self.glass_panel(x, y, rect.width as usize, rect.height as usize, true);
         if let Some(id)=state.menu_widget{
+            if state.transparency_menu {
+                self.ui_text_strong(x+16*scale,y+10*scale,b"BACKGROUND TRANSPARENCY",120,209,245,1);
+                for (index,label) in [b"0%".as_slice(),b"25%",b"50%",b"75%"].iter().enumerate(){
+                    let top=y+(46+36*index)*scale;
+                    if usize::from((state.transparency>>(2*id))&3)==index {self.ui_text(x+14*scale,top,b"*",120,209,245,1);}
+                    self.ui_text(x+40*scale,top,label,222,237,249,1);
+                }
+                return;
+            }
             let (title,action):(&[u8],&[u8])=match id{2=>(b"WEATHER",b"Set location..."),1=>(b"INFINITY AI",b"AI & Voice settings"),_=>(b"SYSTEM OVERVIEW",b"System settings")};
             self.ui_text_strong(x+16*scale,y+10*scale,title,120,209,245,1);
             self.ui_text(x+16*scale,y+46*scale,action,222,237,249,1);
-            self.ui_text(x+16*scale,y+82*scale,b"Hide widget",222,237,249,1);return;
+            self.ui_text(x+16*scale,y+82*scale,b"Set transparency...",222,237,249,1);
+            self.ui_text(x+16*scale,y+118*scale,b"Hide widget",222,237,249,1);return;
+        }
+        if !state.visibility_menu {
+            self.ui_text_strong(x+16*scale,y+10*scale,b"DESKTOP",120,209,245,1);
+            self.ui_text(x+16*scale,y+46*scale,b"Widgets  >",222,237,249,1);
+            return;
         }
         self.ui_text_strong(x + 16 * scale, y + 10 * scale, b"WIDGETS", 120, 209, 245, 1);
         for (i, label) in [

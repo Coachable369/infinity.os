@@ -1521,8 +1521,8 @@ fn forecast_and_meter_pixels(){
         write!(f,"P6\n{width} {height}\n255\n").unwrap();
         for p in &pixels{f.write_all(&[(*p&255)as u8,((*p>>8)&255)as u8,((*p>>16)&255)as u8]).unwrap();}
     }
-    d.weather_widget(1,Some((65,3,100)),100,b"Oslo",false,b"",false,b"");
-    let first=pixels.clone();d.weather_widget(1,Some((-12,71,110)),110,b"Oslo",false,b"",false,b"");
+    d.weather_widget(1,Some((65,3,100,true)),100,b"Oslo",false,b"",false,b"");
+    let first=pixels.clone();pixels.fill(0x201005);d.weather_widget(1,Some((65,3,100,false)),100,b"Oslo",false,b"",false,b"");
     assert!(pixels.iter().zip(first.iter()).filter(|(a,b)|a!=b).count()>100);
     d.metric_ring(530,315,25,0,(92,217,251));
     let first=pixels.clone();d.metric_ring(530,315,25,100,(92,217,251));

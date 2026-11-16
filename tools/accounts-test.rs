@@ -77,7 +77,7 @@ fn layout() -> DesktopSessionLayout {
         focused_surface: DesktopResumeSurface::Settings,
         settings_section: 2, settings_expanded_row: None, settings_scroll_offset: 73,
         input_preferences: [0; 8], app_drawer_left: true,
-        app_drawer_floating: [301, 201], weather_position:[789,654], widgets: 0x8000_0100_0123_4567,
+        app_drawer_floating: [301, 201], widget_transparency:57, weather_position:[789,654], widgets: 0x8000_0100_0123_4567,
     }
 }
 

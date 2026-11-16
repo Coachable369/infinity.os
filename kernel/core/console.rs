@@ -4017,6 +4017,7 @@ impl ConsoleRuntime {
             app_drawer_left: crate::ui::app_launcher::minimized_shelf::current().left,
             app_drawer_floating: crate::ui::app_launcher::minimized_shelf::current().floating,
             widgets: crate::ui::desktop_widgets::current().encode(),
+            widget_transparency:crate::ui::desktop_widgets::current().transparency,
             weather_position:crate::ui::desktop_widgets::current().weather_position,
         }
     }
@@ -4032,6 +4033,7 @@ impl ConsoleRuntime {
         drawer.floating = layout.app_drawer_floating;
         let mut widgets=crate::ui::desktop_widgets::State::decode(layout.widgets);
         widgets.weather_position=layout.weather_position;
+        widgets.transparency=layout.widget_transparency;
         crate::ui::desktop_widgets::publish(widgets);
         drawer.drag = None;
         crate::ui::app_launcher::minimized_shelf::publish(drawer);

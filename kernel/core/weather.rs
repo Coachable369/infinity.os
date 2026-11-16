@@ -8,7 +8,7 @@ enum Request{City,Detect,Forecast}
 static mut PENDING:Option<(SecurityIdentity,https::Ticket,Request)>=None;
 static mut SESSION:Option<SecurityIdentity>=None;
 static mut NEXT:u64=0;
-static mut REPORT:Option<(i16,u8,u64)>=None;
+static mut REPORT:Option<(i16,u8,u64,bool)>=None;
 static mut PLACE:Option<Place>=None;
 static mut QUERY:Text<54>=Text::EMPTY;
 static mut SETUP:bool=true;
@@ -20,7 +20,7 @@ static mut MESSAGE:&[u8]=b"Enter your city";
 // FUNC: view
 // DESC: Copies the visible setup state without exposing mutable references to the painter.
 // ------------------=
-pub(crate) fn view()->(Option<(i16,u8,u64)>,Text<64>,bool,Text<54>,bool,&'static [u8]){
+pub(crate) fn view()->(Option<(i16,u8,u64,bool)>,Text<64>,bool,Text<54>,bool,&'static [u8]){
     unsafe{(REPORT,PLACE.map(|p|p.city).unwrap_or(Text::EMPTY),SETUP,QUERY,FOCUS,MESSAGE)}
 }
 // ------------------------=
@@ -61,7 +61,7 @@ pub(super) fn key(k:ConsoleKey)->bool{unsafe{
 // FUNC: parse
 // DESC: Extracts finite, bounded readings from the provider's current observation object, excluding units and forecasts.
 // ------------------=
-fn parse(body:&[u8])->Option<(i16,u8)>{
+fn parse(body:&[u8])->Option<(i16,u8,bool)>{
     let text=core::str::from_utf8(body).ok()?;
     let fields=text.split_once("\"current\"")?.1.trim_start().strip_prefix(':')?.trim_start().strip_prefix('{')?.split_once('}')?.0;
     let number=|key:&str|fields.split(',').find_map(|field|{
@@ -71,7 +71,7 @@ fn parse(body:&[u8])->Option<(i16,u8)>{
     let temp=number("temperature_2m")?.parse::<f32>().ok()?;
     let code=number("weather_code")?.parse::<u8>().ok()?;
     if !(-150.0..=160.0).contains(&temp)||code>99{return None}
-    Some((libm::roundf(temp) as i16,code))
+    Some((libm::roundf(temp) as i16,code,match number("is_day")? {"1"=>true,"0"=>false,_=>return None}))
 }
 // ------------------------=
 // FUNC: tick
@@ -86,7 +86,7 @@ pub(super) fn tick(console:&ConsoleRuntime){
         let active=enabled.then_some(owner);
         if SESSION!=active{
             if let Some((a,t,_))=PENDING{let _=https::cancel_browser(a,t);}
-            SESSION=active;REPORT=None;PLACE=None;QUERY=Text::EMPTY;SETUP=true;FOCUS=false;LOOKUP=None;NEXT=0;MESSAGE=b"Enter your city";
+            PENDING=None;SESSION=active;REPORT=None;PLACE=None;QUERY=Text::EMPTY;SETUP=true;FOCUS=false;LOOKUP=None;NEXT=0;MESSAGE=b"Enter your city";
             if enabled{let mut saved=[0;120];if let Ok(n)=crate::storage::weather_location(console.current_user.0,owner.0,None,&mut saved){PLACE=Place::decode(&saved[..n]);SETUP=PLACE.is_none();}}
             crate::ui::widget_keyframes::invalidate(2);
         }
@@ -95,7 +95,7 @@ pub(super) fn tick(console:&ConsoleRuntime){
                 Ok(None)|Err(https::Failure::Busy)=>return,
                 result if enabled && actor==owner=>{
                     if kind==Request::Forecast{
-                        if let Ok(Some(Ok(r)))=result{if r.status==200{if let Some((t,c))=parse(&r.bytes[..r.length]){REPORT=Some((t,c,now));NEXT=now+900;}}}
+                        if let Ok(Some(Ok(r)))=result{if r.status==200{if let Some((t,c,day))=parse(&r.bytes[..r.length]){REPORT=Some((t,c,now,day));NEXT=now+900;}}}
                     }else{
                         let found=if let Ok(Some(Ok(r)))=result{if r.status==200{place::resolve(&r.bytes[..r.length],kind==Request::Detect)}else{None}}else{None};
                         LOOKUP=None;

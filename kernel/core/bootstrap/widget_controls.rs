@@ -5,11 +5,15 @@ impl DisplayDevice {
     // FUNC: weather_widget
     // DESC: Composites real provider data on the reusable glass illustration; stale readings remain labeled.
     // ------------------=
-    pub(crate) fn weather_widget(&mut self,scale:usize,report:Option<(i16,u8,u64)>,now:u64,city:&[u8],setup:bool,draft:&[u8],focused:bool,message:&[u8]){
+    pub(crate) fn weather_widget(&mut self,scale:usize,report:Option<(i16,u8,u64,bool)>,now:u64,city:&[u8],setup:bool,draft:&[u8],focused:bool,message:&[u8]){
         let r=crate::ui::desktop_widgets::current().rect(2,self.width,self.height,scale,false);
         let(x,y,w,h)=(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
         self.widget_shadow(r,scale);
-        self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/weather-glass.bmp"),x,y,w,h,crate::ui::widget_keyframes::value(2));
+        let artwork: &[u8] = if report.is_some_and(|reading|reading.3) {
+            include_bytes!("../../../assets/ui-design-kit/default/weather-day.bmp")
+        } else { include_bytes!("../../../assets/ui-design-kit/default/weather-glass.bmp") };
+        let alpha=crate::ui::desktop_widgets::current().material_alpha(2,crate::ui::widget_keyframes::value(2));
+        self.paint_bitmap_alpha_fit_rect_opacity(artwork,x,y,w,h,alpha);
         self.widget_grip(x,y,scale);
         let old=self.render_clip;self.intersect_render_clip(x,y,w,h);
         let left=x+14*scale; self.ui_text_strong(left,y+h/10,if setup{message}else{city},214,232,249,1);
@@ -23,12 +27,12 @@ impl DisplayDevice {
                 self.render_clip=old;self.intersect_render_clip(x,y,w,h);
             };
             control(w/20,h/3,w*9/10,h/4,Surface::Field,if draft.is_empty(){b"City name"}else{draft},focused);
-            control(w/20,h*2/3,w*4/10,h/4,Surface::Secondary,b"Find city",false);
+            control(w/20,h*2/3,w*4/10,h/4,Surface::Primary,b"Save location",false);
             control(w/2,h*2/3,w*45/100,h/4,Surface::Secondary,b"Detect",false);
             self.render_clip=old;return;
         }
         self.ui_text(x+w*72/100,y+h/10,b"Change",164,211,238,1);
-        if let Some((t,c,last))=report{
+        if let Some((t,c,last,_))=report{
             let mut bytes=[0u8;20];let mut text=[0u8;12];let mut n=0;
             if t<0{text[0]=b'-';n+=1;}
             let number=super::editor_view::decimal(t.unsigned_abs() as usize,&mut bytes);

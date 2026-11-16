@@ -99,13 +99,21 @@ impl ConsoleRuntime {
             if clicked {
                 if menu.contains(point) {
                     let row = (point.y - menu.y) as usize / (36 * scale);
-                    if let Some(id)=state.menu_widget.take(){
+                    if state.transparency_menu {
+                        if let (Some(id),1..=4)=(state.menu_widget,row) {
+                            let shift=id*2;
+                            state.transparency=(state.transparency & !(3<<shift)) | (((row-1) as u8)<<shift);
+                        }
+                    } else if let Some(id)=state.menu_widget {
                         match row{
                             1=>match id{2=>{#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]super::weather::configure();},1=>self.open_settings(3),_=>self.open_settings(0)},
-                            2=>{state.visible &= !(1<<id);if id==1{self.set_ai_chat_enabled(false);}},
+                            2=>{state.transparency_menu=true;widgets::publish(state);self.redraw();return true;},
+                            3=>{state.visible &= !(1<<id);if id==1{self.set_ai_chat_enabled(false);}},
                             _=>{}
                         }
-                    }else if (1..=3).contains(&row) {
+                    }else if !state.visibility_menu && row==1 {
+                        state.visibility_menu=true;widgets::publish(state);self.redraw();return true;
+                    }else if state.visibility_menu && (1..=3).contains(&row) {
                         state.visible ^= 1 << (row - 1);
                         if row == 2 {
                             self.set_ai_chat_enabled(state.visible & 2 != 0);
@@ -115,7 +123,7 @@ impl ConsoleRuntime {
                         state.positions = [[0; 2]; 2];state.weather_position=[0;2];
                     }
                 }
-                state.menu = None;
+                state.menu = None;state.menu_widget=None;state.visibility_menu=false;state.transparency_menu=false;
                 widgets::publish(state);
                 let _ = self.checkpoint_desktop_layout();
                 self.redraw();

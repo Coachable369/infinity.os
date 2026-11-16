@@ -6,11 +6,22 @@ pub struct State {
     pub weather_position: [u16;2],
     pub menu_widget: Option<usize>,
     pub visible: u8,
+    pub transparency: u8,
+    pub transparency_menu: bool,
+    pub visibility_menu: bool,
     pub trash_position: Option<[u16;2]>,
     pub drag: Option<(usize, i32, i32)>,
     pub menu: Option<Point>,
 }
 impl State {
+    // ------------------------=
+    // FUNC: material_alpha
+    // DESC: Adjusts only the widget background while keeping text and control contrast intact.
+    // ------------------=
+    pub fn material_alpha(self, id:usize, base:u8)->u8 {
+        let level=(self.transparency>>(2*id)) & 3;
+        ((base as u16 * (100 - 25*level as u16))/100) as u8
+    }
     // ------------------------=
     // FUNC: shown
     // DESC: Keeps the overview off a standalone browser desktop without changing saved widget preferences.
@@ -26,7 +37,7 @@ impl State {
         Self {
             positions: [[0; 2]; 2],
             weather_position: [0;2], menu_widget: None,
-            visible: 2,
+            visible: 2, transparency: 0, transparency_menu: false, visibility_menu: false,
             trash_position: None,
             drag: None,
             menu: None,
@@ -209,7 +220,7 @@ impl State {
     pub fn menu_rect(self, width: usize, height: usize, scale: usize) -> Option<Rect> {
         self.menu.map(|p| {
             let w = (260 * scale).min(width);
-            let rows=if self.menu_widget.is_some(){3}else{5};
+            let rows=if self.transparency_menu || self.visibility_menu {5} else if self.menu_widget.is_some(){4}else{2};
             let h = ((rows*36+8)*scale).min(height);
             Rect {
                 x: p.x.clamp(0, width.saturating_sub(w) as i32),
