@@ -1567,6 +1567,8 @@ impl ConsoleRuntime {
             self.redraw();
             if matches!(key,ConsoleKey::Escape) {return;}
         }
+        #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+        if self.mode==ConsoleMode::Desktop && weather::key(key){self.session_idle.note_activity();self.redraw();return}
         self.synchronize_workplace();
         if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::CommandWindow
             && self.ai_chat_focus==0 && self.terminal_edit_key(key) {self.session_idle.note_activity();self.redraw();return;}
@@ -8697,6 +8699,8 @@ impl ConsoleRuntime {
             left_button && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_LEFT == 0;
         let right_clicked = right_button
             && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_RIGHT == 0;
+        #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+        if clicked||right_clicked{weather::blur();}
         let back_clicked = buttons & crate::drivers::input::pointer::BUTTON_BACK != 0
             && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_BACK == 0;
         let forward_clicked = buttons & crate::drivers::input::pointer::BUTTON_FORWARD != 0

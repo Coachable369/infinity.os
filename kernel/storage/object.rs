@@ -1836,6 +1836,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                     | b"@hermes-memory"
                     | b"@browser-favorites"
                     | b"@font-preferences"
+                    | b"@weather-city"
                     | b"@editor-preferences"
                     | b"@generated-apps"
                     | b"@python-packages"
@@ -2172,6 +2173,24 @@ impl<D: BlockDevice> ObjectStore<D> {
         let record = &self.state.objects[self.object_index(id)?];
         if record.space != Space::System as u8
             || &record.name[..record.name_len as usize] != b"@font-preferences"
+        {
+            return Err(ObjectError::Unauthorized);
+        }
+        self.read_internal(id, None, out)
+    }
+
+    // ------------------------=
+    // FUNC: read_weather_location
+    // DESC: Reads the private weather location after active-session admission by the native service.
+    // ------------------=
+    pub(crate) fn read_weather_location(
+        &mut self,
+        id: ObjectId,
+        out: &mut [u8],
+    ) -> Result<usize, ObjectError> {
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8
+            || &record.name[..record.name_len as usize] != b"@weather-city"
         {
             return Err(ObjectError::Unauthorized);
         }

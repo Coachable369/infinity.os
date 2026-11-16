@@ -1511,8 +1511,18 @@ fn forecast_and_meter_pixels(){
     let mut pixels=vec![0x201005u32;width*height];
     let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
     ui::widget_keyframes::advance(2,255,0,true);
-    d.weather_widget(1,Some((65,3,100)),100);
-    let first=pixels.clone();d.weather_widget(1,Some((-12,71,110)),110);
+    d.weather_widget(1,None,100,b"",true,b"",false,b"Enter your city");
+    let empty=pixels.clone();
+    d.weather_widget(1,None,100,b"",true,b"Oslo",true,b"Enter your city");
+    assert!(pixels.iter().zip(empty.iter()).filter(|(a,b)|a!=b).count()>40);
+    if let Some(path)=std::env::var_os("WEATHER_SETUP_PPM"){
+        use std::io::Write;
+        let mut f=std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+        write!(f,"P6\n{width} {height}\n255\n").unwrap();
+        for p in &pixels{f.write_all(&[(*p&255)as u8,((*p>>8)&255)as u8,((*p>>16)&255)as u8]).unwrap();}
+    }
+    d.weather_widget(1,Some((65,3,100)),100,b"Oslo",false,b"",false,b"");
+    let first=pixels.clone();d.weather_widget(1,Some((-12,71,110)),110,b"Oslo",false,b"",false,b"");
     assert!(pixels.iter().zip(first.iter()).filter(|(a,b)|a!=b).count()>100);
     d.metric_ring(530,315,25,0,(92,217,251));
     let first=pixels.clone();d.metric_ring(530,315,25,100,(92,217,251));

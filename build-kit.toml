@@ -301,3 +301,8 @@ clean = false
 domain = "studio"
 command = ["sh", "tools/desktop-refinement-test.sh"]
 clean = false
+
+[profiles.studio-weather-location]
+domain = "studio"
+command = ["sh","tools/weather-location-check.sh"]
+clean = false

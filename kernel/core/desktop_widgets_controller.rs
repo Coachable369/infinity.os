@@ -148,6 +148,12 @@ impl ConsoleRuntime {
         {
             return false;
         }
+        #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+        if clicked && state.visible&4!=0 && self.mode==ConsoleMode::Desktop{
+            let r=state.rect(2,width,height,scale,false);if r.contains(point){
+                self.ai_chat_focus=0;super::weather::click((point.x-r.x)*100/r.width.max(1) as i32,(point.y-r.y)*100/r.height.max(1) as i32);self.redraw();return true;
+            }
+        }
         if point.y < (height * 7 / 100) as i32
             || layout.desktop_foreground_geometry().dock.contains(point)
         {

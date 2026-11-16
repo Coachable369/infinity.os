@@ -845,6 +845,23 @@ fn intelligence_state_path(owner:[u8;16])->[u8;56]{
 }
 
 // ------------------------=
+// FUNC: weather_location
+// DESC: Reads or commits only the active account's bounded weather preference.
+// ------------------=
+pub(crate) fn weather_location(owner:[u8;16],session:[u8;16],save:Option<&[u8]>,out:&mut[u8])->Result<usize,object::ObjectError>{
+    let _=browser_favorites_path(owner,session)?;
+    let mut path=intelligence_state_path(owner);path[..24].copy_from_slice(b"/system/weather/city/v1/");
+    if let Some(b)=save{
+        if b.is_empty()||b.len()>120{return Err(object::ObjectError::CorruptContent)}
+        #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+        return with_store(|store|match store.resolve(&path){Ok(id)=>store.replace_state(id,b).map(|_|b.len()),Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>store.create_attached(b"@weather-city",object::ObjectType::Metadata,object::Space::System,b,&path).map(|_|b.len()),Err(e)=>Err(e)});
+    }
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|s|{let id=s.resolve(&path)?;s.read_weather_location(id,out)})}
+    #[cfg(target_arch="x86")]
+    {let _=(path,out);Err(object::ObjectError::SpaceUnavailable)}
+}
+// ------------------------=
 // FUNC: intelligence_state_load
 // DESC: Loads the initiating owner's latest versioned IntelligenceKit checkpoint after active-session validation.
 // ------------------=
