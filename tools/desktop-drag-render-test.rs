@@ -84,7 +84,9 @@ fn verify_launcher_and_trash() {
         save("idle",&pixels);
         let idle=pixels.clone();
         ui::app_launcher::animate_highlight(0,128,true);
-        ui::app_launcher::animate_highlight(1,0,false);
+        assert_eq!(ui::app_launcher::highlight_for(1),0);
+        ui::app_launcher::animate_highlight(1,500,false);
+        assert_eq!(ui::app_launcher::highlight_for(1),0);
         let mut last_count=0;
         for (name,elapsed) in [("hover-mid",64),("hover-full",64)] {
             ui::app_launcher::animate_highlight(1,elapsed,false);

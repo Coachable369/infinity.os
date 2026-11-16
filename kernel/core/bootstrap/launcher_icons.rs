@@ -17,6 +17,11 @@ impl DisplayDevice {
         role: usize,
         size: usize,
     ) -> bool {
+        if role == 62 {
+            self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinitycode-icon-v1.bmp"),
+                center_x.saturating_sub(size/2),center_y.saturating_sub(size/2),size,size);
+            return true;
+        }
         if role == 61 {
             self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-memory-v1.bmp"),
                 center_x.saturating_sub(size/2),center_y.saturating_sub(size/2),size,size);

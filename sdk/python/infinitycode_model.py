@@ -1,7 +1,6 @@
 """Versioned InfinityCode projects and deterministic native Tk source export."""
 import copy
 import json
-import ast
 import keyword
 
 KINDS = ("Label", "Button", "Entry", "Checkbutton", "Radiobutton", "Combobox")
@@ -57,7 +56,7 @@ def reset_count():
 # ------------------=
 def configure_workspace_bounds(root):
     maximum_width, maximum_height = root.maxsize()
-    width, height = min(1520, maximum_width), min(940, maximum_height)
+    width, height = min(1360,maximum_width,root.winfo_screenwidth()-32), min(840,maximum_height,root.winfo_screenheight()-108)
     root.minsize(min(800, width), min(560, height))
     root.geometry(f"{width}x{height}")
 
@@ -141,6 +140,7 @@ def export_source(project):
     project = validate(project)
     elements = project["elements"]
     methods = project.get("methods", "")
+    import ast
     tree = ast.parse(methods)
     functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
     for item in elements:

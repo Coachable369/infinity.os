@@ -177,6 +177,18 @@ class ProjectTests(unittest.TestCase):
     def test_workspace_bounds_respect_native_work_area(self):
         class Window:
             # ------------------------=
+            # FUNC: winfo_screenwidth
+            # DESC: Supplies the complete display width.
+            # ------------------=
+            def winfo_screenwidth(self):
+                return self.maximum[0]+32
+            # ------------------------=
+            # FUNC: winfo_screenheight
+            # DESC: Supplies the complete simulated display including its reserved work-area margins.
+            # ------------------=
+            def winfo_screenheight(self):
+                return self.maximum[1]+108
+            # ------------------------=
             # FUNC: maxsize
             # DESC: Returns the native work-area constraint for this test case.
             # ------------------=

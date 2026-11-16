@@ -214,6 +214,14 @@ fn all_widgets_remain_reachable_when_overview_appears(){
         let r=state.rect(2,w,h,s,false);
         assert!(!r.intersects(ai));
         assert!(!r.intersects(state.rect(0,w,h,s,false)));
+        for id in [0,1] {
+            state.drag=Some((id,3,3));
+            assert_eq!(state.rect(2,w,h,s,false),r);
+            state.move_pointer(Point{x:ai.x+8,y:ai.y+8},true,w,h,s,false);
+            let sky=state.rect(2,w,h,s,false);
+            assert!((0..2).all(|i|!sky.intersects(state.rect(i,w,h,s,false))));
+            state.positions=[[0;2];2];
+        }
         for id in 0..3{state.set_percent(id,[7,43,100][id]);}
         assert_eq!([state.percent(0),state.percent(1),state.percent(2)],[7,43,100]);
     }

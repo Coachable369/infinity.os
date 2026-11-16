@@ -295,7 +295,9 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
     let job = &mut *(&raw mut JOB);
     if job.task.is_some() { return Err(b"python: a script is already running; use python-cancel."); }
     if !active(console) { return Err(b"python: an authenticated session is required."); }
-    prepare_packages(console, job, false,path==memory_browser::PATH && expected_source.is_some() && candidate.is_none())?;
+    let bundled_ide=candidate.is_none() && path.ends_with(b"/documents/InfinityCode.py") &&
+        expected_source==Some(include_bytes!("../../sdk/python/examples/infinitycode.py").as_slice()) && arguments.len()==2 && arguments[1]==path;
+    prepare_packages(console, job, false,bundled_ide || (path==memory_browser::PATH && expected_source.is_some() && candidate.is_none()))?;
     if path==memory_browser::PATH && expected_source==Some(include_bytes!("../../runtime/install/System/infinity-memory.py").as_slice()) && candidate.is_none() {
         // Launch the signed-in system app from this kernel's immutable generation.
         // An older installed ObjectStore script cannot acquire its private syscall.
@@ -310,6 +312,11 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
     if let Some(bytes)=candidate {if bytes.len()>LIMIT{return Err(b"Repair exceeds Python source limit.");}
         job.files[0].bytes[..bytes.len()].copy_from_slice(bytes);job.files[0].len=bytes.len();}
     job.count = 1;
+    if bundled_ide {
+        // The bundled IDE imports only the read-only interpreter library. Keep its original owned /data identity.
+        job.filesystem.mount_readonly(path,&job.files[0].bytes[..job.files[0].len]).map_err(|_|b"Cannot mount InfinityCode.".as_slice())?;
+        return start_task(console,job,arguments);
+    }
     if crate::runtime::native_python_scope::system_script(path) {
         job.filesystem.mount_readonly(path,&job.files[0].bytes[..job.files[0].len]).map_err(|_|b"Cannot mount system tool.".as_slice())?;
         return start_system_tool(console,job,path,arguments);
@@ -491,7 +498,8 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
     job.memory_browser = path == memory_browser::PATH && arguments.len()==2 && job.generated.is_none()
         && &job.files[0].bytes[..job.files[0].len] == include_bytes!("../../runtime/install/System/infinity-memory.py");
-    job.memory_launching=job.memory_browser;
+    job.memory_launching=job.memory_browser || (arguments.len()==2 && path.ends_with(b"/documents/InfinityCode.py") &&
+        &job.files[0].bytes[..job.files[0].len]==include_bytes!("../../sdk/python/examples/infinitycode.py"));
     let name=if path==memory_browser::PATH { b"Infinity Memory".as_slice() } else if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
     MONITOR_RESUME_NS=0;
     job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
@@ -749,12 +757,11 @@ fn exception_call<T:crate::runtime::native_memory::PageTable>(
 // FUNC: launch_memory
 // DESC: Focuses the existing browser or starts its immutable installed source under the current login.
 // ------------------=
-pub(super) fn launch_memory(console:&mut ConsoleRuntime) {
-    if gui_control(console,Some(b"Infinity Memory"),crate::ui::window::WindowControl::Focus)==Some(true) { return; }
+pub(super) fn launch_memory(console:&mut ConsoleRuntime)->Result<(),&'static [u8]> {
+    if gui_control(console,Some(b"Infinity Memory"),crate::ui::window::WindowControl::Focus)==Some(true) { return Ok(()); }
+    if unsafe{let job=&*(&raw const JOB);job.task.is_some() && job.owner.0==console.current_session.0 && job.memory_browser}{return Ok(());}
     let argv=[b"/system/python".as_slice(),memory_browser::PATH];
-    if let Err(message)=unsafe { start(console,memory_browser::PATH,&argv,Some(include_bytes!("../../runtime/install/System/infinity-memory.py"))) } {
-        console.show_shell_notice(message);
-    }
+    unsafe { start(console,memory_browser::PATH,&argv,Some(include_bytes!("../../runtime/install/System/infinity-memory.py"))) }
 }
 
 // ------------------------=
@@ -787,7 +794,8 @@ pub(super) fn launch_media(console:&mut ConsoleRuntime,path:Option<&[u8]>)->bool
 // FUNC: launch_infinitycode
 // DESC: Launches the bundled designer through the existing Python process with a private owned source and durable data grant.
 // ------------------=
-pub(super) fn launch_infinitycode(console: &mut ConsoleRuntime) {
+pub(super) fn launch_infinitycode(console: &mut ConsoleRuntime) -> Result<(), &'static [u8]> {
+    if gui_control(console,Some(b"InfinityCode"),crate::ui::window::WindowControl::Focus)==Some(true){return Ok(());}
     let result = (|| -> Result<(), &'static [u8]> {
         if !active(console) { return Err(b"InfinityCode: sign in first."); }
         let home = crate::storage::provision_user_home(console.current_user.0)
@@ -812,10 +820,7 @@ pub(super) fn launch_infinitycode(console: &mut ConsoleRuntime) {
         }
         unsafe { start(console, path, &[b"/system/python", path], Some(source)) }
     })();
-    console.output.write_line(match result {
-        Ok(()) => b"Launching InfinityCode. Projects are saved in its private /data directory.",
-        Err(error) => error,
-    });
+    result
 }
 
 // ------------------------=
@@ -824,7 +829,7 @@ pub(super) fn launch_infinitycode(console: &mut ConsoleRuntime) {
 // ------------------=
 pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsafe {
     if input.trim_ascii() == b"infinitycode" {
-        launch_infinitycode(console);
+        if let Err(error)=launch_infinitycode(console){console.output.write_line(error);}
         return true;
     }
     if input == b"python-cancel" {
@@ -998,6 +1003,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
                     }))
                 .or_else(||job.network.syscall(tables, operation, arguments))
                 .or_else(|| job.data.syscall(&mut job.filesystem, &mut job.archive, tables, operation, arguments)));
+        if !job.memory_browser && job.gui.revision()!=job.gui_revision {job.memory_launching=false;}
         if !job.memory_launching || !matches!(result,State::Runnable) {break result;}
         remaining-=1;
         let next=crate::runtime::ai::qwen::workers::clock_ns();
@@ -1058,7 +1064,8 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let execution = task.execution_id();
     let lengths = task.result_lengths(b"", &mut job.output, &mut job.errors);
     if authorized && job.memory_browser && !matches!(result,State::Exited(0)|State::Cancelled) {
-        console.show_shell_notice(b"Infinity Memory could not finish starting or running. See the Python diagnostics above.");
+        console.open_app_launcher();
+        crate::ui::app_launcher::set_launch_notice(b"Infinity Memory stopped. Reopen it to retry.");
     }
     if authorized {
         if let Some((_length, _errors, truncated)) = lengths {

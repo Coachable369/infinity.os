@@ -124,6 +124,10 @@ impl DisplayDevice {
         );
 
         self.render_clip = search_clip;
+        let notice=crate::ui::app_launcher::launch_notice();
+        if !notice.is_empty() {
+            self.ui_text(search_left,search_top+search_height+3*scale,notice,250,202,129,1);
+        }
         let visible = crate::ui::app_launcher::launcher_visible_count(query);
         let launcher_clip = self.render_clip;
         self.intersect_render_clip(
@@ -153,7 +157,7 @@ impl DisplayDevice {
                 .saturating_mul(63)
                 / 100;
             let well_left = cell_left + geometry.grid_cell_width.saturating_sub(well_size) / 2;
-            let emphasis=if selected {crate::ui::app_launcher::highlight_level()} else {0};
+            let emphasis=if selected {crate::ui::app_launcher::highlight_for(focus)} else {0};
             let well_top=(cell_top + 3*scale).saturating_sub(8*scale*emphasis/255);
             let _ = self.launcher_icon(
                 well_left + well_size / 2,

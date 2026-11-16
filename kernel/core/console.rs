@@ -6062,9 +6062,11 @@ impl ConsoleRuntime {
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
             LauncherAction::InfinityMemory => {
-                self.close_app_launcher();
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                python_commands::launch_memory(self);
+                match python_commands::launch_memory(self) {
+                    Ok(())=>self.close_app_launcher(),
+                    Err(message)=>crate::ui::app_launcher::set_launch_notice(message),
+                }
             }
             LauncherAction::MediaPlayer => {
                 self.close_app_launcher();
@@ -6074,9 +6076,11 @@ impl ConsoleRuntime {
             LauncherAction::InfinityCode => {
                 // The IDE owns a native GUI window; launching it must not
                 // create or focus an unrelated terminal window.
-                self.close_app_launcher();
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                python_commands::launch_infinitycode(self);
+                match python_commands::launch_infinitycode(self) {
+                    Ok(())=>self.close_app_launcher(),
+                    Err(message)=>crate::ui::app_launcher::set_launch_notice(message),
+                }
             },
             LauncherAction::CommandWindow => self.open_command_window(),
             LauncherAction::TaskManager => self.open_task_manager(),
@@ -8745,7 +8749,7 @@ impl ConsoleRuntime {
         if clicked || right_clicked {
             let mut dismissed=false;
             crate::ui::desktop_effects::mutate(|effects| dismissed=effects.dismiss_peek());
-            if dismissed {self.advance_desktop_effects();self.redraw();return;}
+            if dismissed {self.advance_desktop_effects();self.redraw();if !right_clicked{return;}}
         }
         if self.clipboard_menu_pointer(clicked,right_clicked) {self.redraw();return;}
         if let Some((id,bounds))=self.assistant_owner().filter(|(id,_)|*id==crate::ui::app_assistant::NATIVE_OWNER) {
@@ -15239,7 +15243,8 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
         runtime.launcher_tick_ns = now;
         let tick = crate::ui::app_launcher::launcher_animation_advance(maximum, elapsed_ms);
         if tick.closed {
-            runtime.enter_desktop();
+            // Closing an overlay is not a new login. Keep active windows and launched tasks intact.
+            runtime.mode=ConsoleMode::Desktop;runtime.system_focus=0;runtime.reset_input();
             runtime.redraw();
             return true;
         }

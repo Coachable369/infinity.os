@@ -569,7 +569,7 @@ unsafe fn stop_spoken_reply() {
     clear_pending_prompt(true);
     report_timing(); TURN_TIMING_ACTIVE = false;
     clear_wake_command(); clear_captured_turn();
-    resume_captured_turn(); arm_followup();
+    resume_captured_turn();
 }
 // ------------------------=
 // FUNC: queue_command
@@ -672,17 +672,6 @@ unsafe fn clear_wake_command() {
     WAKE_ARMED = false;
     WAKE_ARMED_UNTIL = 0;
     WAKE_ARMED_MODEL = 0;
-}
-// ------------------------=
-// FUNC: arm_followup
-// DESC: Opens one ten-second follow-up for this authenticated owner and selected model after an addressed exchange.
-// ------------------=
-unsafe fn arm_followup() {
-    WAKE_ARMED=true;
-    WAKE_ARMED_UNTIL=super::qwen::workers::clock_ns().saturating_add(WAKE_COMMAND_WINDOW_NS);
-    WAKE_ARMED_MODEL=super::with_ai_runtime(|ai|ai.chat.selected_model());
-    WAKE_ARMED_WORD=configured_wake_word(OWNER);
-    trace(b"follow-up listening window opened");
 }
 // ------------------------=
 // FUNC: clear_captured_turn
@@ -1203,9 +1192,9 @@ unsafe fn speak_next() -> bool {
             // context or releasing its recognition authority.
             if duplex::pending() || duplex::capturing() {STATE=State::Thinking;return true;}
             if voice_input::prepared() {
-                let listening=listen();
-                if listening && STATE==State::Listening {arm_followup();}
-                return listening;
+                // Only the user's explicit wake-only utterance may authorize a later unaddressed segment.
+                clear_wake_command();
+                return listen();
             }
             let _ = voice_input::prepare();
             STATE = State::Starting;

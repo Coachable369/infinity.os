@@ -95,6 +95,11 @@ impl ConsoleRuntime {
             }
             return true;
         }
+        if secondary && state.menu.is_some() {
+            state.menu=None;state.menu_widget=None;state.menu_hover=None;
+            state.adjusting=false;state.visibility_menu=false;state.transparency_menu=false;
+            widgets::publish(state);
+        }
         if let Some(menu) = state.menu_rect(width, height, scale) {
             if let Some(id)=state.menu_widget.filter(|_|state.transparency_menu) {
                 let inset=20*scale as i32;

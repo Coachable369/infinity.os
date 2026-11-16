@@ -22,6 +22,7 @@ impl ConsoleRuntime {
         let p=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,
             y:self.system.framebuffer_height as i32*self.pointer_y/1000};
         let mut menu=clipboard_menu::current();
+        if menu.open && right_clicked && !menu.rect.contains(p) {clipboard_menu::close();menu=Menu::new();}
         if menu.open {
             if clicked {
                 if menu.viewer {

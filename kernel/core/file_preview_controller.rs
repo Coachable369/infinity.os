@@ -195,7 +195,8 @@ impl ConsoleRuntime {
         if self.settings_open&&l.settings_window_geometry(self.settings_window).window.contains(p){return false;}
         if self.home_window_visible {let(x,y,w,h)=l.home_window_geometry_sized(self.home_window_x,self.home_window_y,self.home_window_width,self.home_window_height,self.home_window_maximized);if (Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32}).contains(p){return false;}}
         if self.inactive_file_navigator_at_pointer().is_some(){return false;}
-        self.refresh_desktop_preview_files();let files=preview::desktop_files();
+        // Hit-test the same published file snapshot that is visible on the desktop.
+        let files=preview::desktop_files();
         let selected=files.iter().enumerate().find(|(i,f)|{let r=preview::desktop_rect(*i,self.system.framebuffer_width,self.system.framebuffer_height);f.length!=0&&(r.bottom() as usize)<self.system.framebuffer_height.saturating_sub(100*l.scale())&&r.contains(p)});
         let reference;
         let path=if let Some((_,f))=selected {&f.path[..f.length]}else{

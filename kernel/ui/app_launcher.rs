@@ -18,6 +18,18 @@ pub mod navigation;
 pub mod shortcuts;
 #[path = "window_controls.rs"]
 pub mod window_controls;
+// Launcher messages and painting are confined to the desktop event loop.
+static mut LAUNCH_NOTICE: &'static [u8] = b"";
+// ------------------------=
+// FUNC: set_launch_notice
+// DESC: Keeps an unsuccessful app launch visible in the launcher that initiated it.
+// ------------------=
+pub fn set_launch_notice(value:&'static [u8]) {unsafe{LAUNCH_NOTICE=value;}}
+// ------------------------=
+// FUNC: launch_notice
+// DESC: Returns the current actionable launcher message without a terminal side effect.
+// ------------------=
+pub fn launch_notice()->&'static [u8]{unsafe{LAUNCH_NOTICE}}
 static HIGHLIGHT_FOCUS: AtomicUsize = AtomicUsize::new(0);
 static HIGHLIGHT_LEVEL: AtomicUsize = AtomicUsize::new(255);
 
@@ -28,9 +40,17 @@ static HIGHLIGHT_LEVEL: AtomicUsize = AtomicUsize::new(255);
 pub fn animate_highlight(focus:usize, elapsed:usize, reduced:bool)->bool {
     let moved=HIGHLIGHT_FOCUS.swap(focus,Ordering::Relaxed)!=focus;
     let old=HIGHLIGHT_LEVEL.load(Ordering::Relaxed);
-    let next=if reduced {255} else {(if moved {0} else {old}).saturating_add(elapsed.min(128)*2).min(255)};
+    let next=if reduced {255} else if moved {0} else {old.saturating_add(elapsed.min(32)*2).min(255)};
     HIGHLIGHT_LEVEL.store(next,Ordering::Relaxed);
     moved || old!=next
+}
+
+// ------------------------=
+// FUNC: highlight_for
+// DESC: Gives a newly focused icon its neutral pose until its own animation clock starts.
+// ------------------=
+pub fn highlight_for(focus:usize)->usize {
+    if focus==HIGHLIGHT_FOCUS.load(Ordering::Relaxed){highlight_level()}else{0}
 }
 
 // ------------------------=
@@ -296,7 +316,7 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
     #[cfg(feature = "native-python")]
     LauncherEntry {
         label: b"InfinityCode",
-        icon_role: 49,
+        icon_role: 62,
         action: LauncherAction::InfinityCode,
     },
     #[cfg(feature = "native-python")]
@@ -368,6 +388,7 @@ pub(crate) fn encode_launcher_order(order: &[u8; LAUNCHER_APPS.len()]) {
 // DESC: Starts the native launcher entrance transition and resets transient interaction state.
 // ------------------=
 pub fn launcher_open() {
+    set_launch_notice(b"");
     LAUNCHER_TRANSITION.store(LAUNCHER_TRANSITION_STEP, Ordering::Relaxed);
     LAUNCHER_CLOSING.store(false, Ordering::Relaxed);
     LAUNCHER_DRAG_SOURCE.store(LAUNCHER_NO_ITEM, Ordering::Relaxed);

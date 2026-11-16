@@ -2,7 +2,6 @@
 import copy
 import io
 import keyword
-import tokenize
 import os
 import sys
 import tkinter as tk
@@ -34,13 +33,20 @@ class Studio:
         style.configure("Accent.TButton", background="#315ED2", foreground="white")
         toolbar = ttk.Frame(root, padding=(12,8))
         toolbar.pack(fill="x")
-        ttk.Label(toolbar, text="InfinityCode", font=("Inter",-24,"bold")).pack(side="left", padx=(2,14))
-        for group in ((("New Widget", self.new_widget), ("Open", self.load), ("Save", self.save)), (("Undo", self.undo), ("Redo", self.redo)),
-                      (("Check Python", self.check_python), ("Generate Python", self.generate), ("Export", self.export))):
-            ttk.Separator(toolbar, orient="vertical").pack(side="left",fill="y",padx=5)
-            for title, command in group:
-                ttk.Button(toolbar,text=title,width=0,style="Accent.TButton" if title=="Generate Python" else "TButton",
-                           command=lambda action=command:self.perform(action)).pack(side="left",padx=2)
+        actions = (("Project", (("New widget",self.new_widget),("Open project",self.load),("Save project",self.save),("Export Python",self.export))),
+                   ("Edit", (("Undo",self.undo),("Redo",self.redo),("Delete selection",self.delete))),
+                   ("Build", (("Check Python",self.check_python),("Generate Python",self.generate),("Go to handler",self.goto_handler))))
+        menu = tk.Menu(root,tearoff=False)
+        for title, entries in actions:
+            group=tk.Menu(menu,tearoff=False)
+            for label,action in entries:
+                group.add_command(label=label,command=lambda fn=action:self.perform(fn))
+            menu.add_cascade(label=title,menu=group)
+        root.configure(menu=menu)
+        ttk.Label(toolbar,text="Design workspace",style="Heading.TLabel").pack(side="left",padx=(0,14))
+        for title,action in (("Open",self.load),("Save",self.save),("Check Python",self.check_python),("Generate Python",self.generate)):
+            ttk.Button(toolbar,text=title,style="Accent.TButton" if title=="Generate Python" else "TButton",
+                       command=lambda fn=action:self.perform(fn)).pack(side="left",padx=3)
         footer = ttk.Frame(root, padding=(12,5))
         footer.pack(side="bottom",fill="x")
         workspace = ttk.Frame(root, padding=8)
@@ -50,7 +56,7 @@ class Studio:
         ttk.Label(left, text="Toolbox", style="Heading.TLabel").pack(anchor="w", pady=(0,8))
         self.toolbox_filter = tk.StringVar()
         search = ttk.Entry(left,textvariable=self.toolbox_filter,width=16)
-        ttk.Label(left,text="Find a control").pack(anchor="w")
+        ttk.Label(left,text="Filter controls").pack(anchor="w")
         search.pack(fill="x",pady=(2,6))
         search.bind("<ButtonPress-1>",lambda event:search.focus_force(),add="+")
         self.palette = ttk.Frame(left)
@@ -169,6 +175,7 @@ class Studio:
     def colorize(self, editor):
         self.syntax_jobs.pop(editor,None)
         ranges = {role:[] for role in ("keyword","string","comment","number")}
+        import tokenize
         roles = {tokenize.STRING:"string",tokenize.COMMENT:"comment",tokenize.NUMBER:"number"}
         source = editor.get("1.0","end-1c")
         try:

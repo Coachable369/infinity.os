@@ -350,7 +350,11 @@ class Browser:
     # DESC: Renders the active Infinity UIKit button recipe for normal, hover and pressed states.
     # ------------------=
     def button(self, parent, label, action, primary=False):
-        normal = self.surface(primary, 0)
+        try:
+            normal = self.surface(primary, 0)
+        except (ImportError, OSError, RuntimeError, tk.TclError):
+            # A missing optional skin must never prevent the database browser opening.
+            return ttk.Button(parent, text=label, command=action)
         button = tk.Button(parent, text=label, command=action, image=normal, compound="center",
                            fg=WHITE, activeforeground=WHITE, bg=NAVY, activebackground=NAVY,
                            font=self.button_font, borderwidth=0, relief="flat", highlightthickness=0)
