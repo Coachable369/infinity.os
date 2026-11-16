@@ -128,6 +128,14 @@ pub fn mapped(e:InstallerTemplateElement<'_>,width:usize,height:usize,translatio
 }
 
 // ------------------------=
+// FUNC: widget_width
+// DESC: Uses the Studio AI panel as the shared width for stock desktop widgets.
+// ------------------=
+pub fn widget_width(width:usize,height:usize)->u32 {
+    bounds(3,2,width,height).map_or((width*28/100) as u32,|r|r.width).min(width as u32)
+}
+
+// ------------------------=
 // FUNC: overview_chart_height
 // DESC: Reserves the first content row for two equal gauges while keeping the desktop usable on smaller displays.
 // ------------------=
@@ -142,7 +150,13 @@ pub fn overview_chart_height(panel_width:u32,height:usize)->u32 {
 pub fn overview_layer(e:InstallerTemplateElement<'_>,width:usize,height:usize,translation:Option<(i32,i32)>)->Rect {
     let mut r=mapped(e,width,height,translation);
     if let Some(panel)=element(2,2) {
-        let extra=overview_chart_height(mapped(panel,width,height,None).width,height);
+        let base=mapped(panel,width,height,translation);
+        let shared=widget_width(width,height);
+        if e.role!=Role::SceneBackground as u8 && base.width!=0 {
+            r.x=base.x+((r.x-base.x) as i64*i64::from(shared)/i64::from(base.width)) as i32;
+            r.width=(u64::from(r.width)*u64::from(shared)/u64::from(base.width)) as u32;
+        }
+        let extra=overview_chart_height(shared,height);
         if e.role==2 { r.height+=extra; }
         else if matches!(e.role,5|60..=64) { r.y+=extra as i32; }
     }

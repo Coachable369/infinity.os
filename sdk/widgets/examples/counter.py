@@ -13,13 +13,13 @@ controls = {}
 from infinity_widget import attach
 widget_host = attach(root, __file__)
 controls['title'] = ttk.Label(root, text='Session counter')
-controls['title'].place(x=20, y=16, width=300, height=32)
+controls['title'].place(relx=0.05555555555555555, relwidth=0.8333333333333334, y=16, height=32)
 controls['count'] = ttk.Label(root, text='0')
-controls['count'].place(x=20, y=58, width=300, height=42)
+controls['count'].place(relx=0.05555555555555555, relwidth=0.8333333333333334, y=58, height=42)
 controls['add'] = ttk.Button(root, text='Add one')
-controls['add'].place(x=20, y=126, width=148, height=40)
+controls['add'].place(relx=0.05555555555555555, relwidth=0.4111111111111111, y=126, height=40)
 controls['reset'] = ttk.Button(root, text='Reset')
-controls['reset'].place(x=184, y=126, width=148, height=40)
+controls['reset'].place(relx=0.5111111111111111, relwidth=0.4111111111111111, y=126, height=40)
 
 total = 0
 

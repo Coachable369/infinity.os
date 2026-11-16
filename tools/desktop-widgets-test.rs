@@ -174,3 +174,24 @@ fn weather_visibility_round_trip(){
  }}
  assert_eq!(State::decode(0),State::new());
 }
+
+#[test]
+// ------------------------=
+// FUNC: widgets_share_width_and_snap_into_stacks
+// DESC: Drags the weather panel near the AI panel and verifies both edges snap on release at three resolutions.
+// ------------------=
+fn widgets_share_width_and_snap_into_stacks() {
+    for (w,h,scale) in [(1280,800,1),(1920,1080,1),(3840,2160,2)] {
+        let mut state=State::new();
+        state.visible=6;
+        let ai=state.rect(1,w,h,scale,false);
+        assert_eq!(ai.width,state.rect(0,w,h,scale,false).width);
+        assert_eq!(ai.width,state.rect(2,w,h,scale,false).width);
+        state.drag=Some((2,4,8));
+        let drop=Point{x:ai.x+24*scale as i32+4,y:ai.bottom()+20*scale as i32+8};
+        state.move_pointer(drop,false,w,h,scale,false);
+        let weather=state.rect(2,w,h,scale,false);
+        assert!((weather.x-ai.x).abs()<=w.div_ceil(1000) as i32);
+        assert!((weather.y-ai.bottom()-12*scale as i32).abs()<=h.div_ceil(1000) as i32);
+    }
+}

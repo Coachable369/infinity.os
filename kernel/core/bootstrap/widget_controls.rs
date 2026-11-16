@@ -8,6 +8,7 @@ impl DisplayDevice {
     pub(crate) fn weather_widget(&mut self,scale:usize,report:Option<(i16,u8,u64)>,now:u64,city:&[u8],setup:bool,draft:&[u8],focused:bool,message:&[u8]){
         let r=crate::ui::desktop_widgets::current().rect(2,self.width,self.height,scale,false);
         let(x,y,w,h)=(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
+        self.widget_shadow(r,scale);
         self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/weather-glass.bmp"),x,y,w,h,crate::ui::widget_keyframes::value(2));
         self.widget_grip(x,y,scale);
         let old=self.render_clip;self.intersect_render_clip(x,y,w,h);

@@ -337,6 +337,7 @@ impl DisplayDevice {
         let content_x = geometry.content.x.max(0) as usize;
         let content_y = geometry.content.y.max(0) as usize;
         if authored_content.is_some(){self.settings_template_surface(geometry.content,authored_panel(authored_content),Material{fill:(primary_r,primary_g,primary_b),edge:(0,0,0),opacity:0,edge_opacity:0,focus:0,pressed:false,scale});}
+        self.smoke_backdrop(geometry.content,0);
         if focus==2 {
             return SettingsChrome{geometry,primary:(primary_r,primary_g,primary_b),outline:(outline_r,outline_g,outline_b),selection:(selection_r,selection_g,selection_b),opacity:background_opacity};
         }

@@ -85,6 +85,35 @@ impl DisplayDevice {
         }
     }
     // ------------------------=
+    // FUNC: widget_shadow
+    // DESC: Draws the same downward soft shadow underneath a desktop widget at every density.
+    // ------------------=
+    pub(crate) fn widget_shadow(&mut self,r:crate::ui::geometry::Rect,scale:usize) {
+        let scale=scale.max(1) as i32;
+        for band in (1..=4).rev() {
+            let spread=band*2*scale;
+            let left=r.x-spread;
+            let top=r.y+4*scale-spread;
+            let right=r.right()+spread;
+            let bottom=r.bottom()+4*scale+spread;
+            if right<=0 || bottom<=0 {continue;}
+            self.fill_rounded_rect_alpha(left.max(0) as usize,top.max(0) as usize,
+                (right-left.max(0)) as usize,(bottom-top.max(0)) as usize,
+                (12*scale+spread) as usize,2,6,12,16);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: smoke_backdrop
+    // DESC: Composites the shared neutral smoke material behind live controls.
+    // ------------------=
+    pub(crate) fn smoke_backdrop(&mut self,r:crate::ui::geometry::Rect,inset:usize) {
+        let width=(r.width as usize).saturating_sub(inset*2);
+        let height=(r.height as usize).saturating_sub(inset*2);
+        self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/ai-smoke.bmp"),
+            (r.x+inset as i32).max(0) as usize,(r.y+inset as i32).max(0) as usize,width,height,255);
+    }
+    // ------------------------=
     // FUNC: widget_grip
     // DESC: Paints the AI widget's six-dot grip at the same offset on every desktop widget.
     // ------------------=
@@ -115,6 +144,7 @@ impl DisplayDevice {
         if e.hidden||e.opacity==0||rect.width==0||rect.height==0{return false;}
         let Some(t)=crate::ui::desktop_template::template() else{return false;};
         e.text=b"";
+        if role==67 { e.fill[3]=e.fill[3].min(40); }
         self.template_element_in_rect(e,t.asset(e.image_asset),None,
             crate::ui::installer_layout::InstallerRect{left:rect.x.max(0)as usize,top:rect.y.max(0)as usize,
                 width:rect.width as usize,height:rect.height as usize});
@@ -153,17 +183,14 @@ impl DisplayDevice {
                     self.fill_rect_alpha(r.x.max(0) as usize,(r.y-6).max(0) as usize,width,1,110,151,188,60);
                 }
             }
+            if wallpaper && matches!(scene,2|3) && e.role==2 {self.widget_shadow(r,self.ui_scale());}
             let old=self.render_clip;
             self.intersect_render_clip(r.x.max(0)as usize,r.y.max(0)as usize,r.width as usize,r.height as usize);
             if e.role==InstallerTemplateRole::LauncherClose as u8 {
                 self.kit_close_control(r);
             } else {self.template_element_in_rect(e,template.asset(e.image_asset),None,
                 crate::ui::installer_layout::InstallerRect{left:r.x.max(0)as usize,top:r.y.max(0)as usize,width:r.width as usize,height:r.height as usize});}
-            if scene==3 && e.role==2 && r.width>16 && r.height>16 {
-                // Inset the texture to preserve authored corner alpha and border highlights.
-                self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/ai-smoke.bmp"),
-                    r.x.max(0) as usize+8,r.y.max(0) as usize+8,r.width as usize-16,r.height as usize-16,77);
-            }
+            if matches!(scene,2|3) && e.role==2 {self.smoke_backdrop(r,8);}
             self.render_clip=old;
         }
         true

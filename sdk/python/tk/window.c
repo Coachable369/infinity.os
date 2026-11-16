@@ -90,11 +90,25 @@ static int renew_leases(NativeWindow *w){
     w->input=input;w->closed=closed;w->close_requested=requested;w->lease_deadline=deadline;return 1;
 }
 // ------------------------=
+// FUNC: desktop_widget_width
+// DESC: Uses the compositor's shared widget column while leaving regular and private Tk window requests intact.
+// ------------------=
+static unsigned desktop_widget_width(const NativeWindow *w,unsigned requested){
+    if(!w->tk || !w->tk->classUid || strcmp(w->tk->classUid,"InfinityWidget"))return requested;
+    int64_t column=infinity_gui_geometry(8);
+    return column>0 && column<=8192 ? (unsigned)column : requested;
+}
+// ------------------------=
 // FUNC: native_create
 // DESC: Creates a capability-scoped retained native toplevel and input subscriptions, rolling back incomplete creation.
 // ------------------=
 static int native_create(NativeWindow *w){
     if(w->native)return 1;int64_t create=infinity_gui_request(INFINITY_GUI_SURFACE_CREATE,0);if(create<0)return 0;
+    unsigned column=desktop_widget_width(w,w->width);
+    if(column!=w->width){
+        if(!InfinityTkResize(w->id,column,w->height))return 0;
+        w->width=column;w->tk->changes.width=(int)column;
+    }
     int64_t surface=infinity_surface_create(create,w->width,w->height,INFINITY_XRGB8888);if(surface<0)return 0;w->surface=surface;
     int64_t grant=infinity_gui_request(INFINITY_GUI_SURFACE_DESTROY,w->surface);if(grant<0)return 0;w->destroy=grant;
     grant=infinity_gui_request(INFINITY_GUI_SURFACE_PUBLISH,w->surface);if(grant<0)goto failed;w->publish=grant;
@@ -310,6 +324,7 @@ int XDestroyWindow(Display *d,Window id){(void)d;NativeWindow *w=lookup_window(i
 // ------------------=
 int XMoveResizeWindow(Display *d,Window id,int x,int y,unsigned width,unsigned height){
     (void)d;NativeWindow *w=lookup_window(id);if(!w||!width||!height)return BadWindow;
+    if(w->native)width=desktop_widget_width(w,width);
     if(w->x==x&&w->y==y&&w->width==width&&w->height==height)return Success;
     if(w->native){if((size_t)width*height*4>16u*1024u*1024u)return BadAlloc;
         if(infinity_surface_resize(w->resize,w->surface,width,height)<0)return BadAlloc;++w->generation;

@@ -33,7 +33,7 @@ impl SceneDamage {
                     bounds=bounds.union(crate::ui::app_assistant::geometry_in_viewport(frame,display.width as usize,scale,false).toggle);
                 }
                 if bounds.width > 0 && bounds.height > 0 {
-                    let pad = (3 * scale.max(1)) as i32;
+                    let pad = (if window.z_class==crate::ui::window::ZOrderClass::Desktop {12} else {3} * scale.max(1)) as i32;
                     let footprint = Rect { x: bounds.x.saturating_sub(pad), y: bounds.y.saturating_sub(pad),
                         width: bounds.width.saturating_add(2 * pad as u32), height: bounds.height.saturating_add(2 * pad as u32) }
                         .intersection(display);
@@ -383,7 +383,9 @@ impl Gui {
                 0 => display.x as i64, 1 => display.y as i64,
                 2 => display.width as i64, 3 => display.height as i64,
                 4 => preferred.x as i64, 5 => preferred.y as i64,
-                6 => preferred.width as i64, 7 => preferred.height as i64, _ => -3,
+                6 => preferred.width as i64, 7 => preferred.height as i64,
+                8 => i64::from(crate::ui::desktop_template::widget_width(display.width as usize,display.height as usize)),
+                _ => -3,
             });
         }
         if operation == 0x1251 {

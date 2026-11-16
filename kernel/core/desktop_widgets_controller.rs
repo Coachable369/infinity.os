@@ -76,7 +76,14 @@ impl ConsoleRuntime {
         let minimized = crate::runtime::ai::with_ai_runtime(|r| r.chat.minimized());
         if state.drag.is_some() {
             let old = state;
-            state.move_pointer(point, self.pointer_pressed, width, height, scale, minimized);
+            if self.pointer_pressed {
+                state.move_pointer(point,true,width,height,scale,minimized);
+            } else {
+                let targets=crate::runtime::with_runtime(|runtime|core::array::from_fn::<_,8,_>(|i|
+                    runtime.ui.windows.ordered_window(i).filter(|w|w.visible && w.z_class==crate::ui::window::ZOrderClass::Desktop)
+                        .map_or(Rect::default(),|w|w.bounds))).unwrap_or([Rect::default();8]);
+                state.move_with_neighbours(point,false,width,height,scale,minimized,&targets);
+            }
             widgets::publish(state);
             if state.drag.is_none() {
                 let _ = self.checkpoint_desktop_layout();

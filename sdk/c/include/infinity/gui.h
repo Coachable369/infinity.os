@@ -25,7 +25,7 @@ static inline int64_t infinity_gui_request(enum InfinityGuiGrant category, uint3
 }
 // ------------------------=
 // FUNC: infinity_gui_geometry
-// DESC: Reads actual authenticated display/work-area geometry (display x/y/width/height then work x/y/width/height); no framebuffer address is exposed.
+// DESC: Reads actual authenticated display/work-area geometry (display x/y/width/height then work x/y/width/height, then desktop widget width); no framebuffer address is exposed.
 // ------------------=
 static inline int64_t infinity_gui_geometry(unsigned component) {
     return infinity_system_call(0x1252, component, 0, 0, 0, 0, 0);

@@ -44,8 +44,9 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn native_gui_window(&mut self, window: crate::ui::window::Window, frame: crate::ui::compositor::SurfaceFrame<'_>, active:bool) {
         use crate::ui::window::WindowState;
-        self.native_gui_surface(frame);
         let scale=self.ui_scale();
+        if window.z_class==crate::ui::window::ZOrderClass::Desktop { self.widget_shadow(window.bounds,scale); }
+        self.native_gui_surface(frame);
         let title=crate::runtime::native_gui::title_bounds(window,scale);
         if window.z_class==crate::ui::window::ZOrderClass::Desktop{
             self.widget_grip(window.bounds.x.max(0) as usize,window.bounds.y.max(0) as usize,scale);return;
@@ -6056,6 +6057,7 @@ impl super::DisplayDevice {
         let Some(base)=crate::ui::desktop_template::bounds(2,2,self.width,self.height) else{return;};
         let machine=crate::runtime::with_runtime(|runtime|runtime.identity.machine()).flatten();
         let name=machine.map(|v|v.display_name).unwrap_or(crate::runtime::identity::ShortText::empty());
+        self.widget_shadow(geometry,scale);
         self.desktop_template_scene(crate::ui::desktop_template::BYTES,2,
             &[(60,name.as_bytes()),(61,b"Active"),(62,b"Online"),(63,b"Ready"),(64,b"Ready")],
             Some((geometry.x-base.x,geometry.y-base.y)),false,&[]);
@@ -6106,6 +6108,7 @@ impl super::DisplayDevice {
         let height = geometry.panel.height as usize;
         let (accent_r, accent_g, accent_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.widget_shadow(geometry.panel,scale);
         if let Some(base)=crate::ui::desktop_template::bounds(3,2,self.width,self.height) {
             let saved=self.render_clip;
             self.intersect_render_clip(left,top,width,height);

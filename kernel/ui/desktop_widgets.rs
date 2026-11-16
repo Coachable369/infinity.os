@@ -84,7 +84,7 @@ impl State {
         minimized: bool,
     ) -> Rect {
         if id==2 {
-            let w=(340*scale).min(width/3);let h=w/2;
+            let w=super::desktop_template::widget_width(width,height) as usize;let h=w/2;
             let [x,y]=self.weather_position;
             return Rect{x:if x==0{width/10}else{((x-1)as usize*width/1000).min(width.saturating_sub(w))}as i32,
                 y:if y==0{height.saturating_sub(h+105*scale)}else{((y-1)as usize*height/1000).min(height.saturating_sub(h))}as i32,width:w as u32,height:h as u32}
@@ -158,6 +158,13 @@ impl State {
         scale: usize,
         minimized: bool,
     ) {
+        self.move_with_neighbours(point,held,width,height,scale,minimized,&[]);
+    }
+    // ------------------------=
+    // FUNC: move_with_neighbours
+    // DESC: Includes visible application-authored widgets in the built-in drop targets.
+    // ------------------=
+    pub fn move_with_neighbours(&mut self,point:Point,held:bool,width:usize,height:usize,scale:usize,minimized:bool,extra:&[Rect]) {
         let Some((id, grab_x, grab_y)) = self.drag else {
             return;
         };
@@ -182,28 +189,11 @@ impl State {
                     y = edge;
                 }
             }
-            for neighbour in 0..3 {
-                if neighbour==id || self.visible & (1<<neighbour)==0 {continue}
-                let other=self.rect(neighbour,width,height,scale,minimized && neighbour==1);
-                for edge in [
-                    other.x,
-                    other.right() + (12 * scale) as i32,
-                    other.x - bounds.width as i32 - (12 * scale) as i32,
-                ] {
-                    if (x - edge).abs() <= (12 * scale) as i32 {
-                        x = edge;
-                    }
-                }
-                for edge in [
-                    other.y,
-                    other.bottom() + (12 * scale) as i32,
-                    other.y - bounds.height as i32 - (12 * scale) as i32,
-                ] {
-                    if (y - edge).abs() <= (12 * scale) as i32 {
-                        y = edge;
-                    }
-                }
-            }
+            let builtins=(0..3).filter(|&other|other!=id && self.visible&(1<<other)!=0)
+                .map(|other|self.rect(other,width,height,scale,minimized && other==1));
+            let snap=stack_point(Point{x,y},bounds,top,bottom,scale,builtins.chain(extra.iter().copied()));
+            x=snap.x;
+            y=snap.y;
             self.drag = None;
         }
         let position = [
@@ -232,6 +222,33 @@ impl State {
 }
 static mut STATE: State = State::new();
 static mut PAINTED: State = State::new();
+// ------------------------=
+// FUNC: stack_point
+// DESC: Selects the nearest reachable vertical stack and aligns its leading edge in one pointer operation.
+// ------------------=
+pub fn stack_point(point:Point,bounds:Rect,top:i32,bottom:i32,scale:usize,targets:impl Iterator<Item=Rect>)->Point {
+    let (mut x,mut y)=(point.x,point.y);
+    let gap=(12*scale) as i32;
+    let reach=(26*scale) as i32;
+    let mut nearest=None;
+    for other in targets.filter(|r|r.width!=0 && r.height!=0) {
+        if y<other.bottom() && y+bounds.height as i32>other.y {
+            for side in [other.right()+gap,other.x-bounds.width as i32-gap] {
+                if (x-side).abs()<=gap {x=side;}
+            }
+            if (y-other.y).abs()<=gap && (x-other.x).abs()<=bounds.width as i32+2*gap {y=other.y;}
+        }
+        if (point.x-other.x).abs()>reach*2 {continue;}
+        for edge in [other.bottom()+gap,other.y-bounds.height as i32-gap] {
+            let distance=(point.y-edge).abs();
+            if (top..=bottom).contains(&edge) && distance<=reach && nearest.is_none_or(|(d,_,_)|distance<d) {
+                nearest=Some((distance,other.x,edge));
+            }
+        }
+    }
+    nearest.map_or(Point{x,y},|(_,x,y)|Point{x,y})
+}
+
 // ------------------------=
 // FUNC: current
 // DESC: Reads the UI-thread presentation snapshot.
@@ -282,8 +299,11 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
         }
     }
     damage.map(|mut rect| {
-        rect.width = rect.width.saturating_add(12);
-        rect.height = rect.height.saturating_add(12);
+        let outset=(12*scale) as u32;
+        rect.x-=outset as i32;
+        rect.y-=outset as i32;
+        rect.width=rect.width.saturating_add(2*outset);
+        rect.height=rect.height.saturating_add(3*outset);
         rect.intersection(Rect {
             x: 0,
             y: 0,

@@ -178,10 +178,21 @@ impl InfinityRuntime {
                 .windows
                 .set_title(context, window, title)
                 .map(|_| before.bounds),
-            Command::Move(point) => self
-                .ui
-                .windows
-                .move_window(context, window, point, work_area),
+            Command::Move(mut point) => {
+                if before.z_class==crate::ui::window::ZOrderClass::Desktop {
+                    point.x=point.x.clamp(work_area.x,(work_area.right()-before.bounds.width as i32).max(work_area.x));
+                    point.y=point.y.clamp(work_area.y,(work_area.bottom()-before.bounds.height as i32).max(work_area.y));
+                    let (w,h)=(display_area.width as usize,display_area.height as usize);
+                    let scale=crate::ui::system_layout::SystemLayout::new(w,h).scale();
+                    let layout=crate::ui::desktop_widgets::current();
+                    let stock=(0..3).filter(|id|layout.visible & (1<<id)!=0).map(|id|layout.rect(id,w,h,scale,false));
+                    let forms=(0..self.ui.windows.count()).filter_map(|i|self.ui.windows.ordered_window(i))
+                        .filter(|v|v.id!=window && v.visible && v.z_class==before.z_class).map(|v|v.bounds);
+                    point=crate::ui::desktop_widgets::stack_point(point,before.bounds,work_area.y,
+                        work_area.bottom()-before.bounds.height as i32,scale,stock.chain(forms));
+                }
+                self.ui.windows.move_window(context,window,point,work_area)
+            }
             Command::Resize(size) => {
                 self.ui
                     .windows

@@ -1243,12 +1243,12 @@
     },
     {
       "id": "desktop.ai.smoke",
-      "label": "Frosted smoke",
+      "label": "Silver smoke",
       "group": "Desktop Widgets",
       "target": "assets/ui-design-kit/default/ai-smoke.bmp",
       "offset": 0,
-      "width": 320,
-      "height": 320,
+      "width": 384,
+      "height": 384,
       "format": "bmp"
     },
     {

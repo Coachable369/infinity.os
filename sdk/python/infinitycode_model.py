@@ -174,6 +174,8 @@ def export_source(project):
         elif kind == "Combobox" and item["text"]:
             lines.append(f"controls[{name}].current(0)")
         geometry = ", ".join(f"{key}={item[key]}" for key in ("x", "y", "width", "height"))
+        if project.get("form_type") == "widget":
+            geometry = f"relx={item['x']/width!r}, relwidth={item['width']/width!r}, y={item['y']}, height={item['height']}"
         lines.append(f"controls[{name}].place({geometry})")
     lines += ["", methods, ""]
     for item in elements:
