@@ -81,6 +81,11 @@ impl DisplayDevice {
                 self.kit_close_control(r);
             } else {self.template_element_in_rect(e,template.asset(e.image_asset),None,
                 crate::ui::installer_layout::InstallerRect{left:r.x.max(0)as usize,top:r.y.max(0)as usize,width:r.width as usize,height:r.height as usize});}
+            if scene==3 && e.role==2 && r.width>16 && r.height>16 {
+                // Inset the texture to preserve authored corner alpha and border highlights.
+                self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/ai-smoke.bmp"),
+                    r.x.max(0) as usize+8,r.y.max(0) as usize+8,r.width as usize-16,r.height as usize-16,77);
+            }
             self.render_clip=old;
         }
         true

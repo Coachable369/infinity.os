@@ -1242,6 +1242,16 @@
       "format": "rgba"
     },
     {
+      "id": "desktop.ai.smoke",
+      "label": "Frosted smoke",
+      "group": "Desktop Widgets",
+      "target": "assets/ui-design-kit/default/ai-smoke.bmp",
+      "offset": 0,
+      "width": 320,
+      "height": 320,
+      "format": "bmp"
+    },
+    {
       "id": "desktop.weather.glass",
       "label": "Forecast glass",
       "group": "Desktop Widgets",

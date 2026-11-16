@@ -92,14 +92,20 @@ impl ConsoleRuntime {
             if clicked {
                 if menu.contains(point) {
                     let row = (point.y - menu.y) as usize / (36 * scale);
-                    if (1..=3).contains(&row) {
+                    if let Some(id)=state.menu_widget.take(){
+                        match row{
+                            1=>match id{2=>{#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]super::weather::configure();},1=>self.open_settings(3),_=>self.open_settings(0)},
+                            2=>{state.visible &= !(1<<id);if id==1{self.set_ai_chat_enabled(false);}},
+                            _=>{}
+                        }
+                    }else if (1..=3).contains(&row) {
                         state.visible ^= 1 << (row - 1);
                         if row == 2 {
                             self.set_ai_chat_enabled(state.visible & 2 != 0);
                         }
                         self.ai_chat_focus = 0;
                     } else if row == 4 {
-                        state.positions = [[0; 2]; 2];
+                        state.positions = [[0; 2]; 2];state.weather_position=[0;2];
                     }
                 }
                 state.menu = None;
@@ -148,10 +154,23 @@ impl ConsoleRuntime {
         {
             return false;
         }
-        #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
-        if clicked && state.visible&4!=0 && self.mode==ConsoleMode::Desktop{
-            let r=state.rect(2,width,height,scale,false);if r.contains(point){
-                self.ai_chat_focus=0;super::weather::click((point.x-r.x)*100/r.width.max(1) as i32,(point.y-r.y)*100/r.height.max(1) as i32);self.redraw();return true;
+        for id in [1,0,2] {
+            if !state.shown(id,self.browser_window_state().visible){continue}
+            let r=state.rect(id,width,height,scale,minimized && id==1);
+            if !r.contains(point){continue}
+            if secondary{
+                state.menu_widget=Some(id);state.menu=Some(point);
+                widgets::publish(state);self.redraw();return true;
+            }
+            if clicked{
+                if id==1{
+                    let g=layout.ai_chat_geometry(minimized);
+                    if [g.minimize,g.close].iter().any(|r|r.contains(point)) || !minimized && [g.status,g.model,g.timeline,g.composer,g.send].iter().any(|r|r.contains(point)){return false}
+                }
+                #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+                if id==2 && super::weather::click((point.x-r.x)*100/r.width.max(1) as i32,(point.y-r.y)*100/r.height.max(1) as i32){self.ai_chat_focus=0;self.redraw();return true;}
+                self.surface_desktop();
+                state.drag=Some((id,point.x-r.x,point.y-r.y));self.ai_chat_focus=0;widgets::publish(state);return true;
             }
         }
         if point.y < (height * 7 / 100) as i32
@@ -192,7 +211,7 @@ impl ConsoleRuntime {
             }
         }
         if secondary {
-            state.menu = Some(point);
+            state.menu_widget=None;state.menu = Some(point);
             self.shell_menu = 0;
             widgets::publish(state);
             self.redraw();
@@ -200,24 +219,6 @@ impl ConsoleRuntime {
         }
         if clicked {
             self.surface_desktop();
-            for id in (0..2).rev() {
-                if !state.shown(id,self.browser_window_state().visible) {
-                    continue;
-                }
-                let rect = state.rect(id, width, height, scale, minimized && id == 1);
-                if rect.contains(point) {
-                    if id==1 && layout.ai_chat_geometry(minimized).status.contains(point) { return false; }
-                    if point.y < rect.y + (40 * scale) as i32
-                        && point.x < rect.right() - (80 * scale) as i32
-                    {
-                        state.drag = Some((id, point.x - rect.x, point.y - rect.y));
-                        self.ai_chat_focus = 0;
-                        widgets::publish(state);
-                        return true;
-                    }
-                    break;
-                }
-            }
         }
         false
     }

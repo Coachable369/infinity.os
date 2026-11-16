@@ -13,6 +13,12 @@ impl DisplayDevice {
         };
         let (x, y) = (rect.x.max(0) as usize, rect.y.max(0) as usize);
         self.glass_panel(x, y, rect.width as usize, rect.height as usize, true);
+        if let Some(id)=state.menu_widget{
+            let (title,action):(&[u8],&[u8])=match id{2=>(b"WEATHER",b"Set location..."),1=>(b"INFINITY AI",b"AI & Voice settings"),_=>(b"SYSTEM OVERVIEW",b"System settings")};
+            self.ui_text_strong(x+16*scale,y+10*scale,title,120,209,245,1);
+            self.ui_text(x+16*scale,y+46*scale,action,222,237,249,1);
+            self.ui_text(x+16*scale,y+82*scale,b"Hide widget",222,237,249,1);return;
+        }
         self.ui_text_strong(x + 16 * scale, y + 10 * scale, b"WIDGETS", 120, 209, 245, 1);
         for (i, label) in [
             b"System Overview".as_slice(),

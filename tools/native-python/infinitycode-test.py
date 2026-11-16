@@ -15,6 +15,30 @@ from infinitycode_model import Project, KINDS, WIDTH, validate, export_source, c
 
 class ProjectTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_packaged_widget_backend
+    # DESC: Executes the installed template callbacks and compares its exported code with the editable form.
+    # ------------------=
+    def test_packaged_widget_backend(self):
+        from infinitycode_model import counter_widget
+        folder = ROOT / "sdk/widgets/examples"
+        project = json.loads((folder / "counter.json").read_text())
+        source = export_source(counter_widget())
+        self.assertEqual(export_source(project), source)
+        self.assertEqual((folder / "counter.py").read_text(), source)
+        import types
+        tk = MagicMock()
+        ttk = types.SimpleNamespace(Style=MagicMock(), Label=lambda *a, **k: MagicMock(), Button=lambda *a, **k: MagicMock())
+        tk.ttk = ttk
+        with patch.dict(sys.modules, {"tkinter":tk,"tkinter.ttk":ttk,"infinity_widget":MagicMock()}):
+            namespace = {"__file__":"counter.py"}
+            exec(compile(source,"counter.py","exec"),namespace)
+        controls = namespace["controls"]
+        controls["add"].configure.call_args.kwargs["command"]()
+        controls["count"].configure.assert_called_with(text="1")
+        controls["reset"].configure.call_args.kwargs["command"]()
+        controls["count"].configure.assert_called_with(text="0")
+
+    # ------------------------=
     # FUNC: test_editor_diagnostics_and_handler_navigation
     # DESC: Exercises source validation and method navigation with widget doubles, including exact error selection and no execution.
     # ------------------=

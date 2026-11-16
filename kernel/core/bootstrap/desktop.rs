@@ -47,6 +47,9 @@ impl DisplayDevice {
         self.native_gui_surface(frame);
         let scale=self.ui_scale();
         let title=crate::runtime::native_gui::title_bounds(window,scale);
+        if window.z_class==crate::ui::window::ZOrderClass::Desktop{
+            self.widget_grip(window.bounds.x.max(0) as usize,window.bounds.y.max(0) as usize,scale);return;
+        }
         if title.height==0{return;}
         let old_clip=self.render_clip;
         let left=title.x.max(0) as usize;
@@ -3241,6 +3244,9 @@ impl super::DisplayDevice {
         if matches!(screen,2|4|8|9|10|11) {
             let stack=crate::ui::desktop_stack::current();
             self.desktop_base(scale,desktop_items,desktop_item_positions,false);
+            crate::console::native_gui_frames(|window,frame,_| {
+                if window.z_class==crate::ui::window::ZOrderClass::Desktop {self.native_gui_window(window,frame,false);}
+            });
             for id in stack.order {
                 if !stack.visible[id] {continue;}
                 crate::ui::desktop_effects::layer(Some(id));
@@ -3249,7 +3255,7 @@ impl super::DisplayDevice {
                     if dim!=0 {self.fill_rect_alpha(0,top_bar,self.width,self.height.saturating_sub(top_bar),3,10,19,dim);}
                 }
                 if id==crate::ui::desktop_stack::NATIVE {
-                    crate::console::native_gui_frames(|window,frame,active|self.native_gui_window(window,frame,active));
+                    crate::console::native_gui_frames(|window,frame,active|{if window.z_class!=crate::ui::window::ZOrderClass::Desktop {self.native_gui_window(window,frame,active);}});
                     continue;
                 }
                 if id==0 {
@@ -6053,6 +6059,7 @@ impl super::DisplayDevice {
         self.desktop_template_scene(crate::ui::desktop_template::BYTES,2,
             &[(60,name.as_bytes()),(61,b"Active"),(62,b"Online"),(63,b"Ready"),(64,b"Ready")],
             Some((geometry.x-base.x,geometry.y-base.y)),false,&[]);
+        self.widget_grip(geometry.x.max(0) as usize,geometry.y.max(0) as usize,scale);
         {
             let x=geometry.right().max(0) as usize;
             let y=geometry.y.max(0) as usize+geometry.height as usize/12;
@@ -6134,7 +6141,7 @@ impl super::DisplayDevice {
                 }
             }
         }
-        for row in 0..3 { for col in 0..2 { self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226); } }
+        self.widget_grip(left,top,scale);
         let app_progress = crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_generation_progress());
         let can_stop = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
             || crate::runtime::ai::with_ai_runtime(|runtime| runtime.app_turn_owner().is_some())

@@ -10,6 +10,48 @@ THEME = dict(background="#101B3A", foreground="#FFFFFF", font=("Inter", 11),
              fieldbackground="#090F26", bordercolor="#86C7FF", lightcolor="#1A2E63", darkcolor="#090F26")
 
 # ------------------------=
+# FUNC: form_size
+# DESC: Resolves the shared design and runtime dimensions for the selected form.
+# ------------------=
+def form_size(project):
+    return (360, 200) if project.get("form_type") == "widget" else (WIDTH, HEIGHT)
+
+
+# ------------------------=
+# FUNC: counter_widget
+# DESC: Supplies an editable widget with state and two connected Python event methods.
+# ------------------=
+def counter_widget():
+    elements = [
+        dict(id="title", kind="Label", text="Session counter", x=20, y=16, width=300, height=32),
+        dict(id="count", kind="Label", text="0", x=20, y=58, width=300, height=42),
+        dict(id="add", kind="Button", text="Add one", handler="increment", x=20, y=126, width=148, height=40),
+        dict(id="reset", kind="Button", text="Reset", handler="reset_count", x=184, y=126, width=148, height=40),
+    ]
+    return {"version": 1, "form_type": "widget", "elements": elements, "source": "",
+            "methods": """total = 0
+
+# ------------------------=
+# FUNC: increment
+# DESC: Adds one to the displayed count.
+# ------------------=
+def increment():
+    global total
+    total += 1
+    controls['count'].configure(text=str(total))
+
+# ------------------------=
+# FUNC: reset_count
+# DESC: Resets the counter and its label together.
+# ------------------=
+def reset_count():
+    global total
+    total = 0
+    controls['count'].configure(text='0')
+"""}
+
+
+# ------------------------=
 # FUNC: configure_workspace_bounds
 # DESC: Fits initial and minimum client bounds to the native window manager's available work area.
 # ------------------=
@@ -38,6 +80,9 @@ def configure_theme(root):
 def validate(project):
     if not isinstance(project, dict) or project.get("version") != 1:
         raise ValueError("Unsupported project version")
+    if project.get("form_type", "application") not in ("application", "widget"):
+        raise ValueError("Unknown form type")
+    width, height = form_size(project)
     items = project.get("elements")
     if not isinstance(items, list) or len(items) > 96:
         raise ValueError("A project supports at most 96 controls")
@@ -52,9 +97,9 @@ def validate(project):
         for key in ("x", "y", "width", "height"):
             if type(item.get(key)) is not int:
                 raise ValueError("Geometry must use integer pixels")
-        if not (0 <= item["x"] <= WIDTH - 20 and 0 <= item["y"] <= HEIGHT - 20
-                and 20 <= item["width"] <= WIDTH - item["x"]
-                and 20 <= item["height"] <= HEIGHT - item["y"]):
+        if not (0 <= item["x"] <= width - 20 and 0 <= item["y"] <= height - 20
+                and 20 <= item["width"] <= width - item["x"]
+                and 20 <= item["height"] <= height - item["y"]):
             raise ValueError("Controls must fit inside the design surface")
         if not isinstance(item.get("text"), str) or len(item["text"]) > 256:
             raise ValueError("Control text is limited to 256 characters")
@@ -107,12 +152,17 @@ def export_source(project):
             if len(arguments.posonlyargs) + len(arguments.args) > len(arguments.defaults) or any(
                     default is None for default in arguments.kw_defaults):
                 raise ValueError("Connected methods must be callable without arguments: " + handler)
+    width, height = form_size(project)
+    title = "Infinity widget" if project.get("form_type") == "widget" else "My Infinity app"
     lines = ["import tkinter as tk", "from tkinter import ttk", "",
-             "root = tk.Tk()", "root.title('My Infinity app')",
-             "root.geometry('640x420')", "root.configure(background='#090F26')",
+             "root = tk.Tk()", f"root.title({title!r})",
+             f"root.geometry('{width}x{height}')", "root.configure(background='#090F26')",
              "style = ttk.Style(root)", "style.theme_use('clam')",
              f"style.configure('.', **{THEME!r})",
              "style.map('TButton', background=[('active', '#1A2E63'), ('pressed', '#3E6FFF')])", "controls = {}"]
+    if project.get("form_type") == "widget":
+        lines[3] = "root = tk.Tk(className='InfinityWidget')"
+        lines.extend(["from infinity_widget import attach", "widget_host = attach(root, __file__)"])
     for item in elements:
         name = repr(item["id"])
         kind = item["kind"]

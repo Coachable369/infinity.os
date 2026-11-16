@@ -3,6 +3,8 @@ use super::geometry::{Point, Rect};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
     pub positions: [[u16; 2]; 2],
+    pub weather_position: [u16;2],
+    pub menu_widget: Option<usize>,
     pub visible: u8,
     pub trash_position: Option<[u16;2]>,
     pub drag: Option<(usize, i32, i32)>,
@@ -14,7 +16,7 @@ impl State {
     // DESC: Keeps the overview off a standalone browser desktop without changing saved widget preferences.
     // ------------------=
     pub fn shown(self, id: usize, browser_visible: bool) -> bool {
-        id < 2 && self.visible & (1 << id) != 0 && !(id == 0 && browser_visible)
+        id < 3 && self.visible & (1 << id) != 0 && !(id == 0 && browser_visible)
     }
     // ------------------------=
     // FUNC: new
@@ -23,6 +25,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             positions: [[0; 2]; 2],
+            weather_position: [0;2], menu_widget: None,
             visible: 2,
             trash_position: None,
             drag: None,
@@ -82,7 +85,9 @@ impl State {
     ) -> Rect {
         if id==2 {
             let w=(340*scale).min(width/3);let h=w/2;
-            return Rect{x:(width/10) as i32,y:height.saturating_sub(h+105*scale) as i32,width:w as u32,height:h as u32}
+            let [x,y]=self.weather_position;
+            return Rect{x:if x==0{width/10}else{((x-1)as usize*width/1000).min(width.saturating_sub(w))}as i32,
+                y:if y==0{height.saturating_sub(h+105*scale)}else{((y-1)as usize*height/1000).min(height.saturating_sub(h))}as i32,width:w as u32,height:h as u32}
         }
         let top = height * 7 / 100;
         let overview_height = (330 * scale).min(height * 30 / 100);
@@ -159,7 +164,7 @@ impl State {
             .saturating_sub(102 * scale + bounds.height as usize)
             .max(top as usize) as i32;
         if !held {
-            let other = self.rect(1 - id, width, height, scale, minimized && id == 0);
+
             for edge in [left, right] {
                 if (x - edge).abs() <= (20 * scale) as i32 {
                     x = edge;
@@ -170,7 +175,9 @@ impl State {
                     y = edge;
                 }
             }
-            if self.visible & (1 << (1 - id)) != 0 {
+            for neighbour in 0..3 {
+                if neighbour==id || self.visible & (1<<neighbour)==0 {continue}
+                let other=self.rect(neighbour,width,height,scale,minimized && neighbour==1);
                 for edge in [
                     other.x,
                     other.right() + (12 * scale) as i32,
@@ -192,10 +199,11 @@ impl State {
             }
             self.drag = None;
         }
-        self.positions[id] = [
+        let position = [
             (x.clamp(left.min(right), right).max(0) as usize * 1000 / width.max(1) + 1) as u16,
             (y.clamp(top, bottom).max(0) as usize * 1000 / height.max(1) + 1) as u16,
         ];
+        if id==2{self.weather_position=position;}else{self.positions[id]=position;}
     }
     // ------------------------=
     // FUNC: menu_rect
@@ -204,7 +212,8 @@ impl State {
     pub fn menu_rect(self, width: usize, height: usize, scale: usize) -> Option<Rect> {
         self.menu.map(|p| {
             let w = (260 * scale).min(width);
-            let h = (188 * scale).min(height);
+            let rows=if self.menu_widget.is_some(){3}else{5};
+            let h = ((rows*36+8)*scale).min(height);
             Rect {
                 x: p.x.clamp(0, width.saturating_sub(w) as i32),
                 y: p.y.clamp(0, height.saturating_sub(h) as i32),

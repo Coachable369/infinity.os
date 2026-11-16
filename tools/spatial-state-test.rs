@@ -558,7 +558,7 @@ use session_state::{DesktopResumeSurface, DesktopSessionLayout, WindowPlacement}
         input_preferences: [0; 8],
         app_drawer_left: false,
         app_drawer_floating: [301, 201],
-        widgets: 0x8000_0100_0123_4567,
+        weather_position:[789,654], widgets: 0x8000_0100_0123_4567,
     };
     state.worlds[2].layout = Some(layout);
     state.worlds[2].name.set(b"Research");

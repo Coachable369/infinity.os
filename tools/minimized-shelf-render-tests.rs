@@ -292,8 +292,7 @@ fn empty_shelf_has_no_icon() {
     let (x, y, w, h) = (rail.x as usize, rail.y as usize, rail.width as usize, rail.height as usize);
     // Empty means no icon ink over the shelf's actual Eclipse glass recipe,
     // not a different strong/default-palette panel used by older chrome.
-    display.glass_panel_with_palette(x, y, w, h, false,
-        (16, 27, 58), (194, 219, 245));
+    display.fill_rounded_rect_alpha(x,y,w,h,(w/4).clamp(6,22),16,27,58,208);
     let glass = pixels.clone();
     pixels.fill(0x102336u32);
     shelf::publish(state);

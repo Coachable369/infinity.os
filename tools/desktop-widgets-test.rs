@@ -67,7 +67,7 @@ fn browser_suppresses_overview_without_mutating_preferences() {
 fn drag_snap_visibility_and_persistence() {
     for (w, h, s) in [(800, 600, 1), (1920, 1080, 1), (3840, 2160, 2)] {
         let mut state = State::new();
-        for id in 0..2 {
+        for id in 0..3 {
             let r = state.rect(id, w, h, s, false);
             state.drag = Some((id, 10, 10));
             state.move_pointer(Point { x: 110, y: 110 }, true, w, h, s, false);

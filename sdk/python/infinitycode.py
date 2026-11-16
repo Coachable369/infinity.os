@@ -7,7 +7,7 @@ import os
 import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
-from infinitycode_model import Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme, configure_workspace_bounds
+from infinitycode_model import counter_widget, form_size, Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme, configure_workspace_bounds
 
 
 class Studio:
@@ -35,7 +35,7 @@ class Studio:
         toolbar = ttk.Frame(root, padding=(12,8))
         toolbar.pack(fill="x")
         ttk.Label(toolbar, text="InfinityCode", font=("Inter",-24,"bold")).pack(side="left", padx=(2,14))
-        for group in ((("Open", self.load), ("Save", self.save)), (("Undo", self.undo), ("Redo", self.redo)),
+        for group in ((("New Widget", self.new_widget), ("Open", self.load), ("Save", self.save)), (("Undo", self.undo), ("Redo", self.redo)),
                       (("Check Python", self.check_python), ("Generate Python", self.generate), ("Export", self.export))):
             ttk.Separator(toolbar, orient="vertical").pack(side="left",fill="y",padx=5)
             for title, command in group:
@@ -93,7 +93,8 @@ class Studio:
         self.tabs.pack(fill="both", expand=True, padx=10)
         designer = ttk.Frame(self.tabs, padding=10)
         self.tabs.add(designer, text="Form Designer")
-        ttk.Label(designer, text="Form    /    640 x 420").pack(anchor="w", pady=8)
+        self.form_label = tk.StringVar(root, "Application form   640 × 420")
+        ttk.Label(designer, textvariable=self.form_label).pack(anchor="w", pady=8)
         viewport = tk.Canvas(designer,background="#070D20",highlightthickness=0,
                              scrollregion=(0,0,WIDTH+24,HEIGHT+24))
         x_scroll = ttk.Scrollbar(designer,orient="horizontal",command=viewport.xview)
@@ -104,7 +105,8 @@ class Studio:
         viewport.configure(xscrollcommand=x_scroll.set,yscrollcommand=y_scroll.set)
         self.canvas = tk.Frame(viewport, width=WIDTH, height=HEIGHT, background="#101B3A",
                                highlightthickness=1,highlightbackground="#456B94")
-        viewport.create_window(12,12,anchor="nw",window=self.canvas,width=WIDTH,height=HEIGHT)
+        self.viewport = viewport
+        self.surface = viewport.create_window(12,12,anchor="nw",window=self.canvas,width=WIDTH,height=HEIGHT)
         self.canvas.pack_propagate(False)
         self.grip = tk.Frame(self.canvas, background="#86C7FF", width=10, height=10)
         self.grip.bind("<ButtonPress-1>", self.resize_start)
@@ -260,10 +262,33 @@ class Studio:
         self.project.data["methods"] = self.methods.get("1.0", "end-1c")
 
     # ------------------------=
+    # FUNC: new_widget
+    # DESC: Opens a writable copy of the SDK widget example with its connected methods.
+    # ------------------=
+    def new_widget(self):
+        if not self.discard():
+            return
+        self.project = Project()
+        self.project.replace(counter_widget())
+        self.project.data["source"] = export_source(self.project.data)
+        self.generated = self.project.data["source"]
+        self.selected = None
+        self.path.delete(0, "end")
+        self.path.insert(0, "/data/widget.json" if sys.platform == "infinityos" else os.path.abspath("widget.json"))
+        self.restore()
+        self.tabs.select(0)
+        self.status.set("Widget form  |  Select a control to edit its event method")
+
+    # ------------------------=
     # FUNC: render
     # DESC: Recreates actual exported widget types and binds editor-only manipulation gestures.
     # ------------------=
     def render(self):
+        width, height = form_size(self.project.data)
+        kind = "Widget" if self.project.data.get("form_type") == "widget" else "Application"
+        self.form_label.set(f"{kind} form   {width} × {height}")
+        self.viewport.itemconfigure(self.surface, width=width, height=height)
+        self.viewport.configure(scrollregion=(0, 0, width+24, height+24))
         for widget in self.widgets.values():
             widget.destroy()
         self.widgets.clear()
@@ -341,6 +366,7 @@ class Studio:
     # DESC: Shows bounded snapped geometry while dragging without growing undo history per pixel.
     # ------------------=
     def motion(self, event):
+        width,height=form_size(self.project.data)
         if not self.drag:
             return "break"
         x, y, original, resize = self.drag
@@ -348,11 +374,11 @@ class Studio:
         dx, dy = round((event.x_root - x) / step) * step, round((event.y_root - y) / step) * step
         item = copy.deepcopy(original)
         if resize:
-            item["width"] = max(20, min(WIDTH - item["x"], original["width"] + dx))
-            item["height"] = max(20, min(HEIGHT - item["y"], original["height"] + dy))
+            item["width"] = max(20, min(width - item["x"], original["width"] + dx))
+            item["height"] = max(20, min(height - item["y"], original["height"] + dy))
         else:
-            item["x"] = max(0, min(WIDTH - item["width"], original["x"] + dx))
-            item["y"] = max(0, min(HEIGHT - item["height"], original["y"] + dy))
+            item["x"] = max(0, min(width - item["width"], original["x"] + dx))
+            item["y"] = max(0, min(height - item["height"], original["y"] + dy))
         self.widgets[self.selected].place(**{key: item[key] for key in ("x", "y", "width", "height")})
         for key in ("x", "y", "width", "height"):
             self.fields[key].delete(0, "end")

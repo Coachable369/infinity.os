@@ -2,6 +2,15 @@ use super::*;
 #[cfg(any(target_arch="x86_64",target_arch="aarch64"))]
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: widget_grip
+    // DESC: Paints the AI widget's six-dot grip at the same offset on every desktop widget.
+    // ------------------=
+    pub(super) fn widget_grip(&mut self,left:usize,top:usize,scale:usize){
+        for row in 0..3 { for col in 0..2 {
+            self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226);
+        }}
+    }
+    // ------------------------=
     // FUNC: metric_ring
     // DESC: Draws a bounded annular metric against the UIKit track, with a fixed twelve-o'clock origin.
     // ------------------=
@@ -22,6 +31,7 @@ impl DisplayDevice {
         let r=crate::ui::desktop_widgets::current().rect(2,self.width,self.height,scale,false);
         let(x,y,w,h)=(r.x as usize,r.y as usize,r.width as usize,r.height as usize);
         self.paint_bitmap_alpha_fit_rect_opacity(include_bytes!("../../../assets/ui-design-kit/default/weather-glass.bmp"),x,y,w,h,crate::ui::widget_keyframes::value(2));
+        self.widget_grip(x,y,scale);
         let old=self.render_clip;self.intersect_render_clip(x,y,w,h);
         let left=x+14*scale; self.ui_text_strong(left,y+h/10,if setup{message}else{city},214,232,249,1);
         if setup{

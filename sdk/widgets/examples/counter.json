@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "form_type": "widget",
+  "elements": [
+    {
+      "id": "title",
+      "kind": "Label",
+      "text": "Session counter",
+      "x": 20,
+      "y": 16,
+      "width": 300,
+      "height": 32
+    },
+    {
+      "id": "count",
+      "kind": "Label",
+      "text": "0",
+      "x": 20,
+      "y": 58,
+      "width": 300,
+      "height": 42
+    },
+    {
+      "id": "add",
+      "kind": "Button",
+      "text": "Add one",
+      "handler": "increment",
+      "x": 20,
+      "y": 126,
+      "width": 148,
+      "height": 40
+    },
+    {
+      "id": "reset",
+      "kind": "Button",
+      "text": "Reset",
+      "handler": "reset_count",
+      "x": 184,
+      "y": 126,
+      "width": 148,
+      "height": 40
+    }
+  ],
+  "source": "import tkinter as tk\nfrom tkinter import ttk\n\nroot = tk.Tk(className='InfinityWidget')\nroot.title('Infinity widget')\nroot.geometry('360x200')\nroot.configure(background='#090F26')\nstyle = ttk.Style(root)\nstyle.theme_use('clam')\nstyle.configure('.', **{'background': '#101B3A', 'foreground': '#FFFFFF', 'font': ('Inter', 11), 'fieldbackground': '#090F26', 'bordercolor': '#86C7FF', 'lightcolor': '#1A2E63', 'darkcolor': '#090F26'})\nstyle.map('TButton', background=[('active', '#1A2E63'), ('pressed', '#3E6FFF')])\ncontrols = {}\nfrom infinity_widget import attach\nwidget_host = attach(root, __file__)\ncontrols['title'] = ttk.Label(root, text='Session counter')\ncontrols['title'].place(x=20, y=16, width=300, height=32)\ncontrols['count'] = ttk.Label(root, text='0')\ncontrols['count'].place(x=20, y=58, width=300, height=42)\ncontrols['add'] = ttk.Button(root, text='Add one')\ncontrols['add'].place(x=20, y=126, width=148, height=40)\ncontrols['reset'] = ttk.Button(root, text='Reset')\ncontrols['reset'].place(x=184, y=126, width=148, height=40)\n\ntotal = 0\n\n# ------------------------=\n# FUNC: increment\n# DESC: Adds one to the displayed count.\n# ------------------=\ndef increment():\n    global total\n    total += 1\n    controls['count'].configure(text=str(total))\n\n# ------------------------=\n# FUNC: reset_count\n# DESC: Resets the counter and its label together.\n# ------------------=\ndef reset_count():\n    global total\n    total = 0\n    controls['count'].configure(text='0')\n\n\ncontrols['add'].configure(command=increment)\ncontrols['reset'].configure(command=reset_count)\nroot.mainloop()\n",
+  "methods": "total = 0\n\n# ------------------------=\n# FUNC: increment\n# DESC: Adds one to the displayed count.\n# ------------------=\ndef increment():\n    global total\n    total += 1\n    controls['count'].configure(text=str(total))\n\n# ------------------------=\n# FUNC: reset_count\n# DESC: Resets the counter and its label together.\n# ------------------=\ndef reset_count():\n    global total\n    total = 0\n    controls['count'].configure(text='0')\n"
+}

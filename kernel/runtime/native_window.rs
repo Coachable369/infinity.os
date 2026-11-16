@@ -43,7 +43,7 @@ impl InfinityRuntime {
         let Ok(id) = u32::try_from(args[1]) else {
             return -3;
         };
-        if operation == 0x1100 {
+        if matches!(operation,0x1100|0x1109) {
             let (Ok(x), Ok(y), Ok(width), Ok(height)) = (
                 i32::try_from(args[2] as i64),
                 i32::try_from(args[3] as i64),
@@ -66,7 +66,7 @@ impl InfinityRuntime {
                     width,
                     height,
                 },
-                crate::ui::window::ZOrderClass::Normal,
+                if operation==0x1109 {crate::ui::window::ZOrderClass::Desktop}else{crate::ui::window::ZOrderClass::Normal},
                 now,
             ) {
                 Ok(window) => {

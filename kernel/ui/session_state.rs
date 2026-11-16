@@ -63,6 +63,7 @@ pub struct DesktopSessionLayout {
     pub app_drawer_left: bool,
     pub app_drawer_floating: [u16; 2],
     pub widgets: u64,
+    pub weather_position: [u16;2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -308,7 +309,10 @@ pub(crate) fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayo
     );
     write_placement(out, at + 133, layout.task_manager);
     out[at + 150..at + 158].copy_from_slice(&layout.input_preferences);
-    out[at + 158] = u8::from(layout.app_drawer_left);
+    let [x,y]=layout.weather_position.map(|v|v.min(1001));
+    out[at+127]=x as u8;
+    out[at+132]=y as u8;
+    out[at + 158] = u8::from(layout.app_drawer_left) | ((x>>8) as u8)<<1 | ((y>>8) as u8)<<3;
 }
 
 // ------------------------=
@@ -347,9 +351,10 @@ pub(crate) fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayou
         settings_expanded_row: input[at + 126].checked_sub(1).map(|row| row as usize),
         settings_scroll_offset: get_u32(input, at + 128) as usize,
         input_preferences: input[at + 150..at + 158].try_into().ok()?,
-        app_drawer_left: input[at + 158] == 1,
+        app_drawer_left: input[at + 158] & 1 != 0,
         app_drawer_floating: [0; 2],
         widgets: 0,
+        weather_position:[input[at+127] as u16 | ((input[at+158] as u16>>1)&3)<<8,input[at+132] as u16 | ((input[at+158] as u16>>3)&3)<<8],
     })
 }
 

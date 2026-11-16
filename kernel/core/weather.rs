@@ -24,6 +24,11 @@ pub(crate) fn view()->(Option<(i16,u8,u64)>,Text<64>,bool,Text<54>,bool,&'static
     unsafe{(REPORT,PLACE.map(|p|p.city).unwrap_or(Text::EMPTY),SETUP,QUERY,FOCUS,MESSAGE)}
 }
 // ------------------------=
+// FUNC: configure
+// DESC: Opens the city field from the widget context menu.
+// ------------------=
+pub(super) fn configure(){unsafe{if LOOKUP.is_none(){SETUP=true;FOCUS=true;QUERY=Text::EMPTY;MESSAGE=b"Enter your city";crate::ui::widget_keyframes::invalidate(2);}}}
+// ------------------------=
 // FUNC: blur
 // DESC: Releases the city field before another control receives a pointer press.
 // ------------------=
@@ -32,12 +37,13 @@ pub(super) fn blur(){unsafe{FOCUS=false}}
 // FUNC: click
 // DESC: Routes weather field, submit and explicit approximate-location actions.
 // ------------------=
-pub(super) fn click(x:i32,y:i32){unsafe{
-    if LOOKUP.is_some(){return}
+pub(super) fn click(x:i32,y:i32)->bool{unsafe{
+    if LOOKUP.is_some(){return false}
     if !SETUP && y<32 && x>=65{SETUP=true;MESSAGE=b"Enter your city";QUERY=Text::EMPTY;FOCUS=true;}
     else if SETUP && (33..59).contains(&y) && (5..95).contains(&x){FOCUS=true;}
     else if SETUP && (66..92).contains(&y) && ((5..45).contains(&x)||(50..95).contains(&x)){if x>=50{LOOKUP=Some(Request::Detect);}else if QUERY.len>0{LOOKUP=Some(Request::City);}NEXT=0;}
-    crate::ui::widget_keyframes::invalidate(2);
+    else{return false}
+    crate::ui::widget_keyframes::invalidate(2);true
 }}
 // ------------------------=
 // FUNC: key

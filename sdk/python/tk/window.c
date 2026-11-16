@@ -111,7 +111,9 @@ static int native_create(NativeWindow *w){
         if (w->y>bottom-w->height) w->y=(int)(bottom-w->height);
     }
     if (w->tk) { w->tk->changes.x=w->x; w->tk->changes.y=w->y; }
-    int64_t native=infinity_window_create(create,w->surface,w->x,w->y,w->width,w->height);if(native<0)goto failed;w->native=native;
+    int widget=w->tk && w->tk->classUid && !strcmp(w->tk->classUid,"InfinityWidget");
+    int64_t native=widget ? infinity_widget_create(create,w->surface,w->x,w->y,w->width,w->height)
+                          : infinity_window_create(create,w->surface,w->x,w->y,w->width,w->height);if(native<0)goto failed;w->native=native;
     grant=infinity_gui_request(INFINITY_GUI_WINDOW_MANAGE,w->native);if(grant<0)goto failed;w->manage=grant;
     if(w->title[0]&&infinity_window_title(w->manage,w->native,w->title,strlen(w->title))<0)goto failed;
     grant=infinity_gui_request(INFINITY_GUI_WINDOW_FOCUS,w->native);if(grant<0)goto failed;w->focus=grant;

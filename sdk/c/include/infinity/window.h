@@ -33,6 +33,15 @@ static inline int64_t infinity_window_create(InfinityCapability create, Infinity
         (uint64_t)(int64_t)x, (uint64_t)(int64_t)y, width, height);
 }
 // ------------------------=
+// FUNC: infinity_widget_create
+// DESC: Creates an owned interactive desktop-layer surface with the standard window creation grant.
+// ------------------=
+static inline int64_t infinity_widget_create(InfinityCapability create, InfinitySurfaceId surface,
+    int32_t x, int32_t y, uint32_t width, uint32_t height) {
+    return infinity_system_call(INFINITY_SYS_WIDGET_CREATE, create, surface,
+        (uint64_t)(int64_t)x, (uint64_t)(int64_t)y, width, height);
+}
+// ------------------------=
 // FUNC: infinity_window_close
 // DESC: Closes only the window covered by the caller's management capability.
 // ------------------=
