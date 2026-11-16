@@ -8729,6 +8729,8 @@ impl ConsoleRuntime {
         }
         if self.continue_scroll_capture(left_button,released){return;}
         if self.command_terminal_pointer(clicked,left_button) {self.present_continuous_motion(clicked||released);return;}
+        if (crate::ui::desktop_widgets::current().menu.is_some() || crate::ui::desktop_widgets::current().drag.is_some())
+            && self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         let preview_before=crate::ui::file_preview::current();
         if self.preview_pointer(clicked,left_button) {if preview_before!=crate::ui::file_preview::current(){self.present_continuous_motion(clicked||released);}else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}return;}
         if right_clicked && self.desktop_preview_menu() {self.redraw();return;}
@@ -8776,8 +8778,6 @@ impl ConsoleRuntime {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if self.app_shortcuts_pointer(clicked, released) {return;}
         if self.ai_chat_status_menu_pointer(clicked) { return; }
-        if (crate::ui::desktop_widgets::current().menu.is_some() || crate::ui::desktop_widgets::current().drag.is_some())
-            && self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         if self.minimized_shelf_pointer(clicked, right_clicked) { return; }
         if self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         let layout = SystemLayout::new(
