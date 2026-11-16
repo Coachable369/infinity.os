@@ -16,7 +16,7 @@ const CHUNK_READY:u8=6;
 const CHUNK_READING:u8=7;
 struct Data {url:[u8;8192],length:usize,request_headers:[u8;8192],request_head:usize,
     method:[u8;8],method_length:usize,request_body:[u8;65536],request_length:usize,
-    status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
+    status:u32,headers:[u8;16384],head:usize,body:[u8;crate::http_transport::https::STREAM_CHUNK_BYTES],size:usize}
 struct Slot {state:AtomicU8,id:AtomicU64,cancelled:AtomicBool,data:UnsafeCell<Data>}
 // Engine writes only after claiming FREE. BSP writes only after acquiring
 // PENDING; CHUNK_READY publishes immutable bytes until the engine's next poll
@@ -30,7 +30,7 @@ impl Slot {
     const fn new()->Self {Self {state:AtomicU8::new(FREE),id:AtomicU64::new(0),cancelled:AtomicBool::new(false),
         data:UnsafeCell::new(Data {url:[0;8192],length:0,request_headers:[0;8192],request_head:0,
             method:[0;8],method_length:0,request_body:[0;65536],request_length:0,
-            status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
+            status:0,headers:[0;16384],head:0,body:[0;crate::http_transport::https::STREAM_CHUNK_BYTES],size:0})}}
 }
 static SLOTS:[Slot;COUNT]=[const {Slot::new()};COUNT];
 static NEXT:AtomicU64=AtomicU64::new(1);
@@ -317,11 +317,11 @@ pub unsafe fn pump() {
         if state!=PENDING {continue;}
         let data=&*slot.data.get();
         let parsed=core::str::from_utf8(&data.url[..data.length]).ok().and_then(|url|
-            crate::http_transport::geturl::parse(core::iter::once(url)).ok());
-        let Some(crate::http_transport::geturl::Command::Get(options))=parsed else {
+            crate::http_transport::geturl::https_target(url).ok());
+        let Some((host,target))=parsed else {
             slot.state.store(FAILED,Ordering::Release);continue;
         };
-        match https::get_browser_streaming(owner,caps[0],caps[1],caps[2],caps[3],options.host,443,options.target,
+        match https::get_browser_streaming(owner,caps[0],caps[1],caps[2],caps[3],host,443,target,
             &data.request_headers[..data.request_head],core::str::from_utf8(&data.method[..data.method_length]).unwrap(),
             &data.request_body[..data.request_length],publish_progress) {
             Ok(ticket)=>{INFINITY_BROWSER_NETWORK_FAILURE.store(0,Ordering::Release);

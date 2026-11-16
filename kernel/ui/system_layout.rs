@@ -1427,12 +1427,7 @@ impl SystemLayout {
         let geometry = AppLauncherGeometry {
             panel,
             search,
-            close: rect(
-                panel_left + panel_width.saturating_sub(42 * self.scale),
-                panel_top + 12 * self.scale,
-                24 * self.scale,
-                24 * self.scale,
-            ),
+            close: self.launcher_chrome_close(panel),
             grid_left: panel_left + inset,
             grid_top,
             grid_cell_width: inner_width.saturating_sub(20 * self.scale) / 6,
@@ -1459,6 +1454,18 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: launcher_chrome_close
+    // DESC: Anchors the standard circular window control to the visible launcher's top-right chrome.
+    // ------------------=
+    fn launcher_chrome_close(self, panel:Rect)->Rect {
+        let inset=(12*self.scale) as u32;
+        let size=(26*self.scale) as u32;
+        let size=size.min(panel.width.saturating_sub(2*inset)).min(panel.height.saturating_sub(2*inset));
+        if size==0 {return Rect::default();}
+        Rect{x:panel.right()-(inset+size) as i32,y:panel.y+inset as i32,width:size,height:size}
+    }
+
+    // ------------------------=
     // FUNC: apply_launcher_template
     // DESC: Maps validated Studio launcher regions into the same native layout consumed by rendering and pointer interaction.
     // ------------------=
@@ -1470,7 +1477,7 @@ impl SystemLayout {
                 .unwrap_or(rect(0,0,0,0));
             geometry.panel = authored(81);
             geometry.search = authored(82);
-            geometry.close = authored(83);
+            geometry.close = if authored(83).width > 0 { self.launcher_chrome_close(geometry.panel) } else { Rect::default() };
             geometry.grid_viewport = authored(84);
             geometry.grid_left = geometry.grid_viewport.x.max(0) as usize;
             geometry.grid_top = geometry.grid_viewport.y.max(0) as usize;

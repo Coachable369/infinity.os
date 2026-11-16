@@ -14830,7 +14830,7 @@ fn poll_native_ai_inner() {
     #[cfg(feature="native-browser")]
     if crate::runtime::browser::poll_presentation() {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
-            if runtime.browser_window_state().visible {runtime.redraw();}
+            if matches!(runtime.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && runtime.browser_window_state().visible {runtime.redraw();}
         } }
     }
     #[cfg(target_os = "none")]
@@ -15402,7 +15402,7 @@ fn firmware_date_time(firmware_runtime_services: u64) -> DateTimeConfiguration {
 // DESC: Reads certificate-validation time from firmware and fails closed instead of using installer fallback dates.
 // ------------------=
 pub(crate) fn certificate_time(services: u64) -> Option<u64> {
-    crate::runtime::ai::clock::SYSTEM.settings().utc(console_clock::hardware_utc(services)?)
+    console_clock::current_utc(services)
 }
 
 // ------------------------=

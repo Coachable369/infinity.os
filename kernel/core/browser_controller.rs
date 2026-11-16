@@ -74,7 +74,10 @@ fn favorites_sync(console:&ConsoleRuntime)->bool {unsafe {
     let active=crate::runtime::with_runtime(|runtime|(0..crate::runtime::identity::MAX_SESSIONS)
         .filter_map(|i|runtime.identity.session_nth(i)).any(|s|s.id==console.current_session&&s.user==console.current_user
         &&s.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false);
-    if !active {FAVORITES_OWNER=None;FAVORITES=infinity_browser_core::favorites::Favorites::new();FAVORITES_OFFSET=0;FAVORITES_ERROR=0;}
+    if !active {
+        if (&mut *(&raw mut FAVORITES_OWNER)).take().is_some() { FAVORITES=infinity_browser_core::favorites::Favorites::new(); }
+        FAVORITES_OFFSET=0;FAVORITES_ERROR=0;
+    }
     else if FAVORITES_OWNER!=Some(console.current_user.0) {
         FAVORITES=infinity_browser_core::favorites::Favorites::new();FAVORITES_OFFSET=0;FAVORITES_ERROR=0;
         let mut bytes=[0u8;infinity_browser_core::favorites::BYTES];

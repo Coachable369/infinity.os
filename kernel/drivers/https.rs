@@ -599,7 +599,12 @@ fn get_bounded(
             return Err(Failure::Busy);
         }
         let ticket=Ticket(NEXT_TICKET.checked_add(1).ok_or(Failure::Unavailable)?);
-        let (config, auth, seed, time) = prepare_connection(owner,connect,send,receive,resolve,true)?;
+        let (mut config, auth, seed, time) = prepare_connection(owner,connect,send,receive,resolve,true)?;
+        // The renderer bounds a streaming resource to two minutes. Include time
+        // spent waiting for it to acknowledge chunks in the same hard budget.
+        if progress.is_some() {
+            config.deadline = Instant::from_millis(CLOCK.saturating_add(120_000).min(i64::MAX as u64) as i64);
+        }
         let mut name = [0; 253];
         name[..host.len()].copy_from_slice(host.as_bytes());
         let name_length = host.len();

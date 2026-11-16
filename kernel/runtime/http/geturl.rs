@@ -90,6 +90,20 @@ pub fn parse<'a>(args: impl Iterator<Item = &'a str>) -> Result<Command<'a>, Err
         }
     }
     let url = url.ok_or(Error::Arguments)?;
+    let (host, target) = https_target(url)?;
+    if target.contains(['{', '}', '[', ']']) {
+        return Err(Error::Url);
+    }
+    options.host = host;
+    options.target = target;
+    Ok(Command::Get(options))
+}
+
+// ------------------------=
+// FUNC: https_target
+// DESC: Extracts a validated HTTPS origin and request target without interpreting browser URLs as shell arguments.
+// ------------------=
+pub fn https_target(url: &str) -> Result<(&str, &str), Error> {
     let rest = url.strip_prefix("https://").ok_or(Error::Unsupported)?;
     let rest = rest
         .split_once('#')
@@ -118,18 +132,24 @@ pub fn parse<'a>(args: impl Iterator<Item = &'a str>) -> Result<Command<'a>, Err
     if target.len() > 8192
         || !target.starts_with('/')
         || !target.bytes().all(|b| (0x21..=0x7e).contains(&b))
-        || target.contains(['{', '}', '[', ']'])
     {
         return Err(Error::Url);
     }
-    options.host = host;
-    options.target = target;
-    Ok(Command::Get(options))
+    Ok((host, target))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: browser_resource_query
+    // DESC: Preserves bracketed resource parameters while excluding fragments and enforcing origin validation.
+    // ------------------=
+    #[test]
+    fn browser_resource_query() {
+        assert_eq!(https_target("https://cdn.example/path?width[]=800#local"), Ok(("cdn.example", "/path?width[]=800")));
+        assert!(https_target("https://user@cdn.example/path").is_err());
+    }
     // ------------------------=
     // FUNC: supported_argv_and_fail_behavior
     // DESC: Checks typed URL components, combined flags and HTTP exit semantics without output-text assertions.

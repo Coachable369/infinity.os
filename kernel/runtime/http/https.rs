@@ -7,6 +7,7 @@ use embedded_io_async::{Read, Write};
 use embedded_tls::{Aes128GcmSha256, TlsConfig, TlsConnection, TlsContext, TlsError};
 use rustls_pki_types::TrustAnchor;
 
+pub const STREAM_CHUNK_BYTES: usize = 16 * 1024;
 pub const MAX_RESPONSE_BODY: usize = 16 * 1024 * 1024;
 
 #[derive(Debug)]
@@ -204,9 +205,11 @@ pub async fn request_streaming<S: Read + Write, R: rand_core::CryptoRngCore>(
         }
         if let Some(head) = head {
             while let Some(chunk) = cursor.next(&buffers.response[head.bytes..used], head.body).map_err(Error::Body)? {
-                core::future::poll_fn(|_| if progress(None, chunk) {
-                    core::task::Poll::Ready(())
-                } else { core::task::Poll::Pending }).await;
+                for part in chunk.chunks(STREAM_CHUNK_BYTES) {
+                    core::future::poll_fn(|_| if progress(None, part) {
+                        core::task::Poll::Ready(())
+                    } else { core::task::Poll::Pending }).await;
+                }
             }
             if let Some(length) = cursor.complete(
                 &mut buffers.response[head.bytes..used],

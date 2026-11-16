@@ -1,6 +1,6 @@
 //! Stable priority policy for the bounded, serialized native transport queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Priority { Document, Stylesheet, Critical, Font, Other }
+pub enum Priority { Document, Embedded, Stylesheet, Critical, Font, Other }
 
 // ------------------------=
 // FUNC: dispatch_index
@@ -9,7 +9,7 @@ pub enum Priority { Document, Stylesheet, Critical, Font, Other }
 pub fn dispatch_index(queue:impl Iterator<Item=(bool,Priority)>,critical_streak:u8,last_visual:Priority)->usize {
     let mut queue=queue.enumerate();
     let Some((_,(active,first)))=queue.next() else {return 0;};
-    if active || first!=Priority::Critical || critical_streak<3 {return 0;}
+    if active || !matches!(first,Priority::Critical|Priority::Embedded) || critical_streak<3 {return 0;}
     let preferred=if last_visual==Priority::Font {Priority::Other} else {Priority::Font};
     let mut fallback=None;
     for (index,(active,priority)) in queue {
@@ -25,7 +25,7 @@ pub fn dispatch_index(queue:impl Iterator<Item=(bool,Priority)>,critical_streak:
 // DESC: Tracks bounded script bursts independently of transfer chunk count or engine pump frequency.
 // ------------------=
 pub fn dispatched(streak:u8,priority:Priority)->u8 {
-    if priority==Priority::Critical {streak.saturating_add(1)} else {0}
+    if matches!(priority,Priority::Critical|Priority::Embedded) {streak.saturating_add(1)} else {0}
 }
 
 // ------------------------=
@@ -35,7 +35,8 @@ pub fn dispatched(streak:u8,priority:Priority)->u8 {
 pub fn classify(document:bool,destination:&str)->Priority {
     if document {return Priority::Document;}
     match destination {
-        "document"|"iframe"|"frame"=>Priority::Document,
+        "document"=>Priority::Document,
+        "iframe"|"frame"=>Priority::Embedded,
         "style"=>Priority::Stylesheet,
         // Fetch/XHR and beacon traffic have an empty destination. Preserve
         // their FIFO turn with images rather than promoting every background
@@ -120,6 +121,8 @@ mod tests {
         assert_eq!(queue.iter().map(|&(_,_,id)|id).collect::<std::vec::Vec<_>>(),[0,5,4,6,3,2,1]);
         assert_eq!(insertion_index(core::iter::empty(),Priority::Document),0);
         assert_eq!(classify(false,""),Priority::Other);
+        assert_eq!(classify(false,"iframe"),Priority::Embedded);
+        assert_eq!(dispatch_index([(false,Priority::Embedded),(false,Priority::Other)].into_iter(),3,Priority::Font),1);
         assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Critical),Some(6));
         assert_eq!(eviction_index(queue.iter().map(|&(active,p,_)|(active,p)),Priority::Other),None);
         assert!(retry_pre_header("GET",0));

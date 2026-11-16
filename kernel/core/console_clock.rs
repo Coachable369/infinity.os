@@ -30,6 +30,18 @@ pub(super) fn hardware_utc(services: u64) -> Option<u64> {
 }
 
 // ------------------------=
+// FUNC: current_utc
+// DESC: Advances the trusted boot sample without synchronous firmware calls on page loads or idle UI ticks.
+// ------------------=
+pub(super) fn current_utc(services:u64)->Option<u64> {
+    let now=crate::runtime::ai::qwen::workers::clock_ns();
+    if now!=0 {
+        if let Some(ns)=clock::SYSTEM.utc_nanoseconds(now) { return Some(ns/1_000_000_000); }
+    }
+    clock::SYSTEM.settings().utc(hardware_utc(services)?)
+}
+
+// ------------------------=
 // FUNC: configuration
 // DESC: Converts exact native local fields to the existing desktop/calendar presentation type.
 // ------------------=
@@ -45,9 +57,9 @@ fn configuration(local: clock::LocalTime, settings: clock::Settings) -> DateTime
 // DESC: Projects the actual system clock using its persisted fixed UTC offset.
 // ------------------=
 pub(super) fn local_configuration(services: u64) -> Option<DateTimeConfiguration> {
-    let hardware = hardware_utc(services)?;
+    let utc = current_utc(services)?;
     let settings = clock::SYSTEM.settings();
-    clock::local_time(settings.utc(hardware)?, settings.offset_minutes).map(|local| configuration(local, settings))
+    clock::local_time(utc, settings.offset_minutes).map(|local| configuration(local, settings))
 }
 
 impl ConsoleRuntime {

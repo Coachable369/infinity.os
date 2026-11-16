@@ -35,8 +35,9 @@ impl DisplayDevice {
         let glyph = (geometry.grid_cell_width * 5 / 4).min(geometry.grid_row_height) * 63 * 84 * size / 1_000_000;
         if let Some(scene) = authored {
             // The grid and track are layout guides, not extra framed surfaces.
-            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[81,84,85,86]);
-        } else { self.kit_close_control(geometry.close); }
+            self.desktop_template_scene(crate::ui::desktop_template::BYTES,scene,&[],None,false,&[81,83,84,85,86]);
+        }
+        self.kit_close_control(geometry.close);
 
         let search_left = geometry.search.x.max(0) as usize;
         let search_top = geometry.search.y.max(0) as usize;

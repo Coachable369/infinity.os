@@ -18,12 +18,20 @@ fn main(){
         assert!(dock_bounds.x>0 && dock_bounds.y>0);
         let layout=ui::system_layout::SystemLayout::new(width,height);
         let launcher=layout.apply_launcher_template(layout.app_launcher_geometry(),template,5);
-        for (role,actual) in [(81,launcher.panel),(82,launcher.search),(83,launcher.close),
+        for (role,actual) in [(81,launcher.panel),(82,launcher.search),
             (84,launcher.grid_viewport),(86,launcher.scrollbar_track)] {
             let element=(0..template.element_count(5).unwrap()).filter_map(|i|template.element_at(5,i))
                 .find(|e|e.role==role).unwrap();
-            assert_eq!(actual,ui::desktop_template::mapped(element,width,height,None));
+            let mut expected=ui::desktop_template::mapped(element,width,height,None);
+            if role==84 || role==86 {
+                expected.height=(launcher.panel.bottom()-(launcher.panel.height/20) as i32-launcher.grid_viewport.y) as u32;
+            }
+            assert_eq!(actual,expected);
         }
+        let close=launcher.close;
+        let scale=layout.scale() as u32;
+        assert_eq!((close.width,close.height),(26*scale,26*scale));
+        assert_eq!((launcher.panel.right()-close.right(),close.y-launcher.panel.y),((12*scale) as i32,(12*scale) as i32));
         assert!(launcher.grid_cell_width>0 && launcher.grid_row_height>0);
         for index in 0..8 {
             let element=(0..template.element_count(4).unwrap()).filter_map(|i|template.element_at(4,i))
