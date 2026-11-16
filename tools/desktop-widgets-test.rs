@@ -105,6 +105,11 @@ fn drag_snap_visibility_and_persistence() {
         assert_eq!(restored.positions, state.positions);
         assert_eq!(restored.visible, 0);
         assert_eq!(restored.menu, None);
+        state.transparency=3<<4;
+        assert_eq!(state.material_alpha(2,240),60);
+        assert_eq!(state.material_alpha(1,240),240);
+        state.visibility_menu=true;
+        assert!(state.menu_rect(w,h,s).unwrap().height>menu.height);
         assert_eq!(State::decode(0), State::new());
     }
 }

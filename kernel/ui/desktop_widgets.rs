@@ -293,7 +293,8 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
         damage=Some(old.position_trash(tile,width,height).union(new.position_trash(tile,width,height)));
     }
     for id in 0..3 {
-        if old.rect(id,width,height,scale,false) != new.rect(id,width,height,scale,false) || (old.visible ^ new.visible) & (1 << id) != 0 {
+        if old.rect(id,width,height,scale,false) != new.rect(id,width,height,scale,false) || (old.visible ^ new.visible) & (1 << id) != 0
+            || (old.transparency ^ new.transparency) & (3 << (2*id)) != 0 {
             for state in [old, new] {
                 if state.visible & (1 << id) != 0 {
                     let rect = state.rect(id, width, height, scale, false);
@@ -302,7 +303,8 @@ pub fn take_damage(width: usize, height: usize, scale: usize) -> Option<Rect> {
             }
         }
     }
-    if old.menu != new.menu {
+    if old.menu != new.menu || old.transparency_menu != new.transparency_menu
+        || old.visibility_menu != new.visibility_menu || old.menu_widget != new.menu_widget {
         for state in [old, new] {
             if let Some(rect) = state.menu_rect(width, height, scale) {
                 damage = Some(damage.map_or(rect, |d| d.union(rect)));
