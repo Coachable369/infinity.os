@@ -674,6 +674,16 @@ unsafe fn clear_wake_command() {
     WAKE_ARMED_MODEL = 0;
 }
 // ------------------------=
+// FUNC: arm_explicit_wake
+// DESC: Authorizes one subsequent segment only after recognizing the user's standalone wake word.
+// ------------------=
+unsafe fn arm_explicit_wake() {
+    WAKE_ARMED=true;
+    WAKE_ARMED_UNTIL=super::qwen::workers::clock_ns().saturating_add(WAKE_COMMAND_WINDOW_NS);
+    WAKE_ARMED_MODEL=super::with_ai_runtime(|ai|ai.chat.selected_model());
+    WAKE_ARMED_WORD=configured_wake_word(OWNER);
+}
+// ------------------------=
 // FUNC: clear_captured_turn
 // DESC: Erases the single pending utterance and endpoint carry without touching microphone authority.
 // ------------------=
@@ -1995,12 +2005,7 @@ pub fn poll() -> bool {
                         ) {
                             clear_wake_command();
                         } else {
-                            WAKE_ARMED = true;
-                            WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
-                                .saturating_add(WAKE_COMMAND_WINDOW_NS);
-                            WAKE_ARMED_MODEL =
-                                super::with_ai_runtime(|ai| ai.chat.selected_model());
-                            WAKE_ARMED_WORD = configured_wake_word(OWNER);
+                            arm_explicit_wake();
                         }
                         trace(b"wake phrase armed command capture");
                         resume_captured_turn();

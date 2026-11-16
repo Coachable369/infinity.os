@@ -987,7 +987,7 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     NOW.fetch_add(400_000_000,Ordering::SeqCst);
     MICROPHONE.lock().unwrap().extend(microphone_phrase(2100));drain_microphone();
     assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(),requests,"delayed speaker tail must not authorize a follow-up");
-    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"tell me more".to_vec());
+    *TEST_TRANSCRIPT.lock().unwrap()=Some(b"Infinity tell me more".to_vec());
     MICROPHONE.lock().unwrap().extend((0..1600).map(|i|if i%2==0{2800}else{-2800}));
     MICROPHONE.lock().unwrap().extend([0;voice_vad::END_SILENCE]);drain_microphone();conversation::poll();
     assert_eq!(TURNS.load(Ordering::SeqCst),turns+1,"independent near-end speech must survive tail suppression");
@@ -995,10 +995,14 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     conversation::stop(owner);conversation::poll();
     assert!(conversation::start(owner));recognize_voice(b"Infinity hello");
     conversation::poll();OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Listening);assert!(conversation::wake_armed());
+    assert_eq!(conversation::state().0,State::Listening);assert!(!conversation::wake_armed());
     let turns=TURNS.load(Ordering::SeqCst);
     recognize_voice(b"New response.");
     assert_eq!(TURNS.load(Ordering::SeqCst),turns,"spoken response must not become a follow-up prompt");
+    recognize_voice(b"tell me more");
+    assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+    recognize_voice(b"Infinity");
+    assert!(conversation::wake_armed());
     recognize_voice(b"tell me more");
     assert_eq!(TURNS.load(Ordering::SeqCst),turns+1);
     assert_eq!(PROMPTS.lock().unwrap().last().unwrap(),b"tell me more");
@@ -1431,7 +1435,7 @@ fn next_turn_capture_boundary_tests(owner: runtime::execution::SecurityIdentity)
         assert!(MICROPHONE.lock().unwrap().is_empty());
         assert_eq!(NOW.load(Ordering::SeqCst), now);
         assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
-        assert!(conversation::wake_armed());
+        assert!(!conversation::wake_armed());
         let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
         let turns = TURNS.load(Ordering::SeqCst);
         recognize_voice(command);
@@ -1544,7 +1548,7 @@ fn repeated_reply_wake_tests(owner: runtime::execution::SecurityIdentity) {
                 }
             }
             assert_eq!(conversation::state().0, State::Listening);
-            assert!(conversation::wake_armed());
+            assert!(!conversation::wake_armed());
             assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
             expire_followup();
             recognize_voice(b"unaddressed follow-up");
@@ -1753,7 +1757,7 @@ fn complete_voice_reply() {
     OUTPUT.store(2,Ordering::SeqCst);
     conversation::poll();
     assert_eq!(conversation::state().0,conversation::State::Listening);
-    assert!(conversation::wake_armed());
+    assert!(!conversation::wake_armed());
     expire_followup();
     assert!(!conversation::wake_armed());
 }

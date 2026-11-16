@@ -151,7 +151,7 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 report_timing();TURN_TIMING_ACTIVE=false;
                 clear_wake_command();
                 if start==end {
-                    resume_captured_turn();arm_followup();
+                    resume_captured_turn();arm_explicit_wake();
                 } else {
                     clear_captured_turn();
                     if queue_command(&(&*(&raw const TRANSCRIPT))[start..end]) {
