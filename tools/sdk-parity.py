@@ -22,7 +22,9 @@ def main():
             resources = ["assets/ai-memory/weights.bin", "assets/ai-memory/tokens.bin", "assets/ai-memory/offsets.bin"]
             # The launcher is compiled only in the installed kernel; the live installer has no desktop.
             if "installed-kernel" in Path(name).name:
-                resources.extend(("assets/apps/infinity-memory-v1.bmp","assets/apps/infinitycode-icon-v1.bmp"))
+                resources.extend(("assets/apps/infinity-memory-v1.bmp","assets/apps/infinitycode-icon-v1.bmp",
+                                  "assets/apps/text-editor-icon-v1.bmp", "assets/apps/infinity-browser-icon-v1.bmp",
+                                  "assets/apps/infinity-world-shift-icon-v1.bmp", "assets/apps/infinity-holographic-desktop-icon-v1.bmp"))
             for resource in resources:
                 assert binary.find((ROOT / resource).read_bytes()) >= 0, (name, resource)
             for record in manifest["files"]:
