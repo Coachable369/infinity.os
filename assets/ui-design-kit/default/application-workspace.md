@@ -48,6 +48,13 @@ Never use decorative borders around every control or change hit bounds on hover.
 alive while the notebook exists. Use style `Workspace.TNotebook`; this selects
 the reusable image-backed tab element. InfinityCode is the reference consumer.
 
+Use `workspace_menu(button, menu)` for menu-bar dropdowns. A completed click
+posts the menu below its button; the opening mouse release cannot activate an
+item or dismiss the newly opened menu. Disabled buttons do not open menus, and
+releasing outside a pressed button cancels the click. Keyboard traversal remains
+owned by the native toolkit. Keep menu commands on the same application action
+handlers used by toolbar and keyboard shortcuts.
+
 ## Acceptance
 
 Capture the real native application at normal, maximized and restored sizes,

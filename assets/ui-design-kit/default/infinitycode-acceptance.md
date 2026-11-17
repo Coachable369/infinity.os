@@ -1,29 +1,43 @@
 # InfinityCode workspace acceptance — 2026-11-17
 
-Status: incomplete; do not claim exact visual parity or a completed ISO release.
+Native ARM installed-system verification passed for startup, menu interaction,
+fixed chrome, maximize/restore, keyboard zoom and scrollable toolbox/inspector.
+Release packaging is a separate gate; see the release build manifest.
 
-Implemented: fixed menu/toolbar geometry, anchored/scrollable inspector,
-logical-coordinate-preserving zoom, shared soft-shoulder tabs, and button/field
-states exported from the production UIKit renderer. The application workspace
-specification is the required contract for future apps.
+## Observable evidence
 
-Passing evidence:
-- 10 host behavioral tests: `builds/manifests/20261117T170954246881Z-1909.json`.
-- Runtime menu-layer lifecycle checks: `builds/manifests/20261117T165648188616Z-99350.json`.
-- ARM installed-kernel build: `builds/manifests/20261117T170411230657Z-741.json`.
-- Disposable disk byte verification: `builds/manifests/20261117T170804203069Z-1775.json`.
-- SDK package: `builds/manifests/20261117T170143462913Z-639.json`.
+Disposable installed ARM guest, 2560×1440, same VM and account:
+- Before: blank startup lasting approximately 75 seconds.
+- After: complete workspace in the first 5-second capture (`click-start-5.png`).
+- View opens on a completed click and remains visible (`click-menu-open.png`).
+  Selecting Zoom in changes workspace density to 110%; Cmd-minus restores 100%.
+- Menu/toolbar heights stay fixed during maximize/restore; inspector stays right
+  anchored; the form remains centered when it fits and scrollable otherwise.
+- Dragging the toolbox scrollbar exposes Layers and Delete selected.
 
-Remaining failures after the bounded native correction passes:
-1. The native application takes tens of seconds with a blank client area before
-   its first complete paint. Host rendering does not exhibit this delay.
-2. Clicking View highlights the menubutton and transfers focus, but the dropdown
-   is not visible in the captured native client. The low-level menu lifecycle
-   test passes; actual toolkit popup presentation does not yet pass.
-3. Final native maximize/restore, Cmd zoom and complete design-reference parity
-   must be rechecked after the above presentation defects are resolved.
+Screenshots under `builds/validation/infinitycode-fixed-chrome/`:
+`click-menu-open.png`, `final-cmd-minus.png`, `final-maximized.png`,
+`final-restored-toolbox-scroll.png`.
 
-Evidence directory: `builds/validation/infinitycode-fixed-chrome/`.
-See `native-presentation-open.png`, `native-presentation-open-late.png`, and
-`native-presentation-menu-final.png`. The updated release ISOs have not been
-built or published. Earlier ISOs do not contain this implementation.
+## Design comparison
+
+Compared installed pixels with the application-workspace and tab specifications:
+Inter typography, navy pane colors, fixed chrome, soft-shoulder tabs, production
+UIKit button/input artwork and compositor-owned outer frame are integrated.
+Host behavioral checks also compare decoded control pixels with the production
+surface samples at 1× and 2×. This verifies those components; it is not a claim
+that the whole screen is pixel-identical to the older illustrative workspace
+mockup. Native toolkit scrollbars remain the existing shared implementation.
+
+## Verification manifests
+
+- 10 host behavioral/pixel checks: `20261117T181332634024Z-8101.json`.
+- ARM installed kernel: `20261117T181338677619Z-8125.json`.
+- Private installed disk byte verification: `20261117T181656388493Z-9041.json`.
+- Native menu action: `20261117T181943689261Z-9116.json`.
+- Native maximize/restore: `20261117T182001026823Z-9132.json`,
+  `20261117T182008944269Z-9143.json`.
+- Toolbox drag: `20261117T182016914522Z-9152.json`.
+
+Native rendered acceptance above is ARM-only. Shared code and x86 packaging
+checks do not substitute for an installed x86 visual acceptance run.

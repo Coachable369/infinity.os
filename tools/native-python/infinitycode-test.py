@@ -285,6 +285,29 @@ class ProjectTests(unittest.TestCase):
                 self.assertLess(width-inspector,280)
             self.assertEqual(studio.menu_bar.winfo_height(),36)
             self.assertEqual(studio.toolbar.winfo_height(),48)
+            view=studio.menu_bar.winfo_children()[2]
+            menu=root.nametowidget(view.cget("menu"))
+            view.event_generate("<ButtonPress-1>",x=8,y=8)
+            root.update()
+            self.assertFalse(menu.winfo_viewable())
+            with patch.object(menu,"tk_popup") as post:
+                view.event_generate("<ButtonRelease-1>",x=8,y=8)
+                root.update()
+                post.assert_called_once_with(view.winfo_rootx(),view.winfo_rooty()+view.winfo_height())
+                post.reset_mock()
+                view.state(["disabled"])
+                view.event_generate("<ButtonPress-1>",x=8,y=8)
+                view.event_generate("<ButtonRelease-1>",x=8,y=8)
+                root.update()
+                post.assert_not_called()
+                view.state(["!disabled"])
+                view.event_generate("<ButtonPress-1>",x=8,y=8)
+                view.event_generate("<ButtonRelease-1>",x=-4,y=8)
+                root.update()
+                post.assert_not_called()
+            menu.invoke(0)
+            self.assertEqual(studio.zoom,1.1)
+            studio.set_zoom(1.0)
             before=copy.deepcopy(studio.project.data)
             studio.set_zoom(1.5)
             root.update()
@@ -313,6 +336,16 @@ class ProjectTests(unittest.TestCase):
             self.assertGreaterEqual(page.winfo_y(),78)
             self.assertEqual(studio.tab_images[0].height(),80)
             self.assertEqual(studio.project.data,before)
+            # Compare decoded native image pixels with the production UIKit asset,
+            # including borders, highlight and fill at both supported densities.
+            import base64, zlib
+            from infinity_uikit_artwork import SURFACES
+            reference=zlib.decompress(base64.b64decode(SURFACES))
+            for density in (1,2):
+                for state,image in enumerate(root._infinity_control_images[density*100]):
+                    for x,y in ((0,0),(7,7),(40,0),(40,8),(40,20),(79,39)):
+                        offset=state*9600+(y*80+x)*3
+                        self.assertEqual(image.get(x*density,y*density),tuple(reference[offset:offset+3]))
             studio.base_scale=1
             studio.set_zoom(1.0)
             root.update()

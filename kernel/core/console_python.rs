@@ -994,7 +994,8 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     let work = crate::runtime::native_gui::client_work_area(display,scale);
     let gui_allowed = authorized && !job.pip && job.generated.is_none_or(|g|g.phase == workflow::Phase::Run);
     // Importing Tk and constructing its first window issues many short native calls.
-    // Amortize desktop event-loop trips only during startup, with a strict time and call budget.
+    // Amortize short GUI calls throughout construction, painting and interaction,
+    // retaining the same strict two-millisecond scheduler slice.
     let mut remaining=16u8;
     let mut slice_now=now;
     let result=loop {
@@ -1016,7 +1017,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
                 .or_else(||job.network.syscall(tables, operation, arguments))
                 .or_else(|| job.data.syscall(&mut job.filesystem, &mut job.archive, tables, operation, arguments)));
         if !job.memory_browser && job.gui.revision()!=job.gui_revision {job.memory_launching=false;}
-        if !job.memory_launching || !matches!(result,State::Runnable) {break result;}
+        if !(job.memory_launching || gui_allowed) || !matches!(result,State::Runnable) {break result;}
         remaining-=1;
         let next=crate::runtime::ai::qwen::workers::clock_ns();
         if remaining==0 || next<=slice_now || next.saturating_sub(now)>=2_000_000 || !task.ready_for_resume(next) {break result;}

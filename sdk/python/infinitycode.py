@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from infinitycode_model import counter_widget, form_size, Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme, configure_workspace_bounds
 
-from infinity_uikit import MENU_HEIGHT, TOOLBAR_HEIGHT, workspace_tabs, workspace_controls
+from infinity_uikit import MENU_HEIGHT, TOOLBAR_HEIGHT, workspace_tabs, workspace_controls, workspace_menu
 
 
 class Studio:
@@ -56,14 +56,14 @@ class Studio:
                       ("Paste", lambda: self.edit_command("Paste")), ("Delete control", self.delete),
                       ("View code behind", self.code_behind))),
             ("View", (("Zoom in   Cmd +", lambda:self.set_zoom(self.zoom+0.1)),
-                      ("Zoom out   Cmd −", lambda:self.set_zoom(self.zoom-0.1)),
+                      ("Zoom out   Cmd -", lambda:self.set_zoom(self.zoom-0.1)),
                       ("Actual size   Cmd 0", lambda:self.set_zoom(1.0)))),
             ("Help", (("Designer help", self.help),))):
             button = ttk.Menubutton(bar, text=title, style="Workspace.TMenubutton", width=0)
             menu = tk.Menu(button, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
             for label, action in actions:
                 menu.add_command(label=label, command=lambda fn=action:self.perform(fn))
-            button.configure(menu=menu)
+            workspace_menu(button, menu)
             button.pack(side="right" if title=="Help" else "left")
         self.control_copy = None
         toolbar = ttk.Frame(root, padding=(12,6), height=TOOLBAR_HEIGHT)
@@ -82,6 +82,15 @@ class Studio:
         self.toolbox = left
         left.pack_propagate(False)
         left.pack(side="left", fill="y")
+        toolbox_view = tk.Canvas(left,background="#101B3A",highlightthickness=0)
+        toolbox_scroll = ttk.Scrollbar(left,orient="vertical",command=toolbox_view.yview)
+        toolbox_scroll.pack(side="right",fill="y")
+        toolbox_view.configure(yscrollcommand=toolbox_scroll.set)
+        toolbox_view.pack(fill="both",expand=True)
+        left = ttk.Frame(toolbox_view)
+        toolbox_item = toolbox_view.create_window(0,0,window=left,anchor="nw")
+        left.bind("<Configure>",lambda event:toolbox_view.configure(scrollregion=toolbox_view.bbox("all")))
+        toolbox_view.bind("<Configure>",lambda event:toolbox_view.itemconfigure(toolbox_item,width=event.width))
         ttk.Label(left, text="Toolbox", style="Heading.TLabel").pack(anchor="w", pady=(0,8))
         self.toolbox_filter = tk.StringVar()
         search = ttk.Entry(left,textvariable=self.toolbox_filter,width=16)
