@@ -2,7 +2,7 @@
 use super::*;
 use infinity_browser_core::{layout::Layout,worker as abi};
 use crate::runtime::{capability::CapabilityType,execution::SecurityIdentity};
-struct Launch {owner:SecurityIdentity,url:[u8;2048],length:usize,stage:u8,size:(u32,u32)}
+struct Launch {owner:SecurityIdentity,url:[u8;2048],length:usize,stage:u8,size:(u32,u32),error_logged:bool}
 static mut LAUNCH:Option<Launch>=None;
 static mut INPUT:infinity_browser_core::input_queue::Queue<64>=infinity_browser_core::input_queue::Queue::new();
 static mut POINTER:infinity_browser_core::pointer::Pointer=infinity_browser_core::pointer::Pointer::new();
@@ -162,7 +162,7 @@ pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
     let view=crate::runtime::browser::presentation();
     crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);
     if url.len()>2048 {return;}
-    let mut consent=Launch{owner:SecurityIdentity(console.current_session.0),url:[0;2048],length:url.len(),stage:0,size:(0,0)};
+    let mut consent=Launch{owner:SecurityIdentity(console.current_session.0),url:[0;2048],length:url.len(),stage:0,size:(0,0),error_logged:false};
     consent.url[..url.len()].copy_from_slice(url);
     unsafe {CONSENT=Some(consent);}
     if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
@@ -295,12 +295,14 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
     };
     crate::runtime::browser::launch_presentation(url,result.err());
     if let Err(error)=result {
+        let _ = crate::storage::app_errors::record(b"InfinityBrowser",super::certificate_time(console.system.firmware_runtime_services),
+            "launch",format_args!("Browser worker startup error={}", error as u32));
         console.output.write_number(b"Native browser startup failure: ",error as u64);return true;
     }
     let size=size.unwrap();
     unsafe { CONSENT=None; }
     crate::runtime::browser::permission_presentation(0);
-    let mut launch=Launch{owner,url:[0;2048],length:url.len(),stage:0,size};
+    let mut launch=Launch{owner,url:[0;2048],length:url.len(),stage:0,size,error_logged:false};
     launch.url[..url.len()].copy_from_slice(url);
     unsafe {
         if let Some(previous)=(&*(&raw const LAUNCH)).as_ref() {
@@ -586,7 +588,7 @@ fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
         if crate::runtime::browser::start(owner,caps).is_err() {return false;}
         let view=crate::runtime::browser::presentation();
         launch.length=view.address_length;launch.url[..launch.length].copy_from_slice(&view.address[..launch.length]);
-        launch.stage=0;INPUT.clear();POINTER=infinity_browser_core::pointer::Pointer::new();NEW_TABS=0;CANCEL_ACK=0;DOWNLOAD=None;IMAGE_AUTO_SAVE=false;
+        launch.stage=0;launch.error_logged=false;INPUT.clear();POINTER=infinity_browser_core::pointer::Pointer::new();NEW_TABS=0;CANCEL_ACK=0;DOWNLOAD=None;IMAGE_AUTO_SAVE=false;
         crate::runtime::browser::discard_download();
         crate::runtime::browser::download_presentation(&[],0);
         crate::runtime::browser::launch_presentation(&launch.url[..launch.length],None);
@@ -938,6 +940,14 @@ pub(super) fn poll(console:&ConsoleRuntime) {
     unsafe {
         let slot=&mut *(&raw mut LAUNCH);
         let Some(launch)=slot.as_mut() else {return;};
+        if !launch.error_logged && launch.owner==SecurityIdentity(console.current_session.0) {
+            let (state, failure, generation, peak) = crate::runtime::browser::status();
+            if state == 3 {
+                launch.error_logged = true;
+                let _ = crate::storage::app_errors::record(b"InfinityBrowser",super::certificate_time(console.system.firmware_runtime_services),
+                    "execution",format_args!("Browser worker failure={failure} generation={generation} peak_bytes={peak}"));
+            }
+        }
         if launch.stage==2 && CANCEL_ACK==0 && DOWNLOAD.is_none() && launch.owner==SecurityIdentity(console.current_session.0) {
             if let Some(value)=crate::runtime::browser::take_download(launch.owner) {
                 crate::runtime::browser::download_presentation(&value.name[..value.name_length],1);DOWNLOAD=Some(value);
