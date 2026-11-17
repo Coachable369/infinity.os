@@ -53,7 +53,7 @@ impl NativeSurfaces {
         now: u64,
     ) -> i64 {
         match operation {
-            0x1100..=0x1109 => runtime.native_window_syscall(
+            0x1100..=0x110a => runtime.native_window_syscall(
                 caller,
                 owner,
                 tables,

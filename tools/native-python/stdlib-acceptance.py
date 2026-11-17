@@ -5,6 +5,9 @@ assert sys.version_info[:2] == (3, 13)
 import _infinity_modules
 import infinitycode
 from infinitycode_model import Project, export_source
+from infinity_uikit import MENU_HEIGHT, TOOLBAR_HEIGHT, workspace_tabs
+assert (MENU_HEIGHT, TOOLBAR_HEIGHT) == (36,48)
+assert callable(workspace_tabs)
 
 # Verify the shipped IDE modules in the actual native interpreter, not host
 # imports. Interactive Tk behavior is checked separately in an installed OS.

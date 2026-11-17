@@ -30,6 +30,12 @@ First reusable component: `ai-window-tab-v1.png`, a transparent AI-generated PNG
 Use for the attached assistant on every application window. Navy smoked glass,
 smooth shoulders, tight blue/violet light rim, one embedded four-point sparkle.
 
+## Application layout standard
+
+All new and updated apps follow [Native application workspaces](application-workspace.md).
+Reuse its fixed chrome dimensions and [workspace tab states](infinitycode-tabs.md).
+InfinityCode is the reference consumer; native screenshots are required for acceptance.
+
 ## Geometry and states
 
 Native boolean, selection and disclosure controls reuse the

@@ -731,11 +731,11 @@ fn native_gui_lifecycle<T: runtime::native_memory::PageTable>() {
     assert_eq!(call!(0x1105,[manage as u64,window as u64,0,0,0,0]),0);
     for index in 0..40 {
         let s=call!(0x1120,[create as u64,8,8,0,0,0]); assert!(s>0);
-        let operation=if index%2==0{0x1100}else{0x1109};
+        let operation=[0x1100,0x1109,0x110a][index%3];
         let w=call!(operation,[window_create as u64,s as u64,300,300,8,8]); assert!(w>0);
         let view=*runtime.ui.windows.inspect(ui::window::WindowId(w as u32)).unwrap();
-        assert_eq!(view.z_class==ui::window::ZOrderClass::Desktop,index%2!=0);
-        assert_eq!(runtime::native_gui::title_bounds(view,1).height==0,index%2!=0);
+        assert_eq!(view.z_class,[ui::window::ZOrderClass::Normal,ui::window::ZOrderClass::Desktop,ui::window::ZOrderClass::Menu][index%3]);
+        assert_eq!(runtime::native_gui::title_bounds(view,1).height==0,index%3!=0);
         let m=call!(0x1251,[5,w as u64,0,0,0,0]); assert!(m>0);
         let d=call!(0x1251,[4,s as u64,0,0,0,0]); assert!(d>0);
         assert_eq!(call!(0x1101,[m as u64,w as u64,0,0,0,0]),0);

@@ -61,7 +61,7 @@ struct ChromeDrag { window: WindowId, part: ChromePart, start: Point, bounds: Re
 // DESC: Places shared OS chrome outside native client pixels; minimized windows reside only in the tray.
 // ------------------=
 pub fn title_bounds(window: Window, scale: usize) -> Rect {
-    let height = if window.z_class==crate::ui::window::ZOrderClass::Desktop || matches!(window.state,WindowState::Fullscreen|WindowState::Withdrawn|WindowState::Minimized) { 0 } else { 44 * scale.max(1) as u32 };
+    let height = if matches!(window.z_class,crate::ui::window::ZOrderClass::Desktop|crate::ui::window::ZOrderClass::Menu) || matches!(window.state,WindowState::Fullscreen|WindowState::Withdrawn|WindowState::Minimized) { 0 } else { 44 * scale.max(1) as u32 };
     Rect { x: window.bounds.x, y: window.bounds.y.saturating_sub(height as i32), width: window.bounds.width, height }
 }
 
@@ -100,7 +100,7 @@ fn chrome_hit(window: Window, point: Point, scale: usize) -> Option<ChromePart> 
             return Some(ChromePart::Control(index));
         }
     }
-    if window.state==WindowState::Normal && window.z_class!=crate::ui::window::ZOrderClass::Desktop {
+    if window.state==WindowState::Normal && matches!(window.z_class,crate::ui::window::ZOrderClass::Normal|crate::ui::window::ZOrderClass::Floating) {
         if let Some(handle)=crate::ui::system_layout::native_window_resize_target(window.bounds.union(title),point,scale){
             return Some(ChromePart::Resize{left:matches!(handle,0|2|5),right:matches!(handle,1|3|6),top:matches!(handle,0|1),bottom:matches!(handle,2|3|4)});
         }
@@ -336,12 +336,12 @@ impl Gui {
     pub fn dispatch<T: PageTable>(&mut self, runtime: &mut InfinityRuntime, memory: &mut NativeMemory,
         tables: &mut T, caller: SecurityIdentity, owner: ContextId, authorized: bool,
         operation: u64, args: [u64; 6], work: Rect, display: Rect, now: u64) -> Option<i64> {
-        if !matches!(operation, 0x1100..=0x1109 | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1251..=0x1254) { return None; }
+        if !matches!(operation, 0x1100..=0x110a | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1251..=0x1254) { return None; }
         if !authorized || owner.0 == 0 || caller == SecurityIdentity([0;16]) { return Some(-1); }
         if self.owner.is_some_and(|bound| bound != (caller, owner)) { return Some(-1); }
         self.owner = Some((caller, owner));
         let mut args=args;
-        if matches!(operation,0x1100|0x1109) {
+        if matches!(operation,0x1100|0x1109|0x110a) {
             if let Ok(y)=i32::try_from(args[3] as i64) {args[3]=y.max(work.y) as i64 as u64;}
         }
         if operation == 0x1254 {
@@ -410,7 +410,7 @@ impl Gui {
             if matches!(operation,0x1110|0x1111){self.last_event_poll=now;}
             if operation == 0x1110 { *self.leases.iter_mut().find(|s| s.is_none()).unwrap() = Some((result as u64,args[0])); }
             if operation == 0x1112 { for slot in &mut self.leases { if slot.is_some_and(|(lease,_)|lease==args[0]) { *slot = None; } } }
-            if matches!(operation, 0x1100..=0x1109 | 0x1122..=0x1124) { self.revision = self.revision.wrapping_add(1); }
+            if matches!(operation, 0x1100..=0x110a | 0x1122..=0x1124) { self.revision = self.revision.wrapping_add(1); }
         }
         Some(result)
     }

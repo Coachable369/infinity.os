@@ -1,7 +1,9 @@
 #include "native.h"
+#include "pixel_reflow.h"
+#include <infinity/compiler_host.h>
 
 #define MAX_DRAWABLES 256
-#define PIXEL_BUDGET (96u*1024u*1024u)
+#define PIXEL_BUDGET (128u*1024u*1024u)
 typedef struct NativeDrawable {
     Drawable id;
     InfinityTkPixels image;
@@ -10,6 +12,7 @@ typedef struct NativeDrawable {
 static NativeDrawable drawables[MAX_DRAWABLES];
 static Drawable next_drawable=2;
 static size_t pixel_bytes;
+static NativeDrawable *last_drawable;
 
 // ------------------------=
 // FUNC: lookup
@@ -17,7 +20,8 @@ static size_t pixel_bytes;
 // ------------------=
 static NativeDrawable *lookup(Drawable id) {
     if(!id)return NULL;
-    for(unsigned i=0;i<MAX_DRAWABLES;++i)if(drawables[i].id==id)return &drawables[i];
+    if(last_drawable && last_drawable->id==id)return last_drawable;
+    for(unsigned i=0;i<MAX_DRAWABLES;++i)if(drawables[i].id==id){last_drawable=&drawables[i];return last_drawable;}
     return NULL;
 }
 // ------------------------=
@@ -45,11 +49,18 @@ int InfinityTkResize(Drawable id,unsigned width,unsigned height){
     NativeDrawable *d=lookup(id);if(!d||!width||!height||width>8192||height>8192)return 0;
     if(d->image.width==width && d->image.height==height)return 1;
     size_t old=(size_t)d->image.width*d->image.height*4,size=(size_t)width*height*4;
-    if(size>PIXEL_BUDGET-(pixel_bytes-old))return 0;
-    uint32_t *pixels=calloc(1,size);if(!pixels)return 0;
-    unsigned w=width<d->image.width?width:d->image.width,h=height<d->image.height?height:d->image.height;
-    for(unsigned y=0;y<h;++y)memcpy(pixels+(size_t)y*width,d->image.pixels+(size_t)y*d->image.width,(size_t)w*4);
-    free(d->image.pixels);d->image.pixels=pixels;d->image.width=width;d->image.height=height;
+    if(size>PIXEL_BUDGET-(pixel_bytes-old)){
+        fprintf(stderr,"Tk drawable resize rejected: id=%lu size=%ux%u retained=%lu budget=%u\n",(unsigned long)id,width,height,(unsigned long)pixel_bytes,PIXEL_BUDGET);
+        return 0;
+    }
+    uint32_t *pixels=d->image.pixels;
+    if(size>old){
+        pixels=realloc(pixels,size);
+        if(!pixels){fprintf(stderr,"Tk drawable resize allocation failed: id=%lu bytes=%lu retained=%lu heap=%lu\n",(unsigned long)id,(unsigned long)size,(unsigned long)pixel_bytes,(unsigned long)infinity_compiler_get_host()->heap_size);return 0;}
+    }
+    InfinityTkReflowPixels(pixels,d->image.width,d->image.height,width,height);
+    if(size<old){uint32_t *smaller=realloc(pixels,size);if(smaller)pixels=smaller;}
+    d->image.pixels=pixels;d->image.width=width;d->image.height=height;
     pixel_bytes=pixel_bytes-old+size;++d->revision;return 1;
 }
 // ------------------------=
@@ -112,7 +123,10 @@ int XFillRectangles(Display *display,Drawable id,GC gc,XRectangle *rectangles,in
     (void)display;InfinityTkPixels *d=InfinityTkDrawable(id);if(!d||!gc||count<0)return BadDrawable;
     for(int i=0;i<count;++i){XRectangle r=rectangles[i];int left=r.x<0?0:r.x,top=r.y<0?0:r.y,right=r.x+r.width,bottom=r.y+r.height;
         if(right>(int)d->width)right=d->width;if(bottom>(int)d->height)bottom=d->height;
-        for(int y=top;y<bottom;++y)for(int x=left;x<right;++x)fill_pixel(id,gc,x,y);}
+        if(gc->fill_style==FillSolid && gc->function==GXcopy && !gc->clip_mask && (gc->plane_mask&0xffffffu)==0xffffffu && d->depth!=1){
+            uint32_t color=(uint32_t)gc->foreground|0xff000000u;
+            for(int y=top;y<bottom;++y){uint32_t *row=d->pixels+(size_t)y*d->width;for(int x=left;x<right;++x)row[x]=color;}
+        }else for(int y=top;y<bottom;++y)for(int x=left;x<right;++x)fill_pixel(id,gc,x,y);}
     InfinityTkDamage(id);return Success;
 }
 // ------------------------=

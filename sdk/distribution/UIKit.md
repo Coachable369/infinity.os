@@ -35,3 +35,16 @@ the active/inactive window and AI adorner.
 
 See APIKit/GettingStarted.md for the supported public control API. The internal
 OS control catalog is broader than the currently exposed C/Python factories.
+
+## Application workspace standard
+
+New apps must follow `UIKit/application-workspace.md`: fixed-height
+menu and toolbar, compositor-owned title bar, anchored sidebars, reflowing content
+and zoom independent of saved geometry. Reuse native Python `infinity_uikit`
+constants `MENU_HEIGHT` and `TOOLBAR_HEIGHT`, `workspace_tabs(root, style)`, and `workspace_controls(root, style)`.
+Retain the returned images and use `Workspace.TNotebook`. The tab design reference
+and normal/hover/selected/focused states are supplied in the same UIKit directory.
+
+Native transient menus use `infinity_menu_create` with the standard window-create
+grant. They occupy the menu layer without title bars, resize handles, or AI
+adorners; they retain owned input, surface, focus, and teardown capabilities.

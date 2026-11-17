@@ -18,6 +18,19 @@ for every UI task, without exceptions.
   must not invent alternate outer borders, corner treatments, or focus states.
   Compare production-rendered pixels against this reference before acceptance.
 
+## Application workspace design and acceptance
+
+All new and updated application interfaces must follow
+`assets/ui-design-kit/default/application-workspace.md` and the associated
+component reference boards. Keep compositor title bars and application menu,
+nav and toolbar heights fixed during window resize. Reflow content and anchor
+panels instead of stretching controls. Explicit content zoom must preserve saved
+geometry. Reuse the packaged UIKit tab states and shared controls; add reusable
+components and their state specifications to UIKit when a genuine gap exists.
+Compare native normal/maximized/restored and zoomed screenshots to the kit before
+claiming visual parity. Record and fix mismatches; a successful build is not
+visual acceptance.
+
 ## Desktop widget design and acceptance
 
 Every new or redesigned desktop widget requires an AI-generated visual design kit

@@ -339,13 +339,29 @@ def infinitycode(guest, native, python):
               for y in range(max(0, window["y"]), min(capture["height"], window["y"] + window["height"]), 3)
               for x in range(max(0, window["x"]), min(capture["width"], window["x"] + window["width"]), 3)}
     assert len(colors) > 12, len(colors)
+    initial = window.copy()
+    sx,sy=close_point(guest,window)
+    scale=2 if guest.state()[11]>=2560 and guest.state()[12]>=1440 else 1
+    native.ui.click(guest,sx-44*scale,sy)
+    window=wait(guest,python,lambda:gui(guest,native)["windows"][0],
+                lambda w:w["width"]>initial["width"],timeout=30)
+    # A maximized workspace must paint its whole client, not just a stale-sized corner.
+    # ------------------------=
+    # FUNC: fully_painted
+    # DESC: Reject unpainted black client areas after a native maximize.
+    # ------------------=
+    def fully_painted(image):
+        points=[pixel(image,x,y) for y in range(window["y"]+12,min(image["height"],window["y"]+window["height"]-12),12)
+                for x in range(window["x"]+12,min(image["width"],window["x"]+window["width"]-12),12)]
+        return bool(points) and sum(c==(0,0,0) for c in points)/len(points)<0.005
+    maximized=wait(guest,python,lambda:screenshot(guest,"infinitycode-maximized"),fully_painted,150)
     before = guest.state()[2]
     guest.key("tab")
     assert guest.state()[2] > before
     native.ui.click(guest, *close_point(guest, window))
     receipt = finished(guest, python, previous)
     wait(guest, python, lambda: gui(guest, native), lambda value: not value["windows"])
-    return dict(window=window, screenshot=capture["path"], colors=len(colors), exit=receipt)
+    return dict(window=window, screenshot=capture["path"], maximized=maximized["path"], colors=len(colors), exit=receipt)
 
 
 # ------------------------=
@@ -445,6 +461,8 @@ def main():
     parser.add_argument("--media-player-only", action="store_true", help="Verify automatic MP4 opening and playback")
     parser.add_argument("--infinitycode-only", action="store_true",
                         help="Exercise installed InfinityCode launch, drawing, input and clean close")
+    parser.add_argument("--width",type=int,default=1024)
+    parser.add_argument("--height",type=int,default=768)
     args = parser.parse_args()
     iso = args.iso.resolve()
     assert iso.is_relative_to(ROOT) and iso.is_file()
@@ -477,7 +495,7 @@ def main():
     helper.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["rustc", "--edition=2021", "-A", "warnings", "tools/native-python/package-disk.rs", "-o", str(helper)], check=True, cwd=ROOT)
     guest = native.NativeGuest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
-                               reuse=bool(args.reuse_work), width=1024, height=768, memory_mb=12288)
+                               reuse=bool(args.reuse_work), width=args.width, height=args.height, memory_mb=12288)
     active = subprocess.run(["lsof", "-t", str(guest.disk)], capture_output=True)
     assert active.returncode in (0, 1) and not active.stdout, "Disposable test disk is still open by another process"
     guest.arch = args.arch

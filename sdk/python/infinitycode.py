@@ -8,6 +8,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from infinitycode_model import counter_widget, form_size, Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme, configure_workspace_bounds
 
+from infinity_uikit import MENU_HEIGHT, TOOLBAR_HEIGHT, workspace_tabs, workspace_controls
+
 
 class Studio:
     # ------------------------=
@@ -18,10 +20,15 @@ class Studio:
         self.root, self.project = root, Project()
         self.selected, self.drag = None, None
         self.widgets, self.generated = {}, ""
+        self.zoom = 1.0
+        self.base_scale = 2 if root.winfo_screenwidth()>=2560 and root.winfo_screenheight()>=1440 else 1
+        self.scale = self.base_scale
         root.title("InfinityCode")
         configure_workspace_bounds(root)
         root.configure(background="#090F26")
         style = configure_theme(root)
+        self.style = style
+        self.tab_images = workspace_tabs(root, style, self.scale)
         style.configure("TNotebook", background="#090F26", borderwidth=0)
         style.configure("TNotebook.Tab", padding=(14, 8), font=("Inter",-15,"bold"))
         style.map("TNotebook.Tab", background=[("selected", "#1A2E63")], foreground=[("selected", "#FFFFFF")])
@@ -36,7 +43,9 @@ class Studio:
         style.configure("Workspace.TMenubutton", background="#101B3A", foreground="#DAE9FF",
                         padding=(12,6), font=("Inter",-15), relief="flat")
         style.map("Workspace.TMenubutton", background=[("active","#244F96"),("focus","#244F96")])
-        bar = tk.Frame(root, bg="#101B3A", padx=8)
+        bar = tk.Frame(root, bg="#101B3A", padx=8, height=MENU_HEIGHT)
+        self.menu_bar = bar
+        bar.pack_propagate(False)
         bar.pack(fill="x")
         for title, actions in (
             ("File", (("New form", self.new_form), ("New widget", self.new_widget),
@@ -46,15 +55,20 @@ class Studio:
                       ("Cut", lambda: self.edit_command("Cut")), ("Copy", lambda: self.edit_command("Copy")),
                       ("Paste", lambda: self.edit_command("Paste")), ("Delete control", self.delete),
                       ("View code behind", self.code_behind))),
+            ("View", (("Zoom in   Cmd +", lambda:self.set_zoom(self.zoom+0.1)),
+                      ("Zoom out   Cmd −", lambda:self.set_zoom(self.zoom-0.1)),
+                      ("Actual size   Cmd 0", lambda:self.set_zoom(1.0)))),
             ("Help", (("Designer help", self.help),))):
-            button = ttk.Menubutton(bar, text=title, style="Workspace.TMenubutton")
+            button = ttk.Menubutton(bar, text=title, style="Workspace.TMenubutton", width=0)
             menu = tk.Menu(button, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
             for label, action in actions:
                 menu.add_command(label=label, command=lambda fn=action:self.perform(fn))
             button.configure(menu=menu)
             button.pack(side="right" if title=="Help" else "left")
         self.control_copy = None
-        toolbar = ttk.Frame(root, padding=(12,6))
+        toolbar = ttk.Frame(root, padding=(12,6), height=TOOLBAR_HEIGHT)
+        self.toolbar = toolbar
+        toolbar.pack_propagate(False)
         toolbar.pack(fill="x")
         ttk.Label(toolbar,text="Design workspace",style="Heading.TLabel").pack(side="left",padx=(0,14))
         for title,action in (("Open",self.open_project),("Save",self.save),("Check Python",self.check_python),("Generate Python",self.generate)):
@@ -64,7 +78,9 @@ class Studio:
         footer.pack(side="bottom",fill="x")
         workspace = ttk.Frame(root, padding=8)
         workspace.pack(fill="both", expand=True)
-        left = ttk.Frame(workspace, padding=8)
+        left = ttk.Frame(workspace, padding=8, width=210)
+        self.toolbox = left
+        left.pack_propagate(False)
         left.pack(side="left", fill="y")
         ttk.Label(left, text="Toolbox", style="Heading.TLabel").pack(anchor="w", pady=(0,8))
         self.toolbox_filter = tk.StringVar()
@@ -88,8 +104,19 @@ class Studio:
         self.layers.pack(fill="both", expand=True)
         self.layers.bind("<<ListboxSelect>>", self.layer_selected)
         ttk.Button(left, text="Delete selected", command=lambda: self.perform(self.delete)).pack(fill="x", pady=8)
-        right = ttk.Frame(workspace, padding=12, width=190)
+        right = ttk.Frame(workspace, padding=12, width=260)
+        self.inspector = right
+        right.pack_propagate(False)
         right.pack(side="right", fill="y")
+        inspector_view = tk.Canvas(right,background="#101B3A",highlightthickness=0)
+        inspector_scroll = ttk.Scrollbar(right,orient="vertical",command=inspector_view.yview)
+        inspector_scroll.pack(side="right",fill="y")
+        inspector_view.configure(yscrollcommand=inspector_scroll.set)
+        inspector_view.pack(fill="both",expand=True)
+        right=ttk.Frame(inspector_view)
+        inspector_item=inspector_view.create_window(0,0,window=right,anchor="nw")
+        right.bind("<Configure>",lambda event:inspector_view.configure(scrollregion=inspector_view.bbox("all")))
+        inspector_view.bind("<Configure>",lambda event:inspector_view.itemconfigure(inspector_item,width=event.width))
         ttk.Label(right, text="Properties",style="Heading.TLabel").pack(anchor="w",pady=(0,6))
         self.fields = {}
         for label, keys in (("Identity",("id","text")),("Layout",("x","y","width","height")),("Event",("handler",))):
@@ -110,11 +137,11 @@ class Studio:
         ttk.Button(right, text="Go to handler", command=lambda:self.perform(self.goto_handler)).pack(fill="x",pady=(0,6))
         self.snap = tk.BooleanVar(root, True)
         ttk.Checkbutton(right, text="Snap to 10 px", variable=self.snap).pack(anchor="w")
-        self.tabs = ttk.Notebook(workspace)
+        self.tabs = ttk.Notebook(workspace, style="Workspace.TNotebook")
         self.tabs.pack(fill="both", expand=True, padx=10)
         designer = ttk.Frame(self.tabs, padding=10)
         self.tabs.add(designer, text="Form Designer")
-        self.form_label = tk.StringVar(root, "Application form   640 × 420")
+        self.form_label = tk.StringVar(root, "Application form   640 x 420")
         ttk.Label(designer, textvariable=self.form_label).pack(anchor="w", pady=8)
         viewport = tk.Canvas(designer,background="#070D20",highlightthickness=0,
                              scrollregion=(0,0,WIDTH+24,HEIGHT+24))
@@ -144,7 +171,7 @@ class Studio:
         self.grip.bind("<B1-Motion>", self.motion)
         self.grip.bind("<ButtonRelease-1>", self.release)
         source_frame = ttk.Frame(self.tabs)
-        self.tabs.add(source_frame, text="Python")
+        self.tabs.add(source_frame, text="Code")
         self.source = tk.Text(source_frame, undo=True, background="#090F26", foreground="#FFFFFF",
                               insertbackground="#86C7FF", font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
         vertical = ttk.Scrollbar(source_frame, orient="vertical", command=self.source.yview)
@@ -184,6 +211,58 @@ class Studio:
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.saved = copy.deepcopy(self.project.data)
 
+        for modifier in ("Mod4", "Control") + (("Command",) if sys.platform == "darwin" else ()):
+            root.bind(f"<{modifier}-plus>",lambda event:self.set_zoom(self.zoom+0.1))
+            root.bind(f"<{modifier}-equal>",lambda event:self.set_zoom(self.zoom+0.1))
+            root.bind(f"<{modifier}-minus>",lambda event:self.set_zoom(self.zoom-0.1))
+            root.bind(f"<{modifier}-0>",lambda event:self.set_zoom(1.0))
+        self.set_zoom(1.0)
+
+    # ------------------------=
+    # FUNC: set_zoom
+    # DESC: Scale workspace controls and design preview without changing saved coordinates or shell chrome.
+    # ------------------=
+    def set_zoom(self, value):
+        self.sync_source()
+        self.zoom = min(1.75, max(0.75, round(value,2)))
+        self.scale = self.zoom*self.base_scale
+        size = round(18*self.scale)
+        import tkinter.font as tkfont
+        for name in ("TkDefaultFont","TkTextFont","TkMenuFont","TkHeadingFont"):
+            tkfont.nametofont(name,root=self.root).configure(family="Inter",size=-size)
+        self.tab_images=workspace_tabs(self.root,self.style,self.scale)
+        self.control_images=workspace_controls(self.root,self.style,self.scale)
+        self.style.configure(".", font=("Inter",-size))
+        for name in ("TLabel", "TButton", "TEntry", "Workspace.TMenubutton", "Workspace.TNotebook.Tab"):
+            self.style.configure(name,font=("Inter",-size))
+        self.style.configure("Workspace.TNotebook.Tab",padding=(round(24*self.scale),round(9*self.scale)))
+        self.style.configure("Heading.TLabel",font=("Inter",-round(20*self.scale),"bold"))
+        self.toolbox.configure(width=round(210*self.scale))
+        self.inspector.configure(width=round(260*self.scale))
+        self.menu_bar.configure(height=round(MENU_HEIGHT*self.scale))
+        self.toolbar.configure(height=round(TOOLBAR_HEIGHT*self.scale))
+        self.layers.configure(font=("Inter",-size))
+        for editor in (self.source,self.methods):
+            editor.configure(font=("IBM Plex Mono",-round(18*self.scale)))
+        self.render()
+        self.status.set(f"Zoom {round(self.zoom*100)}%")
+        return "break"
+
+    # ------------------------=
+    # FUNC: preview_geometry
+    # DESC: Convert logical form coordinates to zoomed preview pixels without mutating the project.
+    # ------------------=
+    def preview_geometry(self,item):
+        return {key:round(item[key]*self.scale) for key in ("x","y","width","height")}
+
+    # ------------------------=
+    # FUNC: place_grip
+    # DESC: Keep the selected resize handle fixed in size at the zoomed control corner.
+    # ------------------=
+    def place_grip(self,item):
+        self.grip.place(x=round((item["x"]+item["width"])*self.scale)-10,
+                        y=round((item["y"]+item["height"])*self.scale)-10)
+
 
     # ------------------------=
     # FUNC: layout_form
@@ -191,6 +270,7 @@ class Studio:
     # ------------------=
     def layout_form(self, size=None):
         width,height = size or form_size(self.project.data)
+        width,height = round(width*self.scale),round(height*self.scale)
         vw=max(self.viewport.winfo_width(),width+32)
         vh=max(self.viewport.winfo_height(),height+32)
         x,y=(vw-width)//2,(vh-height)//2
@@ -221,8 +301,8 @@ class Studio:
         min_w=max([64]+[i["x"]+i["width"] for i in items])
         min_h=max([64]+[i["y"]+i["height"] for i in items])
         # A centered edge moves by half the change in the full dimension.
-        width=min(4096,max(min_w,w+2*(event.x_root-x))) if "e" in axis else w
-        height=min(4096,max(min_h,h+2*(event.y_root-y))) if "s" in axis else h
+        width=min(4096,max(min_w,w+round(2*(event.x_root-x)/self.scale))) if "e" in axis else w
+        height=min(4096,max(min_h,h+round(2*(event.y_root-y)/self.scale))) if "s" in axis else h
         self.layout_form((width,height))
         return width,height
 
@@ -244,8 +324,8 @@ class Studio:
     # ------------------=
     def drop_control(self,event,kind):
         event.widget.grab_release()
-        x=event.x_root-self.canvas.winfo_rootx()
-        y=event.y_root-self.canvas.winfo_rooty()
+        x=round((event.x_root-self.canvas.winfo_rootx())/self.scale)
+        y=round((event.y_root-self.canvas.winfo_rooty())/self.scale)
         width,height=form_size(self.project.data)
         if 0<=x<width and 0<=y<height:
             if self.snap.get():
@@ -510,7 +590,7 @@ class Studio:
     def render(self):
         width, height = form_size(self.project.data)
         kind = "Widget" if self.project.data.get("form_type") == "widget" else "Application"
-        self.form_label.set(f"{kind} form   {width} × {height}")
+        self.form_label.set(f"{kind} form   {width} x {height}")
         self.layout_form()
         for widget in self.widgets.values():
             widget.destroy()
@@ -519,6 +599,7 @@ class Studio:
         for item in self.project.data["elements"]:
             identifier = item["id"]
             widget = make_widget(self.canvas, item)
+            widget.place(**self.preview_geometry(item))
             self.widgets[identifier] = widget
             widget.bind("<ButtonPress-1>", lambda event, key=identifier: self.start(event, key))
             widget.bind("<Button-3>", lambda event,key=identifier:self.context(event,key))
@@ -543,7 +624,7 @@ class Studio:
         if item:
             index = self.project.data["elements"].index(item)
             self.layers.selection_set(index)
-            self.grip.place(x=item["x"] + item["width"] - 10, y=item["y"] + item["height"] - 10)
+            self.place_grip(item)
             self.grip.lift()
 
     # ------------------------=
@@ -595,7 +676,7 @@ class Studio:
             return "break"
         x, y, original, resize = self.drag
         step = 10 if self.snap.get() else 1
-        dx, dy = round((event.x_root - x) / step) * step, round((event.y_root - y) / step) * step
+        dx, dy = round((event.x_root - x) / (step*self.scale)) * step, round((event.y_root - y) / (step*self.scale)) * step
         item = copy.deepcopy(original)
         if resize:
             item["width"] = max(20, min(width - item["x"], original["width"] + dx))
@@ -603,11 +684,11 @@ class Studio:
         else:
             item["x"] = max(0, min(width - item["width"], original["x"] + dx))
             item["y"] = max(0, min(height - item["height"], original["y"] + dy))
-        self.widgets[self.selected].place(**{key: item[key] for key in ("x", "y", "width", "height")})
+        self.widgets[self.selected].place(**self.preview_geometry(item))
         for key in ("x", "y", "width", "height"):
             self.fields[key].delete(0, "end")
             self.fields[key].insert(0, str(item[key]))
-        self.grip.place(x=item["x"] + item["width"] - 10, y=item["y"] + item["height"] - 10)
+        self.place_grip(item)
         return "break"
 
     # ------------------------=

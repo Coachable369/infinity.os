@@ -232,7 +232,8 @@ impl Task {
                 process: self.id,
                 session: self.session,
                 heap: 0x200010000,
-                heap_bytes: 64 * 1024 * 1024 - 65536,
+                heap_bytes: (space.heap.page_count as u64 * 4096).checked_sub(65536)
+                    .filter(|bytes| *bytes > 0).ok_or(MemoryError::InvalidAddress)?,
             },
         )?;
         cpu::finish_preparation(space, memory, self.controller)?;
@@ -371,7 +372,7 @@ impl Task {
             .step(now, |_, operation, a| {
                 // Only explicitly bound application, console, filesystem and HTTPS operations
                 // may be delegated; memory, entropy and process authority stay native.
-                if matches!(operation, 0x1100..=0x1109 | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1140..=0x1142 | 0x1150..=0x1156 | 0x1206..=0x1208 | 0x120b..=0x121a | 0x121b | 0x121d | 0x1233..=0x1237 | 0x1240..=0x1243 | 0x1251..=0x1254 | 0x1270..=0x1274 | 0x1280..=0x1283 | 0x1290 | 0x12e0..=0x12e7 | 0x12f8) {
+                if matches!(operation, 0x1100..=0x110a | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1140..=0x1142 | 0x1150..=0x1156 | 0x1206..=0x1208 | 0x120b..=0x121a | 0x121b | 0x121d | 0x1233..=0x1237 | 0x1240..=0x1243 | 0x1251..=0x1254 | 0x1270..=0x1274 | 0x1280..=0x1283 | 0x1290 | 0x12e0..=0x12e7 | 0x12f8) {
                     if let Some(result) = filesystem(memory, tables, operation, a) { return result; }
                 }
                 match operation {

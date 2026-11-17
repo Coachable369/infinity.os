@@ -60,7 +60,8 @@ def reset_count():
 # ------------------=
 def configure_workspace_bounds(root):
     maximum_width, maximum_height = root.maxsize()
-    width, height = min(1360,maximum_width,root.winfo_screenwidth()-32), min(840,maximum_height,root.winfo_screenheight()-108)
+    scale=2 if root.winfo_screenwidth()>=2560 and root.winfo_screenheight()>=1440 else 1
+    width, height = min(1360*scale,maximum_width,root.winfo_screenwidth()-32), min(840*scale,maximum_height,root.winfo_screenheight()-108)
     root.minsize(min(800, width), min(560, height))
     root.geometry(f"{width}x{height}")
 

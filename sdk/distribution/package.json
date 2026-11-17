@@ -46,7 +46,12 @@
     "Examples/C/camera.c": "sdk/c/examples/camera_capture.c",
     "AIKit/Potion-LICENSE.txt": "assets/ai-memory/LICENSE",
     "AIKit/PersistentMemory.md": "sdk/distribution/PersistentMemory.md",
-    "Examples/NativeMemoryHarness.rs": "tools/aikit-memory-test.rs"
+    "Examples/NativeMemoryHarness.rs": "tools/aikit-memory-test.rs",
+    "UIKit/application-workspace.md": "assets/ui-design-kit/default/application-workspace.md",
+    "UIKit/infinitycode-tabs.md": "assets/ui-design-kit/default/infinitycode-tabs.md",
+    "UIKit/infinitycode-tabs-reference.png": "assets/ui-design-kit/default/infinitycode-tabs-reference.png",
+    "UIKit/infinity_uikit.py": "sdk/python/infinity_uikit.py",
+    "UIKit/infinity_uikit_artwork.py": "sdk/python/infinity_uikit_artwork.py"
   },
   "trees": {
     "widgets/examples": "sdk/widgets/examples",

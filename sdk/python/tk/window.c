@@ -32,6 +32,7 @@ static Visual visual;
 static Depth depth;
 static uint64_t stacking;
 static int initialized;
+static int presentation_pending;
 static Window keyboard_window,hover_window,captured_window,keyboard_grab;
 static int pointer_x,pointer_y;
 static unsigned pointer_state;
@@ -126,7 +127,9 @@ static int native_create(NativeWindow *w){
     }
     if (w->tk) { w->tk->changes.x=w->x; w->tk->changes.y=w->y; }
     int widget=w->tk && w->tk->classUid && !strcmp(w->tk->classUid,"InfinityWidget");
-    int64_t native=widget ? infinity_widget_create(create,w->surface,w->x,w->y,w->width,w->height)
+    int popup=w->tk && w->tk->atts.override_redirect;
+    int64_t native=popup ? infinity_menu_create(create,w->surface,w->x,w->y,w->width,w->height)
+                        : widget ? infinity_widget_create(create,w->surface,w->x,w->y,w->width,w->height)
                           : infinity_window_create(create,w->surface,w->x,w->y,w->width,w->height);if(native<0)goto failed;w->native=native;
     grant=infinity_gui_request(INFINITY_GUI_WINDOW_MANAGE,w->native);if(grant<0)goto failed;w->manage=grant;
     if(w->title[0]&&infinity_window_title(w->manage,w->native,w->title,strlen(w->title))<0)goto failed;
@@ -263,6 +266,24 @@ static int observe_geometry(NativeWindow *w){
     return changed;
 }
 // ------------------------=
+// FUNC: present_idle
+// DESC: Publish once after Tk's pending widget paints, instead of composing a whole window for every widget flush.
+// ------------------=
+static void present_idle(ClientData unused){
+    (void)unused;presentation_pending=0;
+    for(unsigned i=0;i<WINDOW_LIMIT;++i)if(windows[i].id&&windows[i].native)present(&windows[i]);
+}
+// ------------------------=
+// FUNC: schedule_presentation
+// DESC: Coalesce dirty native surfaces into one idle callback without creating a perpetual idle loop.
+// ------------------=
+static void schedule_presentation(void){
+    if(presentation_pending)return;
+    for(unsigned i=0;i<WINDOW_LIMIT;++i){NativeWindow *w=&windows[i];if(!w->id||!w->native||!w->mapped)continue;
+        if(compose(w,NULL,w->width,w->height,0,0,0,0,w->width,w->height,0)!=w->paint_revision){
+            presentation_pending=1;Tcl_DoWhenIdle(present_idle,NULL);return;}}
+}
+// ------------------------=
 // FUNC: pump
 // DESC: Performs bounded native input/close polling and retained presentation between Tcl timer/event iterations.
 // ------------------=
@@ -275,7 +296,8 @@ static int pump(void){
             close.xclient.data.l[0]=Tk_InternAtom((Tk_Window)w->tk,"WM_DELETE_WINDOW");Tk_QueueWindowEvent(&close,TCL_QUEUE_TAIL);++work;}
         if(w->closed&&infinity_event_poll(w->closed,&e)>0){w->mapped=0;queue_event(w,DestroyNotify);++work;}
         renew_leases(w);work+=observe_geometry(w);
-        work+=present(w);}
+        }
+    schedule_presentation();
     return work;
 }
 // ------------------------=
@@ -299,7 +321,7 @@ TkDisplay *TkpOpenDisplay(const char *name){
 // FUNC: TkpCloseDisplay
 // DESC: Closes all owned native windows and retained pixels when the last Tk display is destroyed.
 // ------------------=
-void TkpCloseDisplay(TkDisplay *d){(void)d;for(unsigned i=0;i<WINDOW_LIMIT;++i)if(windows[i].id){native_release(&windows[i]);InfinityTkRelease(windows[i].id);memset(&windows[i],0,sizeof(windows[i]));}InfinityTclSetEventPump(NULL);initialized=0;}
+void TkpCloseDisplay(TkDisplay *d){(void)d;Tcl_CancelIdleCall(present_idle,NULL);presentation_pending=0;for(unsigned i=0;i<WINDOW_LIMIT;++i)if(windows[i].id){native_release(&windows[i]);InfinityTkRelease(windows[i].id);memset(&windows[i],0,sizeof(windows[i]));}InfinityTclSetEventPump(NULL);initialized=0;}
 // ------------------------=
 // FUNC: TkpMakeWindow
 // DESC: Creates a private retained Tk child or native toplevel drawable without granting a framebuffer mapping.
@@ -381,7 +403,7 @@ int InfinityTkGetState(Window id){NativeWindow *w=top_window(lookup_window(id));
 // FUNC: TkpSync
 // DESC: Flushes completed widget pixels and currently queued native events without blocking audio or native scheduling.
 // ------------------=
-void TkpSync(Display *d){(void)d;pump();}
+void TkpSync(Display *d){(void)d;schedule_presentation();}
 // ------------------------=
 // FUNC: XFlush
 // DESC: Publishes real retained Tk frames at the native event boundary.

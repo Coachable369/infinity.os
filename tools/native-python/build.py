@@ -91,6 +91,8 @@ def frozen_library(source, arch):
                            ("infinity_network", "infinity_network.py"),
                            ("infinitycode", "infinitycode.py"),
                            ("infinitycode_model", "infinitycode_model.py"),
+                           ("infinity_uikit", "infinity_uikit.py"),
+                           ("infinity_uikit_artwork", "infinity_uikit_artwork.py"),
                            ("infinity_widget", "infinity_widget.py"),
                            ("_infinity_platform", "platform.py")):
         names[name] = (name + ".py", (ROOT / "sdk/python" / filename).read_bytes())
@@ -357,6 +359,7 @@ def main():
     (out / "config.c").write_text(config)
     frozen = ['#include "Python.h"', '#include "pycore_import.h"']
     entries = [[], []]
+    subprocess.run([sys.executable, str(ROOT / "tools/native-python/uikit-artwork.py")], check=True)
     names, pip_wheel = frozen_library(source, arch)
     inventory = module_inventory(source, VERSION, arch, names, modules)
     inventory["bundled_distributions"] = {p["name"]: p["version"] for p in packages()}

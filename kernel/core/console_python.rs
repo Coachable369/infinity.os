@@ -491,7 +491,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     // Maximized Tk designers retain pixels for overlapping containers as well as the final surface.
     let bundled_ide = arguments.len()==2 && arguments[1].ends_with(b"/documents/InfinityCode.py") &&
         job.count>0 && &job.files[0].bytes[..job.files[0].len]==include_bytes!("../../sdk/python/examples/infinitycode.py");
-    let heap_pages = if bundled_ide && job.initial_pages >= 61440 { 28672 } else { 16384 };
+    let heap_pages = if bundled_ide && job.initial_pages >= 61440 { 36864 } else { 16384 };
     job.task = Some(Task::start_with_heap(crate::runtime::native_python_package::PYTHON, arguments,
         job.owner, id, 1, memory_mut(), kernel, controller,
         if job.pip { now.saturating_add(600_000_000_000) }
