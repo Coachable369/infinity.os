@@ -51,6 +51,7 @@ impl Place{
 // DESC: Encodes field input as one city parameter, including spaces and reserved characters.
 // ------------------=
 pub fn search(city:&[u8])->Option<Text<256>>{
+    let city=city.trim_ascii();
     if city.is_empty(){return None} let mut s=Text::EMPTY;s.add(b"/v1/search?count=1&language=en&name=")?;
     for &b in city{if b.is_ascii_alphanumeric(){s.add(&[b])?}else{let h=b"0123456789ABCDEF";s.add(&[b'%',h[(b>>4)as usize],h[(b&15)as usize]])?}}Some(s)
 }
@@ -78,6 +79,8 @@ mod tests{
         let city=resolve(br#"{"results":[{"name":"Oslo","latitude":59.91,"longitude":10.74},{"name":"Paris","latitude":48.8,"longitude":2.3}]}"#,false).unwrap();
         let auto=resolve(br#"{"success":true,"city":"Oslo","latitude":59.91,"longitude":10.74}"#,true).unwrap();
         assert_eq!(city,auto);assert_eq!(Place::decode(auto.encode().value()),Some(city));assert_eq!(auto.path().unwrap().value(),b"/v1/forecast?latitude=59.91&longitude=10.74&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit&hourly=temperature_2m&forecast_hours=25&daily=sunrise,sunset&forecast_days=2&timeformat=unixtime&timezone=auto");
+        assert_eq!(search(b"  Oslo  "),search(b"Oslo"));
+        assert!(search(b"   ").is_none());
         assert!(resolve(b"{}",false).is_none());assert!(resolve(br#"{"success":false,"city":"Oslo","latitude":60,"longitude":10}"#,true).is_none());
         assert!(Place::decode(b"City\n92\n0").is_none());assert_eq!(search(b"St. John's").unwrap().value(),b"/v1/search?count=1&language=en&name=St%2E%20John%27s");
     }

@@ -113,14 +113,25 @@ pub(super) fn tick(console:&ConsoleRuntime){
                         if let Ok(Some(Ok(r)))=result{if r.status==200{if let Some((t,c,day))=parse(&r.bytes[..r.length]){let previous=OUTLOOK.map_or(0,|out|out.page);
                             OUTLOOK=core::str::from_utf8(&r.bytes[..r.length]).ok().and_then(crate::ui::weather_forecast::Outlook::parse);
                             if let Some(ref mut out)=*(&raw mut OUTLOOK){out.page=previous.min(out.count.saturating_sub(1)/3);}
-                            REPORT=Some((t,c,now,day));NEXT=now+900;}}}
+                            REPORT=Some((t,c,now,day));
+                            if LOOKUP.is_none() { NEXT=now+900; }}}}
                     }else{
-                        let found=if let Ok(Some(Ok(r)))=result{if r.status==200{place::resolve(&r.bytes[..r.length],kind==Request::Detect)}else{None}}else{None};
+                        let resolution = match result {
+                            Ok(Some(Ok(response))) if response.status == 200 =>
+                                place::resolve(&response.bytes[..response.length],kind==Request::Detect)
+                                    .ok_or(b"City not found".as_slice()),
+                            _ => Err(b"Location service unavailable".as_slice()),
+                        };
                         LOOKUP=None;
-                        if let Some(p)=found{let mut scratch=[0;120];if crate::storage::weather_location(console.current_user.0,owner.0,Some(p.encode().value()),&mut scratch).is_ok(){
-                            PLACE=Some(p);REPORT=None;OUTLOOK=None;SETUP=false;FOCUS=false;NEXT=0;
-                        }else{MESSAGE=b"Could not save city";}}
-                        else{MESSAGE=b"City not found";}
+                        match resolution {
+                            Ok(location) => {
+                                let mut saved=[0;120];
+                                if crate::storage::weather_location(console.current_user.0,owner.0,Some(location.encode().value()),&mut saved).is_ok() {
+                                    PLACE=Some(location);REPORT=None;OUTLOOK=None;SETUP=false;FOCUS=false;NEXT=0;
+                                } else {MESSAGE=b"Could not save city";}
+                            }
+                            Err(message) => MESSAGE=message,
+                        }
                     }
                     crate::ui::widget_keyframes::invalidate(2);
                 }

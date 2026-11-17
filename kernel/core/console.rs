@@ -1543,6 +1543,18 @@ impl ConsoleRuntime {
     fn input(&mut self, key: ConsoleKey) {
         self.publish_command_terminal();
         let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
+        if matches!(key, ConsoleKey::Escape) && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
+            let mut widgets = crate::ui::desktop_widgets::current();
+            if widgets.menu.is_some() {
+                let was_adjusting = widgets.adjusting;
+                widgets.dismiss_menu();
+                crate::ui::desktop_widgets::publish(widgets);
+                if was_adjusting { let _ = self.persist_desktop_layout(); }
+                self.session_idle.note_activity();
+                self.redraw();
+                return;
+            }
+        }
         if self.accounts_focus_guard() { return; }
         if self.mode == ConsoleMode::Settings && self.system_focus == 2 {
             if let ConsoleKey::Shortcut(code)=key {

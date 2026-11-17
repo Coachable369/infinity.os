@@ -96,9 +96,10 @@ impl ConsoleRuntime {
             return true;
         }
         if secondary && state.menu.is_some() {
-            state.menu=None;state.menu_widget=None;state.menu_hover=None;
-            state.adjusting=false;state.visibility_menu=false;state.transparency_menu=false;
+            let was_adjusting=state.adjusting;
+            state.dismiss_menu();
             widgets::publish(state);
+            if was_adjusting { let _=self.persist_desktop_layout(); }
         }
         if let Some(menu) = state.menu_rect(width, height, scale) {
             if let Some(id)=state.menu_widget.filter(|_|state.transparency_menu) {
@@ -146,7 +147,7 @@ impl ConsoleRuntime {
                         state.positions = [[0; 2]; 2];state.weather_position=[0;2];
                     }
                 }
-                state.menu = None;state.menu_hover=None;state.menu_widget=None;state.visibility_menu=false;state.transparency_menu=false;
+                state.dismiss_menu();
                 widgets::publish(state);
                 if previous.visible!=state.visible || previous.transparency!=state.transparency
                     || previous.positions!=state.positions || previous.weather_position!=state.weather_position {

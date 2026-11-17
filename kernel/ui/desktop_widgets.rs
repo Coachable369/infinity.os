@@ -259,6 +259,18 @@ impl State {
         if id==2{self.weather_position=position;}else{self.positions[id]=position;}
     }
     // ------------------------=
+    // FUNC: dismiss_menu
+    // DESC: Releases all transient widget menu and slider interaction state.
+    // ------------------=
+    pub fn dismiss_menu(&mut self) {
+        self.menu = None;
+        self.menu_widget = None;
+        self.menu_hover = None;
+        self.adjusting = false;
+        self.visibility_menu = false;
+        self.transparency_menu = false;
+    }
+    // ------------------------=
     // FUNC: menu_rect
     // DESC: Keeps the widget chooser inside the display at the click position.
     // ------------------=

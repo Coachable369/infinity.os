@@ -1552,6 +1552,17 @@ fn weather_outlook_and_chooser_render(){
     ui::widget_keyframes::weather_phase(8250,false);
     d.weather_widget(1,Some((65,0,120,true)),Some(out),120,b"Bossier City",false,b"",false,b"");
     assert!(first.iter().zip(&pixels).filter(|(a,b)|a!=b).count()>500);
+    let fresh=pixels.clone();
+    pixels.fill(0x24170c);
+    d.weather_widget(1,Some((65,0,120,true)),Some(out),1921,b"Bossier City",false,b"",false,b"");
+    let rect=state.rect(2,width,height,1,false);
+    let x=rect.x as usize;
+    let y=rect.y as usize+rect.height as usize/2;
+    assert!((y..y+rect.height as usize/8).any(|row| {
+        let start=row*width+x;
+        pixels[start..start+rect.width as usize]!=fresh[start..start+rect.width as usize]
+    }));
+    pixels.copy_from_slice(&fresh);
     d.desktop_widget_menu(1);
     if let Some(path)=std::env::var_os("WEATHER_REVIEW_PPM"){
         use std::io::Write;

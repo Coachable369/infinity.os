@@ -64,8 +64,16 @@ impl DisplayDevice {
             text[n..n+number.len()].copy_from_slice(number);n+=number.len();text[n..n+2].copy_from_slice(b" F");
             self.ui_text_raster(left,y+h/4,&text[..n+2],239,248,255,FontSize::new(UI_FONT_CELL_HEIGHT,(h/4).clamp(23,56)),true,None);
             let condition=match c{0=>b"Clear".as_slice(),1..=3=>b"Clouds",45|48=>b"Fog",51..=57=>b"Drizzle",61..=67|80..=82=>b"Rain",71..=77|85|86=>b"Snow",95..=99=>b"Thunderstorms",_=>b"Weather"};
-            self.ui_text_raster(left,y+h/2,condition,192,218,238,label,false,None);
             let stale=now.saturating_sub(last)>1800;
+            let mut status=[0u8;32];
+            status[..condition.len()].copy_from_slice(condition);
+            let mut length=condition.len();
+            if stale {
+                let suffix=b" / stale";
+                status[length..length+suffix.len()].copy_from_slice(suffix);
+                length+=suffix.len();
+            }
+            self.ui_text_raster(left,y+h/2,&status[..length],192,218,238,label,false,None);
             if let Some(out)=outlook.filter(|v|v.count>0) {
                 let small=FontSize::new(UI_FONT_CELL_HEIGHT,(h/9).clamp(13,25));
                 self.fill_rounded_rect_alpha(x+6*scale,y+h*67/100,w-12*scale,h*29/100,8*scale,9,17,38,(u16::from(alpha)*2/3)as u8);
@@ -83,7 +91,7 @@ impl DisplayDevice {
                 }
                 if out.page>0 {self.ui_text_raster(x+w/28,y+h*74/100,b"<",160,209,248,label,true,None);}
                 if (out.page+1)*3<out.count {self.ui_text_raster(x+w*91/100,y+h*74/100,b">",160,209,248,label,true,None);}
-            } else {self.ui_text_raster(left,y+h*8/10,if stale{b"Open-Meteo / stale"}else{b"Open-Meteo"},158,186,207,label,false,None);}
+            } else {self.ui_text_raster(left,y+h*8/10,b"Open-Meteo",158,186,207,label,false,None);}
         }else{self.ui_text(left,y+h/2,b"Awaiting forecast",191,212,232,1);}
         self.render_clip=old;
     }

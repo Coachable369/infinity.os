@@ -249,3 +249,22 @@ fn weather_avoids_each_visible_neighbour() {
         }
     }
 }
+
+#[test]
+// ------------------------=
+// FUNC: dismissing_slider_releases_pointer_and_preserves_preference
+// DESC: Closing a widget menu retains its chosen transparency and resets the next menu to its root.
+// ------------------=
+fn dismissing_slider_releases_pointer_and_preserves_preference() {
+    let mut state=State::new();
+    state.menu=Some(Point{x:40,y:50});
+    state.menu_widget=Some(2);
+    state.menu_hover=Some(1);
+    state.transparency_menu=true;
+    state.adjusting=true;
+    state.set_percent(2,71);
+    state.dismiss_menu();
+    let mut expected=State::new();
+    expected.set_percent(2,71);
+    assert_eq!(state,expected);
+}
