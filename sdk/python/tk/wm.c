@@ -163,10 +163,10 @@ void TkWmNewWindow(TkWindow *window) {
     wm->window = window; wm->state = NormalState;
     wm->width = wm->height = -1;
     wm->min_width = wm->min_height = 1;
-    int64_t work_width = infinity_gui_geometry(6);
-    int64_t work_height = infinity_gui_geometry(7);
-    wm->max_width = work_width > 0 && work_width <= INT_MAX ? (int)work_width : DisplayWidth(window->display, window->screenNum);
-    wm->max_height = work_height > 0 && work_height <= INT_MAX ? (int)work_height : DisplayHeight(window->display, window->screenNum);
+    // Preferred placement excludes the task tray; it is not a maximum size.
+    // The compositor supplies the maximized client bounds within this display.
+    wm->max_width = DisplayWidth(window->display, window->screenNum);
+    wm->max_height = DisplayHeight(window->display, window->screenNum);
     wm->resize_width = wm->resize_height = 1;
     wm->width_step = wm->height_step = 1;
     wm->title = Tcl_NewStringObj(window->nameUid ? window->nameUid : "Tk", -1);
