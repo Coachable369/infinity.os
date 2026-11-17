@@ -31,20 +31,23 @@ class Studio:
         style.configure("TEntry", fieldbackground="#090F26", foreground="#FFFFFF", padding=4)
         style.configure("TButton", padding=(8,5), font=("Inter",-14))
         style.configure("Accent.TButton", background="#315ED2", foreground="white")
+        style.layout("Workspace.TMenubutton", [("Menubutton.padding", {"sticky":"nswe", "children":
+            [("Menubutton.label", {"sticky":"w"})]})])
+        style.configure("Workspace.TMenubutton", background="#101B3A", foreground="#DAE9FF",
+                        padding=(12,6), font=("Inter",-15), relief="flat")
+        style.map("Workspace.TMenubutton", background=[("active","#244F96"),("focus","#244F96")])
         bar = tk.Frame(root, bg="#101B3A", padx=8)
         bar.pack(fill="x")
         for title, actions in (
             ("File", (("New form", self.new_form), ("New widget", self.new_widget),
                       ("Open…", self.open_project), ("Save", self.save), ("Save As…", self.save_as),
                       ("Export Python", self.export), ("Exit", self.close))),
-            ("Edit", (("Undo", self.undo), ("Redo", self.redo),
+            ("Edit", (("Undo", lambda:self.edit_command("Undo")), ("Redo", lambda:self.edit_command("Redo")),
                       ("Cut", lambda: self.edit_command("Cut")), ("Copy", lambda: self.edit_command("Copy")),
                       ("Paste", lambda: self.edit_command("Paste")), ("Delete control", self.delete),
                       ("View code behind", self.code_behind))),
             ("Help", (("Designer help", self.help),))):
-            button = tk.Menubutton(bar, text=title, bg="#101B3A", fg="#DAE9FF",
-                                   activebackground="#244F96", activeforeground="white",
-                                   font=("Inter",-15), padx=12, pady=5, relief="flat")
+            button = ttk.Menubutton(bar, text=title, style="Workspace.TMenubutton")
             menu = tk.Menu(button, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
             for label, action in actions:
                 menu.add_command(label=label, command=lambda fn=action:self.perform(fn))
@@ -288,6 +291,8 @@ class Studio:
         target=self.root.focus_get()
         if isinstance(target,(tk.Text,tk.Entry,ttk.Entry)):
             target.event_generate("<<"+action+">>")
+        elif action in ("Undo","Redo"):
+            (self.undo if action=="Undo" else self.redo)()
         elif action in ("Copy","Cut") and self.item():
             self.control_copy=copy.deepcopy(self.item())
             if action=="Cut":
